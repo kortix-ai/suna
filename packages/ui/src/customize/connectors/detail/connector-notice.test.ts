@@ -91,6 +91,15 @@ describe('splitNoticeReason', () => {
     });
   });
 
+  // The reason is server text: the split must stay linear (CodeQL js/polynomial-redos).
+  test('splits a long whitespace run in linear time', () => {
+    const reason = `x${'\t'.repeat(50_000)}y`;
+    const started = performance.now();
+    expect(splitNoticeReason(reason)).toEqual({ code: null, detail: reason });
+    expect(splitNoticeReason(`a${'\t'.repeat(50_000)}HTTP 503`)).toEqual({ code: '503', detail: 'a' });
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
   test('keeps a reason with no HTTP status whole', () => {
     expect(splitNoticeReason('connect ECONNREFUSED')).toEqual({
       code: null,

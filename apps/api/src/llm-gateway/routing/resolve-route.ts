@@ -85,9 +85,9 @@ export function createGatewayRouteResolver(
     const projectPolicy = principal.projectId && options.getProjectPolicy
       ? await options.getProjectPolicy(principal.projectId)
       : null;
-    // The default decides only an image reroute and the project default
-    // fallback; without either, it is not read at all.
-    const defaultMatters = input.requires.imageInput || Boolean(projectPolicy?.defaultFallback);
+    // The default decides only an image reroute (the project chain covers
+    // every model); a text request never reads it.
+    const defaultMatters = input.requires.imageInput;
     const principalDefault = principal.defaultModel
       ?? (defaultMatters && options.resolveDefaultModel
         ? await options.resolveDefaultModel(principal).catch(() => undefined)
@@ -124,7 +124,12 @@ export function createGatewayRouteResolver(
       };
     }
 
-    if (isDefaultRequest && projectPolicy?.defaultFallback) {
+    // The project's chain is a catch-all: it covers every model that has no
+    // exact rule. It never depends on `isDefaultRequest`, because the
+    // principal's default is one model. An agent with its own default, or a
+    // default with every account paused, would otherwise take a request for
+    // the project's own model out of the chain.
+    if (projectPolicy?.defaultFallback) {
       return {
         policyId: 'project:default',
         primaryModel,

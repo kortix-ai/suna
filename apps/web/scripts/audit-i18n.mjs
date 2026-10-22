@@ -399,7 +399,9 @@ function messageSignature(message, locale) {
   }
 
   visit(ast);
-  return tokens.sort();
+  // A set, not a count: a locale with fewer plural categories (ja and zh have
+  // only `other`) repeats an argument fewer times than en does.
+  return [...new Set(tokens)].sort();
 }
 
 function messageIssues(english, messages, locale) {

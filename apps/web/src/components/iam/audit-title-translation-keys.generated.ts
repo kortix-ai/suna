@@ -646,6 +646,7 @@ export const AUDIT_TITLE_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Synchronized seat quantity': 'text2ffa12a23b19',
   'Synchronized subscription': 'text95e5dd85ed41',
   'Took Kortix App volume snapshot': 'textb8390ff12da4',
+  'Transferred project to another account': 'text2b2c3ec032a6',
   'Turned Capture off': 'text6bdc49eed8c9',
   'Turned Capture on': 'textab4c24c38193',
   'Turned Capture on or off': 'textba3d3f6932af',

@@ -33,6 +33,13 @@ interface ProjectContextOpts {
    */
   onePrincipal?: boolean;
   /**
+   * The connector data plane's KRTX-1705 pin: the injected env token
+   * outranks a marker-selected host's stored credentials, so a `hosts use`
+   * inside a session sandbox never redirects the session's own connector
+   * calls. An explicit `--host` or a cwd link still wins (KRTX-2529).
+   */
+  envPin?: boolean;
+  /**
    * Do not print "No project linked" when nothing resolves.
    *
    * Set by callers that have a fallback — `locateSessionAnywhere` goes on to
@@ -51,7 +58,7 @@ interface ProjectContextOpts {
  * token → the active host. resolveProjectContext and the host notice both
  * read this so the header never names credentials the command will not use.
  */
-export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
+export function resolveProjectAuth(opts: { hostArg?: string; envPin?: boolean } = {}): {
   hostName?: string;
   auth: Auth | null;
   /** Plain auth resolved to the stored active host through an in-sandbox
@@ -71,6 +78,24 @@ export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
   // belongs to the deployment the link names, never to the selection.
   let fellBackToEnv = false;
   if (!auth?.token && !opts.hostArg && hasEnvTokenHost()) {
+    auth = loadEnvAuth();
+    hostName = undefined;
+    fellBackToEnv = true;
+  }
+  // The connector data plane's KRTX-1705 pin, kept alongside the KRTX-2529
+  // link rule: a session only ever invokes `kortix connectors` — its injected
+  // env token must keep outranking a marker-selected host's stored
+  // credentials (a `hosts use` in the sandbox must never redirect the
+  // session's own connector calls at that host). A link still wins: its
+  // stored credentials are what make a NON-session project reachable from
+  // inside a sandbox, and its host notice already displays it.
+  if (
+    opts.envPin &&
+    !opts.hostArg &&
+    !link?.host &&
+    !fellBackToEnv &&
+    hasEnvTokenHost()
+  ) {
     auth = loadEnvAuth();
     hostName = undefined;
     fellBackToEnv = true;
@@ -122,7 +147,7 @@ export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
  */
-export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg' | 'onePrincipal'>;
+export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg' | 'onePrincipal' | 'envPin'>;
 
 export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
@@ -132,7 +157,10 @@ export async function resolveProjectContext(
       ? { projectArg: optsOrProjectArg }
       : optsOrProjectArg ?? {};
 
-  const { hostName, auth: resolvedAuth, hostScoped } = resolveProjectAuth({ hostArg: opts.hostArg });
+  const { hostName, auth: resolvedAuth, hostScoped } = resolveProjectAuth({
+    hostArg: opts.hostArg,
+    envPin: opts.envPin,
+  });
   let auth: Auth | null = resolvedAuth;
   if (!auth?.token) {
     if (hostName) {

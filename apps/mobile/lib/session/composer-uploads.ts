@@ -6,8 +6,25 @@
  * composer-attachment-tiles.tsx`) is the render. Kept import-free of React
  * Native so it tests with plain `bun test`.
  */
-import type { ComposerAttachmentUpload } from '@/components/session/composer-attachment-tiles';
 import type { PromptAttachmentItem } from '@kortix/sdk';
+
+/** Per-file upload state, keyed by the file's index in `files`. */
+export interface ComposerAttachmentUpload {
+  /** 0–100 while uploading. */
+  progress?: number;
+  failed?: boolean;
+  /** Present when a retry can succeed. */
+  onRetry?: () => void;
+  /**
+   * The live progress of an upload in flight. The tile subscribes itself, so
+   * progress ticks do not re-render the composer. `progress` is the value at
+   * the time the entry was built.
+   */
+  live?: {
+    subscribe: (listener: () => void) => () => void;
+    getProgress: () => number | undefined;
+  };
+}
 
 /** How long `takeForSend` waits for every staged upload to finish. */
 export const SEND_UPLOAD_WAIT_MS = 120_000;

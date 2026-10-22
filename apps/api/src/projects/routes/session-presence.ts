@@ -23,7 +23,7 @@ const PresenceResponse = z.object({
     description: 'When the session\'s computer stops after this renewal. Null unless active=true, the caller may start the session, and the computer is running or starting.',
   }),
   awake_cap_at: z.string().datetime().nullable().openapi({
-    description: 'Presence never keeps the computer on past this time: 2 h after the session\'s latest turn activity, or after the computer started if that is later, and at most 24 h into the computer\'s run. A new turn moves it. Null when awake_until is null.',
+    description: 'Presence never keeps the computer on past this time: the idle autostop window (KORTIX_SANDBOX_AUTOSTOP_MINUTES, 15 minutes by default) after the session\'s latest turn activity, or after the computer started if that is later, and at most 24 h into the computer\'s run. A new turn moves it. Null when awake_until is null.',
   }),
 });
 

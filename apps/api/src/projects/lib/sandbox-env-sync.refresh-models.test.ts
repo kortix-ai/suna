@@ -13,6 +13,7 @@
 // `bun test --isolate`, so the module-level mocks below are safe).
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import { applyEnvSyncDurableWrite, firstBoundString } from '../../__tests__/helpers/env-sync-durable-fake';
 import * as realSecrets from '../secrets';
 import * as realSecretGrant from './secret-grant';
 
@@ -35,20 +36,27 @@ let snapshotEnv: Record<string, string> = { EXAMPLE: 'v1' };
 let snapshotNames: string[] = ['EXAMPLE'];
 let snapshotRevision = 'rev-1';
 let snapshotCapabilitiesJson = '{"version":1,"capabilities":[]}';
+/** Each session's sandbox-row `config`: the durable env-sync record every push writes. */
+const sandboxConfigs = new Map<string, Record<string, unknown> | null>();
 
 mock.module('../../shared/db', () => ({
   hasDatabase: true,
   db: {
     select: (columns: Record<string, unknown>) => ({
       from: () => ({
-        where: () => {
+        where: (condition: unknown) => {
           // `resolveOwnerRawEnv` selects the session row, then the project row.
           // `resolveProjectLlmGatewayEnabled` selects a project row shaped like
           // `{ metadata }` only. Route on the requested column set so one fake
           // `db` satisfies every select on this path, same as the sibling
           // `sandbox-env-sync.prompt.test.ts`.
           const wantsSession = 'createdBy' in columns;
-          const rows = wantsSession ? [SESSION_ROW] : [PROJECT_ROW];
+          const wantsSandboxConfig = !wantsSession && Object.keys(columns).length === 1 && 'config' in columns;
+          const rows = wantsSession
+            ? [SESSION_ROW]
+            : wantsSandboxConfig
+              ? [{ config: sandboxConfigs.get(firstBoundString(condition) ?? '') ?? null }]
+              : [PROJECT_ROW];
           return {
             limit: async () => rows,
             then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
@@ -57,7 +65,14 @@ mock.module('../../shared/db', () => ({
         },
       }),
     }),
-    update: () => ({ set: () => ({ where: async () => undefined }) }),
+    update: () => ({
+      set: (patch: { config?: unknown }) => ({
+        where: async (condition: unknown) => {
+          const sessionId = firstBoundString(condition) ?? '';
+          sandboxConfigs.set(sessionId, applyEnvSyncDurableWrite(sandboxConfigs.get(sessionId) ?? null, patch.config));
+        },
+      }),
+    }),
   },
 }));
 
@@ -112,10 +127,11 @@ const ORIGINAL_FETCH = globalThis.fetch;
 const { syncSandboxEnvForPrompt, __resetPromptModelSignatureCacheForTests, __pendingEnvChecksForTests } =
   await import('./sandbox-env-sync');
 
+/** One box per session, as in production: `ext-2` is the box of `sess-2`. */
 function prompt(externalId = 'ext-1', requestedAgent?: string) {
   return syncSandboxEnvForPrompt({
     projectId: 'proj-1',
-    sessionId: 'sess-1',
+    sessionId: externalId.replace('ext-', 'sess-'),
     externalId,
     serviceKey: 'svc-key',
     previewUrl: 'https://sandbox.test',
@@ -144,6 +160,7 @@ afterAll(() => {
 
 beforeEach(() => {
   __resetPromptModelSignatureCacheForTests();
+  sandboxConfigs.clear();
   posted = [];
   snapshotGate = Promise.resolve();
   snapshotEnv = { EXAMPLE: 'v1' };

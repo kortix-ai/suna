@@ -214,6 +214,11 @@ locals {
   }
 }
 
+# The scanner looks for an MFA condition on the group itself and cannot see
+# attached policies. administrators, engineers and mfa-self-manage attach
+# kortix-mfa-required (enforce_mfa_for_iam_users = true). The other groups
+# hold only programmatic service users with no console login.
+#trivy:ignore:AVD-AWS-0123 MFA is enforced through the attached kortix-mfa-required policy; service-user groups cannot present MFA.
 resource "aws_iam_group" "this" {
   for_each = local.groups
   name     = each.key

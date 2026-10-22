@@ -156,7 +156,7 @@ The three reply actions remove the item only after the server accepts the reply.
 | `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. |
 | `replayStartStash` | `true` | Sends a first prompt that a "new session" screen saved, once the session is ready and empty. |
 | `initialRuntimeSessionId` | `null` | A runtime session id your server already holds. The transcript renders from it while `/start` runs. The `/start` answer wins. |
-| `browserPresence` | `false` | Holds this tab's presence lease while a person uses the page (input in the last 10 minutes). The lease keeps the sandbox awake for a person who may start the session, at most 2 hours past its latest turn. |
+| `browserPresence` | `false` | Holds this tab's presence lease while a person uses the page (input in the last 10 minutes). The lease routes notifications and returns the awake window (`presenceAwake`) for a person who may start the session; the sandbox stops the idle window — 15 minutes by default — after its latest turn, with the page open or not. |
 | `presenceAlerts` | `false` | `true` tells the server this tab shows its own notifications, so the server skips phone and Web Push while the tab is in use. Pass `true` only when the project's `notification_center` flag is on and this tab's browser notifications are on and permitted. Needs `browserPresence`. |
 | `presencePageExit` | `false` | Ends the presence lease when the page closes. Off, the lease ends at its 90-second expiry. Needs `browserPresence`. Pass the project's `notification_center` flag. |
 

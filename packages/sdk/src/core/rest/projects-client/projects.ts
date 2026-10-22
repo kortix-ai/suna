@@ -215,6 +215,10 @@ export interface KortixProject {
   /** Per-project sandbox-provider pin (Customize → Settings). null = follow the
    *  platform default/distribution. */
   default_sandbox_provider?: SandboxProviderName | null;
+  /** Per-project default reasoning effort (a models.dev effort label such as
+   *  `low`/`high`/`xhigh`), or null for automatic. Delivery injects it as the
+   *  prompt's `variant` whenever the prompt carries none. */
+  default_reasoning_effort?: string | null;
   /** Enabled sandbox providers the picker offers (ALLOWED ∩ has-API-key). */
   available_sandbox_providers?: SandboxProviderName[];
   /** Per-project emoji shown on the project card. Server-validated: exactly one
@@ -1079,6 +1083,21 @@ export async function updateProjectSandboxProvider(
   );
 }
 
+/** Set or clear the per-project default reasoning effort (Settings → General).
+ *  Pass `null` to clear (automatic). The value must be an effort label the
+ *  model catalog publishes; the server validates it. Returns the updated
+ *  project with `default_reasoning_effort` re-validated on read. */
+export async function setDefaultReasoningEffort(
+  projectId: string,
+  effort: string | null,
+): Promise<KortixProject> {
+  return unwrap(
+    await backendApi.put<KortixProject>(`/projects/${projectId}/default-reasoning-effort`, {
+      effort,
+    }),
+  );
+}
+
 /** PUBLIC provider-migration transition view served by the poll endpoint. Carries
  *  only status / providers / generation / timestamps / a user-safe error class +
  *  label — never internal build/lease detail. */
@@ -1179,6 +1198,26 @@ export async function setProjectOnboardingProfile(projectId: string, profile: On
 
 export async function archiveProject(projectId: string) {
   return unwrap(await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}`));
+}
+
+/**
+ * Move the project — and everything it owns (sessions, drives, git
+ * connection, project-bound tokens, member grants) — to another account.
+ *
+ * The caller needs the destructive tier on the project (`project.delete`)
+ * AND the right to create projects in the TARGET account; the API refuses a
+ * caller who is not a member of the target (or whose target role cannot
+ * create projects) with 403 before anything moves, and 403 with the target
+ * account's project-cap body when the move would exceed its plan. The usage
+ * ledger stays with the source account: spend stays where it was consumed.
+ */
+export async function transferProject(projectId: string, accountId: string) {
+  return unwrap(
+    await backendApi.post<{ ok: boolean; project_id: string; account_id: string }>(
+      `/projects/${projectId}/transfer`,
+      { account_id: accountId },
+    ),
+  );
 }
 
 // ── Server-side explicit-token variants ──────────────────────────────────────

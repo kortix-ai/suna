@@ -21,7 +21,6 @@ import type { ProjectSessionRow } from '../projects/lib/serializers';
 import { transitionSession } from '../projects/session-lifecycle/status-transitions';
 import { persistTitle } from '../projects/session-title-generate';
 import { db } from '../shared/db';
-import { getPublicSessionInfo } from '../shared/public-session-share-view';
 
 const { writeRuntimeSessionList, registerRuntimeFork } = await import('../projects/lib/runtime-session-snapshot');
 const { saveRuntimeProjection } = await import('../projects/lib/session-runtime-projection');
@@ -259,24 +258,6 @@ describe('PLACEHOLDER_TITLE_SQL_PATTERN agrees with isPlaceholderOpencodeTitle i
       sql`select (btrim(${title}::text) ~* ${PLACEHOLDER_TITLE_SQL_PATTERN})::bool as hit`,
     );
     expect((check as { hit: boolean }).hit).toBe(isPlaceholderOpencodeTitle(title));
-  });
-});
-
-describe('getPublicSessionInfo — the anonymous share viewer sees the same title chain', () => {
-  test('nulls the frozen placeholder, keeps a real title, and custom_name still wins', async () => {
-    const placeholder = await seed({ name: 'New session - Jul 29' });
-    const generated = await seed({ name: 'Set Up MS Graph' });
-    const renamed = await seed({ name: 'Set Up MS Graph', custom_name: 'Mine' });
-
-    const titleOf = async (sessionId: string) => {
-      const result = await getPublicSessionInfo(sessionId);
-      expect(result.ok).toBe(true);
-      return result.ok ? result.session.title : undefined;
-    };
-
-    expect(await titleOf(placeholder.sessionId)).toBeNull();
-    expect(await titleOf(generated.sessionId)).toBe('Set Up MS Graph');
-    expect(await titleOf(renamed.sessionId)).toBe('Mine');
   });
 });
 

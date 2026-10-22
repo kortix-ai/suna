@@ -82,7 +82,7 @@ export function transcriptCarriesFirstPrompt(
  * stand-in knew — text and file names — so it keeps drawing the bubble and the
  * pending tiles through any frame where its own parts are still streaming.
  */
-export interface FirstPromptHandoverInput {
+interface FirstPromptHandoverInput {
   /** The producer's copy exists (the boot preview store has this session). */
   hasPreview: boolean;
   /** The transcript's first user message carries its text right now. */
@@ -111,7 +111,7 @@ export interface FirstPromptHandoverInput {
   transcriptEmpty?: boolean;
 }
 
-export interface FirstPromptHandover {
+interface FirstPromptHandover {
   /** Draw the stand-in bubble. */
   showStandIn: boolean;
   /** Hand the preview's text + file names to the real first turn. */

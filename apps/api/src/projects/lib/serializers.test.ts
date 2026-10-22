@@ -29,6 +29,36 @@ function projectRow(metadata: Record<string, unknown> | null) {
   };
 }
 
+describe('serializeProject default_reasoning_effort', () => {
+  test('exposes a published metadata.default_reasoning_effort as a top-level field', () => {
+    expect(
+      serializeProject(projectRow({ default_reasoning_effort: 'high' })).default_reasoning_effort,
+    ).toBe('high');
+  });
+
+  test('is null when metadata has no default effort', () => {
+    expect(serializeProject(projectRow({})).default_reasoning_effort).toBeNull();
+  });
+
+  test('is null when the stored value is not a published effort label', () => {
+    // A value written directly to the DB, or before the route validated, must
+    // read as automatic (null) — never as garbage the gateway would 400 on.
+    expect(
+      serializeProject(projectRow({ default_reasoning_effort: 'ultra' })).default_reasoning_effort,
+    ).toBeNull();
+  });
+
+  test('trims a hand-written value with surrounding whitespace', () => {
+    expect(
+      serializeProject(projectRow({ default_reasoning_effort: ' low ' })).default_reasoning_effort,
+    ).toBe('low');
+  });
+
+  test('is null when metadata itself is null', () => {
+    expect(serializeProject(projectRow(null)).default_reasoning_effort).toBeNull();
+  });
+});
+
 describe('serializeProject icon', () => {
   test('exposes a valid metadata.icon as a top-level field', () => {
     expect(serializeProject(projectRow({ icon: '🚀' })).icon).toBe('🚀');

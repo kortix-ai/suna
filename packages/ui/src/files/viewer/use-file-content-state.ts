@@ -93,6 +93,12 @@ export function useFileContentState({
   const fetchRevision = useContentRevision(dataUpdatedAt || undefined);
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  // A refetch may replace server content while CodeEditor retains a dirty draft.
+  // CAS must compare against the revision that draft started from.
+  const draftRevisionRef = useRef(fileContent?.revision);
+  useEffect(() => {
+    if (!hasUnsavedChanges) draftRevisionRef.current = fileContent?.revision;
+  }, [hasUnsavedChanges, fileContent?.revision]);
   const [isSaving, setIsSaving] = useState(false);
   const [saveFlash, setSaveFlash] = useState(false);
   // Tracks the latest editor content so we can save from the header button.
@@ -185,12 +191,12 @@ export function useFileContentState({
 
   const displayContent = fileContent?.content ?? '';
 
-  // Keep latestContentRef in sync with loaded content
+  // Refresh clean content only; header Save must keep the visible dirty draft.
   useEffect(() => {
-    if (fileContent?.content) {
-      latestContentRef.current = fileContent.content;
+    if (!hasUnsavedChanges) {
+      latestContentRef.current = fileContent?.content ?? '';
     }
-  }, [fileContent?.content]);
+  }, [fileContent?.content, hasUnsavedChanges]);
 
   // Reset state when the FILE changes — markdown defaults to rendered preview.
   //
@@ -234,15 +240,17 @@ export function useFileContentState({
   // Save handler — called by CodeEditor (Cmd+S) and by the header Save button.
   // When called from the header button we pass latestContentRef.current.
   // When called from CodeEditor's Cmd+S, CodeEditor passes its own localContent.
+  const draftGeneration = useRef(0);
   const handleSave = useCallback(
     async (content: string) => {
       if (readOnly) return;
+      const generation = draftGeneration.current;
       setIsSaving(true);
       try {
         const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
         const file = new File([blob], fileName, { type: 'text/plain' });
         if (source.save) {
-          await source.save(filePath, file);
+          await source.save(filePath, file, draftRevisionRef.current);
         } else {
           const parentPath = filePath.substring(0, filePath.lastIndexOf('/'));
           await source.upload(file, parentPath || undefined);
@@ -250,7 +258,14 @@ export function useFileContentState({
         // Refetch so fileContent.content (= originalContent for CodeEditor) updates.
         // CodeEditor's originalContent effect will then sync savedContent.current
         // to match localContent, clearing its internal hasChanges flag.
-        await refetch();
+        const refreshed = await refetch();
+        if (refreshed && typeof refreshed === 'object' && 'data' in refreshed) {
+          const data = refreshed.data;
+          if (data && typeof data === 'object' && 'revision' in data && typeof data.revision === 'string') {
+            draftRevisionRef.current = data.revision;
+          }
+        }
+        if (draftGeneration.current !== generation) return;
         setHasUnsavedChanges(false);
         setSaveFlash(true);
         if (saveFlashTimerRef.current) clearTimeout(saveFlashTimerRef.current);
@@ -266,6 +281,7 @@ export function useFileContentState({
                 : tI18nHardcoded.raw('i18nComplete.text27c2ccd962c2'),
           }),
         );
+        throw err;
       } finally {
         setIsSaving(false);
       }
@@ -285,6 +301,7 @@ export function useFileContentState({
   const handleEditorChange = useCallback(
     (content: string) => {
       if (readOnly) return;
+      draftGeneration.current++;
       latestContentRef.current = content;
     },
     [readOnly],
@@ -297,7 +314,7 @@ export function useFileContentState({
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
         if (hasUnsavedChanges && latestContentRef.current) {
-          handleSave(latestContentRef.current);
+          void handleSave(latestContentRef.current).catch(() => undefined);
         }
       }
     };

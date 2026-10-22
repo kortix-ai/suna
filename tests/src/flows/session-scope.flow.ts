@@ -538,8 +538,7 @@ flow(
     requires: ['database'],
     routes: [
       'POST /v1/projects/:projectId/sessions/:sessionId/public-shares',
-      'GET /v1/public/session-shares/:shareId',
-      'GET /v1/public/session-shares/:shareId/messages',
+      'GET /v1/p/public-share/:token',
     ],
   },
   async (ctx) => {
@@ -557,14 +556,17 @@ flow(
       r.status(201);
       shareId = r.json<{ share: { share_id: string } }>().share.share_id;
     });
-    await ctx.step('anon reads the share metadata → never an auth error', async () => {
-      (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } })).status([200, 503]);
+    await ctx.step('the removed anonymous viewing routes answer 404 — the conversation has no public reader at all (KRTX-2358)', async () => {
+      (await anon.get('/v1/public/session-shares/:shareId', { params: { shareId } })).status(404);
+      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId } })).status(404);
     });
-    await ctx.step('anon reads the conversation through the preview share → 404', async () => {
-      (await anon.get('/v1/public/session-shares/:shareId/messages', { params: { shareId } }))
-        .status(404)
-        .body()
-        .has('$.error', 'This share does not include the conversation');
+    await ctx.step('the token edge resolves the share — 200 (sandbox ready) or 503 (not yet) — never an auth error', async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/public-shares', {
+        params: { projectId: project.id, sessionId: session.id },
+      });
+      const token = r.json<{ shares: Array<{ share_id: string; public_token: string }> }>().shares
+        .find((s) => s.share_id === shareId)!.public_token;
+      (await anon.get('/v1/p/public-share/:token', { params: { token } })).status([200, 503]);
     });
   },
 );
