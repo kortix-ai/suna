@@ -47,6 +47,7 @@ import {
   getOrCreateDm,
   listSpacesForUser,
   serializeSpace,
+  type SpaceViewer,
   updateChannel,
 } from '../lib/project-spaces';
 
@@ -71,8 +72,8 @@ async function loadChannel(c: Context<AppEnv>) {
 
 type LoadedProject = NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
 
-/** A project manager may delete any link; anyone else only their own. */
-async function linkViewer(c: Context<AppEnv>, loaded: LoadedProject): Promise<LinkViewer> {
+/** A project manager may edit any channel and delete any link; anyone else only their own. */
+async function spaceViewer(c: Context<AppEnv>, loaded: LoadedProject): Promise<LinkViewer & SpaceViewer> {
   const { userId, row } = loaded;
   const manager = await projectCapabilityAllowed(c, userId, row.accountId, row.projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
   return { userId, manager };
@@ -100,7 +101,8 @@ export function registerProjectSpacesRoutes(): void {
       if (gate) return gate;
       const { row, userId } = loaded;
       const rows = await listSpacesForUser(row.projectId, row.accountId, userId);
-      return c.json({ spaces: rows.map(serializeSpace) }, 200);
+      const viewer = await spaceViewer(c, loaded);
+      return c.json({ spaces: rows.map((space) => serializeSpace(space, viewer)) }, 200);
     },
   );
 
@@ -131,7 +133,8 @@ export function registerProjectSpacesRoutes(): void {
       if ('error' in result) return c.json(result.error.body, result.error.status);
       // Its Files folder and Memory folder, best effort and off the response path.
       void makeChannelFolders(row.accountId, row.projectId, result.space.slug!);
-      return c.json(serializeSpace(result.space), 201);
+      // The caller created it, so it may edit it whatever its role.
+      return c.json(serializeSpace(result.space, { userId, manager: false }), 201);
     },
   );
 
@@ -166,7 +169,7 @@ export function registerProjectSpacesRoutes(): void {
         return c.json({ error: `No agent "${agentName}" in this project.`, code: 'agent_not_found' }, 404);
       }
       const space = await getOrCreateDm(loaded.row.projectId, loaded.row.accountId, loaded.userId, agentName);
-      return c.json(serializeSpace(space), 200);
+      return c.json(serializeSpace(space, { userId: loaded.userId, manager: false }), 200);
     },
   );
 
@@ -177,6 +180,7 @@ export function registerProjectSpacesRoutes(): void {
       path: '/{projectId}/spaces/{spaceId}',
       tags: ['spaces'],
       summary: 'Update a channel',
+      description: 'Only the channel’s creator or a project manager (`project.members.manage`) may edit it; anyone else gets 403 `forbidden`. A DM is 400 `dm_not_editable`.',
       ...auth,
       request: {
         params: projectParams.extend({ spaceId: z.string() }),
@@ -194,14 +198,15 @@ export function registerProjectSpacesRoutes(): void {
       if (gate) return gate;
       const spaceId = c.req.param('spaceId');
       if (!isUuid(spaceId)) return c.json(SPACE_NOT_FOUND, 404);
-      const result = await updateChannel(loaded.row.projectId, loaded.userId, spaceId, c.req.valid('json'));
+      const viewer = await spaceViewer(c, loaded);
+      const result = await updateChannel(loaded.row.projectId, viewer, spaceId, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
       // The channel's folder follows a rename, best effort (it logs a failure).
       // Waited for, so the renaming client never sees the new slug before the
       // move settled. Another member who opens the Files tab during the move
       // can still make the new folder first; the move then fails with 409.
       if (result.renamedFrom) await moveChannelFolder(loaded.row.projectId, spaceId, result.renamedFrom, result.space.slug!);
-      return c.json(serializeSpace(result.space), 200);
+      return c.json(serializeSpace(result.space, viewer), 200);
     },
   );
 
@@ -248,7 +253,7 @@ export function registerProjectSpacesRoutes(): void {
       const channel = await loadChannel(c);
       if (channel instanceof Response) return channel;
       const { loaded, space } = channel;
-      const links = await listSpaceLinks(space.spaceId, loaded.row.accountId, await linkViewer(c, loaded));
+      const links = await listSpaceLinks(space.spaceId, loaded.row.accountId, await spaceViewer(c, loaded));
       return c.json({ links }, 200);
     },
   );
@@ -271,7 +276,7 @@ export function registerProjectSpacesRoutes(): void {
       const channel = await loadChannel(c);
       if (channel instanceof Response) return channel;
       const { loaded, space } = channel;
-      const viewer = await linkViewer(c, loaded);
+      const viewer = await spaceViewer(c, loaded);
       const link = await addSpaceLink(loaded.row.projectId, space.spaceId, loaded.row.accountId, viewer, c.req.valid('json'));
       if (link === 'link_limit') {
         return c.json({ error: `A channel holds at most ${SPACE_LINKS_MAX} links. Remove one first.`, code: 'link_limit' }, 409);
@@ -296,7 +301,7 @@ export function registerProjectSpacesRoutes(): void {
       if (channel instanceof Response) return channel;
       const { loaded, space } = channel;
       const linkId = c.req.param('linkId');
-      const result = isUuid(linkId) ? await deleteSpaceLink(space.spaceId, linkId, await linkViewer(c, loaded)) : 'not_found';
+      const result = isUuid(linkId) ? await deleteSpaceLink(space.spaceId, linkId, await spaceViewer(c, loaded)) : 'not_found';
       if (result === 'not_found') return c.json({ error: 'Link not found', code: 'link_not_found' }, 404);
       if (result === 'forbidden') {
         return c.json({ error: 'Only the person who added the link or a project manager can remove it.', code: 'forbidden' }, 403);

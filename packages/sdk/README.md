@@ -414,7 +414,8 @@ both the pool list and the session's provider-specific query cache.
 
 Experimental: every call here needs the project's `project_channels` flag (off
 by default). While it is off, every `spaces` route returns `403`
-`feature_disabled`, and session create and list ignore `space_id`.
+`feature_disabled`, and session create and list ignore `space_id` (a create
+whose `space_id` is not a UUID still returns `400`).
 
 A space (`ProjectSpace`) is a channel of the project or the caller's DM with
 one agent. A thread is an ordinary session whose `space_id` names the space;
@@ -424,7 +425,7 @@ its first prompt is the thread's top message.
 const p = kortix.project(pid);
 const spaces = await p.spaces.list(); // #general first (created on the first call), channels, then the caller's DMs
 const ch = await p.spaces.create({ name: "Launch Week" }); // slug "launch-week"; a taken slug → ApiError 409 slug_taken
-await p.spaces.update(ch.space_id, { archived: true }); // name, description (null clears), archived
+await p.spaces.update(ch.space_id, { archived: true }); // name, description (null clears), archived; its creator or a project manager (`can_edit`), else 403 forbidden
 const dm = await p.spaces.dm("kortix"); // the caller's DM, created on the first call
 
 // A channel's tabs (channels only; a DM, an archived or unknown id → 404 space_not_found)

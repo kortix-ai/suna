@@ -45,7 +45,7 @@ export function useCreateProjectSpace(projectId: string) {
   });
 }
 
-/** Rename, describe, archive or unarchive a channel. */
+/** Rename, describe, archive or unarchive a channel: its creator or a project manager (`can_edit`), else 403 `forbidden`. */
 export function useUpdateProjectSpace(projectId: string) {
   const invalidate = useInvalidateSpaces(projectId);
   return useMutation({

@@ -39,7 +39,7 @@ const DM = '/v1/projects/:projectId/spaces/dm';
 const MANIFEST =
   'kortix_version: 2\nproject:\n  name: ke2e-spaces\ndefault_agent: kortix\nagents:\n  kortix:\n    kortix_permissions: all\n';
 
-type Space = { space_id: string; kind: string; slug: string | null; name: string; is_default: boolean; archived_at: string | null };
+type Space = { space_id: string; kind: string; slug: string | null; name: string; is_default: boolean; archived_at: string | null; can_edit: boolean };
 type Session = {
   session_id: string;
   space_id: string | null;
@@ -152,7 +152,7 @@ flow('SPACE-2', meta([ROUTES.list, FEATURES_ROUTE]), async (ctx) => {
 });
 
 flow('SPACE-3', meta([ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE]), async (ctx) => {
-  const { project, world } = await openWorld(ctx);
+  const { team, project, world } = await openWorld(ctx);
   const params = { projectId: project.id };
   try {
     await world.setFeature('project_channels', true);
@@ -215,6 +215,25 @@ flow('SPACE-3', meta([ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE]
         .status(400).body().has('$.code', 'default_channel');
       (await world.owner.patch(SPACE, { name: 'x' }, { params: { ...params, spaceId: randomUUID() } })).status(404);
       (await world.owner.patch(SPACE, { name: 'x' }, { params: { ...params, spaceId: 'not-a-uuid' } })).status(404);
+    });
+
+    await ctx.step('a channel is edited by its creator or a project manager: a plain member gets can_edit false and 403 forbidden on another member’s channel, and edits their own', async () => {
+      const ownerList = (await world.owner.get(SPACES, { params })).status(200).json<{ spaces: Space[] }>().spaces;
+      if (!ownerList.every((s) => s.can_edit === true)) throw new Error('a project manager cannot edit every channel');
+      const member = await team.addMember('member');
+      await team.grantProjectRole(project.id, member.userId!, 'member');
+      const client = ctx.client.as(member);
+      const listed = (await client.get(SPACES, { params })).status(200).json<{ spaces: Space[] }>().spaces;
+      if (listed.find((s) => s.space_id === launchId)?.can_edit !== false) throw new Error('a member may edit another member’s channel');
+      if (listed.find((s) => s.space_id === generalId)?.can_edit !== false) throw new Error('a member may edit #general');
+      (await client.patch(SPACE, { name: 'Taken Over' }, { params: { ...params, spaceId: launchId } }))
+        .status(403).body().has('$.code', 'forbidden');
+      (await client.patch(SPACE, { archived: true }, { params: { ...params, spaceId: launchId } }))
+        .status(403).body().has('$.code', 'forbidden');
+      const own = (await client.post(SPACES, { name: 'Mine' }, { params })).status(201);
+      own.body().has('$.can_edit', true);
+      (await client.patch(SPACE, { description: 'Edited by its creator' }, { params: { ...params, spaceId: own.json<Space>().space_id } }))
+        .status(200).body().has('$.can_edit', true).has('$.description', 'Edited by its creator');
     });
   } finally {
     await world.close();

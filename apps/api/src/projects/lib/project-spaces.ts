@@ -20,7 +20,7 @@ import { normalizeString } from './serializers';
 type SpaceRow = typeof projectSpaces.$inferSelect;
 
 export type SpaceError = {
-  status: 400 | 404 | 409;
+  status: 400 | 403 | 404 | 409;
   body: { error: string; code: string; space_id?: string; archived?: boolean };
 };
 /** `renamedFrom`: the slug a rename replaced. */
@@ -32,7 +32,15 @@ const ASSIGN_BATCH = 1_000;
 /** `metadata.first_prompt`: what a channel timeline shows as the thread's top message. */
 export const FIRST_PROMPT_MAX_CHARS = 500;
 
-export function serializeSpace(row: SpaceRow): Space {
+/** Who reads a space: a project manager (`project.members.manage`) may edit every channel. */
+export type SpaceViewer = { userId: string; manager: boolean };
+
+/** A channel is edited by its creator or a project manager, the rule a channel link's delete follows. A DM is never edited. */
+function canEditSpace(row: SpaceRow, viewer: SpaceViewer): boolean {
+  return row.kind === 'channel' && (viewer.manager || row.createdBy === viewer.userId);
+}
+
+export function serializeSpace(row: SpaceRow, viewer: SpaceViewer): Space {
   return {
     space_id: row.spaceId,
     kind: row.kind,
@@ -44,6 +52,7 @@ export function serializeSpace(row: SpaceRow): Space {
     archived_at: row.archivedAt?.toISOString() ?? null,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
+    can_edit: canEditSpace(row, viewer),
   };
 }
 
@@ -256,10 +265,11 @@ export async function findForkSourceSpace(
 
 export async function updateChannel(
   projectId: string,
-  userId: string,
+  viewer: SpaceViewer,
   spaceId: string,
   input: SpaceUpdateInput,
 ): Promise<SpaceResult> {
+  const { userId } = viewer;
   const [row] = await db
     .select()
     .from(projectSpaces)
@@ -269,6 +279,11 @@ export async function updateChannel(
   if (!row || (row.kind === 'dm' && row.dmUserId !== userId)) return spaceNotFound();
   if (row.kind !== 'channel') {
     return { error: { status: 400, body: { error: 'A direct message cannot be edited.', code: 'dm_not_editable' } } };
+  }
+  if (!canEditSpace(row, viewer)) {
+    return {
+      error: { status: 403, body: { error: 'Only the channel’s creator or a project manager can edit it.', code: 'forbidden' } },
+    };
   }
   if (input.archived === true && row.isDefault) {
     return {

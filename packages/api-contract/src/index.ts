@@ -1276,6 +1276,8 @@ export const SpaceSchema = z
     archived_at: z.string().nullable(),
     created_at: z.string(),
     updated_at: z.string(),
+    /** The caller may rename, describe, archive and unarchive it: the channel's creator or a project manager. False for a DM. */
+    can_edit: z.boolean(),
   })
   .strict();
 export type Space = z.infer<typeof SpaceSchema>;

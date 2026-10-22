@@ -20,7 +20,8 @@ export type SpaceDetailsTab = 'about' | 'members';
  * A channel's details, opened from `# name` in the header: About (name,
  * description, when it was made, Archive) and Members (the people and agents
  * of its loaded threads). Edit opens the rename dialog, which edits both the
- * name and the description.
+ * name and the description. Edit and Archive show only to the channel's
+ * creator or a project manager (`can_edit`).
  */
 export function SpaceDetailsDialog({
   space,
@@ -44,6 +45,8 @@ export function SpaceDetailsDialog({
   const locale = useLocale();
   const created = new Date(space.created_at).toLocaleDateString(locale, { dateStyle: 'long' });
   const memberCount = roster.people.length + roster.agents.length;
+  // Its creator or a project manager; an older API sends no `can_edit`.
+  const editable = space.can_edit !== false;
   return (
     <Modal open={tab !== null} onOpenChange={onOpenChange}>
       <ModalContent className="lg:max-w-lg">
@@ -66,18 +69,18 @@ export function SpaceDetailsDialog({
           <TabsContent value="about">
             <ModalBody className="pt-2">
               <dl className="divide-border divide-y">
-                <DetailRow label={t('name')} action={<EditButton field={t('name')} onClick={onEdit} />}>
+                <DetailRow label={t('name')} action={editable ? <EditButton field={t('name')} onClick={onEdit} /> : null}>
                   #{space.slug}
                 </DetailRow>
                 <DetailRow
                   label={t('description')}
-                  action={<EditButton field={t('description')} onClick={onEdit} />}
+                  action={editable ? <EditButton field={t('description')} onClick={onEdit} /> : null}
                 >
                   {space.description || <span className="text-muted-foreground">{t('noDescription')}</span>}
                 </DetailRow>
                 <DetailRow label={t('created')}>{created}</DetailRow>
               </dl>
-              {space.is_default ? null : (
+              {space.is_default || !editable ? null : (
                 <div className="flex items-center justify-between gap-4 border-t pt-4">
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{t('archiveTitle')}</p>

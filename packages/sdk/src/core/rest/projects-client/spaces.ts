@@ -23,6 +23,8 @@ export interface ProjectSpace {
   archived_at: string | null;
   created_at: string;
   updated_at: string;
+  /** The caller may rename, describe, archive and unarchive it: the channel's creator or a project manager. False for a DM. Absent on older APIs. */
+  can_edit?: boolean;
 }
 
 export interface CreateProjectSpaceInput {
@@ -66,9 +68,11 @@ export async function createProjectSpace(projectId: string, input: CreateProject
 }
 
 /**
- * Rename, describe, archive or unarchive a channel. A rename whose slug is
- * taken rejects with 409 `slug_taken` (fields as in `createProjectSpace`). The
- * caller shows the error, so it never reaches the host error handler.
+ * Rename, describe, archive or unarchive a channel. Only its creator or a
+ * project manager may (`can_edit`); anyone else rejects with 403 `forbidden`.
+ * A rename whose slug is taken rejects with 409 `slug_taken` (fields as in
+ * `createProjectSpace`). The caller shows the error, so it never reaches the
+ * host error handler.
  */
 export async function updateProjectSpace(projectId: string, spaceId: string, input: UpdateProjectSpaceInput) {
   return unwrap(

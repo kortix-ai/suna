@@ -69,7 +69,7 @@ export interface ProjectSession {
   model?: string | null;
   /** The space (channel or DM) the session is filed in; null outside every space. Absent on older APIs. */
   space_id?: string | null;
-  /** The text of the session's first prompt, or null before one is sent. Absent on older APIs. */
+  /** The first 500 characters of the first prompt; stored for sessions created while `project_channels` is on, else null. Absent on older APIs. */
   first_prompt?: string | null;
   /**
    * A channel or DM thread list only (`listProjectSessions({ spaceId })`): the
