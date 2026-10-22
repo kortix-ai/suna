@@ -297,6 +297,28 @@ describe('the boot config never touches the network', () => {
     expect(models[`other-provider/${tail}`]?.limit).toEqual({ context: 200_000, output: 32_000 })
   })
 
+  test('a model with a known window and no output limit still gets an output limit', async () => {
+    // OpenCode's config schema requires `limit.output` next to `limit.context`. One
+    // model without it fails the whole config: no OpenCode session can start
+    // (v0.14.7 staging, `ConfigInvalidError … limit.output: Missing key`).
+    recordFetches()
+    const models = providerModels(
+      await buildOpencodeConfigContent({
+        ...NO_FILE_ENV,
+        KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
+          models: {
+            'poe/novita/deepseek-v3.2': { name: 'Window only', limit: { context: 163_840 } },
+            'tiny/model': { name: 'Small window', limit: { context: 8_192 } },
+            'with-input/model': { name: 'Input too', limit: { context: 400_000, input: 272_000 } },
+          },
+        }),
+      } as NodeJS.ProcessEnv),
+    ) as Record<string, { limit?: { context?: number; input?: number; output?: number } }>
+    expect(models['poe/novita/deepseek-v3.2']?.limit).toEqual({ context: 163_840, output: 32_000 })
+    expect(models['tiny/model']?.limit).toEqual({ context: 8_192, output: 8_192 })
+    expect(models['with-input/model']?.limit).toEqual({ context: 400_000, input: 272_000, output: 32_000 })
+  })
+
 })
 
 describe('a repaired catalog is rebuilt to a known shape before it reaches disk', () => {
