@@ -20314,7 +20314,12 @@
       "text57f57edb6f16": "Änderungsanfrage #{number} ist bereit zur Prüfung.",
       "texta8597db6f24b": "Skill entfernen",
       "text5f6ba69d66d1": "Skill entfernt",
-      "textcb8d6b0c94c9": " und alle Dateien darin, einschließlich Änderungen, und entfernt den Skill aus jedem Agenten, der ihn verwendet. Ein Commit auf dem Standard-Branch."
+      "textcb8d6b0c94c9": " und alle Dateien darin, einschließlich Änderungen, und entfernt den Skill aus jedem Agenten, der ihn verwendet. Ein Commit auf dem Standard-Branch.",
+      "cliDeviceTitle": "Kortix CLI autorisieren",
+      "cliDeviceWarning": "Genehmige nur eine Anmeldung, die du selbst gestartet hast. Gib den Code ein, den dein Terminal anzeigt.",
+      "cliDeviceCode": "Anmeldecode",
+      "cliDeviceApproved": "Anmeldung genehmigt. Kehre zu deinem Terminal zurück.",
+      "cliDeviceAction": "CLI autorisieren"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",

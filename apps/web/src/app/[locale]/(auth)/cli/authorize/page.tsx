@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
 import Loading from '@kortix/ui/loading';
 import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
@@ -19,8 +20,10 @@ import {
 } from '@kortix/ui/internal/auth/auth-consent';
 import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
-import { createAccountToken, revokeAccountToken } from '@kortix/sdk';
+import { backendApi, createAccountToken, revokeAccountToken } from '@kortix/sdk';
 import { validateCallback } from './validate-callback';
+
+const normalizeCliCode = (code: string) => code.trim().toUpperCase().replace(/-/g, '');
 
 /**
  * Browser-callback authorization page. The CLI runs `kortix login`,
@@ -53,6 +56,7 @@ function CliAuthorizeInner() {
   const router = useRouter();
   const params = useSearchParams();
 
+  const userCode = params.get('user_code');
   const callback = params.get('callback');
   const state = params.get('state');
   const label = params.get('label') ?? '';
@@ -61,6 +65,7 @@ function CliAuthorizeInner() {
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [typedCode, setTypedCode] = useState('');
 
   useEffect(() => {
     if (isLoading) return;
@@ -72,6 +77,37 @@ function CliAuthorizeInner() {
 
   if (isLoading || !user) {
     return <AuthPendingScreen />;
+  }
+
+  if (userCode) {
+    // The URL carries the code, so a link from someone else could too. The
+    // person types the code their own terminal shows; only a match approves.
+    const confirmed = typedCode.trim().length > 0 && normalizeCliCode(typedCode) === normalizeCliCode(userCode);
+    return (
+      <AuthFrame>
+        <StepHeader title={tI18nComplete.raw('cliDeviceTitle')} description={tI18nComplete.raw('cliDeviceWarning')} />
+        <Input
+          aria-label={tI18nComplete.raw('cliDeviceCode')}
+          placeholder={tI18nComplete.raw('cliDeviceCode')}
+          autoComplete="off"
+          spellCheck={false}
+          className="font-mono uppercase"
+          value={typedCode}
+          onChange={(event) => setTypedCode(event.target.value)}
+        />
+        {error ? <ErrorStrip message={error} /> : null}
+        {phase === 'success' ? <p>{tI18nComplete.raw('cliDeviceApproved')}</p> : (
+          <Button disabled={!confirmed || phase === 'authorizing'} onClick={async () => {
+            setPhase('authorizing'); setError(null);
+            try {
+              const result = await backendApi.post('/cli/device/decide', { user_code: userCode, approve: true });
+              if (!result.success) throw result.error ?? new Error('Could not approve login.');
+              setPhase('success');
+            } catch (err) { setError((err as Error).message); setPhase('error'); }
+          }}>{tI18nComplete.raw('cliDeviceAction')}</Button>
+        )}
+      </AuthFrame>
+    );
   }
 
   if (!callback || !state) {

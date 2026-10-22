@@ -750,8 +750,10 @@ What the product sees is unchanged: pi's events are reshaped into the OpenCode
 wire (`message.updated`, `message.part.updated`, `message.part.delta`,
 `session.status`, `session.idle`, `permission.*`, `question.*`), served over the
 same `/kortix/runtime/*` namespace and the same raw routes
-(`/session`, `/session/:id/prompt_async`, `/session/:id/message`, `/config`,
-`/agent`, `/provider`, `/permission/:id/reply`, …). One pi session is one Kortix
+(`/session`, `/session/:id/prompt_async`, `/session/:id/message`,
+`/permission/:id/reply`, …). pi does not serve OpenCode's `/config`, `/agent` or
+`/provider` (they answer `404`), so `opencode attach` cannot drive a pi
+session. One pi session is one Kortix
 session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic (or the
 root thread id a session-log restore wrote into the dump), so a restart
 resolves the same root and restores the transcript from

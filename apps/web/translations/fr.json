@@ -20314,7 +20314,12 @@
       "text57f57edb6f16": "La demande de modification #{number} est prête à être examinée.",
       "texta8597db6f24b": "Supprimer la compétence",
       "text5f6ba69d66d1": "Compétence supprimée",
-      "textcb8d6b0c94c9": " et tous ses fichiers, modifications comprises, et retire la compétence de chaque agent qui l'utilise. Un commit sur la branche par défaut."
+      "textcb8d6b0c94c9": " et tous ses fichiers, modifications comprises, et retire la compétence de chaque agent qui l'utilise. Un commit sur la branche par défaut.",
+      "cliDeviceTitle": "Autoriser Kortix CLI",
+      "cliDeviceWarning": "Approuvez uniquement une connexion que vous avez lancée. Saisissez le code affiché dans votre terminal.",
+      "cliDeviceCode": "Code de connexion",
+      "cliDeviceApproved": "Connexion approuvée. Retournez dans votre terminal.",
+      "cliDeviceAction": "Autoriser CLI"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",

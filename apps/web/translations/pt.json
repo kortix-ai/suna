@@ -20314,7 +20314,12 @@
       "text57f57edb6f16": "A solicitação de alteração #{number} está pronta para revisão.",
       "texta8597db6f24b": "Remover habilidade",
       "text5f6ba69d66d1": "Habilidade removida",
-      "textcb8d6b0c94c9": " e todos os arquivos nela, incluindo edições, e remove a habilidade de todos os agentes que a usam. Um commit no branch padrão."
+      "textcb8d6b0c94c9": " e todos os arquivos nela, incluindo edições, e remove a habilidade de todos os agentes que a usam. Um commit no branch padrão.",
+      "cliDeviceTitle": "Autorizar Kortix CLI",
+      "cliDeviceWarning": "Aprove apenas um início de sessão que você iniciou. Digite o código exibido no seu terminal.",
+      "cliDeviceCode": "Código de acesso",
+      "cliDeviceApproved": "Acesso aprovado. Volte ao terminal.",
+      "cliDeviceAction": "Autorizar CLI"
     },
     "publicShareConfirm": {
       "title": "Criar um link público?",

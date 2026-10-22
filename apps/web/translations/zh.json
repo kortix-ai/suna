@@ -20314,7 +20314,12 @@
       "text57f57edb6f16": "变更请求 #{number} 已可审阅。",
       "texta8597db6f24b": "移除技能",
       "text5f6ba69d66d1": "技能已移除",
-      "textcb8d6b0c94c9": " 及其中的所有文件（包括修改），并从所有使用该技能的代理中移除它。在默认分支上提交一次。"
+      "textcb8d6b0c94c9": " 及其中的所有文件（包括修改），并从所有使用该技能的代理中移除它。在默认分支上提交一次。",
+      "cliDeviceTitle": "授权 Kortix CLI",
+      "cliDeviceWarning": "仅批准您自己发起的登录。请输入终端中显示的代码。",
+      "cliDeviceCode": "登录代码",
+      "cliDeviceApproved": "登录已批准。请返回终端。",
+      "cliDeviceAction": "授权 CLI"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
