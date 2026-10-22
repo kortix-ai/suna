@@ -72,7 +72,8 @@ tools:
 
 # Files only OpenCode reads: opencode.jsonc, plugins/, tools/, commands/.
 # Defaults to "harnesses/opencode", then the legacy ".kortix/opencode",
-# when omitted. The agent daemon launches opencode with
+# when omitted. Deprecated with OpenCode: only a session that still runs
+# OpenCode reads it. The agent daemon launches opencode with
 # OPENCODE_CONFIG_DIR pointed here. Agents and skills sit at the root;
 # Kortix-side launchability and grants live in the `agents:` map below.
 opencode:

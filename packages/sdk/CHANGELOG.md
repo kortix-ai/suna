@@ -11,6 +11,14 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   project, and `useFeatureFlag(id, 'pi_harness')` reports `true`.
   `KortixProject.experimental.pi_harness` is optional in the type.
 
+### Deprecated (OpenCode-only; pi does not serve them)
+- `useRuntimeConfig`, `useUpdateRuntimeConfig`, `configKeys` (`/global/config`), `useRuntimeSessionTodo`,
+  `logRuntimeEvent`, `RuntimeConfigIssue`, `RuntimeConfigInvalidError`, `getRuntimeConfigInvalidError`,
+  `isRuntimeConfigInvalidError`, `isShellMode`, `getShellModePart`, `AddMcpServerParams`,
+  `ProjectConfigSummary.open_code_raw`, and the frozen runtime types `Config`, `McpStatus`,
+  `McpLocalConfig`, `McpRemoteConfig`, `Todo`, `EventTodoUpdated`, `EventPty*`, `EventMcpToolsChanged`.
+  They keep working for sessions that still run OpenCode and are removed with OpenCode support.
+
 ### Changed (the session log is the only saved history, P8.2)
 - `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
   the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so

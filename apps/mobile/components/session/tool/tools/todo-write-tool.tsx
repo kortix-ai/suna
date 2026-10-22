@@ -44,6 +44,7 @@ import type { ToolProps } from '../shared/types';
 /** `text-xs leading-snug` (1.375). */
 const TODO_TEXT = { fontSize: TURN_TYPE.xs.fontSize, lineHeight: TURN_TYPE.xs.fontSize * 1.375 };
 
+/** @deprecated Renders an OpenCode-only tool in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function TodoWriteTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const input = partInput(call);

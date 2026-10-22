@@ -14,6 +14,7 @@ import { authorizeControl } from './control-auth'
  * `convergeManagedModelCatalog` (harness/open-code/lifecycle.ts).
  */
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:@\/-]{0,255}$/
+/** @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function createCatalogRouter(cfg: Config, control: HarnessControlOperations): Hono {
   const router = new Hono()
 

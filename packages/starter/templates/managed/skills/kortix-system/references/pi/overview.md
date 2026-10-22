@@ -1,9 +1,9 @@
 # pi in a Kortix project
 
-pi is one of the two harnesses a Kortix session can run. The other is
-OpenCode. A harness is the agent runtime inside the session sandbox: it runs
-the model loop, calls the tools and writes the transcript. A session runs
-exactly one harness.
+pi is the harness of every new Kortix session. OpenCode, the other one, is
+deprecated and serves only sessions that started on it. A harness is the agent
+runtime inside the session sandbox: it runs the model loop, calls the tools
+and writes the transcript. A session runs exactly one harness.
 
 pi runs inside the sandbox daemon process. It has no server of its own, no
 port and no child process. The clients (web, CLI, TUI, mobile, SDK) read a pi

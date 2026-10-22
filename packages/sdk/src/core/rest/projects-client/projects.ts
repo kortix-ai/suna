@@ -240,6 +240,7 @@ export interface ProjectConfigSummary {
   is_kortix_repo: boolean;
   signals: Record<string, boolean>;
   manifest_raw: string | null;
+  /** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
   open_code_raw: string | null;
   /** Provider-neutral project default. The SDK derives this from legacy servers. */
   default_agent?: string | null;

@@ -90,6 +90,7 @@ export type QuestionInfo = RuntimeQuestion;
 export type QuestionOption = RuntimeQuestionOption;
 export type QuestionAnswer = RuntimeQuestionAnswer;
 export type QuestionTool = RuntimeToolRef;
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type Todo = KortixTodo;
 export type ProviderAuthError = KortixProviderAuthError;
 export type UnknownError = KortixUnknownError;
@@ -399,6 +400,7 @@ export type ProviderConfig = {
         };
     };
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type McpLocalConfig = {
     /**
      * Type of MCP server connection
@@ -422,6 +424,7 @@ export type McpOAuthConfig = {
     callbackPort?: number;
     redirectUri?: string;
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type McpRemoteConfig = {
     /**
      * Type of MCP server connection
@@ -454,6 +457,7 @@ export type ImageAttachmentConfig = {
 export type AttachmentConfig = {
     image?: ImageAttachmentConfig;
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type Config = {
     $schema?: string;
     shell?: string;
@@ -800,6 +804,7 @@ export type McpStatusNeedsClientRegistration = {
     status: "needs_client_registration";
     error: string;
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type McpStatus = McpStatusConnected | McpStatusDisabled | McpStatusFailed | McpStatusNeedsAuth | McpStatusNeedsClientRegistration;
 export type Project = {
     id: string;
@@ -1076,6 +1081,7 @@ export type EventFileEdited = {
         file: string;
     };
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type EventPtyCreated = {
     id: string;
     type: "pty.created";
@@ -1083,6 +1089,7 @@ export type EventPtyCreated = {
         info: Pty;
     };
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type EventPtyUpdated = {
     id: string;
     type: "pty.updated";
@@ -1090,6 +1097,7 @@ export type EventPtyUpdated = {
         info: Pty;
     };
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type EventPtyExited = {
     id: string;
     type: "pty.exited";
@@ -1098,6 +1106,7 @@ export type EventPtyExited = {
         exitCode: number;
     };
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type EventPtyDeleted = {
     id: string;
     type: "pty.deleted";
@@ -1105,6 +1114,7 @@ export type EventPtyDeleted = {
         id: string;
     };
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type EventTodoUpdated = {
     id: string;
     type: "todo.updated";
@@ -1147,6 +1157,7 @@ export type EventPermissionReplied = {
         reply: "once" | "always" | "reject";
     };
 };
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export type EventMcpToolsChanged = {
     id: string;
     type: "mcp.tools.changed";

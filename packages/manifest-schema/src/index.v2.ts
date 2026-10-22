@@ -470,6 +470,7 @@ export type PiPackageEntryV2 = string | { source: string; extensions?: string[];
 export interface HarnessesV2 {
   /** `exclude` exists only on an agent: global packages that agent does not load. */
   pi?: { packages?: PiPackageEntryV2[]; exclude?: string[]; codemode?: PiCodemodeV2 };
+  /** @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset". */
   opencode?: { plugins?: string[]; exclude?: string[] };
 }
 

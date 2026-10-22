@@ -106,6 +106,7 @@ export async function refreshRuntimeConfiguration(): Promise<void> {
   unwrapRuntimeResult(await getClient().global.dispose());
 }
 
+/** @deprecated OpenCode only: pi does not serve it (OpenCode is sunset, 2026-10-23). Removed with OpenCode support. */
 export function logRuntimeEvent(input: {
   service: string;
   level: 'debug' | 'info' | 'warn' | 'error';

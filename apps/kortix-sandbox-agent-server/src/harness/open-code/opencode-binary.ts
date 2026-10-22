@@ -17,14 +17,18 @@ import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const OPENCODE_SYSTEM_LINK = '/usr/local/bin/opencode-kortix'
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const OPENCODE_CURRENT_LINK = '/opt/kortix/opencode.current'
 
 const OPENCODE_PACKAGE = 'opencode-ai'
 const OPENCODE_NATIVE_RELATIVE_PATH = 'bin/opencode.exe'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type CaptureCommand = (file: string, args: string[]) => Promise<string>
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function captureProcessOutput(file: string, args: string[]): Promise<string> {
   const { stdout } = await execFileAsync(file, args, {
     timeout: 30_000,
@@ -33,6 +37,7 @@ export async function captureProcessOutput(file: string, args: string[]): Promis
   return String(stdout)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function parsePnpmGlobalPackagePath(
   output: string,
   packageName = OPENCODE_PACKAGE,
@@ -50,12 +55,14 @@ export function parsePnpmGlobalPackagePath(
   return null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function requireExecutableFile(path: string): Promise<void> {
   const info = await stat(path)
   if (!info.isFile()) throw new Error(`OpenCode native target is not a file: ${path}`)
   await access(path, constants.X_OK)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function resolveInstalledOpencodeNative(
   capture: CaptureCommand = captureProcessOutput,
 ): Promise<string> {
@@ -77,6 +84,7 @@ export async function resolveInstalledOpencodeNative(
   return nativePath
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function publishOpencodeNativeLink(
   nativePath: string,
   linkPath = OPENCODE_CURRENT_LINK,
@@ -110,8 +118,10 @@ export async function publishOpencodeNativeLink(
  *
  * The predecessor is a RETAINED BINARY, not a link. It was a symlink once, and
  * that was a rollback that could not run: see {@link recordOpencodePrevious}.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const OPENCODE_PREV_BINARY = '/opt/kortix/opencode.prev'
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const OPENCODE_PINNED_LATCH = '/opt/kortix/opencode.pinned'
 
 /**
@@ -158,6 +168,7 @@ async function retainExecutable(source: string, target: string): Promise<void> {
  *
  * Returns the retained path, or null when there was nothing to keep — which the
  * caller must treat as "there is no rollback target", not as "fine".
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function recordOpencodePrevious(
   currentLinkPath = OPENCODE_CURRENT_LINK,
@@ -192,6 +203,7 @@ export async function recordOpencodePrevious(
  * back to. It does not throw on an absent or unusable predecessor: the caller
  * is already handling a box that failed to serve, and an exception there is
  * what once skipped the pin latch.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function restoreOpencodePrevious(
   currentLinkPath = OPENCODE_CURRENT_LINK,
@@ -210,7 +222,10 @@ export async function restoreOpencodePrevious(
   return prevPath
 }
 
-/** The latch: a previous OpenCode update failed to serve and was rolled back. */
+/**
+ * The latch: a previous OpenCode update failed to serve and was rolled back.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 
 export async function opencodeUpdatesPinned(
   latchPath = OPENCODE_PINNED_LATCH,
@@ -224,6 +239,7 @@ export async function opencodeUpdatesPinned(
 /**
  * Latch updates off. Written only after a rollback has ALREADY restored the box,
  * so the latch always describes a box that is working on an older version.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function latchOpencodePinned(
   reason: string,

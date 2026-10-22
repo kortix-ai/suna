@@ -22,12 +22,18 @@ const RECENT_PROMPT_IDS = 512
  */
 const STEER_MIN_OPENCODE_VERSION = '1.18.15'
 
-/** True when this OpenCode release can steer, null when the version is unknown. */
+/**
+ * True when this OpenCode release can steer, null when the version is unknown.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function opencodeSupportsSteer(version: string | null): boolean | null {
   return version ? Bun.semver.satisfies(version, `>=${STEER_MIN_OPENCODE_VERSION}`) : null
 }
 
-/** The running OpenCode's version (`GET /global/health`, memoised by the state store). */
+/**
+ * The running OpenCode's version (`GET /global/health`, memoised by the state store).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const runningOpencodeVersion = async (): Promise<string | null> => (await runtimeStateStore()?.opencodeVersion()) ?? null
 
 /**
@@ -37,7 +43,10 @@ export const runningOpencodeVersion = async (): Promise<string | null> => (await
  */
 const unreadSteers = new Set<string>()
 
-/** Test seam. */
+/**
+ * Test seam.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resetSteerWitnessForTests(): void {
   unreadSteers.clear()
 }
@@ -47,6 +56,7 @@ export function resetSteerWitnessForTests(): void {
  * message. OpenCode parents a step on the NEWEST user message and answers
  * everything before it, so every older unread steer (the set keeps send
  * order) was read by the same step.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function observeSteerRead(event: { type?: string; properties?: unknown }): void {
   if (event.type !== 'message.updated' || unreadSteers.size === 0) return
@@ -86,6 +96,7 @@ async function call(
 
 const segment = encodeURIComponent
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function createOpenCodeTurnService(
   proxy: Pick<HarnessProxyService, 'forward'>,
   workspace: () => string,

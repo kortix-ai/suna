@@ -206,7 +206,10 @@ export interface RuntimeComponents {
    * make a box read as behind. Absent when the API image carries no copy.
    */
   entrypoint?: RuntimeBinaryComponent;
-  /** Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane. */
+  /**
+   * Fetched from npm by the daemon, not proxied: 167 MB has no business crossing our control plane.
+   * @deprecated OpenCode only. OpenCode is sunset: no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+   */
   opencode: { version: string; source: 'npm' };
   'managed-skills': { hash: string; count: number };
   /**

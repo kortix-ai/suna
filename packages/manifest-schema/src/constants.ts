@@ -494,5 +494,8 @@ export const KORTIX_SKILL_PREFIX = 'kortix-';
 export const CODEMODE_VALUES = ['on', 'only', 'off'] as const;
 /** The harnesses an extension can implement. */
 export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
-/** OpenCode's built-in agents that v3 disables unless the manifest declares the name. */
+/**
+ * OpenCode's built-in agents that v3 disables unless the manifest declares the name.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const OPENCODE_BUILTIN_AGENTS_V3 = ['build', 'plan', 'general', 'explore'] as const;

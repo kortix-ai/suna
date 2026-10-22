@@ -27,7 +27,10 @@ export const AGENTS_DIR = 'agents';
 export const SKILLS_DIR = 'skills';
 export const MEMORY_DIR = 'memory';
 export const HARNESSES_DIR = 'harnesses';
-/** Default OpenCode config dir (`opencode.config_dir`). */
+/**
+ * Default OpenCode config dir (`opencode.config_dir`).
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
+ */
 export const OPENCODE_CONFIG_DIR = `${HARNESSES_DIR}/opencode`;
 /** OpenCode config dir of the pre-2026-09 layout; it also held agents/ and skills/. */
 export const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode';
@@ -97,6 +100,7 @@ function isV3(manifest: unknown): boolean {
 /**
  * OpenCode config dirs to try, in order. The first one that ships an
  * `opencode.json[c]` is the project's OpenCode config dir. None for v3.
+ * @deprecated OpenCode only. OpenCode is sunset (2026-10-23): no new code. See apps/kortix-sandbox-agent-server/src/harness/README.md "OpenCode sunset".
  */
 export function opencodeConfigDirCandidates(manifest: unknown): string[] {
   if (isV3(manifest)) return [];

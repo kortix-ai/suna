@@ -16,14 +16,19 @@ import { spawn, type ChildProcess } from 'node:child_process'
  * `turnEnded` is only ever true for the respawn path — a dispose re-reads the
  * config in place and interrupts nothing.
  */
-/** How long a candidate opencode gets to start serving, and pass the proven check, before we give up. */
+/**
+ * How long a candidate opencode gets to start serving, and pass the proven check, before we give up.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const VERIFY_READY_TIMEOUT_MS = 90_000
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ReloadConfigResult {
   how: 'disposed' | 'restarted' | 'kept-old'
   turnEnded: boolean | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type VerifiedReloadResult =
   | {
       outcome: 'swapped'
@@ -73,12 +78,14 @@ export type VerifiedReloadResult =
  * A caller-supplied check on the candidate, after it serves the session API
  * and before it is promoted. `deadline` is the end of the verify budget, in
  * epoch milliseconds.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export type CandidateProof = (
   baseUrl: string,
   deadline: number,
 ) => Promise<{ ok: true } | { ok: false; reason: string }>
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface VerifiedReloadOptions {
   forceFail?: boolean
   /** Runs on the candidate before promotion; a failure keeps the running process. */
@@ -197,6 +204,7 @@ const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
  * bad — a user connects a ChatGPT/Codex account, the UI confirms it, and the
  * next turn still runs on the account they replaced.
  *
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export const RESPAWN_REQUIRED_ENV_NAMES = [
   CODEX_AUTH_JSON_SECRET,
@@ -204,7 +212,10 @@ export const RESPAWN_REQUIRED_ENV_NAMES = [
   SECRET_CAPABILITIES_ENV_NAME,
 ] as const
 
-/** Does this env delta need a full respawn rather than a dispose? */
+/**
+ * Does this env delta need a full respawn rather than a dispose?
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function requiresRespawn(changedNames: readonly string[]): boolean {
   return changedNames.some((name) =>
     (RESPAWN_REQUIRED_ENV_NAMES as readonly string[]).includes(name),
@@ -217,6 +228,7 @@ export function requiresRespawn(changedNames: readonly string[]): boolean {
  * `kortix_sb_` service key there — valid for the daemon and the API, unknown to
  * the gateway — and its session PAT under KORTIX_LLM_API_KEY (the variable the
  * daemon of that era used). Prefer whichever is a PAT; never invent one.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function pickLlmGatewayKey(env: NodeJS.ProcessEnv): string | undefined {
   const token = env.KORTIX_TOKEN?.trim()
@@ -226,7 +238,10 @@ export function pickLlmGatewayKey(env: NodeJS.ProcessEnv): string | undefined {
   return token || legacy || undefined
 }
 
-/** True when the box carries the env the `kortix` provider needs to reach the gateway. */
+/**
+ * True when the box carries the env the `kortix` provider needs to reach the gateway.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function hasKortixLlmGateway(env: NodeJS.ProcessEnv): boolean {
   return Boolean(
     env.KORTIX_LLM_PROXY_URL ||
@@ -240,7 +255,10 @@ function bareKortixModelId(ref: string): string {
   return trimmed.startsWith('kortix/') ? trimmed.slice('kortix/'.length) : trimmed
 }
 
-/** Convert a gateway wire model into OpenCode's `provider/model` string. */
+/**
+ * Convert a gateway wire model into OpenCode's `provider/model` string.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function toKortixOpencodeModelRef(ref: string): string {
   const trimmed = ref.trim()
   return trimmed.startsWith('kortix/') ? trimmed : `kortix/${trimmed}`
@@ -276,6 +294,7 @@ function normalizeGatewayModelRefs(config: Record<string, unknown>): void {
  * found: codex/gpt-6-sol." (prod 2026-09-30: every Slack follow-up to one
  * project's default agent). `OPENCODE_CONFIG_CONTENT` is the one layer OpenCode
  * merges after the config dir, and it merges deeply, so only `model` changes.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function gatewayAgentModelPatch(configDir: string): Promise<string | undefined> {
   const agent: Record<string, { model: string }> = {}
@@ -324,6 +343,7 @@ function frontmatterModel(text: string): string | null {
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 // Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
 // opencode at spawn. It MERGES over the repo's own opencode config and has three
 // independent contributors, any of which may apply:
@@ -611,6 +631,7 @@ const CAPABILITY_TOOLS: Record<string, readonly string[]> = {
  * allowed only when the capability is exactly `allow`; an `ask` or a pattern
  * map denies it, which hides it (fail closed). A rule the config sets for the
  * tool itself wins. A bare action already covers every tool.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function capabilityToolRules(permission: unknown): unknown {
   if (!permission || typeof permission !== 'object' || Array.isArray(permission)) return permission
@@ -639,6 +660,7 @@ const DENIED_BUILTIN_SKILLS = ['customize-opencode']
  * rule, so it stays last once the block is ordered (`orderPermissionRules`).
  * A bare action becomes its `*` form, which OpenCode reads the same way. A
  * block that already denies every skill is left alone.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function denyBuiltinSkills(permission: unknown): unknown {
   if (permission !== undefined && typeof permission !== 'string' && (!permission || typeof permission !== 'object' || Array.isArray(permission))) return permission
@@ -723,7 +745,9 @@ const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
 
 /** The baked path THIS process reads. `KORTIX_BAKED_LLM_CATALOG_PATH` lets a test
  *  run on a box whose image already carries the real catalog, where the image
- *  file would otherwise answer for a missing one. */
+ *  file would otherwise answer for a missing one.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const bakedCatalogPath = () => process.env.KORTIX_BAKED_LLM_CATALOG_PATH ?? BAKED_LLM_CATALOG_PATH
 
 /** Read + normalize a catalog JSON file ({models:{…}} or a bare id→model map).
@@ -787,7 +811,10 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
   return {}
 }
 
-/** True when boot had to fall back to the minimal set — i.e. no catalog on disk. */
+/**
+ * True when boot had to fall back to the minimal set — i.e. no catalog on disk.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function catalogIsDegraded(catalogFile?: string): boolean {
   return !readCatalogFile(catalogFile ?? bakedCatalogPath()) && !readCatalogFile(bakedCatalogPath())
 }
@@ -858,11 +885,15 @@ function sanitizeCatalogForDisk(
   return kept > 0 ? out : null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function scheduleCatalogWarm(fetchBaseURL?: string, fetchApiKey?: string): void {
   scheduleCatalogWarmToPath(fetchBaseURL, fetchApiKey, BAKED_LLM_CATALOG_PATH)
 }
 
-/** Test seam: same repair, to a caller-chosen path (the real one is root-owned). */
+/**
+ * Test seam: same repair, to a caller-chosen path (the real one is root-owned).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function scheduleCatalogWarmToPathForTests(
   fetchBaseURL: string,
   fetchApiKey: string,
@@ -922,6 +953,7 @@ const TOOL_BRIDGE_PLUGIN_PATH = join(OPENCODE_HOME, '.config', 'kortix-tools.js'
  * past Linux's 128KB per-env-var ceiling (MAX_ARG_STRLEN). Inlining it via
  * OPENCODE_CONFIG_CONTENT makes execve fail with E2BIG and OpenCode never
  * spawns ("runtime not ready"), so it is always handed over as a FILE.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function writeKortixOpencodeConfig(
   env: NodeJS.ProcessEnv,
@@ -1109,6 +1141,7 @@ function withManagedOverlay(
  * fetch fixed for managed models on 2026-08-19). Returns null on failure or
  * an empty set (a free-tier account with no connected provider legitimately
  * has nothing; callers then keep whatever the disk catalog holds).
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function fetchManagedModels(
   baseUrl: string,
@@ -1174,6 +1207,7 @@ export async function fetchManagedModels(
  * (see main.ts, right after the proxy binds). It runs CONCURRENTLY with repo
  * materialization, so by the time the OpenCode config is built the answer is
  * already in hand and the overlay costs ~0ms of boot.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function startManagedModelsPrefetch(baseUrl?: string, apiKey?: string): void {
   if (!baseUrl || !apiKey) return
@@ -1191,7 +1225,9 @@ export function startManagedModelsPrefetch(baseUrl?: string, apiKey?: string): v
 }
 
 /** Publish a freshly fetched managed set so later config rebuilds (an OpenCode
- *  restart, a warm-fork adoption) reuse it without another fetch. */
+ *  restart, a warm-fork adoption) reuse it without another fetch.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function rememberManagedModels(models: Record<string, KortixGatewayModel>): void {
   managedCache = models
   managedCacheAt = Date.now()
@@ -1206,6 +1242,7 @@ export function rememberManagedModels(models: Record<string, KortixGatewayModel>
  * does NOT consult the in-flight prefetch: the config build is what gates
  * OpenCode's port bind, and awaiting the fetch there measured 1.6s of dead
  * boot time on a real dev guest.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function cachedManagedModels(): Record<string, KortixGatewayModel> | null {
   if (managedCache && Date.now() - managedCacheAt < MANAGED_CACHE_TTL_MS) return managedCache
@@ -1223,6 +1260,7 @@ export function cachedManagedModels(): Record<string, KortixGatewayModel> | null
  * out. A box reporting null is exactly the case `managedCatalogFallbackReason`
  * explains — the control plane must not read null as "zero managed models
  * exist" and must not skip the box's `managed_catalog_fallback_reason` either.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function managedModelIdsSnapshot(): string[] | null {
   const cache = cachedManagedModels()
@@ -1240,6 +1278,7 @@ export function managedModelIdsSnapshot(): string[] | null {
  * signal, surfaced on `/kortix/health` next to `managed_model_ids` — the SAME
  * channel a config-release fallback is already visible on
  * (`DaemonConfigReport.fallback_reason`), not a second, unwatched place.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function managedCatalogFallbackReason(): string | null {
   return lastManagedFetchFailureReason
@@ -1251,6 +1290,7 @@ export function managedCatalogFallbackReason(): string | null {
  * Bounded by the prefetch's own ≤5s budget, which started at proxy-up — by the
  * time OpenCode is spawned it is normally already resolved, so this returns
  * immediately. Never call it from a path that gates the spawn.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function settleManagedModelsPrefetch(): Promise<Record<
   string,
@@ -1270,6 +1310,7 @@ export async function settleManagedModelsPrefetch(): Promise<Record<
  * whose `modalities` changed: OpenCode replaces every image with "Cannot read
  * image" until it restarts (2026-09-29). An empty result means the boot config
  * was already complete and nothing has to be restarted.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function missingManagedModelIds(live: Record<string, KortixGatewayModel> | null): string[] {
   if (!live) return []
@@ -1286,6 +1327,7 @@ export function missingManagedModelIds(live: Record<string, KortixGatewayModel> 
  * truth (the runtime-convergence contract (PR #7785), Rule 1.2): the provider map a
  * running box really serves, never a second opinion re-derived from a file it
  * only hoped to load. Null before OpenCode has built a config at all.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function configuredKortixProviderModelIds(): readonly string[] | null {
   return lastConfiguredProviderModelIds ? [...lastConfiguredProviderModelIds] : null
@@ -1296,6 +1338,7 @@ export function configuredKortixProviderModelIds(): readonly string[] | null {
  * restart, and any later restart on this box) registers it from disk, not just
  * from this process's cache. Returns the file OpenCode should read, or null
  * when nothing usable could be composed.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function writeManagedOverlayCatalogFile(opts: {
   currentCatalogFile: string
@@ -1310,7 +1353,10 @@ export function writeManagedOverlayCatalogFile(opts: {
   return opts.targetCatalogFile
 }
 
-/** Test seam: drop prefetch/cache/config state between cases. */
+/**
+ * Test seam: drop prefetch/cache/config state between cases.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function resetManagedModelsStateForTests(): void {
   managedPrefetch = null
   managedCache = null
@@ -1321,6 +1367,7 @@ export function resetManagedModelsStateForTests(): void {
   requestedModelIds.clear()
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type ManagedCatalogConvergeOutcome =
   /** Nothing was missing; nothing was fetched-and-stale. */
   | 'unchanged'
@@ -1339,6 +1386,7 @@ export type ManagedCatalogConvergeOutcome =
    *  or the managed lane's listing fetch never answered. */
   | 'no-gateway'
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface ManagedCatalogConvergeResult {
   outcome: ManagedCatalogConvergeOutcome
   /** The ids this call set out to register — empty when `unchanged`/`no-gateway`. */
@@ -1366,6 +1414,7 @@ export interface ManagedCatalogConvergeResult {
  * Applying is one in-place config reload (`reloadConfig`: `/global/dispose`,
  * same process, measured 3 ms on OpenCode 1.18.23). A dispose aborts a running
  * turn, so the reload is idle-gated and a live turn answers `declined`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function convergeManagedModelCatalog(
   opencode: Pick<Opencode, 'getInternalUrl' | 'reloadConfig'>,
@@ -1442,6 +1491,7 @@ function persistManagedOverlay(live: Record<string, KortixGatewayModel>, targetC
 /**
  * Make the running OpenCode register `missing`: persist the listing, then one
  * idle-gated config reload. Never ends a running turn, never retries.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function applyCatalogIfIdle(
   opencode: Pick<Opencode, 'getInternalUrl' | 'reloadConfig'>,
@@ -1467,6 +1517,7 @@ export async function applyCatalogIfIdle(
   return { outcome: applied.how === 'disposed' ? 'reloaded' : 'restarted', missing }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type GatewayCatalogRefreshResult = {
   changed: boolean
   catalogFile: string
@@ -1479,6 +1530,7 @@ export type GatewayCatalogRefreshResult = {
  * OpenCode materializes provider models at process start. Updating the file is
  * therefore not sufficient by itself: callers must restart OpenCode when
  * `changed` is true. A matching catalog preserves the warm no-restart path.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function refreshGatewayCatalogFile(opts: {
   currentCatalogFile: string
@@ -1593,6 +1645,7 @@ async function which(bin: string): Promise<string | null> {
   })
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpencodeBinaryDetectionOptions {
   currentLink?: string
   systemLink?: string
@@ -1608,6 +1661,7 @@ export interface OpencodeBinaryDetectionOptions {
  * script that `exec`s it and names it in a trailing `# cmd-shim-target=` line.
  * Conservative by construction: anything this cannot read or resolve is NOT a
  * stub, so a false positive can never take a working launcher away.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function isStubOpencodeLauncher(launcherPath: string): Promise<boolean> {
   try {
@@ -1656,6 +1710,7 @@ async function readTextIfSmall(path: string): Promise<string | null> {
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function detectOpencodeBinary(
   options: OpencodeBinaryDetectionOptions = {},
 ): Promise<string | null> {
@@ -1681,6 +1736,7 @@ export async function detectOpencodeBinary(
   return null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   try {
     const project = await stat(cfg.projectTarget)
@@ -1689,8 +1745,10 @@ export async function resolveOpencodeCwd(cfg: Config): Promise<string> {
   return cfg.workspace
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type OpencodeState = HarnessState
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface LivenessDecisionInput {
   /** The lifecycle's current opencode state. */
   state: OpencodeState
@@ -1702,6 +1760,7 @@ export interface LivenessDecisionInput {
   threshold: number
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface LivenessDecision {
   state: OpencodeState
   consecutiveFailures: number
@@ -1718,6 +1777,7 @@ export interface LivenessDecision {
  *   downgrades to `starting` only on the Nth consecutive failure;
  * - any other non-ready state resolves to `starting` (unchanged from the
  *   pre-hysteresis behaviour), with the counter reset.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function nextLivenessState(input: LivenessDecisionInput): LivenessDecision {
   if (input.ready) return { state: 'ok', consecutiveFailures: 0, downgraded: false }
@@ -1731,6 +1791,7 @@ export function nextLivenessState(input: LivenessDecisionInput): LivenessDecisio
   return { state: 'starting', consecutiveFailures: 0, downgraded: false }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export type Opencode = HarnessLifecycleService & {
   /**
    * @param opts.mayPromote Forwarded to `reloadVerified` as the last-moment
@@ -1798,6 +1859,7 @@ export type Opencode = HarnessLifecycleService & {
   waitForCurrentListening(): Promise<void>
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OpencodeLifecycleOptions {
   onStartupMark?: (label: string) => void
   onFirstReadyResponse?: () => void
@@ -1928,6 +1990,7 @@ async function reapOrphanedOpencode(ports: readonly number[]): Promise<void> {
   }
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function createOpencodeLifecycle(
   cfg: Config,
   projectEnv?: ProjectEnvStore,
@@ -3052,6 +3115,7 @@ async function probeOpencodeSessionApi(
  * Tail-readiness probe used at boot to deadline-bound the first ready state.
  * Returns true if opencode reported ready before the deadline, false otherwise.
  * Non-throwing — the daemon should boot even on false so we can report `starting`.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function waitForOpencodeReady(
   opencode: Opencode,
