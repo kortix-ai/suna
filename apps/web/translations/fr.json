@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "Barre latérale gauche (actuelle)",
+    "variantTabs": "Onglets soulignés groupés",
+    "variantGroups": "Sélecteur de groupe + onglets",
+    "variantInline": "Onglets verticaux avec valeurs",
+    "previousVariant": "Variante précédente",
+    "nextVariant": "Variante suivante"
+  },
   "repositoryDisconnected": {
     "title": "GitHub déconnecté",
     "reconnect": "Reconnecter GitHub",

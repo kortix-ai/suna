@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "左侧栏（当前）",
+    "variantTabs": "分组下划线标签",
+    "variantGroups": "分组切换 + 标签",
+    "variantInline": "带值的纵向标签",
+    "previousVariant": "上一个方案",
+    "nextVariant": "下一个方案"
+  },
   "repositoryDisconnected": {
     "title": "GitHub 已断开",
     "reconnect": "重新连接 GitHub",

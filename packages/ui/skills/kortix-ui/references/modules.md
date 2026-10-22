@@ -373,6 +373,8 @@ export function Sessions({ projectId }: { projectId: string }) {
 }
 ```
 
+Goals (behind the `goals` flag): `GoalStatusBadge` (a goal's status), `GoalHealthDot` (green running, orange needs attention, grey closed), `useGoalIssueText` (one sentence per health issue), `goalProgress` (met and total criteria), `goalOpenAsks` (asks waiting on a person), `goalNeedsYou` (an open ask or a health issue), `formatGoalTime` (the reminders time format), `goalHref` (the goal's page, or null), `useGoalClock` (the current time, re-read every 30 s).
+
 Names: `ProjectPageHeader`, `useCapabilityAccess`, `useProjectNavRows`, `SidebarToggle`, `activeCapabilityTab`, `agentHref`, `capabilityTabHref`, `channelsHref`, `remindersHref`, `reviewHref`, `detectManifestVersion`, `manifestFilename`, `manifestNeedsUpgrade`, `useProjectManifestVersion`, `ManifestVersion`, `CUSTOMIZE_SECTION_ACCESS`, `CUSTOMIZE_SECTION_GATE_ACTIONS`, `PROJECT_ACTIONS`, `isCustomizeSectionVisible`, `CustomizeSection`, `ProjectAction`, `usePermission`, `usePermissions`, `usePermissionsFor`, `PROJECT_PAGE_ACTIONS`, `useProjectCan`, `useProjectCans`, `useProjectPageCans`, `CanResult`, `formatFireTime`, `nearestFire`, `reminderTitle`, `scheduleLabel`, `ProjectHomeWallpaper`, `ProjectHomeWelcomeBody`, `InstantSessionShell`, `ProjectFilesView`, `ProjectHome`, `ProjectHomeSendOptions`, `useProjectHomeSend`, `UseProjectHomeSendOptions`, `SavedSessionSkeleton`, `SessionLayout`, `SessionWorkspace`, `SessionLayoutProps`, `SessionWorkspaceProps`, `ProjectSessionsView`, `ProjectSessionList`, `ProjectSidebar`, `ShareSessionModal`
 
 ## `@kortix/ui/access`

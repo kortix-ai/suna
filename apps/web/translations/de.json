@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "Linke Leiste (heute)",
+    "variantTabs": "Gruppierte Unterstrich-Tabs",
+    "variantGroups": "Gruppenschalter + Tabs",
+    "variantInline": "Vertikale Tabs mit Werten",
+    "previousVariant": "Vorherige Variante",
+    "nextVariant": "Nächste Variante"
+  },
   "repositoryDisconnected": {
     "title": "GitHub getrennt",
     "reconnect": "GitHub erneut verbinden",
