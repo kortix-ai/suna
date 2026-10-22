@@ -17,8 +17,11 @@ export function createCliDeviceRouter() {
   const router = makeOpenApiApp<AppEnv>();
   router.use('*', async (c, next) => {
     c.header('Cache-Control', 'no-store');
-    const limit = c.req.path.endsWith('/start') ? 10 : 30;
-    if (!limiter.check(requestClientKey(c), { limit, windowMs: 60_000 }).allowed) {
+    // One bucket per budget: a shared bucket starts at whichever limit the
+    // first call names, so start's 10 capped poll and decide at 10 too.
+    const start = c.req.path.endsWith('/start');
+    const key = `${start ? 'start' : 'poll'}:${requestClientKey(c)}`;
+    if (!limiter.check(key, { limit: start ? 10 : 30, windowMs: 60_000 }).allowed) {
       return c.json({ error: 'slow_down' }, 429);
     }
     await next();
