@@ -105,7 +105,7 @@ function useInvalidateSpaceLinks(projectId: string, spaceId: string) {
     ]);
 }
 
-/** Pin a link to a channel. A bad URL rejects with `ApiError` status 400 (see `addProjectSpaceLink`). */
+/** Pin a link to a channel. A bad URL rejects with `ApiError` status 400; a full channel rejects with 409 `link_limit` (see `addProjectSpaceLink`). */
 export function useAddProjectSpaceLink(projectId: string, spaceId: string) {
   const invalidate = useInvalidateSpaceLinks(projectId, spaceId);
   return useMutation({

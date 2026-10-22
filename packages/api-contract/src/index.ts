@@ -1325,10 +1325,11 @@ export type SpaceLink = z.infer<typeof SpaceLinkSchema>;
 export const SpaceLinkListSchema = z.object({ links: z.array(SpaceLinkSchema) }).strict();
 export type SpaceLinkList = z.infer<typeof SpaceLinkListSchema>;
 
-function isHttpUrl(value: string): boolean {
+/** An http(s) URL whose normalized form, the one the API stores, is at most 2,048 characters. */
+function isStorableHttpUrl(value: string): boolean {
   try {
-    const { protocol } = new URL(value);
-    return protocol === 'http:' || protocol === 'https:';
+    const { protocol, href } = new URL(value);
+    return (protocol === 'http:' || protocol === 'https:') && href.length <= 2048;
   } catch {
     return false;
   }
@@ -1336,7 +1337,7 @@ function isHttpUrl(value: string): boolean {
 
 export const SpaceLinkCreateInputSchema = z
   .object({
-    url: z.string().trim().min(1).max(2048).refine(isHttpUrl, 'url must be an http(s) URL'),
+    url: z.string().trim().min(1).max(2048).refine(isStorableHttpUrl, 'url must be an http(s) URL of at most 2,048 characters'),
     title: z.string().trim().max(200).optional(),
   })
   .strict();
