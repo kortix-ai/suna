@@ -90,4 +90,32 @@ describe('WebSearchTool', () => {
     expect(html).toContain('2 results');
     expect(sourceListBody(html)).not.toContain('results');
   });
+
+  // KRTX-3016: a batch whose every query failed (a provider quota) rendered
+  // "N searches" over an empty card. Each failed query now shows its error.
+  test('a failed batch shows each query and its error, never an empty card', () => {
+    const part = {
+      id: 'p2',
+      callID: 'c2',
+      tool: 'web_search',
+      type: 'tool',
+      state: {
+        status: 'completed',
+        input: { query: ['desk cable tray', 'monitor riser'] },
+        output: JSON.stringify({
+          batch_mode: true,
+          total_queries: 2,
+          results: [
+            { query: 'desk cable tray', success: false, error: 'Error: 432 Error: {"message":"Search is over its plan quota"}' },
+            { query: 'monitor riser', success: false, error: 'Error: 432 Error: {"message":"Search is over its plan quota"}' },
+          ],
+        }),
+      },
+    } as unknown as ToolPart;
+    const html = render(<WebSearchTool call={toolCallBlock(part)} defaultOpen />);
+    expect(html).toContain('2 searches');
+    expect(html).toContain('desk cable tray');
+    expect(html).toContain('monitor riser');
+    expect(html).toContain('over its plan quota');
+  });
 });
