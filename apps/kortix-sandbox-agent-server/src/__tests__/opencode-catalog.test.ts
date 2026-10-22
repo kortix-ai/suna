@@ -3,7 +3,6 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { MINIMAL_FALLBACK_MODELS } from '@kortix/api-contract/fallback-models'
 import {
   buildOpencodeConfigContent,
   catalogIsDegraded,
@@ -250,10 +249,10 @@ describe('the boot config never touches the network', () => {
     return calls
   }
 
-  test('with no catalog file it falls back to the minimal model set, with no fetch', async () => {
+  test('with no catalog file it invents no models, with no fetch', async () => {
     const calls = recordFetches()
     const models = providerModels(await buildOpencodeConfigContent(NO_FILE_ENV as NodeJS.ProcessEnv))
-    expect(Object.keys(models)).toEqual(Object.keys(MINIMAL_FALLBACK_MODELS))
+    expect(models).toEqual({})
     expect(calls).toEqual([])
   })
 
@@ -280,8 +279,7 @@ describe('the boot config never touches the network', () => {
   test("a model keeps its own window; only a model no source can size gets the default", async () => {
     // Without a window OpenCode cannot size the conversation and never compacts.
     // Another provider's model with the same last id segment does not lend its window.
-    const knownTail = Object.entries(MINIMAL_FALLBACK_MODELS).find(([, model]) => model.limit?.context)!
-    const tail = knownTail[0].split('/').pop()!
+    const tail = 'deepseek-v4.1-flash'
     recordFetches()
     const models = providerModels(
       await buildOpencodeConfigContent({
@@ -289,6 +287,7 @@ describe('the boot config never touches the network', () => {
         KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
           models: {
             'own/model': { name: 'Own', limit: { context: 1_048_576, output: 65_536 } },
+            [`deepseek/${tail}`]: { name: 'Known', limit: { context: 1_048_576, output: 393_216 } },
             [`other-provider/${tail}`]: { name: 'Same tail' },
           },
         }),
@@ -298,14 +297,6 @@ describe('the boot config never touches the network', () => {
     expect(models[`other-provider/${tail}`]?.limit).toEqual({ context: 200_000, output: 32_000 })
   })
 
-  test('no OpenAI reasoning model in the fallback set claims temperature support', () => {
-    // OpenCode would send `temperature` and every turn 400s while the fallback
-    // set is in effect.
-    const offenders = Object.entries(MINIMAL_FALLBACK_MODELS)
-      .filter(([id, model]) => id.startsWith('openai/') && model.reasoning && model.temperature)
-      .map(([id]) => id)
-    expect(offenders).toEqual([])
-  })
 })
 
 describe('a repaired catalog is rebuilt to a known shape before it reaches disk', () => {

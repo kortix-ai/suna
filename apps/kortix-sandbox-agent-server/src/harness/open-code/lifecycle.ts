@@ -132,7 +132,7 @@ import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { orderPermissionRules } from '@kortix/api-contract/permission-rules'
-import { MINIMAL_FALLBACK_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
+import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 import { applyV3, compiledV3, v3OpencodeEnv } from './manifest-v3'
 import type { ExtensionDepsOptions } from './extension-deps'
@@ -780,15 +780,11 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
     logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${bakedCatalogPath()}`)
     return baked
   }
-  // Loud: this means the image was built without its catalog layer, which is a
-  // bake regression, not a runtime condition. The session boots fast on the
-  // minimal set rather than paying a cross-region fetch to hide it.
-  logger.error(
-    `[opencode] no catalog file at ${bakedCatalogPath()} — booting on the minimal ` +
-      `${Object.keys(MINIMAL_FALLBACK_MODELS).length}-model set. This is an IMAGE BAKE defect ` +
-      `(build-context.ts stages kortix-llm-catalog.json unconditionally); boot latency is preserved by design.`,
-  )
-  return MINIMAL_FALLBACK_MODELS
+  // Loud: the image was built without its catalog layer (build-context.ts stages
+  // kortix-llm-catalog.json unconditionally). The box boots on the live picker
+  // overlay and the models the session names; the background warm repairs the file.
+  logger.error(`[opencode] no catalog file at ${bakedCatalogPath()} — IMAGE BAKE defect; booting on the live picker catalog only`)
+  return {}
 }
 
 /** True when boot had to fall back to the minimal set — i.e. no catalog on disk. */
@@ -1307,7 +1303,7 @@ export function writeManagedOverlayCatalogFile(opts: {
   managed: Record<string, KortixGatewayModel>
 }): string | null {
   const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(bakedCatalogPath())
-  const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? MINIMAL_FALLBACK_MODELS, opts.managed))
+  const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? {}, opts.managed))
   if (!composed) return null
   mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
   writeFileSync(opts.targetCatalogFile, JSON.stringify({ models: composed }), { mode: 0o600 })
