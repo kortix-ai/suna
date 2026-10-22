@@ -277,7 +277,7 @@ async function startSingletonWorkers() {
   startSessionLogPurgeWorker();
   // Idle sessions off a fallback model once their own model serves again.
   startSessionModelFallbackWorker();
-  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=off (default) runs nothing.
+  // Old sessions into the session log (P3.1); SESSION_LOG_BACKFILL=write (default) converts them.
   startSessionLogBackfillWorker();
   // Closed pending days of the gateway spend running total, recomputed from the log rows.
   startGatewaySpendBackfillWorker();

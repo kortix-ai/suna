@@ -33,10 +33,7 @@ import {
 } from '../projects/lib/session-transcript-compact';
 import { projectionIdentity } from '../projects/lib/session-runtime-projection';
 import { fetchRuntimeMessages, fetchRuntimeState } from '../projects/lib/session-runtime-transport';
-import {
-  type MirrorSnapshot,
-  readSessionTranscriptMirror,
-} from '../projects/lib/session-transcript-mirror';
+import type { MirrorSnapshot } from '../projects/lib/session-transcript-mirror';
 import type { PublicShareRow } from './session-public-shares';
 
 /** Bounds the tool input and output `compactMessage` reads; `toPublicMessage`
@@ -131,18 +128,15 @@ export interface PublicSessionTranscript {
 }
 
 /** The stored-transcript read. The route passes `readStoredTranscriptWindow`
- *  (the session log when the project flag `session_log` is on, else the
- *  mirror); without it, the mirror. Tests inject their own. */
+ *  (the session log); tests inject their own. */
 export interface PublicSessionMessagesDeps {
-  readMirror?: (sessionId: string, limit: number) => Promise<MirrorSnapshot | null>;
+  readMirror: (sessionId: string, limit: number) => Promise<MirrorSnapshot | null>;
 }
-
-const readMirrorOnly = (sessionId: string, limit: number) => readSessionTranscriptMirror({ sessionId, limit });
 
 /** A mirror read that fails reads as "nothing saved": this is a best-effort
  *  fallback on an anonymous route, and it must never 500 it. */
 async function readMirrorSafely(
-  read: NonNullable<PublicSessionMessagesDeps['readMirror']>,
+  read: PublicSessionMessagesDeps['readMirror'],
   sessionId: string,
   limit: number,
 ): Promise<MirrorSnapshot | null> {
@@ -235,9 +229,9 @@ function fromMirror(
  */
 export async function getPublicSessionMessages(
   row: Pick<PublicShareRow, 'sessionId'> & { externalId: string | null; sandboxStatus: string | null },
-  deps: PublicSessionMessagesDeps = {},
+  deps: PublicSessionMessagesDeps,
 ): Promise<PublicSessionMessagesResult> {
-  const readMirror = (sessionId: string, limit: number) => readMirrorSafely(deps.readMirror ?? readMirrorOnly, sessionId, limit);
+  const readMirror = (sessionId: string, limit: number) => readMirrorSafely(deps.readMirror, sessionId, limit);
   const degrade = async (
     reason: string,
     opencodeSessionId: string | null = null,

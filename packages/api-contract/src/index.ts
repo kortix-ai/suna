@@ -66,7 +66,6 @@ export const FeatureFlagMapSchema = z.object({
   notification_center: z.boolean(),
   volumes: z.boolean(),
   drives: z.boolean(),
-  session_log: z.boolean(),
   session_log_restore: z.boolean(),
   connectors_v2: z.boolean(),
   agent_rooms: z.boolean(),
@@ -187,6 +186,8 @@ export const ProjectSchema = z.object({
     apps: z.literal(true).optional(),
     /** Not a flag (the gateway is the only model path); always `true` for older SDK and mobile clients. */
     llm_gateway: z.literal(true).optional(),
+    /** Not a flag (the session log is every session's saved history); always `true` for older SDK, CLI and mobile clients. */
+    session_log: z.literal(true).optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
