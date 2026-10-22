@@ -1486,6 +1486,7 @@
   },
   "sidebar": {
     "rooms": "Sobe",
+    "goals": "Ciljevi",
     "referAndEarn": "Препоручи и заради",
     "referralShareTitle": "Препоручите пријатеље",
     "referralShareSubtitle": "Освојите 400 кредита",
@@ -22299,5 +22300,91 @@
     "join": "Pridruži se",
     "openRoom": "Otvori",
     "gateDescription": "Uključite Sobe da bi sesije agenata i ljudi ovog projekta razgovarali u imenovanim sobama za ćaskanje."
+  },
+  "goals": {
+    "title": "Ciljevi",
+    "gateDescription": "Agenti preuzimaju cilj dok ne bude proverljivo ostvaren: cilj živi u Fajlovima, dnevni otkucaj ga budi, agent traži od ljudi ono što mu treba, a nezavisna provera ga zatvara.",
+    "empty": "Još nema ciljeva",
+    "emptyHint": "Pokreni jedan u sesiji: opiši ishod, na primer \"pobrini se da naš stari bankovni račun bude zatvoren\". Agent pravi cilj i on se pojavljuje ovde.",
+    "loadError": "Ciljevi nisu mogli da se učitaju. Pokušaj ponovo.",
+    "retry": "Pokušaj ponovo",
+    "needsYou": "Čeka tebe",
+    "open": "Otvoreni",
+    "closed": "Zatvoreni",
+    "waitingFor": "Čeka: {title}",
+    "criteria": "{met}/{total} kriterijuma",
+    "nextWake": "Sledeće buđenje {time}",
+    "noWake": "Nema zakazanog buđenja",
+    "heartbeat": "Otkucaj",
+    "heartbeatPaused": "Pauzirano",
+    "lastWakeLabel": "Poslednje buđenje",
+    "progress": "Napredak",
+    "scope": {
+      "company": "Kompanija",
+      "personal": "Samo ti"
+    },
+    "status": {
+      "draft": "Nacrt",
+      "active": "Aktivan",
+      "waiting_on_user": "Čeka tebe",
+      "waiting_external": "Čeka",
+      "verifying": "Provera",
+      "done": "Završen",
+      "abandoned": "Napušten"
+    },
+    "health": {
+      "healthy": "Radi",
+      "attention": "Zahteva pažnju",
+      "closed": "Zatvoren"
+    },
+    "issue": {
+      "no_heartbeat": "Ništa neće probuditi ovaj cilj: nedostaje podsetnik za otkucaj.",
+      "heartbeat_paused": "Podsetnik za otkucaj je pauziran.",
+      "heartbeat_failed": "Poslednje buđenje nije uspelo: {error}",
+      "missed_wake": "Poslednje buđenje kasni.",
+      "ask_overdue": "Zahtevu je istekao rok.",
+      "verification_stalled": "Provera je počela pre više od 24 sata.",
+      "unreadable": "goal.json nedostaje ili nije ispravan JSON."
+    },
+    "sessionChip": "Cilj",
+    "sessionRole": {
+      "coordinator": "Ova sesija vodi ovaj cilj.",
+      "worker": "Ova sesija radi na ovom cilju.",
+      "verifier": "Ova sesija proverava ovaj cilj."
+    },
+    "openGoal": "Otvori cilj",
+    "openSession": "Otvori glavnu sesiju",
+    "openFolder": "Otvori folder",
+    "back": "Svi ciljevi",
+    "healthTitle": "Stanje",
+    "successCriteria": "Kriterijumi uspeha",
+    "met": "Ispunjen",
+    "notMet": "Nije ispunjen",
+    "items": "Stavke",
+    "noItems": "Još nema stavki.",
+    "noCriteria": "Još nema kriterijuma: agent ih piše pre nego što cilj postane aktivan.",
+    "kind": {
+      "task": "Zadatak",
+      "ask": "Zahtev",
+      "wait": "Čekanje"
+    },
+    "itemStatus": {
+      "open": "otvoreno",
+      "doing": "u toku",
+      "done": "gotovo",
+      "dropped": "odbačeno"
+    },
+    "due": "Rok {time}",
+    "sessions": "Sesije",
+    "role": {
+      "coordinator": "Glavna sesija",
+      "worker": "Izvršilac",
+      "verifier": "Proveravač"
+    },
+    "timeline": "Vremenska linija",
+    "verification": "Provera",
+    "notes": "Beleške",
+    "log": "Dnevnik",
+    "notFound": "Ovaj cilj više ne postoji."
   }
 }

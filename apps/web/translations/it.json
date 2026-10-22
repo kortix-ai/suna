@@ -1486,6 +1486,7 @@
   },
   "sidebar": {
     "rooms": "Stanze",
+    "goals": "Obiettivi",
     "referAndEarn": "Invita e Guadagna",
     "referralShareTitle": "Invita Amici",
     "referralShareSubtitle": "Ottieni 400 crediti",
@@ -22299,5 +22300,91 @@
     "join": "Entra",
     "openRoom": "Apri",
     "gateDescription": "Attiva le Stanze per permettere alle sessioni degli agenti e alle persone di questo progetto di parlare in chat room con nome."
+  },
+  "goals": {
+    "title": "Obiettivi",
+    "gateDescription": "Gli agenti seguono un obiettivo finché non è raggiunto in modo verificabile: l'obiettivo vive in File, un battito giornaliero lo risveglia, l'agente sollecita le persone per ciò che gli serve e un controllo indipendente lo chiude.",
+    "empty": "Ancora nessun obiettivo",
+    "emptyHint": "Avviane uno in una sessione: descrivi il risultato, ad esempio \"assicurati che il nostro vecchio conto bancario sia chiuso\". L'agente crea l'obiettivo e compare qui.",
+    "loadError": "Impossibile caricare gli obiettivi. Riprova.",
+    "retry": "Riprova",
+    "needsYou": "Richiede te",
+    "open": "Aperti",
+    "closed": "Chiusi",
+    "waitingFor": "In attesa di: {title}",
+    "criteria": "{met}/{total} criteri",
+    "nextWake": "Prossimo risveglio {time}",
+    "noWake": "Nessun risveglio pianificato",
+    "heartbeat": "Battito",
+    "heartbeatPaused": "In pausa",
+    "lastWakeLabel": "Ultimo risveglio",
+    "progress": "Avanzamento",
+    "scope": {
+      "company": "Azienda",
+      "personal": "Solo tu"
+    },
+    "status": {
+      "draft": "Bozza",
+      "active": "Attivo",
+      "waiting_on_user": "Attende te",
+      "waiting_external": "In attesa",
+      "verifying": "In verifica",
+      "done": "Completato",
+      "abandoned": "Abbandonato"
+    },
+    "health": {
+      "healthy": "In esecuzione",
+      "attention": "Richiede attenzione",
+      "closed": "Chiuso"
+    },
+    "issue": {
+      "no_heartbeat": "Niente risveglierà questo obiettivo: manca il promemoria del battito.",
+      "heartbeat_paused": "Il promemoria del battito è in pausa.",
+      "heartbeat_failed": "L'ultimo risveglio non è riuscito: {error}",
+      "missed_wake": "L'ultimo risveglio è in ritardo.",
+      "ask_overdue": "Una richiesta è scaduta.",
+      "verification_stalled": "La verifica è iniziata più di 24 ore fa.",
+      "unreadable": "goal.json manca o non è un JSON valido."
+    },
+    "sessionChip": "Obiettivo",
+    "sessionRole": {
+      "coordinator": "Questa sessione guida questo obiettivo.",
+      "worker": "Questa sessione lavora a questo obiettivo.",
+      "verifier": "Questa sessione verifica questo obiettivo."
+    },
+    "openGoal": "Apri obiettivo",
+    "openSession": "Apri sessione principale",
+    "openFolder": "Apri cartella",
+    "back": "Tutti gli obiettivi",
+    "healthTitle": "Stato",
+    "successCriteria": "Criteri di successo",
+    "met": "Soddisfatto",
+    "notMet": "Non soddisfatto",
+    "items": "Elementi",
+    "noItems": "Ancora nessun elemento.",
+    "noCriteria": "Ancora nessun criterio: l'agente li scrive prima che l'obiettivo diventi attivo.",
+    "kind": {
+      "task": "Attività",
+      "ask": "Richiesta",
+      "wait": "Attesa"
+    },
+    "itemStatus": {
+      "open": "aperto",
+      "doing": "in corso",
+      "done": "fatto",
+      "dropped": "scartato"
+    },
+    "due": "Scadenza {time}",
+    "sessions": "Sessioni",
+    "role": {
+      "coordinator": "Sessione principale",
+      "worker": "Esecutore",
+      "verifier": "Verificatore"
+    },
+    "timeline": "Cronologia",
+    "verification": "Verifica",
+    "notes": "Note",
+    "log": "Registro",
+    "notFound": "Questo obiettivo non esiste più."
   }
 }
