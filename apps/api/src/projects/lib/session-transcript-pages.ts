@@ -62,11 +62,16 @@ export interface TranscriptPageWalk {
  *
  * A first page that fails still throws: nothing was read, so there is nothing
  * to keep, and "the box is unreachable" is exactly what the capture retries.
+ *
+ * `limit` is the page size the reader asks for: a page that fills it with no
+ * `x-next-cursor` is not taken as the head (see `headComplete` below).
  */
 export async function readTranscriptPages(
   readPage: (cursor?: string) => Promise<Response>,
   fullHistory: boolean,
   prepareMessages?: (messages: unknown[]) => Promise<unknown[]>,
+  /** The page size asked for. A page that fills it and names no cursor does not prove the head. */
+  limit?: number,
 ): Promise<TranscriptPageWalk> {
   const messages = new Map<string, MirrorMessage>();
   const cursors = new Set<string>();
@@ -114,7 +119,11 @@ export async function readTranscriptPages(
     }
     pagesRead += 1;
     cursor = response.headers.get("x-next-cursor") || undefined;
-    headComplete = !cursor;
+    // No cursor proves the head only on a short page. A build that ignores paging answers the
+    // newest `limit` rows and no cursor on every read; taken as the head, a complete walk would
+    // tombstone every older row. A session of exactly k * `limit` messages is then never
+    // complete: it only loses the rewind tombstone, never a row.
+    headComplete = !cursor && (limit === undefined || payload.length < limit);
     // A cursor the walk has already followed means the daemon is not
     // advancing. Stop and keep what landed. This used to throw; a repeat can
     // only ever be SEEN with at least one page already in hand (the set is
