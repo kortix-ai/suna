@@ -260,6 +260,7 @@ describe('formatTokenCount', () => {
   test('formats millions with a decimal only when not whole', () => {
     expect(formatTokenCount(1_000_000)).toBe('1M');
     expect(formatTokenCount(1_500_000)).toBe('1.5M');
+    expect(formatTokenCount(1_048_576)).toBe('1M');
   });
 
   test('formats thousands rounded to the nearest K', () => {
