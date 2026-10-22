@@ -26,9 +26,9 @@
     "python-pptx": "1.0.2",
     "reportlab": "5.0.0"
   },
-  "bun": "1.3.14",
-  "bunSha256Amd64": "951ee2aee855f08595aeec6225226a298d3fea83a3dcd6465c09cbccdf7e848f",
-  "bunSha256Arm64": "a27ffb63a8310375836e0d6f668ae17fa8d8d18b88c37c821c65331973a19a3b",
+  "bun": "1.4.3",
+  "bunSha256Amd64": "3e730528d89775f03f87f05c06787c4df4099d0a37f3f252e7b829cb23816e18",
+  "bunSha256Arm64": "efa9813da5ed72423bf847f916e8d2c47c0d776add972354026a75e10da9aa21",
   "opencode": "1.18.23",
   "opencodeSdk": "1.18.23",
   "agentBrowser": "0.27.0",

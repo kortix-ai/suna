@@ -1,9 +1,9 @@
 /**
  * Agents as principals.
  *
- * With the project feature flag `agent_principal` ON, a GOVERNED agent session
- * (non-null kortix.yaml grant, not the platform `meta` coordinator) authorizes
- * AS its agent's service account, never as the human who launched it:
+ * A GOVERNED agent session (non-null kortix.yaml grant, not the platform
+ * `meta` coordinator) authorizes AS its agent's service account, never as the
+ * human who launched it:
  *
  *   effective(agent, action) = action ∈ kortix_permissions(agent)   (manifest)
  *                            ∧ action ∈ ceiling(agent)              (IAM)
@@ -14,31 +14,28 @@
  * AND custom), or `AGENT_DEFAULT_CEILING` when nobody bound one. The launcher's
  * role and super-admin bit are not inputs.
  *
- * Flag OFF, or an ungoverned (null-grant) token: nothing here runs, and the
- * legacy launcher ∩ grant model applies byte for byte.
+ * An ungoverned (null-grant) token — the `meta` coordinator, or a v1 project
+ * with no `[[agents]]` — authorizes as its launcher.
  *
- * This module holds the PURE decision plus the flag lookup. The engine wiring
+ * This module holds the PURE decision. The engine wiring
  * lives in `authorize.ts` (step 5a); the credential classification in
  * `actor.ts` (`tokenCredential`).
  */
-import { eq } from 'drizzle-orm';
 import { GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
 import { isMetaAgentName } from '@kortix/shared';
-import { projects, type AgentGrant } from '@kortix/db';
-import { resolveFeatureFlag } from '../feature-flags/registry';
-import { db } from '../shared/db';
-import { ttlMemo } from '../shared/ttl-memo';
+import type { AgentGrant } from '@kortix/db';
 import { agentMayPerform } from './agent-scope';
-import { registerProjectScopedMemo } from './cache-invalidation';
 import type { ScopeType } from './catalog';
 
 /**
- * Actions no agent ever holds, whatever its grant or bound role says. A human
- * does these. Spec §2.1.
+ * Actions no agent ever holds, whatever its grant or bound role says.
+ *
+ * Only credential minting: a project token minted by an agent session carries
+ * no agent grant, so the agent would hand itself a credential outside its own
+ * permissions. Every other action is an ordinary permission — `all` includes
+ * `project.members.manage` and `project.delete`.
  */
 export const HUMAN_ONLY_ACTIONS: ReadonlySet<string> = new Set([
-  'project.members.manage',
-  'project.delete',
   'project.credentials.issue',
 ]);
 
@@ -108,46 +105,17 @@ export function agentPrincipalDecision(input: AgentPrincipalInput): {
   return { allowed: true, reason: 'role' };
 }
 
-// ─── Flag lookup ────────────────────────────────────────────────────────────
-
-const TTL_MS = (() => {
-  const raw = Number(process.env.IAM_CACHE_TTL_MS);
-  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 15_000;
-})();
-
 /**
- * Effective `agent_principal` for one project. Same 15 s window as every other
- * IAM memo. Keyed `${projectId}|` so `invalidateIamCacheForProjectResources`
- * busts it; the features PATCH route calls that after a toggle, so the writing
- * replica switches on the next request and the others within one TTL.
- */
-const loadAgentPrincipalFlag = ttlMemo({
-  ttlMs: TTL_MS,
-  keyFn: (projectId: string) => `${projectId}|agent_principal`,
-  loader: async (projectId: string): Promise<boolean> => {
-    const [row] = await db
-      .select({ metadata: projects.metadata })
-      .from(projects)
-      .where(eq(projects.projectId, projectId))
-      .limit(1);
-    return row ? resolveFeatureFlag(row.metadata, 'agent_principal') : false;
-  },
-});
-registerProjectScopedMemo(loadAgentPrincipalFlag);
-
-/**
- * Is this token governed by the agent-principal model? True only for a
- * governed grant, bound to a project whose flag is on.
+ * Does this token authorize as its agent? Yes for every governed grant bound
+ * to a project. There is one path: the per-project `agent_principal` switch
+ * back to the launcher model is gone.
  */
 export async function agentPrincipalModeFor(
   projectId: string | null | undefined,
   grant: AgentGrant | null | undefined,
 ): Promise<boolean> {
-  if (!projectId || !isGovernedAgentGrant(grant)) return false;
-  return loadAgentPrincipalFlag(projectId);
+  return Boolean(projectId) && isGovernedAgentGrant(grant);
 }
-
-export { loadAgentPrincipalFlag };
 
 /**
  * May an agent session start (or prompt) a session of agent `target`? Spec

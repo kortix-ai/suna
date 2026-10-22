@@ -28,6 +28,7 @@
  * actually exists.
  */
 
+import { classifyRuntimeRequest } from './runtime-request';
 import {
   WIRE_MESSAGE_ID,
   isWireIdAheadOf,
@@ -46,18 +47,27 @@ export const EFFECTIVE_MESSAGE_ID_HEADER = 'X-Kortix-Effective-Message-Id';
  *  transcript; the proxy then skips its own read. Stripped from the forward. */
 export const WIRE_ID_PLACED_HEADER = 'X-Kortix-Wire-Id-Placed';
 
-const PROMPT_PATH = /^(\/proxy\/\d+)?\/session\/([^/?#]+)\/(?:prompt_async|message)$/;
+/**
+ * Only OpenCode's two prompt routes need the proxy to place the id: a direct
+ * client sends them. The Kortix prompt route is the API's own delivery, which
+ * the inbox placed already.
+ */
+function promptRoute(path: string) {
+  const request = classifyRuntimeRequest('POST', path);
+  return request.kind === 'turn-start' && (request.verb === 'prompt_async' || request.verb === 'message')
+    ? request
+    : null;
+}
 
-/** Only the two prompt routes carry a client-minted wire id. */
 export function isPromptWireIdRepairPath(path: string): boolean {
-  return PROMPT_PATH.test(path);
+  return promptRoute(path) !== null;
 }
 
 /** The same session's newest-N read, with any `/proxy/<port>` prefix kept. */
 export function promptTranscriptReadPath(path: string, limit: number): string {
-  const match = PROMPT_PATH.exec(path);
-  if (!match) throw new Error(`not a prompt path: ${path}`);
-  return `${match[1] ?? ''}/session/${match[2]}/message?limit=${limit}`;
+  const route = promptRoute(path);
+  if (!route) throw new Error(`not a prompt path: ${path}`);
+  return `${route.prefix}/session/${encodeURIComponent(route.runtimeSessionId)}/message?limit=${limit}`;
 }
 
 export interface PromptWireIdRepairResult {

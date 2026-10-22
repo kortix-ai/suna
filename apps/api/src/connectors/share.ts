@@ -19,13 +19,12 @@
  */
 import { eq, inArray } from 'drizzle-orm';
 import {
-  accountGroupMembers,
   projectSessionGrants,
   projectSessions,
 } from '@kortix/db';
+import { requestMemo } from '../lib/request-context';
 import { db } from '../shared/db';
-
-export type ShareScope = 'project' | 'restricted';
+import { groupIdsOfUser } from '../iam/group-read';
 
 export interface SecretGrant {
   principalType: 'member' | 'group';
@@ -38,55 +37,11 @@ export interface ShareSubject {
   groupIds: string[];
 }
 
-/** Pure: may this subject use a `restricted`-allow-list resource with the given
- *  scope + grants? (Despite the name, this is now generic — session visibility
- *  is the remaining caller; project secrets and connectors both dropped
- *  restricted sharing entirely — see the file doc comment.) */
-export function isSecretUsableBy(
-  shareScope: ShareScope,
-  grants: SecretGrant[],
-  subject: ShareSubject,
-): boolean {
-  if (shareScope === 'project') return true;
-  for (const g of grants) {
-    if (g.principalType === 'member' && g.principalId === subject.userId) return true;
-    if (g.principalType === 'group' && subject.groupIds.includes(g.principalId)) return true;
-  }
-  return false;
-}
-
 /** The dashboard's three sharing options, before persistence. */
 export type SharingIntent =
   | { mode: 'project' }
   | { mode: 'private'; ownerId: string }
   | { mode: 'members'; memberIds?: readonly string[]; groupIds?: readonly string[] };
-
-/** Normalize a sharing intent into a persisted (scope, grants) pair. */
-export function intentToScope(intent: SharingIntent): {
-  shareScope: ShareScope;
-  grants: SecretGrant[];
-} {
-  if (intent.mode === 'project') return { shareScope: 'project', grants: [] };
-  if (intent.mode === 'private') {
-    return { shareScope: 'restricted', grants: [{ principalType: 'member', principalId: intent.ownerId }] };
-  }
-  const grants: SecretGrant[] = [
-    ...(intent.memberIds ?? []).map((id) => ({ principalType: 'member' as const, principalId: id })),
-    ...(intent.groupIds ?? []).map((id) => ({ principalType: 'group' as const, principalId: id })),
-  ];
-  // Empty allow-list collapses to project-wide (Marko's rule).
-  if (grants.length === 0) return { shareScope: 'project', grants: [] };
-  return { shareScope: 'restricted', grants };
-}
-
-/** Inverse of intentToScope — for rendering the dashboard's current selection. */
-export function scopeToIntent(shareScope: ShareScope, grants: SecretGrant[]): SharingIntent {
-  if (shareScope === 'project') return { mode: 'project' };
-  const memberIds = grants.filter((g) => g.principalType === 'member').map((g) => g.principalId);
-  const groupIds = grants.filter((g) => g.principalType === 'group').map((g) => g.principalId);
-  if (memberIds.length === 1 && groupIds.length === 0) return { mode: 'private', ownerId: memberIds[0]! };
-  return { mode: 'members', memberIds, groupIds };
-}
 
 /**
  * Validate/normalize an untrusted sharing body into a SharingIntent. Returns
@@ -110,13 +65,30 @@ export function parseSharingIntent(body: any, fallbackOwner: string): SharingInt
 
 /* ─── DB helpers (used by the gateway + CRUD) ─────────────────────────────── */
 
-/** Resolve a user's group memberships → the subject the gateway authorizes with. */
+/** Resolve a user's group memberships → the subject the gateway authorizes with.
+ *
+ *  Read fresh on every REQUEST: a membership added between two connector calls
+ *  must authorize (or deny) the second one, and no TTL can honor that without
+ *  an invalidation hook the admin routes and the flows' direct seeds don't
+ *  share. Within ONE request the resolution is memoized (`requestMemo`):
+ *  independent helpers re-resolve the same subject several times per request
+ *  (the Apps list resolves it 3× — visibility filter, openable set, then the
+ *  link slugs' visibility re-check — measured on the 2026-10-14/15
+ *  pool-saturation burst, KRTX-2341), and every one of those reads answers
+ *  from the same first read of this request. The first resolution of each
+ *  request is still a fresh read, so the cross-call contract above holds;
+ *  outside a request scope (background sweeps, tests) there is no memo at all.
+ *  A request that writes memberships and then re-resolves in the same request
+ *  would read pre-write data — no such flow exists today (SCIM's membership
+ *  writes never resolve a subject; `reconcileAccountIdentities` moves
+ *  memberships and does not re-resolve). If one appears, it must call
+ *  `invalidateRequestMemo('share-subject:' + userId)` after its write, like
+ *  `git.ts` and `session-connector-bindings.ts` do for their memos. */
 export async function resolveShareSubject(userId: string): Promise<ShareSubject> {
-  const rows = await db
-    .select({ groupId: accountGroupMembers.groupId })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.userId, userId));
-  return { userId, groupIds: rows.map((r) => r.groupId) };
+  return requestMemo(`share-subject:${userId}`, async () => {
+    const rows = await groupIdsOfUser(userId);
+    return { userId, groupIds: rows.map((r) => r.groupId) };
+  });
 }
 
 /* ─── Session sharing — default private; team-wide or select-members ───────────
@@ -273,9 +245,47 @@ export function isTriggerCreatedSessionMetadata(metadata: unknown): boolean {
 }
 
 /**
+ * A trigger's run: the session the trigger created, or a worker that session
+ * spawned (`initiator_type = 'trigger'` is server-derived and copied from the
+ * parent at create, see projects/lib/session-initiator.ts). Managers who may
+ * read the coordinator may read its workers.
+ */
+export function isTriggerRunSession(session: { metadata: unknown; initiatorType?: string | null }): boolean {
+  return session.initiatorType === 'trigger' || isTriggerCreatedSessionMetadata(session.metadata);
+}
+
+/**
+ * An agent session's standing on one session row under the agent-principal
+ * model (spec §2). The agent acts as itself, so it owns only its own session
+ * and the sessions it spawned (`metadata.spawned_by_session`), never the
+ * launcher's other sessions. Visibility only narrows: a private or restricted
+ * session it does not own is invisible even when the launcher could see it; a
+ * project-visible session keeps the ordinary verdict (`visibleByRules`).
+ */
+export function agentSessionStanding(
+  boundCredentialSessionId: string | null,
+  row: { sessionId: string; metadata: unknown; visibility: string },
+  visibleByRules: boolean,
+): { isOwner: boolean; visible: boolean } {
+  const meta = (row.metadata ?? {}) as Record<string, unknown>;
+  const isOwner =
+    boundCredentialSessionId !== null &&
+    (row.sessionId === boundCredentialSessionId ||
+      meta.spawned_by_session === boundCredentialSessionId);
+  return { isOwner, visible: isOwner || (row.visibility === 'project' && visibleByRules) };
+}
+
+/**
  * Project-session content visibility. Project managers can open sessions that
  * triggers created. Ordinary private human sessions remain owner-only. The
  * backend sibling-session gate runs first and cannot be bypassed.
+ *
+ * A session-bound credential whose bind names the target (or its spawner) is
+ * the session's own credential and always passes, before the overrides: a
+ * trigger/schedule run attributes its row to the agent's standing service
+ * account, not to the launcher in the token, so the ownership rule below
+ * would otherwise refuse the session its own credential and the daemon-port
+ * gate would 403 every proxied runtime read from the box.
  */
 export function isProjectSessionVisibleTo(
   visibility: SessionVisibility,
@@ -285,6 +295,8 @@ export function isProjectSessionVisibleTo(
   ownership: SessionOwnershipContext,
   context: {
     metadata: unknown;
+    /** `project_sessions.initiator_type`; see isTriggerRunSession. */
+    initiatorType?: string | null;
     canManageProject: boolean;
     /**
      * The account's "admins can open every session" policy, already resolved
@@ -295,6 +307,14 @@ export function isProjectSessionVisibleTo(
   },
 ): boolean {
   if (!isSessionTargetVisibleToCaller(ownership)) return false;
+  // The session's own credential, mint-time fact — before the overrides:
+  // neither oversight nor the manager override is needed to open yourself,
+  // and both are powers the bind must never widen into sibling reach.
+  if (agentSessionStanding(ownership.boundCredentialSessionId, {
+    sessionId: ownership.sessionId,
+    metadata: context.metadata,
+    visibility,
+  }, true).isOwner) return true;
   // Oversight is a HUMAN admin's power. A sandbox/agent token launched by an
   // admin must not read every other member's session through it, for the same
   // reason as the trigger-session manager override below.
@@ -312,7 +332,7 @@ export function isProjectSessionVisibleTo(
   if (
     ownership.boundCredentialSessionId === null &&
     context.canManageProject &&
-    isTriggerCreatedSessionMetadata(context.metadata)
+    isTriggerRunSession(context)
   ) {
     return true;
   }

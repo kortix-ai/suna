@@ -24,11 +24,17 @@ describe('credits / usage-limit detection (web session-error-banner.tsx)', () =>
     expect(isUsageLimitError('subscription_required')).toBe(true);
     expect(isUsageLimitError('Billing inactive')).toBe(true);
     expect(isUsageLimitError('Model not found')).toBe(false);
+    // A provider's own plan cap is not a Kortix entitlement (KRTX-621).
+    expect(isUsageLimitError('The usage limit has been reached')).toBe(false);
   });
 
   test('balance', () => {
-    expect(parseBalance('Insufficient credits. Balance: $-0.06')).toBe('$-0.06');
-    expect(parseBalance('balance: 12.5')).toBe('$12.50');
+    // Current API: credits.
+    expect(parseBalance('Insufficient credits. Balance: 1,250 credits, required: 3 credits')).toBe('1,250 credits');
+    expect(parseBalance('Payment Required: Insufficient credits. Balance: -6 credits')).toBe('-6 credits');
+    // An older server during a deploy: dollars, shown in credits.
+    expect(parseBalance('Insufficient credits. Balance: $-0.06')).toBe('-6 credits');
+    expect(parseBalance('balance: 12.5')).toBe('1,250 credits');
     expect(parseBalance('no number')).toBeNull();
   });
 });
@@ -53,7 +59,7 @@ describe('turnErrorCard routing (web TurnErrorDisplay)', () => {
     expect(
       turnErrorCard({ error: { kind: 'billing', message: 'x', billing: { detail: { code: 'budget_exceeded' } } } }).kind,
     ).toBe('usage-limit');
-    expect(turnErrorCard({ error: { kind: 'billing', message: 'Subscribe to activate your seat' } }).kind).toBe(
+    expect(turnErrorCard({ error: { kind: 'billing', message: 'Subscribe to continue' } }).kind).toBe(
       'usage-limit',
     );
     expect(
@@ -68,6 +74,8 @@ describe('turnErrorCard routing (web TurnErrorDisplay)', () => {
       text: 'Insufficient credits. Balance: $1',
     });
     expect(turnErrorCard({ errorText: 'Free usage exceeded' }).kind).toBe('usage-limit');
+    // Provider plan cap → the generic error card, never the upgrade card.
+    expect(turnErrorCard({ errorText: 'The usage limit has been reached' }).kind).toBe('error');
     expect(turnErrorCard({ errorText: 'ModelNotFound', errorDetails: { provider: 'openai' } })).toEqual({
       kind: 'error',
       text: 'ModelNotFound',

@@ -91,6 +91,25 @@ describe('AppHostingProvider', () => {
     });
   });
 
+  test('a Platinum App template has minimal defaults; the machine size goes to create', async () => {
+    const { hosting, builds, creates } = dependencies();
+    await hosting.buildImage({
+      provider: 'platinum', snapshotName: 'kortix-appimg-1', slug: 'hello', dockerfile: 'FROM nginx:alpine',
+      runtimeSpec: {}, machine: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+    });
+    expect(builds[0]![0].spec).toEqual({ cpu: 1, memoryGb: 1, diskGb: 1 });
+    await hosting.createRuntime({
+      provider: 'platinum', runtimeId: 'runtime-1', accountId: 'account-1', userId: 'user-1', name: 'app-hello-v1',
+      snapshotName: 'kortix-appimg-1', machine: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+      volumes: { '/data': { volume: 'kapp-dev-1' } },
+    });
+    expect(creates[0]).toMatchObject({
+      resourceSpec: { cpuCores: 4, memoryGb: 8, diskGb: 40 },
+      volumes: { '/data': { volume: 'kapp-dev-1' } },
+      volumesRequired: true,
+    });
+  });
+
   test('creates an App workload with only the derived appd token', async () => {
     const { hosting, creates, appRuntimeStarts } = dependencies();
     const result = await hosting.createRuntime({
@@ -118,6 +137,19 @@ describe('AppHostingProvider', () => {
       appControlTokenHash(appControlToken('runtime-1', secret)),
     );
     expect(appRuntimeStarts).toEqual(['box-1']);
+  });
+
+  test('an always-on App is persistent on Platinum and keeps the provider backstop elsewhere', async () => {
+    const input = {
+      runtimeId: 'runtime-1', accountId: 'account-1', userId: 'user-1', name: 'app-hello-v1',
+      snapshotName: 'kortix-app-deployment-1', machine: { cpuCores: 1, memoryGb: 2, diskGb: 10 }, alwaysOn: true,
+    };
+    const { hosting, creates } = dependencies();
+    await hosting.createRuntime({ ...input, provider: 'platinum' });
+    await hosting.createRuntime({ ...input, provider: 'daytona' });
+    await hosting.createRuntime({ ...input, provider: 'platinum', alwaysOn: false });
+    // Daytona would clamp 0 to a 1-minute stop; keep-alive renews the backstop instead.
+    expect(creates.map((create) => create.autoStopInterval)).toEqual([0, undefined, undefined]);
   });
 
   test('restarts the App runtime daemon after provider start and cold wake', async () => {
@@ -173,6 +205,35 @@ describe('AppHostingProvider', () => {
     expect(events).toEqual(['wake', 'status:stopped', 'status:unknown', 'status:running', 'appd']);
   });
 
+  test('a box whose start failed is recovered in place once, then wakes', async () => {
+    const events: string[] = [];
+    const statuses = ['removed', 'removed', 'unknown', 'running'] as const;
+    let statusIndex = 0;
+    const runtime = {
+      ensureRunning: async () => { events.push('wake'); },
+      getStatus: async () => statuses[Math.min(statusIndex++, statuses.length - 1)]!,
+      recoverInPlace: async () => { events.push('recover'); return 'recovering'; },
+      ensureAppRuntimeStarted: async () => { events.push('appd'); },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
+
+    await hosting.ensureRunning('platinum', 'box-1');
+
+    expect(events).toEqual(['wake', 'recover', 'appd']);
+  });
+
+  test('a box that cannot be recovered in place fails the wake', async () => {
+    const runtime = {
+      ensureRunning: async () => {},
+      getStatus: async () => 'removed',
+      recoverInPlace: async () => 'unavailable',
+      ensureAppRuntimeStarted: async () => {},
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
+
+    await expect(hosting.ensureRunning('platinum', 'box-1')).rejects.toThrow('entered removed while waking');
+  });
+
   test('treats an already stopped provider runtime as an idempotent stop', async () => {
     const events: string[] = [];
     const runtime = {
@@ -192,16 +253,72 @@ describe('AppHostingProvider', () => {
     expect(events).toEqual(['stop', 'status']);
   });
 
-  test('preserves a stop error while the provider still reports running', async () => {
+  test('resolves a stop that conflicts with a provider state change once the sandbox settles stopped', async () => {
+    // Daytona rejects a stop with 409 "Sandbox state change in progress" while
+    // a concurrent lifecycle transition moves the sandbox. The reported state
+    // still reads running at that instant, so stop must wait for the
+    // transition to settle instead of failing the request.
+    const events: string[] = [];
+    const statuses = ['running', 'stopped'];
     const runtime = {
       stop: async () => {
+        events.push('stop');
+        throw new Error('Sandbox state change in progress');
+      },
+      getStatus: async () => {
+        events.push('status');
+        return (statuses.shift() ?? 'stopped') as 'running' | 'stopped';
+      },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
+
+    await hosting.stop('daytona', 'box-1');
+
+    expect(events).toEqual(['stop', 'status', 'stop', 'status']);
+  });
+
+  test('retries a stop whose sandbox settles back to running after a state-change conflict', async () => {
+    const events: string[] = [];
+    const statuses = ['running', 'running'];
+    const runtime = {
+      stop: async () => {
+        events.push('stop');
+        if (events.filter((event) => event === 'stop').length < 2) {
+          throw new Error('Sandbox state change in progress');
+        }
+      },
+      getStatus: async () => {
+        events.push('status');
+        return (statuses.shift() ?? 'running') as 'running';
+      },
+    } as unknown as SandboxProvider;
+    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime, sleep: async () => {} });
+
+    await hosting.stop('daytona', 'box-1');
+
+    expect(events).toEqual(['stop', 'status', 'stop']);
+  });
+
+  test('preserves a stop error while the provider still reports running', async () => {
+    const events: string[] = [];
+    const runtime = {
+      stop: async () => {
+        events.push('stop');
         throw new Error('provider stop failed');
       },
-      getStatus: async () => 'running' as const,
+      getStatus: async () => {
+        events.push('status');
+        return 'running' as const;
+      },
     } as unknown as SandboxProvider;
-    const hosting = new AppHostingProvider({ runtimeProvider: () => runtime });
+    const hosting = new AppHostingProvider({
+      runtimeProvider: () => runtime,
+      sleep: async () => {},
+      stopSettleTimeoutMs: 0,
+    });
 
-    expect(hosting.stop('platinum', 'box-1')).rejects.toThrow('provider stop failed');
+    expect(hosting.stop('platinum', 'box-1')).rejects.toThrow('provider stop failed (provider status: running)');
+    expect(events).toEqual(['stop', 'status']);
   });
 
   test('stop is a no-op when the runtime provider can no longer be constructed', async () => {
@@ -234,7 +351,7 @@ describe('AppHostingProvider', () => {
 
   test('polls authenticated appd status until the runtime is ready', async () => {
     const { hosting, ingressCalls, fetchCalls } = dependencies();
-    const status = await hosting.waitUntilReady('e2b', 'box-1', 'runtime-1', 1_000);
+    const status = await hosting.waitUntilReady('platinum', 'box-1', 'runtime-1', 1_000);
 
     expect(status).toEqual({ status: 'running', ready: true });
     expect(ingressCalls).toHaveLength(2);

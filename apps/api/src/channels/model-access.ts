@@ -24,17 +24,15 @@
 import { eq } from 'drizzle-orm';
 import { projects, sessionProviderSecretPools } from '@kortix/db';
 import { db } from '../shared/db';
-import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
 import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
 import { runtimeModelCatalog } from '../llm-gateway/models/runtime-catalog';
 import { isModelServableForAccount, resolveEffectiveModel } from '../llm-gateway/resolution/default-model';
-import { toOpencodeModelRef, toWireModel } from '../llm-gateway/resolution/effective';
+import { toWireModel } from '../llm-gateway/resolution/effective';
 import { resolveSessionPersonalOwner } from '../projects/lib/personal-resources';
 import { type ProviderKeySelection, providerKeyOf, usableProviderKeys } from '../secrets/provider-key-selection';
-import { channelModelContext, projectModelContext } from './slack/model-gate';
-import type { ChannelCtx } from './slack/selection';
+import { projectModelContext } from './slack/model-gate';
 import { channelTurnModel } from './vision-model';
 
 type AgentGrantEnv = () => Promise<readonly string[] | 'all' | null>;
@@ -49,7 +47,6 @@ export interface ChannelModelScope {
   /** Whose personal keys and ChatGPT connection count; null in a shared conversation. */
   personalUserId: string | null;
   freeManagedOnly: boolean;
-  llmGatewayEnabled: boolean;
   pooledEnabled: boolean;
 }
 
@@ -59,7 +56,6 @@ export function channelModelScope(input: {
   accountId: string;
   ownerUserId: string;
   freeManagedOnly: boolean;
-  llmGatewayEnabled: boolean;
   pooledEnabled: boolean;
   /** The linked Kortix user of the person typing, or null when unlinked. */
   linkedUserId: string | null;
@@ -75,19 +71,8 @@ export function channelModelScope(input: {
     // owner's must never stand in for them.
     personalUserId: input.linkedUserId && input.oneToOne ? input.linkedUserId : null,
     freeManagedOnly: input.freeManagedOnly,
-    llmGatewayEnabled: input.llmGatewayEnabled,
     pooledEnabled: input.pooledEnabled,
   };
-}
-
-export async function loadChannelModelScope(
-  ctx: ChannelCtx,
-  person: { linkedUserId: string | null; oneToOne: boolean },
-): Promise<ChannelModelScope | null> {
-  const gate = await channelModelContext(ctx);
-  if (!gate) return null;
-  const pooledEnabled = await projectFeatureFlagEnabled(gate.projectId, 'pooled_provider_secrets').catch(() => false);
-  return channelModelScope({ ...gate, pooledEnabled, ...person });
 }
 
 /** `loadChannelModelScope` for a project row the caller already holds. */
@@ -173,12 +158,11 @@ export type ChannelKeySelection = ProviderKeySelection;
 
 /**
  * Every key this conversation may use for the model's provider, so all of
- * them rotate. Null when there is nothing to select: the flag or the gateway
- * is off, the model is a Kortix model, or no pooled key exists — the legacy
+ * them rotate. Null when there is nothing to select: the flag is off, the model is a Kortix model, or no pooled key exists — the legacy
  * project key path then applies, as it does in the web.
  */
 export async function channelKeySelection(scope: ChannelModelScope, model: string): Promise<ChannelKeySelection | null> {
-  if (!scope.pooledEnabled || !scope.llmGatewayEnabled) return null;
+  if (!scope.pooledEnabled) return null;
   return usableProviderKeys({
     accountId: scope.accountId,
     projectId: scope.projectId,
@@ -246,7 +230,7 @@ export async function checkChannelModel(
     personalUserId: scope.personalUserId,
     ...(keys ? { providerSecretPools: selectionPools(keys) } : options.sessionId ? { sessionId: options.sessionId } : {}),
   }).catch(() => false);
-  return servable ? { ok: true, model: toOpencodeModelRef(model), keys } : { ok: false, reason: 'not_servable' };
+  return servable ? { ok: true, model: toWireModel(model), keys } : { ok: false, reason: 'not_servable' };
 }
 
 /**
@@ -341,6 +325,8 @@ export async function sessionModelScope(
 export interface ChannelSessionStart {
   /** The model to pin; null leaves it to the server's default. */
   model: string | null;
+  /** Explicit selection that cannot run and has no usable replacement. */
+  unavailableModel?: string;
   /** The key selection the session starts with (`provider_secret_pools`). */
   pools?: Record<string, string[]>;
 }
@@ -366,7 +352,7 @@ export async function planChannelSessionStart(input: {
   userId: string;
   /** Null: no model scope could be read, and the legacy check applies. */
   scope: ChannelModelScope | null;
-  /** The conversation's `/model` choice (a native ref when the gateway is off). */
+  /** The conversation's `/model` choice. */
   chosenModel: string | null | undefined;
   /** The agent the session will run, for its default model. */
   agentName: string | null | undefined;
@@ -379,7 +365,7 @@ export async function planChannelSessionStart(input: {
     return { model: (await channelTurnModel({ projectId, accountId, userId, currentModel: chosen, hasImage, agentGrantEnv })) ?? chosen };
   }
   let base = chosen;
-  if (!base && scope.llmGatewayEnabled && scope.personalUserId !== userId) {
+  if (!base && scope.personalUserId !== userId) {
     // Pinned only when the creator's own keys change the answer; otherwise
     // the server resolves the same default itself, with its real source.
     const common = {
@@ -411,15 +397,21 @@ export async function planChannelSessionStart(input: {
     ...(pools ? { providerSecretPools: pools } : {}),
   });
   const model = replaced ?? base;
+  // Only reject an explicit selection; an unresolved default belongs to the
+  // session lifecycle, which may resolve a different agent-level default.
+  const unavailableModel = chosen && !replaced && !keys && !(await checkChannelModel(scope, chosen, { agentGrantEnv })).ok
+    ? chosen : undefined;
   // The keys belong to the model they were selected for. A replacement on
   // another provider runs as that provider normally does.
   const keep = keys && model && keyProviderOf(model)?.providerId === keys.providerId;
-  return { model, ...(keep ? { pools } : {}) };
+  return { model, ...(keep ? { pools } : {}), ...(unavailableModel ? { unavailableModel } : {}) };
 }
 
 /**
- * The model a follow-up in a chat conversation must carry, or null to leave
- * the session's own.
+ * The model a follow-up in a chat conversation carries: the conversation's
+ * `/model` choice, else the session's pin. Every prompt carries it, so the
+ * runtime runs the model Kortix shows (`channelTurnModel`). Null only when
+ * there is nothing servable to send.
  *
  * The conversation's `/model` choice is the model: a Teams chat keeps one
  * session, so a choice that waited for the next session did nothing. A choice
@@ -447,9 +439,7 @@ export async function planChannelFollowUp(input: {
     return channelTurnModel({ projectId, accountId, userId: input.userId, currentModel: session.pinnedModel, hasImage, agentGrantEnv });
   }
   const scope = await sessionModelScope(input.scope, session);
-  // Off the gateway a choice is a native `provider/model` ref, which cannot
-  // travel per prompt through the `kortix` provider: it waits for `/new`.
-  const chosen = scope.llmGatewayEnabled ? input.chosenModel?.trim() || null : null;
+  const chosen = input.chosenModel?.trim() || null;
   const current = chosen ?? session.pinnedModel;
   if (current) {
     const keys = await grantedKeySelection(scope, current, agentGrantEnv);
@@ -464,7 +454,6 @@ export async function planChannelFollowUp(input: {
     agentGrantEnv,
     personalUserId: scope.personalUserId,
     sessionId: session.sessionId,
-    explicit: Boolean(chosen) && toWireModel(chosen!) !== (session.pinnedModel ? toWireModel(session.pinnedModel) : null),
   });
 }
 

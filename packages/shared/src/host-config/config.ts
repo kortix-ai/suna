@@ -1,0 +1,733 @@
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { isIP } from 'node:net';
+import { homedir } from 'node:os';
+import { dirname, resolve } from 'node:path';
+import { sandboxEnvValue } from './sandbox-env';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-host config storage.
+//
+// File layout: ~/.config/kortix/config.json (mode 0600)
+//
+//   {
+//     "active": "cloud",
+//     "hosts": {
+//       "cloud": {
+//         "url": "https://api.kortix.com",
+//         "token": "kortix_pat_...",
+//         "user_id": "...",
+//         "user_email": "...",
+//         "account_id": "...",
+//         "logged_in_at": "2026-05-19T..."
+//       },
+//       "local": { "url": "http://localhost:13738", "token": "", ... },
+//       "dev": { "url": "http://localhost:8008", "token": "", ... }
+//     }
+//   }
+//
+// One host is "active" at a time — every command operates against it
+// unless overridden by `--host <name>` for a single invocation.
+//
+// Single-host auth files are read on first load and moved into a `cloud`
+// host so users can switch cleanly between Kortix Cloud and self-hosted APIs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://api.kortix.com';
+// Local `pnpm dev` API server.
+export const DEFAULT_LOCAL_DEV_API_BASE = 'http://localhost:8008';
+// Kortix-internal hosted dev API.
+export const DEFAULT_INTERNAL_DEV_API_BASE = 'https://dev-api.kortix.com';
+// The self-host Docker stack publishes its API on this port by default
+// (see `kortix self-host` DEFAULT_API_URL). The built-in `selfhost` host is
+// pre-pointed here so `kortix hosts use selfhost` works before login;
+// `kortix self-host start` rewrites it to the actual published port.
+export const DEFAULT_SELFHOST_API_BASE = 'http://localhost:13738';
+
+export const CLOUD_HOST_NAME = 'cloud';
+export const LOCAL_DEV_HOST_NAME = 'local-dev';
+export const INTERNAL_DEV_HOST_NAME = 'kortix-internal-dev';
+export const SELFHOST_HOST_NAME = 'selfhost';
+export const DEFAULT_HOST_NAME = CLOUD_HOST_NAME;
+
+// Legacy built-in names migrated to the new scheme on load.
+const LEGACY_DEV_HOST_NAME = 'dev'; // → local-dev (localhost:8008)
+const LEGACY_LOCAL_HOST_NAME = 'local'; // → selfhost (localhost:13738)
+const LEGACY_LOCAL_API_BASE = 'http://localhost:13738';
+
+/** The global default project for a host — used by every project-scoped
+ *  command (connectors, sessions, …) when the cwd is not bound
+ *  to a project via `.kortix/link.json`. Carries its account_id so the
+ *  default always resolves under the right account. */
+export interface DefaultProjectRef {
+  project_id: string;
+  account_id: string;
+  name?: string;
+}
+
+export interface Host {
+  url: string;
+  token: string;
+  user_id: string;
+  user_email: string;
+  /** The host's active account id — every account-scoped call defaults to it. */
+  account_id: string;
+  /** Active account display fields, captured at login / `accounts use`. */
+  account_slug?: string;
+  account_name?: string;
+  /** Global default project for this host (see DefaultProjectRef). */
+  default_project?: DefaultProjectRef;
+  /**
+   * The frontend/dashboard base URL for this host, when known authoritatively
+   * (e.g. `kortix self-host` registers it from its own `PUBLIC_URL`). Lets
+   * `kortix login`'s browser flow open the right origin instead of guessing
+   * one from the API host's shape — that guess (see web-url.ts) assumes cloud
+   * URL conventions (`api.<domain>` → `<domain>`, `:8008` → `:3000`) which
+   * silently breaks for a self-host stack on non-default ports.
+   */
+  dashboard_url?: string;
+  logged_in_at: string;
+}
+
+export interface ActiveAccount {
+  id: string;
+  slug: string;
+  name: string;
+}
+
+export interface Config {
+  active: string;
+  hosts: Record<string, Host>;
+  /** The host the user explicitly selected with `kortix hosts use <name>`
+   *  while the platform delegation env (KORTIX_TOKEN) was injected (KRTX-1705).
+   *  Plain commands then honor this host's stored credential over the injected
+   *  identity. The marker lives here because the sandbox's injected env cannot
+   *  carry it: only an explicit `hosts use` writes it, so a script or CI job
+   *  that merely sets KORTIX_TOKEN on a machine with a stored login keeps
+   *  env-over-stored as the default. Read-time comparison with `active` keeps
+   *  a stale marker harmless. */
+  sandbox_selected?: string;
+}
+
+// ─── File path resolution ──────────────────────────────────────────────────
+
+function defaultConfigPath(): string {
+  return resolve(homedir(), '.config', 'kortix', 'config.json');
+}
+
+export function configFilePath(): string {
+  // Honor both config path env vars. KORTIX_AUTH_FILE is still used by the
+  // existing e2e test harness.
+  return process.env.KORTIX_CONFIG_FILE ?? process.env.KORTIX_AUTH_FILE ?? defaultConfigPath();
+}
+
+function singleHostAuthFilePath(): string {
+  return resolve(homedir(), '.config', 'kortix', 'auth.json');
+}
+
+/** Only pull from the single-host auth file when the caller is using the
+ *  default config file location. Custom paths get a fresh empty config:
+ *  they are usually tests or scratch envs that must not mutate real auth. */
+function shouldImportSingleHostAuth(currentPath: string): boolean {
+  return currentPath === defaultConfigPath();
+}
+
+// ─── Load / save ──────────────────────────────────────────────────────────
+
+export function loadConfig(): Config {
+  // Try the multi-host file first.
+  const path = configFilePath();
+  if (existsSync(path)) {
+    try {
+      const raw = readFileSync(path, 'utf8');
+      const parsed = JSON.parse(raw) as Partial<Config>;
+      if (parsed && typeof parsed === 'object' && parsed.hosts) {
+        return normalizeConfig(parsed);
+      }
+      // Single-host auth schema at the override path: import in place.
+      const migrated = importSingleHostAuth(parsed);
+      if (migrated) {
+        saveConfig(migrated);
+        return migrated;
+      }
+    } catch {
+      /* corrupted file — fall through to empty */
+    }
+  }
+
+  // Import from ~/.config/kortix/auth.json only when the caller is using the
+  // default config path. Test/scratch envs pointed elsewhere should stay empty.
+  if (shouldImportSingleHostAuth(path)) {
+    const singleHostAuth = singleHostAuthFilePath();
+    if (existsSync(singleHostAuth)) {
+      try {
+        const parsed = JSON.parse(readFileSync(singleHostAuth, 'utf8')) as Record<string, unknown>;
+        const migrated = importSingleHostAuth(parsed);
+        if (migrated) {
+          saveConfig(migrated);
+          rmSync(singleHostAuth, { force: true });
+          return migrated;
+        }
+      } catch {
+        /* unreadable — ignore */
+      }
+    }
+  }
+
+  return normalizeConfig({ active: DEFAULT_HOST_NAME, hosts: {} });
+}
+
+export function saveConfig(config: Config): void {
+  const path = configFilePath();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 });
+  try {
+    // Belt-and-braces for pre-existing files whose mode predates this fix —
+    // writeFileSync's `mode` option only applies when the file is created.
+    chmodSync(path, 0o600);
+  } catch {
+    /* Windows */
+  }
+}
+
+export function deleteConfig(): void {
+  const path = configFilePath();
+  if (existsSync(path)) rmSync(path, { force: true });
+}
+
+// ─── Active host helpers ──────────────────────────────────────────────────
+
+/**
+ * Resolve the active Host for the current invocation. Priority:
+ *   1. KORTIX_TOKEN env var (synthetic ephemeral host, never persisted).
+ *      It carries the session-scoped token the platform injects into a
+ *      sandbox — unless the user explicitly selected the stored active host
+ *      with `kortix hosts use <name>` while the delegation env was injected
+ *      (config.sandbox_selected, KRTX-1705).
+ *   2. KORTIX_API_URL env var (URL override for the stored active host)
+ *   3. `--host` flag (handled at the call site via `getHost(name)`)
+ *   4. The `active` host in config.json
+ */
+/**
+ * True when the platform-injected `KORTIX_TOKEN` is present.
+ * `activeHost()` then resolves to a
+ * synthetic env host, which must outrank a `.kortix/link.json` host —
+ * inside a sandbox the named host has no stored credentials, so honoring
+ * the link would strand a fully-authenticated CLI on "not logged in".
+ */
+function sandboxCliToken(): string | undefined {
+  return sandboxEnvValue('KORTIX_TOKEN');
+}
+
+export function hasEnvTokenHost(): boolean {
+  return Boolean(sandboxCliToken());
+}
+
+/** True when an explicit in-sandbox `hosts use` selection owns plain
+ *  resolution: the marker matches the active host and that host holds a
+ *  token. The ambient project chain (KORTIX_PROJECT_ID, the directory link)
+ *  belongs to the injected deployment, so stored-credential callers must skip
+ *  it — exactly as an explicit `--host` resolves. The marker stays active
+ *  after the injected env disappears (it lives in the config file), so this
+ *  does not require the env token to be present. */
+export function markerActive(config: Config = loadConfig()): boolean {
+  const stored = config.hosts[config.active];
+  return Boolean(
+    config.sandbox_selected && config.sandbox_selected === config.active && stored?.token,
+  );
+}
+
+/** The synthetic host the platform delegation env would resolve to — null
+ *  when no KORTIX_TOKEN is injected. Its url is the injected base the
+ *  ambient project ids belong to. */
+export function envTokenHost(): Host | null {
+  const envToken = sandboxCliToken();
+  if (!envToken) return null;
+  return {
+    url: sandboxEnvValue('KORTIX_API_URL') ?? DEFAULT_API_BASE,
+    token: envToken,
+    user_id: '',
+    user_email: '',
+    account_id: '',
+    logged_in_at: new Date().toISOString(),
+  };
+}
+
+export function activeHost(): Host | null {
+  const config = loadConfig();
+  const stored = config.hosts[config.active];
+  if (sandboxCliToken()) {
+    // Explicit in-sandbox selection (KRTX-1705): `kortix hosts use <name>`
+    // ran while the delegation env was injected, so plain commands act as the
+    // selected stored credential — with its own url, exactly like `--host`.
+    // Without the marker the injected identity wins (env-over-stored is the
+    // default): a KORTIX_TOKEN on a machine with a stored `kortix login` is
+    // the env identity, and the sandbox's injected env cannot carry the
+    // marker to flip it.
+    if (stored?.token && markerActive(config)) return stored;
+    return envTokenHost();
+  }
+  const host = config.hosts[config.active];
+  if (!host) return null;
+  const envApiUrl = sandboxEnvValue('KORTIX_API_URL');
+  if (envApiUrl) return { ...host, url: envApiUrl };
+  return host;
+}
+
+export function getHost(name: string): Host | null {
+  const config = loadConfig();
+  return config.hosts[name] ?? null;
+}
+
+export function listHosts(): { name: string; host: Host; active: boolean }[] {
+  const config = loadConfig();
+  return Object.entries(config.hosts)
+    .map(([name, host]) => ({ name, host, active: name === config.active }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function activeHostEntry(): { name: string; host: Host; envWins: boolean } {
+  const envToken = sandboxCliToken();
+  const config = loadConfig();
+  const stored = config.hosts[config.active] ?? null;
+  // Same winner activeHost() picks, spelled out for the callers that name the
+  // acting host: `sandbox`/`env` while the injected identity serves the
+  // command, the stored host's name once an in-sandbox selection took over.
+  const storedWins = Boolean(
+    envToken && stored?.token && config.sandbox_selected === config.active,
+  );
+  const envHost = activeHost();
+  if (envToken && !storedWins && envHost) return { name: 'sandbox', host: envHost, envWins: true };
+  if (!envToken && sandboxEnvValue('KORTIX_API_URL') && envHost) {
+    return { name: 'env', host: envHost, envWins: false };
+  }
+  const name = stored ? config.active : DEFAULT_HOST_NAME;
+  return { name, host: stored ?? defaultHost(DEFAULT_API_BASE), envWins: false };
+}
+
+export function activeHostName(): string | null {
+  const config = loadConfig();
+  return config.hosts[config.active] ? config.active : null;
+}
+
+// ─── Active account + default project ───────────────────────────────────────
+
+/** The host whose PERSISTED identity state (active account, default
+ *  project) plain commands read. The env-token host is synthetic — the
+ *  delegation env carries neither — so when it wins, the stored active host
+ *  (the one `accounts use` and `projects use` write) is the only place that
+ *  state exists; reading the env host there reports "no active account" and
+ *  `default_project: null` although the config holds both (KRTX-1951,
+ *  KRTX-1804). With an in-sandbox `hosts use` selection or no injected
+ *  token, `activeHost()` already resolves to the stored host. */
+function persistedStateHost(): Host | null {
+  const config = loadConfig();
+  const stored = config.hosts[config.active] ?? null;
+  if (sandboxCliToken() && !markerActive(config)) return stored;
+  return activeHost();
+}
+
+/** The active account for the current invocation (the active host's
+ *  stored account), or null when there's no host / no account yet. Inside a
+ *  sandbox this is the stored active host's account — the env host carries
+ *  none, and the stored host is what `accounts use` maintains. */
+export function activeAccount(): ActiveAccount | null {
+  const host = persistedStateHost();
+  if (!host || !host.account_id) return null;
+  return {
+    id: host.account_id,
+    slug: host.account_slug || host.account_id.slice(0, 8),
+    name: host.account_name || '',
+  };
+}
+
+/** The active host's global default project, or null when none is set.
+ *  Inside a sandbox this is the stored active host's default — the env host
+ *  never carries one, and the stored host is what `projects use` writes. */
+export function defaultProject(): DefaultProjectRef | null {
+  const host = persistedStateHost();
+  return host?.default_project ?? null;
+}
+
+/** Plain "Name (slug)" label, or just the slug when no name is known (a
+ *  pre-name-capture login). Avoids the ugly "slug (slug)" duplication. */
+export function accountLabel(a: { name?: string; slug: string }): string {
+  return a.name ? `${a.name} (${a.slug})` : a.slug;
+}
+
+/** Switch the active account on a host (default: the active host). A
+ *  default project that no longer lives in the active account is dropped —
+ *  the default must always be reachable under the active account. */
+export function setActiveAccount(
+  account: { id: string; slug?: string; name?: string },
+  hostName?: string,
+): void {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host) return;
+  host.account_id = account.id;
+  host.account_slug = account.slug ?? account.id.slice(0, 8);
+  host.account_name = account.name ?? '';
+  if (host.default_project && host.default_project.account_id !== account.id) {
+    delete host.default_project;
+  }
+  saveConfig(config);
+}
+
+/** Set the global default project on a host (default: the active host). */
+export function setDefaultProject(project: DefaultProjectRef, hostName?: string): void {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host) return;
+  host.default_project = {
+    project_id: project.project_id,
+    account_id: project.account_id,
+    ...(project.name ? { name: project.name } : {}),
+  };
+  saveConfig(config);
+}
+
+/** Clear the global default project. Returns true if one was removed. */
+export function clearDefaultProject(hostName?: string): boolean {
+  const config = loadConfig();
+  const name = resolveTargetHostName(config, hostName);
+  const host = config.hosts[name];
+  if (!host?.default_project) return false;
+  delete host.default_project;
+  saveConfig(config);
+  return true;
+}
+
+function resolveTargetHostName(config: Config, hostName?: string): string {
+  if (hostName) return hostName;
+  return config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
+}
+
+// ─── Mutations ────────────────────────────────────────────────────────────
+
+export function upsertHost(name: string, host: Host, makeActive = false): void {
+  validateHostName(name);
+  const config = loadConfig();
+  config.hosts[name] = host;
+  if (makeActive || Object.keys(config.hosts).length === 1) {
+    config.active = name;
+  }
+  saveConfig(config);
+}
+
+export function removeHost(name: string): { removed: boolean; switchedTo?: string } {
+  const config = loadConfig();
+  if (!config.hosts[name]) return { removed: false };
+  if (name === CLOUD_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_API_BASE);
+  } else if (name === LOCAL_DEV_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_LOCAL_DEV_API_BASE);
+  } else if (name === INTERNAL_DEV_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_INTERNAL_DEV_API_BASE);
+  } else if (name === SELFHOST_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_SELFHOST_API_BASE);
+  } else {
+    delete config.hosts[name];
+  }
+  let switchedTo: string | undefined;
+  if (config.sandbox_selected === name) config.sandbox_selected = undefined;
+  if (config.active === name) {
+    const remaining = Object.keys(config.hosts).sort();
+    config.active = remaining[0] ?? DEFAULT_HOST_NAME;
+    if (remaining.length > 0) switchedTo = config.active;
+  }
+  saveConfig(config);
+  return { removed: true, switchedTo };
+}
+
+/** Switch the active host — what `kortix hosts use <name>` runs. When the
+ *  selection happens inside a sandbox (the platform delegation env is
+ *  injected), record it in `sandbox_selected` so plain commands honor this
+ *  host's stored credential over the injected identity (KRTX-1705). Outside
+ *  a sandbox the marker is cleared: the selection was made without a
+ *  delegation env, so env-over-stored stays the default everywhere else. */
+export function useHost(name: string): boolean {
+  const config = loadConfig();
+  if (!config.hosts[name]) return false;
+  config.active = name;
+  // A selection made without the delegation env clears the marker (assigning
+  // undefined keeps JSON.stringify from persisting the key).
+  config.sandbox_selected = hasEnvTokenHost() ? name : undefined;
+  saveConfig(config);
+  return true;
+}
+
+// ─── Validation ───────────────────────────────────────────────────────────
+
+const VALID_HOST_NAME = /^[a-zA-Z][a-zA-Z0-9._-]*$/;
+
+export function validateHostName(name: string): void {
+  if (!VALID_HOST_NAME.test(name) || name.length > 64) {
+    throw new Error(
+      `invalid host name "${name}" — letters/digits/._-, must start with a letter, max 64 chars`,
+    );
+  }
+}
+
+// ─── Internal ─────────────────────────────────────────────────────────────
+
+/** Loopback, RFC1918, link-local, and CGNAT IPv4 ranges. */
+function isPrivateIPv4(host: string): boolean {
+  const [a, b] = host.split('.').map(Number);
+  return (
+    a === 0 || // unspecified 0.0.0.0/8
+    a === 10 || // 10.0.0.0/8
+    a === 127 || // loopback
+    (a === 172 && b >= 16 && b <= 31) || // 172.16.0.0/12
+    (a === 192 && b === 168) || // 192.168.0.0/16
+    (a === 169 && b === 254) || // 169.254.0.0/16 link-local
+    (a === 100 && b >= 64 && b <= 127) // 100.64.0.0/10 CGNAT
+  );
+}
+
+/** Loopback, unspecified, unique-local, link-local, and mapped private IPv4. */
+function isPrivateIPv6(host: string): boolean {
+  if (host === '::' || host === '::1') return true;
+
+  // WHATWG URL parsing canonicalizes `::ffff:192.168.1.50` to
+  // `::ffff:c0a8:132`. Recover the mapped IPv4 before applying its ranges.
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(host);
+  if (mapped) {
+    const value = Number.parseInt(mapped[1], 16) * 0x10000 + Number.parseInt(mapped[2], 16);
+    const ipv4 = [
+      (value >>> 24) & 0xff,
+      (value >>> 16) & 0xff,
+      (value >>> 8) & 0xff,
+      value & 0xff,
+    ].join('.');
+    return isPrivateIPv4(ipv4);
+  }
+
+  const firstHextet = Number.parseInt(host.split(':', 1)[0], 16);
+  return (
+    (firstHextet >= 0xfc00 && firstHextet <= 0xfdff) || // fc00::/7 unique-local
+    (firstHextet >= 0xfe80 && firstHextet <= 0xfebf) // fe80::/10 link-local
+  );
+}
+
+/**
+ * Is this host unreachable from the public internet — i.e. somewhere plain
+ * `http` is the legitimate, intended scheme?
+ *
+ * Loopback is the obvious case, but a self-host reaches its own API over any of:
+ *   - a container/service name on a private network — `http://kortix-api:8000`
+ *     (single-label: a public FQDN always has a dot)
+ *   - a LAN or VPC address — `http://192.168.1.50:8000`, `http://10.2.0.7:8000`
+ *   - a private DNS suffix — `.local`, `.internal`, `.lan`, `.home.arpa`
+ * None of those can present a public certificate, so upgrading them to https
+ * cannot succeed — it only replaces a working request with an opaque failure.
+ */
+function isPrivateHostname(rawHost: string): boolean {
+  const host = rawHost
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.$/, '')
+    .toLowerCase();
+  const ipFamily = isIP(host);
+  if (ipFamily === 4) return isPrivateIPv4(host);
+  if (ipFamily === 6) return isPrivateIPv6(host);
+  if (host === 'localhost') return true;
+
+  // A non-IP name without a dot is a container/service name, not a public FQDN.
+  if (!host.includes('.')) return true;
+  return (
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host.endsWith('.lan') ||
+    host.endsWith('.home.arpa')
+  );
+}
+
+/**
+ * Kortix cloud APIs are HTTPS-only. A remote `http://` base 308-redirects to
+ * https, and `fetch` drops the `Authorization` header on the scheme change — so
+ * the bearer token silently never arrives and the call 401s as "Token rejected
+ * by the API" even after a successful browser login (and the same drop breaks
+ * the sandbox proxy, which reads the stored base directly). Upgrade any REMOTE
+ * http base to https; localhost / self-host (legitimately plain http) stay put.
+ *
+ * "Self-host" is why the predicate is `isPrivateHostname` and not just
+ * loopback: a compose deployment talks to its API as `http://kortix-api:8000`
+ * or `http://192.168.x.y:8000`, and forcing https there turns a working
+ * cleartext request into a TLS handshake against a non-TLS port — which
+ * surfaces only as an unexplained "Unable to connect", with no hint that the
+ * CLI rewrote the scheme.
+ */
+export function secureRemoteBase(base: string): string {
+  try {
+    const u = new URL(base);
+    if (u.protocol === 'http:' && !isPrivateHostname(u.hostname)) {
+      u.protocol = 'https:';
+      return u.toString().replace(/\/$/, '');
+    }
+  } catch {
+    // Not a parseable absolute URL — leave it for the caller/fetch to reject.
+  }
+  return base;
+}
+
+function normalizeConfig(parsed: Partial<Config>): Config {
+  const hosts = parsed.hosts ?? {};
+  const cleaned: Record<string, Host> = {};
+  for (const [name, value] of Object.entries(hosts)) {
+    if (!value || typeof value !== 'object') continue;
+    const h = value as Partial<Host>;
+    if (typeof h.token !== 'string') continue;
+    cleaned[name] = {
+      url: secureRemoteBase(h.url ?? DEFAULT_API_BASE),
+      token: h.token,
+      user_id: h.user_id ?? '',
+      user_email: h.user_email ?? '',
+      account_id: h.account_id ?? '',
+      logged_in_at: h.logged_in_at ?? new Date().toISOString(),
+      // New optional fields — carried through verbatim when present so an
+      // older config (without them) still loads, and a newer one round-trips.
+      ...(typeof h.account_slug === 'string' ? { account_slug: h.account_slug } : {}),
+      ...(typeof h.account_name === 'string' ? { account_name: h.account_name } : {}),
+      ...(isDefaultProjectRef(h.default_project) ? { default_project: h.default_project } : {}),
+      ...(typeof h.dashboard_url === 'string' ? { dashboard_url: h.dashboard_url } : {}),
+    };
+  }
+  // Tracks which old names were folded into new ones so we can retarget the
+  // active host below (e.g. active "dev" → "local-dev").
+  const renamed: Record<string, string> = {};
+
+  // Legacy `default`: the original single-host name. If it still points at
+  // Kortix Cloud, fold it into `cloud`. If it is a never-logged-in placeholder
+  // (no token and the cloud URL), it is a stale artifact — drop it and fall
+  // back to cloud. Custom deployments keep their registration after logout.
+  const legacyDefault = cleaned.default;
+  if (legacyDefault) {
+    if (!cleaned[CLOUD_HOST_NAME] && legacyDefault.url === DEFAULT_API_BASE) {
+      cleaned[CLOUD_HOST_NAME] = legacyDefault;
+      delete cleaned.default;
+      renamed.default = CLOUD_HOST_NAME;
+    } else if (!legacyDefault.token && legacyDefault.url === DEFAULT_API_BASE) {
+      delete cleaned.default;
+      renamed.default = CLOUD_HOST_NAME;
+    }
+  }
+
+  // Legacy `dev` (localhost:8008) → `local-dev`. `dev` was always the local
+  // dev server, so carry its credentials over wholesale.
+  if (cleaned[LEGACY_DEV_HOST_NAME] && !cleaned[LOCAL_DEV_HOST_NAME]) {
+    cleaned[LOCAL_DEV_HOST_NAME] = cleaned[LEGACY_DEV_HOST_NAME];
+    delete cleaned[LEGACY_DEV_HOST_NAME];
+    renamed[LEGACY_DEV_HOST_NAME] = LOCAL_DEV_HOST_NAME;
+  }
+
+  // Legacy `local` (the old self-host default, localhost:13738) → `selfhost`.
+  // Only migrate when it still carries the old default URL; a user who pointed
+  // `local` somewhere else keeps it as a regular custom host.
+  const legacyLocal = cleaned[LEGACY_LOCAL_HOST_NAME];
+  if (legacyLocal && legacyLocal.url === LEGACY_LOCAL_API_BASE && !cleaned[SELFHOST_HOST_NAME]) {
+    cleaned[SELFHOST_HOST_NAME] = legacyLocal;
+    delete cleaned[LEGACY_LOCAL_HOST_NAME];
+    renamed[LEGACY_LOCAL_HOST_NAME] = SELFHOST_HOST_NAME;
+  }
+
+  // Seed any missing built-ins.
+  if (!cleaned[CLOUD_HOST_NAME]) {
+    cleaned[CLOUD_HOST_NAME] = defaultHost(DEFAULT_API_BASE);
+  }
+  if (!cleaned[LOCAL_DEV_HOST_NAME]) {
+    cleaned[LOCAL_DEV_HOST_NAME] = defaultHost(DEFAULT_LOCAL_DEV_API_BASE);
+  }
+  if (!cleaned[INTERNAL_DEV_HOST_NAME]) {
+    cleaned[INTERNAL_DEV_HOST_NAME] = defaultHost(DEFAULT_INTERNAL_DEV_API_BASE);
+  }
+  if (!cleaned[SELFHOST_HOST_NAME]) {
+    cleaned[SELFHOST_HOST_NAME] = defaultHost(DEFAULT_SELFHOST_API_BASE);
+  }
+
+  let active = parsed.active ?? DEFAULT_HOST_NAME;
+  if (renamed[active]) active = renamed[active];
+  if (!cleaned[active]) {
+    active = cleaned[DEFAULT_HOST_NAME] ? DEFAULT_HOST_NAME : Object.keys(cleaned)[0]!;
+  }
+  return {
+    active,
+    hosts: cleaned,
+    // A marker naming a host that no longer exists (or a renamed one) is
+    // stale — activeHost()'s read-time comparison with `active` ignores it.
+    ...(parsed.sandbox_selected && cleaned[parsed.sandbox_selected]
+      ? { sandbox_selected: parsed.sandbox_selected }
+      : {}),
+  };
+}
+
+function isDefaultProjectRef(value: unknown): value is DefaultProjectRef {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return typeof v.project_id === 'string' && typeof v.account_id === 'string';
+}
+
+function defaultHost(url: string): Host {
+  return {
+    url,
+    token: '',
+    user_id: '',
+    user_email: '',
+    account_id: '',
+    logged_in_at: '',
+  };
+}
+
+function importSingleHostAuth(
+  parsed: Record<string, unknown> | Partial<Config> | null,
+): Config | null {
+  if (!parsed || typeof parsed !== 'object') return null;
+  const p = parsed as Record<string, unknown>;
+  const token = typeof p.token === 'string' ? p.token : undefined;
+  if (!token) return null;
+  // Single-host auth uses `api_base`; multi-host config uses `url`.
+  const url = typeof p.api_base === 'string' ? p.api_base : DEFAULT_API_BASE;
+  const host: Host = {
+    url,
+    token,
+    user_id: typeof p.user_id === 'string' ? p.user_id : '',
+    user_email: typeof p.user_email === 'string' ? p.user_email : '',
+    account_id: typeof p.account_id === 'string' ? p.account_id : '',
+    logged_in_at: typeof p.logged_in_at === 'string' ? p.logged_in_at : new Date().toISOString(),
+  };
+  return {
+    active: CLOUD_HOST_NAME,
+    hosts: {
+      [CLOUD_HOST_NAME]: host,
+      [LOCAL_DEV_HOST_NAME]: defaultHost(DEFAULT_LOCAL_DEV_API_BASE),
+      [INTERNAL_DEV_HOST_NAME]: defaultHost(DEFAULT_INTERNAL_DEV_API_BASE),
+      [SELFHOST_HOST_NAME]: defaultHost(DEFAULT_SELFHOST_API_BASE),
+    },
+  };
+}
+
+/**
+ * Normalize a stored CLI host base into the absolute `<origin>/v1` the SDK
+ * requires. Two shapes reach us:
+ *
+ *   - host login stores a bare origin (`https://api.kortix.com`)
+ *   - a session sandbox injects `KORTIX_API_URL` *with* the mount (`https://<tunnel>/v1`)
+ *
+ * `createKortix` throws `INVALID_BACKEND_URL` on a relative base outside a
+ * browser (there is no `window.location` to resolve against), and the SDK
+ * appends endpoint paths verbatim — so the version mount must be present
+ * exactly once.
+ */
+/** Strip trailing `/` without a backtracking regex (CodeQL js/polynomial-redos). */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return value.slice(0, end);
+}
+
+export function sdkBackendUrl(apiBase: string): string {
+  let base = trimTrailingSlashes(secureRemoteBase(apiBase));
+  if (base.endsWith('/v1')) base = base.slice(0, -3);
+  return `${trimTrailingSlashes(base)}/v1`;
+}

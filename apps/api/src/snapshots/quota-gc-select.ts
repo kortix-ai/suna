@@ -94,6 +94,36 @@ export const DEFAULT_PREFIX = 'kortix-default-';
  * the sole reason to reap — exactly the role it already plays for `kortix-tpl-`.
  */
 export const APP_DEPLOYMENT_PREFIX = 'kortix-app-';
+
+/**
+ * The provider image one App deployment build mints. The deployment worker
+ * builds it, quota GC protects it, and App/deployment delete removes it — all
+ * three must use this function, or a rename strands images nothing can find.
+ */
+export function appDeploymentSnapshotName(deploymentId: string): string {
+  return `${APP_DEPLOYMENT_PREFIX}${deploymentId.replaceAll('-', '')}`;
+}
+
+/**
+ * The inverse of `appDeploymentSnapshotName`: the deployment id an App image
+ * belongs to, or null when the name is not exactly that shape. The reclaim
+ * sweep keys every delete on this id, so a near-miss name is never touched.
+ */
+export function deploymentIdFromAppSnapshotName(name: string): string | null {
+  const match = /^kortix-app-([0-9a-f]{8})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{12})$/.exec(name);
+  return match ? match.slice(1).join('-') : null;
+}
+
+/**
+ * `kortix-appimg-<env>-<key>` — one provider image that every App deployment
+ * with the same build inputs shares (`apps/images.ts` `appImageName`). This
+ * environment tracks each one in `kortix.app_images` and deletes it once no
+ * deployment uses it. Quota GC protects every tracked name (`referenced`) and
+ * reaps an untracked one (another environment's, or one whose database is
+ * gone) only through rule 5's idle floor, like `kortix-app-`.
+ */
+export const APP_IMAGE_PREFIX = 'kortix-appimg-';
+
 /** Namespaces we own and may reap. Anything else (stock/bench images) is untouched. */
 export const MANAGED_PREFIXES = [
   DEFAULT_PREFIX,
@@ -102,6 +132,7 @@ export const MANAGED_PREFIXES = [
   PPWARM_PREFIX,
   SCOPED_PPWARM_PREFIX,
   APP_DEPLOYMENT_PREFIX,
+  APP_IMAGE_PREFIX,
 ] as const;
 
 /** States that mean a build is IN FLIGHT — deleting these would break a live boot. */
@@ -251,7 +282,7 @@ export function selectSnapshotsToReap(input: SelectInput): SelectResult {
   }
 
   // 5. Everything else we own (user templates `kortix-tpl-`, legacy
-  //    `kortix-wproj-`, App-deployment images `kortix-app-`): conservative
+  //    `kortix-wproj-`, App images `kortix-app-` / `kortix-appimg-`): conservative
   //    idle gate. These can encode real user intent — or, for `kortix-app-`,
   //    a foreign environment's live rollback target that `referenced` cannot
   //    see (see `APP_DEPLOYMENT_PREFIX`'s header) — so they get the benefit

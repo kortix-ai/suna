@@ -8,9 +8,9 @@ delete process.env.LLM_GATEWAY_PROXY_PORT;
 delete process.env.LLM_GATEWAY_PROXY_TARGET;
 
 const { config } = await import('../../config');
-const { llmGatewayBaseUrlForProvider } = await import('./sandbox-env-sync');
+const { resolveLlmGatewayBaseUrl } = await import('../../llm-gateway/sandbox-base-url');
 
-describe('llmGatewayBaseUrlForProvider', () => {
+describe('the env-push LLM gateway base URL (the boot formula)', () => {
   beforeEach(() => {
     config.LLM_GATEWAY_BASE_URL = '';
     config.LLM_GATEWAY_PROXY_PORT = 0;
@@ -18,14 +18,12 @@ describe('llmGatewayBaseUrlForProvider', () => {
   });
 
   test('uses the public config.KORTIX_URL for every provider', () => {
-    expect(llmGatewayBaseUrlForProvider('daytona')).toBe('https://api.example.com/v1/llm');
-    expect(llmGatewayBaseUrlForProvider('e2b')).toBe('https://api.example.com/v1/llm');
-    expect(llmGatewayBaseUrlForProvider('platinum')).toBe('https://api.example.com/v1/llm');
+    expect(resolveLlmGatewayBaseUrl(config.KORTIX_URL)).toBe('https://api.example.com/v1/llm');
   });
 
-  test('an explicit LLM_GATEWAY_BASE_URL override wins for every provider', () => {
+  test('an explicit LLM_GATEWAY_BASE_URL override wins', () => {
     config.LLM_GATEWAY_BASE_URL = 'https://gateway.internal.example.com/v1/llm';
-    expect(llmGatewayBaseUrlForProvider('daytona')).toBe(
+    expect(resolveLlmGatewayBaseUrl(config.KORTIX_URL)).toBe(
       'https://gateway.internal.example.com/v1/llm',
     );
   });

@@ -44,7 +44,7 @@ describe('which address counts as the caller', () => {
     expect(
       requestEgressIp(
         ctx({
-          'x-forwarded-for': '67.213.121.131, 172.68.1.1',
+          'x-forwarded-for': '198.51.100.21, 172.68.1.1',
           'cf-connecting-ip': '203.0.113.9',
         }),
       ),
@@ -53,7 +53,7 @@ describe('which address counts as the caller', () => {
 
   test('cf-connecting-ip wins over a spoofed x-real-ip too', () => {
     expect(
-      requestEgressIp(ctx({ 'x-real-ip': '67.213.121.131', 'cf-connecting-ip': '203.0.113.9' })),
+      requestEgressIp(ctx({ 'x-real-ip': '198.51.100.21', 'cf-connecting-ip': '203.0.113.9' })),
     ).toBe('203.0.113.9');
   });
 
@@ -61,27 +61,27 @@ describe('which address counts as the caller', () => {
     // Deployments that do not sit behind Cloudflare send no edge header. They
     // must keep the forwarded-for behaviour, not lose the address entirely.
     expect(
-      requestEgressIp(ctx({ 'cf-connecting-ip': '  ', 'x-forwarded-for': '67.213.121.131' })),
-    ).toBe('67.213.121.131');
+      requestEgressIp(ctx({ 'cf-connecting-ip': '  ', 'x-forwarded-for': '198.51.100.21' })),
+    ).toBe('198.51.100.21');
   });
 
   test('the FIRST x-forwarded-for hop is the client, not the last', () => {
     // Cloudflare fronts this API and appends. Taking the last hop would pin
     // Cloudflare's own address — identical for every sandbox on earth, which
     // would make the check pass for everyone and protect no one.
-    expect(requestEgressIp(ctx({ 'x-forwarded-for': '67.213.121.131, 172.68.1.1' }))).toBe(
-      '67.213.121.131',
+    expect(requestEgressIp(ctx({ 'x-forwarded-for': '198.51.100.21, 172.68.1.1' }))).toBe(
+      '198.51.100.21',
     );
   });
 
   test('whitespace around a hop is tolerated', () => {
-    expect(requestEgressIp(ctx({ 'x-forwarded-for': '  67.213.121.131 , 172.68.1.1' }))).toBe(
-      '67.213.121.131',
+    expect(requestEgressIp(ctx({ 'x-forwarded-for': '  198.51.100.21 , 172.68.1.1' }))).toBe(
+      '198.51.100.21',
     );
   });
 
   test('x-real-ip is the fallback', () => {
-    expect(requestEgressIp(ctx({ 'x-real-ip': '67.213.113.135' }))).toBe('67.213.113.135');
+    expect(requestEgressIp(ctx({ 'x-real-ip': '198.51.100.35' }))).toBe('198.51.100.35');
   });
 
   test('an empty forwarded-for does not become an empty-string pin', () => {

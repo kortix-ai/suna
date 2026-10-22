@@ -15,9 +15,9 @@ import type { ToolProps } from '../shared/types';
 
 const NO_ARGS: string[] = [];
 
-export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const output = partOutput(part);
+export function SessionLineageTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const output = partOutput(call);
   const sessionId = (input.session_id as string) || '';
   const sessionCount = useMemo(() => countLineageSessions(output), [output]);
   const args = useMemo(() => (sessionCount > 0 ? [`${sessionCount} sessions`] : NO_ARGS), [sessionCount]);
@@ -25,7 +25,7 @@ export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: Too
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TreeStructureIcon}
       trigger={{ title: 'Session history', subtitle: shortSessionId(sessionId), args }}
       defaultOpen={defaultOpen}
@@ -40,7 +40,4 @@ export function SessionLineageTool({ part, defaultOpen, forceOpen, locked }: Too
     </BasicTool>
   );
 }
-ToolRegistry.register('session_lineage', SessionLineageTool);
 ToolRegistry.register('session-lineage', SessionLineageTool);
-ToolRegistry.register('oc-session_lineage', SessionLineageTool);
-ToolRegistry.register('oc-session-lineage', SessionLineageTool);

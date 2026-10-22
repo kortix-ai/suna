@@ -2,7 +2,7 @@
  * GET /kortix/part/:sessionID/:messageID/:partID serves prompt-attachment
  * bytes and, unlike every other route in the /kortix/* namespace, checked no
  * credential at all. The namespace is exempt from the daemon's global auth
- * gate (proxy.ts) precisely so each route authenticates itself — see
+ * gate (app/server.ts) precisely so each route authenticates itself — see
  * `/kortix/logs` (routes/logs.ts), which this mirrors via the shared
  * `authorizeControl` helper (routes/control-auth.ts).
  *
@@ -12,12 +12,12 @@
  * real hole the moment a daemon runs anywhere that proxy is not in front of
  * it.
  */
-import { createHmac } from 'crypto'
+import { createHmac } from 'node:crypto'
 import { describe, expect, test } from 'bun:test'
-import type { Config } from '../config'
-import type { HarnessAttachmentResult, HarnessAttachmentService } from '../harness/queries'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { createPartRouter } from '../routes/part'
+import type { Config } from '@/lib/config/config'
+import type { HarnessAttachmentResult, HarnessAttachmentService } from '@/harness/contract/queries'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { createPartRouter } from '@/routes/kortix/part'
 
 const TOKEN = 'test-sandbox-token'
 const WRONG_TOKEN = 'wrong-sandbox-token'

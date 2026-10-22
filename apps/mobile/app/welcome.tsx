@@ -5,11 +5,12 @@
  * lib/onboarding/onboarding.ts). Never a paywall: "Continue with Free"
  * always leads on to `/new`.
  *
- * The offer is the upgrade sheet's (`GlobalUpgradeSheet`): Kortix Team and the
+ * The offer is the upgrade sheet's (`GlobalUpgradeSheet`): Kortix Credits and the
  * first four lines of its Includes list (`welcomeOffer`).
  * - iOS (App Store guideline 3.1.1, `lib/billing/store-policy.ts`): plan name
  *   and benefits, no price, no purchase button — Continue with Free only.
- * - Android and web: the per-seat price and a primary Upgrade that opens web
+ * - Android and web: the pitch line (pick any monthly amount on the web) and a
+ *   primary Upgrade that opens web
  *   billing (the Plans screen's checkout, `openExternalUrl`); a user who
  *   cannot manage billing sees "Ask an account owner to upgrade" instead.
  * - An account already on a paid plan skips the screen.
@@ -32,8 +33,7 @@ import { Text } from '@/components/ui/text';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { openExternalUrl } from '@/lib/billing/checkout';
 import { useAccountState } from '@/lib/billing/hooks';
-import { getPlanFamily } from '@/lib/billing/plan-action';
-import { getTeamUpgradeOffer } from '@/lib/billing/team-upgrade-offer';
+import { canManageBilling, getPlanFamily } from '@/lib/billing/plan-action';
 import { getWebBillingUrl } from '@/lib/billing/web-links';
 import { haptics } from '@/lib/haptics';
 import { ArrowUpRightIcon, CheckIcon } from '@/lib/icons';
@@ -54,12 +54,10 @@ export default function WelcomeScreen() {
   const [opening, setOpening] = React.useState(false);
 
   const accountState = useAccountState({ accountId: accountId ?? undefined, enabled: !!accountId });
-  const teamOffer = getTeamUpgradeOffer(accountState.data);
   const offer = welcomeOffer({
     os: Platform.OS,
     family: getPlanFamily(accountState.data),
-    canManageBilling: teamOffer.canManageBilling,
-    pricePerSeat: teamOffer.pricePerSeat,
+    canManageBilling: canManageBilling(accountState.data),
   });
   // A failed plan lookup still shows the offer: the screen is never a dead end.
   const loading = !!accountId && accountState.isLoading;
@@ -103,7 +101,7 @@ export default function WelcomeScreen() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View className="flex-1 items-center justify-center bg-background">
-          {splashHidden ? <KortixLoader size="xlarge" /> : null}
+          {splashHidden ? <KortixLoader size="large" /> : null}
         </View>
       </>
     );
@@ -117,10 +115,13 @@ export default function WelcomeScreen() {
         style={{ paddingTop: insets.top + 24, paddingBottom: Math.max(insets.bottom, 16) }}>
         <View className="flex-1 justify-center gap-6">
           <View className="items-center">
-            <Text variant="h3">{t('upgrade.teamPlan', 'Kortix Team')}</Text>
+            <Text variant="h3">{t('upgrade.creditsPlan', 'Kortix Credits')}</Text>
             {offer.action === 'none' ? null : (
-              <Text variant="muted" className="mt-1 tabular-nums">
-                {`$${teamOffer.pricePerSeat} ${t('upgrade.perSeatMonthly', 'per seat / month')}`}
+              <Text variant="muted" className="mt-1 text-center">
+                {t(
+                  'upgrade.pickAmount',
+                  'Pick any monthly amount on the web. Unlimited members share one credit pool.'
+                )}
               </Text>
             )}
           </View>
@@ -135,7 +136,7 @@ export default function WelcomeScreen() {
         <View className="gap-2.5 pt-3">
           {offer.action === 'upgrade' ? (
             <Button size="lg" className="rounded-full" disabled={opening} onPress={upgrade}>
-              <Text>{t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: 'Team' })}</Text>
+              <Text>{t('plans.upgradeTo', { defaultValue: 'Upgrade to {{plan}}', plan: 'Credits' })}</Text>
               <Icon as={ArrowUpRightIcon} size={18} />
             </Button>
           ) : offer.action === 'ask-owner' ? (

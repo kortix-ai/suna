@@ -191,13 +191,8 @@ export function getCatalogSnapshot(
   return { snapshot: current, warming: current === null && inFlight !== null };
 }
 
-/**
- * Await the snapshot, crawling if there is none.
- *
- * Only for callers that genuinely cannot answer without it — the live e2e
- * suite, and a warm-up call at boot. Request handlers use
- * {@link getCatalogSnapshot} so nobody waits ~48 s behind a cold pod.
- */
+/** Await the snapshot, crawling if there is none. Tests only: request handlers
+ *  use {@link getCatalogSnapshot} so nobody waits ~48 s behind a cold pod. */
 export async function ensureCatalogSnapshot(
   fetchPage: CatalogPageFetcher,
   now: () => number = Date.now,

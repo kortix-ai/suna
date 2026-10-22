@@ -6,21 +6,22 @@
  * The desired release is ALWAYS the base branch's current tip. There is no
  * per-session mode: a session that edited its config dir under `/workspace`
  * still receives the base release, and its edits reach the box only once they
- * are pushed to the base branch. The one exception is the project quarantine,
- * which assigns the last release a session proved when the tip's release has
- * failed in enough sessions — a bad base config must not make sessions
- * unbootable.
+ * are pushed to the base branch. The one exception is a tip that cannot serve:
+ * a release the builder could not build, or one the project quarantined after
+ * it failed in enough sessions. Then the last release a session proved is
+ * assigned, with `fallbackReason` saying why — a bad base config must neither
+ * make sessions unbootable nor read as up to date.
  */
 
-import { resolveCommitSha } from '../projects/git/commits';
-import { invalidateProjectMirror } from '../projects/git/mirror';
+import { COMPILED_AGENT_CONFIG_ENV, COMPILED_AGENT_CONFIG_GZ_CAPABILITY, fitsInEnvString } from '@kortix/api-contract/compiled-agent-config-env';
+import { readMirrorCommitSha, resolveCommitSha } from '../projects/git/commits';
 import type { GitBackedProject } from '../projects/git/types';
-import { repositoryAccessFromSessionMetadata } from '../projects/lib/session-sandbox-metadata';
 import {
   buildConfigRelease,
   toDescriptor,
   type ConfigReleaseAgentRepoint,
   type ConfigReleaseDescriptor,
+  type ConfigReleaseFormat,
   type ConfigReleaseVariant,
 } from './builder';
 import { loadAgentRosterAtCommit } from './agent-roster';
@@ -45,6 +46,23 @@ export interface DesiredReleaseInput {
   /** Record the assignment. Only the daemon's own request records it. */
   recordAssignment?: boolean;
   /**
+   * Default true: the base tip is the upstream's, asked at most once per
+   * mirror refresh interval per `(project, ref)` across every API process
+   * (`base-tip.ts`). Set false only from a caller that has JUST refreshed this
+   * project's mirror within the same request (`GET /config` compiles the
+   * latest etag first — its own invalidate already fetched the tip): the tip
+   * is then read from the mirror as it is.
+   */
+  refreshProjectMirror?: boolean;
+  /**
+   * The base tip the session was created on (`KORTIX_BASE_SHA`), as a booting
+   * box reports it. Session create resolved it from the remote seconds ago, so
+   * when the mirror already holds it as the base tip the forced fetch would
+   * only prove it again: it is skipped. It never chooses the release: any
+   * other value, or none, refreshes as before.
+   */
+  bootTip?: string | null;
+  /**
    * May the session's OWNER run `agent`? Asked only when the manifest dropped
    * the session's agent and a declared default exists to move it to. Omitted ⇒
    * the answer is no, so a caller that cannot ask never widens anything.
@@ -55,6 +73,14 @@ export interface DesiredReleaseInput {
    * request, so a human read decides and reports without writing.
    */
   persistRepoint?: (from: string, to: string) => Promise<boolean>;
+  /**
+   * The descriptor format the caller reads. Default v3: every caller that
+   * compares a box's running release against this one (`GET /config`, the
+   * turn gate, admission) must agree with a v3 box about a tree over the
+   * archive cap. Only the descriptor route serves v2, to a daemon that did not
+   * ask for v3.
+   */
+  format?: ConfigReleaseFormat;
 }
 
 export interface DesiredRelease {
@@ -62,6 +88,13 @@ export interface DesiredRelease {
   descriptor: ConfigReleaseDescriptor;
   /** The base release ID the project quarantined, when a fallback replaced it. */
   quarantinedReleaseId: string | null;
+  /**
+   * Why this session does not get the base tip's release: the tip could not
+   * be built, or the project quarantined it. Null when the tip is assigned.
+   * `GET /config` shows it as the release's `fallback_reason`, so a session on
+   * an older release never reads as up to date.
+   */
+  fallbackReason: string | null;
   /** The variant the release was built for, after the agent resolution. */
   variant: ConfigReleaseVariant;
 }
@@ -70,6 +103,10 @@ export interface DesiredReleaseDeps {
   ledger: ConfigReleaseLedger;
   build: typeof buildConfigRelease;
   resolveBase: (project: GitBackedProject, ref: string) => Promise<string>;
+  /** The base tip the mirror holds now, with no refresh; null when unknown. */
+  readBase: (project: GitBackedProject, ref: string) => Promise<string | null>;
+  /** The upstream's base tip, shared across requests (`sharedBaseTip`). */
+  checkBase: (project: GitBackedProject, ref: string) => Promise<string>;
   /** What the manifest declares at the release's own commit. */
   loadRoster: (project: GitBackedProject, commit: string) => Promise<DeclaredAgentRoster>;
 }
@@ -78,6 +115,10 @@ const defaultDeps: DesiredReleaseDeps = {
   ledger: dbConfigReleaseLedger,
   build: (project, commit, variant, options) => buildConfigRelease(project, commit, variant, options),
   resolveBase: resolveCommitSha,
+  readBase: readMirrorCommitSha,
+  // Loaded on first use: base-tip reaches projects/surface, whose session code imports the
+  // sandbox proxy root, which reaches back here through turn-start (an import cycle).
+  checkBase: async (project, ref) => (await import('./base-tip')).sharedBaseTip(project, ref),
   loadRoster: loadAgentRosterAtCommit,
 };
 
@@ -86,25 +127,51 @@ const defaultDeps: DesiredReleaseDeps = {
  * different release ID (governance only) than one with access, so the two
  * never share a fallback.
  */
+/**
+ * The descriptor a daemon receives. A kortixd built before the gzip form
+ * (@kortix/api-contract/compiled-agent-config-env) stores a release's
+ * governance raw in its env; over 128 KiB every exec on the box then fails
+ * with E2BIG. Such a daemon gets no governance and keeps the config it has.
+ * `capabilities` is what the daemon declared in its descriptor request.
+ */
+export function governanceForDaemon<T extends { compiled_governance: string | null; compiled_governance_etag: string | null }>(descriptor: T, capabilities: readonly string[]): T {
+  const governance = descriptor.compiled_governance;
+  if (governance === null || fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, governance)) return descriptor;
+  if (capabilities.includes(COMPILED_AGENT_CONFIG_GZ_CAPABILITY)) return descriptor;
+  // Both fields go together: kortixd rejects a descriptor with only one of them
+  // and then boots the image default config instead of the project's.
+  return { ...descriptor, compiled_governance: null, compiled_governance_etag: null };
+}
+
 export function ledgerVariant(variant: ConfigReleaseVariant, repositoryAccess: boolean): string {
   return repositoryAccess ? variant : `${variant}#governance-only`;
 }
 
 /**
- * Resolve the base tip, build its release, and apply the project quarantine. A quarantined release is replaced by the newest release
- * of the same variant that any session proved; with none, the quarantined
- * release is assigned unchanged and each box keeps its own last proven
- * config through its box quarantine and fallback chain.
+ * Resolve the base tip, build its release, and apply the fallback. An
+ * unbuildable or quarantined tip is replaced by the newest release of the same
+ * variant that any session proved. With none, a quarantined tip is assigned
+ * unchanged and each box keeps its own last proven config through its box
+ * quarantine and fallback chain; an unbuildable tip is assigned no release.
  */
 export async function resolveDesiredRelease(
   input: DesiredReleaseInput,
   deps: DesiredReleaseDeps = defaultDeps,
 ): Promise<DesiredRelease> {
-  // A push the warm mirror has not fetched must not be missed.
-  invalidateProjectMirror(input.project.projectId);
   let baseSha: string;
   try {
-    baseSha = await deps.resolveBase(input.project, input.baseRef);
+    // A boot whose tip the mirror already holds: the fetch would prove only
+    // what session create proved (p50 ~1 s on prod, 2026-10-13, on every boot).
+    const known = input.bootTip ? await deps.readBase(input.project, input.baseRef).catch(() => null) : null;
+    if (known && known === input.bootTip) {
+      baseSha = known;
+    } else if (input.refreshProjectMirror === false) {
+      baseSha = await deps.resolveBase(input.project, input.baseRef);
+    } else {
+      // A push the warm mirror has not fetched must not be missed: ask the
+      // upstream, or read what another request asked it moments ago.
+      baseSha = await deps.checkBase(input.project, input.baseRef);
+    }
   } catch (error) {
     throw new BaseRefUnresolvedError(input.baseRef, error as Error);
   }
@@ -151,30 +218,50 @@ export async function resolveDesiredRelease(
   const variant = releaseVariantFor(agent, input.repositoryAccess);
 
   const base = await deps.build(input.project, baseSha, variant);
-  let descriptor = toDescriptor(base, { repositoryAccess: input.repositoryAccess, agentRepoint });
+  const shape = { repositoryAccess: input.repositoryAccess, agentRepoint, format: input.format };
+  let descriptor = toDescriptor(base, shape);
   let quarantinedReleaseId: string | null = null;
+  let fallbackReason: string | null = null;
   const variantKey = ledgerVariant(variant, input.repositoryAccess);
   const projectId = input.project.projectId;
+  const tip = `The base branch's latest agent config (commit ${baseSha.slice(0, 12)})`;
 
-  if (descriptor.release_id) {
-    try {
+  try {
+    // Why the tip's release cannot be assigned, or null when it can. A tip the
+    // builder could not build (an archive over the limit, a missing plugin, a
+    // git error) has no release ID; a tip that failed in enough sessions is
+    // quarantined. Either way the project's last proven release serves.
+    let unusable: string | null = null;
+    if (!descriptor.release_id) {
+      unusable = `${tip} could not be built: ${descriptor.reason ?? 'no reason given'}`;
+    } else {
       const quarantined = await deps.ledger.quarantined(projectId, [descriptor.release_id], PROJECT_QUARANTINE_SESSIONS);
       if (quarantined.has(descriptor.release_id)) {
-        const fallback = await deps.ledger.lastProven(projectId, variantKey, PROJECT_QUARANTINE_SESSIONS);
-        if (fallback && fallback.releaseId !== descriptor.release_id) {
-          const rebuilt = await deps.build(input.project, fallback.sourceCommit, variant);
-          const candidate = toDescriptor(rebuilt, { repositoryAccess: input.repositoryAccess, agentRepoint });
-          // Assign the fallback only when the rebuild reproduces the proven ID.
-          if (candidate.release_id === fallback.releaseId) {
-            quarantinedReleaseId = descriptor.release_id;
-            descriptor = candidate;
-          }
+        const reported = await deps.ledger.failureReason(projectId, descriptor.release_id);
+        unusable = `${tip} failed to load in ${PROJECT_QUARANTINE_SESSIONS} sessions${reported ? `: ${reported}` : ''}`;
+      }
+    }
+    if (unusable) {
+      const fallback = await deps.ledger.lastProven(projectId, variantKey, PROJECT_QUARANTINE_SESSIONS);
+      if (fallback && fallback.releaseId !== descriptor.release_id) {
+        const rebuilt = await deps.build(input.project, fallback.sourceCommit, variant);
+        const candidate = toDescriptor(rebuilt, shape);
+        // Assign the fallback only when the rebuild reproduces the proven ID.
+        if (candidate.release_id === fallback.releaseId) {
+          quarantinedReleaseId = descriptor.release_id;
+          descriptor = candidate;
+          fallbackReason = `${unusable}. Sessions run the last config that loaded (commit ${fallback.sourceCommit.slice(0, 12)}).`;
         }
       }
-    } catch (error) {
-      // The ledger is bookkeeping. Without it the base release is assigned.
-      console.warn(`[config-releases] quarantine lookup failed for ${projectId}: ${(error as Error).message}`);
+      // No proven release to fall back to: an unbuildable tip stays
+      // unassigned (the box keeps what it runs) and the reason is stated. A
+      // quarantined tip stays assigned and each box keeps its own last proven
+      // config, which its health reports.
+      if (!fallbackReason && !descriptor.release_id) fallbackReason = unusable;
     }
+  } catch (error) {
+    // The ledger is bookkeeping. Without it the base release is assigned.
+    console.warn(`[config-releases] quarantine lookup failed for ${projectId}: ${(error as Error).message}`);
   }
 
   if (input.recordAssignment && descriptor.release_id && descriptor.source_commit) {
@@ -189,5 +276,5 @@ export async function resolveDesiredRelease(
         console.warn(`[config-releases] recording assignment failed for ${projectId}: ${error.message}`),
       );
   }
-  return { baseSha, descriptor, quarantinedReleaseId, variant };
+  return { baseSha, descriptor, quarantinedReleaseId, fallbackReason, variant };
 }

@@ -1,6 +1,8 @@
 const ABSOLUTE_URL_PATTERN = /^[a-zA-Z][a-zA-Z\d+\-.]*:/;
 
-function normalizeForwardedHeader(value: string | null): string | null {
+/** First comma-separated value, or null when absent/empty — a chained proxy
+ * appends ("https, http"), and only the client-facing first hop is the scheme. */
+export function normalizeForwardedHeader(value: string | null | undefined): string | null {
   if (!value) return null;
   const first = value.split(',')[0]?.trim();
   return first || null;

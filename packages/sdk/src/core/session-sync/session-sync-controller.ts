@@ -1,5 +1,5 @@
-import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { SandboxNotReadyError, isSandboxNotReadyError } from '../http/opencode-errors';
+import type { Message, Part, SessionStatus } from '../runtime/runtime-types';
+import { SandboxNotReadyError, isSandboxNotReadyError } from '../http/runtime-errors';
 import { isAbortError } from '../http/abort-error';
 import { ApiError } from '../http/api/errors';
 
@@ -82,7 +82,7 @@ export const SESSION_SYNC_TAIL_PAGE_SIZE = 50;
  */
 export const MAX_TURN_BACKFILL_PAGES = 10;
 
-export type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'stale' | 'error';
+type SessionSyncFreshness = 'idle' | 'loading' | 'fresh' | 'error';
 
 export interface SessionSyncMessage {
   info: Message;
@@ -106,7 +106,7 @@ export interface SessionSyncPage {
  * from `projectWorking` over the server's own turn authority
  * (`core/session/working.ts`), so this controller holds no opinion about it.
  */
-export interface SessionSyncSnapshot {
+interface SessionSyncSnapshot {
   freshness: SessionSyncFreshness;
   hasOlder: boolean;
   isLoadingOlder: boolean;
@@ -131,7 +131,8 @@ export type SessionSyncReason =
    *  a final answer whose closing frames the stream never delivered. */
   | 'turn-end'
   /** The tab became visible again. A backgrounded tab is throttled, not
-   *  notified, so return is a moment to re-read rather than to assume. */
+   *  notified, so return is a moment to re-read rather than to assume —
+   *  unless the session stream holds and the transcript is fresh. */
   | 'visible'
   /** The transcript was evicted while detached and the live stream refilled it
    *  from the middle — see `transcriptIsFragment`. */
@@ -208,7 +209,7 @@ export interface SessionSyncControllerOptions {
   readTimeoutMs?: number;
 }
 
-export interface HttpSessionSyncControllerOptions extends Pick<
+interface HttpSessionSyncControllerOptions extends Pick<
   SessionSyncControllerOptions,
   | 'sessionId'
   | 'hydrate'
@@ -225,14 +226,14 @@ export interface HttpSessionSyncControllerOptions extends Pick<
   fetch?: SessionSyncFetch;
 }
 
-export type SessionSyncFetch = (input: string, init?: RequestInit) => Promise<Response>;
+type SessionSyncFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 type HttpSessionSyncSourceOptions = Pick<
   HttpSessionSyncControllerOptions,
   'baseUrl' | 'sessionId' | 'getToken' | 'fetch'
 >;
 
-export function createHttpSessionSyncPageLoader(
+function createHttpSessionSyncPageLoader(
   options: HttpSessionSyncSourceOptions,
 ): SessionSyncControllerOptions['loadPage'] {
   const fetchImpl: SessionSyncFetch = options.fetch ?? globalThis.fetch;
@@ -364,9 +365,12 @@ export class SessionSyncController {
   private knownUserMessageIds = new Set<string>();
   private olderHistoryStarted = false;
   private tailRequest: Promise<void> | undefined;
+  private turnEndPending = false;
   private olderRequest: Promise<void> | undefined;
   private livenessTimer: unknown;
   private livenessBusy = false;
+  /** The session stream is up (R5.3): its ring replays what a drop missed. */
+  private streamReliable = false;
   private lastActivityAt: number;
   private listeners = new Set<() => void>();
   private destroyed = false;
@@ -402,15 +406,24 @@ export class SessionSyncController {
 
   reconcile(reason: SessionSyncReason = 'manual'): Promise<void> {
     if (this.destroyed) return Promise.resolve();
+    // Returning to the tab is the one read the session stream makes
+    // redundant: while it holds, its box-side ring replays a reconnect's
+    // missed frames and a runtime resync re-reads the tail. Re-reading 50
+    // messages (up to ~400 kB) on every return also replaced every recent
+    // message object, so recent turns redrew. A transcript that never loaded
+    // is still read.
+    if (reason === 'visible' && this.streamReliable && this.snapshot.freshness === 'fresh') {
+      return Promise.resolve();
+    }
     if (this.tailRequest) return this.tailRequest;
     // `loading` covers the first read AND a not-ready retry, so a waking box
-    // does not flip to `stale` between attempts; a session that already has a
-    // fresh transcript revalidates as `stale`.
+    // does not flip between attempts; a re-read of a fresh or failed
+    // transcript leaves the state alone.
     this.update({
       freshness:
         this.snapshot.freshness === 'idle' || this.snapshot.freshness === 'loading'
           ? 'loading'
-          : 'stale',
+          : this.snapshot.freshness,
     });
     this.tailRequest = this.loadTail(reason).finally(() => {
       this.tailRequest = undefined;
@@ -454,6 +467,16 @@ export class SessionSyncController {
    * state it already has. `watchIdle` keeps a visible session on a slower
    * verification cadence when the working signal itself was missed.
    */
+  /**
+   * The session stream (`GET .../events`) is connected. Its box-side ring
+   * replays any frame a reconnect missed, and a runtime resync re-reads the
+   * tail, so the liveness and verification reads stop while it holds. The
+   * turn-end read stays: it is one read per turn, not a poll.
+   */
+  setStreamReliable(reliable: boolean): void {
+    this.streamReliable = reliable;
+  }
+
   setBusy(isBusy: boolean, watchIdle = false): void {
     const turnEnded = this.livenessBusy && !isBusy;
     this.livenessBusy = isBusy;
@@ -470,10 +493,10 @@ export class SessionSyncController {
       // One bounded read for a session that was actually busy. A watched idle
       // session continues at the verification cadence below.
       this.stopLivenessTimer();
-      if (turnEnded && !this.destroyed) void this.reconcile('turn-end');
+      if (turnEnded && !this.destroyed) this.reconcileTurnEnd();
       return;
     }
-    if (turnEnded && !this.destroyed) void this.reconcile('turn-end');
+    if (turnEnded && !this.destroyed) this.reconcileTurnEnd();
     if (this.livenessTimer !== undefined) return;
     this.lastActivityAt = this.scheduler.now();
     this.livenessTimer = this.scheduler.setInterval(
@@ -496,6 +519,21 @@ export class SessionSyncController {
     // controller that is being torn down.
     this.abortController.abort();
     this.listeners.clear();
+  }
+
+  private reconcileTurnEnd(): void {
+    if (!this.tailRequest) {
+      void this.reconcile('turn-end');
+      return;
+    }
+    // An already-issued poll may have read the transcript before the turn ended.
+    // Wait for it to release the single-flight slot, then verify the final tail.
+    if (this.turnEndPending) return;
+    this.turnEndPending = true;
+    void this.tailRequest.finally(() => {
+      this.turnEndPending = false;
+      if (!this.destroyed) void this.reconcile('turn-end');
+    });
   }
 
   private async loadTail(reason: SessionSyncReason): Promise<void> {
@@ -562,7 +600,7 @@ export class SessionSyncController {
       // empty-`fresh` — `markLoaded` above ran only on success, so a failed
       // read never records the session as an empty transcript. A read that
       // outlived its budget says nothing about the session either: keep the
-      // `loading`/`stale` state `reconcile` set and retry.
+      // `loading` state `reconcile` set and retry.
       if (!timedOut) {
         this.update({ freshness: isSandboxNotReadyError(error) ? 'loading' : 'error' });
       }
@@ -781,7 +819,7 @@ export class SessionSyncController {
   }
 
   private async checkLiveness(): Promise<void> {
-    if (this.destroyed || this.tailUnavailable) return;
+    if (this.destroyed || this.tailUnavailable || this.streamReliable) return;
     const nowMs = this.scheduler.now();
     const quiet = nowMs - this.lastActivityAt > this.livenessIntervalMs;
     // `noteActivity` proves frames are ARRIVING, not that none were lost. A

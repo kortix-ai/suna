@@ -5,7 +5,7 @@
  * REPLACES `iam/engine-v2.ts` (authorizeV2, resolveActorV2, loadProjectRoleRows,
  * deriveEffectiveProjectRole, customPolicyAllows, computeTokenScope,
  * agentGrantGates, listAccessibleProjectsV2, filterAccessibleProjectResources),
- * `projects/access.ts` (effectiveProjectRole, roleAllows,
+ * `projects/access.ts` (effectiveProjectRole, the retired roleAllows,
  * foldEffectiveProjectAccess) and `iam/resource-grants.ts`'s fold
  * (isProjectResourceUsableByMember, isResourceAccessible, …) — four independent
  * copies of the max-role fold and three parallel permission vocabularies.
@@ -41,10 +41,12 @@ import {
   roleAssignments,
   serviceAccounts,
 } from '@kortix/db';
+import { ssoProviderIdOf } from '../shared/auth-identity';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
 import { retryTransientDatabaseRead } from '../shared/database-errors';
 import { isImpersonatingAccount, isImpersonationBlockedAccount } from '../shared/impersonation';
+import { isUuid } from '../shared/validate';
 import { ttlMemo } from '../shared/ttl-memo';
 import { agentMayPerform } from './agent-scope';
 import { AGENT_DEFAULT_CEILING, agentPrincipalDecision } from './agent-principal';
@@ -87,6 +89,9 @@ export type Reason =
   | 'not_a_member'
   | 'super_admin'
   | 'account_mfa_required'
+  /** The account requires single sign-on for this person's email domain, and
+   *  the credential is not an identity of the account's own IdP. */
+  | 'sso_required'
   | 'role'
   | 'account_role_insufficient'
   | 'project_target_required'
@@ -171,6 +176,18 @@ export function authorize(actor: Actor, action: string, obj: Obj = { type: 'acco
   return timeStage('iam', () => authorizeDecision(actor, action, obj));
 }
 
+/**
+ * The SSO-only gate alone (step 4a below), for account routes that decide on
+ * membership without `authorize` (`GET /v1/accounts/:id`, members, invites,
+ * branding, secret resources). `middleware/sso-gate.ts` applies it to every
+ * `/v1/accounts/:accountId` request.
+ */
+export async function ssoRequiredFor(actor: Actor): Promise<boolean> {
+  if (isImpersonatingAccount(actor.userId, actor.accountId)) return false;
+  const rec = await resolvePrincipal(actingPrincipal(actor), actor.accountId);
+  return rec?.accountSsoRequired === true;
+}
+
 async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promise<Verdict> {
   // 1. ACT-AS. Above everything, and above the principal memo in particular:
   // `resolvePrincipal` is a TTL memo shared across requests, so widening the
@@ -201,11 +218,20 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
   // every account-level action.
   if (!tokenScopeAllows(binding, tokenId, rec.kind, scope, obj)) return deny('token_out_of_scope');
 
+  // 4a. SSO only. Above the super-admin bypass: the account creator holds
+  // `is_super_admin`, and enforcement exists to close exactly that person's
+  // password door. Every credential of a non-SSO identity in the enforced
+  // domain is refused, a PAT included; an identity of the account's own IdP
+  // passes. Break-glass for a broken IdP: a platform admin marks the domain
+  // unverified (`PUT /v1/admin/api/accounts/:id/sso-domain-verification`),
+  // which lifts enforcement.
+  if (rec.accountSsoRequired) return deny('sso_required');
+
   // 5. Super-admin. Above the MFA gate on purpose: flipping account MFA must
   // never be able to lock an account out permanently.
   if (rec.isSuperAdmin) return allow('super_admin');
 
-  // 5a. AGENT PRINCIPAL (project flag `agent_principal`, governed grant). The
+  // 5a. AGENT PRINCIPAL (every governed grant). The
   // session IS the agent: grant ∩ ceiling − HUMAN_ONLY. The launcher's role and
   // super-admin bit never reach this point — the principal is the agent's
   // service account (actingPrincipal), so step 5 above cannot fire for it.
@@ -286,9 +312,9 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
     if (!usable) return deny('resource_scope_insufficient');
   }
 
-  // 10. role ∩ agent grant. Enforced HERE, centrally, so a new route cannot
-  // forget it — the 23 per-route `assertAgentScope` calls are the duplicate.
-  // No-op for non-agent tokens (null grant) and for `permissions: all`.
+  // 10. role ∩ agent grant, for a token that carries a grant but did not take
+  // step 5a (a session token with no service account). Kept as the backstop so
+  // a grant is never ignored; a no-op for a null grant and for `all`.
   if (tokenId && !AGENT_GRANT_EXEMPT_ACTIONS.has(action)) {
     if (!agentMayPerform(binding?.agentGrant ?? null, action)) {
       return deny('agent_scope_insufficient');
@@ -305,7 +331,7 @@ async function authorizeDecision(actor: Actor, action: string, obj: Obj): Promis
  * of the session's own project (or `projectId`).
  *
  * Returns false for any actor that is NOT an agent session under the
- * agent-principal model (flag off, ungoverned grant, human, PAT): those callers
+ * agent-principal model (ungoverned grant, human, PAT): those callers
  * keep their existing decision path. Check `isAgentPrincipalActor(actor)`
  * (iam/actor.ts) first to choose the path.
  */
@@ -385,6 +411,11 @@ async function listAccessibleProjectsUntimed(actor: Actor, action: string): Prom
     }
   }
 
+  // SSO only IS applied to the listing, unlike MFA below: the remedy is a new
+  // sign-in through the IdP, not a step-up on this page, and a password
+  // identity of the enforced domain must not enumerate the account's projects.
+  if (rec.accountSsoRequired) return { mode: 'none', reason: 'sso_required' };
+
   if (rec.isSuperAdmin) return { mode: 'all' };
 
   // The account-wide MFA gate is DELIBERATELY not applied here. Enumerating a
@@ -436,6 +467,10 @@ export async function filterAccessibleObjects(
   objectIds: readonly string[],
 ): Promise<string[]> {
   if (objectIds.length === 0) return [];
+  // Step 1, as in `authorize`: act-as runs every agent of the target account,
+  // and nothing anywhere else. Checked before the principal memo.
+  if (isImpersonatingAccount(actor.userId, actor.accountId)) return [...objectIds];
+  if (isImpersonationBlockedAccount(actor.userId, actor.accountId)) return [];
   const principal = actingPrincipal(actor);
   const rec = await resolvePrincipal(principal, actor.accountId);
   if (!rec) return [];
@@ -567,6 +602,9 @@ interface PrincipalRecord {
   kind: 'member' | 'service_account';
   isSuperAdmin: boolean;
   accountMfaRequired: boolean;
+  /** The account enforces SSO on a verified domain, this principal's email is
+   *  in that domain, and the principal is not an identity of that IdP. */
+  accountSsoRequired: boolean;
   /** 'owner' | 'admin' | 'member', from the system role held at account scope. */
   accountRoleKey: string | null;
   accountRoleActions: ReadonlySet<string>;
@@ -596,6 +634,13 @@ async function resolvePrincipalUncached(
   accountId: string,
 ): Promise<PrincipalRecord | null> {
   if (!accountId) return null;
+  // A malformed account id (a slug, a stray literal segment) never matches a
+  // membership, and letting it reach the uuid-typed casts below ends the
+  // request as SQLSTATE 22P02 → an opaque 500 (Better Stack pattern 97669531,
+  // KRTX-211). Answer the same "no membership" the engine answers for a real
+  // non-member id — every account-scoped route the engine authorizes gets its
+  // own denial shape, never a 500.
+  if (!isUuid(accountId)) return null;
   const pid = principal.id;
 
   // Group membership drives two of the four queries, so it is inlined as a
@@ -616,7 +661,25 @@ async function resolvePrincipalUncached(
   const [identityRows, groupRows, assignmentRows, customRows] = await Promise.all([
     // is_super_admin and mfa_required are NOT permissions — see the module note.
     db
-      .select({ isSuperAdmin: accountMembers.isSuperAdmin, mfaRequired: accounts.mfaRequired })
+      .select({
+        isSuperAdmin: accountMembers.isSuperAdmin,
+        mfaRequired: accounts.mfaRequired,
+        // SSO only: the account's IdP enforces sign-in for a domain it proved
+        // control of, this person's email is in that domain, and this auth user
+        // is not an identity of that IdP (a password, email-code or social
+        // identity, or another IdP's). A subquery of the same read, so the
+        // resolve stays one round trip deep.
+        ssoRequired: sql<boolean>`EXISTS (
+          SELECT 1
+            FROM kortix.account_sso_providers enforcing
+            JOIN auth.users person ON person.id = ${pid}::uuid
+           WHERE enforcing.account_id = ${qualifiedColumn(accounts.accountId)}
+             AND enforcing.enforce_sso
+             AND enforcing.domain_verified_at IS NOT NULL
+             AND enforcing.primary_domain = split_part(lower(trim(person.email)), '@', 2)
+             AND ${ssoProviderIdOf(sql`person`)} IS DISTINCT FROM enforcing.supabase_sso_provider_id::text
+        )`,
+      })
       .from(accountMembers)
       .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
       .where(and(eq(accountMembers.userId, pid), eq(accountMembers.accountId, accountId)))
@@ -704,6 +767,7 @@ async function resolvePrincipalUncached(
       kind: 'member',
       isSuperAdmin: identityRows[0]?.isSuperAdmin ?? false,
       accountMfaRequired: identityRows[0]?.mfaRequired ?? false,
+      accountSsoRequired: identityRows[0]?.ssoRequired === true,
       accountRoleKey,
       accountRoleActions,
       groupIds: groupRows.map((g) => g.groupId),
@@ -732,6 +796,7 @@ async function resolvePrincipalUncached(
     kind: 'service_account',
     isSuperAdmin: false,
     accountMfaRequired: false,
+    accountSsoRequired: false,
     accountRoleKey: null,
     accountRoleActions: EMPTY_SET,
     groupIds: [],
@@ -831,13 +896,26 @@ export function customRoleAllows(
  * FIRST grant flips that — an empty map read afterwards on a replica that has
  * not seen the write means "still open to everyone", which is a stale
  * over-grant for anyone the new grant was meant to exclude, not a harmless
- * stale negative. `skill`/`secret`/`app`/`trigger` are OPEN by unscoped
- * default and have no per-object grant writer today, so their empty map can
- * never go stale and stays cache-eligible. Kept as a constant here because the
+ * stale negative. `secret` is the same case: a value's audience (keyed by
+ * `secret_id`, `projects/lib/secret-audience.ts`) is open until its first
+ * grant. `skill`/`app`/`trigger` are OPEN by unscoped default and have no
+ * per-object grant writer today, so their empty map can never go stale and
+ * stays cache-eligible. Kept as a constant here because the
  * memo's caching rule must not itself depend on a DB read;
  * `unscopedDefaultFor` stays the source of truth for the VERDICT.
  */
-const NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection']);
+const NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection', 'secret']);
+
+/**
+ * Object types whose grants are never cached, empty or not. A secret value's
+ * or connector account's audience narrows and widens per object, so a cached
+ * map of any size on a replica that did not see the write is a stale over- or
+ * under-grant: on the v0.13.52 gate (SEC-AUD-1/2/4) a value saved for a group
+ * read as open to everyone, and a session holding a person-only value could be
+ * shared. One indexed query per check is the price of every replica reading
+ * the current audience.
+ */
+const NEVER_CACHE_OBJECT_TYPES: ReadonlySet<string> = new Set(['connection', 'secret']);
 
 interface ObjectGrantPrincipal {
   principalType: string;
@@ -898,7 +976,7 @@ const loadObjectGrants = ttlMemo({
     return map;
   },
   shouldCache: (map, _projectId, objectType) =>
-    map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType),
+    !NEVER_CACHE_OBJECT_TYPES.has(objectType) && (map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType)),
 });
 registerProjectScopedMemo(loadObjectGrants);
 

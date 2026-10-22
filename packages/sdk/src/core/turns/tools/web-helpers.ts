@@ -13,125 +13,102 @@ export interface WebSearchQueryResult {
   query: string;
   answer?: string;
   sources: WebSearchSource[];
+  /** Why this query of a batch failed (`success: false`), e.g. a provider
+   *  quota. Absent on a query that ran. */
+  error?: string;
 }
 
-export function parseWebSearchOutput(output: string | any): WebSearchQueryResult[] {
+/** The JSON shapes the web tools return: an object, or an array of them. */
+type ParsedJson = Record<string, unknown> | Record<string, unknown>[];
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseJsonOutput(output: unknown, trimBom = false): ParsedJson | null {
+  if (typeof output === 'object' && output !== null) return output as ParsedJson;
+  if (typeof output !== 'string') return null;
+  try {
+    let result: unknown = JSON.parse(output);
+    if (typeof result === 'string') {
+      try {
+        result = JSON.parse(result);
+      } catch {}
+    }
+    return typeof result === 'object' ? (result as ParsedJson) : null;
+  } catch {
+    const trimmed = trimBom && output.trim().replace(/^\uFEFF/, '');
+    if (trimmed && trimmed !== output) {
+      try {
+        const retried: unknown = JSON.parse(trimmed);
+        return typeof retried === 'object' && retried !== null ? (retried as ParsedJson) : null;
+      } catch {}
+    }
+    return null;
+  }
+}
+
+function collectSources(list: unknown[]): WebSearchSource[] {
+  return list
+    .filter((s): s is Record<string, unknown> => isJsonRecord(s) && Boolean(s.title) && Boolean(s.url))
+    .map((s) => ({
+      title: s.title as string,
+      url: s.url as string,
+      snippet: (s.snippet || s.content || s.text || undefined) as string | undefined,
+      author: (s.author || undefined) as string | undefined,
+      publishedDate: (s.publishedDate || s.published_date || undefined) as string | undefined,
+    }));
+}
+
+export function parseWebSearchOutput(output: unknown): WebSearchQueryResult[] {
   if (!output) return [];
-
-  let parsed: any = null;
-  if (typeof output === 'object' && output !== null) {
-    parsed = output;
-  } else if (typeof output === 'string') {
-    try {
-      let result = JSON.parse(output);
-
-      if (typeof result === 'string') {
-        try {
-          result = JSON.parse(result);
-        } catch {}
+  const parsed = parseJsonOutput(output, true);
+  const record = parsed && !Array.isArray(parsed) ? parsed : undefined;
+  if (record?.success === false) return [];
+  const results = record && Array.isArray(record.results) ? (record.results as unknown[]) : undefined;
+  if (results && results.length > 0) {
+    const firstItem = results[0];
+    if (isJsonRecord(firstItem) && typeof firstItem.query === 'string') {
+      const queries: WebSearchQueryResult[] = [];
+      for (const r of results) {
+        if (!isJsonRecord(r) || typeof r.query !== 'string') continue;
+        queries.push({
+          query: r.query,
+          answer: (r.answer || undefined) as string | undefined,
+          sources: Array.isArray(r.results) ? collectSources(r.results) : [],
+          // A failed query of a batch keeps its error: dropping it rendered
+          // an empty row per query (KRTX-3016).
+          ...(r.success === false
+            ? { error: (typeof r.error === 'string' && r.error.trim()) || 'Search failed' }
+            : {}),
+        });
       }
-      parsed = typeof result === 'object' ? result : null;
-    } catch {
-      const trimmed = output.trim().replace(/^\uFEFF/, '');
-      if (trimmed !== output) {
-        try {
-          parsed = JSON.parse(trimmed);
-        } catch {}
-      }
+      if (queries.length > 0) return queries;
+    } else if (isJsonRecord(firstItem) && (firstItem.title || firstItem.url)) {
+      const sources = collectSources(results);
+      if (sources.length > 0)
+        return [
+          {
+            query: (record?.query || '') as string,
+            answer: (record?.answer || undefined) as string | undefined,
+            sources,
+          },
+        ];
     }
   }
-
-  if (parsed) {
-    if (parsed.success === false) return [];
-
-    if (parsed.results && Array.isArray(parsed.results) && parsed.results.length > 0) {
-      const firstItem = parsed.results[0];
-      if (firstItem && typeof firstItem.query === 'string') {
-        const queryResults: WebSearchQueryResult[] = [];
-        for (const r of parsed.results) {
-          if (typeof r.query !== 'string') continue;
-          const sources: WebSearchSource[] = [];
-          if (Array.isArray(r.results)) {
-            for (const s of r.results) {
-              if (s.title && s.url) {
-                sources.push({
-                  title: s.title,
-                  url: s.url,
-                  snippet: s.snippet || s.content || s.text || undefined,
-                  author: s.author || undefined,
-                  publishedDate: s.publishedDate || s.published_date || undefined,
-                });
-              }
-            }
-          }
-          queryResults.push({
-            query: r.query,
-            answer: r.answer || undefined,
-            sources,
-          });
-        }
-        if (queryResults.length > 0) return queryResults;
-      } else if (firstItem && (firstItem.title || firstItem.url)) {
-        const sources: WebSearchSource[] = [];
-        for (const s of parsed.results) {
-          if (s.title && s.url) {
-            sources.push({
-              title: s.title,
-              url: s.url,
-              snippet: s.snippet || s.content || s.text || undefined,
-              author: s.author || undefined,
-              publishedDate: s.publishedDate || s.published_date || undefined,
-            });
-          }
-        }
-        if (sources.length > 0) {
-          return [
-            {
-              query: parsed.query || '',
-              answer: parsed.answer || undefined,
-              sources,
-            },
-          ];
-        }
-      }
-    }
-
-    if (parsed.query && typeof parsed.query === 'string') {
-      const sources: WebSearchSource[] = [];
-      if (Array.isArray(parsed.results)) {
-        for (const s of parsed.results) {
-          if (s.title && s.url) {
-            sources.push({
-              title: s.title,
-              url: s.url,
-              snippet: s.snippet || s.content || s.text || undefined,
-              author: s.author || undefined,
-              publishedDate: s.publishedDate || s.published_date || undefined,
-            });
-          }
-        }
-      }
-      return [{ query: parsed.query, answer: parsed.answer || undefined, sources }];
-    }
-
-    if (
-      Array.isArray(parsed) &&
-      parsed.length > 0 &&
-      parsed[0] &&
-      (parsed[0].title || parsed[0].url)
-    ) {
-      const sources: WebSearchSource[] = [];
-      for (const s of parsed) {
-        if (s.title && s.url) {
-          sources.push({
-            title: s.title,
-            url: s.url,
-            snippet: s.snippet || s.content || s.text || undefined,
-            author: s.author || undefined,
-            publishedDate: s.publishedDate || s.published_date || undefined,
-          });
-        }
-      }
+  if (record?.query && typeof record.query === 'string') {
+    return [
+      {
+        query: record.query,
+        answer: (record.answer || undefined) as string | undefined,
+        sources: results ? collectSources(results) : [],
+      },
+    ];
+  }
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    const first = parsed[0];
+    if (isJsonRecord(first) && (first.title || first.url)) {
+      const sources = collectSources(parsed);
       if (sources.length > 0) return [{ query: '', sources }];
     }
   }
@@ -160,14 +137,7 @@ export function parseWebSearchOutput(output: string | any): WebSearchQueryResult
 
   if (typeof output === 'string') {
     const recovered = recoverLinkResults(output);
-    if (recovered.length > 0) {
-      return [
-        {
-          query: '',
-          sources: recovered.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })),
-        },
-      ];
-    }
+    if (recovered.length > 0) return [{ query: '', sources: recovered.map((r) => ({ title: r.title, url: r.url, snippet: r.snippet })) }];
   }
   return [];
 }
@@ -246,7 +216,10 @@ export function parseScrapeInputUrls(input: Record<string, unknown>): string[] {
 }
 
 /** Build per-URL failure cards when the tool returns a plain error string. */
-export function buildScrapeFailureResults(output: string, urls: string[]): ScrapeResult[] {
+export function buildScrapeFailureResults(
+  output: string,
+  urls: string[],
+): ScrapeResult[] {
   if (urls.length === 0) return [];
   const cleaned = output.replace(/^Error:\s*/i, '').trim();
 
@@ -258,7 +231,7 @@ export function buildScrapeFailureResults(output: string, urls: string[]): Scrap
 
 /** Parsed scrape results, or per-input-URL failure cards for plain error output. */
 export function resolveScrapeResults(
-  output: string | unknown,
+  output: unknown,
   input: Record<string, unknown>,
 ): ScrapeResult[] {
   const parsed = parseScrapeOutput(output);
@@ -270,37 +243,32 @@ export function resolveScrapeResults(
   return buildScrapeFailureResults(outputStr, parseScrapeInputUrls(input));
 }
 
-export function parseScrapeOutput(output: string | any): ParsedScrapeOutput | null {
+export function parseScrapeOutput(output: unknown): ParsedScrapeOutput | null {
   if (!output) return null;
-  let parsed: any = null;
-  if (typeof output === 'object' && output !== null) {
-    parsed = output;
-  } else if (typeof output === 'string') {
-    try {
-      let result = JSON.parse(output);
-      if (typeof result === 'string') {
-        try {
-          result = JSON.parse(result);
-        } catch {}
-      }
-      parsed = typeof result === 'object' ? result : null;
-    } catch {}
-  }
-  if (!parsed) return null;
+  const parsed = parseJsonOutput(output);
+  const record = parsed && !Array.isArray(parsed) ? parsed : undefined;
+  if (!record) return null;
 
-  if (parsed.results && Array.isArray(parsed.results)) {
+  if (record.results && Array.isArray(record.results)) {
+    const results = record.results as unknown[];
     return {
-      total: parsed.total || parsed.results.length,
+      total: (record.total || results.length) as number,
       successful:
-        parsed.successful ?? parsed.results.filter((r: any) => r.success !== false).length,
-      failed: parsed.failed ?? parsed.results.filter((r: any) => r.success === false).length,
-      results: parsed.results.map((r: any) => ({
-        url: r.url || '',
-        success: r.success !== false,
-        title: r.title || undefined,
-        content: r.content || r.text || r.snippet || undefined,
-        error: r.error || undefined,
-      })),
+        (record.successful as number | undefined) ??
+        results.filter((r) => isJsonRecord(r) && r.success !== false).length,
+      failed:
+        (record.failed as number | undefined) ??
+        results.filter((r) => isJsonRecord(r) && r.success === false).length,
+      results: results.map((r) => {
+        const item = isJsonRecord(r) ? r : {};
+        return {
+          url: (item.url || '') as string,
+          success: item.success !== false,
+          title: (item.title || undefined) as string | undefined,
+          content: (item.content || item.text || item.snippet || undefined) as string | undefined,
+          error: (item.error || undefined) as string | undefined,
+        };
+      }),
     };
   }
 

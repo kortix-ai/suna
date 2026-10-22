@@ -8,7 +8,7 @@
  * missed. `narrowChatEvent` reshapes the raw ~50-variant wire union down to
  * the dozen events a chat UI actually cares about (message/part updates,
  * status, questions, permissions) — the same narrowing `@kortix/sdk/react`'s
- * `useOpenCodeEventStream` does internally.
+ * `useRuntimeEventStream` does internally.
  *
  * Run:
  *   KORTIX_API_URL=http://localhost:8008/v1 KORTIX_API_KEY=kortix_pat_... \

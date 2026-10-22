@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
 import { findChatThread } from '../core/threads';
@@ -44,16 +44,17 @@ export function inboundAllowsTeam(inbound: SlackInbound, teamId: string | null |
 }
 
 /**
- * The Slack workspaces a project's install was proven for. Read from
- * `chat_installs`, which only the install paths write (after `auth.test` or
- * the OAuth token exchange named the team) — never from `project_secrets`,
+ * The Slack workspaces a project's install was proven for, newest first. Read
+ * from `chat_installs`, which only the install paths write (after `auth.test`
+ * or the OAuth token exchange named the team) — never from `project_secrets`,
  * which a project admin can overwrite through the generic secrets API.
  */
 export async function provenSlackWorkspaces(projectId: string): Promise<string[]> {
   const rows = await db
     .select({ workspaceId: chatInstalls.workspaceId })
     .from(chatInstalls)
-    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.projectId, projectId)));
+    .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.projectId, projectId)))
+    .orderBy(desc(chatInstalls.connectedAt));
   return rows.map((r) => r.workspaceId).filter(Boolean);
 }
 

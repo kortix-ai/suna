@@ -3,6 +3,8 @@
  * connector remainder). Mounted by `ConnectorCallTool`
  * (`connector-tools.tsx`) whenever a `kortix-connectors_call` denial names an
  * unconnected app (`connectorConnectNeed`, `lib/session/connector-handoff.ts`).
+ * A `/connect/<token>` link in the agent's prose draws the same shape
+ * (`ConnectRowShell`) with its own status: `turn/setup-link-card.tsx`.
  *
  * `ResultRow`-styled, not `ResultRow` itself: `result-row.tsx` has no slot for
  * a trailing action button (only a chevron `onPress`), and this row's whole
@@ -17,19 +19,64 @@
  * query refetches, without re-running the tool call.
  */
 import * as React from 'react';
-import { Image, View } from 'react-native';
+import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 
 import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { PlugIcon } from '@/lib/icons';
 import { useConnectors } from '@/lib/projects/hooks';
 import { isConnectorConnected } from '@/lib/session/connector-handoff';
 import { THEME } from '@/lib/utils/theme';
+import { ConnectorAppMark } from '../../connector-handshake';
 import { ConnectorHandoffContext } from '../shared/connector-handoff-context';
 import { RESULT_ROW_TILE } from '../shared/result-row';
 import { TURN_TYPE, useTurnPalette } from '../shared/styles';
+
+/** The row's shape: a 40pt tile, a title over a status line, one action. */
+export function ConnectRowShell({
+  media,
+  title,
+  status,
+  statusTone = 'muted',
+  titleLines = 1,
+  action,
+}: {
+  media: React.ReactNode;
+  title: string;
+  /** A connect link's title names the app and the project: it may wrap once. */
+  titleLines?: number;
+  status: string;
+  statusTone?: 'muted' | 'success';
+  action?: React.ReactNode;
+}) {
+  const palette = useTurnPalette();
+  const { colorScheme } = useColorScheme();
+  const theme = colorScheme === 'dark' ? THEME.dark : THEME.light;
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: 10,
+        borderRadius: 12,
+        backgroundColor: theme.card,
+      }}>
+      {media}
+      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+        <Text numberOfLines={titleLines} style={[TURN_TYPE.sm, { color: palette.foreground }]}>
+          {title}
+        </Text>
+        <Text
+          numberOfLines={1}
+          style={[TURN_TYPE.xs, { color: statusTone === 'success' ? palette.success : palette.mutedForeground }]}>
+          {status}
+        </Text>
+      </View>
+      {action}
+    </View>
+  );
+}
 
 export interface ConnectorConnectRowProps {
   slug: string;
@@ -39,12 +86,8 @@ export interface ConnectorConnectRowProps {
 }
 
 export function ConnectorConnectRow({ slug, label, fallbackConnectUrl }: ConnectorConnectRowProps) {
-  const palette = useTurnPalette();
-  const { colorScheme } = useColorScheme();
-  const theme = colorScheme === 'dark' ? THEME.dark : THEME.light;
   const handoff = React.useContext(ConnectorHandoffContext);
-  const { data: connectors } = useConnectors(handoff?.projectId ?? null);
-  const [imgFailed, setImgFailed] = React.useState(false);
+  const { data: connectors, isLoading } = useConnectors(handoff?.projectId ?? null);
 
   // No handoff context mounted (defensive — `SessionPage` always provides
   // one): nothing this row could do, so it renders nothing rather than a dead
@@ -54,7 +97,6 @@ export function ConnectorConnectRow({ slug, label, fallbackConnectUrl }: Connect
   const connector = connectors?.connectors.find((row) => row.slug === slug);
   const connected = isConnectorConnected(connector);
   const logoUri = connector?.iconUrl ?? null;
-  const showLogo = !!logoUri && !imgFailed;
 
   const connect = () => {
     handoff.requestConnect({
@@ -67,53 +109,26 @@ export function ConnectorConnectRow({ slug, label, fallbackConnectUrl }: Connect
   };
 
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        padding: 10,
-        borderRadius: 12,
-        backgroundColor: theme.card,
-      }}>
-      <View
-        style={{
-          width: RESULT_ROW_TILE,
-          height: RESULT_ROW_TILE,
-          borderRadius: 8,
-          overflow: 'hidden',
-          backgroundColor: theme.secondary,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-        {showLogo ? (
-          <Image
-            source={{ uri: logoUri! }}
-            resizeMode="contain"
-            onError={() => setImgFailed(true)}
-            style={{ width: '100%', height: '100%' }}
-          />
-        ) : (
-          <Icon as={PlugIcon} size={20} color={palette.mutedForeground} />
-        )}
-      </View>
-
-      <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
-        <Text numberOfLines={1} style={[TURN_TYPE.sm, { color: palette.foreground }]}>
-          {label}
-        </Text>
-        <Text
-          numberOfLines={1}
-          style={[TURN_TYPE.xs, { color: connected ? palette.success : palette.mutedForeground }]}>
-          {connected ? 'Connected' : 'Needs connecting'}
-        </Text>
-      </View>
-
-      {connected ? null : (
-        <Button size="sm" onPress={connect}>
-          <Text>Connect</Text>
-        </Button>
-      )}
-    </View>
+    <ConnectRowShell
+      media={
+        <ConnectorAppMark
+          name={label}
+          iconUrl={isLoading ? undefined : logoUri}
+          size={RESULT_ROW_TILE}
+          radius={8}
+          connected={connected}
+        />
+      }
+      title={label}
+      status={connected ? 'Connected' : 'Needs connecting'}
+      statusTone={connected ? 'success' : 'muted'}
+      action={
+        connected ? null : (
+          <Button size="sm" onPress={connect}>
+            <Text>Connect</Text>
+          </Button>
+        )
+      }
+    />
   );
 }

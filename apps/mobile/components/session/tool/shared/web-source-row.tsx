@@ -12,17 +12,13 @@
 import { useState } from 'react';
 import { Image, View } from 'react-native';
 import { wsDomain, wsFavicon } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { Text } from '@/components/ui/text';
 import { GlobeIcon } from '@/lib/icons';
 import { webSpace } from '@/lib/session/user-message';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from './styles';
 import { useToolNavigation } from './navigation';
-
-function safeHttpUrl(url: string): string | null {
-  const trimmed = url.trim();
-  return /^https?:\/\/[^\s]+$/i.test(trimmed) ? trimmed : null;
-}
 
 /** Web `FaviconAvatar size="xs"`. */
 export function FaviconAvatar({ value }: { value: string }) {

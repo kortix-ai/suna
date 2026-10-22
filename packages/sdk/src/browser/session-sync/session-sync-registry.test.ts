@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
-import type { Message } from '@opencode-ai/sdk/v2/client';
-import { SandboxNotReadyError } from '../../core/http/opencode-errors';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type { Message } from '../../core/runtime/runtime-types';
+import { SandboxNotReadyError } from '../../core/http/runtime-errors';
 import { useSyncStore } from '../stores/sync-store';
 import { setCurrentRuntime } from '../../core/session/current-runtime';
 import { configureKortix, platformConfig } from '../../core/http/config';
@@ -12,6 +12,7 @@ import {
   noteSessionSyncEvent,
   prefetchSessionSyncOnce,
   readSessionMessagePage,
+  reportTelemetry,
   resetSessionSyncControllers,
   resetSessionSyncControllersForSession,
   retainSessionSyncController,
@@ -296,9 +297,116 @@ describe('session sync controller eviction', () => {
       expect(getSessionSyncController(sessionId)).toBe(controller);
     }
 
+    // Released overflow is evicted once it has been idle past the hold, not in the release's
+    // own tick: a remounting effect (StrictMode) retains it again right after.
     retained[0]?.release();
-    expect(getSessionSyncController('session-0')).not.toBe(retained[0]?.controller);
+    expect(getSessionSyncController('session-0')).toBe(retained[0]!.controller);
+    const realNow = Date.now;
+    try {
+      Date.now = () => realNow() + 60_000;
+      retainSessionSyncController('session-1')();
+      expect(getSessionSyncController('session-0')).not.toBe(retained[0]?.controller);
+    } finally {
+      Date.now = realNow;
+    }
     for (const entry of retained.slice(1)) entry.release();
+  });
+
+  // React renders every sibling (each `useSessionSync` gets its controller) before it runs any
+  // effect (each retains it). A sub-agent list that mounts 25 rows at once ("Load all") had
+  // the first rows' retains evict the later rows' controllers, so their initial read went to a
+  // destroyed controller and never left the browser.
+  test("a controller a render handed out survives its siblings' retains until its own", () => {
+    const ids = Array.from({ length: 25 }, (_, index) => `sub-agent-${index}`);
+    const rendered = ids.map((id) => getSessionSyncController(id));
+    const releases = ids.map((id) => retainSessionSyncController(id));
+
+    ids.forEach((id, index) => expect(getSessionSyncController(id)).toBe(rendered[index]!));
+    for (const release of releases) release();
+  });
+
+  // Eviction ran only inside get/retain/release, so with nothing else calling the registry a
+  // released overflow controller lived on, and one whose read failed kept retrying.
+  test('a released overflow controller is evicted by its own timer once idle past the hold', () => {
+    const realNow = Date.now;
+    const realSetTimeout = globalThis.setTimeout;
+    const timers: Array<{ run: () => void; ms: number }> = [];
+    globalThis.setTimeout = ((run: () => void, ms: number) => {
+      timers.push({ run, ms });
+      return { unref() {} } as never;
+    }) as unknown as typeof setTimeout;
+    try {
+      const releases = Array.from({ length: 22 }, (_, index) => {
+        getSessionSyncController(`idle-${index}`);
+        return retainSessionSyncController(`idle-${index}`);
+      });
+      const first = getSessionSyncController('idle-0');
+      for (const release of releases) release();
+      const evict = timers.filter((timer) => timer.ms > 30_000);
+      expect(evict).toHaveLength(1);
+      Date.now = () => realNow() + 60_000;
+      evict[0]!.run();
+      Date.now = realNow;
+      expect(getSessionSyncController('idle-0')).not.toBe(first);
+    } finally {
+      Date.now = realNow;
+      globalThis.setTimeout = realSetTimeout;
+    }
+  });
+
+  test('the eviction pass re-arms for a controller released later in the burst', () => {
+    const realNow = Date.now;
+    const realSetTimeout = globalThis.setTimeout;
+    const timers: Array<{ run: () => void; ms: number }> = [];
+    globalThis.setTimeout = ((run: () => void, ms: number) => {
+      timers.push({ run, ms });
+      return { unref() {} } as never;
+    }) as unknown as typeof setTimeout;
+    const at = (offset: number) => (Date.now = () => realNow() + offset);
+    const evictionPasses = () => timers.filter((timer) => timer.ms > 1_000);
+    try {
+      at(0);
+      // 20 stay retained; `early` is released at 0 and `late` at 10 s.
+      const releases = Array.from({ length: 22 }, (_, index) => {
+        getSessionSyncController(`burst-${index}`);
+        return retainSessionSyncController(`burst-${index}`);
+      });
+      const late = getSessionSyncController('burst-21');
+      releases[20]!();
+      at(10_000);
+      releases[21]!();
+      expect(evictionPasses()).toHaveLength(1);
+      // The pass armed at 0 evicts `early`; `late` is still inside the hold ...
+      at(30_001);
+      evictionPasses()[0]!.run();
+      // Read without touching it: a registry call would count as a use.
+      const destroyed = () => (late as unknown as { destroyed: boolean }).destroyed;
+      expect(destroyed()).toBe(false);
+      // ... so it re-arms for the moment `late` leaves the hold, and that pass evicts it.
+      expect(evictionPasses()).toHaveLength(2);
+      const rearmed = evictionPasses()[1]!;
+      expect(rearmed.ms).toBeGreaterThan(9_000);
+      expect(rearmed.ms).toBeLessThanOrEqual(10_001);
+      at(40_002);
+      rearmed.run();
+      expect(destroyed()).toBe(true);
+      for (const release of releases.slice(0, 20)) release();
+    } finally {
+      Date.now = realNow;
+      globalThis.setTimeout = realSetTimeout;
+    }
+  });
+
+  test('a controller a render handed out and nothing retained is evicted after the hold', () => {
+    const realNow = Date.now;
+    try {
+      const orphan = getSessionSyncController('orphan');
+      Date.now = () => realNow() + 60_000;
+      for (let index = 0; index < 21; index += 1) getSessionSyncController(`later-${index}`);
+      expect(getSessionSyncController('orphan')).not.toBe(orphan);
+    } finally {
+      Date.now = realNow;
+    }
   });
 });
 
@@ -534,5 +642,37 @@ describe('readSessionMessagePage — error classification', () => {
     const controller = new AbortController();
     await readSessionMessagePage(client, 'session-1', { limit: 50 }, controller.signal);
     expect(seen).toBe(controller.signal);
+  });
+});
+
+describe('session sync telemetry', () => {
+  const debug = console.debug;
+  const storage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const lines: unknown[][] = [];
+  const setStorage = (value: Record<string, string>) =>
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: { getItem: (key: string) => value[key] ?? null },
+    });
+  beforeEach(() => {
+    lines.length = 0;
+    console.debug = (...args: unknown[]) => void lines.push(args);
+  });
+  afterEach(() => {
+    console.debug = debug;
+    if (storage) Object.defineProperty(globalThis, 'localStorage', storage);
+    else delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  test('is silent by default', () => {
+    setStorage({});
+    reportTelemetry('s1', { type: 'sync' } as never);
+    expect(lines).toEqual([]);
+  });
+
+  test("logs when localStorage 'kortix:debug' is set", () => {
+    setStorage({ 'kortix:debug': '1' });
+    reportTelemetry('s1', { type: 'sync' } as never);
+    expect(lines).toEqual([['[session-sync]', { sessionId: 's1', type: 'sync' }]]);
   });
 });

@@ -14,7 +14,7 @@ import {
 } from 'node:fs/promises'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { logger } from '../../logger'
+import { logger } from '@/lib/log/logger'
 import { OPENCODE_HOME } from './paths'
 
 const execFileAsync = promisify(execFile)
@@ -212,13 +212,48 @@ async function replaceNodeModules(configDir: string, replacement: string): Promi
   if (hadTarget) await rm(backup, { recursive: true, force: true }).catch(() => undefined)
 }
 
-type InstallDeps = (stagingDir: string) => Promise<void>
+type InstallDeps = (stagingDir: string, opts: { offline: boolean }) => Promise<void>
 
-async function offlineInstall(stagingDir: string): Promise<void> {
-  await execFileAsync('bun', ['install', '--offline'], {
+/** Bounds the registry install, the last resort on the boot path. */
+const ONLINE_INSTALL_TIMEOUT_MS = 60_000
+
+async function bunInstall(stagingDir: string, { offline }: { offline: boolean }): Promise<void> {
+  await execFileAsync('bun', offline ? ['install', '--offline'] : ['install'], {
     cwd: stagingDir,
     env: { ...process.env, HOME: OPENCODE_HOME, BUN_INSTALL_CACHE_DIR: BUN_CACHE_DIR },
+    ...(offline ? {} : { timeout: ONLINE_INSTALL_TIMEOUT_MS }),
   })
+}
+
+/**
+ * Install in `stagingDir`: offline from the project's lock first. A release is
+ * sealed read-only after this, so OpenCode cannot self-install there; a failure
+ * would leave every tool file unable to import its packages. A release's
+ * bun.lock pins the versions of the day it was built, the warm cache holds the
+ * versions of the day the image was built (dev, 2026-10-14: firecrawl-js
+ * 4.25.1 locked, 4.46.0 cached). So a platform-owned dir then resolves its
+ * declared ranges from the cache without the lock, and last from the registry.
+ */
+async function installStaged(stagingDir: string, install: InstallDeps, platformOwned: boolean): Promise<void> {
+  try {
+    return await install(stagingDir, { offline: true })
+  } catch (err) {
+    if (!platformOwned) throw err
+    logger.warn('[boot] release deps are not in the warm cache at their locked versions; resolving the declared ranges', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+  await rm(join(stagingDir, 'bun.lock'), { force: true })
+  await rm(join(stagingDir, 'node_modules'), { recursive: true, force: true })
+  try {
+    return await install(stagingDir, { offline: true })
+  } catch (err) {
+    logger.warn('[boot] release deps are not in the warm cache; installing from the registry', {
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+  await rm(join(stagingDir, 'node_modules'), { recursive: true, force: true })
+  await install(stagingDir, { offline: false })
 }
 
 /**
@@ -259,7 +294,7 @@ export async function ensureOpencodeConfigDeps(
   } = {},
 ): Promise<void> {
   const bakedDir = opts.bakedDir ?? BAKED_DEPS_DIR
-  const install = opts.install ?? offlineInstall
+  const install = opts.install ?? bunInstall
   const platformOwned = opts.platformOwned === true
   const targetModules = join(configDir, 'node_modules')
   let stagingDir: string | null = null
@@ -296,7 +331,7 @@ export async function ensureOpencodeConfigDeps(
     if (await pathExists(configLock)) {
       await copyFile(configLock, join(stagingDir, 'bun.lock'))
     }
-    await install(stagingDir)
+    await installStaged(stagingDir, install, platformOwned)
     const stagedModules = join(stagingDir, 'node_modules')
     if (!(await pathEntryExists(stagedModules))) {
       throw new Error('dependency installation completed without node_modules')

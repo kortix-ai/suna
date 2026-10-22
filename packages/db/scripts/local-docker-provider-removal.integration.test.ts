@@ -141,7 +141,7 @@ let cleanupRuntimeMigrations = () => {};
 
   afterAll(() => {
     cleanupRuntimeMigrations();
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
   test('removes the enum value when every affected table is empty', () => {

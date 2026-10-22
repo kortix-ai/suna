@@ -1,0 +1,446 @@
+import { eq } from 'drizzle-orm';
+import { HTTPException } from 'hono/http-exception';
+import { accountMemberships, projects } from '@kortix/db';
+// Straight from the engine + the actor builder, not the barrel: the barrel is
+// replaced wholesale by `mock.module` in several route tests, so every name
+// imported from it is a name those stubs must also declare.
+import { authorize, type Verdict } from '../../iam/authorize';
+import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
+import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { ttlMemo } from '../../shared/ttl-memo';
+import { invalidateIamCacheForUser, registerPrincipalScopedMemo } from '../../iam/cache-invalidation';
+// Straight from `iam/denial-message`, not the `iam` barrel: the barrel and the
+// engine are both replaced wholesale by `mock.module` in several route tests,
+// and these two names are pure wording policy with no reason to live behind
+// that.
+import { buildDenialError, denialReasonMessage } from '../../iam/denial-message';
+import { projectRoleForUser } from '../../iam/read-models';
+import { db } from '../../shared/db';
+import { IMPERSONATION_INVALID_CODE, impersonatedAccountFor } from '../../shared/impersonation';
+import { resolveAccountId } from '../../shared/resolve-account';
+import { isUuid } from '../../shared/validate';
+import { logger } from '../../lib/logger';
+import { setContextField } from '../../lib/request-context';
+import { effectiveProjectRole, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
+import { getAccountMembership } from './user-identity';
+
+// Memoized briefly (positive hits only) — same rationale and trade-off as
+// getAccountMembership: runs on every project request. Each statement is a
+// fast same-region roundtrip (~3ms measured, not the cross-region cost this
+// comment used to claim), but the same query repeats across a burst of
+// parallel requests, so caching still cuts redundant query volume;
+// revocations lag at most one TTL window, grants are instant.
+const loadProjectMemberRole = ttlMemo({
+  ttlMs: 15_000,
+  // Key is `${userId}|${projectId}` (userId-first) so a single
+  // invalidateByPrefix(`${userId}|`) busts it alongside the engine memos.
+  keyFn: (projectId: string, userId: string) => `${userId}|${projectId}`,
+  loader: async (projectId: string, userId: string): Promise<ProjectRole | null> => {
+    // From `role_assignments`, the store the verdict beside this label comes
+    // from. `project_members` is no longer written by every path — an
+    // assignment made through `assignRole()` leaves it untouched on purpose —
+    // so a label read from it can disagree with the gate that just ran.
+    return (await projectRoleForUser(projectId, userId)) as ProjectRole | null;
+  },
+  shouldCache: (role) => role !== null,
+});
+registerPrincipalScopedMemo(loadProjectMemberRole);
+
+export async function getProjectMemberRole(projectId: string, userId: string): Promise<ProjectRole | null> {
+  return loadProjectMemberRole(projectId, userId);
+}
+
+
+export async function grantProjectRole(input: {
+  accountId: string;
+  projectId: string;
+  userId: string;
+  role: ProjectRole;
+  grantedBy: string;
+  /** undefined = leave as-is on update / NULL on insert; null = clear
+   *  any existing expiry; Date = set/replace the expiry. */
+  expiresAt?: Date | null | undefined;
+}) {
+  // THE write. `kortix.project_members` is a view over `kortix.role_assignments`
+  // as of the cutover, so there is no second store to keep in step and no
+  // best-effort fallback: if this throws, no grant was made, and the caller must
+  // hear about it.
+  //
+  // `SYSTEM_ACTOR` because the CALLER was already authorized by the route that
+  // got here (`project.members.manage`, asserted before this function is
+  // reached) — re-authorizing a different action here would 403 the
+  // invite-acceptance and access-request-approval paths, where the writer is the
+  // invitee or an approver acting on someone else's behalf.
+  await assignRole(SYSTEM_ACTOR, input.accountId, {
+    principal: { type: 'user', id: input.userId },
+    roleKey: input.role,
+    scope: { type: 'project', id: input.projectId },
+    // undefined preserves nothing here: `assignRole` upserts expires_at
+    // unconditionally, and every caller that means "leave it alone" already
+    // reads the row first. null is "no expiry", which is the legacy INSERT's
+    // default and what the three callers that omit it intend.
+    expiresAt: input.expiresAt ?? null,
+    source: 'manual',
+    // The legacy `project_members` PRIMARY KEY (project_id, user_id) meant an
+    // upsert REPLACED the role. Reproduce that: member -> manager must retract
+    // the member row, not union with it.
+    exclusive: true,
+    // The human who granted it. `SYSTEM_ACTOR` only says "this route already
+    // authorized the writer"; it does not mean nobody granted this.
+    grantedBy: input.grantedBy,
+  });
+  // The role just changed — drop this user's cached authz so the new role is
+  // effective on their next request, not after the ~15s TTL window.
+  // (`assignRole` busts the principal memos; this covers the project-role label
+  // memo in this module, which is keyed the same way.)
+  invalidateIamCacheForUser(input.userId);
+}
+
+/**
+ * Parse + validate an optional `expires_at` ISO string from a request
+ * body. undefined = caller didn't set; null = clear; Date = set.
+ * Rejects past timestamps to surface mistakes at write time.
+ */
+
+export function parseExpiresAtBody(
+  raw: unknown,
+): { ok: true; value: Date | null | undefined } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, value: undefined };
+  if (raw === null) return { ok: true, value: null };
+  if (typeof raw !== 'string')
+    return { ok: false, error: 'expires_at must be an ISO-8601 string or null' };
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime()))
+    return { ok: false, error: 'expires_at must be a valid ISO-8601 timestamp' };
+  if (d.getTime() < Date.now())
+    return { ok: false, error: 'expires_at must be in the future' };
+  return { ok: true, value: d };
+}
+
+
+export async function ensureOrgMembership(
+  accountId: string,
+  userId: string,
+): Promise<AccountRole> {
+  const existing = await getAccountMembership(userId, accountId);
+  if (existing) return existing.accountRole as AccountRole;
+  // Membership is two facts in two stores now. IDENTITY (the row that says this
+  // user belongs to this account, and carries is_super_admin / scim_external_id)
+  // is `kortix.account_memberships`; the ROLE is an account-scope assignment.
+  // Writing the identity row first is what lets `assignRole`'s principal check
+  // resolve without falling back to auth.users.
+  await db.insert(accountMemberships).values({ userId, accountId }).onConflictDoNothing();
+  // The grant, through the ONE write path, so joining an account emits
+  // `iam.assignment.granted` like every other grant. `SYSTEM_ACTOR`: the two
+  // callers (accepting a project invite, approving an access request) were
+  // authorized by their own route, and the person being added is not the writer.
+  await assignRole(SYSTEM_ACTOR, accountId, {
+    principal: { type: 'user', id: userId },
+    roleKey: 'member',
+    scope: { type: 'account' },
+    source: 'system',
+    // One account role per member, as the `account_role` COLUMN enforced.
+    exclusive: true,
+  });
+  invalidateIamCacheForUser(userId);
+  return 'member';
+}
+
+/**
+ * The account a project request targets: `requested` (the caller's
+ * `account_id`, already normalized) when the caller is a member of it, else
+ * the caller's own account. Throws the 400/403 the request answers with. The
+ * HTTP reader is `resolveProjectAccount` (`http-project-access.ts`).
+ */
+export async function resolveRequestedProjectAccount(userId: string, requested: string | null) {
+  // A malformed account_id is caller input, not a lookup miss: past this point
+  // it reaches the account-membership query, whose account_id comparison is a
+  // uuid column, and Postgres answers SQLSTATE 22P02 — a 500. Refuse the shape
+  // before any lookup (see shared/validate.ts for the shape contract).
+  if (requested && !isUuid(requested)) {
+    throw new HTTPException(400, {
+      message: 'account_id must be a valid id',
+      res: new Response(
+        JSON.stringify({
+          error: true,
+          message: 'account_id must be a valid id',
+          status: 400,
+          code: 'invalid_account_id',
+        }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+  }
+  // ACT-AS: the grant, not the query string, decides the account. Defense in
+  // depth — under impersonation `/v1/accounts` returns only the target, so a
+  // correct client already sends the target id. A stale one that still holds
+  // the operator's OWN account id would otherwise resolve a real membership
+  // here and write to the operator's account while the banner named the
+  // customer's. Refuse instead.
+  const impersonated = impersonatedAccountFor(userId);
+  if (impersonated && requested && requested !== impersonated) {
+    throw new HTTPException(403, {
+      message: 'Impersonated requests cannot target another account',
+      res: new Response(
+        JSON.stringify({
+          error: 'Impersonated requests cannot target another account',
+          code: IMPERSONATION_INVALID_CODE,
+        }),
+        { status: 403, headers: { 'content-type': 'application/json' } },
+      ),
+    });
+  }
+  const accountId = impersonated ?? requested ?? await resolveAccountId(userId);
+
+  const membership = await getAccountMembership(userId, accountId);
+  if (!membership) {
+    throw new HTTPException(403, { message: 'You do not have access to this account' });
+  }
+  setContextField('accountId', membership.accountId);
+
+  return {
+    userId,
+    accountId: membership.accountId,
+    accountRole: membership.accountRole as AccountRole,
+  };
+}
+
+/**
+ * THE alias table: the coarse `loadProjectForUser` parameter mapped onto a real
+ * permission from `kortix.permissions`. Nothing else in the system speaks the
+ * coarse vocabulary — bespoke actions (project.trigger.fire, project.secret.write,
+ * …) call `assertProjectCapability` with the exact leaf.
+ *
+ *   read        -> project.read
+ *   session     -> project.session.start
+ *   write       -> project.write
+ *   members     -> project.members.manage   (member administration)
+ *   credentials -> project.credentials.issue (mint/revoke a project credential)
+ *
+ * A route whose real gate is a specific leaf loads with `read` and asserts the
+ * leaf itself. A coarse `write` floor in front of it would refuse a custom
+ * role that holds only that leaf.
+ */
+export function iamActionForProjectAccess(action: ProjectAccessAction): string {
+  switch (action) {
+    case 'read':
+      return 'project.read';
+    case 'session':
+      // Starting / running / stopping a session. Granted to every project
+      // role (a plain `member` included) so the floor role can actually use
+      // Kortix, while project customization stays behind project.write.
+      return 'project.session.start';
+    case 'write':
+      return 'project.write';
+    case 'members':
+      return 'project.members.manage';
+    case 'credentials':
+      // Minting or revoking a credential that outlives the request is its own
+      // capability, not "an admin-tier write". Before this leaf existed, a
+      // project CLI token could be minted by anyone holding project.write.
+      return 'project.credentials.issue';
+  }
+}
+
+
+/**
+ * The `effectiveRole` label: the serialized `effective_project_role`. A display
+ * label only; no gate reads it.
+ *
+ * Legacy callers keep the caller's own role. An agent-principal session
+ * never inherits its launcher's role: it is `manager` only when the AGENT's effective permissions
+ * hold `project.write` (the IAM action behind the `manage` tier,
+ * `iamActionForProjectAccess('write')`), else `member`. Pure; exported for
+ * unit tests.
+ */
+export function deriveEffectiveRole(input: {
+  agentPrincipal: boolean;
+  agentMayWrite: boolean;
+  callerRole: ProjectRole;
+}): ProjectRole {
+  if (!input.agentPrincipal) return input.callerRole;
+  return input.agentMayWrite ? 'manager' : 'member';
+}
+
+
+/**
+ * Membership, project-role label and the IAM verdict for one project request —
+ * the facts the denial ladder and the effectiveRole fold read. Throws the
+ * account-membership 403.
+ */
+async function resolveProjectGate(
+  request: { isServiceAccount: boolean },
+  userId: string,
+  projectId: string,
+  accountId: string,
+  action: ProjectAccessAction,
+  iamAction: string,
+  actor: Actor,
+): Promise<{
+  membership: { accountId: string; accountRole: string } | null;
+  projectRole: ProjectRole | null;
+  verdict: Verdict;
+  accountRole: AccountRole | undefined;
+}> {
+  // Membership, project role and the IAM verdict are independent lookups —
+  // overlap them. Every project-scoped request runs this path; each DB
+  // statement is a fast same-region roundtrip (~3ms measured, DB and API
+  // both in eu-west-2), but they're serial by default, so running them in
+  // parallel instead of stacked still matters at this call frequency.
+  // The verdict comes from `kortix.role_assignments` only. `membership` and
+  // `projectRole` are read here for the `accountRole` / `projectRole` /
+  // `effectiveRole` LABELS the four read models render — they are not part of
+  // the decision.
+  const [membership, projectRole, verdict] = await Promise.all([
+    getAccountMembership(userId, accountId),
+    getProjectMemberRole(projectId, userId),
+    authorize(actor, iamAction, { type: 'project', id: projectId }),
+  ]);
+
+  // A service account has NO account_members row — its access is purely its own
+  // iam_policies, already evaluated by the engine `verdict` above. Don't apply
+  // the human membership hard-gate to it (that would 403 every SA before its
+  // standing role is ever consulted); fall through to the verdict check.
+  const { isServiceAccount } = request;
+
+  if (!membership && !isServiceAccount) {
+    throw new HTTPException(403, { message: 'You do not have access to this account' });
+  }
+
+  const accountRole = membership?.accountRole as AccountRole | undefined;
+  return { membership, projectRole, verdict, accountRole };
+}
+
+
+/**
+ * THE denial ladder for a failed engine verdict — reports the engine's own
+ * reason when it names a real constraint, else distinguishes "no access at
+ * all" from "has access but not for this action". Always throws.
+ */
+async function denyProjectAccess(input: {
+  action: ProjectAccessAction;
+  iamAction: string;
+  actor: Actor;
+  projectId: string;
+  verdict: Verdict;
+}): Promise<never> {
+  const { action, iamAction, actor, projectId, verdict } = input;
+  // The engine already computed WHY. When the reason names a constraint other
+  // than the caller's project role — an agent-session grant, a service
+  // account's assigned role, MFA, token scope — report THAT.
+  //
+  // The role-probe below cannot: `project.read` is one of the two actions the
+  // agent-grant fold never gates (AGENT_GRANT_EXEMPT_ACTIONS in iam/authorize),
+  // so for an agent-session token the probe passes no matter what actually
+  // denied the request. Every agent-scope and service-account-scope denial
+  // therefore rendered as "your role is too low" — advice that told an
+  // account owner running the meta coordinator to ask an account owner for a
+  // higher role.
+  if (denialReasonMessage(iamAction, verdict.reason) !== null) {
+    throw buildDenialError(iamAction, verdict.reason);
+  }
+  // Genuine role denial. Distinguish "no access at all" from "has access but
+  // not for this action" so the UI can show a meaningful message. A Viewer can
+  // see the project but can't create a session — telling them "no access" is
+  // misleading and they spend time wondering why they can see the page at
+  // all. Only do the second probe when the failed action was NOT already
+  // 'read' — otherwise it's the same answer.
+  if (action !== 'read') {
+    const readVerdict = await authorize(actor, 'project.read', { type: 'project', id: projectId });
+    if (readVerdict.allowed) {
+      // The two precise aliases name a real leaf, so they get the leaf's own
+      // wording ("manage project members" / "issue project credentials")
+      // rather than the coarse "change this project" — the coarse phrasing is
+      // what made a members-only denial read as a project-wide one.
+      if (action === 'members' || action === 'credentials') {
+        throw buildDenialError(iamAction, verdict.reason);
+      }
+      throw buildDenialError(
+        iamAction,
+        verdict.reason,
+        "Your role on this project doesn't let you change this project. Ask an account owner or admin to grant you a higher role.",
+      );
+    }
+  }
+  throw buildDenialError(iamAction, verdict.reason, 'You do not have access to this project');
+}
+
+/**
+ * The project row a project request names, or null when the id is malformed,
+ * the project does not exist, or it is archived. Binds the request context's
+ * account and project.
+ */
+export async function loadProjectRow(projectId: string) {
+  if (!isUuid(projectId)) return null;
+  const [row] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!row || row.status === 'archived') return null;
+  setContextField('accountId', row.accountId);
+  setContextField('projectId', row.projectId);
+  return row;
+}
+
+/**
+ * THE project gate: may `actor` do `action` on the loaded project? Answers
+ * the caller's labels (account role, project role, effective role) or throws
+ * the 403 the request answers with. The HTTP gate is `loadProjectForUser`
+ * (`http-project-access.ts`).
+ */
+export async function authorizeProjectAccess(input: {
+  userId: string;
+  /** The id the request named (not re-read from `row`). */
+  projectId: string;
+  row: NonNullable<Awaited<ReturnType<typeof loadProjectRow>>>;
+  action: ProjectAccessAction;
+  /** The request's canonical principal, asked about the project's account. */
+  actor: Actor;
+  /** The request authenticated with a direct service-account bearer. */
+  isServiceAccount: boolean;
+}) {
+  const { userId, projectId, row, action, actor } = input;
+  const iamAction = iamActionForProjectAccess(action);
+
+  const gate = await resolveProjectGate(
+    input, userId, projectId, row.accountId, action, iamAction, actor,
+  );
+  const { accountRole, projectRole } = gate;
+  if (!gate.verdict.allowed) {
+    await denyProjectAccess({ action, iamAction, actor, projectId, verdict: gate.verdict });
+  }
+  // effectiveRole label for the UI / downstream helpers. The engine
+  // doesn't hand back a role — it answers yes/no. Mirror the prior
+  // mapping so any code reading effectiveRole still gets sensible
+  // labels: owner/admin → manager, explicit project_members row →
+  // that role, otherwise → 'member' (the engine permitted read but
+  // we don't know the exact tier).
+  // For a service account there's no account role; capabilities come purely from
+  // its policies (already enforced by `verdict`). Use the safe-minimum 'member'
+  // label, exactly as for a member granted access via a policy with no role tier.
+  const callerRole =
+    (accountRole ? effectiveProjectRole(accountRole, projectRole) : projectRole) ?? 'member';
+  const agentPrincipal = isAgentPrincipalActor(actor);
+  const effectiveRole = deriveEffectiveRole({
+    agentPrincipal,
+    agentMayWrite: agentPrincipal
+      ? // `authorize` directly, not `agentEffectiveAllows`: for an agent-principal
+        // actor they are the same verdict, and a new name imported from
+        // iam/authorize is one more export every hand-written mock must list.
+        (await authorize(actor, iamActionForProjectAccess('write'), { type: 'project', id: projectId })).allowed
+      : false,
+    callerRole: callerRole as ProjectRole,
+  });
+
+  return {
+    row,
+    userId,
+    accountRole: accountRole ?? null,
+    projectRole,
+    effectiveRole: effectiveRole as ProjectRole,
+    /** The request's canonical principal, so a handler that needs a second
+     *  verdict or an assignment write does not rebuild it. */
+    actor,
+  };
+}

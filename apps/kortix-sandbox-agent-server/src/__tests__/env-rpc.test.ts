@@ -4,9 +4,9 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { Config } from '../config'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
-import { createEnvRpcRouter } from '../routes/env-rpc'
+import type { Config } from '@/lib/config/config'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
+import { createEnvRpcRouter } from '@/routes/kortix/env-rpc'
 
 const TOKEN = 'test-session-token'
 

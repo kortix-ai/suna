@@ -2,7 +2,8 @@
 
 /**
  * Global catch-all that intercepts clicks on any <a> whose href points to
- * `localhost:PORT` (or 127.0.0.1:PORT) or an already-proxied preview URL.
+ * `localhost:PORT` (or 127.0.0.1:PORT), an already-proxied preview URL, or a
+ * Kortix App host.
  *
  * Routing:
  *
@@ -27,8 +28,9 @@
  * views, JSON viewers, etc.).
  */
 
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { createSandboxProxyContext, rewriteSandboxPath } from '@/lib/utils/sandbox-proxy';
+import { isKortixAppUrl } from '@kortix/ui/apps';
+import { openSessionQuickView } from '@kortix/ui/session-panel';
+import { createSandboxProxyContext, rewriteSandboxPath } from '@kortix/ui/internal/lib/utils/sandbox-proxy';
 import {
   buildWebProxyUrl,
   isPreviewUrl,
@@ -39,9 +41,9 @@ import {
   proxyUrlToInternal,
   toInternalUrl,
 } from '@/lib/utils/sandbox-url';
-import { enrichPreviewMetadata } from '@/lib/utils/session-context';
-import { getActivePanelSessionId, sessionPreviewTabId } from '@/stores/session-browser-store';
-import { useTabStore } from '@/stores/tab-store';
+import { enrichPreviewMetadata } from '@kortix/ui/internal/lib/utils/session-context';
+import { getActivePanelSessionId, sessionPreviewTabId } from '@kortix/ui/internal/stores/session-browser-store';
+import { useTabStore } from '@kortix/ui/internal/stores/tab-store';
 import { useEffect } from 'react';
 
 // The session's panel is keyed by the OpenCode chatSessionId (registered by the
@@ -115,6 +117,16 @@ export function LocalhostLinkInterceptor() {
           window.open(url, '_blank', 'noopener,noreferrer');
         } catch {}
       };
+
+      // ── Case 0: a Kortix App (`*.apps.kortix.com`, `*.apps.localhost`) ──
+      // On a session page the App opens in the session's browser, beside the
+      // chat, on its own origin (no proxy). Off a session page there is no
+      // panel to host it, so the anchor keeps its native new-tab behavior.
+      if (isKortixAppUrl(href)) {
+        const sessionId = getCurrentSessionId();
+        if (sessionId) openInPanel(sessionId, { url: href, port: 0, originalUrl: href, path: '/' });
+        return;
+      }
 
       // ── Case 1: Fresh localhost:PORT URL (not yet proxied) ──
       if (isProxiableLocalhostUrl(href)) {

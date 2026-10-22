@@ -5,10 +5,10 @@
  *
  * Callers:
  * - `reportUnauthorized()`: `configureKortix` `onError` (API 401) and the
- *   sandbox stream (401/403, `event-stream.ts`).
+ *   sandbox stream (401/403, `lib/session/sse-transport.ts`).
  * - `sessionExpiry.disarm()`: every deliberate sign-out, before it calls
- *   `supabase.auth.signOut` (`useAuth.signOut`, the OAuth admission reject,
- *   account deletion).
+ *   `signOutThisDevice` (`useAuth.signOut`, the OAuth admission reject,
+ *   account deletion, the deployment switch).
  * - `SessionEndedDialog` arms the monitor while a user is signed in and
  *   installs the auth listener.
  */

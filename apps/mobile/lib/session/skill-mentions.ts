@@ -20,7 +20,7 @@
  *     plain text `/<name> <args>` and sent as an ordinary message.
  *
  * Mobile's `#` trigger reuses the SAME `Command[]` `/` already fetches
- * (`useOpenCodeCommands`, passed into `SessionChatInput` as `commands`),
+ * (`useRuntimeCommands`, passed into `SessionChatInput` as `commands`),
  * filtered to `source === 'skill'` — the identical "Skills" bucket web's `/`
  * menu shows. `resolveSkillSubmission` below is `planDraftSubmission`'s
  * mirror for a token that can sit anywhere in the text (not just a leading
@@ -30,7 +30,7 @@
  * way `serialize.ts`'s `commandSplit` does.
  */
 
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 
 export const SKILL_TRIGGER = '#';
 
@@ -96,10 +96,12 @@ export function insertSkillToken(text: string, trigger: SkillTriggerMatch, skill
  * Drop tracked mentions whose "#label" text no longer appears in `text` —
  * same rule `useMentions.ts`'s `handleTextChange` applies to "@label":
  * deleting the visible token (backspace, selecting and typing over it, …)
- * untracks it.
+ * untracks it. Returns `mentions` itself when nothing is pruned, so a
+ * keystroke keeps the state's identity.
  */
 export function pruneSkillMentions(text: string, mentions: TrackedSkillMention[]): TrackedSkillMention[] {
-  return mentions.filter((m) => text.includes(`${SKILL_TRIGGER}${m.label}`));
+  const kept = mentions.filter((m) => text.includes(`${SKILL_TRIGGER}${m.label}`));
+  return kept.length === mentions.length ? mentions : kept;
 }
 
 export type SkillSubmissionPlan =

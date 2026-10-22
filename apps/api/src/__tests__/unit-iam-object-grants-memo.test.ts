@@ -9,9 +9,11 @@
 // one TTL (observed on dev 2026-08-19 for `agent`; observed on the v0.13.34
 // release gate, CONN-28, for `connection` — a group member's own `GET
 // /connections` immediately after the owner's grant answered `shared_with:[]`
-// on a replica that had not yet re-queried). Types with no per-object grant
-// writer today (skill/secret/app/trigger) keep caching the empty map — it can
-// never go stale. Source pin, because the memo's `enableInTests` is off by
+// on a replica that had not yet re-queried). `secret` joined them when a
+// secret value gained an audience (projects/lib/secret-audience.ts): the same
+// open-until-first-grant shape as `connection`. Types with no per-object grant
+// writer today (skill/app/trigger) keep caching the empty map — it can never
+// go stale. Source pin, because the memo's `enableInTests` is off by
 // design and the rule is one line.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -24,10 +26,10 @@ const flat = source.replace(/\s+/g, ' ');
 describe('loadObjectGrants memo — empty map caching', () => {
   test('never caches an empty map for a closed-by-default or narrowable-by-default object type', () => {
     expect(flat).toContain(
-      "shouldCache: (map, _projectId, objectType) => map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType)",
+      "(map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType))",
     );
     expect(flat).toContain(
-      "NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection'])",
+      "NEVER_CACHE_EMPTY_OBJECT_TYPES: ReadonlySet<string> = new Set(['agent', 'connection', 'secret'])",
     );
   });
 
@@ -64,7 +66,6 @@ describe('loadObjectGrants — cross-replica staleness for connection', () => {
   test('a replica that cached the pre-grant empty map re-queries after a sibling writes the first grant', async () => {
     const table = new Map<string, string[]>();
     const replicaA = makeReplica(table); // reads before the grant exists
-    const replicaB = makeReplica(table); // writes the grant
 
     // Replica A observes "no grants yet" and (per the fix) must NOT cache it.
     expect((await replicaA.memo('p1', 'connection')).size).toBe(0);
@@ -95,5 +96,43 @@ describe('loadObjectGrants — cross-replica staleness for connection', () => {
     table.set('skill1', ['user:u1']); // nothing writes this in production today
     expect((await replica.memo('p1', 'skill')).size).toBe(0); // served from cache, unchanged
     expect(replica.loads).toBe(1);
+  });
+});
+
+// SEC-AUD-1/2/4 (v0.13.52 release gate, staging with several API replicas): a
+// replica that had cached a NON-empty secret-grant map kept serving it after a
+// sibling wrote a new grant. A value saved as "people and groups" read as open
+// to everyone, and a session holding a person-only value could be shared. For
+// the narrowable types a stale map of any size is a stale over- or under-grant,
+// so `secret` and `connection` grants are never cached: every replica reads
+// the current rows.
+describe('loadObjectGrants — narrowable types are never cached', () => {
+  test('source: secret and connection skip the memo entirely', () => {
+    expect(flat).toContain(
+      "NEVER_CACHE_OBJECT_TYPES: ReadonlySet<string> = new Set(['connection', 'secret'])",
+    );
+    expect(flat).toContain(
+      'shouldCache: (map, _projectId, objectType) => !NEVER_CACHE_OBJECT_TYPES.has(objectType) && (map.size > 0 || !NEVER_CACHE_EMPTY_OBJECT_TYPES.has(objectType))',
+    );
+  });
+
+  test('a replica holding a non-empty secret map sees a sibling\'s next grant', async () => {
+    const table = new Map<string, string[]>([['holder_only', ['user:holder']]]);
+    let loads = 0;
+    const replica = ttlMemo({
+      ttlMs: 60_000,
+      keyFn: (projectId: string, objectType: string) => `${projectId}|${objectType}`,
+      loader: async () => {
+        loads += 1;
+        return new Map(table.entries());
+      },
+      shouldCache: (map, _projectId, objectType) =>
+        !new Set(['connection', 'secret']).has(objectType) && (map.size > 0 || !new Set(['agent']).has(objectType)),
+      enableInTests: true,
+    });
+    expect((await replica('p1', 'secret')).size).toBe(1);
+    table.set('group_only', ['group:g1']);
+    expect((await replica('p1', 'secret')).get('group_only')).toEqual(['group:g1']);
+    expect(loads).toBe(2);
   });
 });

@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { STREAM_CACHE_FLUSH_MS } from "./sync-store/stream-cache";
 import type {
 	AssistantMessage,
 	Message,
@@ -7,9 +6,17 @@ import type {
 	SessionStatus,
 	TextPart,
 	UserMessage,
-} from "@opencode-ai/sdk/v2/client";
+} from "../../core/runtime/runtime-types";
+import { projectWorking } from "../../core/session/working";
+import { openEventStream } from "../../core/stream/event-stream";
 import { getTurnError, groupMessagesIntoTurns } from "../../core/turns";
-import { ascendingId, Binary, sameSessionStatus, useSyncStore } from "./sync-store";
+import {
+	ascendingId,
+	Binary,
+	hasOnlyCacheSourcedMessages,
+	sameSessionStatus,
+	useSyncStore,
+} from "./sync-store";
 import { DELTA_EVENT_TAIL_LIMIT } from "./sync-store/delta-event-window";
 
 // ============================================================================
@@ -225,6 +232,118 @@ describe("hydrate stamps runtime activity for a moved, still-open transcript", (
 			{ source: "cache" },
 		);
 		expect(useSyncStore.getState().sessionActivityAt[sid]).toBeUndefined();
+	});
+});
+
+/**
+ * The push half of the same rule: only OPEN frames stamp activity. A closing
+ * frame lands after the idle frame; see `isOpenMessage` / `isOpenPart`.
+ */
+describe("applyEvent stamps runtime activity only for open frames", () => {
+	const sid = "ses_act_push";
+	const STALE = 1;
+
+	function messageUpdated(info: unknown) {
+		useSyncStore.getState().applyEvent({
+			type: "message.updated",
+			properties: { info },
+		} as never);
+	}
+	function partUpdated(part: Record<string, unknown>) {
+		useSyncStore.getState().applyEvent({
+			type: "message.part.updated",
+			properties: { part: { sessionID: sid, messageID: "msg_a1", ...part } },
+		} as never);
+	}
+	/** A stamp old enough that the 1s quantizer lets the next frame through. */
+	function ageActivity() {
+		useSyncStore.setState({ sessionActivityAt: { [sid]: STALE } });
+	}
+	const activity = () => useSyncStore.getState().sessionActivityAt[sid];
+
+	beforeEach(() => {
+		useSyncStore.getState().upsertMessage(sid, userMessage("msg_u1", sid));
+		ageActivity();
+	});
+
+	test("an open assistant message stamps", () => {
+		messageUpdated(assistantMessage("msg_a1", sid));
+		expect(activity()).toBeGreaterThan(STALE);
+	});
+
+	test("a completed assistant message does not stamp", () => {
+		const message = assistantMessage("msg_a1", sid);
+		messageUpdated({ ...message, time: { ...message.time, completed: 2 } });
+		expect(activity()).toBe(STALE);
+	});
+
+	test("an errored assistant message does not stamp", () => {
+		messageUpdated({
+			...assistantMessage("msg_a1", sid),
+			error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+		});
+		expect(activity()).toBe(STALE);
+	});
+
+	test("a user message update does not stamp", () => {
+		messageUpdated({ ...userMessage("msg_u1", sid), summary: { diffs: [] } });
+		expect(activity()).toBe(STALE);
+	});
+
+	test.each([
+		["a running tool", { id: "prt_1", type: "tool", state: { status: "running" } }],
+		["a pending tool", { id: "prt_1", type: "tool", state: { status: "pending" } }],
+		["streaming text", { id: "prt_1", type: "text", text: "hel", time: { start: 1 } }],
+		["a step start", { id: "prt_1", type: "step-start" }],
+	])("%s stamps", (_name, part) => {
+		partUpdated(part);
+		expect(activity()).toBeGreaterThan(STALE);
+	});
+
+	test.each([
+		["a completed tool", { id: "prt_1", type: "tool", state: { status: "completed" } }],
+		["an errored tool", { id: "prt_1", type: "tool", state: { status: "error" } }],
+		["finished text", { id: "prt_1", type: "text", text: "done", time: { start: 1, end: 2 } }],
+		["finished reasoning", { id: "prt_1", type: "reasoning", text: "ok", time: { start: 1, end: 2 } }],
+		["a step finish", { id: "prt_1", type: "step-finish" }],
+		["a patch", { id: "prt_1", type: "patch", hash: "h", files: [] }],
+	])("%s does not stamp", (_name, part) => {
+		partUpdated(part);
+		expect(activity()).toBe(STALE);
+	});
+
+	// The captured order, end to end: a finished turn must project idle.
+	test("closing frames after the idle frame leave the session idle", () => {
+		const realNow = Date.now;
+		let now = 1_000_000;
+		Date.now = () => now;
+		try {
+			useSyncStore.setState({ sessionActivityAt: { [sid]: now - 5_000 } });
+			const apply = useSyncStore.getState().applyEvent;
+			apply({ type: "session.idle", properties: { sessionID: sid } } as never);
+			now += 16;
+			messageUpdated({ ...userMessage("msg_u1", sid), summary: { diffs: [] } });
+			partUpdated({ id: "prt_1", type: "tool", state: { status: "completed" } });
+			const message = assistantMessage("msg_a1", sid);
+			messageUpdated({
+				...message,
+				time: { ...message.time, completed: now },
+				error: { name: "MessageAbortedError", data: { message: "Aborted" } },
+			});
+
+			const state = useSyncStore.getState();
+			expect(state.sessionStatusAt[sid]).toBe(1_000_000);
+			const projection = projectWorking({
+				optimistic: null,
+				server: null,
+				stream: { type: "idle", origin: "wire", atMs: state.sessionStatusAt[sid] },
+				activity: { atMs: state.sessionActivityAt[sid] },
+				nowMs: now + 100,
+			});
+			expect(projection.state).toBe("idle");
+		} finally {
+			Date.now = realNow;
+		}
 	});
 });
 
@@ -1114,6 +1233,20 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Hello");
 	});
 
+	test("a completed answer ignores a replayed final delta after session.idle", () => {
+		const store = useSyncStore.getState();
+		store.upsertMessage("ses_1", userMessage("msg_user"));
+		const delta = {
+			id: "evt_final",
+			type: "message.part.delta",
+			properties: { messageID: "msg_asst", partID: "prt_1", sessionID: "ses_1", field: "text", delta: "Done" },
+		} as never;
+		store.applyEvent(delta);
+		store.applyEvent({ type: "session.idle", properties: { sessionID: "ses_1" } } as never);
+		store.applyEvent(delta);
+		expect((useSyncStore.getState().parts.msg_asst[0] as TextPart).text).toBe("Done");
+	});
+
 	// F1 review finding: the event-id was recorded as "applied" BEFORE the
 	// `set()` callback even checked whether the target part existed — so a
 	// delta that hit the not-found path (e.g. the extra was dropped by the
@@ -1150,6 +1283,242 @@ describe("useSyncStore — applyPartDelta idempotency (part-delta duplicate deli
 		store.applyPartDelta("ses_1", "msg_1", "prt_1", "text", "Hi", "evt_1");
 
 		expect((useSyncStore.getState().parts.msg_1[0] as TextPart).text).toBe("Hi");
+	});
+});
+
+// The stream merges a run of consecutive deltas of one part field into ONE
+// event (`core/stream/event-stream.ts`), which lists the wire events it
+// replaced in `coalesced`. The store applies the run in one update and keeps
+// the per-wire-event idempotency above.
+describe("useSyncStore — a delta that lands after its message completed", () => {
+	// The live run: the turn ends, the control plane's verdict triggers a tail
+	// read, and the hydrate writes the server's whole text while deltas the
+	// stream read earlier still wait in its queue. Appended, they put a piece of
+	// the reply (a generative UI block's source) after its last paragraph, and
+	// the longer local text then outlives every later read until a reload.
+	test("a hydrate of the completed message wins over deltas still in flight", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_u1"), parts: [] }]);
+		store.upsertMessage("ses_1", assistantMessage("msg_a1"));
+		store.upsertPart("msg_a1", textPart("prt_1", "msg_a1", ""));
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "Hello ", "evt_1");
+
+		const completed = { ...assistantMessage("msg_a1"), time: { created: 1, completed: 2 } };
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: completed, parts: [textPart("prt_1", "msg_a1", "Hello world")] },
+		]);
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "world", "evt_2");
+
+		expect((useSyncStore.getState().parts.msg_a1[0] as TextPart).text).toBe("Hello world");
+	});
+
+	test("deltas of a message still open keep appending", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_u1"), parts: [] }]);
+		store.upsertMessage("ses_1", assistantMessage("msg_a1"));
+		store.upsertPart("msg_a1", textPart("prt_1", "msg_a1", ""));
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "Hello ", "evt_1");
+		store.applyPartDelta("ses_1", "msg_a1", "prt_1", "text", "world", "evt_2");
+
+		expect((useSyncStore.getState().parts.msg_a1[0] as TextPart).text).toBe("Hello world");
+	});
+});
+
+describe("useSyncStore — a hydrate followed by a replay of the same stream", () => {
+	// The live report: a reply showed twice, the second copy glued to the last
+	// link. The stream dropped mid-turn, a tail read hydrated the whole text,
+	// and the reconnect replayed the turn: its first message.updated (not yet
+	// completed) and every delta the store never applied. Appended, the deltas
+	// wrote the reply a second time. A delta whose text the part already holds
+	// at its stream offset is the same text, not new text.
+	const reply = "For a 2-day stay, **pick The Connaught**.\n\n| Hotel | Price |\n|---|---|\n| A | 10k |";
+	const chunks = reply.match(/.{1,7}/gs)!;
+	const info = (completed?: number) => ({ ...assistantMessage("msg_a1"), time: completed ? { created: 1, completed } : { created: 1 } });
+	const event = (id: string, type: string, properties: Record<string, unknown>) =>
+		({ id, type, properties: { sessionID: "ses_1", ...properties } }) as never;
+	const delta = (i: number, epoch = "e1") =>
+		event(`${epoch}:${100 + i}`, "message.part.delta", { messageID: "msg_a1", partID: "prt_1", field: "text", delta: chunks[i] });
+	const text = () => (useSyncStore.getState().parts.msg_a1!.find((p) => p.id === "prt_1") as TextPart).text;
+
+	function liveStart(applied: number) {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [{ info: userMessage("msg_u1"), parts: [] }]);
+		store.applyEvent(event("e1:98", "message.updated", { info: info() }));
+		store.applyEvent(event("e1:99", "message.part.updated", { part: textPart("prt_1", "msg_a1", ""), time: 1 }));
+		for (let i = 0; i < applied; i++) store.applyEvent(delta(i));
+	}
+	function replay(epoch = "e1") {
+		const store = useSyncStore.getState();
+		store.applyEvent(event(`${epoch}:98`, "message.updated", { info: info() }));
+		store.applyEvent(event(`${epoch}:99`, "message.part.updated", { part: textPart("prt_1", "msg_a1", ""), time: 1 }));
+		chunks.forEach((_, i) => store.applyEvent(delta(i, epoch)));
+		store.applyEvent(event(`${epoch}:200`, "message.updated", { info: info(2) }));
+	}
+
+	test("all deltas live, then the turn ends, then the whole turn is delivered again", () => {
+		liveStart(chunks.length);
+		const store = useSyncStore.getState();
+		store.applyEvent(event("e1:200", "message.updated", { info: info(2) }));
+		store.applyEvent(event("e1:201", "session.idle", {}));
+		expect(text()).toBe(reply);
+		replay("e2");
+		expect(text()).toBe(reply);
+	});
+
+	test("a replay that starts after the part's first frame, after the turn ended", () => {
+		liveStart(chunks.length);
+		const store = useSyncStore.getState();
+		store.applyEvent(event("e1:200", "message.updated", { info: info(2) }));
+		store.applyEvent(event("e2:98", "message.updated", { info: info() }));
+		chunks.forEach((_, i) => store.applyEvent(delta(i, "e2")));
+		expect(text()).toBe(reply);
+	});
+
+	test("the replayed deltas leave the hydrated reply as it is", () => {
+		liveStart(3);
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(2), parts: [textPart("prt_1", "msg_a1", reply)] },
+		]);
+		replay();
+		expect(text()).toBe(reply);
+	});
+
+	test("the same when the replay carries new event ids", () => {
+		liveStart(3);
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(2), parts: [textPart("prt_1", "msg_a1", reply)] },
+		]);
+		replay("e2");
+		expect(text()).toBe(reply);
+	});
+
+	test("a mid-turn hydrate: the held deltas are skipped, the new ones append", () => {
+		liveStart(2);
+		const half = chunks.slice(0, 6).join("");
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(), parts: [textPart("prt_1", "msg_a1", half)] },
+		]);
+		for (let i = 2; i < chunks.length; i++) useSyncStore.getState().applyEvent(delta(i));
+		expect(text()).toBe(reply);
+	});
+
+	test("a hydrate that ends inside a delta: only the part past the hydrated text appends", () => {
+		liveStart(0);
+		const store = useSyncStore.getState();
+		const wire = (id: string, piece: string) =>
+			event(id, "message.part.delta", { messageID: "msg_a1", partID: "prt_1", field: "text", delta: piece });
+		store.applyEvent(wire("e1:400", "Hello "));
+		// The tail read captured the server text partway through the next delta.
+		useSyncStore.getState().hydrate("ses_1", [
+			{ info: userMessage("msg_u1"), parts: [] },
+			{ info: info(), parts: [textPart("prt_1", "msg_a1", "Hello wor")] },
+		]);
+		useSyncStore.getState().applyEvent(wire("e1:401", "world"));
+		useSyncStore.getState().applyEvent(wire("e1:402", "!"));
+		expect(text()).toBe("Hello world!");
+	});
+
+	test("live deltas that repeat the text before them still append", () => {
+		liveStart(0);
+		const store = useSyncStore.getState();
+		for (const [i, piece] of ["ab", "ab", "ab"].entries())
+			store.applyEvent(event(`e1:${300 + i}`, "message.part.delta", { messageID: "msg_a1", partID: "prt_1", field: "text", delta: piece }));
+		expect(text()).toBe("ababab");
+	});
+});
+
+describe("useSyncStore — coalesced message.part.delta", () => {
+	function wireDelta(id: string, delta: string) {
+		return {
+			id,
+			type: "message.part.delta",
+			properties: { sessionID: "ses_1", messageID: "msg_1", partID: "prt_1", field: "text", delta },
+		};
+	}
+	function coalesce(wire: ReturnType<typeof wireDelta>[]) {
+		const last = wire[wire.length - 1];
+		return {
+			...last,
+			properties: { ...last.properties, delta: wire.map((e) => e.properties.delta).join("") },
+			coalesced: wire,
+		} as never;
+	}
+	const text = () => (useSyncStore.getState().parts.msg_1[0] as TextPart).text;
+
+	test("a coalesced event leaves the text its wire deltas leave, in one parts update", () => {
+		const wire = Array.from({ length: 40 }, (_, i) => wireDelta(`evt_${i}`, `w${i} `));
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "Hello "));
+		let partsUpdates = 0;
+		const unsubscribe = useSyncStore.subscribe((next, previous) => {
+			if (next.parts !== previous.parts) partsUpdates++;
+		});
+
+		store.applyEvent(coalesce(wire));
+		unsubscribe();
+
+		expect(text()).toBe(`Hello ${wire.map((e) => e.properties.delta).join("")}`);
+		expect(partsUpdates).toBe(1);
+	});
+
+	test("a wire delta already applied is skipped inside a coalesced event", () => {
+		const [a, b, c] = [wireDelta("evt_a", "a"), wireDelta("evt_b", "b"), wireDelta("evt_c", "c")];
+		const store = useSyncStore.getState();
+		store.upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		store.applyEvent(a as never);
+		store.applyEvent(b as never);
+
+		// A second delivery of the same wire events, grouped differently.
+		store.applyEvent(coalesce([b, c]));
+		expect(text()).toBe("abc");
+
+		let updates = 0;
+		const unsubscribe = useSyncStore.subscribe(() => updates++);
+		store.applyEvent(coalesce([a, b, c]));
+		unsubscribe();
+		expect(text()).toBe("abc");
+		expect(updates).toBe(0);
+	});
+
+	test("200 streamed deltas of one part reach the store as one text update", async () => {
+		const total = 200;
+		const wire = Array.from({ length: total }, (_, i) => wireDelta(`evt_${i}`, `w${i} `));
+		useSyncStore.getState().upsertPart("msg_1", textPart("prt_1", "msg_1", ""));
+		let partsUpdates = 0;
+		const unsubscribe = useSyncStore.subscribe((next, previous) => {
+			if (next.parts !== previous.parts) partsUpdates++;
+		});
+
+		const handle = openEventStream({
+			client: {
+				global: {
+					event: async ({ signal }) => ({
+						stream: (async function* () {
+							for (const event of wire) yield event;
+							await new Promise((resolve) => signal.addEventListener("abort", resolve));
+						})(),
+					}),
+				},
+			},
+			onEvent: (event) => useSyncStore.getState().applyEvent(event as never),
+		});
+		const deadline = Date.now() + 2_000;
+		const expected = wire.map((e) => e.properties.delta).join("");
+		while (text() !== expected && Date.now() < deadline) {
+			await new Promise((resolve) => setTimeout(resolve, 5));
+		}
+		handle.close();
+		unsubscribe();
+
+		expect(text()).toBe(expected);
+		// One update per flush window the burst spans — 200 before the stream
+		// merged a run. The read loop yields every 8 ms, so a slow machine can
+		// split the burst across a few windows.
+		expect(partsUpdates).toBeLessThanOrEqual(5);
 	});
 });
 
@@ -1198,190 +1567,6 @@ describe("useSyncStore — reset", () => {
 		expect(s.sessionStatus).toEqual({});
 		expect(s.diffs).toEqual({});
 		expect(s.todos).toEqual({});
-	});
-});
-
-// ============================================================================
-// stream-cache — writeStreamCache() is a side effect of the sync store's
-// message.part.updated / message.part.delta handling. `window`/`sessionStorage`
-// don't exist in bun's default test environment, so both are stubbed here.
-// ============================================================================
-
-class MemoryStorage {
-	private map = new Map<string, string>();
-	/** How many times the store actually reached for storage. */
-	setItemCalls = 0;
-	getItem(key: string): string | null {
-		return this.map.has(key) ? (this.map.get(key) ?? null) : null;
-	}
-	setItem(key: string, value: string): void {
-		this.setItemCalls++;
-		this.map.set(key, value);
-	}
-	removeItem(key: string): void {
-		this.map.delete(key);
-	}
-	clear(): void {
-		this.map.clear();
-	}
-}
-
-interface GlobalWithDom {
-	window?: unknown;
-	sessionStorage?: Storage;
-}
-
-describe("stream-cache (via applyEvent message.part.updated / message.part.delta)", () => {
-	beforeEach(() => {
-		(globalThis as GlobalWithDom).window = {};
-		(globalThis as GlobalWithDom).sessionStorage = new MemoryStorage() as unknown as Storage;
-	});
-
-	afterEach(() => {
-		delete (globalThis as GlobalWithDom).window;
-		delete (globalThis as GlobalWithDom).sessionStorage;
-	});
-
-	function readCache(sessionID: string): { messageID: string; partID: string; text: string } | null {
-		const raw = sessionStorage.getItem(`opencode_stream_cache:${sessionID}`);
-		return raw ? JSON.parse(raw) : null;
-	}
-
-	function storage(): MemoryStorage {
-		return (globalThis as GlobalWithDom).sessionStorage as unknown as MemoryStorage;
-	}
-
-	test("a burst of deltas writes to sessionStorage once, not once per delta", async () => {
-		// The cost this pins down: every delta used to do getItem + JSON.parse +
-		// JSON.stringify + setItem of the ENTIRE accumulated text, so a response
-		// cost O(n^2) synchronous storage work as it streamed.
-		const store = useSyncStore.getState();
-		store.upsertMessage("ses_burst", userMessage("msg_user"));
-
-		for (let i = 0; i < 20; i++) {
-			store.applyEvent({
-				id: `evt_${i}`,
-				type: "message.part.delta",
-				properties: {
-					messageID: "msg_asst",
-					partID: "prt_1",
-					sessionID: "ses_burst",
-					field: "text",
-					delta: "chunk ",
-				},
-			} as never);
-		}
-
-		// One leading write. The other 19 coalesce into a single trailing one.
-		expect(storage().setItemCalls).toBe(1);
-
-		// And nothing is lost: the final text lands once the window closes. The
-		// wait is derived from the implementation's own constant so the two
-		// cannot drift apart.
-		await new Promise((r) => setTimeout(r, STREAM_CACHE_FLUSH_MS + 50));
-		expect(readCache("ses_burst")?.text).toBe("chunk ".repeat(20));
-		expect(storage().setItemCalls).toBe(2);
-	});
-
-	test("a new part is written at once, not held behind the previous part's window", async () => {
-		// The cache holds ONE entry per session, so a part switch is a change of
-		// subject. Letting it wait out a window opened by the part it replaced
-		// would leave the cache describing text the reader can no longer see.
-		const store = useSyncStore.getState();
-		store.upsertMessage("ses_1", assistantMessage("msg_a"));
-
-		store.applyEvent({
-			id: "evt_1",
-			type: "message.part.updated",
-			properties: { sessionID: "ses_1", time: Date.now(), part: textPart("prt_1", "msg_a", "first") },
-		} as never);
-		const afterFirst = storage().setItemCalls;
-
-		store.applyEvent({
-			id: "evt_2",
-			type: "message.part.updated",
-			properties: { sessionID: "ses_1", time: Date.now(), part: textPart("prt_2", "msg_a", "second") },
-		} as never);
-
-		// Synchronously, with no waiting.
-		expect(storage().setItemCalls).toBe(afterFirst + 1);
-		expect(readCache("ses_1")?.partID).toBe("prt_2");
-		expect(readCache("ses_1")?.text).toBe("second");
-	});
-
-	test("message.part.updated with a text part writes the streamed text to sessionStorage", () => {
-		const store = useSyncStore.getState();
-		store.upsertMessage("ses_1", assistantMessage("msg_a"));
-
-		store.applyEvent({
-			id: "evt_1",
-			type: "message.part.updated",
-			properties: {
-				sessionID: "ses_1",
-				time: Date.now(),
-				part: textPart("prt_1", "msg_a", "Hello there"),
-			},
-		} as never);
-
-		const cached = readCache("ses_1");
-		expect(cached?.text).toBe("Hello there");
-		expect(cached?.messageID).toBe("msg_a");
-		expect(cached?.partID).toBe("prt_1");
-	});
-
-	test("message.part.delta accumulates text and writes the running total to sessionStorage", async () => {
-		const store = useSyncStore.getState();
-		store.upsertMessage("ses_1", userMessage("msg_user"));
-
-		store.applyEvent({
-			id: "evt_1",
-			type: "message.part.delta",
-			properties: {
-				messageID: "msg_asst",
-				partID: "prt_1",
-				sessionID: "ses_1",
-				field: "text",
-				delta: "Hel",
-			},
-		} as never);
-		store.applyEvent({
-			id: "evt_2",
-			type: "message.part.delta",
-			properties: {
-				messageID: "msg_asst",
-				partID: "prt_1",
-				sessionID: "ses_1",
-				field: "text",
-				delta: "lo",
-			},
-		} as never);
-
-		// The assertion is unchanged — the running total reaches the cache. What
-		// changed is that it no longer arrives on the delta itself: writes are
-		// coalesced, so the second delta lands on the trailing flush. Asserting
-		// synchronous write-through was asserting the performance bug.
-		await new Promise((r) => setTimeout(r, STREAM_CACHE_FLUSH_MS + 50));
-		expect(readCache("ses_1")?.text).toBe("Hello");
-	});
-
-	test("a shorter cached entry is overwritten, but a longer one already cached is kept (writeStreamCache's own guard)", () => {
-		const store = useSyncStore.getState();
-		store.upsertMessage("ses_1", assistantMessage("msg_a"));
-
-		store.applyEvent({
-			id: "evt_1",
-			type: "message.part.updated",
-			properties: { sessionID: "ses_1", time: Date.now(), part: textPart("prt_1", "msg_a", "Hello world") },
-		} as never);
-		expect(readCache("ses_1")?.text).toBe("Hello world");
-
-		// A stale, shorter snapshot for the SAME part must not regress the cache.
-		store.applyEvent({
-			id: "evt_2",
-			type: "message.part.updated",
-			properties: { sessionID: "ses_1", time: Date.now(), part: textPart("prt_1", "msg_a", "Hello") },
-		} as never);
-		expect(readCache("ses_1")?.text).toBe("Hello world");
 	});
 });
 
@@ -2372,7 +2557,7 @@ describe("useSyncStore — session retention (memory eviction)", () => {
 	// branch that history was simply resident, so this is a regression in what
 	// the user sees, not a missed optimisation.
 	//
-	// Dropping those events instead would be worse: `useOpenCodeMessages` (the
+	// Dropping those events instead would be worse: `useRuntimeMessages` (the
 	// spawn-tool preview of a child session) has no reconcile of its own and is
 	// fed by SSE alone, so a child streaming before its preview mounts would
 	// lose the frames outright. The events stay; the repaint decision is what
@@ -2589,12 +2774,6 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		expect(rowsFor("ses_missing")).toEqual([]);
 	});
 
-	// The actual leak assertion, and the only way to observe the memo from
-	// outside: re-present the SAME arrays it memoized on. A surviving entry
-	// hands back the identical rows — which is precisely the retention being
-	// fixed, since those rows hold the whole transcript. Re-seeding the session
-	// instead would prove nothing: `upsertMessage` builds a new array, so the
-	// memo would rebuild whether or not the old entry was ever dropped.
 	function capture(sessionID: string) {
 		const state = useSyncStore.getState();
 		const msgs = state.messages[sessionID];
@@ -2606,42 +2785,75 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		};
 	}
 
-	test("eviction drops the memoized rows, not just the store slices", () => {
+	// The actual leak assertion: once the store drops a session's arrays, nothing the
+	// memo holds keeps its rows reachable. The memo is weak by the store's array, so
+	// the rows go with it; observed through a WeakRef after a full collection.
+	async function rowsCollectedAfter(sessionID: string, drop: () => void): Promise<boolean> {
+		const ref = new WeakRef(capture(sessionID).rows);
+		drop();
+		// A WeakRef target stays alive until the current job ends.
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		Bun.gc(true);
+		return ref.deref() === undefined;
+	}
+
+	test("eviction drops the memoized rows, not just the store slices", async () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_1"));
 		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
 		const held = capture("ses_1");
 		expect(held.rebuild()).toBe(held.rows); // memoized while resident
 
-		store.retainSession("ses_1")();
-		// `DETACHED_SESSION_LIMIT` (8) + 1 detaches push ses_1 out of the window.
-		for (let i = 0; i < 9; i++) {
-			const id = `ses_churn_${i}`;
-			useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
-			useSyncStore.getState().retainSession(id)();
-		}
-		useSyncStore.getState().retainSession("ses_fresh");
+		const collected = await rowsCollectedAfter("ses_1", () => {
+			useSyncStore.getState().retainSession("ses_1")();
+			// `DETACHED_SESSION_LIMIT` (8) + 1 detaches push ses_1 out of the window.
+			for (let i = 0; i < 9; i++) {
+				const id = `ses_churn_${i}`;
+				useSyncStore.getState().upsertMessage(id, userMessage(`msg_c${i}`, id));
+				useSyncStore.getState().retainSession(id)();
+			}
+			useSyncStore.getState().retainSession("ses_fresh");
+		});
 
 		expect("ses_1" in useSyncStore.getState().messages).toBe(false);
-		expect(held.rebuild()).not.toBe(held.rows);
+		expect(collected).toBe(true);
 	});
 
-	// The memo is bounded, or a tab that never navigates away still accumulates
-	// one full set of rows per session it has ever rendered.
+	// The row-reuse memo by session is bounded, or a tab that never navigates away
+	// still holds one replaced message array per session it has ever rendered.
+	// Observed through reuse: a changed array reuses the previous rows only while
+	// the session's entry survives.
+
 	test("the memo is bounded — the least recently used session is dropped", () => {
 		// 21 distinct sessions rendered once each, never re-read: probing one
 		// early would count as use and reorder the very thing under test.
-		const held: Array<ReturnType<typeof capture>> = [];
+		const id = (i: number) => `ses_${i}`;
+		const first: Array<ReturnType<typeof capture>["rows"]> = [];
 		for (let i = 0; i < 21; i++) {
+			useSyncStore.getState().upsertMessage(id(i), userMessage(`msg_${i}`, id(i)));
+			first.push(capture(id(i)).rows);
+		}
+
+		// Assert the survivor first — reading the evicted one re-inserts it.
+		useSyncStore.getState().upsertMessage(id(1), userMessage("msg_1_b", id(1)));
+		// 21 > MESSAGE_ROWS_LIMIT dropped ses_0, the least recently used.
+		expect(capture(id(1)).rows[0]).toBe(first[1]![0]);
+		useSyncStore.getState().upsertMessage(id(0), userMessage("msg_0_b", id(0)));
+		expect(capture(id(0)).rows[0]).not.toBe(first[0]![0]);
+	});
+
+	// A subscribed selector (`selectSessionRows` under `useSyncStore`) re-reads its
+	// session on every store change. Past 20 sessions read in one render, a rebuilt
+	// array for unchanged arrays read as a change: the session context modal with
+	// 20+ sub-agent rows re-rendered until React threw "Maximum update depth exceeded".
+	test("unchanged arrays keep their rows past 20 sessions, so a subscribed selector settles", () => {
+		const held: Array<ReturnType<typeof capture>> = [];
+		for (let i = 0; i < 40; i++) {
 			const id = `ses_${i}`;
 			useSyncStore.getState().upsertMessage(id, userMessage(`msg_${i}`, id));
 			held.push(capture(id));
 		}
-
-		// 21 > MESSAGE_ROWS_LIMIT. Assert the survivor first — asking about an
-		// evicted session re-inserts it and would evict this one.
-		expect(held[1].rebuild()).toBe(held[1].rows);
-		expect(held[0].rebuild()).not.toBe(held[0].rows);
+		for (const h of held) expect(h.rebuild()).toBe(h.rows);
 	});
 
 	test("a hit counts as use, so a stable session is not pushed out by other sessions", () => {
@@ -2659,20 +2871,19 @@ describe("useSyncStore — buildSessionMessages (the one shared join)", () => {
 		useSyncStore.getState().upsertMessage("ses_20", userMessage("msg_20", "ses_20"));
 		capture("ses_20");
 
-		expect(held[0].rebuild()).toBe(held[0].rows);
-		expect(held[1].rebuild()).not.toBe(held[1].rows);
+		useSyncStore.getState().upsertMessage("ses_0", userMessage("msg_0_b", "ses_0"));
+		expect(capture("ses_0").rows[0]).toBe(held[0].rows[0]);
+		useSyncStore.getState().upsertMessage("ses_1", userMessage("msg_1_b", "ses_1"));
+		expect(capture("ses_1").rows[0]).not.toBe(held[1].rows[0]);
 	});
 
-	test("clearSession drops the memoized rows too", () => {
+	test("clearSession drops the memoized rows too", async () => {
 		const store = useSyncStore.getState();
 		store.upsertMessage("ses_1", userMessage("msg_1"));
 		store.upsertPart("msg_1", textPart("prt_1", "msg_1", "hi"), "ses_1");
-		const held = capture("ses_1");
-		expect(held.rebuild()).toBe(held.rows);
+		expect(capture("ses_1").rebuild()).toBe(capture("ses_1").rows);
 
-		store.clearSession("ses_1");
-
-		expect(held.rebuild()).not.toBe(held.rows);
+		expect(await rowsCollectedAfter("ses_1", () => useSyncStore.getState().clearSession("ses_1"))).toBe(true);
 	});
 });
 
@@ -3938,6 +4149,56 @@ describe("hydrate preserves the server's page order", () => {
 	});
 });
 
+describe("hydrate reconciles provisional cache rows", () => {
+	test("an empty runtime page keeps cached rows and their parts, still provisional", () => {
+		// An empty runtime read is evidence that the box lost its state, not
+		// that the conversation is empty. Dropping the saved rows on it blanked
+		// the visible conversation.
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_cached"), parts: [textPart("prt_cached", "msg_cached", "draft")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", []);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_cached"]);
+		expect(useSyncStore.getState().parts.msg_cached?.[0]).toMatchObject({ text: "draft" });
+		// Still a saved copy: the next non-empty runtime read settles it.
+		expect(hasOnlyCacheSourcedMessages("ses_1")).toBe(true);
+		store.hydrate("ses_1", [{ info: userMessage("msg_cached"), parts: [] }]);
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_cached"]);
+		expect(hasOnlyCacheSourcedMessages("ses_1")).toBe(false);
+	});
+
+	test("a bounded runtime tail keeps older cached history but removes a covered phantom", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_10"), parts: [textPart("prt_10", "msg_10", "history")] },
+			{ info: userMessage("msg_30"), parts: [textPart("prt_30", "msg_30", "phantom")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", [{ info: userMessage("msg_20"), parts: [] }]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_10", "msg_20"]);
+		expect(useSyncStore.getState().parts.msg_10?.[0]).toMatchObject({ text: "history" });
+		expect(useSyncStore.getState().parts.msg_30).toBeUndefined();
+	});
+
+	test("a runtime row confirms a cached id while retaining longer existing text", () => {
+		const store = useSyncStore.getState();
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_20"), parts: [textPart("prt_20", "msg_20", "cached longer text")] },
+		], { source: "cache" });
+
+		store.hydrate("ses_1", [
+			{ info: userMessage("msg_20"), parts: [textPart("prt_20", "msg_20", "runtime text")] },
+		]);
+
+		expect(useSyncStore.getState().messages.ses_1.map((m) => m.id)).toEqual(["msg_20"]);
+		expect(useSyncStore.getState().parts.msg_20?.[0]).toMatchObject({ text: "cached longer text" });
+	});
+});
+
 describe("session.error stub reconciliation reads parentID and time, never id order", () => {
 	function stageFailedTurn(userId: string, created: number): string {
 		const store = useSyncStore.getState();
@@ -4158,5 +4419,38 @@ describe("a part frame that beats its message frame never invents a role", () =>
 		// The echo landed under the id we painted, so nothing is outstanding.
 		useSyncStore.getState().applyEvent(partFrame("msg_assistant0002") as never);
 		expect(rolesById()).toEqual([`user:${WIRE}`, "assistant:msg_assistant0002"]);
+	});
+});
+
+// A re-read of the transcript (tab return, turn end, a stream gap) used to
+// replace every recent message and part object even when nothing changed. Rows,
+// blocks and the transcript reuse by identity, so every recent turn redrew and
+// long sessions stuttered.
+describe("hydrate keeps what did not change", () => {
+	const sid = "ses_keep";
+	const page = (answer: string) => [
+		{ info: userMessage("msg_k_u1", sid), parts: [textPart("prt_k_u1", "msg_k_u1", "hi", sid)] },
+		{ info: assistantMessage("msg_k_a1", sid), parts: [textPart("prt_k_a1", "msg_k_a1", answer, sid)] },
+	];
+
+	test("a re-read of the same content keeps every message and part object", () => {
+		useSyncStore.getState().hydrate(sid, page("hello"));
+		const before = useSyncStore.getState();
+		useSyncStore.getState().hydrate(sid, page("hello"));
+		const after = useSyncStore.getState();
+		expect(after.messages[sid]).toBe(before.messages[sid]);
+		expect(after.parts.msg_k_u1).toBe(before.parts.msg_k_u1);
+		expect(after.parts.msg_k_a1).toBe(before.parts.msg_k_a1);
+	});
+
+	test("a changed message gets new objects; the unchanged one keeps its own", () => {
+		useSyncStore.getState().hydrate(sid, page("hello"));
+		const before = useSyncStore.getState();
+		useSyncStore.getState().hydrate(sid, page("hello world"));
+		const after = useSyncStore.getState();
+		expect(after.messages[sid]?.[0]).toBe(before.messages[sid]?.[0]);
+		expect(after.parts.msg_k_u1).toBe(before.parts.msg_k_u1);
+		expect(after.parts.msg_k_a1).not.toBe(before.parts.msg_k_a1);
+		expect((after.parts.msg_k_a1?.[0] as TextPart).text).toBe("hello world");
 	});
 });

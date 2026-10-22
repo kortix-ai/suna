@@ -4,7 +4,6 @@ import type { PromptPartWire } from './store';
 import { RuntimeRouteUnsupportedError } from './runtime-prompt-file';
 import {
   type RuntimePromptFileWriteInput,
-  INLINE_PROMPT_BUDGET_BYTES,
   PromptAttachmentMaterializationError,
   materializePromptAttachments,
 } from './prompt-attachment-materializer';
@@ -72,20 +71,27 @@ describe('materializePromptAttachments', () => {
     ).toBe(true);
   });
 
-  test('storage failure prevents first-prompt delivery and remains retryable', async () => {
-    let writes = 0;
-    await expect(
-      materialize({
-        saveAttachment: async () => {
-          throw new Error('Storage unavailable');
-        },
-        writeFile: async (file) => {
-          writes++;
-          return { path: file.targetPath, size: file.bytes.length };
-        },
-      }),
-    ).rejects.toThrow('Storage unavailable');
-    expect(writes).toBe(0);
+  test('a saved copy that fails never keeps a file from the computer', async () => {
+    // The copy is for saved history, and the next capture copies the file from
+    // the workspace. The computer needs the file now.
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    const writes: string[] = [];
+    const result = await materialize({
+      saveAttachment: async () => {
+        throw new Error('Storage unavailable');
+      },
+      writeFile: async (file) => {
+        writes.push(file.filename);
+        return { path: file.targetPath, size: file.bytes.length };
+      },
+    });
+    warn.mockRestore();
+    expect(writes).toEqual(['bundle.zip', 'shot.png', 'README.md']);
+    for (const part of result.slice(1)) {
+      expect(part.type).toBe('text');
+      expect(part.text).toContain('<file path="/workspace/uploads/.kortix-inbox/command_1/');
+      expect(part.text).not.toContain('attachment=');
+    }
   });
   test('resolves handles under the command and imports only durable workspace files', async () => {
     const commandId = '11111111-1111-4111-8111-111111111111';
@@ -134,26 +140,25 @@ describe('materializePromptAttachments', () => {
       },
     });
 
-    expect(imports).toEqual([
-      {
+    // Every file goes to the computer, a model-native image included.
+    expect(imports).toEqual(
+      [zipId, pngId].map((attachmentId, index) => ({
         externalId: 'sbx_1',
         sessionId: 'session_1',
         userId: 'user_1',
         commandId,
-        attachmentId: zipId,
-        partIndex: 1,
-      },
-    ]);
-    expect(reads).toEqual([pngId]);
+        attachmentId,
+        partIndex: index + 1,
+      })),
+    );
+    expect(reads).toEqual([]);
     expect(result[1]).toEqual({
       type: 'text',
       text: expect.stringContaining('filename="canonical.zip"'),
     });
     expect(result[2]).toEqual({
-      type: 'file',
-      filename: 'canonical.png',
-      mime: 'image/png',
-      url: 'data:image/png;base64,AQID',
+      type: 'text',
+      text: expect.stringContaining('filename="canonical.png"'),
     });
   });
 
@@ -248,22 +253,16 @@ describe('materializePromptAttachments', () => {
     expect(active).toBe(0);
   });
 
-  // A model-native attachment is only worth inlining if the prompt body can
-  // still reach the box. Past the budget it is written to the workspace like
-  // any other file — a JPEG the runtime never receives is worth less than a
-  // JPEG the agent can open. Measured ceiling: ~104 KB lands, ~115 KB does not.
-  test('materializes a native image too large to inline', async () => {
-    const big = 'A'.repeat(INLINE_PROMPT_BUDGET_BYTES + 1_000);
+  // Nothing rides inline in the prompt body: the provider's edge drops a body
+  // over its ceiling and answers ok anyway (measured 2026-09-04: ~104 KB lands,
+  // ~115 KB does not). A file the agent can open beats one that may not arrive.
+  test('a native image of any size is written to the computer and referenced', async () => {
     const writes: string[] = [];
     const result = await materializePromptAttachments({
       parts: [
         { type: 'text', text: 'look' },
-        {
-          type: 'file',
-          mime: 'image/jpeg',
-          filename: 'photo.jpg',
-          url: `data:image/jpeg;base64,${big}`,
-        },
+        { type: 'file', mime: 'image/png', filename: 'tiny.png', url: 'data:image/png;base64,iVBORw0KGgo=' },
+        { type: 'file', mime: 'image/jpeg', filename: 'photo.jpg', url: `data:image/jpeg;base64,${'A'.repeat(200_000)}` },
       ],
       externalId: 'sbx_1',
       sessionId: 'session_1',
@@ -275,40 +274,13 @@ describe('materializePromptAttachments', () => {
       },
     });
 
-    expect(writes).toEqual(['/workspace/uploads/.kortix-inbox/command_1/1-photo.jpg']);
+    expect(writes).toEqual([
+      '/workspace/uploads/.kortix-inbox/command_1/1-tiny.png',
+      '/workspace/uploads/.kortix-inbox/command_1/2-photo.jpg',
+    ]);
     expect(result[1]).toMatchObject({ type: 'text' });
-    expect((result[1] as { text: string }).text).toContain('filename="photo.jpg"');
-  });
-
-  // Several small natives together can bust the same ceiling one big one does,
-  // so the budget is spent across the whole prompt, not per attachment.
-  test('spends one inline budget across the whole prompt', async () => {
-    // A multiple of 4, or it is not decodable base64 and the parser rejects it
-    // before the budget ever gets a say.
-    const half = 'A'.repeat(Math.floor((INLINE_PROMPT_BUDGET_BYTES * 0.6) / 4) * 4);
-    const png = (name: string) => ({
-      type: 'file' as const,
-      mime: 'image/png',
-      filename: name,
-      url: `data:image/png;base64,${half}`,
-    });
-    const writes: string[] = [];
-    const result = await materializePromptAttachments({
-      parts: [{ type: 'text', text: 'two shots' }, png('a.png'), png('b.png')],
-      externalId: 'sbx_1',
-      sessionId: 'session_1',
-      userId: 'user_1',
-      materializationKey: 'command_1',
-      writeFile: async (file) => {
-        writes.push(file.targetPath);
-        return { path: file.targetPath, size: file.bytes.byteLength };
-      },
-    });
-
-    // The first fits and stays native; the second would bust the budget.
-    expect(result[1]).toMatchObject({ type: 'file', mime: 'image/png' });
-    expect(result[2]).toMatchObject({ type: 'text' });
-    expect(writes).toEqual(['/workspace/uploads/.kortix-inbox/command_1/2-b.png']);
+    expect((result[1] as { text: string }).text).toContain('filename="tiny.png"');
+    expect((result[2] as { text: string }).text).toContain('filename="photo.jpg"');
   });
 
   // The 2026-09-04 incident, at the seam that decides it. An SVG left inline
@@ -350,21 +322,22 @@ describe('materializePromptAttachments', () => {
       },
     });
 
-    expect(writes).toEqual([
+    expect(writes).toHaveLength(3);
+    expect(writes.slice(0, 2)).toEqual([
       '/workspace/uploads/.kortix-inbox/command_1/1-team-logo.svg',
       '/workspace/uploads/.kortix-inbox/command_1/2-photo.heic',
     ]);
-    // The text survives, the SVG and HEIC become readable file references,
-    // and the PDF stays native — it decodes fine.
+    // The text survives, and every file becomes a readable file reference.
     expect(result[0]).toEqual(undecodable[0]);
     expect(result[1]).toMatchObject({ type: 'text' });
     expect((result[1] as { text: string }).text).toContain('mime="image/svg+xml"');
     expect((result[1] as { text: string }).text).toContain('filename="team-logo.svg"');
     expect(result[2]).toMatchObject({ type: 'text' });
-    expect(result[3]).toEqual(undecodable[3]);
+    expect(result[3]).toMatchObject({ type: 'text' });
+    expect((result[3] as { text: string }).text).toContain('mime="application/pdf"');
   });
 
-  test('materializes non-native files while preserving native parts and order', async () => {
+  test('writes every staged file to the computer, a native image included, in order', async () => {
     const writes: string[] = [];
     const result = await materialize({
       writeFile: async (input) => {
@@ -375,13 +348,12 @@ describe('materializePromptAttachments', () => {
 
     expect(writes).toEqual([
       '/workspace/uploads/.kortix-inbox/command_1/1-bundle.zip',
+      '/workspace/uploads/.kortix-inbox/command_1/2-shot.png',
       '/workspace/uploads/.kortix-inbox/command_1/3-README.md',
     ]);
     expect(result[0]).toEqual(parts[0]);
-    expect(result[1]).toMatchObject({ type: 'text' });
-    expect(result[2]).toEqual(parts[2]);
-    expect(result[3]).toMatchObject({ type: 'text' });
     expect(result[1]?.text).toContain('filename="bundle.zip"');
+    expect(result[2]?.text).toContain('filename="shot.png"');
     expect(result[3]?.text).toContain('filename="README.md"');
   });
 
@@ -396,6 +368,7 @@ describe('materializePromptAttachments', () => {
     expect(error.failures.map((failure: { filename: string }) => failure.filename)).toEqual([
       'bundle.zip',
       'README.md',
+      'shot.png',
     ]);
   });
 
@@ -632,27 +605,10 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
     url: `data:image/png;base64,${'A'.repeat(Math.floor(n / 4) * 4)}`,
   });
 
-  test('prompt text spends the same inline budget as the files', async () => {
-    const writes: string[] = [];
-    const longText = 'x'.repeat(INLINE_PROMPT_BUDGET_BYTES - 1000);
-    // Alone this image fits; beside a long prompt it does not.
-    const result = await materializePromptAttachments({
-      ...base,
-      parts: [{ type: 'text', text: longText }, png(4000)],
-      writeFile: async (f) => {
-        writes.push(f.targetPath);
-        return { path: f.targetPath, size: f.bytes.byteLength };
-      },
-    });
-    expect(writes).toHaveLength(1);
-    expect(result[1]).toMatchObject({ type: 'text' });
-  });
-
-  test('a native file that is a remote URL stays inline whatever the budget', async () => {
+  test('a remote URL reaches the runtime as it is', async () => {
     const writes: string[] = [];
     const result = await materializePromptAttachments({
       ...base,
-      inlineBudgetBytes: 10,
       parts: [
         { type: 'text', text: 'see' },
         {
@@ -674,13 +630,13 @@ describe('materializePromptAttachments — review findings 2026-09-05', () => {
     });
   });
 
-  test('the legacy repair keeps native images inline via an unbounded budget', async () => {
+  test('the legacy repair keeps the native images the runtime already holds inline', async () => {
     const writes: string[] = [];
     await materializePromptAttachments({
       ...base,
-      inlineBudgetBytes: Number.POSITIVE_INFINITY,
+      keepNativeInline: true,
       parts: [
-        png(INLINE_PROMPT_BUDGET_BYTES * 4),
+        png(256 * 1024),
         {
           type: 'file',
           mime: 'application/zip',

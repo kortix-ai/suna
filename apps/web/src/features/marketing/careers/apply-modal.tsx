@@ -1,9 +1,9 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Select,
   SelectContent,
@@ -19,11 +19,11 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Textarea } from '@/components/ui/textarea';
-import { errorToast } from '@/components/ui/toast';
+} from '@kortix/ui/modal';
+import { Textarea } from '@kortix/ui/textarea';
+import { errorToast } from '@kortix/ui/toast';
 import { useTranslations } from '@/i18n/use-translations';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { getLocalizedCareersContent } from './content';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -57,12 +57,14 @@ export function ApplyModal({
   const [link, setLink] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (open) {
       setStep('form');
       setError(null);
     }
-  }, [open]);
+  }
 
   const submit = useCallback(async () => {
     const fail = (message: string) => {
@@ -77,7 +79,7 @@ export function ApplyModal({
 
     setSubmitting(true);
     try {
-      await fetch(LEAD_ENDPOINT, {
+      const response = await fetch(LEAD_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -100,7 +102,9 @@ export function ApplyModal({
           source: SOURCE,
         }),
       });
+      if (!response.ok) throw new Error(`Application request failed: ${response.status}`);
     } catch {
+      setError(tI18nComplete.raw('textc3bf78fdd3b9'));
       errorToast(tI18nComplete.raw('textc3bf78fdd3b9'), {
         description: tI18nComplete.raw('textfedb675f658f'),
       });

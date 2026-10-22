@@ -55,16 +55,24 @@ describe('CostSummaryTiles', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles isLoading={false} extraTiles={[]} summary={baseSummary} />,
     );
-    expect(html).toContain('$46.42');
+    expect(html).toContain('4,642');
     expect(html).toContain('+23%');
+  });
+
+  test('shows spend in credits with the unit beside each cost figure, never in dollars', () => {
+    const html = renderToStaticMarkup(
+      <CostSummaryTiles isLoading={false} extraTiles={[]} summary={baseSummary} />,
+    );
+    expect(html.match(/>credits<\/span>/g)?.length ?? 0).toBe(3);
+    expect(html).not.toContain('$');
   });
 
   test('renders LLM and compute tiles without a delta of their own', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles isLoading={false} extraTiles={[]} summary={baseSummary} />,
     );
-    expect(html).toContain('$12.40');
-    expect(html).toContain('$34.02');
+    expect(html).toContain('1,240');
+    expect(html).toContain('3,402');
     // Only the total tile shows a period delta. Counting "%" characters would
     // now double-count — the accessible name repeats the figure — so count the
     // delta paragraphs, which is what the assertion always meant.
@@ -139,7 +147,7 @@ describe('CostSummaryTiles', () => {
         summary={{ ...baseSummary, previous: { total_cost: 0 } }}
       />,
     );
-    expect(html).toContain('$46.42');
+    expect(html).toContain('4,642');
     expect(html).not.toContain('%');
   });
 
@@ -163,7 +171,7 @@ describe('CostSummaryTiles', () => {
     const html = renderToStaticMarkup(
       <CostSummaryTiles isLoading={true} extraTiles={[]} summary={undefined} />,
     );
-    expect(html).not.toContain('$46.42');
+    expect(html).not.toContain('4,642');
     expect(html).not.toContain('animate-spin');
     expect(html).toContain('animate-pulse');
   });

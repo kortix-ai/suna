@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   lstatSync,
+  readlinkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -47,8 +48,9 @@ describe("init in an existing cloned project", () => {
     expect(result.stdout).toContain(
       `Configured this Kortix project in ${realpathSync(repo)}`,
     );
-    expect(lstatSync(resolve(repo, ".agents")).isSymbolicLink()).toBe(true);
-    expect(lstatSync(resolve(repo, ".opencode")).isSymbolicLink()).toBe(true);
+    // A legacy checkout: every link points at .kortix/opencode, none dangles.
+    expect(readlinkSync(resolve(repo, ".agents", "skills"))).toBe("../.kortix/opencode/skills");
+    expect(readlinkSync(resolve(repo, ".opencode"))).toBe(".kortix/opencode");
     expect(lstatSync(resolve(repo, ".claude")).isDirectory()).toBe(true);
     expect(
       lstatSync(resolve(repo, ".claude", "skills")).isSymbolicLink(),

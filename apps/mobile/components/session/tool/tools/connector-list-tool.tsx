@@ -29,17 +29,17 @@ import { ToolResultCard } from '../shared/result-card';
 import { FONT_MEDIUM, TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ConnectorListTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const connectors = useMemo(() => parseConnectorListOutput(output || ''), [output]);
   // `isErrorOutput` trims a copy of the whole output and runs `JSON.parse` over it.
   const isError = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PlugIcon}
       trigger={connectorListTrigger(input, connectors.length)}
       defaultOpen={defaultOpen || connectors.length === 0}
@@ -94,7 +94,4 @@ export function ConnectorListTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('connector_list', ConnectorListTool);
 ToolRegistry.register('connector-list', ConnectorListTool);
-ToolRegistry.register('oc-connector_list', ConnectorListTool);
-ToolRegistry.register('oc-connector-list', ConnectorListTool);

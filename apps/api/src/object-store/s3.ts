@@ -13,10 +13,12 @@
  * One store instance = one target (bucket + endpoint + credentials). A caller
  * adds its own key layout on top; this module never invents keys.
  */
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
+  GetObjectLockConfigurationCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
@@ -40,9 +42,17 @@ export interface ObjectStoreTarget {
   /** Explicit pair. Both empty = the AWS SDK default credential chain. */
   accessKeyId?: string;
   secretAccessKey?: string;
+  /**
+   * A credentials provider, when the store authenticates by assuming a role:
+   * the SDK calls it and refreshes on its `expiration`. Takes precedence over
+   * the explicit pair. Used by the per-account capture store in role mode.
+   */
+  credentials?: S3ClientConfig['credentials'];
 }
 
 export type PutOutcome = 'created' | 'exists';
+
+export type ObjectLockMode = 'COMPLIANCE' | 'GOVERNANCE';
 
 /** How `putIfAbsent` keeps the first write on this endpoint. */
 export type PublishOnceMode = 'if-none-match' | 'head-then-put';
@@ -166,7 +176,8 @@ export class ObjectStore {
     };
     const accessKeyId = (t.accessKeyId ?? '').trim();
     const secretAccessKey = (t.secretAccessKey ?? '').trim();
-    if (accessKeyId && secretAccessKey) options.credentials = { accessKeyId, secretAccessKey };
+    if (t.credentials) options.credentials = t.credentials;
+    else if (accessKeyId && secretAccessKey) options.credentials = { accessKeyId, secretAccessKey };
     return new S3Client(options);
   }
 
@@ -223,10 +234,10 @@ export class ObjectStore {
 
   private async resolveBody(body: ObjectBody): Promise<{ Body: PutObjectCommandInput['Body']; ContentLength?: number }> {
     if (typeof body === 'string' || Buffer.isBuffer(body)) return { Body: body };
-    // Whole-file Buffer, not `createReadStream`: on the API image's Bun
-    // (`BUN_VERSION=1.2`, 1.2.23) a PutObject with a Node ReadStream body
-    // never completes and pins a core (scripts/project-snapshot-s3-probe.ts
-    // reproduces it; a Buffer body of the same bytes finishes in ~30 ms).
+    // Whole-file Buffer, not `createReadStream`: on Bun 1.2.23 (the API image
+    // until 2026-10-14) a PutObject with a Node ReadStream body never completes
+    // and pins a core (scripts/project-snapshot-s3-probe.ts reproduces it; a
+    // Buffer body of the same bytes finishes in ~30 ms).
     // ponytail: archives are capped by the caller (512 MiB for snapshots,
     // 4 MiB for config archives) and are single-digit MB in practice; switch
     // to @aws-sdk/lib-storage multipart if that ceiling is ever approached.
@@ -266,6 +277,88 @@ export class ObjectStore {
       return 'created';
     } catch (err) {
       if (conditional && (errorName(err) === 'PreconditionFailed' || httpStatus(err) === 412)) return 'exists';
+      throw err;
+    }
+  }
+
+  /**
+   * Publish once under S3 Object Lock: the object is written only when no object exists at
+   * `key`, with a retention date, SSE-KMS (the audit archive bucket policy denies a put without
+   * it) and a SHA-256 S3 verifies on receipt. Bytes only (see `resolveBody`). Under COMPLIANCE
+   * nobody, root included, can delete or shorten the object before `retainUntil`.
+   */
+  async putLocked(input: {
+    key: string;
+    body: Buffer;
+    contentType: string;
+    retainUntil: Date;
+    mode: ObjectLockMode;
+  }): Promise<PutOutcome> {
+    this.logMode();
+    const conditional = this.publishOnce() === 'if-none-match';
+    if (!conditional && (await this.head(input.key))) return 'exists';
+    try {
+      await this.client().send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: input.key,
+          Body: input.body,
+          ContentType: input.contentType,
+          ObjectLockMode: input.mode,
+          ObjectLockRetainUntilDate: input.retainUntil,
+          // AWS S3 only: the audit archive bucket policy denies a put without SSE-KMS. An
+          // S3-compatible endpoint (MinIO for local runs) usually has no KMS configured.
+          ...((this.target().endpoint ?? '').trim() ? {} : { ServerSideEncryption: 'aws:kms' as const }),
+          ChecksumSHA256: createHash('sha256').update(input.body).digest('base64'),
+          ...(conditional ? { IfNoneMatch: '*' } : {}),
+        }),
+      );
+      return 'created';
+    } catch (err) {
+      if (conditional && (errorName(err) === 'PreconditionFailed' || httpStatus(err) === 412)) return 'exists';
+      throw err;
+    }
+  }
+
+  /** Write (or overwrite) one object. Server-side encryption is the bucket default. */
+  async put(key: string, body: string | Uint8Array, contentType: string): Promise<void> {
+    await this.client().send(new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }));
+  }
+
+  /** The SHA-256 (base64) S3 stored for the object, or null when it does not exist. */
+  async checksum(key: string): Promise<string | null> {
+    try {
+      const res = await this.client().send(new HeadObjectCommand({ Bucket: this.bucket, Key: key, ChecksumMode: 'ENABLED' }));
+      return res.ChecksumSHA256 ?? null;
+    } catch (err) {
+      if (isMissing(err)) return null;
+      throw err;
+    }
+  }
+
+  /** One object's bytes, or null when it is missing. `maxBytes` refuses a larger object before its body is read. */
+  async getBytes(key: string, opts: { maxBytes?: number } = {}): Promise<Uint8Array | null> {
+    try {
+      const res = await this.client().send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      if (opts.maxBytes !== undefined && (res.ContentLength ?? 0) > opts.maxBytes) {
+        res.Body?.transformToWebStream().cancel().catch(() => undefined);
+        throw new Error(`object too large: ${key}: ${res.ContentLength} > ${opts.maxBytes} bytes`);
+      }
+      return res.Body ? await res.Body.transformToByteArray() : new Uint8Array();
+    } catch (err) {
+      if (isMissing(err)) return null;
+      throw err;
+    }
+  }
+
+  /** The bucket's default Object Lock mode; null when the bucket has no Object Lock configuration. */
+  async lockMode(): Promise<ObjectLockMode | null> {
+    try {
+      const res = await this.client().send(new GetObjectLockConfigurationCommand({ Bucket: this.bucket }));
+      const mode = res.ObjectLockConfiguration?.Rule?.DefaultRetention?.Mode;
+      return mode === 'COMPLIANCE' || mode === 'GOVERNANCE' ? mode : null;
+    } catch (err) {
+      if (errorName(err) === 'ObjectLockConfigurationNotFoundError' || isMissing(err)) return null;
       throw err;
     }
   }

@@ -8,21 +8,32 @@
  * GoTrue's session and user, with errors passed through as
  * `{error, error_description}` and the upstream status.
  *
+ * `GET /client-config` hands a client the public values it needs to sign in
+ * when it only knows the API URL (the mobile app's self-hosted sheet).
+ *
  * Bearer-carrying routes (`GET /user`, `POST /password/update`,
  * `POST /sign-out`) live on the authenticated router in ./index.ts.
  */
 import { createRoute, z } from '@hono/zod-openapi';
+import { createHash } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import type { Context } from 'hono';
+import { db } from '../shared/db';
+import { isTransientDatabaseError } from '../shared/database-errors';
+import { logger } from '../lib/logger';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
-import { auditLoginFail } from '../shared/auth-audit';
-import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
+import { auditLoginFail } from '../middleware/auth-audit';
+import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
-import { requestClientIp, requestClientKey } from '../shared/client-ip';
+import { canSignUp } from '../shared/access-control-cache';
+import { requestClientIp, requestClientKey } from '../middleware/client-ip';
+import { config } from '../config';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
+// replica-local: limit × API replicas (shared/rate-limit.ts).
 const limiter = new TokenBucketRateLimiter('headless-auth');
 /** Per client IP: generous for a human, tight enough to blunt credential stuffing. */
 const IP_POLICY = { limit: 30, windowMs: 60_000 };
@@ -96,6 +107,52 @@ function sessionResponse(c: Context, body: Record<string, unknown>, status: 200 
   return c.json({ session, user: (body.user as GoTrueUser | undefined) ?? null }, status);
 }
 
+// ─── GET /client-config ──────────────────────────────────────────────────────
+
+/** A comma list from config; null when the setting is unset. */
+function listOrNull(value: string | undefined): string[] | null {
+  if (value === undefined) return null;
+  return value.split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+headlessAuthRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/client-config',
+    tags: ['auth'],
+    summary: 'Public sign-in configuration for a client that knows only the API URL',
+    responses: {
+      200: json(
+        z
+          .object({
+            supabase_url: z.string(),
+            supabase_anon_key: z.string().nullable(),
+            frontend_url: z.string().nullable(),
+            auth_methods: z.array(z.string()).nullable(),
+            auth_providers: z.array(z.string()).nullable(),
+          })
+          .openapi('AuthClientConfig'),
+        'Public values only: the anon key is public by design. Null = not configured on this API.',
+      ),
+      ...errors(429),
+    },
+  }),
+  async (c: any): Promise<any> => {
+    const limited = throttled(c);
+    if (limited) return limited;
+    return c.json(
+      {
+        supabase_url: config.SUPABASE_PUBLIC_URL || config.SUPABASE_URL,
+        supabase_anon_key: config.SUPABASE_ANON_KEY || null,
+        frontend_url: config.FRONTEND_URL || null,
+        auth_methods: listOrNull(config.KORTIX_PUBLIC_AUTH_METHODS),
+        auth_providers: listOrNull(config.KORTIX_PUBLIC_AUTH_PROVIDERS),
+      },
+      200,
+    );
+  },
+);
+
 // ─── POST /signup ───────────────────────────────────────────────────────────
 
 headlessAuthRouter.openapi(
@@ -106,6 +163,7 @@ headlessAuthRouter.openapi(
     summary: 'Create an account with email + password (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({
@@ -123,15 +181,25 @@ headlessAuthRouter.openapi(
         z.object({ user: UserSchema.nullable(), session: SessionSchema.nullable(), requires_email_confirmation: z.boolean() }),
         'Created. `session` is null until the email is confirmed when confirmation is required.',
       ),
-      ...errors(400, 422, 429),
+      ...errors(400, 403, 422, 429),
     },
   }),
   async (c: any): Promise<any> => {
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    const email = body.email.trim().toLowerCase();
+    // The same two rules the web sign-up form gets from `/access/check-email`,
+    // so a direct API call cannot create the account the form would refuse
+    // (KRTX-1716): an SSO-only domain, and closed sign-ups off the allowlist.
+    const denied = await ssoRequired(c, email);
+    if (denied) return denied;
+    if (!canSignUp(email)) {
+      auditLoginFail({ c, reason: 'signup_closed', authType: 'supabase' });
+      return c.json({ error: 'signup_closed', error_description: 'Sign-ups are closed for this email address.' }, 403);
+    }
     const result = await gotrue<Record<string, unknown>>('/signup', {
-      body: { email: body.email.trim().toLowerCase(), password: body.password, data: body.data ?? {} },
+      body: { email, password: body.password, data: body.data ?? {} },
       clientIp: requestClientIp(c),
       query: { redirect_to: safeRedirect(body.redirect_to) },
     });
@@ -154,7 +222,7 @@ headlessAuthRouter.openapi(
     path: '/sign-in/password',
     tags: ['auth'],
     summary: 'Sign in with email + password (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ email: Email, password: z.string().min(1).max(256) }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ email: Email, password: z.string().min(1).max(256) }) } } } },
     responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 403, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -186,6 +254,7 @@ headlessAuthRouter.openapi(
     summary: 'Email a magic link / one-time code (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({
@@ -226,6 +295,7 @@ headlessAuthRouter.openapi(
     summary: 'Exchange an emailed code for a session (headless)',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ email: Email, token: z.string().min(4).max(64), type: z.enum(OTP_TYPES) }),
@@ -270,6 +340,7 @@ headlessAuthRouter.openapi(
     summary: 'Start a social sign-in (PKCE): returns the provider URL and the code verifier to keep',
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ provider: z.enum(PROVIDERS), redirect_to: z.string(), scopes: z.string().optional() }),
@@ -312,7 +383,7 @@ headlessAuthRouter.openapi(
     path: '/oauth/exchange',
     tags: ['auth'],
     summary: 'Exchange the social sign-in code (+ PKCE verifier) for a session',
-    request: { body: { content: { 'application/json': { schema: z.object({ code: z.string().min(1), code_verifier: z.string().min(1) }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ code: z.string().min(1), code_verifier: z.string().min(1) }) } } } },
     responses: { 200: json(SessionResponse, 'The session'), ...errors(400, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -340,18 +411,40 @@ headlessAuthRouter.openapi(
     path: '/refresh',
     tags: ['auth'],
     summary: 'Rotate a session with its refresh token (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ refresh_token: z.string().min(1) }) } } } },
-    responses: { 200: json(SessionResponse, 'The new session'), ...errors(400, 429) },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ refresh_token: z.string().min(1) }) } } } },
+    responses: { 200: json(SessionResponse, 'The new session'), ...errors(400, 429, 503) },
   }),
   async (c: any): Promise<any> => {
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    const digest = createHash('sha256').update(body.refresh_token).digest('hex');
+    // A unique insert is atomic across replicas. Fail closed if the store is down.
+    let claimed: { token_hash: string }[];
+    try {
+      claimed = await db.execute<{ token_hash: string }>(sql`
+        INSERT INTO kortix.used_refresh_tokens (token_hash, expires_at)
+        VALUES (${digest}, now() + interval '90 days')
+        ON CONFLICT DO NOTHING RETURNING token_hash
+      `);
+    } catch (error) {
+      // Only a connection-level failure clears on its own. A missing table or a
+      // permission error (a self-host whose migration did not run) is a fault:
+      // the global handler logs its SQLSTATE and answers 500 (KRTX-2977).
+      if (!isTransientDatabaseError(error)) throw error;
+      logger.warn('[auth] refresh-token ledger unavailable', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return c.json({ error: 'auth_unavailable', error_description: 'Refresh temporarily unavailable' }, 503);
+    }
+    if (!claimed.length) return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);
     const result = await gotrue<Record<string, unknown>>('/token', {
       body: { refresh_token: body.refresh_token },
       clientIp: requestClientIp(c),
       query: { grant_type: 'refresh_token' },
     });
+    // A failed response does not prove GoTrue left the token untouched: it may
+    // have rotated it before the response was lost. Keep the claim fail-closed.
     if (!result.ok) return upstreamError(c, result);
     return sessionResponse(c, result.body);
   },
@@ -369,6 +462,7 @@ headlessAuthRouter.openapi(
       "Asks whether an email domain has an enterprise IdP and returns the redirect URL to send the browser to. Unauthenticated by design: the caller is signing IN, so there is no bearer yet, and the answer is not a secret — it is what the IdP's own discovery endpoint publishes.",
     request: {
       body: {
+        required: true,
         content: {
           'application/json': {
             schema: z.object({ domain: z.string().min(1).max(253), redirect_to: z.string().optional() }),
@@ -404,7 +498,7 @@ headlessAuthRouter.openapi(
     path: '/password/reset',
     tags: ['auth'],
     summary: 'Email a password-recovery link / code (headless)',
-    request: { body: { content: { 'application/json': { schema: z.object({ email: Email, redirect_to: z.string().optional() }) } } } },
+    request: { body: { required: true, content: { 'application/json': { schema: z.object({ email: Email, redirect_to: z.string().optional() }) } } } },
     responses: { 200: json(z.object({ sent: z.literal(true) }), 'Email sent (also when the address is unknown)'), ...errors(400, 429) },
   }),
   async (c: any): Promise<any> => {
@@ -422,5 +516,3 @@ headlessAuthRouter.openapi(
     return c.json({ sent: true as const });
   },
 );
-
-export type { GoTrueSession };

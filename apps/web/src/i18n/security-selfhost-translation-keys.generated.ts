@@ -90,8 +90,8 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   Credentials: 'textd48a617c7da5',
   'Custom roles': 'textc703c7f9cbe6',
   'data plane': 'text7225a08be0c6',
-  'Daytona, Platinum, or E2B. This is the one credential the stack genuinely cannot start without.':
-    'textfe1e8536b04d',
+  'A Platinum API key. This is the one credential the stack genuinely cannot start without.':
+    'texta4df7a062ff9',
   'Decide what needs a human before it happens.': 'text77ad70aefdce',
   'default_mode: risk makes reads run and sends writes and destructive calls to a person. A project with no policy block keeps the permissive legacy default, so set this explicitly.':
     'text221bf49bd2bb',
@@ -165,7 +165,7 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Kortix’s own upstream provider keys, which no sandbox may hold': 'text9fac860db4d4',
   'llm-gateway': 'text1a89c40bda2b',
   Machine: 'text8f1cc42d7c1c',
-  'Manage members, groups, roles and tokens.': 'text186c10caa2d2',
+  'Manage members, groups, roles, tokens and billing.': 'text0ef1d8916df6',
   Manager: 'text8b2085f74dfa',
   member: 'texte31ab643c44f',
   Member: 'text7c968fb71f50',
@@ -187,8 +187,8 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'Not a community edition.': 'texte3bbf2902a7f',
   'not on your box': 'textaa57cad004f0',
   'Nothing is shared, because nothing is shared.': 'text9045e34e96f2',
-  'On Kortix’s own Platinum compute a sandbox is a Cloud Hypervisor microVM. Daytona and E2B are also supported. The provider is a deployment choice, and we will tell you which one you are on rather than blur them together.':
-    'text8368ff24d89c',
+  'On Platinum, Kortix’s own compute and the reference provider, a sandbox is a Cloud Hypervisor microVM. Daytona remains a legacy fallback, and its removal is scheduled. We will tell you which one you are on rather than blur them together.':
+    'text4752074ca727',
   'on your box': 'text425aa668a9e4',
   'One branch per session': 'textb0f2f6dd1e38',
   'One Compose project, no hidden pieces.': 'text2a2728fd9252',
@@ -239,8 +239,8 @@ export const SECURITY_SELFHOST_TRANSLATION_KEYS: Readonly<Record<string, string>
   'SAML SSO, SCIM directory sync, custom roles, groups and reading the audit log are Enterprise entitlements. On a self-hosted instance they switch on with an Enterprise licence. The built-in owner, admin, member, manager and editor roles are there on every install, and the audit record is written on every install whether or not you can read it back yet.':
     'text2288facc3728',
   sandbox: 'textb7ad567477c8',
-  'Sandbox compute is a provider choice: Daytona by default, or Platinum or E2B. Air-gapped and other fully isolated topologies are scoped with us rather than self-served.':
-    'text193ea53a9706',
+  'Sandbox compute runs on Platinum. Daytona remains a legacy fallback, and its removal is scheduled. Fully isolated topologies are scoped with us rather than self-served.':
+    'text9c282c968d5e',
   'SCIM 2.0': 'text98fe74b2a48a',
   'Scope a team to specific agents': 'text7bbd0566a549',
   Secrets: 'textd8707d411d99',

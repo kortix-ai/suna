@@ -87,31 +87,29 @@ describe('buildInviteUser', () => {
 });
 
 /**
- * Deprovisioning through SCIM must release the paid seat.
+ * Deprovisioning through SCIM must revoke the member's YOLO token.
  *
- * Removing the member row is not the whole offboarding: on a per-seat account
- * the Stripe subscription QUANTITY is what gets invoiced, and only
- * `onMemberRemoved` lowers it. The UI removal path has always called it
- * (accounts/core/members.ts:549, :704). SCIM never did — so an enterprise
- * offboarding through its IdP, the automated channel we tell enterprises to
- * use, kept paying for every departed employee indefinitely. Nothing reconciles
- * seats periodically, so it never self-healed.
+ * Removing the member row is not the whole offboarding: the departed member's
+ * YOLO token (the credential their sessions spend under) must die with it, or
+ * the removed person keeps a working credential. There are no seats to release:
+ * members are unlimited and free.
  *
- * Asserted against the source: `deprovisionMember` is module-private, its two
- * collaborators are a DB delete and a Stripe round-trip, and the property that
- * matters is simply that the call is on the path at all.
+ * Asserted against the source: SCIM deprovisions through `offboardMember`
+ * (accounts/core/offboard-member.ts, shared with removal and leave).
+ * `integration-offboard-member.test.ts` drives all three exits end to end.
  */
 import { readFileSync as readScimSource } from 'node:fs';
 import { join as joinScimPath } from 'node:path';
 
-const SCIM_USERS_SRC = readScimSource(
-  joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'),
+const SCIM_USERS_SRC = readScimSource(joinScimPath(import.meta.dir, '..', 'scim', 'users.ts'), 'utf8');
+const OFFBOARD_SRC = readScimSource(
+  joinScimPath(import.meta.dir, '..', 'accounts', 'core', 'offboard-member.ts'),
   'utf8',
 );
 
-describe('SCIM deprovision releases the seat', () => {
-  function deprovisionBody(): string {
-    const body = SCIM_USERS_SRC.split('async function deprovisionMember(')[1]?.split('\n}\n')[0];
+describe('SCIM deprovision revokes the member YOLO token', () => {
+  function offboardBody(): string {
+    const body = OFFBOARD_SRC.split('export async function offboardMember(')[1]?.split('\n}\n')[0];
     expect(body).toBeTruthy();
     // Guard the extraction: if this stops covering the identity-row delete, every
     // assertion below passes vacuously.
@@ -119,23 +117,20 @@ describe('SCIM deprovision releases the seat', () => {
     return body as string;
   }
 
-  test('onMemberRemoved is called on the deprovision path', () => {
-    expect(deprovisionBody()).toContain('onMemberRemoved(accountId, userId)');
+  test('SCIM deactivation runs the shared offboarding', () => {
+    expect(SCIM_USERS_SRC).toContain("offboardMember(SYSTEM_ACTOR, user.accountId, userId, 'deprovisioned')");
+    expect(SCIM_USERS_SRC).toContain("from '../accounts/core/offboard-member'");
   });
 
-  test('it is awaited, so the seat release cannot race the SCIM reply', () => {
-    expect(deprovisionBody()).toContain('await onMemberRemoved(');
+  test('the offboarding awaits revokeYoloTokenForMember after the member row is gone', () => {
+    const body = offboardBody();
+    expect(body).toContain('await revokeYoloTokenForMember(userId, accountId)');
+    expect(body.indexOf('delete(accountMemberships)')).toBeLessThan(body.indexOf('revokeYoloTokenForMember('));
   });
 
-  test('the seat release happens after the member row is gone', () => {
-    // Ordering matters: syncSeatQuantity counts remaining members, so releasing
-    // before the delete would recount the leaving member and change nothing.
-    const body = deprovisionBody();
-    expect(body.indexOf('delete(accountMemberships)')).toBeLessThan(body.indexOf('onMemberRemoved('));
-  });
-
-  test('the module actually imports it', () => {
-    expect(SCIM_USERS_SRC).toContain("from '../billing/services/seat-management'");
+  test('nothing on the path still syncs seats', () => {
+    expect(OFFBOARD_SRC).not.toContain('seat-management');
+    expect(SCIM_USERS_SRC).not.toContain('seat-management');
   });
 });
 

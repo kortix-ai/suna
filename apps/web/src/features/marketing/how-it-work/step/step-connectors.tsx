@@ -1,7 +1,7 @@
 'use client';
 
-import { faviconUrlForHostname } from '@/lib/favicon';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import { faviconUrlForHostname } from '@kortix/ui';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { IconFrame } from '@/components/ui/marketing/icon-frame';
 import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
@@ -18,7 +18,7 @@ import { useStepShowcaseStart } from '../use-step-showcase';
  * Order matters visually, not semantically: adjacent tiles are kept different
  * in color and weight so no two neighbours read as one blob.
  */
-const APPS: string[] = [
+export const APPS: string[] = [
   'slack.com',
   'notion.so',
   'github.com',

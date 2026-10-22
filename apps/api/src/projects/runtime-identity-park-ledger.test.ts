@@ -13,7 +13,7 @@
  * database mock so that suite keeps needing no harness.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realSentry from '../lib/sentry';
 import * as realProviders from '../platform/providers';
@@ -259,5 +259,51 @@ describe('a lost runtime is reported once', () => {
       'provider_removed',
     );
     expect(lostReports).toBe(2);
+  });
+});
+
+// 2026-10-16: an open page on a lost session logged `runtime.lost` (and filed a
+// Sentry event) on every /start. /start reaches the preserve through a
+// recovery claim, which overwrites `runtimeIdentityState` with
+// `recovery_claimed`, so the state check alone never saw the earlier loss.
+describe('a lost runtime re-preserved after a recovery claim', () => {
+  test('is not reported again for the same identity', async () => {
+    const reclaimed = {
+      ...ROW,
+      metadata: {
+        runtimeIdentityState: 'recovery_claimed',
+        runtimeRecoveryLeaseId: 'lease-2',
+        preservedExternalId: 'ext-1',
+        runtimeUnavailableAt: '2026-10-16T14:37:37.000Z',
+      },
+    };
+    await preserveEstablishedRuntime(reclaimed, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(0);
+  });
+
+  test('a first claim on a box that was never lost is still reported', async () => {
+    const firstClaim = {
+      ...ROW,
+      metadata: { runtimeIdentityState: 'recovery_claimed', preservedExternalId: 'ext-1' },
+    };
+    await preserveEstablishedRuntime(firstClaim, 'runtime_removed', 'provider_removed');
+    expect(lostReports).toBe(1);
+  });
+});
+
+describe('a Kortix-initiated removal is not a lost runtime', () => {
+  const removal = (extra: Record<string, unknown>) =>
+    preserveEstablishedRuntime({ ...ROW, ...extra }, 'provider_webhook_removed', 'provider_removed');
+
+  test('account teardown stamp, archived session and pending removal are not reported', async () => {
+    expect(await removal({ metadata: { kortixRemovalIntentAt: '2026-10-01T00:00:00Z' } })).not.toBeNull();
+    expect(await removal({ status: 'archived', metadata: {} })).not.toBeNull();
+    expect(await removal({ metadata: { providerRemovalPendingAt: '2026-10-01T00:00:00Z' } })).not.toBeNull();
+    expect(lostReports).toBe(0);
+  });
+
+  test('the same webhook for a live session is still reported', async () => {
+    await removal({ status: 'active', metadata: {} });
+    expect(lostReports).toBe(1);
   });
 });

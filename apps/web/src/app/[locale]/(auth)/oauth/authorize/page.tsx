@@ -6,17 +6,17 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
   AuthPendingScreen,
   AuthStatusScreen,
   DetailPanel,
   DetailRow,
-} from '@/features/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
+} from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
 import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
@@ -69,8 +69,12 @@ async function loadAndMaybeApprove(
       backendUrl,
       accessToken: session.access_token,
     });
-  } catch {
-    return { kind: 'error', message: tI18nComplete.raw('text9ff8cfaf7d94') };
+  } catch (err) {
+    // The API names why ("expired or already used"); a network failure has no message.
+    return {
+      kind: 'error',
+      message: err instanceof Error && err.message ? err.message : tI18nComplete.raw('text9ff8cfaf7d94'),
+    };
   }
   const request: ConsentRequestView = {
     clientName: data.client_name || 'Unknown App',
@@ -207,7 +211,8 @@ function OAuthConsent() {
         window.location.href = data.redirect_uri;
       }
     } catch (err) {
-      setError('Network error. Please try again.');
+      // The API says why (expired or already used request): show it.
+      setError(err instanceof Error && err.message ? err.message : 'Network error. Please try again.');
       setDecision(null);
     }
   };
@@ -272,7 +277,7 @@ function OAuthConsent() {
                 {scopes.map((s) => (
                   <li key={s} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm">
                     <Check className="text-muted-foreground size-4 shrink-0" />
-                    <span className="min-w-0 truncate">{SCOPE_DESCRIPTIONS[s] || s}</span>
+                    <span className="min-w-0">{SCOPE_DESCRIPTIONS[s] || s}</span>
                   </li>
                 ))}
               </ul>

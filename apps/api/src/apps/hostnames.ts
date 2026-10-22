@@ -23,12 +23,15 @@
 import { config } from '../config';
 
 /** Hostname shape for an App on a real domain. Kept in one regexp. */
-const APP_LABEL = /^(dev|staging|prod|preview)-[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?-([a-f0-9]{16})$/;
-const LOCAL_HOST = /^([a-f0-9]{16})\.apps\.localhost$/;
+/** `<env>-<slug>-<route key>`, plus `--<service>` for a service other than the primary `http` (slugs never hold `--`). */
+const APP_LABEL = /^(dev|staging|prod|preview)-[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?-([a-f0-9]{16})(?:--([a-z][a-z0-9-]{0,30}))?$/;
+const LOCAL_HOST = /^([a-f0-9]{16})(?:--([a-z][a-z0-9-]{0,30}))?\.apps\.localhost$/;
 
 export interface ResolvedAppHost {
   routeKey: string;
   local: boolean;
+  /** The service this host serves: `http` (the App's own host) or a named one. */
+  service: string;
 }
 
 export function appsLocalMode(): boolean {
@@ -78,11 +81,14 @@ export function appsBaseDomain(): string | null {
   return derived ? `apps.${derived}` : null;
 }
 
+/** `http://<label>.apps.localhost:<port>`: a local-mode host this API answers. */
+export function appsLocalUrl(label: string): string {
+  const localPort = process.env.KORTIX_APPS_LOCAL_PORT || String(config.PORT);
+  return `http://${label}.apps.localhost:${localPort}`;
+}
+
 export function appPublicUrl(row: { slug: string; routeKey: string }): string {
-  if (appsLocalMode()) {
-    const localPort = process.env.KORTIX_APPS_LOCAL_PORT || String(config.PORT);
-    return `http://${row.routeKey}.apps.localhost:${localPort}`;
-  }
+  if (appsLocalMode()) return appsLocalUrl(row.routeKey);
   const domain = appsBaseDomain();
   if (!domain) {
     throw new Error(
@@ -92,15 +98,28 @@ export function appPublicUrl(row: { slug: string; routeKey: string }): string {
   return `https://${config.INTERNAL_KORTIX_ENV}-${row.slug}-${row.routeKey}.${domain}`;
 }
 
+/**
+ * The URL of an App service: `http` is the App's own URL; another service adds
+ * `--<name>` to the host label. Null when that label would pass the 63-character
+ * DNS limit (a long slug): the service is then reachable only through a binding.
+ */
+export function appServiceUrl(row: { slug: string; routeKey: string }, service: string): string | null {
+  if (service === 'http') return appPublicUrl(row);
+  if (appsLocalMode()) return appsLocalUrl(`${row.routeKey}--${service}`);
+  const label = `${config.INTERNAL_KORTIX_ENV}-${row.slug}-${row.routeKey}--${service}`;
+  if (label.length > 63) return null;
+  return `https://${label}.${appsBaseDomain()}`;
+}
+
 export function resolveAppHost(hostname: string): ResolvedAppHost | null {
   const host = hostname.toLowerCase().replace(/\.$/, '');
   const local = LOCAL_HOST.exec(host);
-  if (local) return { routeKey: local[1]!, local: true };
+  if (local) return { routeKey: local[1]!, local: true, service: local[2] ?? 'http' };
   const domain = appsBaseDomain();
   if (!domain || !host.endsWith(`.${domain}`)) return null;
   const label = host.slice(0, -(domain.length + 1));
   if (label.includes('.')) return null;
   const match = APP_LABEL.exec(label);
   if (!match || match[1] !== config.INTERNAL_KORTIX_ENV) return null;
-  return { routeKey: match[2]!, local: false };
+  return { routeKey: match[2]!, local: false, service: match[3] ?? 'http' };
 }

@@ -21,7 +21,7 @@
  * load (~13 s for two packages, measured), so a source that is not on disk is
  * dropped and reported in the runtime's extension status instead.
  */
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Agent, AgentOptions, AgentTool } from '@earendil-works/pi-agent-core'
@@ -38,7 +38,7 @@ import {
   type PackageSource,
   type Skill,
 } from '@earendil-works/pi-coding-agent'
-import { logger } from '../../../logger'
+import { logger } from '@/lib/log/logger'
 
 export type { InlineExtension }
 
@@ -141,22 +141,48 @@ class ScopedSettingsStorage {
   }
 }
 
-/** The loader, with the runtime's system prompt read live (it follows the compiled agent config). */
+/**
+ * The loader, with the runtime's system prompt and skill grant read live (both
+ * follow the compiled agent config). Every skill read in pi — the prompt's
+ * skill list and `/skill:` expansion — goes through `getSkills()`.
+ */
+/** Holds no project resources: discovery for a config with no tree. */
+const NO_PROJECT_DIR = '/nonexistent/kortix-no-project'
+
 class KortixResourceLoader extends DefaultResourceLoader {
-  constructor(options: ConstructorParameters<typeof DefaultResourceLoader>[0], private readonly prompt: () => string) {
+  constructor(
+    options: ConstructorParameters<typeof DefaultResourceLoader>[0],
+    private readonly prompt: () => string,
+    private readonly skillAllowed: (name: string) => boolean,
+  ) {
     super(options)
   }
   override getSystemPrompt(): string {
     return this.prompt()
   }
+  override getSkills(): ReturnType<DefaultResourceLoader['getSkills']> {
+    const loaded = super.getSkills()
+    return { ...loaded, skills: loaded.skills.filter((skill) => this.skillAllowed(skill.name)) }
+  }
 }
 
 export interface PiSessionInput {
   agent: Agent
+  /** pi's session store; the agent's messages are already its projection. */
+  sessionManager: SessionManager
   ref: RunnerRef
   cwd: string
   agentDir: string
+  projectConfigDir?: string | null
   projectPackages: readonly PackageSource[]
+  /** Where a `./` entry of `projectPackages` resolves: the release root while a release runs, else `cwd`. */
+  packageRoot?: string
+  /**
+   * Where pi discovers project-local resources (`.pi/{extensions,skills,prompts}`,
+   * `.agents/skills`): the running config's root. Null: none (the image default).
+   * Never `cwd` while a release runs: the workspace is not config.
+   */
+  discoveryRoot: string | null
   /** The unpacked node_modules fallback (`<root>/node_modules/<name>`) for npm entries in `projectPackages`, or null. */
   projectBundleRoot: string | null
   /** Pre-built project packages (prebuilt.ts): their folders for skills/prompts, and their npm names. */
@@ -164,8 +190,12 @@ export interface PiSessionInput {
   baseTools: readonly AgentTool<any, any>[]
   extensions: readonly InlineExtension[]
   systemPrompt: () => string
+  /** The agent's skill grant (manifest `skills:`), read on every skill lookup. */
+  skillAllowed: (name: string) => boolean
   /** The provider the agent streams through; pi checks it has auth before a prompt. */
   provider: Provider | undefined
+  /** pi `compaction` settings from the runtime (per-model reserves: model.ts `compactionSettings`). */
+  compaction?: object
 }
 
 export interface PiSession {
@@ -278,7 +308,14 @@ export function resolveProjectPackages(
 
 export async function createPiSession(input: PiSessionInput): Promise<PiSession> {
   const globalSettings = readSettings(join(input.agentDir, 'settings.json'))
-  const project = resolveProjectPackages(input.projectPackages, { cwd: input.cwd, bundleRoot: input.projectBundleRoot })
+  const project = resolveProjectPackages(input.projectPackages, { cwd: input.packageRoot ?? input.cwd, bundleRoot: input.projectBundleRoot })
+  const projectSettings = input.projectConfigDir ? readSettings(join(input.projectConfigDir, 'settings.json')) : {}
+  // The repository supplies pi-native settings as-is; explicit agent packages
+  // from the manifest remain additive and are already installed by the API.
+  const localPackages = (Array.isArray(projectSettings.packages) ? projectSettings.packages : []).filter(
+    (entry): entry is string => typeof entry === 'string' && entry.startsWith('./'),
+  )
+  project.kept.push(...localPackages.map((source) => join(input.projectConfigDir!, source)))
   for (const name of input.prebuilt?.names ?? []) project.npmNames.add(name)
   project.kept.push(...(input.prebuilt?.resources ?? []))
   // A package the project pins itself replaces the system one (pi would load both: a path and an npm name differ).
@@ -289,11 +326,17 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
   const system = installedPackages(systemEntries, join(input.agentDir, 'npm'))
   const settingsManager = SettingsManager.fromStorage(
     new ScopedSettingsStorage({
-      // Kortix owns compaction and retry: the transcript has no compaction yet, and a failed
-      // turn is the product's to retry (a silent pi retry would double-bill and reorder the wire).
-      // They live in storage, not `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
-      global: JSON.stringify({ ...globalSettings, packages: system.kept, compaction: { enabled: false }, retry: { enabled: false } }),
-      project: JSON.stringify({ packages: project.kept }),
+      // Kortix owns retry: a failed turn is the product's to retry (a silent pi retry would
+      // double-bill and reorder the wire). pi's compaction is on (its own default), and the
+      // runtime puts it on the wire, at the runtime's token budget. `retry` and `compaction` live in
+      // storage, not `applyOverrides`: `loader.reload()` re-reads storage and drops overrides.
+      global: JSON.stringify({
+        ...globalSettings,
+        packages: system.kept,
+        retry: { enabled: false },
+        compaction: { ...(globalSettings.compaction as object | undefined), ...input.compaction },
+      }),
+      project: JSON.stringify({ ...projectSettings, packages: project.kept }),
     }),
     { projectTrusted: true },
   )
@@ -305,11 +348,21 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
       agentDir: input.agentDir,
       settingsManager,
       extensionFactories: [...input.extensions],
+      additionalExtensionPaths: input.projectConfigDir && existsSync(join(input.projectConfigDir, 'extensions'))
+        ? readdirSync(join(input.projectConfigDir, 'extensions')).filter((file) => /\.[cm]?[jt]s$/.test(file)).map((file) => join(input.projectConfigDir!, 'extensions', file))
+        : [],
+      additionalPromptTemplatePaths: input.projectConfigDir && existsSync(join(input.projectConfigDir, 'prompts'))
+        ? [join(input.projectConfigDir, 'prompts')] : [],
       noContextFiles: true,
       noThemes: true,
     },
     input.systemPrompt,
+    input.skillAllowed,
   )
+  // pi discovers project-local resources from its package manager's cwd, which
+  // is the loader's (the workspace). Only discovery moves to the running config:
+  // extensions keep the workspace as their cwd.
+  ;(loader as unknown as { packageManager: { cwd: string } }).packageManager.cwd = input.discoveryRoot ?? NO_PROJECT_DIR
   await loader.reload()
 
   const modelRuntime = await ModelRuntime.create({ credentials: new InMemoryCredentialStore(), modelsPath: null, refreshOnCreate: false })
@@ -321,7 +374,7 @@ export async function createPiSession(input: PiSessionInput): Promise<PiSession>
 
   const session = new AgentSession({
     agent: input.agent,
-    sessionManager: SessionManager.inMemory(input.cwd),
+    sessionManager: input.sessionManager,
     settingsManager,
     cwd: input.cwd,
     resourceLoader: loader,

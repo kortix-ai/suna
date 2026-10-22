@@ -3,7 +3,7 @@
  *
  * WHY THIS EXISTS. The Kortix Runtime API (`/kortix/opencode/*`) answers
  * transcript and session reads from OpenCode's storage instead of proxying
- * OpenCode's HTTP. Measured on box `ib31dg1elkycjulm0eeq1` (154 messages /
+ * OpenCode's HTTP. Measured on one box (154 messages /
  * 573 parts / 1.60 MB of transcript JSON, WS-V, 2026-08-26):
  *
  *   | operation                                     | median |
@@ -51,7 +51,7 @@
  *    change in a future OpenCode therefore degrades to "slower", never "wrong".
  */
 import { Database } from 'bun:sqlite'
-import { logger } from '../../logger'
+import { logger } from '@/lib/log/logger'
 
 /** Tiny retry for `SQLITE_BUSY` past `busy_timeout` — a checkpoint window. */
 export const DB_BUSY_RETRIES = 3
@@ -105,6 +105,31 @@ export interface PartRow {
   time_created: number
   time_updated: number
   data: string
+}
+
+export interface StoreSessionRow {
+  id: string
+  title: string
+  parent_id: string | null
+  version: string
+  time_created: number
+}
+
+export interface TodoRow {
+  session_id: string
+  content: string
+  status: string
+  priority: string
+  position: number
+}
+
+export interface StoreSnapshot {
+  sessions: StoreSessionRow[]
+  /** Ordered by `(time_created, id)`. */
+  messages: MessageRow[]
+  /** Ordered by `(message_id, id)`, as `messagePage` reads them. */
+  parts: PartRow[]
+  todos: TodoRow[]
 }
 
 export interface MessagePage {
@@ -324,6 +349,34 @@ export class OpencodeDb {
         .get(aggregateId),
     )
     return row?.seq ?? null
+  }
+
+  /**
+   * Every session, message, part and todo row, in ONE deferred transaction:
+   * the session-log export (`session-log.ts`) reads the whole store from a
+   * single WAL snapshot, so a part never belongs to a message of a later write.
+   * Rows keep their raw JSON; the caller parses them. `null` when unreadable.
+   * ponytail: the whole store on every read (a p99 session is ~2 MB); read by
+   * `time_updated` when a profile shows the full read on the turn-end path.
+   */
+  storeSnapshot(): StoreSnapshot | null {
+    const todo = this.probe().tables.includes('todo')
+    return this.retry('storeSnapshot', (db) =>
+      db.transaction((): StoreSnapshot => ({
+        sessions: db
+          .query<StoreSessionRow, []>('SELECT id, title, parent_id, version, time_created FROM session ORDER BY time_created, id')
+          .all(),
+        messages: db
+          .query<MessageRow, []>('SELECT id, session_id, time_created, time_updated, data FROM message ORDER BY time_created, id')
+          .all(),
+        parts: db
+          .query<PartRow, []>('SELECT id, message_id, session_id, time_created, time_updated, data FROM part ORDER BY message_id, id')
+          .all(),
+        todos: todo
+          ? db.query<TodoRow, []>('SELECT session_id, content, status, priority, position FROM todo ORDER BY session_id, position').all()
+          : [],
+      }))(),
+    )
   }
 
   /**

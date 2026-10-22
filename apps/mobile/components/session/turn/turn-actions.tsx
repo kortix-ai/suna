@@ -19,11 +19,12 @@ import { View } from 'react-native';
 import Reanimated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Clipboard from 'expo-clipboard';
 import { useColorScheme } from 'nativewind';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { CheckIcon, CopyIcon } from '@/lib/icons';
-import type { Turn } from '@/lib/opencode/types';
+import type { SessionLogTurn } from '@kortix/sdk';
 import { turnDurationMs, turnEndedAt, type TurnMetaCost } from '@/lib/session/turn-meta';
 import { THEME } from '@/lib/utils/theme';
 
@@ -36,53 +37,23 @@ const SWAP_SPRING = { duration: 300, dampingRatio: 1 } as const;
 /** Web: `scale: 0.25` at the hidden end of the swap. */
 const HIDDEN_SCALE = 0.25;
 
-export interface TurnActionsProps {
+interface TurnActionsProps {
   /** The response text Copy writes to the clipboard. Empty → no Copy button. */
   response: string;
-  /**
-   * The turn. When given, the details sheet derives Finished and Duration
-   * exactly like web (`sessionTurnEndedAt` / `sessionTurnDurationMs`).
-   */
-  turn?: Turn;
-  /** Finished stamp when `turn` is not given. */
-  endedAt?: number | null;
-  /** Duration when `turn` is not given. */
-  durationMs?: number | null;
-  /** @deprecated Legacy name for `durationMs`. */
-  duration?: number;
+  /** The turn: the details sheet derives Finished and Duration exactly like
+   * web (`sessionTurnEndedAt` / `sessionTurnDurationMs`). */
+  turn: SessionLogTurn;
   costInfo?: TurnMetaCost;
-  /** @deprecated Colours come from the colour scheme. Accepted for existing callers. */
-  isDark?: boolean;
-  /** @deprecated Spacing belongs to the turn layout. Accepted for existing callers. */
-  tightToResponse?: boolean;
-  /** @deprecated The bar is always visible on a phone, with no enter fade. */
-  animateIn?: boolean;
 }
 
-export function TurnActions({
-  response,
-  turn,
-  endedAt,
-  durationMs,
-  duration,
-  costInfo,
-}: TurnActionsProps) {
-  const resolvedEndedAt = React.useMemo(
-    () => (turn ? turnEndedAt(turn) : (endedAt ?? null)),
-    [turn, endedAt],
-  );
-  const resolvedDurationMs = React.useMemo(
-    () => (turn ? turnDurationMs(turn) : (durationMs ?? duration ?? null)),
-    [turn, durationMs, duration],
-  );
-
+export function TurnActions({ response, turn, costInfo }: TurnActionsProps) {
   return (
     // `icon-sm` buttons: a 28pt box (web: 26px), so the pressed highlight and
     // the spacing between glyphs match web. `-ml-0.5` puts the first glyph
     // ≈4pt in from the text edge, like web. Hit slop keeps a 44pt-tall target.
     <View className="-ml-0.5 flex-row items-center gap-0.5" testID="session-turn-actions">
       {response ? <CopyResponseButton response={response} /> : null}
-      <SessionTurnMeta endedAt={resolvedEndedAt} durationMs={resolvedDurationMs} cost={costInfo} />
+      <SessionTurnMeta endedAt={turnEndedAt(turn)} durationMs={turnDurationMs(turn)} cost={costInfo} />
     </View>
   );
 }
@@ -107,7 +78,8 @@ function CopyResponseButton({ response }: { response: string }) {
   );
 
   const handleCopy = React.useCallback(async () => {
-    await Clipboard.setStringAsync(response);
+    // A generative UI block pastes as its markdown, not as OpenUI source.
+    await Clipboard.setStringAsync(genuiToMarkdown(response));
     setCopied(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setCopied(false), COPIED_MS);

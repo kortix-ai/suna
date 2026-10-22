@@ -26,11 +26,23 @@ export const SHARED_AUTH_DEFAULTS: Record<string, string> = {
   // Sign-in UI method order. Password-first so no email is required out of the
   // box; add 'magic' after SMTP is configured.
   KORTIX_PUBLIC_AUTH_METHODS: 'password',
+  // Social providers: none (the web auth page's default). Explicitly empty,
+  // not unset: the API's GET /v1/auth/client-config reports unset as null,
+  // which the mobile app reads as "use the build's Google + Apple buttons".
+  KORTIX_PUBLIC_AUTH_PROVIDERS: '',
+  // GoTrue redirect allow-list (GOTRUE_URI_ALLOW_LIST). The Kortix mobile app
+  // (app.json scheme `kortix`) finishes magic-link, OAuth and SSO sign-in on
+  // kortix://auth/callback; without this entry GoTrue drops the redirect and
+  // the phone lands on the web SITE_URL instead of back in the app.
+  ADDITIONAL_REDIRECT_URLS: 'kortix://**',
 };
 
-/** Agent code-execution sandbox provider (Daytona SaaS by default). */
+/**
+ * Agent code-execution sandbox provider: Platinum, the reference. The Daytona
+ * values only apply when an operator opts into the legacy Daytona fallback.
+ */
 export const SHARED_SANDBOX_DEFAULTS: Record<string, string> = {
-  ALLOWED_SANDBOX_PROVIDERS: 'daytona',
+  ALLOWED_SANDBOX_PROVIDERS: 'platinum',
   DAYTONA_SERVER_URL: 'https://app.daytona.io/api',
   DAYTONA_TARGET: 'us',
 };
@@ -76,9 +88,22 @@ export const SHARED_FEATURE_FLAG_DEFAULTS: Record<string, string> = {
   KORTIX_PUBLIC_RESTRICT_ACCOUNT_CREATION: 'true',
 };
 
+/**
+ * Kortix Capture's object store. `bundled` (the default) runs the on-box
+ * `capture-store` MinIO service and wires the API at it — zero config.
+ * `external` drops that service and points the API at an operator-owned
+ * S3-compatible store (AWS S3, Cloudflare R2, ...) via the KORTIX_CAPTURE_S3_* /
+ * KORTIX_CAPTURE_STS_* keys in .env. See compose-assets.ts
+ * renderFullDockerCompose() and references/self-host.md.
+ */
+export const SHARED_CAPTURE_DEFAULTS: Record<string, string> = {
+  KORTIX_CAPTURE_STORE: 'bundled',
+};
+
 /** Every target-agnostic default in one object, for a single spread. */
 export const SHARED_SELF_HOST_DEFAULTS: Record<string, string> = {
   ...SHARED_AUTH_DEFAULTS,
   ...SHARED_SANDBOX_DEFAULTS,
   ...SHARED_FEATURE_FLAG_DEFAULTS,
+  ...SHARED_CAPTURE_DEFAULTS,
 };

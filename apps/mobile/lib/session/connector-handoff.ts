@@ -9,10 +9,11 @@
  * `apps/api/src/connectors/db-deps.ts` `mintConnectorConnectLink`). Web's
  * markdown link interceptor turns that link into `SetupLinkButton` /
  * `ConnectorIntake` wherever the agent happens to paste it in prose. Mobile
- * has no markdown link interception, so it reads the SAME field straight off
- * the `kortix-connectors_call` tool part instead
+ * reads the SAME field straight off the `kortix-connectors_call` tool part
  * (`components/session/tool/tools/connector-tools.tsx`'s `ConnectorCallTool`)
- * — the tool part is the one place this fact is guaranteed to show up.
+ * — the tool part is the one place this fact is guaranteed to show up — and
+ * draws the same row for a link in prose (`lib/markdown/setup-links.ts`,
+ * `components/session/turn/setup-link-card.tsx`).
  *
  * The connect hand-off itself prefers the project's own Pipedream connect
  * round trip (`lib/projects/projects-client.ts` `pipedreamConnect` /
@@ -28,7 +29,7 @@
  * inside another sheet would stack two overlays.
  */
 
-import { isToolPart, type Part } from '@kortix/sdk';
+import type { SessionLogBlock } from '@kortix/sdk';
 
 import { partInput, partOutput } from './tool-part-accessors';
 import { parseConnectorOutput } from './tool-output-parsers';
@@ -148,44 +149,55 @@ export function isConnectorCallTool(tool: string): boolean {
 }
 
 /**
- * The call ids of `kortix-connectors_call` parts that ask a human for
+ * The call ids of `kortix-connectors_call` calls that ask a human for
  * something — connect an app (`connectorConnectNeed`) or approve a call
  * (`connectorApprovalNeed`). `standaloneCallIdsFor` breaks these out of their
  * burst, so their Connect row and approval prompt render in the transcript.
  */
-export function connectorHandoffCallIds(parts: ReadonlyArray<{ part: Part }>): string[] {
+export function connectorHandoffCallIds(blocks: ReadonlyArray<SessionLogBlock>): string[] {
   const ids: string[] = [];
-  for (const { part } of parts) {
-    if (!isToolPart(part) || !isConnectorCallTool(part.tool)) continue;
-    const parsed = parseConnectorOutput(partOutput(part));
+  for (const block of blocks) {
+    if (block.type !== 'tool_call' || !isConnectorCallTool(block.name)) continue;
+    const parsed = parseConnectorOutput(partOutput(block));
     if (!parsed) continue;
-    const input = partInput(part);
-    if (connectorConnectNeed(input, parsed) || connectorApprovalNeed(input, parsed)) ids.push(part.callID);
+    const input = partInput(block);
+    if (connectorConnectNeed(input, parsed) || connectorApprovalNeed(input, parsed)) ids.push(block.call_id);
   }
   return ids;
 }
 
 /**
  * What the in-chat approval prompt shows:
- * - `unknown`  — the review list has not loaded yet: render nothing, so a
- *   resolved call never flashes Approve / Deny;
+ * - `unknown`  — the review list cannot vouch for the call yet: not loaded,
+ *   failed, or fetched before the call settled. Render nothing: a resolved
+ *   call never flashes Approve / Deny, and a viewer the API would refuse
+ *   never gets them (KRTX-1724);
  * - `pending`  — Approve / Deny;
+ * - `waiting`  — still pending, but this viewer may not decide it: only a
+ *   project manager or the person who started the session may (KRTX-1724).
+ *   No Approve / Deny, which the API would refuse with 403;
  * - `approved` / `denied` — the outcome is known;
  * - `resolved` — decided elsewhere (web, the Review page, before a remount),
  *   outcome not known.
  */
-export type ConnectorApprovalState = 'unknown' | 'pending' | 'approved' | 'denied' | 'resolved';
+export type ConnectorApprovalState =
+  | 'unknown'
+  | 'pending'
+  | 'waiting'
+  | 'approved'
+  | 'denied'
+  | 'resolved';
 
 export interface ConnectorApprovalStateInput {
   executionId: string;
-  /** The project's review list (`reviewKeys.list`, the query `ReviewPage`
-   *  reads). The API adapts only still-pending connector calls into it, as
-   *  `call:<execution_id>`. `undefined` until it loads. */
-  reviewItems: ReadonlyArray<{ id: string; status: string }> | undefined;
+  /** The project's pending approvals (`useReviewItems` with `kind: 'approval'`).
+   *  The API adapts only still-pending connector calls into the review list, as
+   *  `call:<execution_id>`. `undefined` until it loads. `canResolve` is the
+   *  call's own verdict (`ReviewApprovalAction.canResolve`), when known.
+   *  A failed request holds no list, so no verdict: `unknown`. */
+  reviewItems: ReadonlyArray<{ id: string; status: string; canResolve?: boolean }> | undefined;
   /** When that list was fetched (react-query `dataUpdatedAt`), epoch ms. */
   reviewFetchedAtMs: number;
-  /** The review list request failed and holds no data. */
-  reviewFailed: boolean;
   /** When the tool call settled, epoch ms. A list fetched before it cannot
    *  carry the call yet, so its absence proves nothing. */
   callSettledAtMs: number | null;
@@ -194,26 +206,61 @@ export interface ConnectorApprovalStateInput {
   localDecision: 'approve' | 'deny' | null;
 }
 
+/**
+ * A pending connector call this viewer may not decide (KRTX-1724). The API
+ * lists it as `waiting` for such a viewer; an API older than that still says
+ * `needs_you`, but its `canResolve` (from `args_preview_authorized`) is false.
+ */
+export function approvalWaitsOnOthers(item: { status: string; canResolve?: boolean }): boolean {
+  return item.status === 'waiting' || (item.status === 'needs_you' && item.canResolve === false);
+}
+
 export function connectorApprovalState(input: ConnectorApprovalStateInput): ConnectorApprovalState {
   if (input.localDecision) return input.localDecision === 'approve' ? 'approved' : 'denied';
-  if (!input.reviewItems) return input.reviewFailed ? 'pending' : 'unknown';
+  if (!input.reviewItems) return 'unknown';
 
   const item = input.reviewItems.find((row) => row.id === `call:${input.executionId}`);
   if (item) {
-    if (item.status === 'needs_you' || item.status === 'waiting') return 'pending';
+    if (approvalWaitsOnOthers(item)) return 'waiting';
+    if (item.status === 'needs_you') return 'pending';
     if (item.status === 'approved') return 'approved';
     if (item.status === 'rejected') return 'denied';
     return 'resolved';
   }
   // Absent from a list fetched before the call settled: too early to say.
-  if (input.callSettledAtMs !== null && input.reviewFetchedAtMs <= input.callSettledAtMs) return 'pending';
+  if (listPredatesCall(input.reviewFetchedAtMs, input.callSettledAtMs)) return 'unknown';
   return 'resolved';
 }
 
-export function connectorHandoffCopy(providerLabel: string): { title: string; body: string } {
+/** A list fetched at or before the call settled cannot carry it yet. */
+export function listPredatesCall(reviewFetchedAtMs: number, callSettledAtMs: number | null): boolean {
+  return callSettledAtMs !== null && reviewFetchedAtMs <= callSettledAtMs;
+}
+
+/**
+ * The line that says who decides a call this viewer may not decide. A session
+ * started with an API token or a service account is decided by managers only
+ * (`resolvers: 'managers'`, KRTX-1724).
+ */
+export function approvalWaitingWhoKey(
+  resolvers: 'managers' | 'managers_and_launcher' | undefined,
+): 'approvals.waitingManagers' | 'approvals.waitingWho' {
+  return resolvers === 'managers' ? 'approvals.waitingManagers' : 'approvals.waitingWho';
+}
+
+/**
+ * The connect sheet's words. The title is the card's title, so the sheet
+ * continues the row that opened it. The body says where the sign-in happens
+ * and the one thing a reader worries about; the pill names where it goes.
+ */
+export function connectorHandoffCopy(
+  providerLabel: string,
+  projectName?: string | null,
+): { title: string; body: string; action: string } {
   return {
-    title: `Connect ${providerLabel}`,
-    body: "Sign in on kortix.com. You come back to this chat when it's done.",
+    title: projectName ? `Connect ${providerLabel} to ${projectName}` : `Connect ${providerLabel}`,
+    body: `You sign in on ${providerLabel} in the browser, then come back to this chat. Kortix never sees your password.`,
+    action: `Continue to ${providerLabel}`,
   };
 }
 

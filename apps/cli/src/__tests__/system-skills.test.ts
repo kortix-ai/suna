@@ -293,18 +293,26 @@ describe('kortix system-skills — get', () => {
 });
 
 describe('kortix system-skills — path', () => {
-  test('resolves the on-disk skill dir under a project root', async () => {
-    mkdirSync(join(tmp, '.kortix', 'opencode'), { recursive: true });
+  test('resolves the on-disk skill dir under a legacy project root', async () => {
+    mkdirSync(join(tmp, '.kortix', 'opencode', 'skills'), { recursive: true });
     const code = await runSystemSkills(['path', 'kortix-system']);
     expect(code).toBe(0);
     expect(stdout.trim().endsWith('.kortix/opencode/skills/kortix-system')).toBe(true);
+  });
+
+  test('resolves the root skills/ dir under a root-layout project', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), 'kortix_version: 2\n');
+    mkdirSync(join(tmp, 'skills'), { recursive: true });
+    const code = await runSystemSkills(['path', 'kortix-system']);
+    expect(code).toBe(0);
+    expect(stdout.trim().endsWith(`${tmp.split('/').pop()}/skills/kortix-system`)).toBe(true);
   });
 
   test('--json reports the path and whether it exists', async () => {
     const code = await runSystemSkills(['path', 'kortix-memory', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
-    expect(parsed.path.endsWith('.kortix/opencode/skills/kortix-memory')).toBe(true);
+    expect(parsed.path.endsWith('/skills/kortix-memory')).toBe(true);
     expect(parsed.exists).toBe(false);
   });
 });

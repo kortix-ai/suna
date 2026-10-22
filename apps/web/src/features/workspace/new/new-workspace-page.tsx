@@ -1,48 +1,46 @@
 'use client';
 
-import { readAccountParam } from '@/features/workspace/new/account-param';
-import { readCloneParam } from '@/features/workspace/new/clone-param';
-import { readOnboardingParam } from '@/features/workspace/new/onboarding-param';
-import { readSourceParam } from '@/features/workspace/new/source-param';
+import { readAccountParam } from '@kortix/ui/workspace/new/account-param';
+import { readCloneParam } from '@kortix/ui/workspace/new/clone-param';
+import { readSourceParam } from '@kortix/ui/workspace/new/source-param';
 import { useTranslations } from '@/i18n/use-translations';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { ArrowLeftIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion } from 'motion/react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { DesktopCloseButton } from '@/components/desktop/desktop-close-button';
-import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { ProjectIconField } from '@/features/projects/modal/project-icon-field';
+import { ProjectIconField } from '@kortix/ui/workspace/projects/modal/project-icon-field';
 import { useAuth } from '@/features/providers/auth-provider';
-import { AccountPicker } from '@/features/workspace/new/account-picker';
-import { AdvancedFields } from '@/features/workspace/new/advanced-fields';
+import { AccountTopBar } from '@/features/workspace/account-top-bar';
+import { AccountPicker } from '@kortix/ui/workspace/new/account-picker';
+import { AdvancedFields } from '@kortix/ui/workspace/new/advanced-fields';
 import {
   INITIAL_FORM_STATE,
-  filterCreatableAccounts,
   isForeignAccountList,
   isSubmittable,
   resolveDefaultCreatableAccountId,
   shouldShowAccountLine,
   type NewWorkspaceFormState,
-} from '@/features/workspace/new/new-workspace-form';
-import { useCreateWorkspace } from '@/features/workspace/new/use-create-workspace';
-import { WorkspaceHandoff } from '@/features/workspace/new/workspace-handoff';
+} from '@kortix/ui/workspace/new/new-workspace-form';
+import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { useCreateWorkspace } from '@kortix/ui/workspace/new/use-create-workspace';
+import { useProjectQuota } from '@kortix/ui/workspace/new/use-project-quota';
+import { WorkspaceHandoff } from '@kortix/ui/workspace/new/workspace-handoff';
 import {
   WORKSPACE_NAME_MAX_LENGTH,
+  suggestWorkspaceName,
   validateWorkspaceName,
-} from '@/features/workspace/new/workspace-name';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
+} from '@kortix/ui/workspace/new/workspace-name';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { cn } from '@kortix/ui';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
 
 /**
  * The form <-> `WorkspaceHandoff` swap's ONLY transition — a plain opacity
@@ -73,9 +71,16 @@ const EASE_IN_OUT: [number, number, number, number] = [0.77, 0, 0.175, 1];
 const ICON_REVEAL = { duration: 0.22, ease: EASE_IN_OUT };
 const ICON_HIDE = { duration: 0.17, ease: EASE_IN_OUT };
 
-/** `size-10`, as a width Motion can interpolate. Keep in step with the
- *  trigger's own `triggerClassName` below — they are the same box. */
-const ICON_WIDTH = '2.5rem';
+/**
+ * The icon column's open width: the `size-10` tile PLUS the gap after it.
+ * Border-box clamps content, not padding, so the animated `paddingRight`
+ * (`ICON_GAP`) is carved out of this width — at the old `2.5rem` a wider gap
+ * only clipped the tile. `size-10` is `10 × --spacing` (0.23rem) = 2.3rem.
+ * Keep in step with the trigger's own `triggerClassName` below.
+ */
+const ICON_GAP = '0.5rem';
+/** Tile + gap: 2.3rem + `ICON_GAP`. Change the two together. */
+const ICON_WIDTH = '2.8rem';
 
 /**
  * Create a workspace.
@@ -131,13 +136,6 @@ export function NewWorkspacePage() {
 
   useSignedOutRedirect();
 
-  // Same `useSearchParams()` result the clone param reads — one subscription,
-  // two params. Non-null only between "the workspace was created" and "the
-  // user finished or skipped onboarding for it".
-  const onboardingProjectId = readOnboardingParam(
-    new URLSearchParams(searchParams?.toString() ?? ''),
-  );
-
   // `?source=` is how the picked repository source survives the real
   // navigation to `/github/setup` and back (`readSourceParam`). Read into the
   // INITIAL state only — a lazy `useState` initializer, so a later param
@@ -159,6 +157,13 @@ export function NewWorkspacePage() {
     ...(initialAccountId ? { accountId: initialAccountId } : {}),
   }));
   const [touched, setTouched] = useState(false);
+  // Seed a friendly default name once, after mount — not in the `useState`
+  // initializer, because a random value there differs between the server
+  // render and the client's first render (a hydration mismatch). A name the
+  // user already has (typed, or restored) is never replaced.
+  useEffect(() => {
+    setState((current) => (current.name ? current : { ...current, name: suggestWorkspaceName() }));
+  }, []);
   // Never cleared: the document is replaced, not re-rendered.
   const [signingOut, setSigningOut] = useState(false);
   const reduceMotion = useReducedMotion();
@@ -172,31 +177,26 @@ export function NewWorkspacePage() {
     retry,
     canRetry,
     limitReached,
+    phase,
   } = useCreateWorkspace();
   const openUpgradeDialog = useUpgradeDialogStore((store) => store.openUpgradeDialog);
   const submitting = status === 'creating';
-  /**
-   * The form is gone and `WorkspaceHandoff` holds the page.
-   *
-   * ONE flag over both waiting windows — the create being in flight, and the
-   * project existing while the wizard is still `null` — because the user is in
-   * one continuous wait across them and the screen should not change at the
-   * seam. Deriving it here rather than testing both conditions at the JSX also
-   * means the two can never drift into a state that renders neither branch.
-   */
-  const handingOff = submitting || Boolean(onboardingProjectId);
 
-  // Only surface a name error after the field has been left once. Validating
-  // on the first keystroke would tell the user "Name is required" while they
-  // are still typing the name.
+  // The too-long message fires LIVE, before the field is ever left: the input
+  // no longer truncates typed or pasted names at the limit (there is no
+  // `maxLength` — the browser used to clip silently at 120, which made this
+  // message and the submit gate both unreachable for typing). The remaining
+  // name errors wait for the field to be left once: validating on the first
+  // keystroke would tell the user "Name is required" while they are still
+  // typing the name.
   const nameError = useMemo(() => {
-    if (!touched) return null;
     const result = validateWorkspaceName(state.name);
-    if (result.ok) return null;
-    if (result.error === 'Name is required') return t('validation.nameRequired');
-    if (result.error.startsWith('Name must be')) {
+    if (!result.ok && result.error.startsWith('Name must be')) {
       return t('validation.nameTooLong', { max: WORKSPACE_NAME_MAX_LENGTH });
     }
+    if (!touched) return null;
+    if (result.ok) return null;
+    if (result.error === 'Name is required') return t('validation.nameRequired');
     return t('validation.nameCharacters');
   }, [state.name, t, touched]);
 
@@ -214,7 +214,7 @@ export function NewWorkspacePage() {
   // here; the result feeds both `AccountPicker` and `isSubmittable` below —
   // never the raw list to one and this to the other, which would let "what
   // the user can pick" and "what gates submit" disagree.
-  const creatableAccounts = filterCreatableAccounts(accounts);
+  const creatableAccounts = useCreatableAccounts(accounts);
 
   // `user?.id` is `string | undefined`; the identity helpers below require an
   // explicit `string | null` — an omitted/undefined argument used to compile
@@ -256,6 +256,18 @@ export function NewWorkspacePage() {
     accountId: effectiveAccountId,
   };
 
+  // The target account's project-cap state, read once on load. When the plan
+  // caps the account, the form shows the cap reason and the Upgrade affordance
+  // up front (KRTX-2495) and Create cannot submit — the same information a
+  // denied submit would have taught, without the failed attempt first. Gated
+  // on `!accountsQuery.isLoading` so the pre-check never fires for an account
+  // the create would not target (the effective id is still unresolved during
+  // the load window), and on `userId` so a signed-out render reads nothing.
+  const quotaQuery = useProjectQuota(effectiveAccountId, {
+    enabled: !accountsQuery.isLoading && Boolean(userId),
+  });
+  const capState = quotaQuery.data?.capped ? quotaQuery.data : null;
+
   // `accountsQuery.isLoading` is checked here AS WELL AS inside
   // `isSubmittable`'s own `accountCount < 1` floor. Belt and braces on
   // purpose, not redundant: during the loading window `creatableAccounts` is
@@ -282,84 +294,46 @@ export function NewWorkspacePage() {
     isSubmittable(effectiveState, creatableAccounts.length) &&
     !accountsQuery.isLoading &&
     !submitting &&
+    // The account is at its plan cap (the quota pre-check said so): a create
+    // can only fail with the 403 the cap block on screen already explains.
+    !capState &&
     // Belt and braces on top of `effectiveAccountId` already being forced
     // null above for a FOREIGN list — `isSubmittable`'s own
     // `accountCount > 1 && !accountId` check already fails on that null, but
     // naming the condition here directly means a future edit to either
     // function cannot silently reopen the disclosure by accident.
     !foreignAccountList;
-  const signOutLabel = signingOut ? t('actions.signingOut') : t('actions.logOut');
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center gap-6 px-6 py-16">
       {/* No `relative` on <main> on purpose: with no positioned ancestor in
-          this tree, `absolute` resolves against the initial containing block —
-          the true viewport edges — rather than the right edge of the centered
-          max-w-md column. `inset-x-0` + padding (not `w-full` + `right-*`) so
-          the row spans the viewport without overflowing left. Sits ahead of
-          the <form> so it stays reachable regardless of form state.
-          `kx-desktop-band-row` moves the row below the title-bar band on
-          desktop, clear of the macOS traffic lights and the Win/Linux window
-          controls. */}
-      <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
-        {/* The web needs an in-page exit; Electron supplies Back in its band. */}
-        <Button
-          asChild
-          variant="ghost"
-          size="sm"
-          className="kx-web-only-back text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
-        >
-          <Link href="/projects">
-            <ArrowLeftIcon className="size-4" />
-            {t('actions.back')}
-          </Link>
-        </Button>
-        {/* `text-muted-foreground hover:text-foreground` (not the bare `ghost`
-            default) so this reads as one quiet secondary row at rest, same
-            treatment as `(auth)/auth/phone-verification/page.tsx:223-227` —
-            otherwise it sits at full-contrast `text-foreground` beside the
-            identity's dim muted text and reads louder than the page's actual
-            primary action.
-
-            `performSignOut`, not the old bare `void signOut()`: that neither
-            awaited the sign-out nor navigated, so pressing Log out here signed
-            the user out and left them sitting on the create form. */}
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-foreground shrink-0"
-            disabled={signingOut}
-            onClick={() => {
-              setSigningOut(true);
-              void performSignOut();
-            }}
-          >
-            {signingOut ? <Loading className="size-4 shrink-0" /> : null}
-            {signOutLabel}
-          </Button>
-          {/* Desktop only. The shell has no browser toolbar, so without this
-              Log out was the only way off this page there. `replace`, not
-              `push`: `/new` is where the user left, not somewhere to return
-              to. The landing door resolves the latest project, or offers
-              create and sign-out to an account with none. */}
-          <DesktopCloseButton onClose={() => router.replace('/projects')} />
-        </div>
-      </div>
+          this tree, the bar's `absolute` resolves against the initial
+          containing block — the true viewport edges — rather than the centered
+          max-w-md column. Sits ahead of the <form> so it stays reachable
+          regardless of form state. `performSignOut`, not a bare `signOut()`:
+          that neither awaited nor navigated, and left the user on the form. */}
+      <AccountTopBar
+        email={user?.email ?? null}
+        name={user?.user_metadata?.name}
+        signingOut={signingOut}
+        onLogOut={() => {
+          setSigningOut(true);
+          void performSignOut();
+        }}
+        back={{ href: '/projects', label: t('actions.back') }}
+        // Desktop only. The shell has no browser toolbar, so without this the
+        // account menu was the only way off this page there. `replace`, not
+        // `push`: `/new` is where the user left, not somewhere to return to.
+        trailing={<DesktopCloseButton onClose={() => router.replace('/projects')} />}
+      />
 
       {/* TWO states, one swap — see the `SWAP_IN`/`SWAP_OUT` doc comment above.
           `initial={false}` so neither side fades in on first paint.
 
-          `handingOff` deliberately folds the onboarding param in with
-          `submitting` rather than gating the whole block on it separately. The
-          param OWNS this page: `/new?onboarding=<id>` means the workspace
-          already exists, so the create form has nothing left to say — and on a
-          RELOAD the create hook restarts at `status: 'idle'`, so `submitting`
-          alone would paint the live form (Name input, `autoFocus`, fully
-          interactive) in the window before `getProjectDetail` settles. A user
-          who reloaded mid-onboarding could type into it, and if the account
-          list resolved first, Enter fired a SECOND `runCreate`.
+          The swap runs only while the create is in flight — the handoff holds
+          the page from the click until the provision finishes; on success the
+          orchestration navigates to `/projects/<id>` (KRTX-1419), so there is
+          no post-create window on this page for the form to reappear in.
 
           The header lives INSIDE the form branch, not above the swap. It is
           the form's title — "Create a workspace" above a screen that is already
@@ -367,28 +341,30 @@ export function NewWorkspacePage() {
           motions (a block fading while a heading holds still) instead of the
           page turning over as one thing. */}
       <AnimatePresence mode="wait" initial={false}>
-        {handingOff ? (
+        {submitting ? (
           <m.div
             key="handoff"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: SWAP_IN }}
             exit={{ opacity: 0, transition: SWAP_OUT }}
           >
-            {/* `state.name` survives the whole handoff — this component is a
-                sibling of the form in the same render, not a route away — so
-                the name shown is the one submitted, never re-fetched. */}
-            <WorkspaceHandoff workspaceName={state.name.trim()} projectId={onboardingProjectId} />
+            {/* `state.name` is the form's own state, so the name shown is the
+                one submitted. `phase` is the latest streamed provisioning
+                phase (KRTX-1543): the managed create reports its steps over
+                `/projects/provision-stream` and the handoff renders them;
+                `null` (GitHub sources, fallback) renders the base screen. */}
+            <WorkspaceHandoff workspaceName={state.name.trim()} phase={phase} />
           </m.div>
         ) : (
           <m.div
             key="form"
-            className="flex flex-col gap-6"
+            className="flex flex-col gap-10"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1, transition: SWAP_IN }}
             exit={{ opacity: 0, transition: SWAP_OUT }}
           >
             <header className="flex flex-col gap-2 text-center">
-              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
+              <h1 className="text-foreground text-2xl font-medium tracking-tight">
                 {t('title')}
               </h1>
               <p className="text-muted-foreground text-sm text-balance">{t('description')}</p>
@@ -434,7 +410,7 @@ export function NewWorkspacePage() {
                       as an animated `paddingRight`. Once an icon is PICKED the
                       column is open for good and the tile is tinted, so the
                       extra `gap-1.5` is safe and keeps the fill off the input. */}
-                <div className={cn('grid grid-cols-[auto_1fr] items-end', state.icon && 'gap-2')}>
+                <div className={cn('grid grid-cols-[auto_1fr] items-end', state.icon && 'gap-0')}>
                   <m.div
                     // ONE element, always mounted, retargeting its width —
                     // NOT an AnimatePresence enter/exit. Mount/unmount
@@ -453,7 +429,7 @@ export function NewWorkspacePage() {
                             // CONTENT, not padding, so a fixed padding-right
                             // survives `width: 0` as a 12px stub holding the
                             // column open. This closes it completely.
-                            paddingRight: showIcon ? '0.75rem' : 0,
+                            paddingRight: showIcon ? ICON_GAP : 0,
                             opacity: showIcon ? 1 : 0,
                             filter: showIcon ? 'blur(0px)' : 'blur(2px)',
                           }
@@ -493,7 +469,10 @@ export function NewWorkspacePage() {
                       onChange={(event) => setState((s) => ({ ...s, name: event.target.value }))}
                       onBlur={() => setTouched(true)}
                       placeholder={t('name.placeholder')}
-                      maxLength={WORKSPACE_NAME_MAX_LENGTH}
+                      // No `maxLength`: the browser would clip typed and pasted
+                      // names at the limit with no message, and the validation
+                      // below would stay unreachable. The limit is enforced by
+                      // `isSubmittable` (shared form model) + the live message.
                       size="md"
                       className="w-full"
                       aria-invalid={nameError ? true : undefined}
@@ -580,6 +559,39 @@ export function NewWorkspacePage() {
               <Button type="submit" size="lg" disabled={!canSubmit} className="w-full">
                 {t('actions.create')}
               </Button>
+              {/* The plan cap, known BEFORE any submit (KRTX-2495): the quota
+                  pre-check answered `capped` for the target account, so the
+                  form states the cap reason here instead of teaching it
+                  through a failed create. Same slot and treatment as the
+                  post-submit error block below — form-level, `role="alert"`,
+                  one message and one secondary action — so the cap says the
+                  same thing about the same account wherever it is met. Shown
+                  only while `status === 'idle'`: once a submit runs, the
+                  handoff ('creating') or the post-submit block ('error') owns
+                  this slot, so at most one cap message is ever on screen.
+                  The Upgrade affordance is gated on billing exactly like the
+                  post-submit one: with billing off there is nothing to upgrade
+                  to, and the server itself answers `capped: false`. */}
+              {capState && status === 'idle' ? (
+                <div role="alert" className="flex flex-col items-center gap-1.5">
+                  <p className="text-destructive text-center text-xs">{capState.message}</p>
+                  {isBillingEnabled() ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        openUpgradeDialog({
+                          reason: 'subscription_required',
+                          accountId: effectiveAccountId ?? undefined,
+                        })
+                      }
+                    >
+                      {t('actions.upgrade')}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
               {/* Form-level, not a field error: every failure `messageFor`
                     (`use-create-workspace.ts`) maps — 403 wrong-account, 400
                     bad name, a managed-git-unavailable 503, a retryable 502, or
@@ -646,31 +658,14 @@ export function NewWorkspacePage() {
         )}
       </AnimatePresence>
 
-      {/* Onboarding runs HERE, not on the workspace page. It is a fullscreen
-          portal, so whenever it mounts it covers the handoff above — which is
-          exactly why the handoff has no "finished" state of its own to render.
-
-          `key` on the project: `index`, `domain` and the survey `answers` are
-          plain `useState` inside the wizard, none keyed on the project, so a
-          change of id on a mounted instance would PATCH workspace A's answers
-          onto workspace B. */}
-      {onboardingProjectId && (
-        <ProjectOnboardingWizard
-          key={onboardingProjectId}
-          projectId={onboardingProjectId}
-          onCompleted={() => router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)}
-          onSkip={() => router.replace(`/projects/${encodeURIComponent(onboardingProjectId)}`)}
-        />
-      )}
-
-      {/* The plan step's "See plans" option calls `openUpgrade()`, which needs a
-          mounted `GlobalUpgradeModal` to answer it. The other hosts are
-          `AppProviders` (mounted by `project-shell.tsx` and the share page,
-          never by `app/(app)/layout.tsx`) and `accounts/[id]/page.tsx`, which
-          mounts one bare — the precedent that this mount follows. Neither
-          covers `/new`, so billing can be enabled here with no host at all and
-          that option is a dead click. Same flag and
-          same line as `app-providers.tsx:139`. */}
+      {/* The plan-cap error's "Upgrade" button calls `openUpgradeDialog()`,
+          which needs a mounted `GlobalUpgradeModal` to answer it. The other
+          hosts are `AppProviders` (mounted by `project-shell.tsx` and the share
+          page, never by `app/(app)/layout.tsx`) and
+          `accounts/[id]/page.tsx`, which mounts one bare — the precedent that
+          this mount follows. Neither covers `/new`, so billing can be enabled
+          here with no host at all and that button would be a dead click. Same
+          flag and same line as `app-providers.tsx:139`. */}
       {isBillingEnabled() && <GlobalUpgradeModal />}
     </main>
   );

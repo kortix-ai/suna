@@ -8,10 +8,13 @@
  * also wrong — a self-host box runs the "prod" build but is not the hosted
  * multi-tenant SaaS, so "prod always means org" never held there).
  *
- * This proves `githubBackend.createRepo()` routes to `/user/repos` for a
- * personal owner and `/orgs/{owner}/repos` for an org owner, via BOTH:
- *  - the stored `ownerType` install-callback now writes to the DB config, and
- *  - the live `isOrgAccount` fallback for configs that don't have it yet.
+ * This proves `githubBackend.createRepo()` classifies the owner correctly via
+ * BOTH the stored `ownerType` the install-callback writes and the live
+ * `isOrgAccount` fallback for configs that don't have it yet: an org owner
+ * creates through `/orgs/{owner}/repos`, and a personal owner on an App
+ * installation is refused before the request, because GitHub does not accept
+ * an installation token on `/user/repos`. A PAT-backed instance backend still
+ * creates for its own user.
  *
  * Seeds the two instance resolvers (platform/services/github-app-identity.ts
  * and platform/services/managed-git-backend.ts) — everything downstream runs
@@ -139,7 +142,15 @@ function findRequest(pathSuffix: string) {
 }
 
 describe('managed GitHub App createRepo — owner-type routing', () => {
-  test('stored ownerType "User" (install-callback resolved a personal account) -> POST /user/repos', async () => {
+  // The routing is right and the CREDENTIAL cannot work: GitHub does not accept
+  // an App installation token on `POST /user/repos` — the endpoint is absent
+  // from its "endpoints available for GitHub App installation access tokens"
+  // while `POST /orgs/{org}/repos` is present — so this request answered
+  // `403 Resource not accessible by integration` in production on 2026-09-25.
+  // The mocked fetch here always answered 201, which is why the old
+  // expectation read as correct. `createRepo` now refuses before the request,
+  // and `createRepoFailureResult` maps that to a 409 that says what to do.
+  test('stored ownerType "User" on an App install is refused before any request', async () => {
     setConfig({
       appId: '12345',
       privateKey: TEST_APP_PRIVATE_KEY,
@@ -148,20 +159,17 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
       installationId: '501',
     });
 
-    const repo = await githubBackend.createRepo({
-      accountId: 'acct-1',
-      projectId: 'proj-1',
-      slug: 'demo',
-      defaultBranch: 'main',
-      isPrivate: true,
-    });
+    await expect(
+      githubBackend.createRepo({
+        accountId: 'acct-1',
+        projectId: 'proj-1',
+        slug: 'demo',
+        defaultBranch: 'main',
+        isPrivate: true,
+      }),
+    ).rejects.toMatchObject({ code: 'github_personal_account_create_unsupported' });
 
-    // /user/repos ignores the owner param (it's always "the authenticated
-    // account's repos" on GitHub's side) — the mock reflects that by always
-    // returning a fixed clone_url, independent of the configured owner.
-    expect(repo.upstreamUrl).toBe('https://github.com/whoever/demo.git');
-    expect(findRequest('/user/repos')).toBeTruthy();
-    expect(findRequest('/orgs/agent-kortix/repos')).toBeUndefined();
+    expect(findRequest('/user/repos')).toBeFalsy();
   });
 
   test('stored ownerType "Organization" -> POST /orgs/{owner}/repos (regression guard)', async () => {
@@ -186,7 +194,7 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
     expect(findRequest('/user/repos')).toBeUndefined();
   });
 
-  test('no stored ownerType (older config) falls back to a live account-type lookup — User', async () => {
+  test('no stored ownerType (older config): the live lookup finds User, and it is still refused', async () => {
     setConfig({
       appId: '12345',
       privateKey: TEST_APP_PRIVATE_KEY,
@@ -194,16 +202,20 @@ describe('managed GitHub App createRepo — owner-type routing', () => {
       installationId: '501',
     });
 
-    const repo = await githubBackend.createRepo({
-      accountId: 'acct-1',
-      projectId: 'proj-1',
-      slug: 'demo',
-      defaultBranch: 'main',
-      isPrivate: true,
-    });
+    await expect(
+      githubBackend.createRepo({
+        accountId: 'acct-1',
+        projectId: 'proj-1',
+        slug: 'demo',
+        defaultBranch: 'main',
+        isPrivate: true,
+      }),
+    ).rejects.toMatchObject({ code: 'github_personal_account_create_unsupported' });
 
-    expect(repo.upstreamUrl).toBe('https://github.com/whoever/demo.git');
-    expect(findRequest('/user/repos')).toBeTruthy();
+    // The live account-type lookup still ran — it is what classified the owner
+    // as personal in the first place.
+    expect(findRequest('/users/user-owner-live')).toBeTruthy();
+    expect(findRequest('/user/repos')).toBeFalsy();
   });
 
   test('no stored ownerType, live lookup says Organization -> org path (regression guard)', async () => {

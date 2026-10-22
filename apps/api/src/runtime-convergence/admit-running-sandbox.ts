@@ -13,7 +13,7 @@
  * a health fetch failure) gets `{ admitted: true }` rather than blocking every
  * session open on this gate's own availability — the same shape as every other
  * "must not throw" convergence lane in this codebase
- * (`convergeBeforeTurnStart`, `convergeAssetsInBackground`). A box that FAILED
+ * (`convergeConfigIfBehind`, `convergeAssetsInBackground`). A box that FAILED
  * to answer at all is handled inside `evaluateAdmission` via
  * `parseActualRuntime`'s tolerant "reports nothing" default, which refuses —
  * this catch is for the admission PLUMBING breaking, not for the box.
@@ -25,7 +25,7 @@ import { resolveDesiredRelease } from '../config-releases/desired';
 import { sandboxOpencodeEndpoint } from '../projects/opencode-mapping';
 import { sandboxRuntimeRequestHeaders } from '../projects/sandbox-fetch';
 import { admitSandboxForSession } from './admit-sandbox';
-import type { RuntimeAdmissionVerdict } from './admission';
+import { runtimeAdmissionEnforced, type RuntimeAdmissionVerdict } from './admission';
 
 export interface AdmitRunningSandboxInput {
   externalId: string;
@@ -97,11 +97,13 @@ export async function admitRunningSandbox(
       {
         releaseId: () => deps.resolveReleaseId(input),
         onRefused: (event) => {
-          logger.error('[runtime-convergence] admission refused — box replaced, not used', {
-            session_id: input.sessionId,
-            failed_check: event.failedCheck,
-            cause: event.cause,
-          });
+          const enforced = runtimeAdmissionEnforced();
+          logger[enforced ? 'error' : 'warn'](
+            enforced
+              ? '[runtime-convergence] admission refused — box replaced, not used'
+              : '[runtime-convergence] admission refused — observe only, box still used',
+            { session_id: input.sessionId, failed_check: event.failedCheck, cause: event.cause },
+          );
         },
       },
     );

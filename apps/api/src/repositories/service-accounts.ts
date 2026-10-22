@@ -5,7 +5,10 @@
 
 import { and, asc, eq, inArray, isNull, isNotNull } from 'drizzle-orm';
 import { serviceAccounts, roleAssignments } from '@kortix/db';
+import { notAnAudienceGrant } from '../iam/audience-grants';
 import { db } from '../shared/db';
+import { errorSqlstate } from '../shared/error-cause';
+import { createLastUsedTracker } from '../shared/throttled-last-used';
 import { candidateSecretKeyHashesAsync, markTokenValidated } from '../shared/token-hash';
 import {
   generateServiceAccountSecret,
@@ -14,8 +17,9 @@ import {
   isServiceAccountToken,
 } from '../shared/crypto';
 
-const THROTTLE_MS = 15 * 60 * 1000;
-const lastUsedCache = new Map<string, number>();
+const updateLastUsedThrottled = createLastUsedTracker((saId) =>
+  db.update(serviceAccounts).set({ lastUsedAt: new Date() }).where(eq(serviceAccounts.serviceAccountId, saId)),
+);
 
 export type ServiceAccount = {
   serviceAccountId: string;
@@ -192,7 +196,8 @@ export async function ensureAgentServiceAccount(args: {
     if (row) return row.id;
   } catch (err) {
     // Lost a concurrent create race (unique violation) — fall through to re-read.
-    if ((err as { code?: string })?.code !== '23505') throw err;
+    // drizzle wraps the PostgresError, so read the SQLSTATE through the cause.
+    if (errorSqlstate(err) !== '23505') throw err;
   }
   const [winner] = await db
     .select({ id: serviceAccounts.serviceAccountId })
@@ -234,7 +239,8 @@ export async function deleteServiceAccount(
   // `role_assignments.principal_id` is polymorphic across user/group/
   // service_account/pending, so it carries no FK to service_accounts; without
   // this delete, a removed SA leaves dangling assignments behind that a re-used
-  // id would inherit.
+  // id would inherit. Its audience grants stay and reach nobody: deleting a
+  // value's last one would share it with the whole project.
   return db.transaction(async (tx) => {
     await tx
       .delete(roleAssignments)
@@ -243,6 +249,7 @@ export async function deleteServiceAccount(
           eq(roleAssignments.accountId, accountId),
           eq(roleAssignments.principalType, 'service_account'),
           eq(roleAssignments.principalId, serviceAccountId),
+          notAnAudienceGrant(),
         ),
       );
     const rows = await tx
@@ -308,26 +315,5 @@ export async function validateServiceAccountToken(
   } catch (err) {
     console.error('SA validation error:', err);
     return { isValid: false, error: 'Validation error' };
-  }
-}
-
-async function updateLastUsedThrottled(saId: string): Promise<void> {
-  const now = Date.now();
-  const last = lastUsedCache.get(saId) || 0;
-  if (now - last < THROTTLE_MS) return;
-  lastUsedCache.set(saId, now);
-  if (lastUsedCache.size > 1000) {
-    const cutoff = now - THROTTLE_MS * 2;
-    for (const [k, v] of lastUsedCache.entries()) {
-      if (v < cutoff) lastUsedCache.delete(k);
-    }
-  }
-  try {
-    await db
-      .update(serviceAccounts)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(serviceAccounts.serviceAccountId, saId));
-  } catch (err) {
-    console.warn('Failed to update service_accounts.last_used_at:', err);
   }
 }

@@ -22,6 +22,10 @@ export interface SelfHostCommandFlags {
    *  SHARED_FEATURE_FLAG_DEFAULTS); `--no-restrict-account-creation` opts
    *  out. */
   restrictAccountCreation?: boolean;
+  /** Turn self sign-up off (DISABLE_SIGNUP=true, `--disable-signup`). Nobody
+   *  can sign up while it is on, the operator included. Only set when the
+   *  flag is passed, so a plain init never reopens sign-up (KRTX-1715). */
+  disableSignup?: boolean;
   /** Public domain reachability mode: this instance is reachable at
    *  `https://<domain>` (and `https://api.<domain>`) — sets KORTIX_DOMAIN,
    *  turning on the bundled Caddy reverse proxy/ACME TLS, same as

@@ -19,6 +19,76 @@ import {
   writeSupabaseVendorAssets,
 } from '../compose-assets.ts';
 
+describe('Kortix Capture store', () => {
+  type Rendered = { services: Record<string, { image?: string; ports?: string[]; environment?: Record<string, string>; depends_on?: Record<string, { condition?: string }>; volumes?: string[]; mem_limit?: string }>; volumes: Record<string, unknown> };
+  const render = (options = {}) => parse(renderFullDockerCompose('kortix-test', options)) as Rendered;
+
+  test('the store is pinned by digest, publishes no port, keeps its data in a named volume, and the API waits for it', () => {
+    const { services, volumes } = render();
+    const store = services['capture-store']!;
+    expect(store.image).toMatch(/^cgr\.dev\/chainguard\/minio@sha256:[a-f0-9]{64}$/);
+    expect(store.ports).toBeUndefined();
+    expect(store.volumes).toEqual(['kortix-capture-data:/data']);
+    expect(volumes).toHaveProperty('kortix-capture-data');
+    expect(store.mem_limit).toBeDefined();
+    expect(services['kortix-api']!.depends_on!['capture-store']).toEqual({ condition: 'service_healthy' });
+  });
+
+  test('the API issues device credentials through the store’s STS and creates its bucket', () => {
+    const env = render().services['kortix-api']!.environment!;
+    expect(env).toMatchObject({
+      KORTIX_CAPTURE_S3_BUCKET: 'kortix-capture',
+      KORTIX_CAPTURE_S3_ENDPOINT: 'http://capture-store:9000',
+      KORTIX_CAPTURE_STS_ENDPOINT: 'http://capture-store:9000',
+      KORTIX_CAPTURE_STS_ROLE_ARN: expect.stringMatching(/^arn:aws:iam::/),
+      KORTIX_CAPTURE_S3_FORCE_PATH_STYLE: 'true',
+      KORTIX_CAPTURE_S3_CREATE_BUCKET: 'true',
+      // A device reaches the store on the origin sandboxes call the API on.
+      KORTIX_CAPTURE_S3_PUBLIC_ENDPOINT: '${KORTIX_URL}',
+      KORTIX_CAPTURE_S3_ACCESS_KEY_ID: '${CAPTURE_STORE_ROOT_USER}',
+      KORTIX_CAPTURE_S3_SECRET_ACCESS_KEY: '${CAPTURE_STORE_ROOT_PASSWORD}',
+    });
+  });
+
+  test('without a domain the API forwards the store’s path prefix; with a domain Caddy does, and the API does not', () => {
+    expect(render().services['kortix-api']!.environment!.KORTIX_CAPTURE_S3_PROXY_TARGET).toBe('http://capture-store:9000');
+    expect(render({ tunnelConfigured: true }).services['kortix-api']!.environment!.KORTIX_CAPTURE_S3_PROXY_TARGET).toBe('http://capture-store:9000');
+    expect(render({ domainConfigured: true }).services['kortix-api']!.environment!).not.toHaveProperty('KORTIX_CAPTURE_S3_PROXY_TARGET');
+    const caddyfile = renderCaddyfile();
+    expect(caddyfile).toContain('@capture path /kortix-capture /kortix-capture/*');
+    expect(caddyfile).toContain('reverse_proxy capture-store:9000');
+  });
+
+  test('external mode drops the on-box store and points the API at the operator’s S3 via .env', () => {
+    const { services } = render({ captureStoreExternal: true });
+    // No bundled MinIO: the service and the kortix-api dependency on it are gone
+    // (its mem limit goes with it — applyMemLimits skips an absent service).
+    expect(services['capture-store']).toBeUndefined();
+    expect(services['kortix-api']!.depends_on!['capture-store']).toBeUndefined();
+
+    const env = services['kortix-api']!.environment!;
+    // The external values come from .env through Compose interpolation, not
+    // literals — and never the bundled MinIO root pair.
+    expect(env.KORTIX_CAPTURE_S3_BUCKET).toBe('${KORTIX_CAPTURE_S3_BUCKET:-}');
+    expect(env.KORTIX_CAPTURE_STS_ROLE_ARN).toBe('${KORTIX_CAPTURE_STS_ROLE_ARN:-}');
+    expect(env.KORTIX_CAPTURE_S3_ACCESS_KEY_ID).toBe('${KORTIX_CAPTURE_S3_ACCESS_KEY_ID:-}');
+    expect(env.KORTIX_CAPTURE_S3_ACCESS_KEY_ID).not.toContain('CAPTURE_STORE_ROOT');
+    // The operator (or Terraform) owns the bucket; the box never creates it.
+    expect(env.KORTIX_CAPTURE_S3_CREATE_BUCKET).toBe('false');
+    // Devices upload straight to the store — no on-box passthrough.
+    expect(env).not.toHaveProperty('KORTIX_CAPTURE_S3_PROXY_TARGET');
+  });
+
+  test('external mode removes the @capture passthrough from the Caddyfile, leaving the rest intact', () => {
+    const caddyfile = renderCaddyfile({ captureStoreExternal: true });
+    expect(caddyfile).not.toContain('@capture');
+    expect(caddyfile).not.toContain('capture-store:9000');
+    // The surrounding site blocks survive byte-adjacent.
+    expect(caddyfile).toContain('@llm path /v1/llm*');
+    expect(caddyfile).toContain('header Strict-Transport-Security "max-age=2592000"');
+  });
+});
+
 describe('full self-host Docker distribution', () => {
   test('renders the complete pinned Supabase and Kortix service set', () => {
     const document = parse(renderFullDockerCompose('kortix-enterprise')) as {
@@ -32,6 +102,7 @@ describe('full self-host Docker distribution', () => {
     };
 
     expect(Object.keys(document.services).sort()).toEqual([
+      'capture-store',
       'frontend',
       'kortix-api',
       'kortix-migrate',

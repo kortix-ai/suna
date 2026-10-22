@@ -46,19 +46,19 @@ function VerificationLine({ text }: { text: string }) {
   );
 }
 
-export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function AgentSpawnTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
   const surface = useContext(ToolSurfaceContext);
-  const input = partInput(part);
-  const status = partStatus(part);
-  const output = partOutput(part);
-  const childSessionId = useMemo(() => getChildSessionId(part), [part]);
-  const { childMessages, childToolParts } = useChildSession(childSessionId);
+  const input = partInput(call);
+  const status = partStatus(call);
+  const output = partOutput(call);
+  const childSessionId = useMemo(() => getChildSessionId(call), [call]);
+  const { childThread, childCalls } = useChildSession(childSessionId);
   const { enabled: navigationEnabled, openSession } = useToolNavigation();
 
   const model = useMemo(
-    () => agentSpawnModel({ status, input, output, childToolParts }),
-    [status, input, output, childToolParts],
+    () => agentSpawnModel({ status, input, output, childCalls }),
+    [status, input, output, childCalls],
   );
 
   const openChild = useCallback(() => {
@@ -67,7 +67,7 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={CpuIcon}
       trigger={{ title: model.title, subtitle: model.subtitle }}
       onSubtitleClick={childSessionId && navigationEnabled ? openChild : undefined}
@@ -124,7 +124,7 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
         </ToolResultCard>
       ) : null}
 
-      {surface === 'panel' && childToolParts.length > 0 ? (
+      {surface === 'panel' && childCalls.length > 0 ? (
         <View
           style={{
             marginHorizontal: -TURN_SPACE.cardPad,
@@ -134,24 +134,18 @@ export function AgentSpawnTool({ part, defaultOpen, forceOpen }: ToolProps) {
             paddingTop: TURN_SPACE.cardPad,
           }}
         >
-          <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+          <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
         </View>
       ) : null}
 
-      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+      <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
     </BasicTool>
   );
 }
-ToolRegistry.register('agent_spawn', AgentSpawnTool);
 ToolRegistry.register('agent-spawn', AgentSpawnTool);
 
-ToolRegistry.register('agent_task', AgentSpawnTool);
 ToolRegistry.register('agent-task', AgentSpawnTool);
-ToolRegistry.register('agent_task_create', AgentSpawnTool);
 ToolRegistry.register('agent-task-create', AgentSpawnTool);
-ToolRegistry.register('agent_task_start', AgentSpawnTool);
 ToolRegistry.register('agent-task-start', AgentSpawnTool);
-ToolRegistry.register('task_create', AgentSpawnTool);
 ToolRegistry.register('task-create', AgentSpawnTool);
-ToolRegistry.register('task_start', AgentSpawnTool);
 ToolRegistry.register('task-start', AgentSpawnTool);

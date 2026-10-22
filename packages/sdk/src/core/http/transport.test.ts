@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { backendApi, setAdminBypass } from './api-client';
+import { backendApi, isAdminBypassEnabled, setAdminBypass } from './api-client';
 import { ApiError, AuthError, BillingError } from './api/errors';
-import { authenticatedFetch } from './auth';
+import { authenticatedFetch, getSupabaseAccessToken, invalidateTokenCache } from './auth';
 import { configureKortix } from './config';
 import { clearImpersonationSession, setImpersonationSession } from './impersonation';
 import { send } from './transport';
@@ -64,17 +64,19 @@ const live = () => ({
 });
 
 describe('send: header policy', () => {
-  test('attaches the bearer and the client surface', async () => {
+  test('attaches the bearer and never a client surface', async () => {
     await send('http://backend.test/v1/projects');
     expect(seen[0].headers.get('authorization')).toBe('Bearer tok1');
-    expect(seen[0].headers.get('x-kortix-client')).toBe('web');
+    // The audit records the authenticated credential; the SDK reports no client.
+    expect(seen[0].headers.has('x-kortix-client')).toBe(false);
   });
 
-  test('attaches admin bypass and act-as while they are on', async () => {
+  test('attaches act-as while it is on; the retired admin bypass sends nothing', async () => {
     setAdminBypass(true);
     setImpersonationSession(live());
     await send('http://backend.test/v1/p/ext-1/8000/session');
-    expect(seen[0].headers.get('x-kortix-admin-bypass')).toBe('1');
+    expect(seen[0].headers.has('x-kortix-admin-bypass')).toBe(false);
+    expect(isAdminBypassEnabled()).toBe(false);
     expect(seen[0].headers.get('x-kortix-impersonate')).toBe('grant-1');
   });
 
@@ -84,12 +86,11 @@ describe('send: header policy', () => {
     expect(seen[0].headers.has('x-kortix-impersonate')).toBe(false);
   });
 
-  test("keeps a caller's own Authorization and X-Kortix-Client", async () => {
+  test("keeps a caller's own Authorization", async () => {
     await send('http://backend.test/v1/x', {
-      headers: { Authorization: 'Bearer explicit', 'X-Kortix-Client': 'cli' },
+      headers: { Authorization: 'Bearer explicit' },
     });
     expect(seen[0].headers.get('authorization')).toBe('Bearer explicit');
-    expect(seen[0].headers.get('x-kortix-client')).toBe('cli');
   });
 
   test('a URL request carries its headers as a plain record with stable names', async () => {
@@ -116,14 +117,12 @@ describe('send: header policy', () => {
   });
 
   test('the platform policy replaces a caller header in another case, as one value', async () => {
-    setAdminBypass(true);
     setImpersonationSession(live());
     await send(
       new Request('http://backend.test/v1/p/ext-1/8000/session', {
-        headers: { 'X-Kortix-Admin-Bypass': '0', 'x-kortix-impersonate': 'stale' },
+        headers: { 'x-kortix-impersonate': 'stale' },
       }),
     );
-    expect(seen[0].headers.get('x-kortix-admin-bypass')).toBe('1');
     expect(seen[0].headers.get('x-kortix-impersonate')).toBe('grant-1');
   });
 
@@ -137,14 +136,12 @@ describe('send: header policy', () => {
         return new Response('{}');
       },
     });
-    setAdminBypass(true);
     setImpersonationSession(live());
     await send('http://backend.test/v1/p/ext-1/8000/session', {
-      headers: { 'content-type': 'application/json', 'X-KORTIX-ADMIN-BYPASS': '0', 'x-kortix-impersonate': 'stale' },
+      headers: { 'content-type': 'application/json', 'X-KORTIX-IMPERSONATE': 'stale' },
     });
     expect(raw).toEqual({
       'content-type': 'application/json',
-      'x-kortix-admin-bypass': '1',
       'X-Kortix-Impersonate': 'grant-1',
       Authorization: 'Bearer tok1',
     });
@@ -226,6 +223,54 @@ describe('send: 401 replay', () => {
   });
 });
 
+describe('send: 401 recovery with a host that implements invalidate', () => {
+  function configureWithInvalidate(rotate: () => void, rejected: string[]) {
+    let current = 'old';
+    const getToken = Object.assign(async () => current, {
+      invalidate: (token: string) => {
+        rejected.push(token);
+        rotate();
+        current = 'new';
+      },
+    });
+    configureKortix({
+      backendUrl: 'http://backend.test/v1',
+      getToken,
+      fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const auth = new Headers(init?.headers).get('authorization');
+        seen.push({ url: String(input), headers: new Headers(init?.headers), body: null, signal: null });
+        return new Response('{}', { status: auth === 'Bearer new' ? 200 : 401 });
+      },
+    });
+  }
+
+  test('a 401 invalidates the rejected token and replays once with the fresh one', async () => {
+    const rejected: string[] = [];
+    configureWithInvalidate(() => {}, rejected);
+    const response = await send('http://backend.test/v1/x');
+    expect(response.status).toBe(200);
+    expect(rejected).toEqual(['old']);
+    expect(seen.map((s) => s.headers.get('authorization'))).toEqual(['Bearer old', 'Bearer new']);
+  });
+
+  test('concurrent 401s on one token refresh it once (single flight)', async () => {
+    const rejected: string[] = [];
+    configureWithInvalidate(() => {}, rejected);
+    const responses = await Promise.all([1, 2, 3, 4, 5].map(() => send('http://backend.test/v1/x')));
+    expect(responses.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+    expect(rejected).toEqual(['old']);
+  });
+
+  test('invalidateTokenCache() reaches the host with the last token the SDK handed out', async () => {
+    const rejected: string[] = [];
+    configureWithInvalidate(() => {}, rejected);
+    expect(await getSupabaseAccessToken()).toBe('old');
+    invalidateTokenCache();
+    expect(rejected).toEqual(['old']);
+    expect(await getSupabaseAccessToken()).toBe('new');
+  });
+});
+
 describe('send: deadline', () => {
   test('timeoutMs: null leaves the caller signal as the only deadline', async () => {
     const abort = new AbortController();
@@ -243,12 +288,10 @@ describe('send: deadline', () => {
 });
 
 describe('every adapter applies the same policy', () => {
-  test('authenticatedFetch attaches act-as and admin bypass (it used to drop both)', async () => {
-    setAdminBypass(true);
+  test('authenticatedFetch attaches act-as (it used to drop it)', async () => {
     setImpersonationSession(live());
     await authenticatedFetch('http://backend.test/v1/p/ext-1/8000/file/content?path=a');
     expect(seen[0].headers.get('x-kortix-impersonate')).toBe('grant-1');
-    expect(seen[0].headers.get('x-kortix-admin-bypass')).toBe('1');
   });
 
   test('authenticatedFetch still answers a missing token with a synthetic 401', async () => {
@@ -312,7 +355,7 @@ describe('error typing', () => {
       backendUrl: 'http://backend.test/v1',
       getToken: async () => 'tok1',
       fetch: async () =>
-        new Response(JSON.stringify({ error: 'Budget exceeded', code: 'app_budget_exceeded', balance: 0 }), {
+        new Response(JSON.stringify({ error: 'Account unfunded', code: 'app_account_unfunded', balance: 0 }), {
           status: 402,
           headers: { 'content-type': 'application/json' },
         }),
@@ -321,8 +364,8 @@ describe('error typing', () => {
     expect(error).toBeInstanceOf(BillingError);
     expect(error).toBeInstanceOf(ApiError);
     expect(error?.status).toBe(402);
-    expect(error?.code).toBe('app_budget_exceeded');
-    expect(error?.message).toBe('Budget exceeded');
+    expect(error?.code).toBe('app_account_unfunded');
+    expect(error?.message).toBe('Account unfunded');
   });
 
   test('a non-JSON error body is still a typed ApiError with its status', async () => {
@@ -338,7 +381,7 @@ describe('error typing', () => {
 });
 
 describe('client surface', () => {
-  test('tui is sent; an unknown configured surface is not', async () => {
+  test('a configured client surface is inert: no header is sent', async () => {
     configureKortix({
       backendUrl: 'http://backend.test/v1',
       clientSource: 'tui',
@@ -359,6 +402,43 @@ describe('client surface', () => {
       },
     });
     await send('http://backend.test/v1/x');
-    expect(seen.map((s) => s.headers.get('x-kortix-client'))).toEqual(['tui', null]);
+    expect(seen.map((s) => s.headers.get('x-kortix-client'))).toEqual([null, null]);
+  });
+
+  test('sends the configured client version; a caller-set or blank one wins or is omitted', async () => {
+    const withVersion = (clientVersion?: string) =>
+      configureKortix({
+        backendUrl: 'http://backend.test/v1',
+        clientVersion,
+        getToken: async () => 'tok1',
+        fetch: async (_input, init) => {
+          seen.push({ url: '', headers: new Headers(init?.headers), body: null, signal: null });
+          return new Response('{}');
+        },
+      });
+    withVersion('cli/0.13.42');
+    await send('http://backend.test/v1/x');
+    await send('http://backend.test/v1/x', { headers: { 'X-Kortix-Client-Version': 'caller' } });
+    withVersion('  ');
+    await send('http://backend.test/v1/x');
+    withVersion(undefined);
+    await send('http://backend.test/v1/x');
+    expect(seen.map((s) => s.headers.get('x-kortix-client-version'))).toEqual(['cli/0.13.42', 'caller', null, null]);
+  });
+  test('credentialHeader carries the token in that header and leaves Authorization unset, replay included', async () => {
+    tokens = ['old', 'new'];
+    statuses = [401, 200];
+    configureKortix({
+      backendUrl: 'http://backend.test/v1',
+      credentialHeader: 'x-app-reader-token',
+      getToken: async () => tokens.length > 1 ? tokens.shift()! : tokens[0]!,
+      fetch: async (_input, init) => {
+        seen.push({ url: '', headers: new Headers(init?.headers), body: null, signal: null });
+        return new Response('{}', { status: statuses.shift() ?? 200 });
+      },
+    });
+    await send('http://backend.test/v1/x');
+    expect(seen.map((s) => s.headers.get('x-app-reader-token'))).toEqual(['old', 'new']);
+    expect(seen.map((s) => s.headers.get('authorization'))).toEqual([null, null]);
   });
 });

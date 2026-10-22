@@ -52,7 +52,8 @@ describe('platinum uploadWithRetry — large-context resilience', () => {
       return new Response('', { status: put === 1 ? 408 : 200 });
     }) as typeof fetch;
 
-    const key = await uploadWithRetry(presignFn, tarPath);
+    // The retry's 2 s pause is not under test; the second presign is.
+    const key = await uploadWithRetry(presignFn, tarPath, undefined, 1);
 
     expect(presignCalls).toBe(2);
     expect(key).toBe('key-2');

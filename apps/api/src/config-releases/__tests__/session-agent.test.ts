@@ -77,10 +77,28 @@ describe('releaseVariantFor', () => {
     expect(releaseVariantFor('reviewer', false)).toBe('agent:reviewer');
   });
 
+  // The coordinator never holds the project's files, whatever the session
+  // metadata says about repository access.
+  test('the platform meta coordinator has its own variant', () => {
+    expect(releaseVariantFor('meta', true)).toBe('meta');
+    expect(releaseVariantFor('meta', false)).toBe('meta');
+  });
+
   // The whole point: a session with no usable agent still gets a RELEASE.
   // `none` compiles to an empty OpenCode config, which has a non-null etag,
   // so `release_id` is never null and the box never falls back.
   test('no usable agent and no repository access compiles nothing, not a failure', () => {
     expect(releaseVariantFor(null, false)).toBe('none');
+  });
+});
+
+describe('resolveSessionReleaseAgent on kortix_version 3', () => {
+  test('an undeclared built-in the v3 config disables re-points to the default', () => {
+    expect(resolveSessionReleaseAgent('build', roster({ onlyDeclared: true }))).toEqual({ kind: 'repoint', agent: 'kortix', dropped: 'build' });
+  });
+
+  test('a declared built-in name and a runtime-internal agent are kept', () => {
+    expect(resolveSessionReleaseAgent('plan', roster({ onlyDeclared: true, enabled: ['kortix', 'plan'] }))).toEqual({ kind: 'declared', agent: 'plan' });
+    expect(resolveSessionReleaseAgent('title', roster({ onlyDeclared: true }))).toEqual({ kind: 'declared', agent: 'title' });
   });
 });

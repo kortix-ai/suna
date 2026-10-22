@@ -88,11 +88,23 @@ export async function createAccountToken(input: CreateAccountTokenInput) {
   );
 }
 
-/** Revoke an account-scoped CLI PAT. */
-export async function revokeAccountToken(tokenId: string, accountId?: string) {
-  const qs = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+/** Revoke an account-scoped CLI PAT. With `{ deleteRevoked: true }`, DELETE
+ *  becomes "remove this dead row": the API only honors it for a personal key
+ *  that is already revoked (the caller's own), and answers 404 otherwise —
+ *  the settings page's Delete action for a revoked key rides on it. */
+export async function revokeAccountToken(
+  tokenId: string,
+  accountId?: string,
+  options?: { deleteRevoked?: boolean },
+) {
+  const params = new URLSearchParams();
+  if (accountId) params.set('account_id', accountId);
+  if (options?.deleteRevoked) params.set('delete_revoked', 'true');
+  const qs = params.size > 0 ? `?${params.toString()}` : '';
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/accounts/tokens/${tokenId}${qs}`),
+    await backendApi.delete<{ ok: boolean; deleted?: boolean }>(
+      `/accounts/tokens/${encodeURIComponent(tokenId)}${qs}`,
+    ),
   );
 }
 
@@ -102,6 +114,75 @@ export async function revokeAccountToken(tokenId: string, accountId?: string) {
 // CLI works with zero config. Minting/revoking is a human/`manage` operation;
 // an agent-session token is denied outright server-side (privilege-escalation
 // guard — see apps/api/src/projects/routes/project-credentials.ts).
+
+// ─── Connected apps (OAuth grants) ─────────────────────────────────────────
+
+/**
+ * An app the caller approved with "Sign in with Kortix": an MCP client such as
+ * Claude Code or Cursor, or an account's own OAuth app. Per person, across all
+ * accounts. `GET /oauth/grants`.
+ */
+export interface OAuthGrant {
+  client_id: string;
+  name: string;
+  client_type: string;
+  /** Registered by the app itself (RFC 7591): its name is its own claim. */
+  self_registered: boolean;
+  /** Where the app sends the user back after sign-in. */
+  redirect_hosts: string[];
+  scopes: string[];
+  granted_at: string | null;
+  /** When the app last got a token; it refreshes about hourly while in use. */
+  last_active_at: string | null;
+  /** Holds a live token right now. */
+  active: boolean;
+}
+
+/** The caller's connected apps, most recently active first. */
+export async function listOAuthGrants(): Promise<OAuthGrant[]> {
+  return unwrap(await backendApi.get<{ grants: OAuthGrant[] }>('/oauth/grants')).grants;
+}
+
+/**
+ * Revoke a connected app: its consent (it must ask again) and every live token
+ * it holds for the caller.
+ */
+export async function revokeOAuthGrant(clientId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: true; revoked_tokens: number }>(`/oauth/grants/${encodeURIComponent(clientId)}`),
+  );
+}
+
+// ─── Signed-in devices (browser sign-ins) ─────────────────────────────────
+
+/**
+ * One place the caller is signed in: a live Supabase auth session, as the
+ * auth server recorded it. `GET /accounts/me/devices`.
+ */
+export interface SignedInDevice {
+  session_id: string;
+  /** The User-Agent the device signed in with. */
+  user_agent: string | null;
+  ip: string | null;
+  signed_in_at: string;
+  /** When the device last refreshed its token; it refreshes about hourly while open. */
+  last_active_at: string;
+  /** The device that made this request. */
+  current: boolean;
+}
+
+/** The caller's signed-in devices, most recently active first. */
+export async function listSignedInDevices(): Promise<SignedInDevice[]> {
+  return unwrap(await backendApi.get<{ devices: SignedInDevice[] }>('/accounts/me/devices'))
+    .devices;
+}
+
+/** Sign one other device out. The current device signs out with `auth.signOut()`. */
+export async function signOutDevice(sessionId: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: true }>(`/accounts/me/devices/${encodeURIComponent(sessionId)}`),
+  );
+}
 
 export interface ProjectCliToken {
   token_id: string;
@@ -116,6 +197,11 @@ export interface ProjectCliToken {
 
 export interface ProjectCliTokenListResponse {
   items: ProjectCliToken[];
+  /** Session-bound tokens the list hides — the runtime mints one per session
+   *  (the sandbox's `KORTIX_TOKEN`) and revokes it with the session, so they
+   *  are not CLI credentials a person manages. The count keeps their
+   *  provenance visible instead of a silent hole in the list. */
+  session_tokens: number;
 }
 
 /** The newly minted project-scoped token — `secret_key` is returned once. */

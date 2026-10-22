@@ -2,18 +2,19 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import type { McpStatus } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
+import type { McpStatus } from '../../core/runtime/runtime-types';
+import { runtimeKeys, useRuntimeReady } from './keys';
 import { unwrap } from './shared';
 
 // ============================================================================
 // MCP Status Hook
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useOpenCodeMcpStatus() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+  const runtimeReady = useRuntimeReady();
   return useQuery<Record<string, McpStatus>>({
-    queryKey: opencodeKeys.mcpStatus(),
+    queryKey: runtimeKeys.mcpStatus(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.mcp.status();

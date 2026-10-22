@@ -47,6 +47,8 @@ async function runCli(args: string[], cwd = tmp) {
     NO_COLOR: '1',
     FORCE_COLOR: '0',
     KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+    // The hermetic suite's fresh config store — the spawned CLI inherits nothing.
+    KORTIX_CONFIG_FILE: process.env.KORTIX_CONFIG_FILE,
     // Stub docker first on PATH: nothing in this suite may reach a real daemon.
     PATH: `${join(tmp, 'bin')}:${process.env.PATH}`,
   };
@@ -170,6 +172,8 @@ describe('kortix sandboxes --help', () => {
 
 describe('kortix validate — sandbox Dockerfile lint', () => {
   beforeEach(() => {
+    mkdirSync(join(tmp, 'agents'));
+    writeFileSync(join(tmp, 'agents', 'kortix.md'), '# Agent');
     writeFileSync(
       join(tmp, 'kortix.yaml'),
       MANIFEST('sandbox:\n  templates:\n    - slug: ml\n      dockerfile: Dockerfile.ml'),
@@ -217,5 +221,53 @@ describe('kortix validate — sandbox Dockerfile lint', () => {
     rmSync(join(tmp, 'Dockerfile.ml'));
     const r = await runCli(['validate']);
     expect(r.stdout + r.stderr).not.toContain('build context');
+  });
+});
+
+
+describe('kortix validate — local wiring', () => {
+  test('reports all missing references in one JSON report', async () => {
+    writeFileSync(join(tmp, 'kortix.yaml'), `kortix_version: 2
+default_agent: kortix
+project:
+  name: fixture
+agents:
+  kortix:
+    file: agents/missing.md
+    skills: [missing]
+    connectors: [missing]
+    secrets: [MISSING]
+`);
+    const r = await runCli(['validate', '--json']);
+    expect(r.code).toBe(1);
+    const paths = JSON.parse(r.stdout).issues.map((issue: { path: string }) => issue.path);
+    for (const path of ['agents.kortix.file', 'agents.kortix.skills[0]', 'agents.kortix.connectors[0]', 'agents.kortix.secrets[0]'])
+      expect(paths).toContain(path);
+  });
+
+  test('accepts files and declarations present in the project', async () => {
+    mkdirSync(join(tmp, 'agents'));
+    mkdirSync(join(tmp, 'skills', 'known'), { recursive: true });
+    writeFileSync(join(tmp, 'agents', 'kortix.md'), '# Agent');
+    writeFileSync(join(tmp, 'skills', 'known', 'SKILL.md'), '# Skill');
+    writeFileSync(join(tmp, 'kortix.yaml'), `kortix_version: 2
+default_agent: kortix
+project:
+  name: fixture
+env:
+  required: [KNOWN]
+connectors:
+  - slug: known
+    provider: mcp
+    url: https://example.test/mcp
+agents:
+  kortix:
+    skills: [known]
+    connectors: [known]
+    secrets: [KNOWN]
+`);
+    const r = await runCli(['validate', '--json']);
+    expect(JSON.parse(r.stdout).issues.filter((issue: { severity: string }) => issue.severity === 'error')).toEqual([]);
+    expect(r.code).toBe(0);
   });
 });

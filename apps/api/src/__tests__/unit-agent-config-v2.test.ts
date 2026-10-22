@@ -136,8 +136,8 @@ describe('applyAgentBlockV2', () => {
     expect(agents.support.connectors).toBe('all');
     expect(agents.support.secrets).toBe('none');
     expect(agents.support.skills).toEqual(['pdf-export', 'web-research']);
-    expect(agents.support.repository_access).toBe(true);
-    expect(agents.support).not.toHaveProperty('workspace');
+    expect(agents.support.workspace).toEqual({ project_repository: true });
+    expect(agents.support).not.toHaveProperty('repository_access');
     // Sibling agents / default_agent are untouched by a single-agent edit.
     expect(applied.raw.default_agent).toBe('support');
   });
@@ -173,10 +173,9 @@ describe('applyAgentBlockV2', () => {
   });
 
   test('rejects a behavioral field on the block — it belongs in the .md frontmatter now', () => {
-    const applied = applyAgentBlockV2(v2Manifest(), 'support', {
-      // @ts-expect-error — `mode` is no longer part of AgentBlockV2 (governance-only)
-      mode: 'primary',
-    });
+    // `mode` is a behavioral field: the block must refuse it at runtime even
+    // when a caller's type allows it, so pass it through an untyped object.
+    const applied = applyAgentBlockV2(v2Manifest(), 'support', { mode: 'primary' } as never);
     expect(applied.ok).toBe(false);
     if (applied.ok) return;
     expect(applied.error).toContain('.md');
@@ -369,16 +368,33 @@ describe('connectors_required — the config route validation gate', () => {
 
 
 describe('repository access', () => {
-  test('mirrors false for older API readers while returning only the boolean', () => {
-    const saved = applyAgentBlockV2(v2Manifest(), 'support', { repository_access: false });
+  test('writes workspace.project_repository to kortix.yaml and reads it back as repository_access', () => {
+    for (const value of [false, true]) {
+      const saved = applyAgentBlockV2(v2Manifest(), 'support', { repository_access: value });
+      expect(saved.ok).toBe(true);
+      if (!saved.ok) return;
+      expect((saved.raw.agents as any).support).toEqual({ workspace: { project_repository: value } });
+      const read = readAgentBlockV2({ ...v2Manifest(), raw: saved.raw }, 'support');
+      expect(read.ok && read.block).toEqual({ repository_access: value });
+    }
+  });
+  test('writes an undeclared value explicitly as the v2 default (true) and reads it back', () => {
+    const saved = applyAgentBlockV2(v2Manifest(), 'support', { connectors: 'none' });
     expect(saved.ok).toBe(true);
     if (!saved.ok) return;
-    expect((saved.raw.agents as any).support).toEqual({ repository_access: false, workspace: 'runtime' });
-    const read = readAgentBlockV2({ ...v2Manifest(), raw: saved.raw }, 'support');
-    expect(read.ok && read.block).toEqual({ repository_access: false });
+    expect((saved.raw.agents as any).support.workspace).toEqual({ project_repository: true });
+    expect(extractAgents({ ...v2Manifest(), raw: saved.raw }).specs[0]?.repositoryAccess).toBe(true);
+    const read = readAgentBlockV2(v2Manifest(V2.replace('    workspace: runtime\n', '')), 'support');
+    expect(read.ok && read.block?.repository_access).toBe(true);
   });
   test('rejects conflicting aliases and invalid boolean values', () => {
-    for (const block of [{ repository_access: true, workspace: 'runtime' }, { repository_access: 'false' }]) {
+    for (const block of [
+      { repository_access: true, workspace: 'runtime' },
+      { repository_access: 'false' },
+      { repository_access: true, workspace: { project_repository: false } },
+      { workspace: { project_repository: 'no' } },
+      { workspace: { project_repo: false } },
+    ]) {
       expect(applyAgentBlockV2(v2Manifest(), 'support', block as any).ok).toBe(false);
     }
   });

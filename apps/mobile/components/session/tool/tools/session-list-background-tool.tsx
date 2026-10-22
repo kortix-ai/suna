@@ -31,11 +31,11 @@ import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/style
 import type { ToolProps } from '../shared/types';
 import { ToolScroll } from '../shared/surface';
 
-export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionListBackgroundTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const project = (input.project as string) || '';
 
   const workers = useMemo(() => parseBackgroundWorkers(output), [output]);
@@ -46,7 +46,7 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={StackIcon}
       trigger={{ title: 'Background work', subtitle: project || 'all projects', args }}
       defaultOpen={defaultOpen}
@@ -104,15 +104,6 @@ export function SessionListBackgroundTool({ part, defaultOpen, forceOpen, locked
     </BasicTool>
   );
 }
-ToolRegistry.register('session_list', SessionListBackgroundTool);
 ToolRegistry.register('session-list', SessionListBackgroundTool);
-ToolRegistry.register('oc-session_list', SessionListBackgroundTool);
-ToolRegistry.register('oc-session-list', SessionListBackgroundTool);
-ToolRegistry.register('session_list_background', SessionListBackgroundTool);
 ToolRegistry.register('session-list-background', SessionListBackgroundTool);
-ToolRegistry.register('oc-session_list_background', SessionListBackgroundTool);
-ToolRegistry.register('oc-session-list-background', SessionListBackgroundTool);
-ToolRegistry.register('session_list_spawned', SessionListBackgroundTool);
 ToolRegistry.register('session-list-spawned', SessionListBackgroundTool);
-ToolRegistry.register('oc-session_list_spawned', SessionListBackgroundTool);
-ToolRegistry.register('oc-session-list-spawned', SessionListBackgroundTool);

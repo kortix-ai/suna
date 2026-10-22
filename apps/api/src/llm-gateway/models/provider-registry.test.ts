@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import type { Catalog } from '@kortix/llm-catalog';
 import { resolveCatalogUpstream } from './provider-registry';
 
 describe('runtime catalog provider resolution', () => {
@@ -15,6 +16,15 @@ describe('runtime catalog provider resolution', () => {
   // packages/llm-gateway/src/transports/openai-compat/index.ts). If this ever
   // resolves to something other than the real api.openai.com host, that
   // translation silently stops firing for genuine OpenAI BYOK traffic.
+  // Platinum is not on models.dev; the overlay makes it a regular BYOK provider.
+  test('resolves Platinum to its inference endpoint with PLATINUM_API_KEY', () => {
+    expect(resolveCatalogUpstream('platinum')).toMatchObject({
+      kind: 'openai-compat',
+      envVar: 'PLATINUM_API_KEY',
+      baseUrl: 'https://api.platinum.dev/v1/inference',
+    });
+  });
+
   test('resolves OpenAI to the genuine api.openai.com host', () => {
     expect(resolveCatalogUpstream('openai')).toMatchObject({
       kind: 'openai-compat',
@@ -39,23 +49,44 @@ describe('runtime catalog provider resolution', () => {
   // The catalog's `anthropic` entry publishes no `api` field (hence the
   // ANTHROPIC_BASE_URL fallback, asserted above); these third-party
   // Anthropic-compatible providers DO, and it must win.
-  test('resolves kimi-for-coding to its own Anthropic-compatible endpoint, not api.anthropic.com', () => {
-    expect(resolveCatalogUpstream('kimi-for-coding')).toMatchObject({
+  // The two tests below run on a fixture catalog, not the bundled models.dev
+  // snapshot. The daily catalog refresh rewrites that snapshot, and upstream
+  // renamed `kimi-for-coding` (now `kimi-code-plan-*`) and moved the MiniMax CN
+  // host (api.minimaxi.com -> api.minimax.cn). The guarantee is the resolver
+  // rule, not any one upstream id or host: an Anthropic-transport provider
+  // keeps its own `api` base.
+  const thirdPartyAnthropic: Catalog = {
+    source: 'test', fetched_at: '2026-10-11T00:00:00.000Z', provider_count: 3, model_count: 0,
+    providers: [
+      { id: 'kimi-for-coding', name: 'Kimi For Coding', env: ['KIMI_API_KEY'], api: 'https://api.kimi.com/coding/v1', npm: '@ai-sdk/anthropic', models: [] },
+      { id: 'minimax-coding-plan', name: 'MiniMax Token Plan', env: ['MINIMAX_API_KEY'], api: 'https://api.minimax.io/anthropic/v1', npm: '@ai-sdk/anthropic', models: [] },
+      { id: 'minimax-cn', name: 'MiniMax CN', env: ['MINIMAX_API_KEY'], api: 'https://api.minimax.cn/anthropic/v1', npm: '@ai-sdk/anthropic', models: [] },
+    ],
+  };
+
+  test('resolves an Anthropic-transport provider to its own endpoint, not api.anthropic.com', () => {
+    expect(resolveCatalogUpstream('kimi-for-coding', undefined, thirdPartyAnthropic)).toMatchObject({
       kind: 'anthropic',
-      envVar: 'KIMI_API_KEY',
       baseUrl: 'https://api.kimi.com/coding/v1',
     });
   });
 
-  test('resolves MiniMax coding-plan providers to their own endpoints', () => {
-    expect(resolveCatalogUpstream('minimax-coding-plan')).toMatchObject({
+  test('resolves MiniMax Anthropic-transport providers to their own endpoints', () => {
+    expect(resolveCatalogUpstream('minimax-coding-plan', undefined, thirdPartyAnthropic)).toMatchObject({
       kind: 'anthropic',
       baseUrl: 'https://api.minimax.io/anthropic/v1',
     });
-    expect(resolveCatalogUpstream('minimax-cn')).toMatchObject({
+    expect(resolveCatalogUpstream('minimax-cn', undefined, thirdPartyAnthropic)).toMatchObject({
       kind: 'anthropic',
-      baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+      baseUrl: 'https://api.minimax.cn/anthropic/v1',
     });
+  });
+
+  // Live snapshot: whatever host upstream publishes, MiniMax never falls back to Anthropic.
+  test('the bundled snapshot resolves minimax-coding-plan off api.anthropic.com', () => {
+    const upstream = resolveCatalogUpstream('minimax-coding-plan');
+    expect(upstream).toMatchObject({ kind: 'anthropic' });
+    expect((upstream as { baseUrl: string }).baseUrl).toMatch(/^https:\/\/api\.minimax[a-z]*\.[a-z]+\/anthropic\/v1$/);
   });
 
   test('resolves Google Gemini through its OpenAI-compatible API with the primary UI key', () => {
@@ -116,5 +147,41 @@ describe('runtime catalog provider resolution', () => {
     // doc comment above).
     if (upstream?.kind === 'bedrock') throw new Error('expected openai-compat, got bedrock');
     expect(upstream?.baseUrl).toBe('https://openrouter.ai/api/v1');
+  });
+});
+
+// models.dev overrides the provider's wire format per model with
+// `model.provider.npm`. OpenCode Go serves MiniMax/Qwen on Anthropic `/messages`
+// and Grok/GPT/Muse on OpenAI `/responses` under one `api` base. Resolving only
+// the provider sent every model to `/chat/completions`.
+describe('per-model wire format override', () => {
+  const catalog: Catalog = {
+    source: 'test', fetched_at: '2026-09-29T00:00:00.000Z', provider_count: 1, model_count: 4,
+    providers: [{
+      id: 'opencode-go', name: 'OpenCode Go', env: ['OPENCODE_API_KEY'],
+      api: 'https://opencode.ai/zen/go/v1', npm: '@ai-sdk/openai-compatible',
+      models: [
+        { id: 'glm-5.3', name: 'GLM-5.3' },
+        { id: 'minimax-m3', name: 'MiniMax-M3', provider: { npm: '@ai-sdk/anthropic' } },
+        { id: 'grok-4.7', name: 'Grok 4.7', provider: { npm: '@ai-sdk/openai' } },
+        { id: 'moved', name: 'Moved', provider: { api: 'https://other.test/v1' } },
+      ],
+    }],
+  };
+  // models.dev lists OPENCODE_API_KEY for Go too; Zen owns that name, so Go reads its own.
+  const base = { envVar: 'OPENCODE_GO_API_KEY', baseUrl: 'https://opencode.ai/zen/go/v1' };
+
+  test.each([
+    ['glm-5.3', { ...base, kind: 'openai-compat', npm: '@ai-sdk/openai-compatible' }],
+    ['minimax-m3', { ...base, kind: 'anthropic', npm: '@ai-sdk/anthropic' }],
+    ['grok-4.7', { ...base, kind: 'openai-responses', npm: '@ai-sdk/openai' }],
+    ['moved', { ...base, kind: 'openai-compat', baseUrl: 'https://other.test/v1' }],
+    ['not-in-catalog', { ...base, kind: 'openai-compat' }],
+  ])('%s resolves its own transport', (modelId, expected) => {
+    expect(resolveCatalogUpstream('opencode-go', modelId, catalog)).toEqual(expect.objectContaining(expected));
+  });
+
+  test('without a model id the provider default applies', () => {
+    expect(resolveCatalogUpstream('opencode-go', undefined, catalog)).toMatchObject({ kind: 'openai-compat' });
   });
 });

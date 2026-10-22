@@ -8,6 +8,7 @@ import {
 } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from '../session-lifecycle/prompt-attachment-materializer';
 import { stableSessionAttachmentId } from './session-attachment-identity';
+import { isRecord } from '@kortix/shared/guards';
 
 type Part = Record<string, unknown>;
 type Message = { info: Record<string, unknown>; parts: Part[] };
@@ -128,7 +129,9 @@ async function saveRecovered(
       if (!filePath) return null;
       bytes = await input.readFile(filePath);
     }
-    if (!bytes) throw new Error('Original attachment is unavailable');
+    // A deleted workspace file is expected on later full-history captures.
+    // Keep the original reference so a later capture can still retry it.
+    if (!bytes) return null;
     if (bytes.byteLength > MAX_SESSION_ATTACHMENT_BYTES)
       throw new Error('Attachment exceeds 50 MiB');
     return (await input.saveFile({ ...scope, filename, mime, bytes })).url;
@@ -154,9 +157,6 @@ async function saveRecovered(
 const SHOWN_TOOLS = new Set(['show', 'show_user']);
 const normalizeToolName = (name: unknown) =>
   (typeof name === 'string' ? name : '').replace(/^oc-/, '').replace(/-/g, '_');
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
 
 /** Stored with the bytes, so a download names itself correctly. */
 const SHOW_MIME_BY_EXTENSION: Record<string, string> = {

@@ -27,10 +27,10 @@ never applies a fix itself.
 
 This is not a ledger to resume — it's live policy, loaded fresh every run:
 ```sh
-cat .kortix/memory/compliance-policy.md 2>/dev/null || echo "(no policy file yet — using the defaults below)"
+cat memory/compliance-policy.md 2>/dev/null || echo "(no policy file yet — using the defaults below)"
 ```
 If no policy file exists yet, use these starting defaults and propose creating
-`.kortix/memory/compliance-policy.md` from them on this run:
+`memory/compliance-policy.md` from them on this run:
 - **Buckets** — none public unless explicitly allow-listed by name.
 - **Tags** — every resource carries `owner` and `environment`.
 - **IAM roles** — no role holds `*:*` or an unscoped `iam:PassRole`.
@@ -39,7 +39,7 @@ If no policy file exists yet, use these starting defaults and propose creating
 
 If a human asked to add or change a rule in the policy itself (not run a
 sweep), that's the whole job for this run: read
-`.kortix/memory/compliance-policy.md` (Step 0 above), edit it to reflect the
+`memory/compliance-policy.md` (Step 0 above), edit it to reflect the
 requested rule, and confirm the change back to the human. No AWS calls, no
 findings, no change request — the policy file itself is the human-authored
 input the rest of this skill checks against.

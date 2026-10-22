@@ -1,34 +1,23 @@
 import { projectTriggerExecutions, projectTriggerRuntime, projects } from '@kortix/db';
-import { and, asc, eq, gte, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, lte, ne, or, sql } from 'drizzle-orm';
+import { formatDurationSeconds } from '@kortix/manifest-schema';
 import { db } from '../shared/db';
+import { featureFlagDef } from '../feature-flags/registry';
 import { nextTriggerScheduleSlot } from './trigger-schedule';
 import type { GitTriggerSpec } from './triggers';
+import type { TriggerFireSource } from './lib/trigger-webhook-auth';
+import { exponentialBackoffMs } from '../shared/backoff';
+import { logger } from '../lib/logger';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
+import { cronSlotFields } from './lib/trigger-payload';
+import { clearTriggerAlert, raiseTriggerAlert } from './lib/trigger-alerts';
+import { accountAutomationsRunSql } from '../accounts/automation-pause';
 
 export type TriggerExecutionRow = typeof projectTriggerExecutions.$inferSelect;
 
 export interface ClaimedScheduleSlot {
   execution: TriggerExecutionRow;
   inserted: boolean;
-}
-
-async function mapConcurrently<T, R>(
-  items: T[],
-  concurrency: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await fn(items[index]);
-    }
-  };
-  await Promise.all(
-    Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, () => worker()),
-  );
-  return results;
 }
 
 function triggerPayload(input: {
@@ -44,6 +33,7 @@ function triggerPayload(input: {
       scheduled_for: input.scheduledFor.toISOString(),
       claimed_at: input.claimedAt.toISOString(),
       last_scheduled_for: input.lastScheduledFor?.toISOString() ?? null,
+      ...cronSlotFields(input.scheduledFor),
     },
     trigger: { slug: input.spec.slug, type: input.spec.type, kind: 'git' },
   };
@@ -56,6 +46,11 @@ function triggerPayload(input: {
  * crash cannot lose a slot between those two writes. The unique slot index
  * plus the compare-and-swap update make concurrent scheduler pods safe.
  */
+/** The flag's per-project default; a non-boolean override means "no override", as in resolveFeatureFlag. */
+function remindersDefault(): string {
+  return featureFlagDef('reminders')?.platformDefault() ? 'true' : 'false';
+}
+
 export async function claimDueScheduleSlots(input: {
   now: Date;
   limit: number;
@@ -78,12 +73,21 @@ export async function claimDueScheduleSlots(input: {
         eq(projectTriggerRuntime.triggerType, 'cron'),
         lte(projectTriggerRuntime.nextFireAt, input.now),
         sql`coalesce(${projects.metadata} ->> 'triggers_paused', 'false') <> 'true'`,
+        // Pause all automations (KRTX-1721): the slot stays due and unclaimed,
+        // so resuming fires a missed slot once.
+        accountAutomationsRunSql(projects.accountId),
+        // An auto-paused trigger (KRTX-1721) stays due and unclaimed until it is resumed.
+        isNull(projectTriggerRuntime.autoPausedAt),
+        // A session reminder fires only while its project has the `reminders`
+        // flag on. Off, the row stays due and unclaimed, so turning the flag
+        // back on fires a missed slot once, like any downtime.
+        sql`(${projectTriggerRuntime.scheduleSpec} ->> 'reminder' is null or (case when jsonb_typeof(${projects.metadata} #> '{experimental,reminders}') = 'boolean' then ${projects.metadata} #>> '{experimental,reminders}' else ${remindersDefault()} end) = 'true')`,
       ),
     )
     .orderBy(asc(projectTriggerRuntime.nextFireAt), asc(projectTriggerRuntime.projectId))
     .limit(input.limit);
 
-  const results = await mapConcurrently(candidates, 8, async (candidate) => {
+  const results = await mapWithConcurrency(candidates, 8, async (candidate) => {
     if (!candidate.nextFireAt || !candidate.scheduleRevision || !candidate.scheduleSpec) {
       return null;
     }
@@ -96,10 +100,12 @@ export async function claimDueScheduleSlots(input: {
     // This prevents a restart from producing an unbounded execution storm.
     // Same jitter key the catalog used — the offset MUST match or the sweep
     // would disagree with the stored slot and double-fire or skip.
+    // A session reminder is one person's schedule, not a fleet-wide cron, so it
+    // fires on time instead of taking the fleet jitter.
     const nextFireAt = spec.runAt
       ? null
       : nextTriggerScheduleSlot(spec, input.now, {
-          jitterKey: `${candidate.projectId}:${candidate.slug}`,
+          jitterKey: spec.reminder ? undefined : `${candidate.projectId}:${candidate.slug}`,
         });
     return db.transaction(async (tx) => {
       // Advance first. If the manifest was reconciled or another scheduler
@@ -124,6 +130,13 @@ export async function claimDueScheduleSlots(input: {
 
       if (!advanced[0]) return null;
 
+      // KRTX-1743: a slot later than the trigger's `max_lateness` is recorded
+      // as a skipped run and fires nothing. No `max_lateness` fires it once.
+      const lateMs = input.now.getTime() - scheduledFor.getTime();
+      const missed = spec.maxLatenessSeconds && lateMs > spec.maxLatenessSeconds * 1000
+        ? `missed: ${Math.floor(lateMs / 60_000)} min late, beyond max_lateness ${formatDurationSeconds(spec.maxLatenessSeconds)}`
+        : null;
+
       const inserted = await tx
         .insert(projectTriggerExecutions)
         .values({
@@ -131,7 +144,9 @@ export async function claimDueScheduleSlots(input: {
           slug: candidate.slug,
           scheduleRevision,
           scheduledFor,
-          status: 'queued',
+          status: missed ? 'skipped' : 'queued',
+          lastError: missed,
+          completedAt: missed ? input.now : null,
           spec: scheduleSpec,
           payload: triggerPayload({
             spec,
@@ -153,6 +168,7 @@ export async function claimDueScheduleSlots(input: {
         })
         .returning();
 
+      if (missed) return null;
       if (inserted[0]) return { execution: inserted[0], inserted: true };
 
       const [existing] = await tx
@@ -182,13 +198,14 @@ export async function claimTriggerExecutions(input: {
   const leaseMs = input.leaseMs ?? 2 * 60_000;
   // A worker may die during its final attempt. Once that lease expires, make
   // the abandonment explicit instead of leaving a permanent `running` row.
-  await db
+  const abandonedError = 'execution lease expired after the maximum number of attempts';
+  const abandoned = await db
     .update(projectTriggerExecutions)
     .set({
       status: 'dead_lettered',
       lockedBy: null,
       lockedUntil: null,
-      lastError: 'execution lease expired after the maximum number of attempts',
+      lastError: abandonedError,
       completedAt: input.now,
       updatedAt: input.now,
     })
@@ -209,7 +226,10 @@ export async function claimTriggerExecutions(input: {
           ),
         ),
       ),
-    );
+    )
+    .returning({ projectId: projectTriggerExecutions.projectId, slug: projectTriggerExecutions.slug });
+  // A dead letter is a terminal failure: its watchers hear about it (KRTX-1742).
+  await Promise.all(abandoned.map((row) => raiseTriggerAlert({ ...row, source: 'fire', error: abandonedError })));
 
   const candidates = await db
     .select()
@@ -235,34 +255,41 @@ export async function claimTriggerExecutions(input: {
     .orderBy(asc(projectTriggerExecutions.availableAt), asc(projectTriggerExecutions.createdAt))
     .limit(input.limit);
 
-  const claimed = await mapConcurrently(candidates, 8, async (candidate) => {
-    const [row] = await db
-      .update(projectTriggerExecutions)
-      .set({
-        status: 'running',
-        attempts: candidate.attempts + 1,
-        lockedBy: input.workerId,
-        lockedUntil: new Date(input.now.getTime() + leaseMs),
-        updatedAt: input.now,
-      })
-      .where(
-        and(
-          eq(projectTriggerExecutions.executionId, candidate.executionId),
-          eq(projectTriggerExecutions.attempts, candidate.attempts),
-          or(
-            eq(projectTriggerExecutions.status, 'queued'),
-            and(
-              eq(projectTriggerExecutions.status, 'running'),
-              or(
-                isNull(projectTriggerExecutions.lockedUntil),
-                lte(projectTriggerExecutions.lockedUntil, input.now),
+  const claimed = await mapWithConcurrency(candidates, 8, async (candidate) => {
+    // A row whose UPDATE fails stays queued and is claimed on the next pass. One bad
+    // row must not discard the rows this batch already moved to `running`.
+    try {
+      const [row] = await db
+        .update(projectTriggerExecutions)
+        .set({
+          status: 'running',
+          attempts: candidate.attempts + 1,
+          lockedBy: input.workerId,
+          lockedUntil: new Date(input.now.getTime() + leaseMs),
+          updatedAt: input.now,
+        })
+        .where(
+          and(
+            eq(projectTriggerExecutions.executionId, candidate.executionId),
+            eq(projectTriggerExecutions.attempts, candidate.attempts),
+            or(
+              eq(projectTriggerExecutions.status, 'queued'),
+              and(
+                eq(projectTriggerExecutions.status, 'running'),
+                or(
+                  isNull(projectTriggerExecutions.lockedUntil),
+                  lte(projectTriggerExecutions.lockedUntil, input.now),
+                ),
               ),
             ),
           ),
-        ),
-      )
-      .returning();
-    return row ?? null;
+        )
+        .returning();
+      return row ?? null;
+    } catch (error) {
+      logger.error('[trigger-executions] claim failed', { executionId: candidate.executionId, error: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
   });
   return claimed.filter((row): row is TriggerExecutionRow => row !== null);
 }
@@ -300,6 +327,9 @@ export async function markTriggerExecutionSucceeded(input: {
       status: 'succeeded',
       sessionId: input.sessionId ?? null,
       commandId: input.commandId ?? null,
+      // The agent turn this fire dispatched; settleTriggerRunsFromTurns closes
+      // it. A fire queued as a create links to its session when the create runs.
+      runStatus: input.sessionId || input.commandId ? 'running' : null,
       completedAt: input.completedAt,
       lockedBy: null,
       lockedUntil: null,
@@ -337,7 +367,7 @@ export async function markTriggerExecutionFailed(input: {
   terminal?: boolean;
 }): Promise<'queued' | 'dead_lettered'> {
   const terminal = input.terminal || input.row.attempts >= 5;
-  const retryDelayMs = Math.min(60_000, 2 ** Math.max(0, input.row.attempts - 1) * 2_000);
+  const retryDelayMs = exponentialBackoffMs({ attempt: input.row.attempts, baseMs: 2_000, capMs: 60_000 });
   await db
     .update(projectTriggerExecutions)
     .set({
@@ -384,12 +414,26 @@ export async function markTriggerRuntimeDelivered(input: {
     .onConflictDoUpdate({
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       set: {
-        lastStatus: 'fired',
-        lastError: null,
+        ...keepRunFailure('fired'),
         lastAttemptAt: input.when,
         updatedAt: input.when,
       },
     });
+  // The prompt reached its session: a fire failure streak is over (KRTX-1742).
+  await clearTriggerAlert({ projectId: input.projectId, slug: input.slug, source: 'fire' });
+}
+
+/**
+ * The status a fire or a delivery writes over an existing runtime row. A
+ * failed RUN (`run_failing_since` set by recordTriggerRunEnd) stays `failed`
+ * with its reason until a run finishes: the next fire says nothing about
+ * whether its run works. A failed fire or delivery clears as before.
+ */
+export function keepRunFailure(status: 'fired' | 'queued') {
+  return {
+    lastStatus: sql<string>`case when ${projectTriggerRuntime.runFailingSince} is null then ${status} else 'failed' end`,
+    lastError: sql<string | null>`case when ${projectTriggerRuntime.runFailingSince} is null then null else ${projectTriggerRuntime.lastError} end`,
+  };
 }
 
 /**
@@ -421,6 +465,156 @@ export async function markTriggerRuntimeDeliveryFailed(input: {
       target: [projectTriggerRuntime.projectId, projectTriggerRuntime.slug],
       set: { lastStatus: 'failed', lastError, lastAttemptAt: input.when, updatedAt: input.when },
     });
+}
+
+/** A stored run payload larger than this is replaced by a size marker (KRTX-1743). */
+export const TRIGGER_RUN_PAYLOAD_MAX_BYTES = 64 * 1024;
+
+/**
+ * `requeued`: the create went back to the session-lifecycle queue and may
+ * still run. Like every run status here, the claim worker never reads it:
+ * it claims only `queued` and `running` rows.
+ */
+export type TriggerRunStatus = 'succeeded' | 'failed' | 'skipped' | 'rejected' | 'requeued';
+
+/** The payload as stored on a run: over 64 KiB it is a marker and cannot be replayed. */
+export function cappedRunPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const bytes = Buffer.byteLength(JSON.stringify(payload));
+  return bytes > TRIGGER_RUN_PAYLOAD_MAX_BYTES ? { truncated: true, bytes } : payload;
+}
+
+/**
+ * Record one non-cron fire as a run (KRTX-1743, rulings 1 and 3). The row is
+ * written in a terminal status with a unique `<source>:<uuid>` revision, so
+ * the claim worker never picks it up. A fire that reached a session starts
+ * with `run_status = running`; settleTriggerRunsFromTurns closes it. So does
+ * a fire queued as a create (`command_id`, no session yet): the settle links
+ * it to the session the create started.
+ *
+ * Never throws: the history must not fail a fire. Returns the run's
+ * `execution_id`, or null when the write failed.
+ */
+export async function recordTriggerRun(input: {
+  projectId: string;
+  slug: string;
+  source: TriggerFireSource;
+  spec: GitTriggerSpec | Record<string, unknown>;
+  payload: Record<string, unknown>;
+  verified?: boolean;
+  status: TriggerRunStatus;
+  sessionId?: string | null;
+  commandId?: string | null;
+  error?: string | null;
+  replayOf?: string | null;
+  now: Date;
+}): Promise<string | null> {
+  try {
+    const [row] = await db
+      .insert(projectTriggerExecutions)
+      .values({
+        projectId: input.projectId,
+        slug: input.slug,
+        scheduleRevision: `${input.source}:${crypto.randomUUID()}`,
+        scheduledFor: input.now,
+        source: input.source,
+        status: input.status,
+        spec: input.spec as unknown as Record<string, unknown>,
+        payload: cappedRunPayload(input.payload),
+        payloadVerified: input.verified ?? true,
+        sessionId: input.sessionId ?? null,
+        commandId: input.commandId ?? null,
+        runStatus: (input.status === 'succeeded' || input.status === 'requeued') && (input.sessionId || input.commandId) ? 'running' : null,
+        lastError: input.error?.slice(0, 2_000) ?? null,
+        replayOf: input.replayOf ?? null,
+        availableAt: input.now,
+        completedAt: input.now,
+        createdAt: input.now,
+        updatedAt: input.now,
+      })
+      .returning({ executionId: projectTriggerExecutions.executionId });
+    return row?.executionId ?? null;
+  } catch (error) {
+    logger.warn('[trigger-runs] run not recorded', {
+      projectId: input.projectId,
+      slug: input.slug,
+      source: input.source,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
+}
+
+/** The run row a fire result maps to: a deduped fire ran nothing new. */
+export function triggerRunFromFire(result: {
+  status: 'fired' | 'queued' | 'failed' | 'skipped';
+  sessionId?: string;
+  commandId?: string;
+  error?: string;
+  reason?: string;
+  deduped?: boolean;
+  requeued?: boolean;
+}): { status: TriggerRunStatus; sessionId: string | null; commandId: string | null; error: string | null } {
+  const ids = { sessionId: result.sessionId ?? null, commandId: result.commandId ?? null };
+  if (result.status === 'failed' && result.requeued) {
+    return { status: 'requeued', ...ids, error: result.error ?? result.reason ?? 'create requeued' };
+  }
+  if (result.status === 'failed') {
+    return { status: 'failed', ...ids, error: result.error ?? result.reason ?? 'trigger fire failed' };
+  }
+  // A run cap held it (KRTX-1721): the reason names the cap.
+  if (result.status === 'skipped') return { status: 'skipped', ...ids, error: result.reason ?? 'skipped' };
+  if (result.deduped) return { status: 'skipped', ...ids, error: 'deduped' };
+  return { status: 'succeeded', ...ids, error: null };
+}
+
+const RUN_RETENTION_DAYS = 30;
+const REJECTED_RUN_RETENTION_DAYS = 7;
+const RUN_RETENTION_BATCH = 500;
+/** Batches per maintenance cycle: up to 10,000 rows, so one busy project cannot outgrow retention. */
+const RUN_RETENTION_MAX_BATCHES = 20;
+
+/**
+ * Ruling 5 retention: non-cron runs older than 30 days and rejected runs
+ * older than 7 days. Cron slot rows stay. Deletes batch after batch until one
+ * comes back short, at most `RUN_RETENTION_MAX_BATCHES` per call.
+ */
+export async function purgeExpiredTriggerRuns(now = new Date()): Promise<number> {
+  let total = 0;
+  for (let batch = 0; batch < RUN_RETENTION_MAX_BATCHES; batch++) {
+    const deleted = await purgeExpiredTriggerRunBatch(now);
+    total += deleted;
+    if (deleted < RUN_RETENTION_BATCH) break;
+  }
+  return total;
+}
+
+async function purgeExpiredTriggerRunBatch(now: Date): Promise<number> {
+  const day = 24 * 60 * 60_000;
+  const doomed = await db
+    .select({ executionId: projectTriggerExecutions.executionId })
+    .from(projectTriggerExecutions)
+    // `source <> 'cron'` plus one `created_at <` range: the predicate of
+    // idx_project_trigger_executions_noncron_created. Rejected runs are
+    // webhook runs, so they are in that index too.
+    .where(
+      and(
+        ne(projectTriggerExecutions.source, 'cron'),
+        lt(projectTriggerExecutions.createdAt, new Date(now.getTime() - REJECTED_RUN_RETENTION_DAYS * day)),
+        or(
+          eq(projectTriggerExecutions.status, 'rejected'),
+          lt(projectTriggerExecutions.createdAt, new Date(now.getTime() - RUN_RETENTION_DAYS * day)),
+        ),
+      ),
+    )
+    .limit(RUN_RETENTION_BATCH);
+  if (doomed.length === 0) return 0;
+  await db.delete(projectTriggerExecutions).where(
+    inArray(
+      projectTriggerExecutions.executionId,
+      doomed.map((row) => row.executionId),
+    ),
+  );
+  return doomed.length;
 }
 
 export async function countUncatalogedTriggerProjects(): Promise<number> {

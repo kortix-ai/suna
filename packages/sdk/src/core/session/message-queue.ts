@@ -2,8 +2,8 @@
  * @deprecated since 0.12.9 — Kortix owns prompt ordering server-side
  * (`POST /v1/projects/:projectId/sessions/:sessionId/prompts`). This module is
  * retained ONLY so `@kortix/sdk/message-queue`, published in 0.12.8, keeps
- * resolving for external consumers. It is not used by any Kortix host and will
- * be removed in the next major.
+ * resolving for external consumers. It is not used by any Kortix host.
+ * Removed in the next major.
  *
  * The rules a message queue obeys, as pure functions.
  *
@@ -49,7 +49,10 @@
  * old one.
  */
 
-/** What a host hands in when the user queues a message. */
+/**
+ * What a host hands in when the user queues a message.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
+ */
 export interface QueuedMessageInput<TFile = unknown, TMention = unknown> {
   /** Queue-local id. Client-only; never sent to the server. */
   id: string;
@@ -88,7 +91,10 @@ export interface QueuedMessageInput<TFile = unknown, TMention = unknown> {
   createdAt: number;
 }
 
-/** A queued message, once the queue owns it. */
+/**
+ * A queued message, once the queue owns it.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
+ */
 export interface QueuedMessage<TFile = unknown, TMention = unknown>
   extends QueuedMessageInput<TFile, TMention> {
   /** Dispatch attempts so far. Incremented by `claimNext`. */
@@ -97,7 +103,10 @@ export interface QueuedMessage<TFile = unknown, TMention = unknown>
   lastError?: string;
 }
 
-/** One session's queue. */
+/**
+ * One session's queue.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
+ */
 export interface SessionQueue<TFile = unknown, TMention = unknown> {
   /** Waiting to send, oldest first. The leading run is in flight when claimed. */
   pending: QueuedMessage<TFile, TMention>[];
@@ -128,6 +137,7 @@ export interface SessionQueue<TFile = unknown, TMention = unknown> {
   inFlightIds?: string[];
 }
 
+/** @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major. */
 export function createSessionQueue<TFile = unknown, TMention = unknown>(): SessionQueue<
   TFile,
   TMention
@@ -158,6 +168,7 @@ function inFlight<TFile, TMention>(state: SessionQueue<TFile, TMention>): string
  * if the session happens to read idle this instant. Jumping the line is what
  * "Stop & send" is for, and that is an explicit user action, not a side effect
  * of timing.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
  */
 export function enqueue<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
@@ -171,6 +182,7 @@ export function enqueue<TFile, TMention>(
  *
  * Returns `claimed: undefined` when the queue is empty or something is already
  * in flight — so a caller that races itself sends once, not twice.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
  */
 export function claimNext<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
@@ -191,7 +203,10 @@ export function claimNext<TFile, TMention>(
   };
 }
 
-/** The send landed. Drop everything it carried and free the queue. */
+/**
+ * The send landed. Drop everything it carried and free the queue.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
+ */
 export function completeInFlight<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
 ): SessionQueue<TFile, TMention> {
@@ -211,6 +226,7 @@ export function completeInFlight<TFile, TMention>(
  * Requeueing a failure at the head is how the queue used to wedge, and it is
  * also how a prompt the server already accepted gets sent a second time. The
  * item lands in `failed` with its reason, and `pending` keeps moving.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
  */
 export function failInFlight<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
@@ -233,7 +249,10 @@ export function failInFlight<TFile, TMention>(
   };
 }
 
-/** Put a failed item back at the tail, with its error cleared. */
+/**
+ * Put a failed item back at the tail, with its error cleared.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
+ */
 export function retryFailed<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
@@ -249,7 +268,10 @@ export function retryFailed<TFile, TMention>(
   };
 }
 
-/** Drop a message. Refuses anything in flight — it is already on the wire. */
+/**
+ * Drop a message. Refuses anything in flight — it is already on the wire.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
+ */
 export function removeQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
@@ -264,7 +286,10 @@ export function removeQueued<TFile, TMention>(
   return state;
 }
 
-/** Rewrite a queued message. Refuses anything in flight. */
+/**
+ * Rewrite a queued message. Refuses anything in flight.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
+ */
 export function editQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,
   id: string,
@@ -287,6 +312,7 @@ export function editQueued<TFile, TMention>(
  * the wire — and an in-flight message cannot move at all. That is one slot for
  * a `claimNext` lock, and several for a state rehydrated from a host that
  * claimed a batch.
+ * @deprecated Kortix orders prompts server-side: send with `useSession().send`. Removed in the next major.
  */
 export function reorderQueued<TFile, TMention>(
   state: SessionQueue<TFile, TMention>,

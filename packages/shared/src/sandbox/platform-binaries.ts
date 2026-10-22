@@ -93,7 +93,7 @@ export const SANDBOX_MANAGED_SKILLS_DIR = '/opt/kortix/managed-skills';
  * Where a box records which runtime assets it is running.
  *
  * Same constant as the daemon's `DEFAULT_STATE_PATH`
- * (apps/kortix-sandbox-agent-server/src/runtime-assets.ts);
+ * (apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts);
  * `platform-binaries.test.ts` asserts the two spellings still agree.
  */
 export const SANDBOX_RUNTIME_ASSETS_STATE_PATH = '/opt/kortix/runtime-assets-state.json';

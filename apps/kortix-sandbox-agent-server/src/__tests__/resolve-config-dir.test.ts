@@ -12,8 +12,8 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadConfig } from '../config'
-import { loadOpenCodeConfig, requireOpenCodeConfig, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from '../harness/open-code/config'
+import { loadConfig } from '@/harness/harness'
+import { loadOpenCodeConfig, requireOpenCodeConfig, resolveOpencodeConfigDir, type OpenCodeConfig as Config } from '@/harness/open-code/config'
 
 let workspace: string
 const DEFAULT_DIR = '/ephemeral/kortix-master/opencode'
@@ -41,7 +41,6 @@ function cfg(overrides: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: 'blob:none',
-    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -98,6 +97,21 @@ describe('resolveOpencodeConfigDir', () => {
     expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'yaml/oc'))
   })
 
+  test('root layout: harnesses/opencode wins over the legacy dir when the manifest names none', async () => {
+    for (const dir of ['harnesses/opencode', '.kortix/opencode']) {
+      mkdirSync(join(workspace, dir), { recursive: true })
+      writeFileSync(join(workspace, dir, 'opencode.jsonc'), '{}')
+    }
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'harnesses/opencode'))
+  })
+
+  test('an explicit config_dir is the only candidate: no fallback to the defaults', async () => {
+    writeFileSync(join(workspace, 'kortix.yaml'), 'opencode:\n  config_dir: config/oc\n')
+    mkdirSync(join(workspace, 'harnesses/opencode'), { recursive: true })
+    writeFileSync(join(workspace, 'harnesses/opencode/opencode.jsonc'), '{}')
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(DEFAULT_DIR)
+  })
+
   test('falls back when the manifest points at a dir lacking an opencode config file', async () => {
     writeFileSync(join(workspace, 'kortix.yaml'), 'opencode:\n  config_dir: .kortix/opencode\n')
     mkdirSync(join(workspace, '.kortix/opencode'), { recursive: true })
@@ -139,5 +153,20 @@ describe('native configuration behind the host boundary', () => {
     // boot any more.
     expect('opencodeConfigDirHint' in native).toBe(false)
     expect(() => loadOpenCodeConfig({ KORTIX_OPENCODE_INTERNAL_PORT: 'invalid' })).toThrow()
+  })
+})
+
+describe('resolveOpencodeConfigDir — kortix.yaml v3', () => {
+  afterEach(() => {
+    delete process.env.KORTIX_COMPILED_AGENT_CONFIG
+  })
+
+  test('a v3 session never resolves a project config dir: the image default runs', async () => {
+    mkdirSync(join(workspace, 'harnesses/opencode'), { recursive: true })
+    writeFileSync(join(workspace, 'harnesses/opencode/opencode.jsonc'), '{}')
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({ schema: 3, agent: {} })
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(DEFAULT_DIR)
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = JSON.stringify({ agent: {} })
+    expect(await resolveOpencodeConfigDir(cfg())).toBe(join(workspace, 'harnesses/opencode'))
   })
 })

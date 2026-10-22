@@ -20,18 +20,18 @@ import { TaskDoneTool } from './task-done-tool';
 
 const APPROVED_ARGS = ['approved'];
 
-export function AgentTaskUpdateTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function AgentTaskUpdateTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
+  const input = partInput(call);
   switch (agentTaskUpdateRoute(input)) {
     case 'start':
-      return <AgentSpawnTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
+      return <AgentSpawnTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
     case 'cancel':
-      return <AgentStopTool part={part} forceOpen={forceOpen} />;
+      return <AgentStopTool call={call} forceOpen={forceOpen} />;
     case 'approve':
       return (
         <BasicTool
-          disclosureId={disclosureKey('tool', part.id)}
+          disclosureId={disclosureKey('tool', call.id)}
           icon={<CheckIcon size={TURN_SPACE.icon} color={palette.success} />}
           trigger={{
             title: 'Update task',
@@ -42,22 +42,14 @@ export function AgentTaskUpdateTool({ part, defaultOpen, forceOpen }: ToolProps)
         />
       );
     case 'message':
-      return <AgentMessageTool part={part} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
+      return <AgentMessageTool call={call} defaultOpen={defaultOpen} forceOpen={forceOpen} />;
   }
 }
-ToolRegistry.register('agent_task_update', AgentTaskUpdateTool);
 ToolRegistry.register('agent-task-update', AgentTaskUpdateTool);
-ToolRegistry.register('task_update', AgentTaskUpdateTool);
 ToolRegistry.register('task-update', AgentTaskUpdateTool);
-ToolRegistry.register('agent_task_message', AgentMessageTool);
 ToolRegistry.register('agent-task-message', AgentMessageTool);
-ToolRegistry.register('task_message', AgentMessageTool);
 ToolRegistry.register('task-message', AgentMessageTool);
-ToolRegistry.register('agent_task_approve', TaskDoneTool);
 ToolRegistry.register('agent-task-approve', TaskDoneTool);
-ToolRegistry.register('agent_task_cancel', AgentStopTool);
 ToolRegistry.register('agent-task-cancel', AgentStopTool);
-ToolRegistry.register('task_approve', TaskDoneTool);
 ToolRegistry.register('task-approve', TaskDoneTool);
-ToolRegistry.register('task_cancel', AgentStopTool);
 ToolRegistry.register('task-cancel', AgentStopTool);

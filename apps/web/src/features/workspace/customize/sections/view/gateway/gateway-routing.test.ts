@@ -9,10 +9,11 @@ import {
   hasAdvancedRoutingConfig,
   moveFallback,
   validateRoutingDraft,
-} from './gateway-routing';
+} from '@kortix/ui/customize/sections/view/gateway/gateway-routing';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-const routingSource = readFileSync(join(import.meta.dir, 'gateway-routing.tsx'), 'utf8');
-const gatewayViewSource = readFileSync(join(import.meta.dir, '../../gateway-view.tsx'), 'utf8');
+const routingSource = readFileSync(uiSourcePath('customize/sections/view/gateway/gateway-routing.tsx'), 'utf8');
+const gatewayViewSource = readFileSync(uiSourcePath('customize/sections/gateway-view.tsx'), 'utf8');
 const modelDefaultsSource = readFileSync(
   join(import.meta.dir, '../../../../../../../../../packages/sdk/src/react/use-model-defaults.ts'),
   'utf8',
@@ -85,7 +86,6 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('uses the shared model selector', () => {
-    expect(routingSource).toContain("from '@/features/session/model-selector'");
     expect(routingSource).toContain('<ModelSelector');
   });
 
@@ -150,7 +150,10 @@ describe('gateway routing editor helpers', () => {
   });
 
   test('the header selector reads and writes the project default scope', () => {
-    expect(gatewayViewSource).toContain('modelDefaults.projectDefault');
+    // The read goes through the SDK's one default chain (`resolveModelDefault`),
+    // so the page cannot grow a second copy of the agent → project → account →
+    // platform precedence.
+    expect(gatewayViewSource).toContain('resolveModelDefault(modelDefaults.data');
     expect(gatewayViewSource).toContain('.setProjectDefault(m)');
     expect(gatewayViewSource).toContain('useProjectModels(projectId)');
     expect(gatewayViewSource).not.toContain('useRuntimeProviders');

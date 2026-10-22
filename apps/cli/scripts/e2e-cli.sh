@@ -51,7 +51,7 @@ section() { echo; echo "── $1 ──"; }
 WORK="$(mktemp -d -t kortix-e2e-XXXXXX)"
 cleanup() {
   if [[ "${KORTIX_E2E_KEEP:-0}" != "1" ]]; then
-    ( cd "$WORK" && "${RUN[@]}" projects rm --purge -y >/dev/null 2>&1 )
+    ( cd "$WORK" && "${RUN[@]}" projects rm -y >/dev/null 2>&1 )
   fi
   rm -rf "$WORK"
 }

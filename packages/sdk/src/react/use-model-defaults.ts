@@ -18,18 +18,19 @@ import {
   setGlobalDefaultModel,
   wireToModelKey,
 } from './use-model-store';
+import { resolveModelDefault } from '../core/models/composer-model';
 import { qk } from './query-keys';
-import { useProjectLlmGatewayEnabled } from './use-project-llm-gateway';
+
+// Framework-free since it moved to core; re-exported so `./react` keeps it.
+export { resolveModelDefault };
 
 export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;
   isLoading: boolean;
   isUpdating: boolean;
   /**
-   * The project's `llm_gateway` flag. False ⇒ the model-defaults chain does
-   * not exist for this project (native OpenCode mode): `data` never loads,
-   * and UIs must hide every set/clear affordance — the write routes answer
-   * 404 llm_gateway_disabled.
+   * @deprecated True for every project: the LLM gateway is the only model
+   * path, so the model-defaults chain always exists. Removed in the next major.
    */
   llmGatewayEnabled: boolean;
   accountDefault: ModelKey | undefined;
@@ -46,32 +47,16 @@ export interface UseModelDefaults {
   clearProjectDefault: () => Promise<void>;
 }
 
-export function resolveModelDefault(
-  data: ModelDefaultsResponse | undefined,
-  agentName: string | undefined,
-): ModelKey | undefined {
-  const wire =
-    (agentName ? data?.agentDefaults?.[agentName] : undefined) ??
-    data?.projectDefault ??
-    data?.accountDefault ??
-    (data?.freeTier ? undefined : data?.platformDefault);
-  return wire ? wireToModelKey(wire) : undefined;
-}
-
 export function useModelDefaults(
   projectId: string | null | undefined,
 ): UseModelDefaults {
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ['model-defaults', projectId], [projectId]);
 
-  // The model-defaults chain is a GATEWAY concept: with the project's
-  // llm_gateway flag off the route answers 404 llm_gateway_disabled and
-  // OpenCode resolves the default model in the sandbox — never fetch.
-  const gateway = useProjectLlmGatewayEnabled(projectId);
   const { data, isLoading } = useQuery({
     queryKey,
     queryFn: () => getModelDefaults(projectId as string),
-    enabled: !!projectId && gateway.enabled,
+    enabled: !!projectId,
     staleTime: 30_000,
   });
 
@@ -205,7 +190,7 @@ export function useModelDefaults(
     data,
     isLoading,
     isUpdating: setMutation.isPending || clearMutation.isPending,
-    llmGatewayEnabled: gateway.enabled,
+    llmGatewayEnabled: !!projectId,
     accountDefault,
     agentDefaults,
     projectDefault,

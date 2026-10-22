@@ -155,16 +155,28 @@ describe('dispatch: one attempt plan', () => {
     expect(cooldowns).toEqual([['a', 40], ['b', 6]]);
   });
 
-  test('a failover chain skips candidates that did not opt in', async () => {
-    const chain = [
-      upstream('first', { failover: true }),
-      upstream('no-opt-in'),
-      upstream('third', { failover: true }),
+  // A prod ChatGPT account hit its weekly plan limit (resets in ~4.8 days) and
+  // rested 30 s at a time, so every later request paid one more refused call.
+  test('a ChatGPT usage limit rests the account until its reset; the client retry stays within a minute', async () => {
+    const key = { ...base, apiKey: 'a', poolSecretId: 'a', billingMode: 'none' as const, markup: 0 };
+    const limit = (fields: Record<string, unknown>) =>
+      JSON.stringify({ error: { type: 'usage_limit_reached', message: 'The usage limit has been reached', ...fields } });
+    const cases: Array<[Record<string, unknown>, number]> = [
+      [{ resets_in_seconds: 414374, limit_window_minutes: 10080 }, 414374],
+      [{ resets_at: Math.floor(Date.now() / 1000) + 7200 }, 7200],
+      [{ resets_in_seconds: 99_999_999 }, 8 * 24 * 60 * 60],
     ];
-    const { run, sent } = harness((s) => (s.host === 'third' ? ok() : status(500)));
-    const outcome = await run({ model: 'm', candidates: chain });
-    expect(sent.map((s) => s.host)).toEqual(['first', 'third']);
-    expect(outcome.attemptFailures.map((f) => [f.provider, f.status])).toEqual([['first', 500]]);
+    for (const [fields, expected] of cases) {
+      const body = limit(fields);
+      const { run, cooldowns } = harness(() => new Response(body, { status: 429 }));
+      const outcome = await run({ model: 'm', candidates: [key] });
+      expect(outcome.response?.status).toBe(429);
+      expect(Number(outcome.response?.headers.get('retry-after'))).toBeLessThanOrEqual(60);
+      expect(await outcome.response?.text()).toBe(body);
+      expect(cooldowns).toHaveLength(1);
+      expect(cooldowns[0]![0]).toBe('a');
+      expect(Math.abs(cooldowns[0]![1] - expected)).toBeLessThanOrEqual(2);
+    }
   });
 
   test('fallback models are resolved lazily, deduplicated, and capped at eight', async () => {
@@ -209,6 +221,7 @@ describe('dispatch: one attempt plan', () => {
   test.each([
     ['402', () => status(402)],
     ['403', () => status(403)],
+    ['404 (the provider will not serve this model)', () => status(404)],
     ['429', () => status(429)],
     ['500', () => status(500)],
     ['a network error', () => new TypeError('fetch failed')],
@@ -231,6 +244,86 @@ describe('dispatch: one attempt plan', () => {
     expect(sent.map((s) => s.host)).toEqual(['provider-a', 'g-byok']);
   });
 
+  // Incident 2026-09-28: a ChatGPT-plan model (billing 'none', like BYOK) hit
+  // its usage limit, and the fallback chain the project set for it (managed
+  // models) never ran. A chain the project chose is consent to its billing.
+  test('a fallback chain the project chose runs after a BYOK primary fails, Kortix-billed or not', async () => {
+    const plan = { ...base, provider: 'openai-codex', billingMode: 'none' as const, markup: 0 };
+    const { run, sent } = harness((_s, index) => (index === 0 ? status(429) : ok()), {
+      resolveCandidates: async () => [upstream('glm-managed')],
+      admitCharge: async () => true,
+    });
+    const outcome = await run({
+      model: 'codex/gpt-6-sol', candidates: [plan], fallbackModels: ['glm-5.3-flash'],
+      fallbackOn: 'any-error', fallbackChosenByProject: true,
+    });
+    expect(sent.map((s) => s.host)).toEqual(['provider-a', 'glm-managed']);
+    expect(outcome.model).toBe('glm-5.3-flash');
+    expect(outcome.response?.status).toBe(200);
+  });
+
+  // #7979 moved a failed ChatGPT request to a Kortix model without asking
+  // whether the account can pay: the wallet gate had run for the ChatGPT model
+  // alone, which bills nothing.
+  test.each([
+    ['admitted', true, ['provider-a', 'g-managed', 'h-managed'], 200],
+    ['refused', false, ['provider-a'], 429],
+    ['not asked for', undefined, ['provider-a'], 429],
+  ] as const)('a project chain reaches Kortix-billed models only when the charge is %s', async (_name, admit, hosts, expected) => {
+    const plan = { ...base, provider: 'openai-codex', billingMode: 'none' as const, markup: 0 };
+    const { run, sent } = harness((s) => (s.host === 'h-managed' ? ok() : status(s.host === 'provider-a' ? 429 : 503)), {
+      resolveCandidates: async (model) => [upstream(`${model}-managed`)],
+      ...(admit === undefined ? {} : { admitCharge: async () => admit }),
+    });
+    const outcome = await run({
+      model: 'codex/gpt-6-sol', candidates: [plan], fallbackModels: ['g', 'h'],
+      fallbackOn: 'any-error', fallbackChosenByProject: true,
+    });
+    expect(sent.map((s) => s.host)).toEqual([...hosts]);
+    expect(outcome.response?.status).toBe(expected);
+  });
+
+  test('an own-key fallback after a ChatGPT failure needs no charge admission', async () => {
+    const plan = { ...base, provider: 'openai-codex', billingMode: 'none' as const, markup: 0 };
+    const asked: string[] = [];
+    const { run, sent } = harness((_s, index) => (index === 0 ? status(429) : ok()), {
+      resolveCandidates: async (model) => [upstream(`${model}-byok`, { billingMode: 'none', markup: 0 })],
+      admitCharge: async () => { asked.push('charge'); return false; },
+    });
+    const outcome = await run({
+      model: 'codex/gpt-6-sol', candidates: [plan], fallbackModels: ['claude'],
+      fallbackOn: 'any-error', fallbackChosenByProject: true,
+    });
+    expect(sent.map((s) => s.host)).toEqual(['provider-a', 'claude-byok']);
+    expect(outcome.response?.status).toBe(200);
+    expect(asked).toEqual([]);
+  });
+
+  test('a plan that starts at a fallback records the unavailable routed model first', async () => {
+    const { run } = harness((s) => (s.host === 'g-upstream' ? ok() : status(503)));
+    const outcome = await run({
+      model: 'f',
+      candidates: [upstream('f-upstream')],
+      fallbackModels: ['g'],
+      fallbackOn: 'any-error',
+      fallbackChosenByProject: true,
+      unavailable: {
+        model: 'codex/gpt-6-sol',
+        failure: {
+          attempt: 1, provider: 'codex', routeModel: 'codex/gpt-6-sol', resolvedModel: 'codex/gpt-6-sol',
+          stage: 'resolve', status: 429, code: 'provider_pool_rate_limited', message: 'Every ChatGPT account is paused',
+        },
+      },
+    });
+    expect(outcome.response?.status).toBe(200);
+    expect(outcome.attempts).toBe(2);
+    expect(outcome.candidatesTried).toEqual(['codex/gpt-6-sol:provider_pool_rate_limited', 'f-upstream:f', 'g-upstream:g']);
+    expect(outcome.attemptFailures.map((f) => [f.attempt, f.stage, f.routeModel, f.status])).toEqual([
+      [1, 'resolve', 'codex/gpt-6-sol', 429],
+      [2, 'dispatch', 'f', 503],
+    ]);
+  });
+
   test('a client that left stops the plan', async () => {
     const client = new AbortController();
     const { run, sent } = harness(
@@ -242,12 +335,12 @@ describe('dispatch: one attempt plan', () => {
     );
     const outcome = await run({
       model: 'm',
-      candidates: [upstream('first', { failover: true }), upstream('second', { failover: true })],
+      candidates: [upstream('first')],
       fallbackModels: ['f'],
       fallbackOn: 'any-error',
     });
     // Dispatch itself stops: callUpstream's own pre-check would also hold the
-    // fetch count at 1, but only dispatch's stop keeps the second candidate
+    // fetch count at 1, but only dispatch's stop keeps the fallback model
     // from being attempted.
     expect(outcome.attempts).toBe(1);
     expect(outcome.candidatesTried).toHaveLength(1);
@@ -256,16 +349,101 @@ describe('dispatch: one attempt plan', () => {
   });
 
   test('a publicly named candidate records a classified failure, never the upstream text', async () => {
-    const managed = (provider: string) => upstream(provider, { failover: true, publicProvider: 'kortix' });
     const { run } = harness((s) =>
       s.host === 'upstream-a' ? new Response('upstream-a key rejected', { status: 401 }) : ok(),
     );
-    const outcome = await run({ model: 'm', candidates: [managed('upstream-a'), managed('upstream-b')] });
-    expect(outcome.attemptFailures).toEqual([
+    const outcome = await run({
+      model: 'm',
+      candidates: [upstream('upstream-a', { publicProvider: 'kortix' })],
+      fallbackModels: ['f'],
+      fallbackOn: 'any-error',
+    });
+    expect(outcome.attemptFailures[0]).toEqual(
       expect.objectContaining({ provider: 'kortix', resolvedModel: 'm', code: 'model_unavailable', status: 401 }),
-    ]);
+    );
     expect(JSON.stringify(outcome.attemptFailures)).not.toContain('upstream-a');
-    expect(outcome.candidatesTried).toEqual(['kortix', 'kortix']);
+    expect(outcome.candidatesTried[0]).toBe('kortix');
+  });
+});
+
+// Seen on dev 2026-09-29: a ChatGPT login the provider no longer accepted
+// (401 "Could not parse your authentication token") failed every turn, while
+// the gateway believed the token valid until its stored expiry. A 401 on a
+// refreshable login now gets one forced refresh and one retry.
+describe('dispatch: a refused login', () => {
+  const login = (overrides: Partial<UpstreamDescriptor> = {}) =>
+    upstream('chatgpt', { apiKey: 'stale', credentialRef: 'acct-a', refreshableCredential: true, billingMode: 'none', markup: 0, ...overrides });
+  const refused = () => json({ error: { message: 'Could not parse your authentication token.', code: 'unauthorized_unknown' } }, 401);
+
+  test('a 401 refreshes the login once and retries with the new token', async () => {
+    const refreshed: string[] = [];
+    const { run, sent } = harness(({ key }) => (key === 'stale' ? refused() : ok()), {
+      refreshCredential: async (descriptor) => {
+        refreshed.push(descriptor.credentialRef!);
+        return { ...descriptor, apiKey: 'fresh' };
+      },
+    });
+    const outcome = await run({ model: 'codex/m', candidates: [login()] });
+    expect(sent.map((s) => s.key)).toEqual(['stale', 'fresh']);
+    expect(refreshed).toEqual(['acct-a']);
+    expect(outcome.response?.status).toBe(200);
+    expect(outcome.descriptor.apiKey).toBe('fresh');
+  });
+
+  test('a login that cannot be refreshed keeps the provider 401, sent once', async () => {
+    const { run, sent } = harness(() => refused(), { refreshCredential: async () => null });
+    const outcome = await run({ model: 'codex/m', candidates: [login()] });
+    expect(sent).toHaveLength(1);
+    expect(outcome.response?.status).toBe(401);
+    expect(await outcome.response?.text()).toContain('unauthorized_unknown');
+  });
+
+  test('a refreshed login that is refused again is final: no second refresh', async () => {
+    let refreshes = 0;
+    const { run, sent } = harness(() => refused(), {
+      refreshCredential: async (descriptor) => {
+        refreshes += 1;
+        return { ...descriptor, apiKey: `fresh-${refreshes}` };
+      },
+    });
+    const outcome = await run({ model: 'codex/m', candidates: [login()] });
+    expect(sent.map((s) => s.key)).toEqual(['stale', 'fresh-1']);
+    expect(refreshes).toBe(1);
+    expect(outcome.response?.status).toBe(401);
+  });
+
+  test('a refresh hook that throws does not fail the request differently', async () => {
+    const { run, sent } = harness(() => refused(), {
+      refreshCredential: async () => {
+        throw new Error('api unreachable');
+      },
+    });
+    const outcome = await run({ model: 'codex/m', candidates: [login()] });
+    expect(sent).toHaveLength(1);
+    expect(outcome.response?.status).toBe(401);
+  });
+
+  test('only a refreshable login is refreshed: a BYOK key 401 is final', async () => {
+    let refreshes = 0;
+    const { run, sent } = harness(() => status(401), {
+      refreshCredential: async (descriptor) => {
+        refreshes += 1;
+        return descriptor;
+      },
+    });
+    const outcome = await run({ model: 'openai/m', candidates: [upstream('openai', { credentialRef: 'OPENAI_API_KEY' })] });
+    expect(sent).toHaveLength(1);
+    expect(refreshes).toBe(0);
+    expect(outcome.response?.status).toBe(401);
+  });
+
+  test('a pooled login that stays refused hands the request to the next pool member', async () => {
+    const member = (name: string) => login({ apiKey: name, credentialRef: name, poolSecretId: name });
+    const { run, sent } = harness(({ key }) => (key === 'b' ? ok() : refused()), { refreshCredential: async () => null });
+    const outcome = await run({ model: 'codex/m', candidates: [member('a'), member('b')] });
+    expect(sent.map((s) => s.key)).toEqual(['a', 'b']);
+    expect(outcome.response?.status).toBe(200);
+    expect(outcome.descriptor.poolSecretId).toBe('b');
   });
 });
 

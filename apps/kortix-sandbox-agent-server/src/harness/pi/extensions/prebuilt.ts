@@ -23,7 +23,7 @@ import * as piTui from '@earendil-works/pi-tui'
 import * as typebox from 'typebox'
 import * as typeboxCompile from 'typebox/compile'
 import * as typeboxValue from 'typebox/value'
-import { logger } from '../../../logger'
+import { logger } from '@/lib/log/logger'
 import { parseNpmSource } from './host'
 
 /** pi-coding-agent's VIRTUAL_MODULES, keyed exactly as prebuild.ts rewrites the imports. */
@@ -60,6 +60,54 @@ export interface PrebuiltResult {
 
 function sourceOf(entry: PackageSource): string {
   return typeof entry === 'string' ? entry : entry.source
+}
+
+/**
+ * The project's `./` extension files, by Bun's native import. pi loads them
+ * through jiti in the compiled binary, Babel included: 71-81 ms per cold boot
+ * for the 3-file factory contract vs 1.3-3.8 ms native (macOS; the box is
+ * slower). The host modules resolve by name through a runtime plugin: the
+ * release dir has no node_modules.
+ *
+ * Only for a release root: it is content-addressed (`<store>/<release_id>`),
+ * so Bun's import cache, keyed by path, never serves a stale file. The working
+ * tree changes in place and stays on pi's loader. A directory, an entry with
+ * its own `extensions` filter, or a file whose import throws stays pi's too.
+ */
+export async function loadLocalExtensions(root: string, entries: readonly PackageSource[]): Promise<{ extensions: InlineExtension[]; rest: PackageSource[] }> {
+  const result: { extensions: InlineExtension[]; rest: PackageSource[] } = { extensions: [], rest: [] }
+  for (const entry of entries) {
+    const source = sourceOf(entry)
+    if (!source.startsWith('./') || !/\.[cm]?[jt]s$/.test(source) || (typeof entry !== 'string' && entry.extensions !== undefined)) {
+      result.rest.push(entry)
+      continue
+    }
+    const path = join(root, source)
+    try {
+      registerHostModules()
+      const module = (await import(path)) as { default?: unknown }
+      if (typeof module.default !== 'function') throw new Error('no default export function')
+      // Named by its path, as pi names a file it loads: the extension status reads the same.
+      result.extensions.push({ name: path, factory: module.default as ExtensionFactory })
+    } catch (err) {
+      logger.warn('[pi] project extension loads through pi', { source, reason: (err as Error).message })
+      result.rest.push(entry)
+    }
+  }
+  return result
+}
+
+let hostModulesRegistered = false
+function registerHostModules(): void {
+  if (hostModulesRegistered) return
+  hostModulesRegistered = true
+  const modules = hostModules()
+  Bun.plugin({
+    name: 'kortix-pi-host-modules',
+    setup(build) {
+      for (const [name, exports] of Object.entries(modules)) build.module(name, () => ({ exports: exports as Record<string, unknown>, loader: 'object' }))
+    },
+  })
 }
 
 /** Load the project's npm entries from an unpacked pre-built bundle; everything else is the caller's. */

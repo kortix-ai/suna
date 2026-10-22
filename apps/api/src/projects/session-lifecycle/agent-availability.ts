@@ -1,3 +1,4 @@
+import { BoundedMap } from '../../shared/bounded-map';
 /**
  * THE AGENT A PROMPT IS DELIVERED UNDER, CHECKED AGAINST THE RUNTIME THAT HAS
  * TO RUN IT.
@@ -16,7 +17,7 @@
  *     POST .../prompts {overrides:{agent:"kortix"}}  → 202 queued
  *     … 400ms later                                   → delivering, attempts 1
  *     … 800ms later                                   → row GONE
- *     ledger turn d0fd8134                            → ended `abandoned` +3.3s
+ *     the ledger turn                                 → ended `abandoned` +3.3s
  *     transcript                                      → NO user message,
  *                                                       NO assistant message
  *   The same prompt with `agent:"build"` was answered normally.
@@ -70,6 +71,19 @@ export function resolveDeliverableAgent(
   return { agent: null, dropped: true };
 }
 
+/**
+ * The agent a prompt runs under: the prompt's own pick, else the session's
+ * `agent_name`. Authorization already falls back to the session's agent
+ * (`resolveAndAuthorizeAgent`); delivery must use the same name, or the turn
+ * runs on the runtime default while the member was authorized for another.
+ */
+export function promptAgent(
+  requested: string | null | undefined,
+  sessionAgent: string | null | undefined,
+): string | null {
+  return requested?.trim() || sessionAgent?.trim() || null;
+}
+
 /** Names out of the runtime's `GET /agent` body, tolerant of shape drift. */
 export function parseRuntimeAgentNames(body: unknown): string[] | null {
   const list = Array.isArray(body)
@@ -101,7 +115,7 @@ interface CacheEntry {
   atMs: number;
 }
 
-const rosterCache = new Map<string, CacheEntry>();
+const rosterCache = new BoundedMap<string, CacheEntry>(5_000);
 
 /**
  * Read (and cache) the agent names a session's runtime reports.

@@ -61,12 +61,14 @@ describe('newSessionCreateInput', () => {
     expect(input.pending_prompt).toBeUndefined();
   });
 
-  test('model and agent map to opencode_model and agent_name', () => {
+  test('model and agent map to model (plus its pre-W4 name) and agent_name', () => {
     const input = newSessionCreateInput({ ...base, model: 'kortix/model-a', agent: 'build' });
+    expect(input.model).toBe('kortix/model-a');
     expect(input.opencode_model).toBe('kortix/model-a');
     expect(input.agent_name).toBe('build');
     const bare = newSessionCreateInput(base);
     expect('opencode_model' in bare).toBe(false);
+    expect('model' in bare).toBe(false);
     expect('agent_name' in bare).toBe(false);
   });
 });

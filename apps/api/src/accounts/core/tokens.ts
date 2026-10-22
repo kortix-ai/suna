@@ -1,26 +1,26 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
-import { accountMembers, accounts } from '@kortix/db';
-import { db } from '../../shared/db';
+import { userAccountNameRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
 import { resolveAccountId } from '../../shared/resolve-account';
 import {
   PatPolicyError,
+  checkTokenMintExpiry,
   createAccountToken,
   listAccountTokens,
   listPersonalAccountTokens,
   getAccountTokenOwner,
   revokeAccountToken,
+  deleteRevokedPersonalAccountToken,
 } from '../../repositories/account-tokens';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
+import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf, type Actor } from '../../iam/actor';
+import { isUuid } from '../../shared/validate';
 import { loadProjectForUser } from '../../projects/lib/access';
 import {
   accountsRouter,
   accountDisplayName,
   AccountTokenSchema,
-  OkSchema,
   MeSchema,
   autoClaimPendingInvites,
   resolveAccountForUser,
@@ -93,14 +93,7 @@ accountsRouter.openapi(
       // `account_members` says WHICH accounts; `role_assignments` says at what
       // role — the same split GET /accounts uses.
       const [rows, rolesByAccount] = await Promise.all([
-        db
-          .select({
-            accountId: accountMembers.accountId,
-            name: accounts.name,
-          })
-          .from(accountMembers)
-          .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-          .where(eq(accountMembers.userId, userId)),
+        userAccountNameRows(userId),
         accountRolesForUser(userId),
       ]);
       return rows.map((r) => ({ ...r, accountRole: rolesByAccount.get(r.accountId) ?? 'member' }));
@@ -139,6 +132,10 @@ accountsRouter.openapi(
     email: userEmail,
     token_context: {
       auth_type: authType,
+      // The account token this request authenticated with (null for a web
+      // session), so a client can tell its own credential from the rest:
+      // `kortix tokens rm` refuses to revoke it by accident (KRTX-1842).
+      token_id: (c.get('iamTokenBinding') as { tokenId?: string } | undefined)?.tokenId ?? null,
       project_id: (c.get('tokenProjectId') as string | undefined) ?? null,
       session_id: (c.get('sessionId') as string | undefined) ?? null,
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
@@ -175,9 +172,9 @@ accountsRouter.openapi(
           // keys — no other member's keys, no session connector tokens, no
           // service-account bearers. That is what a person's own settings page
           // shows (`/settings/tokens`); the account hub's Tokens tab is the
-          // automation surface and reads service accounts instead. Any other
-          // value is the unnarrowed account-wide list this route always
-          // returned, so no existing caller changes behaviour.
+          // automation surface and reads service accounts instead. Without
+          // it a caller with `token.revoke` gets every live token of the
+          // account; any other caller gets only the live tokens they own.
           mine: z.string(),
         })
         .partial(),
@@ -198,12 +195,16 @@ accountsRouter.openapi(
     return c.json({ error: (err as Error).message }, 403);
   }
 
-  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
+  const actor = await actorOf(c, accountId);
+  await assertAuthorized(actor, ACCOUNT_ACTIONS.TOKEN_READ);
 
-  const onlyMine = isTruthyFlag(c.req.query('mine'));
-  const tokens = onlyMine
+  // The account-wide list names every member's keys. Only a caller who may
+  // revoke them (token.revoke) reads it; anyone else gets the live tokens
+  // they own (their keys and their sessions' tokens).
+  const canSeeAll = (await authorize(actor, ACCOUNT_ACTIONS.TOKEN_REVOKE)).allowed;
+  const tokens = isTruthyFlag(c.req.query('mine'))
     ? await listPersonalAccountTokens(accountId, userId)
-    : await listAccountTokens(accountId);
+    : await listAccountTokens(accountId, undefined, canSeeAll ? undefined : userId);
   return c.json(
     tokens.map((t) => ({
       token_id: t.tokenId,
@@ -249,6 +250,10 @@ accountsRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
+  // A connected app's revocable `kortix_oat_` token must not mint a durable one.
+  if (c.get('authType') === 'oauth') {
+    return c.json({ error: 'Connected apps cannot mint personal access tokens.' }, 403);
+  }
   const body = await readJsonObject(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
   if (!name) {
@@ -283,6 +288,13 @@ accountsRouter.openapi(
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
   if (expiresAt && Number.isNaN(expiresAt.getTime())) {
     return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+  }
+  const expiryRefusal = await checkTokenMintExpiry(
+    expiresAt,
+    c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined,
+  );
+  if (expiryRefusal) {
+    return c.json({ error: expiryRefusal.error, code: expiryRefusal.code }, expiryRefusal.status);
   }
 
   // Optional project scope. A project-scoped key only ever works on that one
@@ -330,20 +342,26 @@ accountsRouter.openapi(
     method: 'delete',
     path: '/tokens/{tokenId}',
     tags: ['accounts'],
-    summary: 'Revoke a PAT',
+    summary: 'Revoke a PAT, or explicitly delete a revoked personal key',
     ...auth,
     request: {
       params: z.object({ tokenId: z.string() }),
-      query: z.object({ account_id: z.string() }).partial(),
+      query: z.object({ account_id: z.string(), delete_revoked: z.enum(['true', 'false']) }).partial(),
     },
     responses: {
-      200: json(OkSchema, 'Revocation result'),
-      ...errors(401, 403, 404),
+      200: json(z.object({ ok: z.literal(true), deleted: z.boolean().optional() }), 'Revocation or deletion result'),
+      ...errors(400, 401, 403, 404),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const tokenId = c.req.param('tokenId');
+  // A non-UUID id would reach the uuid-typed `account_tokens.token_id` query
+  // and surface as a 500 `22P02` (shared/validate.ts). A client-input error is
+  // answered as one, before any account or token lookup runs.
+  if (!isUuid(tokenId)) {
+    return c.json({ error: `"${tokenId}" is not a valid token id (a token id is a UUID)` }, 400);
+  }
   const queryAccount = c.req.query('account_id') ?? undefined;
 
   let accountId: string;
@@ -367,6 +385,12 @@ accountsRouter.openapi(
     actor,
     ownPersonalToken ? ACCOUNT_ACTIONS.TOKEN_PERSONAL_REVOKE : ACCOUNT_ACTIONS.TOKEN_REVOKE,
   );
+
+  if (c.req.query('delete_revoked') === 'true') {
+    const deleted = await deleteRevokedPersonalAccountToken(tokenId, accountId);
+    if (deleted) return c.json({ ok: true, deleted: true });
+    return c.json({ error: 'revoked personal token not found' }, 404);
+  }
 
   const ok = await revokeAccountToken(tokenId, accountId);
   if (!ok) {

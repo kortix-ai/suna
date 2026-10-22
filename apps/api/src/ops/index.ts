@@ -127,7 +127,7 @@ async function recentAuditEvents(): Promise<RecentAuditEvent[]> {
     occurred_at: Date | string;
   }>(await db.execute(sql`
     SELECT event_id, account_id, actor_user_id, action, resource_type, resource_id, occurred_at
-    FROM kortix.audit_events
+    FROM kortix.audit_events_all
     ORDER BY occurred_at DESC
     LIMIT 10
   `));
@@ -251,7 +251,7 @@ opsApp.openapi(
       'audit_events_24h',
       sql`
         SELECT count(*)::int AS count
-        FROM kortix.audit_events
+        FROM kortix.audit_events_all
         WHERE occurred_at >= now() - interval '24 hours'
       `,
     ),

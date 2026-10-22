@@ -18,6 +18,22 @@ function gatewayProviderList(
   } as unknown as ProviderListResponse;
 }
 
+describe('flattenModels — free catalog flag', () => {
+  test('normalizes true, false, and absent free flags without changing other fields', () => {
+    const models = gatewayProviderList({
+      paid: { name: 'Paid' },
+      free: { name: 'Free', free: true },
+      disabled: { name: 'Disabled', free: false },
+    });
+    const flat = flattenModels(models);
+    expect(flat.map(({ modelID, free, capabilities }) => ({ modelID, free, capabilities }))).toEqual([
+      { modelID: 'paid', free: false, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+      { modelID: 'free', free: true, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+      { modelID: 'disabled', free: false, capabilities: { reasoning: false, vision: undefined, toolcall: false } },
+    ]);
+  });
+});
+
 describe('flattenModels — gateway `provider` + `reasoning_options` pass-through', () => {
   test('carries the explicit `provider` field for a BYOK model registered under the kortix provider', () => {
     const [flat] = flattenModels(
@@ -33,6 +49,23 @@ describe('flattenModels — gateway `provider` + `reasoning_options` pass-throug
     expect(flat?.providerID).toBe('kortix');
     expect(flat?.provider).toBe('anthropic');
     expect(flat?.reasoningOptions).toEqual([{ type: 'effort', values: ['low', 'medium', 'high'] }]);
+  });
+
+  // A BYOK provider without a hand-written label (OpenCode Go) was named after
+  // the synthetic provider: "Kortix". The gateway serves the real name.
+  test('names a BYOK model after its real provider, keeping the kortix providerID', () => {
+    const [flat] = flattenModels(
+      gatewayProviderList({
+        'opencode-go/glm-5.3': { name: 'GLM-5.3', provider: 'opencode-go', provider_name: 'OpenCode Go' },
+      }),
+    );
+    expect(flat?.providerID).toBe('kortix');
+    expect(flat?.providerName).toBe('OpenCode Go');
+  });
+
+  test('a model without `provider_name` keeps the provider list name', () => {
+    const [flat] = flattenModels(gatewayProviderList({ 'glm-5.3-flash': { name: 'GLM', provider: 'kortix' } }));
+    expect(flat?.providerName).toBe('Kortix');
   });
 
   test('carries `provider: "kortix"` for a managed model, distinct from its providerID', () => {
@@ -112,57 +145,29 @@ describe('flattenModels — gateway `provider` + `reasoning_options` pass-throug
   });
 });
 
-// Native mode (project `llm_gateway` flag OFF): the session runtime serves
-// OpenCode's own connected providers (`anthropic`, `openrouter`, `opencode`,
-// …) and the synthetic `kortix` provider does not exist. `flattenModels` must
-// flatten those — the gateway-only allowlist applies only in gateway mode, or
-// the composer has ZERO models off-gateway and refuses to send.
-describe('flattenModels — native mode (llm_gateway off)', () => {
-  const nativeList = {
-    connected: ['anthropic', 'opencode'],
+// The gateway is the only model path: `kortix` is the one renderable
+// provider. A native provider in a runtime answer is a bypass and is dropped,
+// and the deprecated `providerMode: 'native'` changes nothing.
+describe('flattenModels — native providers never render', () => {
+  const list = {
+    connected: ['anthropic', 'kortix'],
     all: [
       {
         id: 'anthropic',
         name: 'Anthropic',
         source: 'env',
-        models: {
-          'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', reasoning: true, tool_call: true },
-        },
+        models: { 'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6' } },
       },
-      {
-        id: 'opencode',
-        name: 'OpenCode',
-        source: 'custom',
-        models: { 'big-pickle': { name: 'Big Pickle' } },
-      },
-      // A disconnected provider must not flatten even in native mode.
-      { id: 'openai', name: 'OpenAI', source: 'env', models: { 'gpt-5.2': { name: 'GPT-5.2' } } },
+      { id: 'kortix', name: 'Kortix', source: 'custom', models: { 'glm-5.3-flash': { name: 'GLM' } } },
     ],
   } as unknown as ProviderListResponse;
 
-  test('native mode flattens connected native providers', () => {
-    const flat = flattenModels(nativeList, { providerMode: 'native' });
-    expect(flat.map((m) => `${m.providerID}/${m.modelID}`).sort()).toEqual([
-      'anthropic/claude-sonnet-4-6',
-      'opencode/big-pickle',
-    ]);
-  });
-
-  test('native mode still never renders the synthetic kortix provider', () => {
-    const withStaleKortix = {
-      connected: ['anthropic', 'kortix'],
-      all: [
-        ...(nativeList.all ?? []),
-        { id: 'kortix', name: 'Kortix', source: 'custom', models: { 'glm-5.3-flash': { name: 'GLM' } } },
-      ],
-    } as unknown as ProviderListResponse;
-    const flat = flattenModels(withStaleKortix, { providerMode: 'native' });
-    expect(flat.some((m) => m.providerID === 'kortix')).toBe(false);
-    expect(flat.some((m) => m.providerID === 'anthropic')).toBe(true);
-  });
-
-  test('default (gateway) mode still drops native providers entirely', () => {
-    expect(flattenModels(nativeList)).toEqual([]);
+  test('only the kortix provider flattens, whatever providerMode says', () => {
+    for (const opts of [undefined, { providerMode: 'gateway' as const }, { providerMode: 'native' as const }]) {
+      expect(flattenModels(list, opts).map((m) => `${m.providerID}/${m.modelID}`)).toEqual([
+        'kortix/glm-5.3-flash',
+      ]);
+    }
   });
 });
 
@@ -263,5 +268,39 @@ describe('isOfferedModel', () => {
 
   test('refuses a key that is not in the catalog', () => {
     expect(isOfferedModel(models, { providerID: 'kortix', modelID: 'gone/model' })).toBe(false);
+  });
+});
+
+// These behaviors once diverged from the web-host copy of the flattener
+// (KRTX-451 phase 1 characterized the drift against
+// apps/web/src/features/session/model-flatten.ts; KRTX-455 phase 4 deleted
+// that host file, so the SDK is the single definition). They stay as
+// regression pins on the SDK semantics every picker now runs on.
+describe('flattenModels — semantics that once diverged from the deleted host copy', () => {
+  const driftList = gatewayProviderList({
+    // Stale pre-removal entries a baked catalog can still carry.
+    auto: { name: 'Auto' },
+    'kortix/auto': { name: 'Kortix Auto' },
+    'custom/mystery': { name: 'Mystery' },
+    'custom/silent': { name: 'Silent', capabilities: { reasoning: true } },
+    // Zero-cost managed model: the gateway stamps `free`.
+    'kortix/free-tier': { name: 'Free Tier', free: true, cost: { input: 0, output: 0 } },
+    'kortix/paid-tier': { name: 'Paid Tier', cost: { input: 1, output: 2 } },
+  });
+
+  test('gateway mode drops stale pre-removal auto/kortix/auto entries', () => {
+    const flat = flattenModels(driftList);
+    expect(flat.map((m) => m.modelID).sort()).toEqual([
+      'custom/mystery',
+      'custom/silent',
+      'kortix/free-tier',
+      'kortix/paid-tier',
+    ]);
+  });
+
+  test('free is carried on the SDK FlatModel for both free and paid models', () => {
+    const flat = flattenModels(driftList);
+    expect(flat.find((m) => m.modelID === 'kortix/free-tier')?.free).toBe(true);
+    expect(flat.find((m) => m.modelID === 'kortix/paid-tier')?.free).toBe(false);
   });
 });

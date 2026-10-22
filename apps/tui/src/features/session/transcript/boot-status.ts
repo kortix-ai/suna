@@ -6,9 +6,9 @@
  * happening, when `/start` fired the moment the session opened
  * (`packages/sdk/src/react/use-session.ts`, `startEnabled`).
  *
- * The labels are the web app's (`session-starting-loader.tsx`, `STEPS`), so
- * both products narrate the same boot the same way. Pure so every branch is
- * asserted without a renderer or a clock.
+ * The labels are the boot steps the web app used to narrate before its wake
+ * went silent. Pure so every branch is asserted without a renderer or a
+ * clock.
  */
 
 /** The SDK's raw `/start` stage plus the two the hook derives. */

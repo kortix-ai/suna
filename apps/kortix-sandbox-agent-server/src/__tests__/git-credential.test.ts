@@ -5,14 +5,14 @@ import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'bun:test'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import {
   buildGitAuthArgs,
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
   resolveGitCredentialOutput,
-} from '../git'
+} from '@/lib/git/git'
 
 const execFileAsync = promisify(execFile)
 
@@ -39,7 +39,6 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
-    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',

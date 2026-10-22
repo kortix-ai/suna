@@ -33,6 +33,7 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_projectId: string, value: string) => value.replace(/^enc:/, ''),
   encryptProjectSecret: (_projectId: string, value: string) => `enc:${value}`,
   getProjectSecretValueForConsumer: async () => null,
+  getProjectSecretValuesForConsumer: async () => ({}),
   listProjectSecrets: async () => ({}),
 }));
 

@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import {
+  IMPORTABLE_LIST_KEYS,
+  IMPORTABLE_MAP_KEYS,
   type ManifestFormat,
   type ManifestImportReaderSync,
   type ResolvedManifest,
@@ -69,7 +71,10 @@ export function resolveLocalManifestImports(
     return {
       raw,
       files: [rootSource],
-      origins: { triggers: {}, connectors: {}, agents: {}, apps: {} },
+      // One origin map per importable key, exactly the keys the resolver uses.
+      origins: Object.fromEntries(
+        [...IMPORTABLE_LIST_KEYS, ...IMPORTABLE_MAP_KEYS].map((key) => [key, {}]),
+      ) as ResolvedManifest['origins'],
     };
   }
   return resolveManifestImportsSync(rootSource, localImportReader(root));

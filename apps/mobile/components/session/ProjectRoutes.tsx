@@ -9,13 +9,16 @@
  *   /projects/[id]/sessions sessions — every session of the project (drawer)
  *   /projects/[id]/files    files    — the project's files (drawer)
  *   /projects/[id]/account  account  — the Account page (drawer avatar)
+ *   /projects/[id]/inbox    inbox    — the caller's notifications across
+ *                                      every project (drawer, KRTX-1742)
  *   /projects/[id]/page     page     — a sub-page (`?pageId=`), pushed over
  *                                      the page it was opened from: project
  *                                      Settings from Settings, Schedules or
- *                                      Secrets from project Settings
+ *                                      Secrets from project Settings, Files
+ *                                      from the thread's ··· sheet
  *
  * The stack is `[index]`, `[index, X]`, or `[index, X, page, …]`. The
- * drawer never deepens it: it pushes `sessions`, `files`, or `account` over
+ * drawer never deepens it: it pushes `sessions`, `files`, `account`, or `inbox` over
  * home, replaces a covering route with them, and drops any sub-pages
  * (lib/session/project-stack, ProjectScreen). A covering route replaces
  * itself with the view when a session opens (useCoveringRoute). Every
@@ -33,13 +36,15 @@
  * through ProjectRouteProvider. The tab store still decides WHICH page or
  * thread shows. The routes mirror only whether the project is on its home:
  *   - home route: the store leaves the home state → push `view`
- *   - covering route (sessions, files, account): the store leaves the home
+ *   - covering route (sessions, files, account, inbox): the store leaves the home
  *     state → replace this route with `view`
  *   - view route: the store returns to the home state (deleted session, New
  *     session) → pop to home
  *   - view route removed (pop, replace, leaving the project) → reset the
  *     store to the home state, before the route leaves the navigation state,
  *     so the home route never sees "not home" with no view to show it
+ *   - sub-page: the store's open target changes after the push → leave for
+ *     the view (ProjectSubPageRoute)
  */
 
 import * as React from 'react';
@@ -61,6 +66,7 @@ import {
   isSubPageId,
   subPageBackMove,
   subPageLeaveMove,
+  subPageShouldLeave,
   type SubPageId,
 } from '@/lib/session/project-stack';
 import { haptics } from '@/lib/haptics';
@@ -69,6 +75,7 @@ export {
   PROJECT_ACCOUNT_ROUTE,
   PROJECT_FILES_ROUTE,
   PROJECT_HOME_ROUTE,
+  PROJECT_INBOX_ROUTE,
   PROJECT_PAGE_ROUTE,
   PROJECT_SESSIONS_ROUTE,
   PROJECT_VIEW_ROUTE,
@@ -81,6 +88,11 @@ export interface ProjectRouteValue {
   view: React.ReactNode;
   /** True when no page, thread, or connecting session is open. */
   isHome: boolean;
+  /**
+   * What the store has open (`projectViewKey`): null on project home. A
+   * sub-page leaves when it differs from its value at the sub-page's mount.
+   */
+  viewKey: string | null;
   /**
    * Increments each time the view finishes covering project home. The home
    * route remounts on it, so a sent prompt does not wait in the composer.
@@ -100,13 +112,13 @@ export interface ProjectRouteValue {
   /**
    * Put the project in the connecting state for a session. The view route
    * shows it. Stable. A covering route opens a session through
-   * useCoveringRoute, not through this directly. `focusOpenCodeId` (a
+   * useCoveringRoute, not through this directly. `focusRuntimeId` (a
    * sub-session row): the thread opens on that sub-session, not the root.
    */
-  openProjectSession: (session: ProjectSession, focusOpenCodeId?: string) => void;
+  openProjectSession: (session: ProjectSession, focusRuntimeId?: string) => void;
   /** Open the project drawer. Stable. Every project page's hamburger calls it. */
   openDrawer: () => void;
-  /** The project drawer is open: a hamburger shows its X. */
+  /** The project drawer is open: pages pause their loaders behind it. */
   isDrawerOpen: boolean;
   /**
    * Open the session actions sheet (`SessionActionsSheet`, COR-140 Task 5) for
@@ -118,9 +130,9 @@ export interface ProjectRouteValue {
   openSessionActions: (session: ProjectSession) => void;
   /**
    * Push a sub-page (`page` route) over the focused project route. Stable.
-   * Call it only from a screen that shows while the store is on the home
-   * state (a covering route, or another sub-page): a sub-page leaves as soon
-   * as the store is off home (ProjectSubPageRoute).
+   * From a covering route, another sub-page, or the open thread (Files from
+   * the session ··· sheet). A sub-page leaves when the store's open target
+   * changes after it was pushed (ProjectSubPageRoute).
    */
   openSubPage: (pageId: SubPageId) => void;
   /** The content of a sub-page. `onBack` pops the sub-page. */
@@ -202,7 +214,7 @@ export function ProjectViewRoute() {
 }
 
 /**
- * A route that covers project home: `sessions`, `files`, or `account`. Call it
+ * A route that covers project home: `sessions`, `files`, `account`, or `inbox`. Call it
  * once in the component the route renders: `useNavigation()` there is the
  * project stack.
  *
@@ -231,7 +243,7 @@ export function ProjectViewRoute() {
  * A covering route must not reset the store on `beforeRemove`: replace removes
  * it after step 1.
  */
-export function useCoveringRoute(): (session: ProjectSession, focusOpenCodeId?: string) => void {
+export function useCoveringRoute(): (session: ProjectSession, focusRuntimeId?: string) => void {
   const { openProjectSession, isHome } = useProjectRoute();
   const navigation = useNavigation<ProjectStackNavigation>();
   const isFocused = useIsFocused();
@@ -250,9 +262,9 @@ export function useCoveringRoute(): (session: ProjectSession, focusOpenCodeId?: 
   }, [isHome, isFocused, replaceWithView]);
 
   return React.useCallback(
-    (session: ProjectSession, focusOpenCodeId?: string) => {
+    (session: ProjectSession, focusRuntimeId?: string) => {
       if (leavingRef.current) return;
-      openProjectSession(session, focusOpenCodeId);
+      openProjectSession(session, focusRuntimeId);
       replaceWithView();
     },
     [openProjectSession, replaceWithView]
@@ -283,23 +295,27 @@ export function backFromSubPage(navigation: {
  * → `pop`), and the iOS swipe-back (this screen enables the gesture, and the
  * drawer's edge swipe is off while it is on top).
  *
- * When the store leaves the home state while this route is focused (a
- * session opened from a notification), the stack ends as [index, view]
- * (`subPageLeaveMove`): a view under the sub-pages is popped to and swaps
- * its content; otherwise the stack resets to [index, view], so a new view
- * mounts with the store already off home. Removing this route never resets
- * the store.
+ * When the store's open target changes while this route is focused
+ * (`subPageShouldLeave`: a session opened from a notification, or the thread
+ * under Files deleted), the stack ends as [index, view] (`subPageLeaveMove`):
+ * a view under the sub-pages is popped to and swaps its content (or, back on
+ * home, removes itself); otherwise the stack resets to [index, view], so a
+ * new view mounts with the store already off home. The target at mount is
+ * not a reason to leave: Files pushed over the open thread stays. Removing
+ * this route never resets the store.
  */
 export function ProjectSubPageRoute() {
-  const { renderSubPage, isHome } = useProjectRoute();
+  const { renderSubPage, viewKey } = useProjectRoute();
   const { pageId } = useLocalSearchParams<{ pageId?: string }>();
   const navigation = useNavigation<ProjectStackNavigation>();
   const isFocused = useIsFocused();
   // Set once the route starts to leave for the view, so it never dispatches twice.
   const leavingRef = React.useRef(false);
+  // The store's open target when this sub-page was pushed.
+  const viewKeyAtMount = React.useRef(viewKey).current;
 
   React.useEffect(() => {
-    if (isHome || !isFocused || leavingRef.current) return;
+    if (!subPageShouldLeave({ viewKey, viewKeyAtMount }) || !isFocused || leavingRef.current) return;
     leavingRef.current = true;
     const state = navigation.getState();
     if (subPageLeaveMove(state.routes.map((route) => route.name)) === 'pop-to-view') {
@@ -309,7 +325,7 @@ export function ProjectSubPageRoute() {
     navigation.dispatch(
       CommonActions.reset(homeAndRoute(state.routes[0], { name: PROJECT_VIEW_ROUTE }))
     );
-  }, [isHome, isFocused, navigation]);
+  }, [viewKey, viewKeyAtMount, isFocused, navigation]);
 
   const goBack = React.useCallback(() => {
     haptics.tap();

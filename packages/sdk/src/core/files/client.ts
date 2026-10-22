@@ -8,15 +8,16 @@
  * consume `readBlob`/`list` from here.
  */
 import { getClient, RuntimeNotReadyError } from '../runtime/client';
-import { getActiveOpenCodeUrl } from '../session/server-store/active';
+import { getActiveRuntimeUrl } from '../session/server-store/active';
 import { authenticatedFetch } from '../http/auth';
+import { type AuthenticatedRequest, authenticatedRequest } from '../http/authenticated-request';
 import { ApiError } from '../http/api/errors';
 import type {
   FileContent,
   FileNode,
   FindMatch,
   GitFileStatus,
-  OpenCodeProjectInfo,
+  RuntimeProjectInfo,
   ServerHealth,
   UploadResult,
   WriteFileResult,
@@ -59,7 +60,7 @@ async function errorMessage(res: Response): Promise<string> {
 /**
  * Resolve the daemon base url for ONE operation — or refuse to run it.
  *
- * `getActiveOpenCodeUrl()` returns `''` on a billing-enabled deployment until a
+ * `getActiveRuntimeUrl()` returns `''` on a billing-enabled deployment until a
  * session runtime is bound (`session/server-store/active.ts`). Interpolating
  * that `''` into a template makes the request URL RELATIVE, so the browser sent
  * the user's file AND their bearer token to the WEB origin
@@ -78,7 +79,7 @@ async function errorMessage(res: Response): Promise<string> {
  * be impossible from this file.
  */
 function requireBaseUrl(baseUrl?: string): string {
-  const resolved = (baseUrl ?? getActiveOpenCodeUrl()).trim();
+  const resolved = (baseUrl ?? getActiveRuntimeUrl()).trim();
   if (!resolved) throw new RuntimeNotReadyError();
   return resolved;
 }
@@ -95,6 +96,30 @@ async function fetchDaemonJson<T>(relUrl: string, baseUrl?: string): Promise<T> 
     throw new ApiError(await errorMessage(response), { status: response.status, response });
   }
   return response.json() as Promise<T>;
+}
+
+/** POST/DELETE a daemon JSON-write endpoint, surfacing the server's error as
+ *  `<label> failed (<status>): ...` (the labels byte-match the previous
+ *  per-function messages). */
+async function daemonWrite(
+  relUrl: string,
+  method: 'POST' | 'DELETE',
+  body: unknown,
+  label: string,
+  baseUrl?: string,
+): Promise<boolean> {
+  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}${relUrl}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new ApiError(`${label} failed (${res.status}): ${await errorMessage(res)}`, {
+      status: res.status,
+      response: res,
+    });
+  }
+  return res.json() as Promise<boolean>;
 }
 
 /**
@@ -153,13 +178,8 @@ export async function listFiles(dirPath: string, baseUrl?: string): Promise<File
 
 /** Read a file's content (text, or base64 for binaries). Daemon `GET /file/content`. */
 export async function readFile(filePath: string, baseUrl?: string): Promise<FileContent> {
-  const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(filePath);
-  const response = await authenticatedFetch(`${base}/file/content?path=${encodeURIComponent(daemonPath)}`);
-  if (!response.ok) {
-    throw new ApiError(await errorMessage(response), { status: response.status, response });
-  }
-  return response.json() as Promise<FileContent>;
+  return fetchDaemonJson<FileContent>(`/file/content?path=${encodeURIComponent(daemonPath)}`, baseUrl);
 }
 
 /** Raw byte read. Daemon `GET /file/raw`. Throws (so callers can fall back). */
@@ -185,20 +205,64 @@ async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl?: st
   return blob;
 }
 
+// ─── Raw-read concurrency bound ─────────────────────────────────────────────
+//
+// A host transcript can show hundreds of binary file cards, and the live event
+// stream refetches every mounted card at once — `binaryBlobKeys.all` is
+// invalidated on each `file.edited` event and at turn end
+// (`use-opencode-events/handle-event.ts`). Unbounded, that fan-out saturates a
+// box's dial path: on 2026-10-10 one web client fired 649 `GET /file/raw` in one
+// minute at a single box and the route's p95 reached 20 s (Linear KRTX-471).
+// Eight concurrent reads keep every request fast and still drain a 700-card
+// refetch in seconds; the proxy's 15 s per-attempt connect cap never engages.
+const MAX_CONCURRENT_RAW_READS = 8;
+let rawReadsActive = 0;
+const rawReadWaiters: Array<() => void> = [];
+
+async function acquireRawReadSlot(): Promise<void> {
+  if (rawReadsActive < MAX_CONCURRENT_RAW_READS) {
+    rawReadsActive++;
+    return;
+  }
+  await new Promise<void>((release) => rawReadWaiters.push(release));
+  rawReadsActive++;
+}
+
+function releaseRawReadSlot(): void {
+  rawReadsActive--;
+  rawReadWaiters.shift()?.();
+}
+
+/**
+ * Daemon `GET /file/raw` as a request the host sends itself, for a host that
+ * streams the bytes to disk (React Native's `FileSystem.downloadAsync`) so a
+ * large file never enters the JS heap. The caller checks the status and treats
+ * a `text/html` body for a non-HTML file as a failure (a misrouted SPA shell).
+ */
+export function fileDownloadRequest(filePath: string, baseUrl?: string): Promise<AuthenticatedRequest> {
+  const base = requireBaseUrl(baseUrl);
+  return authenticatedRequest(`${base}/file/raw?path=${encodeURIComponent(toDaemonPath(filePath))}`);
+}
+
 /** Read a file as a Blob — prefers `/file/raw`, falls back to base64 `/file/content`. */
 export async function readBlob(filePath: string, baseUrl?: string): Promise<Blob> {
-  // Resolve BEFORE the try: an unresolved runtime must surface as
-  // `RuntimeNotReadyError`, not be swallowed into the base64 fallback path.
-  const base = requireBaseUrl(baseUrl);
+  await acquireRawReadSlot();
   try {
-    return await readFileRaw(filePath, undefined, base);
-  } catch { /* fall back to JSON content endpoint */ }
-  const result = await readFile(filePath, base);
-  if (result.encoding === 'base64' && result.content) {
-    const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
-    return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
+    // Resolve BEFORE the try: an unresolved runtime must surface as
+    // `RuntimeNotReadyError`, not be swallowed into the base64 fallback path.
+    const base = requireBaseUrl(baseUrl);
+    try {
+      return await readFileRaw(filePath, undefined, base);
+    } catch { /* fall back to JSON content endpoint */ }
+    const result = await readFile(filePath, base);
+    if (result.encoding === 'base64' && result.content) {
+      const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
+      return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
+    }
+    return new Blob([result.content ?? ''], { type: result.mimeType || 'text/plain;charset=utf-8' });
+  } finally {
+    releaseRawReadSlot();
   }
-  return new Blob([result.content ?? ''], { type: result.mimeType || 'text/plain;charset=utf-8' });
 }
 
 /** Git file status — uncommitted changes. Daemon `GET /file/status`. */
@@ -212,7 +276,7 @@ export async function getFileStatus(baseUrl?: string): Promise<GitFileStatus[]> 
  * Throws `ApiError` on failure — like every other op in this module. This
  * USED TO swallow every failure to `[]`, which silently hid daemon/network
  * errors from callers. The only real caller of this SDK export
- * (`apps/web/src/features/files/search/workspace-search-service.ts`) already
+ * (`packages/ui/src/files/runtime/search/workspace-search-service.ts`) already
  * wraps each call in its own `.catch(() => [])`, and there are no callers
  * under `@kortix/sdk/react`, so removing the internal swallow here is
  * non-breaking — verified by grepping every `findFiles(` call site in the
@@ -360,9 +424,36 @@ export interface UploadFileOptions {
   onProgress?: (event: UploadProgressEvent) => void;
 }
 
-// Requests above this size are not reliable through the sandbox edge. Keep
-// every multipart body below the measured boundary and verify each append.
-const SANDBOX_UPLOAD_CHUNK_BYTES = 64 * 1024;
+// The most bytes one upload request carries; a larger file is reserved, then
+// appended in chunks of this size, and every append's landed size is verified.
+//
+// This was 64 KiB: on 2026-09-04 the Platinum sandbox edge silently dropped
+// request bodies above ~104 KB. Platinum fixed that (#923 drains the request
+// body across backpressure, #1077 streams proxy and edge bodies), and 64 KiB
+// then cost one ~0.9-1.3 s proxied round trip per 64 KiB: 17 sequential
+// requests and 17-19 s for a 1 MiB file. Measured 2026-10-02 through the real
+// route (Kortix API → Platinum edge → daemon), single requests landed byte-exact
+// at 1, 4, 8 and 16 MiB in both eu-west and us-east (1 MiB in 1.5-2 s, 16 MiB in
+// 5-7 s). 8 MiB keeps a 2x margin under the largest size proven, and a short or
+// lost body still fails loudly: the size check below and on every append.
+const SANDBOX_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Refuse a single-request upload whose body arrived SHORT.
+ *
+ * Only `landed < sent` is truncation. An empty file legitimately lands 0 of 0,
+ * and a Blob whose length the host could not know up front (a pipe-backed file
+ * reports 0 or a non-finite size) can land MORE than it claimed; neither is a
+ * cut body. A daemon that reports no size is not checked.
+ */
+function verifyLandedSize(result: UploadResult | undefined, expected: number): void {
+  if (typeof result?.size !== 'number' || !Number.isFinite(expected)) return;
+  if (result.size >= expected) return;
+  throw new ApiError(
+    `Upload verification failed for ${result.path}: expected ${expected} bytes, received ${result.size}`,
+    { code: 'UPLOAD_SIZE_MISMATCH' },
+  );
+}
 
 function notifyUploadProgress(options: UploadFileOptions | undefined, event: UploadProgressEvent): void {
   try {
@@ -420,10 +511,22 @@ export async function uploadFile(
       (form) =>
         authenticatedFetch(`${base}/file/upload`, { method: 'POST', body: form }, { timeoutMs }),
     );
+    verifyLandedSize(result[0], file.size);
     notifyUploadProgress(options, { loadedBytes: file.size, totalBytes: file.size });
     return result;
   }
+  return uploadFileChunked(file, targetPath, name, base, options);
+}
 
+/** The large-file path: reserve the collision-safe destination, then append
+ *  chunks under it, cleaning up the partial upload on any failure. */
+async function uploadFileChunked(
+  file: File | Blob,
+  targetPath: string | undefined,
+  name: string,
+  base: string,
+  options: UploadFileOptions | undefined,
+): Promise<UploadResult[]> {
   // Reserve the collision-safe destination with the daemon's existing upload
   // semantics. The returned path is authoritative when the requested name
   // already exists.
@@ -485,12 +588,48 @@ export async function uploadFile(
 }
 
 /**
+ * A file on the device's disk, as React Native's `FormData` takes it: the
+ * runtime streams the bytes from `uri`, so they never enter the JS heap.
+ */
+export interface NativeFilePart {
+  uri: string;
+  name: string;
+  type?: string;
+}
+
+/**
+ * Upload a device file to the sandbox in one request (no chunking: the size is
+ * unknown to JS). For hosts whose `fetch` cannot build a `Blob` from a file URI
+ * (React Native). Daemon `POST /file/upload`, through the same auth, deadline,
+ * 401 replay and retry as `uploadFile`. `baseUrl` names the sandbox.
+ */
+export function uploadNativeFile(
+  file: NativeFilePart,
+  targetPath?: string,
+  baseUrl?: string,
+): Promise<UploadResult[]> {
+  const base = requireBaseUrl(baseUrl);
+  return uploadWithRetry(
+    () => {
+      const form = new FormData();
+      if (targetPath) form.append('path', targetPath);
+      form.append('file', { uri: file.uri, name: file.name, type: file.type || 'application/octet-stream' } as unknown as Blob);
+      return form;
+    },
+    (form) => authenticatedFetch(`${base}/file/upload`, { method: 'POST', body: form }, { timeoutMs: NATIVE_UPLOAD_TIMEOUT_MS }),
+  );
+}
+
+// The size is unknown, so the deadline is the ceiling `uploadTimeoutMsForBytes` allows.
+const NATIVE_UPLOAD_TIMEOUT_MS = UPLOAD_TIMEOUT_CEILING_MS;
+
+/**
  * Upload content to a specific path via the field-name-as-path convention.
  *
  * Goes through `authenticatedFetch` like every other write. It used to call a
  * bare `fetch()` with a hand-rolled `Authorization` header, which silently
- * skipped the size-scaled deadline, the 401 stale-token refresh-and-retry, the
- * `X-Kortix-Client` header, and `platformConfig().fetch` — so every host that
+ * skipped the size-scaled deadline, the 401 stale-token refresh-and-retry, and
+ * `platformConfig().fetch` — so every host that
  * injects its own fetch (mobile, whitelabel) was bypassed on this one path.
  */
 function uploadToPath(filePath: string, content: Blob, baseUrl?: string): Promise<UploadResult[]> {
@@ -720,28 +859,12 @@ async function placeUpload(
 
 /** Delete a file/dir (recursive). Daemon `DELETE /file`. */
 export async function deleteFile(filePath: string, baseUrl?: string): Promise<boolean> {
-  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: filePath }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Delete failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite('/file', 'DELETE', { path: filePath }, 'Delete', baseUrl);
 }
 
 /** Create a directory (recursive, idempotent). Daemon `POST /file/mkdir`. */
 export async function mkdir(dirPath: string, baseUrl?: string): Promise<boolean> {
-  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file/mkdir`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: dirPath }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Mkdir failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite('/file/mkdir', 'POST', { path: dirPath }, 'Mkdir', baseUrl);
 }
 
 /** Rename/move a file or directory. Daemon `POST /file/rename`. */
@@ -751,20 +874,18 @@ export async function renameFile(from: string, to: string, baseUrl?: string): Pr
 
 /** Daemon `POST /file/rename`. `overwrite: false` asks for create-only (409 when taken). */
 async function moveFile(from: string, to: string, base: string, overwrite: boolean): Promise<boolean> {
-  const res = await authenticatedFetch(`${base}/file/rename`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(overwrite ? { from, to } : { from, to, overwrite: false }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Rename failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite(
+    '/file/rename',
+    'POST',
+    overwrite ? { from, to } : { from, to, overwrite: false },
+    'Rename',
+    base,
+  );
 }
 
 // ── project / health (via opencode client) ────────────────────────────────────
-export async function getCurrentProject(): Promise<OpenCodeProjectInfo> {
-  return unwrap(await getClient().project.current()) as OpenCodeProjectInfo;
+export async function getCurrentProject(): Promise<RuntimeProjectInfo> {
+  return unwrap(await getClient().project.current()) as RuntimeProjectInfo;
 }
 
 export async function getServerHealth(): Promise<ServerHealth> {

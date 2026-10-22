@@ -10,10 +10,10 @@ import {
   SETTINGS_TABS,
   resolveSettingsOverlayHref,
   type SettingsTab,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import { STANDALONE_DEFAULT_SETTINGS_TAB } from '@/features/workspace/settings/standalone-settings-route';
 import { getItemsForSurface } from '@/lib/menu-registry';
-import { LEGACY_SETTINGS_TAB_MAP } from './command-palette';
+import { LEGACY_SETTINGS_TAB_MAP, firstChatMatchesPaletteQuery, sessionMatchesPaletteQuery } from './command-palette';
 import {
   PALETTE_ACCOUNT_SCOPED_TABS,
   PALETTE_NO_PROJECT_DEFAULT_TAB,
@@ -126,9 +126,7 @@ describe('mirrored settings-panel constants', () => {
  * offered-but-unreachable tab is a test failure rather than a dead click.
  */
 describe('offered tabs survive the panel filter', () => {
-  // `canProject: () => true` — the palette offers the two IAM-gated Workspace
-  // rows without probing; the panel answers the probe and hides a denied row.
-  const allowedParams = (hasProject: boolean) => ({ hasProject, canProject: () => true });
+  const allowedParams = (hasProject: boolean) => ({ hasProject });
 
   test('with a project, every offered tab is allowed', () => {
     for (const tab of tabsFor(IN_A_PROJECT)) {
@@ -145,9 +143,10 @@ describe('offered tabs survive the panel filter', () => {
     }
   });
 
-  test('with NO project, every live tab is offered — all of them are personal', () => {
-    const offered: string[] = tabsFor({ hasProject: false });
-    expect([...offered].sort()).toEqual([...SETTINGS_TABS].sort());
+  test('with NO project, every live tab but Computer is offered — all of them are personal', () => {
+    const offered = tabsFor({ hasProject: false });
+    // Computer pairs a machine from a project, so it needs one open.
+    expect([...offered].sort()).toEqual(SETTINGS_TABS.filter((tab) => tab !== 'computer').sort());
     for (const tab of offered) expect(ACCOUNT_SCOPED_SETTINGS_TABS).toContain(tab);
     // The project configuration tabs specifically — these were the ones the
     // old `Customize · X` entries offered from `/accounts/**`. They are not
@@ -543,5 +542,63 @@ describe('command palette — model list chrome', () => {
 
   test('the raw model ID is gated on saying something the name does not', () => {
     expect(modelsPage).toContain('modelIdAddsInformation(model.modelName, model.modelID)');
+  });
+});
+
+describe('palette session search', () => {
+  const session = {
+    session_id: 'ses_abc123456',
+    name: 'Quarterly review',
+  } as Parameters<typeof sessionMatchesPaletteQuery>[0];
+
+  test('matches full session ID and its prefix, not arbitrary ID substrings', () => {
+    expect(sessionMatchesPaletteQuery(session, 'ses_abc123456')).toBe(true);
+    expect(sessionMatchesPaletteQuery(session, 'ses_abc')).toBe(true);
+    expect(sessionMatchesPaletteQuery(session, 'abc123')).toBe(false);
+    expect(sessionMatchesPaletteQuery(session, 'quarterly')).toBe(true);
+  });
+});
+
+/**
+ * KRTX-2476: the sidebar lists "Your first chat with Kortix" under Sessions,
+ * but it is not a session yet, so the server search never returns it. The
+ * palette matches it by its title while it is pending.
+ */
+describe('palette first-chat search', () => {
+  const title = 'Your first chat with Kortix';
+
+  test('matches its title while the first chat is pending', () => {
+    expect(firstChatMatchesPaletteQuery(true, title, 'first')).toBe(true);
+    expect(firstChatMatchesPaletteQuery(true, title, 'your first chat with kortix')).toBe(true);
+    expect(firstChatMatchesPaletteQuery(true, title, 'quarterly')).toBe(false);
+  });
+
+  test('never matches once it is gone, or for an empty query', () => {
+    expect(firstChatMatchesPaletteQuery(false, title, 'first')).toBe(false);
+    expect(firstChatMatchesPaletteQuery(true, title, '')).toBe(false);
+  });
+});
+
+/**
+ * The SSH dialog store was write-only dead wiring: nothing read `isOpen`, so
+ * no dialog could ever render, and no registry row referenced the handler id,
+ * so the palette could not reach it either (KRTX-723). These pins keep it
+ * deleted: a registry row that starts answering the retired action id, or a
+ * return of the dynamic import, fails here. The needles are assembled from
+ * parts on purpose — the retirement sweep greps apps/web/src for the exact
+ * identifiers, and this test must not become its own hit.
+ */
+describe('the retired ssh dialog wiring', () => {
+  const retiredActionId = 'generate' + 'SSHKey';
+  const retiredStorePath = '@/stores/ssh-' + 'dialog-store';
+
+  test('no palette row reaches the retired action id', () => {
+    expect(paletteItems.some((item) => item.actionId === retiredActionId)).toBe(false);
+  });
+
+  test('the palette neither imports the store nor names the handler', () => {
+    const source = readFileSync(new URL('./command-palette.tsx', import.meta.url), 'utf8');
+    expect(source).not.toContain(retiredStorePath);
+    expect(source).not.toContain(retiredActionId);
   });
 });

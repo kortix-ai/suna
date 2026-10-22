@@ -22,15 +22,15 @@ import { ToolResultCard } from '../shared/result-card';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ConnectorGetTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const data = useMemo(() => parseConnectorGetOutput(output || ''), [output]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PlugIcon}
       trigger={connectorGetTrigger(input, data)}
       defaultOpen={defaultOpen}
@@ -91,7 +91,4 @@ export function ConnectorGetTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('connector_get', ConnectorGetTool);
 ToolRegistry.register('connector-get', ConnectorGetTool);
-ToolRegistry.register('oc-connector_get', ConnectorGetTool);
-ToolRegistry.register('oc-connector-get', ConnectorGetTool);

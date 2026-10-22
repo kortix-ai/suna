@@ -1,30 +1,41 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import {
+  type ConnectionSharePrincipal,
+  type ConnectorMove,
+  getConnectorCatalog,
+  listConnectorMoves,
+  moveConnector,
+  renameConnection,
+  revokeConnection,
+  setConnectorSecretBinding,
+  shareConnection,
+} from '@kortix/sdk';
+import type { ApiClient } from '../api/client.ts';
+import { withKortixScope } from '../api/sdk.ts';
+import { openInBrowser } from '../browser.ts';
 import {
   emitJson,
   fail,
+  featureDisabledMessage,
   missing,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
   takeFlagValues,
-  takeFlagBool,
 } from '../command-helpers.ts';
-import { promptSecret } from '../prompts.ts';
+import { UUID_RE, resolveUserId } from '../iam.ts';
 import {
   appendArrayBlock,
   arrayEntryExists,
   removeArrayBlock,
   setTableScalar,
 } from '../manifest-edit.ts';
-import {
-  type ConnectionSharePrincipal,
-  renameConnection,
-  setConnectorSecretBinding,
-  shareConnection,
-} from '@kortix/sdk';
-import { resolveUserId, UUID_RE } from '../iam.ts';
-import { withKortixScope } from '../api/sdk.ts';
-import { C, help, pad, status } from '../style.ts';
+import { promptSecret } from '../prompts.ts';
+import { C, help, pad, status, trim } from '../style.ts';
 import { runConnector } from './connector-gateway.ts';
+import { renderConnectorTypes } from './connector-types.ts';
 
 // ── Shapes (mirror apps/api/src/connectors) ───────────────────────────────────
 
@@ -88,6 +99,8 @@ interface ConnectorAccountRow {
   is_default: boolean;
   /** Who the account was authorized as. Absent on older servers. */
   connected_as?: string | null;
+  /** When the upstream rejected the stored credential (401). Absent: not rejected. */
+  credential_rejected_at?: string | null;
 }
 
 /** One condition on a policy rule: a dot path into the call's arguments, the
@@ -108,6 +121,8 @@ interface PolicyRule {
 interface ProjectPoliciesView {
   policies: PolicyRule[];
   defaultMode: 'risk' | 'allow_all';
+  /** Per-connector tool-call rule counts (KRTX-2527). */
+  connectorRules?: { slug: string; count: number }[];
 }
 
 /** One record in the direct-connector catalogue (integrations.sh). */
@@ -158,9 +173,10 @@ dashboard's Customize → Connectors. Connectors are project-wide visible; the
 only access gate is which AGENTS may call one (\`kortix agents scope\` /
 \`[[agents]].connectors\` in kortix.yaml) — see \`kortix grants\`.
 
-Config lives in kortix.yaml (the source of truth): \`add\`/\`rm\`/\`policy set\`
-edit your LOCAL file — run \`kortix ship\` to apply, then \`sync\` to reconcile.
-Only credentials, OAuth, and reads talk to the cloud.
+Config lives in kortix.yaml: \`add\`/\`rm\` and \`policy set --default\` edit your
+LOCAL file — run \`kortix ship\` to apply (or pass --apply to apply at once),
+then \`sync\` to reconcile. Every other policy, credential, rename and mode
+change applies on the cloud project at once.
 
 Subcommands:
   ls [--session <id>] [--json]      List project or session-bound connectors.
@@ -176,6 +192,10 @@ Subcommands:
                                     several accounts and none named or pinned,
                                     the call is denied (reason account_required)
                                     instead of guessing.
+       [--reason <text>]            What the call does, shown to the human if a
+                                    policy holds it for approval. Pass it when
+                                    the args are only ids (send_draft: say who
+                                    it goes to and what it says).
        [--attach <file>]...         Attach a file from /workspace/{output,
                                     artifacts,reports,deliverables}: stages the
                                     bytes and appends a reference to the
@@ -200,6 +220,18 @@ Subcommands:
                                     names \`call --account\` accepts.
        [--default <label|id>]       Pin one account as the default an unnamed
                                     call uses.
+                                    Each paired computer is an account of the
+                                    \`computer\` connector. List them with
+                                    \`accounts computer\`; pick one with
+                                    \`call computer <tool> --account "<machine name>"\`.
+  types [--connector <a,b>]         Print TypeScript types for every callable
+        [--out <file>]              action: \`declare module '@kortix/sdk'\`
+                                    filling ConnectorActionRegistry, so
+                                    \`connectors.callAction(slug, action, args)\`
+                                    type-checks args and \`output\`. Output is
+                                    \`unknown\` for managed Composio/Pipedream
+                                    connectors (they publish no output schema).
+                                    --out writes the file instead of stdout.
   connections <subcommand>          Manage configured connector connections.
   add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.yaml.
                                     Add --apply to skip ship/CR and apply it
@@ -220,8 +252,12 @@ Subcommands:
                                     alone, the default) or \`project\` (shared
                                     with every member; needs
                                     project.connector.write).
+       [--label <name>]             Name a NEW account (a second Gmail). The
+                                    human confirms the name and who can use
+                                    the account in the setup dialog.
   connect-finalize <slug>           Confirm authorization completed. Accepts
-       [--connection-id <uuid>]     the IDs returned by \`connect\`.
+       [--owner me|project]         the IDs returned by \`connect\`. Pass the
+       [--connection-id <uuid>]     same --owner the link was started with.
        [--request-id <id>]
   apps [<query>] [--category <c>]   Search the Composio toolkit catalog — the
        [--cursor <c>] [--limit <n>]  slugs that add --provider composio --app
@@ -236,8 +272,6 @@ Subcommands:
                                     account now: choose it per connection with
                                     \`connect --owner me|project\`, read it back
                                     with \`accounts\`.
-  machines <slug> [--show]          Which paired computers a \`computer\`
-           [--add <id>] [--rm <id>] connector may target (applies now).
   policy ls|show [--json]           Show project-wide execution policies.
   policy set --default <risk|allow_all>   Set the default execution mode in
                                     kortix.yaml. Add --apply to set it live.
@@ -259,7 +293,17 @@ Subcommands:
   authorize <slug> --device         Same, on a server that supports the OAuth
                                     2.0 device flow: prints a code + URL and
                                     polls until it is approved.
-  mcp                               Run the stdio MCP server.
+  moves [--json]                    List the Pipedream and Composio connectors
+                                    and the Kortix app each one moves to. Needs
+                                    the \`connectors_v2\` flag.
+  move <slug>                       Move a Pipedream or Composio connector to
+       [--connection <id>]          its Kortix app: sign in once, and the
+       [--no-open] [--device]       connector uses provider mcp. It keeps its
+                                    slug and agent grants; Composio triggers
+                                    move to Kortix events. Other accounts on
+                                    it sign in again. --connection: the account
+                                    to sign in on (default: the project's).
+                                    --no-open: print the URL only.
 
 \`policy ls|show|set|add|rm\` are the PROJECT-wide surface, so a connector
 named after one of those verbs must be addressed as \`policy <slug> ls\` etc.
@@ -297,6 +341,43 @@ Global:
   -h, --help         Show this help.
 `;
 
+const POLICY_HELP = help`Usage: kortix connectors policy <subcommand> [options]
+
+Show and change what connector calls may do without asking. Project-wide
+rules gate every connector; per-connector rules gate one connector's tool
+calls. Every form below applies on the cloud project at once — except
+\`policy set --default\` without --apply, which edits the LOCAL kortix.yaml
+for \`kortix ship\` to apply.
+
+Project-wide (a connector named like one of these verbs needs
+\`policy <slug> …\` to reach its own rules):
+  ls|show [--json]                  Show the default mode + every rule.
+  set --default <risk|allow_all>    Set the default execution mode. Without
+        [--apply]                   --apply: a LOCAL kortix.yaml edit — run
+                                    \`kortix ship\` to apply.
+  add <match> <action>              Add a rule (applies now). <action>:
+        [--condition <k=v>]…        allow | ask | block. Narrow it to a
+                                    matching argument; repeat for more;
+                                    \`k!=v\` negates. <k> is a dot path into
+                                    the call's arguments.
+  rm <match>                        Remove a rule (applies now).
+
+Per-connector:
+  <slug> ls [--json]                Show one connector's tool-call rules.
+  <slug> set <match> <action>       Allow|ask|block a tool/glob/regex (applies
+                                    now). <match> = tool name, glob (send_*)
+                                    or /regex/.
+  <slug> rm <match>                 Remove a connector rule (applies now).
+  <slug> clear                      Remove all of a connector's rules (applies
+                                    now).
+
+Global:
+  --project <id>     Operate on this project id (default: linked).
+  --host <name>      Operate against a non-default Kortix host.
+  --json             Machine-readable output.
+  -h, --help         Show this help.
+`;
+
 const CONNECTIONS_HELP = help`Usage: kortix connectors connections <subcommand> [options]
 
 Manage connections — the project-wide inventory of every account, across
@@ -320,8 +401,10 @@ Subcommands:
                                     shared account only they may use (--everyone:
                                     the whole project). Needs the right to manage
                                     the project's connections.
-  connect <id> [options]            Start Pipedream OAuth for a connection.
-  finalize <id> [--json]            Finalize Pipedream OAuth for a connection.
+  connect <id> [options]            Start a connection's sign-in (Composio,
+                                    Pipedream, or an MCP server with one-click
+                                    sign-in). Prints the URL to open.
+  finalize <id> [--json]            Confirm the connection's sign-in completed.
 
 Add options:
   --owner <type>       project|agent|member|subject|external (default: project).
@@ -352,9 +435,16 @@ export async function runConnectors(argv: string[]): Promise<number> {
     process.stdout.write(CONNECTIONS_HELP);
     return rest.length === 0 ? 2 : 0;
   }
+  // `policy` owns dedicated help too (KRTX-1914): the four per-connector
+  // policy forms and the cloud-side semantics, not the full connectors page.
+  if ((sub === 'policy' || sub === 'policies') && (rest.includes('-h') || rest.includes('--help'))) {
+    process.stdout.write(POLICY_HELP);
+    return 0;
+  }
   // The root help promises `kortix connectors <subcommand> --help`. Only
-  // `connections` (handled above) owns dedicated help text; every other
-  // subcommand would otherwise treat `--help` as an ordinary positional arg.
+  // `connections` and `policy` (handled above) own dedicated help text; every
+  // other subcommand would otherwise treat `--help` as an ordinary positional
+  // arg.
   if (rest.includes('-h') || rest.includes('--help')) {
     process.stdout.write(HELP);
     return 0;
@@ -368,13 +458,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
   if (sub === 'show' && rest[0]?.includes('.')) {
     return runConnector(['show', ...rest]);
   }
-  if ((sub === 'ls' || sub === 'list') && rest.includes('--session')) {
+  if (
+    (sub === 'ls' || sub === 'list') &&
+    rest.some((arg) => arg === '--session' || arg.startsWith('--session='))
+  ) {
     const forwarded = rest.filter(
-      (arg, index) => arg !== '--session' && rest[index - 1] !== '--session',
+      (arg, index) =>
+        arg !== '--session' && !arg.startsWith('--session=') && rest[index - 1] !== '--session',
     );
     return runConnector(['ls', ...forwarded]);
   }
-  let f: Record<string, string | undefined> = {};
+  const f: Record<string, string | undefined> = {};
   let asStdin = false;
   let statusOnly = false;
   let json = false;
@@ -384,10 +478,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
   let allConnections = false;
   let mine = false;
   let deviceFlow = false;
-  let showOnly = false;
+  let noOpen = false;
   let conditions: string[] = [];
-  let addIds: string[] = [];
-  let rmIds: string[] = [];
   let shareGroups: string[] = [];
   let shareUsers: string[] = [];
   let shareEveryone = false;
@@ -414,8 +506,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.default = takeFlagValue(rest, ['--default']);
     f.expires = takeFlagValue(rest, ['--expires']);
     f.owner = takeFlagValue(rest, ['--owner']);
+    f.label = takeFlagValue(rest, ['--label']);
     f.ownerId = takeFlagValue(rest, ['--owner-id']);
-    f.connectionId = takeFlagValue(rest, ['--connection-id']);
+    f.connectionId = takeFlagValue(rest, ['--connection-id', '--connection']);
     f.requestId = takeFlagValue(rest, ['--request-id']);
     f.metadata = takeFlagValue(rest, ['--metadata']);
     f.clientId = takeFlagValue(rest, ['--client-id']);
@@ -425,17 +518,17 @@ export async function runConnectors(argv: string[]): Promise<number> {
     f.errorRedirect = takeFlagValue(rest, ['--error-redirect']);
     f.category = takeFlagValue(rest, ['--category']);
     f.limit = takeFlagValue(rest, ['--limit']);
+    f.connector = takeFlagValue(rest, ['--connector']);
+    f.out = takeFlagValue(rest, ['--out']);
     if (takeFlagBool(rest, ['--pipedream', '--legacy-pipedream'])) f.pipedream = 'true';
     conditions = takeFlagValues(rest, ['--condition', '--cond']);
-    addIds = takeFlagValues(rest, ['--add']);
-    rmIds = takeFlagValues(rest, ['--rm']);
     shareGroups = takeFlagValues(rest, ['--group']);
     shareUsers = takeFlagValues(rest, ['--user', '--member']);
     shareEveryone = takeFlagBool(rest, ['--everyone']);
     asStdin = takeFlagBool(rest, ['--stdin']);
     statusOnly = takeFlagBool(rest, ['--status']);
     deviceFlow = takeFlagBool(rest, ['--device']);
-    showOnly = takeFlagBool(rest, ['--show']);
+    noOpen = takeFlagBool(rest, ['--no-open']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -464,6 +557,15 @@ export async function runConnectors(argv: string[]): Promise<number> {
   });
   if (!ctx) return 1;
   const ex = `/connectors/projects/${ctx.projectId}`;
+  // The OAuth 2.1 sign-in flags `authorize` and `move` share.
+  const signInOptions: SignInOptions = {
+    ...(f.scope ? { scopes: f.scope.split(/[\s,]+/).filter(Boolean) } : {}),
+    ...(f.clientId ? { clientId: f.clientId } : {}),
+    ...(f.clientSecret ? { clientSecret: f.clientSecret } : {}),
+    device: deviceFlow,
+    ...(f.successRedirect ? { successRedirect: f.successRedirect } : {}),
+    ...(f.errorRedirect ? { errorRedirect: f.errorRedirect } : {}),
+  };
 
   try {
     if (sub === 'connections') {
@@ -542,9 +644,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
       }
       case 'ls':
       case 'list': {
+        // The server includes every action's JSON Schema unless asked not to
+        // (it is the bulk of this route's payload — 1.6 MB on prod). The human
+        // view renders name/status/action count only, so it opts out; `--json`
+        // keeps the historical response.
         const { connectors } = await ctx.client.get<{
           connectors: AdminConnector[];
-        }>(`${ex}/connectors`);
+        }>(`${ex}/connectors${json ? '' : '?include_schemas=false'}`);
         if (json) {
           emitJson({ connectors });
           return 0;
@@ -580,14 +686,15 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'show': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
-        // The server omits each action's `inputSchema` by default (it is the
-        // dominant contributor to this route's payload — see
-        // apps/api/src/connectors/db-deps.ts `listConnectors`). `--json` is a
-        // scripting contract that historically included it, so ask for it
-        // explicitly; the human-readable view below never renders it.
+        // The server INCLUDES each action's `inputSchema` unless the caller
+        // passes `include_schemas=false` (it is the bulk of this route's
+        // payload — see apps/api/src/connectors/db-deps.ts `listConnectors`).
+        // `--json` is a scripting contract that historically included it, so
+        // ask for it explicitly; the human-readable view below never renders
+        // it, so the human path opts out.
         const { connectors } = await ctx.client.get<{
           connectors: AdminConnector[];
-        }>(`${ex}/connectors${json ? '?include_schemas=true' : ''}`);
+        }>(`${ex}/connectors${json ? '?include_schemas=true' : '?include_schemas=false'}`);
         const c = connectors.find((x) => x.slug === slug);
         if (!c) {
           process.stderr.write(`${status.err(`No connector "${slug}".`)}\n`);
@@ -656,21 +763,27 @@ export async function runConnectors(argv: string[]): Promise<number> {
           process.stderr.write(`${status.err('No value provided.')}\n`);
           return 2;
         }
-        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential`, { value });
+        const resp = await ctx.client.put<{ sync?: SyncResult }>(
+          `${ex}/connectors/${encodeURIComponent(slug)}/credential`,
+          { value },
+        );
         process.stdout.write(`${status.ok(`Credential set for ${C.bold}${slug}${C.reset}`)}\n`);
+        reportSync(resp?.sync);
         return 0;
       }
       case 'secret': {
         const input = connectorSecretBindingInput(positional, clearSecretBinding);
         if ('error' in input) return missing(input.error);
-        await withKortixScope(ctx.auth, () =>
+        // An MCP connector re-lists its tools with the bound secret; show why when that fails.
+        const resp = (await withKortixScope(ctx.auth, () =>
           setConnectorSecretBinding(ctx.projectId, input.slug, input.secretIdentifier),
-        );
+        )) as { sync?: SyncResult } | undefined;
         process.stdout.write(
           input.secretIdentifier
             ? `${status.ok(`Secret ${C.bold}${input.secretIdentifier}${C.reset} bound to ${C.bold}${input.slug}${C.reset}`)}\n`
             : `${status.ok(`Secret binding removed from ${C.bold}${input.slug}${C.reset}`)}\n`,
         );
+        reportSync(resp?.sync);
         return 0;
       }
       /**
@@ -699,72 +812,73 @@ export async function runConnectors(argv: string[]): Promise<number> {
           else process.stdout.write(`  ${C.bold}${String(state.status)}${C.reset}\n`);
           return state.status === 'error' ? 1 : 0;
         }
-        const { discovery } = await ctx.client.post<{
-          discovery: OAuth2ResourceDiscoveryLike;
-        }>(`${oauth2}/discover-resource`, {});
-        const steps = oauth2AuthorizeSteps(discovery, {
-          ...(f.scope ? { scopes: f.scope.split(/[\s,]+/).filter(Boolean) } : {}),
-          ...(f.clientId ? { clientId: f.clientId } : {}),
-          ...(f.clientSecret ? { clientSecret: f.clientSecret } : {}),
-        });
-        if ('error' in steps) {
+        const signIn = await startOAuth2SignIn(ctx.client, oauth2, signInOptions);
+        if ('error' in signIn) {
           if (json)
             emitJson({
               connection_id: connectionId,
-              error: steps.error,
-              discovery,
+              error: signIn.error,
+              discovery: signIn.discovery,
             });
-          else process.stderr.write(`${status.err(steps.error)}\n`);
+          else process.stderr.write(`${status.err(signIn.error)}\n`);
           return 1;
         }
-        if ('register' in steps) {
-          await ctx.client.post(`${oauth2}/register`, steps.register);
-        } else {
-          await ctx.client.put(`${oauth2}/application`, steps.application);
-        }
+        const { discovery } = signIn;
         // ── RFC 8628 device flow: a code and a URL, no redirect back. The
         //    only path that works on a machine with no browser, which is every
         //    sandbox — so the CLI polls to completion instead of handing the
         //    caller a second command to run.
-        if (deviceFlow) {
-          const device = await ctx.client.post<DeviceAuthorizationStart>(`${oauth2}/device`, {
-            ...(steps.scopes.length ? { scopes: steps.scopes } : {}),
-          });
+        if ('device' in signIn) {
           if (json) {
-            emitJson({ connection_id: connectionId, ...device });
+            emitJson({ connection_id: connectionId, ...signIn.device });
             return 0;
           }
-          process.stdout.write(
-            `\n  ${C.bold}Authorize ${discovery.resource_name ?? slug}${C.reset}\n` +
-              `  ${C.dim}Open ${C.reset}${C.cyan}${device.verification_uri_complete ?? device.verification_uri}${C.reset}\n` +
-              `  ${C.dim}Enter code ${C.reset}${C.bold}${device.user_code}${C.reset}\n\n`,
-          );
-          return await pollDeviceAuthorization(ctx.client, oauth2, device);
+          printDeviceCode(discovery.resource_name ?? slug, signIn.device);
+          return await pollDeviceAuthorization(ctx.client, oauth2, signIn.device);
         }
-        const started = await ctx.client.post<{
-          authorization_url: string;
-          expires_at: string;
-        }>(`${oauth2}/authorize`, {
-          ...(steps.scopes.length ? { scopes: steps.scopes } : {}),
-          ...(f.successRedirect ? { success_redirect_uri: f.successRedirect } : {}),
-          ...(f.errorRedirect ? { error_redirect_uri: f.errorRedirect } : {}),
-        });
         if (json) {
           emitJson({
             connection_id: connectionId,
-            registered: 'register' in steps,
-            scopes: steps.scopes,
-            ...started,
+            registered: signIn.registered,
+            scopes: signIn.scopes,
+            ...signIn.started,
           });
           return 0;
         }
         process.stdout.write(
           `\n  ${C.bold}Authorize ${discovery.resource_name ?? slug}${C.reset}\n` +
-            `  ${C.cyan}${started.authorization_url}${C.reset}\n\n` +
-            `  ${C.dim}${'register' in steps ? 'Kortix registered itself as an OAuth client. ' : ''}` +
+            `  ${C.cyan}${signIn.started.authorization_url}${C.reset}\n\n` +
+            `  ${C.dim}${signIn.registered ? 'Kortix registered itself as an OAuth client. ' : ''}` +
             `Open the URL, approve, then run: kortix connectors authorize ${slug} --status${C.reset}\n\n`,
         );
         return 0;
+      }
+      case 'moves': {
+        let moves: ConnectorMove[];
+        try {
+          moves = await withKortixScope(ctx.auth, () => listConnectorMoves(ctx.projectId));
+        } catch (err) {
+          return surfaceMoveError(err);
+        }
+        if (json) {
+          emitJson({ moves });
+          return 0;
+        }
+        process.stdout.write(movesTable(moves));
+        return 0;
+      }
+      case 'move': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        try {
+          return await moveToKortix(ctx, slug, {
+            connectionId: f.connectionId,
+            open: !noOpen,
+            signIn: signInOptions,
+          });
+        } catch (err) {
+          return surfaceMoveError(err);
+        }
       }
       case 'connect': {
         const slug = positional[0];
@@ -783,6 +897,31 @@ export async function runConnectors(argv: string[]): Promise<number> {
           f.owner === 'me' || f.owner === 'project' ? f.owner : undefined;
         if (f.owner !== undefined && owner === undefined) {
           return fail('--owner must be me or project');
+        }
+        // `--label` mints the same setup link as the MCP `connect` tool: a
+        // dialog where the human names the new account and picks who can use it.
+        if (f.label !== undefined) {
+          const label = f.label.trim();
+          if (!label) return missing('--label <account name>');
+          const link = await ctx.client.post<{ url: string; app?: string | null; expires_at?: string; label?: string | null }>(
+            `/projects/${ctx.projectId}/connect-requests`,
+            {
+              slug,
+              label,
+              ...(owner ? { owner } : {}),
+              ...(expires ? { expires_in_minutes: expires } : {}),
+            },
+          );
+          const output = { slug, owner: owner ?? 'me', label: link.label ?? label, app: link.app ?? null, url: link.url, expires_at: link.expires_at ?? null };
+          if (json) {
+            emitJson(output);
+            return 0;
+          }
+          process.stdout.write(
+            `\n  ${C.bold}Connect ${slug} as "${output.label}"${C.reset}\n  ${C.cyan}${output.url}${C.reset}\n\n` +
+              `  ${C.dim}Hand the URL to the human. They confirm the name and who can use the account.${C.reset}\n\n`,
+          );
+          return 0;
         }
         const resp = await ctx.client.post<{
           provider: string;
@@ -827,6 +966,13 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'connect-finalize': {
         const slug = positional[0];
         if (!slug) return missing('a connector slug');
+        // Finalize the account the link authorized: `connect --owner project`
+        // starts a shared one, and the API looks for a private one by default.
+        const finalizeOwner: 'me' | 'project' | undefined =
+          f.owner === 'me' || f.owner === 'project' ? f.owner : undefined;
+        if (f.owner !== undefined && finalizeOwner === undefined) {
+          return fail('--owner must be me or project');
+        }
         const resp = await ctx.client.post<{
           provider: string;
           connected?: boolean;
@@ -834,6 +980,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           connectionId?: string;
           isNoAuth?: boolean;
         }>(`${ex}/connectors/${encodeURIComponent(slug)}/connect/finalize`, {
+          ...(finalizeOwner ? { owner: finalizeOwner } : {}),
           ...(f.connectionId ? { connection_id: f.connectionId } : {}),
           ...(f.requestId ? { request_id: f.requestId } : {}),
         });
@@ -923,10 +1070,18 @@ export async function runConnectors(argv: string[]): Promise<number> {
           accounts: ConnectorAccountRow[];
         }>(`${ex}/connectors/${encodeURIComponent(slug)}/accounts`);
         const accounts = response.accounts ?? [];
-        const note = `Nothing is connected to "${slug}" yet. Run 'kortix connectors connect ${slug} --owner me'.`;
+        // A computer is paired on the machine itself, never through `connect`.
+        const isComputer = slug === 'computer';
+        const note = isComputer
+          ? 'No computer is connected. Connect one from the Kortix desktop app, or run `npx @kortix/agent-tunnel connect` on the computer.'
+          : `Nothing is connected to "${slug}" yet. Run 'kortix connectors connect ${slug} --owner me'.`;
         if (json) {
           // Byte-identical to the gateway face agents already parse.
           emitJson({ connector: slug, accounts, ...(accounts.length === 0 ? { note } : {}) });
+          return 0;
+        }
+        if (accounts.length === 0 && isComputer) {
+          process.stdout.write(`  ${C.dim}${note}${C.reset}\n`);
           return 0;
         }
         if (accounts.length === 0) {
@@ -948,7 +1103,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
             `  ${pad(account.label, labelWidth)}  ${pad(account.connected_as ?? '—', asWidth)}  ` +
               `${pad(accountOwnerLabel(account.owner_type), 8)} ` +
               `${pad(account.is_default ? 'yes' : 'no', 8)} ${account.connection_id}` +
-              `${account.is_default ? `  ${C.dim}(pinned default)${C.reset}` : ''}\n`,
+              `${account.is_default ? `  ${C.dim}(pinned default)${C.reset}` : ''}` +
+              `${account.credential_rejected_at ? `  ${C.red}(credential rejected — replace it)${C.reset}` : ''}\n`,
           );
         }
         process.stdout.write('\n');
@@ -1056,18 +1212,23 @@ export async function runConnectors(argv: string[]): Promise<number> {
           return 0;
         }
 
+        type Toolkit = {
+          slug: string;
+          name: string;
+          description?: string | null;
+          categories?: string[];
+          connection?: { isActive?: boolean } | null;
+          connected?: boolean;
+        };
+        // A search or a page answers `items` + `cursor`; a --category listing
+        // answers `toolkits` + `total` + `hasMore` (the whole category, no cursor).
         const resp = await ctx.client.get<{
-          items: {
-            slug: string;
-            name: string;
-            description?: string | null;
-            categories?: string[];
-            connection?: { isActive?: boolean } | null;
-          }[];
+          items?: Toolkit[];
+          toolkits?: Toolkit[];
           cursor?: string | null;
           totalPages?: number;
         }>(`${ex}/connect/toolkits${qs ? `?${qs}` : ''}`);
-        const items = resp.items ?? [];
+        const items = resp.items ?? resp.toolkits ?? [];
         if (json) {
           emitJson(resp);
           return 0;
@@ -1081,7 +1242,8 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const slugW = Math.max(...items.map((a) => a.slug.length), 4);
         process.stdout.write('\n');
         for (const a of items) {
-          const connected = a.connection?.isActive ? `  ${C.green}connected${C.reset}` : '';
+          const connected =
+            a.connection?.isActive || a.connected ? `  ${C.green}connected${C.reset}` : '';
           process.stdout.write(
             `  ${C.cyan}${pad(a.slug, slugW)}${C.reset}  ${trim(a.name, 30)}  ${C.dim}${trim(a.description ?? '', 40)}${C.reset}${connected}\n`,
           );
@@ -1132,6 +1294,49 @@ export async function runConnectors(argv: string[]): Promise<number> {
       // ── Browse the direct-connector catalogue ───────────────────────────
       // Gated on `connectors_api_discover`; the 403 names the flag and
       // surfaceApiError prints it verbatim.
+      case 'types': {
+        const slugs = (f.connector ?? '')
+          .split(',')
+          .map((slug) => slug.trim())
+          .filter(Boolean);
+        const read = (slug?: string) =>
+          withKortixScope(ctx.auth, () =>
+            getConnectorCatalog(ctx.projectId, {
+              slug,
+              includeSchemas: true,
+              includeOutputSchemas: true,
+            }),
+          );
+        const connectors = slugs.length
+          ? (await Promise.all(slugs.map(read))).flat()
+          : await read();
+        const missingSlugs = slugs.filter((slug) => !connectors.some((c) => c.slug === slug));
+        if (missingSlugs.length) {
+          process.stderr.write(
+            `${status.err(`No callable connector: ${missingSlugs.join(', ')}. List them with \`kortix connectors ls\`.`)}\n`,
+          );
+          return 1;
+        }
+        const source = renderConnectorTypes(connectors);
+        if (!f.out) {
+          process.stdout.write(source);
+          return 0;
+        }
+        const path = resolve(f.out);
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, source);
+        const actions = connectors.reduce((sum, c) => sum + c.actions.length, 0);
+        const untyped = connectors
+          .filter((c) => c.actions.length > 0 && c.actions.every((a) => !a.outputSchema))
+          .map((c) => c.slug);
+        process.stdout.write(
+          `${status.ok(`Wrote ${actions} action${actions === 1 ? '' : 's'} across ${connectors.length} connector${connectors.length === 1 ? '' : 's'} to ${f.out}`)}\n` +
+            (untyped.length
+              ? `  ${C.dim}No output schema (result is unknown): ${untyped.join(', ')}${C.reset}\n`
+              : ''),
+        );
+        return 0;
+      }
       case 'catalog':
       case 'discover-catalog': {
         if (positional[0] === 'show' || positional[0] === 'info') {
@@ -1202,68 +1407,15 @@ export async function runConnectors(argv: string[]): Promise<number> {
         return 0;
       }
 
-      // ── Which paired computers a `computer` connector may target ────────
-      // Read the current assignment, apply --add/--rm, write the whole list
-      // back through the create route (the only writer of `tunnel_ids`).
+      // Removed: a paired computer is an account of the `computer` connector.
       case 'machines':
-      case 'computers': {
-        const slug = positional[0];
-        if (!slug) return missing('a connector slug');
-        const config = await ctx.client.get<{
-          slug: string;
-          name: string;
-          provider: string;
-          tunnelIds?: string[];
-        }>(`${ex}/connectors/${encodeURIComponent(slug)}/config`);
-        if (config.provider !== 'computer') {
-          process.stderr.write(
-            `${status.err(`${slug} is a ${config.provider} connector — machines apply to a \`computer\` connector.`)}\n`,
-          );
-          return 1;
-        }
-        const current = config.tunnelIds ?? [];
-        if (showOnly || (addIds.length === 0 && rmIds.length === 0)) {
-          if (json) {
-            emitJson({ slug: config.slug, machines: current });
-            return 0;
-          }
-          if (current.length === 0) {
-            process.stdout.write(`  ${C.dim}No machines assigned to ${slug}.${C.reset}\n`);
-            return 0;
-          }
-          process.stdout.write('\n');
-          for (const id of current) process.stdout.write(`  ${id}\n`);
-          process.stdout.write(
-            `\n  ${C.dim}${current.length} machine${current.length === 1 ? '' : 's'}${C.reset}\n\n`,
-          );
-          return 0;
-        }
-        const removed = new Set(rmIds);
-        const next = [...new Set([...current.filter((id) => !removed.has(id)), ...addIds])].sort();
-        // The route refuses an empty list ("select at least one computer") —
-        // say so here rather than relaying a 400 the caller has to decode.
-        if (next.length === 0) {
-          process.stderr.write(
-            `${status.err('A Computers profile needs at least one machine.')} ${C.dim}Remove the connector instead: ${C.reset}${C.cyan}kortix connectors rm ${slug} --apply${C.reset}\n`,
-          );
-          return 2;
-        }
-        const resp = await ctx.client.post<{ ok: boolean; sync?: unknown }>(`${ex}/connectors`, {
-          slug: config.slug,
-          name: config.name,
-          provider: 'computer',
-          tunnel_ids: next,
-        });
-        if (json) {
-          emitJson({ ...resp, machines: next });
-          return 0;
-        }
-        process.stdout.write(
-          `${status.ok(`${C.bold}${slug}${C.reset} → ${next.length} machine${next.length === 1 ? '' : 's'}`)}\n`,
+      case 'computers':
+        process.stderr.write(
+          `${status.err(`"${sub}" was removed: each paired computer is an account of the \`computer\` connector.`)}\n` +
+            `  ${C.dim}List them:${C.reset} ${C.cyan}kortix connectors accounts computer${C.reset}\n` +
+            `  ${C.dim}Pick one:${C.reset}  ${C.cyan}kortix connectors call computer <tool> --account "<machine name>"${C.reset}\n`,
         );
-        for (const id of next) process.stdout.write(`  ${C.faded}${id}${C.reset}\n`);
-        return 0;
-      }
+        return 2;
 
       case 'policy':
       case 'policies': {
@@ -1281,7 +1433,7 @@ export async function runConnectors(argv: string[]): Promise<number> {
           process.stdout.write(
             `\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`,
           );
-          if (resp.policies.length === 0) {
+          if (resp.policies.length === 0 && !(resp.connectorRules?.length)) {
             process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
             return 0;
           }
@@ -1289,6 +1441,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
             process.stdout.write(
               `  ${C.cyan}${p.match}${C.reset} → ${p.action}${conditionsLabel(p.conditions)}\n`,
             );
+          }
+          for (const line of connectorRulesLines(resp.connectorRules ?? [])) {
+            process.stdout.write(line);
           }
           process.stdout.write('\n');
           return 0;
@@ -1455,6 +1610,28 @@ async function runConnections(input: {
         process.stdout.write(`  ${C.dim}No connections.${C.reset}\n`);
         return 0;
       }
+      // The --all roster is identity + status only (connections.ts
+      // `/connections/all`): no label, account name, default or audience.
+      if (all) {
+        const rows = response.connections;
+        const connectorWidth = Math.max(9, ...rows.map((row) => row.connector_alias.length));
+        const ownerWidth = Math.max(5, ...rows.map((row) => row.owner_type.length));
+        const ownerIdWidth = Math.max(8, ...rows.map((row) => (row.owner_id ?? '—').length));
+        process.stdout.write('\n');
+        process.stdout.write(
+          `  ${C.dim}${pad('CONNECTOR', connectorWidth)}  ${pad('OWNER', ownerWidth)}  ${pad('OWNER ID', ownerIdWidth)}  STATUS   CONNECTION ID${C.reset}\n`,
+        );
+        for (const row of rows) {
+          process.stdout.write(
+            `  ${pad(row.connector_alias, connectorWidth)}  ${pad(row.owner_type, ownerWidth)}  ` +
+              `${pad(row.owner_id ?? '—', ownerIdWidth)}  ${pad(row.status, 8)} ${row.connection_id}\n`,
+          );
+        }
+        process.stdout.write(
+          `\n  ${C.dim}${rows.length} connection${rows.length === 1 ? '' : 's'}${C.reset}\n\n`,
+        );
+        return 0;
+      }
       const connectorWidth = Math.max(
         9,
         ...response.connections.map((connection) => connection.connector_alias.length),
@@ -1477,7 +1654,7 @@ async function runConnections(input: {
           `  ${pad(connection.connector_alias, connectorWidth)}  ${pad(connection.label ?? '—', labelWidth)}  ` +
             `${pad(connection.connected_as ?? '—', asWidth)}  ` +
             `${pad(connection.owner_type, 9)} ${pad(connectionAudienceLabel(connection), audienceWidth)}  ` +
-            `${pad(connection.status, 8)} ` +
+            `${pad(connection.status === 'active' && connection.metadata?.credential_rejected_at ? 'rejected' : connection.status, 8)} ` +
             `${pad(connection.is_default ? 'yes' : 'no', 8)} ${connection.connection_id}\n`,
         );
       }
@@ -1557,10 +1734,20 @@ async function runConnections(input: {
     case 'default': {
       const connectionId = positional[0];
       if (!connectionId) return missing('a connection id');
-      const response = await ctx.client.put<{ ok: true }>(
-        `${base}/${encodeURIComponent(connectionId)}/${action}`,
-        {},
-      );
+      const response = action === 'revoke'
+        ? await withKortixScope(ctx.auth, () => revokeConnection(ctx.projectId, connectionId))
+        : await ctx.client.put<{ ok: true }>(
+            `${base}/${encodeURIComponent(connectionId)}/${action}`,
+            {},
+          );
+      if (action === 'revoke') {
+        if (response?.ok !== true) return fail('Revoke was not acknowledged by the server.');
+        // A 200 acknowledgement is not proof that the connection stopped being usable.
+        const persisted = await ctx.client.get<{ connections: Connection[] }>(base);
+        if (persisted?.connections?.find((row) => row.connection_id === connectionId)?.status !== 'revoked') {
+          return fail('Could not verify the connection is revoked. Read its status before retrying.');
+        }
+      }
       if (json) emitJson(response);
       else
         process.stdout.write(
@@ -1807,6 +1994,8 @@ export interface OAuth2ResourceDiscoveryLike {
     resource?: string;
   };
   registration_endpoint?: string;
+  /** A catalogue app the server signs in to with Kortix's own OAuth client. */
+  kortix_client?: boolean;
   token_endpoint_auth_methods_supported?: string[];
   scopes: string[];
   warnings: string[];
@@ -1844,10 +2033,14 @@ export function oauth2AuthorizeSteps(
   };
   const resource = discovery.resource ?? metadata.resource;
 
-  if (discovery.registration_endpoint && !opts.clientId) {
+  // A catalogue app with no dynamic registration (`kortix_client`): the server
+  // signs in with Kortix's own client, so the registration names no endpoint.
+  if ((discovery.registration_endpoint || discovery.kortix_client) && !opts.clientId) {
     return {
       register: {
-        registration_endpoint: discovery.registration_endpoint,
+        ...(discovery.registration_endpoint
+          ? { registration_endpoint: discovery.registration_endpoint }
+          : {}),
         ...(discovery.authorization_server ? { issuer: discovery.authorization_server } : {}),
         ...endpoints,
         ...(discovery.token_endpoint_auth_methods_supported?.length
@@ -1922,7 +2115,7 @@ function reportSync(sync?: SyncResult): void {
  * never sees again stays pending forever otherwise.
  */
 async function pollDeviceAuthorization(
-  client: import('../api/client.ts').ApiClient,
+  client: ApiClient,
   oauth2Base: string,
   device: DeviceAuthorizationStart,
 ): Promise<number> {
@@ -1962,8 +2155,222 @@ async function pollDeviceAuthorization(
   }
 }
 
+interface SignInOptions {
+  scopes?: string[];
+  clientId?: string;
+  clientSecret?: string;
+  /** RFC 8628 device flow instead of the browser redirect. */
+  device: boolean;
+  successRedirect?: string;
+  errorRedirect?: string;
+}
+
+type SignInStart =
+  | { error: string; discovery: OAuth2ResourceDiscoveryLike }
+  | {
+      discovery: OAuth2ResourceDiscoveryLike;
+      registered: boolean;
+      scopes: string[];
+      device: DeviceAuthorizationStart;
+    }
+  | {
+      discovery: OAuth2ResourceDiscoveryLike;
+      registered: boolean;
+      scopes: string[];
+      started: { authorization_url: string; expires_at: string };
+    };
+
+/**
+ * Start the OAuth 2.1 sign-in on one connection: discover the server's
+ * authorization metadata, register Kortix as a client (or save the given app),
+ * then start the device flow or the browser flow. `authorize` and `move` use it.
+ */
+async function startOAuth2SignIn(
+  client: ApiClient,
+  oauth2: string,
+  opts: SignInOptions,
+): Promise<SignInStart> {
+  const { discovery } = await client.post<{ discovery: OAuth2ResourceDiscoveryLike }>(
+    `${oauth2}/discover-resource`,
+    {},
+  );
+  const steps = oauth2AuthorizeSteps(discovery, opts);
+  if ('error' in steps) return { error: steps.error, discovery };
+  if ('register' in steps) await client.post(`${oauth2}/register`, steps.register);
+  else await client.put(`${oauth2}/application`, steps.application);
+  const registered = 'register' in steps && !!discovery.registration_endpoint;
+  const scopes = steps.scopes.length ? { scopes: steps.scopes } : {};
+  if (opts.device) {
+    const device = await client.post<DeviceAuthorizationStart>(`${oauth2}/device`, scopes);
+    return { discovery, registered, scopes: steps.scopes, device };
+  }
+  const started = await client.post<{ authorization_url: string; expires_at: string }>(
+    `${oauth2}/authorize`,
+    {
+      ...scopes,
+      ...(opts.successRedirect ? { success_redirect_uri: opts.successRedirect } : {}),
+      ...(opts.errorRedirect ? { error_redirect_uri: opts.errorRedirect } : {}),
+    },
+  );
+  return { discovery, registered, scopes: steps.scopes, started };
+}
+
+function printDeviceCode(name: string, device: DeviceAuthorizationStart): void {
+  process.stdout.write(
+    `\n  ${C.bold}Authorize ${name}${C.reset}\n` +
+      `  ${C.dim}Open ${C.reset}${C.cyan}${device.verification_uri_complete ?? device.verification_uri}${C.reset}\n` +
+      `  ${C.dim}Enter code ${C.reset}${C.bold}${device.user_code}${C.reset}\n\n`,
+  );
+}
+
+/** Print an API error of `moves`/`move`. The `connectors_v2` gate also names the command that turns it on. */
+function surfaceMoveError(err: unknown): number {
+  const code = surfaceApiError(err);
+  if (featureDisabledMessage(err)) {
+    process.stderr.write(`  ${C.dim}Turn it on: kortix projects features enable connectors_v2${C.reset}\n`);
+  }
+  return code;
+}
+
+/** The state of one move, as `moves` prints it. */
+function moveState(move: ConnectorMove): string {
+  if (!move.to) return 'no Kortix app yet';
+  if (!move.connection_id) return 'ready';
+  return move.signed_in ? 'signed in' : 'signing in';
+}
+
+function movesTable(moves: ConnectorMove[]): string {
+  if (moves.length === 0) {
+    return `  ${C.dim}No Pipedream or Composio connectors. Nothing to move.${C.reset}\n`;
+  }
+  // An API from before Composio moves sends no provider: those moves were all Pipedream.
+  const rows = moves.map((m) => [m.slug, m.provider ?? 'pipedream', m.app ?? '—', m.to?.name ?? '—', moveState(m), String(m.accounts)]);
+  const head = ['SLUG', 'PROVIDER', 'APP', 'MOVES TO', 'STATE', 'ACCOUNTS'];
+  const widths = head.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)));
+  const line = (cells: string[]) => `  ${cells.map((c, i) => pad(c, widths[i]!)).join('   ').trimEnd()}\n`;
+  return (
+    `\n  ${C.dim}${line(head).trim()}${C.reset}\n` +
+    rows.map(line).join('') +
+    `\n  ${C.dim}${moves.length} connector${moves.length === 1 ? '' : 's'} on a retired provider. Move one: ${C.reset}${C.cyan}kortix connectors move <slug>${C.reset}\n\n`
+  );
+}
+
+const SIGN_IN_POLL_MS = 2_000;
+const SIGN_IN_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Move a Pipedream or Composio connector to its Kortix app (`connectors_v2`).
+ *
+ * The first `move` call marks an account and answers `sign_in`. The person
+ * signs in on that account with the same OAuth 2.1 flow as `authorize`. The
+ * server switches the connector to `provider: mcp` when the sign-in stores
+ * its token; the second `move` call reads `moved` (or finishes a switch that
+ * failed). Service: apps/api/src/connectors/connector-move.ts.
+ */
+async function moveToKortix(
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
+  slug: string,
+  opts: { connectionId?: string; open: boolean; signIn: SignInOptions },
+): Promise<number> {
+  const move = () =>
+    withKortixScope(ctx.auth, () =>
+      moveConnector(ctx.projectId, slug, opts.connectionId ? { connectionId: opts.connectionId } : {}),
+    );
+  const first = await move();
+  if (first.status === 'moved') {
+    // No sign-in happened in this run: the connector was already on its Kortix app.
+    process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset} already uses its Kortix app (provider mcp). Nothing to move.`)}\n`);
+    return 0;
+  }
+  if (!first.connection_id || !first.to) {
+    process.stderr.write(`${status.err('The server started the move but named no account to sign in on.')}\n`);
+    return 1;
+  }
+  const to = first.to;
+  const oauth2 = `/projects/${ctx.projectId}/connections/${first.connection_id}/oauth2`;
+  const signIn = await startOAuth2SignIn(ctx.client, oauth2, opts.signIn);
+  if ('error' in signIn) {
+    process.stderr.write(`${status.err(signIn.error)}\n`);
+    return 1;
+  }
+  process.stdout.write(
+    `\n  ${C.bold}Move ${slug} to ${to.name}${C.reset}\n` +
+      `  ${C.dim}Sign in to ${to.name} once. The connector keeps its slug, agent grants and triggers.${C.reset}\n`,
+  );
+  if ('device' in signIn) {
+    printDeviceCode(to.name, signIn.device);
+    const code = await pollDeviceAuthorization(ctx.client, oauth2, signIn.device);
+    if (code !== 0) return code;
+  } else {
+    const url = signIn.started.authorization_url;
+    const opened = opts.open && openInBrowser(url);
+    process.stdout.write(
+      `  ${C.cyan}${url}${C.reset}\n` +
+        `  ${C.dim}${opened ? 'Opened in your browser. ' : ''}Waiting for the sign-in (Ctrl+C to cancel)…${C.reset}\n`,
+    );
+    const code = await waitForSignIn(ctx.client, oauth2);
+    if (code !== 0) return code;
+  }
+  // The sign-in's callback switches the connector by itself: wait for it rather
+  // than racing it with a second write. A switch that failed is finished by `move`.
+  if (await waitForSwitch(ctx, slug)) return printMoved(slug, to.name);
+  const finished = await move();
+  if (finished.status !== 'moved') {
+    process.stderr.write(
+      `${status.err(`The sign-in completed, but ${slug} did not switch. Run: kortix connectors move ${slug}`)}\n`,
+    );
+    return 1;
+  }
+  return printMoved(slug, to.name);
+}
+
+/** Whether the connector left the Pipedream list within 30 s: the server switched it. */
+async function waitForSwitch(
+  ctx: NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>,
+  slug: string,
+): Promise<boolean> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const moves = await withKortixScope(ctx.auth, () => listConnectorMoves(ctx.projectId));
+    if (!moves.some((candidate) => candidate.slug === slug)) return true;
+    if (Date.now() >= deadline) return false;
+    await new Promise((resolve) => setTimeout(resolve, SIGN_IN_POLL_MS));
+  }
+}
+
+/** Poll the connection's OAuth2 status until the sign-in stores its token. */
+async function waitForSignIn(client: ApiClient, oauth2: string): Promise<number> {
+  const deadline = Date.now() + SIGN_IN_TIMEOUT_MS;
+  for (;;) {
+    const state = await client.get<{ status: string; error_code?: string }>(`${oauth2}/status`);
+    if (state.status === 'active') {
+      process.stdout.write(`${status.ok('Signed in')}\n`);
+      return 0;
+    }
+    if (state.status === 'error' || state.status === 'revoked') {
+      process.stderr.write(
+        `${status.err(`Sign-in ${state.status}${state.error_code ? `: ${state.error_code}` : ''}`)}\n`,
+      );
+      return 1;
+    }
+    if (Date.now() >= deadline) {
+      process.stderr.write(`${status.err('No sign-in after 10 minutes. Run the command again.')}\n`);
+      return 1;
+    }
+    await new Promise((resolve) => setTimeout(resolve, SIGN_IN_POLL_MS));
+  }
+}
+
+function printMoved(slug: string, toName: string): number {
+  process.stdout.write(
+    `${status.ok(`${C.bold}${slug}${C.reset} now uses ${toName} (provider mcp) and keeps its slug.`)}\n` +
+      `  ${C.dim}Its tools now come from the vendor's MCP server. Other accounts on it sign in again.${C.reset}\n`,
+  );
+  return 0;
+}
+
 /** `on`/`off` (and the obvious synonyms) → boolean, else null. */
-export function parseOnOff(value: string | undefined): boolean | null {
+function parseOnOff(value: string | undefined): boolean | null {
   switch ((value ?? '').toLowerCase()) {
     case 'on':
     case 'true':
@@ -1992,16 +2399,15 @@ export function parsePolicyConditions(
 ): { conditions: PolicyCondition[] } | { error: string } {
   const conditions: PolicyCondition[] = [];
   for (const entry of raw) {
-    const negated = entry.includes('!=');
-    const separator = negated ? '!=' : '=';
-    const index = entry.indexOf(separator);
+    const index = entry.indexOf('=');
+    const negated = index > 0 && entry[index - 1] === '!';
     if (index <= 0) {
       return {
         error: `--condition must look like arg=value or arg!=value (got "${entry}")`,
       };
     }
-    const arg = entry.slice(0, index).trim();
-    const match = entry.slice(index + separator.length).trim();
+    const arg = entry.slice(0, negated ? index - 1 : index).trim();
+    const match = entry.slice(index + 1).trim();
     if (!arg) return { error: `--condition needs an argument path (got "${entry}")` };
     if (!match) return { error: `--condition needs a value to match (got "${entry}")` };
     conditions.push({ arg, match, ...(negated ? { negate: true } : {}) });
@@ -2010,9 +2416,27 @@ export function parsePolicyConditions(
 }
 
 /** " when to=*@corp.com, subject!=/urgent/" — or "" when unconditioned. */
-export function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
+function conditionsLabel(conditions: PolicyCondition[] | undefined): string {
   if (!conditions || conditions.length === 0) return '';
   return ` when ${conditions.map((c) => `${c.arg}${c.negate ? '!=' : '='}${c.match}`).join(', ')}`;
+}
+
+/**
+ * `policy ls` renders per-connector rule counts below the project rules
+ * (KRTX-2527): a rule `policy <slug> set` wrote seconds earlier must be
+ * visible in the parent view, not only in `policy <slug> ls`.
+ */
+export function connectorRulesLines(rules: ReadonlyArray<{ slug: string; count: number }>): string[] {
+  if (rules.length === 0) return [];
+  const lines = [
+    `\n  ${C.dim}connector rules:${C.reset}\n`,
+  ];
+  for (const rule of rules) {
+    lines.push(
+      `  ${C.cyan}${rule.slug}${C.reset} ${C.dim}·${C.reset} ${rule.count} rule${rule.count === 1 ? '' : 's'}${C.dim} — policy ${rule.slug} ls${C.reset}\n`,
+    );
+  }
+  return lines;
 }
 
 /** Accept friendly verbs (allow|ask|block) or canonical actions → canonical, else null. */
@@ -2053,7 +2477,7 @@ async function readStdin(): Promise<string> {
  * project, else the grant labels. `(not you)` marks an account the caller
  * lists only because they manage the project's connections.
  */
-export function connectionAudienceLabel(connection: Connection): string {
+function connectionAudienceLabel(connection: Connection): string {
   if (connection.owner_type !== 'project') return 'owner only';
   const shares = connection.shared_with ?? [];
   const audience =
@@ -2081,8 +2505,4 @@ function accountsCell(connector: Pick<AdminConnector, 'accounts'>): string {
   const ordered = [...accounts].sort((a, b) => Number(b.is_default) - Number(a.is_default));
   const names = ordered.map((a) => `${a.label}${a.is_default ? '*' : ''}`).join(', ');
   return `${accounts.length} · ${names}`;
-}
-
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }

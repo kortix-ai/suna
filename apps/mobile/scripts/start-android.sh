@@ -46,7 +46,7 @@ else
 fi
 
 # Check if dev client is installed
-DEV_CLIENT_PACKAGE="com.kortix.app"
+DEV_CLIENT_PACKAGE="com.kortix.application"
 if ! adb shell pm list packages 2>/dev/null | grep -q "$DEV_CLIENT_PACKAGE"; then
     echo -e "${YELLOW}⚠️  Dev client not installed${NC}"
     echo -e "${YELLOW}You need to build and install the dev client first.${NC}"

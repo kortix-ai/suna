@@ -22,7 +22,7 @@
  */
 
 import { isNotNull } from 'drizzle-orm';
-import { appRuntimes, projectMonitorBoxes, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectMonitorBoxes, sessionSandboxes } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider, type ProviderName } from '../../platform/providers';
@@ -77,7 +77,7 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
   }
   if (boxes.length === 0) return zero;
 
-  const [sessionKeepRows, environmentKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
+  const [sessionKeepRows, appKeepRows, monitorKeepRows] = await Promise.all([
     db
       .select({
         provider: sessionSandboxes.provider,
@@ -90,10 +90,6 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
       .from(sessionSandboxes)
       .where(isNotNull(sessionSandboxes.externalId)),
     db
-      .select({ provider: sessionEnvironments.provider, externalId: sessionEnvironments.externalId })
-      .from(sessionEnvironments)
-      .where(isNotNull(sessionEnvironments.externalId)),
-    db
       .select({ provider: appRuntimes.provider, externalId: appRuntimes.externalId })
       .from(appRuntimes)
       .where(isNotNull(appRuntimes.externalId)),
@@ -105,7 +101,7 @@ export async function reapOrphanProviderBoxes(now = new Date()): Promise<OrphanR
       .from(projectMonitorBoxes)
       .where(isNotNull(projectMonitorBoxes.externalId)),
   ]);
-  const keepRows = [...sessionKeepRows, ...environmentKeepRows, ...appKeepRows, ...monitorKeepRows];
+  const keepRows = [...sessionKeepRows, ...appKeepRows, ...monitorKeepRows];
   const keep = new Set(
     keepRows
       .filter((row): row is typeof row & { externalId: string } => !!row.externalId)

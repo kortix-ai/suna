@@ -97,6 +97,8 @@ beforeEach(() => {
   write({
     'kortix.yaml': ROOT,
     '.kortix/agents.yaml': 'agents:\n  galileo:\n    connectors: none\n',
+    'agents/kortix.md': '# Kortix\n',
+    'agents/galileo.md': '# Galileo\n',
     '.kortix/triggers/reports/weekly.yaml': WEEKLY,
     '.kortix/triggers/dockets.yaml': DOCKETS,
     'config.json': JSON.stringify({ active: 'test', hosts: {} }),
@@ -199,5 +201,20 @@ describe('kortix triggers — edits land in the declaring file', () => {
     expect(read('kortix.yaml')).toContain('# root manifest — keep this comment');
     expect(read('.kortix/triggers/reports/weekly.yaml')).toBe(WEEKLY);
     expect((await runCli(['validate', '--json'])).code).toBe(0);
+  });
+});
+
+describe('resolveLocalManifestImports origins', () => {
+  test('a TOML manifest carries one origin map per importable key of the manifest schema', async () => {
+    const { IMPORTABLE_LIST_KEYS, IMPORTABLE_MAP_KEYS } = await import('@kortix/manifest-schema');
+    const { resolveLocalManifestImports } = await import('../manifest-imports.ts');
+    const dir = mkdtempSync(join(tmpdir(), 'imports-origins-'));
+    try {
+      writeFileSync(join(dir, 'kortix.toml'), 'kortix_version = 1\n');
+      const resolved = resolveLocalManifestImports(join(dir, 'kortix.toml'), 'toml');
+      expect(Object.keys(resolved.origins).sort()).toEqual([...IMPORTABLE_LIST_KEYS, ...IMPORTABLE_MAP_KEYS].sort());
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

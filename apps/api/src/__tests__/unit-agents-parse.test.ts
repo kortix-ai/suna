@@ -8,12 +8,10 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  agentSpecToTomlEntry,
   applyAgentScope,
   extractAgents,
   GRANTABLE_KORTIX_PERMISSIONS,
   sandboxFromLoadedAgents,
-  type AgentSpec,
 } from '../projects/agents';
 import { KNOWN_SCHEMA_VERSION, parseManifestString } from '../projects/triggers';
 import { GRANTABLE_KORTIX_PERMISSIONS as SCHEMA_GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
@@ -42,8 +40,8 @@ describe('[[agents]] — grantable enum drift guard', () => {
   // either side is caught even if it happens to keep the two sides equal to
   // EACH OTHER but wrong in absolute terms (both sides sourced from the same
   // stale copy-paste, say).
-  test('45 grantable project actions (all of PROJECT_ACTIONS)', () => {
-    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(45);
+  test('51 grantable project actions (all of PROJECT_ACTIONS)', () => {
+    expect(GRANTABLE_KORTIX_PERMISSIONS.size).toBe(51);
   });
 
   // The git ref leaves are grantable on purpose: a project that WANTS an agent
@@ -171,45 +169,47 @@ kortix_permissions = ["project.connector.write", "project.connector.read"]
     expect(specs[0].permissions).toEqual(['project.connector.write', 'project.connector.read']);
   });
 
+  // An ungrantable entry drops out on its own. Failing the whole entry gave the
+  // agent an EMPTY grant on every dimension, connectors and secrets included.
   test('channel.* actions are no longer grantable (removed dead catalog leaves)', () => {
     const { specs, errors } = parse(`
 [[agents]]
 name = "a"
-kortix_permissions = ["channel.send"]
+kortix_permissions = ["channel.send", "project.file.read"]
+connectors = "all"
 `);
-    expect(specs).toHaveLength(0);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].error).toContain('unknown action');
+    expect(errors).toEqual([]);
+    expect(specs[0].permissions).toEqual(['project.file.read']);
+    expect(specs[0].connectors).toBe('all');
   });
 
-  test('account-scoped action is rejected with a clear message', () => {
+  test('account-scoped action is dropped, never granted', () => {
     const { specs, errors } = parse(`
 [[agents]]
 name = "a"
 kortix_permissions = ["member.invite"]
 `);
-    expect(specs).toHaveLength(0);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].error).toContain('account-scoped');
+    expect(errors).toEqual([]);
+    expect(specs[0].permissions).toEqual([]);
   });
 
-  test('project.create (account-scoped) is rejected', () => {
-    const { errors } = parse(`
+  test('project.create (account-scoped) is dropped', () => {
+    const { specs } = parse(`
 [[agents]]
 name = "a"
 kortix_permissions = ["project.create"]
 `);
-    expect(errors[0].error).toContain('account-scoped');
+    expect(specs[0].permissions).toEqual([]);
   });
 
-  test('unknown action is rejected as unknown', () => {
-    const { errors } = parse(`
+  test('unknown action is dropped, the rest of the list stays', () => {
+    const { specs, errors } = parse(`
 [[agents]]
 name = "a"
-kortix_permissions = ["project.frobnicate"]
+kortix_permissions = ["project.frobnicate", "project.file.read"]
 `);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].error).toContain('unknown action');
+    expect(errors).toEqual([]);
+    expect(specs[0].permissions).toEqual(['project.file.read']);
   });
 
   // `project.cr.open` / `project.cr.merge` are OUT of the live catalog: spec
@@ -233,9 +233,9 @@ kortix_permissions = ["project.frobnicate"]
     expect(specs[0]!.permissions).toEqual(['project.cr.open', 'project.trigger.create']);
   });
 
-  test('a genuinely unknown action is still an error', () => {
-    const { errors } = parse('\n[[agents]]\nname = "a"\nkortix_permissions = ["project.not.a.thing"]\n');
-    expect(errors.length).toBeGreaterThan(0);
+  test('a genuinely unknown action is never granted', () => {
+    const { specs } = parse('\n[[agents]]\nname = "a"\nkortix_permissions = ["project.not.a.thing"]\n');
+    expect(specs[0].permissions).toEqual([]);
   });
 
   test('account actions are NOT in the grantable set', () => {
@@ -245,38 +245,9 @@ kortix_permissions = ["project.frobnicate"]
   });
 });
 
-describe('[[agents]] — round-trip', () => {
-  test('spec → TOML entry → re-parse is stable', () => {
-    const spec: AgentSpec = {
-      name: 'release-bot',
-      path: 'kortix.toml#agents.release-bot',
-      enabled: true,
-      connectors: ['github'],
-      permissions: ['project.trigger.create'],
-      env: 'all',
-      file: null,
-      model: 'anthropic/claude-sonnet-4-6',
-    };
-    const entry = agentSpecToTomlEntry(spec);
-    const { specs, errors } = parse(`
-[[agents]]
-name = "${entry.name}"
-connectors = ${JSON.stringify(entry.connectors)}
-kortix_permissions = ${JSON.stringify(entry.kortix_permissions)}
-model = "${entry.model}"
-`);
-    expect(errors).toEqual([]);
-    expect(specs[0]).toMatchObject({ name: 'release-bot', connectors: ['github'], permissions: ['project.trigger.create'], model: 'anthropic/claude-sonnet-4-6' });
-  });
+describe('[[agents]] — env', () => {
 
-  test('minimal spec emits only name', () => {
-    const entry = agentSpecToTomlEntry({
-      name: 'kortix', path: '', enabled: true, connectors: [], permissions: [], env: 'all', file: null, model: null,
-    });
-    expect(entry).toEqual({ name: 'kortix' });
-  });
-
-  test('env defaults to "all" when omitted; an explicit list narrows + round-trips', () => {
+  test('env defaults to "all" when omitted; an explicit list narrows', () => {
     const { specs } = parse(`
 [[agents]]
 name = "no-env"
@@ -289,9 +260,6 @@ env = ["GITHUB_TOKEN", "OPENAI_API_KEY"]
     const scoped = specs.find((s) => s.name === 'scoped');
     expect(noEnv?.env).toBe('all'); // omitted → all (back-compat for the new dimension)
     expect(scoped?.env).toEqual(['GITHUB_TOKEN', 'OPENAI_API_KEY']);
-    // only the narrowed one emits an `env` key
-    expect(agentSpecToTomlEntry(noEnv!).env).toBeUndefined();
-    expect(agentSpecToTomlEntry(scoped!).env).toEqual(['GITHUB_TOKEN', 'OPENAI_API_KEY']);
   });
 });
 
@@ -338,7 +306,7 @@ name = "dupe"
 name = "a"
 connectors = "github"
 `);
-    expect(errors[0].error).toContain('"all" or "none"');
+    expect(errors[0].error).toContain('"all", "*" or "none"');
   });
 });
 
@@ -550,14 +518,36 @@ describe('kortix_version 2 — `agents:` map', () => {
     expect(specs[0].model).toBeNull();
   });
 
-  test('an ungrantable kortix_permissions action is rejected the same way as v1', () => {
+  test('an ungrantable kortix_permissions action drops out; the other grants stay', () => {
     const { specs, errors } = parseV2(`
   support:
-    kortix_permissions: [member.invite]
+    kortix_permissions: [member.invite, project.file.read]
+    connectors: all
+    secrets: all
 `);
-    expect(specs).toHaveLength(0);
-    expect(errors).toHaveLength(1);
-    expect(errors[0].error).toContain('account-scoped');
+    expect(errors).toEqual([]);
+    expect(specs[0].permissions).toEqual(['project.file.read']);
+    expect(specs[0].connectors).toBe('all');
+    expect(specs[0].env).toBe('all');
+  });
+
+  // "*" and "all" are synonyms in every grant field, alone or inside a list.
+  // ["*", leaf] used to fail the entry and zero every grant of the agent.
+  test.each([
+    ['"*"'], ['all'], ['["*"]'], ['["*", project.gitops.merge]'], ['[project.file.read, "*"]'],
+  ])('kortix_permissions: %s resolves to all, and so do connectors/secrets/apps', (value) => {
+    const { specs, errors } = parseV2(`
+  support:
+    kortix_permissions: ${value}
+    connectors: ${value.replace('project.gitops.merge', 'github').replace('project.file.read', 'github')}
+    secrets: ${value.replace('project.gitops.merge', 'A').replace('project.file.read', 'A')}
+    apps: ${value.replace('project.gitops.merge', 'app').replace('project.file.read', 'app')}
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0].permissions).toBe('all');
+    expect(specs[0].connectors).toBe('all');
+    expect(specs[0].env).toBe('all');
+    expect(specs[0].apps).toBe('all');
   });
 
   test('an invalid agent name (map key) is rejected', () => {

@@ -2,11 +2,12 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   createAccountSecretResource, deleteAccountSecretResource, grantAccountSecretResource,
-  listAccountSecretResources, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
+  listAccountSecretResources, retryAccountSecretResource, revokeAccountSecretResourceGrant, rotateAccountSecretResource,
   setAccountSecretResourceAccess,
   getSessionProviderSecretPool, setSessionProviderSecretPool,
   listSessionProviderSecretPools,
 } from './account-secret-resources';
+import type { SecretValueStatus } from './secrets';
 
 const calls: Array<{ url: string; method: string; body: unknown }> = [];
 beforeEach(() => {
@@ -37,6 +38,13 @@ test('account secret resource calls use stable IDs and never send a value on rea
   expect(calls[2]?.body).toEqual({ value: 'new-key' });
 });
 
+test('retry ends a cooldown with a body-less POST on the secret', async () => {
+  await retryAccountSecretResource('account', 'secret');
+  expect(calls.map((call) => [call.method, call.url])).toEqual([
+    ['POST', 'http://test.local/accounts/account/secret-resources/secret/retry'],
+  ]);
+});
+
 test('session pool preserves inherited, empty, and selected states', async () => {
   await getSessionProviderSecretPool('project', 'session', 'anthropic');
   await setSessionProviderSecretPool('project', 'session', 'anthropic', []);
@@ -64,7 +72,12 @@ test('project access and member restriction use one scoped request', async () =>
 });
 
 test('list preserves an empty configured pool after its last resource disappears', async () => {
-  const result = { pools: [{ provider_id: 'anthropic', configured: true, secret_ids: [] }], can_edit: false };
+  const result = {
+    pools: [{ provider_id: 'anthropic', configured: true, secret_ids: [] }],
+    can_edit: false,
+    personal_user_id: null,
+    personal_keys_reason: 'no_person' as const,
+  };
   globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
     calls.push({ url: String(url), method: init.method ?? 'GET', body: null });
     return Response.json(result);
@@ -85,4 +98,25 @@ test('grant editors can handle a failure once without a duplicate global notific
   expect(notifications).toBe(0);
   await expect(grantAccountSecretResource('account', 'secret', 'member')).rejects.toMatchObject({ status: 403 });
   expect(notifications).toBe(1);
+});
+
+test('a ChatGPT account whose login stopped working says since when', async () => {
+  globalThis.fetch = mock(async () => new Response(JSON.stringify({ secrets: [
+    { secret_id: 'expired', label: 'ChatGPT · Work', active: true, needs_reauth_at: '2026-09-25T10:00:00.000Z' },
+    { secret_id: 'working', label: 'ChatGPT · Home', active: true, needs_reauth_at: null },
+  ] }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+  const { secrets } = await listAccountSecretResources('account', 'project');
+  const since: Array<string | null | undefined> = secrets.map((secret) => secret.needs_reauth_at);
+  expect(since).toEqual(['2026-09-25T10:00:00.000Z', null]);
+});
+
+test('a provider key the server can no longer decrypt says so', async () => {
+  globalThis.fetch = mock(async () => new Response(JSON.stringify({ secrets: [
+    { secret_id: 'lost', label: 'Primary', active: true, status: 'undecryptable' },
+    { secret_id: 'fine', label: 'Backup', active: true, status: 'ok' },
+    { secret_id: 'older', label: 'Older server', active: true },
+  ] }), { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+  const { secrets } = await listAccountSecretResources('account');
+  const statuses: Array<SecretValueStatus | undefined> = secrets.map((secret) => secret.status);
+  expect(statuses).toEqual(['undecryptable', 'ok', undefined]);
 });

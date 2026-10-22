@@ -21,11 +21,11 @@
  *
  * ─── WHICH IDENTITY CHECKS ARE APPLIED, AND WHICH ARE ONLY REPORTED ────────
  * Applied (free — both sides are already in hand):
- *   • `opencode_session_id` vs the session row's pin  → `identity_mismatch`
+ *   • `runtime_session_id` vs the session row's pin   → `identity_mismatch`
  *   • age vs {@link PROJECTION_MAX_AGE_MS}, and only while the sandbox is
  *     RUNNING                                          → `stale`
  * Reported, not gated:
- *   • `opencode_version`   — gating it needs the manifest pin resolved, which
+ *   • `harness_version`    — gating it needs the manifest pin resolved, which
  *     this path does not read.
  *   • `agent_config_etag`  — gating it needs a manifest COMPILE
  *     (`compile-agent-config.ts`), which is the ~500 ms of work the whole
@@ -41,13 +41,15 @@
  * is strictly worse than saying "as of 3 h ago".
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   projectSessions,
   sessionRuntimeProjections,
   sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
+import { writeRuntimeSessionList } from './runtime-session-snapshot';
 
 /**
  * How old a RUNNING box's projection may be before it is refused.
@@ -66,14 +68,7 @@ export const PROJECTION_MAX_BYTES = 256 * 1024;
 
 export type RuntimeProjectionSource = 'daemon_push' | 'api_pull';
 
-/** Identity the live runtime would also produce. See the ghost rule above. */
-export interface RuntimeProjectionIdentity {
-  opencode_session_id: string | null;
-  opencode_version: string | null;
-  daemon_build: number | null;
-  agent_config_etag: string | null;
-  head_seq: Record<string, number> | null;
-}
+import type { RuntimeProjectionIdentity } from '@kortix/api-contract';
 
 export interface StoredRuntimeProjection {
   sessionId: string;
@@ -138,9 +133,16 @@ export function projectionIdentity(doc: unknown): RuntimeProjectionIdentity {
       ? ((doc as Record<string, unknown>).identity as Record<string, unknown> | undefined)
       : undefined;
   const headSeq = identity?.head_seq;
+  // The W3 names first; a daemon built before W3 sends only the OpenCode ones.
+  const runtimeSessionId = asString(identity?.runtime_session_id) ?? asString(identity?.opencode_session_id);
+  const harnessVersion = asString(identity?.harness_version) ?? asString(identity?.opencode_version);
   return {
-    opencode_session_id: asString(identity?.opencode_session_id),
-    opencode_version: asString(identity?.opencode_version),
+    schema: doc && typeof doc === 'object' ? asString((doc as Record<string, unknown>).schema) : null,
+    harness: asString(identity?.harness),
+    runtime_session_id: runtimeSessionId,
+    harness_version: harnessVersion,
+    opencode_session_id: runtimeSessionId,
+    opencode_version: harnessVersion,
     daemon_build: asNumber(identity?.daemon_build),
     agent_config_etag: asString(identity?.agent_config_etag),
     head_seq:
@@ -198,8 +200,10 @@ export async function saveRuntimeProjection(
       projectId: input.projectId,
       accountId: input.accountId,
       externalId: input.externalId,
-      opencodeSessionId: identity.opencode_session_id,
-      opencodeVersion: identity.opencode_version,
+      schema: identity.schema,
+      harness: identity.harness,
+      runtimeSessionId: identity.runtime_session_id,
+      harnessVersion: identity.harness_version,
       agentConfigEtag: identity.agent_config_etag,
       daemonBuild: identity.daemon_build,
       epoch,
@@ -215,8 +219,10 @@ export async function saveRuntimeProjection(
       target: sessionRuntimeProjections.sessionId,
       set: {
         externalId: input.externalId,
-        opencodeSessionId: identity.opencode_session_id,
-        opencodeVersion: identity.opencode_version,
+        schema: identity.schema,
+        harness: identity.harness,
+        runtimeSessionId: identity.runtime_session_id,
+        harnessVersion: identity.harness_version,
         agentConfigEtag: identity.agent_config_etag,
         daemonBuild: identity.daemon_build,
         epoch,
@@ -238,7 +244,22 @@ export async function saveRuntimeProjection(
     })
     .returning({ etag: sessionRuntimeProjections.projectionEtag });
 
-  return result.length > 0 ? 'stored' : 'ignored';
+  if (result.length === 0) return 'ignored';
+  // The session's list of runtime conversations follows the stored document.
+  // A failure here never fails the projection write it follows.
+  await writeRuntimeSessionList({
+    sessionId: input.sessionId,
+    projectId: input.projectId,
+    accountId: input.accountId,
+    projection: input.projection,
+    runtimeSessionId: identity.runtime_session_id,
+  }).catch((err) =>
+    logger.warn('[runtime-projection] session list write failed', {
+      session_id: input.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
+  return 'stored';
 }
 
 export interface RuntimeProjectionRead {
@@ -265,8 +286,10 @@ export async function readRuntimeProjection(
       projectId: sessionRuntimeProjections.projectId,
       accountId: sessionRuntimeProjections.accountId,
       externalId: sessionRuntimeProjections.externalId,
-      opencodeSessionId: sessionRuntimeProjections.opencodeSessionId,
-      opencodeVersion: sessionRuntimeProjections.opencodeVersion,
+      schema: sessionRuntimeProjections.schema,
+      harness: sessionRuntimeProjections.harness,
+      runtimeSessionId: sessionRuntimeProjections.runtimeSessionId,
+      harnessVersion: sessionRuntimeProjections.harnessVersion,
       agentConfigEtag: sessionRuntimeProjections.agentConfigEtag,
       daemonBuild: sessionRuntimeProjections.daemonBuild,
       epoch: sessionRuntimeProjections.epoch,
@@ -276,7 +299,7 @@ export async function readRuntimeProjection(
       projection: sessionRuntimeProjections.projection,
       source: sessionRuntimeProjections.source,
       capturedAt: sessionRuntimeProjections.capturedAt,
-      pinned: projectSessions.opencodeSessionId,
+      pinned: projectSessions.runtimeSessionId,
       sandboxStatus: sessionSandboxes.status,
     })
     .from(projectSessions)
@@ -299,8 +322,12 @@ export async function readRuntimeProjection(
           accountId: row.accountId!,
           externalId: row.externalId!,
           identity: {
-            opencode_session_id: row.opencodeSessionId ?? null,
-            opencode_version: row.opencodeVersion ?? null,
+            schema: row.schema ?? null,
+            harness: row.harness ?? null,
+            runtime_session_id: row.runtimeSessionId ?? null,
+            harness_version: row.harnessVersion ?? null,
+            opencode_session_id: row.runtimeSessionId ?? null,
+            opencode_version: row.harnessVersion ?? null,
             daemon_build: row.daemonBuild ?? null,
             agent_config_etag: row.agentConfigEtag ?? null,
             head_seq: (row.headSeq as Record<string, number> | null) ?? null,
@@ -336,8 +363,8 @@ export function resolveRuntimeLeg(
   // pin yet (a cold box mid-boot) is not evidence that the projection is wrong.
   if (
     pinnedOpencodeSessionId &&
-    row.identity.opencode_session_id &&
-    pinnedOpencodeSessionId !== row.identity.opencode_session_id
+    row.identity.runtime_session_id &&
+    pinnedOpencodeSessionId !== row.identity.runtime_session_id
   ) {
     return { known: false, reason: 'identity_mismatch' };
   }

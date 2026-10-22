@@ -1,27 +1,27 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { accessRequests } from '@kortix/db';
-import postgres from 'postgres';
+import { sql } from 'drizzle-orm';
 import { config } from '../config';
 import { errors, json, makeOpenApiApp } from '../openapi';
 import { ssoEnforcedForEmail } from '../repositories/sso';
 import { areSignupsEnabled, canSignUp } from '../shared/access-control-cache';
 import { db } from '../shared/db';
-import { createCheckEmailRateLimitMiddleware } from '../shared/rate-limit';
+import { createCheckEmailRateLimitMiddleware } from '../middleware/rate-limit';
 
 export const accessControlApp = makeOpenApiApp();
 
 async function userExistsInAuth(email: string): Promise<boolean> {
   if (!config.DATABASE_URL) return false;
-  const sql = postgres(config.DATABASE_URL, { max: 1 });
+  // The shared pool: a public, rate-limited route must not open and close a
+  // Postgres connection per request.
   try {
-    const [row] = await sql`
-      SELECT 1 FROM auth.users WHERE email = ${email.trim().toLowerCase()} LIMIT 1
-    `;
-    return !!row;
+    const result = await db.execute(
+      sql`SELECT 1 AS found FROM auth.users WHERE email = ${email.trim().toLowerCase()} LIMIT 1`,
+    );
+    const rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
+    return rows.length > 0;
   } catch {
     return false;
-  } finally {
-    await sql.end();
   }
 }
 
@@ -114,7 +114,12 @@ accessControlApp.openapi(
     },
   }),
   async (c) => {
-    const body = c.req.valid('json');
+    // Same guard as /check-email: an unsupported content type reaches the
+    // handler without parsed JSON, and `email.trim()` would answer 500.
+    const body = c.req.valid('json') as { email?: unknown; company?: string; useCase?: string } | undefined;
+    if (!body || typeof body.email !== 'string') {
+      return c.json({ error: true, message: 'Validation failed', status: 400 }, 400);
+    }
     await db.insert(accessRequests).values({
       email: body.email.trim().toLowerCase(),
       company: body.company || null,

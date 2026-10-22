@@ -1,25 +1,25 @@
 /**
- * Computer connectors — connected machines reached over the Agent Computer
- * Tunnel, as a first-class connector. Like `channel`, this is a
- * provider with a FIXED, hand-curated catalog (the tunnel RPC method set) rather
- * than a spec-driven one. Unlike every other provider it has NO credential — the
- * live WS relay IS the credential, and per-machine auth/scope is enforced by the
- * tunnel permission layer at call time.
+ * Computer connectors — machines reached over the Agent Computer Tunnel, as a
+ * first-class connector with a FIXED, hand-curated catalog (the tunnel RPC
+ * method set).
  *
- * One connector profile contains one or more selected machines. Tool schemas
- * include a machine selector, and the gateway restricts it to the profile's
- * server-side allowlist. The gateway routes `tunnel` bindings
- * through the shared tunnel RPC core
+ * A paired machine is an ACCOUNT on the project's `computer` connector: one
+ * `connector_connections` row whose `tunnel_id` names the machine, owned by
+ * one member (private) or by the project (shared). The generic connection
+ * resolver picks the account (`--account`, session bindings, reachability);
+ * the gateway relays through the shared tunnel RPC core
  * (`tunnel/core/rpc-core.ts`), NOT executeCall.
  */
+import { connectorActions, connectorConnections, connectors, tunnelConnections } from '@kortix/db';
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { db } from '../shared/db';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
+import cuaDriverTools from './cua-driver-tools.generated.json';
 
-/** Human label for the computer connector (UI default name). */
-export function computerLabel(): string {
-  return 'Computer Tunnel';
-}
+/** Default name of a project's computer connector. */
+export const COMPUTER_CONNECTOR_NAME = 'Computers';
 
-/** Legacy aggregate slug. Kept for existing session bindings during migration. */
+/** The one computer connector slug per project. */
 export const COMPUTER_SLUG = 'computer';
 
 /** One curated computer action — normalized into a `tunnel`-bound NormalizedAction. */
@@ -34,35 +34,23 @@ interface ComputerActionDef {
   /** JSON-schema properties for the operation itself. */
   properties: Record<string, { type: string; description: string }>;
   required: string[];
-  /** Meta actions run server-side and do not accept a machine selector. */
-  meta?: boolean;
 }
 
-const COMPUTER_SELECTOR = {
-  computer: {
-    type: 'string',
-    description:
-      'Target machine name or id from list_computers. Optional when exactly one assigned machine is online.',
-  },
-} as const;
-
 /**
- * The computer catalog. `fs.*` + `shell.exec` are fully typed; the high-value
- * `desktop.cua.*` methods are typed too, and `desktop.cua.call` is a generic
- * passthrough to ANY of the ~45 desktop methods (like Pipedream's `request`), so
- * the long tail is reachable without hand-maintaining every schema.
+ * The computer catalog. `fs.*` + `shell.exec` are typed here; the desktop
+ * tools come from the pinned driver (CUA_ACTIONS), and `desktop.cua.call`
+ * reaches ANY tool the installed driver has.
  */
 const COMPUTER_ACTIONS: ComputerActionDef[] = [
   {
-    path: 'list_computers',
-    method: 'list_computers',
-    name: 'List computers',
+    path: 'status',
+    method: 'status',
+    name: 'Computer status',
     description:
-      'List the machines assigned to this connector profile — id, name, online status, declared capabilities, and platform. Use this to choose a `computer` for the other actions.',
+      'Call this first. Shows the computer this call resolves to: name, online status, platform, approved capabilities, home_dir, and allowed_paths (file tools only work inside these). Select another computer with the account flag.',
     risk: 'read',
     properties: {},
     required: [],
-    meta: true,
   },
   // ── filesystem ──────────────────────────────────────────────────────────
   {
@@ -164,114 +152,25 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     },
     required: ['command'],
   },
-  // ── desktop (computer use) — curated; desktop.cua.call covers the long tail ─
   {
-    path: 'desktop.cua.get_screen_size',
-    method: 'desktop.cua.get_screen_size',
-    name: 'Get screen size',
-    description: 'Return the display resolution of the machine.',
+    path: 'desktop.cua.list_tools',
+    method: 'desktop.cua.list_tools',
+    name: 'List desktop tools',
+    description: 'List tools exposed by the installed computer-use driver. Requires an approved desktop computer-use capability.',
     risk: 'read',
     properties: {},
     required: [],
   },
   {
-    path: 'desktop.cua.list_apps',
-    method: 'desktop.cua.list_apps',
-    name: 'List apps',
-    description: 'List running/installed applications on the machine.',
+    path: 'desktop.cua.describe',
+    method: 'desktop.cua.describe',
+    name: 'Describe desktop tool',
+    description: 'Describe a tool exposed by the installed computer-use driver. Discovery does not grant permission to run it.',
     risk: 'read',
-    properties: {},
-    required: [],
-  },
-  {
-    path: 'desktop.cua.list_windows',
-    method: 'desktop.cua.list_windows',
-    name: 'List windows',
-    description: 'List open windows on the machine.',
-    risk: 'read',
-    properties: {},
-    required: [],
-  },
-  {
-    path: 'desktop.cua.get_accessibility_tree',
-    method: 'desktop.cua.get_accessibility_tree',
-    name: 'Get accessibility tree',
-    description:
-      'Read the accessibility tree of the focused window — the elements you can interact with.',
-    risk: 'read',
-    properties: {},
-    required: [],
-  },
-  {
-    path: 'desktop.cua.launch_app',
-    method: 'desktop.cua.launch_app',
-    name: 'Launch app',
-    description: 'Launch an application on the machine. Provide the app `name`.',
-    risk: 'write',
     properties: {
-      name: { type: 'string', description: 'Application name to launch.' },
+      tool: { type: 'string', description: 'Computer-use tool name to describe.' },
     },
-    required: ['name'],
-  },
-  {
-    path: 'desktop.cua.click',
-    method: 'desktop.cua.click',
-    name: 'Click',
-    description: 'Click at a screen coordinate. Provide `x` and `y`.',
-    risk: 'write',
-    properties: {
-      x: { type: 'number', description: 'X coordinate.' },
-      y: { type: 'number', description: 'Y coordinate.' },
-    },
-    required: ['x', 'y'],
-  },
-  {
-    path: 'desktop.cua.type_text',
-    method: 'desktop.cua.type_text',
-    name: 'Type text',
-    description: 'Type text on the machine. Provide `text`.',
-    risk: 'write',
-    properties: {
-      text: { type: 'string', description: 'Text to type.' },
-    },
-    required: ['text'],
-  },
-  {
-    path: 'desktop.cua.press_key',
-    method: 'desktop.cua.press_key',
-    name: 'Press key',
-    description: 'Press a single key. Provide `key` (e.g. "Enter", "Escape").',
-    risk: 'write',
-    properties: {
-      key: { type: 'string', description: 'Key name to press.' },
-    },
-    required: ['key'],
-  },
-  {
-    path: 'desktop.cua.hotkey',
-    method: 'desktop.cua.hotkey',
-    name: 'Hotkey',
-    description: 'Press a key combination. Provide `keys` (e.g. ["cmd","c"]).',
-    risk: 'write',
-    properties: {
-      keys: {
-        type: 'array',
-        description: 'Keys to press together, e.g. ["cmd","c"].',
-      },
-    },
-    required: ['keys'],
-  },
-  {
-    path: 'desktop.cua.scroll',
-    method: 'desktop.cua.scroll',
-    name: 'Scroll',
-    description: 'Scroll the screen. Provide `dx`/`dy` deltas.',
-    risk: 'write',
-    properties: {
-      dx: { type: 'number', description: 'Horizontal scroll delta.' },
-      dy: { type: 'number', description: 'Vertical scroll delta.' },
-    },
-    required: [],
+    required: ['tool'],
   },
   {
     path: 'desktop.cua.call',
@@ -283,7 +182,7 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
     properties: {
       tool: {
         type: 'string',
-        description: 'Computer-use tool name (e.g. "double_click", "drag", "zoom").',
+        description: 'Computer-use tool name (e.g. "zoom", "clipboard_read", "browser_navigate").',
       },
       args: { type: 'object', description: 'Arguments for the tool.' },
     },
@@ -291,13 +190,54 @@ const COMPUTER_ACTIONS: ComputerActionDef[] = [
   },
 ];
 
+/**
+ * Driver tools with their own action, in the order agents use them. Their
+ * descriptions and input schemas are the pinned driver's own
+ * (`cua-driver-tools.generated.json`, from apps/desktop-electron/scripts/dump-cua-tools.js),
+ * so `pid`, `window_id` and `element_token` are never missing from a schema.
+ * Each relays as `desktop.cua.call`; that action reaches every other tool.
+ */
+const CUA_ACTIONS: { tool: keyof typeof cuaDriverTools.tools; name: string; risk: Risk }[] = [
+  { tool: 'health_report', name: 'Desktop health report', risk: 'read' },
+  { tool: 'list_apps', name: 'List apps', risk: 'read' },
+  { tool: 'list_windows', name: 'List windows', risk: 'read' },
+  { tool: 'get_window_state', name: 'Get window state (screenshot + elements)', risk: 'read' },
+  { tool: 'get_desktop_state', name: 'Screenshot the screen', risk: 'read' },
+  { tool: 'get_screen_size', name: 'Get screen size', risk: 'read' },
+  { tool: 'get_accessibility_tree', name: 'Desktop snapshot (apps and windows)', risk: 'read' },
+  { tool: 'launch_app', name: 'Launch app', risk: 'write' },
+  { tool: 'click', name: 'Click', risk: 'write' },
+  { tool: 'double_click', name: 'Double-click', risk: 'write' },
+  { tool: 'right_click', name: 'Right-click', risk: 'write' },
+  { tool: 'type_text', name: 'Type text', risk: 'write' },
+  { tool: 'press_key', name: 'Press key', risk: 'write' },
+  { tool: 'hotkey', name: 'Hotkey', risk: 'write' },
+  { tool: 'scroll', name: 'Scroll', risk: 'write' },
+  { tool: 'drag', name: 'Drag', risk: 'write' },
+  { tool: 'set_value', name: 'Set value', risk: 'write' },
+];
+
+function cuaAction(def: (typeof CUA_ACTIONS)[number]): NormalizedAction {
+  const tool = cuaDriverTools.tools[def.tool];
+  const schema = tool.input_schema as Record<string, unknown>;
+  const hasInput = Object.keys((schema.properties as Record<string, unknown> | undefined) ?? {}).length > 0;
+  return {
+    path: `desktop.cua.${def.tool}`,
+    name: def.name,
+    description: tool.description,
+    inputSchema: hasInput ? schema : null,
+    outputSchema: null,
+    risk: def.risk,
+    binding: { kind: 'tunnel', method: `desktop.cua.${def.tool}` },
+  };
+}
+
 function toAction(def: ComputerActionDef): NormalizedAction {
   const binding: ActionBinding = { kind: 'tunnel', method: def.method };
-  const properties = def.meta ? def.properties : { ...COMPUTER_SELECTOR, ...def.properties };
-  const inputSchema = Object.keys(properties).length
+  const inputSchema = Object.keys(def.properties).length
     ? {
         type: 'object',
-        properties,
+        properties: def.properties,
         ...(def.required.length ? { required: def.required } : {}),
       }
     : null;
@@ -312,7 +252,204 @@ function toAction(def: ComputerActionDef): NormalizedAction {
   };
 }
 
-/** The fixed catalog for every Computer Tunnel connector profile. */
+/** The fixed catalog of every computer connector. */
 export function computerCatalog(): NormalizedAction[] {
-  return COMPUTER_ACTIONS.map(toAction);
+  return [...COMPUTER_ACTIONS.map(toAction), ...CUA_ACTIONS.map(cuaAction)];
 }
+
+type ActionRow = typeof connectorActions.$inferSelect;
+
+/**
+ * Computer actions always come from this code, never from `connector_actions`.
+ * An older API (a replica mid-rollout, or an old stack sharing the database)
+ * re-materializes its own catalog into that table, and an agent reading it
+ * then calls tools that no longer exist.
+ */
+export function withComputerCatalog(
+  connectorId: string,
+  providerType: string | null | undefined,
+  stored: ActionRow[],
+): ActionRow[] {
+  if (providerType !== 'computer') return stored;
+  const epoch = new Date(0);
+  return computerCatalog().map((action) => ({
+    actionId: `computer:${action.path}`,
+    connectorId,
+    path: action.path,
+    name: action.name,
+    description: action.description ?? null,
+    inputSchema: (action.inputSchema ?? null) as Record<string, unknown> | null,
+    outputSchema: null,
+    risk: action.risk,
+    binding: (action.binding ?? {}) as Record<string, unknown>,
+    createdAt: epoch,
+    updatedAt: epoch,
+  }));
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type ConnectionRow = typeof connectorConnections.$inferSelect;
+
+/** `name`, or `name (2)`, `name (3)`, … — the first label this owner does not hold. */
+export function uniqueComputerLabel(name: string, taken: ReadonlySet<string>): string {
+  const base = name.trim().slice(0, 240) || 'Computer';
+  const lower = new Set([...taken].map((label) => label.toLowerCase()));
+  if (!lower.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n += 1) {
+    const candidate = `${base} (${n})`;
+    if (!lower.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
+/**
+ * Make one paired machine an account on a project's computer connector.
+ *
+ * Idempotent on (connector, owner, machine): the existing account is returned
+ * (and reactivated when it was revoked). A private attach of a machine that is
+ * already shared in this project returns the shared account. A revoked account of the same owner
+ * that lost its machine and carries the machine's name is reused, so re-pairing
+ * a computer keeps its label and every session binding to it. Otherwise a new
+ * account is created with a unique label; it becomes the owner's default when
+ * the owner has none.
+ *
+ * Attaches to one connector serialize on its row lock, so two concurrent
+ * approvals for the same owner cannot both pin a default or pick one label.
+ *
+ * Null when the machine is gone: unpaired before this attach, or while it
+ * waited. The key-share lock makes a concurrent unpair wait for this
+ * transaction; without it the unpair commits first and the account's
+ * `tunnel_id` fails its foreign key (Postgres 23503, a 500 on every caller).
+ */
+export async function attachComputerConnection(
+  tx: Tx,
+  input: {
+    accountId: string;
+    projectId: string;
+    connectorId: string;
+    ownerType: 'member' | 'project';
+    /** The member's user id; null for a project-shared account. */
+    ownerId: string | null;
+    tunnelId: string;
+    name: string;
+    createdBy: string;
+  },
+): Promise<{ connection: ConnectionRow; created: boolean } | null> {
+  const owner = and(
+    eq(connectorConnections.connectorId, input.connectorId),
+    eq(connectorConnections.ownerType, input.ownerType),
+    input.ownerId === null
+      ? isNull(connectorConnections.ownerId)
+      : eq(connectorConnections.ownerId, input.ownerId),
+  );
+  await tx
+    .select({ connectorId: connectors.connectorId })
+    .from(connectors)
+    .where(eq(connectors.connectorId, input.connectorId))
+    .for('update');
+  const [machine] = await tx
+    .select({ tunnelId: tunnelConnections.tunnelId })
+    .from(tunnelConnections)
+    .where(eq(tunnelConnections.tunnelId, input.tunnelId))
+    .for('key share');
+  if (!machine) return null;
+  const rows = await tx.select().from(connectorConnections).where(owner);
+  const hasDefault = rows.some((row) => row.isDefault);
+  const reactivate = async (row: ConnectionRow) => {
+    const [updated] = await tx
+      .update(connectorConnections)
+      .set({
+        tunnelId: input.tunnelId,
+        status: 'active',
+        // An active account was not revoked: offboarding's reason no longer holds.
+        metadata: sql`${connectorConnections.metadata} - 'revokedReason'`,
+        ...(hasDefault ? {} : { isDefault: true }),
+        updatedAt: new Date(),
+      })
+      .where(eq(connectorConnections.connectionId, row.connectionId))
+      .returning();
+    return { connection: updated!, created: false };
+  };
+
+  // A machine its owner shared here is already their account in this project
+  // (they keep a grant). A second, private account for it would duplicate it.
+  if (input.ownerType === 'member') {
+    const [shared] = await tx
+      .select()
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, input.connectorId),
+          eq(connectorConnections.tunnelId, input.tunnelId),
+          eq(connectorConnections.ownerType, 'project'),
+          eq(connectorConnections.status, 'active'),
+        ),
+      )
+      .limit(1);
+    if (shared) return { connection: shared, created: false };
+  }
+  const same = rows.find((row) => row.tunnelId === input.tunnelId);
+  if (same) return same.status === 'active' ? { connection: same, created: false } : reactivate(same);
+  const orphan = rows.find(
+    (row) =>
+      row.tunnelId === null &&
+      row.status === 'revoked' &&
+      row.label.toLowerCase() === input.name.trim().toLowerCase(),
+  );
+  if (orphan) return reactivate(orphan);
+
+  const [created] = await tx
+    .insert(connectorConnections)
+    .values({
+      accountId: input.accountId,
+      projectId: input.projectId,
+      connectorId: input.connectorId,
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
+      label: uniqueComputerLabel(input.name, new Set(rows.map((row) => row.label))),
+      status: 'active',
+      isDefault: !hasDefault,
+      tunnelId: input.tunnelId,
+      createdBy: input.createdBy,
+    })
+    .returning();
+  return { connection: created!, created: true };
+}
+
+/**
+ * Offboarding (KRTX-1722): revoke every computer account in `accountId` that
+ * reaches a machine `userId` owns. The machine can live in that account
+ * (shared with a project at pairing) or in the owner's personal account
+ * (attached to a team project as their private account). Both match, because
+ * the match is on the machine's owner, not on where the machine lives.
+ * Accounts in other Kortix accounts the person still belongs to stay active.
+ *
+ * Like unpairing, the default pin goes too, so no resolver picks an account
+ * that reaches nothing. `metadata.revokedReason` records why. Returns the
+ * number of accounts revoked.
+ */
+export async function revokeComputersOfDepartedOwner(accountId: string, userId: string): Promise<number> {
+  const revoked = await db
+    .update(connectorConnections)
+    .set({
+      status: 'revoked',
+      isDefault: false,
+      metadata: sql`${connectorConnections.metadata} || '{"revokedReason":"owner_left"}'::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(connectorConnections.accountId, accountId),
+        ne(connectorConnections.status, 'revoked'),
+        inArray(
+          connectorConnections.tunnelId,
+          db
+            .select({ tunnelId: tunnelConnections.tunnelId })
+            .from(tunnelConnections)
+            .where(eq(tunnelConnections.ownerUserId, userId)),
+        ),
+      ),
+    )
+    .returning({ connectionId: connectorConnections.connectionId });
+  return revoked.length;
+}
+

@@ -6,6 +6,7 @@ import {
   backendApi,
   isAdminBypassEnabled,
   PROVISION_IN_FLIGHT_CODE,
+  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
   setAdminBypass,
 } from './api-client';
 import { ApiError, featureDisabledKey, isFeatureDisabledError } from './api/errors';
@@ -21,10 +22,8 @@ describe('setAdminBypass / isAdminBypassEnabled', () => {
     expect(isAdminBypassEnabled()).toBe(false);
   });
 
-  test('toggles on and off', () => {
+  test('is a retired no-op: turning it on leaves it off', () => {
     setAdminBypass(true);
-    expect(isAdminBypassEnabled()).toBe(true);
-    setAdminBypass(false);
     expect(isAdminBypassEnabled()).toBe(false);
   });
 });
@@ -48,7 +47,7 @@ describe('makeRequest admin-bypass header', () => {
     };
   }
 
-  test('attaches x-kortix-admin-bypass when enabled', async () => {
+  test('sends no x-kortix-admin-bypass even when set (the header is retired)', async () => {
     configureKortix({
       backendUrl: 'http://api.test/v1',
       getToken: async () => 'test-token',
@@ -57,7 +56,7 @@ describe('makeRequest admin-bypass header', () => {
     try {
       setAdminBypass(true);
       await backendApi.get('/projects/abc/detail');
-      expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBe('1');
+      expect(stub.getHeaders()?.['x-kortix-admin-bypass']).toBeUndefined();
     } finally {
       stub.restore();
     }
@@ -78,7 +77,7 @@ describe('makeRequest admin-bypass header', () => {
     }
   });
 
-  test('attaches the configured client surface to backend requests', async () => {
+  test('a configured client surface is inert: backend requests carry no X-Kortix-Client', async () => {
     configureKortix({
       backendUrl: 'http://api.test/v1',
       getToken: async () => 'test-token',
@@ -87,7 +86,7 @@ describe('makeRequest admin-bypass header', () => {
     const stub = stubFetch();
     try {
       await backendApi.get('/projects/abc/detail');
-      expect(stub.getHeaders()?.['X-Kortix-Client']).toBe('cli');
+      expect(stub.getHeaders()?.['X-Kortix-Client']).toBeUndefined();
     } finally {
       stub.restore();
     }
@@ -351,6 +350,25 @@ describe('makeRequest retries transient transport failures on idempotent reads',
       expect(response.error?.message).toBe('Failed to fetch');
       expect(attempts).toBe(3);
       expect(errors).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a project secret POST transport failure identifies the endpoint without leaking its value', async () => {
+    configureKortix({ backendUrl: 'http://api.test/v1', getToken: async () => 'tok' });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new TypeError('Failed to fetch');
+    }) as unknown as typeof fetch;
+    try {
+      const response = await backendApi.post('/projects/p1/secrets', {
+        name: 'SAMPLE',
+        value: 'synthetic-secret',
+      });
+      expect(response.success).toBe(false);
+      expect(response.error?.message).toContain('POST /projects/p1/secrets');
+      expect(response.error?.message).not.toContain('synthetic-secret');
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -695,6 +713,27 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
     }
   });
 
+  // The account enforces single sign-on and this credential is a password
+  // (or other non-IdP) identity: the host asks the person to sign in again
+  // through the IdP. A new sign-in, not a step-up, so a separate event.
+  test('the coded SSO denial dispatches kortix:sso-required, not the MFA step-up', async () => {
+    configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
+    const restoreFetch = stubFetch403({
+      error: true,
+      message: 'Your organization requires single sign-on.',
+      code: 'sso_required',
+    });
+    const win = stubWindow();
+    try {
+      const res = await backendApi.get('/accounts/abc');
+      expect(res.success).toBe(false);
+      expect(win.dispatched).toEqual(['kortix:sso-required']);
+    } finally {
+      win.restore();
+      restoreFetch();
+    }
+  });
+
   test('an ordinary 403 dispatches nothing', async () => {
     configureKortix({ backendUrl: 'http://test', getToken: async () => 'tok' });
     const restoreFetch = stubFetch403({
@@ -707,6 +746,84 @@ describe('account_mfa_required 403 → kortix:mfa-required browser event', () =>
       expect(win.dispatched.length).toBe(0);
     } finally {
       win.restore();
+      restoreFetch();
+    }
+  });
+
+  // React Native has no `window.dispatchEvent`: `onAccessRemedy` is its only
+  // signal. It fires for every request, like the window event, so a call made
+  // with `showErrors: false` still reaches it. No window is stubbed here.
+  test('the coded SSO denial calls onAccessRemedy, also with showErrors: false', async () => {
+    const remedies: string[] = [];
+    const errors: unknown[] = [];
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: (code) => remedies.push(code),
+      onError: (error) => errors.push(error),
+    });
+    const restoreFetch = stubFetch403({
+      error: true,
+      message: 'Your organization requires single sign-on.',
+      code: 'sso_required',
+    });
+    try {
+      const res = await backendApi.get('/accounts/abc', { showErrors: false });
+      expect(res.success).toBe(false);
+      expect(res.error).toMatchObject({ status: 403, code: 'sso_required' });
+      expect(remedies).toEqual(['sso_required']);
+      expect(errors).toHaveLength(0);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  test('the coded MFA denial calls onAccessRemedy with its code', async () => {
+    const remedies: string[] = [];
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: (code) => remedies.push(code),
+    });
+    const restoreFetch = stubFetch403({ error: 'mfa needed', code: 'account_mfa_required' });
+    try {
+      await backendApi.get('/accounts/abc/iam/groups');
+      expect(remedies).toEqual(['account_mfa_required']);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  test('an ordinary 403 calls no onAccessRemedy', async () => {
+    const remedies: string[] = [];
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: (code) => remedies.push(code),
+    });
+    const restoreFetch = stubFetch403({ error: 'forbidden', code: 'forbidden' });
+    try {
+      await backendApi.get('/accounts/abc/iam/groups');
+      expect(remedies).toEqual([]);
+    } finally {
+      restoreFetch();
+    }
+  });
+
+  test('a throwing onAccessRemedy still returns the error response', async () => {
+    configureKortix({
+      backendUrl: 'http://test',
+      getToken: async () => 'tok',
+      onAccessRemedy: () => {
+        throw new Error('host bug');
+      },
+    });
+    const restoreFetch = stubFetch403({ error: true, code: 'sso_required' });
+    try {
+      const res = await backendApi.get('/accounts/abc');
+      expect(res.success).toBe(false);
+      expect(res.error).toMatchObject({ status: 403, code: 'sso_required' });
+    } finally {
       restoreFetch();
     }
   });
@@ -962,6 +1079,83 @@ describe('makeRequest classifies a typed provision_in_flight 409 as silent to Se
       const res = await backendApi.post('/projects/provision', {
         account_id: 'a1',
       });
+      expect(res.success).toBe(false);
+      expect(res.error?.status).toBe(409);
+      expect(onErrorCalls).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// Regression for Better Stack frontend pattern `6bc03d7d…`
+// (`ApiError: Internal server error` on app hibernate): the API answered a
+// generic 500 for an in-flight sandbox state transition. The API now answers a
+// typed 409 `sandbox_state_change_in_progress` (an EXPECTED, self-resolving
+// state — the in-flight transition is already doing what the caller asked).
+// Classify it SILENT to `onError` like the other typed 409s, still returning
+// the `ApiError` so a caller can branch on `.code`. A genuine 409 with no
+// typed code still reports. See
+// apps/api/src/shared/daytona-state-transition.ts.
+describe('makeRequest classifies a typed sandbox_state_change_in_progress 409 as silent to Sentry', () => {
+  function stubFetchOnce(status: number, body: unknown) {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string, _init?: RequestInit) =>
+      new Response(JSON.stringify(body), {
+        status,
+        headers: { 'content-type': 'application/json' },
+      })) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  test('a 409 with code=sandbox_state_change_in_progress does NOT fire onError but returns an ApiError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(409, {
+      error: true,
+      message: 'sandbox state change in progress; try again shortly',
+      code: SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+      status: 409,
+    });
+    try {
+      const res = await backendApi.post('/projects/p-1/apps/app-1/stop', {});
+      expect(res.success).toBe(false);
+      expect(res.error).toBeInstanceOf(ApiError);
+      expect(res.error?.status).toBe(409);
+      expect(res.error?.code).toBe(SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE);
+      // The retryable message must still reach the caller (the web toast),
+      // but never page Sentry/Better Stack.
+      expect(res.error?.message).toBe('sandbox state change in progress; try again shortly');
+      expect(onErrorCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a genuine 409 on the stop route (no typed code) STILL fires onError', async () => {
+    let onErrorCalls = 0;
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'tok',
+      onError: () => {
+        onErrorCalls++;
+      },
+    });
+    const restore = stubFetchOnce(409, {
+      error: true,
+      message: 'Conflict',
+      status: 409,
+    });
+    try {
+      const res = await backendApi.post('/projects/p-1/apps/app-1/stop', {});
       expect(res.success).toBe(false);
       expect(res.error?.status).toBe(409);
       expect(onErrorCalls).toBe(1);
@@ -1275,7 +1469,7 @@ describe('makeRequest surfaces the body `code` on a 403 feature_disabled gate', 
 });
 
 // Regression for a prod session card + toast that read `runtime_identity_unavailable`
-// (session ad4b63ac, 2026-08-13): every Kortix error body pairs a machine slug
+// (a prod session, 2026-08-13): every Kortix error body pairs a machine slug
 // (`reason`) with the sentence written for the user (`error`), and `reason` used
 // to be read FIRST. Not one `reason` value in the API is a sentence — they are
 // all snake_case slugs — so any endpoint that sets one leaked the slug into the
@@ -1300,8 +1494,8 @@ describe('makeRequest prefers the human-readable body field over the machine `re
       error:
         'The original sandbox is unavailable. Its identity was preserved and no replacement sandbox was created.',
       code: 'SESSION_RUNTIME_IDENTITY_UNAVAILABLE',
-      session_id: 'ad4b63ac-c5f3-4eaa-a5ea-960dfece7af9',
-      external_id: 'sbx_01KZP370WDB8DGYNAQM1B875VR',
+      session_id: '5a1e0c0e-0000-4000-8000-00000000000e',
+      external_id: 'sbx_01SYNTHETIC0000000000000',
       reason: 'runtime_identity_unavailable',
     });
     try {
@@ -1337,5 +1531,32 @@ describe('makeRequest prefers the human-readable body field over the machine `re
     } finally {
       restore();
     }
+  });
+});
+
+describe('retry and error characterization', () => {
+  test('GET retries a 503 then returns a typed 409 without reporting expected provision race', async () => {
+    const statuses = [503, 409];
+    const reported: unknown[] = [];
+    configureKortix({
+      backendUrl: 'http://api.test/v1',
+      getToken: async () => 'token',
+      onError: (error) => {
+        reported.push(error);
+      },
+      fetch: async () =>
+        new Response(
+          JSON.stringify({ message: 'Still provisioning', code: PROVISION_IN_FLIGHT_CODE }),
+          {
+            status: statuses.shift() ?? 500,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+    });
+    const result = await backendApi.get('/projects/provision');
+    expect(statuses).toEqual([]);
+    expect(result.error?.code).toBe(PROVISION_IN_FLIGHT_CODE);
+    expect(result.error?.message).toBe('Still provisioning');
+    expect(reported).toEqual([]);
   });
 });

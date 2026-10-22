@@ -2,7 +2,7 @@
  * Pure logic of the PTY tool rows — a port of apps/web
  * `tool/tools/pty-spawn-tool.tsx`, `pty-read-tool.tsx` (`splitTerminalBuffer`
  * and its parse), `pty-write-tool.tsx`, `pty-kill-tool.tsx`, and
- * `tool/tool-renderers-sanitization.ts` `stripMarkupForToolOutput`.
+ * `stripMarkupForToolOutput` (from `@kortix/shared`).
  */
 
 import { stripAnsi } from '@kortix/sdk';
@@ -134,63 +134,4 @@ export function ptyWriteView(input: Record<string, unknown>): { ptyInput: string
 
 export function ptyKillId(input: Record<string, unknown>): string {
   return (input.id as string) || (input.pty_id as string) || '';
-}
-
-// ─── stripMarkupForToolOutput ────────────────────────────────────────────────
-
-function findTagCloseIndex(input: string, tagStart: number): number {
-  let quote: '"' | "'" | undefined;
-  for (let index = tagStart + 1; index < input.length; index += 1) {
-    const char = input[index];
-    if (quote) {
-      if (char === quote) quote = undefined;
-      continue;
-    }
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-    if (char === '>') return index;
-  }
-  return -1;
-}
-
-function isWhitespace(char: string): boolean {
-  return char === ' ' || char === '\t' || char === '\n' || char === '\r' || char === '\f' || char === '\v';
-}
-
-/** Web `stripMarkupForToolOutput`: drop comments and tags (linear, quote-aware), collapse whitespace. */
-export function stripMarkupForToolOutput(output: string): string {
-  let text = '';
-  let index = 0;
-  while (index < output.length) {
-    if (output.startsWith('<!--', index)) {
-      const commentEnd = output.indexOf('-->', index + 4);
-      index = commentEnd === -1 ? output.length : commentEnd + 3;
-      continue;
-    }
-    if (output[index] !== '<') {
-      text += output[index];
-      index += 1;
-      continue;
-    }
-    const tagEnd = findTagCloseIndex(output, index);
-    if (tagEnd === -1) break;
-    index = tagEnd + 1;
-  }
-
-  let normalized = '';
-  let pendingSpace = false;
-  for (const char of text) {
-    if (isWhitespace(char)) {
-      pendingSpace = normalized.length > 0;
-      continue;
-    }
-    if (pendingSpace) {
-      normalized += ' ';
-      pendingSpace = false;
-    }
-    normalized += char;
-  }
-  return normalized.trim();
 }

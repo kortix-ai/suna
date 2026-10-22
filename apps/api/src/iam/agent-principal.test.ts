@@ -8,6 +8,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { AgentGrant } from '@kortix/db';
+import { GRANTABLE_KORTIX_PERMISSIONS } from '@kortix/manifest-schema';
 import {
   AGENT_DEFAULT_CEILING,
   HUMAN_ONLY_ACTIONS,
@@ -106,7 +107,7 @@ describe('AGENT_DEFAULT_CEILING', () => {
     expect(AGENT_DEFAULT_CEILING.has('project.secret.read')).toBe(true);
     expect(AGENT_DEFAULT_CEILING.has('project.write')).toBe(true);
     for (const action of HUMAN_ONLY_ACTIONS) expect(AGENT_DEFAULT_CEILING.has(action)).toBe(false);
-    expect(AGENT_DEFAULT_CEILING.size).toBe(45 - HUMAN_ONLY_ACTIONS.size);
+    expect(AGENT_DEFAULT_CEILING.size).toBe(GRANTABLE_KORTIX_PERMISSIONS.length - HUMAN_ONLY_ACTIONS.size);
   });
 });
 

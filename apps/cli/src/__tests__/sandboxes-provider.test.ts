@@ -75,12 +75,12 @@ function startServer(opts: ServerOpts = {}): string {
           project_id: PROJECT,
           name: 'Provider',
           default_sandbox_provider: pinned,
-          available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+          available_sandbox_providers: ['platinum', 'daytona'],
         });
       }
       if (p === `/v1/projects/${PROJECT}/sandbox-provider` && req.method === 'PATCH') {
         const wanted = (body as { provider: string | null }).provider;
-        if (wanted !== null && !['daytona', 'platinum', 'e2b'].includes(wanted)) {
+        if (wanted !== null && !['platinum', 'daytona'].includes(wanted)) {
           return Response.json(
             { error: `Unknown or disabled sandbox provider: ${wanted}` },
             { status: 400 },
@@ -96,7 +96,7 @@ function startServer(opts: ServerOpts = {}): string {
           project_id: PROJECT,
           name: 'Provider',
           default_sandbox_provider: pinned,
-          available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+          available_sandbox_providers: ['platinum', 'daytona'],
         });
       }
       if (p === `/v1/projects/${PROJECT}/sandbox-provider/transition` && req.method === 'GET') {
@@ -169,7 +169,10 @@ describe('kortix sandboxes provider', () => {
     expect(r.stdout).toContain('provider <name>');
     expect(r.stdout).toContain('provider --clear');
     expect(r.stdout).toContain('provider status');
-    expect(r.stdout).toContain('project.customize.write');
+    expect(r.stdout).toContain('project.settings.write');
+    // KRTX-1681: the pin is a person's action — the help must not promise an
+    // agent session that holding the permission is enough.
+    expect(r.stdout).toContain('always refused');
   });
 
   test('bare `provider` prints the pin and what this host offers; --json is machine-readable', async () => {
@@ -177,28 +180,28 @@ describe('kortix sandboxes provider', () => {
     const r = await runCli(['sandboxes', 'provider', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(r.stdout).toContain('pinned     daytona');
-    expect(r.stdout).toContain('available  daytona, platinum, e2b');
+    expect(r.stdout).toContain('available  platinum, daytona');
     expect(calls).toEqual([{ method: 'GET', path: `/v1/projects/${PROJECT}`, body: null }]);
 
     const j = await runCli(['sandboxes', 'provider', '--project', PROJECT, '--json'], config);
     expect(JSON.parse(j.stdout)).toEqual({
       default_sandbox_provider: 'daytona',
-      available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+      available_sandbox_providers: ['platinum', 'daytona'],
     });
   });
 
   test('an immediate switch PATCHes {provider} and reports the new pin without polling', async () => {
     const config = writeConfig(startServer());
-    const r = await runCli(['sandboxes', 'provider', 'e2b', '--project', PROJECT], config);
+    const r = await runCli(['sandboxes', 'provider', 'platinum', '--project', PROJECT], config);
     expect(r.code).toBe(0);
     expect(calls).toEqual([
       {
         method: 'PATCH',
         path: `/v1/projects/${PROJECT}/sandbox-provider`,
-        body: { provider: 'e2b' },
+        body: { provider: 'platinum' },
       },
     ]);
-    expect(r.stdout).toContain('Pinned to e2b');
+    expect(r.stdout).toContain('Pinned to platinum');
   });
 
   test('--clear PATCHes {provider:null}', async () => {

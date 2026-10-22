@@ -2,17 +2,20 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 
-import { AdvancedPanel } from '@/features/session/action-panel/advanced/advanced-panel';
-import { ToolParts } from '@/features/session/action-panel/easy/detail-view';
-import { EasyPanel } from '@/features/session/action-panel/easy/easy-panel';
-import { FileViewer } from '@/features/session/action-panel/easy/file-viewer';
-import { SessionPanelProvider } from '@/features/session/action-panel/session-panel-provider';
-import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
-import { SessionFilesPanel } from '@/features/session/session-files-panel';
-import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool/tool-renderers';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import type { MessageWithParts } from '@/ui';
-import { useState } from 'react';
+import {
+  AdvancedPanel,
+  EasyPanel,
+  SessionPanelProvider,
+  SessionFiles as SessionFilesExplorer,
+  SessionChanges as SessionFilesPanel,
+} from '@kortix/ui/session-panel';
+import { ToolParts } from '@kortix/ui/session/panel/easy/detail-view';
+import { FileViewer } from '@kortix/ui/file-viewer';
+import { ToolActivateContext, ToolPartRenderer } from '@kortix/ui/session';
+import { useKortixComputerStore } from '@kortix/ui/internal/stores/kortix-computer-store';
+import { useEffect, useState } from 'react';
+import { sessionLogOfV1Rows, type ToolCallBlock } from '@kortix/sdk';
+import { useSessionLogThread, useSessionStateStore } from '@kortix/sdk/react';
 
 /**
  * /debug/tools
@@ -41,6 +44,26 @@ function part(tool: string, state: Record<string, unknown>): any {
     tool,
     state,
   };
+}
+
+/** The store's v1 rows: the panel fixtures seed them (`hydrate`). */
+type FixtureRows = Parameters<ReturnType<typeof useSessionStateStore.getState>['hydrate']>[1];
+
+/**
+ * The fixtures stay v1 parts: the panels seed them into the session store, which
+ * takes v1 rows, and some carry display metadata (`filediff`, `loaded`) the session
+ * log has no field for yet. A row renders the block the session log converts its
+ * part to (`sessionLogOfV1Rows`), one per part.
+ */
+const blocks = new WeakMap<object, ToolCallBlock>();
+function blockOf(part: any): ToolCallBlock {
+  let block = blocks.get(part);
+  if (!block) {
+    const row = { info: { id: part.messageID, sessionID: part.sessionID, role: 'assistant' }, parts: [part] };
+    block = sessionLogOfV1Rows('ses_dbg', part.sessionID, [row as never]).threads[0]!.messages[0]!.blocks[0] as ToolCallBlock;
+    blocks.set(part, block);
+  }
+  return block;
 }
 
 const done = (
@@ -213,8 +236,8 @@ const HTML_PREVIEW_CONTENT = `<!doctype html>
 // ---------------------------------------------------------------------------
 // Task 10 fixtures — the converted Advanced-mode views from T5-T7: get-mem,
 // memory-search (full rebuilds), agent-spawn/agent-status (bypasser family),
-// a connector call (tokens + OutputBlock), session-stats + dcp-compress (one
-// representative each), triggers' non-bracket fallback path (OutputBlock,
+// a connector call (tokens + OutputBlock), session-stats (one
+// representative), triggers' non-bracket fallback path (OutputBlock,
 // not the parsed row list), and project-delete (chrome-only, no output).
 // ---------------------------------------------------------------------------
 // NOTE: parseMemoryEntryOutput's Tool/Prompt/Session/Created regexes don't
@@ -322,10 +345,6 @@ const SESSION_STATS_OUTPUT = `## Session stats
 - Tokens: 284,102 in / 19,884 out
 - Duration: 26m 12s
 - Cost: $1.84`;
-
-const DCP_COMPRESS_OUTPUT = `Compressed 6 tool results about "pricing research" into a 3-sentence summary:
-
-Acme and Globex both gate SSO behind their top tier. Our Growth plan undercuts Acme's equivalent by $10/mo while matching seat count. Recommendation: lead with the SSO parity + price gap in the launch page hero.`;
 
 const TRIGGERS_GET_OUTPUT = JSON.stringify(
   {
@@ -800,10 +819,6 @@ const GROUPS: Group[] = [
         node: part('session_stats', done({}, SESSION_STATS_OUTPUT)),
       },
       {
-        label: 'compress (dcp)',
-        node: part('compress', done({ topic: 'pricing research' }, DCP_COMPRESS_OUTPUT)),
-      },
-      {
         label: 'triggers (get, fallback dump)',
         node: part(
           'triggers',
@@ -1014,29 +1029,48 @@ const EASY_PARTS = [
 /**
  * Easy mode takes no props any more — it reads the derived outputs/context/
  * apps from `SessionPanelProvider`, which in the real app is mounted at
- * `SessionLayout` above both panel surfaces. So the debug fixtures feed the
- * PROVIDER and the panel renders whatever it finds there.
+ * `SessionLayout` above both panel surfaces, and reads the session log of the
+ * runtime session (`useSessionLogThread`). So the debug fixtures feed the
+ * STORE, the provider reads them back as blocks, and the panel renders
+ * whatever it finds there.
  *
- * `AdvancedPanel` is untouched by that split and still takes props directly,
- * which is why only the Easy call sites are wrapped.
+ * `AdvancedPanel` takes the thread's messages directly, so its fixture reads
+ * the same log back from the store.
  */
+function useFixtureThread(sessionId: string, messages: FixtureRows) {
+  useEffect(() => {
+    useSessionStateStore.getState().hydrate(sessionId, messages);
+  }, [sessionId, messages]);
+  return useSessionLogThread({ projectId: '', sessionId: '', runtimeSessionId: sessionId })?.messages;
+}
+
 function EasyFixture({
   sessionId,
   messages,
   isSessionBusy,
 }: {
   sessionId: string;
-  messages: MessageWithParts[];
+  messages: FixtureRows;
   isSessionBusy?: boolean;
 }) {
+  useFixtureThread(sessionId, messages);
   return (
-    <SessionPanelProvider sessionId={sessionId} messages={messages} isSessionBusy={isSessionBusy}>
+    <SessionPanelProvider sessionId={sessionId} isSessionBusy={isSessionBusy}>
       <EasyPanel />
     </SessionPanelProvider>
   );
 }
 
-const EASY_MESSAGES: MessageWithParts[] = [
+function AdvancedFixture({ sessionId, messages }: { sessionId: string; messages: FixtureRows }) {
+  return <AdvancedPanel sessionId={sessionId} messages={useFixtureThread(sessionId, messages)} />;
+}
+
+/** Every row of every group, as one assistant message: the Advanced stepper's fixture. */
+const ALL_ROWS_MESSAGES: FixtureRows = [
+  { info: { id: 'm1', role: 'assistant' }, parts: GROUPS.flatMap((g) => g.rows.map((r) => r.node)) } as any,
+];
+
+const EASY_MESSAGES: FixtureRows = [
   {
     info: { id: 'm_easy', role: 'assistant' },
     parts: EASY_PARTS,
@@ -1047,10 +1081,52 @@ const EASY_MESSAGES: MessageWithParts[] = [
 // Outputs/Context cards' EMPTY states (soft placeholder art + one plain
 // sentence) — the main fixture above always has content in both, so without
 // this the empty state would ship unverified.
-const EMPTY_MESSAGES: MessageWithParts[] = [
+const EMPTY_MESSAGES: FixtureRows = [
   {
     info: { id: 'm_empty', role: 'assistant' },
     parts: [],
+  } as any,
+];
+
+// A run that crossed the Outputs fold with a MIXED hidden tail — eight
+// deliverable files in front, a deck, a video and a note behind the fold. The
+// fold's noun follows the hidden rows' kinds: an all-file fold says "N more
+// files", a mixed one says "N more items" (KRTX-1779). The two single-run
+// fixtures above stay under the eight-row limit, so without this the fold
+// button, its label and the expand interaction have no visual home.
+const FOLD_PARTS = [
+  part('write', done({ filePath: '/workspace/reports/chart-summary.pdf' }, '')),
+  part('write', done({ filePath: '/workspace/reports/revenue.xlsx' }, '')),
+  part('write', done({ filePath: '/workspace/reports/leads.csv' }, '')),
+  part('write', done({ filePath: '/workspace/reports/brief.docx' }, '')),
+  part('write', done({ filePath: '/workspace/reports/forecast.pdf' }, '')),
+  part('write', done({ filePath: '/workspace/reports/cohort.xlsx' }, '')),
+  part('write', done({ filePath: '/workspace/reports/pipeline.csv' }, '')),
+  part('write', done({ filePath: '/workspace/reports/handbook.docx' }, '')),
+  // Behind the fold: the note (a write → kind 'file', derive-panels.ts), the
+  // deck (kind ranks 4) and the video (RANK_MEDIA) — the deck and the video
+  // make the fold mixed, so its noun is "items".
+  part('write', done({ filePath: '/workspace/reports/notes.md' }, '')),
+  part(
+    'presentation_gen',
+    done(
+      { presentation_name: 'Pricing deck' },
+      JSON.stringify({ presentation_path: '/workspace/outputs/pricing-deck.pptx' }),
+    ),
+  ),
+  part(
+    'video_gen',
+    done(
+      { prompt: 'launch teaser' },
+      JSON.stringify({ path: '/workspace/outputs/launch-teaser.mp4' }),
+    ),
+  ),
+];
+
+const FOLD_MESSAGES: FixtureRows = [
+  {
+    info: { id: 'm_fold', role: 'assistant' },
+    parts: FOLD_PARTS,
   } as any,
 ];
 
@@ -1113,7 +1189,7 @@ const COMPLETED_LATEST_RUN_PARTS = [
   ),
 ];
 
-const COMPLETED_MESSAGES: MessageWithParts[] = [
+const COMPLETED_MESSAGES: FixtureRows = [
   { info: { id: 'm_completed_1', role: 'assistant' }, parts: COMPLETED_PRIOR_RUN_PARTS } as any,
   { info: { id: 'm_completed_2', role: 'user' }, parts: [] } as any,
   { info: { id: 'm_completed_3', role: 'assistant' }, parts: COMPLETED_LATEST_RUN_PARTS } as any,
@@ -1130,7 +1206,7 @@ const FAILED_PARTS = [
   ),
 ];
 
-const FAILED_MESSAGES: MessageWithParts[] = [
+const FAILED_MESSAGES: FixtureRows = [
   {
     info: {
       id: 'm_failed',
@@ -1144,7 +1220,7 @@ const FAILED_MESSAGES: MessageWithParts[] = [
 // Same underlying content as the failed fixture, but the error is an abort —
 // `deriveRunOutcome`'s abort heuristic must read this as "stopped by you", not
 // "something went wrong", even though a step still ended in error.
-const STOPPED_MESSAGES: MessageWithParts[] = [
+const STOPPED_MESSAGES: FixtureRows = [
   {
     info: {
       id: 'm_stopped',
@@ -1181,8 +1257,8 @@ const memoryViewOutput = (path: string, content: string) =>
     ...content.split('\n').map((line, i) => `${i + 1}\t${line}`),
   ].join('\n');
 
-const MEMORY_NOTE_PATH = '.kortix/memory/notes/pricing.md';
-const MEMORY_NOTE_RENAMED = '.kortix/memory/notes/pricing-findings.md';
+const MEMORY_NOTE_PATH = 'memory/notes/pricing.md';
+const MEMORY_NOTE_RENAMED = 'memory/notes/pricing-findings.md';
 
 /**
  * A real memory note: frontmatter, headings, a list, and one fenced block whose
@@ -1307,7 +1383,7 @@ const PANEL_SKILL_PARTS = [
     'skill',
     done(
       { name: 'kortix-design-system' },
-      skillOutput('.kortix/opencode/skills/kortix-design-system', DESIGN_SKILL_MD, [
+      skillOutput('skills/kortix-design-system', DESIGN_SKILL_MD, [
         'SKILL.md',
         'references/tokens.md',
         'references/primitives.md',
@@ -1318,7 +1394,7 @@ const PANEL_SKILL_PARTS = [
     'skill',
     done(
       { name: 'testing' },
-      skillOutput('.kortix/opencode/skills/testing', TESTING_SKILL_MD, [
+      skillOutput('skills/testing', TESTING_SKILL_MD, [
         'SKILL.md',
         'references/flows.md',
       ]),
@@ -1567,7 +1643,7 @@ function PanelDetailFixture({
     <div data-panel-fixture={fixture}>
       <div className="text-muted-foreground/60 mb-2 font-mono text-xs">{label}</div>
       <div className="border-border bg-popover w-[420px] rounded-md border p-4 shadow">
-        <ToolParts parts={parts as any} sessionId={fixture} summary={summary} />
+        <ToolParts calls={parts.map(blockOf)} sessionId={fixture} summary={summary} />
       </div>
     </div>
   );
@@ -1576,7 +1652,6 @@ function PanelDetailFixture({
 export default function DebugToolsPage() {
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [open, setOpen] = useState(true);
   const focusToolCall = useKortixComputerStore((s) => s.focusToolCall);
 
   return (
@@ -1592,15 +1667,6 @@ export default function DebugToolsPage() {
             )}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="border-border bg-card hover:bg-muted rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
-        >
-          {open
-            ? tI18nHardcoded.raw('i18nComplete.text25f7b3721119')
-            : tI18nHardcoded.raw('i18nComplete.texta3e586be3eff')}
-        </button>
       </div>
 
       {/* Easy-mode panel preview — the non-technical card home, and the
@@ -1625,7 +1691,7 @@ export default function DebugToolsPage() {
               {tI18nHardcoded.raw('i18nComplete.text9f088dbebd6c')}
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
-              <AdvancedPanel sessionId="debug-easy" messages={EASY_MESSAGES} />
+              <AdvancedFixture sessionId="debug-easy" messages={EASY_MESSAGES} />
             </div>
           </div>
           <div>
@@ -1669,7 +1735,7 @@ export default function DebugToolsPage() {
               {tI18nHardcoded.raw('i18nComplete.text03748cd6138a')}
             </div>
             <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
-              <AdvancedPanel sessionId="debug-advanced-failed" messages={FAILED_MESSAGES} />
+              <AdvancedFixture sessionId="debug-advanced-failed" messages={FAILED_MESSAGES} />
             </div>
           </div>
           <div>
@@ -1682,6 +1748,16 @@ export default function DebugToolsPage() {
                 messages={STOPPED_MESSAGES}
                 isSessionBusy={false}
               />
+            </div>
+          </div>
+          {/* A dev-only page, so this caption is a literal: one new fixture is
+              not worth a hashed key in every locale file. */}
+          <div>
+            <div className="text-muted-foreground/60 mb-2 font-mono text-xs">
+              Outputs fold — mixed hidden rows (KRTX-1779): says "3 more items"
+            </div>
+            <div className="border-border bg-card h-[640px] w-[420px] overflow-hidden rounded-md border">
+              <EasyFixture sessionId="debug-easy-fold" messages={FOLD_MESSAGES} />
             </div>
           </div>
         </div>
@@ -1798,15 +1874,7 @@ export default function DebugToolsPage() {
           {tHardcodedUi.raw('appDebugToolsPage.line286JsxTextSidePanelActions')}
         </h2>
         <div className="border-border bg-card h-[560px] w-full overflow-hidden rounded-md border">
-          <AdvancedPanel
-            sessionId="debug"
-            messages={[
-              {
-                info: { id: 'm1', role: 'assistant' },
-                parts: GROUPS.flatMap((g) => g.rows.map((r) => r.node)),
-              } as any,
-            ]}
-          />
+          <AdvancedFixture sessionId="debug" messages={ALL_ROWS_MESSAGES} />
         </div>
       </div>
 
@@ -1851,7 +1919,7 @@ export default function DebugToolsPage() {
                     </div>
                     <div className="border-border/40 bg-card/30 rounded-md border px-4 py-3">
                       <ToolPartRenderer
-                        part={row.node as any}
+                        call={blockOf(row.node)}
                         sessionId="debug"
                         disableNavigation
                       />

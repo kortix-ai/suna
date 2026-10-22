@@ -5,68 +5,43 @@ import { useTranslations } from '@/i18n/use-translations';
 import {
   WarningCircleIcon as AlertCircle,
   ArrowLeftIcon as ArrowLeft,
-  ArrowsLeftRightIcon as ArrowLeftRight,
   PowerIcon as Power,
-  WifiSlashIcon as WifiOff,
 } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { translateUiCatalogText } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import { STAGE_LABELS, type ProvisioningStageInfo } from '@/lib/provisioning-stages';
-import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 
 /**
  * ConnectingScreen — canonical lightweight loader for auth, project routing,
- * and project-session connectivity.
+ * and project-session connectivity. The props pick the mode:
  *
- * Modes (determined by props, and fall back to the sandbox-connection store
- * for the dashboard case):
+ *   - `provisioning`:  determinate progress + stage, for sandbox boot
+ *   - `error`:         red error state with retry actions
+ *   - `stopped`:       neutral "workspace stopped" state
+ *   - none of these:   the connecting signal (auth and routing gates)
  *
- *   - `forceConnecting`: always show the connecting view (pre-store gate)
- *   - `provisioning`:    determinate progress + stage, for sandbox boot
- *   - `error`:           red error state with retry actions
- *   - `stopped`:         neutral "workspace stopped" state
- *   - (none provided):   derive from sandbox connection store
- *       • connected                            → null
- *       • was connected, still alive-ish       → floating ReconnectPill
- *       • unreachable + never connected before → full-screen Unreachable
- *       • default                              → full-screen Connecting
+ * It reads no connection state: a session's connection states render in the
+ * session view.
  */
 export function ConnectingScreen({
-  forceConnecting = false,
   overrideStage,
   title,
   labelOverride,
   provisioning,
   error,
   stopped,
-  sandboxId,
-  provider,
   backHref,
   minimal = false,
   hideWorkspacePicker = false,
 }: ConnectingScreenProps = {}) {
   const appHome = useAppHome();
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const status = useRuntimeConnectionStore((s) => s.status);
-  const wasConnected = useRuntimeConnectionStore((s) => s.wasConnected);
-  const initialCheckDone = useRuntimeConnectionStore((s) => s.initialCheckDone);
-  const reconnectAttempts = useRuntimeConnectionStore((s) => s.reconnectAttempts);
-  const disconnectedAt = useRuntimeConnectionStore((s) => s.disconnectedAt);
-  const healthy = useRuntimeConnectionStore((s) => s.healthy);
-
-  const effectiveProvider = provider;
-  const resolvedSandboxId = sandboxId || undefined;
-
-  const runtimeOnlyDegraded = !forceConnecting && healthy === false && status === 'connected';
-  const runtimeSummary = 'Runtime services degraded';
 
   // `useAppHome` reads document.cookie, which the server pass cannot see, so it
   // resolves to the landing door there and to the remembered project here. An
@@ -75,14 +50,13 @@ export function ConnectingScreen({
   const [resolvedHome, setResolvedHome] = useState(PROJECT_LANDING_PATH);
   useEffect(() => setResolvedHome(appHome), [appHome]);
 
-  // This screen renders exactly when the runtime is unhealthy, so the escape
-  // hatch is the control most likely to meet a bad RSC response. It is an
-  // anchor: Next prefetches it and the click never runs that fetch.
+  // The error, stopped and provisioning views render when the runtime is not
+  // up, so the escape hatch is the control most likely to meet a bad RSC
+  // response. It is an anchor: Next prefetches it and the click never runs
+  // that fetch.
   const escapeHref = backHref || resolvedHome;
 
   const serverLabel = labelOverride?.trim() || 'workspace';
-
-  // ── Prop-driven modes (explicit caller intent beats store state) ────────
 
   if (error) {
     return (
@@ -123,58 +97,10 @@ export function ConnectingScreen({
     );
   }
 
-  // ── Store-driven modes (used by the dashboard overlay) ──────────────────
-
-  if (!forceConnecting && status === 'connected' && healthy !== false) return null;
-
-  const isMidSessionDrop =
-    !forceConnecting && wasConnected && initialCheckDone && status !== 'connected';
-
-  if (isMidSessionDrop) {
-    return (
-      <>
-        <ReconnectPill status={status} disconnectedAt={disconnectedAt} backHref={escapeHref} />
-      </>
-    );
-  }
-
-  if (runtimeOnlyDegraded) {
-    return (
-      <>
-        <HealthPill
-          title={tHardcodedUi.raw(
-            'componentsDashboardConnectingScreen.line156JsxAttrTitleRuntimeDegraded',
-          )}
-          detail={runtimeSummary}
-          backHref={escapeHref}
-        />
-      </>
-    );
-  }
-
-  if (!forceConnecting && status === 'unreachable') {
-    return (
-      <>
-        <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
-          <UnreachableView
-            label={serverLabel}
-            reconnectAttempts={reconnectAttempts}
-            provider={effectiveProvider}
-            degraded={false}
-            backHref={escapeHref}
-            sandboxId={resolvedSandboxId}
-          />
-        </FullScreenShell>
-      </>
-    );
-  }
-
   return <CompactConnectingSignal title={title} overrideStage={overrideStage} minimal={minimal} />;
 }
 
 export interface ConnectingScreenProps {
-  /** Force the connecting view regardless of store state (dashboard gate). */
-  forceConnecting?: boolean;
   /** Pin the stage label (Auth / Routing / Reaching / Restoring). */
   overrideStage?: Stage;
   /** Override the screen headline (e.g. "Provisioning workspace"). */
@@ -203,8 +129,6 @@ export interface ConnectingScreenProps {
   stopped?: {
     name?: string;
   };
-  sandboxId?: string;
-  provider?: string;
   /** Where "Back" / switch buttons should navigate. */
   backHref?: string;
   /**
@@ -219,20 +143,9 @@ export interface ConnectingScreenProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Toast hook — kept as a no-op compatibility export for older shells.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function useConnectionToasts() {
-  // Mid-session connection state now stays in the background and is surfaced
-  // exclusively via the reconnect pill in the bottom-right corner. Avoid
-  // duplicate toast noise for transient drops and recoveries.
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Shared shell
 // ─────────────────────────────────────────────────────────────────────────────
 
-type SandboxConnectionStatus = 'connecting' | 'connected' | 'unreachable';
 export type Stage = 'auth' | 'routing' | 'reaching' | 'restoring';
 
 const STAGE_COPY: Record<Stage, string> = {
@@ -488,171 +401,4 @@ function BackLink({ href }: { href: string }) {
       {tI18nComplete.raw('text76900f1bfd16')}
     </Link>
   );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Unreachable view — health checks failed past threshold
-// ─────────────────────────────────────────────────────────────────────────────
-
-function UnreachableView({
-  label,
-  reconnectAttempts,
-  provider,
-  degraded,
-  backHref,
-  sandboxId,
-}: {
-  label: string;
-  reconnectAttempts: number;
-  provider?: string;
-  degraded?: boolean;
-  backHref: string;
-  sandboxId?: string;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <>
-      <div
-        className="border-destructive/20 bg-destructive/10 flex h-12 w-12 items-center justify-center rounded-full border"
-        aria-hidden
-      >
-        <WifiOff className="text-destructive/70 h-5 w-5" />
-      </div>
-
-      <div className="flex flex-col items-center gap-1.5">
-        <h1 className="text-foreground/90 text-sm font-medium">
-          {degraded ? tI18nComplete.raw('texte48034ba91dd') : tI18nComplete.raw('text42b3d52014ba')}
-        </h1>
-        <p className="text-muted-foreground/55 max-w-[300px] text-center text-xs leading-relaxed">
-          {degraded ? tI18nComplete.raw('texta4c128e48978') : tI18nComplete.raw('textd94a83e48b64')}
-        </p>
-        {sandboxId ? (
-          <p className="text-muted-foreground/35 font-mono text-xs">
-            {tI18nComplete.raw('text67fc62497e85')} {sandboxId.slice(0, 8)}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="text-muted-foreground/45 inline-flex items-center gap-1.5 text-xs">
-        <Loading className="h-3 w-3" />
-        <span>{tI18nComplete.raw('text26f0dd993530')}</span>
-        {reconnectAttempts > 0 && (
-          <span className="text-muted-foreground/35 font-mono tabular-nums">
-            · {reconnectAttempts}
-          </span>
-        )}
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Link
-          href={backHref}
-          prefetch
-          className="border-border/40 text-foreground/70 hover:border-border/70 hover:text-foreground inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full border px-4 text-xs font-medium transition-colors"
-        >
-          <ArrowLeftRight className="h-3 w-3" />
-          {tI18nComplete.raw('text04e2a9728af7')}
-        </Link>
-      </div>
-    </>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Reconnect pill — non-blocking, mid-session drop
-// ─────────────────────────────────────────────────────────────────────────────
-
-function ReconnectPill({
-  status,
-  disconnectedAt,
-  backHref,
-}: {
-  status: SandboxConnectionStatus;
-  disconnectedAt: number | null;
-  backHref: string;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const elapsed = useElapsedTime(disconnectedAt);
-  const label = status === 'unreachable' ? 'Unreachable' : 'Reconnecting';
-
-  return (
-    <div className="animate-in slide-in-from-bottom-3 fade-in fixed right-6 bottom-6 z-[60] duration-300">
-      <div className="border-border/50 bg-background/95 flex items-center gap-2.5 rounded-full border py-1.5 pr-1.5 pl-3 shadow-lg shadow-black/5 backdrop-blur-xl">
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
-        </span>
-
-        <span className="text-muted-foreground text-xs whitespace-nowrap">
-          {label}
-          {elapsed ? <span className="text-muted-foreground/40"> · {elapsed}</span> : null}
-        </span>
-
-        <Button asChild variant="muted" size="xs" className="rounded-full">
-          <Link href={backHref} prefetch>
-            <ArrowLeftRight className="h-2.5 w-2.5" />
-            {tI18nComplete.raw('text04e2a9728af7')}
-          </Link>
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function HealthPill({
-  title,
-  detail,
-  backHref,
-}: {
-  title: string;
-  detail?: string;
-  backHref: string;
-}) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  return (
-    <div className="animate-in slide-in-from-bottom-3 fade-in fixed right-6 bottom-6 z-[60] duration-300">
-      <div className="border-border/50 bg-background/95 flex items-center gap-2.5 rounded-full border py-1.5 pr-1.5 pl-3 shadow-lg shadow-black/5 backdrop-blur-xl">
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
-        </span>
-
-        <span className="text-muted-foreground max-w-[220px] truncate text-xs whitespace-nowrap">
-          {title}
-          {detail ? <span className="text-muted-foreground/40"> · {detail}</span> : null}
-        </span>
-
-        <Button asChild variant="muted" size="xs" className="rounded-full">
-          <Link href={backHref} prefetch>
-            <ArrowLeftRight className="h-2.5 w-2.5" />
-            {tI18nComplete.raw('text04e2a9728af7')}
-          </Link>
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Utility: human-readable elapsed time for the pill
-// ─────────────────────────────────────────────────────────────────────────────
-
-function useElapsedTime(since: number | null): string | null {
-  const [now, setNow] = useState(Date.now());
-
-  useEffect(() => {
-    if (!since) return;
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, [since]);
-
-  return useMemo(() => {
-    if (!since) return null;
-    const seconds = Math.floor((now - since) / 1000);
-    if (seconds < 5) return 'just now';
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ${minutes % 60}m`;
-  }, [since, now]);
 }

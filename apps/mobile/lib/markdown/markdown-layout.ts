@@ -21,10 +21,11 @@ export function web(steps: number): number {
 /** Web type ramp (`app/globals.css` `--text-*`), [fontSize, lineHeight]. */
 export const TYPE = {
   /**
-   * Chat prose. Web's `.kortix-markdown` root is `text-[15px]`; mobile reads
-   * one step up at 16px (Jay, 2026-09-22), `leading-relaxed` (1.625) = 26.
+   * Chat prose. Web's `.kortix-markdown` root is `text-[15px]`; mobile matches
+   * it at 15px on a 24pt line (1.6). It was 16/26 (Jay, 2026-09-22) and read
+   * too large (KRTX-2927).
    */
-  body: { fontSize: 16, lineHeight: 26 },
+  body: { fontSize: 15, lineHeight: 24 },
   xs: { fontSize: 13, lineHeight: 16 },
   sm: { fontSize: 14, lineHeight: 20 },
   base: { fontSize: 16, lineHeight: 24 },
@@ -35,11 +36,21 @@ export const TYPE = {
 /** Web radii: `rounded-sm` 6, `rounded-md` 8, `rounded-lg` 10. */
 export const RADIUS = { sm: 6, md: 8, lg: 10, inlineCode: 5, swatch: 3 } as const;
 
+/** The hairline around a markdown table and a code block: one weight for both (Jay, 2026-10-20). */
+export const MARKDOWN_BORDER_WIDTH = 0.5;
+
 /** Code block (web `code-block.tsx`). */
 export const CODE_BLOCK = {
-  captionMinHeight: 29.5,
-  captionPaddingX: web(2),
-  captionPaddingY: web(0.5),
+  /**
+   * Header row, the Claude app's (Jay, 2026-10-20): 12pt sides, 6pt above and
+   * below, around 32pt round buttons. Web's caption is 29.5pt with 7.36pt sides.
+   */
+  captionMinHeight: 44,
+  captionPaddingX: 12,
+  captionPaddingY: 6,
+  /** The card's corners; the body inside keeps `bodyRadius` on its top corners. */
+  radius: 14,
+  bodyRadius: 10,
   captionFontSize: 12,
   /** `tracking-wide` = 0.025em. */
   captionLetterSpacing: 0.3,
@@ -50,8 +61,9 @@ export const CODE_BLOCK = {
   lineHeight: Math.round(TYPE.xs.fontSize * 1.65 * 100) / 100,
   /** `tracking-tight` = -0.025em. */
   letterSpacing: -0.33,
-  copyButtonSize: web(7),
-  copyIconSize: web(4),
+  /** Copy and full screen: 32pt round buttons with 18pt glyphs (web: 25.76 / 14.72). */
+  copyButtonSize: 32,
+  copyIconSize: 18,
   /** Web resets the copy icon 2000 ms after a copy. */
   copiedResetMs: 2000,
 } as const;
@@ -66,7 +78,8 @@ const MONO = { unitsPerEm: 1000, ascent: 1018, descent: 246, advance: 630 } as c
 const CHIP_FONT_SIZE = 12.8;
 const CHIP_LINE_HEIGHT = 15;
 const CHIP_PADDING_Y = 1;
-const CHIP_BORDER = 1;
+/** Half of web's 1px `border`: one device pixel at 2x (Jay, 2026-09-30). */
+const CHIP_BORDER = 0.5;
 /** Glyph content box of the code font at the chip size: 16.18px (taller than the 15px line). */
 const CHIP_CONTENT = ((MONO.ascent + MONO.descent) / MONO.unitsPerEm) * CHIP_FONT_SIZE;
 /** Chip text baseline above the bottom of its 15px line: half-leading (-0.59) + descent (3.15) = 2.56px. */
@@ -88,11 +101,11 @@ export const INLINE_CODE = {
   /** `py-[0.08rem]` = 1.28px, rounded to 1 to keep the chip inside a 20px table line. */
   paddingY: CHIP_PADDING_Y,
   borderWidth: CHIP_BORDER,
-  /** 15 + 2 × 1 + 2 × 1 = 19px. */
+  /** 15 + 2 × 1 + 2 × 0.5 = 18px. */
   height: CHIP_LINE_HEIGHT + 2 * CHIP_PADDING_Y + 2 * CHIP_BORDER,
   /** Chip text baseline above the bottom of the chip's 15px text line: 2.56px. */
   textBaselineFromBottom: CHIP_TEXT_BASELINE,
-  /** Chip text baseline above the chip's bottom border edge: 2.56 + 1 + 1 = 4.56px. */
+  /** Chip text baseline above the chip's bottom border edge: 2.56 + 1 + 0.5 = 4.06px. */
   chipBaselineFromBottom: CHIP_TEXT_BASELINE + CHIP_PADDING_Y + CHIP_BORDER,
   /** One code character, px: Roobert Mono advance 8.06 + tracking -0.32 = 7.74. */
   charWidth: (MONO.advance / MONO.unitsPerEm) * CHIP_FONT_SIZE - 0.32,
@@ -113,7 +126,7 @@ const IOS_ATTACHMENT_DESCENDER = 2.76;
 /**
  * Where the inline code view goes in its line.
  *
- * The inline view is the WHOLE chip (`height`, 19px at 1x text size). An
+ * The inline view is the WHOLE chip (`height`, 18px at 1x text size). An
  * earlier version made the view only the part above the chip's text baseline
  * and let the rest hang out of its bottom; Android clips children to their
  * parent's bounds, so the bottom 5.07px (Menlo metrics) disappeared (about 70% of the chip
@@ -123,14 +136,14 @@ const IOS_ATTACHMENT_DESCENDER = 2.76;
  * baseline. Where each platform puts the view's bottom edge:
  * - Android: on the line baseline (`TextLayoutManager.kt`:
  *   `getLineBaseline(line) - placeholderHeight`). Shift down by the chip's own
- *   baseline offset (4.56px). The paragraph's fixed line height leaves room
+ *   baseline offset (4.06px). The paragraph's fixed line height leaves room
  *   below the baseline (body: 24.38px line, about 5.9px below the baseline).
  * - iOS: `RCTTextLayoutManager.mm` sets the bottom to the line fragment's
  *   bottom plus the fragment font's descender. The glyph rect of an
  *   attachment is the whole line fragment, and the font is Helvetica 12.
  *   That bottom sits `Roobert descent + half-leading - 2.76` above the line
  *   baseline, so the shift is the chip baseline offset minus that drop:
- *   +0.50px in body text, +2.72px in table cells.
+ *   +0.61px in body text, +2.22px in table cells.
  */
 export function inlineCodeAnchor(
   os: string,
@@ -267,20 +280,57 @@ function kindOfLine(line: string): BlockKind {
 }
 
 /**
+ * A line of `block` as `block.split(/\r?\n/)` gives it: the text between two
+ * newlines, without the `\r` of a `\r\n`. `start` is its index in `block`.
+ */
+interface BlockLine {
+  start: number;
+  text: string;
+}
+
+/** The line that starts at `start`. */
+function lineAt(block: string, start: number): BlockLine {
+  const newline = block.indexOf('\n', start);
+  if (newline === -1) return { start, text: block.slice(start) };
+  const end = newline > start && block.charCodeAt(newline - 1) === 13 ? newline - 1 : newline;
+  return { start, text: block.slice(start, end) };
+}
+
+function firstNonBlankLine(block: string): BlockLine | null {
+  for (let start = 0; ; ) {
+    const line = lineAt(block, start);
+    if (line.text.trim() !== '') return line;
+    const newline = block.indexOf('\n', start);
+    if (newline === -1) return null;
+    start = newline + 1;
+  }
+}
+
+function lastNonBlankLine(block: string): BlockLine | null {
+  for (let end = block.length; ; ) {
+    const start = end === 0 ? 0 : block.lastIndexOf('\n', end - 1) + 1;
+    const line = lineAt(block, start);
+    if (line.text.trim() !== '') return line;
+    if (start === 0) return null;
+    end = start - 1;
+  }
+}
+
+/**
  * The first and last construct of one `splitMarkdownBlocks` block, read from
  * its first and last lines — enough to collapse the margin BETWEEN blocks.
  * Margins between constructs INSIDE a block come from the parsed AST instead.
  */
 export function classifyBlock(block: string): { first: BlockKind; last: BlockKind } {
-  const lines = block.split(/\r?\n/).filter((line) => line.trim() !== '');
-  if (lines.length === 0) return { first: 'paragraph', last: 'paragraph' };
-  const first = kindOfLine(lines[0]);
-  if (lines.length === 1) return { first, last: first };
+  const firstLine = firstNonBlankLine(block);
+  if (!firstLine) return { first: 'paragraph', last: 'paragraph' };
+  const first = kindOfLine(firstLine.text);
+  const lastLine = lastNonBlankLine(block)!;
+  if (lastLine.start === firstLine.start) return { first, last: first };
 
-  const lastLine = lines[lines.length - 1];
-  let last = kindOfLine(lastLine);
+  let last = kindOfLine(lastLine.text);
   // An indented or lazy last line belongs to the construct the block opened.
-  if (last === 'code' && !FENCE_LINE.test(lastLine) && (first === 'list' || first === 'blockquote')) {
+  if (last === 'code' && !FENCE_LINE.test(lastLine.text) && (first === 'list' || first === 'blockquote')) {
     last = first;
   }
   if (last === 'paragraph' && (first === 'list' || first === 'blockquote' || first === 'code' || first === 'math')) {

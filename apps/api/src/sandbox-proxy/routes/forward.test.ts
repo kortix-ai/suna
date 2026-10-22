@@ -21,6 +21,7 @@ import * as realRequestContext from '../../lib/request-context';
 import { WIRE_MESSAGE_ID, mintWireMessageId, wireIdTime } from '../../projects/wire-message-id';
 import * as realKortixUserContext from '../../shared/kortix-user-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
+import * as realRetryBudget from '../preview-retry-budget';
 import { PROXY_ATTEMPT_TIMEOUT_MS, PROXY_IMPORT_ATTEMPT_TIMEOUT_MS } from '../preview-retry-budget';
 
 const ACTIVE_RECORD = {
@@ -34,6 +35,9 @@ const ACTIVE_RECORD = {
   provider: 'daytona',
 };
 
+// The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
+// attempts and their outcome, not the backoff's wall time.
+mock.module('../preview-retry-budget', () => ({ ...realRetryBudget, PROXY_RETRY_DELAYS_MS: [1, 1, 1] }));
 mock.module('../../config', () => ({ config: {} }));
 mock.module('../../lib/request-context', () => ({
   ...realRequestContext,
@@ -67,34 +71,31 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // driver's connect timeout — 5 s per prompt, which times these cases out.
   // This suite is about delivery dedupe and wire-id placement, so the gate is
   // stubbed to its no-op answer.
-  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  convergeConfigIfBehind: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   // The runtime-asset lane beside the config gate. Void, never awaited — a
   // stub is enough here, and its absence is a module LINK error, not a skip.
   scheduleAssetConvergence: () => {},
   // The model-catalog lane. AWAITED by the route, unlike the asset lane — a
   // stub that resolves immediately keeps every case in this file off the
-  // network, same reasoning as `convergeBeforeTurnStart` above.
+  // network, same reasoning as `convergeConfigIfBehind` above.
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
-}));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 // The ledger identity the proxy begins the turn under.
-let begunTurns: Array<{ opencodeSessionId: string; messageId: string | null }> = [];
+let begunTurns: Array<{ runtimeSessionId: string; messageId: string | null }> = [];
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
   beginSandboxTurn: async (
     _target: unknown,
-    turn: { opencodeSessionId: string; messageId: string | null },
+    turn: { runtimeSessionId: string; messageId: string | null },
   ) => {
-    begunTurns.push({ opencodeSessionId: turn.opencodeSessionId, messageId: turn.messageId });
+    begunTurns.push({ runtimeSessionId: turn.runtimeSessionId, messageId: turn.messageId });
     return 'granted';
   },
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 // Daytona ingress is a pass-through: the effective port is the addressed port.
@@ -109,6 +110,25 @@ mock.module('../backend', () => ({
   markSandboxUsed: () => {},
   markSandboxErrored: async () => {},
   wakeSandbox: async () => {},
+}));
+
+// A client abort asks who may stop the running turn (`abort-authority.ts`, its
+// rule tested beside it), then stamps the stop. Both are recorded here.
+let abortVerdict: { allowed: true; by: string | null } | { allowed: false } = { allowed: true, by: 'u1' };
+let abortAsks: Array<{ userId: string | null; sessionId: string }> = [];
+const stopLog: Array<{ name: string; scope: unknown; by: unknown }> = [];
+mock.module('../forward/abort-authority', () => ({
+  decideClientAbort: async (access: { kind: string; userId?: string }, record: { sessionId: string }) => {
+    abortAsks.push({ userId: access.kind === 'principal' ? (access.userId ?? null) : null, sessionId: record.sessionId });
+    return abortVerdict;
+  },
+}));
+const realTurnLedger = await import('../../projects/session-turn-ledger');
+mock.module('../../projects/session-turn-ledger', () => ({
+  ...realTurnLedger,
+  markTurnStopRequested: async (_sessionId: string, name: string, scope: unknown, by: unknown) => {
+    stopLog.push({ name, scope, by });
+  },
 }));
 
 const { forwardToSandbox } = await import('./preview');
@@ -248,6 +268,44 @@ describe('forwardToSandbox — prompt delivery is never double-sent', () => {
   });
 });
 
+describe('forwardToSandbox — a client abort asks who may stop the turn', () => {
+  const abort = (access: typeof principal = principal) =>
+    forwardToSandbox('sb-1', 8000, access, 'POST', '/session/ses_root/abort', '', jsonHeaders(), undefined, 'http://app.local');
+  beforeEach(() => {
+    abortVerdict = { allowed: true, by: 'u1' };
+    abortAsks = [];
+    stopLog.length = 0;
+  });
+
+  test('refused: 403 not_turn_prompter, nothing stamped, nothing forwarded', async () => {
+    abortVerdict = { allowed: false };
+    queueFetch();
+    const res = await abort();
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({
+      error: 'Only the member who started this run, the session owner or a project manager can stop it.',
+      code: 'not_turn_prompter',
+    });
+    expect(abortAsks).toEqual([{ userId: 'u1', sessionId: 'sess-1' }]);
+    expect(stopLog).toEqual([]);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('allowed: the stop is stamped under the stopper, then forwarded once', async () => {
+    queueFetch(new Response('true', { status: 200 }));
+    expect((await abort()).status).toBe(200);
+    expect(stopLog).toEqual([{ name: 'UserStop', scope: { opencodeSessionId: 'ses_root' }, by: 'u1' }]);
+    expect(fetchCalls).toBe(1);
+  });
+
+  test('a sandbox-authored abort is the agent acting: it asks nothing and stamps nothing', async () => {
+    queueFetch(new Response('true', { status: 200 }));
+    expect((await abort({ ...principal, sandboxAuthored: true })).status).toBe(200);
+    expect(abortAsks).toEqual([]);
+    expect(stopLog).toEqual([]);
+  });
+});
+
 describe('forwardToSandbox — idempotent GET retry is unchanged', () => {
   test('a GET that 502s then 200s is retried and returns the eventual success', async () => {
     queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
@@ -308,6 +366,46 @@ describe('forwardToSandbox — a sandbox-down 400 on the LAST attempt releases t
   });
 });
 
+describe('forwardToSandbox — every definitive non-delivery releases the dedupe claim (05#2)', () => {
+  const retryReaches = async (key: string, first: () => Response) => {
+    const args = [
+      'sb-1', 8000, principal, 'POST', '/session/sess-1/message', '', jsonHeaders({ 'idempotency-key': key }),
+      PROMPT_BODY, 'http://app.local',
+    ] as const;
+    queueFetch(first());
+    const firstRes = await forwardToSandbox(...args);
+    queueFetch(new Response('{"ok":true}', { status: 200 }));
+    const retry = await forwardToSandbox(...args);
+    return { firstRes, retry, retryFetches: fetchCalls };
+  };
+
+  test('a daemon 4xx: the same-key retry reaches the sandbox, not a bogus duplicate', async () => {
+    const { firstRes, retry, retryFetches } = await retryReaches('rel-4xx', () => new Response('{"error":"bad"}', { status: 422 }));
+    expect(firstRes.status).toBe(422);
+    expect(retryFetches).toBe(1);
+    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test('a 3xx: the same-key retry reaches the sandbox', async () => {
+    const { retryFetches, retry } = await retryReaches('rel-3xx', () => new Response(null, { status: 302, headers: { location: '/x' } }));
+    expect(retryFetches).toBe(1);
+    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test('a rejected signed user context (401): the same-key retry reaches the sandbox', async () => {
+    const { firstRes, retryFetches, retry } = await retryReaches('rel-401', () => new Response('no', { status: 401 }));
+    expect(firstRes.status).toBe(502);
+    expect(retryFetches).toBe(1);
+    expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
+  });
+
+  test('an ambiguous 5xx keeps the claim: the retry is still deduped', async () => {
+    const { retryFetches, retry } = await retryReaches('keep-5xx', () => new Response('bad gateway', { status: 502 }));
+    expect(retryFetches).toBe(0);
+    expect(await retry.json()).toEqual({ status: 'duplicate', deduplicated: true });
+  });
+});
+
 // ── wire id placement ──
 let fetchLog: Array<{ url: string; method: string; body: string | null }> = [];
 
@@ -363,7 +461,7 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(wireIdTime(delivered.messageID)! > tip.time).toBe(true);
     expect(delivered.parts).toEqual([{ type: 'text', text: 'stop looping' }]);
     // The turn ledger was begun under the EFFECTIVE id, not the stale one.
-    expect(begunTurns).toEqual([{ opencodeSessionId: 'ses_child', messageId: delivered.messageID }]);
+    expect(begunTurns).toEqual([{ runtimeSessionId: 'ses_child', messageId: delivered.messageID }]);
     // And the sender can correlate.
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(delivered.messageID);
     expect(res.headers.get('Access-Control-Expose-Headers')).toContain('X-Kortix-Effective-Message-Id');
@@ -381,6 +479,16 @@ describe('forwardToSandbox — wire id placement on the direct prompt path', () 
     expect(fetchLog[1].body).toBe(JSON.stringify(body));
     expect(begunTurns[0]?.messageId).toBe(client.id);
     expect(res.headers.get('X-Kortix-Effective-Message-Id')).toBe(client.id);
+  });
+
+  test('a noReply prompt is forwarded with its flag and never begins a turn', async () => {
+    const client = mintWireMessageId({ nowMs: NOW });
+    installFetch([]);
+    const body = { messageID: client.id, noReply: true, parts: [{ type: 'text', text: 'held' }] };
+    const res = await forwardToSandbox('sb-1', 8000, principal, 'POST', '/session/ses_1/prompt_async', '', jsonHeaders(), bodyOf(body), 'http://app.local');
+    expect(res.status).toBe(200);
+    expect(begunTurns).toEqual([]);
+    expect(fetchLog[fetchLog.length - 1].body).toContain('"noReply":true');
   });
 
   test('a body with NO client id pays for no read at all — OpenCode mints', async () => {
@@ -478,5 +586,28 @@ describe('forwardToSandbox — POST /file/import', () => {
     expect(res.status).toBe(200);
     expect(timerDelays).toContain(PROXY_ATTEMPT_TIMEOUT_MS);
     expect(timerDelays).not.toContain(PROXY_IMPORT_ATTEMPT_TIMEOUT_MS);
+  });
+});
+
+// `/kortix/env-rpc` answers only when its operation finishes, and its `exec` is
+// not idempotent: a replay runs the shell command a second time.
+describe('forwardToSandbox — POST /kortix/env-rpc', () => {
+  test('on the daemon port: one attempt past the 15 s cap, a 502 is not replayed', async () => {
+    queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
+    recordTimerDelays();
+    const res = await forwardToSandbox(
+      'sb-1',
+      8000,
+      principal,
+      'POST',
+      '/kortix/env-rpc',
+      '',
+      new Headers({ 'content-type': 'application/json' }),
+      new TextEncoder().encode('{"op":"exec","args":{"command":"true"}}').buffer,
+      'http://app.local',
+    );
+    expect(fetchCalls).toBe(1);
+    expect(res.status).toBe(502);
+    expect(Math.max(...timerDelays)).toBeGreaterThan(PROXY_ATTEMPT_TIMEOUT_MS);
   });
 });

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { nextAuditReconciliationCursor } from './audit-reconciliation-worker';
+import {
+  type AuditReconciliationFailureState,
+  nextAuditReconciliationCursor,
+  nextAuditReconciliationFailureDecision,
+} from './audit-reconciliation-worker';
 
 describe('nextAuditReconciliationCursor', () => {
   test('repeats an account until every bounded source page is complete', () => {
@@ -24,5 +28,88 @@ describe('nextAuditReconciliationCursor', () => {
     expect(nextAuditReconciliationCursor('account-last', { accountId: null, result: null })).toBe(
       null,
     );
+  });
+});
+
+describe('nextAuditReconciliationFailureDecision', () => {
+  const initial: AuditReconciliationFailureState = {
+    consecutiveFailures: 0,
+    failingAccountId: null,
+  };
+
+  // Regression: a page that keeps failing on the same account (e.g. a
+  // statement timeout from an unindexed source table) was retried every 5s
+  // forever — `tick()`'s catch path never advanced the cursor past it. That
+  // burned I/O on every API replica and starved unrelated audit_events
+  // inserts. The fix bounds both the retry rate and the stall.
+
+  test('the first failure on an account waits the base delay and does not skip', () => {
+    const decision = nextAuditReconciliationFailureDecision(initial, 'account-a');
+    expect(decision.delayMs).toBe(5_000);
+    expect(decision.skipToAccountId).toBeNull();
+    expect(decision.state).toEqual({ consecutiveFailures: 1, failingAccountId: 'account-a' });
+  });
+
+  test('repeated failures on the same account escalate the delay: 5s, 30s, 120s', () => {
+    let state: AuditReconciliationFailureState = initial;
+    const delays: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const decision = nextAuditReconciliationFailureDecision(state, 'account-a');
+      state = decision.state;
+      delays.push(decision.delayMs);
+    }
+    expect(delays).toEqual([5_000, 30_000, 120_000]);
+  });
+
+  test('the third consecutive failure on the same account skips forward past it', () => {
+    let state: AuditReconciliationFailureState = initial;
+    let decision = nextAuditReconciliationFailureDecision(state, 'account-a');
+    state = decision.state;
+    decision = nextAuditReconciliationFailureDecision(state, 'account-a');
+    state = decision.state;
+    decision = nextAuditReconciliationFailureDecision(state, 'account-a');
+
+    expect(decision.skipToAccountId).toBe('account-a');
+    expect(decision.state).toEqual({ consecutiveFailures: 0, failingAccountId: null });
+  });
+
+  test('skipping resets the streak, so the account after it starts a fresh escalation', () => {
+    const state: AuditReconciliationFailureState = {
+      consecutiveFailures: 2,
+      failingAccountId: 'account-a',
+    };
+    const skipDecision = nextAuditReconciliationFailureDecision(state, 'account-a');
+    expect(skipDecision.skipToAccountId).toBe('account-a');
+
+    const nextDecision = nextAuditReconciliationFailureDecision(skipDecision.state, 'account-b');
+    expect(nextDecision.delayMs).toBe(5_000);
+    expect(nextDecision.skipToAccountId).toBeNull();
+  });
+
+  test('a failure on a different account resets the streak instead of escalating', () => {
+    const decision = nextAuditReconciliationFailureDecision(
+      { consecutiveFailures: 2, failingAccountId: 'account-a' },
+      'account-b',
+    );
+    expect(decision.delayMs).toBe(5_000);
+    expect(decision.skipToAccountId).toBeNull();
+    expect(decision.state).toEqual({ consecutiveFailures: 1, failingAccountId: 'account-b' });
+  });
+
+  test('a success resets the streak (the caller passes the initial state back after a good page)', () => {
+    // tick() resets its state to `initial` on success; the very next failure
+    // after a recovery must therefore start over at the base delay.
+    const decision = nextAuditReconciliationFailureDecision(initial, 'account-a');
+    expect(decision.delayMs).toBe(5_000);
+  });
+
+  test('a failure that cannot be attributed to an account (e.g. the account-lookup query itself) never skips and stays at the base delay', () => {
+    let state: AuditReconciliationFailureState = initial;
+    for (let i = 0; i < 3; i++) {
+      const decision = nextAuditReconciliationFailureDecision(state, null);
+      expect(decision.skipToAccountId).toBeNull();
+      expect(decision.delayMs).toBe(5_000);
+      state = decision.state;
+    }
   });
 });

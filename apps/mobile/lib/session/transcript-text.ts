@@ -1,20 +1,20 @@
 /**
  * The plain-text transcript that "Share transcript" hands to the native share
- * sheet (KRTX-248). Built from the messages the thread already holds in the
- * sync store — no fetch.
+ * sheet (KRTX-248). Built from session-log messages (`SessionLogMessage`): the
+ * thread's, or the whole history read for the share — no fetch here.
  *
  * Shape: the session title, then one block per speaker turn, "You:" or
  * "Kortix:" on its own line and the visible text under it. Consecutive
  * messages of one role share one label. A tool call is one line, "Tool:
  * <name>" — never its input or output. Reasoning, synthetic and ignored text,
- * system messages, and file contents (`<file>` tags in a user message) are
- * dropped. The result is capped at `TRANSCRIPT_MAX_CHARS`, with
+ * system and context messages, and file contents (`<file>` tags in a user
+ * message) are dropped. The result is capped at `TRANSCRIPT_MAX_CHARS`, with
  * `TRANSCRIPT_TRUNCATED_LINE` after the cut; the cut never splits a surrogate
  * pair. `incomplete` (older history could not be loaded) puts
  * `TRANSCRIPT_INCOMPLETE_LINE` right under the title.
  */
-import type { MessageWithParts, Part, TextPart } from '@/lib/opencode/types';
-import { parseUserMessageText } from '@/lib/session/user-message';
+import type { SessionLogBlock, SessionLogMessage } from '@kortix/sdk';
+import { parseUserMessageText, userMessageCopyText } from '@/lib/session/user-message';
 
 /** The share sheet's practical ceiling: messaging apps choke far above this. */
 export const TRANSCRIPT_MAX_CHARS = 100_000;
@@ -37,52 +37,55 @@ function cutAt(text: string, max: number): string {
 
 const ROLE_LABEL = { user: 'You:', assistant: 'Kortix:' } as const;
 
-function visibleText(part: Part): string | null {
-  if (part.type !== 'text') return null;
-  const flags = part as TextPart & { ignored?: boolean };
-  if (flags.synthetic || flags.ignored) return null;
-  const value = part.text?.trim();
+/** A text block the harness did not write (ignored text is a harness block), trimmed; null when blank. */
+function visibleText(block: SessionLogBlock): string | null {
+  if (block.type !== 'text' || block.synthetic) return null;
+  const value = block.text.trim();
   return value ? value : null;
 }
 
-/** The lines one message contributes, in part order. Empty when it shows nothing. */
-function messageLines(message: MessageWithParts): string[] {
-  if (message.info.role === 'user') {
+/** The lines one message contributes, in block order. Empty when it shows nothing. */
+function messageLines(message: SessionLogMessage): string[] {
+  if (message.role === 'user') {
     // A user message's text parts are one prompt: parse them together, as the
     // thread does, so `<file>` bodies and system blocks never leak out.
-    const raw = message.parts.map(visibleText).filter((t): t is string => t !== null).join('\n');
-    const shown = parseUserMessageText(raw).text.trim();
+    const raw = message.blocks.map(visibleText).filter((t): t is string => t !== null).join('\n');
+    const parsed = parseUserMessageText(raw);
+    // A paste is the user's words: its text goes in, as Copy writes it.
+    const shown = userMessageCopyText(parsed.text, parsed.pasted).trim();
     return shown ? [shown] : [];
   }
   const lines: string[] = [];
-  for (const part of message.parts) {
-    if (part.type === 'tool') {
-      lines.push(`Tool: ${part.tool}`);
+  for (const block of message.blocks) {
+    if (block.type === 'tool_call') {
+      lines.push(`Tool: ${block.name}`);
       continue;
     }
-    const value = visibleText(part);
+    const value = visibleText(block);
     if (value) lines.push(value);
   }
   return lines;
 }
 
 /**
- * The transcript for `messages` (sync-store order), or null when no message
+ * The transcript for `messages` (store order), or null when no message
  * has anything to show. A blank `title` drops the header line.
  */
 export function buildTranscriptText(
   title: string | null | undefined,
-  messages: readonly MessageWithParts[],
+  messages: readonly SessionLogMessage[],
   { maxChars = TRANSCRIPT_MAX_CHARS, incomplete = false }: TranscriptTextOptions = {}
 ): string | null {
   const blocks: { role: 'user' | 'assistant'; lines: string[] }[] = [];
   for (const message of messages) {
-    if (message.info.system) continue;
+    // A system or context message is not the user's or the agent's words.
+    if (message.role === 'system' || message.kind === 'context') continue;
+    const role = message.role;
     const lines = messageLines(message);
     if (lines.length === 0) continue;
     const last = blocks[blocks.length - 1];
-    if (last && last.role === message.info.role) last.lines.push(...lines);
-    else blocks.push({ role: message.info.role, lines });
+    if (last && last.role === role) last.lines.push(...lines);
+    else blocks.push({ role, lines });
   }
   if (blocks.length === 0) return null;
 

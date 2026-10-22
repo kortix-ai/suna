@@ -1,9 +1,11 @@
 /**
  * Restore a migrated session's chat into its sandbox DURING provisioning, before
  * the sandbox is marked active — re-land of the module removed in 0d8c2cbe97
- * (#4592). Suna-account migrations (suna-migration-phases.ts) still write the
- * `legacy_migration` metadata + upload the opencode archive this module ships;
- * without it every migrated session opens with an empty chat.
+ * (#4592). Suna-account migrations (deleted in R6.5: prod logged no migration
+ * worker activity in the 30 days to 2026-10-07) wrote the `legacy_migration`
+ * metadata and uploaded the opencode archive this module ships; without it
+ * every migrated session opens with an empty chat. Prod still ran this restore
+ * on 2026-10-06, so it stays.
  *
  * Why before-active: the frontend, once it sees `active`, calls `ensure-opencode`
  * (opencode-mapping.ts) — the authoritative writer of opencode_session_id. It
@@ -12,7 +14,7 @@
  * runs through `beforeActive` (session-sandbox.ts), and additionally restores
  * the pin at the end so a lost race self-heals on the next open.
  *
- * Mechanics proven live on prod (project 79d76143, sandbox d265e212):
+ * Mechanics proven live on a prod project and sandbox:
  * download the archive captured at migration time, re-key its project ids to the
  * workspace's opencode projectID (opencode scopes session lists by project),
  * SIGKILL the server (pattern must match `opencode.exe serve`), swap the db in,
@@ -28,8 +30,6 @@ import { logger as appLogger } from '../lib/logger';
 import { getDaytona } from '../shared/daytona';
 import { db } from '../shared/db';
 import { downloadOpencodeArchive } from './legacy-migration-storage';
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface LegacyRehydrateSpec {
   sourceSandboxId: string;
@@ -202,7 +202,7 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
   if (spec.opencodeSessionId) {
     await db
       .update(projectSessions)
-      .set({ opencodeSessionId: spec.opencodeSessionId, updatedAt: new Date() })
+      .set({ runtimeSessionId: spec.opencodeSessionId, updatedAt: new Date() })
       .where(eq(projectSessions.sessionId, sessionId));
   }
 }
@@ -234,7 +234,7 @@ async function waitForOpencodeProjectId(
     } catch {
       /* opencode not up yet */
     }
-    await sleep(3000);
+    await Bun.sleep(3000);
   }
   return null;
 }

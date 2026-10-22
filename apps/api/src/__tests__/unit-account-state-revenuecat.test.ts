@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
+import * as realDb from '../shared/db';
+
 let account: any = null;
 let creditSummary: any = null;
 let autoTopup: any = null;
@@ -17,7 +19,6 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 mock.module('../billing/services/credits', () => ({
   getCreditSummary: () => creditSummary,
-  calculateTokenCost: () => 0,
 }));
 
 mock.module('../billing/services/auto-topup', () => ({
@@ -28,12 +29,23 @@ mock.module('../shared/platform-roles', () => ({
   isPlatformAdmin: async () => isAdmin,
 }));
 
+// The unit gate's DATABASE_URL is a closed port, and every read the service
+// makes beside the mocked row (instances, sessions, seats) went to it: ~11 s
+// of connect failures per file, one test past the 5 s default timeout. Every
+// such read returns no rows here.
+const noRows: unknown = new Proxy(() => undefined, {
+  get: (_target, property) =>
+    property === 'then' ? (resolve: (rows: unknown[]) => void) => resolve([]) : () => noRows,
+});
+mock.module('../shared/db', () => ({ ...realDb, db: noRows }));
+
 const { buildMinimalAccountState } = await import('../billing/services/account-state');
 
 describe('buildMinimalAccountState revenuecat', () => {
   beforeEach(() => {
     account = {
-      tier: 'tier_2_20',
+      tier: 'credits',
+      planMonthlyUsd: '20',
       provider: 'revenuecat',
       planType: 'monthly',
       stripeSubscriptionId: null,
@@ -70,8 +82,9 @@ describe('buildMinimalAccountState revenuecat', () => {
     expect(state.subscription.provider).toBe('revenuecat');
     expect(state.subscription.status).toBe('active');
     expect(state.subscription.subscription_id).toBe('rc_sub_123');
-    expect(state.tier.name).toBe('tier_2_20');
-    expect(state.can_claim_computer).toBe(true);
+    expect(state.tier.name).toBe('credits');
+    expect(state.plan?.monthly_usd).toBe(20);
+    expect((state as any).can_claim_computer).toBeUndefined();
   });
 
   test('reports past_due revenuecat subscription correctly', async () => {

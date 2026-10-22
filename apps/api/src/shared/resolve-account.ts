@@ -1,7 +1,7 @@
 import { accountMembers } from "@kortix/db";
 import { and, eq } from "drizzle-orm";
-import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { profileNameFromMetadata } from "../accounts/core/account-name";
 import { bootstrapPersonalAccount } from "../accounts/core/bootstrap-personal-account";
 import { syncLegacyStripeSubscription } from "../billing/services/legacy-stripe-sync";
 import { db } from "./db";
@@ -11,6 +11,7 @@ import {
 } from "./impersonation";
 import { getSupabase } from "./supabase";
 import { ttlMemo } from "./ttl-memo";
+import { isUuid } from "./validate";
 import { withTimeout } from "./with-timeout";
 
 // Legacy Stripe recovery sync — throttled to once per account per hour and
@@ -53,47 +54,18 @@ async function syncLegacySubscription(accountId: string): Promise<void> {
 }
 
 /**
- * Resolve the account a billing request should target.
+ * The account a billing request targets, from plain values: the caller's user
+ * id and the `account_id` the request named (query or body), if any. The HTTP
+ * reader is `resolveScopedAccountId` in `middleware/resolve-account.ts`.
  *
- * Multi-account users (one user, multiple Kortix accounts) need every billing
- * route to be account-scoped — otherwise mutating "Subscribe" or "Manage
- * billing" or even reading "account-state" silently target the user's FIRST
- * membership, which makes /accounts/<other>?tab=billing nonsensical.
- *
- * Resolution order:
- *   1. `?account_id=` (query) or `body.account_id` if provided → verify the
- *      caller is a member of that account, then return it. 403 on miss.
- *   2. Fall back to `resolveAccountId(userId)` — the user's primary
- *      membership. Preserves legacy behaviour for surfaces that haven't
- *      been migrated to send `account_id` yet.
- *
- * Pass `source: 'body'` for POST/PUT/PATCH/DELETE routes (we read the JSON
- * body once and look for `account_id`). Pass `source: 'query'` for GETs.
+ *   1. A named account → verify the caller is a member of it, then return it.
+ *      403 on miss.
+ *   2. Otherwise `resolveAccountId(userId)` — the user's primary membership.
  */
-export async function resolveScopedAccountId(
-  c: Context,
-  source: "query" | "body" = "query",
+export async function scopedAccountIdFor(
+  userId: string,
+  requested: string | undefined,
 ): Promise<string> {
-  const userId = c.get("userId") as string;
-
-  let requested: string | undefined;
-  if (source === "query") {
-    requested = c.req.query("account_id");
-  } else {
-    try {
-      // Use Hono's cached body parse (c.req.json()), NOT c.req.raw.clone().json():
-      // under @hono/zod-openapi the request-validation middleware consumes the raw
-      // body stream before the handler runs, so a clone of c.req.raw is empty by
-      // then → account_id would be missed → a non-member would resolve to their
-      // own account instead of being 403'd. c.req.json() returns the cached parse.
-      const body = await c.req.json();
-      const candidate = body?.account_id;
-      if (typeof candidate === "string" && candidate) requested = candidate;
-    } catch {
-      // No JSON body or malformed — that's fine, fall through.
-    }
-  }
-
   // Acting as an account: the target IS the scope. An explicit `account_id`
   // that disagrees is refused rather than honoured — a console still holding a
   // stale account id must not be able to steer a write out of the account the
@@ -117,6 +89,16 @@ export async function resolveScopedAccountId(
 
   if (!requested) {
     return resolveAccountId(userId);
+  }
+
+  // A malformed account id must not reach the uuid-typed account_members
+  // column: Postgres answers 22P02 and the request dies as an opaque 500
+  // (Better Stack pattern 97669531, KRTX-211). Answer exactly like a
+  // membership miss — 403, no DB read, no hint whether the id exists.
+  if (!isUuid(requested)) {
+    throw new HTTPException(403, {
+      message: "Not a member of the requested account",
+    });
   }
 
   const [member] = await db
@@ -184,20 +166,22 @@ export async function resolveAccountId(userId: string): Promise<string> {
   // genuine new-user signup working while never minting a self-membership for an
   // account that already exists.
   try {
-    // Resolve the signup email so the account gets a real name
-    // ("<email>'s Account") instead of the bare "Account" placeholder. A
+    // Resolve the signup email and profile name so the account gets a real,
+    // suggested name ("Ada's workspace" — never the email, KRTX-638). A
     // token-authed caller reaches here with userId == an existing account_id,
     // which is not an auth user — the lookup misses and the placeholder
     // fallback inside bootstrapPersonalAccount still applies (the insert is a
     // conflict no-op for those anyway).
     let email: string | null = null;
+    let fullName: string | null = null;
     try {
       const { data } = await getSupabase().auth.admin.getUserById(userId);
       email = data?.user?.email ?? null;
+      fullName = profileNameFromMetadata(data?.user?.user_metadata);
     } catch {
-      /* name falls back to the placeholder */
+      /* name falls back to the email-derived suggestion */
     }
-    await bootstrapPersonalAccount(userId, email);
+    await bootstrapPersonalAccount(userId, email, fullName);
   } catch (err) {
     console.warn("[resolve-account] Failed to initialize first account:", err);
   }

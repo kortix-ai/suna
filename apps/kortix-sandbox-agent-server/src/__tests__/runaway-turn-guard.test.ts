@@ -3,7 +3,7 @@ import {
   __resetRunawayGuardStates,
   MAX_CONSECUTIVE_REPEATS,
   observeIdleForRunaway,
-} from '../harness/open-code/runaway-turn-guard';
+} from '@/harness/open-code/runaway-turn-guard';
 
 describe('observeIdleForRunaway', () => {
   test('tolerates exactly MAX_CONSECUTIVE_REPEATS repeats of the same standing prompt; the next one aborts', async () => {

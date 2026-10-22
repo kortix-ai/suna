@@ -8,6 +8,8 @@
  * Files never go into the local message queue: `onEnqueue` carries text only.
  * A send with files while the agent is busy is refused with a toast, and the
  * draft and files stay in the composer for a send after the reply.
+ * Paste tiles are text: the host passes the draft with its pastes inline
+ * (`serializePromptWithPastes`), so a pastes-only draft sends, and queues.
  *
  * No model available (`isModelUnavailable`, KRTX-251): nothing is sent or
  * queued. The composer opens the connect-provider flow and keeps the draft.

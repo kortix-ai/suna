@@ -1,0 +1,332 @@
+/**
+ * Resolving a policy-gated connector call — the one implementation behind every
+ * surface a human decides on (the web cards via POST /approvals/:executionId,
+ * and the Slack approval card). Authorization is the CALLER's job: each surface
+ * proves a human with `mayResolveApproval` / `humanMayResolveApproval` first.
+ */
+import { connectorCalls, projectSessions, sessionLifecycleCommands } from '@kortix/db';
+import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { approvalNotExpired, isApprovalExpired } from '../../connectors/approval-expiry';
+import { approvalPreviewReviewable } from '../../connectors/args-preview';
+import { approvalExpiredAuditEvent, approvalResolvedAuditEvent } from '../../connectors/call-audit';
+import { logger } from '../../lib/logger';
+import { recordAuditEvent } from '../../shared/audit';
+import { db } from '../../shared/db';
+import { buildContinueSessionCommandValues, drainSessionLifecycleQueue } from '../session-lifecycle';
+import {
+  type ApprovalCaller,
+  type ApprovalRefusal,
+  type ApprovalTarget,
+  approvalTargetOf,
+  mayResolveApproval,
+} from './approval-authority';
+
+export type ApprovalDecision = 'approve' | 'deny';
+
+export interface PendingApprovalRow {
+  executionId: string;
+  sessionId: string | null;
+  actingUserId: string | null;
+  connectorId: string | null;
+  actionPath: string;
+  status: string;
+  approvedBy: string | null;
+  resolvedAt: Date | null;
+  resultSummary: unknown;
+  expiresAt: Date | null;
+}
+
+export async function loadApprovalRow(
+  projectId: string,
+  executionId: string,
+): Promise<PendingApprovalRow | null> {
+  const [row] = await db
+    .select({
+      executionId: connectorCalls.executionId,
+      sessionId: connectorCalls.sessionId,
+      actingUserId: connectorCalls.actingUserId,
+      connectorId: connectorCalls.connectorId,
+      actionPath: connectorCalls.actionPath,
+      status: connectorCalls.status,
+      approvedBy: connectorCalls.approvedBy,
+      resolvedAt: connectorCalls.resolvedAt,
+      resultSummary: connectorCalls.resultSummary,
+      expiresAt: connectorCalls.expiresAt,
+    })
+    .from(connectorCalls)
+    .where(and(eq(connectorCalls.executionId, executionId), eq(connectorCalls.projectId, projectId)))
+    .limit(1);
+  return row ?? null;
+}
+
+export function isPendingApproval(row: PendingApprovalRow): boolean {
+  return row.status === 'pending_approval' && !row.approvedBy && !row.resolvedAt;
+}
+
+export async function approvalTargetSession(
+  projectId: string,
+  row: Pick<PendingApprovalRow, 'sessionId' | 'actingUserId'>,
+): Promise<ApprovalTarget> {
+  if (!row.sessionId) return approvalTargetOf(row, undefined);
+  const [session] = await db
+    .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)))
+    .limit(1);
+  return approvalTargetOf(row, session);
+}
+
+/** The prompt that tells the agent what the human decided — and what they said. */
+export function approvalResumeText(actionPath: string, decision: ApprovalDecision, note: string): string {
+  if (decision === 'approve') {
+    return `Your pending approval to run ${actionPath} was approved — continue.${note ? `\n\nMessage from the approver:\n${note}` : ''}`;
+  }
+  return note
+    ? `Your request to run ${actionPath} was denied. Message from the approver:\n${note}`
+    : `Your request to run ${actionPath} was denied — continue without it.`;
+}
+
+export function normalizeApprovalNote(value: unknown): string {
+  return typeof value === 'string' ? value.trim().slice(0, 4_000) : '';
+}
+
+export type DecideOutcome = 'resolved' | 'already_resolved' | 'preview_unavailable' | 'expired';
+
+/**
+ * Apply one human decision. `resume: 'queue'` enqueues the durable
+ * `system:approval-resume` continuation in the same transaction as the
+ * resolve; `'caller'` leaves resuming to the surface (the Slack card resumes
+ * through a Slack-native turn so the thread shows the agent working).
+ */
+export async function decideConnectorApproval(input: {
+  projectId: string;
+  accountId: string;
+  row: PendingApprovalRow;
+  decision: ApprovalDecision;
+  note: string;
+  actorUserId: string;
+  auditSource: string;
+  resume: 'queue' | 'caller';
+  /** Update any chat card this decision left stale — the surface above owns
+   *  the presentation edge, so this module stays out of channels. Fire-and-
+   *  forget: a failed card update never fails the decision. */
+  updateStaleCard?: () => Promise<void>;
+}): Promise<DecideOutcome> {
+  const { projectId, row, decision, note } = input;
+  // Past its window the call is no longer decidable (connectors/approval-expiry.ts).
+  if (isApprovalExpired(row)) return 'expired';
+  const existingDetail =
+    typeof row.resultSummary === 'object' && row.resultSummary
+      ? (row.resultSummary as Record<string, unknown>)
+      : {};
+  // Blind approval stays impossible — but only when the row genuinely shows
+  // NOTHING. A shortened preview is still reviewable; see
+  // `approvalPreviewReviewable`.
+  if (decision === 'approve' && !approvalPreviewReviewable(existingDetail)) {
+    return 'preview_unavailable';
+  }
+
+  const detail = {
+    ...existingDetail,
+    decision,
+    decided_by: input.actorUserId,
+    ...(note ? { decision_note: note } : {}),
+  };
+  const callbackValues =
+    row.sessionId && input.resume === 'queue'
+      ? buildContinueSessionCommandValues({
+          source: 'system:approval-resume',
+          projectId,
+          accountId: input.accountId,
+          sessionId: row.sessionId,
+          actorUserId: input.actorUserId,
+          text: approvalResumeText(row.actionPath, decision, note),
+          executionId: row.executionId,
+          availableAt: new Date(),
+          idempotencyKey: `approval-resume:${row.executionId}`,
+        })
+      : null;
+  // Atomic resolve — guard the UPDATE on the still-pending state so two
+  // concurrent resolvers can't both win (TOCTOU): approve clears the gate to
+  // the terminal `ok` (the real retried call re-audits as its own row), deny
+  // flips it to `denied`. Both stamp approvedBy (= who resolved) + resolvedAt,
+  // so the row leaves the pending inbox. A lost race matches 0 rows.
+  const resolved = await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(connectorCalls)
+      .set({
+        status: decision === 'approve' ? 'ok' : 'denied',
+        approvedBy: input.actorUserId,
+        resolvedAt: new Date(),
+        resultSummary: detail,
+      })
+      .where(
+        and(
+          eq(connectorCalls.executionId, row.executionId),
+          eq(connectorCalls.projectId, projectId),
+          eq(connectorCalls.status, 'pending_approval'),
+          isNull(connectorCalls.approvedBy),
+          isNull(connectorCalls.resolvedAt),
+          approvalNotExpired,
+        ),
+      )
+      .returning({ id: connectorCalls.executionId });
+    if (updated.length > 0 && callbackValues) {
+      await tx
+        .insert(sessionLifecycleCommands)
+        .values(callbackValues)
+        .onConflictDoNothing({ target: sessionLifecycleCommands.idempotencyKey });
+    }
+    return updated;
+  });
+  // A lost race against the window closing reads as expired, not decided.
+  if (resolved.length === 0) return isApprovalExpired(row) ? 'expired' : 'already_resolved';
+
+  try {
+    await recordAuditEvent(
+      approvalResolvedAuditEvent({
+        accountId: input.accountId,
+        projectId,
+        sessionId: row.sessionId,
+        executionId: row.executionId,
+        actorUserId: input.actorUserId,
+        actionPath: row.actionPath,
+        connectorId: row.connectorId,
+        decision,
+        source: input.auditSource,
+      }),
+    );
+  } catch (error) {
+    console.error('[approvals] failed to record central audit event', error);
+  }
+
+  // Decision callback. The connector HTTP call returned the approval URL and
+  // ended; the durable command above is the callback, and this drain is the
+  // best-effort immediate delivery. The next exact call claims the approved
+  // request digest once. A changed payload creates a new approval instead.
+  if (callbackValues) {
+    void drainSessionLifecycleQueue({
+      limit: 1,
+      idempotencyKey: `approval-resume:${row.executionId}`,
+    }).catch(() => {});
+  }
+
+  // A card posted in a chat thread must not keep offering buttons for a call
+  // decided elsewhere. Lazy in effect only — the fire is best-effort and never
+  // blocks the resolve.
+  void input.updateStaleCard?.().catch((error) =>
+    console.warn('[approvals] approval card update failed', error),
+  );
+
+  return 'resolved';
+}
+
+export type ResolveApprovalResult =
+  | { outcome: DecideOutcome | 'not_found' }
+  | { outcome: 'forbidden'; reason: ApprovalRefusal };
+
+/**
+ * Load, gate and decide one pending call for a human caller: the checks every
+ * HTTP surface runs before `decideConnectorApproval`, in the order the single
+ * resolve route reports them (404, 409 expired, 409 resolved, 403).
+ */
+export async function resolveApprovalAs(input: {
+  projectId: string;
+  accountId: string;
+  executionId: string;
+  decision: ApprovalDecision;
+  note: string;
+  caller: ApprovalCaller;
+  auditSource: string;
+  updateStaleCard?: (row: PendingApprovalRow) => Promise<void>;
+}): Promise<ResolveApprovalResult> {
+  const row = await loadApprovalRow(input.projectId, input.executionId);
+  if (!row) return { outcome: 'not_found' };
+  if (isApprovalExpired(row)) return { outcome: 'expired' };
+  if (!isPendingApproval(row)) return { outcome: 'already_resolved' };
+  const target = await approvalTargetSession(input.projectId, row);
+  const verdict = mayResolveApproval({
+    ...input.caller,
+    targetSessionOrigin: target.origin,
+    targetSessionCreatedBy: target.createdBy,
+  });
+  if (!verdict.allowed) return { outcome: 'forbidden', reason: verdict.reason };
+  const outcome = await decideConnectorApproval({
+    projectId: input.projectId,
+    accountId: input.accountId,
+    row,
+    decision: input.decision,
+    note: input.note,
+    actorUserId: input.caller.callerUserId,
+    auditSource: input.auditSource,
+    resume: 'queue',
+    updateStaleCard: input.updateStaleCard && (() => input.updateStaleCard!(row)),
+  });
+  return { outcome };
+}
+
+const EXPIRY_BATCH = 200;
+
+/**
+ * Close every pending approval past its `expires_at`: status `expired`,
+ * `resolved_at` now, one audit event each, and each chat card replaced through
+ * `updateCard` (the caller owns the channels edge). Never resumes a session:
+ * the gateway does not wait on the decision. Batches of 200 until none is due.
+ */
+export async function expireDueApprovals(
+  updateCard?: (projectId: string, row: PendingApprovalRow) => Promise<void>,
+): Promise<number> {
+  let total = 0;
+  for (;;) {
+    const due = db
+      .select({ id: connectorCalls.executionId })
+      .from(connectorCalls)
+      .where(and(eq(connectorCalls.status, 'pending_approval'), lt(connectorCalls.expiresAt, sql`now()`)))
+      .limit(EXPIRY_BATCH)
+      .for('update', { skipLocked: true });
+    const rows = await db
+      .update(connectorCalls)
+      .set({ status: 'expired', resolvedAt: sql`now()` })
+      .where(
+        and(
+          inArray(connectorCalls.executionId, due),
+          eq(connectorCalls.status, 'pending_approval'),
+        ),
+      )
+      .returning({
+        accountId: connectorCalls.accountId,
+        projectId: connectorCalls.projectId,
+        executionId: connectorCalls.executionId,
+        sessionId: connectorCalls.sessionId,
+        actingUserId: connectorCalls.actingUserId,
+        connectorId: connectorCalls.connectorId,
+        actionPath: connectorCalls.actionPath,
+        status: connectorCalls.status,
+        approvedBy: connectorCalls.approvedBy,
+        resolvedAt: connectorCalls.resolvedAt,
+        resultSummary: connectorCalls.resultSummary,
+        expiresAt: connectorCalls.expiresAt,
+      });
+    for (const { accountId, projectId, ...row } of rows) {
+      try {
+        await recordAuditEvent(
+          approvalExpiredAuditEvent({
+            accountId,
+            projectId,
+            sessionId: row.sessionId,
+            executionId: row.executionId,
+            actionPath: row.actionPath,
+            connectorId: row.connectorId,
+          }),
+        );
+      } catch (error) {
+        logger.warn('[approvals] failed to record expiry audit event', { error: String(error) });
+      }
+      void updateCard?.(projectId, row).catch((error) =>
+        logger.warn('[approvals] expired approval card update failed', { error: String(error) }),
+      );
+    }
+    total += rows.length;
+    if (rows.length < EXPIRY_BATCH) return total;
+  }
+}

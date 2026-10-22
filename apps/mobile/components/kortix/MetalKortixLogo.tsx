@@ -39,7 +39,7 @@
  * unmounts. Both shaders draw for that one crossfade only.
  */
 import * as React from 'react';
-import { AccessibilityInfo, AppState, StyleSheet, View } from 'react-native';
+import { AppState, StyleSheet, View } from 'react-native';
 import {
   Canvas,
   FilterMode,
@@ -55,6 +55,7 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useDerivedValue,
+  useReducedMotion,
   useSharedValue,
   withTiming,
   type SharedValue,
@@ -117,7 +118,7 @@ interface MetalKortixLogoProps {
 }
 
 /** How long a style switch takes to crossfade. */
-export const LOGO_STYLE_CROSSFADE_MS = 260;
+const LOGO_STYLE_CROSSFADE_MS = 260;
 
 export function MetalKortixLogo(props: MetalKortixLogoProps) {
   const { size, style } = props;
@@ -190,7 +191,7 @@ function ShaderLogo({
   image,
   effect,
 }: MetalKortixLogoProps & { image: SkiaImage; effect: SkiaEffect }) {
-  const reduceMotion = useReduceMotion();
+  const reduceMotion = useReducedMotion();
   const isFocused = useIsFocused();
   const appActive = useAppActive();
   const running = isFocused && appActive && !reduceMotion;
@@ -253,8 +254,9 @@ function HeatmapCanvas({
 }
 
 function DitherCanvas({ size, tone, front, image, effect, sweep, angle }: CanvasProps & { front?: Rgba | null }) {
-  const box = symbolBox(size);
-  const colorFront: Rgba = front ?? LOGO_STYLE_COLORS[tone].dither.front;
+  // Memoized: a new array in the worklet's closure would rebuild the uniforms mapper.
+  const box = React.useMemo(() => symbolBox(size), [size]);
+  const colorFront: Rgba = React.useMemo(() => front ?? LOGO_STYLE_COLORS[tone].dither.front, [front, tone]);
   const imageWidth = image.width();
   const imageHeight = image.height();
 
@@ -314,22 +316,6 @@ function ShaderBox<U extends HeatmapUniforms | DitheringUniforms>({
       </Canvas>
     </View>
   );
-}
-
-function useReduceMotion(): boolean {
-  const [reduceMotion, setReduceMotion] = React.useState(false);
-  React.useEffect(() => {
-    let alive = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (alive) setReduceMotion(enabled);
-    });
-    const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => {
-      alive = false;
-      sub.remove();
-    };
-  }, []);
-  return reduceMotion;
 }
 
 function useAppActive(): boolean {

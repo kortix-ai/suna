@@ -101,6 +101,10 @@ let object: Uint8Array | undefined;
 const stored = new Map<string, Uint8Array>();
 /** A Storage DELETE that never answers. */
 let hangDelete = false;
+/** A Storage GET that fails as an outage (5xx), not as a missing object. */
+let failGet = false;
+/** A Storage write refused for size (the bucket limit is below the file). */
+let refuseWriteForSize = false;
 const bucketPath = (path: string) => path.slice(path.indexOf('/staged-files/'));
 const originalFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(
@@ -112,8 +116,16 @@ globalThis.fetch = Object.assign(
     storage.push(record);
     events.push(`${inTransaction ? 'tx:' : ''}storage:${request.method}`);
     if (path.startsWith('/storage/v1/object/upload/sign/')) {
+      // Storage refuses to sign over an existing object unless asked to upsert.
+      if (stored.has(bucketPath(path)) && request.headers.get('x-upsert') !== 'true') {
+        return Response.json({ statusCode: '409', error: 'Duplicate', message: 'The resource already exists' }, { status: 400 });
+      }
       // Storage answers relative to /storage/v1; storage-js prefixes its own base URL.
       return Response.json({ url: `${path.slice('/storage/v1'.length)}?token=signed-token` });
+    }
+    if (path.startsWith('/storage/v1/object/sign/')) {
+      if (!stored.has(bucketPath(path)) && !object) return Response.json({ statusCode: '404', error: 'not_found' }, { status: 400 });
+      return Response.json({ signedURL: `${path.slice('/storage/v1'.length)}?token=read-token` });
     }
     if (request.method === 'DELETE') {
       record.body = await request.json();
@@ -122,6 +134,7 @@ globalThis.fetch = Object.assign(
       return Response.json([]);
     }
     if (request.method === 'GET') {
+      if (failGet) return Response.json({ statusCode: '500', error: 'internal' }, { status: 500 });
       const bytes = stored.get(bucketPath(path)) ?? object;
       if (!bytes) return Response.json({ statusCode: '404', error: 'not_found' }, { status: 400 });
       return new Response(
@@ -133,6 +146,9 @@ globalThis.fetch = Object.assign(
           },
         }),
       );
+    }
+    if (refuseWriteForSize) {
+      return Response.json({ statusCode: '413', error: 'Payload too large', message: 'The object exceeded the maximum allowed size' }, { status: 400 });
     }
     const written = new Uint8Array(await request.arrayBuffer());
     record.body = written.byteLength;
@@ -159,6 +175,8 @@ beforeEach(() => {
   object = undefined;
   stored.clear();
   hangDelete = false;
+  failGet = false;
+  refuseWriteForSize = false;
   config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'direct';
   config.PROMPT_ATTACHMENT_CHUNK_BYTES = 65536;
 });
@@ -185,6 +203,25 @@ test('begin in direct mode returns a public-origin signed upload URL', async () 
     `POST /storage/v1/object/upload/sign/staged-files/${objectPath}`,
   ]);
   expect(JSON.stringify(handle)).not.toContain('supabase-kong');
+});
+
+test('begin stores unsupported MIME as binary and preserves native image/PDF and text/plain types', async () => {
+  for (const [declared, expected] of [
+    ['text/html', 'application/octet-stream'],
+    ['text/plain', 'text/plain'],
+    ['text/plain; charset=utf-8', 'text/plain'],
+    ['text/markdown', 'application/octet-stream'],
+    ['image/svg+xml', 'application/octet-stream'],
+    ['image/png; charset=binary', 'image/png'],
+    ['application/pdf', 'application/pdf'],
+  ]) {
+    const handle = await attachments.beginPromptAttachment(scope, {
+      filename: 'synthetic-file', mime: declared, size: 5,
+    });
+    expect(row?.mime).toBe(expected);
+    expect(handle.mime).toBe(expected);
+    expect(handle.upload.kind === 'direct' && handle.upload.headers['content-type']).toBe(expected);
+  }
 });
 
 test('begin with an existing attachment_id re-signs the same row and inserts nothing', async () => {
@@ -378,4 +415,46 @@ test('the chunk route is refused in direct mode', () => {
   expect(refusal).toMatchObject({ status: 409, code: 'attachment_upload_mode' });
   config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'chunked';
   expect(() => attachments.assertChunkedPromptAttachmentUpload()).not.toThrow();
+});
+
+// KRTX-2974: delivery and chunk assembly read through download(). A missing
+// object is permanent; telling the person to retry the same file never works.
+test('download answers a missing object with 404 attachment_not_found', async () => {
+  const { download } = await import('./prompt-attachment-storage');
+  await expect(download('a/b/c/file')).rejects.toMatchObject({ status: 404, code: 'attachment_not_found' });
+});
+
+test('download keeps the 503 retry for a storage outage', async () => {
+  const { download } = await import('./prompt-attachment-storage');
+  failGet = true;
+  await expect(download('a/b/c/file')).rejects.toMatchObject({ status: 503, code: 'attachment_storage_unavailable' });
+});
+
+// KRTX-2980: three more Storage calls that told the person to retry something
+// that can never work.
+test('re-signing an upload whose object already landed returns a target, not a 503', async () => {
+  const first = await attachments.beginPromptAttachment(scope, { filename: 'a.txt', mime: 'text/plain', size: 5 });
+  stored.set(`/staged-files/prompt-attachments/${scope.projectId}/${first.attachment_id}/file`, new Uint8Array(5));
+  const again = await attachments.beginPromptAttachment(scope, {
+    attachment_id: first.attachment_id,
+    filename: 'a.txt',
+    mime: 'text/plain',
+    size: 5,
+  });
+  expect(again.upload.kind).toBe('direct');
+});
+
+test('a signed download URL for a missing object answers 404 attachment_not_found', async () => {
+  const storageModule = await import('./prompt-attachment-storage');
+  await expect(storageModule.signedDownloadUrl('a/b/c/file', 60)).rejects.toMatchObject({ status: 404, code: 'attachment_not_found' });
+});
+
+test('a chunk Storage refuses for size answers 413 attachment_size_limit, not a retry', async () => {
+  config.PROMPT_ATTACHMENT_UPLOAD_MODE = 'chunked';
+  config.PROMPT_ATTACHMENT_CHUNK_BYTES = 4;
+  const handle = await attachments.beginPromptAttachment(scope, { filename: 'a.txt', mime: 'text/plain', size: 6 });
+  refuseWriteForSize = true;
+  await expect(
+    attachments.uploadPromptAttachmentChunk(scope, handle.attachment_id, 0, new Uint8Array([1, 2, 3, 4])),
+  ).rejects.toMatchObject({ status: 413, code: 'attachment_size_limit' });
 });

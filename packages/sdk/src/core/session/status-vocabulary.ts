@@ -68,14 +68,15 @@ export function isLegacyMigratedSession(session: Pick<ProjectSession, 'metadata'
 /**
  * The list status of a session. A pending review wins outright: a finished
  * session with items awaiting the human is actionable, and actionable outranks
- * finished.
+ * finished. Canonical idle activity settles an awake computer to done; an
+ * older server without activity retains the lifecycle fallback.
  *
  * A status this build has never seen reads `stopped`: `ProjectSessionStatus` is
  * a published union, so a newer API can send an eighth member, and "not live"
  * is true of it where `failed` would invent a failure.
  */
 export function sessionListStatus(
-  session: Pick<ProjectSession, 'status' | 'metadata'>,
+  session: Pick<ProjectSession, 'status' | 'metadata' | 'working'>,
   reviewCount = 0,
 ): SessionListStatus {
   if (reviewCount > 0) return 'needs-you';
@@ -85,7 +86,7 @@ export function sessionListStatus(
     case 'provisioning':
       return 'starting';
     case 'running':
-      return 'running';
+      return session.working?.state === 'idle' ? 'done' : 'running';
     case 'completed':
     case 'stopped':
       // A dormant migrated session is not "done": nothing ran; its chat is
@@ -134,7 +135,7 @@ export const SESSION_NOTICE = {
   /** A first prompt is waiting for a new computer. */
   starting: "Starting this session's computer. Your message sends automatically.",
   /** The computer sleeps while the session is idle; a send wakes it. */
-  idle: 'This session is idle. The next message you send wakes its computer and is delivered.',
+  idle: "This session's computer is asleep. Your next message wakes it up and is delivered.",
   /** The computer is waking. */
   waking: "Waking this session's computer. Messages you send are queued and go out automatically.",
 } as const;

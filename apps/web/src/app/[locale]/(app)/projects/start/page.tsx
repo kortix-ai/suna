@@ -1,20 +1,20 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import Loading from '@/components/ui/loading';
+import Loading from '@kortix/ui/loading';
 import { useAuth } from '@/features/providers/auth-provider';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { useSignedOutRedirect } from '@/lib/auth/use-signed-out-redirect';
-import { readLastProjectId, writeLastProjectId } from '@/lib/onboarding/last-project-cookie';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { readLastProjectId, writeLastProjectId } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { SignOutIcon } from '@phosphor-icons/react';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
-import { decideDoor } from '@/features/workspace/project-selector/project-selector-model';
+import { decideDoor } from '@kortix/ui/workspace/project-selector/project-selector-model';
 import { useProjectSelectorData } from '@/features/workspace/project-selector/use-project-selector-data';
 
 /**
@@ -27,8 +27,20 @@ import { useProjectSelectorData } from '@/features/workspace/project-selector/us
  */
 function withCurrentQuery(path: string): string {
   if (typeof window === 'undefined') return path;
-  const { search } = window.location;
-  return search && search !== '?' ? `${path}${search}` : path;
+  const params = new URLSearchParams(window.location.search);
+  // The door's own input, never carried on: `?accountId=` opens the account hub.
+  params.delete(REQUESTED_ACCOUNT_PARAM);
+  const search = params.toString();
+  return search ? `${path}?${search}` : path;
+}
+
+/** `/projects/start?account=<id>`: the account an account switch or an invite
+ *  accept asked for (KRTX-1731). */
+const REQUESTED_ACCOUNT_PARAM = 'account';
+
+function requestedAccountId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get(REQUESTED_ACCOUNT_PARAM) || null;
 }
 
 /**
@@ -69,6 +81,7 @@ export default function ProjectStartPage() {
         sections: data.sections,
         inviteCount: data.invites.length,
         rememberedProjectId: readLastProjectId(user?.id),
+        requestedAccountId: requestedAccountId(),
       });
       if (decision.kind === 'open') {
         // Heal the persisted selection: every account-scoped surface after this
@@ -77,6 +90,8 @@ export default function ProjectStartPage() {
         writeLastProjectId(user?.id, decision.projectId);
         decided.current = withCurrentQuery(`/projects/${decision.projectId}`);
       } else {
+        // An account switch that lands on the selector keeps the account chosen.
+        if (decision.accountId) setSelectedAccountId(decision.accountId);
         decided.current = withCurrentQuery('/projects');
       }
     }
@@ -145,12 +160,9 @@ function StartSignOutButton() {
 }
 
 /**
- * Failure stays on this route. Falling back to `/projects` would quietly make
- * the list the default destination again, which is exactly what this flow
- * removes — so the recovery is an explicit retry, and the secondary action
- * goes to `/new`, not `/projects`: the list is gone (Task 21), and `/projects`
- * is now a redirect back to THIS route, which would just re-run the same
- * failing resolve a beat later instead of offering anything new.
+ * Failure stays on this route with an explicit retry. `/projects` would
+ * re-run the same failing reads, so the secondary action goes to `/new`,
+ * which the user chooses here. No default path forwards a user to `/new`.
  */
 function ProjectStartError({ onRetry }: { onRetry: () => void }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');

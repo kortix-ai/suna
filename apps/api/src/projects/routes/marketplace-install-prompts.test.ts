@@ -46,7 +46,7 @@ describe('buildTemplateInstallPrompt', () => {
     // namespaced from the template id, not a bare "support-agent"
     expect(p).toContain('kortix-starter:support-agent');
     expect(p).toContain('$KORTIX_API_URL/marketplace/items/<part-id>/file?path=<target>');
-    expect(p).toContain('.kortix/opencode/agents/');
+    expect(p).toContain('\`@agents/x.md\` → \`agents/x.md\`');
   });
 
   test('wires the trigger from the show output and ships it DISABLED', () => {
@@ -103,3 +103,26 @@ describe('buildRegistryProjectInstallPrompt', () => {
     expect(p).not.toContain('Once merged, start a session');
   });
 });
+
+describe('buildRegistryProjectInstallPrompt on a kortix_version 3 project', () => {
+  const entry = { item: { name: 'kit', files: [{ path: 'agents/helper.md', content: 'You help.' }] } };
+
+  test('teaches the v3 layout: registries, per-agent grants, prompt_file, no harnesses folder', () => {
+    const p = buildRegistryProjectInstallPrompt(entry, 'kortix_version: 3\ndefault_agent: kortix\nagents:\n  kortix: {}\n');
+
+    expect(p).toContain('`prompt_file`');
+    expect(p).toContain('`skills:`');
+    expect(p).toContain('`extensions:`');
+    expect(p).toContain('no `harnesses/` folder');
+    expect(p).toContain('kortix validate');
+    expect(p).not.toContain('.kortix/opencode/agents/');
+  });
+
+  test('a v2 project keeps the v2 steps', () => {
+    const p = buildRegistryProjectInstallPrompt(entry, 'kortix_version: 2\ndefault_agent: kortix\nagents:\n  kortix: {}\n');
+
+    expect(p).toContain('.kortix/opencode/agents/');
+    expect(p).not.toContain('`prompt_file`');
+  });
+});
+

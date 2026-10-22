@@ -32,11 +32,11 @@ import { ToolScroll } from '../shared/surface';
 
 const NO_ARGS: string[] = [];
 
-export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function SessionSearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const query = (input.query as string) || '';
 
   const hits = useMemo(() => parseSessionSearchHits(output), [output]);
@@ -49,7 +49,7 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={MagnifyingGlassIcon}
       trigger={{ title: 'Searched sessions', subtitle: query ? `"${query}"` : '', args }}
       defaultOpen={defaultOpen}
@@ -113,7 +113,4 @@ export function SessionSearchTool({ part, defaultOpen, forceOpen, locked }: Tool
     </BasicTool>
   );
 }
-ToolRegistry.register('session_search', SessionSearchTool);
 ToolRegistry.register('session-search', SessionSearchTool);
-ToolRegistry.register('oc-session_search', SessionSearchTool);
-ToolRegistry.register('oc-session-search', SessionSearchTool);

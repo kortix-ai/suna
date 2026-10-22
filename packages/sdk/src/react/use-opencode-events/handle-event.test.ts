@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import type {
   AssistantMessage,
   Message,
@@ -8,7 +7,8 @@ import type {
   Session,
   ToolPart,
   UserMessage,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 
 // Mock the notification sink BEFORE importing the module under test, so
 // `handle-event.ts`'s `import { infoToast, notify* } from '../../platform/ui'`
@@ -74,7 +74,7 @@ const { createEventHandler } = await import('./handle-event');
 const { qk } = await import('../query-keys');
 const { useSyncStore } = await import('../../browser/stores/sync-store');
 const { useDiagnosticsStore } = await import('../../browser/stores/diagnostics-store');
-const { opencodeKeys } = await import('../use-opencode-sessions');
+const { runtimeKeys } = await import('../use-opencode-sessions');
 const { fileListKeys, gitStatusKeys, fileContentKeys, binaryBlobKeys } = await import(
   '../file-keys'
 );
@@ -105,6 +105,8 @@ function buildHandler(
      *  production does, for tests whose contract depends on the order in
      *  which the reducer and `handle-event.ts` see the same event. */
     realSyncStore?: boolean;
+    /** The Kortix session of the stream the handler serves. */
+    sessionId?: string;
   } = {},
 ) {
   const queryClient = new QueryClient();
@@ -154,6 +156,7 @@ function buildHandler(
     markSessionAbortedLocally: { current: markSessionAbortedLocally.fn },
     fetchLspDiagnosticsDebounced: { current: fetchLspDiagnosticsDebounced.fn },
     projectId: overrides.projectId,
+    sessionId: overrides.sessionId,
     reconcileSessionTail: overrides.reconcileSessionTail,
     userPartsGraceMs: overrides.userPartsGraceMs,
   });
@@ -334,13 +337,13 @@ describe('message.part.updated', () => {
 
 // ============================================================================
 // session.created / session.updated / session.deleted — surgical cache
-// mutations on the `opencodeKeys.sessions()` list + `opencodeKeys.session(id)`.
+// mutations on the `runtimeKeys.sessions()` list + `runtimeKeys.session(id)`.
 // ============================================================================
 
 describe('session lifecycle cache mutations', () => {
   test('session.created inserts into an existing session list, newest first', () => {
     const { handleEvent, queryClient } = buildHandler();
-    queryClient.setQueryData(opencodeKeys.sessions(), [
+    queryClient.setQueryData(runtimeKeys.sessions(), [
       session('ses_old', { time: { created: 1, updated: 1 } }),
     ]);
 
@@ -353,9 +356,9 @@ describe('session lifecycle cache mutations', () => {
       },
     });
 
-    const list = queryClient.getQueryData<Session[]>(opencodeKeys.sessions());
+    const list = queryClient.getQueryData<Session[]>(runtimeKeys.sessions());
     expect(list?.map((s) => s.id)).toEqual(['ses_new', 'ses_old']);
-    expect(queryClient.getQueryData(opencodeKeys.runtimeSession('ses_new'))).toMatchObject({
+    expect(queryClient.getQueryData(runtimeKeys.runtimeSession('ses_new'))).toMatchObject({
       id: 'ses_new',
     });
   });
@@ -367,21 +370,21 @@ describe('session lifecycle cache mutations', () => {
       type: 'session.created',
       properties: { sessionID: 'ses_new', info: session('ses_new') },
     });
-    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())).toEqual([
+    expect(queryClient.getQueryData<Session[]>(runtimeKeys.sessions())).toEqual([
       session('ses_new'),
     ]);
   });
 
   test('session.updated patches the individual session cache and re-sorts the list', () => {
     const { handleEvent, queryClient } = buildHandler();
-    queryClient.setQueryData(opencodeKeys.sessions(), [
+    queryClient.setQueryData(runtimeKeys.sessions(), [
       session('ses_a', {
         time: { created: 1, updated: 1 },
         title: 'Old title',
       }),
     ]);
     queryClient.setQueryData(
-      opencodeKeys.runtimeSession('ses_a'),
+      runtimeKeys.runtimeSession('ses_a'),
       session('ses_a', { title: 'Old title' }),
     );
 
@@ -397,18 +400,18 @@ describe('session lifecycle cache mutations', () => {
       },
     });
 
-    expect(queryClient.getQueryData<Session>(opencodeKeys.runtimeSession('ses_a'))?.title).toBe(
+    expect(queryClient.getQueryData<Session>(runtimeKeys.runtimeSession('ses_a'))?.title).toBe(
       'New title',
     );
-    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.[0].title).toBe(
+    expect(queryClient.getQueryData<Session[]>(runtimeKeys.sessions())?.[0].title).toBe(
       'New title',
     );
   });
 
   test('session.deleted removes the session from the list and clears its query cache', () => {
     const { handleEvent, queryClient } = buildHandler();
-    queryClient.setQueryData(opencodeKeys.sessions(), [session('ses_a'), session('ses_b')]);
-    queryClient.setQueryData(opencodeKeys.runtimeSession('ses_a'), session('ses_a'));
+    queryClient.setQueryData(runtimeKeys.sessions(), [session('ses_a'), session('ses_b')]);
+    queryClient.setQueryData(runtimeKeys.runtimeSession('ses_a'), session('ses_a'));
 
     handleEvent({
       id: 'evt_1',
@@ -416,21 +419,21 @@ describe('session lifecycle cache mutations', () => {
       properties: { sessionID: 'ses_a', info: session('ses_a') },
     });
 
-    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.map((s) => s.id)).toEqual([
+    expect(queryClient.getQueryData<Session[]>(runtimeKeys.sessions())?.map((s) => s.id)).toEqual([
       'ses_b',
     ]);
-    expect(queryClient.getQueryData(opencodeKeys.runtimeSession('ses_a'))).toBeUndefined();
+    expect(queryClient.getQueryData(runtimeKeys.runtimeSession('ses_a'))).toBeUndefined();
   });
 });
 
 // ============================================================================
 // session.compacted — the targeted refetch that is supposed to clear
-// `time.compacting` off `opencodeKeys.runtimeSession`. This ad hoc
+// `time.compacting` off `runtimeKeys.runtimeSession`. This ad hoc
 // `client.session.get()` call used to have NO retry and a `.catch(() => {})`
 // that swallowed any failure, leaving `time.compacting` stale forever
-// (`useOpenCodeSession` reads it with `staleTime: Infinity`, so nothing else
+// (`useRuntimeSession` reads it with `staleTime: Infinity`, so nothing else
 // ever refetches it). On failure it must now route through
-// `queryClient.invalidateQueries` — the SAME query `useOpenCodeSession`
+// `queryClient.invalidateQueries` — the SAME query `useRuntimeSession`
 // registers, with its own retry/backoff — instead of failing silently once.
 // ============================================================================
 
@@ -439,9 +442,9 @@ describe('session.compacted', () => {
     const { handleEvent, queryClient, stopCompaction } = buildHandler({
       getImpl: async () => ({ data: session('ses_a', { time: { created: 1, updated: 9 } }) }),
     });
-    queryClient.setQueryData(opencodeKeys.sessions(), [session('ses_a', { title: 'Old' })]);
+    queryClient.setQueryData(runtimeKeys.sessions(), [session('ses_a', { title: 'Old' })]);
     queryClient.setQueryData(
-      opencodeKeys.runtimeSession('ses_a'),
+      runtimeKeys.runtimeSession('ses_a'),
       session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
     );
 
@@ -455,9 +458,11 @@ describe('session.compacted', () => {
     await Promise.resolve();
 
     expect(
-      queryClient.getQueryData<Session>(opencodeKeys.runtimeSession('ses_a'))?.time.compacting,
+      queryClient.getQueryData<Session>(runtimeKeys.runtimeSession('ses_a'))?.time.compacting,
     ).toBeUndefined();
-    expect(queryClient.getQueryData<Session[]>(opencodeKeys.sessions())?.[0].time.compacting).toBeUndefined();
+    expect(
+      queryClient.getQueryData<Session[]>(runtimeKeys.sessions())?.[0].time.compacting,
+    ).toBeUndefined();
   });
 
   test('failure: a rejected refetch invalidates the runtime-session query instead of leaving it stale forever', async () => {
@@ -468,13 +473,13 @@ describe('session.compacted', () => {
     });
     // Seed a cache entry so `invalidateQueries` has something to mark.
     queryClient.setQueryData(
-      opencodeKeys.runtimeSession('ses_a'),
+      runtimeKeys.runtimeSession('ses_a'),
       session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
     );
     let invalidatedRuntimeSession = 0;
     const orig = queryClient.invalidateQueries.bind(queryClient);
     queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
-      if (JSON.stringify(opts.queryKey) === JSON.stringify(opencodeKeys.runtimeSession('ses_a')))
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(runtimeKeys.runtimeSession('ses_a')))
         invalidatedRuntimeSession++;
       return orig(opts);
     }) as typeof queryClient.invalidateQueries;
@@ -496,13 +501,13 @@ describe('session.compacted', () => {
       getImpl: async () => ({ data: undefined }),
     });
     queryClient.setQueryData(
-      opencodeKeys.runtimeSession('ses_a'),
+      runtimeKeys.runtimeSession('ses_a'),
       session('ses_a', { time: { created: 1, updated: 1, compacting: 5 } }),
     );
     let invalidatedRuntimeSession = 0;
     const orig = queryClient.invalidateQueries.bind(queryClient);
     queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
-      if (JSON.stringify(opts.queryKey) === JSON.stringify(opencodeKeys.runtimeSession('ses_a')))
+      if (JSON.stringify(opts.queryKey) === JSON.stringify(runtimeKeys.runtimeSession('ses_a')))
         invalidatedRuntimeSession++;
       return orig(opts);
     }) as typeof queryClient.invalidateQueries;
@@ -595,6 +600,63 @@ describe('session.created / session.updated — revert mirror (T22)', () => {
     });
 
     expect(useSyncStore.getState().sessionRevert.ses_b).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// A session stream's notifications name the KORTIX session. The runtime's id
+// (`ses_…`) built `/projects/<p>/sessions/ses_…`, a page that is not the
+// session, and never matched the session on screen.
+// ============================================================================
+
+describe('session stream notifications carry the Kortix session id', () => {
+  const PROJECT_ID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+  const KORTIX_ID = '11111111-2222-4333-8444-555555555555';
+
+  function streamHandler() {
+    const built = buildHandler({ projectId: PROJECT_ID, sessionId: KORTIX_ID });
+    built.queryClient.setQueryData(qk.project.session(PROJECT_ID, KORTIX_ID), {
+      session_id: KORTIX_ID,
+      runtime_session_id: 'ses_root',
+    });
+    return built;
+  }
+
+  test('a finished turn names the Kortix session', () => {
+    const { handleEvent } = streamHandler();
+    useSyncStore.getState().setStatus('ses_root', { type: 'busy' });
+    handleEvent({
+      id: 'evt_1',
+      type: 'session.status',
+      properties: { sessionID: 'ses_root', status: { type: 'idle' } },
+    });
+    expect(notifications).toEqual([
+      { kind: 'task-complete', sessionId: KORTIX_ID, sessionTitle: undefined },
+    ]);
+  });
+
+  test('a failed turn names the Kortix session', () => {
+    const { handleEvent } = streamHandler();
+    handleEvent({
+      id: 'evt_2',
+      type: 'session.error',
+      properties: { sessionID: 'ses_root', error: { name: 'UnknownError', data: { message: 'boom' } } },
+    } as never);
+    expect(notifications.at(-1)).toMatchObject({ kind: 'session-error', sessionId: KORTIX_ID });
+  });
+
+  // A sub-agent runs in its own runtime session on the same stream. Its end
+  // is not the turn's end: "Task complete" while the parent still runs, with a
+  // link to a page that does not exist, was wrong twice.
+  test('a sub-agent session of the stream raises nothing', () => {
+    const { handleEvent } = streamHandler();
+    useSyncStore.getState().setStatus('ses_child', { type: 'busy' });
+    handleEvent({
+      id: 'evt_3',
+      type: 'session.status',
+      properties: { sessionID: 'ses_child', status: { type: 'idle' } },
+    });
+    expect(notifications).toEqual([]);
   });
 });
 
@@ -776,7 +838,7 @@ describe('session.status', () => {
 });
 
 // ============================================================================
-// The Changes surface reads ONE query (`opencodeKeys.vcsDiffAll()`). Every
+// The Changes surface reads ONE query (`runtimeKeys.vcsDiffAll()`). Every
 // event that means "the files on disk or on this branch moved" must invalidate
 // it, or the tab badge and the diff panel go stale together.
 // ============================================================================
@@ -799,7 +861,7 @@ describe('vcs diff invalidation', () => {
   test('busy → idle invalidates the vcs diff — the agent just finished editing', () => {
     const { handleEvent, queryClient } = buildHandler();
     useSyncStore.getState().setStatus('ses_1', { type: 'busy' });
-    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+    const vcs = countInvalidations(queryClient, runtimeKeys.vcsDiffAll());
 
     handleEvent({
       id: 'evt_1',
@@ -813,7 +875,7 @@ describe('vcs diff invalidation', () => {
   test('session.idle invalidates the vcs diff', () => {
     const { handleEvent, queryClient } = buildHandler();
     useSyncStore.getState().setStatus('ses_2', { type: 'busy' });
-    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+    const vcs = countInvalidations(queryClient, runtimeKeys.vcsDiffAll());
 
     handleEvent({ id: 'evt_1', type: 'session.idle', properties: { sessionID: 'ses_2' } });
 
@@ -822,7 +884,7 @@ describe('vcs diff invalidation', () => {
 
   test('file.edited invalidates the vcs diff', () => {
     const { handleEvent, queryClient } = buildHandler();
-    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+    const vcs = countInvalidations(queryClient, runtimeKeys.vcsDiffAll());
 
     handleEvent({ id: 'evt_1', type: 'file.edited', properties: { file: 'src/a.ts' } });
 
@@ -831,7 +893,7 @@ describe('vcs diff invalidation', () => {
 
   test('session.diff invalidates the vcs diff, so the panel updates mid-turn', () => {
     const { handleEvent, queryClient } = buildHandler();
-    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+    const vcs = countInvalidations(queryClient, runtimeKeys.vcsDiffAll());
 
     handleEvent({
       id: 'evt_1',
@@ -844,7 +906,7 @@ describe('vcs diff invalidation', () => {
 
   test('vcs.branch.updated invalidates the vcs diff — a new branch is a new base', () => {
     const { handleEvent, queryClient } = buildHandler();
-    const vcs = countInvalidations(queryClient, opencodeKeys.vcsDiffAll());
+    const vcs = countInvalidations(queryClient, runtimeKeys.vcsDiffAll());
 
     handleEvent({ id: 'evt_1', type: 'vcs.branch.updated', properties: { branch: 'feat/x' } });
 
@@ -866,7 +928,7 @@ describe('turn end refreshes open file viewers', () => {
     const observer = new QueryObserver(queryClient, {
       queryKey,
       queryFn: async () => 'content',
-      staleTime: Infinity,
+      staleTime: Number.POSITIVE_INFINITY,
     });
     const unsubscribe = observer.subscribe(() => {});
     queryClient.setQueryData(queryKey, 'before the turn');
@@ -937,9 +999,9 @@ describe('turn end refreshes open file viewers', () => {
 
     handleEvent({ id: 'evt_1', type: 'session.idle', properties: { sessionID: 'ses_1' } });
 
-    expect(queryClient.getQueryCache().find({ queryKey: key, exact: true })!.state.isInvalidated).toBe(
-      true,
-    );
+    expect(
+      queryClient.getQueryCache().find({ queryKey: key, exact: true })!.state.isInvalidated,
+    ).toBe(true);
   });
 
   test('idle → idle leaves open file queries alone — nothing ran, nothing changed', () => {
@@ -1016,7 +1078,7 @@ describe('session.idle', () => {
 describe('session.error', () => {
   test('patches .error onto the last assistant message in the messages cache', () => {
     const { handleEvent, queryClient } = buildHandler();
-    const key = opencodeKeys.runtimeMessages('ses_1');
+    const key = runtimeKeys.runtimeMessages('ses_1');
     queryClient.setQueryData(key, [
       { info: userMessage('msg_u'), parts: [] },
       { info: assistantMessage('msg_a'), parts: [] },
@@ -1040,10 +1102,76 @@ describe('session.error', () => {
       {
         kind: 'session-error',
         sessionId: 'ses_1',
-        errorTitle: 'UnknownError',
+        errorTitle: 'boom',
         sessionTitle: undefined,
       },
     ]);
+  });
+
+  // The notification carried the error's class name ("APIError"), not the
+  // provider's sentence the transcript row shows.
+  test('the notification carries the readable sentence, never the class name', () => {
+    const { handleEvent } = buildHandler();
+    handleEvent({
+      id: 'evt_api',
+      type: 'session.error',
+      properties: {
+        sessionID: 'ses_1',
+        error: {
+          name: 'APIError',
+          data: {
+            message: "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.",
+            isRetryable: false,
+          },
+        },
+      },
+    } as never);
+    expect(notifications.at(-1)).toMatchObject({
+      kind: 'session-error',
+      errorTitle: "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account.",
+    });
+  });
+
+  // An `APIError`'s message is the HTTP status text; the gateway's sentence
+  // sits in `responseBody`. The transcript row reads that sentence, so the
+  // notification does too.
+  test('the gateway sentence wins over the HTTP status text', () => {
+    const { handleEvent } = buildHandler();
+    handleEvent({
+      id: 'evt_gateway',
+      type: 'session.error',
+      properties: {
+        sessionID: 'ses_1',
+        error: {
+          name: 'APIError',
+          data: {
+            message: 'Bad Request',
+            statusCode: 400,
+            isRetryable: false,
+            responseBody: JSON.stringify({
+              error: { message: 'Insufficient credits.', code: 'insufficient_credits' },
+            }),
+          },
+        },
+      },
+    } as never);
+    expect(notifications.at(-1)).toMatchObject({ errorTitle: 'Insufficient credits.' });
+  });
+
+  // A Stop ends the turn with `MessageAbortedError`. Every other viewer's tab
+  // got a "Session Error" notification for it, beside the transcript's
+  // "Stopped by <name>". An abort is the effect of a stop, not a failure.
+  test('an abort raises no session-error notification', () => {
+    const { handleEvent } = buildHandler();
+    handleEvent({
+      id: 'evt_abort',
+      type: 'session.error',
+      properties: {
+        sessionID: 'ses_1',
+        error: { name: 'MessageAbortedError', data: { message: 'The operation was aborted.' } },
+      },
+    });
+    expect(notifications).toEqual([]);
   });
 
   test('non-abort errors rehydrate real messages from the injected client', async () => {
@@ -1190,6 +1318,50 @@ describe('question.asked / question.replied / question.rejected', () => {
       properties: { sessionID: 'ses_1', requestID: 'q_2' },
     });
     expect(removeQuestion.calls).toEqual([['q_2']]);
+  });
+
+  // KRTX-1739: the session lists read Needs you from GET needs-input. The API
+  // closes a stored question before it returns the answer, so a refetch on the
+  // event reads it current instead of after the next 30 s poll.
+  test('each question event refetches the project needs-input summary', () => {
+    const { handleEvent, queryClient } = buildHandler({ projectId: 'proj_q' });
+    const needsInput = countInvalidations(queryClient, qk.project.needsInput('proj_q'));
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'question.asked',
+      properties: { id: 'q_1', sessionID: 'ses_1', questions: [] },
+    });
+    handleEvent({
+      id: 'evt_2',
+      type: 'question.replied',
+      properties: { sessionID: 'ses_1', requestID: 'q_1', answers: [] },
+    });
+    handleEvent({
+      id: 'evt_3',
+      type: 'question.rejected',
+      properties: { sessionID: 'ses_1', requestID: 'q_2' },
+    });
+
+    expect(needsInput.n).toBe(3);
+  });
+
+  test('a stream with no project refetches no needs-input summary', () => {
+    const { handleEvent, queryClient } = buildHandler();
+    const invalidated: unknown[] = [];
+    const real = queryClient.invalidateQueries.bind(queryClient);
+    queryClient.invalidateQueries = ((opts: { queryKey: unknown[] }) => {
+      invalidated.push(opts.queryKey);
+      return real(opts);
+    }) as typeof queryClient.invalidateQueries;
+
+    handleEvent({
+      id: 'evt_1',
+      type: 'question.replied',
+      properties: { sessionID: 'ses_1', requestID: 'q_1', answers: [] },
+    });
+
+    expect(invalidated).toEqual([]);
   });
 });
 
@@ -1379,11 +1551,21 @@ describe('a USER message.updated whose parts never arrive is re-read from the se
     });
     // `applySyncEvent` is a spy here; the message lands in the store as it
     // would have via the real one.
-    useSyncStore.getState().upsertMessage('ses_up', { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } } as never);
+    useSyncStore
+      .getState()
+      .upsertMessage('ses_up', {
+        id: 'msg_user_np',
+        sessionID: 'ses_up',
+        role: 'user',
+        time: { created: 1 },
+      } as never);
     handleEvent({
       id: 'evt_u',
       type: 'message.updated',
-      properties: { sessionID: 'ses_up', info: { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } } },
+      properties: {
+        sessionID: 'ses_up',
+        info: { id: 'msg_user_np', sessionID: 'ses_up', role: 'user', time: { created: 1 } },
+      },
     } as never);
     await new Promise((r) => setTimeout(r, 5));
     expect(calls).toEqual([['ses_up', 'sse-gap']]);
@@ -1397,11 +1579,26 @@ describe('a USER message.updated whose parts never arrive is re-read from the se
       },
       userPartsGraceMs: 0,
     });
-    useSyncStore.getState().upsertPart('msg_user_p', { id: 'prt_1', messageID: 'msg_user_p', sessionID: 'ses_up2', type: 'text', text: 'hi' } as never, 'ses_up2');
+    useSyncStore
+      .getState()
+      .upsertPart(
+        'msg_user_p',
+        {
+          id: 'prt_1',
+          messageID: 'msg_user_p',
+          sessionID: 'ses_up2',
+          type: 'text',
+          text: 'hi',
+        } as never,
+        'ses_up2',
+      );
     handleEvent({
       id: 'evt_u2',
       type: 'message.updated',
-      properties: { sessionID: 'ses_up2', info: { id: 'msg_user_p', sessionID: 'ses_up2', role: 'user', time: { created: 1 } } },
+      properties: {
+        sessionID: 'ses_up2',
+        info: { id: 'msg_user_p', sessionID: 'ses_up2', role: 'user', time: { created: 1 } },
+      },
     } as never);
     await new Promise((r) => setTimeout(r, 5));
     expect(calls).toEqual([]);
@@ -1443,5 +1640,68 @@ describe('session.next.revert.committed → tail-reconcile wiring (F2 consumer)'
       properties: { sessionID: 'ses_rw2', messageID: 'msg_1' },
     } as never);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('event-family routing characterization', () => {
+  test('dispatcher delivers each family to its observable side effect after reducer delivery', () => {
+    const {
+      handleEvent,
+      applySyncEvent,
+      queryClient,
+      addPermission,
+      fetchLspDiagnosticsDebounced,
+    } = buildHandler();
+    const message = {
+      id: 'evt_message',
+      type: 'message.updated',
+      properties: { sessionID: 'ses_1', info: assistantMessage('msg_1') },
+    } as Parameters<typeof handleEvent>[0];
+    const created = {
+      id: 'evt_session',
+      type: 'session.created',
+      properties: { sessionID: 'ses_new', info: session('ses_new') },
+    } as Parameters<typeof handleEvent>[0];
+    const permission = {
+      id: 'evt_permission',
+      type: 'permission.asked',
+      properties: {
+        id: 'perm_1',
+        sessionID: 'ses_1',
+        permission: 'bash',
+        patterns: ['*'],
+        metadata: {},
+        always: [],
+      },
+    } as Parameters<typeof handleEvent>[0];
+    const workspace = {
+      id: 'evt_workspace',
+      type: 'lsp.updated',
+      properties: {},
+    } as Parameters<typeof handleEvent>[0];
+    for (const event of [message, created, permission, workspace]) handleEvent(event);
+    expect(applySyncEvent.calls).toEqual([[message], [created], [permission], [workspace]]);
+    expect(queryClient.getQueryData<Session[]>(runtimeKeys.sessions())?.[0]?.id).toBe('ses_new');
+    expect(addPermission.calls).toHaveLength(1);
+    expect(notifications[0]?.kind).toBe('permission');
+    expect(fetchLspDiagnosticsDebounced.calls).toHaveLength(1);
+  });
+});
+
+describe('log.* frames (the session log)', () => {
+  beforeEach(() => useSyncStore.getState().reset());
+
+  test("go to the session log of the stream's own session, and not to the v1 reducer", () => {
+    const h = buildHandler({ sessionId: 'kses_stream' });
+    h.handleEvent({ type: 'log.state', properties: { generation: 1, session: { title: 'From the stream' } } } as never);
+    expect(useSyncStore.getState().sessionLogs.kses_stream?.session.title).toBe('From the stream');
+    expect(h.applySyncEvent.calls).toHaveLength(0);
+  });
+
+  test('are dropped by a handler that serves no single session', () => {
+    const h = buildHandler();
+    h.handleEvent({ type: 'log.state', properties: { generation: 1, session: { title: 'x' } } } as never);
+    expect(useSyncStore.getState().sessionLogs).toEqual({});
+    expect(h.applySyncEvent.calls).toHaveLength(0);
   });
 });

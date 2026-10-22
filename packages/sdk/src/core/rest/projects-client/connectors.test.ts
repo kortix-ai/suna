@@ -2,6 +2,10 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import {
   activateConnection,
+  checkMcpServerSignIn,
+  listConnectorMoves,
+  moveConnector,
+  addComputerToProject,
   createConnector,
   deleteConnector,
   discoverConnectionOAuth2,
@@ -28,6 +32,7 @@ import {
   type ConnectorConnectResult,
   connectorConnect,
   connectorFinalize,
+  deleteConnectorCredential,
   pipedreamConnect,
   pipedreamConnectConnection,
   pipedreamFinalize,
@@ -254,6 +259,29 @@ test('MCP authorization discovery and dynamic client registration', async () => 
   expect(registered.application.client_id).toBe('issued-client');
 });
 
+test('a catalogue app on a Kortix OAuth client: discovery says kortix_client, registration sends no endpoint', async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      discovery: {
+        resource_url: 'https://gmailmcp.googleapis.com/mcp/v1',
+        requires_authorization: true,
+        authorization_server: 'https://accounts.google.com',
+        kortix_client: true,
+        scopes: ['https://www.googleapis.com/auth/gmail.readonly'],
+        warnings: [],
+      },
+    },
+  };
+  const { discovery } = await discoverConnectionOAuth2Resource('P1', 'connection-2');
+  expect(discovery.kortix_client).toBe(true);
+
+  nextResponse = { status: 200, body: { application: { client_id: 'kortix-google', token_endpoint_auth_method: 'client_secret_post', has_client_secret: true, has_private_key: false } } };
+  const registration = { issuer: 'https://accounts.google.com', token_url: 'https://oauth2.googleapis.com/token' };
+  await registerConnectionOAuth2Client('P1', 'connection-2', registration);
+  expect(last().body).toEqual(registration);
+});
+
 test('connection methods use the canonical connection route contract', async () => {
   nextResponse = { status: 200, body: { connections: [] } };
   await listConnections('P1');
@@ -420,6 +448,37 @@ test('listConnectors GETs the project connectors list', async () => {
   expect(result.connectors[0]?.requestAuthType).toBe('hmac');
 });
 
+test('listConnectors carries lastError for a connector whose status is error', async () => {
+  const connector = {
+    slug: 'weather',
+    name: 'Weather',
+    provider: 'mcp',
+    status: 'error',
+    credentialMode: 'shared',
+    authorizationStrategy: 'project',
+    sensitive: false,
+    actions: [],
+    authSecret: null,
+    secretSet: true,
+  };
+  nextResponse = {
+    status: 200,
+    body: {
+      connectors: [
+        { ...connector, lastError: 'MCP tools/list failed: HTTP 401' },
+        { ...connector, slug: 'healthy', status: 'active', lastError: null },
+        // An older server sends no `lastError` key at all.
+        { ...connector, slug: 'older-server' },
+      ],
+    },
+  };
+  const result = await listConnectors('P1');
+  const reasons: Array<string | null | undefined> = result.connectors.map(
+    (entry) => entry.lastError,
+  );
+  expect(reasons).toEqual(['MCP tools/list failed: HTTP 401', null, undefined]);
+});
+
 test('listConnectors throws on a failed response', async () => {
   nextResponse = { status: 500, body: { message: 'boom' } };
   await expect(listConnectors('P1')).rejects.toBeTruthy();
@@ -579,36 +638,6 @@ test('getConnectorConfig GETs the config, url-encoding a slug with special chara
   expect(result.slug).toBe('my app/v1');
 });
 
-test('computer connector config exposes its assigned machine ids', async () => {
-  const tunnelIds = [
-    '11111111-1111-4111-8111-111111111111',
-    '22222222-2222-4222-8222-222222222222',
-  ];
-  nextResponse = {
-    status: 200,
-    body: {
-      slug: 'studio-computers',
-      name: 'Studio computers',
-      provider: 'computer',
-      platform: null,
-      credentialMode: 'shared',
-      authorizationStrategy: 'project',
-      app: null,
-      account: null,
-      url: null,
-      transport: null,
-      endpoint: null,
-      baseUrl: null,
-      spec: null,
-      tunnelIds,
-      auth: { type: 'none', in: 'header', name: null, prefix: null },
-      headers: {},
-    },
-  };
-  const result = await getConnectorConfig('P1', 'studio-computers');
-  expect(result.tunnelIds).toEqual(tunnelIds);
-});
-
 test('setConnectorName PUTs { name }', async () => {
   nextResponse = { status: 200, body: { ok: true } };
   await setConnectorName('P1', 'slack', 'Team Slack');
@@ -644,18 +673,91 @@ test('createConnector POSTs the draft as the raw body', async () => {
   expect(last().body).toEqual(draft);
 });
 
-test('createConnector sends a Computers profile machine allowlist', async () => {
-  nextResponse = { status: 200, body: { ok: true } };
-  const draft: import('./connectors').ConnectorDraftInput = {
-    slug: 'studio-computers',
-    name: 'Studio computers',
-    provider: 'computer',
-    tunnel_ids: ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222'],
-    create_only: true,
+// A paired computer is an ACCOUNT of the project's `computer` connector. The
+// connection view carries the machine it points at and its live status.
+const computerConnection: Connection = {
+  connection_id: 'connection-computer',
+  connector_alias: 'computer',
+  owner_type: 'member',
+  owner_id: 'user-1',
+  label: 'Studio Mac',
+  status: 'active',
+  is_default: true,
+  metadata: {},
+  tunnel_id: '11111111-1111-4111-8111-111111111111',
+  machine: {
+    online: true,
+    last_heartbeat_at: '2026-09-28T10:00:00.000Z',
+    hostname: 'studio-mac',
+    platform: 'darwin',
+  },
+};
+
+test('listConnections passes a computer account through with its machine status', async () => {
+  nextResponse = { status: 200, body: { connections: [computerConnection] } };
+  const [row] = (await listConnections('P1')).connections;
+  expect(row?.tunnel_id).toBe('11111111-1111-4111-8111-111111111111');
+  expect(row?.machine).toEqual({
+    online: true,
+    last_heartbeat_at: '2026-09-28T10:00:00.000Z',
+    hostname: 'studio-mac',
+    platform: 'darwin',
+  });
+});
+
+// The owner decides on the machine who may use it (Ask each time / Always /
+// Off). The view reports that choice so a UI or an agent can say "waiting for
+// you to allow access".
+test('listConnections passes the machine access state through', async () => {
+  const asking: Connection = {
+    ...computerConnection,
+    machine: {
+      ...computerConnection.machine!,
+      access: { mode: 'ask', granted_until: '2026-09-28T12:00:00.000Z' },
+    },
   };
-  await createConnector('P1', draft);
+  const off: Connection = {
+    ...computerConnection,
+    connection_id: 'connection-off',
+    machine: { ...computerConnection.machine!, access: { mode: 'off', granted_until: null } },
+  };
+  nextResponse = { status: 200, body: { connections: [asking, off] } };
+  const [first, second] = (await listConnections('P1')).connections;
+  expect(first?.machine?.access).toEqual({ mode: 'ask', granted_until: '2026-09-28T12:00:00.000Z' });
+  expect(second?.machine?.access?.mode).toBe('off');
+  // An agent that never reported its access state (npm 0.1.x) reads as null.
+  const legacy: NonNullable<Connection['machine']>['access'] = null;
+  expect(legacy).toBeNull();
+});
+
+test('addComputerToProject POSTs { tunnel_id, share } and returns the connection view', async () => {
+  nextResponse = { status: 200, body: computerConnection };
+  const result = await addComputerToProject('P1', {
+    tunnelId: '11111111-1111-4111-8111-111111111111',
+    share: 'project',
+  });
   expect(last().method).toBe('POST');
-  expect(last().body).toEqual(draft);
+  expect(last().url).toBe('http://test.local/projects/P1/computers');
+  expect(last().body).toEqual({
+    tunnel_id: '11111111-1111-4111-8111-111111111111',
+    share: 'project',
+  });
+  expect(result.connection_id).toBe('connection-computer');
+  expect(result.machine?.online).toBe(true);
+});
+
+test('addComputerToProject omits share so the server applies its private default', async () => {
+  nextResponse = { status: 200, body: computerConnection };
+  await addComputerToProject('P1', { tunnelId: '11111111-1111-4111-8111-111111111111' });
+  expect(last().body).toEqual({ tunnel_id: '11111111-1111-4111-8111-111111111111' });
+});
+
+test('addComputerToProject surfaces a refusal as an ApiError with the status', async () => {
+  nextResponse = { status: 409, body: { error: 'computer belongs to another account' } };
+  const error = await addComputerToProject('P1', {
+    tunnelId: '11111111-1111-4111-8111-111111111111',
+  }).catch((e: unknown) => e);
+  expect((error as { status?: number }).status).toBe(409);
 });
 
 test('discoverConnectorAuth POSTs a draft to the auth-discovery endpoint', async () => {
@@ -970,6 +1072,15 @@ test('setConnectorCredential PUTs a native OAuth2 client-credentials configurati
   expect(last().body).toEqual({ oauth2 });
 });
 
+// Storing a credential re-syncs an MCP connector. The response carries that
+// sync, so a caller can tell "stored" from "stored, and the tools load".
+test('setConnectorCredential returns the re-sync the credential ran', async () => {
+  const errors = [{ slug: 'linear', error: 'MCP tools/list failed: HTTP 401' }];
+  nextResponse = { status: 200, body: { ok: true, sync: { synced: 1, errors } } };
+  const result = await setConnectorCredential('P1', 'linear', 'sekret');
+  expect(result.sync?.errors).toEqual(errors);
+});
+
 test('pipedreamFinalize POSTs an empty body to the connect/finalize endpoint', async () => {
   nextResponse = { status: 200, body: { connected: true, accountId: 'acc_1' } };
   const result = await pipedreamFinalize('P1', 'github');
@@ -1188,11 +1299,21 @@ test('listConnectorAccounts reads the accounts a call may run as', async () => {
       connector: 'gmail',
       accounts: [
         { connection_id: 'c-1', label: 'Work', owner_type: 'project', is_default: true },
-        { connection_id: 'c-2', label: 'Personal', owner_type: 'member', is_default: false },
+        {
+          connection_id: 'c-2',
+          label: 'Personal',
+          owner_type: 'member',
+          is_default: false,
+          credential_rejected_at: '2026-10-19T00:00:00Z',
+        },
       ],
     },
   };
   const accounts = await listConnectorAccounts('P1', 'gmail');
+  // The upstream answered 401 to the stored credential: a person must replace it.
+  const rejectedAt: string | null | undefined = accounts[1].credential_rejected_at;
+  expect(rejectedAt).toBe('2026-10-19T00:00:00Z');
+  expect(accounts[0].credential_rejected_at).toBeUndefined();
   expect(calls[0].url).toBe('http://test.local/connectors/projects/P1/connectors/gmail/accounts');
   expect(calls[0].method).toBe('GET');
   expect(accounts.map((account) => account.label)).toEqual(['Work', 'Personal']);
@@ -1372,7 +1493,12 @@ test('listConnectorTools never asks for schemas — no caller of it reads inputS
     },
   };
   await listConnectorTools('P1');
-  expect(last()!.url).toBe('http://test.local/connectors/projects/P1/catalog');
+  // The title is the contract: this helper must OPT OUT of the schemas, or the
+  // server's include-by-default sends them and the summary path pays 439KB it
+  // never reads. Asserting the bare URL only proved the bug.
+  expect(last()!.url).toBe(
+    'http://test.local/connectors/projects/P1/catalog?include_schemas=false',
+  );
 });
 
 test('describeConnectorTool fetches ONE connector, with its schema, instead of the whole catalog', async () => {
@@ -1428,4 +1554,83 @@ test('describeConnectorTool: a malformed tool name (no dot) resolves to null wit
   const tool = await describeConnectorTool('P1', 'not-a-tool-name');
   expect(tool).toBeNull();
   expect(calls).toHaveLength(0);
+});
+
+test('deleteConnectorCredential DELETEs the connector credential (disconnect)', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  const result = await deleteConnectorCredential('P1', 'google sheets');
+  expect(last().url).toBe('http://test.local/connectors/projects/P1/connectors/google%20sheets/credential');
+  expect(last().method).toBe('DELETE');
+  expect(result).toEqual({ ok: true });
+});
+
+test('deleteConnectorCredential throws on a failed response', async () => {
+  nextResponse = { status: 409, body: { error: 'connector is shared' } };
+  await expect(deleteConnectorCredential('P1', 'gmail')).rejects.toBeTruthy();
+});
+
+test('connectorConnect forwards the redirect URIs the hosted flow returns to', async () => {
+  nextResponse = { status: 200, body: { connectUrl: 'https://connect.composio.dev/link/r' } };
+  await connectorConnect('P1', 'gmail', {
+    successRedirectUri: 'kortix://connect/success',
+    errorRedirectUri: 'kortix://connect/error',
+  });
+  expect(last().body).toEqual({
+    success_redirect_uri: 'kortix://connect/success',
+    error_redirect_uri: 'kortix://connect/error',
+  });
+
+  await connectorConnect('P1', 'gmail', { owner: 'project', successRedirectUri: 'kortix://ok' });
+  expect(last().body).toEqual({ owner: 'project', success_redirect_uri: 'kortix://ok' });
+});
+
+test('checkMcpServerSignIn POSTs the server URL and returns whether sign-in is one click', async () => {
+  nextResponse = { status: 200, body: { requires_sign_in: true, one_click: true } };
+  const check: import('./connectors').McpServerSignInCheck = await checkMcpServerSignIn(
+    'p1',
+    'https://mcp.example.test/mcp',
+  );
+  expect(check).toEqual({ requires_sign_in: true, one_click: true });
+  expect(last()).toEqual({
+    url: 'http://test.local/connectors/projects/p1/connectors/mcp-sign-in-check',
+    method: 'POST',
+    body: { url: 'https://mcp.example.test/mcp' },
+  });
+});
+
+test('listConnectorMoves GETs the Pipedream connectors and the Kortix app each moves to', async () => {
+  const move = {
+    slug: 'gmail',
+    name: 'Gmail',
+    provider: 'composio' as const,
+    app: 'gmail',
+    to: { slug: 'gmail', name: 'Gmail', icon: '/connector-icons/gmail.svg' },
+    connection_id: null,
+    signed_in: false,
+    accounts: 1,
+  };
+  nextResponse = { status: 200, body: { moves: [move] } };
+  const moves: import('./connectors').ConnectorMove[] = await listConnectorMoves('p1');
+  expect(moves).toEqual([move]);
+  const provider: 'pipedream' | 'composio' = moves[0]!.provider;
+  expect(provider).toBe('composio');
+  expect(last()).toEqual({ url: 'http://test.local/projects/p1/connector-moves', method: 'GET', body: undefined });
+});
+
+test('moveConnector POSTs the account to sign in on and returns the next step', async () => {
+  nextResponse = {
+    status: 200,
+    body: { status: 'sign_in', connection_id: 'c1', to: { slug: 'gmail', name: 'Gmail', url: 'https://gmailmcp.googleapis.com/mcp/v1' } },
+  };
+  const result: import('./connectors').ConnectorMoveResult = await moveConnector('p1', 'gmail work', { connectionId: 'c1' });
+  expect(result.status).toBe('sign_in');
+  expect(result.connection_id).toBe('c1');
+  expect(last()).toEqual({
+    url: 'http://test.local/projects/p1/connectors/gmail%20work/move',
+    method: 'POST',
+    body: { connection_id: 'c1' },
+  });
+  nextResponse = { status: 200, body: { status: 'moved' } };
+  await moveConnector('p1', 'gmail');
+  expect(last().body).toEqual({});
 });

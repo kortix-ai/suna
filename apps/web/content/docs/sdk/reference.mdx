@@ -1,1169 +1,678 @@
 ---
 title: SDK reference
-description: The full @kortix/sdk API surface — client methods, modules, turns, and distribution.
+description: "Every @kortix/sdk entry point, client member, project and session handle method, and framework-free module, grouped by domain."
 ---
 
-This page is the full `@kortix/sdk` API surface: every client method, the
-framework-free modules, the turns helpers, and how the package ships. Use
-[SDK](/docs/sdk) to get started and [Sessions](/docs/sdk/sessions) for the
-session lifecycle in depth.
+This page lists the public surface of `@kortix/sdk`: each entry point, each member of the client, each method of the project and session handles, and the framework-free modules. It is for developers who already have a client and need the exact method name and arguments. The client table gives the route prefix of each member. To install the package and run a first session, start at [SDK](/docs/sdk).
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const kortix = createKortix({ backendUrl: 'https://api.kortix.com/v1', getToken });
+
+const p = kortix.project(projectId);           // every project resource, id bound
+const s = kortix.session(projectId, sessionId); // one session, both ids bound
+await p.secrets.list();
+await s.send('Run the tests.');
+```
+
+Each client method calls the Kortix API. Session runtime methods reach the session's sandbox through the API at `{backendUrl}/p/…`. Route paths on this page are relative to `backendUrl`, which ends in `/v1`. Each route is in the [REST reference](https://api.kortix.com/v1/docs). A failed call throws an `ApiError` with `status`, `code` and `details`.
+
+## Entry points and stability
+
+| Import | Status | What it holds |
+| --- | --- | --- |
+| `@kortix/sdk` | Stable | The client and every framework-free module. It never imports React or `node:*`. It runs in browsers, Node 18 or later, Bun and edge runtimes. |
+| `@kortix/sdk/react` | Stable | The React hooks. It is the only entry that imports React. See [React](/docs/sdk/react). |
+| `@kortix/sdk/server` | Stable | Server helpers for Node and Bun (table below). It imports `node:async_hooks`. Never bundle it for a browser. |
+| `@kortix/sdk/wire-message-id` | Stable | `mintWireMessageId` and `WIRE_MESSAGE_ID` in one module with no imports. The root exports the same names. |
+| `@kortix/sdk/workspace-search` | Stable | `createWorkspaceSearchClient(fileClient)`: ranked file and folder search over a session workspace, with a cached index. `fileClient` has `listFiles(path)` and `findFiles(query, options?)`. |
+| `@kortix/sdk/message-queue` | Deprecated | Client-side prompt queue reducers. Kortix orders prompts on the server: use `s.send` or `useSession().send`. |
+| `@kortix/sdk/turns`, `/files`, `/session`, `/session/url`, `/projects-client`, `/platform-client`, `/api-client`, `/auth`, `/config`, `/event-stream`, `/opencode-client`, `/opencode-errors`, `/feature-flags`, `/fresh-sessions`, `/instance-routes` | Deprecated | Aliases. Each re-exports names that the root already exports. Import from the root. |
+| `@kortix/sdk/sync-store`, `/server-store`, `/sandbox-connection-store`, `/opencode-pending-store`, `/idb-sync-cache` | Deprecated | Aliases of the internal web-app stores. They have no replacement. Read session state with `useSession` from `@kortix/sdk/react`. |
+| `@kortix/sdk/internal/*` | Internal | State stores for the Kortix web app. Outside semver. Do not import. |
+
+Deprecated subpaths and names resolve until the next major version. The package also ships two browser bundles, `dist/kortix.esm.min.js` and `dist/kortix.global.js` (`window.Kortix`). See [Install](/docs/sdk#install).
+
+### `@kortix/sdk/server`
+
+| Export | What it does |
+| --- | --- |
+| `createScopedKortix(config)` | The same client as `createKortix`, but every call, including calls on `project()` and `session()` handles, runs with this config only. Create one per request in a server that acts for many people. |
+| `runWithKortix(config, fn)` · `getScopedConfig()` | Run `fn` with a request-scoped config (Node `AsyncLocalStorage`) · read the config in scope. |
+| `forwardKortixRequest(options)` | Forward one same-origin request to the Kortix API with an upstream token. It strips host credentials and keeps a streaming response body. |
+| `createKortixAuth(options)` | Sign in with Kortix for your own app: OAuth 2.1 with PKCE, an encrypted session cookie, refresh, sign-out, `/me` and a same-origin `/proxy`. Register the client with `kortix.iam.oauthClients.create`. See [Sign in with Kortix](/docs/sdk/auth#sign-in-with-kortix). |
+| `readAppViewer(request, options?)` | Inside a Kortix App: verify the signed `x-kortix-app-viewer` header with `KORTIX_APP_VIEWER_SECRET` and return the viewer, or `null`. |
+| `createAppViewerKortix(request, options)` | Inside a Kortix App: a client that calls the Kortix API as the viewer. |
+| `createKortixAppGuard(options)` | One viewer resolver for an App behind the Kortix gate or set to `public`. `requireViewer` and `requireGroup` return a viewer or a `Response`. |
+| `KortixAuthError`, `AppViewerUnavailableError`, `safeReturnTo`, `APP_VIEWER_HEADER`, `APP_VIEWER_TOKEN_HEADER`, `APP_VIEWER_SECRET_ENV`, `KORTIX_SESSION_SENTINEL` | Errors, a return-URL guard and the header and environment variable names. |
+
+App viewers are described in [Know who is looking](/docs/apps#know-who-is-looking).
 
 ## The client
 
-`createKortix(config)` returns one client. Every method is a typed call to
-the platform API. The `project(id)` and `session(pid, sid)` handles bind ids
-so you never repeat them.
+`createKortix(config)` returns one client. A second call with a different `backendUrl` or `getToken` re-points every earlier client and logs one warning. The options are in [Create the client](/docs/sdk#create-the-client).
+
+| Member | What it reaches | Routes |
+| --- | --- | --- |
+| `config` | The config in effect. | none |
+| `auth` | Headless sign-up, sign-in, magic link, OTP, OAuth, SSO, MFA, refresh, sign-out. | `/auth/…` |
+| `accounts` | Accounts, members, invites, API keys, connected apps, account secrets, branding, the audit log. | `/accounts/…` |
+| `iam` | Assignments, roles, permissions, groups, agent identities, OAuth clients, permission probes. | `/accounts/{accountId}/iam/…` |
+| `accountInvites` | The invitee's side of an account invite. | `/account-invites/…` |
+| `projects` | Project list, create, provision and model access. | `/projects/…` |
+| `project(projectId)` | The [project handle](#the-project-handle). | `/projects/{projectId}/…` |
+| `session(projectId, sessionId)` | The [session handle](#the-session-handle). | `/projects/{projectId}/sessions/{sessionId}/…` |
+| `connectors` · `connector(slug)` | Connector calls with a token that carries its project, such as a session token. Same methods as `p.connectors` (data plane) and `p.connector(slug)`. | `/connectors/…` |
+| `github` | GitHub App installations and repository links, per account. | `/projects/github/…` |
+| `gitBackend` | The instance git backend that holds Kortix-managed repositories. | `/projects/git/backend` |
+| `billing` | Plan, credit balance, transactions, usage, subscription. | `/billing/…`, `/usage/…` |
+| `notifications` | The caller's inbox, preferences, Web Push and device tokens. | `/notifications/…` |
+| `capture` | Kortix Capture: one account's recorded screen, actions and audio, and the device sign-in approval. | `/accounts/{accountId}/capture/…`, `/capture/…` |
+| `marketplace` | The public marketplace catalog and its sources. | `/marketplace/…` |
+| `sandboxShares` | Public share links for one sandbox port. | `/p/share` |
+| `connectStatus()` | Whether the managed OAuth connect provider is configured on this instance. | `/connectors/connect-status` |
+| `mobileClientPolicy()` | `{ minimum_version, store_url_ios, store_url_android }`. `null` means the operator set no value. Needs no token. | `/clients/mobile` |
+| `validateToken()` | Checks a pasted API key. Never throws. | `/accounts/me` |
+| `runtime()` | The runtime client of the process-wide active sandbox. Throws on a scoped client. Use `s.messages()` and the other session methods instead. | sandbox |
+
+### `kortix.projects`
+
+| Method | What it does |
+| --- | --- |
+| `list()` · `listForAccount(accountId)` | Projects you can open · projects in one account. |
+| `get(projectId)` · `detail(projectId)` | Summary · full detail with config. |
+| `provision(input)` | New project on a new Kortix-managed repository: `{ name, account_id?, seed_starter?, starter_template?: 'general-knowledge-worker' \| 'minimal', marketplace_items?, source_item_id?, default_branch?, icon?, icon_glyph?, idempotency_key? }`. |
+| `create(input)` · `createRepo(input)` | From an existing `repo_url` · on a new GitHub repository. |
+| `update(projectId, input)` · `archive(projectId)` | Change settings · archive. |
+| `llmCatalog(projectId)` · `modelPicker(projectId)` | Full model catalog · the compact list for a model picker. |
+| `modelAccess(projectId)` · `setModelAccess(projectId, { target: 'provider' \| 'model', id, enabled })` | Read · turn on or off one provider or model. Provider id `kortix` is the Kortix-managed models. Disabling the current default returns `409 cannot_disable_default`. |
+| `sandboxHealth(projectId)` · `sandboxTemplates(projectId)` | Sandbox build health · build templates. |
+| `sessions(projectId)` · `createSession(projectId, input?)` | Same as `p.sessions.list()` · `p.sessions.create()`. |
+
+Send `idempotency_key` (1 to 200 characters of `A–Z a–z 0–9 . _ : -`, one UUID per create) when a retry is possible. A repeat with the same key returns the first project (`201`, same `project_id`). A repeat while the first call still runs returns `409 provision_in_flight`: retry with the same key. The key identifies the attempt, not the payload.
+
+### `kortix.github` and `kortix.gitBackend`
+
+| Method | What it does |
+| --- | --- |
+| `github.getInstallation(accountId)` · `github.listInstallations(accountId)` | The account's GitHub App installation · installations the user can reach. |
+| `github.listLinkableInstallations(input)` · `github.linkInstallation(input)` · `github.saveInstallation(input)` · `github.deleteInstallation(accountId, installationId?)` | Installations the GitHub user may link · link · record · unlink one. |
+| `github.listRepositories(accountId, installationId?)` · `github.listRepositoryBranches(…)` | Repositories the installation sees · their branches and default branch. |
+| `github.linkRepository(input)` | Import a repository as a project. |
+| `github.replaceProjectRepository(input)` | Point a project at another repository. Send `expected_repo_url`: a stale value returns `409`. New sessions use the new repository. Running sessions keep their checkout. |
+| `github.storeUserToken(input)` | Store the user's GitHub authorization, needed to create a repository in a personal GitHub account. |
+| `gitBackend.get()` | `{ configured, kind: 'app' \| 'pat' \| null, owner }`. Any signed-in user can read it. |
+| `gitBackend.repositories({ search?, limit? })` | Repositories under that owner. Self-host operators only; others get `403`. |
+
+Repositories, branches and change requests are explained in [Git](/docs/git).
+
+### `kortix.marketplace` and `kortix.sandboxShares`
+
+| Method | What it does |
+| --- | --- |
+| `marketplace.items(options?)` · `marketplace.item(id)` · `marketplace.itemFile(id, path)` | Browse the catalog · one item · one file of an item. |
+| `marketplace.marketplaces()` · `marketplace.featured()` | All marketplaces · featured marketplaces. |
+| `marketplace.sources.list()` · `.add(input)` · `.remove(id)` | Marketplace sources. |
+| `sandboxShares.list(sandboxId)` · `.create({ sandboxId, port, ttl?, label? })` · `.revoke(sandboxId, token)` | Public share links for one sandbox port. |
+
+To install an item into a project, see [Install from the marketplace](/docs/project#install-from-the-marketplace).
+
+## Accounts, IAM, billing and notifications
+
+### `kortix.auth`
+
+Methods: `signUp`, `signInWithPassword`, `sendMagicLink`, `verifyOtp`, `signInWithProvider`, `exchangeCode`, `refresh`, `resetPassword`, `updatePassword`, `updateUserMetadata`, `signInWithSso`, `mfa.enroll`, `mfa.challenge`, `mfa.verify`, `mfa.unenroll`, `user`, `signOut`.
+
+`session(options)` returns a session store. It saves the tokens through a storage adapter you supply. It refreshes them 60 seconds before they expire. Pass its `getToken` to `createKortix`. See [Headless sign-in](/docs/sdk/auth#headless-sign-in).
+
+### `kortix.accounts`
+
+| Method | What it does |
+| --- | --- |
+| `list()` · `get(accountId)` · `create({ name })` · `updateName(accountId, name)` · `leave(accountId)` | Accounts you belong to, and their lifecycle. |
+| `members(accountId)` · `invite(accountId, input)` · `updateMemberRole(accountId, userId, role)` · `removeMember(accountId, userId)` | Members and their account role. |
+| `invites(accountId)` · `cancelInvite(accountId, inviteId)` · `resendInvite(accountId, inviteId)` | Pending invites. |
+| `tokens.list(accountId?, { mine? })` · `tokens.create({ accountId?, name, expiresAt?, projectId? })` · `tokens.revoke(tokenId, accountId?)` | Personal access keys (`kortix_pat_…`). `mine: true` lists only yours. `projectId` binds the key to one project. |
+| `connectedApps.list()` · `connectedApps.revoke(…)` | OAuth and MCP clients this person approved, across all accounts. Route `/oauth/grants`. |
+| `secretResources.list` · `.create` · `.rotate` · `.retry` · `.remove` · `.grant` · `.revoke` · `.setAccess` | Account-level provider secrets and which projects may use them. |
+| `branding.get(accountId)` · `.update(accountId, { app_name })` · `.uploadAsset(accountId, kind, file)` · `.removeAsset(accountId, kind)` · `.reset(accountId)` | Organization branding. `kind`: `logo`, `icon`, `favicon`, or `logo_dark`, `icon_dark`, `favicon_dark`. |
+| `audit.log(accountId, filters?)` · `audit.export(accountId, { format: 'csv' \| 'jsonl', …filters })` | The audit log, filtered by project, session, actor, source, outcome, request, resource, action or time · the same events as a file. |
+| `audit.activity(accountId, { since?, until?, projectId?, actor?, client?, actorType?, credentialKind? })` | Who was active and how often, per UTC day: per user, the active days, distinct active hours and events. `client: 'browser'` keeps only a person in a web page. |
+| `audit.webhooks.list` · `.create` · `.update` · `.remove` | Signed webhooks that stream audit events to a SIEM. |
+
+Account features are explained in [Accounts & access](/docs/accounts), keys in [API keys and tokens](/docs/accounts/identity#api-keys-and-tokens).
+
+### `kortix.iam`
+
+Kortix has one grant record, the assignment: one principal (`user`, `group`, `service_account`, `pending` or `project`), one role, one scope (`account` or one `project`), an optional object (`agent`, `skill`, `secret`, `app`, `trigger` or `connection`) and an optional `expiresAt`.
+
+| Method | What it does |
+| --- | --- |
+| `assignments.list(accountId, filter?)` | Live assignments. Filter by `principalType` with `principalId`, `scopeType`, `scopeId`, `objectType`, `objectId`, `roleId`, `includeExpired`. |
+| `assignments.create(accountId, { principal, scope, object?, expiresAt?, roleId \| roleKey })` · `assignments.revoke(accountId, assignmentId)` | Grant · revoke. `roleKey` names a built-in role: `owner`, `admin`, `member`, `manager`, `agent-user`. |
+| `permissions.list(accountId)` · `permissions.forRole(…)` | The permission catalog as data (`action`, `scope_type`, `resource_type`, `delegable`, `description`, `area`, `level`, `implies`) · one role's permissions. |
+| `roles.list` · `.create` · `.update` · `.setPermissions` · `.remove` · `.usage` | Custom roles. Without the account's `rbac` entitlement the API returns `402 entitlement_required`. |
+| `groups.list` · `.get` · `.create` · `.update` · `.remove` · `groups.members.list` · `.add` · `.remove` | Groups and their members. |
+| `agentIdentities(accountId)` | Agent principals, for binding a role to an agent. |
+| `oauthClients.list` · `.get` · `.create` · `.update` · `.rotateSecret` · `.remove` | Sign in with Kortix clients. The secret is returned once, on create and on rotate. |
+| `can(accountId, userId, { action, resourceType?, resourceId? })` · `canBatch(accountId, userId, probes)` | Ask whether a principal may do one action · many, in one round trip, answers in input order. |
+
+Gate a control in your UI with `can` or `canBatch` on the action the route checks, not on a role name. `PROJECT_ACTIONS` (root export) names every project action the API answers about, for example `PROJECT_ACTIONS.PROJECT_GITOPS_MERGE` is `project.gitops.merge`. The API answers an unknown action with `400`. For triggers, probe `TRIGGER_CONTROL_ACTIONS` and pass the result to `triggerControlsFrom(cans)`: it returns `{ canCreate, canFire, canUpdate, canDelete }`, one flag per trigger route, each `false` until the probe allows it. Create, update and delete also need `project.write`, because their routes load the project for write first.
+
+For change requests and the review inbox, probe `REVIEW_CONTROL_ACTIONS`. `changeRequestControlsFrom(cans)` returns `{ canOpen, canMerge, canClose }`: open needs `project.write` + `project.gitops.push`, merge needs `project.write` + `project.gitops.merge`, close and reopen need `project.write`. `reviewVerdictAllowed(item, verdict, cans)` says whether to offer one verdict on one review item. Approving a change request merges it, so it follows `canMerge`. Every other verdict on a change request or a native item needs `project.write` + `project.review.act`. A connector call offers approve and reject to the viewer the API lets decide it: a project manager, or the person who launched the session when a person started it (not an API token or a service account). The API says so per call: `can_resolve` on each `SessionAuditAction` (`getSessionAudit`, and the session snapshot's `audit` leg), and `canResolve` on a connector call's review action (`mapApiReviewItem`). Show Approve and Deny only when it is not `false`. A viewer the API would refuse gets the review item with status `waiting`. `resolvers` (both shapes) says who decides instead: `managers` for a session started with an API token or a service account, else `managers_and_launcher`.
+
+### `kortix.accountInvites`
+
+`listMine()` lists pending invites addressed to your email. `describe(inviteId)`, `accept(inviteId)` and `decline(inviteId)` act on one invite. They need no account membership.
+
+`acceptAndLand(inviteId, invite?)` accepts and returns `{ accepted, landing }`. `landing` is where to open: `{ kind: 'project', projectId, accountId }` for the first project the invite granted, or `{ kind: 'account', accountId }` for a workspace invite. Pass the invite you already read (from `listMine()` or `describe()`): an accept that grants nothing, such as an admin invite, then lands in the first project the invite names. `accountInviteLanding(accepted, invite?)` is the same rule without the request, for an invite accepted earlier.
+
+### `kortix.billing`
+
+| Method | What it does |
+| --- | --- |
+| `accountState(accountId?)` · `accountStateMinimal(accountId?)` | Plan, credit balance and limits · the short form. |
+| `creditBreakdown(accountId?)` · `transactions(params?)` · `transactionsSummary(params?)` | Credit balance by bucket · transaction history · totals. |
+| `usageHistory(params?)` · `usageRollup(params?)` | Usage over time · usage grouped by model, provider or day. |
+| `sessionCosts.list({ accountId?, projectId?, limit?, offset? })` · `sessionCosts.get(sessionId, options?)` | Usage records per session · one session's model and compute ledger. |
+| `tierConfigurations()` | The named amounts (Starter, Pro, Scale) and the minimum and maximum monthly amount. |
+| `setPlan({ monthlyUsd, successUrl, cancelUrl, locale?, accountId? })` | Subscribe to, or change, the credits plan. `monthlyUsd` is a whole dollar from 20 to 10,000; one credit is one cent. It resolves to `{ status: 'checkout_created', checkout_url }` when the account has no paid subscription (redirect there), `{ status: 'updated' \| 'unchanged' }` when an existing subscription changed in place, or `{ status: 'payment_pending', client_secret }` when a raise needs payment confirmation. A raise is charged now and grants the prorated credits at once; a cut applies at the next renewal. React: `useSetBillingPlan()` from `@kortix/sdk/react`. |
+| `subscription.createPortalSession(returnUrl, accountId?)` · `.cancel(feedback?, accountId?)` · `.reactivate(accountId?)` | Manage the subscription. `cancelScheduledChange` and `prorationPreview` are retired and reject with `ENDPOINT_RETIRED`. |
+| `credits.purchase(input)` · `credits.autoTopupSettings(accountId?)` · `credits.configureAutoTopup(input)` | Buy credits · read and set auto top-up. |
+
+Before you render a purchase control, ask `canOfferTopup(state)` (root export) about the account state: `true` only when the plan may buy credits and the caller may change billing. `canManageBilling(state)` answers the second half alone. Both return `false` while `state` is `undefined` or `null`, so a member never sees a control the API answers with `403`.
+
+Plans and credits are explained in [Plans & credits](/docs/credits).
+
+### `kortix.notifications`
+
+Every method needs a person's credential. A service account gets `403`.
+
+| Method | What it does |
+| --- | --- |
+| `list({ limit?, before? }, { signal? })` | Newest rows first: `{ notifications, unread_count, next_before }`. `limit` is 1 to 50, default 20. Pass `next_before` as `before` for the next page. |
+| `markRead({ ids })` · `markRead({ all: true })` · `markRead({ sessionId })` | Mark 1 to 100 rows, all rows, or one session's rows read. Returns `{ updated, unread_count }`. |
+| `preferences()` · `updatePreferences({ kinds })` | Push and email per kind: `{ kinds, email_available }`. A patch changes only the kinds it names. |
+| `webPushPublicKey()` · `registerWebPushSubscription({ endpoint, keys })` · `unregisterWebPushSubscription(endpoint)` | Web Push for this browser. Registration needs a browser sign-in: a personal access key gets `403`. |
+| `registerDeviceToken(input)` · `unregisterDeviceToken(token)` · `releaseDeviceToken(token, { backendUrl? })` | A native app's push token. `releaseDeviceToken` needs no credential: a signed-out app removes its token. |
+
+Kinds (`INBOX_NOTIFICATION_KINDS`): `turn_done`, `turn_error`, `question`, `permission`, `shared`, `automation_failed`, `automation_recovered`. Defaults are in `DEFAULT_NOTIFICATION_PREFERENCES`. The inbox writes rows only for projects with the `notification_center` feature flag on. The flag is off by default. While it is off, `s.watch()` and `s.setWatch()` return `403 feature_disabled`. The session handle adds `watch()`, `setWatch(watching)` and `presence(…)`. See [Notifications](/docs/work/sessions#notifications).
+
+### `kortix.capture`
+
+Capture belongs to the account, not to a project. `kortix.capture.account(accountId)` binds one account. Every account call answers `403 capture_disabled` while Capture is off for the account. Each member reads their own devices and timeline. Reading another member needs the `capture.read_all` permission and writes a `capture.member_view` audit event. Account owners and admins have it by default. See [Capture](/docs/capture).
+
+| Method | What it does |
+| --- | --- |
+| `account(id).workspace.get()` · `.workspace.setEnabled(on)` | `{ account_id, enabled, can_read_all, can_manage, updated_at }` · turn Capture on or off (`capture.manage`). |
+| `account(id).devices.list({ userId?, scope? })` · `.devices.revoke(deviceId)` · `.devices.assetUrl(deviceId, name)` | Devices with live status (`recording`, `paused`, `permission_missing`, `not_recording`, or `offline` after 120 s without a status). `scope: 'account'` lists every member's devices. · Revoke a device's token. · A 5-minute signed URL of an action screenshot. |
+| `account(id).policy.get()` · `.policy.set(policy)` | The account's capture policy: layers, privacy, retention, recording, notice. A write needs `capture.manage`. |
+| `account(id).timeline.get(query?)` · `.timeline.items(query?)` · `.timeline.days(query?)` | App and window runs for a UTC day or a window up to 31 days · frames, actions and audio in a window, 500 of each · the days with recorded items, newest first. |
+| `account(id).search({ q, kinds?, app?, from?, to?, limit?, userId?, scope? })` | Full-text search over on-screen text, actions and audio, newest first. |
+| `account(id).frame(frameId, { userId? })` · `.media(chunkId, { userId? })` | One frame with its on-screen text and a 5-minute signed URL of its video · signed URLs of an item's video and audio. |
+| `deviceGrant(userCode)` · `approveDevice(userCode, accountId?)` · `denyDevice(userCode)` | The person's half of the device sign-in. |
+| `me.search(query)` · `me.timeline(query)` · `me.frame(frameId)` | Reads for the person the token acts for, in the token's account. A credential that acts for no person gets `403 capture_no_human`. |
+
+React (`@kortix/sdk/react`): `useCaptureWorkspace`, `useSetCaptureEnabled`, `useCaptureDevices` (polls every 10 s), `useRevokeCaptureDevice`, `useCapturePolicy`, `useSetCapturePolicy`, `useCaptureDays`, `useCaptureTimeline`, `useCaptureTimelineItems`, `useCaptureSearch`, `useCaptureChunkMedia`, `useCaptureDeviceGrant`, `useApproveCaptureDevice`, `useDenyCaptureDevice`. Each account hook takes the account id first. A `null` id sends no request.
+
+## The project handle
+
+`kortix.project(projectId)` returns `p`, with the project id bound to every method. Creating the handle sends no request.
+
+### Project
+
+| Method | What it does |
+| --- | --- |
+| `get()` · `detail()` · `update(input)` · `archive()` | Read · full detail with config · change settings · archive. |
+| `llmCatalog()` · `modelPicker()` · `modelAccess()` · `setModelAccess(change)` · `sandboxHealth()` | As on `kortix.projects`, project id bound. |
+| `validateManifest(raw)` | Validate `kortix.yaml` text on the server, with the schema a merge uses. |
+| `audit(options?)` | The project's audit timeline. |
+| `skills.create(input)` | Write a skill file to the default branch. |
+| `attachments.upload(…)` · `.delete(…)` · `.createController(options?)` | Prompt attachments, and a controller that tracks uploads for a composer. |
+| `onboardingComplete(…)` | Mark project onboarding done. |
+| `connector(slug)` · `session(sessionId)` | One connector handle · the session handle. |
+
+### Sessions
+
+| Method | What it does |
+| --- | --- |
+| `list(options?)` | One page of sessions as an array. |
+| `listPage(options?)` | One page plus `next_cursor`. A cursor is valid only for the filters that issued it. |
+| `create(input?)` | Create a session. The sandbox starts in the background. See [Create a session](/docs/sdk/sessions#create-a-session). |
+| `ensureWarm()` | Pre-create the session a present user is about to start. Ignore failures. |
+
+| Option | Values |
+| --- | --- |
+| `scope` | `visible` (default) or `project`: the manager inventory with unavailable, warm and deleted sessions. |
+| `limit` · `cursor` | 1 to 200 rows · the `next_cursor` of the previous page. |
+| `parent` | `root` (top-level sessions with `child_count`) or a session id (its children). |
+| `startedBy` | `me`, `others` or `automated`. |
+| `q` | Search over title, starter label, trigger slug and id prefix. Up to 200 characters. |
+| `labels` | Sessions that carry every label. |
+
+Each row carries `parent_session_id` and `initiator: { type: 'member' | 'trigger' | 'channel' | 'api' | 'system', id, label }`. `sessionParentId(session)` reads the parent.
+
+### Files, git and change requests
+
+These methods read the project repository. To read and write files in a running session, use `s.files`.
+
+| Method | What it does |
+| --- | --- |
+| `files.listDirectory({ ref?, path?, cursor?, limit? })` | One folder level: `{ entries, truncated, next_cursor }`. Use it to build a file tree. Without `cursor` or `limit`, one response carries up to 5,000 entries. With either, the response is a page of `limit` entries (default 500, at most 2,000). Pass `next_cursor` as `cursor` for the next page while it is a string: stop when it is `null` or absent (an API older than paging omits it). Every page reads the commit the first page read. |
+| `files.list(options?)` | Every file under a path, recursively, cut at 1,000. A cut response carries `X-Kortix-Truncated: 1`. |
+| `files.read(path, ref?)` · `files.history(path, { ref?, limit?, skip? })` | A file at a ref · its commits. |
+| `files.search(query, { content?, ref?, limit? })` | Search file names, or contents with `content: true`. A content match carries `line_number` and `line_text`. |
+| `files.archive(options?)` · `files.archiveRequest(options?)` | Download a tarball · the same as a request your host streams to disk. |
+| `git.commits()` · `git.commit(sha)` · `git.commitDiff(sha)` | The log · one commit · its diff. |
+| `git.branches()` · `git.versionDiff(…)` | Branches · the diff between two refs. |
+| `git.inviteCollaborator(…)` | Invite a GitHub user to a Kortix-managed repository. |
+| `gitToken()` | A fresh scoped push token for a Kortix-managed repository. A bring-your-own repository returns `409`. |
+| `changeRequests.list(status?, { limit?, cursor? })` · `.get(crId)` · `.diff(crId)` · `.mergePreview(crId)` | Read change requests. `list` returns one page, newest number first: 50 by default, at most 500. Pass `next_cursor` back as `cursor`; it is `null` on the last page. |
+| `changeRequests.open(input)` · `.update(crId, input)` · `.merge(crId, input?)` · `.close(crId, input?)` · `.reopen(crId, input?)` | Change request lifecycle. |
+| `changeRequests.requestChanges(crId, input)` | Record feedback and, optionally, send it to the session that made the change. |
+
+Read a large folder page by page:
 
 ```ts
-const kortix = createKortix({ backendUrl, getToken });
-
-kortix.accounts; // account / team operations
-kortix.accountInvites; // invite accept/decline by token alone
-kortix.projects; // top-level project operations
-kortix.connectors; // Connector calls scoped by an agent-minted token
-kortix.project(id); // id-bound project handle
-kortix.session(pid, sid); // id-bound session handle → see Sessions
-kortix.github; // GitHub App install + repo linking (account-scoped)
-kortix.gitBackend; // the instance git backend ("Kortix managed")
-kortix.billing; // credits, subscription, tier, transactions
-kortix.sandboxShares; // public share links for a sandbox port
-kortix.connectStatus; // easy-connect (Pipedream) status
-kortix.marketplace; // public marketplace catalog
-kortix.validateToken; // pasted-API-key check
-kortix.config; // platform config in effect
-kortix.runtime(); // OpenCode REST compatibility client
+let cursor: string | undefined;
+do {
+  const page = await p.files.listDirectory({ path: 'src', limit: 500, cursor });
+  render(page.entries);
+  cursor = page.next_cursor ?? undefined; // null or absent ends the loop
+} while (cursor);
 ```
 
-### Accounts — `kortix.accounts`
+Routes: `/projects/{projectId}/files`, `/commits`, `/branches`, `/version-diff`, `/change-requests`. See [Git](/docs/git).
 
-| method | what |
+### Review and approvals
+
+| Method | What it does |
 | --- | --- |
-| `list()` · `get(accountId)` | accounts you belong to · one account |
-| `create({ name })` · `updateName(accountId, name)` | create · rename an account |
-| `branding.get(accountId)` · `branding.update(accountId, { app_name })` · `branding.uploadAsset(accountId, kind, file)` · `branding.removeAsset(accountId, kind)` · `branding.reset(accountId)` | organization branding (Enterprise): own logo / icon / favicon and product name; `kind` is `logo` · `icon` · `favicon`, or `logo_dark` · `icon_dark` · `favicon_dark` for the dark-scheme variant |
-| `members(accountId)` · `invite(accountId, input)` | list members · invite one |
-| `updateMemberRole(accountId, userId, role)` · `removeMember(accountId, userId)` | assign the account role · remove a member |
-| `invites(accountId)` | pending invites |
-| `cancelInvite(accountId, inviteId)` · `resendInvite(accountId, inviteId)` | cancel · resend a pending invite |
-| `leave(accountId)` | leave the account |
+| `review.list(params?)` · `.get(id)` · `.submit(input)` · `.act(id, …)` · `.bulkAct(input)` | The Review page inbox: change requests, approvals and agent outputs. `list` returns one page (`{ review_items, next_cursor }`, 50 items by default, at most 200): Needs you, then Waiting, then Done. Filter with `segment`, `kind` and `sessionId`; pass `next_cursor` back as `cursor`. A walk is not a snapshot: an item decided between two pages can come back on a later page, so key the rows by `review_item_id`. `get` reads any item by id, including `cr:<id>` and a pending `call:<id>`. `useReviewItemPages(projectId, query)` (`@kortix/sdk/react`) is the same list as an infinite query; read its rows with `reviewItemsOf(query.data)`. |
+| `review.summary()` | `{ needs_you_total, needs_you_by_session }`: what waits on the caller, counted on the server. Read it for a badge or a per-session dot, never the list. `useReviewSummary(projectId)` polls it every 60 seconds. |
+| `approvals.list(options?)` · `approvals.sessionsNeedingInput(options?)` | Connector calls that wait for a decision · sessions blocked on one or on an open agent question, with a count per session. `useSessionsNeedingInput(projectId)` (`@kortix/sdk/react`) reads the same list every 30 seconds, and again on each question event of an open session. |
+| `approvals.resolve(executionId, 'approve' \| 'deny', { note? })` | Decide one call. `note` goes to the agent as an instruction. A decision covers that call only. |
 
-`accounts.tokens` mints account-scoped API keys (`kortix_pat_...`). See
-[SDK auth](/docs/sdk/auth) for the full token model.
+Policies and approvals are explained in [Policies and approvals](/docs/connect/connectors#policies-and-approvals).
 
-| method | what |
+### Secrets, tokens and setup links
+
+| Method | What it does |
 | --- | --- |
-| `tokens.list(accountId?, options?)` | list API keys — the whole account's, or only your own with `{ mine: true }` |
-| `tokens.create(input)` | mint one — `{ accountId?, name, expiresAt?, projectId? }` |
-| `tokens.revoke(tokenId, accountId?)` | revoke one |
+| `secrets.list()` · `secrets.upsert(input)` · `secrets.remove(name)` | Secret metadata · create or update a write-only value with its delivery policy · delete. Each listed secret carries `status` for the shared value and `mine.status` for your own value: `'undecryptable'` when the server can no longer decrypt it. `upsert` a shared value again; `setPersonal` or `removePersonal` your own. |
+| `secrets.setStrategy(identifier, 'runtime' \| 'egress' \| 'broker' \| 'denied', options?)` | Set the exposure: `runtime` is environment, `egress` is enforced, `denied` is none. `broker` keeps the value out of the session. |
+| `secrets.broker(identifier, request)` | Send one policy-bound HTTPS request with the secret. Needs a session-scoped token. |
+| `secrets.setPersonal(name, { value?, active? })` · `secrets.removePersonal(name)` | Your own value for a secret, used in your sessions. `active: false` keeps your value but uses the shared one. `removePersonal` deletes your value. |
+| `secrets.setGitCredential(input)` | The credential for a bring-your-own git repository. |
+| `secrets.listProviderOAuth()` · `.startProviderOAuth(…)` · `.pollProviderOAuth(…)` · `.removeProviderOAuth(provider)` | Subscription logins for model providers, through a device-code flow. |
+| `tokens.list()` · `tokens.create(input?)` · `tokens.revoke(tokenId)` | Project API keys. Kortix also mints one per session as `KORTIX_TOKEN`. |
+| `setupLinks.requestSecret(input)` · `setupLinks.requestConnector(input)` | A link a person opens to enter a secret or connect an app, without full project access. A connector link works on `composio` and `pipedream` connectors, and on `mcp` connectors with one-click sign-in. |
 
-`accounts.audit` is the enterprise reconstruction log. It combines authenticated
-API requests with semantic session, connector, approval, and computer events.
+Exposure policies and flags are explained in [Secrets](/docs/project/secrets).
 
-| method | what |
+### Connectors and policies
+
+| Method | What it does |
 | --- | --- |
-| `audit.log(accountId, filters?)` | list events by project, session, actor, source, outcome, request, correlation, resource, action, or time |
-| `audit.export(accountId, filters?)` | export the same filtered event stream as CSV or JSONL |
-| `audit.webhooks.list/create/update/remove(...)` | manage signed SIEM webhooks for the centralized stream |
+| `connector(slug).run(action, args, options?)` | The action's output. Throws `ConnectorCallError`, or `ConnectorApprovalPendingError` while a call waits for approval. |
+| `connector(slug).call` · `.describe(action?)` · `.accounts()` · `.paginate(action, args, { next, maxPages? })` · `.uploadAttachment(content, input)` | The raw result · schemas · callable accounts · a page iterator · stage a file. |
+| `connectors.call(tool, args?, { account? })` · `connectors.callAction(slug, action, args, options?)` | Call `<connector>.<action>` · the same with types from `kortix connectors types`. |
+| `connectors.catalog(options?)` · `.tools()` · `.search(query)` · `.describe(tool)` · `.accounts(slug)` · `.uploadAttachment(…)` | Find and inspect callable tools and accounts. |
+| `connectors.list()` · `.config(slug)` · `.create(input)` · `.remove(slug)` · `.sync()` · `.auth.discover(input)` | Configure connectors. `auth.discover` reads auth from an OpenAPI spec, a Postman collection or an endpoint. |
+| `connectors.setName` · `.setSensitive` · `.setCredentialMode` · `.setCredential` · `.deleteCredential` | Connector settings and its stored credential. |
+| `connectors.policies.get(slug)` · `connectors.policies.set(slug, policies)` | One connector's tool policies. |
+| `connectors.connections.list()` · `.listAll()` · `.reconcile(…)` · `.reconcileMember(…)` · `.updateCredential(…)` · `.revoke(…)` · `.activate(…)` · `.setDefault(…)` · `.rename(…)` · `.share(…)` · `.addComputer(…)` | Connected accounts: shared or private, defaults, labels, sharing and paired computers. |
+| `connectors.pipedream.listApps` · `.listSections` · `.connect` · `.finalize` | Legacy Pipedream connect for OAuth apps. |
+| `connectors.listMoves()` · `connectors.move(slug, { connectionId? })` | Move a Pipedream or Composio connector to its Kortix MCP app. It keeps its slug. `listMoves` returns `ConnectorMove[]`. `move` returns `ConnectorMoveResult`: `status: 'sign_in'` with the `connection_id` to sign in on, or `status: 'moved'`. The root exports the same calls as `listConnectorMoves(projectId)` and `moveConnector(projectId, slug, { connectionId? })`. Needs the `connectors_v2` feature flag. See [Move a Pipedream or Composio connector to Kortix](/docs/connect/connectors#move-a-pipedream-or-composio-connector-to-kortix). |
+| `connectors.discover.list` · `.sections` · `.detail` | The direct connector catalog. Needs the `connectors_api_discover` feature flag. |
+| `policies.list()` · `policies.set(policies)` | Project policies. |
+| `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets and connectors to one agent. |
 
-Each event includes `project_id`, `session_id`, `actor_type`, `source`, `outcome`,
-`request_id`, `trace_id`, and `correlation_id` when the action supplies them.
-The API does not store request bodies, prompts, secrets, credentials, or raw
-connector arguments in the centralized event. Connector events can include a
-bounded argument preview that redacts credential-shaped fields and opaque data.
+Accounts, the account a call uses, typed calls and errors are explained in [Connectors](/docs/connect/connectors) and [Call connectors from code](/docs/connect/connectors#call-connectors-from-code).
 
-### Access assignments
+### Triggers and reminders
 
-Kortix has one grant record: an **assignment**. It binds one principal (`user`,
-`group`, `service_account`, or `pending`) to one role, at one scope (`account`,
-or one `project`), optionally narrowed to one object (`agent`, `skill`, `secret`,
-`app`, or `trigger`) and optionally carrying an `expires_at`. Group access,
-per-resource access, and custom-role bindings are all assignments. See
-[Accounts & access](/docs/accounts#one-access-model) for the model.
-
-The canonical REST surface is:
-
-| Method + path | Does |
+| Method | What it does |
 | --- | --- |
-| `GET /v1/accounts/{accountId}/iam/assignments` | list assignments, filtered by principal, scope, object, or role |
-| `POST /v1/accounts/{accountId}/iam/assignments` | create one assignment |
-| `DELETE /v1/accounts/{accountId}/iam/assignments/{assignmentId}` | revoke one assignment |
-| `GET /v1/accounts/{accountId}/iam/permissions` | the permission catalog, as data |
-| `GET /v1/accounts/{accountId}/iam/roles` · `…/roles/{roleId}/permissions` | roles · one role's permissions |
+| `triggers.list()` | Every trigger, with parse errors and `triggers_paused`. |
+| `triggers.create(input)` · `triggers.update(slug, input)` · `triggers.remove(slug)` | Write a trigger. `type` is `cron`, `webhook`, `monitor` or `event`. `name`, `type` and `prompt_template` are required. |
+| `triggers.fire(slug, { payload?, dryRun? }?)` | Run one trigger now. It works while triggers are paused. `payload` deep-merges over the manual payload at the root, for example `{ body: { … } }`. `dryRun: true` writes nothing and returns `ProjectTriggerDryRunResult`: `rendered_prompt`, `filter_matches`, `session_key` and `payload`. A real fire returns `status` (`fired`, `queued` or `deduped`), `session_id`, `command_id` and `run_id`. |
+| `triggers.runs(slug, { cursor?, limit? }?)` · `triggers.projectRuns({ status?, cursor?, limit? }?)` | One trigger's runs · every run of the project, newest first, as `{ runs: ProjectTriggerRun[], next_cursor }`. `limit` is 1–100, default 25. `status` is `queued`, `running`, `fired`, `failed`, `skipped` or `rejected`. A page can hold fewer than `limit` runs while `next_cursor` is set: follow `next_cursor` until it is `null`. |
+| `triggers.replay(slug, runId, { confirmUnverified? }?)` | Fire the trigger again with the run's stored payload and the current spec. Returns `409 run_in_progress` while the run is queued or running, `409 payload_unverified` for an unverified webhook payload unless `confirmUnverified: true`, and `422 payload_truncated` for a payload over 64 KiB. |
+| `triggers.setActivation(paused)` | Pause or resume every trigger of the project. |
+| `triggers.eventApps()` · `triggers.eventTypes({ connector } \| { app, source? })` | Apps with events · the event types of one connector or app. |
+| `reminders.list()` · `reminders.updateMany(…)` · `reminders.removeMany(…)` | Reminders on every session you can open: list, pause or resume, delete. One session's reminders are `s.reminders`. |
 
-The SDK exposes them as `listAssignments`, `createAssignment`,
-`revokeAssignment`, and `listPermissions`. A catalog row carries `action`,
-`scope_type`, `resource_type`, `delegable`, `description`, `area`, `level`, and
-`implies` — read it instead of hardcoding action strings.
+Every field of `create` is in [Triggers & reminders](/docs/connect/triggers#fields).
 
-Assigning a custom role needs the account's `rbac` entitlement; the route answers
-`402` with `code: "entitlement_required"` without it.
+### Apps
 
-### Account invites — `kortix.accountInvites`
-
-Reached by invite token alone — the invitee may not be a member yet.
-
-| method | what |
+| Method | What it does |
 | --- | --- |
-| `listMine()` | every pending, unexpired invite addressed to your email, with the workspace and any projects it grants |
-| `describe(inviteId)` · `accept(inviteId)` · `decline(inviteId)` | preview · accept · decline an invite |
+| `list()` · `get(appId)` · `create(input)` · `update(appId, input)` · `remove(appId)` | App inventory and lifecycle. |
+| `artifacts.register(input)` · `artifacts.uploadArchive(…)` · `artifacts.finalize(…)` | Upload a build. |
+| `deployments.create(appId, …)` · `.list(appId)` · `.get(…)` · `.logs(…)` · `.remove(…)` | Releases and their logs. `remove` deletes one release that is not live. |
+| `rollback(appId, deploymentId)` · `start(appId)` · `stop(appId)` | Move traffic to an earlier release · start · stop. |
+| `machines.list(appId)` · `.start` · `.stop` · `.restart` · `.destroy(appId, machineId)` | Machines. Destroying one keeps its volume. |
+| `scale(appId, { group: count })` | Machines per process group, 0 to 20. |
+| `exec(appId, input)` | Run one command in a machine. Needs `project.app.admin`. Kortix audits each call. |
+| `volumes.list(appId)` · `.create` · `.update` · `.destroy(appId, volumeId, confirmName)` · `.snapshots` · `.snapshot` · `.restore(appId, volumeId, snapshotId)` · `.fork` | Persistent volumes and their snapshots. |
+| `access.get(appId)` · `access.update(appId, …)` · `access.session(appId)` · `access.agents(appId)` | Who can open the App · an access session · agents granted the App in `kortix.yaml`. |
+| `token(appId)` | A 15-minute sign-in token for the App that names the caller. Needs the `member_tokens` capability. |
+| `authEnv(appId)` | `KORTIX_AUTH_ISSUER`, `KORTIX_AUTH_AUDIENCE` and `KORTIX_AUTH_JWKS`, to verify App tokens without a network call. |
 
-### Projects — `kortix.projects`
+Apps are generally available in every project. Apps routes still require project membership and the appropriate Apps permission. Routes: `/projects/{projectId}/apps/…`. See [Build on Apps from TypeScript](/docs/apps#build-on-apps-from-typescript).
 
-| method | what |
+### Gateway and models
+
+| Method | What it does |
 | --- | --- |
-| `list()` · `listForAccount(accountId)` | your projects · projects in an account |
-| `get(id)` · `detail(id)` | summary · full detail |
-| `create(input)` · `createRepo(input)` | from an existing `repo_url` · new empty GitHub repo |
-| `provision(input)` | new project on a new Kortix-managed repo, seeded with a starter template — `{ name, account_id?, seed_starter?, starter_template?, marketplace_items?, source_item_id?, idempotency_key? }` |
-| `update(id, input)` · `archive(id)` | update settings · archive |
-| `llmCatalog(id)` · `modelPicker(id)` | full · compact model catalog for a selector |
-| `sandboxTemplates(id)` · `sandboxHealth(id)` | sandbox build templates · build health |
-| `sessions(id)` · `createSession(id, input?)` | list visible sessions · create a session |
+| `gateway.logs(options?)` · `gateway.log(logId)` | Model request logs. |
+| `gateway.overview(days?)` · `.series(days?)` · `.breakdown(days?)` · `.sessions(days?)` · `.errors(days?)` | Rollups over a window. |
+| `gateway.budgets()` · `.setBudget(input)` · `.deleteBudget(budgetId)` | Budgets. |
+| `gateway.keys()` · `.createKey(name)` · `.revokeKey(keyId)` | Gateway API keys for your own tools. |
+| `gateway.routing.get()` · `.set(policy)` · `.reset()` · `.preview(input)` | The routing policy: default model, vision model and ordered fallbacks · resolve a route without a model call. |
+| `gateway.playground(prompt, models, system?)` | Run one prompt against 1 to 6 models. |
+| `modelDefaults.get()` · `.set(input)` · `.clear(params)` | Default models per account, agent and project. |
+| `setDefaultAgent(agentName)` | Set `default_agent` in `kortix.yaml`. The agent must be declared and enabled. |
 
-`provision` creates a new project; it does not start an existing project's
-sandbox. Start a session instead — see [Sessions](/docs/sdk/sessions).
+Routing, fallback and budgets are explained in [Models](/docs/project/models).
 
-Send `idempotency_key` when a retry is possible — a reload, a second tab, a
-timeout you retried. `provision` mints a brand-new managed repo per call, so
-without a key those all create real duplicate projects. Reuse one key for every
-attempt at a single logical create and the repeats return the project the first
-attempt made (201, same `project_id`, `push_token: null`). The key identifies the
-attempt, not the payload — reusing one with a different `name` returns the first
-project and ignores the new value, so mint a fresh key per distinct create.
-Creating a second project with the same **name** and no key still works.
+### Channels
 
-A repeat that arrives while the first call is still provisioning gets `409` with
-`code: 'provision_in_flight'` rather than a `project_id` that call may still roll
-back. Retry with the same key.
-
-`project(id).sessions.list({ scope: 'project' })` is a lifecycle inventory for a
-caller with project-manager permissions. It adds accessible unavailable, warm, and soft-deleted sessions with
-ownership and runtime-state metadata. Both list scopes omit every session the
-caller cannot open.
-
-### GitHub — `kortix.github`
-
-Account-scoped GitHub App install and repo linking, not project-scoped.
-
-| method | what |
+| Method | What it does |
 | --- | --- |
-| `getInstallation(accountId)` · `listInstallations(accountId)` | this account's install · installs the user can reach |
-| `saveInstallation(input)` · `deleteInstallation(accountId, installationId?)` | record · unlink an install |
-| `listLinkableInstallations(input)` | installs the authorized GitHub user may link; each entry carries `linked_to_other_accounts`, a count of other Kortix accounts holding it — never their names |
-| `listRepositories(accountId, installationId?)` · `listRepositoryBranches(...)` | repos the install can see · branches and the GitHub default |
-| `linkRepository(input)` | import a repo as a project. `source: 'managed'` imports one the instance git backend holds (self-host operator only, 403 otherwise) and is mutually exclusive with `installation_id` (400) |
-| `replaceProjectRepository({ project_id, repo_url, expected_repo_url, github_token })` | replace an existing project's GitHub repository. Use either `github_token` with Contents read/write access, or `installation_id` plus temporary `github_user_token` to verify organization admin access and grant only this repository through the GitHub App. `copy_shared_secrets_from_project_id` plus `copy_shared_secret_identifiers` copies selected shared runtime secrets in the same transaction. A stale `expected_repo_url` returns 409. The old repository remains on GitHub. New sessions use the replacement repository; existing sessions retain their checkout. |
+| `channels.slack.installation()` · `.mode()` · `.manifest()` · `.connect(input)` · `.completeInstall(input)` · `.disconnect()` | The Slack app of the project. |
+| `channels.slack.getFile(url)` · `channels.slack.uploadFile(input)` | Download or upload a Slack file through the server. The bot token stays on the server. |
+| `channels.teams.completeInstall(input)` | Finish a Microsoft Teams install as the signed-in user. |
+| `channels.email.installation(connectorSlug?)` · `.mode()` · `.connect(input)` · `.disconnect(connectorSlug?)` · `.updatePolicy(…)` | The email channel and its send and reply policy. |
 
-This list holds real account connections only. "Kortix managed" is not one of
-them — it is the instance backend below.
+See [Slack, Teams & email](/docs/connect/channels).
 
-### Instance git backend — `kortix.gitBackend`
+### Access
 
-One deployment-wide owner plus credential, used for Kortix-managed
-repositories. It is never an account connection and never appears in
-`kortix.github.listInstallations`.
-
-| method | what |
+| Method | What it does |
 | --- | --- |
-| `get()` | `{ configured, kind: 'app' | 'pat' | null, owner }` — readable by any authenticated user; it exposes only the owner login that every managed `repo_url` already carries |
-| `repositories({ search?, limit? })` | repositories under that owner. Self-host operators only: on cloud that owner holds every customer's project repo, so the API answers `403` for anyone else |
+| `access.list()` · `access.invite(email, role, expiresAt?)` · `access.update(userId, role)` · `access.revoke(userId)` | Members of the project. Roles: `manager`, `member`. |
+| `access.pendingInvites()` · `.resendInvite(inviteId)` · `.revokeInvite(inviteId)` | Pending invites. |
+| `access.requests()` · `.approveRequest(id)` · `.rejectRequest(id)` | Access requests. |
+| `access.groupGrants()` · `.attachGroupGrant(…)` · `.updateGroupGrant(…)` · `.detachGroupGrant(groupId)` | Groups with project access. |
+| `access.resourceGrants.list()` · `.create(input)` · `.remove(grantId)` | Access to one object, such as one agent or skill, for a member or a group. |
 
-### Billing — `kortix.billing`
+See [Project access](/docs/accounts#project-access) and [Grant access to one object](/docs/accounts#grant-access-to-one-object).
 
-Reads for credits, subscription, tier, and transaction history. Checkout,
-the customer portal, and credit purchases are Stripe flows, app-owned.
+### Sandbox
 
-| method | what |
+| Method | What it does |
 | --- | --- |
-| `accountState(accountId?)` · `accountStateMinimal(accountId?)` | full · minimal billing state |
-| `transactions(params?)` · `transactionsSummary(params?)` | history · summarized totals |
-| `creditBreakdown(accountId?)` · `usageHistory(params?)` | credit balance by source · usage over time |
-| `sessionCosts.list(options?)` · `sessionCosts.get(sessionId, options?)` | paginated session-cost records · one detailed session ledger |
-| `tierConfigurations()` | available plan tiers |
-| `checkout.createSession(input)` · `checkout.confirmSession(sessionId, accountId?)` | start · confirm a Stripe Checkout session |
-| `subscription.createPortalSession(...)` · `subscription.cancel(...)` · `subscription.reactivate(...)` | open the customer portal · cancel · reactivate |
-| `subscription.scheduleDowngrade(...)` · `cancelScheduledChange(...)` · `prorationPreview(...)` | schedule · cancel · preview a plan change |
-| `credits.purchase(input)` · `credits.autoTopupSettings(...)` · `credits.configureAutoTopup(...)` | one-off purchase · read · configure auto-topup |
+| `sandbox.list()` · `sandbox.snapshots()` | The project's sandboxes · built snapshots. |
+| `sandbox.rebuildSnapshot(slug?)` · `sandbox.fixWithAgent()` | Rebuild a snapshot · ask an agent to fix a failed build. |
+| `sandbox.createTemplate(input)` · `.updateTemplate(…)` · `.removeTemplate(templateId)` · `.buildTemplate(templateId)` | Sandbox templates. |
+| `sandbox.setProvider(provider \| null)` | Pin the sandbox provider, or `null` for the platform default. Returns `kind: 'project'` when the change applies at once, or `kind: 'preparation'` while the new provider's image builds. The current provider serves until activation. |
 
-`sessionCosts.list()` accepts `accountId`, `projectId`, `limit`, and `offset`.
-Each row combines finalized LLM cost and billed sandbox compute cost.
-`sessionCosts.get()` adds model usage and the discriminated LLM/compute ledger.
-The list includes a reconciliation total for cost without a session.
+See [Sandboxes & previews](/docs/work/runtime).
 
-### Sandbox shares — `kortix.sandboxShares`
+### Settings and feature flags
 
-Public share links for one exposed sandbox port. Sandbox-scoped, not
-project-scoped.
+`p.updateFeatureFlag(key, enabled)` sets one flag for the project with `PATCH /projects/{projectId}/features`. `key` is one of `FEATURE_FLAG_KEYS` (type `FeatureFlagKey`). `enabled: null` clears the override. The caller needs `project.settings.write`. A route behind a flag that is off returns `403 { error, code: 'feature_disabled', feature }`: test it with `isFeatureDisabledError(error)` and read the key with `featureDisabledKey(error)`. See [Feature flags](/docs/project#feature-flags).
 
-| method | what |
+## The session handle
+
+`kortix.session(projectId, sessionId)` (or `p.session(sessionId)`) returns `s`. Creating the handle sends no request. Runtime methods call `ensureReady()` first. Each one is explained in [Sessions from code](/docs/sdk/sessions).
+
+| Area | Methods |
 | --- | --- |
-| `list(sandboxId)` | active share links |
-| `create(input)` | create one — `{ sandboxId, port, ttl?, label? }` |
-| `revoke(sandboxId, token)` | revoke one |
-
-### Marketplace catalog — `kortix.marketplace`
-
-Public catalog browsing, read-only — distinct from `project(id).marketplace`,
-which installs an item onto a project.
-
-| method | what |
-| --- | --- |
-| `items(options?)` · `item(id)` · `itemFile(id, path)` | browse · one item · a file inside an item |
-| `marketplaces()` · `featured()` | all · featured marketplaces |
-| `sources.list()` · `sources.add(input)` · `sources.remove(id)` | list · add · remove a source |
-
-### The project handle — `kortix.project(id)`
-
-Binds the project id; every sub-resource hangs off it.
-
-```ts
-const p = kortix.project(projectId);
-await p.detail();
-await p.update({ name });
-await p.llmCatalog();
-```
-
-| method | what |
-| --- | --- |
-| `get` · `detail` · `update` · `archive` | read · full detail · update · archive |
-| `llmCatalog` · `modelPicker` · `sandboxHealth` | model and sandbox-build reads |
-| `onboardingComplete` | mark project onboarding done |
-| `validateManifest(raw)` | validate a `kortix.yaml` (or legacy `kortix.toml`) manifest server-side |
-| `gitToken()` | mint a fresh scoped git push token (`409` for a bring-your-own repo) |
-| `setAgentScope(agentName, scope)` | set an agent's allowed secrets and connectors in the manifest — the second binding, not a role |
-
-#### `p.tokens` — project-scoped API keys
-
-Auto-minted at session create as `KORTIX_TOKEN`; can also be minted by hand.
-
-| method | what |
-| --- | --- |
-| `list()` | project API keys |
-| `create(input?)` | mint a new one |
-| `revoke(tokenId)` | revoke one |
-
-#### `p.setupLinks` — agent-minted setup links
-
-A link a person opens to enter a secret or connect an app, without full
-project access.
-
-| method | what |
-| --- | --- |
-| `requestSecret(input)` · `requestConnector(input)` | link to collect a secret · connect an app |
-
-#### `p.secrets` — project secrets
-
-| method | what |
-| --- | --- |
-| `list()` · `upsert(input)` | list metadata · create or update a write-only value and delivery policy |
-| `setStrategy(identifier, strategy, options?)` | change the exposure and its host list |
-| `broker(identifier, request)` | execute a session-authorized, policy-bound HTTPS request |
-| `remove(identifier)` | delete a secret |
-| `setPersonal(name, value)` · `removePersonal(name)` | set · remove a per-user override |
-| `setGitCredential(input)` | set a git auth credential |
-
-`runtime` with consumer `sandbox` is **environment** exposure — the default,
-and the only policy that puts a plaintext value in the session. `egress` with
-consumer `network` is **egress-enforced** exposure: the session holds a handle
-and Kortix substitutes the real value outside the sandbox, for the exact HTTPS
-hosts the policy lists. Egress-enforced exposure is experimental; it needs the
-`secrets_egress` feature flag (Settings → Feature flags). With the flag off,
-`setStrategy(identifier, 'egress', …)` and `upsert(...)` with an egress policy
-return `403` `feature_disabled`. Every `broker` consumer has no session presence
-at all. See
-[Secrets](/docs/project/secrets). The `broker(...)` method requires a
-session-scoped token and an active session handle.
-
-#### `p.access` — project assignments, invites, requests
-
-Every method here reads or writes an assignment scoped to this project. Project
-roles are `manager` and `member`.
-
-| method | what |
-| --- | --- |
-| `list()` · `invite(email, role)` | principals with access · invite a user |
-| `update(userId, role)` · `revoke(userId)` | assign a project role · revoke the assignment |
-| `pendingInvites()` · `requests()` | outstanding invites · pending access requests |
-| `resendInvite(inviteId)` · `revokeInvite(inviteId)` · `approveRequest(id)` · `rejectRequest(id)` | resend/revoke an invite · approve/reject a request |
-| `groupGrants()` · `attachGroupGrant(...)` · `updateGroupGrant(...)` · `detachGroupGrant(...)` | the same assignments, with a `group` principal |
-
-`p.access.resourceGrants` is the **object assignment** view: it narrows a
-principal to one object in the project instead of the whole project. Kortix
-enforces object assignments on agents and skills today. An agent is closed by
-default — a member reaches it only when an assignment names them or one of their
-groups. An object assignment carries no permissions of its own, and it restricts a
-project manager as much as a member.
-
-| method | what |
-| --- | --- |
-| `resourceGrants.list()` | object assignments in this project |
-| `resourceGrants.create(input)` | assign one object to a user or a group |
-| `resourceGrants.remove(grantId)` | revoke one object assignment |
-
-#### `p.connectors` — tool connectors
-
-| method | what |
-| --- | --- |
-| `catalog()` · `tools()` | callable Connector catalog · flattened `<connector>.<action>` tools |
-| `search(query, options?)` · `describe(tool)` | find · inspect one callable tool |
-| `call(tool, args?, options?)` | call one `<connector>.<action>` tool through the server-side gateway. `options.account` names which account to run as — see below. |
-| `accounts(slug)` | the accounts this caller may call `slug` as, default first — what `options.account` matches against |
-| `uploadAttachment(content, input)` | stage bytes for `input.connector`; returns `ref` (`{ $kortix_attachment }`) to place in a later call's args — see [Attach files](/docs/connect/connectors#attach-files) |
-| `list()` · `config(connectorId)` | configured connectors · one connector's config |
-| `create(input)` | add a connector |
-| `auth.discover(input)` | preview auth from an OpenAPI spec, Postman collection, or endpoint |
-| `remove(connectorId)` · `sync()` | delete a connector · re-sync connectors |
-| `setName(connectorId, name)` · `setSensitive(connectorId, sensitive)` | rename · mark it sensitive (extra approval gating) |
-| `setAuthorizationStrategy(slug, strategy)` | @deprecated. Still calls the route; the route is a no-op that answers `{ok:true, deprecated:true}` and changes nothing. `owner_type` on each connection is the whole access rule now. |
-| `setCredentialMode(connectorId, mode)` · `setCredential(connectorId, input)` | switch source · set the credential value |
-| `policies.get(connectorId)` · `policies.set(connectorId, policies)` | read · replace its tool policies |
-| `connections.list()` · `connections.reconcile(input)` | list · create/update connected accounts |
-| `connections.updateCredential(connectionId, input)` | rotate a connection credential |
-| `connections.revoke(connectionId)` · `connections.activate(connectionId)` | deny · restore a connection |
-| `connections.setDefault(connectionId)` | make it the default for its owner scope |
-| `connections.rename(connectionId, label)` | change the label only; the account stays authorized. Each connection carries `connected_as`, the identity it was authorized as. |
-
-`p.connectors.discover` browses the direct-connector catalog. It is **experimental** and off by default — enable it per project under [Settings → Experimental](/docs/feature-flags) → "Connectors API Discover". Easy Connect (Pipedream) remains the default connector marketplace.
-
-| method | what |
-| --- | --- |
-| `discover.list(query?, cursor?)` · `discover.detail(id)` | search OpenAPI/MCP/GraphQL/CLI entries · one entry's detail |
-
-`p.connectors.pipedream` is the optional managed-OAuth path; `listApps`
-returns OAuth apps only. Connect API-key apps directly instead.
-
-| method | what |
-| --- | --- |
-| `pipedream.listApps(params?)` · `pipedream.connect(input)` · `pipedream.finalize(input)` | browse the app catalog · start a connect flow · finalize it |
-
-A connector defines the tool, provider app, and policies. `connections`
-stores its connected **accounts** — a connector can hold several side by side.
-A session can pin one for every call with
-`connector_bindings: { alias: { connection_id } }`, or a single call can name
-one with `call(tool, args, { account })`. Credentials stay encrypted and
-resolve per request.
-
-`connections` is the only active authorization facade. The retired
-`authorizations` and `profiles` names are not part of the current SDK surface.
-
-#### Accounts and the call-time gate
-
-Each connection has an `owner_type`: `project` (shared — reachable by anyone
-the connector is granted to, human or service account) or `member` (private —
-reachable only by its own owner, and only in a private session; never by a
-service account). A shared account can be narrowed to groups and people:
-`connections.list()` returns its grants in `shared_with`, and
-`connectionSharedWithEveryone(connection)` answers whether everyone in the
-project may use it. A narrowed account follows the private rules for the
-people it names, and `usable: false` marks one the caller sees only to manage
-it. Grant or revoke with `createAssignment` / `revokeAssignment`
-(`object: { type: 'connection', id }`) — see
-[Choose who can use a shared account](/docs/connect/connectors#choose-who-can-use-a-shared-account).
-`p.connectors.accounts(slug)` lists every account this caller may reach,
-default first:
-
-```ts
-const accounts = await kortix.project(projectId).connectors.accounts('stripe-read');
-// [{ connection_id, label, owner_type, is_default }, ...]
-
-await kortix.project(projectId).connectors.call(
-  'stripe-read.get_balance',
-  {},
-  { account: 'My Stripe' }, // a connection id, a label, or the words `me` / `project`
-);
-```
-
-A call that names no account resolves to the caller's own default private
-account first, then the project's default shared account. A named account
-that does not resolve is **denied** with `connector_not_connected` — never
-silently substituted — and the denial lists `requested_account` and
-`available_accounts`. Every successful call echoes which account it ran as:
-`result.account = { connection_id, label, owner_type }`.
-
-There is no session-create-time connector gate any more. A session used to be
-refused `409 CONNECTOR_CONNECTION_REQUIRED` when a required connector had no
-usable connection; that refusal is gone (`require_connectors` is inert — see
-[`p.sessions`](#psessions--and-the-session-handle)). The gate moved to the
-call: a denied `connector_not_connected` carries `connect_url`, a hosted
-authorization link, whenever one can be minted for the caller — the whole
-remedy is one click, surfaced by the transcript's connect button.
-
-#### `p.policies` — project policies
-
-| method | what |
-| --- | --- |
-| `list()` · `set(policies)` | the project's policies · replace the set |
-
-#### `p.triggers` — cron and webhook automations
-
-A trigger starts an agent action on a schedule or an inbound webhook. See
-[Triggers](/docs/connect/triggers) for session strategy and payload
-templating.
-
-| method | what |
-| --- | --- |
-| `list()` | all triggers |
-| `create(input)` | create one |
-| `update(triggerId, input)` | edit a trigger |
-| `remove(triggerId)` | delete a trigger |
-| `fire(triggerId)` | run it now |
-| `setActivation(paused)` | pause or resume every trigger on the project |
-
-`create(input)` takes `{ name, type: 'cron' | 'webhook' | 'monitor', prompt_template,
-slug?, agent?, model?, enabled?, session_mode?, session_id?, cron?, run_at?,
-timezone?, secret_env?, session_access? }`. `name` and `prompt_template` are required.
-`cron`/`run_at` are mutually exclusive (`type: 'cron'`); `secret_env` (the
-webhook HMAC secret) applies to `type: 'webhook'`.
-
-`session_access` controls who can open sessions the trigger creates. It is
-`{ mode: 'private' | 'members' | 'project', memberIds: string[], groupIds:
-string[] }` and defaults to `private`. This policy is account-local runtime
-state. It does not enter the portable `kortix.yaml` manifest. Updating only
-`session_access` creates no Git commit. A pinned session keeps its own sharing
-settings. A project manager can always open trigger-created sessions, including
-sessions that use `private` or selected-member access.
-
-`session_access` is a per-resource visibility setting on top of the role model,
-not a role. It decides who can open one trigger's sessions. It grants no
-permission the role verdict denies. See
-[Accounts & access](/docs/accounts#per-feature-access-settings).
-
-#### `p.marketplace` / `p.registry` — installed items
-
-Installs a catalog item's files onto the project's default branch.
-`registry.*` is an identical alias of `marketplace.*`.
-
-| method | what |
-| --- | --- |
-| `marketplace.list()` · `marketplace.install(id)` | installed items · install a catalog item |
-| `marketplace.updates()` · `marketplace.update(name)` · `marketplace.updateAll()` | available updates · update one · update all |
-| `marketplace.remove(name)` | uninstall an item |
-
-#### `p.files` — repo files (read)
-
-Read-only access to the project's git tree. To read and write files inside a
-running session, use the session's file operations — see
-[Files](#files) under Modules below.
-
-| method | what |
-| --- | --- |
-| `list(options?)` · `read(path, ref?)` | the repo tree · a file's contents at a git ref |
-| `search(query)` | search the repo |
-| `archive(options?)` · `history(path)` | download a tarball · a file's git history |
-
-#### `p.git` — history
-
-| method | what |
-| --- | --- |
-| `commits()` | the commit log |
-| `commit(sha)` · `commitDiff(sha)` | one commit · its diff |
-| `branches()` · `versionDiff(from, to)` | branches · diff between two refs |
-
-#### `p.changeRequests` — lifecycle and merge
-
-A change request (CR) is how a session's work merges into the default branch.
-
-| method | what |
-| --- | --- |
-| `list()` · `get(crId)` | open CRs · one CR |
-| `diff(crId)` · `mergePreview(crId)` | its diff · preview the merge result |
-| `open(input)` · `merge(crId, input?)` | open · merge a CR |
-| `close(crId, input?)` · `reopen(crId, input?)` | close without merging · reopen a closed one |
-| `requestChanges(crId, input)` | record feedback, optionally delivered back to the originating session |
-
-#### `p.sessions` — and the session handle
-
-| method | what |
-| --- | --- |
-| `list()` | the project's sessions |
-| `create(input?)` | create a session |
-| `session(sid)` | the session handle (same as `kortix.session(id, sid)`) |
-
-The session handle is the heart of the runtime — see
-[Sessions](/docs/sdk/sessions).
-
-`create(input)` accepts `connector_bindings` keyed by connector-connection slug.
-Each value names a `connection_id`. It also accepts `secrets` for
-backend-origin secret narrowing. `require_connectors` is deprecated and
-inert: the field is still accepted (an old client is never rejected for
-sending it), but nothing reads it — a session is never refused at create time
-for a connector with no usable account. See [Accounts and the call-time
-gate](#accounts-and-the-call-time-gate).
-
-#### `p.approvals` — the connector approval inbox
-
-Pending connector-gated actions awaiting a decision — backs the
-permission-approval UX (`APPROVE` / `ASK` / `BLOCK`).
-
-| method | what |
-| --- | --- |
-| `list(options?)` · `sessionsNeedingInput(options?)` | pending approvals · sessions blocked on a decision |
-| `resolve(executionId, decision, scope?)` | approve or deny one — `decision: 'approve' \| 'deny'`, `scope: 'once' \| 'session' \| 'session_all'` |
-
-#### `p.gateway` — LLM observability
-
-Request logs, cost/latency rollups, budgets, and gateway API keys for this
-project's model traffic.
-
-| method | what |
-| --- | --- |
-| `logs(opts?)` · `log(logId)` | request log entries · one log entry |
-| `overview(days?)` · `series(days?)` · `breakdown(days?)` · `sessions(days?)` · `errors(days?)` | rollups, per-session cost, and errors over a window |
-| `budgets()` · `setBudget(input)` · `deleteBudget(budgetId)` | read · create/edit · remove a budget |
-| `keys()` · `createKey(name)` · `revokeKey(keyId)` | list · mint · revoke a gateway API key |
-| `playground(prompt, models)` | run one prompt against up to 6 models |
-| `routing.get()` · `routing.set(policy)` · `routing.reset()` | read · replace · inherit the routing policy |
-| `routing.preview(input)` | resolve a route without invoking a model |
-
-A routing policy holds a default model, a vision model, and an ordered
-fallback chain, each model attempted at most once; `fallbackOn` is
-`transient` or `any-error`.
-
-The gateway moves to the next fallback model only when the current model
-failed before it returned any output:
-
-- `transient`: a network error, a timeout, any `5xx`, or `402`, `403`, `429`.
-- `any-error`: every failure, including a `400`.
-
-A failure after output started stays with that model. A request on your own
-provider key (BYOK) never falls back to a Kortix-billed model. Each fallback
-model gets its own generation defaults.
-
-#### `p.channels` — Slack / email / voice
-
-Connector surfaces that let an agent act as a Slack app, an email address,
-or join a realtime voice call.
-
-| method | what |
-| --- | --- |
-| `slack.installation()` · `slack.mode()` · `slack.manifest()` | current install · mode · app manifest |
-| `slack.connect(input)` · `slack.disconnect()` | connect · disconnect |
-| `slack.getFile(url)` · `slack.uploadFile(input)` | download · upload a file via the server proxy |
-| `email.installation(connectorSlug?)` · `email.mode()` | current install · mode |
-| `email.connect(input)` · `email.disconnect(...)` · `email.updatePolicy(input)` | connect · disconnect · update the send/reply policy |
-| `voice.setBotName(name)` | rename the bot in a live call |
-
-#### `p.modelDefaults` — default model preferences
-
-Account, agent, and project-scoped model defaults, resolved by the gateway.
-
-| method | what |
-| --- | --- |
-| `get()` · `set(input)` · `clear(params)` | read · set a default · clear an override |
-
-#### `p.setDefaultAgent` — project default agent
-
-`p.setDefaultAgent(agentName)` checks that the agent is declared and enabled,
-then sets it as `default_agent` in the project's `kortix.yaml`. New sessions
-prefer this agent unless a user picks another one.
-
-#### `p.updateFeatureFlag` — feature flags
-
-`p.updateFeatureFlag(feature, enabled)` turns one feature flag on or off for the
-project. Pass `enabled: null` to clear the override and fall back to the
-platform default. It calls the canonical `PATCH /v1/projects/:id/features`.
-
-`feature` is one of `FEATURE_FLAG_KEYS` (exported from `@kortix/sdk`, typed as
-`FeatureFlagKey`). The caller needs the project's `project.customize.write`
-permission; the route answers `403` otherwise.
-
-Every flag-gated route rejects the same way while the flag is off: HTTP `403`
-with `{ error, code: "feature_disabled", feature }`. Use `isFeatureDisabledError(error)`
-to branch on it and `featureDisabledKey(error)` to read the flag key — never
-match on the message text.
-
-`p.updateExperimentalFeature(feature, enabled)` is the **deprecated** alias. It
-keeps calling the deprecated route alias `PATCH /v1/projects/:id/experimental`
-so consumers pinned to an older deployed API keep working. Use
-`p.updateFeatureFlag` in new code.
-
-#### `p.sandbox` — templates and snapshot builds
-
-Sandbox build config beyond `sandboxHealth`/`sandboxTemplates` on the project
-handle: Dockerfile/image/warm-pool templates and their snapshot builds.
-
-| method | what |
-| --- | --- |
-| `list()` · `snapshots()` | sandboxes for this project · built snapshots |
-| `rebuildSnapshot(slug?)` · `fixWithAgent()` | rebuild a snapshot · ask an agent to fix a broken build |
-| `createTemplate(input)` · `updateTemplate(...)` · `removeTemplate(...)` · `buildTemplate(...)` | add · edit · delete · build a template |
-| `setProvider(provider)` | request a provider switch. `null` (or the platform default / the already-active provider) applies immediately; switching to a different enabled provider starts a durable prepare→verify→activate transition — the current provider keeps serving while the target warm image is built and verified, then activated. The return is a tagged union: `kind:'project'` (immediate) or `kind:'preparation'` (poll `getProjectSandboxProviderTransition()` until `activated`/`failed`) |
-
-### Escape hatch
-
-`kortix.runtime()` returns the typed OpenCode REST client for the active
-sandbox.
-On a client created by `createScopedKortix` (`@kortix/sdk/server`), it **throws**
-— the process-global "active" runtime is another request's sandbox in a
-multi-tenant server, a cross-tenant leak. Use the session-scoped
-`kortix.session(pid, sid).runtime` (call `ensureReady()` first) instead, which
-resolves that session's own sandbox.
-
-## Modules
-
-The framework-free modules behind [the client](#the-client) facade and the
-React hooks. Reach for them when you need one operation without the facade,
-a pure helper, or a Node-only isolation layer. Each module carries a
-stability tier so you know what to build on.
-
-| Tier | Meaning |
-| --- | --- |
-| Canonical | Import from the root `@kortix/sdk`. Use this for all new code. |
-| Supported | A dedicated subpath (`@kortix/sdk/react`, `@kortix/sdk/server`). First-class, not deprecated. |
-| Deprecated alias | An old subpath that still works. It re-exports code the root already exports. Import from root instead. |
-| Internal | Outside semver. Do not import this in host code. |
-
-The root entry is canonical. Every framework-free name below is importable
-straight from `@kortix/sdk`:
-
-```ts
-import { files, getSessionHealth, getClient, authenticatedFetch, backendApi } from '@kortix/sdk';
-```
-
-### Canonical modules
-
-| Module | What it does |
-| --- | --- |
-| Files | Workspace file operations: list, read, search, write |
-| Session runtime | Health probe and preview/proxy URL builders |
-| OpenCode client | The typed OpenCode REST client and its full type surface |
-| Auth | `authenticatedFetch` and token accessors |
-| Projects REST | The raw REST functions the facade wraps |
-| API client | `backendApi`, the low-level typed HTTP client |
-| Turns | Message-to-turn grouping, cost, and status math — see [Turns](#turns) |
-| Transcripts | `formatTranscript`, a client-side Markdown export |
-
-#### Files
-
-```ts
-import { files } from '@kortix/sdk';
-
-const tree = await files.list('/workspace/src');
-const { content } = await files.read('/workspace/README.md');
-const hits = await files.findText('TODO');
-await files.upload(file, '/workspace/uploads', file.name, {
-  onProgress: ({ loadedBytes, totalBytes }) => {
-    console.log(`${loadedBytes}/${totalBytes}`);
-  },
-});
-```
-
-Uploads larger than 64 KiB cross the sandbox edge in verified chunks. The
-progress callback runs after each chunk reaches the session filesystem.
-
-`files.write(path, blob)` replaces the file at `path` and fails if `path` is a
-folder. `files.create(path)` creates an empty file and never overwrites: when a
-file or folder already exists at `path`, it throws `FileExistsError`
-(`status` `409`, `code` `'FILE_EXISTS'`).
+| Lifecycle | `get()`, `update(input)`, `delete()`, `restore()`, `start()`, `startOrThrow()`, `restart()`, `stop()` |
+| Readiness | `ensureReady({ readyTimeoutMs?, session? })`, `health()` (never throws on a non-2xx status) |
+| Prompts | `send(text, { model?, agent? })`, `abort()`, `prompts.create` · `.list` · `.remove` · `.retry` · `.edit` · `.interrupt` · `.hold` |
+| Live events | `stream({ onEvent, onGapRehydrate?, signal? })` returns a handle with `close()` |
+| Conversation | `messages({ conversationId?, limit?, before? })`, `pending()`, `answerPermission(requestId, 'once' \| 'always' \| 'reject', message?)`, `answerQuestion(requestId, answers \| null)`, `compact(model?)`, `rewind(messageId)`, `restoreRewind()` |
+| Server-side reads | `turn()`, `log(query?)` (one page of the stored session log, `null` when the session has none; answers while the sandbox is stopped), `transcript(options?)` and `transcriptSync(options?)` (deprecated: the v1 transcript; read `log`), `messageAuthors()`, `modelUsage()`, `cost()`, `audit(limit?)` |
+| Files and previews | `files.list` · `.read` · `.readBlob` · `.status` · `.findFiles` · `.findText` · `.upload` · `.write` · `.create` · `.copy` · `.remove` · `.mkdir` · `.rename`, `previews()`, `previewUrl(port, path?)`, `proxyUrl(url)`, `sandboxPortUrl(port)`, `attachments.upload` · `.read` |
+| Model, agent and scope | `setModel(model)`, `setAgent(agent)` (every later `send` on this handle uses it, until you change it; `send(text, { model, agent })` overrides it for one prompt), `changeModel('provider/model')` (persisted, restarts the runtime), `scope()`, `rescope(scope)`, `providerSecretPool.list` · `.get` · `.set` |
+| Config | `configState()`, `reloadConfig(input?)`, `reloadConfigStream(…)` |
+| Sharing and people | `setSharing(intent)`, `publicShares.list` · `.create` · `.revoke`, `participants()`, `watch()`, `setWatch(watching)`, `presence({ tab_id, active, alerts? }, { keepalive? })` (answers `awake_until` and `awake_cap_at`) |
+| Git and reminders | `commit(input?)`, `reminders.list` · `.create` · `.update` · `.remove` |
+
+## Framework-free modules
+
+The root `@kortix/sdk` exports these modules next to the client. Use them for one operation without the facade, or for pure helpers.
+
+| Module | Names | What it does |
+| --- | --- | --- |
+| Files | `files`, `FileExistsError`, `uploadNativeFile` | File operations on the process-wide active sandbox, with the same methods as `s.files`. A host with several sessions uses `s.files`. |
+| Session health | `getSessionHealth(runtimeUrl?, init?)`, `isRuntimeReady(health)`, `detectLocalhostUrls`, `rewriteLocalhostUrl`, `proxyLocalhostUrl`, `parseLocalhostUrl`, `buildWebProxyUrl` | Probe a runtime and rewrite an agent's `localhost` URLs into reachable proxy URLs. |
+| Event stream | `openEventStream`, `narrowChatEvent` | The live stream behind `s.stream`, and a narrower for chat events. |
+| Auth | `authenticatedFetch`, `getAuthToken` | A `fetch` that adds the token from your `getToken`. |
+| API client | `backendApi` | The typed HTTP client under every method. Use it only for an endpoint with no method. |
+| Errors | `ApiError`, `isFeatureDisabledError`, `featureDisabledKey` | Error types and checks. |
+| Composer lists | `projectConfigAgentsToRuntimeAgents`, `composerSelectableAgents`, `resolveComposerAgent`, `pickerProviderList`, `flattenModels`, `createModelVisibility`, `modelInDefaultView`, `resolveComposerModel`, `resolveModelDefault`, `sessionModelCandidates`, `latestPromptModel`, `modelRefToKey` | Build an agent picker and a model picker with the rules of the Kortix web app. Every function is pure. |
+| Transcript export | `formatTranscript(session, messages, options?)` | One session as a Markdown string. |
+| Sandboxes by id | `restartSandbox(id)`, `stopSandbox(id)`, `getSandboxById(id)` | Act on a session's sandbox with only its `session_id`. One `GET /v1/sessions/:id` finds the project, however old the session is. A provider external id still works, but only for a session on its project's first sessions page. With the project id, use `s.restart()`, `s.stop()` and `s.get()`. |
+| Sandboxes, every project | `getSandbox()`, `ensureSandbox()`, `listSandboxes(id?)` | Read each project's first sessions page only (default 50 rows). They need a project to find older sessions: use `p.sessions.listPage()`. |
+
+### Files
 
 ```ts
 import { FileExistsError, files } from '@kortix/sdk';
 
+const { content } = await files.read('/workspace/README.md');
+await files.upload(file, '/workspace/uploads', file.name, {
+  onProgress: ({ loadedBytes, totalBytes }) => console.log(loadedBytes, '/', totalBytes),
+});
+
 try {
   await files.create('/workspace/notes.md');
 } catch (error) {
-  if (error instanceof FileExistsError) console.log(`${error.path} already exists`);
+  if (error instanceof FileExistsError) console.log('exists:', error.path);
   else throw error;
 }
 ```
 
-`files` targets the globally active sandbox. If your host runs more than one
-session at a time, call `s.files` on the session handle instead. It always
-targets that session's own sandbox. See [Sessions](/docs/sdk/sessions).
+- `upload` sends a file of 8 MiB or less in one request. A larger file goes in 8 MiB chunks, and each chunk is checked on arrival. `onProgress` runs after each chunk.
+- `write(path, blob)` replaces the file at `path`. It fails when `path` is a folder.
+- `create(path)` makes an empty file and never overwrites. When anything exists at `path` it throws `FileExistsError` (`status` `409`, `code` `FILE_EXISTS`).
+- `uploadNativeFile({ uri, name, type? }, targetPath?, baseUrl?)` uploads a React Native device file in one request. The bytes stream from `uri` and never enter the JS heap.
 
-#### Session runtime helpers
+### Session health
 
-```ts
-import { getSessionHealth, isRuntimeReady } from '@kortix/sdk';
+`getSessionHealth()` never throws on a non-2xx status. It returns `{ status, ok, health, body, hop, upstreamStatus }`. `isRuntimeReady(health)` is `true` when the runtime accepts work. `s.health()` is the same probe for one session.
 
-const result = await getSessionHealth();
-if (result.ok && isRuntimeReady(result.health)) {
-  // the sandbox daemon is ready
-}
-```
+## Custom transcript rendering
 
-`getSessionHealth` never throws on a non-2xx status. It returns
-`{ status, ok, health, body }` and lets you decide what a status means. The
-same module exports the URL helpers that rewrite an agent's `localhost` output
-into a reachable proxy URL: `detectLocalhostUrls`, `rewriteLocalhostUrl`,
-`proxyLocalhostUrl`, `parseLocalhostUrl`, and `buildWebProxyUrl`.
+Pure functions that turn session messages into renderable parts. Use them to build your own chat view. They have no React and no DOM.
 
-#### OpenCode client
+### Classify parts and turns
 
-```ts
-import { getClient } from '@kortix/sdk';
+`classifyPart(part)` turns one part of the Kortix transcript format (`kortix.transcript.v1`, `KORTIX_TRANSCRIPT_SCHEMA`) into a `ClassifiedPart`, keyed by `kind`:
 
-const client = getClient();
-const { data } = await client.session.list({ limit: 100 });
-```
-
-`getClient()` returns the typed OpenCode v2 compatibility client for the active sandbox,
-with auth already injected. Prefer `kortix.session(pid, sid).runtime`, the
-same client scoped to one session, over the global `getClient()` when your
-host runs more than one session.
-
-#### Auth helpers
-
-```ts
-import { authenticatedFetch, getAuthToken } from '@kortix/sdk';
-
-const res = await authenticatedFetch(`${runtimeUrl}/kortix/health`);
-const token = await getAuthToken();
-```
-
-The token comes from the `getToken` function you passed to `createKortix`.
-Most app code does not need this module — the file, session, and facade
-layers already authenticate for you.
-
-#### API client
-
-```ts
-import { backendApi } from '@kortix/sdk';
-
-const data = await backendApi.get('/some/endpoint');
-await backendApi.post('/some/endpoint', { name: 'x' });
-```
-
-`backendApi` is the typed HTTP client every REST function builds on. Use it
-only for an endpoint that has no typed wrapper yet.
-
-### Supported subpaths
-
-| Subpath | What it does |
+| `kind` | Fields |
 | --- | --- |
-| `@kortix/sdk/react` | React hooks — see [React hooks](/docs/sdk/react) |
-| `@kortix/sdk/server` | Request-scoped config for multi-tenant backends |
-| `@kortix/sdk/wire-message-id` | The OpenCode wire message-id clock alone (one module, no imports). The root exports the same names |
+| `text` | `id`, `text`, `synthetic`. Do not render a `synthetic` part as a chat bubble. |
+| `reasoning` | `id`, `text` |
+| `tool` | `id`, `tool: ToolView` |
+| `file` | `id`, `filename?`, `mime`, `url`, `isImage`, `isPdf` |
+| `subtask` | `id`, `description`, `agent`, `prompt`, `model?` |
+| `patch` | `id`, `hash`, `files`, `fileCount` |
+| `snapshot` | `id`, `snapshot` |
+| `agent` | `id`, `name` |
+| `retry` | `id`, `attempt`, `message`, `createdAt` |
+| `compaction` | `id`, `auto`, `overflow`, `tailStartId?` |
+| `step` | `id`, `phase: 'start' \| 'finish'`, `snapshot?`, `reason?`, `cost?`, `tokens?` |
+| `unknown` | `raw`: a part type this SDK version does not know. It never throws. |
 
-#### Wire message ids
+`ToolView` fields: `name`, `kind` (from `toolKind`), `title`, `status` (`pending`, `running`, `done`, `error`), `input`, `output`, `error`, `outputParsed` (the parsed JSON output, for output up to 256 KiB), `outputText`, `files`, `diff`, `diagnostics`, `answers`, `childSessionId`. A tool that reports `success: false` inside a completed state has `status: 'error'`. `toToolView(part)` builds a `ToolView` from one tool part or one session-log `ToolCallBlock`. Read these fields, not a harness's own metadata: the same card then renders every harness.
 
-A prompt's `messageId` is its position in the transcript. OpenCode orders
-messages by `msg_` + a 48-bit clock (`Date.now() * 0x1000`, low 48 bits) +
-14 base62 characters, and the clock wraps every 2^36 ms (about 2.2 years).
-Never encode it by hand.
-
-```ts
-import { mintWireMessageId } from '@kortix/sdk';
-
-// `after`: the ids already in this session's transcript.
-const messageId = mintWireMessageId({ after: transcriptIds });
-```
-
-The mint is dated two minutes back, then lifted one tick above the newest id
-in `after` that is at most one hour ahead. A caller that holds the newest
-position as a clock instead of ids uses `mintWireMessageIdAbove({ nowMs,
-newestKnownTime })`, which returns `{ id, time }`. `newestWireIdClock(ids)`
-finds that clock. Every comparison is on the ring, so ids on both sides of a
-wrap keep their true order.
-
-The 48-bit clock wraps every ~2.2 years, so never compare two clocks with `>`
-or `<=`: an id minted just after a wrap is numerically smaller than one minted
-just before it. Use `wireIdClockDelta(clock, reference)`, the signed distance
-on the ring (positive when `clock` is ahead), and `maxWireIdClock(clocks)` for
-the newest of several:
+`classifyTurn(message)` returns `{ parts, error?, isEmpty }` for one assistant message. `isEmpty` is `true` when the turn has no error and no visible part.
 
 ```ts
-import { maxWireIdClock, wireIdClockDelta } from '@kortix/sdk/wire-message-id';
+import { classifyTurn, toolViewModel } from '@kortix/sdk';
 
-const floor = maxWireIdClock([transcriptNewest, deliveredNewest]);
-const stale = floor !== null && wireIdClockDelta(clientClock, floor) <= 0n;
-```
-
-#### Server-side isolation
-
-`createKortix` stores its config, including the token function, in one
-process-wide variable. That is fine for a browser tab, a CLI, or a
-single-tenant server. It is unsafe for a Node server that handles concurrent
-requests for different users, because the last `createKortix` call wins for
-every in-flight request. `@kortix/sdk/server` fixes this with per-request
-isolation:
-
-```ts
-import { createScopedKortix } from '@kortix/sdk/server';
-
-export async function handler(req: Request) {
-  const kortix = createScopedKortix({ backendUrl, getToken: () => tokenFor(req) });
-  return kortix.projects.list();
-}
-```
-
-`createScopedKortix` and `runWithKortix` isolate config per request with
-Node's `AsyncLocalStorage`. Never import `@kortix/sdk/server` from a browser
-bundle — it statically pulls in `node:async_hooks`.
-
-A scoped client's top-level `runtime()` throws (it would resolve another
-tenant's sandbox). Reach a specific session's runtime via
-`kortix.session(pid, sid).runtime` after `await s.ensureReady()`.
-
-### Deprecated aliases
-
-About twenty old subpaths still work: `/files`, `/turns`, `/session`, `/auth`,
-`/projects-client`, `/api-client`, `/config`, `/event-stream`,
-`/opencode-client`, `/platform-client`, and more. Each one re-exports code the
-root `@kortix/sdk` entry already exports. They stay working so no existing
-import breaks, but new code should import from the root.
-
-### Internal modules
-
-`@kortix/sdk/internal/*` holds the zustand stores apps/web's own runtime uses
-internally — session sync state, active-runtime tracking, and reconnect
-bookkeeping. This subpath is explicitly outside semver. Do not import it in
-host code; the [React hooks](/docs/sdk/react) already expose the state you
-need.
-
-## Turns
-
-Plain functions that group session messages into turns and classify each
-message part. Use them to build a custom chat renderer instead of the
-reference one in `apps/web`. No React, no DOM — every export is a plain
-function or type, safe to call from any host.
-
-```ts
-import { classifyPart, classifyTurn, toolInfo, toolViewModel } from '@kortix/sdk';
-```
-
-Import every function from the root `@kortix/sdk` entry. The
-`@kortix/sdk/turns` subpath still works, but it is a deprecated alias. New
-code must use the root entry — see [Distribution](#distribution).
-
-### Classify a part
-
-`classifyPart(part)` normalizes one of OpenCode's 12 wire part types into a
-`ClassifiedPart` — a union keyed by `kind`. Each variant already resolves the
-fields a renderer needs: tool status, parsed JSON output, image detection.
-
-```ts
-import { classifyPart, type ClassifiedPart } from '@kortix/sdk';
-
-for (const part of message.parts) {
-  const classified: ClassifiedPart = classifyPart(part);
-  switch (classified.kind) {
-    case 'text':
-      render(classified.text);
-      break;
-    case 'tool':
-      render(classified.tool.title, classified.tool.status);
-      break;
+for (const part of classifyTurn(message).parts) {
+  if (part.kind === 'text' && !part.synthetic) render(part.text);
+  if (part.kind === 'tool') {
+    const view = toolViewModel(part.tool);
+    if (view.kind === 'shell') render(view.command, view.stdout, view.exitCode);
   }
 }
 ```
 
-| `kind` | shape |
+### Tools
+
+- `toolKind(name)` maps any harness's tool name to one `ToolKind`: `read`, `list`, `glob`, `grep`, `write`, `edit`, `apply_patch`, `bash`, `pty`, `web_search`, `webfetch`, `media`, `show`, `task`, `delegate`, `sessions`, `todowrite`, `question`, `memory`, `connectors`, `automations`, `projects`, `skill`, `context`, `retired` or `other`.
+- `toolInfo(name)` returns `{ label, category }`. `getToolInfo(name, input)` returns `{ icon, title, subtitle }` for a tool card. An unknown name falls back to `humanizeToolName(name)`.
+- `inputPath(input)` reads a file tool's path from `filePath`, `file_path` or `path`.
+- `toolViewModel(tool)` returns one shape per tool family:
+
+| `kind` | Fields |
 | --- | --- |
-| `text` | `{ id, text, synthetic }` — skip `synthetic` parts; they mark shell mode's synthetic prompt |
-| `reasoning` | `{ id, text }` |
-| `tool` | `{ id, tool: ToolView }` |
-| `file` | `{ id, filename?, mime, url, isImage, isPdf }` |
-| `subtask` | `{ id, description, agent, prompt, model? }` |
-| `patch` | `{ id, hash, files, fileCount }` |
-| `snapshot` | `{ id, snapshot }` |
-| `agent` | `{ id, name }` |
-| `retry` | `{ id, attempt, message, createdAt }` |
-| `compaction` | `{ id, auto, overflow, tailStartId? }` |
-| `step` | `{ id, phase: 'start' \| 'finish', snapshot?, reason?, cost?, tokens? }` |
-| `unknown` | `{ raw }` — a part type this SDK version does not know |
+| `web-search` | `query`, `results?`, `answer?`, `error?` |
+| `shell` | `command`, `stdout?`, `exitCode?` |
+| `file-read` · `file-write` | `path`, `preview?` |
+| `file-edit` | `path`, `diff?` (lines of `{ type: 'added' \| 'removed' \| 'unchanged', text }`) |
+| `search` | `pattern`, `matches?` |
+| `task` | `description`, `agent?` |
+| `todo` | `items` |
+| `question` | `questions`, `answers?` |
+| `generic` | `label`, `inputPretty?`, `outputPretty?`. Every other tool. Always safe to render. |
 
-An unrecognized wire part degrades to `unknown` at runtime instead of
-throwing. This lets an older client talk to a newer server.
+### Turns, status and helpers
 
-A tool part classifies into `ToolView`:
+| Names | What they do |
+| --- | --- |
+| `groupMessagesIntoTurns(messages)` · `collectTurnParts(turn)` | Pair each user message with the assistant messages that answered it · all parts of one turn. |
+| `findLastTextPart(parts)` · `turnHasSteps(parts)` | The final answer text · whether the turn has tool, compaction, snapshot or patch parts. |
+| `getTurnStatus(parts, childMessages?)` · `getWorkingState(…)` · `formatDuration(ms)` | A status line such as `Reading files...`. Pass `childMessages` to show a sub-agent's activity. |
+| `getTurnError(turn)` · `getChildSessionError(messages)` · `unwrapError(error)` | Turn and sub-agent errors, normalized. |
+| `getRetryInfo(status)` · `getRetryMessage(status)` | Retry state `{ attempt, message, next, details? }` · the full retry message. |
+| `getChildSessionId(part)` · `getChildSessionToolParts(messages)` · `rootRuntimeSession` · `directSubsessions` · `runtimeSessionsOf` · `projectSessionForRuntimeId` | Connect a delegating tool call to its child conversation. |
+| `getPermissionForTool(permissions, callID)` · `getHiddenToolParts(…)` · `isToolPartHidden(…)` | Match a pending permission or question to its tool call. |
+| `isTextPart`, `isToolPart`, `isReasoningPart`, `isFilePart`, `isAgentPart`, `isCompactionPart`, `isSnapshotPart`, `isPatchPart`, `isStepPart`, `getPartText` | Type guards. |
+| `sortSessions(now)` · `childMapByParent(sessions)` · `allDescendantIds(map, id)` | Session list order and hierarchy. |
+| `getFilename`, `getDirectory`, `relativizePath`, `stripAnsi`, `formatTokens` | Formatting. |
+
+The grouping and status functions accept the structural types `PartLike`, `MessageInfoLike`, `TurnLike`, `ToolStateLike` and `SessionStatusLike`, so your own message shapes work. Never mint a message id by hand: use `mintWireMessageId()`.
+
+## Session log types
+
+The root exports the types of the Kortix session log, the harness-neutral record of a session, schema `kortix.session/2`. Kortix stores every session as a session log. The SDK exports the types and three constants, with no validators. In React, `useSessionLog` and `useSessionLogThread` return a session's log once the session reads it: see [Read the session log](/docs/sdk/react#read-the-session-log).
+
+| Name | What it is |
+| --- | --- |
+| `SESSION_LOG_SCHEMA` · `SESSION_LOG_MINOR` | `'kortix.session/2'` · `1` |
+| `SessionLog` | The record: threads, todos, pending questions and permissions, harness history, `restore_grade`. |
+| `SessionLogThread` · `SessionLogMessage` | One thread (the main thread or a sub-agent) · one message with `seq`, `role`, `kind`, `status`, `model`, `usage`, `blocks`. |
+| `SessionLogBlock` | The union of `TextBlock`, `ReasoningBlock`, `AttachmentBlock`, `ToolCallBlock`, `CompactionBlock`, `SubtaskBlock`, `StepBlock`, `HarnessBlock`, keyed by `type`. |
+| `ToolResultContent`, `CompactionLayoutEntry`, `ThreadInteraction`, `ModelRef` | Parts of the records above. |
+| `KNOWN_TOOL_KINDS` · `KnownToolKind` · `SessionLogToolKind` | The tool kinds every reader renders: `shell`, `read`, `write`, `edit`, `patch`, `list`, `glob`, `grep`, `web_fetch`, `web_search`, `todo`, `task`, `question`, `plan`, `mcp`, `other` · the tool kind of a block, any string. Render an unknown kind as `other`. |
+| `SessionLogTodo` | One todo item. |
+| `RestoreGrade` · `GradeCounts` | How faithfully the record restores (`native`, `converted` or `partial`) · what is missing. |
+
+A text over 256 kB is stored by reference. This applies to a `TextBlock` and to a `text` item of a tool result (`ToolResultContent`). Its `text` holds the first 16 kB, `bytes` holds the UTF-8 length of the full text, and `ref` is `kortix-attachment://<project_id>/<session_id>/<attachment_id>`. `kortix.session(projectId, sessionId).attachments.read(attachmentId)` returns the full text as a `Blob` (`text/plain; charset=utf-8`), also while the sandbox is stopped. The v1 transcript reads return the full text.
 
 ```ts
-interface ToolView {
-  name: string;
-  title: string;
-  status: 'pending' | 'running' | 'done' | 'error';
-  input?: Record<string, unknown>;
-  output?: string;
-  error?: string;
-  outputParsed?: unknown; // JSON.parse(output) when it parses, capped at 256KB
-  outputText?: string;    // the raw output text, always present
+import type { SessionLog, SessionLogBlock } from '@kortix/sdk';
+
+function toolCalls(log: SessionLog): SessionLogBlock[] {
+  return log.threads.flatMap((t) => t.messages.flatMap((m) => m.blocks)).filter((b) => b.type === 'tool_call');
 }
 ```
 
-Some tools (`web_search`, `image_search`, connector calls) report
-`state.status: 'completed'` even when their JSON body carries
-`success: false`. `classifyPart` detects this and sets `ToolView.status` to
-`'error'` in that case too.
+### Tool calls from v1 parts (transitional)
 
-`classifyTurn(message)` classifies every part of one assistant message and
-returns a `ClassifiedTurn` with three fields:
+Three functions bridge a host that renders blocks while its rows are still v1 (`useSessionMessages`). All three are transitional.
 
-- `parts` — each part, classified
-- `error` — from `message.info.error`, if any
-- `isEmpty` — true when the turn has no error and no part with visible content
-
-### Tool metadata
-
-Two lookups both describe a tool. Do not confuse them.
-
-- `toolInfo(name)` — icon-free, returns `{ label, category }`. `classifyPart`
-  uses this internally. `ToolCategory` is `'shell' | 'files' | 'search' |
-  'edit' | 'web' | 'task' | 'other'`.
-- `getToolInfo(name, input)` — icon-aware, returns `{ icon, title, subtitle }`
-  for the reference tool-card UI. The subtitle comes from the tool's input,
-  for example a file path or a search query.
-
-```ts
-toolInfo('bash'); // { label: 'Shell', category: 'shell' }
-getToolInfo('write', { filePath: '/workspace/main.go' });
-// { icon: 'file-pen', title: 'Write', subtitle: 'main.go /workspace' }
-```
-
-Both functions match tool-name prefixes, so Kortix's plugin tool families
-(`agent_*`, `session_*`, `task_*`, `trigger_*`, `project_*`, `pty_*`) resolve
-without a registry update. An unknown tool name never throws — it falls back
-to `humanizeToolName(name)` with category `'other'`.
-
-### Tool view models
-
-`toolViewModel(classifiedTool)` maps a classified tool part to a shape built
-for one tool family. A UI can then render it specially instead of as a
-generic JSON blob.
-
-```ts
-const vm = toolViewModel(classifiedTool);
-if (vm.kind === 'shell') {
-  render(vm.command, vm.stdout, vm.exitCode);
-}
-```
-
-| `kind` | shape | tools |
+| Name | What it does | Removed |
 | --- | --- | --- |
-| `web-search` | `{ query, results?, answer?, error? }` | `web_search`, `image_search` |
-| `shell` | `{ command, stdout?, exitCode? }` | `bash` |
-| `file-read` | `{ path, preview? }` | `read` |
-| `file-write` | `{ path, preview? }` | `write` |
-| `file-edit` | `{ path, diff?: DiffLine[] }` | `edit`, `morph_edit` |
-| `search` | `{ pattern, matches?: SearchMatch[] }` | `grep`, `glob` |
-| `task` | `{ description, agent? }` | `task` |
-| `todo` | `{ items: TodoItem[] }` | `todowrite` |
-| `question` | `{ questions: QuestionItem[], answers? }` | `question`, `ask` |
-| `generic` | `{ label, inputPretty?, outputPretty? }` | everything else, always safe to render |
+| `toolCallBlock(part)` | The `ToolCallBlock` of a v1 tool part: the block `fromV1` builds for it. An open call stays open (`pending` or `running`, no `result`). A call that streams its input has the text so far as its `input`. The same part object returns the same block. | In the SDK major that removes the v1 rows. |
+| `toolCallMetadata(call)` | The harness's display metadata of a tool call: the whole `state.metadata` of the v1 part it came from, such as bash `command`, read `loaded`, task `sessionId` or edit `filediff`. A record a harness wrote natively carries its `details` (`result.details`, else the adapter's own ext: pi keeps them in `ext.pi.data.details`) and `exit` (from `result.exit_code`). One shared empty object when there is none. | When the session-log schema carries display metadata. |
+| `sessionLogOfV1Rows(sessionId, runtimeSessionId, rows)` | The `fromV1` live view of one runtime session's v1 rows: the `SessionLog` `useSessionLogThread` returns on v1 (one root thread, the runtime session id as its id, the open turn kept open). For rows a host reads without a `useSession`, such as a sub-agent's chat. A message keeps its identity while its row object is unchanged. | In the SDK major that removes the v1 rows. |
 
-`DiffLine` is `{ type: 'added' | 'removed' | 'unchanged', text }`. String
-fields are capped so one large tool output never breaks a render: 4000
-characters for pretty-printed JSON, 256KB before a diff runs.
-
-### Group messages into turns
-
-A turn pairs one user message with the assistant messages that answered it.
-It is the unit a chat UI renders as one exchange.
+`toToolView`, `getChildSessionId`, `partOutcome`, `contextToolTrigger` and `shouldShowToolPart` accept a `ToolCallBlock` as well as a v1 tool part, and return the same answer for both.
 
 ```ts
-import { groupMessagesIntoTurns, collectTurnParts, type TurnLike } from '@kortix/sdk';
+import { getChildSessionId, toolCallBlock, toolCallMetadata } from '@kortix/sdk';
 
-const turns: TurnLike[] = groupMessagesIntoTurns(messages);
+const call = toolCallBlock(part); // part: a v1 tool part from useSessionMessages
+const child = getChildSessionId(call); // a running task's child session
+const command = toolCallMetadata(call).command; // bash
+```
+
+### Reading a tool call
+
+What a host draws a `ToolCallBlock` with. Block-native: they stay.
+
+| Name | What it does |
+| --- | --- |
+| `toolCallStatus(call)` | The status in the words a renderer compares: `pending`, `running`, `completed` or `error`. |
+| `toolCallRawOutput(call)` | A completed call's output text as the tool returned it (its result's text items, joined); `''` for any other call. One string per call object. |
+| `toolCallError(call)` | A failed call's error text: its semantic error (`result.error.message`), else its result text, as `toV1` gives a v1 part's `state.error`. A harness that closes a failed call with `is_error` and the tool's text only still shows that text. `undefined` for a call that did not fail. |
+| `subAgentCalls(thread)` | The tool calls a sub-agent row lists: every shown call (`shouldShowToolPart`) of the thread's replies, in order. One array per thread object; the same empty array for `null`. |
+
+### Block turns
+
+The turn model over session-log blocks: what a transcript renders a thread from. Each name replaces a v1 helper over `MessageWithParts` (see [Turns, status and helpers](#turns-status-and-helpers)); the v1 helpers stay until the next major.
+
+| Name | What it does | Replaces |
+| --- | --- | --- |
+| `sessionLogTurns(thread, options?)` | One `SessionLogTurn` per user message: `id`, `user`, `assistant` (the replies, by `reply_to` then order), `partial` (the prompt is not loaded), `blocks` (every reply block), and the derived fields `status` (`pending`, else the last reply's status), `error` (`code`, `message`, `details`, `raw`), `cost` (the replies' usage priced with the platform markup; a compaction's summary usage is a reply's; a message converted from v1 is priced over its v1 parts, exactly as `getTurnCost` prices them), `compaction` (`block`, `hasContent`, `inFlight`), `threads` (the sub-threads it spawned), `plan` (owns the plan card), `shell` (shell mode's bash call), `response` (the last text block), `attachments`, `live`, `queued`, `retrying`. Options: `busy`, `liveMessageId`, `held` (the prompts the inbox holds, in queue order), `threads`, `pricing`. A turn keeps its identity while its messages and derived fields do. A message out of context keeps its turn; `hideOutOfContext: true` leaves out every message with `in_context: false` that is not streaming (a failed attempt, an aborted empty reply, an old root's history). | `groupMessagesIntoTurns`, `collectTurnParts`, `getTurnError`, `getTurnErrorDetails`, `getTurnErrorRawText`, `getTurnCost`, `compactionTurnInfo`, `getShellModePart`, `findLastTextPart`, `isAttachment`, `getWorkingState`, `resolveWorkingTurn`, `hasRetryingAssistantTurn`, `getChildSessionId` |
+| `sessionLogTurnSegments(blocks, options?)` | The segments of a turn: `burst` (a run of non-text blocks), `text`, `standalone` (a `show` or sub-agent call, or a call named in `standaloneCallIds`), `show-group` (adjacent `show` calls). | `segmentTurn`, `groupShowSegments` |
+| `splitSessionLogTurnWork(segments, { working })` | The settled-turn fold: `work`, `hoisted` (the `show` deliverables), `final` (the last text). `null` while the turn works or has no work. | `splitTurnWork` |
+| `sessionLogBurstSteps(blocks)` | The rows of a burst: `thought` (a run of reasoning; `running` only while its message streams), `block`, `group` (same-family calls, with `family`, `label`, `status`). An answered question is its own row. | `mergeBurstSteps`, `stepLabel` |
+| `sessionLogCallStatus(call, live)` | The status a call renders with: `pending`, `running`, `complete`, `error`, or `interrupted`. An open call, or one the closure rule closed (`result.synthetic`, or `result.error.code` `'interrupted'`), is `running` (started) or `pending` on a live turn and `interrupted` on any other. | new |
+| `sessionLogOpenCall(call)` | The call in the open shape `sessionLogCallStatus(call, true)` names: a call the closure rule closed reads `running` (started) or `pending`, without its `result`; every other call is itself. One object per call. Render a thread's calls through it so the v1 live view and the v2 page draw one call the same; `sessionLogCallStatus(call, turn.live)` says whether it is interrupted. | the host's open-call shim |
+| `sessionLogBurstSummary(blocks)` | A burst's step counts: `total` (a run of reasoning is one), `failed`, `completed`, `hasPlumbing`. | `burstSummary` |
+| `sessionLogBurstRunning(blocks, { working, trailing? })` | The burst is in progress: never once the turn stops working; the trailing burst for the whole working turn; another one while a call is open or a thought is still written. | the host's `burstIsRunning` |
+| `sessionLogShowGroupCall(calls)` | A `show-group` segment as one `show` call: the first call's ids, `input.items` the carousel (a failed call keeps its slot as an `error` item), `running` while a call is open, else `complete`. | the host's `mergeShowParts` |
+| `sessionLogAnsweredQuestionCall(call, answers, input?)` | A `question` call as answered with `answers` the harness has not confirmed yet: `complete`, the answers in its metadata (`toToolView(call).answers`), `input` replaced when given. | the host's synthetic answered part |
+| `sessionLogRetrying(thread)` | The thread's last reply is open with a retryable provider error: its turn's `retrying`, read without grouping turns, so the busy state a host passes as `busy` can include it. False on a native record (no retry flag). | `hasRetryingAssistantTurn` |
+| `sessionLogActivityText(turn, childMessages?)` | The activity line of a live turn ("Reading files..."); a running task reads its sub-thread's messages. | `getTurnStatus` |
+| `sessionLogThreadMetrics(thread, options?)` | One thread's `cost` (every reply's usage priced: its reported cost, else the lookup, with the platform markup), `messages` (`all`, `user`, `assistant`; a compaction counts as its user marker and, once it is no longer streaming, its summary reply) `tokens` (`input`, `output`, `reasoning`, `cacheRead`, `cacheWrite`: every priced reply's usage summed) and `context` (the last reply, an assistant message or a compaction, with tokens: its `usage` is the context size). Options: `pricing`. What a context modal's overview and its sub-agent rows show. | `getSessionCost` over v1 rows, a host's own token and message counts and last-reply lookup |
+| `classifySessionLogMessage(message)` | `classifyTurn` of one session-log message: its blocks as `ClassifiedPart`s and its error as `TurnError` (the gateway's own sentence, which `message.error.message` does not carry for a converted record). A compaction is one message: the marker's parts, then the summary's. For a host whose renderers take `ClassifiedPart`s (the TUI, the white-label demo). | `classifyTurn` over v1 rows |
+| `sessionLogPromptMessage(prompt, threadId)` | The user message of a queued inbox prompt (`SessionPrompt`) the thread has not placed: id `message_id`, else `queued-<prompt_id>`. Append it after the thread's messages and name it in `held`. | the host's synthetic row |
+| `isSessionLogRestoreNote(message)` | The message is the note a partial restore leaves for the agent: a user message whose text block id starts with `prt_kortix_restore_g` (on v2 it also carries `origin: 'notification'`; the v1 transcript has no origin). Render it as a notice, not as a person's prompt. | new |
+| `sessionLogRestoreNotice(session)` | What a partial restore could not bring back, for the person: `{ generation, missing }`, `missing` a list of `{ kind, count }` (`attachment`, `text`, `tool_input`, `tool_result`, `cut_point`, `other`) with counts above zero. Reads `restore_grade`, `grade_counts` and `ext.kortix.data.restore` of the session record (`useSessionLog`). Null unless the grade is `partial` and a restore wrote the record. | new |
+| `sessionLogHarnessSwitches(history, turns)` | The switches `harness.history` records, by the id of the turn each lands on (the first turn whose prompt `seq` is at or above `from_seq`): `{ harness, previous, version, at }`. A new version of the same harness is no switch. A switch inside a page not loaded yet is left out. | new |
+| `sessionLogReferencedTexts(messages)` | The texts the API stored by reference (a text over 256 kB keeps a 16 kB preview, plus `ref` and `bytes`) that a transcript renders, text blocks and tool results' `content` items (not `model_content`), once per `ref`: `{ ref, bytes }`. Read one with `fetchSessionAttachment(ref)`. | new |
+| `sessionLogWithFullTexts(thread, texts)` | `thread` with each text whose `ref` is a key of `texts` replaced by the whole text, without `ref` and `bytes`. Untouched messages, and the thread when nothing changes, keep their identity. | new |
+| `sessionLogFullTextAction(refs)` | How a host offers the whole of `refs`: `'inline'` up to `SESSION_LOG_FULL_TEXT_INLINE_MAX_BYTES` (1 MiB) in all, else `'download'` (a multi-MB text rendered as markdown stalls the page). | new |
+| `sessionLogFullTextPlan(refs)` | Which of `refs` show inline and which download: the smallest texts fill the 1 MiB inline budget first, only the rest download (`{ inline, download }`, both in record order). Nothing downloads exactly when `sessionLogFullTextAction` says `'inline'`. | new |
+
+A pending permission or question matches a call by `call.call_id`: `getPermissionForTool(permissions, call.call_id)`, `getQuestionForTool(questions, call.call_id)`. `freshSendHint` and `fallbackBusyRowAfterTurnId` accept a `SessionLogTurn[]` as well as v1 turns, and `stepLabel` any session-log block (a non-call block reads by its `type`).
+
+```ts
+import { sessionLogTurns, sessionLogTurnSegments, sessionLogCallStatus } from '@kortix/sdk';
+
+const turns = sessionLogTurns(thread, { busy, liveMessageId: working.turnId, held: heldIds, threads: log.threads });
 for (const turn of turns) {
-  const parts = collectTurnParts(turn);
+  for (const segment of sessionLogTurnSegments(turn.blocks)) {
+    if (segment.kind === 'standalone') render(segment.block, sessionLogCallStatus(segment.block, turn.live));
+  }
 }
 ```
 
-`groupMessagesIntoTurns` links each assistant message to its parent user
-message. It falls back to message order when a parent link is missing. It
-also attaches an orphan assistant message — one with no parent that precedes
-every user message — to the first turn, not the last.
+## Deprecated names
 
-Related helpers:
+Each name below is marked `@deprecated` and stays until the next major version. Your editor flags each call.
 
-- `findLastTextPart(parts)` — the turn's final response text
-- `turnHasSteps(parts)` — true if a `tool`, `compaction`, `snapshot`, or `patch` part exists
-- `isShellMode(turn)` / `getShellModePart(turn)` — a turn that is one synthetic prompt driving one `bash` call
+| Deprecated | Use instead |
+| --- | --- |
+| `p.updateExperimentalFeature(key, enabled)` · `updateExperimentalFeature` · `ExperimentalFeatureKey` · `ExperimentalFeatureView` | `p.updateFeatureFlag` · `updateFeatureFlag` · `FeatureFlagKey` · `FeatureFlagView` |
+| `s.runtime` | The session methods: `messages`, `pending`, `answerPermission`, `answerQuestion`, `compact`, `send`, `abort`, `rewind` |
+| `OpencodeClient` · `OpencodeClientConfig` · `createOpencodeClient` · `OpenCodeEvent` · `OpencodeAgentConfig` · `ProjectOpenCodeSession` · `OpenCodeProjectInfo` | `RuntimeClient` · `RuntimeClientConfig` · `createRuntimeClient` · `RuntimeEvent` · `RuntimeAgentConfig` · `ProjectRuntimeSession` · `RuntimeProjectInfo` |
+| `projectConfigAgentsToOpenCodeAgents` · `parseOpenCodeErrorPayload` · `formatOpenCodeRuntimeError` | `projectConfigAgentsToRuntimeAgents` · `parseRuntimeErrorPayload` · `formatRuntimeError` |
+| `OpenCodeConfigIssue` · `OpenCodeConfigInvalidError` · `getOpenCodeConfigInvalidError` · `isOpenCodeConfigInvalidError` | `RuntimeConfigIssue` · `RuntimeConfigInvalidError` · `getRuntimeConfigInvalidError` · `isRuntimeConfigInvalidError` |
+| `p.sessions.claimWarm(input)` · `claimWarmProjectSession` | Open the session from `p.sessions.ensureWarm()` and prompt it |
+| `p.connectors.setAuthorizationStrategy` · `setConnectorAuthorizationStrategy` | The call changes nothing. To create an account under one owner, pass `owner` to `connectorConnect`. |
+| `getConnectionPolicies` · `setConnectionPolicies` | `p.connectors.policies.get` · `p.connectors.policies.set` |
+| `pipedreamConnect` · `pipedreamFinalize` | `connectorConnect` · `connectorFinalize` |
+| `listDiscoverIntegrations` · `getDiscoverIntegration` · `DiscoverIntegration*` types | `listDiscoverConnectors` · `getDiscoverConnector` · `DiscoverConnector*` types |
+| `SessionScopeResult` · `toWorkspaceRelative` | `SessionScope` · `toDaemonPath` |
+| `setCachedAuthToken` · `setBootstrapAuthToken` | Return the token from your own `getToken` |
+| `claimNext`, `enqueue`, `createSessionQueue` and the other `@kortix/sdk/message-queue` names | `s.send`, or `useSession().send` in React |
+| `wireIdClock`, `wireIdClockDelta`, `maxWireIdClock`, `newestWireIdClock`, `mintWireMessageIdAbove` and the `WIRE_ID_*` constants | `mintWireMessageId`. Message ids are opaque. |
+| `billing.checkout.createSession` · `billing.checkout.confirmSession` · `createPerSeatCheckout` · `claimPerSeatBilling` | `billing.setPlan(input)`. All reject with `ENDPOINT_RETIRED`. |
+| `billing.subscription.scheduleDowngrade` · `billing.subscription.cancelScheduledChange` · `billing.subscription.prorationPreview` | `billing.setPlan(input)`, or `billing.subscription.createPortalSession`. They reject with `ENDPOINT_RETIRED`. |
 
-### Type guards
-
-Narrow a part by `type`:
-
-```ts
-import { isTextPart, isToolPart, getPartText } from '@kortix/sdk';
-
-if (isTextPart(part)) {
-  // part.type narrowed to 'text'
-}
-const text = getPartText(part); // works for 'text' and 'reasoning' parts
-```
-
-Also available: `isReasoningPart`, `isFilePart`, `isAgentPart`,
-`isCompactionPart`, `isSnapshotPart`, `isPatchPart`.
-
-### Status and errors
-
-```ts
-import { getWorkingState, getTurnStatus, formatDuration } from '@kortix/sdk';
-
-const status = getTurnStatus(parts, childMessages); // "Running commands..."
-formatDuration(4300); // "4s" — durations under 1s return ''
-```
-
-`getTurnStatus` scans a turn's parts for the last status line. When the last
-part is a running `task` delegation, pass `childMessages` so the status shows
-the sub-agent's real activity instead of a generic "Delegating..." line.
-
-```ts
-import { getTurnError, getChildSessionError, unwrapError } from '@kortix/sdk';
-
-getTurnError(turn);                    // the first assistant error, unwrapped
-getChildSessionError(childMessages);   // newest error in a sub-agent's messages
-unwrapError(rawError);                 // normalizes double-JSON and mixed error shapes
-```
-
-### Cost and token totals
-
-```ts
-import { getTurnCost, getSessionCost, formatCost, formatTokens, COST_MARKUP } from '@kortix/sdk';
-
-const info = getTurnCost(partsWithMessage, modelPricingLookup);
-const sessionCost = getSessionCost(messages, modelPricingLookup);
-
-formatCost(0.0032);  // "$0.003"
-formatTokens(12345); // "12k"
-```
-
-Both functions read cost and token totals from `step-finish` parts. When a
-part reports zero, they estimate cost from token counts using a
-`ModelPricingLookup`. Every total is multiplied by `COST_MARKUP` (`1.2`) to
-match what Kortix bills.
-
-ChatGPT/Codex subscription messages contribute `$0.00`, including historical
-messages with nonzero runtime costs. Token and context usage remain visible.
-Mixed sessions retain charges for paid API messages. OpenAI API models remain
-billable, including API models whose names contain `codex`.
-
-### Child sessions and pending requests
-
-A `task` tool call delegates to a child session. These helpers connect a
-parent turn to that child's own messages.
-
-```ts
-import { getChildSessionId, getChildSessionToolParts } from '@kortix/sdk';
-
-const childId = getChildSessionId(taskToolPart);
-const steps = getChildSessionToolParts(childMessages);
-```
-
-Match a pending permission or question request to its tool call, and find
-which tool parts to hide while one is active:
-
-```ts
-import { getPermissionForTool, getHiddenToolParts, isToolPartHidden } from '@kortix/sdk';
-
-const permission = getPermissionForTool(permissions, callID);
-const hidden = getHiddenToolParts(activePermission, activeQuestion);
-```
-
-### Formatting and lists
-
-```ts
-import { getFilename, getDirectory, relativizePath, stripAnsi } from '@kortix/sdk';
-
-getFilename('/workspace/src/main.go');               // "main.go"
-getDirectory('/workspace/src/main.go');               // "/workspace/src"
-relativizePath('/workspace/src/main.go', '/workspace'); // "src/main.go"
-```
-
-Session-list helpers operate on the same session data:
-
-```ts
-import { sortSessions, childMapByParent, allDescendantIds } from '@kortix/sdk';
-
-sessions.sort(sortSessions(Date.now())); // pins sessions updated in the last 60s
-const childMap = childMapByParent(sessions);
-const descendants = allDescendantIds(childMap, sessionId);
-```
-
-Retry state: `getRetryInfo(sessionStatus)` returns `{ attempt, message, next,
-details? }` when `status.type === 'retry'`, with `message` capped to 60
-characters. `details` preserves a structured LLM-gateway envelope when present:
-the final provider, gateway code, request ID, suggestion, upstream status, and
-ordered candidate failures. Each candidate failure contains `attempt`,
-`provider`, `routeModel`, `resolvedModel`, `stage`, optional `status`, `code`,
-and `message`. Legacy plain-text retries return `details: undefined`.
-`getRetryMessage(sessionStatus)` returns the full unwrapped message. When
-OpenCode retains only that message, the gateway composite still includes the
-request ID and each candidate's provider, resolved model, HTTP status, code,
-and bounded message.
-
-### Structural types
-
-The grouping and status functions accept minimal structural types —
-`PartLike`, `MessageInfoLike`, `TurnLike`, `ToolStateLike`,
-`SessionStatusLike` — instead of the concrete `@opencode-ai/sdk` wire types.
-Your own message and part shapes flow through unchanged as long as they match
-the required fields. `classifyPart` and `classifyTurn` are the exception.
-They type against the real `@opencode-ai/sdk` `Part` union, so their
-exhaustiveness check catches a new wire part type at build time.
-
-## Distribution
-
-```sh
-npm install @kortix/sdk
-```
-
-The package ships as compiled ESM with full TypeScript type declarations.
-`react` and `@tanstack/react-query` are optional peer dependencies. If you
-use `@kortix/sdk/react`, install both.
-
-```ts
-import { createKortix } from '@kortix/sdk'; // framework-free core
-import { useSession } from '@kortix/sdk/react'; // optional React layer
-import { createScopedKortix } from '@kortix/sdk/server'; // Node and Bun servers
-```
-
-### Entry points and stability
-
-The root entry, `@kortix/sdk`, is canonical. It exports the full
-framework-free surface and runs in browsers, Node 18+, Bun, and edge
-runtimes.
-
-| Entry | Tier | Contract |
-| --- | --- | --- |
-| `@kortix/sdk` | Canonical | Framework-free. Never imports React or `node:*`. |
-| `@kortix/sdk/react` | Supported | React hooks. The only entry that imports React. |
-| `@kortix/sdk/server` | Supported | Per-request config isolation for Node and Bun servers, via `node:async_hooks`. Never bundle it into a browser. |
-| Legacy subpaths (`/projects-client`, `/turns`, `/files`, and more) | Deprecated | Still work. Each re-exports from the root. Import from the root instead. |
-| `@kortix/sdk/internal/*` | Internal | Used by the Kortix web app only. Not a supported API. |
-
-### CDN bundles
-
-The package also ships two browser bundles, built by `tsup`: an ESM bundle
-(`dist/kortix.esm.min.js`) and an IIFE global (`dist/kortix.global.js`) that
-defines `window.Kortix`.
-
-```html
-<script src="https://unpkg.com/@kortix/sdk/dist/kortix.global.js"></script>
-<script>
-  const kortix = Kortix.createKortix({
-    backendUrl: 'https://api.kortix.com/v1',
-    getToken: async () => KEY,
-  });
-</script>
-```
-
-`window.Kortix` exposes the same root entry as the npm import:
-`Kortix.createKortix`, `Kortix.classifyTurn`, `Kortix.ApiError`.
-
-## See also
-
-- [SDK](/docs/sdk) — install and your first session.
-- [Sessions](/docs/sdk/sessions) — lifecycle, streaming, and error handling.
-- [React hooks](/docs/sdk/react) — the reactive layer built on these modules.
-
-
-### Agent repository access
-
-Agent configuration accepts `repository_access?: boolean` (default `true`).
-Set `false` to run new sessions without the project repository or repository API access.
-Git, secret, connector, and tool permissions remain separate. Existing sessions retain their saved policy.
-`AgentConfigBlock.workspace` is deprecated. The SDK maps legacy `branch`/`runtime` to the boolean field.
-A legacy `read` write requires an explicit `repository_access` choice; it does not enable read-only repository access.
-
-
-## Provider and model access
-
-Read `kortix.projects.modelAccess(projectId)`. Change one target with `kortix.projects.setModelAccess(projectId, { target: 'provider' | 'model', id, enabled })`.
-
-Use provider ID `kortix` for Kortix Managed Models, or a catalog provider ID for BYOK, Codex, and custom providers. Use the full gateway wire ID for a model. Provider disable covers future models and preserves individual model preferences and saved credentials.
-
-The current default model and its provider require a replacement before disabling (`409 cannot_disable_default`). Direct gateway requests to disabled targets fail with `model_disabled` or `provider_disabled`. Existing in-flight upstream requests finish normally. The response's `enforced` flag is false when the project uses native OpenCode instead of the gateway.
-
-React consumers use `useModelAccess(projectId)` from `@kortix/sdk/react`. Its `setEnabled(change)` mutation refreshes the management catalog and session picker.
+Other deprecated root names wrap routes that the API does not serve. They reject with `ENDPOINT_RETIRED`, resolve `null`, or return `404`, and they have no replacement.

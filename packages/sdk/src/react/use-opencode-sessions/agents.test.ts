@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { projectConfigAgentsToOpenCodeAgents } from './agents';
+import { projectConfigAgentsToRuntimeAgents } from './agents';
 
 const config = (defaultAgent: string | null) =>
   ({
@@ -16,15 +16,15 @@ const config = (defaultAgent: string | null) =>
     ],
   }) as any;
 
-describe('projectConfigAgentsToOpenCodeAgents', () => {
+describe('projectConfigAgentsToRuntimeAgents', () => {
   test('places the declared project default first for fallback consumers', () => {
     expect(
-      projectConfigAgentsToOpenCodeAgents(config('memory-reflector')).map((agent) => agent.name),
+      projectConfigAgentsToRuntimeAgents(config('memory-reflector')).map((agent) => agent.name),
     ).toEqual(['memory-reflector', 'kortix']);
   });
 
   test('preserves manifest order when there is no declared default', () => {
-    expect(projectConfigAgentsToOpenCodeAgents(config(null)).map((agent) => agent.name)).toEqual([
+    expect(projectConfigAgentsToRuntimeAgents(config(null)).map((agent) => agent.name)).toEqual([
       'kortix',
       'memory-reflector',
     ]);

@@ -6,7 +6,7 @@ import { logger } from '../lib/logger';
 import { captureException } from '../lib/sentry';
 import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
-import { settleOpenSandboxTurns } from './sandbox-turn-lifecycle';
+import { settleOpenSandboxTurns } from './session-turn-ledger';
 import type { StopReason } from './stop-reason';
 import {
   STAMPED_RUNTIME_FAILURE_STOP_REASONS,
@@ -23,10 +23,11 @@ import {
   noLiveStopClaim,
   stopClaimMetadata,
 } from './session-lifecycle/stop-claim';
+import { PROVIDER_REMOVAL_PENDING_KEY } from './reaping/archived-box-removal';
 import { isAlreadyNotRunning } from './reaping/policy';
 import { sessionHoldsTurnAuthority } from './session-lifecycle/inbox-admission';
 
-export const RUNTIME_IDENTITY_UNAVAILABLE = 'runtime_identity_unavailable';
+export { RUNTIME_IDENTITY_UNAVAILABLE } from './session-lifecycle/runtime-wake-fence';
 /** Stable alert key. Better Stack / Sentry rules match on this, not on prose. */
 export const RUNTIME_LOST_EVENT = 'runtime.lost';
 export const RUNTIME_IDENTITY_ERROR =
@@ -35,7 +36,44 @@ export const RUNTIME_IDENTITY_ERROR =
 type RuntimeIdentityRow = Pick<
   typeof sessionSandboxes.$inferSelect,
   'sandboxId' | 'sessionId' | 'externalId' | 'metadata'
->;
+> & { status?: string | null };
+
+/**
+ * Stamped on a row BEFORE Kortix asks the provider to stop/remove its box
+ * (account deletion). The provider's `removed` webhook can land before the
+ * deleting request settles the row; this stamp tells the classifier the removal
+ * is ours, not a lost runtime.
+ */
+export const KORTIX_REMOVAL_INTENT_KEY = 'kortixRemovalIntentAt';
+
+/** A removal Kortix itself started: deleted/archived session or account teardown. */
+export function isKortixInitiatedRemoval(row: Pick<RuntimeIdentityRow, 'status' | 'metadata'>): boolean {
+  const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+  return (
+    row.status === 'archived' ||
+    metadata[KORTIX_REMOVAL_INTENT_KEY] != null ||
+    metadata[PROVIDER_REMOVAL_PENDING_KEY] != null
+  );
+}
+
+/**
+ * Stamp the intent BEFORE Kortix asks the provider to remove the box. The
+ * provider's `removed` webhook can land within seconds of the remove call and
+ * must not read as a lost runtime. Keyed by sandbox id — a metadata merge, so
+ * a concurrent park write loses nothing. Every caller that removes a box
+ * stamps first; a stopped row removed without this stamp is neither archived
+ * nor stamped, so the webhook classifies the teardown as lost work.
+ */
+export async function markKortixRemovalIntent(sandboxId: string): Promise<void> {
+  await db
+    .update(sessionSandboxes)
+    .set({
+      metadata: sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb) || ${JSON.stringify({
+        [KORTIX_REMOVAL_INTENT_KEY]: new Date().toISOString(),
+      })}::jsonb`,
+    })
+    .where(eq(sessionSandboxes.sandboxId, sandboxId));
+}
 
 type RecoverableRuntimeIdentityRow = typeof sessionSandboxes.$inferSelect;
 
@@ -217,10 +255,30 @@ export async function preserveEstablishedRuntime(
   // Once per identity. Every open of a lost session runs the removed path and
   // lands here again (the client polls /start every second), and each pass
   // used to report the same loss as a new one.
+  // `/start` reaches this through a recovery claim, which sets
+  // `runtimeIdentityState: 'recovery_claimed'` but keeps the earlier
+  // `runtimeUnavailableAt`. An accepted recovery strips that stamp, so it marks
+  // a loss of this identity already reported.
   const before = (row.metadata as Record<string, unknown> | null) ?? {};
   const alreadyReported =
-    before.runtimeIdentityState === 'unavailable' && before.preservedExternalId === externalId;
-  if (!alreadyReported) reportLostRuntime(preserved, reason, stopReason, now);
+    before.preservedExternalId === externalId &&
+    (before.runtimeIdentityState === 'unavailable' || typeof before.runtimeUnavailableAt === 'string');
+  if (!alreadyReported) {
+    // A removal Kortix started is an expected teardown, not lost user work.
+    if (isKortixInitiatedRemoval(row)) {
+      logger.info('Session runtime removed by Kortix-initiated teardown', {
+        event: 'runtime.removed_expected',
+        provider: preserved.provider,
+        externalId,
+        sandboxId: row.sandboxId,
+        sessionId: row.sessionId,
+        reason,
+        stopReason,
+      });
+    } else {
+      reportLostRuntime(preserved, reason, stopReason, now);
+    }
+  }
   return preserved;
 }
 
@@ -264,7 +322,7 @@ export function parkMetadataPatch(
     // A park for a FAILED start is a cooldown, not a gravestone. Without this
     // clock `stoppedWakeResult` had nothing to expire, so a `runtime_boot_failed`
     // stamp replayed `stage:"failed"` on every open for as long as the row
-    // lived — 10+ hours on SampleCo session 9c8749ac, 2026-08-26, without one
+    // lived — 10+ hours on a SampleCo session, 2026-08-26, without one
     // provider call. The counter is what escalates the cooldown and eventually
     // earns a terminal card that NAMES the attempts.
     ...((STAMPED_RUNTIME_FAILURE_STOP_REASONS as readonly string[]).includes(stopReason)

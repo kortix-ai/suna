@@ -36,15 +36,19 @@
 
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
 import { type Auth, loadAuth, loadAuthForHost } from '../api/auth.ts';
 import { type ApiClient, ApiError, clientFromAuth } from '../api/client.ts';
 import { emitJson, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { enabledFeatureFlags, featureOffMessage, featureShown } from '../feature-flags.ts';
 import { C, help, status } from '../style.ts';
 
 /** One entry of `GET /v1/skills` — cheap by design: no body, no file contents. */
 interface SkillSummary {
   name: string;
   description: string;
+  /** The project feature flag the skill exists behind, or null. */
+  featureFlag?: string | null;
   referenceCount?: number;
   bytes?: number;
 }
@@ -59,6 +63,7 @@ interface SkillReference {
 interface SkillDetail {
   name: string;
   description: string;
+  featureFlag?: string | null;
   body: string;
   references: SkillReference[];
 }
@@ -111,8 +116,8 @@ Optional (non-system) skills live in the marketplace:
   kortix marketplace list --type skill
 `;
 
-/** Where a skill's files live inside a Kortix project. */
-const SKILLS_DIR = '.kortix/opencode/skills';
+/** Where a skill's files live inside a Kortix project: `skills/`, or the legacy dir. */
+const SKILL_ROOTS = [SKILLS_DIR, `${LEGACY_OPENCODE_CONFIG_DIR}/skills`];
 
 function parseFlags(argv: string[]): SkillsFlags {
   return {
@@ -139,9 +144,13 @@ function resolveClient(host?: string): { client: ApiClient; auth: Auth } | null 
 }
 
 /** The system floor — the kortix-managed skills that describe how Kortix works. */
-async function fetchSystemSkills(client: ApiClient): Promise<SkillSummary[]> {
+async function fetchSystemSkills(client: ApiClient, host?: string): Promise<SkillSummary[]> {
   const res = await client.get<SkillsListResponse>('/skills');
-  return res.skills ?? [];
+  const skills = res.skills ?? [];
+  if (!skills.some((skill) => skill.featureFlag)) return skills;
+  // A skill behind a feature flag is listed only where the flag is known on (feature-flags.ts).
+  const flags = await enabledFeatureFlags(host ? ['--host', host] : []);
+  return skills.filter((skill) => featureShown(skill.featureFlag, flags));
 }
 
 /** `--all` used to mix the marketplace catalog into this list. It no longer does
@@ -161,7 +170,7 @@ async function skillsList(flags: SkillsFlags, cmd: string): Promise<number> {
 
   let skills: SkillSummary[];
   try {
-    skills = await fetchSystemSkills(ctx.client);
+    skills = await fetchSystemSkills(ctx.client, flags.host);
   } catch (err) {
     // A 404 on the LIST route is never "no skills" — the route itself is
     // missing, i.e. the host predates `/v1/skills`. Say that, or an agent burns
@@ -232,6 +241,14 @@ async function skillsGet(argv: string[], flags: SkillsFlags, cmd: string): Promi
     return surfaceApiError(err);
   }
 
+  if (detail.featureFlag) {
+    const enabled = await enabledFeatureFlags(flags.host ? ['--host', flags.host] : []);
+    if (!featureShown(detail.featureFlag, enabled)) {
+      process.stderr.write(`${status.err(featureOffMessage(`The ${detail.name} skill`, detail.featureFlag, enabled))}\n`);
+      return 1;
+    }
+  }
+
   const references = detail.references ?? [];
 
   if (flags.json) {
@@ -297,9 +314,9 @@ async function skillsFile(argv: string[], flags: SkillsFlags, cmd: string): Prom
   if (!ctx) return 1;
 
   const url = `/skills/${encodeURIComponent(name)}/file?path=${encodeURIComponent(path)}`;
-  let file: { name: string; path: string; content: string };
+  let file: { name: string; path: string; content: string; featureFlag?: string | null };
   try {
-    file = await ctx.client.get<{ name: string; path: string; content: string }>(url);
+    file = await ctx.client.get<{ name: string; path: string; content: string; featureFlag?: string | null }>(url);
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) {
       // Distinguish "no such skill" from "no such file in it" — the second is
@@ -312,6 +329,15 @@ async function skillsFile(argv: string[], flags: SkillsFlags, cmd: string): Prom
     return surfaceApiError(err);
   }
 
+  // A file of a skill behind a flag is printed only where the flag is known on.
+  if (file.featureFlag) {
+    const enabled = await enabledFeatureFlags(flags.host ? ['--host', flags.host] : []);
+    if (!featureShown(file.featureFlag, enabled)) {
+      process.stderr.write(`${status.err(featureOffMessage(`The ${name} skill`, file.featureFlag, enabled))}\n`);
+      return 1;
+    }
+  }
+
   if (flags.json) {
     emitJson({ name: file.name, path: file.path, content: file.content });
     return 0;
@@ -321,7 +347,7 @@ async function skillsFile(argv: string[], flags: SkillsFlags, cmd: string): Prom
 }
 
 /** Walk up from cwd to a Kortix project root, else use cwd. Keys on a project
- *  marker (a `kortix.yaml`/`kortix.toml` manifest or a `.kortix/opencode` dir),
+ *  marker (a `kortix.yaml`/`kortix.toml` manifest or an OpenCode config dir),
  *  not a bare `.kortix/` — otherwise the CLI's own `~/.kortix` home dir matches. */
 function projectRoot(): string {
   let dir = process.cwd();
@@ -329,7 +355,8 @@ function projectRoot(): string {
     if (
       existsSync(join(dir, 'kortix.yaml')) ||
       existsSync(join(dir, 'kortix.toml')) ||
-      existsSync(join(dir, '.kortix', 'opencode'))
+      existsSync(join(dir, OPENCODE_CONFIG_DIR)) ||
+      existsSync(join(dir, LEGACY_OPENCODE_CONFIG_DIR))
     ) {
       return dir;
     }
@@ -342,7 +369,12 @@ function projectRoot(): string {
 
 function skillsPath(argv: string[], flags: SkillsFlags): number {
   const name = argv.find((a) => !a.startsWith('-'));
-  const base = join(projectRoot(), SKILLS_DIR);
+  const root = projectRoot();
+  // The root that holds the named skill; else the first skills dir that
+  // exists (a legacy project has only `.kortix/opencode/skills`); else `skills/`.
+  const dirs = SKILL_ROOTS.map((dir) => join(root, dir));
+  const holding = name ? dirs.find((dir) => existsSync(join(dir, name))) : undefined;
+  const base = holding ?? dirs.find((dir) => existsSync(dir)) ?? dirs[0]!;
   const target = name ? join(base, name) : base;
   if (flags.json) {
     emitJson({ path: target, exists: existsSync(target) });

@@ -2,10 +2,12 @@
  * Auth welcome screen — hero, brand, and the ways to sign in.
  *
  * Google and Apple sign in from here. "Continue with email" pushes the email
- * form (app/auth/email.tsx). Social providers and email methods render based on
- * env (see lib/auth/auth-config):
- *   EXPO_PUBLIC_AUTH_METHODS    "magic" / "password"
- *   EXPO_PUBLIC_AUTH_PROVIDERS  "google" / "apple"
+ * form (app/auth/email.tsx). The build shows Google + Apple (iOS); a private
+ * deployment shows only the providers its web auth page shows, plus "Continue
+ * with SSO" when its Supabase has SAML on (lib/auth/auth-config).
+ *
+ * The server row at the bottom opens the private-deployment sheet
+ * (components/auth/DeploymentSheet): the host this screen signs in to.
  *
  * Layout: full-bleed hero on top, brand + provider pills below. Follows the
  * resolved color scheme (NativeWind), the same source the Button fills use.
@@ -21,12 +23,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused } from 'expo-router/react-navigation';
 
 import { KortixCurrents } from '@/components/animations/kortix-currents';
+import { DeploymentSheet } from '@/components/auth/DeploymentSheet';
 import { AppleIcon, GoogleIcon } from '@/components/icons/auth-icons';
 import { KortixLogo } from '@/components/kortix/KortixLogo';
 import { PlatformFullWidthButton } from '@/components/kortix/platform-button';
+import type { SheetRef } from '@/components/kortix/sheet';
+import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useAuthContext } from '@/contexts';
 import { useOAuthSignIn } from '@/hooks/useOAuthSignIn';
+import { appleEnabled, googleEnabled } from '@/lib/auth/auth-config';
+import { fetchSsoEnabled } from '@/lib/deployment/deployment';
+import { activeDeployment } from '@/lib/deployment/store';
+import { BuildingsIcon } from '@/lib/icons';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export default function AuthScreen() {
@@ -46,6 +55,20 @@ export default function AuthScreen() {
   // The auth stack keeps this screen mounted under the email screen; the hero
   // animation stops while it is covered.
   const isFocused = useIsFocused();
+  const deploymentSheetRef = React.useRef<SheetRef>(null);
+  // SSO is a private-deployment option, shown when its Supabase has SAML on
+  // (the web auth page's own check). The cloud build is unchanged.
+  const [ssoEnabled, setSsoEnabled] = React.useState(false);
+  React.useEffect(() => {
+    if (!activeDeployment) return;
+    let active = true;
+    void fetchSsoEnabled(activeDeployment, (url, init) => fetch(url, init)).then((enabled) => {
+      if (active) setSsoEnabled(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Already-signed-in users never see auth.
   React.useEffect(() => {
@@ -114,18 +137,20 @@ export default function AuthScreen() {
                 edge, so every label shares one center line. */}
             <View style={{ gap: 12 }}>
               {/* Google — both platforms */}
-              <PlatformFullWidthButton
-                size="xl"
-                label={oauthPending === 'google' ? 'Opening Google…' : 'Continue with Google'}
-                // Pending is an inline disabled state: the label says it,
-                // the icon stays (KRTX-244).
-                leading={<GoogleIcon size={18} />}
-                disabled={!!oauthPending}
-                onPress={() => void signInWith('google')}
-              />
+              {googleEnabled && (
+                <PlatformFullWidthButton
+                  size="xl"
+                  label={oauthPending === 'google' ? 'Opening Google…' : 'Continue with Google'}
+                  // Pending is an inline disabled state: the label says it,
+                  // the icon stays (KRTX-244).
+                  leading={<GoogleIcon size={18} />}
+                  disabled={!!oauthPending}
+                  onPress={() => void signInWith('google')}
+                />
+              )}
 
               {/* Apple — iOS only */}
-              {Platform.OS === 'ios' && (
+              {appleEnabled && Platform.OS === 'ios' && (
                 <PlatformFullWidthButton
                   size="xl"
                   label={oauthPending === 'apple' ? 'Opening Apple…' : 'Continue with Apple'}
@@ -143,10 +168,33 @@ export default function AuthScreen() {
                 disabled={!!oauthPending}
                 onPress={() => router.push('/auth/email')}
               />
+
+              {/* SSO — self-hosted instances with SAML on. Email → IdP. */}
+              {ssoEnabled && (
+                <PlatformFullWidthButton
+                  size="xl"
+                  variant="outline"
+                  label="Continue with SSO"
+                  leading={<Icon as={BuildingsIcon} size={18} className="text-foreground" />}
+                  disabled={!!oauthPending}
+                  onPress={() => router.push('/auth/email?method=sso')}
+                />
+              )}
+
+              {/* Self-hosted — the email pill's shape. Opens the
+                  deployment sheet; names the host once one is chosen. */}
+              <PlatformFullWidthButton
+                size="xl"
+                variant="outline"
+                label={activeDeployment ? new URL(activeDeployment.origin).host : 'Self-hosted'}
+                disabled={!!oauthPending}
+                onPress={() => deploymentSheetRef.current?.open()}
+              />
             </View>
           </View>
         </View>
       </View>
+      <DeploymentSheet ref={deploymentSheetRef} />
     </>
   );
 }

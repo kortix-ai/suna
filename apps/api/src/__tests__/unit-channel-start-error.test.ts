@@ -50,15 +50,22 @@ describe('startErrorMessage, bound to Teams', () => {
     expect(m).not.toContain('Give it a moment');
   });
 
+  test('project_archived says the workspace was deleted, not "it may have moved"', () => {
+    const m = teams(404, { code: 'project_archived', error: 'This workspace was deleted' });
+    expect(m).toContain('workspace was deleted');
+    expect(m).not.toContain('may have been moved');
+  });
+
   test('WORKSPACE_MODE_UNAVAILABLE explains the config change, not a login', () => {
     const m = teams(409, { code: 'WORKSPACE_MODE_UNAVAILABLE', error: 'read mode' });
     expect(m).toContain('`runtime` or `branch`');
     expect(m).not.toContain('/login');
   });
 
-  test('402 and 429 keep the copy Teams already shipped', () => {
+  test('402 keeps the credits copy; 429 reads as a request rate, not a session limit', () => {
     expect(teams(402, {}).toLowerCase()).toContain('out of credits');
-    expect(teams(429, {}).toLowerCase()).toContain('concurrent-session limit');
+    expect(teams(429, {}).toLowerCase()).toContain('too many requests');
+    expect(teams(429, {}).toLowerCase()).not.toContain('session limit');
   });
 
   test('5xx reads as temporary, and an unknown status still leaves a next step', () => {

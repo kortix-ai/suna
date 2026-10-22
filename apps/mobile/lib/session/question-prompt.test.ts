@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { pickQuestionOption, questionStepAnswer, questionStepLabel } from './question-prompt';
 
-const single = { question: 'Pick one', options: [{ label: 'A' }, { label: 'B' }] };
+const single = {
+  question: 'Pick one',
+  header: 'Pick',
+  options: [
+    { label: 'A', description: 'The first' },
+    { label: 'B', description: 'The second' },
+  ],
+};
 const multi = { ...single, multiple: true };
 
 describe('questionStepAnswer', () => {

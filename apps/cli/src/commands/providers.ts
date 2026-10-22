@@ -1,51 +1,84 @@
-import { createInterface } from 'node:readline';
-
 import { CATALOG, isProviderAuthSatisfied, primaryAuthEnvVars } from '@kortix/llm-catalog';
 import { formatRelative } from '@kortix/shared';
 
 import { ApiError } from '../api/client.ts';
 import type {
+  CustomLlmProvider,
   OauthFlowStartResponse,
   OauthListResponse,
   OauthPollResponse,
   ProjectSecret,
 } from '../api/types.ts';
 import { openInBrowser } from '../browser.ts';
-import { splitHelp } from '../command-argv.ts';
+import { rejectUnknownArgs, splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
+  missing,
+  query,
+  resolveAccountContext,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  fail,
-  missing,
+  takeFlagValues,
 } from '../command-helpers.ts';
+import { resolveProjectId } from '../project-link.ts';
+import { readSecret, readVisible } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
+import { sleep } from '@kortix/shared/guards';
 
 const HELP = help`Usage: kortix providers <subcommand> [options]
 
-Configure LLM providers for the linked Kortix project. Two paths:
+Configure LLM providers for the linked Kortix project. Three paths:
 
   • OAuth (zero config) — uses the upstream provider's device-code flow
-    (ChatGPT Pro/Plus, GitHub Copilot). Tokens land encrypted on the
-    project, get refreshed on each sandbox boot.
+    (ChatGPT Pro/Plus, an OpenCode Console account for OpenCode Zen or Go).
+    Tokens land encrypted on the project; Kortix refreshes them.
 
-  • API key — stored as an encrypted project secret. Injected into
-    sessions at boot, picked up by opencode's provider lookup.
+  • API key — stored as an encrypted project secret. The Kortix LLM
+    gateway uses it; the key never enters a sandbox.
+
+  • Custom endpoint — any OpenAI-compatible API (vLLM, LiteLLM, Ollama
+    behind a public host). The gateway serves its models as <id>/<model>.
 
 Subcommands:
   ls [--json]                       List configured providers (OAuth +
                                     API-key secrets that map to known
                                     providers).
+  ls --catalog [--search <query>]    Browse the bundled provider catalog,
+                                    filtered by id or name. --json supported.
+                                    env lists project secrets to configure
+                                    with \`kortix secrets set NAME=value\`.
   login <provider>                  Run the OAuth device-code flow.
-                                    Providers: openai, github-copilot.
+                                    Providers: openai, opencode (Zen),
+                                    opencode-go. Zen and Go each need
+                                    their own login.
   set <provider> [<key>]            Save an API key as a project secret.
                                     Provider → env-var mapping below.
                                     With no <key>, reads from stdin.
                                     bedrock also needs --region <region>.
   rm <provider>                     Remove the OAuth credential and/or
                                     the matching API-key secret(s).
+  retry [<provider>]                End the rate-limit rest of the account's
+                                    stored provider accounts now (e.g. after
+                                    resetting ChatGPT usage). openai, chatgpt
+                                    and codex name ChatGPT connections. With no
+                                    provider, every account still cooling down.
+                                    Otherwise the gateway re-tries one every
+                                    15 min on its own. --account <id>.
+                                    Includes the logins stored on --project
+                                    (default: linked).
+  custom ls [--json]                List custom OpenAI-compatible endpoints.
+  custom set <id> --base-url <url> --model <model>[=<name>] [--model …]
+             [--name <name>] [--key-stdin]
+                                    Create or replace an endpoint. --model
+                                    repeats; it replaces the model list.
+                                    --name defaults to <id>. --key-stdin
+                                    saves the API key read from stdin as
+                                    CUSTOM_<ID>_API_KEY.
+  custom rm <id>                    Remove the endpoint and its
+                                    CUSTOM_<ID>_API_KEY secret.
 
 Known API-key providers (provider → project secret(s)):
   anthropic       → ANTHROPIC_API_KEY
@@ -56,22 +89,27 @@ Known API-key providers (provider → project secret(s)):
   xai             → XAI_API_KEY
   deepseek        → DEEPSEEK_API_KEY
   mistral         → MISTRAL_API_KEY
+  opencode        → OPENCODE_API_KEY (OpenCode Zen)
+  opencode-go     → OPENCODE_GO_API_KEY (OpenCode Go)
   bedrock         → AWS_BEARER_TOKEN_BEDROCK + AWS_REGION (--region)
+  platinum        → PLATINUM_API_KEY (Platinum Inference; models listed live)
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
   --host <name>      Operate against a non-default Kortix host.
   --region <region>  (set bedrock) AWS region, e.g. us-east-1.
-  --enterprise <url> (login github-copilot) Enterprise GHE URL.
   -h, --help         Show this help.
+
+Example:
+  printf %s "$KEY" | kortix providers custom set my-vllm \\
+    --base-url https://llm.example.com/v1 --model "qwen-3=Qwen 3" --key-stdin
 `;
 
 const LOGIN_HELP = help`Usage: kortix providers login <provider> [options]
 
-Start the OAuth device-code flow for openai or github-copilot.
+Start the OAuth device-code flow for openai, opencode, or opencode-go.
 
 Options:
-  --enterprise <url>  GitHub Enterprise URL for github-copilot.
   --project <id>      Operate on this project id (default: linked).
   --host <name>       Operate against a non-default Kortix host.
   -h, --help          Show this help without starting OAuth.
@@ -97,7 +135,10 @@ export const PROVIDER_CATALOG_ID: Record<string, string> = {
   xai: 'xai',
   deepseek: 'deepseek',
   mistral: 'mistral',
+  opencode: 'opencode',
+  'opencode-go': 'opencode-go',
   bedrock: 'amazon-bedrock',
+  platinum: 'platinum',
 };
 
 export const PROVIDER_ENV_VARS: Record<string, string[]> = Object.fromEntries(
@@ -117,8 +158,9 @@ export function isProviderConnected(envVars: string[], secretNames: Set<string>)
   );
 }
 
-// Providers that support the OAuth device-code flow.
-const OAUTH_PROVIDERS = new Set(['openai', 'github-copilot']);
+// Providers that support the OAuth device-code flow: the ones the API's
+// `oauthProvider()` serves (apps/api/src/projects/routes/provider-oauth.ts).
+const OAUTH_PROVIDERS = new Set(['openai', 'opencode', 'opencode-go']);
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -126,41 +168,137 @@ export async function runProviders(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   // login/oauth own dedicated help text; every other subcommand shares HELP.
-  const helpCode = splitHelp(argv, sub === 'login' || sub === 'oauth' ? LOGIN_HELP : HELP);
+  const usage = sub === 'login' || sub === 'oauth' ? LOGIN_HELP : HELP;
+  const helpCode = splitHelp(argv, usage);
   if (helpCode !== null) return helpCode;
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
-  let enterpriseFlag: string | undefined;
   let regionFlag: string | undefined;
+  let accountFlag: string | undefined;
   let json = false;
+  let catalog = false;
+  let search: string | undefined;
+  let custom: CustomFlags = { models: [], keyStdin: false };
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
-    enterpriseFlag = takeFlagValue(rest, ['--enterprise']);
     regionFlag = takeFlagValue(rest, ['--region']);
+    accountFlag = takeFlagValue(rest, ['--account']);
     json = takeFlagBool(rest, ['--json']);
+    if (sub === 'ls' || sub === 'list') {
+      catalog = takeFlagBool(rest, ['--catalog']);
+      search = takeFlagValue(rest, ['--search']);
+    }
+    if (sub === 'custom') {
+      custom = {
+        name: takeFlagValue(rest, ['--name']),
+        baseUrl: takeFlagValue(rest, ['--base-url']),
+        models: takeFlagValues(rest, ['--model']),
+        keyStdin: takeFlagBool(rest, ['--key-stdin']),
+      };
+    }
   } catch (err) {
     return fail((err as Error).message);
   }
+  // Every known flag is now consumed (splitHelp removed -h/--help above).
+  // `ls` takes no positional, so anything left is unknown; the other
+  // subcommands take positionals, so only a flag-shaped leftover is. The
+  // shared grammar prints `unknown option "<first>"` + the usage, exit 2
+  // (command-argv.ts) — the flag a customer guesses (`--available`) can no
+  // longer masquerade as a no-op success.
+  const leftovers =
+    sub === 'ls' || sub === 'list' ? rest : rest.filter((arg) => arg.startsWith('-'));
+  const unknown = rejectUnknownArgs(leftovers, usage);
+  if (unknown !== null) return unknown;
+  if (search !== undefined && !catalog) return fail('--search requires --catalog');
   const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
     case 'list':
-      return providersLs(ctxOpts, json);
+      return catalog ? providersCatalog(search, json) : providersLs(ctxOpts, json);
     case 'login':
     case 'oauth':
-      return providersLogin(rest[0], enterpriseFlag, ctxOpts);
+      return providersLogin(rest[0], ctxOpts);
     case 'set':
       return providersSet(rest[0], rest[1], regionFlag, ctxOpts);
     case 'rm':
     case 'remove':
     case 'unset':
       return providersRm(rest[0], ctxOpts);
+    case 'retry':
+      return providersRetry(rest[0], accountFlag, ctxOpts, json);
+    case 'custom':
+      return providersCustom(rest[0], rest[1], custom, ctxOpts, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
   }
+}
+
+/** A stored account as `GET /accounts/:id/secret-resources` lists it (no value). */
+interface StoredAccount { secret_id: string; label: string; provider_id: string | null; cooldown_until: string | null }
+
+/** ChatGPT connections are stored under the `codex` provider id. */
+const RETRY_ALIASES: Record<string, string> = { openai: 'codex', chatgpt: 'codex' };
+
+/** The stored accounts still resting after a provider limit, optionally of one provider. */
+export function coolingSecrets<T extends StoredAccount>(rows: T[], provider: string | undefined, now = Date.now()): T[] {
+  const want = provider ? (RETRY_ALIASES[provider] ?? provider) : undefined;
+  return rows.filter((row) => row.cooldown_until && Date.parse(row.cooldown_until) > now && (!want || row.provider_id === want));
+}
+
+async function providersRetry(provider: string | undefined, accountArg: string | undefined, opts: CtxOpts, json: boolean): Promise<number> {
+  const ctx = resolveAccountContext({ accountArg, hostArg: opts.hostArg });
+  if (!ctx) return 1;
+  const base = `/accounts/${encodeURIComponent(ctx.accountId)}/secret-resources`;
+  // Without project_id the list holds only account-wide rows; an OAuth login
+  // (ChatGPT, OpenCode) is stored on its project. Optional: no project, no filter.
+  const projectId = resolveProjectId(opts.projectArg, { hostArg: opts.hostArg });
+  let rows: StoredAccount[];
+  try {
+    rows = (await ctx.client.get<{ secrets: StoredAccount[] }>(`${base}${query({ project_id: projectId ?? undefined })}`)).secrets;
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  const cooling = coolingSecrets(rows, provider);
+  const retried: string[] = [];
+  for (const row of cooling) {
+    try {
+      await ctx.client.post(`${base}/${encodeURIComponent(row.secret_id)}/retry`, {});
+      retried.push(row.secret_id);
+    } catch (err) {
+      return surfaceApiError(err);
+    }
+  }
+  if (json) {
+    emitJson({ retried });
+    return 0;
+  }
+  if (!cooling.length) {
+    process.stdout.write(`${status.ok(`No ${provider ? `${provider} ` : ''}account is cooling down.`)}\n`);
+    return 0;
+  }
+  for (const row of cooling) process.stdout.write(`${status.ok(`${row.label} (${row.provider_id}) is usable again.`)}\n`);
+  return 0;
+}
+
+function providersCatalog(search: string | undefined, json: boolean): number {
+  const query = (search ?? '').trim().toLowerCase();
+  const providers = CATALOG.providers
+    .filter((provider) => `${provider.id} ${provider.name}`.toLowerCase().includes(query))
+    .map((provider) => ({
+      id: provider.id, name: provider.name,
+      env: primaryAuthEnvVars(provider), doc: provider.doc,
+    }));
+  if (json) emitJson({ providers });
+  else {
+    for (const provider of providers) {
+      process.stdout.write(`${provider.id}  ${provider.name}  ${provider.env.join(' + ') || '(no API-key secrets)'}\n`);
+    }
+    if (!providers.length) process.stdout.write('No providers match your search.\n');
+  }
+  return 0;
 }
 
 async function providersLs(opts: CtxOpts, json = false): Promise<number> {
@@ -213,8 +351,10 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   }
 
   const keyRows: Array<{ provider: string; env: string }> = [];
+  // An OpenCode login is stored as the provider's key secret; list it once, as OAuth.
+  const oauthIds = new Set(oauthList.items.map((c) => c.provider_id));
   for (const [provider, envVars] of Object.entries(PROVIDER_ENV_VARS)) {
-    if (isProviderConnected(envVars, setSecretNames)) {
+    if (!oauthIds.has(provider) && isProviderConnected(envVars, setSecretNames)) {
       keyRows.push({ provider, env: envVars.join(' + ') });
     }
   }
@@ -230,16 +370,16 @@ async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   return 0;
 }
 
-async function providersLogin(
-  provider: string | undefined,
-  enterpriseUrl: string | undefined,
-  opts: CtxOpts,
-): Promise<number> {
-  if (!provider) return fail('Pass a provider: kortix providers login <openai|github-copilot>');
+async function providersLogin(provider: string | undefined, opts: CtxOpts): Promise<number> {
+  if (!provider)
+    return fail('Pass a provider: kortix providers login <openai|opencode|opencode-go>');
   if (!OAUTH_PROVIDERS.has(provider)) {
+    const keyHint = PROVIDER_ENV_VARS[provider]?.length
+      ? `  ${C.dim}Try \`kortix providers set ${provider} <key>\` instead.${C.reset}\n`
+      : '';
     process.stderr.write(
-      `${status.err(`OAuth not supported for "${provider}".`)}\n` +
-        `  ${C.dim}Try \`kortix providers set ${provider} <key>\` instead.${C.reset}\n`,
+      `${status.err(`OAuth not supported for "${provider}". Supported: ${[...OAUTH_PROVIDERS].join(', ')}.`)}\n` +
+        keyHint,
     );
     return 2;
   }
@@ -251,7 +391,7 @@ async function providersLogin(
   try {
     flow = await ctx.client.post<OauthFlowStartResponse>(
       `/projects/${ctx.projectId}/oauth/${provider}/start`,
-      enterpriseUrl ? { enterprise_url: enterpriseUrl } : {},
+      {},
     );
   } catch (err) {
     return surfaceApiError(err);
@@ -288,7 +428,7 @@ async function providersLogin(
       const exp = resp.credential.expires_in_ms;
       if (exp !== null) {
         process.stdout.write(
-          `  ${C.dim}Token refresh in ${formatDuration(exp)} (handled by Kortix on next sandbox boot).${C.reset}\n\n`,
+          `  ${C.dim}Token expires in ${formatDuration(exp)}; Kortix refreshes it before then.${C.reset}\n\n`,
         );
       } else {
         process.stdout.write('\n');
@@ -385,7 +525,7 @@ async function providersSet(
   }
   process.stdout.write(
     `\n${status.ok(`Saved ${C.bold}${Object.keys(values).join(', ')}${C.reset} for ${C.bold}${provider}${C.reset}`)}\n` +
-      `  ${C.dim}Will be injected on the next sandbox boot.${C.reset}\n\n`,
+      `  ${C.dim}The LLM gateway uses it; the key never enters a sandbox.${C.reset}\n\n`,
   );
   return 0;
 }
@@ -435,11 +575,147 @@ async function providersRm(provider: string | undefined, opts: CtxOpts): Promise
   return 0;
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────
+// ── custom OpenAI-compatible endpoints ────────────────────────────────────
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
+interface CustomFlags { name?: string; baseUrl?: string; models: string[]; keyStdin: boolean }
+
+/** `--model id=Name` → `{ id, name }`; a bare id names itself. */
+export function parseCustomModel(value: string): { id: string; name: string } {
+  const eq = value.indexOf('=');
+  if (eq === -1) return { id: value, name: value };
+  const id = value.slice(0, eq);
+  return { id, name: value.slice(eq + 1) || id };
 }
+
+async function providersCustom(
+  action: string | undefined,
+  id: string | undefined,
+  flags: CustomFlags,
+  opts: CtxOpts,
+  json: boolean,
+): Promise<number> {
+  if (action === 'ls' || action === 'list') return customLs(opts, json);
+  if (action !== 'set' && action !== 'rm' && action !== 'remove') {
+    process.stderr.write(`${status.err(`unknown subcommand "custom ${action ?? ''}"`)}\n\n${HELP}`);
+    return 2;
+  }
+  if (!id) return missing('a custom provider id');
+  if (action !== 'set') return customRm(id, opts);
+  if (!flags.baseUrl) return fail('Pass --base-url <url> (the OpenAI-compatible API root, e.g. https://host/v1).');
+  if (flags.models.length === 0) return fail('Pass at least one --model <model>[=<name>].');
+
+  let key: string | undefined;
+  if (flags.keyStdin) {
+    key = (await Bun.stdin.text()).trim();
+    if (!key) return fail('--key-stdin read an empty key.');
+  }
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  const base = `/projects/${ctx.projectId}/custom-providers`;
+  let provider: CustomLlmProvider;
+  try {
+    provider = await ctx.client.put<CustomLlmProvider>(`${base}/${encodeURIComponent(id)}`, {
+      name: flags.name ?? id,
+      base_url: flags.baseUrl,
+      models: flags.models.map(parseCustomModel),
+    });
+    if (key) {
+      // The same write the web Custom form makes: the gateway spends the key,
+      // the sandbox never sees it.
+      await ctx.client.post<ProjectSecret>(`/projects/${ctx.projectId}/secrets`, {
+        name: provider.secret_name,
+        value: key,
+        strategy: 'broker',
+        consumer: 'llm_gateway',
+      });
+      provider = { ...provider, has_key: true };
+    }
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson(provider);
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`Saved ${C.bold}${provider.id}${C.reset} → ${provider.base_url} (${provider.models.length} model${provider.models.length === 1 ? '' : 's'})`)}\n` +
+      `  ${C.dim}${provider.has_key ? `Key: ${provider.secret_name}` : `No key. Add one: kortix providers custom set ${provider.id} … --key-stdin`}${C.reset}\n`,
+  );
+  return 0;
+}
+
+async function customLs(opts: CtxOpts, json: boolean): Promise<number> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  let providers: CustomLlmProvider[];
+  try {
+    ({ providers } = await ctx.client.get<{ providers: CustomLlmProvider[] }>(
+      `/projects/${ctx.projectId}/custom-providers`,
+    ));
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson({ providers });
+    return 0;
+  }
+  if (providers.length === 0) {
+    process.stdout.write(
+      `  ${C.dim}No custom providers. Try:${C.reset}\n` +
+        `    ${C.cyan}kortix providers custom set my-llm --base-url https://host/v1 --model my-model --key-stdin${C.reset}\n`,
+    );
+    return 0;
+  }
+  const idW = Math.max(...providers.map((p) => p.id.length), 2);
+  process.stdout.write(`  ${C.dim}${pad('ID', idW)}   KEY  ENDPOINT${C.reset}\n`);
+  for (const p of providers) {
+    const endpoint = p.configured
+      ? `${p.base_url}  ${C.dim}${p.models.map((m) => m.id).join(', ')}${C.reset}`
+      : `${C.dim}no endpoint (kortix providers custom set ${p.id} --base-url …)${C.reset}`;
+    process.stdout.write(`  ${pad(p.id, idW)}   ${p.has_key ? 'yes' : 'no '}  ${endpoint}\n`);
+  }
+  return 0;
+}
+
+/**
+ * Remove an endpoint and its key. The DELETE route drops only the definition;
+ * the key is the project secret `secret_name` (`CUSTOM_<ID>_API_KEY`), deleted
+ * through the secrets route like the web form does. The list says which of
+ * the two exist: the secrets DELETE answers 200 either way.
+ */
+async function customRm(id: string, opts: CtxOpts): Promise<number> {
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+  const base = `/projects/${ctx.projectId}`;
+  let provider: CustomLlmProvider | undefined;
+  try {
+    const { providers } = await ctx.client.get<{ providers: CustomLlmProvider[] }>(`${base}/custom-providers`);
+    provider = providers.find((p) => p.id === id);
+    if (provider?.configured) {
+      await ctx.client.delete(`${base}/custom-providers/${encodeURIComponent(id)}`);
+    }
+    if (provider?.has_key) {
+      await ctx.client.delete(`${base}/secrets/${encodeURIComponent(provider.secret_name)}`);
+    }
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (!provider || (!provider.configured && !provider.has_key)) {
+    process.stdout.write(`  ${C.dim}Nothing to remove for "${id}".${C.reset}\n`);
+    return 0;
+  }
+  const key = provider.has_key ? `${C.bold}${provider.secret_name}${C.reset}` : '';
+  process.stdout.write(
+    `${status.ok(
+      provider.configured
+        ? `Removed custom provider ${C.bold}${id}${C.reset}${key ? ` and its key ${key}` : ''}`
+        : `Removed key ${key}`,
+    )}\n`,
+  );
+  return 0;
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────
 
 function formatDuration(ms: number): string {
   if (ms <= 0) return 'expired';
@@ -451,41 +727,4 @@ function formatDuration(ms: number): string {
   if (h < 24) return `${h}h`;
   const d = Math.floor(h / 24);
   return `${d}d`;
-}
-
-/** Read a plain (non-secret) value with normal echoed input — e.g. a region,
- *  which isn't sensitive and is easier to verify visibly. */
-async function readVisible(label: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(label, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
-/** Read a secret with input echo suppressed when possible. Falls back to
- *  normal readline (echoed) if stdin is not a TTY. */
-async function readSecret(label: string): Promise<string> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const wasMuted = rl as unknown as { _writeToOutput?: unknown };
-  if (process.stdin.isTTY) {
-    // Mute echo by replacing the readline output writer.
-    (rl as unknown as { _writeToOutput: (s: string) => void })._writeToOutput = (s: string) => {
-      if (s.includes(label)) process.stdout.write(s);
-      else process.stdout.write('');
-    };
-  }
-  return new Promise((resolve) => {
-    rl.question(label, (answer) => {
-      // Restore writer so subsequent stdout works normally.
-      if (wasMuted) {
-        (rl as unknown as { _writeToOutput?: unknown })._writeToOutput = wasMuted;
-      }
-      rl.close();
-      process.stdout.write('\n');
-      resolve(answer);
-    });
-  });
 }

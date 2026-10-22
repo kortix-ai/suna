@@ -1,0 +1,322 @@
+import { appRuntimes, apps } from '@kortix/db';
+import { eq } from 'drizzle-orm';
+import { markComputeSessionAlive } from '../billing/services/compute-metering';
+import { type SandboxProviderName } from '../config';
+import { db } from '../shared/db';
+import { ingressTargetUrl } from '../platform/providers/ingress-url';
+import { AppAccountUnfundedError, AppLimitError } from './limits';
+import { AppHostingProvider } from './hosting';
+import { enqueueCurrentAppRuntime } from './deployment-worker';
+import { authorizeAppRequest, authorizeServiceRequest, resolveAppViewerUserId, bindAppViewerSession, appViewerEndpointResponse,
+  appTokenResponse, appViewerContextHeader } from './public-proxy-access';
+import { resolveAppRequest, verifyAppEdgeRequest } from './public-proxy-edge';
+import { appPublicStatusResponse, publicDeploymentStatus, appPublicUnavailableResponse, appProviderStoppedResponse, appColdStartUpstreamResponse } from './public-proxy-status';
+import { loadPublicAppState, loadPublicApp, ensureAppRuntimeRunning, appRuntimeNeedsWake, releaseServes } from './public-proxy-runtime';
+import { appUpstreamHeaders, appPublicResponseHeaders } from './public-proxy-headers';
+import { serveStaticDeployment } from './static-site';
+import { APP_API_PROXY_PREFIX, appApiProxyResponse } from './public-proxy-api';
+const ACTIVITY_LEASE_MS = 60_000;
+type LoadedApp = Omit<NonNullable<Awaited<ReturnType<typeof loadPublicApp>>>, 'agentPrincipal' | 'service'>;
+
+const ACTIVITY_WRITE_EVERY_MS = 10_000;
+// replica-local: a write throttle only. Each replica records a runtime's
+// activity at most once per window; the lease it writes (60 s) outlives the
+// window, so a busy App never looks idle, whichever replica served it.
+const lastActivityWrite = new Map<string, number>();
+
+/**
+ * Mark an App active. Throttled to one write set per runtime per 10 s: a
+ * request used to cost three writes up front and one more to clear its lease
+ * after the response. The lease now simply expires, so the idle reaper sees an
+ * App go idle at most 60 s after its last request.
+ */
+async function recordAppActivity(app: LoadedApp['app'], runtimeId: string, now: Date): Promise<void> {
+  const last = lastActivityWrite.get(runtimeId) ?? 0;
+  if (now.getTime() - last < ACTIVITY_WRITE_EVERY_MS) return;
+  if (lastActivityWrite.size > 10_000) lastActivityWrite.clear();
+  lastActivityWrite.set(runtimeId, now.getTime());
+  await Promise.all([
+    db.update(apps).set({ lastRequestAt: now, updatedAt: now }).where(eq(apps.appId, app.appId)),
+    db.update(appRuntimes).set({
+      lastRequestAt: now,
+      activityLeaseUntil: new Date(now.getTime() + ACTIVITY_LEASE_MS),
+      idleDeadlineAt: new Date(now.getTime() + app.idleTimeoutSeconds * 1000),
+      updatedAt: now,
+    }).where(eq(appRuntimes.runtimeId, runtimeId)),
+    markComputeSessionAlive(runtimeId, now),
+  ]);
+}
+
+/**
+ * `forwardApi` dispatches a request to the API in-process; it serves
+ * `/_kortix/api/v1/*` (public-proxy-api.ts). Without it that path is the App's.
+ */
+export async function handleAppPublicRequest(
+  request: Request,
+  forwardApi?: (request: Request) => Promise<Response>,
+): Promise<Response | null> {
+  const response = await routeAppPublicRequest(request, forwardApi);
+  return response && withoutCloudflareCache(response);
+}
+
+/**
+ * Every App-origin answer, the gate's own included (sign-in redirect, 403,
+ * status page), carries `cloudflare-cdn-cache-control: no-store`. The API
+ * hostnames are Cloudflare-proxied and that cache keys on the API host and
+ * path, not the App host: a cached answer for one App would serve another.
+ * Only the apps-router Worker caches App responses, keyed on the App host.
+ */
+function withoutCloudflareCache(response: Response): Response {
+  try {
+    response.headers.set('cloudflare-cdn-cache-control', 'no-store');
+    return response;
+  } catch {
+    // Immutable headers (a fetched response): copy them.
+    const headers = new Headers(response.headers);
+    headers.set('cloudflare-cdn-cache-control', 'no-store');
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  }
+}
+
+async function routeAppPublicRequest(
+  request: Request,
+  forwardApi?: (request: Request) => Promise<Response>,
+): Promise<Response | null> {
+  const url = new URL(request.url);
+  const matched = resolveAppRequest(request, url);
+  if (!matched) return null;
+  if (!verifyAppEdgeRequest(request, url, matched.local, matched.publicHost)) {
+    return Response.json({ error: 'Invalid App edge signature' }, { status: 403 });
+  }
+  const state = await loadPublicAppState(matched.routeKey, matched.service);
+  if (!state) return Response.json({ error: 'App not found' }, { status: 404 });
+  // A named service the active release does not declare.
+  if (matched.service !== 'http' && !state.service) {
+    return Response.json({ error: 'Service not found', code: 'app_service_not_found' }, { status: 404 });
+  }
+  const gateApp = { ...state.app, agentPrincipal: state.agentPrincipal };
+  const accessResponse = await authorizeServiceRequest(request, url, gateApp, state.service?.access ?? 'app');
+  if (accessResponse) return accessResponse;
+  // An external App's Kortix host is a stable link to its site.
+  if (state.app.externalUrl) return Response.redirect(state.app.externalUrl, 302);
+  const sessionViewer = resolveAppViewerUserId(request, url, gateApp);
+  if (sessionViewer) bindAppViewerSession(sessionViewer);
+  // Answered by the gate itself, before any runtime work: reading who you are
+  // must never wake a sleeping sandbox.
+  if (url.pathname === '/_kortix/viewer') {
+    return appViewerEndpointResponse(request, url, gateApp);
+  }
+  if (url.pathname === '/_kortix/token') {
+    return appTokenResponse(request, url, gateApp);
+  }
+  // The bindings mount: an App it uses (./bindings.ts). Loaded on use, like the links graph.
+  if (url.pathname.startsWith('/_kortix/apps/')) {
+    const { appBindingResponse } = await import('./bindings');
+    return appBindingResponse(request, url, matched.publicHost, gateApp);
+  }
+  if (forwardApi && url.pathname.startsWith(`${APP_API_PROXY_PREFIX}/`)) {
+    return appApiProxyResponse(request, url, matched.publicHost, gateApp, forwardApi);
+  }
+  // A static App has no runtime: its files are served from storage here, past
+  // the same access gate, with no wake, meter or upstream.
+  if (
+    state.deployment?.hostingType === 'static' &&
+    state.deployment.status === 'ready' &&
+    state.deployment.deploymentId === state.app.activeDeploymentId
+  ) {
+    return serveStaticDeployment({
+      request,
+      url,
+      accountId: state.app.accountId,
+      deploymentId: state.deployment.deploymentId,
+      spa: (state.deployment.runtimeSpec as { spa?: boolean }).spa === true,
+      publicApp: state.app.accessMode === 'public',
+    });
+  }
+  const viewer = await appViewerContextHeader(request, url, state.app);
+  if (
+    !state.app.activeDeploymentId ||
+    state.deployment?.deploymentId !== state.app.activeDeploymentId ||
+    !releaseServes(state.deployment, state.app.activeDeploymentId) ||
+    !state.runtime
+  ) {
+    return appPublicStatusResponse(request, state.app, publicDeploymentStatus(state.deployment));
+  }
+  const loaded = { app: state.app, deployment: state.deployment, runtime: state.runtime };
+  const hosting = new AppHostingProvider();
+  // A named service goes straight to its own port; `http` through the supervisor's ingress.
+  const servicePort = matched.service !== 'http' ? state.service?.internal_port : undefined;
+  const coldStart = appRuntimeNeedsWake(state.runtime, new Date(), state.app.alwaysOn);
+  if (coldStart) {
+    await enqueueCurrentAppRuntime(state.app, state.deployment).catch((error) => {
+      console.warn(`[apps] runtime refresh queue failed for ${state.app.appId}:`, error);
+    });
+  }
+  return proxyRunningApp(request, url, matched.publicHost, viewer, loaded, hosting, coldStart, servicePort);
+}
+
+export async function proxyRunningApp(
+  request: Request,
+  url: URL,
+  publicHost: string,
+  viewer: Awaited<ReturnType<typeof appViewerContextHeader>>,
+  loaded: LoadedApp,
+  hosting: AppHostingProvider,
+  coldStart: boolean,
+  servicePort?: number,
+): Promise<Response> {
+  let runtime: typeof loaded.runtime;
+  try {
+    runtime = await ensureAppRuntimeRunning(loaded, hosting);
+  } catch (error) {
+    // An unfunded account or an account at its App-concurrency cap is a paused
+    // App, not a broken one. Say so instead of showing an endless spinner.
+    if (error instanceof AppAccountUnfundedError) {
+      return appPublicStatusResponse(request, loaded.app, { status: 'unfunded' });
+    }
+    if (error instanceof AppLimitError && error.code === 'app_concurrency_limit') {
+      return appPublicStatusResponse(request, loaded.app, { status: 'capacity' });
+    }
+    return appPublicUnavailableResponse(request, loaded.app);
+  }
+  await recordAppActivity(loaded.app, runtime.runtimeId, new Date());
+
+  const replayableRequest = request.method === 'GET' || request.method === 'HEAD';
+  const fetchUpstream = async () => {
+    const ingress = await hosting.ingress(runtime.provider as SandboxProviderName, runtime.externalId, 'http', servicePort);
+    const upstreamUrl = ingressTargetUrl(ingress, `${url.pathname}${url.search}`);
+    return fetch(upstreamUrl, {
+      method: request.method,
+      headers: appUpstreamHeaders(request, ingress.headers, publicHost, viewer),
+      body: replayableRequest ? undefined : request.body,
+      redirect: 'manual',
+      duplex: 'half',
+    } as RequestInit);
+  };
+  const recoverProviderRuntime = async (forceProviderStart: boolean) => {
+    runtime = await ensureAppRuntimeRunning({
+      ...loaded,
+      runtime: {
+        ...runtime,
+        status: 'stopped',
+        idleDeadlineAt: null,
+      },
+    }, hosting, { forceProviderStart });
+  };
+  const startingResponse = async () => {
+    await db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
+      .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+    return appPublicUnavailableResponse(request, loaded.app);
+  };
+
+  const { upstream, recoveredProvider, starting } = await fetchWithRecovery(
+    fetchUpstream, recoverProviderRuntime, startingResponse, () => runtime.provider as SandboxProviderName,
+    replayableRequest, coldStart,
+  );
+  if (starting) return starting;
+  return respondFromUpstream(request, loaded, runtime, upstream, coldStart || recoveredProvider);
+}
+
+async function fetchWithRecovery(
+  fetchUpstream: () => Promise<Response>,
+  recoverProviderRuntime: (force: boolean) => Promise<void>,
+  startingResponse: () => Promise<Response>,
+  provider: () => SandboxProviderName,
+  replayableRequest: boolean,
+  coldStart: boolean,
+): Promise<{ upstream: Response; recoveredProvider: boolean; starting?: never } | { starting: Response; upstream?: never; recoveredProvider?: never }> {
+  let upstream: Response;
+  let recoveredProvider = false;
+  try {
+    upstream = await fetchUpstream();
+  } catch {
+    try {
+      await recoverProviderRuntime(false);
+      recoveredProvider = true;
+      if (!replayableRequest) return { starting: await startingResponse() };
+      upstream = await fetchUpstream();
+    } catch {
+      return { starting: await startingResponse() };
+    }
+  }
+
+  // 400 is Daytona's shape for a runtime it can no longer reach.
+  if (upstream.status === 400) {
+    const body = await upstream.clone().text().catch(() => '');
+    if (appProviderStoppedResponse(provider(), upstream.status, body)) {
+      await upstream.body?.cancel().catch(() => {});
+      if (coldStart) return { starting: await startingResponse() };
+      try {
+        await recoverProviderRuntime(true);
+        recoveredProvider = true;
+        if (!replayableRequest) return { starting: await startingResponse() };
+        upstream = await fetchUpstream();
+      } catch {
+        return { starting: await startingResponse() };
+      }
+      if (upstream.status === 400 || upstream.status >= 502) {
+        const retryBody = await upstream.clone().text().catch(() => '');
+        if (appProviderStoppedResponse(provider(), upstream.status, retryBody)) {
+          await upstream.body?.cancel().catch(() => {});
+          return { starting: await startingResponse() };
+        }
+      }
+    }
+  }
+
+  return { upstream, recoveredProvider };
+}
+
+async function respondFromUpstream(
+  request: Request,
+  loaded: LoadedApp,
+  runtime: LoadedApp['runtime'],
+  upstream: Response,
+  waking: boolean,
+): Promise<Response> {
+  const coldStartResponse = appColdStartUpstreamResponse(
+    request,
+    loaded.app,
+    waking,
+    upstream.status,
+  );
+  if (coldStartResponse) {
+    await upstream.body?.cancel().catch(() => {});
+    await db.update(appRuntimes).set({ activityLeaseUntil: null, updatedAt: new Date() })
+      .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
+    return coldStartResponse;
+  }
+
+  const responseHeaders = appPublicResponseHeaders(upstream.headers);
+  for (const name of ['connection', 'keep-alive', 'transfer-encoding', 'upgrade']) {
+    responseHeaders.delete(name);
+  }
+  if (!upstream.body || request.method === 'HEAD') {
+    return new Response(null, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders });
+  }
+
+  const stream = new TransformStream<Uint8Array, Uint8Array>();
+  const renew = setInterval(() => {
+    const at = new Date();
+    void Promise.all([
+      db.update(appRuntimes).set({
+        activityLeaseUntil: new Date(at.getTime() + ACTIVITY_LEASE_MS),
+        idleDeadlineAt: new Date(at.getTime() + loaded.app.idleTimeoutSeconds * 1000),
+        updatedAt: at,
+      }).where(eq(appRuntimes.runtimeId, runtime.runtimeId)),
+      markComputeSessionAlive(runtime.runtimeId, at),
+    ]);
+  }, 30_000);
+  void upstream.body
+    .pipeTo(stream.writable)
+    // Browser navigation can cancel the response during a refresh. The client
+    // already owns that failure, so consume it instead of emitting an
+    // unhandled rejection from this fire-and-forget stream.
+    .catch(() => {})
+    .finally(() => clearInterval(renew));
+  return new Response(stream.readable, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: responseHeaders,
+  });
+}

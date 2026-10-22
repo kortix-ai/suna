@@ -3,14 +3,11 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  intentToScope,
   isProjectSessionVisibleTo,
-  isSecretUsableBy,
   isSessionTargetVisibleToCaller,
   isSessionVisibleTo,
   parseSharingIntent,
   resolveInheritedSessionSharing,
-  scopeToIntent,
   sessionIntentToVisibility,
   visibilityToIntent,
   type SecretGrant,
@@ -40,92 +37,6 @@ describe('parseSharingIntent — untrusted body → intent (HTTP gate)', () => {
   test('private falls back ownerId to the calling user; project ignores lists', () => {
     expect(parseSharingIntent({ mode: 'private' }, ALICE)).toEqual({ mode: 'private', ownerId: ALICE });
     expect(parseSharingIntent({ mode: 'project', memberIds: ['x'] }, ALICE)).toEqual({ mode: 'project' });
-  });
-});
-
-describe('isSecretUsableBy', () => {
-  test('project scope → everyone', () => {
-    expect(isSecretUsableBy('project', [], { userId: ALICE, groupIds: [] })).toBe(true);
-  });
-
-  test('restricted → only listed member', () => {
-    const grants: SecretGrant[] = [{ principalType: 'member', principalId: ALICE }];
-    expect(isSecretUsableBy('restricted', grants, { userId: ALICE, groupIds: [] })).toBe(true);
-    expect(isSecretUsableBy('restricted', grants, { userId: BOB, groupIds: [] })).toBe(false);
-  });
-
-  test('restricted → group grant matches by membership', () => {
-    const grants: SecretGrant[] = [{ principalType: 'group', principalId: SALES }];
-    expect(isSecretUsableBy('restricted', grants, { userId: BOB, groupIds: [SALES] })).toBe(true);
-    expect(isSecretUsableBy('restricted', grants, { userId: BOB, groupIds: ['group-eng'] })).toBe(false);
-  });
-
-  test('restricted with empty grants → nobody', () => {
-    expect(isSecretUsableBy('restricted', [], { userId: ALICE, groupIds: [SALES] })).toBe(false);
-  });
-});
-
-describe('intentToScope — the 3 options', () => {
-  test('project wide', () => {
-    expect(intentToScope({ mode: 'project' })).toEqual({ shareScope: 'project', grants: [] });
-  });
-
-  test('just me → restricted, single member grant', () => {
-    expect(intentToScope({ mode: 'private', ownerId: ALICE })).toEqual({
-      shareScope: 'restricted',
-      grants: [{ principalType: 'member', principalId: ALICE }],
-    });
-  });
-
-  test('select members (members + groups)', () => {
-    expect(intentToScope({ mode: 'members', memberIds: [ALICE, BOB], groupIds: [SALES] })).toEqual({
-      shareScope: 'restricted',
-      grants: [
-        { principalType: 'member', principalId: ALICE },
-        { principalType: 'member', principalId: BOB },
-        { principalType: 'group', principalId: SALES },
-      ],
-    });
-  });
-
-  test('select members with empty allow-list collapses to project-wide', () => {
-    expect(intentToScope({ mode: 'members', memberIds: [], groupIds: [] })).toEqual({
-      shareScope: 'project',
-      grants: [],
-    });
-  });
-});
-
-describe('scopeToIntent — round-trip for the dashboard', () => {
-  test('project', () => {
-    expect(scopeToIntent('project', [])).toEqual({ mode: 'project' });
-  });
-
-  test('single member → private', () => {
-    expect(scopeToIntent('restricted', [{ principalType: 'member', principalId: ALICE }])).toEqual({
-      mode: 'private',
-      ownerId: ALICE,
-    });
-  });
-
-  test('multiple / group → members', () => {
-    expect(
-      scopeToIntent('restricted', [
-        { principalType: 'member', principalId: ALICE },
-        { principalType: 'group', principalId: SALES },
-      ]),
-    ).toEqual({ mode: 'members', memberIds: [ALICE], groupIds: [SALES] });
-  });
-
-  test('intent → scope → intent is stable', () => {
-    for (const intent of [
-      { mode: 'project' } as const,
-      { mode: 'private', ownerId: ALICE } as const,
-      { mode: 'members', memberIds: [ALICE, BOB], groupIds: [SALES] } as const,
-    ]) {
-      const { shareScope, grants } = intentToScope(intent);
-      expect(intentToScope(scopeToIntent(shareScope, grants))).toEqual({ shareScope, grants });
-    }
   });
 });
 
@@ -416,6 +327,65 @@ describe('trigger-created session visibility', () => {
         callerSessionId: 'trigger-session-a',
         boundCredentialSessionId: 'trigger-session-a',
       },
+      { metadata, canManageProject: true },
+    )).toBe(false);
+  });
+
+  /*
+   * The session's OWN credential.
+   *
+   * A schedule/trigger run attributes its row to the agent's standing service
+   * account, never to the launcher the token names, so the ownership rule
+   * refused the session its own credential: the daemon-port gate 403'd every
+   * proxied runtime read from the box (`[preview] session access refused`).
+   * `agentSessionStanding` already grants that standing on the REST read path
+   * and the bind is mint-time fact — only this session's provisioning mints a
+   * token bound to it — so it must hold here without granting sibling reach.
+   */
+  const OWN_CREDENTIAL = {
+    origin: 'schedule',
+    sessionId: 'trigger-session-b',
+    callerSessionId: 'trigger-session-b',
+    boundCredentialSessionId: 'trigger-session-b',
+  };
+
+  test('the session own credential opens a private trigger-created session', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, OWN_CREDENTIAL,
+      { metadata, canManageProject: true },
+    )).toBe(true);
+  });
+
+  test('the own credential opens it without manager standing too', () => {
+    // The launcher is not a project manager here: the binding, not
+    // `canManageProject`, is the authority.
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] }, OWN_CREDENTIAL,
+      { metadata, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('a plain session own credential opens it, with no trigger marker', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', BOB, [], { userId: ALICE, groupIds: [] },
+      { origin: 'user', sessionId: 'own-session', callerSessionId: 'own-session', boundCredentialSessionId: 'own-session' },
+      { metadata: {}, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('a coordinator credential opens the worker session it spawned', () => {
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
+      { origin: 'trigger', sessionId: 'worker-session', callerSessionId: 'coordinator-session', boundCredentialSessionId: 'coordinator-session' },
+      { metadata: { spawned_by_session: 'coordinator-session' }, canManageProject: false },
+    )).toBe(true);
+  });
+
+  test('another session credential still cannot open a trigger-created session', () => {
+    // No sibling reach: the binding must name the target or its spawner.
+    expect(isProjectSessionVisibleTo(
+      'private', serviceAccount, [], { userId: ALICE, groupIds: [] },
+      { origin: 'trigger', sessionId: 'trigger-session-b', callerSessionId: 'other-session', boundCredentialSessionId: 'other-session' },
       { metadata, canManageProject: true },
     )).toBe(false);
   });

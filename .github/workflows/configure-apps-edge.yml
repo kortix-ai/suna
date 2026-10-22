@@ -14,7 +14,7 @@ permissions:
 jobs:
   configure:
     name: Configure and verify Apps edge
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 25
     env:
       CLOUDFLARE_ZONE_ID: ${{ vars.CLOUDFLARE_ZONE_ID }}
@@ -22,13 +22,13 @@ jobs:
       APPS_DNS_TARGET: '192.0.2.1'
       APPS_CERT_HOST: '*.apps.kortix.com'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # CLOUDFLARE_API_TOKEN — Account: Workers Scripts Write. kortix.com zone:
       # DNS Write, Workers Routes Write, Transform Rules Write, SSL and
       # Certificates Write, and Zone Read.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env

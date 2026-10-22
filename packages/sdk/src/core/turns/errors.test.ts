@@ -81,6 +81,8 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
       suggestion: 'Add an openai API key in project settings, then retry.',
       upstreamStatus: undefined,
       requestId: 'req_abc123',
+      requestedModel: 'openai/gpt-4.1',
+      resolvedModel: 'openai/gpt-4.1',
     });
   });
 
@@ -93,6 +95,27 @@ describe('extractGatewayErrorDetails — recovering the structured envelope', ()
     expect(details?.code).toBe('provider_not_connected');
     expect(details?.suggestion).toBe('Add an openai API key in project settings, then retry.');
     expect(details?.requestId).toBe('req_abc123');
+  });
+
+  // A resolution error (no upstream chosen yet) carries `provider: ''` — the
+  // model ids are the only way a host can tell WHICH connection is missing,
+  // e.g. a ChatGPT subscription (`codex/…`) that needs reconnecting.
+  test('carries the requested and resolved model of a resolution error with an empty provider', () => {
+    const details = extractGatewayErrorDetails(gatewayBody({
+      message: 'The selected ChatGPT connections need reconnection.',
+      code: 'provider_reauth_required',
+      provider: '',
+      requested_model: 'codex/gpt-6-sol',
+      resolved_model: 'codex/gpt-6-sol',
+      suggestion: 'Reconnect a selected ChatGPT account or select another granted connection.',
+      error: undefined,
+    }));
+    expect(details).toMatchObject({
+      code: 'provider_reauth_required',
+      requestedModel: 'codex/gpt-6-sol',
+      resolvedModel: 'codex/gpt-6-sol',
+    });
+    expect(details?.provider).toBeUndefined();
   });
 
   test('carries upstream_status as a number when present', () => {
@@ -322,6 +345,42 @@ describe('extractGatewayErrorDetails — a gateway body serialized into data.mes
     expect(details?.provider).toBe('openai');
     expect(details?.code).toBe('provider_not_connected');
     expect(details?.requestId).toBe('req_abc123');
+  });
+
+  // The daemon stores a failed turn as `{ name, code, data }`; its `code` is the
+  // daemon's own class (`rate_limit`), not the gateway's. A prod session showed
+  // the whole `429: {…}` body as its error row because that outer `code` was
+  // taken for the envelope.
+  test('the gateway envelope in data.message wins over the daemon code beside it', () => {
+    const body = {
+      message: 'All selected ChatGPT connections are cooling down.',
+      type: 'provider_pool_rate_limited',
+      code: 'provider_pool_rate_limited',
+      provider: '',
+      requested_model: 'codex/gpt-6.1-sol',
+      resolved_model: 'codex/gpt-6.1-sol',
+      request_id: 'req_pool429',
+      suggestion: 'Select a granted ChatGPT connection in session settings.',
+    };
+    const details = extractGatewayErrorDetails({
+      name: 'UnknownError',
+      code: 'rate_limit',
+      data: { message: `429: ${JSON.stringify(body)}`, statusCode: 429 },
+    });
+    expect(details?.message).toBe('All selected ChatGPT connections are cooling down.');
+    expect(details?.code).toBe('provider_pool_rate_limited');
+    expect(details?.suggestion).toBe('Select a granted ChatGPT connection in session settings.');
+    expect(details?.requestId).toBe('req_pool429');
+  });
+
+  test('a daemon error with no envelope inside still reports its own code', () => {
+    const details = extractGatewayErrorDetails({
+      name: 'UnknownError',
+      code: 'rate_limit',
+      data: { message: 'Too many requests', statusCode: 429 },
+    });
+    expect(details?.code).toBe('rate_limit');
+    expect(details?.message).toBe('Too many requests');
   });
 });
 

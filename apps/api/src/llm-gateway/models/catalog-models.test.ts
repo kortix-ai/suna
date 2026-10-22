@@ -2,19 +2,37 @@ import { describe, expect, test } from 'bun:test';
 import type { Catalog } from '@kortix/llm-catalog';
 
 import { gatewayCodexModels, gatewayModelCatalog, gatewayModelsAll } from './catalog-models';
-import { codexModelIds } from './codex-models';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { CODEX_SEED_MODEL_IDS } from './codex-models';
+import { TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
+import { __setManagedLineupForTest } from './managed-models';
+import { servedManagedModels } from './served-managed-models';
+
+// The lineup Platinum Inference would list (scripts/test.env sets the Platinum key).
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
+const SERVED = servedManagedModels();
 
 // The sandbox agent server injects this catalog into OpenCode verbatim and does NO
 // client-side limit backfill — so the gateway MUST guarantee a usable context window
 // on every served model, or OpenCode can't size conversations and a long session
 // pins at 100% context. These tests lock that server-side guarantee.
 //
-// The managed lineup and its prices are owned by @kortix/llm-catalog
-// (managed.test.ts). This file owns the mapping from a lineup entry to the
-// served record, so a lineup change needs no edit here.
+// The managed lineup and its prices are owned by Platinum Inference. This file
+// owns the mapping from a lineup entry to the served record.
 describe('gatewayModelCatalog — served catalog', () => {
   const full = gatewayModelCatalog('proj');
+
+  // OpenCode (provider.ts) reads image support ONLY from `modalities.input`
+  // and replaces image parts with "ERROR: Cannot read image" when it is
+  // missing; the thinking control is built ONLY from effort values. Both come
+  // from Platinum's model list.
+  test('every served vision model advertises image input and a thinking control', () => {
+    for (const managed of SERVED.filter((m) => m.vision)) {
+      const served = full[managed.id]!;
+      expect(served.modalities?.input, managed.id).toContain('image');
+      const effort = served.reasoning_options?.find((o) => o.type === 'effort');
+      expect(effort?.values?.length ?? 0, managed.id).toBeGreaterThan(0);
+    }
+  });
 
   test('serves managed DeepSeek V4.1 with vision, tools, and a context limit', () => {
     expect(full['deepseek-v4.1-flash']).toMatchObject({
@@ -23,18 +41,18 @@ describe('gatewayModelCatalog — served catalog', () => {
       attachment: true,
       tool_call: true,
       temperature: true,
-      limit: { context: 1_048_576, output: 16_384 },
-      cost: { input: 0.2, output: 0.65, cache_read: 0.03 },
+      limit: { context: 1_000_000, output: 65_536 },
+      cost: { input: 0.15, output: 0.6, cache_read: 0.003 },
     });
   });
 
-  test.each(SERVED_MANAGED_MODELS.map((model) => [model.id, model] as const))(
-    '%s is served under Kortix with its curated vision, limit, and price',
+  test.each(SERVED.map((model) => [model.id, model] as const))(
+    '%s is served under Kortix with Platinum\'s vision, limit, and price',
     (id, model) => {
-      const pricing = model.pricing!;
+      const pricing = model.pricing;
       expect(full[id]).toMatchObject({
         name: model.name,
-        provider: model.providerBrand ?? 'kortix',
+        provider: 'kortix',
         attachment: model.vision,
         limit: model.limit,
       });
@@ -43,7 +61,6 @@ describe('gatewayModelCatalog — served catalog', () => {
         input: pricing.inputPerMillion,
         output: pricing.outputPerMillion,
         ...(pricing.cachedInputPerMillion != null ? { cache_read: pricing.cachedInputPerMillion } : {}),
-        ...(pricing.cacheWritePerMillion != null ? { cache_write: pricing.cacheWritePerMillion } : {}),
       });
     },
   );
@@ -58,7 +75,7 @@ describe('gatewayModelCatalog — served catalog', () => {
   test('synthetic auto is absent, and an anonymous caller sees exactly the served managed ids', () => {
     expect(full.auto).toBeUndefined();
     expect(Object.keys(gatewayModelCatalog(undefined)).sort()).toEqual(
-      SERVED_MANAGED_MODELS.map((model) => model.id).sort(),
+      SERVED.map((model) => model.id).sort(),
     );
   });
 
@@ -134,7 +151,7 @@ describe('gatewayModelCatalog — served catalog', () => {
 // served shape (PR #5010 review), and a `budget_tokens`-only reasoning entry
 // (mainline Claude) used to vanish.
 describe('served catalog field passthrough', () => {
-  const [codexId] = codexModelIds();
+  const [codexId] = CODEX_SEED_MODEL_IDS;
   const enriched = {
     released: '2026-01-02',
     family: 'synthetic',
@@ -175,6 +192,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/enriched']).toEqual({
       name: 'Enriched',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released,
       release_date: released,
       family,
@@ -186,6 +204,7 @@ describe('served catalog field passthrough', () => {
     expect(gatewayModelsAll(catalog)['anthropic/bare']).toEqual({
       name: 'Bare',
       provider: 'anthropic',
+      provider_name: 'Anthropic',
       released: undefined,
       release_date: undefined,
       family: undefined,
@@ -213,7 +232,8 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
   const freeFull = gatewayModelCatalog('proj', { freeManagedOnly: true });
 
   // Managed ids are bare; every BYOK and codex id carries a provider prefix.
-  test('free tier sees no managed Kortix model', () => {
+  // Free tier sees no managed model, the platform default included.
+  test('free tier sees no managed model', () => {
     expect(Object.keys(freeFull).filter((id) => !id.includes('/'))).toEqual([]);
   });
 
@@ -221,9 +241,9 @@ describe('gatewayModelCatalog — free-tier visibility', () => {
     expect(freeFull['anthropic/claude-opus-4-8']).toBeDefined();
   });
 
-  test('anonymous + free-only = empty catalog', () => {
-    const empty = gatewayModelCatalog(undefined, { freeManagedOnly: true });
-    expect(empty).toEqual({});
+  test('anonymous + free-only = nothing', () => {
+    const freeOnly = gatewayModelCatalog(undefined, { freeManagedOnly: true });
+    expect(Object.keys(freeOnly)).toEqual([]);
   });
 });
 

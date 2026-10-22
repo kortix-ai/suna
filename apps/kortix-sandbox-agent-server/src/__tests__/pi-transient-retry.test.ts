@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { AssistantMessage } from '@earendil-works/pi-ai'
-import { TURN_RETRY_MAX_ATTEMPTS, isTransientModelError, retryDelayMs } from '../harness/pi/transient-retry'
+import { TURN_RETRY_MAX_ATTEMPTS, isTransientModelError, retryDelayMs } from '@/harness/pi/transient-retry'
 
 const failed = (errorMessage: string) => ({ role: 'assistant', stopReason: 'error', errorMessage }) as unknown as AssistantMessage
 
@@ -20,8 +20,13 @@ describe('pi transient retry', () => {
     'JSON Parse error: Unable to parse JSON string',
     'JSON parsing failed: Text: {"id":"chatcmpl-x","choices":[{"delta":{"reasoning_content":"th',
     'Could not parse message into JSON: {"id"',
+    'Error reading response: malformed server-sent event JSON.',
     'deepseek-v4.1-flash is temporarily unavailable.',
     'The operation timed out.',
+    // pi-ai 1.2.0 (1.1.0 for the busy shapes): pi 1.0.3 ended the turn on these.
+    'The upstream provider returned an error',
+    'server_busy',
+    'Our servers are currently busy. Please try again later.',
   ])('transient: %s', (message) => {
     expect(isTransientModelError(failed(message))).toBe(true)
   })

@@ -19,16 +19,16 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function ProjectListTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const output = partOutput(part);
+  const output = partOutput(call);
   const projects = useMemo(() => parseProjectListOutput(output || ''), [output]);
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it.
   const errored = useMemo(() => isErrorOutput(output), [output]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={FolderIcon}
       trigger={{ title: 'Workspace', subtitle: projectListSubtitle(projects.length) }}
       defaultOpen={defaultOpen || projects.length === 0}
@@ -68,7 +68,4 @@ export function ProjectListTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('project_list', ProjectListTool);
 ToolRegistry.register('project-list', ProjectListTool);
-ToolRegistry.register('oc-project_list', ProjectListTool);
-ToolRegistry.register('oc-project-list', ProjectListTool);

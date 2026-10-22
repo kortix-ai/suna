@@ -59,6 +59,29 @@ const MAX_LIFETIME_S = intFromEnv('DB_MAX_LIFETIME_S', 60 * 30); // 30 min
 // enormous for any single OLTP statement; background jobs that legitimately need
 // longer should `SET LOCAL statement_timeout` inside their own transaction.
 const STATEMENT_TIMEOUT_MS = intFromEnv('DB_STATEMENT_TIMEOUT_MS', 25_000);
+/**
+ * Opt-in: send Drizzle statements as server-side prepared statements.
+ *
+ * Two switches have to agree, and each alone is a no-op. postgres.js prepares a
+ * statement only when the CONNECTION option `prepare` is true and the query's
+ * own option is not false. Drizzle calls `client.unsafe(query, params)`, whose
+ * query option defaults to false. `createDb` sets both (`preparedSql` for the
+ * second). Unprepared, every parameterized statement costs two round trips
+ * (Parse/Describe, then Bind/Execute). Prepared, a statement a connection has
+ * seen costs one.
+ *
+ * Off by default, and a per-environment decision:
+ *  - it needs a direct or session-mode connection. A transaction pooler
+ *    (Supavisor port 6543) multiplexes connections and breaks it;
+ *  - after ~5 executions PostgreSQL may switch a prepared statement to a
+ *    generic plan, which cannot use a partial index whose predicate arrives as
+ *    a parameter. Prepared connections therefore set `plan_cache_mode =
+ *    force_custom_plan`: every execution is planned for its own parameters, as
+ *    an unprepared one is, and only the extra round trip goes;
+ *  - the per-connection statement cache has no size limit. `DB_MAX_LIFETIME_S`
+ *    (30 min) bounds it.
+ */
+const PREPARE_STATEMENTS = process.env.DB_PREPARE_STATEMENTS === 'true';
 
 /**
  * Observability hooks for {@link createDb}.
@@ -134,6 +157,134 @@ export function instrumentSql<S extends object>(sql: S, onQuery: () => () => voi
 }
 
 /**
+ * Make every Drizzle statement on `sql` a prepared one: `unsafe(query, params)`
+ * gets `{ prepare: true }` unless the caller passed options of its own. Applies
+ * inside `begin` and `savepoint` too. Everything else passes through.
+ */
+export function preparedSql<S extends object>(sql: S): S {
+  return new Proxy(sql, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      if (property === 'unsafe') {
+        return (query: unknown, params: unknown = [], options: unknown = { prepare: true }) =>
+          (value as (...a: unknown[]) => unknown).call(target, query, params, options);
+      }
+      if (property === 'begin' || property === 'savepoint') {
+        return (...args: unknown[]) => {
+          const last = args.length - 1;
+          const callback = args[last];
+          if (typeof callback === 'function') {
+            args[last] = (inner: object) => callback(preparedSql(inner));
+          }
+          return (value as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      return value;
+    },
+  });
+}
+
+/**
+ * True for the postgres.js connection-phase failure: the attempt to establish
+ * a connection exceeded `connect_timeout` and the statement was never sent to
+ * the server. The error is a plain Error carrying the driver's own code — not
+ * a `PostgresError` — so SQLSTATE-based classification never recognizes it.
+ */
+export function isConnectTimeoutError(error: unknown): boolean {
+  return (
+    typeof error === 'object'
+    && error !== null
+    && (error as { code?: unknown }).code === 'CONNECT_TIMEOUT'
+  );
+}
+
+/**
+ * Retry a statement whose connection never established.
+ *
+ * postgres.js has no driver-level retry: when a connection attempt exceeds
+ * `connect_timeout`, the query that drew the connection rejects with
+ * `Error: write CONNECT_TIMEOUT …` and is gone. During a brief database
+ * degradation (2026-09-15, 2026-10-16 prod) every statement unlucky enough to
+ * draw a connecting socket failed hard and paged as `Failed query: <SQL>` —
+ * with the SQL of whatever statement was the victim, not of any real query
+ * problem.
+ *
+ * The statement provably never reached the server, so exactly ONE fresh
+ * attempt on a new connection is safe — no double execution, no duplicate
+ * side effects. `begin`/`savepoint` are deliberately not retried: their
+ * callback may have already run, and a transaction's statements use the
+ * reserved connection postgres.js manages itself, which never passes through
+ * here. Only the awaited statement path Drizzle uses is retried
+ * (`unsafe(...)` — with its `.values()` flag — then
+ * `then`/`catch`/`finally`); builder methods for streaming or cursor
+ * execution pass through unretried.
+ */
+function retriedQuery<Q extends object>(freshAttempt: () => Q): Q {
+  const attempt = freshAttempt();
+  let valuesShape = false;
+  let chain: Promise<unknown> | null = null;
+  // One chain per statement: the query starts on the first subscriber and
+  // every subscriber rides the same (at most retried once) outcome.
+  const ensureChain = () => {
+    if (!chain) {
+      chain = Promise.resolve(attempt as unknown as Promise<unknown>).catch((error) => {
+        if (!isConnectTimeoutError(error)) throw error;
+        const retry = freshAttempt() as unknown as Q & { values: () => unknown };
+        if (valuesShape) retry.values();
+        return retry;
+      });
+    }
+    return chain;
+  };
+  return new Proxy(attempt, {
+    get(target, property, receiver) {
+      if (property === 'values') {
+        // The result-shape flag: apply it to the real query and keep handing
+        // out this proxy, so the retry can re-apply it on the fresh attempt.
+        return (...args: unknown[]) => {
+          valuesShape = true;
+          (Reflect.get(target, property) as (...a: unknown[]) => unknown).apply(target, args);
+          return receiver;
+        };
+      }
+      if (property === 'then' || property === 'catch' || property === 'finally') {
+        // Route the caller's settle calls through this proxy's retry chain —
+        // never to the query's own settle methods, which a layer below (e.g.
+        // instrumentSql) may already have wrapped. The chain adopts the query
+        // (Promise.resolve), which calls its wrapped `then` and so still
+        // fires that layer's dispatch hook; the caller's resolvers then see
+        // the retried outcome.
+        return (...args: unknown[]) =>
+          (ensureChain() as unknown as Record<string, (...a: unknown[]) => unknown>)[property](...args);
+      }
+      const value = Reflect.get(target, property, receiver);
+      return typeof value === 'function' ? (value as (...a: unknown[]) => unknown).bind(target) : value;
+    },
+  }) as Q;
+}
+
+/**
+ * Give every awaited statement on `sql` one fresh attempt when its connection
+ * never established (see {@link retriedQuery}). Wraps the outermost layer:
+ * a retried attempt goes through the same preparation and instrumentation as
+ * the first. Transactions are not retried.
+ */
+export function connectRetry<S extends object>(sql: S): S {
+  return new Proxy(sql, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver);
+      if (typeof value !== 'function') return value;
+      if (property === 'unsafe') {
+        return (...args: unknown[]) =>
+          retriedQuery(() => (value as (...a: unknown[]) => object).apply(target, args));
+      }
+      return value;
+    },
+  });
+}
+
+/**
  * Create a Drizzle database client.
  *
  * @param databaseUrl - PostgreSQL connection string
@@ -146,13 +297,12 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>, ho
     throw new Error('DATABASE_URL is required');
   }
 
+  // Off unless `DB_PREPARE_STATEMENTS=true` or the caller asks. Off keeps us
+  // compatible with the Supabase transaction pooler (Supavisor multiplexes
+  // connections, so server-side prepared statements can't be reused). Prod
+  // uses the DIRECT connection, where prepared statements work.
+  const prepare = options?.prepare ?? PREPARE_STATEMENTS;
   const client = postgres(databaseUrl, {
-    // prepare: false keeps us compatible with the Supabase transaction pooler
-    // (Supavisor multiplexes connections, so server-side prepared statements
-    // can't be reused). Prod currently uses the DIRECT connection where prepared
-    // statements would be fine, but leaving this off keeps a pooler switch a
-    // pure connection-string change with no code impact.
-    prepare: false,
     max: POOL_MAX,
     idle_timeout: IDLE_TIMEOUT_S,
     connect_timeout: CONNECT_TIMEOUT_S,
@@ -162,12 +312,16 @@ export function createDb(databaseUrl: string, options?: postgres.Options<{}>, ho
     // pinning a pooled connection forever and starving the whole fleet.
     connection: {
       statement_timeout: STATEMENT_TIMEOUT_MS,
+      ...(prepare ? { plan_cache_mode: 'force_custom_plan' } : {}),
     },
     ...options,
+    prepare,
   });
 
-  const observed = hooks?.onQuery ? instrumentSql(client as AnySql, hooks.onQuery) : client;
-  return drizzle(observed as typeof client, { schema });
+  const statements = prepare ? preparedSql(client as AnySql) : client;
+  const observed = hooks?.onQuery ? instrumentSql(statements as AnySql, hooks.onQuery) : statements;
+  const resilient = connectRetry(observed as AnySql);
+  return drizzle(resilient as typeof client, { schema });
 }
 
 export type Database = ReturnType<typeof createDb>;

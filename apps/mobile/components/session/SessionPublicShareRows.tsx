@@ -16,11 +16,10 @@
  *   (`lib/session/public-share-guard.ts`) catches any non-`transcript`
  *   `resource_type`, revokes it right away, and the URL is never shared.
  * - Share transcript: hidden until the device holds the session's messages.
- *   A tap first pages in the older history through the thread's own sync
- *   controller (`loadFullHistory`, at most 20 pages; the row reads
- *   "Loading…"), then shares `buildTranscriptText`. History still missing
- *   after that (bound hit, a failed page, or no open thread to page through)
- *   adds a "may not be included" line to the text.
+ *   A tap first reads the whole history (`loadSessionExportMessages`: the
+ *   runtime while the computer runs, else the session's saved copy; the row
+ *   reads "Loading…"), then shares `buildTranscriptText`. A failed read shares
+ *   what the thread holds, with a "may not be included" line.
  * - Stop sharing link: only while a live transcript share exists; revokes it
  *   after a destructive confirm, pushed the same way. The link then answers 410.
  *
@@ -37,8 +36,8 @@ import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { FileTextIcon, LinkBreakIcon, ShareNetworkIcon } from '@/lib/icons';
-import { loadFullHistory } from '@/lib/opencode/session-sync';
-import { useSyncStore } from '@/lib/opencode/sync-store';
+import { sessionLogOfV1Rows, type SessionLogMessage } from '@kortix/sdk';
+import { loadSessionExportMessages, useSessionLogThread } from '@kortix/sdk/react';
 import { projectKeys } from '@/lib/projects/hooks';
 import {
   createSessionPublicShare,
@@ -162,11 +161,14 @@ export function SessionPublicShareRows({ projectId, session, onConfirm }: Sessio
     session
   );
 
-  // The transcript comes from the sync store, keyed by the OpenCode session id.
-  const runtimeSessionId = session.opencode_session_id;
-  const hasMessages = useSyncStore((s) =>
-    runtimeSessionId ? (s.messages[runtimeSessionId]?.length ?? 0) > 0 : false
+  // The transcript is the session log's root thread (the runtime session's rows on v1).
+  const runtimeSessionId = session.runtime_session_id ?? session.opencode_session_id;
+  const source = React.useMemo(
+    () => ({ projectId, sessionId: session.session_id, runtimeSessionId: runtimeSessionId ?? null }),
+    [projectId, session.session_id, runtimeSessionId],
   );
+  const thread = useSessionLogThread(source);
+  const hasMessages = (thread?.messages.length ?? 0) > 0;
 
   const [loadingHistory, setLoadingHistory] = React.useState(false);
   // False once the Share view unmounts (Back, sheet closed): a history load
@@ -182,15 +184,22 @@ export function SessionPublicShareRows({ projectId, session, onConfirm }: Sessio
     if (!runtimeSessionId || loadingHistory) return;
     haptics.tap();
     setLoadingHistory(true);
+    // The thread holds only its newest page: read the whole history, from the
+    // runtime while the computer runs, else from the saved copy. A failed read
+    // shares what the thread holds, marked incomplete.
+    let messages: readonly SessionLogMessage[] = [];
     let complete = false;
     try {
-      ({ complete } = await loadFullHistory(runtimeSessionId));
+      const rows = await loadSessionExportMessages(runtimeSessionId, `${projectId}/${session.session_id}`);
+      messages = sessionLogOfV1Rows(session.session_id, runtimeSessionId, rows).threads[0]?.messages ?? [];
+      complete = true;
+    } catch {
+      messages = thread?.messages ?? [];
     } finally {
       if (mountedRef.current) setLoadingHistory(false);
     }
     if (!mountedRef.current) return;
-    const messages = useSyncStore.getState().messages[runtimeSessionId];
-    const text = messages ? buildTranscriptText(title, messages, { incomplete: !complete }) : null;
+    const text = messages.length > 0 ? buildTranscriptText(title, messages, { incomplete: !complete }) : null;
     if (!text) {
       toast.error('Nothing to share yet.');
       return;

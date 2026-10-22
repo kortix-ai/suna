@@ -1,150 +1,412 @@
 ---
-title: React hooks
-description: Run a Kortix session in React with the useSession hook.
+title: React
+description: "@kortix/sdk/react: useSession for a whole session view, a headless chat kit, and data hooks for everything else."
 ---
 
-`@kortix/sdk/react` adds React hooks on top of the SDK. This page covers
-`useSession`, the hook that runs a session end to end, and the other hooks
-confirmed stable for React apps.
+`@kortix/sdk/react` is the React layer of the SDK. It gives you one hook that runs a whole session view, a headless chat kit, and data hooks for accounts, projects, sessions, secrets, triggers, Apps, notifications and access checks. It works in React and React Native.
 
-## useSession(projectId, sessionId, options?)
+## Set up
 
-`useSession` starts the session, opens the server-selected event transport, and
-syncs messages, status, and pending prompts. Call it once per session view.
+<Steps>
+<Step title="Install">
+Install the SDK and its two optional peers: `react` 18 or later and `@tanstack/react-query` 5.75.2 or later.
+
+```bash
+npm install @kortix/sdk react @tanstack/react-query
+```
+</Step>
+<Step title="Create the client">
+Create the client once, at module scope. Every hook reads this client. See [SDK](/docs/sdk) for the options and [Authentication](/docs/sdk/auth) for `getToken`.
+
+```ts
+// lib/kortix.ts
+import { createKortix } from '@kortix/sdk';
+
+export const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: async () => getMyToken(),
+});
+```
+</Step>
+<Step title="Add the providers">
+Import that module once, then wrap the tree in `QueryClientProvider`. `useSession`, the prompt hooks and most data hooks are React Query hooks. They throw without a provider.
+
+```tsx
+'use client';
+import '@/lib/kortix';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+```
+</Step>
+</Steps>
+
+Keep one client and one `QueryClient` per host. A second `createKortix()` call with other options re-points every earlier client.
+
+## useSession
+
+`useSession(projectId, sessionId, options?)` runs one session view end to end. It polls `POST /start` until the sandbox is ready, opens the event stream, syncs messages and status, paints saved history, and sends prompts. Call it once per session view.
 
 ```tsx
 import { useSession } from '@kortix/sdk/react';
 
-function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+export function SessionView({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const s = useSession(projectId, sessionId);
 
-  if (s.phase !== 'ready') return <Booting stage={s.stage} onRetry={s.retry} />;
+  if (s.messages.length === 0 && s.phase !== 'ready') {
+    if (s.phase === 'error') return <NotRunning stage={s.stage} onRetry={s.retry} />;
+    if (s.conversationEmpty) return <Composer onSend={s.send} />;
+    return s.savedTranscript === 'none' ? <Booting stage={s.stage} /> : <MessageSkeleton />;
+  }
 
   return (
     <>
       {s.messages.map(({ info, parts }) => (
         <Message key={info.id} info={info} parts={parts} />
       ))}
-      <Composer busy={s.isBusy} onSend={s.send} onStop={s.cancel} />
+      {s.sendError && <SendError error={s.sendError} />}
+      <Composer busy={s.isBusy} disabled={s.phase !== 'ready'} onSend={s.send} onStop={s.cancel} />
     </>
   );
 }
 ```
 
-Readiness is server truth. The runtime is ready when `POST /start` returns
-`stage: 'ready'`. `useSession` does not run a separate client-side health check.
+The sandbox is ready when `/start` answers `stage: 'ready'`. The hook runs no separate health check. While the session starts, render by this rule:
+
+| State | Render |
+| --- | --- |
+| `messages` has rows | The transcript. Saved history paints before the sandbox wakes. |
+| No rows and `conversationEmpty` is `true` | The composer. The session has no messages and nothing to wait for. |
+| No rows and `savedTranscript` is `'none'` | A boot screen with `stage`. Nothing can show until the runtime answers. |
+| No rows and `savedTranscript` is `'loading'` | Placeholder rows. A saved copy is on its way. |
+
+Saved history is the transcript copy the API writes at each turn end. The first window holds the newest 40 messages, at most 1,000,000 characters. `loadOlder()` reads older windows, also while the sandbox is off. Live messages then reconcile into it by message id.
+
+On an API older than the session log (`GET …/log` answers `404` with no `code`), an open reads the first v1 window once: `GET …/transcript?shape=sync&history=true`. The session-open snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`). `useSession` passes that answer to its `useSessionSync` as `mirror`. If you mount a second `useSessionSync` for the root conversation next to `useSession`, pass `mirror: null` so it does not read the window a second time. Omit `mirror` in two cases, so that the hook makes the one read itself:
+
+- Next to `useSession({ chatEngine: false })`. That `useSession` makes no saved-history read.
+- On a `savedChild` hook. It reads the sub-agent's own window, which the open does not read.
+
+To show a session's saved copy before `useSession` binds it, for example on a connecting screen, call `readSavedSessionCopy({ projectId, sessionId, runtimeSessionId })` from `@kortix/sdk`. It reads the session log first and returns `{ envelope, empty, log }`. `log` is the session log's newest page (`GET …/log`): apply it to the session store (`applySessionLogPage`) and render `useSessionLogThread`. No `GET …/transcript` is read then. A new session with no stored log yet answers `404` with `code: 'session_log_missing'`: `log` is `null`, `envelope` is `null`, and nothing is read. Only when the log answers `404` with no `code` (an API older than the session log) does it read the v1 copy: `log` is absent, and you pass `envelope` to `useSessionSync` as `mirror`. `empty` is `true` when the copy proves the conversation empty and the turn record shows no ended or open turn. The function never throws. The `sessionLog` option is deprecated and ignored.
+
+The SDK holds that copy for the open that follows, for up to 5 minutes. When `useSession` binds the session, the saved-history read answers from the held copy. The window is downloaded once per open. `resetIdentityState()` forgets the held copy.
+
+To show a sub-agent's saved history, call `useSessionSync(childRuntimeSessionId, { kortixSessionScope: sessionId, savedChild: true })`. It reads the session log first: a page goes in the session store, and the thread comes from `useSessionLogThread(parentSession, childRuntimeSessionId)`. Only when the log answers `404` with no `code` (an API older than the session log) does it read the child's v1 saved window from the parent session. The device keeps no copy of it. While the session store holds the parent session's log, `useSessionSync` reads no saved copy, whatever `sessionLog` says.
 
 ### Returns
 
 | Field | Type | What it holds |
-|---|---|---|
-| `phase` | `'starting' \| 'ready' \| 'error'` | Overall state. Render a boot screen until `ready`. |
-| `messages` | `{ info, parts }[]` | The message list. Parts stream in live. |
-| `savedTranscript` | `'loading' \| 'shown' \| 'none'` | Whether the saved conversation can show before the computer wakes. `loading`: a saved copy is on its way. `shown`: messages are in the list. `none`: nothing can show until the runtime answers. |
-| `status` | `SessionStatus` | The session status. |
-| `isBusy` | `boolean` | The agent is generating a reply. |
-| `questions`, `permissions` | array | Pending agent questions and tool-approval requests. A `permission` here is one runtime tool approval, not an IAM permission. |
-| `diffs`, `todos` | array | Live file diffs and todo items. |
-| `sendError` | `KortixSendError \| null` | The last `send` failure: `billing`, `runtime-not-ready`, or `runtime-error`. |
-| `rewindMessageId` | `string \| null` | The selected user message while a reversible rewind is staged. |
-| `rewindPending` | `boolean` | A rewind or restore request is in progress. |
-| `rewindError` | `KortixSendError \| null` | The last rewind or restore failure. |
-| `models`, `agents`, `defaultAgent`, `commands` | — | Selectable models, selectable agents, the default agent, and slash commands. Available before the runtime starts. |
-| `retry` | `() => void` | Force a re-check of `/start`. |
+| --- | --- | --- |
+| `phase` | `'starting' \| 'ready' \| 'error'` | The overall state. Enable sends at `ready`. `error` when `stage` is `failed` or `stopped`, or `/start` failed. |
+| `stage` | `string \| null` | The raw `/start` stage: `provisioning`, `starting`, `ready`, `stopped` or `failed`. For boot screens. |
+| `startError` | error or `null` | The terminal `/start` failure. Render it instead of a spinner. |
+| `failure` | object or `null` | The typed terminal provisioning failure from `/start`. |
+| `retry` | `() => void` | Polls `/start` again. Use it for a Retry button. |
+| `messages` | `{ info, parts }[]` | The transcript. Parts stream in live. |
+| `savedTranscript` | `'loading' \| 'shown' \| 'none'` | Whether saved history can show before the sandbox wakes. An unknown is `loading`. |
+| `conversationEmpty` | `boolean` | The saved copy proves the session has no messages, no turn ended since, and nothing is open or queued. |
+| `freshness` | `'idle' \| 'loading' \| 'fresh' \| 'stale' \| 'error'` | The transcript read state. `loading` or `error` with no rows is a wait or a failure, not an empty session. |
+| `retryTranscript` | `() => void` | Reads the transcript tail again. |
+| `hasOlder`, `isLoadingOlder`, `loadOlder` | `boolean`, `boolean`, `() => Promise<void>` | Paging toward older messages. |
+| `status` | `SessionStatus` | The runtime status of the session. |
+| `working` | `WorkingProjection` | `{ state: 'idle' \| 'working', pendingDelivery?, source, turnId, since }`. The one working answer. |
+| `isBusy` | `boolean` | `working.state === 'working'`. |
+| `canStop` | `boolean` | Whether this viewer may stop the running turn. `false` only when the server's `/turn` answer says `can_stop: false`: in a shared session only the member who started the turn, the session owner or a project manager may stop it. Show no Stop then. |
+| `presenceAwake` | `{ until: Date, capAt: Date } \| null` | With `browserPresence`: `until` is when the sandbox stops after the latest presence renewal, and `capAt` is the time presence cannot keep it awake past. Read again every 5 minutes while the person is present, when a turn ends, when the control plane closes a turn, and when the sandbox becomes ready. `null` while the person is absent, for a person who may not start the session, once the session start reports the sandbox not ready, and from the start of a turn until the next renewal answers. |
+| `isSending` | `boolean` | A `send` request is in flight. |
+| `sendError` | `KortixSendError \| null` | The last `send` failure. A new `send` clears it. |
+| `questions`, `permissions` | arrays | Open agent questions and tool-approval requests. A permission here is one tool approval, not an access-control permission. |
+| `hasPending` | `boolean` | At least one question or permission is open. |
+| `diffs`, `todos` | arrays | Live file diffs and the todo list. |
+| `rewindMessageId`, `rewindPending`, `rewindError` | `string \| null`, `boolean`, `KortixSendError \| null` | The staged rewind, a rewind or restore in flight, and its last failure. |
+| `models` | `FlatModel[]` | Selectable models. |
+| `agents`, `defaultAgent`, `commands` | arrays, `string \| null`, array | Selectable agents, the default agent and slash commands. Available before the sandbox starts. |
+| `agentName` | `string \| null` | The agent the session was created with, from the first `/start` answer. `null` when none was bound. |
+| `picks` | `SessionPicks` | This session's chosen `model`, `agent` and `variant`, with `setModel`, `setAgent` and `setVariant`. `send` uses them. |
+| `runtimeSessionId` | `string \| null` | The runtime's root session id, or `null` while it resolves. `opencodeSessionId` is a deprecated alias. |
+| `runtimeUrl` | `string \| null` | The session runtime's proxy URL, or `null` until `stage` is `ready`. For a terminal attach or a direct runtime call. |
 
 ### Actions
 
 | Action | What it does |
-|---|---|
-| `send(text, override?)` | Send a prompt. `override` sets `{ model?, agent? }` for this message only. |
-| `sendParts(parts, override?)` | Send text and runtime URL file parts through the selected transport. Private staged handles use platform prompt routes. |
-| `rewind(messageId)` | Rewind this canonical session to a user message. The selected message and later path become hidden and recoverable. |
-| `restoreRewind()` | Restore the removed path before another prompt commits its replacement. |
-| `cancel()` | Stop the current run and clear pending questions and permissions. Holds the session's queued prompts first, so a queued prompt does not start a new run. |
-| `runCommand(command, args)` | Run a project slash command. |
-| `answerQuestion(id, answers)` | Answer a pending agent question. |
-| `rejectQuestion(id)` | Reject a pending agent question. |
-| `answerPermission(id, reply, message?)` | Answer a tool-approval request. `reply` is `'once'`, `'always'`, or `'reject'`. |
+| --- | --- |
+| `send(text, override?)` | Sends a prompt through the session's prompt inbox. The message shows at once, before the server answers. `override` is `{ model?, agent?, variant? }` for this message only. It does nothing before `phase` is `ready`. Failures go to `sendError`; it never throws. |
+| `sendParts(parts, override?)` | Sends text and file parts. `override` also takes `clientMessageId`: send a failed submission again with the same value and the server delivers it once. Throws a not-ready error before `ready`. |
+| `cancel()` | Stops the running turn. It holds the queued prompts first, so a queued prompt does not start the next turn. Resolves `{ status: 'aborted' }`, `{ status: 'timed-out' }` or `{ status: 'failed', error }`. |
+| `rewind(messageId)` | Rewinds the session to a user message and restores file state. The removed messages stay recoverable until the next prompt. Throws while the session is busy. |
+| `restoreRewind()` | Restores the removed messages before another prompt commits the rewind. |
+| `runCommand(command, args, options?)` | Runs a project slash command. `options` is `{ agent?, model?, variant? }`. |
+| `answerQuestion(id, answers)` | Answers an open question. `answers` is `string[][]`, one array per question. |
+| `rejectQuestion(id)` | Rejects an open question. |
+| `answerPermission(id, reply, message?)` | Answers a tool approval. `reply` is `'once'`, `'always'` or `'reject'`. |
 
-`useSession` also returns `removeQuestion` and `removePermission`. Do not use
-them. They clear the prompt from local state but never notify the agent, so
-the run stays blocked. Use `answerQuestion`, `rejectQuestion`, or
-`answerPermission` instead.
+The three reply actions remove the item only after the server accepts the reply. On failure they throw a `KortixSendError` and the item stays open. `removeQuestion` and `removePermission` are deprecated: they never reach the agent, so the run stays blocked.
 
 ### Options
 
 | Option | Default | What it does |
-|---|---|---|
-| `waitMs` | `15000` | The long-poll budget sent to `/start`. |
-| `replayStartStash` | `true` | Replay a prompt saved before the session existed, once the session is ready. |
-| `enabled` | `true` | Set `false` to delay the hook, for example until a billing check passes. |
-| `chatEngine` | `true` | Set `false` if your app mounts its own chat surface for this session, to avoid syncing messages twice. |
-| `repositoryMode` | — | Telemetry only. A session created before a repository replacement starts and runs the project's current config without it. Only its `/workspace` clone still comes from the old repository, so a push from it needs a rebase first. |
+| --- | --- | --- |
+| `enabled` | `true` | `false` holds the whole hook: no `/start`, no stream. Use it until a precondition passes. |
+| `waitMs` | `15000` | The long-poll budget sent to `/start`. The server clamps it. |
+| `chatEngine` | `true` | `false` when your app mounts its own chat surface for this session. Then `messages`, `diffs` and `todos` are empty, questions and permissions stay live, and the session log is still negotiated (`useSessionLogThread` reads it). |
+| `subscribeMessages` | `true` | `false` re-renders the caller only when the transcript changes shape, not on each streamed delta. Draw the rows in a child with `useSessionMessages`. |
+| `replayStartStash` | `true` | Sends a first prompt that a "new session" screen saved, once the session is ready and empty. |
+| `initialRuntimeSessionId` | `null` | A runtime session id your server already holds. The transcript renders from it while `/start` runs. The `/start` answer wins. |
+| `browserPresence` | `false` | Holds this tab's presence lease while a person uses the page (input in the last 10 minutes). The lease routes notifications and returns the awake window (`presenceAwake`) for a person who may start the session; the sandbox stops the idle window — 15 minutes by default — after its latest turn, with the page open or not. |
+| `presenceAlerts` | `false` | `true` tells the server this tab shows its own notifications, so the server skips phone and Web Push while the tab is in use. Pass `true` only when the project's `notification_center` flag is on and this tab's browser notifications are on and permitted. Needs `browserPresence`. |
+| `presencePageExit` | `false` | Ends the presence lease when the page closes. Off, the lease ends at its 90-second expiry. Needs `browserPresence`. Pass the project's `notification_center` flag. |
 
-Sending is optimistic. `send` shows your message right away, then stream
-events fill in the agent's reply.
+### Send errors
 
-`rewind(messageId)` never creates a session. It uses the canonical session from
-`POST /start`. The runtime restores file state and keeps the removed transcript
-path recoverable. The next accepted prompt commits the replacement path.
+`sendError`, `rewindError` and the reply actions use one type, `KortixSendError`: `{ kind, message, cause }` plus one detail field per kind. `message` is ready to display.
 
-## Other stable hooks
+| `kind` | Meaning | Extra field |
+| --- | --- | --- |
+| `billing` | The API refused the turn with `402`. | `billing`: the parsed `BillingError`. |
+| `connector` | The session needs a connector that has no usable connection. The API refused the turn before the sandbox saw it. | `connectors`: `{ id, slug, name, authorization_strategy }[]`. `project` means one shared connection fixes it. `user` means the person the session runs as must connect. |
+| `runtime-not-ready` | The sandbox is still starting. Try again when `phase` is `ready`. | none |
+| `runtime-error` | Any other failure. | `gateway` when the LLM gateway answered: `{ provider?, code?, suggestion?, upstreamStatus?, requestId? }`. |
 
-`@kortix/sdk/react` also exports React Query hooks for data that does not
-need a running session. Each mirrors a method on the
-[client](/docs/sdk/reference) and needs no provider.
+`classifySendError(error)` turns any thrown value into a `KortixSendError`.
 
-| Hook | Reads |
-|---|---|
-| `useProjectModels(projectId)` | Selectable models for the project. |
-| `useProjectModelPickerCatalog(projectId)` | The raw `/model-picker` record per wire model (`reasoning_options`, `temperature`, `limit`) and `managedPricingRoutes` customer price estimates for each eligible managed route. The server includes its configured markup; the serving route determines the final charge. |
-| `useVisibleAgents({ projectId })` | The project's visible agents. |
-| `useProjectConfig(projectId)` | The project's runtime config: default agent, commands. |
-| `useProjectSecrets(projectId)` | Secrets: list, add, remove, and personal overrides. |
-| `useAccountSecretResources(accountId)` | Account provider-secret metadata and use grants. Values are never returned. |
-| `useSessionProviderSecretPools(projectId, sessionId)` | Configured pools, including empty selections; `setPool` updates one provider and refreshes the session cache. |
-| `useProjectTriggers(projectId)` | Triggers: list, create, update, remove, fire. |
-| `useChangeRequests(projectId, status?)` | Change requests: list, open, merge, close, request changes. |
+## Pending prompts and turn outcomes
 
-## Start the open read early
+`send` covers a composer that sends one prompt at a time. Use these hooks for a queue, for steering a running turn, and to say why a turn ended. They take the same `projectId` and `sessionId` as `useSession`.
 
-`prefetchSessionOpen(queryClient, projectId, sessionId)` starts the session-open
-read before the session view mounts. It issues one `GET .../snapshot` request
-(session row, turn, queue, and the first 40 transcript messages) and seeds the
-session row cache from it. `useSession` then uses that request instead of
-starting its own.
+### useSessionPrompts
 
-Call it when a route names a session, or on hover, focus, or touch of a session
-link. It is read-only: it never calls `/start` and never wakes a computer. It
-never rejects. A repeat call for the same session within 30 seconds sends no
-request.
+`useSessionPrompts(projectId, sessionId)` reads and writes the session's prompt inbox on the server. The server delivers pending prompts in order, as `delivery` says.
+
+| Member | What it does |
+| --- | --- |
+| `prompts` | The pending rows. Each has `prompt_id`, `state` (`queued`, `delivering`, `waiting`, `failed`), `delivery`, `placement`, `full_text` and `last_error`. A delivered prompt leaves the list. |
+| `enqueue(input)` | Adds one prompt. Resolving means the prompt is stored, not delivered. |
+| `edit(promptId, text)` | Replaces a waiting row's text and keeps its place. |
+| `remove(promptId)` | Removes a waiting row and returns it, so an undo can enqueue it again. |
+| `interrupt(promptId)` | Turns a waiting row into an `interrupt`: the running turn ends after its running tool, then this row runs. |
+| `retry(promptId)` | Runs this row next. Use it for a failed row. |
+| `hold(held)` | Holds or releases the whole queue. A new send or `retry` releases it. |
+
+`edit`, `remove` and `interrupt` throw a `409` for a row that is already on its way to the runtime.
+
+`enqueue` takes `delivery` (`steer`, `queue` or `interrupt`) and an optional `placement`. The delivery modes and `steer_fallback` are in [Sessions from code](/docs/sdk/sessions#send-prompts). `placement` only says where the pending row shows: `transcript` in the message list (implied by `interrupt`), `composer` in the list above the input (implied by `steer` and `queue`).
+
+### useSessionWorking
+
+`useSessionWorking(projectId, sessionId, { runtimeSessionId })` returns the same `WorkingProjection` as `useSession().working`. It stays `working` while a prompt waits in the inbox, and sets `pendingDelivery: true` while that prompt is still on its way. Keep Stop visible whenever `state` is `working`.
+
+### Why a turn ended
+
+An interrupted turn's transcript carries only an abort error. The API records the cause the sandbox named, for example its memory guard. A stop that someone asked for is never a failure.
+
+```tsx
+import { turnEndNotice } from '@kortix/sdk';
+import { useSessionTurnOutcome } from '@kortix/sdk/react';
+
+const outcome = useSessionTurnOutcome(projectId, sessionId);
+const notice = turnEndNotice(outcome, userMessageId, { hasError, isAbort });
+// { kind: 'sandbox-memory', usedPct, detail }
+// | { kind: 'cause', name, message }
+// | { kind: 'unexplained' }
+// | null
+```
+
+Pass the id of the user message that started the turn. `hasError` is `true` when the transcript shows an error on that turn, and `isAbort` is `true` when that error is an abort. A non-abort error returns `null`, because the transcript already explains it.
+
+`useSessionTurnOutcome` makes no request. It reads the cache that `useSessionWorking` keeps fresh. Map each `kind` to your own copy. `null` means show what the transcript shows. `turnEndCause(outcome, messageId)` returns the raw recorded cause, or `null`.
+
+### Turn-end notifications
+
+`useSession` calls the `onNotify` you pass to `createKortix` when a turn ends: `{ kind: 'task-complete', sessionId, sessionTitle }` or `{ kind: 'session-error', sessionId, errorTitle, sessionTitle }`. Show it only when the person is not looking at that session.
+
+While the view is mounted, its event stream raises these. When the view unmounts with a turn still running, for example because the person opened another page, `useSession` hands the turn to a watch:
+
+- The watch listens for `kortix.control.turn` frames on the session's control stream (`GET …/events?channels=control`), so a hidden window that throttles its timers still hears the end. While that stream is down, it reads `GET …/turn` every 5 s, every 15 s after 5 minutes. It stops after 12 hours.
+- When no turn is open, it raises `task-complete`, or `session-error` with the cause the API recorded. A stop that someone asked for raises nothing.
+- These two events also carry `projectId`, and `task-complete` carries `watchedSinceMs`: when the watch started, in the host's `Date.now()`. A host that relays completions between tabs skips one it already showed after that instant.
+- Mounting a view of the session again ends the watch. The view's stream announces from then on, so one end is never announced twice.
+- A host without `onNotify` gets no watch and no extra `/turn` reads.
+
+## Build a chat UI
+
+Start with `SessionThread` from [`@kortix/ui/session`](/docs/sdk/ui#the-thread-alone). It renders the whole chat from one `useSession` result: the transcript, tool calls, prompts, the send error and the composer.
+
+```tsx
+import { useSession } from '@kortix/sdk/react';
+import { SessionThread } from '@kortix/ui/session';
+
+function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId);
+  return (
+    <div className="h-dvh">
+      <SessionThread session={session} />
+    </div>
+  );
+}
+```
+
+It is the thread the Kortix web app renders. `ToolRegistry.register(name, Row)` replaces one tool row, and its building blocks (`UserMessage`, `ToolPartRenderer`, `SessionChatInput`) compose into a layout of your own. Setup, styles and props: [Kortix UI](/docs/sdk/ui).
+
+### Render the parts yourself
+
+To draw every part with your own components, use the headless chat kit. `messages` are runtime messages. The kit turns each one into typed parts you can render with no knowledge of the harness.
+
+```tsx
+import { toolViewModel } from '@kortix/sdk';
+import { renderParts, useChatTurns, type UseSessionResult } from '@kortix/sdk/react';
+
+function Transcript({ messages }: { messages: UseSessionResult['messages'] }) {
+  const turns = useChatTurns(messages);
+  return turns.map((turn) =>
+    turn.isEmpty ? null : (
+      <Row key={turn.message.info.id} role={turn.message.info.role} error={turn.error}>
+        {renderParts(turn.parts, {
+          text: (p) => (p.synthetic ? null : <Markdown key={p.id}>{p.text}</Markdown>),
+          reasoning: (p) => <Thinking key={p.id} text={p.text} />,
+          tool: (p) => <ToolCard key={p.id} view={toolViewModel(p.tool)} status={p.tool.status} />,
+          file: (p) => <Attachment key={p.id} part={p} />,
+          subtask: (p) => <Subtask key={p.id} part={p} />,
+          patch: () => null,
+          snapshot: () => null,
+          agent: () => null,
+          retry: (p) => <RetryNotice key={p.id} part={p} />,
+          compaction: () => <CompactedNotice />,
+          step: () => null,
+          unknown: () => null,
+        })}
+      </Row>
+    ),
+  );
+}
+```
+
+| Export | From | What it does |
+| --- | --- | --- |
+| `useChatTurns(messages)` | `@kortix/sdk/react` | One `TurnView` per message: `{ message, parts, error?, isEmpty }`. Memoized on the `messages` array. |
+| `renderParts(parts, renderers)` | `@kortix/sdk/react` | Calls the renderer for each part's `kind`. The type requires one renderer per kind, so a new kind fails your build, not your UI. |
+| `classifyPart(part)`, `classifyTurn(message)` | `@kortix/sdk` | The classifiers behind `useChatTurns`, for code outside React. |
+| `toolViewModel(tool)` | `@kortix/sdk` | A typed view of a tool call: `web-search`, `shell`, `file-read`, `file-write`, `file-edit`, `search`, `task`, `todo`, `question`, or `generic`. |
+
+Part kinds: `text`, `reasoning`, `tool`, `file`, `subtask`, `patch`, `snapshot`, `agent`, `retry`, `compaction`, `step` and `unknown`. A `text` part with `synthetic: true` is internal to the runtime; skip it.
+
+A streaming turn changes the transcript about every 16 ms. To keep the rest of the view still, call `useSession(projectId, sessionId, { subscribeMessages: false })` in the view, and read the rows in the transcript component with `useSessionMessages(session)`. Pass the whole `useSession` result. Only that component re-renders per delta. `useSessionMessages(session, { throttleMs })` paces the updates.
+
+More on parts, tools and turn grouping: [SDK reference](/docs/sdk/reference#custom-transcript-rendering).
+
+### Read the session log
+
+`useSessionLog(session)` returns the whole session log (`SessionLog`): every thread, its messages by `seq`, and their blocks, plus `source`: `'v2'` (the API's log) or `'v1'` (the conversion of the v1 rows, below). `useSessionLogThread(session, threadId?, options?)` returns one thread: the root thread, or the sub-agent thread `threadId` names. `options.throttleMs` paces the v1 rows as `useSessionMessages` paces them (a transcript reads a streaming turn at most once per window). Pass the whole `useSession` result. Both start no request: `useSession` loads the log. `useSessionLog` changes with every message; to read session fields (`restore_grade`, `grade_counts`, `harness`, `ext`) use `useSessionLogRecord(session)`: the session record without threads, null while the session reads v1, unchanged through message puts and deltas, so its consumer re-renders only on a page or a session patch.
+
+```tsx
+import { useSession, useSessionLogThread } from '@kortix/sdk/react';
+
+function Thread({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const session = useSession(projectId, sessionId, { subscribeMessages: false });
+  const root = useSessionLogThread(session);
+  if (!root) return null; // no runtime session id yet, or no message yet
+  return <ol>{root.messages.map((m) => <li key={m.message_id}>{m.role}: {m.blocks.length} blocks</li>)}</ol>;
+}
+```
+
+On v2, `useSessionLogThread` adds the v1 rows the log does not hold yet, converted with `fromV1` and placed by time as `useSessionMessages` places them (an older page `loadOlder` read goes before the thread's messages, an optimistic send after them), until the log's put of the same id replaces them; on v1 the conversion already holds them. Render a thread's turns with `sessionLogTurns` ([Block turns](/docs/sdk/reference#block-turns)).
+
+On v2, `useSessionLogThread(session, threadId)` reads a sub-agent thread's newest page the first time a row asks for it. `useSessionLogOlder(session, threadId?)` pages one thread back: it returns `{ hasOlder, isLoadingOlder, loadOlder }`, and `loadOlder()` reads `GET …/log?thread=&before_seq=` before the thread's first `seq`. `threadId` omitted is the root thread, which `useSession().loadOlder` already pages. It returns `hasOlder: false` while the session reads v1. A sub-agent's chat (a view with no `useSession` of its own) reads its thread and its older pages with these two hooks, passing the parent session as `session`.
+
+Every open reads the log first: `GET /v1/projects/:projectId/sessions/:sessionId/log`. No project flag is read, and the runtime is not asked: the stored log is the API's, so a stopped computer shows it too. While that read runs and after it answers a page, `useSession` reads no v1 saved copy: the open asks the snapshot for no transcript window, older pages come from `GET …/log?thread=&before_seq=` (`useSessionLogOlder` pages any thread), and a sub-agent thread loads its first page when it shows.
+
+A new session with no stored log yet (`404`, `code: 'session_log_missing'`) stays on the log with nothing in it: no v1 copy is read, `savedTranscript` is `none` until a message arrives, and the log is read again at the end of each turn. Only when the log answers `404` with no `code` or an invalid page (an API older than the session log) does the session read v1. Both hooks then return the `fromV1` conversion of the v1 rows `useSessionMessages` renders (`source: 'v1'`): one root thread whose id is the runtime session id, with the turn that runs kept open (its calls stay `pending` or `running`). On v1 a `threadId` is a runtime session id. Without a `runtimeSessionId`, or before the store holds a row for it, both hooks return `null`. A message keeps its identity while its row is unchanged.
+
+Both harnesses read v2: an OpenCode thread (converted from v1) and a pi thread (written natively).
+
+An SDK older than the session log reads v1. An API older than the session log answers `404` with no `code` for `GET …/log`, and the session reads v1. On v2, `useSession` paints the device's saved copy of the log first, then the API's page, and asks the session stream for `schema=v2`. What the stream carries depends on the server:
+
+- The runtime side is complete: on `schema=v2` the runtime's stream carries `log.*` frames in place of the `message.*` transcript frames, plus every other frame (status, permissions, questions, todos). A message arrives as a streaming record when it starts, then grows with each streamed delta.
+- The API relays `schema=v2`: a runtime that lists `session.log.v2` streams its own `log.*` frames, and the API converts the v1 frames of an older runtime.
+
+A session without a stored log yet (a new one) reads v1 and tries the log again at the end of each turn. `useSessionMessages`, `useSession().messages` and `classifyTurn` return the same rows either way. A session-log message converts with `toV1`, the conversion the API uses for v1 readers, and replaces the v1 row with the same id. In a thread converted from v1 (OpenCode) the rows are exact. A pi thread's rows carry what its blocks map, with a tool call's `details` as `state.metadata`; render its blocks (`sessionLogTurns`) for the full record. A deleted message stays out. A row the log does not hold yet, such as the streaming turn or an optimistic send, keeps its place. A row keeps its identity while its message is unchanged.
+
+## Hooks
+
+Most hooks below are React Query hooks. Unless the row names another return value, a hook returns the query result (`data`, `isLoading`, `error`, …) plus the mutations the row names. A write refreshes the matching reads.
+
+| Hook | What it gives you |
+| --- | --- |
+| `useAccounts({ userId, enabled })` | The caller's accounts. Pass the signed-in person's `userId` in any host where the person can change without a reload. |
+| `useProjects(accountId?, options?)` | The projects in one account. |
+| `useProjectSessions(projectId, { scope, parent, startedBy, q, labels, limit })` | One project's sessions, paged, newest activity first. Read `sessions` (flat) and `fetchNextPage`. `parent: 'root'` returns top-level sessions with `child_count`. `startedBy` is `'me'`, `'others'` or `'automated'`. `q` searches every session the caller can open. `scope: 'project'` is the manager inventory. |
+| `useSessionChildren(projectId, parentSessionId, { q, limit, enabled })` | The sessions one parent started, paged. Keep `enabled: false` until the parent row opens. |
+| `useProjectModels(projectId)` | Selectable models as `FlatModel[]`. Empty while the list loads. |
+| `useProjectModelPickerCatalog(projectId)` | The full model-picker record per model (`reasoning_options`, `temperature`, `limit`). `undefined` while it loads. |
+| `useModelAccess(projectId)` | The project's disabled providers and models, and `setEnabled({ target, id, enabled })` with `target` `'provider'` or `'model'`. |
+| `useProjectConfig(projectId)` | The project's config summary (default agent and slash commands) as `ProjectConfigSummary`, or `undefined` while it loads. |
+| `useVisibleAgents({ projectId })` | The agents a person can pick, as `Agent[]`. |
+| `useProjectSecrets(projectId)` | Secrets, with `upsert`, `remove`, `setPersonal` and `removePersonal`. Values are never returned. |
+| `useAccountSecretResources(accountId, projectId?)`, `useSessionProviderSecretPools(projectId, sessionId)` | Account-level secret resources, and the provider-key pools one session can use. |
+| `useProjectTriggers(projectId)` | Triggers, with `create`, `update`, `remove`, `fire`, `dryRun` and `replay`. `fire.mutate(slug)` or `fire.mutate({ slug, payload? })` returns `FireProjectTriggerResponse`. `dryRun.mutate(slug \| { slug, payload? })` returns `ProjectTriggerDryRunResult` and writes nothing. `replay.mutate({ slug, runId, confirmUnverified? })`. A fire and a replay refresh the triggers and every run list. A dry run refreshes nothing. |
+| `useTriggerRuns(projectId, slug, { enabled?, refetchInterval?, limit? }?)`, `useProjectTriggerRuns(projectId, { status? }?, { enabled?, refetchInterval? }?)` | One trigger's runs, and every run of the project, as an infinite query paged by `next_cursor`. Read `data.pages[].runs`, and call `fetchNextPage()` while `hasNextPage` is true. No polling by default; pass `refetchInterval` (ms) to poll while a run is queued or running. `limit` (1 to 100, server default 25) sets the runs per page of `useTriggerRuns`; a set limit is its own cache entry. |
+| `useProjectTriggerEventTypes(projectId, connector)` | The app events a connector can trigger on. Idle until `connector` is set. |
+| `useProjectReminders(projectId)`, `useSessionReminders(projectId, sessionId)` | Reminders, with `update` and `remove`. The project hook adds `updateMany` and `removeMany`. |
+| `useChangeRequests(projectId, status?)` | Change requests, with `open`, `merge`, `close` and `requestChanges`. |
+| `useProjectApps(projectId)` | Apps, with `create`, `update`, `start`, `stop` and `remove`. |
+| `useAppDeployments`, `useAppDeployment` | Deployments with `deploy` and `rollback`, and one deployment with its build log. |
+| `useAppMachines(projectId, appId)`, `useAppVolumes(projectId, appId)`, `useAppVolumeSnapshots(projectId, appId, volumeId)`, `useAppAccess` | Machines with `start`, `stop`, `restart`, `destroy` and `scale` (polled every 5 s). Volumes with `snapshot`, `restore`, `fork`, `extend` and `destroy`. A volume's snapshots, newest first. `useAppAccess` returns `{ policy, session, update }`. See [Apps](/docs/apps#build-on-apps-from-typescript). |
+| `useKortixAppViewer()` | Inside an App: the person who is looking, as `{ status: 'loading' \| 'anonymous' \| 'viewer', viewer }`. |
+| `useConnectorQuery(projectId, slug, action, args, { account, enabled, staleTime })` | One connector action's output as a cached query. Use it only for actions that read: every fetch runs the action. See [Connectors](/docs/connect/connectors#call-connectors-from-code). |
+| `useConnectorSetup(token, { backendUrl, storage, openPopup, onOpened })` | The flow behind a connect link (`/connect/<token>`): `phase` (`loading`, `ready`, `starting`, `opened`, `connected`, `error`), `info`, `error`, `connectedAs` and `connect()`. You supply the popup opener. |
+| `useNotificationInbox({ userId, limit, enabled })` | The caller's newest notifications (`limit` 1 to 50, default 20), `unreadCount`, `markRead(ids)`, `markAllRead()` and `markSessionRead(sessionId)`. Polls every 60 s while the page is visible. |
+| `useNotificationPreferences({ userId, enabled })` | Push and email choices per kind, and `update(patch)`. |
+| `useSessionWatch({ userId, projectId, sessionId, enabled })` | Whether the caller follows one session, and `setWatching(boolean)`. |
+| `useFeatureFlag(projectId, key)` | `{ enabled, isLoading }`. `enabled` is `true` only when the server says so. Loading and errors read `false`. |
+| `useRuntimeSupports(capability)` | Whether the open session's runtime serves a capability such as `session.rewind` or `session.compact`. `true` until the runtime first answers. See [Runtime capabilities](/docs/sdk/sessions#runtime-capabilities). |
+| `useCan(target, action)` | `{ allowed, reason, isLoading, isError }` for one action. `target` is `{ accountId }`, `{ accountId, resource }` or `{ projectId }`. Loading and errors read `allowed: false`. |
+| `useCans(target, actions)` | One request for several actions on one target. Returns a map keyed by action. Keep `actions` stable across renders. |
+| `usePermissionsFor(accountId, memberUserId, probes)` | What another member can do. Needs `member.read` on the account. |
+| `useGatewayOverview`, `useGatewaySeries`, `useGatewayBreakdown`, `useGatewaySessions`, `useGatewayErrors` | LLM gateway usage for a project over `days` (default 30). |
+| `useGatewayLogs`, `useGatewayLog` | Gateway request logs, paged, and one log entry. |
+| `useGatewayBudgets`, `useSetGatewayBudget`, `useDeleteGatewayBudget` | Gateway budgets. |
+| `useGatewayKeys`, `useCreateGatewayKey`, `useRevokeGatewayKey` | Gateway keys. |
+| `useGatewayRoutingPolicy(projectId)` | The project's model routing policy. |
+
+Rules that apply to several hooks:
+
+- `useCan` and its siblings decide what to show and enable. The API checks every write again. Ask for the action the route checks, for example `PROJECT_ACTIONS.PROJECT_GITOPS_PUSH` (`project.gitops.push`), never for a role. After a write that changes access, call `invalidatePermissionProbes(queryClient, { accountId, userId })`. A verdict is cached for 5 minutes until then. Action names are in [Accounts & access](/docs/accounts#permissions).
+- The three notification hooks key their cache by `userId`. Pass the signed-in person's id. Gate each with `enabled: useFeatureFlag(projectId, 'notification_center').enabled`. The flag is off by default. See [Notifications](/docs/work/sessions#notifications).
+- After a runtime restart or a config reload, call `resetRuntimeQueries(queryClient)`. The next read then comes from the new runtime.
+
+## Fast opens and offline
+
+### Start the open read early
+
+`prefetchSessionOpen(queryClient, projectId, sessionId)` starts the read that a session view needs before the view mounts. It sends one `GET …/snapshot?transcript=0` request: the session row, the current turn and the prompt queue. It asks for no v1 transcript window: the open reads the session log. `useSession` then uses that request instead of its own.
 
 ```tsx
 import { prefetchSessionOpen } from '@kortix/sdk/react';
+import { useQueryClient } from '@tanstack/react-query';
 
-<a
-  href={`/projects/${projectId}/sessions/${sessionId}`}
-  onFocus={() => void prefetchSessionOpen(queryClient, projectId, sessionId)}
-/>;
+function SessionLink({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  const queryClient = useQueryClient();
+  const warm = () => void prefetchSessionOpen(queryClient, projectId, sessionId);
+  return <a href={`/sessions/${sessionId}`} onPointerEnter={warm} onFocus={warm} />;
+}
 ```
 
-## Render from cache on a reload
+Call it on hover, focus or touch of a session link, or when a route names a session. It never calls `/start`, so it never wakes a sandbox. It never rejects. A second call for the same session within 30 seconds sends nothing.
 
-Two stores keep what a user already saw, so a reload or a cold app start renders it
-in the first frame and refreshes it in place. Both are per user and bounded, and a
-host clears both on sign-out.
+### Render from the device on a reload
 
-- `createPersistedQueryCache` keeps the React Query results a user navigates by:
-  accounts, projects, project detail, the paged session list, and session rows
-  (`isPersistableQueryKey`). A restored entry keeps its original age, so it refetches
-  on mount. The default bounds are 1,000,000 characters and 7 days.
-- `createSavedCopyStore` keeps the last saved copies of transcripts that the server
-  sent. Register it with `setSavedCopyStore`, and `useSession` paints the kept copy
-  before the first frame. The server's copy then reconciles into it by message ID, and
-  the SDK re-reads it 3 seconds after each turn ends. The default bounds are 12
-  sessions, 1,500,000 characters, and 14 days.
+Two stores keep what a person already saw, so a reload or a cold start paints it in the first frame. The server's answer then refreshes it in place. Both stores are per user and bounded. They come from `@kortix/sdk`.
 
-```tsx
+| Store | Keeps | Default bounds |
+| --- | --- | --- |
+| `createPersistedQueryCache({ storage, userId, shouldPersist })` | React Query results that `shouldPersist` accepts. `isPersistableQueryKey` accepts accounts, projects, project detail, session lists and session rows. A restored entry refetches when it is first read. | 1,000,000 characters, 7 days |
+| `createSavedCopyStore({ storage, userId })`, registered with `setSavedCopyStore` | The saved transcript copies the server sent. `useSession` paints a kept copy before the server answers. A copy over the per-copy limit keeps its newest messages. | 12 sessions, 1,500,000 characters, 300,000 characters per copy, 14 days |
+
+```ts
+import type { QueryClient } from '@tanstack/react-query';
 import {
   browserKeyValueStorage,
   createPersistedQueryCache,
@@ -153,144 +415,42 @@ import {
   setSavedCopyStore,
 } from '@kortix/sdk';
 
-const storage = browserKeyValueStorage(); // null where there is no localStorage
-if (storage) {
+export function adoptDeviceCaches(queryClient: QueryClient, userId: string) {
+  const storage = browserKeyValueStorage(); // null where localStorage is blocked or absent
+  if (!storage) return null;
   const cache = createPersistedQueryCache({ storage, userId, shouldPersist: isPersistableQueryKey });
-  cache.restore(queryClient); // synchronous with localStorage: no pending frame
+  cache.restore(queryClient); // synchronous with localStorage
   const stop = cache.persist(queryClient);
-  setSavedCopyStore(createSavedCopyStore({ storage, userId }));
+  window.addEventListener('pagehide', () => void cache.flush());
+  const copies = createSavedCopyStore({ storage, userId });
+  setSavedCopyStore(copies);
+  return { cache, copies, stop };
 }
 ```
 
-On React Native, pass AsyncStorage as `storage`. `restore` then returns a promise.
+- `persist` writes at most once per second. Call `flush()` on `pagehide`, so a reload keeps the last change.
+- On React Native, pass AsyncStorage as `storage`. `restore` then returns a promise.
+- The saved-copy store keeps only copies the server sent at a turn end, never the live transcript. A stopped turn cannot come back as a running one.
+- A full, corrupt or missing store never throws. The app then opens from the server, as without the store.
+- `isPersistableQueryKey` never keeps a permission probe (`useCan`). When a probe's answer picks a query key, read the entry the restored cache holds until the probe answers. The web Sessions page does this for its manager-only `scope: 'project'` list.
 
-The saved-copy store keeps only server captures: the transcript mirror that the API
-writes when a turn ends. The live transcript is never written to the device, so a
-stopped turn cannot come back as a running one.
+## Sign-out and identity changes
 
-## Sign-out and account switching
+The SDK keeps per-person session state in memory: transcripts, open questions and permissions, turn receipts and model picks. On every identity change, clear it and your caches in one handler. An identity change is a sign-out, a different person signing in, and a sign-in in another tab that changes the person without a page load.
 
-The SDK keeps per-user session state in memory: transcripts, pending questions
-and permissions, turn receipts, and model picks. Call `resetIdentityState()` on
-every identity change: sign-out, and a different user signing in. This includes
-a sign-in in another tab that changes the user without a page load.
-
-```tsx
+```ts
+import type { QueryClient } from '@tanstack/react-query';
+import { setSavedCopyStore } from '@kortix/sdk';
 import { resetIdentityState } from '@kortix/sdk/react';
 
-supabase.auth.onAuthStateChange((event, session) => {
-  if (event === 'SIGNED_OUT' || session?.user.id !== previousUserId) {
-    queryClient.clear();
-    resetIdentityState();
-  }
-});
-```
-
-`resetIdentityState()` also removes the model store's `localStorage` entry. It
-does not clear the host's own caches, such as React Query, or the token source
-passed to `createKortix`. Reset those in the same handler. It never throws.
-
-With the stores from [Render from cache on a reload](#render-from-cache-on-a-reload),
-clear them in the same handler: `await cache.clear()`, then
-`await savedCopies.clear()` and `setSavedCopyStore(null)`. Neither store ever
-restores data for a different user, but a signed-out device should not keep it.
-
-## Next
-
-- [Sessions](/docs/sdk/sessions) — the session handle `useSession` wraps, and the `KortixSendError` kinds.
-- [Reference](/docs/sdk/reference) — the full REST surface these hooks read from.
-
-
-## Saved history during startup
-
-Enable **Session Transcript History** in a project's **Settings → Feature flags** to let
-`useSession(projectId, sessionId)` show saved chat history while its computer starts.
-The SDK reads the database independently of runtime readiness. Live messages then reconcile
-by their original IDs. Hosts do not need a separate history request or message store.
-
-This flag is off by default. Sessions without saved history use the existing runtime read.
-The initial history window contains the last 40 messages. Older-message loading and attachments
-that require the computer become available when the runtime is ready.
-
-`savedTranscript` tells a host what to render while the computer starts. It is `loading` while
-a saved copy may still arrive, `shown` once messages are in `messages`, and `none` when nothing
-can show before the runtime answers. An unknown is `loading`, never `none`.
-
-```tsx
-if (s.messages.length === 0) {
-  // One round trip for a saved copy; the computer can take minutes.
-  return s.savedTranscript === 'none' ? <Booting stage={s.stage} /> : <MessageSkeleton />;
+export async function onIdentityChange(queryClient: QueryClient, device: ReturnType<typeof adoptDeviceCaches>) {
+  setSavedCopyStore(null);
+  device?.stop();
+  queryClient.clear();
+  resetIdentityState();
+  await device?.cache.clear();
+  await device?.copies.clear();
 }
 ```
-### Pending prompts
 
-`useSessionPrompts(projectId, sessionId)` submits to the durable session inbox.
-The server runs pending prompts automatically, each as its own turn.
-
-Pass `placement: 'transcript'` to display a pending message in the conversation.
-It runs before every `composer` entry and ends the active response after the
-current tool call completes.
-Pass `placement: 'composer'` to keep it in the editable list above the input.
-It waits for the active response to finish. Each placement keeps submission order.
-The web composer uses Enter for transcript placement and Command+Enter
-(Control+Enter on Windows/Linux) for composer placement. Shift+Enter inserts a newline.
-
-List rows include `full_text` for complete previews after reload. `text` remains
-the bounded preview for older clients. Attachment bytes are excluded from list
-responses. Delete returns the complete prompt for lossless undo.
-
-### Pending delivery and active responses
-
-`useSessionWorking()` keeps `state: 'working'` while a prompt waits in the durable
-inbox. This keeps Stop available. `pendingDelivery: true` marks a prompt still on
-its way to the runtime; the web app shows one working indicator whenever `state`
-is `working`, whatever that flag says. Active runtime turns and fresh runtime
-activity clear it. A timed-out cancel does not confirm that execution stopped.
-
-A worker claim only checks admission and keeps the prompt waiting. Delivery starts
-after admission succeeds. A confirmed active turn clears the pending presentation
-even if the previous inbox snapshot still lists that prompt. Runtime activity
-preserves the active turn's message ID during this handoff.
-
-The web composer names Enter **Quick Queue** and Command/Ctrl+Enter **Queue List**.
-Quick Queue entries run first. A waiting Quick Queue entry is a tinted bubble after
-delivered turns, with no status text. Queue List entries remain editable until delivery starts.
-The server recovers missed completion events from exact runtime evidence, including
-after reload, without treating an unreachable runtime as a completed turn.
-
-Each distinct Enter displays its pending prompt immediately, even while an earlier
-acceptance request is unresolved. Only a delivery failure adds text: its cause,
-Retry, and Remove. The server inbox continues to own execution order.
-
-### Why a turn ended
-
-The transcript of an interrupted turn only carries `MessageAbortedError`. The
-control plane keeps what it knows about how each turn ended: the cause the
-sandbox named, for example `SandboxMemoryGuard`, and which turns died with no
-cause named. A stop somebody asked for — the Stop button, `abort()`, a prompt
-sent into a busy session — is recorded as a request and is never reported as a
-failure.
-
-`useSessionTurnOutcome(projectId, sessionId)` returns `last_ended`,
-`recent_failures` and the read time `atMs` from the cache `useSessionWorking()`
-keeps fresh. It makes no request. Pass the result to `turnEndNotice`, with what
-the transcript says about the turn:
-
-```tsx
-const outcome = useSessionTurnOutcome(projectId, sessionId);
-const notice = turnEndNotice(outcome, turn.userMessage.info.id, {
-  hasError: Boolean(turnError),
-  isAbort: turnErrorIsAbort,
-});
-// notice: { kind: 'sandbox-memory', usedPct: 97, detail: 'sandbox memory at 97% …' }
-//       | { kind: 'cause', name: 'SomeGuard', message: '…' }
-//       | { kind: 'unexplained' }
-//       | null
-```
-
-The host maps each `kind` to its own copy and never parses the sandbox's
-message. `null` means "show what the transcript shows": a real error stays, an
-abort renders nothing. An unexplained failure is reported only once the reading
-is a few seconds past the turn's end, because the cause often arrives one frame
-after the abort. `turnEndCause(outcome, messageId)` returns the raw recorded
-cause, or `null`.
+`resetIdentityState()` never throws. It also removes the model picks from `localStorage`. It does not clear React Query, your own stores or the token source you passed to `createKortix`. Reset those in the same handler. Neither device store ever restores data for another person, but a signed-out device must not keep it.

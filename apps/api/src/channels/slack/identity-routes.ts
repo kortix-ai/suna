@@ -26,8 +26,10 @@ import { getSlackUserDisplayName } from '../slack-api';
 import { spawnAgentTurn } from './dispatch';
 import { consumePendingSlackAuthMessage, replaceSlackAuthPromptConnected } from './auth-resume';
 import { verifyLoginState } from './login';
-import { chatUser, isAccountMember, linkChatIdentity } from '../core/identity';
+import { chatUser, completeChatLogin } from '../core/identity';
 import { readJsonObject } from '../../shared/http-body';
+import { buildDenialError } from '../../iam/denial-message';
+import { PROJECT_ACTIONS } from '../../iam/actions';
 
 export const slackIdentityApp = makeOpenApiApp();
 
@@ -138,7 +140,7 @@ slackIdentityApp.openapi(
     request: { body: { content: { 'application/json': { schema: BindBody } } } },
     responses: {
       200: json(BindResult, 'Identity linked'),
-      ...errors(400, 403, 404, 410),
+      ...errors(400, 403, 404, 409, 410),
     },
   }),
   async (c: any) => {
@@ -164,8 +166,6 @@ slackIdentityApp.openapi(
       .from(projects)
       .where(inArray(projects.projectId, projectIds));
     const accountIds = Array.from(new Set(accountRows.map((r) => r.accountId)));
-    const memberships = await Promise.all(accountIds.map((a) => isAccountMember(userId, a)));
-    const hasAccess = memberships.some(Boolean);
 
     // Link regardless of membership. Connecting your Kortix account is decoupled
     // from having access: we establish WHO this Slack user is so a non-member can
@@ -173,13 +173,37 @@ slackIdentityApp.openapi(
     // on its own; the runtime gate (resolveChatActor) still requires membership
     // before any agent runs, so a linked non-member can do nothing until an admin
     // approves. The workspace-must-be-connected check above still stands.
-    await linkChatIdentity(chatUser('slack', payload.teamId, payload.slackUserId), userId);
-
-    const pending = await consumePendingSlackAuthMessage({
-      pendingId: payload.pendingId,
-      teamId: payload.teamId,
-      slackUserId: payload.slackUserId,
+    const outcome = await completeChatLogin({
+      user: chatUser('slack', payload.teamId, payload.slackUserId),
+      userId,
+      login: payload,
+      accountIds,
+      mfaAal: c.get('mfaAal'),
+      tokenId: c.get('iamTokenId'),
     });
+    if (!outcome.ok) {
+      if (outcome.reason === 'mfa_required') {
+        throw buildDenialError(PROJECT_ACTIONS.PROJECT_SESSION_START, 'account_mfa_required');
+      }
+      return outcome.reason === 'used'
+        ? c.json({ error: 'This link was already used. Run `/kortix login` in Slack for a new one.' }, 410)
+        : c.json(
+            {
+              error:
+                'This Slack account is connected to a different Kortix account. Run `/kortix logout` in Slack, then `/kortix login`.',
+            },
+            409,
+          );
+    }
+    const { hasAccess } = outcome;
+
+    const pending = outcome.fresh
+      ? await consumePendingSlackAuthMessage({
+          pendingId: payload.pendingId,
+          teamId: payload.teamId,
+          slackUserId: payload.slackUserId,
+        })
+      : null;
     if (pending) {
       void replaceSlackAuthPromptConnected(pending.slackResponseUrl, { hasAccess });
       void spawnAgentTurn(pending.projectId, pending.envelope, pending.event).catch((err) => {

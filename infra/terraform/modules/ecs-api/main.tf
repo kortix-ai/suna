@@ -248,6 +248,80 @@ resource "aws_iam_role_policy" "project_snapshots" {
   })
 }
 
+# The API exports weekly audit_events partitions to the audit-archive bucket
+# (modules/audit-archive-bucket) with Object Lock retention. Write, set
+# retention, read, list. NO s3:DeleteObject*, s3:BypassGovernanceRetention,
+# s3:PutObjectLegalHold, or any bucket-configuration action: the role cannot
+# shorten or remove a lock.
+resource "aws_iam_role_policy" "audit_archive" {
+  # A plan-time boolean, not the ARN: the ARN comes from a bucket created in the
+  # same apply, and count cannot depend on a value unknown until apply.
+  count = var.audit_archive_enabled ? 1 : 0
+  name  = "${local.name}-audit-archive"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "AuditArchiveObjects"
+      Effect = "Allow"
+      Action = [
+        "s3:PutObject",
+        "s3:PutObjectRetention",
+        "s3:GetObject",
+        "s3:GetObjectVersion",
+      ]
+      Resource = "${var.audit_archive_bucket_arn}/*"
+      }, {
+      Sid      = "AuditArchiveBucket"
+      Effect   = "Allow"
+      Action   = ["s3:ListBucket", "s3:GetBucketObjectLockConfiguration"]
+      Resource = var.audit_archive_bucket_arn
+      }, {
+      Sid      = "AuditArchiveKms"
+      Effect   = "Allow"
+      Action   = ["kms:GenerateDataKey", "kms:Decrypt"]
+      Resource = var.audit_archive_kms_key_arn
+    }]
+  })
+}
+
+# Kortix Capture (modules/capture-store). The API reads device objects
+# (ingestion), writes and deletes policy.json, deletes items past retention,
+# signs media GETs, consumes the manifest-event queue, and assumes the device
+# role to issue per-device credentials (always with a session policy that
+# narrows it to one device folder: apps/api/src/capture/credentials.ts).
+resource "aws_iam_role_policy" "capture" {
+  # A plan-time boolean, not the ARNs: they come from resources created in the
+  # same apply, and count cannot depend on a value unknown until apply.
+  count = var.capture_enabled ? 1 : 0
+  name  = "${local.name}-capture"
+  role  = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "CaptureObjects"
+      Effect   = "Allow"
+      Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+      Resource = "${var.capture_bucket_arn}/*"
+      }, {
+      Sid      = "CaptureMissingKeyIs404"
+      Effect   = "Allow"
+      Action   = ["s3:ListBucket"]
+      Resource = var.capture_bucket_arn
+      }, {
+      Sid      = "CaptureManifestEvents"
+      Effect   = "Allow"
+      Action   = ["sqs:ReceiveMessage", "sqs:DeleteMessage", "sqs:ChangeMessageVisibility", "sqs:GetQueueAttributes"]
+      Resource = var.capture_queue_arn
+      }, {
+      Sid      = "CaptureIssueDeviceCredentials"
+      Effect   = "Allow"
+      Action   = ["sts:AssumeRole"]
+      Resource = var.capture_device_role_arn
+    }]
+  })
+}
+
 # ── Security groups ───────────────────────────────────────────────────────────
 resource "aws_security_group" "alb" {
   name        = "${local.name}-alb"
@@ -480,12 +554,31 @@ resource "aws_lb_listener" "https" {
   }
 }
 
+# ── Private DNS for in-VPC callers (optional) ────────────────────────────────
+# ECS registers each RUNNING task's private IP under <container_name>.<namespace>
+# and removes it when the task stops. Callers resolve the name through the VPC
+# resolver and connect to the task directly, without the ALB.
+resource "aws_service_discovery_service" "this" {
+  count = var.service_discovery == null ? 0 : 1
+  name  = var.container_name
+
+  dns_config {
+    namespace_id   = var.service_discovery.namespace_id
+    routing_policy = "MULTIVALUE"
+    dns_records {
+      type = "A"
+      ttl  = 10
+    }
+  }
+  tags = var.tags
+}
+
 # ── ECS cluster + service ─────────────────────────────────────────────────────
 resource "aws_ecs_cluster" "this" {
   name = local.name
   setting {
     name  = "containerInsights"
-    value = var.container_insights ? "enabled" : "disabled"
+    value = "enabled"
   }
   tags = {
     ManagedBy   = "terraform"
@@ -584,7 +677,7 @@ resource "aws_ecs_service" "this" {
 
   network_configuration {
     subnets          = var.private_subnet_ids
-    security_groups  = [aws_security_group.service.id]
+    security_groups  = concat([aws_security_group.service.id], var.extra_security_group_ids)
     assign_public_ip = var.assign_public_ip
   }
 
@@ -594,17 +687,24 @@ resource "aws_ecs_service" "this" {
     container_port   = var.container_port
   }
 
+  dynamic "service_registries" {
+    for_each = aws_service_discovery_service.this
+    content {
+      registry_arn = service_registries.value.arn
+    }
+  }
+
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
 
   # The AWS provider refuses to update `capacity_provider_strategy` unless
   # `force_new_deployment` is set ("force_new_deployment should be true when
-  # capacity_provider_strategy is being updated"). Only services that carry an
-  # on-demand base (staging) ever change that strategy, so gate it on that: dev
+  # capacity_provider_strategy is being updated"). A service whose strategy
+  # changes sets `force_new_deployment` (staging left Spot on 2026-10-13); dev
   # and prod keep today's plan byte-for-byte. `task_definition` stays under
   # ignore_changes, so a forced deployment re-rolls the service's CURRENT task
   # definition — the one ecs-deploy.sh registered — never a stale TF revision.
-  force_new_deployment = var.fargate_base_on_demand > 0
+  force_new_deployment = var.force_new_deployment || var.fargate_base_on_demand > 0
 
   # Rolling deploy with circuit breaker → auto-rollback on a bad release.
   deployment_circuit_breaker {

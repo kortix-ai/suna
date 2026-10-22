@@ -2,8 +2,7 @@ import { type Catalog, type CatalogModel, autoSeedDefaultModel } from '@kortix/l
 import { toWireModel } from '../resolution/effective';
 import { resolveCatalogUpstream } from './provider-registry';
 import { runtimeModelCatalog } from './runtime-catalog';
-import { RUNTIME_MANAGED_MODELS } from './managed-models';
-import { SERVED_MANAGED_MODELS } from './served-managed-models';
+import { getRuntimeManagedModel } from './managed-models';
 
 // PURE catalog logic for the model picker — no DB, no config, so it's unit-
 // testable in isolation. The DB-touching assembly (connected BYOK providers +
@@ -26,7 +25,6 @@ interface PickerCatalogState {
   revision: number;
   catalog: Catalog;
   modelById: Map<string, CatalogModel>;
-  providerModelIds: Map<string, Set<string>>;
 }
 
 let cachedState: PickerCatalogState | null = null;
@@ -36,45 +34,22 @@ function catalogState(): PickerCatalogState {
   if (cachedState?.revision === revision) return cachedState;
   const catalog = runtimeModelCatalog.snapshot();
   const modelById = new Map<string, CatalogModel>();
-  const providerModelIds = new Map<string, Set<string>>();
   for (const provider of catalog.providers) {
-    const ids = new Set<string>();
     for (const model of provider.models) {
       modelById.set(`${provider.id}/${model.id}`, model);
-      ids.add(model.id);
     }
-    providerModelIds.set(provider.id, ids);
   }
-  cachedState = { revision, catalog, modelById, providerModelIds };
+  cachedState = { revision, catalog, modelById };
   return cachedState;
 }
-
-// Curated flagship candidates per provider, in priority order. Every candidate is
-// VERIFIED against the catalog before use, and there's a data-driven fallback
-// (most recently released), so a wrong/renamed guess is dropped rather than
-// offered — the list can never drift into a lie.
-const FLAGSHIP_CANDIDATES: Record<string, string[]> = {
-  anthropic: ['claude-opus-4-8', 'claude-sonnet-4-6'],
-  openai: ['gpt-5.5', 'gpt-5.1', 'gpt-5', 'gpt-4.1'],
-  google: ['gemini-3-pro-preview', 'gemini-2.5-pro', 'gemini-2.0-flash'],
-  'x-ai': ['grok-4', 'grok-3'],
-  xai: ['grok-4', 'grok-3'],
-  deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-  mistral: ['mistral-large-latest', 'mistral-large'],
-  groq: ['llama-3.3-70b-versatile'],
-  perplexity: ['sonar-pro', 'sonar'],
-};
 
 /** The flagship BYOK model id (bare, no provider prefix) for a provider, or null. */
 export function providerFlagship(providerId: string): string | null {
   const state = catalogState();
-  const ids = state.providerModelIds.get(providerId);
-  if (!ids || ids.size === 0) return null;
-  for (const candidate of FLAGSHIP_CANDIDATES[providerId] ?? []) {
-    if (ids.has(candidate)) return candidate;
-  }
-  // Fallback: the newest AUTO-SELECTABLE model the catalog carries for this
-  // provider (deterministic, real). Released dates sort lexically
+  // The newest AUTO-SELECTABLE model the live catalog carries for this
+  // provider — no curated per-provider list: one went stale within a week of
+  // every launch (gpt-5.5 / claude-opus-4-8 after gpt-6.1-sol and claude-sonnet-5-5
+  // shipped). `autoSeedDefaultModel` skips deprecated/beta. Released dates sort lexically
   // (YYYY-MM-DD); `autoSeedDefaultModel` additionally drops the bare Bedrock
   // ids whenever the provider serves inference profiles. A tie-break alone was
   // not enough: `xai.grok-4.6` is the NEWEST Bedrock model and has no
@@ -92,23 +67,32 @@ export function isProviderConnected(providerId: string, connectedEnvVars: Set<st
   return !!upstream && connectedEnvVars.has(upstream.envVar.toUpperCase());
 }
 
+/** A configured model the caller cannot run until a login or provider key is connected. */
+export interface UnavailableModelMark {
+  available: false;
+  /** What to connect: a ChatGPT login (`codex/…`) or the model's provider key. */
+  availability: 'login' | 'provider';
+}
+
 /**
  * Reduce the gateway's runtime catalog to the models a project can actually
  * choose without downloading the complete models.dev registry. Managed models
  * are always retained (the caller has already applied free-tier filtering),
  * connected BYOK/Codex providers retain their served models, and configured
  * models are kept so existing defaults and fallback policies remain editable
- * after a provider is disconnected.
+ * after a provider is disconnected. A model kept only for that reason is
+ * marked `available: false`: clients must not preselect or send it, because
+ * the gateway refuses it ("Connect Codex to use this model.", KRTX-3011).
  */
-export function projectPickerCatalog<T>(
+export function projectPickerCatalog<T extends object>(
   fullCatalog: Record<string, T>,
   connectedEnvVars: Set<string>,
   requiredModels: string[],
-): Record<string, T> {
+): Record<string, T | (T & UnavailableModelMark)> {
   const required = new Set(requiredModels.filter(Boolean).map(toWireModel));
   const codexConnected =
     connectedEnvVars.has('CODEX_AUTH_JSON') || connectedEnvVars.has('OPENCODE_AUTH_JSON');
-  const compact: Record<string, T> = {};
+  const compact: Record<string, T | (T & UnavailableModelMark)> = {};
 
   for (const [model, entry] of Object.entries(fullCatalog)) {
     if (model === 'auto' || model === 'kortix/auto') continue;
@@ -121,7 +105,10 @@ export function projectPickerCatalog<T>(
         : provider
           ? isProviderConnected(provider, connectedEnvVars)
           : false;
-    if (managed || connected || required.has(model)) compact[model] = entry;
+    if (managed || connected) compact[model] = entry;
+    else if (required.has(model)) {
+      compact[model] = { ...entry, available: false, availability: provider === 'codex' ? 'login' : 'provider' };
+    }
   }
 
   return compact;
@@ -149,7 +136,7 @@ export function flagshipRefForEnvVar(envVar: string): string | null {
 export function labelForModelRef(ref: string): string {
   const modelById = catalogState().modelById;
   const wire = toWireModel(ref);
-  const managed = RUNTIME_MANAGED_MODELS.find((m) => m.id === wire);
+  const managed = getRuntimeManagedModel(wire);
   if (managed) return managed.name;
   if (wire.startsWith('codex/')) {
     const inner = wire.slice('codex/'.length);
@@ -158,22 +145,6 @@ export function labelForModelRef(ref: string): string {
   const catalog = modelById.get(wire);
   if (catalog) return catalog.name;
   return ref;
-}
-
-/**
- * Managed models as opencode refs (`kortix/<id>`), with tier hints. Reads the
- * SERVED lineup, so a configured model whose transport credential is missing is
- * never offered on a surface where picking it would fail.
- */
-export function managedPickerModels(): PickerModel[] {
-  return SERVED_MANAGED_MODELS.map((m) => ({
-    id: `kortix/${m.id}`,
-    label: m.name,
-    provider: 'kortix',
-    managed: true,
-    hint:
-      m.tier === 'flagship' ? 'Most capable' : m.tier === 'fast' ? 'Fastest' : 'Balanced, fast',
-  }));
 }
 
 /** Flagship picker entries for the CONNECTED BYOK providers in `connectedEnvVars`. */
@@ -187,4 +158,19 @@ export function connectedByokPickerModels(connectedEnvVars: Set<string>): Picker
     models.push({ id, label: labelForModelRef(id), provider: provider.id, managed: false, hint: provider.name });
   }
   return models;
+}
+
+/** Discovery metadata only; entries stay outside the runnable picker. */
+export function unavailableCatalog(
+  full: Record<string, { provider?: string }>,
+  served: Record<string, unknown>,
+): Record<string, { provider?: string; availability: 'plan' | 'login' | 'provider' }> {
+  return Object.fromEntries(
+    Object.entries(full)
+      .filter(([id]) => id !== 'auto' && !(id in served))
+      .map(([id, model]) => [id, {
+        provider: model.provider,
+        availability: !id.includes('/') ? 'plan' : id.startsWith('codex/') ? 'login' : 'provider',
+      }]),
+  );
 }

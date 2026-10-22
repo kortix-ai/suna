@@ -68,6 +68,7 @@ async function readRoster(project: GitBackedProject, commit: string): Promise<De
     defaultAgent: loaded.defaultAgent && enabled.includes(loaded.defaultAgent) ? loaded.defaultAgent : null,
     readable: true,
     governed: true,
+    ...((loaded.schemaVersion ?? 0) >= 3 ? { onlyDeclared: true } : {}),
   };
 }
 
@@ -82,8 +83,4 @@ const memo = ttlMemo({
 
 export function loadAgentRosterAtCommit(project: GitBackedProject, commit: string): Promise<DeclaredAgentRoster> {
   return memo(project, commit);
-}
-
-export function __clearAgentRosterCacheForTests(): void {
-  memo.clear();
 }

@@ -5,7 +5,7 @@ import {
   normalizeWorkspacePath,
   searchIndexedWorkspaceEntries,
   toWorkspaceSearchEntry,
-} from './workspace-search-core.ts';
+} from '@kortix/sdk/workspace-search';
 
 test('normalizes relative paths into /workspace paths', () => {
   assert.equal(normalizeWorkspacePath('src/app.tsx'), '/workspace/src/app.tsx');

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import type { Part } from '@kortix/sdk';
+import { blocksOf } from '@/lib/testing/session-log';
 import {
+  approvalWaitingWhoKey,
   connectorApprovalNeed,
   connectorApprovalState,
   connectorConnectNeed,
@@ -167,17 +168,15 @@ describe('isConnectorCallTool', () => {
   });
 });
 
-function toolPart(callID: string, tool: string, state: Record<string, unknown>): { part: Part } {
+function toolPart(callID: string, tool: string, state: Record<string, unknown>): unknown {
   return {
-    part: {
-      type: 'tool',
-      id: `prt_${callID}`,
-      callID,
-      tool,
-      sessionID: 's',
-      messageID: 'm',
-      state: { input: {}, ...state },
-    } as unknown as Part,
+    type: 'tool',
+    id: `prt_${callID}`,
+    callID,
+    tool,
+    sessionID: 's',
+    messageID: 'm',
+    state: { input: {}, ...state },
   };
 }
 
@@ -192,22 +191,26 @@ describe('connectorHandoffCallIds', () => {
   const approval = JSON.stringify({ status: 'pending_approval', execution_id: 'exec_1', connector: 'gmail' });
 
   test('collects connect-need and approval-need calls, nothing else', () => {
-    const ids = connectorHandoffCallIds([
-      toolPart('c1', 'kortix-connectors_call', { status: 'completed', output: connect }),
-      toolPart('c2', 'kortix-connectors_call', { status: 'completed', output: approval }),
-      toolPart('c3', 'kortix-connectors_call', { status: 'completed', output: JSON.stringify({ ok: true }) }),
-      toolPart('c4', 'bash', { status: 'completed', output: approval }),
-      { part: { type: 'text', id: 't', text: 'hi' } as unknown as Part },
-    ]);
+    const ids = connectorHandoffCallIds(
+      blocksOf([
+        toolPart('c1', 'kortix-connectors_call', { status: 'completed', output: connect }),
+        toolPart('c2', 'kortix-connectors_call', { status: 'completed', output: approval }),
+        toolPart('c3', 'kortix-connectors_call', { status: 'completed', output: JSON.stringify({ ok: true }) }),
+        toolPart('c4', 'bash', { status: 'completed', output: approval }),
+        { type: 'text', id: 't', text: 'hi' },
+      ]),
+    );
     expect(ids).toEqual(['c1', 'c2']);
   });
 
   test('a running or unparsable call is not a hand-off', () => {
     expect(
-      connectorHandoffCallIds([
-        toolPart('c1', 'kortix-connectors_call', { status: 'running' }),
-        toolPart('c2', 'kortix-connectors_call', { status: 'completed', output: 'not json' }),
-      ]),
+      connectorHandoffCallIds(
+        blocksOf([
+          toolPart('c1', 'kortix-connectors_call', { status: 'running' }),
+          toolPart('c2', 'kortix-connectors_call', { status: 'completed', output: 'not json' }),
+        ]),
+      ),
     ).toEqual([]);
   });
 });
@@ -217,7 +220,6 @@ describe('connectorApprovalState', () => {
     executionId: 'exec_1',
     reviewItems: [] as { id: string; status: string }[] | undefined,
     reviewFetchedAtMs: 2_000,
-    reviewFailed: false,
     callSettledAtMs: 1_000,
     localDecision: null as 'approve' | 'deny' | null,
   };
@@ -227,12 +229,12 @@ describe('connectorApprovalState', () => {
     expect(connectorApprovalState({ ...base, localDecision: 'deny' })).toBe('denied');
   });
 
-  test('unknown while the review list has not loaded', () => {
+  // KRTX-1724: Approve / Deny need this viewer's verdict, and only the list
+  // carries it. A list not loaded, failed (a role without project.review.read
+  // gets 403) or fetched before the call settled cannot vouch for it: render
+  // nothing, never a decision the API may answer with 403.
+  test('unknown while the review list has not loaded or failed: no verdict, so no decision', () => {
     expect(connectorApprovalState({ ...base, reviewItems: undefined, reviewFetchedAtMs: 0 })).toBe('unknown');
-  });
-
-  test('pending when the list failed to load: the static output is the only signal left', () => {
-    expect(connectorApprovalState({ ...base, reviewItems: undefined, reviewFailed: true })).toBe('pending');
   });
 
   test('pending while the review list still carries the call', () => {
@@ -247,8 +249,43 @@ describe('connectorApprovalState', () => {
     );
   });
 
-  test('a list fetched before the call settled cannot prove a resolution yet', () => {
-    expect(connectorApprovalState({ ...base, reviewFetchedAtMs: 500 })).toBe('pending');
+  test('a list fetched before the call settled proves nothing yet: unknown, not Approve / Deny', () => {
+    expect(connectorApprovalState({ ...base, reviewFetchedAtMs: 500 })).toBe('unknown');
+    expect(connectorApprovalState({ ...base, reviewFetchedAtMs: 1_000 })).toBe('unknown');
+  });
+
+  test('a list fetched before the call settled still answers for a call it carries', () => {
+    expect(
+      connectorApprovalState({
+        ...base,
+        reviewFetchedAtMs: 500,
+        reviewItems: [{ id: 'call:exec_1', status: 'waiting', canResolve: false }],
+      }),
+    ).toBe('waiting');
+  });
+
+  // KRTX-1724: the API lists the call as `waiting` for a viewer it would
+  // refuse (only a project manager or the session's launcher decides). That
+  // viewer reads the call and who decides, never Approve / Deny.
+  test('waiting when the call waits on someone else: no decision on this phone', () => {
+    expect(connectorApprovalState({ ...base, reviewItems: [{ id: 'call:exec_1', status: 'waiting' }] })).toBe(
+      'waiting',
+    );
+  });
+
+  test('a call the API marks canResolve false waits, whatever its status', () => {
+    expect(
+      connectorApprovalState({
+        ...base,
+        reviewItems: [{ id: 'call:exec_1', status: 'needs_you', canResolve: false }],
+      }),
+    ).toBe('waiting');
+    expect(
+      connectorApprovalState({
+        ...base,
+        reviewItems: [{ id: 'call:exec_1', status: 'needs_you', canResolve: true }],
+      }),
+    ).toBe('pending');
   });
 
   test('a terminal status on the item names the outcome', () => {
@@ -264,12 +301,29 @@ describe('connectorApprovalState', () => {
   });
 });
 
+describe('approvalWaitingWhoKey', () => {
+  test('a session started with an API token: managers decide, the launcher is not named', () => {
+    expect(approvalWaitingWhoKey('managers')).toBe('approvals.waitingManagers');
+  });
+
+  test('otherwise, or unknown: the launcher or a manager', () => {
+    expect(approvalWaitingWhoKey('managers_and_launcher')).toBe('approvals.waitingWho');
+    expect(approvalWaitingWhoKey(undefined)).toBe('approvals.waitingWho');
+  });
+});
+
 describe('connectorHandoffCopy', () => {
-  test('names the provider in the title, and keeps the body provider-agnostic', () => {
+  test('names the provider in the title, the body, and the action', () => {
     expect(connectorHandoffCopy('Gmail')).toEqual({
       title: 'Connect Gmail',
-      body: "Sign in on kortix.com. You come back to this chat when it's done.",
+      body: 'You sign in on Gmail in the browser, then come back to this chat. Kortix never sees your password.',
+      action: 'Continue to Gmail',
     });
+  });
+
+  test('names the project when the link does', () => {
+    expect(connectorHandoffCopy('Gmail', 'Acme').title).toBe('Connect Gmail to Acme');
+    expect(connectorHandoffCopy('Gmail', null).title).toBe('Connect Gmail');
   });
 });
 

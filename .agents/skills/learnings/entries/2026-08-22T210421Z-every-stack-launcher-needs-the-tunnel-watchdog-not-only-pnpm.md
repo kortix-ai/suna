@@ -26,5 +26,5 @@ with the new `KORTIX_URL`). The worktree launcher gets the same tunnel
 watchdog as `pnpm dev`. Proven by killing cloudflared on a live stack and
 watching the rotation (PR #6755).
 
-*Incident:* session `b090016e…` / `cbde77cf…` on worktree `timeline-parity`,
+*Incident:* two sessions on worktree `timeline-parity`,
 three tunnel deaths, each surfaced as an OpenCode retry loop.

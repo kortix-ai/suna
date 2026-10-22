@@ -11,10 +11,12 @@
  * The chip names the agent (KRTX-247) and opens the agent and model sheet.
  * Each file uploads when it is picked (`useComposerAttachments`, COR-185), so
  * the send waits for the uploads and hands their parts to ProjectScreen,
- * which creates the session with them. The model comes from the project
- * catalog and is sent as `opencode_model`. A project whose catalog offers no
- * model never starts a session: Send opens the connect-provider sheet and
- * keeps the draft (KRTX-251, `planComposerSend`).
+ * which creates the session with them. The agents and models are web's,
+ * built by `@kortix/sdk` (`useComposerModels`); a model pick is sent as
+ * `model`. A gateway project that offers no model never starts a
+ * session: Send opens the connect-provider sheet and keeps the draft
+ * (KRTX-251, `planComposerSend`). A long paste is a "Pasted text" tile
+ * (`usePastedTiles`) and rides the prompt inline.
  *
  * Layout:
  * - The symbol (`ProjectHero`) is absolutely centred in the keyboard-avoiding
@@ -22,14 +24,29 @@
  *   above the keyboard, so the symbol never sits under the composer. It is
  *   large at rest and scales down with the keyboard.
  * - At rest the composer sits at the thread composer's distance from the
- *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-3`).
+ *   bottom: `max(insets.bottom, 12)`, the card on the safe-area line (KRTX-2930).
  * - The composer follows the keyboard down to KEYBOARD_GAP above it once it appears.
+ *
+ * The draft lives in `HomeComposer`, not here: a keystroke re-renders the
+ * composer card only, never the hero (a Skia canvas), the sheets or the model
+ * resolution.
  */
 
 import * as React from 'react';
-import type { SessionPromptPart } from '@kortix/sdk';
-import { newConfigPrompt } from '@kortix/shared';
-import { Keyboard, Pressable, View } from 'react-native';
+import {
+  resolveComposerAgent,
+  resolveComposerModel,
+  resolveModelDefault,
+  type SessionPromptPart,
+} from '@kortix/sdk';
+import {
+  newConfigPrompt,
+  serializePromptWithPastes,
+  splitPastedContent,
+  type PastedContent,
+} from '@kortix/shared';
+import { Keyboard, Pressable, View, type TextInput } from 'react-native';
+import { useIsFocused, useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
   useReanimatedKeyboardAnimation,
@@ -37,40 +54,43 @@ import {
 import Reanimated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Button } from '@/components/ui/button';
+import { Text } from '@/components/ui/text';
+
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { NotificationsButton } from '@/components/session/NotificationsButton';
 import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectHero } from '@/components/session/ProjectHero';
 import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
 import { useComposerAttachments } from '@/components/session/useComposerAttachments';
 import { useRecoverPendingPick } from '@/components/session/useRecoverPendingPick';
-import { useProjectDetail, useProjectModelCatalog } from '@/lib/projects/hooks';
+import { usePastedTiles } from '@/components/session/use-pasted-tiles';
+import { openPastedText } from '@/stores/pasted-text-store';
+import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { uploadErrorMessage } from '@/lib/session/composer-uploads';
-import { takeComposerFocus } from '@/lib/onboarding/composer-handoff';
+import { subscribeComposerFocus, takeComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
-import {
-  composerModelLabel,
-  effectiveComposerModel,
-  isModelUnavailable,
-  selectComposerModel,
-} from '@/lib/session/composer-model';
+import { isModelUnavailable, sessionModelRef, selectComposerModel } from '@/lib/session/composer-model';
 import { planComposerSend } from '@/lib/session/send-plan';
-import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
+import { useLocalConfigStore } from '@/lib/session/local-config';
+import { composerChip, homeAgentPick, threadAgents, type PickerOption } from '@/lib/session/composer-config';
 import {
-  composerChip,
-  homeAgentName,
-  pickableAgents,
-  type PickerOption,
-} from '@/lib/session/composer-config';
-import { catalogPickerModels, firstPromptPicks, modelPickerOptions } from '@/lib/session/model-picker';
+  firstPromptPicks,
+  modelOptionKey,
+  modelPickerOptions,
+  offeredModelCount,
+  pickerModelName,
+} from '@/lib/session/model-picker';
+import type { Agent } from '@/lib/session/runtime-data';
 
-/** One identity while the project detail loads, so the agent memo does not churn. */
-const EMPTY_AGENTS: NonNullable<ReturnType<typeof useProjectDetail>['data']>['config']['agents'] = [];
+/** One identity while the project detail loads, so the sheet's agent memo does not churn. */
+const EMPTY_AGENTS: Agent[] = [];
 
 /** The thread composer's own bottom padding (SessionChatInput's `pb-3`), so
  *  this composer rests at the same distance from the safe-area bottom. `pb-3`
@@ -84,7 +104,7 @@ export interface ProjectHomeSubmit {
   files: AttachedFile[];
   /** The uploaded files' prompt parts, in `files` order (`takeForSend`). */
   fileParts: SessionPromptPart[];
-  /** Gateway wire id, or null to use the project default. */
+  /** The session `model` of a pick (`sessionModelRef`), or null to use the project default. */
   model: string | null;
   /**
    * The thinking level to run the first message on, with the model it belongs
@@ -94,6 +114,12 @@ export interface ProjectHomeSubmit {
   /** The agent to start the session on. Null: none is sent and the server decides. */
   agent: string | null;
 }
+
+/**
+ * The composer focus retries after New session, in ms: past the drawer's
+ * close and the stack's pop (~350 ms on iOS), which can each drop a focus.
+ */
+const COMPOSER_FOCUS_RETRY_MS = [150, 400, 700];
 
 export interface ProjectHomeProps {
   projectId: string;
@@ -105,6 +131,12 @@ export interface ProjectHomeProps {
    */
   onSubmitNewSession: (input: ProjectHomeSubmit) => Promise<boolean>;
   onOpenDrawer: () => void;
+  /**
+   * The bell at the top right (KRTX-1742): the caller's unread count and the
+   * move to the Notifications page. Omitted while the project's
+   * `notification_center` flag is off: no bell.
+   */
+  notifications?: { unreadCount: number; onOpen: () => void };
   /**
    * Read-and-clear the draft text and files to seed the composer with, if any
    * — e.g. a project-home send the user cancelled from `SessionConnecting`
@@ -122,95 +154,77 @@ export function ProjectHome({
   sending = false,
   onSubmitNewSession,
   onOpenDrawer,
+  notifications,
   takeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const toast = useToast();
   // One read at mount: the text seeds the draft, the files seed the uploads.
   const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
-  const [draft, setDraft] = React.useState(initialDraft.text);
-  // Survives the OS killing the app (COR-143). ProjectScreen clears it once a
-  // send starts a session.
-  useComposerDraft(draftKey({ kind: 'project', projectId }), draft, setDraft);
-  // The first project, just created on `/new` (COR-161): open with the
-  // keyboard up. One-shot, read once at mount.
+  // The first project, just created on `/new` (COR-161), or the drawer's New
+  // session before home mounted: open with the keyboard up. One-shot, read
+  // once at mount.
   const [focusComposer] = React.useState(() => takeComposerFocus(projectId));
+  // The drawer's New session while home is mounted (under the drawer or a
+  // covering route): focus once home is the screen on top, so the keyboard
+  // never opens behind a route that is still popping. Home is "on top" from
+  // the start of the pop, and the drawer is still closing then: a focus in
+  // that window can be dropped, so it is retried until the field has it.
+  const composerInputRef = React.useRef<TextInput>(null);
+  const isScreenFocused = useIsFocused();
+  const [focusRequest, setFocusRequest] = React.useState(0);
+  const handledFocusRequest = React.useRef(0);
+  React.useEffect(
+    () =>
+      subscribeComposerFocus((requested) => {
+        if (requested === projectId && takeComposerFocus(projectId)) setFocusRequest((n) => n + 1);
+      }),
+    [projectId],
+  );
+  React.useEffect(() => {
+    if (!isScreenFocused || focusRequest === handledFocusRequest.current) return;
+    handledFocusRequest.current = focusRequest;
+    const focusUnlessFocused = () => {
+      const input = composerInputRef.current;
+      if (input && !input.isFocused()) input.focus();
+    };
+    const frame = requestAnimationFrame(focusUnlessFocused);
+    const retries = COMPOSER_FOCUS_RETRY_MS.map((ms) => setTimeout(focusUnlessFocused, ms));
+    return () => {
+      cancelAnimationFrame(frame);
+      retries.forEach(clearTimeout);
+    };
+  }, [focusRequest, isScreenFocused]);
   const attachments = useComposerAttachments(projectId, { initialFiles: initialDraft.files });
   useRecoverPendingPick(attachments.add);
   const files = attachments.files;
   // Waiting for the uploads before the create: the send slot shows the loader.
   const [preparing, setPreparing] = React.useState(false);
-  const [model, setModel] = React.useState<string | null>(null);
   const modelSheetRef = React.useRef<SheetRef>(null);
   const connectSheetRef = React.useRef<SheetRef>(null);
   const attachSheetRef = React.useRef<AttachSheetRef>(null);
 
-  // The same catalog, groups, and order as web and the thread
-  // (`lib/session/model-picker.ts`).
-  const { catalog, defaultModel, isLoading: catalogLoading, refetch: refetchCatalog } =
-    useProjectModelCatalog(projectId);
-  const catalogModels = React.useMemo(() => catalogPickerModels(catalog), [catalog]);
-  // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
-  // "Provider connected" only once the catalog actually turns up a model.
-  const refetchModelCount = React.useCallback(async () => {
-    const result = await refetchCatalog();
-    return catalogPickerModels(result.data?.models).length;
-  }, [refetchCatalog]);
-  const modelOptions = React.useMemo<PickerOption[]>(
-    () => modelPickerOptions(catalogModels, (m) => m.modelID),
-    [catalogModels],
-  );
-  // Thinking: the active model's levels, from the catalog. The level lives in
-  // the store the thread reads (`modelVariants["kortix/<modelID>"]`), so a
-  // level set here is the thread's level, and the other way round.
-  const activeModel = effectiveComposerModel(model, defaultModel);
-  const levels = React.useMemo(
-    () => Object.keys(catalogModels.find((m) => m.modelID === activeModel)?.variants ?? {}),
-    [catalogModels, activeModel],
-  );
-  const variantKey = activeModel ? `kortix/${activeModel}` : '';
-  const storedVariant = useLocalConfigStore((s) => (variantKey ? (s.modelVariants[variantKey] ?? null) : null));
-  const setStoredVariant = useLocalConfigStore((s) => s.setVariant);
-  const variant = storedVariant && levels.includes(storedVariant) ? storedVariant : null;
-  const thinking = React.useMemo(
-    () => ({
-      levels,
-      selected: variant,
-      onSelect: (level: string | null) => {
-        if (variantKey) setStoredVariant(variantKey, level);
-      },
-    }),
-    [levels, variant, variantKey, setStoredVariant],
-  );
-  // A gateway project that offers no model: the chip asks to connect one, and
-  // Send opens the connect sheet instead of starting a session (KRTX-251).
-  const modelUnavailable = isModelUnavailable({
-    hasCatalog: catalog !== undefined,
-    loading: catalogLoading,
-    modelCount: modelOptions.length,
-  });
-
-  // Agent: home has no sandbox, so the choices are the project config's agents
-  // (`/detail`). Web's order: the pick made here, else the project default,
-  // else the last agent picked anywhere (`homeAgentName`). A pick also becomes
-  // the store's last-used agent, which the thread's header reads.
+  // Agent: web's order (`resolveComposerAgent`): the pick made here, else the
+  // project default, else — only when the project declares none — the last
+  // agent picked anywhere, else the first. Home has no sandbox: the roster is
+  // the project config's (`/detail`). A pick also becomes the store's
+  // last-used agent, which the thread's chip reads while its roster loads.
   const { data: projectDetail } = useProjectDetail(projectId);
-  const projectAgents = projectDetail?.config?.agents ?? EMPTY_AGENTS;
+  const projectConfig = projectDetail?.config;
+  const projectAgents = React.useMemo(
+    () => (projectConfig ? threadAgents(projectConfig) : undefined),
+    [projectConfig],
+  );
+  const defaultAgent = projectConfig?.default_agent ?? projectConfig?.open_code_default_agent ?? null;
   const [pickedAgent, setPickedAgent] = React.useState<string | null>(null);
   const lastUsedAgent = useLocalConfigStore((s) => s.selectedAgent);
   const setLastUsedAgent = useLocalConfigStore((s) => s.setAgent);
-  const agentName = React.useMemo(
-    () =>
-      homeAgentName(
-        pickableAgents(projectAgents).map((a) => a.name),
-        {
-          picked: pickedAgent,
-          projectDefault: projectDetail?.config?.default_agent ?? projectDetail?.config?.open_code_default_agent,
-          lastUsed: lastUsedAgent,
-        },
-      ),
-    [projectAgents, pickedAgent, projectDetail, lastUsedAgent],
-  );
+  const agentName = resolveComposerAgent({
+    agents: projectAgents,
+    defaultAgent,
+    selectedAgent: homeAgentPick({ picked: pickedAgent, defaultAgent, lastUsed: lastUsedAgent }),
+  }).selected;
   const handleAgentChange = React.useCallback(
     (name: string) => {
       setPickedAgent(name);
@@ -232,30 +246,95 @@ export function ProjectHome({
     });
   }, [onSubmitNewSession]);
   const agentChoice = React.useMemo(
-    () => ({ agents: projectAgents, activeName: agentName, onSelect: handleAgentChange, onCreate: handleCreateAgent }),
+    () => ({ agents: projectAgents ?? EMPTY_AGENTS, activeName: agentName, onSelect: handleAgentChange, onCreate: handleCreateAgent }),
     [projectAgents, agentName, handleAgentChange, handleCreateAgent],
   );
+
+  // Models: the list web and the thread show (`useComposerModels`). The
+  // default is `@kortix/sdk`'s: `/model-defaults` for this agent, then the
+  // provider defaults. A pick equal to the default is no pick
+  // (`selectComposerModel`): the session keeps following the default.
+  const { providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
+    useComposerModels(projectId);
+  const globalDefault = useLocalConfigStore((s) => s.globalDefault) ?? undefined;
+  // The pick persists in the store the thread reads (`agentModels`, per
+  // agent), so it survives the remount after a send and the thread opens on
+  // the same model and thinking level.
+  const agentSlot = agentName ?? '_default';
+  const pickedModel = useLocalConfigStore((s) => s.agentModels[agentSlot]);
+  const setModelForAgent = useLocalConfigStore((s) => s.setModelForAgent);
+  const { defaultModel, activeKey, explicit } = React.useMemo(() => {
+    const modelInput = {
+      models,
+      serverDefault: resolveModelDefault(modelDefaults, agentName ?? undefined),
+      globalDefault,
+      providers,
+    };
+    const active = resolveComposerModel({ ...modelInput, picks: [pickedModel] });
+    return {
+      defaultModel: resolveComposerModel(modelInput).model,
+      activeKey: active.model,
+      explicit: active.explicit,
+    };
+  }, [models, modelDefaults, agentName, globalDefault, providers, pickedModel]);
+  const activeModel = activeKey
+    ? models.find((m) => m.providerID === activeKey.providerID && m.modelID === activeKey.modelID)
+    : undefined;
+  const modelOptions = React.useMemo<PickerOption[]>(
+    () => modelPickerOptions(models, activeModel ?? null),
+    [models, activeModel],
+  );
+  // Thinking: the active model's levels. The level lives in the store the
+  // thread reads (`modelVariants["<providerID>/<modelID>"]`), so a level set
+  // here is the thread's level, and the other way round.
+  const levels = React.useMemo(() => Object.keys(activeModel?.variants ?? {}), [activeModel]);
+  const variantKey = activeModel ? modelOptionKey(activeModel) : '';
+  const storedVariant = useLocalConfigStore((s) => (variantKey ? (s.modelVariants[variantKey] ?? null) : null));
+  const setStoredVariant = useLocalConfigStore((s) => s.setVariant);
+  const variant = storedVariant && levels.includes(storedVariant) ? storedVariant : null;
+  const thinking = React.useMemo(
+    () => ({
+      levels,
+      selected: variant,
+      onSelect: (level: string | null) => {
+        if (variantKey) setStoredVariant(variantKey, level);
+      },
+    }),
+    [levels, variant, variantKey, setStoredVariant],
+  );
+  // A project that offers no model: the chip asks to connect one, and Send
+  // opens the connect sheet instead of starting a session (KRTX-251).
+  const modelUnavailable = isModelUnavailable({
+    loading: modelsLoading,
+    modelCount: offeredModelCount(models),
+  });
   // The chip names the agent; the model name stands in when no agent
-  // resolves. While the catalog loads, and for a project without the gateway
-  // (no catalog), the chip stays hidden.
-  const chip =
-    catalogLoading || catalog === undefined
-      ? null
-      : composerChip({
-          connectModel: modelUnavailable,
-          agentName,
-          modelName: composerModelLabel(
-            modelOptions.map((o) => ({ modelID: o.key, modelName: o.label })),
-            model,
-            defaultModel,
-          ),
-        });
+  // resolves. While the agents or the models load, the chip stays hidden.
+  const chip = modelsLoading
+    ? null
+    : composerChip({
+        connectModel: modelUnavailable,
+        agentName,
+        agentsLoading: !projectAgents,
+        modelName: activeModel ? pickerModelName(activeModel) : null,
+      });
   const openConnectSheet = React.useCallback(() => {
-    Keyboard.dismiss();
     connectSheetRef.current?.open();
   }, []);
+  const openAttachSheet = React.useCallback(() => attachSheetRef.current?.open(), []);
+  const openModelSheet = React.useCallback(() => modelSheetRef.current?.open(), []);
+  const handleModelSelect = React.useCallback(
+    (key: string) => {
+      const picked = selectComposerModel(key, defaultModel ? modelOptionKey(defaultModel) : null);
+      const m = picked ? models.find((x) => modelOptionKey(x) === picked) : undefined;
+      setModelForAgent(agentSlot, m ? { providerID: m.providerID, modelID: m.modelID } : null);
+    },
+    [defaultModel, models, setModelForAgent, agentSlot],
+  );
 
-  const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
+  // The card rests on the safe-area line, as in the thread (KRTX-2930): the
+  // inset already holds the home indicator's clearance, so the 12pt is not stacked on it.
+  const restingGap = Math.max(insets.bottom, COMPOSER_BOTTOM_GAP);
   const { progress } = useReanimatedKeyboardAnimation();
   const composerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: progress.value * (restingGap - KEYBOARD_GAP) }],
@@ -268,8 +347,9 @@ export function ProjectHome({
   // uploads back to the composer. Web does the same (`clearOnSend={false}` on
   // the home composer).
   const isSending = sending || preparing;
-  const submitNow = React.useCallback(async () => {
-    const text = draft.trim();
+  const submitNow = React.useCallback(async (draft: string, pastes: PastedContent[]) => {
+    // Every paste tile inline, then the text: what the session's first prompt carries.
+    const text = serializePromptWithPastes(draft.trim(), pastes);
     const plan = planComposerSend({
       text,
       fileCount: files.length,
@@ -304,8 +384,8 @@ export function ProjectHome({
       text,
       files: sent.files,
       fileParts: sent.fileParts,
-      model,
-      picks: firstPromptPicks(activeModel, variant, levels),
+      model: explicit ? sessionModelRef(explicit) : null,
+      picks: firstPromptPicks(activeKey ?? null, variant, levels),
       agent: agentName,
     });
     if (!ok) {
@@ -314,15 +394,14 @@ export function ProjectHome({
       );
     }
   }, [
-    draft,
     files,
     isSending,
     modelUnavailable,
     openConnectSheet,
     attachments,
     toast,
-    model,
-    activeModel,
+    explicit,
+    activeKey,
     variant,
     levels,
     agentName,
@@ -330,28 +409,22 @@ export function ProjectHome({
     onSubmitNewSession,
   ]);
 
-  // One submission at a time: two taps inside one frame both read the same
-  // draft (the cleared text has not rendered yet), so the second would send
-  // it again. Released a frame after the submission settles.
-  const submittingRef = React.useRef(false);
-  const handleSubmit = React.useCallback(async () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    try {
-      await submitNow();
-    } finally {
-      requestAnimationFrame(() => {
-        submittingRef.current = false;
-      });
-    }
-  }, [submitNow]);
-
   return (
     <View className="flex-1 bg-background">
-      {/* Floating menu button — opens the left drawer. */}
-      {/* No header controls: the agent is picked in the model sheet's Agent
-          tab (Jay, 2026-09-23). */}
-      <FloatingMenuButton onPress={onOpenDrawer} />
+      {/* Floating menu button — opens the left drawer. The one header control
+          is the Notifications bell, top right (Jay, 2026-10-16); the agent is
+          picked in the model sheet's Agent tab (Jay, 2026-09-23). */}
+      <FloatingMenuButton onPress={onOpenDrawer}>
+        {/* Dev builds only: Metro folds `__DEV__` to false, so a release build has no button. */}
+        {__DEV__ ? (
+          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/debug')}>
+            <Text>Debug</Text>
+          </Button>
+        ) : null}
+        {notifications ? (
+          <NotificationsButton unreadCount={notifications.unreadCount} onPress={notifications.onOpen} />
+        ) : null}
+      </FloatingMenuButton>
 
       <KeyboardAvoidingView className="flex-1" behavior="padding">
         <View className="flex-1">
@@ -367,26 +440,21 @@ export function ProjectHome({
           </View>
 
           <Reanimated.View className="px-4" style={[{ paddingBottom: restingGap }, composerStyle]}>
-            <Composer
-              value={draft}
-              onChangeText={setDraft}
-              onSubmit={handleSubmit}
-              placeholder="Ask anything"
+            <HomeComposer
+              projectId={projectId}
+              initialText={initialDraft.text}
+              onSubmit={submitNow}
               autoFocus={focusComposer}
+              inputRef={composerInputRef}
               disabled={isSending}
               sending={isSending}
               attachments={files}
               attachmentUploads={attachments.uploads}
-              onAttach={() => {
-                Keyboard.dismiss();
-                attachSheetRef.current?.open();
-              }}
+              onAttach={openAttachSheet}
               onRemoveAttachment={attachments.remove}
+              onPasteFile={attachments.add}
               chip={chip}
-              onChipPress={() => {
-                Keyboard.dismiss();
-                modelSheetRef.current?.open();
-              }}
+              onChipPress={openModelSheet}
             />
           </Reanimated.View>
         </View>
@@ -397,9 +465,9 @@ export function ProjectHome({
       <ModelPickerSheet
         ref={modelSheetRef}
         options={modelOptions}
-        activeKey={activeModel}
+        activeKey={activeKey ? modelOptionKey(activeKey) : null}
         thinking={thinking}
-        onSelect={(modelID) => setModel(selectComposerModel(modelID, defaultModel))}
+        onSelect={handleModelSelect}
         onConnect={openConnectSheet}
         agent={agentChoice}
       />
@@ -410,5 +478,84 @@ export function ProjectHome({
         onRefetchModels={refetchModelCount}
       />
     </View>
+  );
+}
+
+/**
+ * The home composer, its draft and its paste tiles. Both are state here, so a
+ * keystroke re-renders this card only. `onSubmit` gets the draft as rendered.
+ * A handed-back draft is the prompt as sent: its pastes become tiles again.
+ * An oversized paste goes to `onPasteFile` as a text file.
+ */
+function HomeComposer({
+  projectId,
+  initialText,
+  onSubmit,
+  onPasteFile,
+  ...composer
+}: {
+  projectId: string;
+  initialText: string;
+  onSubmit: (draft: string, pastes: PastedContent[]) => Promise<void>;
+  onPasteFile: (files: AttachedFile[]) => void;
+  autoFocus: boolean;
+  inputRef: React.Ref<TextInput>;
+  disabled: boolean;
+  sending: boolean;
+  attachments: AttachedFile[];
+  attachmentUploads: React.ComponentProps<typeof Composer>['attachmentUploads'];
+  onAttach: () => void;
+  onRemoveAttachment: (index: number) => void;
+  chip: React.ComponentProps<typeof Composer>['chip'];
+  onChipPress: () => void;
+}) {
+  const [initial] = React.useState(() => splitPastedContent(initialText));
+  const [draft, setDraft] = React.useState(initial.text);
+  const pasted = usePastedTiles(onPasteFile, initial.pastes);
+  // Survives the OS killing the app (COR-143). ProjectScreen clears it once a
+  // send starts a session.
+  useComposerDraft(draftKey({ kind: 'project', projectId }), draft, setDraft);
+  const draftRef = React.useRef(draft);
+  draftRef.current = draft;
+  const pastesRef = React.useRef(pasted.pastes);
+  pastesRef.current = pasted.pastes;
+  const { takePaste } = pasted;
+  const handleChangeText = React.useCallback(
+    (next: string) => {
+      const kept = takePaste(draftRef.current, next);
+      draftRef.current = kept;
+      setDraft(kept);
+    },
+    [takePaste],
+  );
+
+  // One submission at a time: two taps inside one frame both read the same
+  // draft (the cleared text has not rendered yet), so the second would send
+  // it again. Released a frame after the submission settles.
+  const submittingRef = React.useRef(false);
+  const handleSubmit = React.useCallback(async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      await onSubmit(draftRef.current, pastesRef.current);
+    } finally {
+      requestAnimationFrame(() => {
+        submittingRef.current = false;
+      });
+    }
+  }, [onSubmit]);
+
+  return (
+    <Composer
+      {...composer}
+      value={draft}
+      onChangeText={handleChangeText}
+      onSelectionChange={pasted.onSelectionChange}
+      pastes={pasted.pastes}
+      onRemovePaste={pasted.remove}
+      onOpenPaste={openPastedText}
+      onSubmit={handleSubmit}
+      placeholder="Ask anything"
+    />
   );
 }

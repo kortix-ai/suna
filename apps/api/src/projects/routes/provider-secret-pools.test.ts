@@ -30,6 +30,8 @@ let ownerIsMachine = false;
 let canManage = true;
 /** The session's personal user as the gateway resolves it: its owner in private, null when shared. */
 let sessionPersonal: string | null = ownerId;
+let sessionVisibility = 'private';
+let sessionMetadata: Record<string, unknown> = {};
 let agentEnv = ['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON'];
 /** Users IAM lets read the project. */
 let readers = new Set(users);
@@ -75,7 +77,7 @@ mock.module('../lib/access', () => ({
     // `PUT /model` passes the raw context session id: a browser login's is not a Kortix session.
     if ((caller && caller !== 'browser-login' && caller !== target) || (bound && bound !== target)) return null;
     return {
-      row: { createdBy: ownerId, status: 'idle', metadata: {}, agentName: null },
+      row: { createdBy: ownerId, status: 'idle', metadata: sessionMetadata, agentName: null, visibility: sessionVisibility },
       canManageLifecycle: canManage, ownerIsMachine,
     };
   },
@@ -94,7 +96,6 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 }));
 const realEnvSync = await import('../lib/sandbox-env-sync');
 mock.module('../lib/sandbox-env-sync', () => ({ ...realEnvSync, pushSessionModelToSandbox: async () => ({ ok: true }) }));
-mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 mock.module('../../llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (providerId: string) => (providerId === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
 }));
@@ -169,8 +170,8 @@ mock.module('../../shared/db', () => ({ db: {
     for (const p of paramsOf(condition)) pools.delete(p as string);
   } }),
 } }));
-await import('./provider-secret-pools');
-await import('./session-scope');
+(await import('./provider-secret-pools')).registerProviderSecretPoolsRoutes();
+(await import('./session-scope')).registerSessionScopeRoutes();
 const { MAX_KEYS_PER_PROVIDER } = await import('../../secrets/provider-key-selection');
 
 const putModel = (model: string) => app.request(`/${projectId}/sessions/${sessionId}/model`, {
@@ -186,6 +187,8 @@ beforeEach(() => {
   pools = new Map();
   boundSession = null;
   sessionPersonal = ownerId;
+  sessionVisibility = 'private';
+  sessionMetadata = {};
   ownerIsMachine = false;
   canManage = true;
   agentEnv = ['ANTHROPIC_API_KEY', 'CODEX_AUTH_JSON'];
@@ -363,6 +366,7 @@ test('a shared session never selects a key granted to one member, even its owner
   // The gateway serves a shared session with no personal user (spec
   // 2026-09-22 §2.3), so a member-granted key would never be used.
   sessionPersonal = null;
+  sessionVisibility = 'project';
   keys = [projectKey(1, { accessMode: 'members', grants: [managerId, ownerId] })];
   const response = await put('anthropic', [keyId(1)]);
   expect(response.status).toBe(403);
@@ -412,6 +416,21 @@ describe('PUT /sessions/:id/model to a model only pooled keys reach', () => {
     expect(keyChecks[0]).toMatchObject({ grantUserId: serviceAccountId, ids: [keyId(1), keyId(2)] });
   });
 
+  test('the body may name the model `model`; the answer carries both names', async () => {
+    callerId = serviceAccountId;
+    keys = [projectKey(1), projectKey(2)];
+    const response = await app.request(`/${projectId}/sessions/${sessionId}/model`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.model).toBe(storedModel!);
+    expect(body.opencode_model).toBe(storedModel!);
+    expect(storedModel).toContain(model);
+  });
+
   test('a member caller stores the same selection', async () => {
     keys = [projectKey(1), projectKey(2)];
     expect((await putModel(model)).status).toBe(200);
@@ -426,5 +445,43 @@ describe('PUT /sessions/:id/model to a model only pooled keys reach', () => {
     expect(await response.json()).toMatchObject({ code: 'INVALID_SESSION_MODEL' });
     expect(pools.size).toBe(0);
     expect(storedModel).toBeNull();
+  });
+});
+
+// A private session can still act for nobody: its token predates on_behalf_of
+// (2026-09-22), it started unattended, or another member prompted it. The web
+// panel offered that session's owner their own keys, and the save was refused
+// with "This session is shared" — for a session that was private.
+describe('who a session acts for', () => {
+  const personalKeys = async () => {
+    const body = await (await app.request(base)).json();
+    return [body.personal_user_id, body.personal_keys_reason];
+  };
+
+  test('the pool list names the person the session acts for, or why there is none', async () => {
+    expect(await personalKeys()).toEqual([ownerId, null]);
+    sessionPersonal = null;
+    expect(await personalKeys()).toEqual([null, 'no_person']);
+    sessionMetadata = { on_behalf_of_cleared_at: '2026-09-29T08:00:00.000Z' };
+    expect(await personalKeys()).toEqual([null, 'prompted_by_another_member']);
+    sessionVisibility = 'project';
+    expect(await personalKeys()).toEqual([null, 'shared']);
+  });
+
+  test.each([
+    ['shared with the project', 'project', {}, 'SHARED_SESSION_PERSONAL_KEY', 'This session is shared'],
+    ['prompted by another member', 'private', { on_behalf_of_cleared_at: '2026-09-29T08:00:00.000Z' }, 'SESSION_PROMPTED_BY_ANOTHER_MEMBER', 'Another member has prompted this session'],
+    ['acting for nobody', 'private', {}, 'SESSION_ACTS_FOR_NO_ONE', 'This session does not act for a person'],
+  ] as const)('a personal key refused in a session %s names that reason', async (_name, visibility, metadata, code, message) => {
+    sessionPersonal = null;
+    sessionVisibility = visibility;
+    sessionMetadata = { ...metadata };
+    keys = [projectKey(1, { accessMode: 'members', grants: [managerId, ownerId] })];
+    const response = await put('anthropic', [keyId(1)]);
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.code).toBe(code);
+    expect(body.error).toStartWith(message);
+    expect(writes).toBe(0);
   });
 });

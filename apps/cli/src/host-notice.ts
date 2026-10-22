@@ -6,7 +6,9 @@ import {
   hasEnvTokenHost,
   type Host,
 } from './api/config.ts';
+import { sandboxEnvValue } from './api/sandbox-env.ts';
 import { cachedTokenIdentity } from './api/token-identity.ts';
+import { resolveProjectAuth } from './command-helpers.ts';
 import { loadLink } from './project-link.ts';
 import { C, pad, visibleWidth } from './style.ts';
 
@@ -60,11 +62,14 @@ export function resolveHostNotice(hostArg?: string): HostNotice {
     };
   }
 
-  const { name, host } = activeHostEntry();
+  const { name, host, envWins } = activeHostEntry();
   return {
     name,
     url: host.url,
-    authState: hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored'),
+    // The auth state follows the actual winner: an in-sandbox `hosts use`
+    // (KRTX-1705) serves commands from the stored credential, so the notice
+    // must stop calling it a session/project token.
+    authState: hostAuthState(host, envWins ? 'env' : 'stored'),
     ...(tokenAgent(host) ? { agent: tokenAgent(host) } : {}),
   };
 }
@@ -75,14 +80,14 @@ export function renderHostNotice(commandArgv: readonly string[]): string | null 
   const hostArg = findHostArg(commandArgv.slice(1));
   const directoryLink = loadLink();
   const linkedHost = !hostArg ? directoryLink?.host : undefined;
-  // Host resolution mirrors resolveProjectContext: --host wins, then the
-  // platform-injected sandbox token, then the cwd link. Reading the LINK host
-  // while a KORTIX_TOKEN is present resolves a named host that carries no
-  // stored credentials inside a sandbox — which reported a fully-authenticated
-  // agent CLI as "not logged in" on every command (the exact trap called out in
-  // api/config.ts). The link still supplies the account/project below; only the
-  // auth state comes from the env host.
-  const notice = resolveHostNotice(hasEnvTokenHost() ? hostArg : (hostArg ?? linkedHost));
+  // Host resolution mirrors resolveProjectContext (resolveProjectAuth):
+  // --host wins, then the cwd link's stored credentials, then the
+  // platform-injected env token. Reading the LINK host while it has no
+  // stored credentials resolves a named host that carries nothing — which
+  // reported a fully-authenticated agent CLI as "not logged in" on every
+  // command (the exact trap called out in api/config.ts) — so the notice
+  // falls back to the env host exactly when the command's auth does.
+  const notice = resolveHostNotice(resolveProjectAuth({ hostArg }).hostName);
   let line = `${C.dim}host ${C.reset}${C.bold}${notice.name}${C.reset}${C.dim} (${notice.url}, ${notice.authState})${C.reset}`;
   // The token's own identity: WHICH agent this session's minted token belongs
   // to. Printed next to the host because it is a property of the credential,
@@ -124,11 +129,14 @@ function activeAccountLabel(): string | null {
 }
 
 /** Active project: the cwd's directory link wins over the global default. */
-function activeProjectLabel(): { label: string; source: 'linked' | 'default' } | null {
+function activeProjectLabel(): { label: string; source: 'linked' | 'default' | 'session' } | null {
   const link = loadLink();
   if (link?.project_id) {
     return { label: idPrefix(link.project_id), source: 'linked' };
   }
+  // A session box without the repository has no link file; its project is injected.
+  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  if (envProjectId) return { label: idPrefix(envProjectId), source: 'session' };
   const def = defaultProject();
   if (def) return { label: def.name || idPrefix(def.project_id), source: 'default' };
   return null;
@@ -161,15 +169,23 @@ export function renderContext(): string {
   // A cwd directory link (`loadLink`) can pin the host — and, with it, the
   // account — for this directory, overriding the globally-active host.
   const directoryLink = loadLink();
-  // Same precedence as renderHostNotice: a platform-injected sandbox token
-  // outranks the cwd link, whose named host has no credentials in a sandbox.
+  // Same precedence as renderHostNotice / resolveProjectContext
+  // (resolveProjectAuth): the cwd link's stored credentials, then the
+  // platform-injected env token (a named link host has none in a sandbox),
+  // then the globally-active host. The link pins the row when its host is
+  // what commands will use — including an unauthenticated one, which still
+  // names the actionable row ("kortix hosts login").
+  const { hostName: linkHostName, auth: linkAuth } = resolveProjectAuth();
   const linkedHost =
-    !hasEnvTokenHost() && directoryLink?.host ? getHost(directoryLink.host) : null;
-  const active = activeHostEntry();
-  const name = linkedHost ? directoryLink!.host! : active.name;
-  const host = linkedHost ?? active.host;
+    linkHostName && (linkAuth?.token || !hasEnvTokenHost()) ? getHost(linkHostName) : null;
+  const { name: activeName, host: activeHost, envWins } = activeHostEntry();
+  const name = linkedHost && linkHostName ? linkHostName : activeName;
+  const host = linkedHost ?? activeHost;
   const signedIn = Boolean(host.token);
-  const authState = hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored');
+  const authState = hostAuthState(
+    host,
+    linkedHost ? 'stored' : envWins ? 'env' : 'stored',
+  );
   const agent = tokenAgent(host);
   const labelW = 7; // "account".length / "project".length / "session".length
 

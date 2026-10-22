@@ -33,11 +33,12 @@
  * `open-bundle` already carries the same discipline
  * (`session-open-bundle.ts:32-35`).
  */
-import { logger } from '../../logger'
+import { KORTIX_RUNTIME_SCHEMA } from '@kortix/api-contract/runtime-relay'
+import { logger } from '@/lib/log/logger'
 import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
 import { OpencodeDb, isSupportedOpencodeVersion } from './opencode-db'
-import { kortixEventBus } from '../../kortix-event-bus'
+import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
 import {
   type AgentProjection,
   type CommandProjection,
@@ -55,6 +56,7 @@ import {
   projectSessions,
   projectStatuses,
 } from './opencode-projection'
+import { v3Commands } from './manifest-v3'
 
 /** Upper bound on how old a served projection can be before a forced rebuild. */
 export const RUNTIME_STATE_FLOOR_MS = 15 * 60_000
@@ -70,13 +72,20 @@ export interface Known<T> {
 }
 
 export interface RuntimeStateDoc {
+  /** The document format (`@kortix/api-contract/runtime-relay`). */
+  schema: typeof KORTIX_RUNTIME_SCHEMA
   /** The daemon boot this projection belongs to; `seq` is only valid inside it. */
   epoch: string
   /** Bus watermark at build time — the client's starting cursor for `/events`. */
   seq: number
   built_at: string
   identity: {
+    harness: 'opencode'
     /** The OpenCode conversation this box is pinned to. */
+    runtime_session_id: string | null
+    /** The OpenCode release serving it. */
+    harness_version: string | null
+    /** Pre-W3 names of the two fields above, for an API that predates them. */
     opencode_session_id: string | null
     opencode_version: string | null
     /** Manifest epoch of the daemon binary, from the convergence report. */
@@ -363,10 +372,14 @@ export class RuntimeStateStore {
         : base?.identity.opencode_version ?? null
 
     const doc: RuntimeStateDoc = {
+      schema: KORTIX_RUNTIME_SCHEMA,
       epoch: kortixEventBus().epoch,
       seq: kortixEventBus().headSeq,
       built_at: new Date(this.now()).toISOString(),
       identity: {
+        harness: 'opencode',
+        runtime_session_id: this.deps.pinnedSessionId(),
+        harness_version: version,
         opencode_session_id: this.deps.pinnedSessionId(),
         opencode_version: version,
         daemon_build:
@@ -375,7 +388,7 @@ export class RuntimeStateStore {
         head_seq: this.deps.db.probe().supported ? this.deps.db.headSeqs() : null,
       },
       agents: section(catalog, agentsRes, base?.agents, projectAgents, []),
-      commands: section(catalog, commandsRes, base?.commands, projectCommands, []),
+      commands: section(catalog, commandsRes, base?.commands, (raw) => projectCommands(raw, v3Commands()), []),
       config: section(catalog, configRes, base?.config, projectConfig, {
         model: null,
         small_model: null,

@@ -3,6 +3,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import {
+  appRuntimeIdentityEnv,
   appViewerScopes,
   appViewerSecret,
   encodeAppViewerContext,
@@ -29,6 +30,15 @@ describe('appViewerSecret', () => {
     expect(appViewerSecret(APP_B)).not.toBe(a);
     expect(a).toMatch(/^[0-9a-f]{64}$/);
     expect(a).not.toContain(process.env.API_KEY_SECRET ?? 'no-secret-configured');
+  });
+});
+
+describe('appRuntimeIdentityEnv', () => {
+  test("carries the App's viewer secret and its account id, which the SDK guard scopes group names to", () => {
+    expect(appRuntimeIdentityEnv({ appId: APP_A, accountId: payload.accountId })).toEqual({
+      KORTIX_APP_VIEWER_SECRET: appViewerSecret(APP_A),
+      KORTIX_APP_ACCOUNT_ID: payload.accountId,
+    });
   });
 });
 

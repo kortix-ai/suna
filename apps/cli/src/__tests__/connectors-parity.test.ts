@@ -22,6 +22,13 @@ let defaultMode = 'risk';
 let discoverEnabled = true;
 /** The accounts GET .../connectors/:slug/accounts returns, default first. */
 let connectorAccounts: Array<Record<string, unknown>> = [];
+/** `connectors_v2` on the project: the move routes answer, else 403 feature_disabled. */
+let connectorsV2 = true;
+/** What POST .../connectors/:slug/move answers, in order (the last one repeats). */
+let moveAnswers: Array<{ status: number; body: unknown }> = [];
+/** Slugs the fake server switched to `mcp`: an active sign-in switches the marked connector. */
+let switched = new Set<string>();
+let switchOnSignIn = true;
 
 function writeConfig(apiBase: string): string {
   const path = join(tmp, 'config.json');
@@ -54,6 +61,53 @@ function startServer(): string {
       calls.push({ method: req.method, path: url.pathname + url.search, body });
       const ex = `/v1/connectors/projects/${PROJECT}`;
 
+      // ── Pipedream → Kortix moves (connectors_v2) ─────────────────────────
+      const moveGate = () =>
+        Response.json(
+          { error: 'Connectors v2 is not enabled for this project. Enable it in Settings → Feature flags.', code: 'feature_disabled', feature: 'connectors_v2' },
+          { status: 403 },
+        );
+      if (url.pathname === `/v1/projects/${PROJECT}/connector-moves` && req.method === 'GET') {
+        if (!connectorsV2) return moveGate();
+        return Response.json({
+          moves: [
+            { slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'hubspot', to: null, connection_id: null, signed_in: false, accounts: 1 },
+            { slug: 'linear', name: 'Linear', provider: 'pipedream', app: 'linear_app', to: { slug: 'linear', name: 'Linear', icon: null }, connection_id: null, signed_in: false, accounts: 2 },
+            { slug: 'mail', name: 'Mail', provider: 'composio', app: 'gmail', to: { slug: 'gmail', name: 'Gmail', icon: null }, connection_id: null, signed_in: false, accounts: 1 },
+            { slug: 'notes', name: 'Notes', provider: 'pipedream', app: 'notion', to: { slug: 'notion', name: 'Notion', icon: null }, connection_id: 'conn_move', signed_in: false, accounts: 1 },
+          ].filter((move) => !switched.has(move.slug)),
+        });
+      }
+      if (/^\/v1\/projects\/proj_connectors\/connectors\/[^/]+\/move$/.test(url.pathname) && req.method === 'POST') {
+        if (!connectorsV2) return moveGate();
+        const answer = moveAnswers.length > 1 ? moveAnswers.shift()! : moveAnswers[0]!;
+        return Response.json(answer.body, { status: answer.status });
+      }
+      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/discover-resource`) {
+        return Response.json({
+          discovery: {
+            resource_url: 'https://mcp.linear.test/mcp',
+            requires_authorization: true,
+            resource_name: 'Linear',
+            authorization_server: 'https://auth.linear.test',
+            registration_endpoint: 'https://auth.linear.test/register',
+            metadata: { authorization_url: 'https://auth.linear.test/authorize', token_url: 'https://auth.linear.test/token' },
+            scopes: [],
+            warnings: [],
+          },
+        });
+      }
+      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/register`) {
+        return Response.json({ application: { client_id: 'cli_move' } });
+      }
+      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/authorize`) {
+        return Response.json({ authorization_url: 'https://auth.linear.test/authorize?state=s1', expires_at: '2026-10-19T12:00:00.000Z' });
+      }
+      if (url.pathname === `/v1/projects/${PROJECT}/connections/conn_move/oauth2/status`) {
+        if (switchOnSignIn) switched.add('linear');
+        return Response.json({ status: 'active', scopes: [] });
+      }
+
       if (url.pathname === `${ex}/policies` && req.method === 'GET') {
         return Response.json({ policies: projectPolicies, defaultMode });
       }
@@ -77,9 +131,10 @@ function startServer(): string {
           requestId: 'auth_1',
         });
       }
-      if (url.pathname === `${ex}/connectors/gmail/accounts` && req.method === 'GET') {
+      const accountsSlug = /\/connectors\/(gmail|computer)\/accounts$/.exec(url.pathname)?.[1];
+      if (accountsSlug && url.pathname.startsWith(ex) && req.method === 'GET') {
         return Response.json({
-          connector: 'gmail',
+          connector: accountsSlug,
           accounts: connectorAccounts,
         });
       }
@@ -119,17 +174,27 @@ function startServer(): string {
           hasMore: true,
         });
       }
-      if (url.pathname === `${ex}/connectors/desk/config` && req.method === 'GET') {
-        return Response.json({
-          slug: 'desk',
-          name: 'Desk',
-          provider: 'computer',
-          tunnelIds: ['11111111-1111-4111-8111-111111111111'],
-          auth: { type: 'none', in: 'header', name: null, prefix: null },
-        });
-      }
       if (url.pathname === `${ex}/connectors/gmail/config` && req.method === 'GET') {
         return Response.json({ slug: 'gmail', name: 'Gmail', provider: 'pipedream', auth: { type: 'none' } });
+      }
+      if (url.pathname === `${ex}/connectors` && req.method === 'GET') {
+        return Response.json({
+          connectors: [
+            {
+              slug: 'gmail',
+              name: 'Gmail',
+              provider: 'composio',
+              status: 'active',
+              credentialMode: 'shared',
+              actions: [
+                { path: 'send', name: 'Send', description: 'Send an email', risk: 'write', inputSchema: null },
+              ],
+              authSecret: 'credential',
+              secretSet: true,
+              accounts: [],
+            },
+          ],
+        });
       }
       if (url.pathname === `${ex}/connectors` && req.method === 'POST') {
         return Response.json({ ok: true, sync: { synced: 1, errors: [] } });
@@ -221,9 +286,13 @@ describe('kortix connectors — capability-page parity', () => {
     tmp = mkdtempSync(join(tmpdir(), 'kortix-connectors-'));
     process.env = { ...ORIGINAL_ENV };
     calls = [];
+    switched = new Set();
+    switchOnSignIn = true;
     projectPolicies = [{ match: 'send_*', action: 'require_approval' }];
     defaultMode = 'risk';
     discoverEnabled = true;
+    connectorsV2 = true;
+    moveAnswers = [{ status: 200, body: { status: 'moved' } }];
     connectorAccounts = [
       {
         connection_id: '11111111-1111-4111-8111-111111111111',
@@ -251,9 +320,52 @@ describe('kortix connectors — capability-page parity', () => {
   test('--help documents every new subcommand', async () => {
     const r = await runCli(['connectors', '--help']);
     expect(r.code).toBe(0);
-    for (const fragment of ['sensitive <slug> on|off', 'owner <slug> project|user', 'catalog show <id>', 'machines <slug>', 'policy add <match> <action>', 'policy rm <match>', '--device']) {
+    for (const fragment of ['sensitive <slug> on|off', 'owner <slug> project|user', 'catalog show <id>', 'policy add <match> <action>', 'policy rm <match>', '--device']) {
       expect(r.stdout).toContain(fragment);
     }
+  });
+
+  test('--help documents computers as accounts, not a machines subcommand', async () => {
+    const r = await runCli(['connectors', '--help']);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toContain('machines <slug>');
+    expect(r.stdout).toContain('--account "<machine name>"');
+  });
+
+  test('ls and show opt out of action schemas; show --json still asks for them', async () => {
+    const config = writeConfig(startServer());
+
+    // The human views render name/status/action count only, so they must not
+    // pull the full per-action JSON Schema (the bulk of the route's payload).
+    const ls = await runCli(['connectors', 'ls', '--project', PROJECT], config);
+    expect(ls.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'GET',
+      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=false`,
+      body: null,
+    });
+
+    calls = [];
+    const show = await runCli(['connectors', 'show', 'gmail', '--project', PROJECT], config);
+    expect(show.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'GET',
+      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=false`,
+      body: null,
+    });
+
+    // `--json` is a scripting contract that historically included the schemas.
+    calls = [];
+    const showJson = await runCli(
+      ['connectors', 'show', 'gmail', '--project', PROJECT, '--json'],
+      config,
+    );
+    expect(showJson.code).toBe(0);
+    expect(calls.at(-1)).toEqual({
+      method: 'GET',
+      path: `/v1/connectors/projects/${PROJECT}/connectors?include_schemas=true`,
+      body: null,
+    });
   });
 
   test('sensitive on|off PUTs the boolean', async () => {
@@ -490,6 +602,26 @@ describe('kortix connectors — capability-page parity', () => {
     });
   });
 
+  // A computer is paired, not connected with a credential: `connect computer`
+  // cannot add one, so the remedy names the desktop app and the pairing command.
+  test('accounts with no computer connected names pairing, not connect, in both faces', async () => {
+    connectorAccounts = [];
+    const config = writeConfig(startServer());
+    const human = await runCli(['connectors', 'accounts', 'computer', '--project', PROJECT], config);
+    expect(human.code).toBe(0);
+    expect(human.stdout).toContain('No computer is connected.');
+    expect(human.stdout).toContain('npx @kortix/agent-tunnel connect');
+    expect(human.stdout).not.toContain('connectors connect computer');
+
+    const json = await runCli(['connectors', 'accounts', 'computer', '--project', PROJECT, '--json'], config);
+    expect(json.code).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual({
+      connector: 'computer',
+      accounts: [],
+      note: 'No computer is connected. Connect one from the Kortix desktop app, or run `npx @kortix/agent-tunnel connect` on the computer.',
+    });
+  });
+
   test('catalog lists records and forwards q + cursor', async () => {
     const config = writeConfig(startServer());
     const r = await runCli(['connectors', 'catalog', 'pay', '--cursor', 'cur_1', '--project', PROJECT], config);
@@ -516,47 +648,16 @@ describe('kortix connectors — capability-page parity', () => {
     expect(r.stderr).toContain('Connector discovery is not enabled for this project');
   });
 
-  test('machines --show reads the config without writing', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['connectors', 'machines', 'desk', '--show', '--project', PROJECT], config);
-    expect(r.code).toBe(0);
-    expect(calls.map((c) => c.method)).toEqual(['GET']);
-    expect(r.stdout).toContain('11111111-1111-4111-8111-111111111111');
-  });
-
-  test('machines --add/--rm read-merge-write the whole tunnel_ids list', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(
-      ['connectors', 'machines', 'desk', '--add', '22222222-2222-4222-8222-222222222222', '--rm', '11111111-1111-4111-8111-111111111111', '--project', PROJECT],
-      config,
-    );
-    expect(r.code).toBe(0);
-    expect(calls.at(-1)).toEqual({
-      method: 'POST',
-      path: `/v1/connectors/projects/${PROJECT}/connectors`,
-      body: {
-        slug: 'desk',
-        name: 'Desk',
-        provider: 'computer',
-        tunnel_ids: ['22222222-2222-4222-8222-222222222222'],
-      },
+  for (const sub of ['machines', 'computers']) {
+    test(`${sub} is removed: it points at computer accounts and sends no request`, async () => {
+      const config = writeConfig(startServer());
+      const r = await runCli(['connectors', sub, 'desk', '--add', '22222222-2222-4222-8222-222222222222', '--project', PROJECT], config);
+      expect(r.code).toBe(2);
+      expect(r.stderr).toContain('kortix connectors accounts computer');
+      expect(r.stderr).toContain('--account');
+      expect(calls).toEqual([]);
     });
-  });
-
-  test('machines refuses to empty the list — the route would 400', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['connectors', 'machines', 'desk', '--rm', '11111111-1111-4111-8111-111111111111', '--project', PROJECT], config);
-    expect(r.code).toBe(2);
-    expect(r.stderr).toContain('at least one machine');
-    expect(calls.some((c) => c.method === 'POST')).toBe(false);
-  });
-
-  test('machines on a non-computer connector says so', async () => {
-    const config = writeConfig(startServer());
-    const r = await runCli(['connectors', 'machines', 'gmail', '--project', PROJECT], config);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain('is a pipedream connector');
-  });
+  }
 
   test('policy show prints the default mode and every rule with its conditions', async () => {
     const config = writeConfig(startServer());
@@ -591,6 +692,27 @@ describe('kortix connectors — capability-page parity', () => {
       defaultMode: 'risk',
     });
     expect(r.stdout).toContain('delete_* → block when scope=prod, actor!=bot');
+  });
+
+  test('policy add preserves != inside matcher values in the wire payload and label', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(
+      ['connectors', 'policy', 'add', 'send_*', 'block', '--condition', 'to=a!=b', '--condition', 'subject!=a!=b', '--project', PROJECT],
+      config,
+    );
+    expect(r.code).toBe(0);
+    expect(calls.find((c) => c.method === 'PUT')?.body).toEqual({
+      policies: [{
+        match: 'send_*',
+        action: 'block',
+        conditions: [
+          { arg: 'to', match: 'a!=b' },
+          { arg: 'subject', match: 'a!=b', negate: true },
+        ],
+      }],
+      defaultMode: 'risk',
+    });
+    expect(r.stdout).toContain('send_* → block when to=a!=b, subject!=a!=b');
   });
 
   test('policy add rejects a malformed --condition before any write', async () => {
@@ -686,6 +808,82 @@ describe('kortix connectors — capability-page parity', () => {
     expect(parsed.user_code).toBe('WDJB-MJHT');
     expect(parsed.session_id).toBe('sess_dev');
     expect(calls.some((c) => c.path.endsWith('/device/sess_dev'))).toBe(false);
+  });
+
+  test('moves tables each Pipedream and Composio connector, its Kortix app and the move state', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'moves', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v1/projects/${PROJECT}/connector-moves`]);
+    const lines = r.stdout.split('\n').map((line) => line.trim());
+    expect(lines).toContain('SLUG     PROVIDER    APP          MOVES TO   STATE               ACCOUNTS');
+    expect(lines).toContain('crm      pipedream   hubspot      —          no Kortix app yet   1');
+    expect(lines).toContain('linear   pipedream   linear_app   Linear     ready               2');
+    expect(lines).toContain('mail     composio    gmail        Gmail      ready               1');
+    expect(lines).toContain('notes    pipedream   notion       Notion     signing in          1');
+    expect(r.stdout).toContain('Move one: kortix connectors move <slug>');
+  });
+
+  test('moves --json emits the API payload', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'moves', '--json', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout) as { moves: Array<{ slug: string; provider: string; to: { slug: string; name: string; icon: string | null } | null }> };
+    expect(parsed.moves.map((m) => m.slug)).toEqual(['crm', 'linear', 'mail', 'notes']);
+    expect(parsed.moves[2]!.provider).toBe('composio');
+    expect(parsed.moves[1]!.to).toEqual({ slug: 'linear', name: 'Linear', icon: null });
+  });
+
+  test('moves without connectors_v2 prints the gate and the command that turns it on', async () => {
+    const config = writeConfig(startServer());
+    connectorsV2 = false;
+    const r = await runCli(['connectors', 'moves', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Connectors v2 is not enabled for this project');
+    expect(r.stderr).toContain('kortix projects features enable connectors_v2');
+  });
+
+  test('move on a connector already on its Kortix app says there is nothing to move', async () => {
+    const config = writeConfig(startServer());
+    const r = await runCli(['connectors', 'move', 'linear', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(calls).toEqual([{ method: 'POST', path: `/v1/projects/${PROJECT}/connectors/linear/move`, body: {} }]);
+    expect(r.stdout).toContain('linear already uses its Kortix app (provider mcp). Nothing to move.');
+    expect(r.stdout).not.toContain('sign in again');
+  });
+
+  test('move signs in on the marked account, waits for the token, then finishes the move', async () => {
+    const config = writeConfig(startServer());
+    moveAnswers = [
+      { status: 200, body: { status: 'sign_in', connection_id: 'conn_move', to: { slug: 'linear', name: 'Linear', url: 'https://mcp.linear.test/mcp' } } },
+      { status: 200, body: { status: 'moved' } },
+    ];
+    const r = await runCli(['connectors', 'move', 'linear', '--connection', 'conn_move', '--no-open', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    const oauth2 = `/v1/projects/${PROJECT}/connections/conn_move/oauth2`;
+    // The server switches on the sign-in by itself: the CLI waits for it, no second write.
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      `POST /v1/projects/${PROJECT}/connectors/linear/move`,
+      `POST ${oauth2}/discover-resource`,
+      `POST ${oauth2}/register`,
+      `POST ${oauth2}/authorize`,
+      `GET ${oauth2}/status`,
+      `GET /v1/projects/${PROJECT}/connector-moves`,
+    ]);
+    expect(calls[0]!.body).toEqual({ connection_id: 'conn_move' });
+    expect(r.stdout).toContain('https://auth.linear.test/authorize?state=s1');
+    expect(r.stdout).not.toContain('Opened in your browser');
+    expect(r.stdout).toContain('Signed in');
+    expect(r.stdout).toContain('linear now uses Linear (provider mcp) and keeps its slug.');
+  });
+
+  test('move prints the API refusal and exits non-zero', async () => {
+    const config = writeConfig(startServer());
+    moveAnswers = [{ status: 409, body: { error: 'Only a Pipedream connector moves. gmail uses composio.' } }];
+    const r = await runCli(['connectors', 'move', 'gmail', '--project', PROJECT], config);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Only a Pipedream connector moves. gmail uses composio.');
+    expect(calls).toHaveLength(1);
   });
 
   test('connector-scoped policy verbs still work unchanged', async () => {

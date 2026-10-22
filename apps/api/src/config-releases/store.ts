@@ -26,8 +26,10 @@ import { ObjectStore, type PutOutcome } from '../object-store/s3';
 import { isUuid } from '../shared/validate';
 
 export interface ConfigArchiveStore {
-  putIfAbsent(key: string, body: Buffer): Promise<PutOutcome>;
+  putIfAbsent(key: string, body: Buffer, contentType?: string): Promise<PutOutcome>;
   downloadUrl(key: string, ttlSeconds: number): Promise<string | null>;
+  /** A signed GET URL, without checking that the object exists. Local signing: no store call. */
+  signedUrl(key: string, ttlSeconds: number): Promise<string>;
   exists(key: string): Promise<boolean>;
   /**
    * Retention: keep the `keep` newest archives of one project, delete the
@@ -37,8 +39,6 @@ export interface ConfigArchiveStore {
   pruneProject(projectId: string, keep: number): Promise<string[]>;
 }
 
-/** Default bucket name in a Supabase-backed environment (created by migration). */
-export const CONFIG_RELEASES_BUCKET = 'kortix-config-releases';
 export const CONFIG_ARCHIVE_URL_TTL_SECONDS = 900;
 export const CONFIG_ARCHIVE_CONTENT_TYPE = 'application/gzip';
 
@@ -56,14 +56,15 @@ export function configArchiveKey(projectId: string, configTreeId: string): strin
   return `${configArchiveProjectPrefix(projectId)}${configTreeId}.tar.gz`;
 }
 
-export class ConfigArchiveStoreError extends Error {
-  constructor(
-    message: string,
-    readonly status: number | null,
-  ) {
-    super(message);
-    this.name = 'ConfigArchiveStoreError';
-  }
+/**
+ * Object key of a published release descriptor (`publish.ts`). One key per
+ * publish: the bucket lifecycle expires an object 30 days after it was
+ * written, so a republish writes a new object instead of keeping an old one.
+ */
+export function configReleaseDescriptorKey(projectId: string, commit: string, publishedAt: Date): string {
+  if (!isUuid(projectId)) throw new Error(`invalid project id: ${projectId}`);
+  if (!TREE_ID.test(commit)) throw new Error(`invalid commit: ${commit}`);
+  return `${configArchiveProjectPrefix(projectId).replace(/trees\/$/, 'releases/')}${commit}-${publishedAt.getTime()}.json`;
 }
 
 /**
@@ -86,8 +87,12 @@ export class S3ConfigArchiveStore implements ConfigArchiveStore {
     return `${this.prefix}${key}`;
   }
 
-  putIfAbsent(key: string, body: Buffer): Promise<PutOutcome> {
-    return this.objects.putIfAbsent({ key: this.objectKey(key), body, contentType: CONFIG_ARCHIVE_CONTENT_TYPE });
+  putIfAbsent(key: string, body: Buffer, contentType = CONFIG_ARCHIVE_CONTENT_TYPE): Promise<PutOutcome> {
+    return this.objects.putIfAbsent({ key: this.objectKey(key), body, contentType });
+  }
+
+  async signedUrl(key: string, ttlSeconds: number): Promise<string> {
+    return (await this.objects.presignDownload(this.objectKey(key), ttlSeconds)).url;
   }
 
   async exists(key: string): Promise<boolean> {
@@ -107,51 +112,18 @@ export class S3ConfigArchiveStore implements ConfigArchiveStore {
 
   async pruneProject(projectId: string, keep: number): Promise<string[]> {
     if (!Number.isInteger(keep) || keep < 1) throw new Error('keep must be at least 1');
-    const prefix = this.objectKey(configArchiveProjectPrefix(projectId));
-    const found = await this.objects.list(prefix, { pageSize: 1000, maxPages: 4 });
-    if (found.length <= keep) return [];
-    const ordered = [...found].sort((a, b) => (b.lastModified?.getTime() ?? 0) - (a.lastModified?.getTime() ?? 0));
-    const stale = ordered.slice(keep);
-    await this.objects.remove(stale.map((o) => o.key));
-    return stale.map((o) => o.key.slice(this.prefix.length));
-  }
-}
-
-/** In-memory store for unit tests. It keeps the real store's first-write-wins rule. */
-export class MemoryConfigArchiveStore implements ConfigArchiveStore {
-  readonly objects = new Map<string, Buffer>();
-  /** When set, every call throws it. Simulates an unavailable store. */
-  failWith: Error | null = null;
-  puts = 0;
-
-  async putIfAbsent(key: string, body: Buffer): Promise<PutOutcome> {
-    if (this.failWith) throw this.failWith;
-    this.puts += 1;
-    if (this.objects.has(key)) return 'exists';
-    this.objects.set(key, Buffer.from(body));
-    return 'created';
-  }
-
-  async downloadUrl(key: string, ttlSeconds: number): Promise<string | null> {
-    if (this.failWith) throw this.failWith;
-    if (!this.objects.has(key)) return null;
-    return `memory://config-archives/${key}?expiresIn=${ttlSeconds}`;
-  }
-
-  async exists(key: string): Promise<boolean> {
-    if (this.failWith) throw this.failWith;
-    return this.objects.has(key);
-  }
-
-  async pruneProject(projectId: string, keep: number): Promise<string[]> {
-    if (this.failWith) throw this.failWith;
-    if (!Number.isInteger(keep) || keep < 1) throw new Error('keep must be at least 1');
-    const prefix = configArchiveProjectPrefix(projectId);
-    // Insertion order is write order, so the tail is the newest.
-    const mine = [...this.objects.keys()].filter((key) => key.startsWith(prefix));
-    const stale = mine.slice(0, Math.max(0, mine.length - keep));
-    for (const key of stale) this.objects.delete(key);
-    return stale;
+    const archives = configArchiveProjectPrefix(projectId);
+    const deleted: string[] = [];
+    // Published descriptors (`configReleaseDescriptorKey`) are bounded the same way.
+    for (const layoutPrefix of [archives, archives.replace(/trees\/$/, 'releases/')]) {
+      const found = await this.objects.list(this.objectKey(layoutPrefix), { pageSize: 1000, maxPages: 4 });
+      if (found.length <= keep) continue;
+      const ordered = [...found].sort((a, b) => (b.lastModified?.getTime() ?? 0) - (a.lastModified?.getTime() ?? 0));
+      const stale = ordered.slice(keep);
+      await this.objects.remove(stale.map((o) => o.key));
+      deleted.push(...stale.map((o) => o.key.slice(this.prefix.length)));
+    }
+    return deleted;
   }
 }
 
@@ -169,11 +141,6 @@ function configArchiveTarget() {
   };
 }
 
-/** True when this environment names a bucket for config archives. */
-export function configArchiveStorageConfigured(): boolean {
-  return config.KORTIX_CONFIG_ARCHIVE_S3_BUCKET.trim().length > 0;
-}
-
 let store: ConfigArchiveStore | null = null;
 
 /** The process store. Built lazily so an import never touches the network. */
@@ -182,9 +149,4 @@ export function getConfigArchiveStore(): ConfigArchiveStore {
     store = new S3ConfigArchiveStore(new ObjectStore(configArchiveTarget), config.KORTIX_CONFIG_ARCHIVE_S3_PREFIX);
   }
   return store;
-}
-
-/** Tests only: replace the process store. `null` restores the default. */
-export function setConfigArchiveStoreForTests(next: ConfigArchiveStore | null): void {
-  store = next;
 }

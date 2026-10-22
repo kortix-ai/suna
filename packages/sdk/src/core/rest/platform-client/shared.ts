@@ -6,8 +6,10 @@
  * the barrel index.ts, so the public surface stays unchanged.
  */
 
+import { backendApi } from '../../http/api-client';
 import { platformConfig } from '../../http/config';
 import { safeEnv } from '../../http/env';
+import { stripTrailingSlashes } from '../../../platform/strings';
 import {
   listProjectSessions,
   listProjects,
@@ -36,10 +38,10 @@ export function getPlatformUrl(): string {
   return 'http://localhost:8008/v1';
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-function isDbSandboxId(sandboxId: string | null | undefined): sandboxId is string {
-  return !!sandboxId && UUID_RE.test(sandboxId);
+/** Backend URL → platform API base: trailing slashes stripped, `/v1` appended when absent. */
+export function platformApiBase(backendUrl: string): string {
+  const base = stripTrailingSlashes(backendUrl);
+  return base.endsWith('/v1') ? base : `${base}/v1`;
 }
 
 export function normalizeSandboxId(value: unknown): string | undefined {
@@ -61,25 +63,6 @@ export function normalizeSandboxId(value: unknown): string | undefined {
   return undefined;
 }
 
-export interface LocalBridgeSandboxResponse {
-  success: boolean;
-  status?: string;
-  data?: SandboxInfo | null;
-}
-
-export const LOCAL_PLATFORM_CANDIDATES = [
-  'http://localhost:8008/v1',
-  'http://127.0.0.1:8008/v1',
-];
-
-export function getLocalBridgeStatusUrl(baseUrl: string): string {
-  // Linear trailing-slash strip — the regex form (/\/+$/) backtracks
-  // quadratically on adversarial input (CodeQL js/polynomial-redos).
-  let end = baseUrl.length;
-  while (end > 0 && baseUrl.charCodeAt(end - 1) === 47 /* '/' */) end--;
-  return `${baseUrl.slice(0, end)}/platform/local-bridge/status`;
-}
-
 function normalizeSessionStatus(status: string | undefined): string {
   if (status === 'running' || status === 'active') return 'active';
   if (status === 'queued' || status === 'branching' || status === 'provisioning') return 'provisioning';
@@ -93,12 +76,13 @@ export function projectSessionToSandboxInfo(
   session: ProjectSession,
   runtime?: ProjectSessionSandbox | null,
 ): SandboxInfo {
-  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
+  // '' when the session has no sandbox yet: the same falsy value callers test.
+  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id || '';
   return {
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,
     name: session.name || `${project.name} session`,
-    provider: (runtime?.provider as SandboxProviderName | null) || (session.sandbox_provider as SandboxProviderName | null) || 'daytona',
+    provider: (runtime?.provider as SandboxProviderName | null) || (session.sandbox_provider as SandboxProviderName | null) || 'platinum',
     base_url: runtime?.base_url || session.sandbox_url || (runtime?.external_id ? `${getPlatformUrl()}/p/${runtime.external_id}/${SANDBOX_PORTS.KORTIX_MASTER}` : ''),
     status: normalizeSessionStatus(runtime?.status || session.status),
     metadata: {
@@ -152,6 +136,39 @@ export async function listProjectSessionSandboxes(): Promise<Array<{
   });
 }
 
+/**
+ * One session by id, in any project the caller may read:
+ * `GET /v1/sessions/:sessionId` (KRTX-2316). `null` when the id names no
+ * session the caller can see (400: not a session id; 404: unknown, hidden or
+ * deleted). Any other failure throws.
+ */
+export async function getSessionById(sessionId: string): Promise<ProjectSession | null> {
+  const response = await backendApi.get<ProjectSession>(`/sessions/${encodeURIComponent(sessionId)}`, {
+    showErrors: false,
+  });
+  if (response.success && response.data) return response.data;
+  if (response.error?.status === 400 || response.error?.status === 404) return null;
+  throw response.error ?? new Error('Session request failed');
+}
+
+/**
+ * The project and session an id names. A session id is read by id, in one
+ * request, however old the session is. Any other id (a provider external id)
+ * falls back to each project's FIRST sessions page, so it resolves only a
+ * session on that page.
+ */
+export async function resolveProjectSessionId(id: string): Promise<{ projectId: string; sessionId: string } | null> {
+  const session = await getSessionById(id);
+  if (session) return { projectId: session.project_id, sessionId: session.session_id };
+  const row = await findProjectSessionSandbox(id);
+  return row ? { projectId: row.project.project_id, sessionId: row.session.session_id } : null;
+}
+
+/**
+ * Every project's FIRST sessions page, scanned: `sandboxId` omitted picks the
+ * most relevant row (active, then provisioning, stopped, error). Resolve a
+ * session id with `resolveProjectSessionId` instead.
+ */
 export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
   project: KortixProject;
   session: ProjectSession;

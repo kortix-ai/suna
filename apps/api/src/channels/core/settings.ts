@@ -20,7 +20,7 @@ import { type ChatUser, resolveProjectChatActor } from './identity';
  * project managers and by account owners and admins, through a linked chat
  * identity. A one-to-one conversation with the bot (a Slack DM, a Teams
  * personal chat) affects only that person, so there the bar is the one for
- * sending a message: `project.write`. Every Slack command, Slack button, Teams
+ * sending a message: `project.session.start`. Every Slack command, Slack button, Teams
  * command and Teams card that writes a setting goes through
  * `authorizeChannelSettings`, so that check exists once. The model setters
  * (slack/model-choice.ts, teams/model-choice.ts) call `authorizeChannelChange`.
@@ -46,7 +46,7 @@ export async function authorizeChannelSettings(
   projectId: string,
   opts: { oneToOne?: boolean } = {},
 ): Promise<{ ok: true; userId: string } | { ok: false; reason: 'unlinked' | 'forbidden' }> {
-  const action = opts.oneToOne ? PROJECT_ACTIONS.PROJECT_WRITE : PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE;
+  const action = opts.oneToOne ? PROJECT_ACTIONS.PROJECT_SESSION_START : PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE;
   const actor = await resolveProjectChatActor(user, projectId, action);
   if ('userId' in actor) return { ok: true, userId: actor.userId };
   return { ok: false, reason: actor.reason === 'unlinked' ? 'unlinked' : 'forbidden' };

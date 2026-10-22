@@ -59,3 +59,16 @@ describe('onTabVisible', () => {
     expect(() => onTabVisible(() => {}, undefined)()).not.toThrow();
   });
 });
+
+test('a host without a document runs on the host visible signal, and only on it', async () => {
+  const { notifyHostSignal } = await import('../../core/session/host-signals');
+  let runs = 0;
+  const stop = onTabVisible(() => runs++, undefined);
+  notifyHostSignal('online');
+  expect(runs).toBe(0);
+  notifyHostSignal('visible');
+  expect(runs).toBe(1);
+  stop();
+  notifyHostSignal('visible');
+  expect(runs).toBe(1);
+});

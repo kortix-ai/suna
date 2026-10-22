@@ -1,7 +1,5 @@
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-
-const WORKSPACE = '/workspace';
+import { WORKSPACE, sessionRuntimeFetch } from './runtime-fetch';
 
 export type ReleaseOutcome = 'released' | 'already_answered' | 'unreachable';
 
@@ -40,15 +38,10 @@ export async function releaseRuntimeQuestion(
   try {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     if (!resolved) return 'unreachable';
-    const url = `${resolved.endpoint.url}/question/${encodeURIComponent(requestId)}/reply?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: sandboxRuntimeRequestHeaders({
-        ...resolved.endpoint.headers,
-        'Content-Type': 'application/json',
-      }),
+    const path = `/question/${encodeURIComponent(requestId)}/reply?directory=${encodeURIComponent(WORKSPACE)}`;
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', path, {
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ answers }),
-      signal: AbortSignal.timeout(5_000),
     });
     if (res.ok) return 'released';
     if (res.status === 404) return 'already_answered';

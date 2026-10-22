@@ -21,10 +21,16 @@ import {
   type RegistryJson,
 } from './schema';
 import {
+  manifestOpencodeDir,
   parseFrontmatter,
   projectNameFromManifest,
-  resolveOpencodeDir,
 } from './manifest';
+import {
+  AGENTS_DIR,
+  LEGACY_OPENCODE_CONFIG_DIR,
+  OPENCODE_CONFIG_DIR,
+  SKILLS_DIR,
+} from '@kortix/manifest-schema/layout';
 import { buildTarget } from './paths';
 import { groupSkillFiles } from './skills';
 
@@ -106,8 +112,12 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
   const source = opts.source ?? nodeFsSource(root);
   const files = source.listFiles();
 
-  const manifestRaw = readOptional(source, 'kortix.toml');
-  const configDir = resolveOpencodeDir(manifestRaw);
+  const manifestRaw = readOptional(source, 'kortix.yaml') ?? readOptional(source, 'kortix.toml');
+  const explicitDir = manifestOpencodeDir(manifestRaw);
+  // The legacy layout kept agents/ and skills/ in the OpenCode config dir.
+  const configDir = explicitDir ?? LEGACY_OPENCODE_CONFIG_DIR;
+  // OpenCode-only commands and tools: the manifest's dir, else both defaults.
+  const opencodeDirs = explicitDir ? [explicitDir] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR];
   const name = opts.name ?? projectNameFromManifest(manifestRaw) ?? 'registry';
 
   const items: RegistryItem[] = [];
@@ -121,8 +131,10 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
     counts[kind] = (counts[kind] ?? 0) + 1;
   };
 
-  // --- skills: <cd>/skills/**/SKILL.md (the dir holding SKILL.md is the skill)
-  for (const sk of groupSkillFiles(files, `${configDir}/skills`)) {
+  // --- skills: skills/**/SKILL.md, then the legacy <cd>/skills/**/SKILL.md
+  // (the dir holding SKILL.md is the skill; a name found twice keeps the first)
+  const skills = [SKILLS_DIR, `${configDir}/skills`].flatMap((root) => groupSkillFiles(files, root));
+  for (const sk of skills) {
     const meta = parseFrontmatter(readOptional(source, sk.skillMd));
     const defaultProjectInstall =
       meta.defaultProjectInstall === 'true'
@@ -154,13 +166,15 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
     );
   }
 
-  // --- agents + commands: <cd>/agent(s)/<file>.md, <cd>/command(s)/<file>.md
-  collectFlatMd(files, source, configDir, ['agents', 'agent'], 'registry:agent', name, add, 'agent', buildTarget.agent);
-  collectFlatMd(files, source, configDir, ['commands', 'command'], 'registry:command', name, add, 'command', buildTarget.command);
+  // --- agents: agents/<file>.md, then the legacy <cd>/agent(s)/<file>.md
+  // --- commands (OpenCode only): <opencode dir>/command(s)/<file>.md
+  collectFlatMd(files, source, [AGENTS_DIR, `${configDir}/agents`, `${configDir}/agent`], 'registry:agent', name, add, 'agent', buildTarget.agent);
+  collectFlatMd(files, source, opencodeDirs.flatMap((dir) => [`${dir}/commands`, `${dir}/command`]), 'registry:command', name, add, 'command', buildTarget.command);
 
-  // --- tools: <cd>/tools/<file>.ts
+  // --- tools: <opencode dir>/tools/<file>.ts
+  const toolRe = new RegExp(`^(?:${opencodeDirs.map(escapeRe).join('|')})/tools/([^/]+)\\.ts$`);
   for (const file of files) {
-    const m = file.match(new RegExp(`^${escapeRe(configDir)}/tools/([^/]+)\\.ts$`));
+    const m = file.match(toolRe);
     if (!m) continue;
     add(
       {
@@ -199,7 +213,6 @@ export function buildRegistry(opts: BuildOptions = {}): BuildResult {
 function collectFlatMd(
   files: string[],
   source: BuildSource,
-  configDir: string,
   dirs: string[],
   type: RegistryItem['type'],
   registryName: string,
@@ -208,7 +221,7 @@ function collectFlatMd(
   target: (file: string) => string,
 ): void {
   for (const dir of dirs) {
-    const re = new RegExp(`^${escapeRe(configDir)}/${dir}/([^/]+)\\.md$`);
+    const re = new RegExp(`^${escapeRe(dir)}/([^/]+)\\.md$`);
     for (const file of files) {
       const m = file.match(re);
       if (!m) continue;

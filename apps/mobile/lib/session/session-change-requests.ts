@@ -1,6 +1,6 @@
 /**
- * session-change-requests — the change requests one session opened, as the
- * thread's bottom cards (`SessionChangeRequests`).
+ * session-change-requests — the change requests one session opened, as cards
+ * at the end of the turn that opened each one (`SessionChangeRequests`).
  *
  * Web shows each change request as an outcome card in the thread
  * (`features/session/outcomes/change-request-outcomes.ts`). Mobile reads them
@@ -13,7 +13,7 @@
  */
 import type { ReviewItem, ReviewItemStatus } from '@kortix/sdk';
 
-type ChangeItem = Extract<ReviewItem, { kind: 'change' }>;
+export type ChangeItem = Extract<ReviewItem, { kind: 'change' }>;
 
 /** The change requests `projectSessionId` opened, oldest first. */
 export function sessionChangeRequests(
@@ -24,6 +24,42 @@ export function sessionChangeRequests(
   return items
     .filter((item): item is ChangeItem => item.kind === 'change' && item.sessionId === projectSessionId)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** A turn's key (its user message id) and its start, epoch ms. */
+export interface TurnStart {
+  key: string;
+  startedAt: number | null;
+}
+
+/**
+ * Which turn shows each change request: the turn with the latest start at or
+ * before the change request's `createdAt` (web `anchorOutcomes`). Nothing is
+ * dropped: one opened before the first loaded turn anchors to the first.
+ * Turns that opened none have no entry.
+ */
+export function anchorChangeRequests(
+  items: readonly ChangeItem[],
+  turns: readonly TurnStart[],
+): Map<string, ChangeItem[]> {
+  const byTurn = new Map<string, ChangeItem[]>();
+  if (turns.length === 0) return byTurn;
+  for (const item of items) {
+    const at = Date.parse(item.createdAt);
+    let target = turns[0];
+    let best = -Infinity;
+    for (const turn of turns) {
+      if (turn.startedAt === null) continue;
+      if (turn.startedAt <= at && turn.startedAt > best) {
+        best = turn.startedAt;
+        target = turn;
+      }
+    }
+    const list = byTurn.get(target.key);
+    if (list) list.push(item);
+    else byTurn.set(target.key, [item]);
+  }
+  return byTurn;
 }
 
 // Web's words (`change-request-outcomes.ts`): open · merged · closed.

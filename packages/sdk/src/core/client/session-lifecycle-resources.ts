@@ -1,0 +1,105 @@
+import { backendApi } from '../http/api-client';
+
+import * as P from '../rest/projects-client';
+
+import type { SessionBindingContext } from './session-context';
+type DropFirst2<T extends unknown[]> = T extends [unknown, unknown, ...infer R] ? R : [];
+export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
+  return {
+    // ── lifecycle (Kortix REST) ──────────────────────────────────────────
+    get: (opts?: { showErrors?: boolean }) =>
+      P.getProjectSession(ctx.projectId, ctx.sessionId, opts),
+    /**
+     * This tab's presence lease. `alerts: true` says the tab shows its own
+     * notifications, so the server skips the phone and Web Push while the
+     * person is here (KRTX-1742). `keepalive` lets the request outlive a
+     * closing page. Default: on for an absent report, off for a present one.
+     *
+     * A present report from a person who may start the session renews the
+     * awake window, and the response says until when (KRTX-1729):
+     * `awake_until` is the computer's stop time after this renewal, and
+     * `awake_cap_at` the time the idle window ends — the idle autostop window
+     * after the computer's latest turn activity or its start (KRTX-2451) —
+     * which presence cannot keep it past. Both are null otherwise, and
+     * absent from an API before KRTX-1729.
+     */
+    presence: (
+      input: { tab_id: string; active: boolean; alerts?: boolean },
+      options?: { keepalive?: boolean },
+    ) =>
+      backendApi.put<{ ok: boolean; awake_until?: string | null; awake_cap_at?: string | null }>(
+        `/projects/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
+        input,
+        { showErrors: false, keepalive: options?.keepalive ?? !input.active },
+      ),
+    /** Unified finalized LLM and compute cost for this session. */
+    cost: () => P.getSessionCostRecord(ctx.sessionId, { projectId: ctx.projectId }),
+    update: (input: Parameters<typeof P.updateProjectSession>[2]) =>
+      P.updateProjectSession(ctx.projectId, ctx.sessionId, input),
+    delete: () => {
+      // A deleted session's sandbox is gone — never let a later handle for
+      // this (ctx.projectId, ctx.sessionId) resolve a runtime that no longer exists.
+      ctx.forgetReady();
+      return P.deleteProjectSession(ctx.projectId, ctx.sessionId);
+    },
+    /** Take the deleted session out of the trash before its `restore_until`. */
+    restore: () => P.restoreProjectSession(ctx.projectId, ctx.sessionId),
+    /** A lost session (its computer gone at the provider) continues on a new computer. */
+    recover: () => P.recoverProjectSession(ctx.projectId, ctx.sessionId),
+    start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
+      P.startProjectSession(ctx.projectId, ctx.sessionId, ...a),
+    /** `start`, but a failed request rejects with the API error instead of yielding `null`. */
+    startOrThrow: (...a: DropFirst2<Parameters<typeof P.startProjectSessionOrThrow>>) =>
+      P.startProjectSessionOrThrow(ctx.projectId, ctx.sessionId, ...a),
+    restart: () => {
+      // Restart preserves the established sandbox identity, but readiness
+      // and the proxy connection must still be resolved again after reboot.
+      ctx.forgetReady();
+      return P.restartProjectSession(ctx.projectId, ctx.sessionId);
+    },
+    stop: () => {
+      ctx.forgetReady();
+      return P.stopProjectSession(ctx.projectId, ctx.sessionId);
+    },
+    /** Is this session still running the config the manifest compiles to? */
+    configState: () => P.getProjectSessionConfigState(ctx.projectId, ctx.sessionId),
+    /**
+     * Recompile the agent config from git into this running session.
+     *
+     * Restarts opencode to rebuild its config, so readiness has to be
+     * resolved again — same reason `restart` forgets it.
+     */
+    reloadConfig: (input?: Parameters<typeof P.reloadProjectSessionConfig>[2]) => {
+      ctx.forgetReady();
+      return P.reloadProjectSessionConfig(ctx.projectId, ctx.sessionId, input);
+    },
+    /** Reload config with server-observed progress events. */
+    reloadConfigStream: (
+      ...args: DropFirst2<Parameters<typeof P.reloadProjectSessionConfigStream>>
+    ) => {
+      ctx.forgetReady();
+      return P.reloadProjectSessionConfigStream(ctx.projectId, ctx.sessionId, ...args);
+    },
+    setSharing: (intent: Parameters<typeof P.setProjectSessionSharing>[2]) =>
+      P.setProjectSessionSharing(ctx.projectId, ctx.sessionId, intent),
+    previews: () => P.getSessionPreviewCandidates(ctx.projectId, ctx.sessionId),
+    participants: () => P.getSessionParticipants(ctx.projectId, ctx.sessionId),
+    /** Is the caller notified about this session? */
+    watch: () => P.getSessionWatch(ctx.projectId, ctx.sessionId),
+    /** Watch (`true`) or mute (`false`) this session for the caller. */
+    setWatch: (watching: boolean) => P.setSessionWatch(ctx.projectId, ctx.sessionId, watching),
+    /** Pin (`true`) or unpin this session in the caller's own list. */
+    setPinned: (pinned: boolean) => P.setSessionPinned(ctx.projectId, ctx.sessionId, pinned),
+    /** Archive (`true`) or unarchive this session in the caller's own list. */
+    setArchived: (archived: boolean) => P.setSessionArchived(ctx.projectId, ctx.sessionId, archived),
+    commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
+      P.commitSessionChanges(ctx.projectId, ctx.sessionId, input),
+    publicShares: {
+      list: () => P.listSessionPublicShares(ctx.projectId, ctx.sessionId),
+      create: (...a: DropFirst2<Parameters<typeof P.createSessionPublicShare>>) =>
+        P.createSessionPublicShare(ctx.projectId, ctx.sessionId, ...a),
+      revoke: (...a: DropFirst2<Parameters<typeof P.revokeSessionPublicShare>>) =>
+        P.revokeSessionPublicShare(ctx.projectId, ctx.sessionId, ...a),
+    },
+  };
+}

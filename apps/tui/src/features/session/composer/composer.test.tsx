@@ -579,6 +579,22 @@ describe('slash-command data', () => {
     expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
   });
 
+  test('a runtime without session.commands / session.attach lists neither', () => {
+    const commands = [{ name: 'review', description: 'Review the diff' }];
+    const ids = (capabilities: readonly string[] | null) =>
+      commandItems(commands, capabilities).map((item) => item.id);
+
+    const pi = ids(['file.import', 'session.subagents']);
+    expect(pi).not.toContain('runtime:review');
+    expect(pi).not.toContain('builtin:attach');
+    expect(pi).toContain('builtin:new');
+
+    for (const all of [null, ['session.commands', 'session.attach']]) {
+      expect(ids(all)).toContain('runtime:review');
+      expect(ids(all)).toContain('builtin:attach');
+    }
+  });
+
   test('a non-array command payload degrades to the built-ins', () => {
     const items = commandItems({ nope: true } as unknown as undefined);
     expect(items).toHaveLength(BUILTIN_COMMANDS.length);

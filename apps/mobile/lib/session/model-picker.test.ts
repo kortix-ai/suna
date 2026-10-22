@@ -4,20 +4,20 @@ import { describe, expect, test } from 'bun:test';
 // package (Metro resolves only @kortix/sdk and @kortix/shared), so the copy in
 // model-picker.ts is pinned against it here.
 import {
-  DEFAULT_MANAGED_MODEL_IDS,
-  generationControlCapabilities,
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
 } from '../../../../packages/llm-catalog/src/index';
 
+import type { ProjectLlmCatalogResponse } from '@kortix/sdk';
+
 import {
   PICKER_PROVIDER_LABELS,
   PICKER_PROVIDER_ORDER,
-  catalogPickerModels,
-  catalogThinkingLevels,
+  composerModelList,
   firstPromptPicks,
+  modelOptionKey,
   modelPickerOptions,
-  offeredSessionModels,
+  offeredModelCount,
   pickerGroupId,
   pickerModelName,
   type PickerModel,
@@ -31,7 +31,9 @@ const catalog = {
   'codex/gpt-6-astra': { name: 'GPT-6 Astra (ChatGPT)', provider: 'codex' },
   'anthropic/claude-sonnet-5': { name: 'Claude Sonnet 5', provider: 'anthropic' },
   'anthropic/claude-haiku-3': { name: 'Claude Haiku 3', provider: 'anthropic', enabled: false },
+  auto: { name: 'Auto', provider: 'kortix' },
 };
+const gateway = { models: catalog } as unknown as ProjectLlmCatalogResponse;
 
 const model = (providerID: string, modelID: string, modelName: string, provider?: string): PickerModel => ({
   providerID,
@@ -51,17 +53,9 @@ describe('copied catalog tables match @kortix/llm-catalog', () => {
       expect(PROVIDER_LABELS[id]).toBe(label);
     }
   });
-
-  test('managed model ids carry no "/": splitting them cannot invent a provider', () => {
-    expect(DEFAULT_MANAGED_MODEL_IDS.some((id) => id.includes('/'))).toBe(false);
-  });
 });
 
 describe('pickerGroupId — web model-grouping.ts', () => {
-  test('a native provider groups under itself', () => {
-    expect(pickerGroupId(model('anthropic', 'claude-sonnet-5', 'Sonnet'))).toBe('anthropic');
-  });
-
   test('a gateway model groups under the served upstream provider', () => {
     expect(pickerGroupId(model('kortix', 'codex/gpt-5.5', 'GPT-5.5', 'codex'))).toBe('codex');
   });
@@ -79,28 +73,20 @@ describe('pickerModelName', () => {
   });
 });
 
-describe('catalogPickerModels — project home', () => {
-  test('offered models only, as kortix gateway models with their upstream provider', () => {
-    const models = catalogPickerModels(catalog);
-    expect(models.map((m) => m.modelID)).not.toContain('anthropic/claude-haiku-3');
-    expect(models.find((m) => m.modelID === 'codex/gpt-5.5')).toEqual({
-      providerID: 'kortix',
-      providerName: 'Kortix',
-      modelID: 'codex/gpt-5.5',
-      modelName: 'GPT-5.5 (ChatGPT)',
-      provider: 'codex',
-    });
-    expect(catalogPickerModels(undefined)).toEqual([]);
-  });
-
-  test('skips the auto alias', () => {
-    expect(catalogPickerModels({ auto: { name: 'Auto' }, 'kortix/auto': { name: 'Auto' } })).toEqual([]);
+describe('composerModelList — the SDK list from /model-picker', () => {
+  test('the /model-picker catalog as kortix models, auto dropped, enablement kept', () => {
+    const models = composerModelList(gateway);
+    expect(models.every((m) => m.providerID === 'kortix')).toBe(true);
+    expect(models.map((m) => m.modelID)).not.toContain('auto');
+    expect(models.find((m) => m.modelID === 'anthropic/claude-haiku-3')?.enabled).toBe(false);
+    expect(offeredModelCount(models)).toBe(5);
+    expect(composerModelList(undefined)).toEqual([]);
   });
 });
 
 describe('modelPickerOptions — groups and rows in web order', () => {
   test('Kortix first, known providers in table order, unknown last by label; rows by name', () => {
-    const options = modelPickerOptions(catalogPickerModels(catalog), (m) => m.modelID);
+    const options = modelPickerOptions(composerModelList(gateway), null);
     expect(options.map((o) => [o.group, o.label])).toEqual([
       ['Kortix', 'DeepSeek V4.1 Flash'],
       ['Kortix', 'Kimi K3 2.8T'],
@@ -111,105 +97,52 @@ describe('modelPickerOptions — groups and rows in web order', () => {
   });
 
   test('search text keeps the full name and the wire id', () => {
-    const [option] = modelPickerOptions([model('kortix', 'codex/gpt-5.5', 'GPT-5.5 (ChatGPT)', 'codex')], (m) => m.modelID);
+    const [option] = modelPickerOptions([model('kortix', 'codex/gpt-5.5', 'GPT-5.5 (ChatGPT)', 'codex')], null);
     expect(option.keywords).toContain('codex/gpt-5.5');
     expect(option.keywords).toContain('(ChatGPT)');
   });
 
-  test('an unknown provider keeps its own name as the title', () => {
-    const [option] = modelPickerOptions([{ ...model('acme', 'x1', 'X1'), providerName: 'Acme AI' }], (m) => m.modelID);
+  test('a custom provider keeps its own name as the title', () => {
+    const [option] = modelPickerOptions([{ ...model('kortix', 'acme/x1', 'X1', 'acme'), providerName: 'Acme AI' }], null);
     expect(option.group).toBe('Acme AI');
   });
-});
 
-describe('offeredSessionModels — the thread', () => {
-  const sandbox = [
-    model('kortix', 'kimi-k3', 'Kimi K3 2.8T'),
-    model('kortix', 'codex/gpt-5.5', 'GPT-5.5 (ChatGPT)'),
-    model('kortix', 'anthropic/claude-haiku-3', 'Claude Haiku 3'),
-    model('kortix', 'auto', 'Auto'),
-    model('kortix', 'not-in-catalog', 'Ghost'),
-    model('openai', 'gpt-5', 'GPT-5'),
-  ];
-
-  test('gateway project: the catalog is the list, the same one project home shows', () => {
-    const offered = offeredSessionModels(sandbox, catalog);
-    expect(offered.map((m) => m.modelID)).toEqual([
-      'deepseek-v4.1-flash',
-      'kimi-k3',
-      'codex/gpt-5.5',
-      'codex/gpt-6-astra',
-      'anthropic/claude-sonnet-5',
-    ]);
-    expect(offered.every((m) => m.providerID === 'kortix')).toBe(true);
-    expect(offered[2].provider).toBe('codex');
-  });
-
-  test('gateway project: the sandbox model wins when it exists (it carries the variants)', () => {
-    const withVariants = [{ ...sandbox[0], variants: { high: {} } }];
-    const kimi = offeredSessionModels(withVariants, catalog).find((m) => m.modelID === 'kimi-k3');
-    expect(Object.keys(kimi?.variants ?? {})).toEqual(['high']);
-  });
-
-  test('native project (no catalog): every provider but kortix, no auto alias', () => {
-    expect(offeredSessionModels(sandbox, undefined).map((m) => m.modelID)).toEqual(['gpt-5']);
-  });
-});
-
-describe('catalogThinkingLevels — web projectLlmCatalogToProviderList', () => {
-  // `reasoning_options` of the live catalog, 2026-09-21. It sends `variants: {}` for every model.
-  const live = [
-    { name: 'GPT-5.5', variants: {}, reasoning_options: [{ type: 'effort', values: ['none', 'low', 'medium', 'high', 'xhigh'] }] },
-    { name: 'Kimi K3', variants: {}, reasoning_options: [{ type: 'toggle' }, { type: 'effort', values: ['low', 'high', 'max'] }] },
-    { name: 'Claude', reasoning_options: [{ type: 'budget_tokens', min: 1024 }] },
-    { name: 'DeepSeek', variants: {}, reasoning: true },
-    { name: 'Toggle only', reasoning_options: [{ type: 'toggle' }] },
-  ];
-
-  test('the published effort values; budget_tokens → low/medium/high; nothing else', () => {
-    expect(live.map(catalogThinkingLevels)).toEqual([
-      ['none', 'low', 'medium', 'high', 'xhigh'],
-      ['low', 'high', 'max'],
-      ['low', 'medium', 'high'],
-      [],
-      [],
-    ]);
-  });
-
-  test('equals the catalog package rule the gateway clamps requests with', () => {
-    for (const entry of live) {
-      const expected = generationControlCapabilities({ id: 'x', ...entry } as never).reasoningEffort?.values ?? [];
-      expect(catalogThinkingLevels(entry)).toEqual([...expected]);
-    }
-  });
-
-  test('an explicit variants map from the API wins', () => {
-    expect(catalogThinkingLevels({ variants: { fast: {}, deep: {} }, reasoning_options: [{ type: 'effort', values: ['low'] }] })).toEqual(['fast', 'deep']);
-  });
-
-  test('home and thread get the same levels: catalog models carry them as variants', () => {
-    const [gpt] = catalogPickerModels({ 'codex/gpt-5.5': live[0] });
-    expect(Object.keys(gpt.variants ?? {})).toEqual(['none', 'low', 'medium', 'high', 'xhigh']);
-    // The sandbox lists the model with no levels of its own: the catalog's fill in.
-    const [threadGpt] = offeredSessionModels<PickerModel>(
-      [{ providerID: 'kortix', providerName: 'Kortix', modelID: 'codex/gpt-5.5', modelName: 'GPT-5.5' }],
-      { 'codex/gpt-5.5': live[0] },
-    );
-    expect(Object.keys(threadGpt.variants ?? {})).toEqual(['none', 'low', 'medium', 'high', 'xhigh']);
+  test('every offered model is in the empty-search view', () => {
+    expect(modelPickerOptions(composerModelList(gateway), null).some((o) => o.searchOnly)).toBe(false);
   });
 });
 
 describe('firstPromptPicks — what project home sends with the first message', () => {
   test('a level the active model offers travels with the model', () => {
-    expect(firstPromptPicks('codex/gpt-5.5', 'high', ['low', 'high'])).toEqual({
+    const gpt = { providerID: 'kortix', modelID: 'codex/gpt-5.5' };
+    expect(firstPromptPicks(gpt, 'high', ['low', 'high'])).toEqual({
       model: { providerID: 'kortix', modelID: 'codex/gpt-5.5' },
       variant: 'high',
     });
   });
 
   test('no level, a level of another model, or no model: nothing to send', () => {
-    expect(firstPromptPicks('codex/gpt-5.5', null, ['low', 'high'])).toBeNull();
-    expect(firstPromptPicks('codex/gpt-5.5', 'max', ['low', 'high'])).toBeNull();
+    const gpt = { providerID: 'kortix', modelID: 'codex/gpt-5.5' };
+    expect(firstPromptPicks(gpt, null, ['low', 'high'])).toBeNull();
+    expect(firstPromptPicks(gpt, 'max', ['low', 'high'])).toBeNull();
     expect(firstPromptPicks(null, 'high', ['low', 'high'])).toBeNull();
+  });
+});
+
+// KRTX-3011: `/model-picker` keeps a model a default names even when its
+// provider is not connected, marked `available: false`. Mobile has no row
+// action to connect it, so it is not a row and does not count as offered.
+describe('an unavailable model (KRTX-3011)', () => {
+  const unavailable = {
+    models: {
+      'deepseek-v4.1-flash': { name: 'DeepSeek V4.1 Flash', provider: 'kortix' },
+      'codex/gpt-6-astra': { name: 'GPT-6 Astra (ChatGPT)', provider: 'codex', available: false, availability: 'login' },
+    },
+  } as unknown as ProjectLlmCatalogResponse;
+
+  test('is not a picker row and is not counted as offered', () => {
+    const models = composerModelList(unavailable);
+    expect(modelPickerOptions(models, null).map((o) => o.label)).toEqual(['DeepSeek V4.1 Flash']);
+    expect(offeredModelCount(models)).toBe(1);
   });
 });

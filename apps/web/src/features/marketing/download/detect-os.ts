@@ -3,8 +3,8 @@
  * routes.
  *
  * Detection runs on the SERVER, from the request's user-agent header, so the
- * page paints the correct card order and the correct filled button on first
- * render. A client-side `useEffect` swap would let a visitor click the wrong
+ * page paints the correct filled button (and, on a phone, the mobile card
+ * first) on first render. A client-side `useEffect` swap would let a visitor click the wrong
  * installer during the flash — the exact failure this page exists to prevent.
  *
  * Architecture is deliberately NOT detected: macOS ships a single universal
@@ -15,7 +15,7 @@ export type DesktopOs = 'macos' | 'windows' | 'linux';
 export type MobileOs = 'ios' | 'android';
 export type Platform = DesktopOs | MobileOs;
 
-/** Canonical order, used once the detected platform has been hoisted out. */
+/** Fixed row order. Detection never reorders rows; it only picks the filled button. */
 export const DESKTOP_ORDER: readonly DesktopOs[] = ['macos', 'windows', 'linux'];
 export const MOBILE_ORDER: readonly MobileOs[] = ['ios', 'android'];
 
@@ -71,21 +71,4 @@ export function detectPlatform(userAgent: string | null | undefined): Platform {
 
 export function isMobilePlatform(platform: Platform): platform is MobileOs {
   return platform === 'ios' || platform === 'android';
-}
-
-/**
- * Detected desktop OS first. A phone detection leaves the order canonical.
- *
- * The early return is what narrows `platform` to `DesktopOs` for the spread —
- * `isMobilePlatform` is a type predicate, so no cast is needed here.
- */
-export function orderedDesktop(platform: Platform): DesktopOs[] {
-  if (isMobilePlatform(platform)) return [...DESKTOP_ORDER];
-  return [platform, ...DESKTOP_ORDER.filter((os) => os !== platform)];
-}
-
-/** Detected mobile OS first. A desktop detection leaves the order canonical. */
-export function orderedMobile(platform: Platform): MobileOs[] {
-  if (!isMobilePlatform(platform)) return [...MOBILE_ORDER];
-  return [platform, ...MOBILE_ORDER.filter((os) => os !== platform)];
 }

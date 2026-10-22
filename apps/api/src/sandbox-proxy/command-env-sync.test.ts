@@ -69,7 +69,6 @@ type Recorder = {
   deps: PrePromptEnvSyncDeps;
   envSync: Array<{ requestedAgent?: string | null; sessionId: string; providerName: string }>;
   remint: Array<{ sessionAgent: string; requestedAgent: string | null }>;
-  snapshot: Array<{ sessionId: string; projectId: string; externalId: string; userId?: string }>;
   titles: string[];
 };
 
@@ -78,7 +77,6 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
   const rec: Recorder = {
     envSync: [],
     remint: [],
-    snapshot: [],
     titles: [],
     deps: {} as PrePromptEnvSyncDeps,
   };
@@ -95,14 +93,7 @@ function recorder(opts: { envSyncError?: () => Error } = {}): Recorder {
       rec.remint.push({ sessionAgent: input.sessionAgent, requestedAgent: input.requestedAgent });
       return { action: 'skip' };
     }) as PrePromptEnvSyncDeps['remintGrant'],
-    scheduleSnapshot: ((input) => {
-      rec.snapshot.push({
-        sessionId: input.sessionId,
-        projectId: input.projectId,
-        externalId: input.externalId,
-        userId: input.userId,
-      });
-    }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
+    bindTurnIdentity: (async () => false) as PrePromptEnvSyncDeps['bindTurnIdentity'],
     generateTitle: (async (input) => {
       rec.titles.push(input.firstPromptText);
     }) as PrePromptEnvSyncDeps['generateTitle'],
@@ -122,6 +113,7 @@ function runSync(rec: Recorder, body: ArrayBuffer, requestedAgent: string | null
       providerHeaders: {},
       serviceKey: 'svc-key',
       requestedAgent,
+      bindTurnIdentity: false,
       body,
       incomingHeaders: jsonHeaders(),
     },
@@ -209,18 +201,6 @@ describe('runPrePromptEnvSync — a /command body', () => {
     const rec = recorder();
     await runSync(rec, COMMAND_BODY);
     expect(rec.remint).toEqual([{ sessionAgent: 'default', requestedAgent: 'writer' }]);
-  });
-
-  // REGRESSION (staging release gate, SESS-10): the schedule used to omit
-  // `userId`. The daemon 401s every non-`/kortix/*` path without the user
-  // context that only a userId mints, so the refresh degraded to `unreachable`
-  // and never wrote a snapshot.
-  test('schedules the opencode snapshot refresh as the caller', async () => {
-    const rec = recorder();
-    await runSync(rec, COMMAND_BODY);
-    expect(rec.snapshot).toEqual([
-      { sessionId: 'sess-1', projectId: 'proj-1', externalId: 'ext-1', userId: 'u1' },
-    ]);
   });
 
   test('generates NO session title from a command body', async () => {
@@ -331,6 +311,18 @@ describe('requestedPromptManagedModelId', () => {
   // /session/:id/command — verified against `SessionCommandData`: `model` is
   // a flat STRING ref ("kortix/<id>" or a native "provider/model"), not an
   // object. `COMMAND_BODY` above carries a native anthropic ref.
+  // POST /kortix/runtime/sessions/:id/prompt — the body `postPrompt`
+  // (session-lifecycle/runtime-client.ts) relays every inbox prompt as. Without
+  // this branch no relayed turn reaches the model-catalog lane at all.
+  test('reads the Kortix prompt route body (flat kortix/<provider>/<model> string)', () => {
+    const body = encode({
+      message_id: 'msg_0fdcfe9b0000mSIdTv1hWHxxEe',
+      parts: [{ type: 'text', text: 'hi' }],
+      model: 'kortix/codex/gpt-6.1-sol',
+    });
+    expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('codex/gpt-6.1-sol');
+  });
+
   test("reads a /command body's flat kortix/<id> model string", () => {
     const body = encode({ command: 'webapp', arguments: 'x', model: 'kortix/kimi-k3' });
     expect(requestedPromptManagedModelId(body, jsonHeaders())).toBe('kimi-k3');

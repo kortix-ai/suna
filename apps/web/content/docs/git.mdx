@@ -1,0 +1,500 @@
+---
+title: Git
+description: "Every project is a git repository: clone it, push to it with any git client, follow each session's branch, and land work through change requests."
+---
+
+Every Kortix project is one git repository. You clone it, push to it with any git client, fetch the branch of each session, and land work on the base branch through change requests. This page is for everyone who works on project files outside the web app, and for admins who decide who may push.
+
+The shortest path from a project to a reviewed change:
+
+```bash
+kortix projects clone <project_id> my-project
+cd my-project
+git checkout -b tighten-triage
+# edit agents/, skills/ or kortix.yaml
+git commit -am "Tighten the triage prompt"
+git push origin tighten-triage
+kortix cr open --head tighten-triage --title "Tighten the triage prompt"
+```
+
+## Your project's repository
+
+A project has one of two kinds of repository. Both work the same way after the project exists.
+
+| Kind | What it is | How you get it |
+| --- | --- | --- |
+| Managed | Kortix creates and manages a private repository. You need no GitHub account. | Pick **Kortix managed** under **Git account** when you create a project. Or run `kortix ship` in a folder with no `origin` remote, or `kortix ship --origin managed`. |
+| GitHub | A repository in your GitHub account or organization. Kortix reaches it through the Kortix GitHub App, which you install under **Account settings → Git**, or through a GitHub token. | Pick a GitHub account under **Git account**, then **Create a new repository** or **Import an existing repository**. Or run `kortix ship` in a folder whose `origin` is on GitHub. |
+
+On a self-hosted instance, a platform admin sets up managed repositories in the admin console. `GET /v1/projects/managed-git/status` returns `configured: false` until then, and the new-project form says "Kortix-managed repositories are not available on this instance." See [Self-hosting](/docs/host).
+
+### The git origin
+
+Every project has one clone URL, whatever its kind:
+
+```text
+https://<api-host>/v1/git/<project_id>.git
+```
+
+On Kortix Cloud this is `https://api.kortix.com/v1/git/<project_id>.git`. Find it in two places:
+
+- `kortix projects info <project_id> --json`, field `git_origin_url`.
+- **Customize → Settings → Git repo → Use your own Git client → Clone address**.
+
+Clone `git_origin_url`, not `repo_url`. `repo_url` is the upstream repository that Kortix forwards to.
+
+- The origin speaks git over HTTPS only.
+- You authenticate with a Kortix token. Kortix adds the upstream credential on the server. No GitHub or other provider credential reaches your computer or a sandbox.
+- The audit log records each clone and fetch as `git.clone` and each push as `git.push`. See [Audit actions](/docs/audit-actions).
+
+## Clone a project
+
+<Steps>
+<Step title="Install the CLI and sign in">
+Follow [CLI → Install](/docs/cli), then run `kortix login`.
+</Step>
+<Step title="Clone">
+Run `kortix projects clone [<project_id>] [<dir>]`. `kortix projects ls` lists project ids. Without an id, the command clones the linked or default project. The directory defaults to the project id, not the project name.
+</Step>
+<Step title="Finish setup in the new folder">
+Optional: run `kortix init --force` to configure your local coding agents in the checkout. Run `kortix env pull` to write a `.env` file with one line per project secret. It writes names only: secret values stay in Kortix.
+</Step>
+</Steps>
+
+**Customize → Settings → Git repo → Work on this locally** shows the same three steps with the commands filled in.
+
+The clone does three things:
+
+1. It runs `git clone` with your token in the process environment. The token is never in the remote URL or in `.git/config`.
+2. It writes `.kortix/link.json`, which binds the folder to the project for `kortix` commands. It adds the file to `.git/info/exclude`, so the link stays on your computer.
+3. It installs a credential helper for the origin, in the repository's own `.git/config`:
+
+```ini
+[credential "https://api.kortix.com/v1/git/<project_id>.git"]
+	helper =
+	helper = !kortix git-credential
+[credential]
+	useHttpPath = true
+```
+
+The empty `helper =` line turns off every helper you configured elsewhere for this URL, so your keychain never stores the Kortix token. `kortix git-credential` gives git the token of your stored login each time git asks. After the clone, plain `git pull` and `git push` work. If that login is gone, git stops with `Kortix Git needs login. Run: kortix login`, plus `--host <name>` when the link names a host.
+
+The clone writes the link and the helper only when the repository root has `.kortix/`, `kortix.yaml`, `kortix.yml` or `kortix.toml`. In any other repository, create a `.kortix/` folder at the root, then wire them by hand as in [Wire the helper by hand](#wire-the-helper-by-hand).
+
+## Use any git client
+
+The origin accepts HTTP Basic authentication. The username can be anything; the convention is `x-access-token`. The password is a Kortix token.
+
+```bash
+git clone https://api.kortix.com/v1/git/<project_id>.git
+# Username: x-access-token
+# Password: kortix_pat_…
+```
+
+Plain git saves the password in the credential store you configured. To keep the token out of every store, send it as a header on each command instead:
+
+```bash
+git -c http.extraHeader="Authorization: Bearer $KORTIX_GIT_TOKEN" clone https://api.kortix.com/v1/git/<project_id>.git
+```
+
+| Token | What it can do |
+| --- | --- |
+| Personal access key, `kortix_pat_…`, from `kortix login`, **Settings → Personal access keys** or `kortix tokens new` | Acts as you. Kortix checks it against your role on the project. Membership of the account alone gives no access. |
+| Project CLI token, `kortix_pat_…`, from `kortix projects cli-tokens new` | Acts as you, on one project only. |
+| Session token, `KORTIX_TOKEN` inside a sandbox | Reads the repository and pushes the session's own branch. See [Who can clone and push](#who-can-clone-and-push). |
+| Service account key (`kortix_sa_…`), OAuth token, gateway key, browser sign-in token | Refused with `401`. |
+
+[Sign-in, SSO & API keys](/docs/accounts/identity) explains how to create and revoke keys.
+
+### Wire the helper by hand
+
+Run these at the root of the checkout. `kortix projects link` refuses a folder without `.kortix/` or `kortix.yaml`. The helper answers only for the URL that equals the project's `git_origin_url`.
+
+```bash
+ORIGIN=https://api.kortix.com/v1/git/<project_id>.git
+git config --local --replace-all credential.$ORIGIN.helper ''
+git config --local --add credential.$ORIGIN.helper '!kortix git-credential'
+git config --local credential.useHttpPath true
+kortix projects link <project_id>
+```
+
+`kortix projects link` writes `.kortix/link.json`. The helper reads it to find the project and the host.
+
+### From CI
+
+Create a project CLI token with `kortix projects cli-tokens new` and store it as a CI secret. The token acts as the person who created it, so that person needs push access to push.
+
+```bash
+AUTH="Authorization: Bearer $KORTIX_GIT_TOKEN"
+git -c http.extraHeader="$AUTH" clone https://api.kortix.com/v1/git/$PROJECT_ID.git project
+cd project
+# change files, then commit
+git -c http.extraHeader="$AUTH" push origin HEAD:refs/heads/ci-update
+```
+
+### Errors from the origin
+
+| Status | Message | Fix |
+| --- | --- | --- |
+| `400` | `invalid project identifier` | Use the project id, a UUID, in the URL. |
+| `401` | `authentication required`, with `WWW-Authenticate: Basic realm="Kortix Git"` | Send a token. Git prompts for one. |
+| `401` | `git proxy requires a Kortix token` | The password is not a Kortix token. Use a `kortix_pat_` token. |
+| `403` | `token is not authorized for this project` | You have no role on the project that allows the operation. See [Who can clone and push](#who-can-clone-and-push). |
+| `403` | `token is scoped to a different project` | The token is bound to another project. |
+| `404` | `Not found` | The project does not exist or was deleted. |
+| `409` | `Repository changed during authorization; retry the request` | Someone replaced the repository while you connected. Retry. |
+| `409` | `Kortix cannot reach <owner>/<repo>: …`, printed as `remote: …` | The repository is disconnected. See [Repository disconnected](#repository-disconnected). |
+| `502` | `No git upstream is configured for this project` or `git upstream unreachable` | Kortix cannot reach the upstream repository. Check the connection under **Git repo**. |
+| `503` | `git_credential_unavailable` | Kortix could not get a credential for the upstream. Retry when the body says `retry: true`. Otherwise check the connection. |
+
+## Commit and push
+
+After a clone, commit and push with plain git. `kortix ship` runs these steps in one command:
+
+1. It runs the `kortix validate` checks. `--no-verify` skips them.
+2. It runs `git add -A` and commits, with the message from `-m`. The default message is `kortix: ship`. `--no-commit` fails when the working tree has changes.
+3. It offers to set each `env` secret that has no value. `--no-env` skips this.
+4. It pushes the current branch to the branch of the same name.
+5. It connects each declared connector that still needs sign-in. `--no-connect` skips this.
+
+`-n` / `--dry-run` prints the plan and changes nothing. `kortix deploy` is an alias.
+
+### The first ship
+
+A folder with no `.kortix/link.json` gets a new project. Ship picks the repository from the folder's `origin`, without a prompt:
+
+| `origin` of the folder | What ship creates |
+| --- | --- |
+| A GitHub URL | A GitHub project through the Kortix GitHub App. If the App is not installed, ship prints an install link and asks you to retry after you install it. With `-y` it stops instead. `--github-token <PAT>` links without the App; the token needs repository Contents read and write. |
+| Another URL (GitLab, Bitbucket, plain git) | Nothing. Kortix links GitHub repositories only, so ship stops before any request and suggests `--origin managed`. |
+| None, or `--origin managed` | A managed repository. Ship sets `origin` to the git origin and installs the credential helper. |
+
+For a GitHub URL, the first ship pushes to your existing `origin` with your own git credentials.
+
+`--origin <github-url>` sets `origin` to that GitHub URL first. `--account <id|slug>` picks the account, and `--name` the project name.
+
+Ship writes `.kortix/link.json` the moment the project exists, and `git add -A` commits it. A teammate with push access (`project.gitops.push`, the Manager role) who clones the repository can then run `kortix ship` too. Later ships set `origin` to the project's git origin and install the credential helper.
+
+## Who can clone and push
+
+Five permissions control git:
+
+| Permission | Allows |
+| --- | --- |
+| `project.gitops.read` | Read commits, diffs and change requests. For a session: clone and fetch. |
+| `project.gitops.push` | Push. Open change requests. |
+| `project.gitops.merge` | Merge change requests. |
+| `project.gitops.ref.any` | For a session: push a branch other than its own. |
+| `project.gitops.ref.delete` | Delete a branch. |
+
+A project **Member** holds `project.gitops.read` only. A Member reads the branches, commits and change requests of their own sessions and of sessions they may open, and nothing of another member's private session. A clone serves every branch, so a person needs `project.gitops.push` to clone or fetch: a Member cannot clone from their own git client. A Member's sessions still clone and push their own branch. A **Manager** holds all five. Account owners and admins act as Managers on every project in the account. See [Accounts & access](/docs/accounts).
+
+**People** with push access:
+
+- may push any branch, including the default branch;
+- need `project.gitops.ref.delete` to delete a branch;
+- can never delete the default branch. Nobody can.
+
+IP allowlist and MFA policies of the account apply to git requests too.
+
+**Sessions** push with the session token:
+
+- A session pushes only its own branch, the branch named after its `session_id`.
+- Any other branch needs `project.gitops.ref.any` in the agent's `kortix_permissions`. Deleting a branch needs `project.gitops.ref.delete`.
+- A push to the default branch also needs `project.agent.write`, `project.trigger.create`, `project.trigger.update` and `project.trigger.delete`.
+- The agent's `kortix_permissions` must list the permission, or be `all`, and the agent's ceiling role must also hold it. Neither widens the other. The role of the person who started the session is not an input. An agent with no `kortix_permissions` key holds no project permission. See [What an agent may do](/docs/project/agents#what-an-agent-may-do).
+
+By default, agents land work through [change requests](#change-requests). [Agents & permissions](/docs/project/agents) shows how to grant leaves.
+
+Kortix does not block a force-push. On a GitHub repository, add a ruleset that blocks force-pushes and deletions on the default branch. The ruleset does not block change-request merges, because a merge is a fast-forward or a merge commit.
+
+### Read a refused push
+
+Kortix refuses the whole push when it refuses one ref. Git prints the reason for each ref:
+
+```text
+ ! [remote rejected] HEAD -> feature-x (a session may only push its own branch (<session_id>); commit there and open a change request to land this elsewhere)
+```
+
+| Reason | Cause |
+| --- | --- |
+| `<branch> is the default branch and cannot be deleted` | A delete of the default branch. |
+| `deleting <ref> requires git ref-delete authority` | A person without `project.gitops.ref.delete` deleted a branch. |
+| `a session may only push its own branch (…)` | A session without `project.gitops.ref.any` pushed another branch. |
+| `pushing <branch> skips change-request review and needs agent and trigger write permission; …` | A session pushed the default branch without `project.gitops.ref.any` and the manifest permissions. |
+| `pushing <branch> could change agent grants without review, and an agent grants only what it holds; …` | A governed agent pushed the default branch but does not hold every permission it could grant. |
+| `a session may not delete its own branch` | A session without `project.gitops.ref.delete` deleted its branch. |
+
+## Session branches
+
+Each session works on its own branch. The branch name is the `session_id`, with no prefix. Kortix cuts it from the session's `base_ref`, which is the project default branch unless the session was created with another one.
+
+Inside the sandbox, the branch is `$KORTIX_BRANCH_NAME`. The agent commits there and runs `git push origin HEAD`. [Sandboxes & previews](/docs/work/runtime) lists the other variables.
+
+A pushed branch stays in the repository after the session stops and after the session is deleted. Work the agent did not push is lost when the sandbox is deleted.
+
+Get an agent's work on your computer:
+
+```bash
+git fetch origin <session_id>
+git checkout <session_id>
+```
+
+- `kortix files branches` lists the branches with commits ahead of and behind the default branch.
+- `kortix sessions info <session_id>` shows `branch` and `base_ref`.
+- To start a session on another branch, pass `base_ref` when you create it, in `POST /v1/projects/<project_id>/sessions` or in `sessions.create()` of the [SDK](/docs/sdk/sessions). `kortix sessions new` has no flag for it.
+
+When the base branch moves, open the command palette in the session and run **Ask Agent: Sync Branch & Reload**. The agent merges `origin/<base_ref>` into the session branch, resolves conflicts, runs the relevant tests, and commits. Its last command is `kortix sessions reload … --no-repo --force --yes`, which restarts the agent runtime and ends the turn. Send `continue` when the runtime is back.
+
+## Change requests
+
+A change request merges one branch, the head, into another, the base. Kortix runs the merge, the diff and the conflict check as git operations on the project repository, so change requests work on every kind of repository.
+
+```text
+open ──merge──▶ merged          (final)
+open ──close──▶ closed ──reopen──▶ open
+```
+
+### Open one from your computer
+
+```bash
+git push origin my-branch
+kortix cr open --head my-branch --title "Add the triage agent" --description "Why and what changed"
+```
+
+- The base is the project default branch. `--base <branch>` targets another branch.
+- A head with no commits ahead of the base is refused with `CR_HEAD_NOT_AHEAD`. Push first.
+- Each later push to the head branch updates the same change request.
+
+### Open one from a session
+
+An agent follows this contract:
+
+1. Commit on `$KORTIX_BRANCH_NAME`.
+2. Push: `git push origin HEAD`.
+3. Open: `kortix cr open --title "…" --description "…"`. Inside a sandbox, `--head` and `--session` fill themselves from `$KORTIX_BRANCH_NAME` and `$KORTIX_SESSION_ID`.
+4. Report the change request number to the person, and stop.
+
+A change request from a session targets the session's `base_ref`. An agent cannot retarget it: `--base` with another branch returns `400` `CR_BASE_NOT_SESSION_BASE`. A person can open a change request for the same head with `--base`.
+
+### Review and merge
+
+Review in the web app on the [Review page](#the-review-page), or from a terminal:
+
+```bash
+kortix cr ls                     # open change requests
+kortix cr diff 3                 # the unified diff
+kortix cr merge-preview 3        # can it merge? lists conflicts
+kortix cr merge 3
+kortix cr request-changes 3 --message "Rename the flag first"
+```
+
+A merge runs these steps:
+
+1. Kortix validates `kortix.yaml` on the head branch, with its `imports:`. An invalid manifest stops the merge with `422` `MANIFEST_INVALID`. A head with no manifest passes.
+2. Kortix fast-forwards the base when the head is strictly ahead.
+3. Otherwise it creates a merge commit, `Merge CR #<n>: <title>`, authored by `Kortix <noreply@kortix.ai>`. `--message` sets another message.
+4. A conflict stops the merge with `409` and the list of conflicting files.
+
+After the merge, running sessions on that base pick up the new config, and Kortix syncs the project's connectors from the new `kortix.yaml`. See [Config comes from the base branch](#config-comes-from-the-base-branch).
+
+**Request changes** records the note on the change request and sends it to the session that opened it as a new prompt. A sleeping sandbox wakes.
+
+### Agents that merge
+
+- An agent that declares `kortix_permissions` merges only when the grant includes `project.gitops.merge`. An agent without `kortix_permissions` cannot merge. Only the `meta` coordinator and a project on the legacy v1 manifest with no agents declared act with the role of the person who started the session.
+- A session cannot merge a change request it opened unless its grant in `kortix.yaml` includes `project.gitops.merge`. Without it, the merge returns `403` `CR_SELF_MERGE_REFUSED`.
+- A merge that changes `agents`, `default_agent` or `triggers` also needs the permission the direct edit needs: `project.agent.write`, or `project.trigger.create`, `.update` or `.delete`. The merging agent cannot grant any permission it does not hold.
+
+A grant that names `project.cr.open` or `project.cr.merge` counts as `project.gitops.push` or `project.gitops.merge`. Write the `gitops` name in new grants.
+
+### Permissions
+
+| Action | Needs |
+| --- | --- |
+| List, show, diff, merge preview | Read access to the project. |
+| Open | `project.gitops.push` |
+| Edit, close, reopen | Write access to the project. An agent also needs `project.gitops.push`. |
+| Merge | `project.gitops.merge`, plus the manifest permissions above for an agent. |
+| Request changes | `project.review.act` |
+
+### `kortix cr` commands
+
+`<cr>` is the change request number, such as `3`, or its UUID.
+
+| Command | Does |
+| --- | --- |
+| `kortix cr ls [--status <s>]` | Lists change requests. `<s>` is `open` (default), `merged`, `closed` or `all`. |
+| `kortix cr show <cr>` | Shows one change request. |
+| `kortix cr diff <cr>` | Prints the unified diff. |
+| `kortix cr open --head <branch> --title <t> [--base <branch>] [--description <t>]` | Opens a change request. Aliases: `--from`, `--into`, `--body`. |
+| `kortix cr merge-preview <cr>` | Shows whether it can merge, and the conflicts. |
+| `kortix cr merge <cr> [--message <t>]` | Merges it. |
+| `kortix cr request-changes <cr> --message <t>` | Sends the note to the agent that opened it. |
+| `kortix cr close <cr>` | Closes it without a merge. |
+| `kortix cr reopen <cr>` | Reopens a closed one. |
+| `kortix cr version-diff --from <head> --into <base>` | Summarizes a merge before you open a change request. |
+
+Each command takes `--project <id>` and `--host <name>`. `ls`, `show`, `diff`, `merge-preview`, `request-changes` and `version-diff` also take `--json`. The REST routes are under `/v1/projects/<project_id>/change-requests` in the [API reference](https://api.kortix.com/v1/docs).
+
+`GET /change-requests` returns one page, newest number first: 50 change requests by default, at most 500 with `limit` (a larger `limit` answers `400`). Pass `next_cursor` back as `cursor` for the next page; it is `null` on the last page. `kortix cr ls` follows it and lists every change request.
+
+### Errors
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `CR_HEAD_NOT_AHEAD` | `422` | The head has no commits ahead of the base. Commit your work on the head branch and push it. |
+| `CR_BASE_NOT_SESSION_BASE` | `400` | An agent tried to target a branch other than its session's base. |
+| `MANIFEST_INVALID` | `422` | The manifest on the head branch fails validation. The body lists the issues. Run `kortix validate`. |
+| (conflict) | `409` | The merge conflicts. The body lists the files. |
+| (not open) | `409` | The change request is merged or closed. |
+| `CR_SELF_MERGE_REFUSED` | `403` | A session tried to merge its own change request without a merge grant. |
+| `CR_GOVERNANCE_UNVERIFIED` | `503` | Kortix could not read the manifest to check an agent's merge. Nothing merged. Retry. |
+| (manifest unreadable) | `502` | Kortix could not read the manifest from the head branch. |
+
+## The Review page
+
+The Review page is the project's inbox for everything that waits on a person. Open **Review** in the project sidebar, or go to `/projects/<project_id>/review`.
+
+| Item | Id | Comes from |
+| --- | --- | --- |
+| Change | `cr:<id>` | A change request. |
+| Approval | `call:<id>` | A connector call that a policy holds for approval. See [Connectors](/docs/connect/connectors#policies-and-approvals). |
+| Output (`output`), question (`decision`), finished batch (`batch`) | its own id | An agent submits it with `kortix review submit`. |
+
+The lists are **Needs you**, **Waiting** and **Done**. The filters are **All**, **Changes**, **Approvals**, **Outputs**, **Questions** and **Finished**. Keys: `j` and `k` move, `Enter` opens, `a` approves, `e` asks for changes, `d` dismisses, `1` `2` `3` switch lists, `/` searches, `?` shows help.
+
+Each list loads 50 items at a time, newest first. **Load more** shows the next 50. The filters and the search apply to the items loaded so far. The **Review** count in the sidebar, and the dot on a session that waits on you, count every item that needs you.
+
+What a verdict does depends on the item:
+
+| Item | `approve` | `reject` | `changes` |
+| --- | --- | --- | --- |
+| Change | Merges the change request. | Closes it. | Sends the note to the agent that opened it. A note is required. |
+| Approval | Lets the call run. | Denies it. | Not available. |
+
+An item an agent submitted takes every verdict: `approve`, `reject`, `changes`, `answer` and `dismiss`.
+
+The Review page shows a verdict only to a role that holds its permissions. Every verdict on a change or on an agent's item needs write access to the project (`project.write`):
+
+| Control | Needs |
+| --- | --- |
+| **Ship it** (web), **Merge** (mobile) | `project.write` + `project.gitops.merge` |
+| **Solve with agent** (web), **Resolve conflicts** (mobile): it replaces the merge on a conflicted change | `project.write` + `project.gitops.merge` |
+| Ask for changes, close, dismiss, answer, and every verdict on an agent's item | `project.write` + `project.review.act` |
+| **Approve** and **Deny** on a connector approval | A project manager, or the person who launched the session. The API refuses anyone else. |
+| **+** on mobile, to open a change request | `project.write` + `project.gitops.push` |
+
+A built-in member holds none of these permissions. It sees changes and agent items without verdicts, and it decides a connector approval only in a session it launched. The change request dialog on the Files page and on a session's change card follows the same rule: **Apply changes** and **Fix with agent** need `project.write` + `project.gitops.merge`, **Dismiss** and **Reopen** need `project.write`.
+
+| Command | Does |
+| --- | --- |
+| `kortix review ls [--segment <s>] [--kind <k>]` | Lists items. Segments: `needs_you`, `waiting`, `done`. Kinds: `change`, `approval`, `output`, `decision`, `batch`. |
+| `kortix review show <item>` | Shows one item, with a connector call's arguments. |
+| `kortix review act <item> <verdict> [--message <t>]` | Decides one item. |
+| `kortix review bulk <verdict> <id>…` | Decides several agent items. It skips changes and approvals, which each need their own review. |
+| `kortix review submit --kind <k> --title <t>` | Submits an `output`, `decision` or `batch`. Options: `--summary`, `--risk` (`none`, `low`, `medium`, `high`), `--detail <json>`, `--agent`, `--session`. |
+
+Reading needs `project.review.read`, a verdict needs `project.review.act`, and `submit` needs `project.review.submit`. A Member holds read and submit. A Manager holds all three.
+
+The REST routes are under `/v1/projects/<project_id>/review`:
+
+| Route | Returns |
+| --- | --- |
+| `GET /review/items` | One page of items: **Needs you**, then **Waiting**, then **Done**, newest first within each. Filters: `segment`, `kind`, `session_id`. `limit` is 50 by default; above 200 it answers `400`. Pass `next_cursor` back as `cursor` for the next page; it is `null` on the last page. A walk is not a snapshot: an item whose status changes between two pages can come back on a later page or be missed. `kortix review ls` follows the cursor and lists each item once, with its newest status. |
+| `GET /review/items/<item>` | One item by its id, including `cr:<id>` and a pending `call:<id>`. |
+| `GET /review/summary` | `{ needs_you_total, needs_you_by_session }`: the counts the sidebar shows. A connector call that you may not decide counts for the people who may. |
+
+## Config comes from the base branch
+
+A session runs the current config release of its base branch: `kortix.yaml`, agents, skills, tools and harness files. It does not run the files in `/workspace`.
+
+- An edit in `/workspace` or on a session branch takes effect only when it lands on the base branch, through a merge or a push.
+- Each commit on the base branch is a new config release. A running session converges to it at the start of its next turn. A push or a merge also starts the convergence in the background.
+- To apply it at once, select **Reload config** in the session menu, or run `kortix sessions reload <session_id>`. It restarts the agent runtime. `--force` reloads during a turn and ends that turn; it asks first unless you pass `--yes`. `--no-repo` skips the git pull in `/workspace`. `--status` only reports whether the session is behind.
+- To test config before a merge, create a session with `base_ref` set to your branch. Its change requests target that branch too.
+- Such a session runs the branch's agent behavior: prompts, tools, skills and harness files. Governance still comes from the default branch: which agents are declared, and their secret, connector and permission grants. A branch cannot widen what an agent may use before it merges. When the project requires declared agents, an agent declared only on the branch is refused with `400` `AGENT_NOT_DECLARED`.
+
+When a release fails to load, the session runs the last release that worked, or else the platform default config. The session header shows **Config failed to load**. Fix the config on the base branch. See [Sandboxes & previews](/docs/work/runtime) for troubleshooting.
+
+| Limit | Value |
+| --- | --- |
+| Config release | 32 MiB compressed, 128 MiB uncompressed |
+| Project snapshot | 512 MiB compressed. Above it, running sessions stop picking up config changes until a new session starts. |
+| `kortix validate` warning | One file of 10 MiB or more, or more than 512 MiB in total |
+
+To keep a file in git but out of the release, mark it `export-ignore` in `.gitattributes`. A directory rule covers everything under it. The release, the `kortix validate` size check and session config downloads leave those files out. The manifest file and the OpenCode config directory always ship whole.
+
+```text
+fixtures export-ignore
+datasets/raw export-ignore
+```
+
+## Manage the repository
+
+**Customize → Settings → Git repo** shows the repository and its **Status**, the **Base branch**, the **Manifest file**, **Work on this locally**, **Use your own Git client** and **People with access**. The base branch is the branch new sessions and change requests start from. From the CLI, `kortix projects set --branch <branch>` and `--manifest <path>` change the same fields. Both need `project.settings.write`.
+
+### GitHub connection
+
+`GET /v1/projects/<project_id>/git/connection` returns the connection `state`:
+
+| `state` | Meaning |
+| --- | --- |
+| `connected` | Kortix can reach the repository. |
+| `reconnect_required` | The Kortix GitHub App installation is missing, unusable, or does not match the repository. Open the `install_url` in the response to install the App again. |
+| `unavailable` | Kortix cannot reach the repository for a reason you cannot fix with the App. |
+| `not_connected` | The project has no repository. |
+
+### Repository disconnected
+
+Kortix reaches a GitHub repository through the Kortix GitHub App installed on the repository's owner. When that access goes away, the project is **disconnected**. `GET /v1/projects/<project_id>/git/connection` then returns `state: reconnect_required`, `reason: repository_disconnected`, a `disconnected_reason`, a `message` with the cause and the fix, and an `install_url`.
+
+| `disconnected_reason` | Cause | Fix |
+| --- | --- | --- |
+| `app_uninstalled` | The Kortix GitHub App was uninstalled from the owner, or its connection was removed from your Kortix account. | A GitHub owner of the organization reinstalls the App: **Customize → Settings → Git repo → Reconnect GitHub**. |
+| `app_suspended` | An owner suspended the App on GitHub. | A GitHub owner unsuspends it under GitHub **Settings → GitHub Apps**. |
+| `repo_not_accessible` | The repository was deleted, renamed, or removed from the App's repository access. | A GitHub owner adds the repository again under GitHub **Settings → GitHub Apps → Kortix → Repository access**, or you replace the repository. |
+
+While a project is disconnected:
+
+- Every API route that reads the repository answers `409` with `code: repository_disconnected`, the `reason`, and the same message. The project detail still loads: its `config.manifest_version.unknown_reason` is `repository_disconnected` and `git_connection.status` is `error`.
+- Session create and start fail at once with that `409`. A session that is already running keeps running.
+- Scheduled triggers skip each run and record the message as the trigger's last error. They do not retry.
+- `git clone`, `fetch` and `push` through the Kortix git origin print the message as `remote: …`.
+- The web app shows **GitHub disconnected** in the sidebar, in **Git repo** and on a session that cannot start. `kortix projects info` prints the reason and the reconnect link.
+
+Kortix checks GitHub again at most every 5 minutes. After the fix on GitHub, the project reconnects on the next check. Reconnecting through **Reconnect GitHub** checks at once, and a project that stored the old installation moves to the new one.
+
+### Replace the repository
+
+Under **Git repo**, select **Change** and enter the new GitHub repository URL. Kortix verifies access through the GitHub App. The new repository needs the manifest file on its default branch. Stop active sessions, and close or merge open change requests, first. New sessions use the new repository. Existing sessions cannot restart after the change. The route is `PUT /v1/projects/<project_id>/git/repository`. It needs `project.settings.write` and `project.connector.write`.
+
+### Give people direct access
+
+A managed repository lives on GitHub under Kortix. To let someone work on it on github.com, add their GitHub username under **People with access**, with **Can edit** or **Can view**. GitHub emails them an invite. This needs `project.members.manage`, and works on managed repositories only. For a repository you own, manage access on GitHub.
+
+### A repository on another git host
+
+To let Kortix reach a repository on another git host, store a token with `PUT /v1/projects/<project_id>/git-credential` and the body `{ "token": "…" }`. Kortix keeps it as a platform credential, not as a secret a sandbox can read. It needs `project.connector.write`. GitHub and managed repositories refuse it with `409`. For a repository on another git host, `kortix sessions new` run in a checkout whose `origin` is that repository creates the session branch. It pushes your current branch with your own git credentials.
+
+### Browse without a clone
+
+`kortix files` reads the committed repository. It acts on the default branch unless `--ref <branch|tag|sha>` picks another. Every subcommand needs `project.file.read`.
+
+| Command | Does |
+| --- | --- |
+| `kortix files ls [<path>]` | Lists files. |
+| `kortix files cat <path>` | Prints a file. |
+| `kortix files search <query> [--content]` | Searches file names, or file contents. |
+| `kortix files history <path>` | Lists the commits that changed a file. |
+| `kortix files branches` | Lists branches, ahead and behind the default branch. |
+| `kortix files commits [--path <p>]` | Lists commits on `--ref`. |
+| `kortix files show <sha>` | Shows one commit and its files. |
+| `kortix files diff <sha> [--path <p>]` | Prints a commit's patch. |
+| `kortix files download -o <file.zip> [--path <p>]` | Downloads the repository or a subtree as a zip. |
+
+For uncommitted files in a running sandbox, use `kortix sessions cp <session_id>:<path> <dst>`. See [Sandboxes & previews](/docs/work/runtime).
+
+### Delete
+
+Deleting a project deletes its managed repository. A repository you connected yourself is left untouched. See [Projects](/docs/project).

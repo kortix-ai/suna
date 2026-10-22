@@ -20,9 +20,11 @@
  */
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
+import { waitFor } from '../core/poll';
 import type { FlowContext, Principal } from '../core/types';
-import { asPlatformAdmin } from '../fixtures/enterprise-demo';
-import { ssoFixtureToken } from '../fixtures/supabase';
+import { asPlatformAdmin } from '../fixtures/enterprise-access';
+import { PASSWORD } from '../fixtures/principals';
+import { passwordGrant, refreshGrant, ssoFixtureToken } from '../fixtures/supabase';
 
 async function saveProvider(
   ctx: FlowContext,
@@ -141,7 +143,7 @@ flow(
       read.status(200).body().has('$.provider.domain_verified', true).exists('$.provider.domain_verified_at');
     });
 
-    await ctx.step('on the verified domain SSO is enforced: check-email says sso, password and email-code sign-in → 403', async () => {
+    await ctx.step('on the verified domain SSO is enforced: check-email says sso, password and email-code sign-in and a new sign-up → 403', async () => {
       const mode = await checkEmailMode(ctx, email);
       if (mode !== 'sso') throw new Error(`expected sso for a verified enforced domain, got ${mode}`);
       (await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/password', { email, password }))
@@ -149,6 +151,11 @@ flow(
         .body()
         .has('$.error', 'sso_required');
       (await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/magic-link', { email, create_user: false }))
+        .status(403)
+        .body()
+        .has('$.error', 'sso_required');
+      // KRTX-1716: the API sign-up door follows the same rule as the web form.
+      (await ctx.client.as(ctx.P.ANON).post('/v1/auth/signup', { email: `newcomer@${domain}`, password }))
         .status(403)
         .body()
         .has('$.error', 'sso_required');
@@ -292,6 +299,7 @@ flow(
       'PATCH /v1/accounts/:accountId/members/:userId',
       'GET /v1/accounts/:accountId/members',
       'GET /v1/accounts/:accountId',
+      'POST /v1/access/check-email',
     ],
   },
   async (ctx) => {
@@ -349,6 +357,12 @@ flow(
 
     await ctx.step('an operator verifies the domain', async () => {
       (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
+    });
+
+    await ctx.step('a verified domain without enforce_sso: check-email for an existing address on it → signin, not sso', async () => {
+      const person = await ctx.fixtures.userWithEmail(`${ctx.fixtures.name('no-enforce')}@${domain}`);
+      const mode = await checkEmailMode(ctx, person.email!);
+      if (mode !== 'signin') throw new Error(`a verified domain without enforce_sso must not force SSO, got ${mode}`);
     });
 
     await ctx.step('verified domain: an owner is never merged; the SSO identity joins as a plain member', async () => {
@@ -460,6 +474,312 @@ flow(
 
     await ctx.step('cleanup: remove the provider', async () => {
       (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: idpTeam.id } })).status(200);
+    });
+  },
+);
+
+// SSO-5 — SAML belongs to an organization. On a personal account its owner
+// could register an IdP that asserts any address (an operator's, say); Supabase
+// creates a separate SSO user for it (KRTX-1715).
+flow(
+  'SSO-5',
+  {
+    domain: 'iam',
+    routes: [
+      'GET /v1/accounts',
+      'GET /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'POST /v1/accounts/:accountId/iam/sso/provider/from-metadata',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    let personal = '';
+    await ctx.step("the owner's personal account is the one whose id is their user id", async () => {
+      const r = await owner.get('/v1/accounts');
+      r.status(200);
+      personal = r.json<Array<{ account_id: string }>>().find((a) => a.account_id === ctx.P.OWNER.userId)?.account_id ?? '';
+      if (!personal) throw new Error('the owner has no personal account');
+    });
+
+    await ctx.step('setting up SAML on it → 403 sso_personal_account, on both routes', async () => {
+      const put = await owner.put(
+        '/v1/accounts/:accountId/iam/sso/provider',
+        { supabase_sso_provider_id: crypto.randomUUID(), name: 'Synthetic IdP', primary_domain: 'personal-sso.test' },
+        { params: { accountId: personal } },
+      );
+      put.status(403).body().has('$.code', 'sso_personal_account');
+      const fromMetadata = await owner.post(
+        '/v1/accounts/:accountId/iam/sso/provider/from-metadata',
+        { name: 'Synthetic IdP', primary_domain: 'personal-sso.test', metadata_url: 'https://idp.personal-sso.test/metadata' },
+        { params: { accountId: personal } },
+      );
+      fromMetadata.status(403).body().has('$.code', 'sso_personal_account');
+    });
+
+    await ctx.step('no provider was recorded on the personal account', async () => {
+      const r = await owner.get('/v1/accounts/:accountId/iam/sso/provider', { params: { accountId: personal } });
+      if (r.statusCode === 200) {
+        const provider = r.json<{ provider: unknown }>().provider;
+        if (provider) throw new Error(`a provider was recorded: ${JSON.stringify(provider)}`);
+      }
+    });
+  },
+);
+
+// ─── SSO only: helpers for SSO-6 and SSO-7 ──────────────────────────────────
+
+/** The status codes of `GET /accounts/:id` and `GET /projects/:id`, joined: "200,200". */
+async function reads(client: Client, accountId: string, projectId: string): Promise<string> {
+  return [
+    (await client.get('/v1/accounts/:accountId', { params: { accountId } })).statusCode,
+    (await client.get('/v1/projects/:projectId', { params: { projectId } })).statusCode,
+  ].join();
+}
+
+/**
+ * Each API process caches a caller's SSO verdict for up to 15 s, and a change
+ * clears only the process that took it. Poll until 8 reads in a row agree, so
+ * every process behind the load balancer answers the new state.
+ */
+async function settledReads(client: Client, accountId: string, projectId: string, expected: string, label: string) {
+  const deadline = Date.now() + 30_000;
+  let streak = 0;
+  let codes = '';
+  while (streak < 8) {
+    if (Date.now() > deadline) throw new Error(`${label}: expected ${expected} 8 times in a row within 30 s, last ${codes}`);
+    codes = await reads(client, accountId, projectId);
+    streak = codes === expected ? streak + 1 : 0;
+    if (streak < 8) await new Promise((resolve) => setTimeout(resolve, codes === expected ? 100 : 1_000));
+  }
+}
+
+interface SignIn {
+  access: string;
+  refresh: string;
+}
+
+/** A password sign-in of its own, beside the principal's session. */
+async function passwordSignIn(ctx: FlowContext, email: string): Promise<SignIn> {
+  const r = await ctx.client.as(ctx.P.ANON).post('/v1/auth/sign-in/password', { email, password: PASSWORD });
+  r.status(200);
+  const session = r.json<{ session: { access_token: string; refresh_token: string } }>().session;
+  return { access: session.access_token, refresh: session.refresh_token };
+}
+
+/** The sign-in is over: its refresh token is refused (400) and its access token too (401). */
+async function assertSignedOut(ctx: FlowContext, signIn: SignIn, accountId: string) {
+  (await ctx.client.as(ctx.P.ANON).post('/v1/auth/refresh', { refresh_token: signIn.refresh })).status(400);
+  (await ctx.client.withBearer(signIn.access, 'ended sign-in').get('/v1/accounts/:accountId', { params: { accountId } })).status(401);
+}
+
+/** The `after` payloads of the account's `action` audit events, once `count` of them exist. */
+async function auditAfters(ctx: FlowContext, accountId: string, action: string, count: number) {
+  const events = await waitFor(
+    async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/audit', {
+        params: { accountId },
+        query: { action, limit: '50' },
+      });
+      r.status(200);
+      return r.json<{ events: Array<{ action: string; after: Record<string, unknown> | null }> }>().events.filter((e) => e.action === action);
+    },
+    { until: (found) => found.length >= count, timeoutMs: 15_000, intervalMs: 500, description: `${count} ${action} audit event(s)` },
+  );
+  return events.map((e) => e.after ?? {});
+}
+
+// SSO-6 — SSO only is enforced by the API on every credential, not only by the
+// web sign-in form. A password identity in the enforced domain still held a
+// JWT from GoTrue (a direct password grant, mobile, a social sign-in), and the
+// API accepted it everywhere (KRTX-1716). Enforcement taking effect also ends
+// that identity's existing sign-ins; its API keys stay and are refused.
+flow(
+  'SSO-6',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'POST /v1/accounts/tokens',
+      'POST /v1/auth/sign-in/password',
+      'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
+      'POST /v1/auth/refresh',
+      'GET /v1/accounts/:accountId',
+      'GET /v1/projects/:projectId',
+      'GET /v1/accounts/:accountId/audit',
+      'DELETE /v1/accounts/:accountId/iam/sso/provider',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const domain = `${ctx.fixtures.name('sso-only')}.test`.toLowerCase();
+    const supabaseProviderId = crypto.randomUUID();
+    const params = { accountId: team.id };
+    const passwordPerson = await ctx.fixtures.userWithEmail(`admin@${domain}`);
+    const ssoPerson = await ctx.fixtures.userWithEmail(`member@${domain}`);
+    const elsewhere = await team.addMember('member');
+    // An account member reads a project only with a project role.
+    await team.grantProjectRole(project.id, elsewhere.userId!, 'member');
+    const readsOf = (client: Client) => reads(client, team.id, project.id);
+    let sso: Client;
+    let pat: Client;
+    let secondSignIn: SignIn;
+
+    await ctx.step('two people on the domain join the account; one of them signs in through the IdP', async () => {
+      for (const person of [passwordPerson, ssoPerson]) {
+        const r = await owner.post('/v1/accounts/:accountId/members', { email: person.email, role: 'admin' }, { params });
+        r.status([200, 201]);
+      }
+      sso = ctx.client.withBearer(await ssoFixtureToken(ctx.env, ssoPerson, supabaseProviderId, []), 'SSO-only');
+    });
+
+    await ctx.step('before verification the password identity mints a PAT and signs in a second time; every member reads', async () => {
+      await saveProvider(ctx, team.id, { supabaseProviderId, domain, enforceSso: true });
+      const minted = await ctx.client.as(passwordPerson).post('/v1/accounts/tokens', { name: ctx.fixtures.name('sso-only-pat'), account_id: team.id });
+      minted.status(201);
+      pat = ctx.client.withBearer(minted.json<{ secret_key: string }>().secret_key, 'SSO-only PAT');
+      secondSignIn = await passwordSignIn(ctx, passwordPerson.email!);
+      const second = ctx.client.withBearer(secondSignIn.access, 'second sign-in');
+      for (const [label, client] of [['password', ctx.client.as(passwordPerson)], ['second sign-in', second], ['pat', pat], ['sso', sso], ['elsewhere', ctx.client.as(elsewhere)]] as const) {
+        const codes = await readsOf(client);
+        if (codes !== '200,200') throw new Error(`${label}: expected 200,200 before verification, got ${codes}`);
+      }
+    });
+
+    await ctx.step('verifying the domain ends both sign-ins of the password identity: refresh 400, access token 401', async () => {
+      (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
+      await assertSignedOut(ctx, secondSignIn, team.id);
+      (await ctx.client.as(passwordPerson).get('/v1/accounts/:accountId', { params })).status(401);
+    });
+
+    await ctx.step('the audit event records the 2 ended sign-ins', async () => {
+      const [after] = await auditAfters(ctx, team.id, 'admin.account.sso_domain.set', 1);
+      if (after.domain_verified !== true || after.revoked_sessions !== 2) {
+        throw new Error(`expected domain_verified true and revoked_sessions 2, got ${JSON.stringify(after)}`);
+      }
+    });
+
+    await ctx.step('the PAT and a new JWT from a direct GoTrue password grant get 403 sso_required on the account and the project', async () => {
+      // The headless sign-in refuses this person; GoTrue with the anon key does not.
+      const grant = ctx.client.withBearer(await passwordGrant(ctx.env, passwordPerson.email!, PASSWORD), 'GoTrue password grant');
+      for (const [label, client] of [['PAT', pat], ['GoTrue password grant', grant]] as const) {
+        await settledReads(client, team.id, project.id, '403,403', `${label} after verification`);
+        (await client.get('/v1/accounts/:accountId', { params })).status(403).body().has('$.code', 'sso_required');
+        (await client.get('/v1/projects/:projectId', { params: { projectId: project.id } }))
+          .status(403)
+          .body()
+          .has('$.code', 'sso_required');
+      }
+    });
+
+    await ctx.step('the identity of the IdP, a member outside the domain, and the owner keep working', async () => {
+      for (const [label, client] of [['sso', sso], ['elsewhere', ctx.client.as(elsewhere)], ['owner', owner]] as const) {
+        const codes = await readsOf(client);
+        if (codes !== '200,200') throw new Error(`${label}: expected 200,200, got ${codes}`);
+      }
+    });
+
+    await ctx.step('break-glass: an operator marks the domain unverified; the PAT and a new sign-in read, the ended sign-in stays ended', async () => {
+      (await operatorVerifies(ctx, team.id, false)).status(200).body().has('$.domain_verified', false);
+      await settledReads(pat, team.id, project.id, '200,200', 'PAT after break-glass');
+      // Ask GoTrue itself: /auth/refresh answers a second presentation of a
+      // refresh token from its used-token claim, without asking GoTrue.
+      const renewal = await refreshGrant(ctx.env, secondSignIn.refresh).then(
+        () => 'renewed',
+        (err: { ke2eRetryable?: boolean }) => (err.ke2eRetryable ? 'retryable error' : 'refused'),
+      );
+      if (renewal !== 'refused') throw new Error(`ended sign-in after break-glass: expected GoTrue to refuse the refresh, got ${renewal}`);
+      (await ctx.client.withBearer(secondSignIn.access, 'ended sign-in').get('/v1/accounts/:accountId', { params })).status(401);
+      const again = await passwordSignIn(ctx, passwordPerson.email!);
+      await settledReads(ctx.client.withBearer(again.access, 'sign-in after break-glass'), team.id, project.id, '200,200', 'new sign-in after break-glass');
+    });
+
+    await ctx.step('cleanup: remove the provider', async () => {
+      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params })).status(200);
+    });
+  },
+);
+
+// SSO-7 — turning `enforce_sso` on for a verified domain ends the existing
+// sign-ins of the in-domain members the gate now refuses, and the
+// `iam.sso.provider.update` audit event records how many (KRTX-1716).
+flow(
+  'SSO-7',
+  {
+    domain: 'iam',
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'PUT /v1/accounts/:accountId/iam/sso/provider',
+      'PUT /v1/admin/api/accounts/:id/sso-domain-verification',
+      'POST /v1/auth/sign-in/password',
+      'POST /v1/auth/refresh',
+      'GET /v1/accounts/:accountId',
+      'GET /v1/projects/:projectId',
+      'GET /v1/accounts/:accountId/audit',
+      'DELETE /v1/accounts/:accountId/iam/sso/provider',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const project = await team.project();
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const domain = `${ctx.fixtures.name('sso-enforce')}.test`.toLowerCase();
+    const supabaseProviderId = crypto.randomUUID();
+    const params = { accountId: team.id };
+    const passwordPerson = await ctx.fixtures.userWithEmail(`admin@${domain}`);
+    const ssoPerson = await ctx.fixtures.userWithEmail(`member@${domain}`);
+    const elsewhere = await team.addMember('member');
+    await team.grantProjectRole(project.id, elsewhere.userId!, 'member');
+    let sso: Client;
+    let secondSignIn: SignIn;
+
+    await ctx.step('two people on the domain join the account; one of them signs in through the IdP', async () => {
+      for (const person of [passwordPerson, ssoPerson]) {
+        const r = await owner.post('/v1/accounts/:accountId/members', { email: person.email, role: 'admin' }, { params });
+        r.status([200, 201]);
+      }
+      sso = ctx.client.withBearer(await ssoFixtureToken(ctx.env, ssoPerson, supabaseProviderId, []), 'SSO-only');
+    });
+
+    await ctx.step('a verified domain without enforce_sso: the password identity signs in and reads', async () => {
+      await saveProvider(ctx, team.id, { supabaseProviderId, domain, enforceSso: false });
+      (await operatorVerifies(ctx, team.id, true)).status(200).body().has('$.domain_verified', true);
+      secondSignIn = await passwordSignIn(ctx, passwordPerson.email!);
+      const codes = await reads(ctx.client.withBearer(secondSignIn.access, 'second sign-in'), team.id, project.id);
+      if (codes !== '200,200') throw new Error(`expected 200,200 before enforcement, got ${codes}`);
+    });
+
+    await ctx.step('turning enforce_sso on ends both sign-ins of the password identity: refresh 400, access token 401', async () => {
+      const provider = await saveProvider(ctx, team.id, { supabaseProviderId, domain, enforceSso: true });
+      if (provider.enforce_sso !== true || provider.domain_verified !== true) {
+        throw new Error(`expected an enforced, verified provider, got ${JSON.stringify(provider)}`);
+      }
+      await assertSignedOut(ctx, secondSignIn, team.id);
+      (await ctx.client.as(passwordPerson).get('/v1/accounts/:accountId', { params })).status(401);
+    });
+
+    await ctx.step('the identity of the IdP, a member outside the domain, and the owner keep working', async () => {
+      for (const [label, client] of [['sso', sso], ['elsewhere', ctx.client.as(elsewhere)], ['owner', owner]] as const) {
+        const codes = await reads(client, team.id, project.id);
+        if (codes !== '200,200') throw new Error(`${label}: expected 200,200, got ${codes}`);
+      }
+    });
+
+    await ctx.step('iam.sso.provider.update records 2 ended sign-ins; saving again ends none and records 0', async () => {
+      const [first] = await auditAfters(ctx, team.id, 'iam.sso.provider.update', 1);
+      if (first.enforce_sso !== true || first.revoked_sessions !== 2) {
+        throw new Error(`expected enforce_sso true and revoked_sessions 2, got ${JSON.stringify(first)}`);
+      }
+      await saveProvider(ctx, team.id, { supabaseProviderId, domain, enforceSso: true });
+      const counts = (await auditAfters(ctx, team.id, 'iam.sso.provider.update', 2)).map((after) => after.revoked_sessions);
+      if (counts.slice().sort().join() !== '0,2') throw new Error(`expected revoked_sessions 0 and 2, got ${counts}`);
+    });
+
+    await ctx.step('cleanup: remove the provider', async () => {
+      (await owner.del('/v1/accounts/:accountId/iam/sso/provider', { params })).status(200);
     });
   },
 );

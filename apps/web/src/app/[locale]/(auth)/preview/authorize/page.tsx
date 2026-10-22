@@ -1,6 +1,5 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
 /**
  * The hand-off that turns "you are signed in to Kortix" into "this preview
  * origin will serve you".
@@ -23,25 +22,15 @@ import { useTranslations } from '@/i18n/use-translations';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
-import { AuthFrame } from '@/features/auth/auth-card-shell';
-import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import { AuthPendingScreen } from '@kortix/ui/internal/auth/auth-consent';
+import {
+  PreviewAuthorizeView,
+  type PreviewAuthorizeState,
+} from '@/features/auth/preview-authorize-view';
 import { useAuth } from '@/features/providers/auth-provider';
 import { getEnv } from '@/lib/env-config';
 import { createClient } from '@/lib/supabase/client';
-
-/** The preview hostname shape, as `GET /v1/p/config` describes it. */
-async function fetchPreviewTemplate(backendUrl: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${backendUrl.replace(/\/+$/, '')}/p/config`, {
-      headers: { Accept: 'application/json' },
-    });
-    if (!res.ok) return null;
-    const body = (await res.json()) as { preview_url_template?: string | null };
-    return typeof body?.preview_url_template === 'string' ? body.preview_url_template : null;
-  } catch {
-    return null;
-  }
-}
+import { loadPreviewUrlTemplate } from '@kortix/sdk';
 
 /**
  * True only for a URL on a hostname this deployment serves previews on.
@@ -86,35 +75,34 @@ export default function PreviewAuthorizePage() {
 }
 
 function PreviewAuthorize() {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const searchParams = useSearchParams();
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Exclude<PreviewAuthorizeState, 'opening'> | null>(null);
   const to = searchParams.get('to') || '';
+  // Come back here once signed in, carrying `to` untouched.
+  const signInUrl = `/auth?returnUrl=${encodeURIComponent(
+    `/preview/authorize?to=${encodeURIComponent(to)}`,
+  )}`;
 
   useEffect(() => {
     if (isLoading) return;
 
     if (!user) {
-      // Come back here once signed in, carrying `to` untouched. `replace`, not
-      // `push`: this page is a hand-off, and leaving it in history means Back
-      // lands on a page that immediately redirects again.
-      const returnUrl = `/preview/authorize?to=${encodeURIComponent(to)}`;
-      router.replace(`/auth?returnUrl=${encodeURIComponent(returnUrl)}`);
+      // `replace`, not `push`: this page is a hand-off, and leaving it in
+      // history means Back lands on a page that immediately redirects again.
+      router.replace(signInUrl);
       return;
     }
 
     let cancelled = false;
     (async () => {
       const backendUrl = getEnv().BACKEND_URL || '';
-      const template = await fetchPreviewTemplate(backendUrl);
+      const template = await loadPreviewUrlTemplate(backendUrl);
       if (cancelled) return;
 
       if (!isServablePreviewUrl(to, template)) {
-        setError(
-          'That address is not a preview this deployment serves. Open the preview from your session instead.',
-        );
+        setFailure('not-served');
         return;
       }
 
@@ -124,7 +112,7 @@ function PreviewAuthorize() {
       } = await supabase.auth.getSession();
       if (cancelled) return;
       if (!session?.access_token) {
-        setError('Your session expired. Sign in again and reopen the preview.');
+        setFailure('expired');
         return;
       }
 
@@ -136,18 +124,17 @@ function PreviewAuthorize() {
     return () => {
       cancelled = true;
     };
-  }, [user, isLoading, to, router]);
+  }, [user, isLoading, to, router, signInUrl]);
 
-  if (error) {
-    return (
-      <AuthFrame>
-        <div className="flex flex-col items-center gap-2 text-center">
-          <h1 className="text-sm font-medium">{tI18nComplete.raw('text4ce7b95988e3')}</h1>
-          <p className="text-muted-foreground text-xs">{error}</p>
-        </div>
-      </AuthFrame>
-    );
-  }
+  // Until the session is known there is nothing true to say about the preview.
+  if (isLoading || !user) return <AuthPendingScreen />;
 
-  return <AuthPendingScreen />;
+  return (
+    <PreviewAuthorizeView
+      state={failure ?? 'opening'}
+      to={to}
+      email={user.email ?? null}
+      onSignInAgain={() => router.replace(signInUrl)}
+    />
+  );
 }

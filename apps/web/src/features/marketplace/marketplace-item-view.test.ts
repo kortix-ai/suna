@@ -5,9 +5,8 @@ import type { DependencyItem, ItemCapabilities } from '@/lib/marketplace-client'
 import {
   emptyDescriptionCopy,
   emptyReadmeCopy,
-  groupBundleMembersByType,
   groupCapabilities,
-  itemCountLabel,
+  marketplaceFileNodes,
   resolveBundleMembers,
   totalCapabilityCount,
 } from './marketplace-item-view';
@@ -45,40 +44,6 @@ describe('emptyReadmeCopy', () => {
 
   test('derives type-aware wording for a skill', () => {
     expect(emptyReadmeCopy('registry:skill')).toBe("This skill doesn't ship a README yet.");
-  });
-});
-
-describe('itemCountLabel', () => {
-  test('a bundle counts its member dependencies as items', () => {
-    const result = itemCountLabel({
-      type: 'registry:bundle',
-      dependencies: ['a', 'b', 'c'],
-      fileCount: 0,
-    });
-
-    expect(result).toEqual({ count: 3, unit: 'items' });
-  });
-
-  test('a bundle with exactly one member uses the singular unit', () => {
-    const result = itemCountLabel({ type: 'registry:bundle', dependencies: ['a'], fileCount: 0 });
-
-    expect(result).toEqual({ count: 1, unit: 'item' });
-  });
-
-  test('a non-bundle type counts files, ignoring dependencies', () => {
-    const result = itemCountLabel({
-      type: 'registry:skill',
-      dependencies: ['a', 'b'],
-      fileCount: 5,
-    });
-
-    expect(result).toEqual({ count: 5, unit: 'files' });
-  });
-
-  test('a single file uses the singular unit', () => {
-    const result = itemCountLabel({ type: 'registry:agent', dependencies: [], fileCount: 1 });
-
-    expect(result).toEqual({ count: 1, unit: 'file' });
   });
 });
 
@@ -151,48 +116,6 @@ describe('resolveBundleMembers', () => {
   });
 });
 
-describe('groupBundleMembersByType', () => {
-  const m = (key: string, type: string | null) => ({
-    key,
-    title: key,
-    type,
-    description: null,
-    href: null,
-  });
-
-  test('buckets members by type in a stable order (skills, agents, tools, …)', () => {
-    const groups = groupBundleMembersByType(
-      [
-        m('t1', 'registry:tool'),
-        m('s1', 'registry:skill'),
-        m('a1', 'registry:agent'),
-        m('s2', 'registry:skill'),
-      ],
-      testUiTranslator,
-    );
-    expect(groups.map((g) => [g.label, g.members.map((x) => x.key)])).toEqual([
-      ['Skills', ['s1', 's2']],
-      ['Agents', ['a1']],
-      ['Tools', ['t1']],
-    ]);
-  });
-
-  test('collects null/unrecognized types into an "Other" bucket at the end', () => {
-    const groups = groupBundleMembersByType(
-      [m('s1', 'registry:skill'), m('x', null), m('y', 'registry:mystery')],
-      testUiTranslator,
-    );
-    expect(groups[0].label).toBe('Skills');
-    const other = groups[groups.length - 1];
-    expect(other.label).toBe('Other');
-    expect(other.members.map((x) => x.key).sort()).toEqual(['x', 'y']);
-  });
-
-  test('empty input produces no groups', () => {
-    expect(groupBundleMembersByType([], testUiTranslator)).toEqual([]);
-  });
-});
-
 describe('groupCapabilities', () => {
   function caps(overrides: Partial<ItemCapabilities>): ItemCapabilities {
     return { secrets: [], connectors: [], tools: [], network: [], ...overrides };
@@ -248,5 +171,37 @@ describe('totalCapabilityCount', () => {
   test('null/undefined capabilities count as zero', () => {
     expect(totalCapabilityCount(null)).toBe(0);
     expect(totalCapabilityCount(undefined)).toBe(0);
+  });
+});
+
+describe('marketplaceFileNodes', () => {
+  test('roots the tree at the shared skill directory, SKILL.md first', () => {
+    const nodes = marketplaceFileNodes([
+      '@skills/pdf/scripts/fill.py',
+      '@skills/pdf/SKILL.md',
+      '@skills/pdf/reference.md',
+    ]);
+    expect(nodes).toEqual([
+      { path: '@skills/pdf/SKILL.md', name: 'SKILL.md', depth: 0 },
+      { path: '@skills/pdf/reference.md', name: 'reference.md', depth: 0 },
+      { path: '@skills/pdf/scripts/fill.py', name: 'fill.py', depth: 1 },
+    ]);
+  });
+
+  test('a single file is one root row', () => {
+    expect(marketplaceFileNodes(['@skills/docx/SKILL.md'])).toEqual([
+      { path: '@skills/docx/SKILL.md', name: 'SKILL.md', depth: 0 },
+    ]);
+  });
+
+  test('targets with no shared directory keep every file, listed flat', () => {
+    expect(marketplaceFileNodes(['b/two.md', 'a/one.md']).map((n) => n.path)).toEqual([
+      'a/one.md',
+      'b/two.md',
+    ]);
+  });
+
+  test('no targets, no rows', () => {
+    expect(marketplaceFileNodes([])).toEqual([]);
   });
 });

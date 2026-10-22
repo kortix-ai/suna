@@ -1,14 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 
+import { config } from '../../config';
 import { getRequestContext, runWithContext } from '../../lib/request-context';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from '../proxy-hop';
 import {
   STRIP_FORWARD_HEADERS,
   bindSandboxRequestContext,
+  clientResponseHeaders,
+  isConnectionRefusedError,
   isProxiedBaseReset,
   longTurnTimeoutResponse,
   portUnreachableResponse,
+  sanitizeRedirectLocation,
   shouldAutoResumeStoppedSandbox,
+  stripFrameAncestors,
 } from './preview';
 
 describe('sandbox proxy audit context', () => {
@@ -132,10 +137,16 @@ describe('shouldAutoResumeStoppedSandbox', () => {
 // The 504 LONG_TURN_PROXY_TIMEOUT answer itself (code, no-store, the way out)
 // is proven at the route in __tests__/e2e-preview-proxy.test.ts.
 describe('longTurnTimeoutResponse', () => {
-  test('reflects CORS origin like every other proxy response, and omits it with no Origin', () => {
-    const res = longTurnTimeoutResponse('https://app.kortix.ai');
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
+  // The same allowlist as every preview response: the preview cookie is ambient
+  // on cross-site requests, so a credentialed grant to any origin let a
+  // cross-site page read this refusal (KRTX-2802).
+  test('grants CORS to the allowlisted origin only, and to no Origin nothing', () => {
+    const res = longTurnTimeoutResponse(config.FRONTEND_URL);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(config.FRONTEND_URL);
     expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    const arbitrary = longTurnTimeoutResponse('https://arbitrary.example');
+    expect(arbitrary.headers.has('Access-Control-Allow-Origin')).toBe(false);
+    expect(arbitrary.headers.has('Access-Control-Allow-Credentials')).toBe(false);
     expect(longTurnTimeoutResponse('').headers.has('Access-Control-Allow-Origin')).toBe(false);
   });
 });
@@ -196,6 +207,12 @@ describe('isProxiedBaseReset', () => {
 // this proxy strips; that strip is proven at the route in
 // __tests__/e2e-preview-proxy.test.ts.
 describe('the forward strip list', () => {
+  test('credential and hop-by-hop headers never reach a user app', () => {
+    for (const name of ['x-kortix-token', 'proxy-authorization', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer', 'keep-alive']) {
+      expect(STRIP_FORWARD_HEADERS.has(name)).toBe(true);
+    }
+  });
+
   test('the strip list is matched case-insensitively, as headers are', () => {
     // Headers arrive in whatever case the client sent; the forward loop
     // lowercases before testing membership, so the entry must be lowercase.
@@ -231,4 +248,219 @@ describe('portUnreachableResponse carries hop attribution', () => {
     expect(res.headers.get(PROXY_UPSTREAM_STATUS_HEADER)).toBe('502');
     expect(await res.json()).toMatchObject({ hop: 'daemon', upstream_status: 502 });
   });
+});
+
+// Phase 2 of the preview.ts split (KRTX-328) moves the response/header helpers
+// into ../preview-response.ts. These pins read them off ./preview — the path
+// every existing importer uses — so the move cannot change what they do.
+describe('stripFrameAncestors', () => {
+  test('removes the frame-ancestors directive and keeps the rest of the CSP', () => {
+    expect(
+      stripFrameAncestors(
+        "default-src 'self'; frame-ancestors 'none'; script-src 'wasm-unsafe-eval'",
+      ),
+    ).toBe("default-src 'self'; script-src 'wasm-unsafe-eval'");
+  });
+
+  test('a CSP that is only frame-ancestors leaves nothing to keep', () => {
+    expect(stripFrameAncestors("frame-ancestors 'self'")).toBeNull();
+  });
+
+  test('the directive match is case-insensitive and tolerates surrounding whitespace', () => {
+    expect(stripFrameAncestors('  FRAME-ANCESTORS * ; img-src data:')).toBe('img-src data:');
+  });
+
+  test('cleans every policy of a comma-separated list and drops the ones left empty', () => {
+    expect(stripFrameAncestors(", frame-ancestors https://sandbox.example.test; img-src 'self'")).toBe("img-src 'self'");
+    expect(stripFrameAncestors("frame-ancestors 'self', frame-ancestors *")).toBeNull();
+    expect(stripFrameAncestors("script-src 'self'; frame-ancestors 'none', img-src data:")).toBe("script-src 'self', img-src data:");
+  });
+
+  test('a lookalike directive is not eaten', () => {
+    expect(stripFrameAncestors('frame-ancestors-src *')).toBe('frame-ancestors-src *');
+  });
+
+  test('an empty CSP leaves nothing', () => {
+    expect(stripFrameAncestors('')).toBeNull();
+  });
+});
+
+describe('clientResponseHeaders', () => {
+  test('deletes X-Frame-Options and rewrites a CSP that frames the app', () => {
+    const upstream = new Headers({
+      'x-frame-options': 'DENY',
+      'content-security-policy': "default-src 'self'; frame-ancestors 'self'",
+    });
+    const headers = clientResponseHeaders(upstream, '');
+    expect(headers.has('x-frame-options')).toBe(false);
+    expect(headers.get('content-security-policy')).toBe("default-src 'self'");
+  });
+
+  test('a CSP reduced to nothing by the strip is deleted, not left empty', () => {
+    const headers = clientResponseHeaders(
+      new Headers({ 'content-security-policy': "frame-ancestors 'none'" }),
+      '',
+    );
+    expect(headers.has('content-security-policy')).toBe(false);
+  });
+
+  test('the report-only CSP is rewritten too', () => {
+    const headers = clientResponseHeaders(
+      new Headers({ 'content-security-policy-report-only': "frame-ancestors 'self'" }),
+      '',
+    );
+    expect(headers.has('content-security-policy-report-only')).toBe(false);
+  });
+
+  test('a CSP without frame-ancestors passes through untouched', () => {
+    const csp = "default-src 'self'; script-src 'wasm-unsafe-eval'";
+    const headers = clientResponseHeaders(new Headers({ 'content-security-policy': csp }), '');
+    expect(headers.get('content-security-policy')).toBe(csp);
+  });
+
+  test('the upstream cannot forge the proxy attribution headers', () => {
+    // X-Kortix-Proxy-Hop / X-Kortix-Upstream-Status are the PROXY's voice about
+    // which hop failed. The request-log suppression keys on them
+    // (request-log-level.ts), so an upstream passthrough that carried its own
+    // copy could name a designed-answer hop and silence a real failure. The
+    // proxy re-sets both where it means to (retry.ts's not-ready passthrough,
+    // portUnreachableResponse); a plain passthrough leaves them absent.
+    const forged = clientResponseHeaders(
+      new Headers({
+        'x-kortix-proxy-hop': 'control_plane',
+        'x-kortix-upstream-status': '200',
+      }),
+      '',
+    );
+    expect(forged.has('x-kortix-proxy-hop')).toBe(false);
+    expect(forged.has('x-kortix-upstream-status')).toBe(false);
+  });
+
+  test('the CORS grant follows the same allowlist as every preview response', () => {
+    const granted = clientResponseHeaders(new Headers(), config.FRONTEND_URL);
+    expect(granted.get('Access-Control-Allow-Origin')).toBe(config.FRONTEND_URL);
+    expect(granted.get('Access-Control-Allow-Credentials')).toBe('true');
+    expect(granted.get('Vary')).toBe('Origin');
+    const arbitrary = clientResponseHeaders(new Headers(), 'https://arbitrary.example');
+    expect(arbitrary.has('Access-Control-Allow-Origin')).toBe(false);
+    expect(arbitrary.has('Access-Control-Allow-Credentials')).toBe(false);
+  });
+
+  test('forwarded app cookies keep their host-only scope; ours are dropped', () => {
+    const upstream = new Headers();
+    upstream.append('set-cookie', 'app_sid=abc; Domain=kortix.com; Path=/');
+    upstream.append('set-cookie', 'theme=dark');
+    upstream.append('set-cookie', '__kortix_preview=tamper; Path=/');
+    const headers = clientResponseHeaders(upstream, '');
+    expect(headers.getSetCookie()).toEqual(['app_sid=abc; Path=/', 'theme=dark']);
+  });
+
+  test('a lone preview cookie of ours is dropped entirely', () => {
+    const upstream = new Headers({ 'set-cookie': '__kortix_preview_chips=a; Path=/' });
+    const headers = clientResponseHeaders(upstream, '');
+    expect(headers.getSetCookie()).toEqual([]);
+  });
+});
+
+describe('sanitizeRedirectLocation', () => {
+  const previewUrl = 'https://p.example/v1/p/sbx_ext/3000';
+  const prefix = '/v1/p/sbx_ext/3000';
+
+  test('a root-relative location rides the preview prefix', () => {
+    expect(sanitizeRedirectLocation(previewUrl, '/login?next=/x', prefix)).toBe(
+      `${prefix}/login?next=/x`,
+    );
+  });
+
+  test('an absolute URL back to the preview origin is re-rooted onto the prefix', () => {
+    expect(sanitizeRedirectLocation(previewUrl, 'https://p.example/dashboard#top', prefix)).toBe(
+      `${prefix}/dashboard#top`,
+    );
+  });
+
+  test('a loopback host is treated as the app itself', () => {
+    expect(sanitizeRedirectLocation(previewUrl, 'http://localhost:3000/callback', prefix)).toBe(
+      `${prefix}/callback`,
+    );
+  });
+
+  test('an external redirect passes through unchanged', () => {
+    expect(sanitizeRedirectLocation(previewUrl, 'https://idp.example/oauth?client=1', prefix)).toBe(
+      'https://idp.example/oauth?client=1',
+    );
+  });
+
+  test('a protocol-relative location is an external URL and passes through', () => {
+    expect(sanitizeRedirectLocation(previewUrl, '//evil.example/x', prefix)).toBe(
+      '//evil.example/x',
+    );
+  });
+
+  test('no location means no rewrite', () => {
+    expect(sanitizeRedirectLocation(previewUrl, null, prefix)).toBeNull();
+  });
+
+  test('an unparseable location yields null instead of throwing', () => {
+    expect(sanitizeRedirectLocation(previewUrl, 'http://[::1', prefix)).toBeNull();
+  });
+});
+
+describe('isConnectionRefusedError', () => {
+  test('a refused code on the error or its cause proves nothing reached the box', () => {
+    expect(isConnectionRefusedError(Object.assign(new Error('x'), { code: 'ECONNREFUSED' }))).toBe(
+      true,
+    );
+    expect(isConnectionRefusedError({ cause: { code: 'ECONNREFUSED' } })).toBe(true);
+  });
+
+  test('the message alone can prove it', () => {
+    for (const message of [
+      'connect ECONNREFUSED 127.0.0.1:3000',
+      'connection refused',
+      'Failed to connect',
+      'Unable to connect',
+    ]) {
+      expect(isConnectionRefusedError(new Error(message))).toBe(true);
+    }
+  });
+
+  test('any other failure stays ambiguous and must not gate the delivery retry', () => {
+    expect(
+      isConnectionRefusedError(Object.assign(new Error('timed out'), { code: 'ETIMEDOUT' })),
+    ).toBe(false);
+    expect(isConnectionRefusedError(new Error('connection reset mid-flight'))).toBe(false);
+    expect(isConnectionRefusedError(new Error('The operation was aborted'))).toBe(false);
+  });
+
+  test('non-error garbage is not a refused connection', () => {
+    expect(isConnectionRefusedError(null)).toBe(false);
+    expect(isConnectionRefusedError(undefined)).toBe(false);
+    expect(isConnectionRefusedError('ECONNREFUSED')).toBe(false);
+  });
+});
+
+// The unreachable-port page never prints the sandbox address: it is an
+// internal host, and the card header already names the preview (KRTX-1644).
+test('the unreachable-port page does not print the browser address', async () => {
+  const res = portUnreachableResponse({
+    port: 3000,
+    status: 502,
+    origin: '',
+    incomingHeaders: new Headers({ accept: 'text/html', 'x-kortix-preview-host': 'p.example' }),
+    reason: 'x',
+    hop: 'upstream_port',
+  });
+  expect(await res.text()).not.toContain('p.example');
+});
+
+test('without host headers the page simply omits the address', async () => {
+  const res = portUnreachableResponse({
+    port: 3000,
+    status: 502,
+    origin: '',
+    incomingHeaders: new Headers({ accept: 'text/html' }),
+    reason: 'x',
+    hop: 'upstream_port',
+  });
+  expect(await res.text()).not.toContain('https://');
 });

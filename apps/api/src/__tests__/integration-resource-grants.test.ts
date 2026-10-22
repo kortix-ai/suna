@@ -25,6 +25,8 @@ const PROJECT = crypto.randomUUID();
 const GRANTED_USER = crypto.randomUUID();
 const OTHER_USER = crypto.randomUUID();
 const GROUP = crypto.randomUUID();
+const STRIPE_SECRET_ID = crypto.randomUUID();
+const OPENAI_SECRET_ID = crypto.randomUUID();
 
 /** THE object rule, asked the way `authorize` asks it. */
 async function usable(
@@ -51,6 +53,10 @@ beforeAll(async () => {
   await db.execute(sql`
     insert into kortix.account_groups (group_id, account_id, name)
     values (${GROUP}::uuid, ${ACCOUNT}::uuid, 'marketing')`);
+  await db.execute(sql`
+    insert into kortix.project_secrets (secret_id, project_id, identifier, name, value_enc) values
+      (${STRIPE_SECRET_ID}::uuid, ${PROJECT}::uuid, 'STRIPE_KEY', 'STRIPE_KEY', 'test-ciphertext'),
+      (${OPENAI_SECRET_ID}::uuid, ${PROJECT}::uuid, 'OPENAI_KEY', 'OPENAI_KEY', 'test-ciphertext')`);
   await db.execute(sql`
     insert into kortix.account_members (user_id, account_id, account_role) values
       (${GRANTED_USER}::uuid, ${ACCOUNT}::uuid, 'member'),
@@ -113,18 +119,27 @@ describe('object grants — real DB round-trip + the engine object rule', () => 
   });
 
   test('secret grant: scoping a secret restricts it; unscoped secrets stay open', async () => {
+    // A secret grant names one shared VALUE by `secret_id` (its audience,
+    // projects/lib/secret-audience.ts) — no longer the secret NAME, and never
+    // a value that does not exist.
+    await expect(
+      upsertResourceGrant({
+        accountId: ACCOUNT, projectId: PROJECT, resourceType: 'secret', resourceId: 'STRIPE_KEY',
+        principalType: 'member', principalId: GRANTED_USER, grantedBy: GRANTED_USER,
+      }),
+    ).rejects.toThrow('not a shared secret');
     await upsertResourceGrant({
       accountId: ACCOUNT,
       projectId: PROJECT,
       resourceType: 'secret',
-      resourceId: 'STRIPE_KEY', // grant resource_id = the secret NAME
+      resourceId: STRIPE_SECRET_ID,
       principalType: 'member',
       principalId: GRANTED_USER,
       grantedBy: GRANTED_USER,
     });
-    expect(await usable('secret', 'STRIPE_KEY', GRANTED_USER, [])).toBe(true);
-    expect(await usable('secret', 'STRIPE_KEY', OTHER_USER, [])).toBe(false);
-    expect(await usable('secret', 'OPENAI_KEY', OTHER_USER, [])).toBe(true);
+    expect(await usable('secret', STRIPE_SECRET_ID, GRANTED_USER, [])).toBe(true);
+    expect(await usable('secret', STRIPE_SECRET_ID, OTHER_USER, [])).toBe(false);
+    expect(await usable('secret', OPENAI_SECRET_ID, OTHER_USER, [])).toBe(true);
   });
 
   test('re-granting the same object is idempotent, not a duplicate', async () => {
@@ -168,7 +183,7 @@ describe('object grants — real DB round-trip + the engine object rule', () => 
     const list = (rows as unknown as { rows?: Array<Record<string, string>> }).rows ?? rows;
     expect(list.map((r) => `${r.resource_type}:${r.resource_id}:${r.principal_type}`)).toEqual([
       'agent:release-bot:member',
-      'secret:STRIPE_KEY:member',
+      `secret:${STRIPE_SECRET_ID}:member`,
       'skill:lead-research:group',
     ]);
     // `effect` is a rendered constant now — 'deny' was reserved and never written.

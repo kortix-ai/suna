@@ -1,85 +1,41 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import {
-  accountGroupMembers,
-  accountGroups,
-  accountInvitations,
-  accountMembers,
-  accountMemberships,
-  accounts,
-  projects,
-} from '@kortix/db';
-import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { onMemberAdded, onMemberRemoved } from '../../billing/services/seat-management';
+import { projects } from '@kortix/db';
+import { and, eq, sql } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { visibleDirectory } from '../../iam/directory-visibility';
+import { isAudienceObjectType } from '../../iam/audience-grants';
 import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
-import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
-import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
+import { accountGroupMembershipRows } from '../../iam/group-read';
+import { accountDirectoryRows, verifiedMfaMemberIds } from '../../iam/membership-read';
 import { auth, errors, json } from '../../openapi';
-import { grantProjectRole } from '../../projects/lib/access';
 import {
   accountRoleMap,
   projectRoleGrants,
 } from '../../iam/read-models';
 import {
-  assignRole,
   auditAssignmentRevoked,
-  deleteAccountScopeAssignments,
   deleteProjectScopeAssignments,
   listAssignments,
   type Writer,
 } from '../../iam/assignments';
-import { revokeAllAccountTokensForUser } from '../../repositories/account-tokens';
 import { db } from '../../shared/db';
-import { buildInviteUrl, sendAccountInviteEmail } from '../email';
+import { registerInviteRoutes, registerMemberInviteRoute } from './invites';
+import { grantAccountRole } from './member-role-write';
 import { canSeeSensitiveMemberColumns } from './member-visibility';
+import { offboardMember } from './offboard-member';
 import {
   AccountIdParam,
-  AccountInviteSchema,
   AccountMemberSchema,
-  type AccountRole,
   OkSchema,
   accountsRouter,
   countOwners,
   getMembership,
   lookupEmailsByUserIds,
-  normalizeEmail,
   parseRole,
 } from './app';
 import { readJsonObject } from '../../shared/http-body';
 
-
-/**
- * The canonical half of an account-membership write.
- *
- * `account_members` is still written by these routes (a pre-cutover replica
- * reads it, and the mirror trigger derives the assignment from it), but the
- * ASSIGNMENT is what the engine reads, so every membership mutation goes
- * through `assignRole` / the revoke audit as well. Doing both is safe: the
- * trigger's upsert and `assignRole`'s upsert target the same identity index, so
- * the pair produces exactly ONE row.
- */
-async function grantAccountRole(
-  writer: Writer,
-  accountId: string,
-  userId: string,
-  role: AccountRole,
-): Promise<void> {
-  // THE write. `account_members.account_role` is a derived view column as of the
-  // cutover — there is no second store to keep in step, so a failure here is a
-  // failure of the membership change and must propagate.
-  //
-  // `exclusive` reproduces what the single `account_role` COLUMN enforced: one
-  // system account role per member, so owner -> admin retracts the owner
-  // assignment instead of unioning with it.
-  await assignRole(writer, accountId, {
-    principal: { type: 'user', id: userId },
-    roleKey: role,
-    scope: { type: 'account' },
-    source: 'system',
-    exclusive: true,
-  });
-}
 
 /**
  * Emit the revoke events for the account-scope system assignments a legacy
@@ -130,7 +86,10 @@ async function auditProjectAssignmentsRevoked(
       scopeType: 'project',
       liveOnly: false,
     });
-    for (const row of rows) await auditAssignmentRevoked(writer, accountId, row);
+    // Audience grants stay (`deleteProjectScopeAssignments`), so they are not revoked.
+    for (const row of rows) {
+      if (!isAudienceObjectType(row.objectType)) await auditAssignmentRevoked(writer, accountId, row);
+    }
   } catch (err) {
     console.warn('[members] canonical project-assignment revoke audit failed', {
       accountId,
@@ -164,14 +123,14 @@ export function registerMemberRoutes(): void {
       const membership = await getMembership(userId, accountId);
       if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
-      // The member directory is visible to EVERY member of the account (the way
-      // Slack / GitHub show teammates within one company), so all rows are
-      // returned. What stays gated is the SENSITIVE per-member data (PAT count,
-      // MFA, group memberships, project grants): member-managers (owner / admin /
-      // member.invite) see it on every row, everyone else only on their own —
-      // enforced by canSeeSensitiveMemberColumns in the map below.
+      // Which ROWS: `member.read` (owners and admins) lists every member. A
+      // plain member lists only the people they share access with
+      // (iam/directory-visibility.ts). Which COLUMNS: the SENSITIVE per-member
+      // data (PAT count, MFA, group memberships, project grants) shows on every
+      // row to member-managers (owner / admin / member.invite) and on their own
+      // row to everyone else — canSeeSensitiveMemberColumns in the map below.
       //
-      // Seven independent reads, each scoped to this account — none needs
+      // Eight independent reads, each scoped to this account — none needs
       // another's result (`emails` is the one exception: it needs the member
       // user ids, so it's kicked off separately right below once `rows` is
       // known). These used to run one at a time (measured: 10 DB round trips
@@ -180,8 +139,10 @@ export function registerMemberRoutes(): void {
       // degrades independently (groups/PAT/MFA catch their own failures) so a
       // `Promise.all` rejection from the authorize/identity/role reads is the
       // only one allowed to fail the request — same as before.
+      const actor = await actorOf(c, accountId);
       const [
         canManageMembers,
+        visible,
         identityRows,
         accountRoles,
         [assignedGrants, activeProjects],
@@ -189,19 +150,13 @@ export function registerMemberRoutes(): void {
         patCountByUser,
         mfaByUser,
       ] = await Promise.all([
-        authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE).then((r) => r.allowed),
+        authorize(actor, ACCOUNT_ACTIONS.MEMBER_INVITE).then((r) => r.allowed),
+        visibleDirectory(actor),
         // `account_members` is the DIRECTORY (who is here, since when, and the
         // is_super_admin bypass flag). The ROLE comes from `role_assignments` —
         // the one store the engine reads — so this list can no longer disagree
         // with what the gate says a moment later.
-        db
-          .select({
-            userId: accountMembers.userId,
-            isSuperAdmin: accountMembers.isSuperAdmin,
-            joinedAt: accountMembers.joinedAt,
-          })
-          .from(accountMembers)
-          .where(eq(accountMembers.accountId, accountId)),
+        accountDirectoryRows(accountId),
         accountRoleMap(accountId),
         // Direct project grants per member, one batched query (name + role, not
         // just a count) — powers both the "N projects" chip and a popover
@@ -223,15 +178,7 @@ export function registerMemberRoutes(): void {
         (async () => {
             const map = new Map<string, Array<{ group_id: string; name: string }>>();
             try {
-              const groupRows = await db
-                .select({
-                  userId: accountGroupMembers.userId,
-                  groupId: accountGroups.groupId,
-                  name: accountGroups.name,
-                })
-                .from(accountGroupMembers)
-                .innerJoin(accountGroups, eq(accountGroupMembers.groupId, accountGroups.groupId))
-                .where(eq(accountGroups.accountId, accountId));
+              const groupRows = await accountGroupMembershipRows(accountId);
               for (const g of groupRows) {
                 const list = map.get(g.userId) ?? [];
                 list.push({ group_id: g.groupId, name: g.name });
@@ -269,14 +216,7 @@ export function registerMemberRoutes(): void {
           (async () => {
             const map = new Map<string, boolean>();
             try {
-              const mfaRows = await db.execute<{ user_id: string }>(sql`
-      SELECT DISTINCT user_id::text
-      FROM auth.mfa_factors
-      WHERE status = 'verified'
-        AND user_id IN (
-          SELECT user_id FROM kortix.account_members WHERE account_id = ${accountId}::uuid
-        )
-    `);
+              const mfaRows = await verifiedMfaMemberIds(accountId);
               const mfaData = (mfaRows as unknown as { rows: typeof mfaRows }).rows ?? mfaRows;
               for (const row of mfaData as Array<{ user_id: string }>) {
                 map.set(row.user_id, true);
@@ -295,13 +235,13 @@ export function registerMemberRoutes(): void {
         accountRole: accountRoles.get(r.userId) ?? 'member',
       }));
 
-      // Everyone in the account sees the full directory; sensitive columns are
-      // gated per-row below.
-      const visibleRows = rows;
+      const visibleRows = visible.userIds
+        ? rows.filter((r) => visible.userIds!.has(r.userId))
+        : rows;
 
       // The one read that genuinely depends on another (`rows`'s user ids), so
       // it cannot join the batch above.
-      const emails = await lookupEmailsByUserIds(rows.map((r) => r.userId));
+      const emails = await lookupEmailsByUserIds(visibleRows.map((r) => r.userId));
 
       const projectNameById = new Map(activeProjects.map((p) => [p.projectId, p.name] as const));
       const projectGrantRows = assignedGrants
@@ -359,406 +299,9 @@ export function registerMemberRoutes(): void {
     },
   );
 
-  // POST /v1/accounts/:accountId/members — invite a user by email. If the user
-  // exists, they're added immediately. Otherwise we create a pending invitation
-  // that auto-claims on first /v1/accounts call after signup.
-  accountsRouter.openapi(
-    createRoute({
-      method: 'post',
-      path: '/{accountId}/members',
-      tags: ['accounts'],
-      summary: 'Invite a user by email (added immediately or pending invite)',
-      ...auth,
-      request: {
-        params: AccountIdParam,
-        body: {
-          content: {
-            'application/json': {
-              schema: z.object({
-                email: z.string(),
-                role: z.string().optional(),
-                // Project access to grant alongside the invite — applied
-                // immediately if the invitee already has a Kortix account,
-                // or staged on the pending invite (same bootstrap_grants
-                // column POST /projects/:id/access/invite already writes)
-                // and applied automatically when they accept.
-                project_grants: z
-                  .array(z.object({ project_id: z.string(), role: z.string().optional() }))
-                  .optional(),
-              }),
-            },
-          },
-        },
-      },
-      responses: {
-        201: json(z.record(z.string(), z.any()), 'Member added or pending invitation created'),
-        ...errors(400, 401, 403, 404, 409),
-      },
-    }),
-    async (c: any) => {
-      const userId = c.get('userId') as string;
-      const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
-      const accountId = c.req.param('accountId');
+  registerMemberInviteRoute();
 
-      const membership = await getMembership(userId, accountId);
-      if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
-
-      const body = await readJsonObject(c);
-      const email = normalizeEmail(body.email);
-      if (!email) return c.json({ error: 'A valid email is required' }, 400);
-
-      const role: AccountRole = parseRole(body.role, ['admin', 'member']) ?? 'member';
-
-      // Project grants only apply to `member` invites — an admin/owner
-      // already holds implicit Manager on every project in the account (see
-      // the PATCH role-change handler below, which strips their direct
-      // project_members rows for the same reason), so a grant would be
-      // redundant at best and misleading at worst.
-      const rawGrants: Array<{ project_id?: unknown; role?: unknown }> = Array.isArray(
-        body.project_grants,
-      )
-        ? body.project_grants
-        : [];
-      let projectGrants: Array<{ project_id: string; role: ProjectRole }> = [];
-      if (rawGrants.length > 0 && role === 'member') {
-        const requestedIds = [
-          ...new Set(
-            rawGrants
-              .map((g) => (typeof g.project_id === 'string' ? g.project_id : null))
-              .filter((v): v is string => v !== null),
-          ),
-        ];
-        // Never trust a client-supplied project_id at face value — confirm
-        // it actually belongs to THIS account before granting, so a bad or
-        // malicious payload can't plant a cross-account project_members row.
-        const owned = requestedIds.length
-          ? await db
-              .select({ projectId: projects.projectId })
-              .from(projects)
-              .where(
-                and(eq(projects.accountId, accountId), inArray(projects.projectId, requestedIds)),
-              )
-          : [];
-        const ownedIds = new Set(owned.map((p) => p.projectId));
-        for (const g of rawGrants) {
-          const projectId = typeof g.project_id === 'string' ? g.project_id : null;
-          if (!projectId || !ownedIds.has(projectId)) continue;
-          // An omitted role still defaults to the floor tier; a role that was
-          // SPELLED OUT and is not assignable (the removed `editor`, a typo) is
-          // a 400, never a silent downgrade to `member` or upgrade to `manager`.
-          const grantRole = g.role === undefined ? 'member' : parseAssignableProjectRole(g.role);
-          if (!grantRole) return c.json({ error: PROJECT_ROLE_INPUT_ERROR }, 400);
-          projectGrants.push({ project_id: projectId, role: grantRole });
-        }
-      }
-
-      // Trial seat gate — covers both branches below (direct add + invite).
-      const { trialSeatLimitBlocksNewMember } = await import(
-        '../../billing/services/seat-management'
-      );
-      const seatBlock = await trialSeatLimitBlocksNewMember(accountId);
-      if (seatBlock) {
-        return c.json(
-          {
-            error: `Your trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Contact the Kortix team to extend the trial.`,
-            code: 'trial_seat_limit_reached',
-            limit: seatBlock.limit,
-            members: seatBlock.members,
-          },
-          403,
-        );
-      }
-
-      // Need account name for the invite email
-      const [accountRow] = await db
-        .select({ name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
-        .limit(1);
-      if (!accountRow) return c.json({ error: 'Account not found' }, 404);
-
-      const identity = await resolveAccountIdentityByEmail(accountId, email);
-      if (identity.ambiguous) {
-        return c.json({ error: 'Multiple account identities use this email', code: 'account_identity_ambiguous' }, 409);
-      }
-      const targetUserId = identity.userId;
-
-      if (targetUserId) {
-        const existing = await getMembership(targetUserId, accountId);
-        if (existing) {
-          return c.json({ error: 'Already a member' }, 409);
-        }
-
-        // IDENTITY first, then the GRANT. Two stores, two writes: the row that
-        // says "this user belongs to this account" (and carries is_super_admin /
-        // scim_external_id) is kortix.account_memberships; the role is an
-        // account-scope assignment. The route already asserted member.invite;
-        // `assignRole` additionally asserts member.update, which owner and admin
-        // both hold and no custom role can (both are non-delegable).
-        await db.insert(accountMemberships).values({ userId: targetUserId, accountId });
-        await grantAccountRole(await actorOf(c, accountId), accountId, targetUserId, role);
-        // An account admin explicitly re-adding the same account-scoped person
-        // clears the manual-removal tombstone. Future SAML logins may now sync
-        // this identity again; SCIM can still deactivate it later.
-        await db.execute(sql`
-          UPDATE kortix.account_scim_users
-          SET user_id=${targetUserId}::uuid, active=true, deleted_at=NULL, updated_at=now()
-          WHERE account_id=${accountId}::uuid AND lower(user_name)=lower(${email})
-        `);
-
-        // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
-        void onMemberAdded(accountId, targetUserId).catch(() => {});
-
-        for (const g of projectGrants) {
-          await grantProjectRole({
-            accountId,
-            projectId: g.project_id,
-            userId: targetUserId,
-            role: g.role,
-            grantedBy: userId,
-          });
-        }
-
-        return c.json(
-          {
-            status: 'added',
-            user_id: targetUserId,
-            email,
-            account_role: role,
-            project_grants: projectGrants,
-          },
-          201,
-        );
-      }
-
-      // User doesn't exist — create or refresh a pending invitation.
-      // Upsert on the unique (account_id, email) index; if one exists,
-      // refresh expires_at + initial_role (e.g. inviter changed role).
-      // bootstrap_grants is fully replaced (not merged) on every call — the
-      // caller resubmits the complete desired project-access set each time,
-      // same "what you see is what you get" contract project_grants above
-      // documents; a re-invite that no longer lists a project drops it.
-      const bootstrapGrants = projectGrants.map((g) => ({
-        project_id: g.project_id,
-        role: g.role,
-      }));
-      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-      const [invite] = await db
-        .insert(accountInvitations)
-        .values({
-          accountId,
-          email,
-          invitedBy: userId,
-          initialRole: role,
-          expiresAt,
-          bootstrapGrants,
-        })
-        .onConflictDoUpdate({
-          target: [accountInvitations.accountId, accountInvitations.email],
-          set: {
-            initialRole: role,
-            expiresAt,
-            invitedBy: userId,
-            // Clear any prior accepted_at so a refreshed invite is "pending" again.
-            acceptedAt: null,
-            bootstrapGrants,
-          },
-        })
-        .returning();
-
-      const delivery = await sendAccountInviteEmail({
-        email,
-        accountName: accountRow.name,
-        inviterEmail: callerEmail,
-        inviteId: invite.inviteId,
-        role: invite.initialRole === 'admin' ? 'admin' : 'member',
-      });
-
-      return c.json(
-        {
-          status: 'pending',
-          invite_id: invite.inviteId,
-          email,
-          account_role: invite.initialRole,
-          project_grants: bootstrapGrants,
-          expires_at: invite.expiresAt.toISOString(),
-          invite_url: buildInviteUrl(invite.inviteId),
-          // false = email skipped or failed; UI surfaces the link so admin can share manually.
-          email_sent: delivery.ok === true,
-          email_skip_reason: delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
-        },
-        201,
-      );
-    },
-  );
-
-  // GET /v1/accounts/:accountId/invites — list pending invitations.
-  accountsRouter.openapi(
-    createRoute({
-      method: 'get',
-      path: '/{accountId}/invites',
-      tags: ['accounts'],
-      summary: 'List pending invitations',
-      ...auth,
-      request: { params: AccountIdParam },
-      responses: {
-        200: json(z.array(AccountInviteSchema), 'Pending invitations'),
-        ...errors(401, 403),
-      },
-    }),
-    async (c: any) => {
-      const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
-
-      const membership = await getMembership(userId, accountId);
-      if (!membership) return c.json({ error: 'Forbidden' }, 403);
-
-      // Pending invites are member-management data — emails of people who
-      // haven't even joined yet. Plain members get an empty list (not a 403)
-      // so the members page renders without a special error path.
-      const canManageMembers = (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE))
-        .allowed;
-      if (!canManageMembers) return c.json([]);
-
-      const rows = await db
-        .select()
-        .from(accountInvitations)
-        .where(
-          and(
-            eq(accountInvitations.accountId, accountId),
-            isNull(accountInvitations.acceptedAt),
-            gt(accountInvitations.expiresAt, new Date()),
-          ),
-        );
-
-      return c.json(
-        rows.map((r) => ({
-          invite_id: r.inviteId,
-          email: r.email,
-          initial_role: r.initialRole,
-          invited_by: r.invitedBy,
-          created_at: r.createdAt.toISOString(),
-          expires_at: r.expiresAt.toISOString(),
-          invite_url: buildInviteUrl(r.inviteId),
-        })),
-      );
-    },
-  );
-
-  // DELETE /v1/accounts/:accountId/invites/:inviteId — cancel a pending invite.
-  accountsRouter.openapi(
-    createRoute({
-      method: 'delete',
-      path: '/{accountId}/invites/{inviteId}',
-      tags: ['accounts'],
-      summary: 'Cancel a pending invite',
-      ...auth,
-      request: { params: z.object({ accountId: z.string(), inviteId: z.string() }) },
-      responses: {
-        200: json(OkSchema, 'Cancellation result'),
-        ...errors(401, 403),
-      },
-    }),
-    async (c: any) => {
-      const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
-      const inviteId = c.req.param('inviteId');
-
-      const membership = await getMembership(userId, accountId);
-      if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      // Cancelling a pending invite is part of invite admin — same capability.
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
-
-      await db
-        .delete(accountInvitations)
-        .where(
-          and(
-            eq(accountInvitations.inviteId, inviteId),
-            eq(accountInvitations.accountId, accountId),
-          ),
-        );
-
-      return c.json({ ok: true });
-    },
-  );
-
-  // POST /v1/accounts/:accountId/invites/:inviteId/resend — re-send the invite
-  // email and bump expires_at to a fresh 14-day window.
-  accountsRouter.openapi(
-    createRoute({
-      method: 'post',
-      path: '/{accountId}/invites/{inviteId}/resend',
-      tags: ['accounts'],
-      summary: 'Resend an invite email and refresh its expiry',
-      ...auth,
-      request: { params: z.object({ accountId: z.string(), inviteId: z.string() }) },
-      responses: {
-        200: json(
-          z.object({
-            ok: z.boolean(),
-            expires_at: z.string(),
-            invite_url: z.string(),
-            email_sent: z.boolean(),
-            email_skip_reason: z.string().nullable(),
-          }),
-          'Resend result',
-        ),
-        ...errors(401, 403, 404),
-      },
-    }),
-    async (c: any) => {
-      const userId = c.get('userId') as string;
-      const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
-      const accountId = c.req.param('accountId');
-      const inviteId = c.req.param('inviteId');
-
-      const membership = await getMembership(userId, accountId);
-      if (!membership) return c.json({ error: 'Forbidden' }, 403);
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.MEMBER_INVITE);
-
-      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
-      const [updated] = await db
-        .update(accountInvitations)
-        .set({ expiresAt })
-        .where(
-          and(
-            eq(accountInvitations.inviteId, inviteId),
-            eq(accountInvitations.accountId, accountId),
-            isNull(accountInvitations.acceptedAt),
-          ),
-        )
-        .returning();
-
-      if (!updated) return c.json({ error: 'Invite not found' }, 404);
-
-      const [accountRow] = await db
-        .select({ name: accounts.name })
-        .from(accounts)
-        .where(eq(accounts.accountId, accountId))
-        .limit(1);
-
-      let delivery: Awaited<ReturnType<typeof sendAccountInviteEmail>> | null = null;
-      if (accountRow) {
-        delivery = await sendAccountInviteEmail({
-          email: updated.email,
-          accountName: accountRow.name,
-          inviterEmail: callerEmail,
-          inviteId: updated.inviteId,
-          role: updated.initialRole === 'admin' ? 'admin' : 'member',
-        });
-      }
-
-      return c.json({
-        ok: true,
-        expires_at: updated.expiresAt.toISOString(),
-        invite_url: buildInviteUrl(updated.inviteId),
-        email_sent: delivery?.ok === true,
-        email_skip_reason:
-          delivery && delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
-      });
-    },
-  );
+  registerInviteRoutes();
 
   // DELETE /v1/accounts/:accountId/members/:userId — remove a member.
   accountsRouter.openapi(
@@ -768,7 +311,7 @@ export function registerMemberRoutes(): void {
       tags: ['accounts'],
       summary: 'Remove a member',
       ...auth,
-      request: { params: z.object({ accountId: z.string(), userId: z.string() }) },
+      request: { params: z.object({ accountId: z.string(), userId: z.string().uuid() }) },
       responses: {
         200: json(OkSchema, 'Removal result'),
         ...errors(401, 403, 404, 409),
@@ -798,65 +341,7 @@ export function registerMemberRoutes(): void {
         }
       }
 
-      // Audit BEFORE the deletes, while the rows still exist to describe.
-      const remover = await actorOf(c, accountId);
-      await auditProjectAssignmentsRevoked(remover, accountId, targetUserId);
-      await auditAccountRoleRevoked(remover, accountId, targetUserId);
-
-      // Membership is two facts now: the GRANTS in kortix.role_assignments and
-      // the IDENTITY row in kortix.account_memberships. Offboarding removes
-      // both. Grants first, so a failure between the two leaves the member
-      // without access rather than with access and no identity.
-      await deleteProjectScopeAssignments(accountId, targetUserId);
-      await deleteAccountScopeAssignments(accountId, targetUserId);
-      // Group grants are independent rows. Leaving them behind makes a later
-      // re-invite restore access to groups the owner already removed this user from.
-      await db.delete(accountGroupMembers).where(and(
-        eq(accountGroupMembers.userId, targetUserId),
-        inArray(accountGroupMembers.groupId, db
-          .select({ groupId: accountGroups.groupId })
-          .from(accountGroups)
-          .where(eq(accountGroups.accountId, accountId))),
-      ));
-      await db
-        .delete(accountMemberships)
-        .where(
-          and(
-            eq(accountMemberships.accountId, accountId),
-            eq(accountMemberships.userId, targetUserId),
-          ),
-        );
-      // A manual removal is an account-scoped deprovisioning decision. Keep the
-      // directory row as an inactive tombstone so the next SAML login cannot
-      // recreate this member. A later SCIM active:true update is the explicit
-      // IdP action that may restore access.
-      await db.execute(sql`
-        INSERT INTO kortix.account_scim_users
-          (scim_id, account_id, user_id, user_name, active, profile, created_at, updated_at)
-        SELECT gen_random_uuid(), ${accountId}::uuid, target.id, lower(target.email), false, '{}'::jsonb, now(), now()
-        FROM auth.users target
-        WHERE target.id=${targetUserId}::uuid AND target.email IS NOT NULL
-        ON CONFLICT (account_id, user_name) DO UPDATE SET
-          user_id=excluded.user_id,
-          active=false,
-          updated_at=now()
-      `);
-      invalidateIamCacheForUser(targetUserId);
-      // Offboarding is immediate: kill their PATs + live sandbox session tokens so a
-      // removed member (and their running agents) can't keep acting on their bearer.
-      // A revocation failure must NOT be swallowed — a removed member holding live
-      // tokens is a silent offboarding hole. Log loudly; membership is already gone.
-      await revokeAllAccountTokensForUser(targetUserId, accountId).catch((err) => {
-        console.error(
-          '[members] token revocation FAILED on member removal — removed user may retain live tokens',
-          { targetUserId, accountId },
-          err,
-        );
-      });
-
-      // Billing v2 — revoke per-member YOLO + push -1 seat to Stripe.
-      void onMemberRemoved(accountId, targetUserId).catch(() => {});
-
+      await offboardMember(await actorOf(c, accountId), accountId, targetUserId, 'removed');
       return c.json({ ok: true });
     },
   );
@@ -870,7 +355,7 @@ export function registerMemberRoutes(): void {
       summary: "Change a member's role",
       ...auth,
       request: {
-        params: z.object({ accountId: z.string(), userId: z.string() }),
+        params: z.object({ accountId: z.string(), userId: z.string().uuid() }),
         body: { content: { 'application/json': { schema: z.object({ role: z.string() }) } } },
       },
       responses: {
@@ -945,6 +430,11 @@ export function registerMemberRoutes(): void {
         await deleteProjectScopeAssignments(accountId, targetUserId);
       }
       invalidateIamCacheForUser(targetUserId);
+      if (newRole === 'member') {
+        // An owner or admin reached every company drive; as a member they reach
+        // only what is granted, and drives they attached by role leave now.
+        await import('../../drives/service').then(({ enforceDriveMounts }) => enforceDriveMounts({ accountId }));
+      }
 
       return c.json({
         user_id: targetUserId,
@@ -987,31 +477,7 @@ export function registerMemberRoutes(): void {
         }
       }
 
-      const leaver = await actorOf(c, accountId);
-      await auditProjectAssignmentsRevoked(leaver, accountId, userId);
-      await auditAccountRoleRevoked(leaver, accountId, userId);
-
-      await deleteProjectScopeAssignments(accountId, userId);
-      await deleteAccountScopeAssignments(accountId, userId);
-      await db
-        .delete(accountMemberships)
-        .where(
-          and(eq(accountMemberships.accountId, accountId), eq(accountMemberships.userId, userId)),
-        );
-      invalidateIamCacheForUser(userId);
-      // Leaving revokes your own tokens for this account (PATs + live sessions).
-      // Never swallow a revocation failure — surface it so a stuck token is visible.
-      await revokeAllAccountTokensForUser(userId, accountId).catch((err) => {
-        console.error(
-          '[members] token revocation FAILED on self-leave — user may retain live tokens',
-          { userId, accountId },
-          err,
-        );
-      });
-
-      // Billing v2 — revoke YOLO + push -1 seat to Stripe on self-leave.
-      void onMemberRemoved(accountId, userId).catch(() => {});
-
+      await offboardMember(await actorOf(c, accountId), accountId, userId, 'left');
       return c.json({ ok: true });
     },
   );

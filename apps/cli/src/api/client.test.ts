@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { platformConfig } from '@kortix/sdk';
+import { ApiError as SdkApiError, platformConfig } from '@kortix/sdk';
 
 import { ApiError, clientFromAuth, createApiClient } from './client.ts';
 import type { Auth } from './auth.ts';
@@ -162,5 +162,23 @@ describe('createApiClient transport', () => {
     await clientFromAuth(auth({ api_base: 'http://localhost:14108' })).get('/accounts/me');
     expect(captured[0]!.url).toBe('http://localhost:14108/v1/accounts/me');
     expect(captured[0]!.authorization).toBe('Bearer kortix_pat_test');
+  });
+});
+
+describe('ApiError is the SDK ApiError', () => {
+  test('a CLI ApiError is an instance of the SDK ApiError and keeps status and body', () => {
+    const err = new ApiError(409, 'conflict', { code: 'x' });
+    expect(err).toBeInstanceOf(SdkApiError);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.status).toBe(409);
+    expect(err.body).toEqual({ code: 'x' });
+    expect(err.message).toBe('conflict');
+  });
+
+  test('a failed request throws an error an SDK-side instanceof check recognises', async () => {
+    stubFetch(404, { error: 'nope' });
+    const err = await createApiClient({ apiBase: 'http://x.test', token: 't' }).get('/y').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SdkApiError);
+    expect((err as ApiError).status).toBe(404);
   });
 });

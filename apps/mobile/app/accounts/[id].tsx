@@ -14,7 +14,7 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import * as WebBrowser from 'expo-web-browser';
+import { openLink } from '@/lib/utils/open-link';
 import {
   ArrowClockwiseIcon as RotateCw,
   GitBranchIcon as GitBranch,
@@ -22,7 +22,7 @@ import {
   UsersIcon as Users,
   WarningCircleIcon as AlertCircle,
 } from '@/lib/icons';
-import { formatCredits } from '@kortix/shared';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { SettingsGroup, SettingsHeader, SettingsPage, SettingsRow } from '@/components/kortix/settings-list';
@@ -50,7 +50,7 @@ export default function AccountDetailScreen() {
   const creditsTotal = accountStateQuery.data?.credits?.total;
   // "Team · 1,240 credits": the plan and the balance in one value.
   const billingSummary =
-    [planName, creditsTotal != null ? `${formatCredits(creditsTotal)} credits` : '']
+    [planName, creditsTotal != null ? `${formatUsdAsCredits(creditsTotal)} credits` : '']
       .filter(Boolean)
       .join(' · ') || undefined;
 
@@ -58,7 +58,7 @@ export default function AccountDetailScreen() {
     (tab: 'members' | 'git' | 'audit') => {
       if (!accountId) return;
       haptics.tap();
-      WebBrowser.openBrowserAsync(accountHubUrl(KORTIX_WEB_URL, accountId, tab)).catch((error) => {
+      openLink(accountHubUrl(KORTIX_WEB_URL, accountId, tab)).catch((error) => {
         log.error('Error opening account web tab:', error);
       });
     },

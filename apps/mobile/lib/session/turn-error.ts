@@ -8,11 +8,18 @@
  *
  * No React / React Native import.
  */
-import { isAbortError, type GatewayErrorDetails } from '@kortix/sdk';
+import { isAbortError, type GatewayErrorDetails, type SessionLogMessage } from '@kortix/sdk';
+import { formatUsdAsCredits, parseBalanceUsd } from '@kortix/shared';
 
 import type { GatewayMetaDetails } from './busy-status';
 
-/** Upstream 402 "Payment Required: Insufficient credits. Balance: $-0.06" and friends. */
+/** A message an abort ended: `status: 'aborted'`, else its error read by the SDK's `isAbortError`. */
+export function messageAborted(message: Pick<SessionLogMessage, 'status' | 'error'>): boolean {
+  if (message.status === 'aborted') return true;
+  return !!message.error && isAbortError({ name: message.error.code, data: { message: message.error.message } });
+}
+
+/** Upstream 402 "Payment Required: Insufficient credits. Balance: -6 credits" and friends. */
 export function isInsufficientCreditsError(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase();
@@ -24,14 +31,16 @@ export function isInsufficientCreditsError(text: string): boolean {
   );
 }
 
-/** Free tier dry, inactive subscription, exhausted budget — a subscribe CTA, not a top-up. */
+/**
+ * Free tier, inactive subscription, or exhausted Kortix budget — a subscribe
+ * CTA, not a top-up. Kortix phrases only: a provider's own cap ("usage limit",
+ * 429) must not reach the upgrade card (KRTX-621).
+ */
 export function isUsageLimitError(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase();
   return (
     lower.includes('free usage') ||
-    lower.includes('usage exceeded') ||
-    lower.includes('usage limit') ||
     lower.includes('subscription required') ||
     lower.includes('subscription_required') ||
     lower.includes('budget exceeded') ||
@@ -41,13 +50,13 @@ export function isUsageLimitError(text: string): boolean {
   );
 }
 
-/** `Balance: $-0.06` → `$-0.06`; no amount → null. */
+/**
+ * The balance a 402 names, in credits: `Balance: -6 credits` and an older
+ * server's `Balance: $-0.06` both → `-6 credits`; no amount → null.
+ */
 export function parseBalance(text: string): string | null {
-  const match = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]);
-  if (Number.isNaN(value)) return null;
-  return `$${value.toFixed(2)}`;
+  const usd = parseBalanceUsd(text);
+  return usd === null ? null : `${formatUsdAsCredits(usd)} credits`;
 }
 
 /**

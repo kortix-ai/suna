@@ -64,6 +64,8 @@ describe('scimAuth binds the directory token', () => {
       actorUserId: null,
       actorType: 'system',
       authoritativeSource: 'scim',
+      credentialKind: 'scim_token',
+      credentialId: 'scim-tok-1',
       authMethod: { kind: 'scim_token', token_id: 'scim-tok-1' },
     });
   });

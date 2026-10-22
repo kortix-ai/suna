@@ -41,6 +41,7 @@
  */
 
 import { isMetaAgentName } from '@kortix/shared';
+import { OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
 import { OPENCODE_BUILTIN_AGENT_NAMES } from '../projects/agents';
 import type { ConfigReleaseVariant } from './builder';
 
@@ -57,6 +58,8 @@ export interface DeclaredAgentRoster {
   readable: boolean;
   /** False when the project declares no agents at all — it adopted no governance. */
   governed: boolean;
+  /** kortix_version 3: OpenCode's build/plan/general/explore run only when declared. */
+  onlyDeclared?: boolean;
 }
 
 export type SessionAgentDecision =
@@ -97,7 +100,10 @@ export function resolveSessionReleaseAgent(
   // The platform coordinator is injected, never declared (2026-08-13), and
   // OpenCode's own built-ins belong to the runtime, not to any manifest.
   // Neither was ever "dropped", so neither is ever re-pointed.
-  if (isMetaAgentName(name) || OPENCODE_BUILTIN_AGENT_NAMES.has(name)) {
+  // A v3 project runs only declared agents: an undeclared built-in it disables
+  // is dropped like any other agent.
+  const disabledBuiltin = roster.onlyDeclared === true && (OPENCODE_BUILTIN_AGENTS_V3 as readonly string[]).includes(name);
+  if (isMetaAgentName(name) || (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !disabledBuiltin)) {
     return { kind: 'declared', agent: name };
   }
 
@@ -122,8 +128,13 @@ export function resolveSessionReleaseAgent(
  * and the box always has a release to converge onto. It is NOT "the default
  * agent minus the grant": compiling the default agent for an owner who may not
  * run it would hand that owner the agent's prompt and model through the box.
+ *
+ * `meta` is the platform coordinator, whatever `repositoryAccess` says: its
+ * session metadata reads `repository_access: true`, but provisioning never
+ * gives it a checkout (`KORTIX_PROJECT_AUTO_CLONE=0`).
  */
 export function releaseVariantFor(agent: string | null, repositoryAccess: boolean): ConfigReleaseVariant {
+  if (isMetaAgentName(agent)) return 'meta';
   if (repositoryAccess) return 'project';
   return agent ? `agent:${agent}` : 'none';
 }

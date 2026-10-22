@@ -1,0 +1,166 @@
+{
+  "next_prompts": {
+    "ses_golden0000000000000001": "What is in hello.txt? Answer in one word.",
+    "ses_golden0000000000000002": "Anything else?"
+  },
+  "views": {
+    "ses_golden0000000000000001": [
+      {
+        "role": "summary",
+        "text": "SUMMARY-G: the user created hello.txt containing hi and checked an image."
+      },
+      {
+        "role": "user",
+        "text": [
+          "Read hello.txt and look at this image"
+        ],
+        "images": [
+          "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+        ]
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_g02",
+            "name": "read",
+            "input": {
+              "filePath": "hello.txt"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_g02",
+        "content": "hi",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "It says hi. The image is a single pixel."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Run the command `false` and report the result."
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_g03",
+            "name": "bash",
+            "input": {
+              "command": "false"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_g03",
+        "content": "exit code 1",
+        "is_error": true
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "The command failed with exit code 1."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Spawn a helper to list the files"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_g04",
+            "name": "task",
+            "input": {
+              "description": "list files",
+              "prompt": "List the files in the workspace",
+              "subagent_type": "general"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_g04",
+        "content": "Found hello.txt",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "The helper found hello.txt."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "What is in hello.txt? Answer in one word."
+        ],
+        "images": []
+      }
+    ],
+    "ses_golden0000000000000002": [
+      {
+        "role": "user",
+        "text": [
+          "List the files in the workspace"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_c01",
+            "name": "bash",
+            "input": {
+              "command": "ls"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_c01",
+        "content": "hello.txt",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "Found hello.txt"
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Anything else?"
+        ],
+        "images": []
+      }
+    ]
+  }
+}

@@ -9,6 +9,7 @@ import {
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from './db';
+import { qualifiedColumn } from './sql-qualified-column';
 import { previewOriginFor } from '../sandbox-proxy/preview-hosts';
 import { OPENCODE_PORTS } from './opencode-ports';
 
@@ -322,22 +323,7 @@ export async function createPublicShare(input: PublicShareInput, ctx: {
   const token = publicShareToken(shareId);
   const [row] = await db
     .insert(projectSessionPublicShares)
-    .values({
-      shareId,
-      tokenHash: publicShareTokenHash(token),
-      sessionId: built.values.sessionId,
-      projectId: built.values.projectId,
-      accountId: built.values.accountId,
-      createdBy: built.values.userId,
-      resourceType: built.values.resourceType,
-      label: built.values.label,
-      port: built.values.port,
-      path: built.values.path,
-      filePath: built.values.filePath,
-      mode: built.values.mode,
-      allowWebsocket: built.values.allowWebsocket,
-      expiresAt: built.values.expiresAt,
-    })
+    .values(publicShareInsertValues(built.values, shareId))
     .returning();
 
   return {
@@ -348,6 +334,25 @@ export async function createPublicShare(input: PublicShareInput, ctx: {
 }
 
 type BuiltShareValues = Extract<ReturnType<typeof buildPublicShareInsert>, { ok: true }>['values'];
+
+function publicShareInsertValues(values: BuiltShareValues, shareId: string) {
+  return {
+    shareId,
+    tokenHash: publicShareTokenHash(publicShareToken(shareId)),
+    sessionId: values.sessionId,
+    projectId: values.projectId,
+    accountId: values.accountId,
+    createdBy: values.userId,
+    resourceType: values.resourceType,
+    label: values.label,
+    port: values.port,
+    path: values.path,
+    filePath: values.filePath,
+    mode: values.mode,
+    allowWebsocket: values.allowWebsocket,
+    expiresAt: values.expiresAt,
+  };
+}
 
 /**
  * A session has at most one live transcript link. Minting again returns the
@@ -380,22 +385,7 @@ async function createOrReuseTranscriptShare(values: BuiltShareValues) {
     const shareId = randomUUID();
     const [row] = await tx
       .insert(projectSessionPublicShares)
-      .values({
-        shareId,
-        tokenHash: publicShareTokenHash(publicShareToken(shareId)),
-        sessionId: values.sessionId,
-        projectId: values.projectId,
-        accountId: values.accountId,
-        createdBy: values.userId,
-        resourceType: values.resourceType,
-        label: values.label,
-        port: values.port,
-        path: values.path,
-        filePath: values.filePath,
-        mode: values.mode,
-        allowWebsocket: values.allowWebsocket,
-        expiresAt: values.expiresAt,
-      })
+      .values(publicShareInsertValues(values, shareId))
       .returning();
     return { row, created: true };
   });
@@ -474,6 +464,7 @@ export async function resolvePublicShare(
       externalId: sessionSandboxes.externalId,
       sandboxStatus: sessionSandboxes.status,
       sessionMetadata: projectSessions.metadata,
+      projectStatus: sql<string | null>`(SELECT p.status::text FROM kortix.projects p WHERE p.project_id = ${qualifiedColumn(projectSessionPublicShares.projectId)})`,
     })
     .from(projectSessionPublicShares)
     .leftJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessionPublicShares.sessionId))
@@ -491,6 +482,11 @@ export async function resolvePublicShare(
   // its saved transcript. Its links must end with it, even one the delete path
   // failed to revoke.
   if (typeof (row.sessionMetadata as Record<string, unknown> | null)?.deletedAt === 'string') {
+    return { ok: false as const, status: 410, error: 'Share link revoked' };
+  }
+  // The same for a deleted workspace (KRTX-1714): the delete archives the
+  // project, and the revoke route answers 404 after it.
+  if (row.projectStatus === 'archived') {
     return { ok: false as const, status: 410, error: 'Share link revoked' };
   }
   // Fail closed for links created before personal-connection sharing was

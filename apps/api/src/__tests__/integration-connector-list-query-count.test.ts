@@ -26,6 +26,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, connectionCredentials, connectorConnections, connectors, projects } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
+import { ensureProjectComputer } from '../connectors/sync';
 import { runWithContext } from '../lib/request-context';
 import { stageSnapshot } from '../lib/server-timing';
 import { encryptProjectSecret } from '../projects/secrets';
@@ -116,11 +117,18 @@ afterAll(async () => {
 
 describe('listConnectors issues a bounded number of queries, not O(connector count)', () => {
   test('8 connectors (4 Composio) stay well under an O(n) ceiling', async () => {
-    const { list, dbQueryCount } = await runWithContext('GET', '/test/connectors', async () => {
+    // Every project holds the built-in computer connector; the first listing
+    // creates it once. Measure the steady state.
+    await ensureProjectComputer(PROJECT, null);
+    const { list: listed, dbQueryCount } = await runWithContext('GET', '/test/connectors', async () => {
       const result = await dbConnectorRouterDeps.listConnectors(PROJECT, USER_A);
       return { list: result, dbQueryCount: stageSnapshot().db?.count ?? 0 };
     });
 
+    // The fixture pairs no machine, so the built-in computer connector stays
+    // out of the list (KRTX-1492) — hidden, not absent from the query plan.
+    expect(listed.filter((view) => view.provider === 'computer')).toEqual([]);
+    const list = listed.filter((view) => view.provider !== 'computer');
     // Correctness: every connector still resolves as connected for its owner.
     expect(list).toHaveLength(OPENAPI_CONNECTOR_COUNT + COMPOSIO_CONNECTOR_COUNT);
     for (const view of list) {

@@ -21,7 +21,7 @@ post anywhere yourself.
 
 1. **Load `brand-mention-monitor` first.** It is the runbook — search strategy,
    the dedupe ledger, sentiment and notability rules, and the digest format.
-2. **Resume first.** Read `.kortix/memory/brand-monitor-log.md` for every
+2. **Resume first.** Read `memory/brand-monitor-log.md` for every
    mention already reported before searching — you only surface mentions not
    already logged there.
 3. **Search only for {{brand_terms}}.** Public news, social platforms, and
@@ -40,7 +40,7 @@ post anywhere yourself.
    callout. A quiet day gets a brief note, not silence and not a wall of noise.
 7. **Keep the ledger current.** Every run appends today's mentions (fingerprint,
    source, sentiment, notable flag, reported or not) to
-   `.kortix/memory/brand-monitor-log.md` so tomorrow's run never re-reports the
+   `memory/brand-monitor-log.md` so tomorrow's run never re-reports the
    same mention.
 
 ## Defaults

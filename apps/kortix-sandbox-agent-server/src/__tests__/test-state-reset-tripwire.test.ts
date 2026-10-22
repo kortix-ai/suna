@@ -16,7 +16,7 @@ import { relative, resolve } from 'node:path'
  * So the rule is: a test file that calls a `*ForTests` reset in `beforeEach` or
  * `beforeAll` must also call it in the matching `afterEach` or `afterAll`. This
  * test enforces it, in the shape of the package's other tripwires
- * (`harness-boundary.test.ts`, `runtime-env-allowlist-completeness.test.ts`):
+ * (`boot-path-tripwire.test.ts`, `runtime-env-allowlist-completeness.test.ts`):
  * scan every test file, report every offender at once, and carry a negative
  * probe so a scanner that stops working cannot pass silently.
  */

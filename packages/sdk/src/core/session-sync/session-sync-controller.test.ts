@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test';
-import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
-import { SandboxNotReadyError } from '../http/opencode-errors';
+import type { Message, Part, SessionStatus } from '../runtime/runtime-types';
+import { SandboxNotReadyError } from '../http/runtime-errors';
 import {
   SESSION_SYNC_PAGE_SIZE,
   SESSION_SYNC_TAIL_PAGE_SIZE,
@@ -796,6 +796,42 @@ describe('SessionSyncController', () => {
     expect(requests).toHaveLength(1);
   });
 
+  test('a reliable stream (R5.3) stops the liveness and verification reads; the turn-end read stays', async () => {
+    const clock = createScheduler();
+    const requests: Array<{ limit: number; before?: string }> = [];
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async (request) => {
+        requests.push(request);
+        return page([]);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+      scheduler: clock.scheduler,
+      livenessIntervalMs: 10_000,
+      verifyIntervalMs: 30_000,
+    });
+    controller.setStreamReliable(true);
+    controller.setBusy(true, true);
+    for (let tick = 0; tick < 12; tick++) {
+      clock.advance(10_000);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    // Two minutes busy and quiet: the box's ring replays anything a reconnect
+    // missed, so no read polls the tail.
+    expect(requests).toHaveLength(0);
+    // A turn end is one event-driven read, not a poll.
+    controller.setBusy(false);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests).toHaveLength(1);
+    // The stream drops: the repair poll comes back.
+    controller.setStreamReliable(false);
+    controller.setBusy(true, true);
+    clock.advance(30_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requests.length).toBeGreaterThan(1);
+  });
+
   test('the snapshot holds transcript state only — never a busy opinion', async () => {
     const controller = new SessionSyncController({
       sessionId: 'session-1',
@@ -952,6 +988,37 @@ describe('SessionSyncController', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(reasons).toEqual(['turn-end']);
+  });
+
+  test('turn-end re-reads after an in-flight partial poll instead of sharing its stale result', async () => {
+    const clock = createScheduler();
+    let finishPoll!: (page: SessionSyncPage) => void;
+    const poll = new Promise<SessionSyncPage>((resolve) => { finishPoll = resolve; });
+    const hydrated: string[][] = [];
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      scheduler: clock.scheduler,
+      loadPage: () => {
+        calls++;
+        return calls === 2 ? poll : Promise.resolve(page([calls === 1 ? 'initial' : 'finished']));
+      },
+      hydrate: (messages) => hydrated.push(messages.map((message) => message.info.id)),
+      markLoaded: () => {},
+    });
+    try {
+      await controller.start();
+      controller.setBusy(true);
+      const pending = controller.reconcile('poll');
+      controller.setBusy(false);
+      finishPoll(page(['partial']));
+      await pending;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(hydrated).toEqual([['initial'], ['partial'], ['finished']]);
+      expect(calls).toBe(3);
+    } finally {
+      controller.destroy();
+    }
   });
 
   test('a session that was never busy does not read a tail when it stays idle', async () => {
@@ -1545,5 +1612,61 @@ describe('SessionSyncController — partial commit of a failed history walk', ()
     await controller.loadOlder();
 
     expect(olderBefore[readsAfterFailure]).toBe('cursor-5');
+  });
+});
+
+/**
+ * Returning to a tab re-read the newest 50 messages (up to ~400 kB) on every
+ * visit, even when the session stream never dropped, and the read replaced
+ * every recent message object, so recent turns redrew. While the session
+ * stream holds, it owns recovery: the box-side ring replays a reconnect's
+ * missed frames and a runtime resync re-reads the tail. The tab-return read is
+ * only the net for a session without that stream.
+ */
+describe('returning to the tab', () => {
+  function counting() {
+    let calls = 0;
+    const controller = new SessionSyncController({
+      sessionId: 'session-1',
+      loadPage: async () => {
+        calls += 1;
+        return page(['m1']);
+      },
+      hydrate: () => {},
+      markLoaded: () => {},
+    });
+    return { controller, calls: () => calls };
+  }
+
+  test('a connected session stream skips the tab-return read', async () => {
+    const { controller, calls } = counting();
+    await controller.start();
+    controller.setStreamReliable(true);
+    await controller.reconcile('visible');
+    expect(calls()).toBe(1);
+  });
+
+  test('without the session stream, returning still re-reads the tail', async () => {
+    const { controller, calls } = counting();
+    await controller.start();
+    controller.setStreamReliable(false);
+    await controller.reconcile('visible');
+    expect(calls()).toBe(2);
+  });
+
+  test('a transcript that never loaded is read on return even with the stream connected', async () => {
+    const { controller, calls } = counting();
+    controller.setStreamReliable(true);
+    await controller.reconcile('visible');
+    expect(calls()).toBe(1);
+  });
+
+  test('every other read still runs while the stream is connected', async () => {
+    const { controller, calls } = counting();
+    await controller.start();
+    controller.setStreamReliable(true);
+    await controller.reconcile('sse-gap');
+    await controller.reconcile('manual');
+    expect(calls()).toBe(3);
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { testUiTranslator } from '@/i18n/test-translator';
 import {
+  authRateLimitCopy,
   credentialsCopy,
   parseAuthMethods,
   passwordFailureCopy,
@@ -73,6 +74,43 @@ describe('credentialsCopy', () => {
     expect(copy.title).toBe('Enter your password');
     expect(copy.showForgotPassword).toBe(true);
     expect(copy.submitsAs).toBe('signup');
+  });
+});
+
+describe('authRateLimitCopy', () => {
+  test('maps the GoTrue email-send rate limit to human guidance', () => {
+    const copy = authRateLimitCopy({
+      code: 'over_email_send_rate_limit',
+      message: 'Email rate limit exceeded',
+    }, testUiTranslator);
+    expect(copy).toContain('Try again in about an hour');
+    // The raw GoTrue string must never reach the screen.
+    expect(copy?.toLowerCase()).not.toContain('rate limit');
+  });
+
+  test('maps the generic request rate limit to human guidance', () => {
+    const copy = authRateLimitCopy({
+      code: 'over_request_rate_limit',
+      message: 'Over request rate limit',
+    }, testUiTranslator);
+    expect(copy).toContain('Try again in a few minutes');
+    expect(copy?.toLowerCase()).not.toContain('rate limit');
+  });
+
+  test('matches the raw message when the GoTrue code is missing', () => {
+    expect(authRateLimitCopy({ message: 'Email rate limit exceeded' }, testUiTranslator)).toContain(
+      'Try again in about an hour',
+    );
+  });
+
+  test('leaves every other error to the existing handling', () => {
+    expect(
+      authRateLimitCopy({ code: 'invalid_credentials', message: 'Invalid login credentials' }, testUiTranslator),
+    ).toBeNull();
+    expect(authRateLimitCopy({ message: 'Email not confirmed' }, testUiTranslator)).toBeNull();
+    expect(authRateLimitCopy({}, testUiTranslator)).toBeNull();
+    expect(authRateLimitCopy(null, testUiTranslator)).toBeNull();
+    expect(authRateLimitCopy(undefined, testUiTranslator)).toBeNull();
   });
 });
 

@@ -58,9 +58,6 @@ let modelGate: unknown = {
   accountId: 'a1',
   ownerUserId: 'u1',
   freeManagedOnly: false,
-  // These cases exercise the GATEWAY picker/servability path; native mode
-  // (flag off) has its own cases.
-  llmGatewayEnabled: true,
 };
 mock.module('../channels/slack/model-gate', () => ({
   // The gate follows the binding: an unbound channel has no project.
@@ -130,6 +127,21 @@ mock.module('../accounts/core/app', () => ({
     new Map(ids.map((id) => [id, `${id}@example.com`])),
   defaultAccountName: (email: string | null | undefined) => email ?? 'Account',
 }));
+
+// Repo previews are probed over the network; these tests decide which load.
+let loadablePreviews = new Map<string, string>();
+const previewRequests: string[][] = [];
+const realRepoPreview = await import('../channels/repo-preview');
+mock.module('../channels/repo-preview', () => ({
+  ...realRepoPreview,
+  repoPreviewImages: async (urls: Iterable<string | null | undefined>) => {
+    const list = [...urls].filter((u): u is string => Boolean(u));
+    previewRequests.push(list);
+    return new Map(list.filter((u) => loadablePreviews.has(u)).map((u) => [u, loadablePreviews.get(u)!]));
+  },
+}));
+let recentSessions: unknown[] | null = [];
+mock.module('../channels/core/sessions', () => ({ listVisibleChatSessions: async () => recentSessions }));
 
 const { config } = await import('../config');
 const { handleSlashCommand } = await import('../channels/slack/commands');
@@ -243,7 +255,7 @@ describe('/kortix agent <name>', () => {
     expect(resp.text).toContain('reviewer');
   });
   test('"default" clears the override (null)', async () => {
-    const resp = await handleSlashCommand('agent', 'default', ctx);
+    await handleSlashCommand('agent', 'default', ctx);
     expect(setAgentCalls).toEqual([null]);
   });
   test('no arg → usage', async () => {
@@ -270,7 +282,7 @@ describe('/kortix agents (list)', () => {
     expect(resp.text).toContain('Loading agents');
   });
   test('/kortix agents <name> is an alias for set', async () => {
-    const resp = await handleSlashCommand('agents', 'reviewer', ctx);
+    await handleSlashCommand('agents', 'reviewer', ctx);
     expect(setAgentCalls).toEqual(['reviewer']);
   });
 });
@@ -344,5 +356,43 @@ describe('channel settings need a linked project manager', () => {
     expect(setAgentCalls).toEqual(['reviewer']);
     expect(setPolicyCalls).toEqual(['owner_only']);
     expect(deletes).toBe(1);
+  });
+});
+
+// A private repository has no GitHub preview (GitHub answers 429 HTML), and a
+// Kortix-hosted one has an internal name. Neither should reach a card.
+describe('repo previews and labels', () => {
+  const HOSTED = 'https://github.com/managed-kortix/proj-11111111-1111-4111-8111-111111111111';
+  afterEach(() => {
+    loadablePreviews = new Map();
+    previewRequests.length = 0;
+    recentSessions = [];
+  });
+
+  test('/kortix sessions shows each session title, and a preview only when it loads', async () => {
+    loadablePreviews = new Map([['https://github.com/o/public', 'https://opengraph.githubassets.com/1/o/public']]);
+    recentSessions = [
+      { projectId: 'p1', projectName: 'Public', repoUrl: 'https://github.com/o/public', sessionId: 's1', lastMessageAt: new Date(), title: 'Fix the flaky test', status: 'completed' },
+      { projectId: 'p2', projectName: 'Private', repoUrl: 'https://github.com/o/private', sessionId: 's2', lastMessageAt: new Date(), title: null, status: 'running' },
+    ];
+    const resp: any = await handleSlashCommand('sessions', '', ctx);
+    const sections = resp.blocks.filter((b: any) => b.type === 'section');
+    expect(sections[0].text.text).toContain('*Fix the flaky test*');
+    expect(sections[0].accessory).toMatchObject({ type: 'image', image_url: 'https://opengraph.githubassets.com/1/o/public' });
+    expect(sections[1].accessory).toBeUndefined();
+  });
+
+  test('/kortix whoami never links a Kortix-hosted repository, and names it "Hosted by Kortix"', async () => {
+    const owner = config.MANAGED_GIT_GITHUB_OWNER;
+    (config as any).MANAGED_GIT_GITHUB_OWNER = 'managed-kortix';
+    try {
+      selection = { projectId: 'p1', agentName: null, opencodeModel: null };
+      dbResults = [[{ projectId: 'p1', name: 'Proj', repoUrl: HOSTED }]];
+      const txt = allText(await handleSlashCommand('whoami', '', ctx));
+      expect(txt).toContain('Hosted by Kortix');
+      expect(txt).not.toContain('managed-kortix');
+    } finally {
+      (config as any).MANAGED_GIT_GITHUB_OWNER = owner;
+    }
   });
 });

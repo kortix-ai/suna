@@ -10,16 +10,24 @@ import {
   PROD_DB_ROLLING_CONNECTION_CEILING,
   PROD_DB_USABLE_CONNECTIONS,
   ROLLING_TASK_OVERLAP,
-  SCHEMA_CHECK_POOL_MAX,
 } from './database-capacity';
 
 describe('production database connection capacity', () => {
   test('pins every API-owned connection pool in the rollout budget', () => {
-    expect(DEFAULT_DB_POOL_MAX).toBe(5);
+    expect(DEFAULT_DB_POOL_MAX).toBe(6);
     expect(DEFAULT_AUDIT_POOL_MAX).toBe(2);
     expect(LEADER_ELECTION_POOL_MAX).toBe(1);
     expect(PG_BROADCAST_POOL_MAX).toBe(1);
-    expect(SCHEMA_CHECK_POOL_MAX).toBe(1);
+  });
+
+  test('keeps the boot schema probe on the shared request pool', () => {
+    // The deployed-env drift probe used to open its own transient postgres
+    // client at boot, which the rolling-deployment ceiling had to count at
+    // one extra connection per starting task (KRTX-2020). It must query
+    // through the request pool instead — zero marginal connections.
+    const ensureSchema = readFileSync(new URL('../ensure-schema.ts', import.meta.url), 'utf8');
+    expect(ensureSchema).not.toMatch(/postgres\(/);
+    expect(ensureSchema).toContain("import { db } from './shared/db'");
   });
 
   test('keeps high-volume audit writers on the bounded audit pool', () => {
@@ -38,7 +46,7 @@ describe('production database connection capacity', () => {
   });
 
   test('keeps the base-move LISTEN/NOTIFY connection on the bounded broadcast pool', () => {
-    // apps/api/src/index.ts awaits startConfigBaseMoveBroadcast() on EVERY
+    // apps/api/src/bootstrap.ts awaits startConfigBaseMoveBroadcast() on EVERY
     // replica at boot (not leader-gated), and the listener is never released:
     // this is a long-lived, per-task connection exactly like the leader-election
     // one, and the rolling-deployment ceiling must count it the same way.
@@ -46,8 +54,9 @@ describe('production database connection capacity', () => {
     expect(pgBroadcast).toContain("import { PG_BROADCAST_POOL_MAX } from './database-capacity'");
     expect(pgBroadcast).toContain('max: PG_BROADCAST_POOL_MAX');
 
-    const bootIndex = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
-    expect(bootIndex).toContain('startConfigBaseMoveBroadcast');
+    // The boot wiring moved into bootstrap.ts (KRTX-347 split).
+    const boot = readFileSync(new URL('../bootstrap.ts', import.meta.url), 'utf8');
+    expect(boot).toContain('startConfigBaseMoveBroadcast');
   });
 
   test('keeps a maximum rolling deployment below the usable PostgreSQL limit', () => {
@@ -55,7 +64,15 @@ describe('production database connection capacity', () => {
     expect(ROLLING_TASK_OVERLAP).toBe(2);
     expect(PROD_DB_USABLE_CONNECTIONS).toBe(237);
     expect(PROD_DB_NON_API_RESERVE).toBe(32);
-    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(190);
+    // Recomputed from the pins above, not trusted: the exported ceiling must
+    // equal tasks × overlap × per-task long-lived pools. The boot schema probe
+    // is no longer a term — it rides the request pool.
+    const perTaskPools =
+      DEFAULT_DB_POOL_MAX + DEFAULT_AUDIT_POOL_MAX + LEADER_ELECTION_POOL_MAX + PG_BROADCAST_POOL_MAX;
+    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(
+      PROD_API_MAX_TASKS * ROLLING_TASK_OVERLAP * perTaskPools,
+    );
+    expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBe(200);
     expect(PROD_DB_ROLLING_CONNECTION_CEILING).toBeLessThanOrEqual(
       PROD_DB_USABLE_CONNECTIONS - PROD_DB_NON_API_RESERVE,
     );

@@ -38,6 +38,8 @@ export const CLI_CONNECTOR_RUNTIME_FILES = [
   // under an unchanged snapshot name (apps/api/src/snapshots/__tests__/cli-connector-closure.test.ts
   // is the guard that catches it).
   'src/api/sdk.ts',
+  // `src/api/sdk.ts` opens its upstream WebSocket through it.
+  'src/api/kortix-socket.ts',
   'src/api/sandbox-env.ts',
   // `src/api/client.ts` records what the acting token resolves to from every
   // `/accounts/me` response, so this file is compiled into the connector
@@ -70,6 +72,12 @@ export function cliConnectorRuntimeArtifacts(
       excludeNames: CLI_RUNTIME_EXCLUDES,
     },
     { label: 'kortix-sdk-pkg', path: join(sdkRoot, 'package.json') },
+    {
+      label: 'kortix-host-config',
+      path: resolve(cliRoot, '../../packages/shared/src/host-config'),
+      excludeNames: CLI_RUNTIME_EXCLUDES,
+    },
+    { label: 'kortix-shared-pkg', path: resolve(cliRoot, '../../packages/shared/package.json') },
   ];
 }
 

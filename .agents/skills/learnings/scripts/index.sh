@@ -39,10 +39,15 @@ EOF
       END { if (prev != "" && !done) untitled(prev); exit failed }'
 }
 
+# --check compares lines, not their order. A GitHub squash merge of a branch
+# that added an entry keeps its index line where the branch put it, below
+# entries merged later, and no one can run index.sh between the merge and the
+# push to main. Order drift is fixed by the next index.sh run (new-entry.sh
+# runs it); a missing, extra, or retitled line still fails.
 if [ "${1:-}" = "--check" ]; then
-  if ! diff -u "$dir/MEMORY.md" <(render) >/dev/null; then
+  if ! diff -u <(sort "$dir/MEMORY.md") <(render | sort) >/dev/null; then
     echo "MEMORY.md is stale. Run: .agents/skills/learnings/scripts/index.sh" >&2
-    diff -u "$dir/MEMORY.md" <(render) | head -20 >&2 || true
+    diff -u <(sort "$dir/MEMORY.md") <(render | sort) | head -20 >&2 || true
     exit 1
   fi
   exit 0

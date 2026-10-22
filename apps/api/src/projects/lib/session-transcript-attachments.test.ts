@@ -93,7 +93,7 @@ test('missing files and storage failures preserve text and allow another capture
     readFile: async () => null,
   });
   expect(failed).toEqual(messages);
-  expect(f.warnings).toEqual(['photo.png', 'R&D.txt']);
+  expect(f.warnings).toEqual(['photo.png']);
   const retry = await recoverTranscriptAttachments({ ...f.input, messages });
   expect(retry[0].parts[0].url).toStartWith('kortix-attachment://');
 });
@@ -353,7 +353,7 @@ test('a shown file that is gone keeps its card and is retried next capture', asy
       return null;
     },
   });
-  expect(f.warnings).toEqual(['deleted.png']);
+  expect(f.warnings).toEqual([]);
   expect((result[0].parts[0] as any).state.input.attachment).toBeUndefined();
   expect(result[0]).toBe(messages[0] as any);
 });

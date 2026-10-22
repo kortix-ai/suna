@@ -183,20 +183,26 @@ async function agentMailInbox(apiKey: string): Promise<DisposableInbox> {
     }
   }
   const inbox = await json<AgentMailInboxResponse>(created, 200);
+  // A message's `timestamp` can fall up to a second before the send that
+  // produced it (whole-second precision), so read 2 s back and skip messages
+  // this inbox already returned: an earlier email never answers a later wait.
+  const returned = new Set<string>();
 
   const readLatestMessage = async (after: Date): Promise<string | null> => {
+    const since = new Date(after.getTime() - 2_000);
     const listUrl = new URL(
       `${baseUrl}/inboxes/${encodeURIComponent(inbox.inbox_id)}/messages`,
     );
     listUrl.searchParams.set("limit", "10");
-    listUrl.searchParams.set("after", after.toISOString());
+    listUrl.searchParams.set("after", since.toISOString());
     listUrl.searchParams.set("include_unauthenticated", "true");
     const result = await json<AgentMailMessagesResponse>(
       await fetch(listUrl, { headers }),
       200,
     );
     const message = result.messages
-      .filter((candidate) => new Date(candidate.timestamp).getTime() >= after.getTime())
+      .filter((candidate) => !returned.has(candidate.message_id))
+      .filter((candidate) => new Date(candidate.timestamp).getTime() >= since.getTime())
       .sort(
         (left, right) =>
           new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime(),
@@ -209,6 +215,7 @@ async function agentMailInbox(apiKey: string): Promise<DisposableInbox> {
       ),
       200,
     );
+    returned.add(message.message_id);
     return `${detail.text ?? ""}\n${detail.html ?? ""}`;
   };
 

@@ -8,8 +8,6 @@ export async function hasProviderBoxReference(provider: ProviderName, externalId
     select exists (
       select 1 from kortix.session_sandboxes where provider = ${provider} and external_id = ${externalId}
       union all
-      select 1 from kortix.session_environments where provider = ${provider} and external_id = ${externalId}
-      union all
       select 1 from kortix.app_runtimes where provider = ${provider} and external_id = ${externalId}
       union all
       select 1 from kortix.project_monitor_boxes where provider = ${provider} and external_id = ${externalId}

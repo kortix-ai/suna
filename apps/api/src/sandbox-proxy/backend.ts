@@ -2,7 +2,7 @@
  * Sandbox backend resolution — the single source of truth for "where does this
  * sandbox live, how do I authenticate to it, and is it healthy".
  *
- * Both proxy data paths (HTTP forward in routes/preview.ts and the WebSocket
+ * Both proxy data paths (HTTP forward in forward/ and the WebSocket
  * upstream resolver) used to duplicate this: each loaded the session-sandbox
  * row, resolved the service key, fetched the Daytona preview link, and built
  * the signed X-Kortix-User-Context header with slightly different code. The
@@ -22,7 +22,7 @@
 
 import { and, eq, gt, ne, sql, type SQL } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { config } from '../config';
+import { timeUpstream } from '../middleware/upstream-timing';
 import {
   getProvider,
   type ProviderName,
@@ -31,6 +31,7 @@ import {
   type SandboxIngressRoute,
 } from '../platform/providers';
 import { recoverTurnsAfterRuntimeRestart } from '../projects/session-lifecycle/runtime-restart-recovery';
+import { setBounded } from '../shared/bounded-cache';
 import { db } from '../shared/db';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
@@ -77,6 +78,16 @@ interface ServiceKeyEntry {
 }
 
 const previewLinkCache = new Map<string, PreviewLinkEntry>();
+/**
+ * Provider resolves in flight, by the cache key. Concurrent misses on one
+ * (sandbox, port, transport) share one provider call instead of each paying
+ * it. An entry lives only as long as its call: a rejection is never kept.
+ */
+// replica-local: single-flight dedup of concurrent resolves in one process.
+// An entry dies with its promise, so there is no state to share; another
+// replica resolving the same key again costs one redundant provider call,
+// never a stale answer.
+const ingressInFlight = new Map<string, Promise<ResolvedSandboxIngress>>();
 const serviceKeyCache = new Map<string, ServiceKeyEntry>();
 const sandboxTouchCache = new Map<string, number>();
 
@@ -126,8 +137,14 @@ function preferredSandboxOrder() {
 const HOST_LABEL_MISS_TTL_MS = 30 * 1000;
 const hostLabelCache = new Map<string, { externalId: string | null; expiresAt: number }>();
 
+const HOST_LABEL_CACHE_MAX = 10_000;
+// A DNS label: at most 63 octets of [a-z0-9-]. Anything else cannot be a sandbox
+// host label, so it never costs a table scan (the TLS-check gate is anonymous).
+const HOST_LABEL_SHAPE = /^[a-z0-9-]{1,63}$/;
+
 export async function resolveExternalIdFromHostLabel(label: string): Promise<string | null> {
   const key = label.toLowerCase();
+  if (!HOST_LABEL_SHAPE.test(key)) return null;
   const cached = hostLabelCache.get(key);
   if (cached && (cached.externalId !== null || Date.now() < cached.expiresAt)) {
     return cached.externalId;
@@ -141,7 +158,7 @@ export async function resolveExternalIdFromHostLabel(label: string): Promise<str
     .limit(1);
 
   const externalId = match?.externalId ?? null;
-  hostLabelCache.set(key, { externalId, expiresAt: Date.now() + HOST_LABEL_MISS_TTL_MS });
+  setBounded(hostLabelCache, key, { externalId, expiresAt: Date.now() + HOST_LABEL_MISS_TTL_MS }, HOST_LABEL_CACHE_MAX);
   return externalId;
 }
 
@@ -253,7 +270,8 @@ export async function resolveServiceKey(sandboxId: string): Promise<string | nul
 // through `/v1/p/`.)
 
 export async function resolveSandboxIngress(
-  sandboxRef: string | SandboxRecord,
+  // An App machine has no session row, so it passes the two fields used.
+  sandboxRef: string | Pick<SandboxRecord, 'externalId' | 'provider'>,
   request: SandboxIngressRequest,
 ): Promise<ResolvedSandboxIngress> {
   const sandboxId = typeof sandboxRef === 'string' ? sandboxRef : sandboxRef.externalId;
@@ -266,14 +284,32 @@ export async function resolveSandboxIngress(
 
   const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
   if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
-  const provider = getProvider(record.provider as ProviderName);
-  const ingress = await provider.resolveIngress(record.externalId, request);
-
-  const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
-  if (cacheTtlMs > 0) {
-    previewLinkCache.set(key, { ingress, expiresAt: Date.now() + cacheTtlMs });
+  let resolving = ingressInFlight.get(key);
+  if (!resolving) {
+    const provider = getProvider(record.provider as ProviderName);
+    const started: Promise<ResolvedSandboxIngress> = (async () =>
+      provider.resolveIngress(record.externalId, request))()
+      .then((ingress) => {
+        const cacheTtlMs = provider.ingressCacheTtlMs ?? CACHE_TTL_MS;
+        // An invalidation during the call removed this entry: the link goes to
+        // the callers already waiting on it and is not cached.
+        if (cacheTtlMs > 0 && ingressInFlight.get(key) === started) {
+          previewLinkCache.set(key, { ingress, expiresAt: Date.now() + cacheTtlMs });
+        }
+        return ingress;
+      })
+      .finally(() => {
+        if (ingressInFlight.get(key) === started) ingressInFlight.delete(key);
+      });
+    ingressInFlight.set(key, started);
+    resolving = started;
   }
-  return ingress;
+  // A provider API call is upstream time by the middleware's own contract; a
+  // stale link makes every proxied request pay this inline (KRTX-471: ~5 s
+  // give-ups whose `upstream_ms` held only the failed dials). A request that
+  // joins a call in flight waits on the provider too, so it is timed the same.
+  const shared = resolving;
+  return timeUpstream(() => shared);
 }
 
 export function routeSandboxIngress(
@@ -283,12 +319,18 @@ export function routeSandboxIngress(
   return getProvider(sandbox.provider as ProviderName).routeIngress(request);
 }
 
+/** Drop every cached link, and every resolve in flight, under a key prefix. */
+function dropIngress(prefix: string): void {
+  for (const entries of [previewLinkCache, ingressInFlight]) {
+    for (const key of entries.keys()) {
+      if (key.startsWith(prefix)) entries.delete(key);
+    }
+  }
+}
+
 /** Drop a cached preview link — called when an upstream returns 502/503 (stale). */
 export function invalidatePreviewLink(sandboxId: string, port: number): void {
-  const prefix = `${sandboxId}:${port}:`;
-  for (const key of previewLinkCache.keys()) {
-    if (key.startsWith(prefix)) previewLinkCache.delete(key);
-  }
+  dropIngress(`${sandboxId}:${port}:`);
 }
 
 // ── Upstream auth headers (shared by HTTP forward + WebSocket) ────────────────
@@ -474,8 +516,5 @@ export async function markSandboxErrored(externalId: string): Promise<void> {
 /** Drop every cached entry for a sandbox (service key + all per-port links). */
 export function invalidateSandbox(externalId: string): void {
   serviceKeyCache.delete(externalId);
-  const prefix = `${externalId}:`;
-  for (const key of previewLinkCache.keys()) {
-    if (key.startsWith(prefix)) previewLinkCache.delete(key);
-  }
+  dropIngress(`${externalId}:`);
 }

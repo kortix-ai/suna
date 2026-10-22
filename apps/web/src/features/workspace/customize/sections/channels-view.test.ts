@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { readFileSync as readRawFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-const dir = import.meta.dir;
+const dir = dirname(uiSourcePath('customize/sections/connectors-view.tsx'));
 
 /**
  * Comments stripped, so every assertion below is about CODE.
@@ -27,11 +28,10 @@ const read = (relativePath: string) => code(readFileSync(join(dir, relativePath)
 
 const channelsSource = read('view/channels-view.tsx');
 const connectorsSource = read('connectors-view.tsx');
-const teamsPanelSource = read('teams-channel-panel.tsx');
+const teamsCardSource = read('component/teams-connect-card.tsx');
 const connectCardSource = read('component/slack-connect-card.tsx');
+const heroSource = read('component/channel-connect-hero.tsx');
 const wizardSource = read('component/slack-byo-wizard.tsx');
-const coverSource = read('component/slack-connect-cover.tsx');
-const blogCoverSource = read('../../../../components/blog/blog-cover.tsx');
 const channelRowSource = read('component/channel-row.tsx');
 const copyBlockSource = read('component/manifest-copy-block.tsx');
 
@@ -54,10 +54,10 @@ const MODULES: Array<[name: string, source: string]> = [
   ['channels-view', channelsSource],
   ['slack-connect-card', connectCardSource],
   ['slack-byo-wizard', wizardSource],
-  ['slack-connect-cover', coverSource],
   ['channel-row', channelRowSource],
   ['manifest-copy-block', copyBlockSource],
-  ['teams-channel-panel', teamsPanelSource],
+  ['teams-connect-card', teamsCardSource],
+  ['channel-connect-hero', heroSource],
 ];
 
 describe('the sources under test are readable and non-trivial', () => {
@@ -75,8 +75,9 @@ describe('Channels view — a disconnected Slack is a hero, not a table row', ()
 
   test('once connected, Slack becomes a peer row in the same list as Email and Teams', () => {
     // Not its own list above a "More channels" heading — the label is
-    // suppressed precisely when Slack has joined the rows.
-    expect(channelsSource).toContain('const showMoreLabel = !slackRow && hasRows;');
+    // suppressed precisely when Slack has joined the rows. The list always
+    // has the Teams row, so nothing else decides it.
+    expect(channelsSource).toContain('const showMoreLabel = !slackRow;');
     expect(channelsSource).toContain('showMoreLabel ? <Label>');
     expect(channelsSource).toContain("raw('text28647129955c')");
     expect(channelsSource).toMatch(
@@ -93,11 +94,13 @@ describe('Channels view — a disconnected Slack is a hero, not a table row', ()
     expect(channelsSource).not.toMatch(/function SlackChannelRow[\s\S]{0,600}<TableCell/);
   });
 
-  test('the bindings table survives — that one has real data to compare', () => {
-    expect(channelsSource).toContain('function ChannelBindingsSection');
-    expect(channelsSource).toContain('<Table>');
-    expect(channelsSource).toContain("raw('textce4683e7013a')");
-    expect(channelsSource).toContain("raw('text11b39c93777e')");
+  // One table of every Slack and Teams conversation under the connection rows
+  // grew with every channel and DM (2026-10-02). The bindings moved into a
+  // dialog with a tab per platform, opened from each platform's row.
+  test('the bindings live in one dialog, not in a table on the page', () => {
+    expect(channelsSource).toContain('function ChannelBindingsDialog');
+    expect(channelsSource).not.toContain('function ChannelBindingsSection');
+    expect(channelsSource).not.toContain('<Table>');
   });
 
   test('the duplicate header CTA is gone — the hero owns the only "Add to Slack"', () => {
@@ -115,66 +118,21 @@ describe('Channels view — a disconnected Slack is a hero, not a table row', ()
 });
 
 describe('Slack connect card — the payoff renders before the commitment', () => {
-  test('shows the cover art and plain-language benefits, not just a button', () => {
-    expect(connectCardSource).toContain('<SlackConnectCover');
-    expect(connectCardSource).toContain('SLACK_BENEFITS');
-    expect(connectCardSource).toContain('Nothing for your teammates to install');
+  test('the payoff is a Slack channel mock beside the copy, not a cover band', () => {
+    // The agent answering an @mention in a channel is the pitch, so the card
+    // carries no cover art or benefit list.
+    expect(connectCardSource).toContain('<ChannelConnectHero');
+    expect(connectCardSource).toContain('<SlackChannelMock');
+    expect(connectCardSource).toContain('@Kortix');
+    expect(connectCardSource).toContain('Bring your agent to Slack');
+    expect(connectCardSource).not.toContain('SlackConnectCover');
+    expect(connectCardSource).not.toContain('BlogCover');
+    expect(connectCardSource).not.toContain('SLACK_BENEFITS');
   });
 
-  test('the cover reuses the blog BlogCover instead of hand-drawing a mock', () => {
-    // ~130 lines of hand-drawn fake Slack thread became a wrapper around the
-    // component the blog already renders on post cards and post pages.
-    expect(coverSource).toContain("from '@/components/blog/blog-cover'");
-    expect(coverSource).toContain('<BlogCover');
-    expect(coverSource).toContain("name: 'Slack'");
-    // No re-drawn chrome: no channel bar, no fake avatars, no mention pill.
-    expect(coverSource).not.toContain('PreviewMessage');
-    expect(coverSource).not.toContain('KortixLogo');
-    expect(coverSource).not.toContain('HashIcon');
-  });
-
-  test('the Slack mark comes from the repo SVG, not a third-party favicon fetch', () => {
-    // BRAND_ICONS had no `slack` key, so LogoChip fell through to
-    // google.com/s2/favicons — a network request for a mark we already ship.
-    expect(blogCoverSource).toContain("import { Slack } from '@/features/icon/icons/slack'");
-    expect(blogCoverSource).toMatch(/BRAND_ICONS[\s\S]*?slack: Slack,/);
-    expect(coverSource).not.toContain('favicons');
-  });
-
-  test('the cover keeps the 520 KB dark-only JPEG out of a settings panel', () => {
-    expect(coverSource).not.toContain('operation_1');
-    expect(coverSource).not.toContain('usecases/slack');
+  test('the preview is decorative and keeps the dark-only JPEG out', () => {
+    expect(heroSource).toMatch(/aria-hidden[\s\S]*?hidden min-w-0 flex-1/);
     expect(connectCardSource).not.toContain('usecases/slack');
-  });
-
-  test('the lockup is hidden from screen readers, since the heading already says it', () => {
-    expect(coverSource).toContain('aria-hidden');
-    // Labelling it would announce "Slack and Kortix" twice, next to <h3>Slack</h3>.
-    expect(coverSource).not.toContain('aria-label');
-  });
-
-  test('the cover is sized for a settings panel, not the blog 16/9', () => {
-    // A wide, short ratio (N/1) — the exact N is a taste call that has already
-    // moved once, so pinning it would fail on a tweak rather than a regression.
-    // What must hold is that the cover is explicitly sized and is NOT the
-    // blog's 16/9, which at max-w-2xl (672px) would be a 378px settings hero.
-    expect(coverSource).toMatch(/aspect-\[\d+\/1\]/);
-    expect(coverSource).not.toContain('aspect-[16/9]');
-    expect(coverSource).not.toContain('aspect-[16/10]');
-  });
-
-  test('the cover sits flush, with no tinted band fighting its own gradient', () => {
-    expect(connectCardSource).not.toContain('bg-muted/30 border-b p-4');
-    const wrapper = connectCardSource.match(/<div className="([^"]*)">\s*<SlackConnectCover/)?.[1];
-    // Read the wrapper's classes rather than pin its whole string: the cover is
-    // `scale-120`, so the wrapper's `overflow-hidden` is load-bearing — without
-    // it the upscaled band spills over the copy beneath. What must not appear
-    // is a fill or an inset, either of which puts a second surface between the
-    // panel and the cover's own gradient.
-    const classes = wrapper?.split(/\s+/).filter(Boolean) ?? [];
-    expect(classes).toContain('border-b');
-    expect(classes.filter((name) => name.startsWith('bg-'))).toEqual([]);
-    expect(classes.filter((name) => /^-?p[xytblrse]?-/.test(name))).toEqual([]);
   });
 
   test('a self-hosted install with no managed app is a path, not an EmptyState', () => {
@@ -189,13 +147,6 @@ describe('Slack connect card — the payoff renders before the commitment', () =
 });
 
 describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
-  test('three steps driven by the shared Stepper, inside a Modal', () => {
-    expect(wizardSource).toContain("from '@/components/ui/stepper'");
-    expect(wizardSource).toContain('<Stepper');
-    expect(wizardSource).toContain('ModalContent');
-    expect(wizardSource).toMatch(/const STEPS = \[[\s\S]*?step: 3/);
-  });
-
   test('the prose step counter is gone', () => {
     expect(wizardSource).not.toContain('Step 1 of 2');
     expect(wizardSource).not.toContain('Step 2 of 2');
@@ -246,9 +197,7 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
   test('the block composes the shipped code primitives instead of hand-rolling them', () => {
     // The barrel's own rule: own frame -> HighlightedCode. This frame is bespoke
     // (copy top-left, ~3-line cap, bg-secondary), the body and control are not.
-    expect(copyBlockSource).toContain("from '@/components/markdown/code'");
     expect(copyBlockSource).toContain('<HighlightedCode');
-    expect(copyBlockSource).toContain("from '@/components/markdown/copy-button'");
     expect(copyBlockSource).toContain('<CopyButton');
   });
 
@@ -280,7 +229,7 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
     // ...and the `label` prop it used to feed is gone rather than left dangling
     // for callers to pass into nothing.
     expect(copyBlockSource).not.toMatch(/^\s*label\?: string;/m);
-    expect(teamsPanelSource).not.toContain('label="Copy manifest"');
+    expect(teamsCardSource).not.toContain('label="Copy manifest"');
   });
 
   test('loading and error states render inside the block, not as sibling banners', () => {
@@ -304,23 +253,11 @@ describe('Bring your own Slack — a guided wizard, not a JSON dump', () => {
     expect(wizardSource).not.toContain('fetch(');
   });
 
-  test('the house icon-swap values live in the shared CopyButton, once', () => {
-    const copyButton = read('../../../../components/markdown/copy-button.tsx');
-    expect(copyButton).toContain("filter: 'blur(4px)'");
-    expect(copyButton).toContain('scale: 0.25');
-    expect(copyButton).toContain('bounce: 0');
-    expect(copyButton).toContain('initial={false}');
-    // Teams' old local button hard-swapped the glyphs; nothing does now.
-    expect(teamsPanelSource).not.toMatch(/\{copied \? <Check/);
-    expect(teamsPanelSource).not.toContain('navigator.clipboard');
-  });
+
 });
 
 describe('Channels view — Email and Teams are entity rows', () => {
   test('both render through the shared ChannelRow', () => {
-    expect(channelsSource).toContain(
-      "from '@/features/workspace/customize/sections/component/channel-row'",
-    );
     expect(channelsSource).toContain('function EmailChannelRow');
     expect(channelsSource).toContain('function TeamsChannelRow');
     expect(channelsSource).toMatch(/<EmailChannelRow[\s\S]*<TeamsChannelRow/);
@@ -343,16 +280,12 @@ describe('Channels view — Email and Teams are entity rows', () => {
 
   test('reuses the connector connect form inside a modal instead of redirecting', () => {
     expect(channelsSource).toContain('EmailConnectForm');
-    expect(channelsSource).toContain(
-      "from '@/features/workspace/customize/sections/connectors-view'",
-    );
     expect(connectorsSource).toContain('export function EmailConnectForm');
   });
 
   test('reuses the shared installation hooks as the single source of truth', () => {
     expect(channelsSource).toContain('useDisconnectSlack');
     expect(channelsSource).toContain('useDisconnectEmail');
-    expect(channelsSource).toContain("from '@/hooks/channels/use-teams-installations'");
     expect(channelsSource).toContain('useTeamsInstall');
     expect(channelsSource).toContain('useTeamsMode');
     expect(channelsSource).toContain('useDisconnectTeams');
@@ -361,14 +294,11 @@ describe('Channels view — Email and Teams are entity rows', () => {
     expect(channelsSource).toContain('Add to Teams');
   });
 
-  test('keeps Email and Teams behind their per-project flags', () => {
-    expect(channelsSource).toContain("useFeatureFlag(projectId, 'agentmail_email')");
-    expect(channelsSource).toContain("EMAIL_CONNECTOR_SLUG = 'kortix_email'");
-    expect(channelsSource).toContain("const teamsFlag = useFeatureFlag(projectId, 'teams');");
-    expect(channelsSource).toContain('const teamsChannelEnabled = teamsFlag.enabled;');
-    expect(channelsSource).toMatch(/emailChannelEnabled \? \(\s*<EmailChannelRow/);
-    expect(channelsSource).toMatch(/teamsChannelEnabled \? \(\s*<TeamsChannelRow/);
-    expect(channelsSource).toMatch(/teamsChannelEnabled \? <TeamsChannelPanel/);
+  test('Teams is on for every project and the shared feature flag query replaces the summary query', () => {
+    // The `teams` flag graduated: no gate before the Teams row or hero.
+    expect(channelsSource).not.toContain("useFeatureFlag(projectId, 'teams')");
+    expect(channelsSource).toMatch(/\n\s*<TeamsChannelRow\s+projectId=\{projectId\}\s+canWrite=\{canWrite\}/);
+    expect(channelsSource).toMatch(/<TeamsConnectCard projectId=\{projectId\} mode=\{teamsMode\}/);
     // The old summary-query read (one hop shallower than every sibling) stays gone.
     expect(channelsSource).not.toContain('?.experimental?.');
     expect(channelsSource).not.toContain('if (mode && !mode.enabled) return null;');
@@ -380,12 +310,39 @@ describe('Channels view — Email and Teams are entity rows', () => {
 });
 
 describe('Channels view — per-channel binding management (spec §2.5)', () => {
-  test('the bindings table renders once ANY channel is connected — Slack via its nudge, Teams on its own', () => {
-    expect(channelsSource).toMatch(/install \? <SlackFollowUp/);
-    expect(channelsSource).toMatch(/function SlackFollowUp[\s\S]*?<ChannelBindingsSection/);
-    // A Teams-only project used to have no way to see or edit its bindings.
-    expect(channelsSource).toMatch(/!install && teamsInstall \? \([\s\S]*?<ChannelBindingsSection/);
+  test("each connected platform's row opens the dialog on its own tab, a Teams-only project too", () => {
+    expect(channelsSource).toMatch(/<SlackChannelRow[\s\S]*?onOpenChannels=/);
+    expect(channelsSource).toMatch(/<TeamsChannelRow[\s\S]*?onOpenChannels=/);
+    expect(channelsSource).toContain('<ChannelBindingsDialog');
+    // "N channels", pluralized by the catalog.
+    expect(channelsSource).toMatch(/tI18nComplete\('text[0-9a-f]{12}', \{ count/);
     expect(channelsSource).toContain('useTeamsInstall(');
+  });
+
+  const dialogSource = () =>
+    channelsSource.slice(
+      channelsSource.indexOf('function ChannelBindingsDialog'),
+      channelsSource.indexOf('function ChannelSettingsModalContent'),
+    );
+
+  test('the dialog has a tab per platform and searches within the open tab', () => {
+    const dialog = dialogSource();
+    expect(dialog).toContain('bindingTabs(');
+    expect(dialog).toContain('<TabsListCompact');
+    expect(dialog).toContain('<TabsTriggerCompact');
+    expect(dialog).toContain('BINDING_SEARCH_MIN');
+  });
+
+  test('a channel opens its settings inside the same dialog, with Back: never a second modal', () => {
+    const dialog = dialogSource();
+    expect(dialog.match(/<Modal\b/g)).toHaveLength(1);
+    expect(dialog).toContain('<ChannelSettingsModalContent');
+    expect(dialog).toContain('onBack=');
+    expect(channelsSource).toContain("raw('text76900f1bfd16')"); // Back
+    // A finished save returns to the list too; there is no Cancel/Close way out.
+    const settings = channelsSource.slice(channelsSource.indexOf('function ChannelSettingsModalContent'));
+    expect(settings).toMatch(/onSuccess: \(\) => \{[^}]*\bonBack\(\);\s*\}/);
+    expect(settings).not.toContain('onDone');
   });
 
   test('a binding row names its platform and, for Teams, its scope instead of the tenant GUID', () => {
@@ -395,8 +352,43 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain("'text28c7d3f8b75d'");
   });
 
+  // Every thread of a Teams channel is its own binding, and all of them read
+  // `Team › Channel` (on dev: three rows of one channel, 2026-10-02).
+  test('a Teams channel thread reads its session title under the name; threads of one channel sort by it', () => {
+    expect(channelsSource).toMatch(/if \(binding\.threadTitle\) return tI18nComplete\('text5097881a690f', \{ title: binding\.threadTitle \}\)/);
+    expect(channelsSource).toMatch(/a\.name\.localeCompare\(b\.name, undefined, \{ numeric: true \}\) \|\|\s*a\.scope\.localeCompare\(b\.scope/);
+  });
+
+  test('a Teams thread with no name reads Channel thread, even without a stored kind: its id says it', () => {
+    expect(channelsSource).toMatch(
+      /binding\.channelType === 'channel' \|\| binding\.channelId\.includes\(';messageid='\)\) return tI18nComplete\.raw\('text5cb103d6008c'\)/,
+    );
+  });
+
+  // Every Slack row on dev read `C0…` over `T0…` (2026-10-02): no Slack name
+  // lookup had ever succeeded. A Slack row now reads like a Teams row.
+  test('a Slack row shows #channel, a person, or a group DM, over its kind, not its workspace id', () => {
+    expect(channelsSource).toContain('slackBindingName(binding, tI18nComplete)');
+    expect(channelsSource).toContain('slackScopeLabel(binding, tI18nComplete)');
+    // The `#name` / person / group-DM rule is `slackConversationName`, shared
+    // with the session's `slack send` card (channel-message.test.ts).
+    expect(channelsSource).toContain('slackConversationName(binding)');
+    expect(channelsSource).toMatch(/binding\.platform === 'slack'\) return slackScopeLabel\(binding, tI18nComplete\)/);
+    for (const key of [
+      'text87f9f3ba9b60', // Private channel
+      'textcd3e16057d09', // Direct message
+      'textcbe7c5d45160', // Group DM
+      'textf5738ddc651d', // Unavailable channel
+    ]) {
+      expect(channelsSource).toContain(key);
+    }
+  });
+
+  test('a deleted Slack channel says so and still shows its id', () => {
+    expect(channelsSource).toContain('binding.channelUnavailable');
+  });
+
   test('reads/writes bindings through the shared hook (no ad-hoc fetches)', () => {
-    expect(channelsSource).toContain("from '@/hooks/channels/use-channel-bindings'");
     expect(channelsSource).toContain('useChannelBindings');
     expect(channelsSource).toContain('useUpdateChannelBinding');
   });
@@ -407,14 +399,12 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
   });
 
   test('agent picker reuses the shared AgentSelector, offering a project-default entry', () => {
-    expect(channelsSource).toContain("from '@/features/session/session-chat-input'");
     expect(channelsSource).toContain('<AgentSelector');
     expect(channelsSource).toContain('useVisibleAgents');
     expect(channelsSource).toContain('Project default');
   });
 
   test('model override reuses the shared ModelSelector and labels the unset state', () => {
-    expect(channelsSource).toContain("from '@/features/session/model-selector'");
     expect(channelsSource).toContain('<ModelSelector');
     expect(channelsSource).toContain("raw('texte8cb80e5c5cb')");
   });
@@ -425,9 +415,19 @@ describe('Channels view — per-channel binding management (spec §2.5)', () => 
     expect(channelsSource).toContain("value: 'owner_approval'");
   });
 
-  test('read-only members see static values instead of editable controls', () => {
-    expect(channelsSource).toContain('canManage');
-    expect(channelsSource).toContain('disabled={!canManage');
+  test('read-only members see the settings with every control disabled and no Save', () => {
+    expect(channelsSource.match(/\sdisabled=\{!canWrite\}/g)).toHaveLength(3);
+    expect(channelsSource).toMatch(/\{canWrite \? \(\s*<Button type="submit"/);
+  });
+
+  // ~30 conversations × 3 live pickers was ~90 controls and a clipped column.
+  test('the list is read-only; a row opens one settings view with one Save', () => {
+    const dialog = dialogSource();
+    expect(dialog).not.toContain('<AgentSelector');
+    expect(dialog).not.toContain('<ModelSelector');
+    expect(dialog).not.toContain('<Select');
+    expect(dialog).toContain('<ChannelSettingsModalContent');
+    expect(channelsSource.match(/update\.mutate\(/g)).toHaveLength(1);
   });
 });
 
@@ -435,7 +435,7 @@ describe('Channels view — no banned primitives in the rebuilt surface', () => 
   for (const [name, source] of MODULES) {
     test(`${name} uses no SectionCard, List, or Dialog`, () => {
       expect(source).not.toContain('SectionCard');
-      expect(source).not.toContain("from '@/components/ui/list'");
+      expect(source).not.toMatch(/primitives\/list'/);
       expect(source).not.toContain('DialogContent');
     });
 
@@ -458,39 +458,26 @@ describe('Channels view — no banned primitives in the rebuilt surface', () => 
   }
 });
 
-describe('Teams panel — chrome aligned with the rebuilt Slack surface', () => {
-  test('is the bring-your-own-bot card, built on the shared Disclosure', () => {
-    expect(teamsPanelSource).toContain('Use your own Microsoft Teams app');
-    expect(teamsPanelSource).toContain("from '@/components/ui/disclosure'");
-    expect(teamsPanelSource).toContain('<DisclosureTrigger');
-    expect(teamsPanelSource).not.toContain('ConnectedPanel');
-    expect(teamsPanelSource).not.toContain('DisconnectedPanel');
+describe('Teams connect hero — the Slack hero, for Teams', () => {
+  test('channels-view shows the hero until Teams is connected, then the row', () => {
+    expect(channelsSource).toContain('<TeamsConnectCard');
+    expect(channelsSource).toContain('teamsHero ? null : (');
+    expect(channelsSource).not.toContain('TeamsChannelPanel');
   });
 
-  test('errors go through InfoBanner rather than a hand-rolled tinted paragraph', () => {
-    expect(teamsPanelSource).toContain('tone="destructive"');
-    expect(teamsPanelSource).not.toContain('bg-destructive/5');
+  test('one primary button: one-click consent when managed, the wizard when not', () => {
+    expect(teamsCardSource).toContain('mode.available && !mode.byo ? mode.orgConsentUrl : null');
+    expect(teamsCardSource).toContain('<TeamsByoWizard');
+    expect(teamsCardSource).toContain('<ChannelConnectHero');
+    expect(teamsCardSource).toContain('<TeamsChannelMock');
+    expect(teamsCardSource).not.toContain('<BlogCover');
   });
 
-  // The Switch this used to assert is gone: bring-your-own is a guided wizard
-  // now, so there is no second mode for this panel to toggle between. What
-  // must not come back is the raw checkbox that preceded the Switch.
-  test('bring-your-own opens the wizard; no raw checkbox, no mode toggle', () => {
-    expect(teamsPanelSource).not.toContain('type="checkbox"');
-    expect(teamsPanelSource).toContain('<TeamsByoWizard');
-    expect(teamsPanelSource).not.toContain('<Switch');
-  });
-
-  test('shares one manifest-copy implementation with the Slack wizard', () => {
-    expect(teamsPanelSource).toContain('<ManifestCopyBlock');
-    expect(wizardSource).toContain('<ManifestCopyBlock');
-    expect(teamsPanelSource).toContain('filename="teams-app-manifest.json"');
-  });
-
-  test('the block absorbed the uppercase caption and the separate manifest <pre>', () => {
-    expect(teamsPanelSource).not.toContain('App manifest');
-    expect(teamsPanelSource).not.toContain('<pre');
-    expect(teamsPanelSource).not.toContain('max-h-64');
+  test('the old panel chrome is gone: no disclosure, banner, tenant form or manifest block', () => {
+    expect(teamsCardSource).not.toContain('<Disclosure');
+    expect(teamsCardSource).not.toContain('<InfoBanner');
+    expect(teamsCardSource).not.toContain('<Input');
+    expect(teamsCardSource).not.toContain('<ManifestCopyBlock');
   });
 });
 
@@ -521,11 +508,13 @@ describe('Channels view — Teams one-click install outcome', () => {
     expect(channelsSource).toContain("get('teams')");
     expect(channelsSource).toContain("delete('teams')");
     expect(channelsSource).toContain('router.replace');
-    for (const status of ['connected', 'review', 'failed', 'publishing', 'declined', 'disabled', 'unconfigured']) {
+    for (const status of ['connected', 'review', 'failed', 'publishing', 'declined', 'unconfigured']) {
       expect(channelsSource).toContain(`'${status}'`);
     }
-    // the retired status is gone everywhere on the web side
+    // the retired statuses are gone everywhere on the web side: `disabled`
+    // went with the `teams` feature flag
     expect(channelsSource).not.toContain('consented');
+    expect(channelsSource).not.toContain("case 'disabled'");
   });
 
   test('every new string goes through the i18n catalog (no hardcoded English)', () => {
@@ -538,7 +527,6 @@ describe('Channels view — Teams one-click install outcome', () => {
       'textf5262c55d1be',
       'text76930360e909',
       'textb8d155eea2ab',
-      'textd4b32aea5c4a',
       'text57ef9e5e8110',
       'text8ccfe10f2f2d', // Publish to your Teams catalog
     ]) {
@@ -549,5 +537,36 @@ describe('Channels view — Teams one-click install outcome', () => {
     const raw = readRawFileSync(join(dir, 'view/channels-view.tsx'), 'utf8');
     expect(raw).not.toContain('Catalog publish failed');
     expect(raw).not.toContain('Publish to your Teams catalog');
+  });
+});
+
+/**
+ * A catalog on a Teams app from before the read permission (manifest 1.0.0)
+ * refuses every thread read in a team. On dev (2026-10-01) the test tenant's
+ * catalog had published 1.0.0 ninety minutes before the permission landed,
+ * and nothing on this page said so. The fix takes two people, in order, and
+ * Teams never installs an update that adds a permission on its own, so the
+ * notice names both steps.
+ */
+describe('Channels view — a Teams catalog on an older app', () => {
+  test('the notice renders from the server verdict, as an InfoBanner under the rows', () => {
+    expect(channelsSource).toContain('teamsInstall?.appUpdateAvailable');
+    expect(channelsSource).toContain('<TeamsAppUpdateNotice');
+    expect(channelsSource).toMatch(/<InfoBanner\s+tone="warning"/);
+  });
+
+  test('it names both versions when the catalog version is known, and the latest when not', () => {
+    expect(channelsSource).toContain('install.appVersion');
+    expect(channelsSource).toContain('install.latestAppVersion');
+    expect(channelsSource).toContain('textdf757dbe33eb'); // Your Teams catalog has version {value0} of the Kortix app. …
+    expect(channelsSource).toContain('textcd2c4b26eedd'); // Kortix has no record of the app version in your Teams catalog. …
+    expect(channelsSource).toContain('text80043b03898d'); // Update the Kortix app in Teams
+  });
+
+  test('the row button says it publishes the update', () => {
+    expect(channelsSource).toContain('texte15f213fa506'); // Publish app update
+    const raw = readRawFileSync(join(dir, 'view/channels-view.tsx'), 'utf8');
+    expect(raw).not.toContain('Publish app update');
+    expect(raw).not.toContain('Manage team');
   });
 });

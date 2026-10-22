@@ -22,7 +22,7 @@
  * redirect through `/refresh`, so a page never renders "signed out" for a user
  * whose refresh token is still good.
  */
-import { createScopedKortix, forwardKortixRequest } from './server';
+import { createScopedKortix, forwardKortixRequest } from './scoped-client';
 import type { Kortix } from '../core/client/kortix';
 import type { AccountIdentity } from '../core/rest/projects-client/accounts';
 import { stripTrailingSlashes } from '../platform/strings';
@@ -553,7 +553,7 @@ export function createKortixAuth(options: KortixAuthOptions): KortixAuth {
     const current = await viewer(request);
     if (!current) throw new KortixAuthError('unauthenticated', 'No signed-in Kortix viewer on this request');
     const token = current.token;
-    return createScopedKortix({ backendUrl, getToken: async () => token, fetch: fetchImpl, clientSource: 'web' });
+    return createScopedKortix({ backendUrl, getToken: async () => token, fetch: fetchImpl });
   }
 
   return {

@@ -16,10 +16,12 @@
  * We mint a real SCIM token for the OWNER-owned team account to exercise the
  * 200/201 happy paths, then drive Users + Groups CRUD over that bearer.
  */
+import { strict as assert } from 'node:assert';
 import { flow } from '../core/flow';
 import type { Client } from '../core/client';
 import type { FlowContext } from '../core/types';
-import { ssoFixtureToken } from '../fixtures/supabase';
+import { adminDeleteUser, ssoFixtureToken } from '../fixtures/supabase';
+import { offboardingEvent, pairBothPlacements, projectComputerAccount } from '../fixtures/tunnel';
 
 /** Mint a per-account SCIM bearer token for an account the OWNER controls. */
 async function mintScimToken(ctx: FlowContext, accountId: string): Promise<string> {
@@ -1176,5 +1178,190 @@ flow('SCIM-14', {
     (await scim.get('/scim/v2/accounts/:accountId/Groups/:groupId', {
       params: { ...params, groupId: groups[1]! },
     })).status(200).body().has('$.members', []);
+  });
+});
+
+// KRTX-1722: SCIM deactivation runs the same offboarding as removal and leave
+// (TUN-8, TUN-9), so the member's computer accounts end with the membership.
+flow('SCIM-16', {
+  domain: 'scim',
+  timeoutMs: 180_000,
+  serial: true,
+  routes: [
+    'POST /v1/tunnel/device-auth',
+    'GET /v1/tunnel/device-auth/:code/status',
+    'POST /v1/tunnel/device-auth/:code/approve',
+    'GET /v1/projects/:projectId/connections',
+    'PATCH /scim/v2/accounts/:accountId/Users/:userId',
+    'GET /v1/accounts/:accountId/audit',
+    'GET /v1/tunnel/connections',
+    'DELETE /v1/tunnel/connections/:tunnelId',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team({ enterprise: true });
+  const member = await team.addMember('member');
+  const project = await team.project();
+  await team.grantProjectRole(project.id, member.userId!, 'manager');
+  const scim = ctx.client.withBearer(await mintScimToken(ctx, team.id), 'SCIM');
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const asMember = ctx.client.as(member);
+  const params = { accountId: team.id, userId: member.userId! };
+  const deactivate = () => scim.patch('/scim/v2/accounts/:accountId/Users/:userId', {
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:PatchOp'],
+    Operations: [{ op: 'replace', value: { active: false } }],
+  }, { params });
+  let machines!: Awaited<ReturnType<typeof pairBothPlacements>>;
+
+  await ctx.step('the member pairs a private machine and one shared with the project', async () => {
+    machines = await pairBothPlacements(ctx.client.as(ctx.P.ANON), asMember, { projectId: project.id, name: ctx.fixtures.name });
+    assert.equal((await projectComputerAccount(owner, project.id, machines.shared.connectionId))?.status, 'active');
+  });
+
+  await ctx.step('the IdP deactivates the member → 200 active:false', async () => {
+    (await deactivate()).status(200).body().has('$.active', false);
+  });
+
+  await ctx.step('the shared machine\'s computer account is revoked with revokedReason owner_left', async () => {
+    const shared = await projectComputerAccount(owner, project.id, machines.shared.connectionId);
+    assert.equal(shared?.status, 'revoked');
+    assert.equal(shared?.metadata?.revokedReason, 'owner_left');
+  });
+
+  await ctx.step('one member.offboarded audit event, with no human actor, counts both placements', async () => {
+    const event = await offboardingEvent(owner, team.id, member.userId!);
+    assert.equal(event.actor_user_id, null);
+    assert.equal(event.metadata?.reason, 'deprovisioned');
+    assert.equal(event.metadata?.computers_revoked, 2);
+  });
+
+  await ctx.step('a repeated deactivation → 200 and records no second offboarding', async () => {
+    (await deactivate()).status(200).body().has('$.active', false);
+    await offboardingEvent(owner, team.id, member.userId!);
+  });
+
+  await ctx.step('the machines stay the member\'s: they still list and unpair both', async () => {
+    const r = await asMember.get('/v1/tunnel/connections');
+    r.status(200);
+    const listed = r.json<any[]>().map((m) => m.tunnelId);
+    for (const machine of [machines.personal, machines.shared]) {
+      assert.ok(listed.includes(machine.tunnelId), `the member lists ${machine.tunnelId}`);
+      (await asMember.del('/v1/tunnel/connections/:tunnelId', { params: { tunnelId: machine.tunnelId } })).status(200);
+    }
+  });
+});
+
+flow('SCIM-17', {
+  domain: 'scim',
+  routes: [
+    'POST /scim/v2/accounts/:accountId/Users',
+    'POST /scim/v2/accounts/:accountId/Groups',
+    'GET /scim/v2/accounts/:accountId/Groups/:groupId',
+    'POST /v1/accounts/:accountId/members',
+    'POST /v1/account-invites/:inviteId/accept',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'GET /v1/projects/:projectId/access',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team({ enterprise: true });
+  const project = await team.project();
+  const scim = ctx.client.withBearer(await mintScimToken(ctx, team.id), 'SCIM');
+  const email = `${ctx.fixtures.name('scim-reinvite')}@${ctx.env.testEmailDomain}`.toLowerCase();
+  let groupId = '';
+  let inviteId = '';
+
+  await ctx.step('SCIM creates a person who has not signed in and adds them to a group → 201, the group waits on their invite', async () => {
+    const user = await scim.post('/scim/v2/accounts/:accountId/Users', { userName: email }, { params: { accountId: team.id } });
+    user.status(201);
+    const group = await scim.post('/scim/v2/accounts/:accountId/Groups', {
+      displayName: ctx.fixtures.name('scim-reinvite-group'),
+      members: [{ value: user.json<{ id: string }>().id }],
+    }, { params: { accountId: team.id } });
+    group.status(201);
+    groupId = group.json<{ id: string }>().id;
+  });
+
+  await ctx.step('an owner re-invites the same email with a project grant → 201 pending', async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/:accountId/members', {
+      email,
+      role: 'member',
+      project_grants: [{ project_id: project.id, role: 'member' }],
+    }, { params: { accountId: team.id } });
+    r.status(201).body().has('$.status', 'pending');
+    inviteId = r.json<{ invite_id: string }>().invite_id;
+  });
+
+  await ctx.step('the person signs up and accepts → 200; the group roster lists them and they hold the project grant', async () => {
+    const person = await ctx.fixtures.userWithEmail(email, { label: 'SCIM-17-INVITEE' });
+    (await ctx.client.as(person).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      .status(200).body().has('$.account_id', team.id);
+    // The SCIM view names the person by their SCIM id before and after sign-in;
+    // the account's own group roster is where the membership lands.
+    const roster = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+      params: { accountId: team.id, groupId },
+    });
+    const members = roster.status(200).json<{ members: Array<{ user_id?: string; userId?: string }> }>().members;
+    if (!members.some((m) => (m.user_id ?? m.userId) === person.userId)) {
+      throw new Error(`the accepted person is not in the SCIM group: ${JSON.stringify(members)}`);
+    }
+    const access = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/access', { params: { projectId: project.id } });
+    const row = access.status(200).json<{ members: Array<{ user_id: string; effective_project_role: string }> }>()
+      .members.find((m) => m.user_id === person.userId);
+    if (row?.effective_project_role !== 'member') throw new Error(`expected the project grant to land, got ${JSON.stringify(row)}`);
+  });
+});
+
+flow('SCIM-18', {
+  domain: 'scim',
+  routes: [
+    'POST /scim/v2/accounts/:accountId/Users',
+    'POST /scim/v2/accounts/:accountId/Groups',
+    'POST /v1/accounts/:accountId/members',
+    'POST /v1/account-invites/:inviteId/accept',
+    'DELETE /v1/accounts/:accountId/members/:userId',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+  ],
+}, async (ctx) => {
+  const team = await ctx.fixtures.team({ enterprise: true });
+  const scim = ctx.client.withBearer(await mintScimToken(ctx, team.id), 'SCIM');
+  const email = `${ctx.fixtures.name('scim-offboarded')}@${ctx.env.testEmailDomain}`.toLowerCase();
+  let groupId = '';
+  let inviteId = '';
+  const roster = async () =>
+    (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+      params: { accountId: team.id, groupId },
+    })).status(200).json<{ members: Array<{ user_id: string }> }>().members.map((m) => m.user_id);
+
+  await ctx.step('a SCIM-pending person in a group accepts → 200, the group roster lists them', async () => {
+    const user = await scim.post('/scim/v2/accounts/:accountId/Users', { userName: email }, { params: { accountId: team.id } });
+    user.status(201);
+    inviteId = user.json<{ id: string }>().id;
+    const group = await scim.post('/scim/v2/accounts/:accountId/Groups', {
+      displayName: ctx.fixtures.name('scim-offboarded-group'),
+      members: [{ value: inviteId }],
+    }, { params: { accountId: team.id } });
+    group.status(201);
+    groupId = group.json<{ id: string }>().id;
+    const person = await ctx.fixtures.userWithEmail(email, { label: 'SCIM-18-FIRST' });
+    (await ctx.client.as(person).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } })).status(200);
+    if (!(await roster()).includes(person.userId!)) throw new Error('the accepted person is not in the SCIM group');
+    (await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+      params: { accountId: team.id, userId: person.userId! },
+    })).status(200);
+    await adminDeleteUser(ctx.env, person.userId!);
+  });
+
+  await ctx.step('the owner re-invites the offboarded address → 201 pending on the same invite', async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/:accountId/members', { email, role: 'member' }, {
+      params: { accountId: team.id },
+    });
+    r.status(201).body().has('$.status', 'pending').has('$.invite_id', inviteId);
+  });
+
+  await ctx.step('a new sign-up for that address accepts → 200; the group it already used does not come back', async () => {
+    const person = await ctx.fixtures.userWithEmail(email, { label: 'SCIM-18-AGAIN' });
+    (await ctx.client.as(person).post('/v1/account-invites/:inviteId/accept', {}, { params: { inviteId } }))
+      .status(200).body().has('$.account_id', team.id);
+    const members = await roster();
+    if (members.includes(person.userId!)) throw new Error(`an accepted invite's group came back on re-invite: ${JSON.stringify(members)}`);
   });
 });

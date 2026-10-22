@@ -20,7 +20,7 @@ import { Icon } from '@/components/ui/icon';
 import { ShieldWarningIcon } from '@/lib/icons';
 import { permissionPromptDetail, permissionPromptTitle } from '@/lib/session/permission-prompt';
 import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
-import type { PermissionRequest } from '@/lib/opencode/types';
+import type { PermissionRequest } from '@/lib/session/types';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
 
 interface PermissionPromptCardProps {

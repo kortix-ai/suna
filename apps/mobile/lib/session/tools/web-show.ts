@@ -13,10 +13,10 @@
  */
 
 import { buildStaticFileLocalUrl, isAppRouteUrl, parseLocalhostUrl } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 
 import { isSvgName } from '@/lib/files/svg-policy';
 import { isLocalSandboxFilePath } from '../tool-part-accessors';
-import { safeHttpUrl } from './web-fetch';
 
 // ─── Type resolution ─────────────────────────────────────────────────────────
 
@@ -29,6 +29,7 @@ export const SHOW_XLSX_EXT_RE = /\.xlsx?$/i;
 export const SHOW_DOCX_EXT_RE = /\.docx$/i;
 export const SHOW_PPTX_EXT_RE = /\.(pptx|ppt)$/i;
 export const SHOW_HTML_EXT_RE = /\.(html?|htm)$/i;
+export const SHOW_MERMAID_EXT_RE = /\.(mmd|mermaid)$/i;
 
 export function getShowFileCategory(filePath: string): string {
   if (SHOW_IMAGE_EXT_RE.test(filePath)) return 'image';
@@ -40,10 +41,11 @@ export function getShowFileCategory(filePath: string): string {
   if (SHOW_DOCX_EXT_RE.test(filePath)) return 'docx';
   if (SHOW_PPTX_EXT_RE.test(filePath)) return 'pptx';
   if (SHOW_HTML_EXT_RE.test(filePath)) return 'html-file';
+  if (SHOW_MERMAID_EXT_RE.test(filePath)) return 'mermaid';
   return 'file';
 }
 
-const RICH_SHOW_CATEGORIES = new Set(['image', 'video', 'audio', 'pdf', 'csv', 'xlsx', 'docx', 'pptx', 'html-file']);
+const RICH_SHOW_CATEGORIES = new Set(['image', 'video', 'audio', 'pdf', 'csv', 'xlsx', 'docx', 'pptx', 'html-file', 'mermaid']);
 const TEXTISH_SHOW_TYPES = new Set(['file', 'text', 'markdown', 'code']);
 
 /** A textish declaration is upgraded when the path names a rich file type. */
@@ -87,6 +89,7 @@ const SHOW_KIND_LABELS: Record<string, string> = {
   pptx: 'Slides',
   'html-file': 'Page',
   html: 'Page',
+  mermaid: 'Diagram',
   markdown: 'Markdown',
   code: 'Code',
   text: 'Text',
@@ -179,6 +182,7 @@ export type ShowContentBranch =
   | 'xlsx'
   | 'docx'
   | 'pptx'
+  | 'mermaid'
   | 'sandbox-file'
   | 'code'
   | 'markdown'
@@ -218,6 +222,7 @@ export function showContentBranch({
   if (effectiveType === 'xlsx' && sandboxPath) return 'xlsx';
   if (effectiveType === 'docx' && path) return 'docx';
   if (effectiveType === 'pptx' && path) return 'pptx';
+  if (effectiveType === 'mermaid' && content) return 'mermaid';
   if (shouldRenderFromSandboxFile(sandboxPath, content)) return 'sandbox-file';
   if (effectiveType === 'code' && content) return 'code';
   if (effectiveType === 'markdown' && content) return 'markdown';
@@ -411,6 +416,7 @@ const SHOW_TYPE_LABELS: Record<string, string> = {
   video: 'Video',
   audio: 'Audio',
   code: 'Code',
+  mermaid: 'Diagram',
   markdown: 'Markdown',
   pdf: 'PDF',
   html: 'HTML',

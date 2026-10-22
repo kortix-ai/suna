@@ -91,7 +91,7 @@ export const KORTIX_USER_PATH_DIRS =
 
 /**
  * Live project secrets on tmpfs. The kortix-agent daemon writes this file
- * (apps/kortix-sandbox-agent-server/src/agent-env-file.ts `AGENT_ENV_SH`).
+ * (apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts `AGENT_ENV_SH`).
  */
 export const KORTIX_AGENT_ENV_FILE = '/dev/shm/kortix/agent-env.sh';
 
@@ -240,6 +240,14 @@ export interface KortixToolchainLayerOpts {
    * alters boot semantics for the warm-seed paths too and wants its own rollout.
    */
   isSharedDefault?: boolean;
+  /**
+   * kortix.yaml `container_runtime: true`. The provider bakes the guest
+   * kernel's full module tree (Platinum `kernel_modules: container`); the guest
+   * kernel loads bridge/overlay/netfilter on demand through /sbin/modprobe, so
+   * the image needs kmod. The marker env makes the entrypoint start dockerd at
+   * boot. Unset renders the layer byte-identical to before.
+   */
+  containerRuntime?: boolean;
 }
 
 
@@ -276,7 +284,7 @@ export interface KortixArtifactLayerOpts {
    * and runs install-shims.sh to wire each *.ts (excluding lib/) as a
    * /usr/local/bin/<name> shim — that's how `slack` lands on PATH for the
    * agent to invoke from inside the sandbox. (The Connector moved into the
-   * `kortix` CLI as `kortix connectors` / `kortix connectors mcp`.)
+   * `kortix` CLI as `kortix connectors`.)
    */
   slackCliPath: string;
   /**
@@ -353,27 +361,26 @@ function buildOpencodeInstanceWarmupLines(opts: {
   return [
     `COPY --chown=kortix:kortix ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
     // Same "does it actually bundle" check as the opencode-config-deps
-    // verification above, but exercised against the REAL starter tool
-    // files (web_search / scrape_webpage / image_search / memory / show)
-    // instead of just their axios/form-data override targets — this is
-    // what actually walks the full transitive dependency tree
-    // (firecrawl-js, tavily-core, replicate) that ToolRegistry resolves
-    // on a session's first prompt. Deliberately its own RUN step: a tool that
-    // cannot bundle breaks every session's first prompt, so the image build
-    // must fail before it reaches the warm-up readiness probe below.
+    // verification above, but exercised against the REAL starter plugin
+    // files (the pty plugin) with the baked config deps — what OpenCode
+    // imports on a session's first prompt. The Kortix tools are hosted by the
+    // daemon (services/tools), so the starter carries no `tools/` to check.
+    // Deliberately its own RUN step: a plugin that cannot bundle breaks every
+    // session's first prompt, so the image build must fail before it reaches
+    // the warm-up readiness probe below.
     // E2B's Dockerfile parser does not preserve COPY --chown. Correct the
     // ownership explicitly before the standard kortix user changes this tree.
     'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
     'RUN cd /opt/kortix/warm-config/.kortix/opencode \\',
     '    && rm -rf node_modules \\',
     '    && ln -s /opt/kortix/opencode-config-deps/node_modules node_modules \\',
-    '    && bun build tools/*.ts --target=bun --outdir=/tmp/opencode-tools-bundle-check \\',
-    '    && rm -rf /tmp/opencode-tools-bundle-check \\',
-    '    && echo "opencode-config-deps: starter tool files bundle cleanly"',
+    '    && bun build plugins/*.ts --target=bun --outdir=/tmp/opencode-plugins-bundle-check \\',
+    '    && rm -rf /tmp/opencode-plugins-bundle-check \\',
+    '    && echo "opencode-config-deps: starter plugin files bundle cleanly"',
     '',
     `COPY --chown=kortix:kortix ${opencodeWarmupScriptPath} /tmp/kortix-opencode-warmup`,
     // Stage the canonical starter opencode config so the instance warm-up
-    // has the pty plugin + tools to load. In repo mode the script hides any
+    // has the pty plugin to load. In repo mode the script hides any
     // repository-controlled `.kortix` tree and points OPENCODE_CONFIG_DIR at
     // this canonical tree. Git cleanup restores the repository tree afterward.
     // The warm-up script records whether the starter config in /workspace is
@@ -430,6 +437,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     opencodeWarmupScriptPath,
     opencodeConfigPath,
     isSharedDefault,
+    containerRuntime,
   } = opts;
 
   return [
@@ -479,6 +487,15 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     '    && mkdir -p /workspace /opt/kortix /opt/pw-browsers /ephemeral/kortix-master/opencode \\',
     '        /home/kortix/.local/bin /home/kortix/.local/share/pnpm/bin /home/kortix/.bun/bin \\',
     '    && chown -R kortix:kortix /workspace /opt/kortix /opt/pw-browsers /ephemeral /home/kortix',
+    ...(containerRuntime
+      ? [
+          'RUN apt-get update && apt-get install -y --no-install-recommends kmod \\',
+          '    && rm -rf /var/lib/apt/lists/* \\',
+          '    && (getent group docker >/dev/null || groupadd --system docker) \\',
+          '    && usermod -aG docker kortix',
+          'ENV KORTIX_CONTAINER_RUNTIME=1',
+        ]
+      : []),
     'ENV PNPM_HOME=/home/kortix/.local/share/pnpm \\',
     `    PATH=${KORTIX_USER_PATH_DIRS}:$PATH`,
     'USER kortix',
@@ -660,7 +677,7 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
       'RUN bash /tmp/kortix-opencode-warmup migration && rm -f /tmp/kortix-opencode-warmup',
     ] : []),
     '',
-    // Bun runtime for the agent CLIs (slack, …) + `kortix connectors mcp`.
+    // Bun runtime for the agent CLIs (slack, …).
     // Download one versioned release artifact and verify its checksum before
     // extracting it. The public installer script is not part of the trust path.
     'RUN case "$(uname -m)" in \\',
@@ -710,14 +727,14 @@ export function kortixToolchainLayer(opts: KortixToolchainLayerOpts): string {
     // Baking the binary version makes opencode find it already present → no fetch.
     // Bump RUNTIME_LAYER_VERSION in templates.ts when this step changes.
     // NOTE: this dependency set (and the "axios"/"form-data" security overrides
-    // below) is duplicated in packages/starter/templates/base/.kortix/opencode/package.json.
+    // below) is duplicated in packages/starter/templates/base/harnesses/opencode/package.json.
     // Keep both in sync —
     // a version bump made in only one place is exactly how this file's axios
     // override once diverged and shipped a bundle-breaking install (see the
     // verification RUN step right below, added after that incident).
     'RUN mkdir -p /opt/kortix/opencode-config-deps \\',
     '    && cd /opt/kortix/opencode-config-deps \\',
-    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\`,
+    `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"${opencodeVersion}","@tavily/core":"^0.7.3","bun-pty":"0.4.11","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' > package.json \\`,
     '    && bun install',
     '',
     // Verify the baked tree is actually usable by OpenCode's own runtime
@@ -877,6 +894,8 @@ export interface SandboxTemplate {
   image?: string;
   /** Hardware spec (cpu/memory/disk). GPUs are intentionally not supported. */
   spec: SandboxSpec;
+  /** kortix.yaml `container_runtime: true` — the sandbox runs Docker. */
+  containerRuntime?: boolean;
   /**
    * True iff this is the platform default (no user customization). Never
    * declared in kortix.yaml — the platform synthesizes one of these.
@@ -1040,6 +1059,7 @@ function parseSandboxTemplate(row: Record<string, unknown>): SandboxTemplate | n
     dockerfile: sanitizedDockerfile || undefined,
     image: !sanitizedDockerfile && image ? image : undefined,
     spec,
+    ...(row.container_runtime === true ? { containerRuntime: true } : {}),
   };
 }
 

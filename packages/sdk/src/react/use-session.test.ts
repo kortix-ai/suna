@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, setSystemTime, test } from 'bun:test';
 
 // Mock the lowest network boundary the reply/send paths go through — the
 // OpenCode SDK client singleton — so the REAL `permissions.ts` wrappers and
-// `promptOpenCodeMessage` run for real, matching session.test.ts's approach of
+// `promptRuntimeMessage` run for real, matching session.test.ts's approach of
 // stubbing the boundary rather than the wrapper.
 let permissionReplyImpl: (args: unknown) => Promise<{
   data?: unknown;
@@ -26,7 +26,7 @@ let sessionPromptImpl: (args: unknown) => Promise<{
 }> = async () => ({ data: {} });
 
 class RuntimeNotReadyError extends Error {
-  constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
+  constructor(message = '[kortix-runtime] Server URL not ready — sandbox is still loading') {
     super(message);
     this.name = 'RuntimeNotReadyError';
   }
@@ -48,14 +48,14 @@ import {
   getSessionSyncController,
   resetSessionSyncControllers,
 } from '../browser/session-sync/session-sync-registry';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSyncStore } from '../browser/stores/sync-store';
 import { BillingError } from '../core/http/api/errors';
 import { clearSessionFresh, markSessionFresh } from '../core/http/fresh-sessions';
 import { SessionStartError, type SessionStartResult } from '../core/rest/projects-client';
 import { setCurrentRuntime } from '../core/session/current-runtime';
 import type { ModelKey } from './use-model-store';
-import { promptOpenCodeMessage } from './use-opencode-sessions/messages';
+import { promptRuntimeMessage } from './use-opencode-sessions/messages';
 import {
   SESSION_START_FRESH_MS,
   SESSION_START_POLL_MS,
@@ -71,12 +71,14 @@ import {
   hasStartGivenUp,
   markDispatchedForPartIds,
   nextInconclusiveSince,
+  presenceReturnReopensSession,
   rejectQuestion,
   resolveSendOptions,
   resolveSessionRuntimeUrl,
   sendReceiptId,
   sendStateOnError,
   sendStateOnStart,
+  sessionPromptFromParts,
   sessionStartStaleTime,
   shouldPollSessionStart,
   shouldRetrySessionStart,
@@ -85,7 +87,7 @@ import { derivePhase } from './use-session-phase';
 import { OPTIMISTIC_RECEIPT_MAX_MS, projectWorking } from '../core/session/working';
 
 function seedQuestion(id: string, sessionID = 'sess-1') {
-  useOpenCodePendingStore.getState().addQuestion({
+  useRuntimePendingStore.getState().addQuestion({
     id,
     sessionID,
     questions: [{ text: 'Continue?', options: [] }],
@@ -93,7 +95,7 @@ function seedQuestion(id: string, sessionID = 'sess-1') {
 }
 
 function seedPermission(id: string, sessionID = 'sess-1') {
-  useOpenCodePendingStore.getState().addPermission({
+  useRuntimePendingStore.getState().addPermission({
     id,
     sessionID,
     permission: 'bash',
@@ -106,7 +108,7 @@ function seedPermission(id: string, sessionID = 'sess-1') {
 beforeEach(() => {
   resetSessionSyncControllers();
   setCurrentRuntime(null);
-  useOpenCodePendingStore.getState().clear();
+  useRuntimePendingStore.getState().clear();
   permissionReplyImpl = async () => ({ data: {} });
   questionReplyImpl = async () => ({ data: {} });
   questionRejectImpl = async () => ({ data: {} });
@@ -199,7 +201,7 @@ describe('answerQuestion', () => {
     await answerQuestion('q1', [['yes']]);
 
     expect(captured).toEqual({ requestID: 'q1', answers: [['yes']] });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeUndefined();
+    expect(useRuntimePendingStore.getState().questions['q1']).toBeUndefined();
   });
 
   test('failure keeps the pending entry and throws a typed KortixSendError', async () => {
@@ -210,7 +212,7 @@ describe('answerQuestion', () => {
       kind: 'runtime-error',
       message: 'boom',
     });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeDefined();
+    expect(useRuntimePendingStore.getState().questions['q1']).toBeDefined();
   });
 });
 
@@ -226,7 +228,7 @@ describe('rejectQuestion', () => {
     await rejectQuestion('q1');
 
     expect(captured).toEqual({ requestID: 'q1' });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeUndefined();
+    expect(useRuntimePendingStore.getState().questions['q1']).toBeUndefined();
   });
 
   test('failure keeps the pending entry and throws a typed error', async () => {
@@ -236,7 +238,7 @@ describe('rejectQuestion', () => {
     await expect(rejectQuestion('q1')).rejects.toMatchObject({
       kind: 'runtime-error',
     });
-    expect(useOpenCodePendingStore.getState().questions['q1']).toBeDefined();
+    expect(useRuntimePendingStore.getState().questions['q1']).toBeDefined();
   });
 });
 
@@ -256,7 +258,7 @@ describe('answerPermission', () => {
       reply: 'once',
       message: 'go ahead',
     });
-    expect(useOpenCodePendingStore.getState().permissions['p1']).toBeUndefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
   });
 
   test('failure keeps the pending entry and throws a typed error', async () => {
@@ -268,13 +270,93 @@ describe('answerPermission', () => {
     await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
       kind: 'runtime-error',
     });
-    expect(useOpenCodePendingStore.getState().permissions['p1']).toBeDefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
+  });
+
+  // KRTX-2190 (prod 2026-10-12): two reply affordances raced for one request;
+  // the runtime answered the first and answered the second with 404
+  // `Permission request not found: per_<id>`, which reached the browser as an
+  // unhandled promise rejection and paged Sentry. The request is gone — the
+  // pending entry must drop and the reply must NOT throw.
+  test('a 404 permission-request-not-found reply resolves and drops the pending entry', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: { message: 'Permission request not found: per_x' },
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'once')).resolves.toBeUndefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('a lowercase permission-request-not-found 404 (pi harness wording) resolves too', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: 'permission request not found',
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'reject')).resolves.toBeUndefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('a 404 that is not an already-answered reply still throws', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: { message: 'no such route' },
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
+      kind: 'runtime-error',
+    });
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
+  });
+
+  test('a second concurrent reply for the same request joins the first instead of double-sending', async () => {
+    seedPermission('p1');
+    let calls = 0;
+    permissionReplyImpl = async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { data: {} };
+    };
+
+    // The composer card and the tool-card inline prompt (or the allow-everything
+    // flow and the auto-approve backstop) both funnel into the same reply verb;
+    // racing them must not POST twice for one request id.
+    await Promise.all([answerPermission('p1', 'once'), answerPermission('p1', 'always')]);
+
+    expect(calls).toBe(1);
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('after a reply settles, a later reply for the same request sends again (the in-flight entry cleared)', async () => {
+    seedPermission('p1');
+    let calls = 0;
+    permissionReplyImpl = async () => {
+      calls += 1;
+      if (calls === 1) return { data: {} };
+      return {
+        error: { message: 'Permission request not found: per_x' },
+        response: new Response(null, { status: 404 }),
+      };
+    };
+
+    await answerPermission('p1', 'once');
+    // A stale caller retries the same request after the first reply settled;
+    // the runtime answers it with the already-answered 404, which resolves.
+    seedPermission('p1');
+    await expect(answerPermission('p1', 'always')).resolves.toBeUndefined();
+
+    expect(calls).toBe(2);
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
   });
 });
 
 describe('classifySendError', () => {
   test('classifies a runtime-not-ready error from getClient()', () => {
-    const err = new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+    const err = new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
     expect(classifySendError(err).kind).toBe('runtime-not-ready');
   });
 
@@ -355,7 +437,7 @@ describe('send state transitions (sendStateOnStart / sendStateOnError)', () => {
       response: new Response(null, { status: 402 }),
     });
 
-    const thrown = await promptOpenCodeMessage({
+    const thrown = await promptRuntimeMessage({
       sessionId: 'sess-1',
       parts: [{ type: 'text', text: 'hi' }],
     }).then(
@@ -580,6 +662,82 @@ describe('shouldPollSessionStart', () => {
     expect(shouldPollSessionStart(null, failedWake)).toBe(false);
   });
 
+  test('a cooldown answer waits out the server retry time the payload already names', () => {
+    // The wake-ladder cooldown payload (`stoppedWakeResult`'s cooling_down
+    // branch, apps/api routes/shared.ts) answers instantly with
+    // `stage: 'starting'`, `retriable: true` and a `next_retry_at` the server
+    // itself will honor. Polling faster than that cannot change the answer;
+    // the fleet poll cadence drove a sustained ~8k POST /start/hour from one
+    // workspace's wedged boxes (KRTX-385).
+    const cooldown = {
+      stage: 'starting',
+      retriable: true,
+      failure: {
+        category: 'sandbox-provider',
+        message: 'The runtime did not start (attempt 2). Retrying automatically.',
+        retryable: true,
+        evidence: {
+          check: 'runtime_wake_failed',
+          observed_at: new Date().toISOString(),
+          error: null,
+          attempts: 2,
+          next_retry_at: new Date(Date.now() + 30_000).toISOString(),
+        },
+      },
+    } as never;
+    const pause = shouldPollSessionStart(null, cooldown);
+    expect(typeof pause).toBe('number');
+    expect(pause as number).toBeGreaterThan(20_000);
+    expect(pause as number).toBeLessThanOrEqual(60_000);
+  });
+
+  test('a cooldown hours away still rechecks once a minute, so an open tab notices the lapse', () => {
+    const cooldown = {
+      stage: 'starting',
+      retriable: true,
+      failure: {
+        category: 'sandbox-provider',
+        message: 'Retrying automatically.',
+        retryable: true,
+        evidence: {
+          check: 'runtime_wake_failed',
+          observed_at: new Date().toISOString(),
+          error: null,
+          attempts: 1,
+          next_retry_at: new Date(Date.now() + 3_600_000).toISOString(),
+        },
+      },
+    } as never;
+    expect(shouldPollSessionStart(null, cooldown)).toBe(60_000);
+  });
+
+  test('a lapsed cooldown returns to the normal cadence — the server is re-attempting now', () => {
+    const lapsed = {
+      stage: 'starting',
+      retriable: true,
+      failure: {
+        category: 'sandbox-provider',
+        message: 'Retrying automatically.',
+        retryable: true,
+        evidence: {
+          check: 'runtime_wake_failed',
+          observed_at: new Date().toISOString(),
+          error: null,
+          attempts: 1,
+          next_retry_at: new Date(Date.now() - 5_000).toISOString(),
+        },
+      },
+    } as never;
+    expect(shouldPollSessionStart(null, lapsed)).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('a non-terminal answer without retry evidence keeps the fast cadence', () => {
+    // A cold boot's `provisioning`/`starting` answers carry no failure payload;
+    // the 1.5s cadence stays exactly as it was.
+    expect(shouldPollSessionStart(null, at('provisioning'))).toBe(SESSION_START_POLL_MS);
+    expect(shouldPollSessionStart(null, at('starting'))).toBe(SESSION_START_POLL_MS);
+  });
+
   test('stops on a terminal client error, which polling cannot fix', () => {
     const err = new SessionStartError('gone', { status: 403, terminal: true });
     expect(shouldPollSessionStart(err, at('provisioning'))).toBe(false);
@@ -589,6 +747,114 @@ describe('shouldPollSessionStart', () => {
 describe('SESSION_START_POLL_OPTIONS', () => {
   test('keeps interval fetches active while the document is hidden', () => {
     expect(SESSION_START_POLL_OPTIONS.refetchIntervalInBackground).toBe(true);
+  });
+
+  test('the live callback delegates to the injected-clock pacing', () => {
+    expect(
+      SESSION_START_POLL_OPTIONS.refetchInterval({
+        state: { error: null, data: { stage: 'ready' } as never },
+      } as never),
+    ).toBe(60_000);
+  });
+
+});
+
+// The pace logic is the injected-clock pure function; the live callback above
+// delegates to it at Date.now(). A wedged box answers `/start` after its 8s
+// server long-poll with the SAME non-terminal `starting` payload, for days
+// (KRTX-385): the interval must grow while nothing changes, reset the moment
+// the answer changes, and stop with the poll on a terminal answer.
+describe('sessionStartRefetchIntervalMs', () => {
+  const interval = (query: Parameters<typeof SESSION_START_POLL_OPTIONS.refetchInterval>[0], now: number) => {
+    setSystemTime(now);
+    try {
+      return SESSION_START_POLL_OPTIONS.refetchInterval(query);
+    } finally {
+      setSystemTime();
+    }
+  };
+  const startingQuery = () => ({
+    state: {
+      error: null,
+      data: { stage: 'starting', retriable: true } as never,
+    },
+  });
+
+  test('an unchanged non-terminal answer stretches the poll — a wedged box stops hammering', () => {
+    const query = startingQuery();
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    expect(interval(query, 250_000)).toBe(30_000);
+    // Still inside the pace TTL: the cap holds.
+    expect(interval(query, 290_000)).toBe(30_000);
+  });
+
+  test('a pace left unpollied longer than its TTL starts fresh, not at the cap', () => {
+    // A query nobody polled for minutes (unmounted, tab closed) must not
+    // inherit a stretched interval on its next answer.
+    const query = startingQuery();
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    expect(interval(query, 400_000)).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('a changed answer resets the stretch back to the normal cadence', () => {
+    const query = startingQuery();
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    // The provider now reports progress (a different reason): back to fast.
+    expect(
+      interval(
+        { state: { error: null, data: { stage: 'starting', retriable: true, reason: 'runtime_waking' } as never } },
+        45_001,
+      ),
+    ).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('a terminal answer forgets the pace state and stops the interval', () => {
+    const query = startingQuery();
+    expect(interval(query, 0)).toBe(SESSION_START_POLL_MS);
+    expect(interval(query, 45_000)).toBe(5_000);
+    const stopped = {
+      state: { error: null, data: { stage: 'stopped', retriable: false } as never },
+    };
+    expect(interval(stopped, 45_001)).toBe(false);
+    // A brand-new query object after the stop starts at the normal cadence —
+    // the pace never leaks across a fresh query's first answer.
+    expect(interval(startingQuery(), 45_002)).toBe(SESSION_START_POLL_MS);
+  });
+
+  test('the retry cooldown and the no-progress stretch take the larger pause', () => {
+    // A cooldown answer whose next_retry_at is further out than the stretch:
+    // the pause is the cooldown's. One payload, both mechanisms live.
+    const nowMs = Date.parse('2026-01-01T00:00:00.000Z');
+    const query = {
+      state: {
+        error: null,
+        data: {
+          stage: 'starting',
+          retriable: true,
+          reason: 'runtime_wake_cooldown',
+          failure: {
+            category: 'sandbox-provider',
+            message: 'Retrying automatically.',
+            retryable: true,
+            evidence: {
+              check: 'runtime_wake_failed',
+              observed_at: new Date(nowMs).toISOString(),
+              error: null,
+              attempts: 1,
+              next_retry_at: new Date(nowMs + 65_000).toISOString(),
+            },
+          } as never,
+        } as never,
+      },
+    };
+    // 65s out clamps to the 60s cap at t=0.
+    expect(interval(query, nowMs)).toBe(60_000);
+    // At 45s the stretch alone would say 5s; the server's own cooldown says
+    // "not before 65s" — the cooldown wins.
+    expect(interval(query, nowMs + 45_000)).toBe(65_000 - 45_000 + 1_000);
   });
 });
 
@@ -1077,7 +1343,7 @@ describe('classifySendError — connector refusals', () => {
 // file read, anything below the hook's own actions) had to rebuild it. These
 // pin the resolution, including the part the raw field cannot be used for:
 // `runtime_url` is a RELATIVE path (`/p/<ext>/8000`, see
-// `apps/api/src/projects/routes/shared.ts:526`), never an absolute URL.
+// `apps/api/src/projects/session-open/index.ts:526`), never an absolute URL.
 
 describe('resolveSessionRuntimeUrl', () => {
   const sandbox = (externalId: string | null) =>
@@ -1137,6 +1403,51 @@ describe('resolveSessionRuntimeUrl', () => {
 // not change is the payload for a caller that never sets a variant: the key
 // has to stay absent, not become `undefined` or `null`.
 
+describe('sessionPromptFromParts (W5 E4: sendParts goes through the prompt inbox)', () => {
+  const WIRE_ID = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+
+  test('parts, picks and a server-placed wire id become one inbox prompt', () => {
+    const prompt = sessionPromptFromParts(
+      'ses_root',
+      [
+        { type: 'text', text: 'hello', id: 'prt_client' },
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA==', filename: 'a.png' },
+        { type: 'agent', name: 'reviewer' },
+      ],
+      { model: { providerID: 'kortix', modelID: 'claude' }, agent: 'coder', variant: 'high', directory: '/workspace/app' },
+      undefined,
+      1_700_000_000_000,
+    );
+    expect(prompt).toEqual({
+      clientMessageId: prompt.messageId,
+      messageId: expect.stringMatching(WIRE_ID),
+      // The part id is the host's own correlation key; the inbox drops it.
+      parts: [
+        { type: 'text', text: 'hello' },
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA==', filename: 'a.png' },
+        { type: 'agent', name: 'reviewer' },
+      ],
+      overrides: {
+        model: { providerID: 'kortix', modelID: 'claude' },
+        agent: 'coder',
+        variant: 'high',
+        directory: '/workspace/app',
+      },
+      remintOnDelivery: true,
+      clientSentAtMs: 1_700_000_000_000,
+    });
+  });
+
+  test('one clientMessageId keeps one wire id across retries; no picks sends no overrides', () => {
+    const first = sessionPromptFromParts('ses_root', [{ type: 'text', text: 'x' }], {}, 'queue-1');
+    const retry = sessionPromptFromParts('ses_root', [{ type: 'text', text: 'x' }], {}, 'queue-1');
+    expect(first.clientMessageId).toBe('queue-1');
+    expect(retry.messageId).toBe(first.messageId);
+    expect('overrides' in first).toBe(false);
+    expect(sessionPromptFromParts('ses_root', [{ type: 'text', text: 'x' }], {}).messageId).not.toBe(first.messageId);
+  });
+});
+
 describe('resolveSendOptions', () => {
   const none = { model: null, agent: null, variant: null };
   const M: ModelKey = { providerID: 'anthropic', modelID: 'claude' };
@@ -1185,5 +1496,27 @@ describe('resolveSendOptions', () => {
     expect(resolveSendOptions(none, { directory: '/workspace/x' })).toEqual({
       directory: '/workspace/x',
     });
+  });
+});
+
+describe('presenceReturnReopensSession', () => {
+  test("a returning human releases this tab's own stop hold", () => {
+    expect(presenceReturnReopensSession(true, 'stopped')).toBe(true);
+    expect(presenceReturnReopensSession(true, null)).toBe(true);
+  });
+
+  test('a returning human re-opens a poll that died on a dormant answer', () => {
+    // The idle reaper and a Stop from any other host land here: the cached
+    // terminal-`stopped` answer stopped the poll, and without this the only
+    // ways back were an explicit Restart or a page remount.
+    expect(presenceReturnReopensSession(false, 'stopped')).toBe(true);
+  });
+
+  test('a live, waking or failed session is untouched by a return', () => {
+    expect(presenceReturnReopensSession(false, 'ready')).toBe(false);
+    expect(presenceReturnReopensSession(false, 'starting')).toBe(false);
+    expect(presenceReturnReopensSession(false, 'failed')).toBe(false);
+    expect(presenceReturnReopensSession(false, null)).toBe(false);
+    expect(presenceReturnReopensSession(false, undefined)).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { loadFileSet } from './load-file-set';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -416,41 +417,58 @@ export function lintMigration(filename: string, raw: string, options: LintOption
   return { errors, warnings };
 }
 
-function loadGrandfatherSet(): Set<string> {
-  try {
-    const data = JSON.parse(readFileSync(GRANDFATHER_FILE, 'utf8')) as { files: string[] };
-    return new Set(data.files);
-  } catch {
-    return new Set();
-  }
+
+
+
+/**
+ * A migration this checkout adds must sort after every migration already on
+ * main. node-pg-migrate's order check halts on an older-dated pending file, and
+ * Deploy Dev applies migrations first, so one such file blocks every dev deploy
+ * (incident #8846). db-migrations.yml checks this only after the merge; this is
+ * the same rule in the local lint, the pre-merge gate.
+ */
+export function lintMigrationSequence(local: string[], merged: string[]): string[] {
+  const mergedSet = new Set(merged);
+  const mergedMax = merged.map((f) => TS_RE.exec(f)?.[1]).filter(Boolean).sort().at(-1);
+  if (!mergedMax) return [];
+  return local
+    .filter((f) => !mergedSet.has(f))
+    .filter((f) => (TS_RE.exec(f)?.[1] ?? '') <= mergedMax)
+    .map(
+      (f) =>
+        `${f}: out of sequence — its timestamp is not after main's newest migration (${mergedMax}). Re-date it (git mv to a current timestamp) so it sorts last; node-pg-migrate's order check would halt every dev deploy.`,
+    );
 }
 
-function loadBackfillGrandfatherSet(): Set<string> {
-  try {
-    const data = JSON.parse(readFileSync(BACKFILL_GRANDFATHER_FILE, 'utf8')) as { files: string[] };
-    return new Set(data.files);
-  } catch {
-    return new Set();
-  }
-}
-
-function loadConcurrentLockTimeoutGrandfatherSet(): Set<string> {
-  try {
-    const data = JSON.parse(readFileSync(CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE, 'utf8')) as {
-      files: string[];
-    };
-    return new Set(data.files);
-  } catch {
-    return new Set();
-  }
+/** Migration filenames on the trunk (the remote's default branch), or null when that ref is not available. */
+export function mergedMigrationFiles(opts: { repoRoot?: string } = {}): string[] | null {
+  const repoRoot = opts.repoRoot ?? join(import.meta.dir, '..', '..', '..');
+  // A fresh clone sets refs/remotes/origin/HEAD to the remote's default branch
+  // (here origin/dev). Resolving that ref instead of naming a branch is what
+  // keeps this gate alive across trunk renames — the main → dev rename made the
+  // old origin/main literal a dead ref in every checkout (issue #9276, #8846).
+  const head = Bun.spawnSync(['git', 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], {
+    cwd: repoRoot,
+  });
+  if (head.exitCode !== 0) return null;
+  const ref = head.stdout.toString().trim();
+  const git = Bun.spawnSync(['git', 'ls-tree', '--name-only', ref, '--', 'packages/db/migrations/'], {
+    cwd: repoRoot,
+  });
+  if (git.exitCode !== 0) return null;
+  return git.stdout
+    .toString()
+    .split('\n')
+    .map((path) => path.split('/').at(-1) ?? '')
+    .filter((f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts'));
 }
 
 function main(): void {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const grandfathered = loadGrandfatherSet();
-  const backfillGrandfathered = loadBackfillGrandfatherSet();
-  const lockTimeoutGrandfathered = loadConcurrentLockTimeoutGrandfatherSet();
+  const grandfathered = loadFileSet(GRANDFATHER_FILE);
+  const backfillGrandfathered = loadFileSet(BACKFILL_GRANDFATHER_FILE);
+  const lockTimeoutGrandfathered = loadFileSet(CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE);
   const files = readdirSync(DIR)
     .filter((f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts'))
     .sort();
@@ -466,6 +484,8 @@ function main(): void {
     warnings.push(...w);
   }
   errors.push(...lintMigrationSet(files));
+  const merged = mergedMigrationFiles();
+  if (merged) errors.push(...lintMigrationSequence(files, merged));
 
   for (const w of warnings) console.log(`::warning::${w}`);
   for (const e of errors) console.error(`::error::${e}`);

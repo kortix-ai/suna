@@ -1,64 +1,65 @@
 import { HTTPException } from 'hono/http-exception';
 import { type ProxyServiceConfig } from '../../config/proxy-services';
-import { config, KORTIX_MARKUP } from '../../../config';
-import { requireModelPricing } from '../../config/models';
-import {
-  accumulateUsageChunk,
-  calculateCost,
-  extractUsage,
-  type UsageAccumulator,
-} from '../../services/llm';
-import { resolveActorFromRequest, type ActorContext } from '../../../shared/actor-context';
-import type { ToolCreditReservation } from './app';
-import {
-  refundLlmReservation,
-  reserveEstimatedLlmCredits,
-  settleLlmReservation,
-  type LlmCreditReservation,
-} from '../../services/llm-reservation';
+import { timeUpstream } from '../../../middleware/upstream-timing';
+import { config } from '../../../config';
+import { logger as appLogger } from '../../../lib/logger';
+import { resolveActorFromRequest } from '../../../shared/actor-context';
+import { assertSafeEgressUrl, UnsafeEgressError } from '../../../shared/ssrf-guard';
 import {
   matchAllowedRoute,
   tryAuthenticate,
-  maybeNormalizeOpenAIResponsesInput,
   buildForwardHeaders,
   getRequestBody,
   reserveToolProxyCredits,
   refundToolReservation,
   injectApiKey,
 } from './helpers';
-
-function pricingProvider(service: ProxyServiceConfig, managed: boolean): string {
-  if (managed && service.kortixTargetBaseUrl === config.OPENROUTER_API_URL) {
-    return 'openrouter';
-  }
-  return (
-    {
-      xai: 'x-ai',
-      gemini: 'google',
-    }[service.name] ?? service.name
-  );
-}
-
-function usageProvider(service: ProxyServiceConfig): 'openai' | 'anthropic' {
-  return service.name === 'anthropic' ? 'anthropic' : 'openai';
-}
-
-function usageRoute(service: ProxyServiceConfig, subPath: string): string {
-  return `/v1/${service.name}${subPath}`;
-}
+import { capFirecrawlCrawlLimit } from './crawl-limit';
 
 // === Core Proxy Handler ===
 //
 // Three authentication/billing modes:
 //
 // 1. Kortix token (kortix_/kortix_sb_ in our DB) in Authorization header
-//    → Inject Kortix's API key, forward, bill at KORTIX_MARKUP (1.2×).
+//    → Inject Kortix's API key, forward, bill the route's tool price.
 //
 // 2. User's own API key in Authorization + Kortix token in X-Kortix-Token header
-//    → Passthrough (no key injection), with no Kortix LLM charge.
+//    → Passthrough (no key injection), billed the tool price.
 //
 // 3. User's own API key, no Kortix token anywhere
 //    → Pure passthrough. No billing, no gating (self-hosted / non-Kortix user).
+
+// Firecrawl forwards a caller-supplied `url` body field to its own fetcher.
+// Reject loopback / link-local (cloud metadata) / private / non-http(s) targets
+// here, before the credit reservation and the upstream hop, so SSRF protection
+// never depends on the upstream service or on the caller's credit balance.
+async function assertSafeFirecrawlTarget(
+  c: any,
+  service: ProxyServiceConfig,
+  method: string,
+): Promise<void> {
+  if (service.name !== 'firecrawl' || method.toUpperCase() !== 'POST') return;
+  const body = await getRequestBody(c, method);
+  if (!body) return;
+  let url: unknown;
+  try {
+    const text = typeof body === 'string' ? body : new TextDecoder().decode(body);
+    url = JSON.parse(text)?.url;
+  } catch {
+    return; // no JSON body — the upstream rejects it
+  }
+  if (typeof url !== 'string' || url.length === 0) return; // routes with no url field
+  try {
+    await assertSafeEgressUrl(url, { allowHttp: true });
+  } catch (error) {
+    if (error instanceof UnsafeEgressError) {
+      throw new HTTPException(400, {
+        message: 'URL not allowed: only public http(s) targets may be fetched',
+      });
+    }
+    throw error;
+  }
+}
 
 export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: string) {
   const fullPath = new URL(c.req.url).pathname;
@@ -69,13 +70,15 @@ export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: s
   const queryString = new URL(c.req.url).search;
   const method = c.req.method;
 
+  await assertSafeFirecrawlTarget(c, service, method);
+
   const auth = await tryAuthenticate(c);
 
   if (auth.isKortixUser && auth.accountId && !auth.isPassthrough) {
-    // Mode 1: Kortix-owned key — inject our key, bill at 1.2×
+    // Mode 1: Kortix-owned key — inject our key, bill the tool price
     return handleKortixProxy(c, service, subPath, queryString, method, auth.accountId);
   } else if (auth.isPassthrough && auth.accountId) {
-    // Mode 2: User's own key — passthrough with no Kortix LLM charge.
+    // Mode 2: User's own key — passthrough, billed the tool price.
     return handleKortixPassthrough(c, service, subPath, queryString, method, auth.accountId);
   } else {
     // Mode 3: No Kortix token — pure passthrough, no billing.
@@ -88,6 +91,145 @@ export async function handleProxy(c: any, service: ProxyServiceConfig, prefix: s
     // Self-hosted: allow passthrough for BYOC users with their own API keys.
     return handlePassthrough(c, service, subPath, queryString, method);
   }
+}
+
+/**
+ * One upstream dispatch for all three auth modes (the fetch block used to be
+ * duplicated three times, KRTX-2073). Forward the upstream response verbatim
+ * — a provider's own 500 is the provider's answer, not ours to rewrite.
+ *
+ * A passed-through status never throws, so a provider-side 5xx used to be
+ * invisible in the logs: no error line, no reason, just a status in the
+ * completion line (36×500 on firecrawl /v2/scrape in 7 minutes, avg ≈46 s,
+ * zero error-level log lines). When the upstream answers 5xx, read its error
+ * body once and emit ONE bounded warn that names the service, the route and
+ * the upstream's own reason, with URLs masked (the target is caller data).
+ * 4xx stays silent: an expected, high-volume outcome the client handles.
+ *
+ * `reservation` refunds exactly as before: awaited on a dispatch error,
+ * fire-and-forget on an upstream error; null for the unbilled pure
+ * passthrough mode.
+ */
+async function forwardUpstream(
+  service: ProxyServiceConfig,
+  method: string,
+  subPath: string,
+  targetUrl: string,
+  headers: Headers,
+  body: Awaited<ReturnType<typeof getRequestBody>>,
+  reservation: Awaited<ReturnType<typeof reserveToolProxyCredits>>,
+): Promise<Response> {
+  let upstream: Response;
+  try {
+    // Attribute the upstream wait to `upstream_ms` so the completion log line
+    // can split provider latency from this API's own work (auth, reservation).
+    upstream = await timeUpstream(() =>
+      fetch(targetUrl, {
+        method,
+        headers,
+        body,
+        // @ts-ignore
+        duplex: 'half',
+      }),
+    );
+  } catch (error) {
+    if (reservation) {
+      await refundToolReservation(
+        reservation,
+        `Tool reservation refund after dispatch error: ${service.name}`,
+      ).catch((refundError) =>
+        console.error('[PROXY] Tool reservation refund failed:', refundError),
+      );
+    }
+    throw error;
+  }
+
+  if (!upstream.ok && reservation) {
+    refundToolReservation(
+      reservation,
+      `Tool reservation refund after upstream error: ${service.name}`,
+    ).catch((err) => console.error('[PROXY] Tool reservation refund failed:', err));
+  }
+
+  if (upstream.status >= 500) {
+    let text: string | null = null;
+    try {
+      text = await upstream.text();
+    } catch {
+      text = null; // body already disturbed — pass the status through bodyless
+    }
+    const reason =
+      text === null
+        ? '(unreadable body)'
+        : text
+            .slice(0, 300)
+            .replace(/https?:\/\/\S+/g, '<url>')
+            .replace(/\s+/g, ' ')
+            .trim() || '(no body)';
+    appLogger.warn(
+      `[PROXY] ${service.name} upstream ${upstream.status} on ${method} ${subPath}: ${reason}`,
+      { upstream_status: upstream.status, upstream_reason: reason },
+    );
+    return new Response(text, {
+      status: upstream.status,
+      statusText: upstream.statusText,
+      headers: upstream.headers,
+    });
+  }
+
+  return new Response(upstream.body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: upstream.headers,
+  });
+}
+
+/**
+ * What a provider answers when it refuses or limits the ACCOUNT behind the key:
+ * a refused key (401), no credit (402), a rate limit (429), and Tavily's plan
+ * and pay-as-you-go limits (432, 433). On the Kortix-owned key that account is
+ * Kortix's, so passing the provider's text through told a user to "upgrade
+ * your plan" for a plan they do not have, and logged nothing (KRTX-3022).
+ * 400 and 403 stay as they are: they are about the request (Firecrawl answers
+ * 403 for a site it will not read).
+ */
+const PLATFORM_ACCOUNT_REFUSALS = new Set([401, 402, 429, 432, 433]);
+
+/** The capability a person loses, named the way the product names it. */
+const TOOL_LABELS: Record<string, string> = {
+  tavily: 'Web search',
+  serper: 'Image search',
+  firecrawl: 'Reading web pages',
+};
+
+async function platformKeyRefusal(service: ProxyServiceConfig, response: Response): Promise<Response | null> {
+  if (!PLATFORM_ACCOUNT_REFUSALS.has(response.status)) return null;
+  const reason = (await response.text().catch(() => ''))
+    .slice(0, 300)
+    .replace(/https?:\/\/\S+/g, '<url>')
+    .replace(/\s+/g, ' ')
+    .trim();
+  appLogger.error(`[PROXY] ${service.name} refused Kortix's key: upstream ${response.status}`, {
+    upstream_status: response.status,
+    upstream_reason: reason || '(no body)',
+  });
+  const tool = TOOL_LABELS[service.name] ?? `The ${service.name} tool`;
+  const cause =
+    response.status === 401
+      ? "the provider is not accepting Kortix's key"
+      : "Kortix's account with the provider is over its usage limit";
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  const retryAfter = response.headers.get('retry-after');
+  if (retryAfter) headers.set('Retry-After', retryAfter);
+  return new Response(
+    JSON.stringify({
+      error: 'tool_unavailable',
+      service: service.name,
+      upstream_status: response.status,
+      message: `${tool} is unavailable right now: ${cause}. This is not a limit on your account, and there is nothing to change on your side.`,
+    }),
+    { status: 503, headers },
+  );
 }
 
 // === Kortix User: match allowed route, inject our key, bill with route-specific pricing ===
@@ -107,25 +249,6 @@ async function handleKortixProxy(
     });
   }
 
-  // Anti-abuse: routes that expose a shared prediction endpoint (where the model is
-  // chosen by a `version` in the body, not the URL) must pin the allowed versions.
-  if (matchedRoute.allowedBodyVersions && method.toUpperCase() === 'POST') {
-    let requestedVersion: unknown;
-    try {
-      requestedVersion = JSON.parse(await c.req.raw.clone().text())?.version;
-    } catch {
-      requestedVersion = undefined;
-    }
-    if (
-      typeof requestedVersion !== 'string' ||
-      !matchedRoute.allowedBodyVersions.includes(requestedVersion)
-    ) {
-      throw new HTTPException(403, {
-        message: `Model version not allowed for ${service.name}`,
-      });
-    }
-  }
-
   const kortixKey = service.getKortixApiKey();
   if (!kortixKey) {
     throw new HTTPException(503, {
@@ -135,9 +258,7 @@ async function handleKortixProxy(
 
   const actor = resolveActorFromRequest(c, { logPrefix: '[PROXY]' });
 
-  // Use alternate target/key injection for Kortix-managed if configured (e.g. OpenRouter)
-  const baseUrl = service.kortixTargetBaseUrl || service.targetBaseUrl;
-  const targetUrl = `${baseUrl}${subPath}${queryString}`;
+  const targetUrl = `${service.targetBaseUrl}${subPath}${queryString}`;
   const headers = buildForwardHeaders(c);
   // Strip Kortix-specific and auth headers — upstream gets injected key only
   headers.delete('x-kortix-token');
@@ -145,315 +266,26 @@ async function handleKortixProxy(
   headers.delete('authorization');
   let body = await getRequestBody(c, method);
 
-  body = injectApiKey(service, headers, body, /* useKortixInjection */ true);
-  body = maybeNormalizeOpenAIResponsesInput(service, method, subPath, body, headers);
+  body = injectApiKey(service, headers, body);
+  body = capFirecrawlCrawlLimit(service, method, subPath, body, headers);
   // Route-specific billing overrides service default.
   const billingToolName = matchedRoute.billingToolName || service.billingToolName;
-  let reservation: LlmCreditReservation | null = null;
-  let toolReservation: ToolCreditReservation | null = null;
-  if (service.isLlm === true) {
-    reservation = await reserveEstimatedLlmCredits(
-      accountId,
-      body,
-      KORTIX_MARKUP,
-      actor,
-      pricingProvider(service, true),
-    );
-  } else {
-    toolReservation = await reserveToolProxyCredits(
-      accountId,
-      billingToolName,
-      actor,
-      `Proxy ${service.name}: ${method} ${subPath}`,
-    );
-  }
+  const toolReservation = await reserveToolProxyCredits(
+    accountId,
+    billingToolName,
+    actor,
+    `Proxy ${service.name}: ${method} ${subPath}`,
+  );
 
   console.log(
     `[PROXY] ${service.name} (kortix:${accountId}) ${method} ${subPath} → ${targetUrl} [bill:${billingToolName}]`,
   );
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      // @ts-ignore
-      duplex: 'half',
-    });
-  } catch (error) {
-    if (service.isLlm === true) {
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after dispatch error: ${service.name}`,
-      ).catch((refundError) =>
-        console.error('[PROXY] LLM reservation refund failed:', refundError),
-      );
-    } else {
-      await refundToolReservation(
-        toolReservation,
-        `Tool reservation refund after dispatch error: ${service.name}`,
-      ).catch((refundError) =>
-        console.error('[PROXY] Tool reservation refund failed:', refundError),
-      );
-    }
-    throw error;
-  }
-
-  // LLM services: bill per-token at KORTIX_MARKUP (1.2×)
-  if (service.isLlm === true) {
-    if (upstream.ok) {
-      return billLlmKortixProxy(upstream, service, subPath, accountId, actor, reservation);
-    }
-    // Upstream error — don't bill for failed requests
-    console.warn(
-      `[PROXY] LLM kortix proxy ${service.name} upstream error ${upstream.status} — no billing`,
-    );
-    await refundLlmReservation(
-      reservation,
-      `LLM reservation refund after upstream error: ${service.name}`,
-    ).catch((err) => console.error('[PROXY] LLM reservation refund failed:', err));
-    return new Response(upstream.body, {
-      status: upstream.status,
-      statusText: upstream.statusText,
-      headers: upstream.headers,
-    });
-  }
-
-  if (!upstream.ok) {
-    refundToolReservation(
-      toolReservation,
-      `Tool reservation refund after upstream error: ${service.name}`,
-    ).catch((err) => console.error('[PROXY] Tool reservation refund failed:', err));
-  }
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: upstream.headers,
-  });
+  const response = await forwardUpstream(service, method, subPath, targetUrl, headers, body, toolReservation);
+  return (await platformKeyRefusal(service, response)) ?? response;
 }
 
-// === Kortix-managed LLM Billing ===
-//
-// Handles both response formats based on upstream:
-// - OpenAI-compatible: usage.prompt_tokens / completion_tokens
-// - Anthropic-native: usage.input_tokens / output_tokens
-
-async function billLlmKortixProxy(
-  upstream: Response,
-  service: ProxyServiceConfig,
-  subPath: string,
-  accountId: string,
-  actor: ActorContext | null,
-  reservation: LlmCreditReservation | null,
-) {
-  const contentType = upstream.headers.get('Content-Type') || '';
-  const isStreaming = contentType.includes('text/event-stream');
-
-  if (isStreaming) {
-    const upstreamBody = upstream.body;
-    if (!upstreamBody) {
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after missing stream body: ${service.name}`,
-      );
-      return new Response(null, { status: 502 });
-    }
-
-    const [clientStream, billingStream] = upstreamBody.tee();
-
-    // Fire-and-forget: extract usage from billing stream
-    extractUsageFromKortixProxyStream(
-      billingStream,
-      service,
-      subPath,
-      accountId,
-      actor,
-      reservation,
-    );
-
-    return new Response(clientStream, {
-      status: upstream.status,
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-      },
-    });
-  }
-
-  // Non-streaming: read response, extract usage, bill, return
-  let responseBody: any;
-  try {
-    responseBody = await upstream.json();
-  } catch {
-    await refundLlmReservation(
-      reservation,
-      `LLM reservation refund after invalid JSON response: ${service.name}`,
-    );
-    throw new HTTPException(502, {
-      message: `${service.name} returned an invalid JSON response`,
-    });
-  }
-  const provider = usageProvider(service);
-  const usage = extractUsage(responseBody, provider);
-  let modelId = responseBody?.model || 'unknown';
-
-  if (usage && (usage.promptTokens > 0 || usage.completionTokens > 0)) {
-    const modelConfig =
-      reservation?.modelConfig ??
-      requireModelPricing(modelId, pricingProvider(service, true));
-    const cost = calculateCost(
-      modelConfig,
-      usage.promptTokens,
-      usage.completionTokens,
-      usage.cachedTokens,
-      usage.cacheWriteTokens,
-      KORTIX_MARKUP,
-      usage.upstreamCost,
-    );
-
-    await settleLlmReservation({
-      accountId,
-      modelId,
-      promptTokens: usage.promptTokens,
-      completionTokens: usage.completionTokens,
-      actualCost: cost,
-      reservation,
-      actor,
-      logPrefix: 'LLM kortix billing',
-      provider: pricingProvider(service, true),
-      route: usageRoute(service, subPath),
-      cachedTokens: usage.cachedTokens,
-      cacheWriteTokens: usage.cacheWriteTokens,
-      upstreamCost: usage.upstreamCost,
-      upstreamStatus: upstream.status,
-    });
-
-    console.log(
-      `[PROXY] LLM kortix ${modelId}: ${usage.promptTokens}/${usage.completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`,
-    );
-  } else {
-    console.warn(`[PROXY] LLM kortix ${service.name}: no usage data in response — billing skipped`);
-    await refundLlmReservation(
-      reservation,
-      `LLM reservation refund after missing usage: ${service.name}`,
-    ).catch((err) => console.error('[PROXY] LLM reservation refund failed:', err));
-  }
-
-  return new Response(JSON.stringify(responseBody), {
-    status: upstream.status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-/**
- * Extract usage from an SSE stream and bill at KORTIX_MARKUP.
- * Handles both OpenAI-compatible and Anthropic-native SSE formats.
- * Runs in background (fire-and-forget).
- */
-async function extractUsageFromKortixProxyStream(
-  stream: ReadableStream<Uint8Array>,
-  service: ProxyServiceConfig,
-  subPath: string,
-  accountId: string,
-  actor: ActorContext | null,
-  reservation: LlmCreditReservation | null,
-) {
-  let settlementStarted = false;
-  try {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let detectedModel = 'unknown';
-    const provider = usageProvider(service);
-    let usageState: UsageAccumulator | null = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-        try {
-          const chunk = JSON.parse(line.slice(6));
-          usageState = accumulateUsageChunk(usageState, chunk, provider);
-          detectedModel = usageState?.model ?? detectedModel;
-        } catch {
-          // Not valid JSON — skip
-        }
-      }
-    }
-
-    if (!usageState) {
-      console.warn(`[PROXY] LLM kortix stream (${service.name}): no usage data — billing skipped`);
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after missing stream usage: ${service.name}`,
-      );
-      return;
-    }
-
-    const { promptTokens, completionTokens, cachedTokens, cacheWriteTokens, upstreamCost } =
-      usageState.usage;
-    if (promptTokens > 0 || completionTokens > 0) {
-      const modelConfig =
-        reservation?.modelConfig ??
-        requireModelPricing(detectedModel, pricingProvider(service, true));
-      const cost = calculateCost(
-        modelConfig,
-        promptTokens,
-        completionTokens,
-        cachedTokens,
-        cacheWriteTokens,
-        KORTIX_MARKUP,
-        upstreamCost,
-      );
-      settlementStarted = true;
-      await settleLlmReservation({
-        accountId,
-        modelId: detectedModel,
-        promptTokens,
-        completionTokens,
-        actualCost: cost,
-        reservation,
-        actor,
-        logPrefix: 'LLM kortix stream billing',
-        provider: pricingProvider(service, true),
-        route: usageRoute(service, subPath),
-        cachedTokens,
-        cacheWriteTokens,
-        upstreamCost,
-        streaming: true,
-        upstreamStatus: 200,
-      });
-      console.log(
-        `[PROXY] LLM kortix stream ${detectedModel}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`,
-      );
-    } else {
-      console.warn(`[PROXY] LLM kortix stream (${service.name}): zero tokens — billing skipped`);
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after zero stream usage: ${service.name}`,
-      );
-    }
-  } catch (err) {
-    console.error(`[PROXY] Error extracting usage from kortix proxy stream:`, err);
-    if (!settlementStarted) {
-      await refundLlmReservation(
-        reservation,
-        `LLM reservation refund after stream usage error: ${service.name}`,
-      ).catch((refundErr) => console.error('[PROXY] LLM reservation refund failed:', refundErr));
-    }
-  }
-}
-
-// === Kortix user with own key: passthrough with no Kortix LLM charge ===
+// === Kortix user with own key: passthrough, billed the tool price ===
 
 async function handleKortixPassthrough(
   c: any,
@@ -467,69 +299,18 @@ async function handleKortixPassthrough(
   const headers = buildForwardHeaders(c);
   // Remove X-Kortix-Token from forwarded headers — upstream doesn't need it
   headers.delete('x-kortix-token');
-  let body = await getRequestBody(c, method);
+  const body = await getRequestBody(c, method);
 
-  body = maybeNormalizeOpenAIResponsesInput(service, method, subPath, body, headers);
-
-  const billingToolName = service.billingToolName;
-  const isLlm = service.isLlm === true;
-  let toolReservation: ToolCreditReservation | null = null;
-  if (!isLlm) {
-    toolReservation = await reserveToolProxyCredits(
-      accountId,
-      billingToolName,
-      null,
-      `Passthrough ${service.name}: ${method} ${subPath}`,
-    );
-  }
-
-  console.log(
-    `[PROXY] ${service.name} (passthrough:${accountId}) ${method} ${subPath} → ${targetUrl} [llm-bill:none]`,
+  const toolReservation = await reserveToolProxyCredits(
+    accountId,
+    service.billingToolName,
+    null,
+    `Passthrough ${service.name}: ${method} ${subPath}`,
   );
 
-  let upstream: Response;
-  try {
-    upstream = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      // @ts-ignore
-      duplex: 'half',
-    });
-  } catch (error) {
-    if (!isLlm) {
-      await refundToolReservation(
-        toolReservation,
-        `Tool reservation refund after dispatch error: ${service.name}`,
-      ).catch((refundError) =>
-        console.error('[PROXY] Tool reservation refund failed:', refundError),
-      );
-    }
-    throw error;
-  }
+  console.log(`[PROXY] ${service.name} (passthrough:${accountId}) ${method} ${subPath} → ${targetUrl}`);
 
-  if (isLlm) {
-    // BYOK provider usage belongs to the provider account. Do not create a
-    // Kortix reservation, debit, or refund for either success or failure.
-    return new Response(upstream.body, {
-      status: upstream.status,
-      statusText: upstream.statusText,
-      headers: upstream.headers,
-    });
-  }
-
-  if (!upstream.ok) {
-    refundToolReservation(
-      toolReservation,
-      `Tool reservation refund after upstream error: ${service.name}`,
-    ).catch((err) => console.error('[PROXY] Tool reservation refund failed:', err));
-  }
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: upstream.headers,
-  });
+  return forwardUpstream(service, method, subPath, targetUrl, headers, body, toolReservation);
 }
 
 // === Not Kortix user: pure passthrough ===
@@ -543,22 +324,9 @@ async function handlePassthrough(
 ) {
   const targetUrl = `${service.targetBaseUrl}${subPath}${queryString}`;
   const headers = buildForwardHeaders(c);
-  let body = await getRequestBody(c, method);
-  body = maybeNormalizeOpenAIResponsesInput(service, method, subPath, body, headers);
+  const body = await getRequestBody(c, method);
 
   console.log(`[PROXY] ${service.name} (passthrough) ${method} ${subPath}`);
 
-  const upstream = await fetch(targetUrl, {
-    method,
-    headers,
-    body,
-    // @ts-ignore
-    duplex: 'half',
-  });
-
-  return new Response(upstream.body, {
-    status: upstream.status,
-    statusText: upstream.statusText,
-    headers: upstream.headers,
-  });
+  return forwardUpstream(service, method, subPath, targetUrl, headers, body, null);
 }

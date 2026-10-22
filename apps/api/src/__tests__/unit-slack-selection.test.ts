@@ -26,8 +26,9 @@ mock.module('../shared/db', () => ({
 }));
 // selection.ts pulls these in at import; stub so the import is cheap + side-effect-free.
 // `projectConfig` is mutable so governance tests can flip a project between
-// legacy (no fixed catalog) and declarative (`[[agents]]` adopted).
-let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null }>; agent_discovery?: string } = { agents: [] };
+// legacy (no fixed catalog) and declarative (`[[agents]]` adopted). `enabled`
+// mirrors the config summary's wire field: a registered agent may be disabled.
+let projectConfig: { agents: Array<{ name: string; description?: string | null; mode?: string | null; enabled?: boolean }>; agent_discovery?: string } = { agents: [] };
 mock.module('../projects/lib/git', () => ({ withProjectGitAuth: async (p: unknown) => p }));
 mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
@@ -37,7 +38,7 @@ mock.module('../projects/git', () => ({
 
 const {
   currentChannelSelection,
-  isValidModelId,
+  loadProjectAgentGovernance,
   setChannelAgent,
   setChannelModel,
 } = await import('../channels/slack/selection');
@@ -45,21 +46,6 @@ const {
 beforeEach(() => {
   dbResults = [];
   projectConfig = { agents: [] };
-});
-
-describe('isValidModelId — provider/model shape only (no stale-catalog gate)', () => {
-  test('accepts well-formed provider/model ids', () => {
-    expect(isValidModelId('anthropic/claude-opus-4-8')).toBe(true);
-    expect(isValidModelId('openai/gpt-5.5')).toBe(true);
-    expect(isValidModelId('a/b')).toBe(true);
-  });
-  test('rejects malformed ids', () => {
-    expect(isValidModelId('claude-opus-4-8')).toBe(false); // no provider
-    expect(isValidModelId('/leading')).toBe(false);
-    expect(isValidModelId('trailing/')).toBe(false);
-    expect(isValidModelId('has space/model')).toBe(false);
-    expect(isValidModelId('')).toBe(false);
-  });
 });
 
 describe('currentChannelSelection', () => {
@@ -138,5 +124,31 @@ describe('setChannelAgent — governance validation (declared [[agents]] project
     projectConfig = { agents: [] };
     dbResults = [[{ projectId: 'p1' }], [{ projectId: 'p1', defaultBranch: 'main' }], [{ id: 'b1' }]];
     expect(await setChannelAgent({ teamId: 'T1', channelId: 'C1' }, 'anything-goes')).toEqual({ ok: true });
+  });
+});
+
+describe('loadProjectAgentGovernance — launchable-only catalog', () => {
+  test('a disabled registered agent never reaches the launchable catalog', async () => {
+    // The config summary lists every registered agent (a disabled one with
+    // `enabled: false`); a picker and the binding check must not offer or
+    // accept an agent no session can launch.
+    projectConfig = {
+      agents: [
+        { name: 'kortix', description: 'Default', mode: 'primary', enabled: true },
+        { name: 'observer', description: 'Off', mode: 'primary', enabled: false },
+      ],
+      agent_discovery: 'declarative',
+    };
+    dbResults = [[{ projectId: 'p1', defaultBranch: 'main' }]];
+    const governance = await loadProjectAgentGovernance('p1');
+    expect(governance.declared).toBe(true);
+    expect(governance.agents.map((a) => a.name)).toEqual(['kortix']);
+  });
+
+  test('an entry without an enabled flag (native discovery) stays listed', async () => {
+    projectConfig = { agents: [{ name: 'zeta', description: null, mode: 'primary' }] };
+    dbResults = [[{ projectId: 'p1', defaultBranch: 'main' }]];
+    const governance = await loadProjectAgentGovernance('p1');
+    expect(governance.agents.map((a) => a.name)).toEqual(['zeta']);
   });
 });

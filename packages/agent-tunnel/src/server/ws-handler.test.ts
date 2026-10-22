@@ -140,7 +140,7 @@ describe('tunnel WebSocket identity binding', () => {
 
     expect(relay.isConnected('tunnel-1')).toBe(false);
     expect(socket.closes).toContainEqual({
-      code: 4001,
+      code: 1011,
       reason: 'authentication response failed',
     });
   });
@@ -154,5 +154,35 @@ describe('tunnel WebSocket identity binding', () => {
     handlers.onMessage('tunnel-1', socket, '123456789');
 
     expect(socket.closes).toContainEqual({ code: 4002, reason: 'message too large' });
+  });
+
+  // A relay that cannot finish auth (database down during a deploy, overload)
+  // must not tell the agent its credential is bad: agents stop for good on 4001.
+  test('closes with a retryable code when the authenticator throws', async () => {
+    const relay = new TunnelRelay();
+    const handlers = createWsHandlers(relay, {
+      onAuthenticate: async () => {
+        throw new Error('database unavailable');
+      },
+    });
+    const socket = fakeWs();
+    handlers.onOpen('tunnel-1', socket);
+    const originalError = console.error;
+    console.error = () => {};
+    try {
+      await handlers.onMessage('tunnel-1', socket, JSON.stringify({ type: 'auth', token: 't' }));
+    } finally {
+      console.error = originalError;
+    }
+    expect(socket.closes).toEqual([{ code: 1011, reason: 'authentication error' }]);
+  });
+
+  test('closes with a retryable code when auth does not complete in time', async () => {
+    const relay = new TunnelRelay();
+    const handlers = createWsHandlers(relay, { authTimeoutMs: 5 });
+    const socket = fakeWs();
+    handlers.onOpen('tunnel-1', socket);
+    await Bun.sleep(20);
+    expect(socket.closes).toEqual([{ code: 1013, reason: 'auth timeout' }]);
   });
 });

@@ -4,8 +4,9 @@
  * onboarding.test.ts); the screens are `app/index.tsx`, `app/welcome.tsx`
  * and `app/new.tsx`.
  *
- * - Where the app opens (`startDestination`): a project when any account has
- *   one (the last one opened, else the first — `lib/projects/landing.ts`).
+ * - Where the app opens (`startDestination`): a pending invite first; then a
+ *   project when any account has one (the last one opened, else the first —
+ *   `lib/projects/landing.ts`).
  *   With no project anywhere: the upgrade screen if this user has not seen
  *   it, else `/new`. A user with a project never sees the upgrade screen.
  * - Which account the first project goes to (`onboardingAccountId`).
@@ -21,30 +22,44 @@
 import type { PlanFamily } from '@/lib/billing/plan-action';
 import { canShowExternalPurchase } from '@/lib/billing/store-policy';
 import { getUpgradeSheetIncludedItems } from '@/lib/billing/upgrade-sheet-included';
-import { creatableAccounts, type LandingResolution } from '@/lib/projects/landing';
+import { creatableAccounts, type CreateVerdicts, type LandingResolution } from '@/lib/projects/landing';
 import type { KortixAccount } from '@/lib/projects/projects-client';
 
 export type StartDestination =
+  | { kind: 'invite'; inviteId: string }
   | { kind: 'project'; projectId: string; accountId: string }
   | { kind: 'welcome' }
   | { kind: 'new' };
 
-/** Where the start screen sends a signed-in user. */
-export function startDestination(landing: LandingResolution, upgradeSeen: boolean): StartDestination {
+/**
+ * Where the start screen sends a signed-in user. A pending invite comes first
+ * (web `decideDoor`): a project invite stays pending until it is accepted, so
+ * without this an invitee lands in an empty personal account (KRTX-1731).
+ * `skipped` holds the invites put off with Not now.
+ */
+export function startDestination(
+  landing: LandingResolution,
+  upgradeSeen: boolean,
+  invites: ReadonlyArray<{ invite_id: string }> = [],
+  skipped: ReadonlySet<string> = new Set()
+): StartDestination {
+  const invite = invites.find((pending) => !skipped.has(pending.invite_id));
+  if (invite) return { kind: 'invite', inviteId: invite.invite_id };
   if (landing.kind === 'project') return landing;
   return upgradeSeen ? { kind: 'new' } : { kind: 'welcome' };
 }
 
 /**
  * The account the upgrade screen and `/new` start on: the selected account
- * when a project can be created in it, else the first account the user owns
- * or administers, else the selected account, else the first account.
+ * when a project can be created in it (`project.create` verdict), else the
+ * first account where one can, else the selected account, else the first account.
  */
 export function onboardingAccountId(
   accounts: KortixAccount[],
-  selectedAccountId: string | null
+  selectedAccountId: string | null,
+  verdicts: CreateVerdicts
 ): string | null {
-  const creatable = creatableAccounts(accounts);
+  const creatable = creatableAccounts(accounts, verdicts);
   if (creatable.some((account) => account.account_id === selectedAccountId)) return selectedAccountId;
   if (creatable[0]) return creatable[0].account_id;
   if (accounts.some((account) => account.account_id === selectedAccountId)) return selectedAccountId;
@@ -74,13 +89,9 @@ export function welcomeOffer(input: {
   os: string;
   family: PlanFamily;
   canManageBilling: boolean;
-  pricePerSeat: number;
 }): WelcomeOffer {
   const canPurchase = canShowExternalPurchase(input.os);
-  const benefits = getUpgradeSheetIncludedItems(input.pricePerSeat, canPurchase).slice(
-    0,
-    WELCOME_BENEFIT_COUNT
-  );
+  const benefits = getUpgradeSheetIncludedItems().slice(0, WELCOME_BENEFIT_COUNT);
   const action: WelcomeAction = !canPurchase ? 'none' : input.canManageBilling ? 'upgrade' : 'ask-owner';
   return { show: input.family === 'free', action, benefits };
 }

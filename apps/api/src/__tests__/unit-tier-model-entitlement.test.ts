@@ -1,14 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { config } from '../config';
 import {
-  accountIsFreeTierForModels,
-  CREDITS_PER_DOLLAR,
   getTier,
   isPaidTier,
   tierGrantsAllModels,
 } from '../billing/services/tiers';
 
 const PAID_TIER_NAMES = [
+  'credits',
   'pro',
   'per_seat',
   'tier_2_20',
@@ -35,19 +33,18 @@ describe('tierGrantsAllModels', () => {
     }
   });
 
-  test('free and none tiers do NOT unlock the premium gateway', () => {
-    expect(tierGrantsAllModels('free')).toBe(false);
+  test('the none tier does NOT unlock the managed models', () => {
     expect(tierGrantsAllModels('none')).toBe(false);
   });
 
-  test('free tier exposes 200 display credits without premium gateway entitlement', () => {
+  // #10147: Free = 500 credits a month. #10297: never the managed models.
+  test('the free tier grants 500 credits a month and no managed model', () => {
     const free = getTier('free');
-    expect(free.hidden).toBe(false);
-    expect(free.monthlyCredits * CREDITS_PER_DOLLAR).toBe(200);
-    expect(free.models).not.toContain('all');
+    expect(free.monthlyCredits * 100).toBe(500);
+    expect(tierGrantsAllModels('free')).toBe(false);
   });
 
-  test('per-seat and the legacy pro/tier_* plans are all entitled', () => {
+  test('credits and every legacy paid plan key are entitled', () => {
     for (const name of PAID_TIER_NAMES) {
       expect(tierGrantsAllModels(name)).toBe(true);
     }
@@ -55,40 +52,5 @@ describe('tierGrantsAllModels', () => {
 
   test('an unknown tier name falls back to the none tier (no gateway)', () => {
     expect(tierGrantsAllModels('totally-made-up-tier')).toBe(false);
-  });
-});
-
-describe('accountIsFreeTierForModels', () => {
-  // The no-arg form reads the AMBIENT config.INTERNAL_KORTIX_ENV, which varies
-  // by where the suite runs (provisioned dev box vs CI vs a bare worktree) —
-  // so assert only self-consistency with an explicit same-env call, never a
-  // specific ambient value.
-  test('no-arg form matches the explicit call for the ambient env', () => {
-    const ambient = config.INTERNAL_KORTIX_ENV;
-    for (const tier of ['free', 'none', 'totally-made-up-tier']) {
-      expect(accountIsFreeTierForModels(tier)).toBe(accountIsFreeTierForModels(tier, ambient));
-    }
-  });
-
-  test('free and none tiers cannot use managed models in any environment', () => {
-    for (const env of ['dev', 'preview', 'staging', 'prod']) {
-      expect(accountIsFreeTierForModels('free', env)).toBe(true);
-      expect(accountIsFreeTierForModels('none', env)).toBe(true);
-    }
-  });
-
-  test('wallet balance cannot affect managed-model entitlement', () => {
-    for (const balance of [0, 0.01, 200, 1_000_000]) {
-      expect(balance).toBeGreaterThanOrEqual(0);
-      expect(accountIsFreeTierForModels('free', 'dev')).toBe(true);
-    }
-  });
-
-  test('a paid tier is never blocked, in any environment', () => {
-    for (const env of ['prod', 'staging', 'dev', 'preview']) {
-      for (const name of PAID_TIER_NAMES) {
-        expect(accountIsFreeTierForModels(name, env)).toBe(false);
-      }
-    }
   });
 });

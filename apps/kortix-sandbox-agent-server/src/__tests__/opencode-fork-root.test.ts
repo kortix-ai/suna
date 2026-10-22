@@ -5,7 +5,7 @@
  * the shared seed root onto its own — see opencode-fork-root.ts.
  */
 import { describe, expect, test } from 'bun:test'
-import { isSharedSeedBakedRoot } from '../harness/open-code/opencode-fork-root'
+import { isSharedSeedBakedRoot } from '@/harness/open-code/opencode-fork-root'
 
 describe('isSharedSeedBakedRoot', () => {
   test.each([

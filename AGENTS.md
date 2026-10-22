@@ -109,7 +109,7 @@ corner to make sure the output is good.
 Every repo skill is a directory in `.agents/skills/<name>/`. `.claude/skills/<name>` is a
 symlink to it. Add a skill in `.agents/skills/`, then add the symlink. Third-party skills come
 from `npx skills add` and are pinned in `skills-lock.json`. The PR procedure is the
-**contributing** skill. Browser work is the **agent-browser** skill.
+**contributing** skill; the PR title and body are the **create-pr** skill. Browser work is the **agent-browser** skill.
 
 The repository has no `docs/` tree. Put a runbook or spec in the skill that owns the
 surface (`.agents/skills/<name>/references/`). Put an incident rule in the learnings
@@ -169,7 +169,7 @@ values. Evidence that contains real data stays local: the gitignored
 into a tracked file.
 
 **If you find customer data** in the tree or in a PR, remove it in the same
-branch and say so. Do not rewrite history on `main`. Report the SHA to the user
+branch and say so. Do not rewrite history on `dev`. Report the SHA to the user
 instead.
 
 **A guard enforces this on every commit and push.**
@@ -237,98 +237,177 @@ in before any non-trivial change. **Do not create a branch by reflex.**
 2. **Start a new canonical branch** only when the work is genuinely a new thing.
    Give it its own worktree: `pnpm worktree create --name <slug> --yes
    --no-start`, then do all edits and runs under `../suna-<slug>`. Add `--db`
-   only when the work needs migrations, destructive data work, schema drift, or
-   independent auth/storage state. See the **worktree** skill.
-3. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
+   when the work needs migrations, destructive data work, or schema drift: it
+   copies the primary local database into the worktree's own database
+   (`kortix_wt_<slug>`, ~5 s, no extra containers). `--full-supabase` (a whole
+   Supabase stack, ~0.75 GB RAM) is only for independent auth/storage config.
+   See the **worktree** skill.
+3. **Never switch a worktree you did not create.** It belongs to one session and
+   its canonical branch. The pre-commit hook refuses a commit on any other branch
+   there (`scripts/check-worktree-branch.sh`). A throwaway probe branch goes in a
+   private `git worktree add` in your scratchpad.
+4. **The primary checkout** (`pnpm dev`, web `3000` / api `8008`) is for running
    and investigating. Do not park feature work there.
+5. **Run `pnpm test` only from a worktree that has `.kortix-worktree.json`.** The
+   runner reads its ports from that marker. A bare `git worktree add` has none,
+   so its test stack takes the primary ports and talks to another session's
+   `pnpm dev` (2026-10-13: 156 flows failed with that stack's 503s).
+6. **Never kill a process you did not start.** Many sessions share this machine.
+   Kill by PID from your own process tree, or by a pattern that contains your
+   own worktree or scratchpad path. Never by a bare pattern such as
+   `pkill -f "bun test"`, and never in a loop. Need CPU? Lower your own
+   concurrency (`KE2E_API_WORKERS`, `KORTIX_DB_SUITE_WORKERS`) or ask the user.
+   2026-10-13: a guard loop that SIGTERMed every other session's `pnpm test`,
+   `tsc` and `vitest` every 20 s made 259 kills, and every suite on the machine
+   died with exit 143 and no failing test.
 
 **Pack more into one branch, not less.** A follow-up fix, a rename cleanup, a
 stale-reference sweep, and the change that caused them all belong on the same
 branch and land together. Splitting one objective across several branches is how
-a half-finished cutover reaches `main` in pieces — each piece green alone, the
+a half-finished cutover reaches `dev` in pieces — each piece green alone, the
 whole thing broken.
 
 Sub-branches are allowed. Agents may cut working branches off the canonical
-branch and merge back into it. **A sub-branch never opens a PR against `main`.**
+branch and merge back into it. **A sub-branch never opens a PR against `dev`.**
 Only the canonical branch does.
 
 Carve-outs where you just proceed: read-only investigation and questions, and
 trivial single-file typo/comment fixes on the current branch.
 
-## Default delivery: share by preview, self-merge to `main` when verified
+## Default delivery: verify in your box, self-merge to `dev`, verify on dev
 
-`main` auto-deploys to dev, so **merging to `main` publishes to the whole team.**
-It is not a save point, and it is not how you show someone your work.
+`dev` is the dev trunk. A merge does not deploy: dev deploys only on a deliberate
+dispatch, but **merging to `dev` still lands your change in everyone's next
+deploy and next `dev` checkout.** It is not a save point.
+
+### Testing philosophy: one gate at Promote to Production, everything else fast
+
+Testing reset, 2026-10-16. Latency is the core concern. Development must be
+fast enough to push and break things on `dev`. The full suite runs once per
+release, at Promote to Production, and nowhere else. The rules:
+
+1. **Never run a full suite during development, and never a whole package's
+   tests.** No multi-minute run on your box, on a PR into `dev`, or on a push
+   to `dev`. Verify only what you changed: T0 for the packages you touched,
+   the test files that cover the change, named one by one
+   (`pnpm --filter <pkg> test <file>`), and the change itself through its real
+   surface. Running all 2,129 `apps/web` tests to check one component is the
+   anti-pattern this rule exists for.
+2. **One gate: the release pull request into `prod`.** Promote to Production
+   runs the whole suite there, once, and every check must be green. It is the
+   only check that blocks anything.
+3. **Test at the boundaries users touch:** the HTTP API, the CLI, the
+   `@kortix/sdk` public surface, DB migrations, and a few browser journeys on
+   the money path. Never test internal calls or source text.
+4. **Run each suite once per tree.** A tree that ran is not run again.
+5. **A red suite is worse than none.** A test that fails twice without a bug is
+   fixed or deleted the same day. Do not park it in quarantine.
+6. **Delete on red.** A unit test that goes red on a refactor with no bug is
+   deleted, not updated. Keep unit tests only for logic that is hard to get
+   right: money and credits, parsers, the streaming protocol, permission
+   decisions, crypto and secrets.
+7. **Small, isolated tests.** Every test file runs standalone in seconds. When
+   the test that covers your change takes more than ~10 s, or drags in setup
+   that has nothing to do with it, split it into a smaller isolated test as
+   part of the same change. Fake the clock; never sleep on real time.
+
+| Tier | Contents | Runs |
+|---|---|---|
+| T0 static | `tsc`, lint, architecture checks, migration lint | anytime, seconds per package |
+| Targeted | the one test file or flow that covers your change | on your box, seconds |
+| Release suite | contract lanes (flows, DB, packages) on the release tree, the deployed smoke and the browser journeys against staging, CI, CodeQL, scanners | once per release, on the pull request into `prod` |
+
+| Where | What runs | Blocks? |
+|---|---|---|
+| Your box | T0 for the packages you touched, the targeted test, and the real surface: the route with curl, the CLI process, the page with agent-browser | your judgment |
+| Pull request into `dev` | nothing, unless a person adds `test` or `preview` | no |
+| Push to `dev` | only the seconds-long guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations` / `i18n-catalogs` / `Terraform Apply Global` / `deploy-api-router-dev` | no |
+| Nightly on `dev` | `Tests` `core` and `packages` lanes, no browser: a red night comments the failures on the commit, so they are ready to fix before a promote | no |
+| Pull request into `staging` | nothing: Promote to Production opens and merges it | no |
+| Pull request into `prod` | the release suite, once (`full suite + quality gates`) | **yes, the only gate** |
+
+**A Mac never runs a suite.** On macOS `pnpm test` refuses a suite-wide run
+(plain, `--full`, `--packages-only`, `--browser-only`, `--db-only` with no path
+filter) and exits `2`. 2026-10-16: five agent sessions ran the suite at once on
+one laptop (load average 112, swap full). Run one flow
+(`pnpm test -- --id <ID>`), one DB suite path, or one package's test file.
+`KORTIX_FULL_TEST=1` overrides only when a person asks. Every package `test`
+script refuses the same way: `pnpm --filter <pkg> test` with no file exits `2`
+(`scripts/test-guard.mjs`). Pass the file(s), `pnpm --filter <pkg> test <file>`,
+or a name filter after `--`: `pnpm --filter <pkg> test -- -t <name>`. CI and
+Linux run the full suite.
+
+No hook or gate requires a test run before a push or a merge into `dev`. Write
+in the PR body what you ran and why. A diff that no test reads (docs, a skill,
+a standalone script) needs no run. When the nightly run or the release suite
+turns red on your change, you fix forward on `dev` the same day.
 
 1. Work on the canonical branch in its worktree. Commit as often as you want.
-2. Open a **draft PR against `main` on the first commit** and apply the
-   `preview` label. Follow the **contributing** skill: it fills the PR template,
-   finds the preview origin, records the demo video with agent-browser, and
-   attaches it with `gh pr edit --attach`. Every PR body carries that video.
-   The `preview` label builds a complete self-host preview for the branch — its
-   own PostgreSQL, Supabase, API, gateway, frontend, and HTTPS origin. This is how
-   work is shared and reviewed internally. **Sharing never requires merging.**
-   The `preview` label also runs the six-lane `Tests` suite on the PR.
-3. Run the relevant local unit, type, integration, and end-to-end checks with
-   real inputs and outputs. **CI does not run the local suite on a PR into
-   `main`** — run it yourself (narrowest command first, then `pnpm test`), or
-   add the `test` label to get the six CI lanes (~8 min, no push needed). Keep
-   the PR green as you go, not at the end.
-4. Merge `main` into the canonical branch daily. A branch that diverges for weeks
+2. Verify in your box, with real inputs and outputs. Run T0 and the tests that
+   cover the change (see above). Start the worktree's stack
+   (`pnpm worktree start <slug>`) and drive the changed behavior through it: the
+   HTTP route, the real CLI process, or the page with agent-browser. Nothing
+   before the release suite at Promote to Production catches what you skip.
+3. Open the PR against `dev` and follow the **contributing** skill: it attaches
+   the demo video you recorded against your local stack. Write the title and
+   body with the **create-pr** skill: English only, for a human reviewer who
+   decides "merge or iterate" without reading the diff. Do not add `test` or `preview` unless you need that one explicit run.
+4. Merge `dev` into the canonical branch daily. A branch that diverges for weeks
    detonates on merge exactly like a 1,500-line PR does.
-5. **Self-merge to `main` when the change is verified. Do not wait for the
+5. **Self-merge to `dev` when the change is verified. Do not wait for the
    user's approval.** Speed matters: a verified change that sits unmerged is
    waste. Verified means all of these are true:
-   - the relevant local checks ran with real inputs and outputs (rule 3), and
+   - the relevant local checks ran with real inputs and outputs (rule 2), and
      they passed;
-   - the PR is mergeable, and the `Tests` lanes are green (the `preview` or
-     `test` label runs them);
+   - the PR is mergeable (no conflict);
    - rule 6 holds when the change touches a client-facing runtime contract.
-   A failing or skipped check blocks the merge until you fix it or state why it
-   is unrelated (for example, the same test fails on `main`). Squash-merge
+   A failing check blocks the merge until you fix it or state why it is
+   unrelated (for example, the same test fails on `dev`). Squash-merge
    (`gh pr merge <pr> --squash`), then finish rules 7 and 8. A merge is not
    the end of the work: dev verification is still yours.
-   The only machine-enforced rule is that every change reaches `main` and
-   `staging` through a pull request — no required approvals, no required status
-   checks, no bypass actors. The discipline is yours, not the ruleset's, so the
-   bar is what you verified, not what CI let through.
+   The only machine-enforced rule on `dev` and `staging` is that every change
+   arrives through a pull request — no required approvals, no required status
+   checks, no bypass actors. The bar is what you verified.
    **The release gates do not change.** Merging into `staging` or `prod`,
    running Promote to Production, and moving the `:stable` tag each need the
    user's explicit approval (the **kortix-release** skill).
 6. **A change to a client-facing runtime contract** — the `@kortix/sdk` public
    surface, session/thread transport, the streaming protocol — merges only after
-   the whole objective ran on its own preview origin through a real session.
-   Green tests are not the bar. Someone used it.
-7. After the merge, wait for the **Live on dev** comment on your pull request.
-   Deploy Dev posts it when `/health` on every surface it changed serves the
-   deployed commit, with the time since merge; "Not live on dev yet" names the
-   surface that failed. A successful `/health` response alone is not
-   deployment proof — the comment checks the commit. Deploys queue, they never
-   cancel: a run in flight finishes, then the newest waiting push deploys, so
-   a merge is live within about two deploy lengths. Force a full redeploy with
-   `gh workflow run deploy-dev.yml -f surface=all`. The surfaces and their
-   checks are in `.github/workflows/deploy-dev.yml`. The same push runs the
-   `Tests` suite on the merge commit in parallel. It does not gate the deploy.
-   A red run comments on the commit and names the failing lanes — read it.
+   the whole objective ran through a real session on your local stack, and runs
+   again on dev after the merge (rule 8). Green tests are not the bar. Someone
+   used it.
+7. After the merge, deploy dev yourself: `gh workflow run deploy-dev.yml
+   --repo kortix-ai/suna -f surface=changed` (`all` or `frontend` force a
+   rebuild). Deploys queue, they never cancel. Wait for the run to finish.
+   `/health` on every changed surface must serve the merge SHA: a successful
+   `/health` response alone is not deployment proof. The run comments "Live on
+   dev" on the merged pull request, and "Not live on dev yet" names the
+   surface that failed. The surfaces and their checks are in
+   `.github/workflows/deploy-dev.yml`. The merge push runs no suite. The
+   nightly `Tests` run on `dev` comments the failing lanes and every commit
+   since the last green run, once per new set of failing lanes. The author
+   whose commit broke `dev` fixes forward the same day. If `dev` is still red
+   1 hour after the comment, anyone may revert the culprit PR. The release
+   suite at Promote to Production runs the same lanes and blocks the release.
 8. Re-run the user-visible behavior against `https://dev.kortix.com` and/or
    `https://dev-api.kortix.com`. Prefer the real Kortix CLI configured for the
    dev API for CLI/project/session flows, and direct authenticated HTTP calls for
    API contracts. For web behavior, drive the deployed UI and assert its network
    request plus visible result.
 
-Preview verification, local verification, and dev verification are all required.
-A local pass does not replace the preview origin, and a dev smoke test does not
-replace focused local tests. Record the branch, PR, preview origin, merge SHA,
-deploy run, deployed SHA evidence, and the exact dev command or interaction in
-the final response.
+Local verification and dev verification are both required. A local pass does
+not replace dev, and a dev smoke test does not replace focused local tests.
+Record the branch, PR, local commands and output, merge SHA, deploy run,
+deployed SHA evidence, and the exact dev command or interaction in the final
+response.
 
 ## Architecture: `@kortix/sdk` is the source of truth
 
 `@kortix/sdk` is the **single source of truth** for everything that talks to the
 Kortix backend — projects, accounts, sessions, files, secrets, triggers, the
-session runtime, OpenCode REST compatibility, SSE streaming, model state,
+session runtime, the runtime REST client, SSE streaming, model state,
 and auth-token plumbing. The apps
-(`apps/web`, `apps/whitelabel-demo`, `apps/mobile`) are **thin consumers**. Treat
+(`apps/web`, `apps/white-label/*`, `apps/mobile`) are **thin consumers**. Treat
 these as standing rules whenever you touch the data/runtime layer:
 
 > **Editing `packages/sdk` itself? Load the **sdk** skill (the rules) first.** It is a
@@ -358,8 +437,26 @@ these as standing rules whenever you touch the data/runtime layer:
   provider.
 - **Session-scoped + provider-agnostic.** The public API is session-scoped
   (`kortix.session(pid, sid).health() / .previewUrl() / .restart() / …`).
-  The sandbox provider is a server-side concern. Every session uses the
-  OpenCode REST runtime. Host code must not implement a second transport.
+  The sandbox provider and the harness are server-side concerns. Host code
+  must not implement a second transport.
+- **Build on the Kortix contract, not on OpenCode.** A session runs one of two
+  harnesses inside kortixd: pi (the default since 2026-10-20: the
+  `pi_harness` project flag, on by default, or `runtime: pi` in
+  `kortix.yaml`) or OpenCode (the flag off). Both call models only through
+  the LLM gateway (no `llm_gateway` flag since 2026-10-20). A flag change applies to new sessions only. pi replaces OpenCode; OpenCode support is temporary.
+  Both serve the same daemon routes (`/kortix/runtime/*`), the same transcript
+  (`kortix.transcript.v1`, `packages/api-contract/src/transcript.ts`) and the
+  same events. New code reads those, never an OpenCode route, type, file or
+  process. A feature one harness lacks is a capability, not a harness check:
+  `GET /kortix/health` lists `capabilities` (`RUNTIME_CAPABILITIES` in
+  `packages/api-contract/src/runtime-relay.ts`), and a client gates the
+  control with `runtimeSupports`. OpenCode lists all eleven (`session.steer`
+  only on OpenCode 1.18.15 or later); pi lists `session.subagents`,
+  `session.compact`, `session.commands` and `session.steer`. pi does not
+  serve rewind, MCP servers, the todo list, shell turns, part edits or
+  `session.attach`.
+  The harness rules and the pi gap list are in
+  `apps/kortix-sandbox-agent-server/src/harness/README.md`.
 - **`apps/web` data modules are shims.** Files such as
   `apps/web/src/ui/index.ts`, `apps/web/src/lib/iam-client.ts`, and
   `apps/web/src/hooks/admin/use-*.ts` are thin re-exports
@@ -377,7 +474,7 @@ these as standing rules whenever you touch the data/runtime layer:
 This repo ships a **complete, runnable local stack with live cloud sandboxes**.
 Do not claim you "can't verify from here" or hand back unverified work — you
 have everything needed to run the app, hit the real API, provision real
-Daytona sandboxes, drive the real UI in a browser, and assert behavior. Use it.
+Platinum sandboxes, drive the real UI in a browser, and assert behavior. Use it.
 
 ### Required verification standard — real inputs, real outputs
 
@@ -418,11 +515,14 @@ mocked internals when a real surface exists.
 - **Web** — Next.js dev server on `http://localhost:3000`.
 - **API** — Bun server on `http://localhost:8008/v1` (`/health` returns JSON).
 - **Supabase** — local, on `http://127.0.0.1:54321` (Docker).
-- **Sandboxes** — REAL cloud sandboxes on the enabled provider (Daytona,
-  Platinum, or E2B; credentials in `apps/api/.env` / `.env.local`). Each project
+- **Sandboxes** — REAL cloud sandboxes on Platinum, the reference provider
+  (`PLATINUM_API_KEY` in `apps/api/.env` / `.env.local`). Daytona is a legacy
+  fallback with removal scheduled and no support guarantee; E2B support is
+  discontinued. Each project
   session gets its own sandbox; `session_id == sandbox_id`. The sandbox daemon is
   reached through `http://localhost:8008/v1/p/<external_id>/8000/...`.
-  OpenCode REST uses the compatibility proxy.
+  The session runtime answers on the same proxy, under `/kortix/runtime/*`,
+  on both harnesses.
 - **Tunnel** — `scripts/dev-local.sh` (`pnpm dev`) auto-starts a cloudflared
   quick tunnel so cloud sandboxes can call back to the local API (`KORTIX_URL`).
 
@@ -483,65 +583,53 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   test profile. Stop an ordinary development stack before either command.
 - Every root run writes lane and total timings to
   `tests/test-results/local/benchmark-<timestamp>.json`.
-- Every Linux CI job runs on Blacksmith through `runs-on: ${{ vars.CI_RUNNER_<tier>
-  || '<label>' }}`. Setting a `CI_RUNNER_<tier>` repository variable to a
-  GitHub-hosted label is the kill switch back to GitHub-hosted runners.
-- GitHub Actions runs six lanes — `core`, `browser-1` … `browser-4`, `packages`
-  — natively, one Blacksmith runner each (`CI_RUNNER_L`), through
-  `.github/workflows/tests.yml`. The four browser lanes are quarters of one
-  sharded run (`--browser-shard=N/4`, Playwright's native `--shard`). The suite
-  measures 8m17s wall clock; `packages` (~8 min) is the slowest lane, so a fifth
-  browser shard buys nothing and the concurrency settings in
-  `tests/bin/package-quality.ts` must not be raised. Each lane is the unchanged
-  root command at the exact requested SHA; browser lanes install Chromium and
-  prestart Supabase first. Do not add CI-only test logic. (The Platinum/Daytona
-  sandbox-worker path was removed on 2026-08-26; only `deploy-preview.yml` still
-  uses a cloud sandbox.)
-- The suite runs on every push to `main`, on a pull request into `staging`, on a
-  pull request labelled `test` or `preview`, and on manual dispatch. The label
-  re-triggers an open pull request without a push. A plain pull request into
-  `main` skips it, and its check shows as skipped. A push-to-`main` run
-  blocks nothing: a red run comments the failing lanes on the commit, a cancelled
-  run means a newer commit superseded it. A pull request into `prod` runs
-  `tests-release.yml` against deployed staging instead.
-- Run the suite locally before merging into `main`: the narrowest relevant
-  command first, then `pnpm test`. The old per-pull-request gate cost ~11 min
-  median and 68 min worst case and gated nothing, because `main` and `staging`
-  require no status check.
-- Release tests run `pnpm test -- --target-full` against deployed staging. They block
-  production when API or gateway health reports a SHA other than
-  `RELEASE_SOURCE_SHA`, when any API flow is excluded, or when a configured
-  Playwright journey fails.
-- The `preview` label creates one full self-host preview in a persistent warm
-  Platinum sandbox. Previews run on Platinum only: the preview host and every
-  session inside it. A Platinum failure fails the preview; there is no Daytona
-  fallback. Daytona code remains only to delete previews created before
-  2026-09-22. The preview has its own PostgreSQL, Supabase, API, gateway,
-  frontend, Mailpit, and HTTPS origin.
-- The `preview` label deploys; it does not run `--target-full`. A deploy takes
-  about 7 min. The sticky pull request comment links the origin as soon as the
-  stack serves the commit ("live; NOT tested").
-- `gh workflow run deploy-preview.yml -f pr_number=<N>` redeploys and runs
-  `pnpm test -- --target-full` against that origin (40–80 min). The comment then
-  gives the result and its `/_tests/` HTML report. Run it only for a deployed-only
-  surface: managed Git, Platinum sessions, Stripe. It gates no merge.
-- A deploy that waited in the per-PR queue re-checks the head SHA, the label, and
-  the branch. When any one changed, the run cancels itself and deploys nothing.
-- A push to a `preview`-labelled branch redeploys its environment in place; the
-  label stays. Removing the label or deleting the branch tears it down. Closing
-  the pull request does not. An hourly reconciler deletes environments whose
-  branch no longer exists (`deploy-preview.yml` `teardown`, `teardown-branch`,
-  `reconcile`). It also stops (never deletes) a host whose pull request is not
-  an open `preview` pull request, or that idled over 1 hour. A stopped host
-  keeps its disk; a redeploy or the next request to its URL starts it again.
-- A preview suite waits up to 45 min before it starts until the Platinum pool
-  has 64 GB free and the managed org saw at most 100 new repositories in the
-  last hour (`PREVIEW_SUITE_*`). It then stops the session boxes it created.
-- Preview warm images contain dependencies and Docker layers only. They never
-  contain a database or runtime secret.
-- Preview Mailpit handles authentication and invite email. The dedicated
-  preview GitHub App runs the managed repository and CLI push flows. OAuth
-  initiation is the only allowed preview browser exclusion.
+- Before merging into `dev`, run T0 and the tests that cover your change (the
+  testing philosophy above). On a Mac, suite-wide modes exit `2`.
+- Every Linux CI job runs on a free GitHub-hosted runner (`ubuntu-24.04`,
+  `ubuntu-24.04-arm`, `ubuntu-22.04`; 4 vCPU / 16 GB on this public repo) through
+  `runs-on: ${{ vars.CI_RUNNER_<tier> || '<label>' }}`. Setting a
+  `CI_RUNNER_<tier>` repository variable moves that tier to another pool
+  without a PR. Never default a job to a paid runner (Blacksmith, a GitHub
+  larger runner): Blacksmith billed ~$2.7k in September 2026 for minutes
+  GitHub gives this repo for free. `tests/unit/image-build-speed-workflow.test.ts`
+  enforces the free default.
+- `.github/workflows/tests.yml` holds the six contract lanes — `core-flows`,
+  `core-db`, `packages-api`, `packages-cli`, `packages-kortixd`,
+  `packages-rest` — one GitHub-hosted runner each (`CI_RUNNER_L`). `core-*`
+  split the core run (`--core-group=flows|db`); `packages-*` are slices of
+  package quality (`--packages-only --package-group=<g>`). The concurrency
+  settings in `tests/bin/package-quality.ts` must not be raised. Each lane is
+  the unchanged root command at the exact requested SHA. Do not add CI-only
+  test logic.
+- The contract lanes run nightly on `dev`, once when a person adds the `test`
+  label to a pull request into `dev`, on dispatch, and inside the release
+  suite (`tests-release.yml` calls `tests.yml`). A push to `dev` and the pull
+  request into `staging` run nothing. A red nightly run comments the failing
+  lanes and suspect commits on the commit, once per new set of failing lanes.
+- The release suite (`tests-release.yml`, on the release PR into `prod`) runs
+  the contract lanes, the deployed API smoke (the flows tagged `deployed`, one
+  or two per deployment seam) and the browser journeys against deployed
+  staging, in parallel. `full suite + quality gates` requires all of them and
+  every other check on the release commit. A browser spec exists only for a
+  money-path journey (sign-in, onboarding, session load and streaming, desktop
+  parity, billing, connectors, invites); everything else is a REST flow or
+  nothing. CI records a video of every browser journey in the run's
+  `tests-release-browser-shard-N` artifact. A failed release-suite run reruns
+  its failed jobs once by itself (`rerun-failed-once.yml`): a job that passes
+  on the rerun is a flake to fix or delete.
+- `tests/unit/sandbox-workflow.test.ts` fails when any workflow except the
+  label-gated `tests.yml` and `deploy-preview.yml` triggers on a pull request
+  into `dev`, and pins both label gates to the label-added event.
+- The deployed half of the release suite (`--target-api-full`,
+  `--target-browser-full`) waits up to 15 min for staging to serve
+  `RELEASE_SOURCE_SHA`, then fails when any `deployed` flow is excluded or any
+  configured Playwright journey fails.
+- The `preview` label is not part of the development flow. Adding it deploys a
+  Platinum self-host environment for the PR (~7 min), once, and runs no tests.
+  A push does not redeploy. Only `gh workflow run deploy-preview.yml -f
+  pr_number=<N>` runs `--target-full` against a preview (40–80 min). Its mechanics are
+  in the **contributing** skill (`references/preview-environments.md`). Run a
+  preview of your change on your worktree's local stack by default.
 
 ### Product flow source of truth
 
@@ -567,18 +655,22 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 
 ### Release topology — dev, staging, prod
 
-- **`main` = dev trunk.** It is the repo default branch and deploys to
+- **`dev` = dev trunk.** It is the repo default branch and deploys to
   `dev.kortix.com` / `dev-api.kortix.com`. Direct pushes are allowed; breaking or
   incomplete development can live here while it is being shaken out.
 - **`staging` = release-candidate branch.** Nothing should land on staging unless
-  it is intended to be production-ready. Human/code changes enter staging by PR:
-  `main` -> `staging` for the full dev candidate, or a targeted branch ->
-  `staging` for a selective release candidate. Staging deploys to
-  `staging.kortix.com` / `staging-api.kortix.com` and must use the staging data
-  plane, not dev or prod.
+  it is intended to be production-ready. Promote to Production merges the
+  `dev` HEAD into staging itself (the PR runs no check), deploys it, and opens
+  the release PR whose release suite is the one gate. Staging is the deploy
+  target that suite runs against, not a test stage. Staging
+  deploys to `staging.kortix.com` / `staging-api.kortix.com` and must use the
+  staging data plane, not dev or prod. The full promote-and-gate flow, the
+  fix-forward loop, and the prod release steps live in the **kortix-release**
+  skill — that is the one place this is written out in full.
 - Staging deploys must apply pending DB migrations against `STAGING_DATABASE_URL`
-  before the staging EKS rollout. If that secret is missing or points at dev/prod,
-  treat the deploy as broken; staging must never fall back to dev, KE2E, or prod DBs.
+  before the staging ECS Fargate rollout. If that secret is missing or points at
+  dev/prod, treat the deploy as broken; staging must never fall back to dev,
+  KE2E, or prod DBs.
 - **`prod` = production.** Production moves only through **Promote to Production**,
   which uses `staging` as the source, opens a reviewed release PR into `prod`,
   publishes the release artifacts, and rolls production after merge.
@@ -608,12 +700,51 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
 - `agent-browser doctor` diagnoses launch and recording problems. Recording
   needs ffmpeg with libvpx and libx264.
 
+### API lint gate
+
+- `pnpm --filter kortix-api lint` runs in the `Tests` packages lane. Its rules
+  are in `apps/api/eslint.config.mjs`: layered imports, no Drizzle in route
+  files, no `(c: any)`, no `process.env` outside `config.ts`, no
+  `console.*`, a `replica-local:` comment on every empty module-level
+  `Map`/`Set`, and no import into `projects/` from outside it except
+  `projects/index.ts` or `projects/surface.ts`. Background timers are guarded by
+  `apps/api/src/__tests__/unit-worker-scope-wiring.test.ts` instead.
+
+### API code conventions (`apps/api/src`)
+
+- **Routes register explicitly.** A route module exports
+  `register<Name>Routes()`. The module that mounts the router calls it right
+  before `app.route()` (`app.ts`, `accounts/index.ts`, `router/index.ts`).
+  Never register at import time. Call order is dispatch order.
+- **No service imports a route module.** Shared logic lives in a service file
+  next to the routes (for example `projects/session-open/`).
+- **Services take an `Actor`, never a Hono `Context`.** The route reads the
+  request through `middleware/` and `http-*.ts` helpers, builds the actor
+  (`middleware/actor.ts`, memoized per request), and calls the service with
+  plain values. Parse `Authorization: Bearer` with `shared/bearer-token.ts`.
+- **Every background loop lives in `workers/<name>-worker.ts`.** The worker
+  owns its timer, start/stop and `runWorkerTick` call. The tick stays an
+  exported service function. `bootstrap.ts` imports every loop from `workers/`.
+- **`iam/` reads the membership, group and role tables.** Use the read models
+  in `iam/membership-read.ts`, `iam/group-read.ts` and `iam/role-read.ts`.
+- **No function longer than 300 lines.** Split long functions into named steps.
+- **SQL trace:** `KORTIX_SQL_TRACE=<file>` appends every pool statement to the
+  file. Diff two traces to prove a refactor runs the same SQL.
+- `apps/api/eslint-suppressions.json` holds the violations that existed when
+  each rule was added. A new violation fails. A fixed one fails until you run
+  `pnpm --filter kortix-api lint:prune` and commit the smaller file. Never
+  absorb a new violation with `--suppress-all`.
+
 ### Frontend type/lint gate
 
-- `apps/web` `tsc --noEmit` is clean apart from ~15 known `@types/bun`
-  `test.each` errors in 3 test files (`app/(system)/api/og/template/template-url.test.ts`,
-  `features/file-viewer/preview-fit.test.tsx`,
-  `features/session/action-panel/easy/easy-panel-logic.test.ts`).
+- Typecheck `apps/web` with `pnpm --filter Kortix-Computer-Frontend typecheck`
+  (tsgo, incremental). Never run raw `tsc --noEmit` there. Measured on
+  2026-10-21 on a 24 GB Mac: raw `tsc` ran 817 s, held 3.18 GB, and was
+  killed before it finished. Cold `tsgo` takes 12.1 s at 5.0 GB peak. A warm
+  incremental run takes 1.1 s at 1.7 GB.
+- On 2026-10-21 the tsgo script reported 0 errors on `dev`. The bar is
+  relative: a branch adds no type error to the files it touches. Compare against `origin/dev` with the same command, not
+  against a number in this file.
   The old ~1500 `TS2786` / `IntrinsicAttributes` noise from a React 19↔18
   types mismatch (two copies of `@types/react` in one program — `packages/sdk`
   had its own) is gone as of the Next 16 upgrade. If `TS2786` appears again,
@@ -624,6 +755,15 @@ See `tests/e2e/helpers/session-auth.ts` for the exact calls.
   rules pending a dedicated audit — expected until that audit lands.
 
 ### Frontend design standard — Jay/Kortix bar
+
+#### Canonical design references
+
+| Surface | Read before changing UI | Implemented source |
+|---|---|---|
+| Web (`apps/web`) | `.agents/skills/kortix-brand/SKILL.md` (the router: values, voice, claims, decision history), then `.agents/skills/kortix-design-system/SKILL.md` for components | `apps/web/src/app/globals.css` tokens (generated from `.agents/skills/kortix-brand/references/visual/visual-system.json`), `packages/ui/src/primitives/` (apps/web imports each one as `@kortix/ui/<name>`; apps/web has no re-export shims, `tests/unit/web-no-ui-shims.test.ts` enforces it), the live `/design-system` route |
+| `@kortix/ui` hosts (Kortix Apps, `apps/white-label/reskin`, `apps/white-label/lumen`, `apps/white-label/team-console`, SDK customer apps) | `packages/ui/skills/kortix-ui/SKILL.md` (setup, which component, white-label theming, the `SessionThread` chat), then the web row for Kortix-owned surfaces | `packages/ui/src/` (components, `session/` for the `SessionThread` chat, `styles/tokens.css` + `theme.css`, prebuilt `dist/styles.css`); white-label = CSS variable overrides, never a forked component |
+| Desktop (Electron shell) | The web row — the shell renders `apps/web` — plus `apps/desktop-electron/README.md` for the shell boundary, then the parity gate below | `apps/web` rendered by the shell; native window geometry in the shell's titlebar classes |
+| Mobile (`apps/mobile`) | `apps/mobile/design.md` for screens, `apps/mobile/AGENTS.md` for primitives | `apps/mobile/global.css` colors, `apps/mobile/components/ui/`; stock Tailwind spacing for touch targets |
 
 #### Desktop parity is a UI gate
 
@@ -650,19 +790,23 @@ prevent every future regression.
 When touching any visual surface in `apps/web`, treat brand fit as a release
 gate, not polish:
 
-- Read `.agents/skills/kortix-brand-guidelines/SKILL.md` before writing the first
-  `className`. It is the value law: the complete allowlist of every color,
-  spacing step, type rung, radius, elevation, and duration you may use. Note
-  `--spacing: 0.23rem` — Tailwind's scale is 8% tighter here, so a 16px mockup
-  padding is `p-4`, never `p-[16px]`. Run its `audit.sh` over your changed paths
-  before opening the PR; it must be clean on files you touched.
+- Read `.agents/skills/kortix-brand/SKILL.md` before writing the first
+  `className` or the first user-facing string. It routes you to the value law:
+  the complete allowlist of every color, spacing step, type rung, radius,
+  elevation, and duration you may use. Note `--spacing: 0.23rem` — Tailwind's
+  scale is 8% tighter here, so a 16px mockup padding is `p-4`, never
+  `p-[16px]`. Run `.agents/skills/kortix-brand/scripts/audit.sh` over your
+  changed paths before opening the PR; it must be clean on files you touched.
+  `references/visual/visual-system.json` is the only file with values: edit it,
+  then run `scripts/generate-tokens.ts`. Never edit a generated region of
+  `globals.css` by hand.
 - Read `.agents/skills/kortix-design-system/SKILL.md` next and compose existing
-  primitives from `@/components/ui/*` before inventing local chrome.
+  primitives from `@kortix/ui/*` before inventing local chrome.
 - Match the current Jay Suthar / Kortix product aesthetic: calm neutral surfaces,
   dense-but-legible UI, black/white plus one earned accent, token-driven spacing,
   and no decorative color, glow, or one-off rounded boxes.
 - Use recent product surfaces as references before editing: `/design-system`,
-  `apps/web/src/features/workspace/project-layout/project-home.tsx`,
+  `packages/ui/src/workspace/layout/project-home.tsx`,
   `apps/web/src/components/ui/wallpaper-background.tsx`, and the account/IAM
   screens called out by the design-system skill.
 - Verify visual work in the browser and include the exact lint/typecheck commands

@@ -25,6 +25,10 @@ case ":${PATH:-}:" in
 esac
 export PATH
 
+# No core dumps: a crash dump carries the process environment, secrets included.
+# Set before the privilege drop so the hard limit binds every descendant.
+ulimit -c 0 2>/dev/null || true
+
 if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
   # TEMPORARY: Platinum starts with /dev/shm as a plain directory and low
   # nofile limits. Both settings must be repaired before the privilege drop.
@@ -32,8 +36,21 @@ if [ "$(id -u)" -eq 0 ] && id kortix >/dev/null 2>&1; then
     || { mkdir -p /dev/shm && mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm; } 2>/dev/null \
     || true
   chmod 1777 /dev/shm 2>/dev/null || true
+  # TEMPORARY: Platinum writes /etc/hosts as 0700 root:root at every boot, so
+  # the runtime user cannot read it and `localhost` never resolves — a Bun
+  # fetch to an http://localhost origin then dials ::1 and fails with
+  # "Unable to connect". The content is already correct; only the mode is.
+  chmod 644 /etc/hosts 2>/dev/null || true
   ulimit -Hn 1048576 2>/dev/null || true
   ulimit -Sn 1048576 2>/dev/null || true
+  # kortix.yaml `container_runtime: true` sets KORTIX_CONTAINER_RUNTIME=1 in the
+  # image. A stock dockerd then gets bridge + overlay + netfilter: the provider
+  # baked the kernel modules and the guest kernel loads them through kmod. The
+  # runtime user reaches the socket through the docker group.
+  if [ "${KORTIX_CONTAINER_RUNTIME:-}" = 1 ] && command -v dockerd >/dev/null 2>&1 \
+      && ! pgrep -x dockerd >/dev/null 2>&1; then
+    nohup dockerd >/var/log/dockerd.log 2>&1 </dev/null &
+  fi
   export HOME=/home/kortix USER=kortix LOGNAME=kortix SHELL=/bin/bash
   if command -v setpriv >/dev/null 2>&1; then
     exec setpriv --reuid kortix --regid kortix --init-groups "$0" "$@"
@@ -54,6 +71,167 @@ if [ "${HOME:-/}" = "/" ]; then
 fi
 
 WORKSPACE="${KORTIX_WORKSPACE:-/workspace}"
+
+# ---------------------------------------------------------------------------
+# Kortix Drive ownership.
+#
+# Drive volumes mount root:root, and files the Kortix web app writes into a
+# drive arrive root-owned (0644 files, 0755 folders). The runtime user must be
+# able to change them without sudo. A small root helper follows every
+# read-write mount under /drives (drives can be attached at any time) and
+# hands each new or changed entry to the runtime user. Read-only mounts are
+# left alone. It never blocks the boot: a failure leaves drives root-owned,
+# exactly as before.
+# ---------------------------------------------------------------------------
+start_drive_owner() {
+  local py=/home/kortix/.local/bin/python3
+  [ -x "${py}" ] || py=$(command -v python3 || true)
+  [ -n "${py}" ] || return 0
+  local as_root=()
+  [ "$(id -u)" -eq 0 ] || as_root=(sudo -n)
+  "${as_root[@]}" setsid -f "${py}" - >/tmp/kortix-drive-owner.log 2>&1 <<'KORTIX_DRIVE_OWNER_PY'
+"""Keep every writable Kortix Drive mount owned by the sandbox runtime user.
+
+Drive volumes come up root:root, and every file the Kortix web app writes into
+a drive lands root-owned (0644 files, 0755 folders). The agent runs as the
+runtime user without sudo in its normal flow, so without this it could not
+change an uploaded file or write into an uploaded folder.
+
+Runs as root, started by the entrypoint. Every few seconds it looks for
+read-write mounts under /drives (a drive can be attached at any time), fixes
+ownership once, then follows the mount with inotify and fixes each new or
+changed entry as it appears. Read-only mounts are left alone. stdlib only.
+"""
+
+import ctypes
+import os
+import pwd
+import struct
+import sys
+import time
+
+ROOT = "/drives"
+USER = os.environ.get("KORTIX_DRIVE_OWNER", "kortix")
+IN_ATTRIB, IN_MOVED_TO, IN_CREATE = 0x4, 0x80, 0x100
+IN_DELETE_SELF, IN_UNMOUNT, IN_IGNORED, IN_ISDIR, IN_Q_OVERFLOW = 0x400, 0x2000, 0x8000, 0x40000000, 0x4000
+MASK = IN_ATTRIB | IN_MOVED_TO | IN_CREATE | IN_DELETE_SELF
+SKIP = {"lost+found"}
+
+libc = ctypes.CDLL("libc.so.6", use_errno=True)
+pw = pwd.getpwnam(USER)
+UID, GID = pw.pw_uid, pw.pw_gid
+
+
+def own(path):
+    try:
+        st = os.lstat(path)
+        if st.st_uid != UID or st.st_gid != GID:
+            os.lchown(path, UID, GID)
+    except OSError:
+        pass
+
+
+def rw_mounts():
+    out = []
+    with open("/proc/mounts") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            mnt = parts[1].replace("\\040", " ")
+            if mnt.startswith(ROOT + "/") and "rw" in parts[3].split(","):
+                out.append(mnt)
+    return out
+
+
+class Watcher:
+    def __init__(self):
+        self.fd = libc.inotify_init1(os.O_NONBLOCK | os.O_CLOEXEC)
+        if self.fd < 0:
+            raise OSError(ctypes.get_errno(), "inotify_init1")
+        self.paths = {}  # wd -> dir
+        self.mounts = set()
+
+    def add_tree(self, top):
+        for dirpath, dirnames, filenames in os.walk(top):
+            dirnames[:] = [d for d in dirnames if not (dirpath == top and d in SKIP)]
+            own(dirpath)
+            for name in filenames:
+                own(os.path.join(dirpath, name))
+            wd = libc.inotify_add_watch(self.fd, dirpath.encode(), MASK)
+            if wd >= 0:
+                self.paths[wd] = dirpath
+
+    def sync_mounts(self):
+        live = set(rw_mounts())
+        for mnt in sorted(live - self.mounts):
+            self.add_tree(mnt)
+        self.mounts = live
+
+    def drain(self):
+        try:
+            buf = os.read(self.fd, 1 << 16)
+        except BlockingIOError:
+            return
+        i = 0
+        while i + 16 <= len(buf):
+            wd, mask, _cookie, length = struct.unpack_from("iIII", buf, i)
+            name = buf[i + 16 : i + 16 + length].split(b"\0", 1)[0].decode(errors="surrogateescape")
+            i += 16 + length
+            if mask & IN_Q_OVERFLOW:
+                # Missed events: walk every mount again.
+                self.mounts = set()
+                continue
+            if mask & (IN_IGNORED | IN_UNMOUNT | IN_DELETE_SELF):
+                self.paths.pop(wd, None)
+                continue
+            base = self.paths.get(wd)
+            if not base:
+                continue
+            path = os.path.join(base, name) if name else base
+            if mask & IN_ISDIR and mask & (IN_CREATE | IN_MOVED_TO):
+                self.add_tree(path)
+            else:
+                own(path)
+
+
+def main():
+    w = Watcher()
+    last = 0.0
+    while True:
+        now = time.monotonic()
+        if now - last >= 3:
+            try:
+                w.sync_mounts()
+            except Exception as err:  # never die: the next pass retries
+                print(f"drive-owner: {err}", file=sys.stderr, flush=True)
+            last = now
+        w.drain()
+        time.sleep(0.2)
+
+
+if __name__ == "__main__":
+    main()
+KORTIX_DRIVE_OWNER_PY
+}
+# Only a session with drives (the API sets KORTIX_DRIVES=1): every other box
+# boots exactly as it did before drives, with no helper process.
+if [ "${KORTIX_DRIVES:-}" = "1" ]; then
+  start_drive_owner || true
+fi
+
+# Kortix Drive off Platinum (KORTIX_DRIVE_SYNC=1): no volume mounts here; the
+# daemon copies the session's drives into /drives and keeps them in sync, as
+# the runtime user, so /drives must be that user's.
+if [ "${KORTIX_DRIVE_SYNC:-}" = "1" ]; then
+  if [ "$(id -u)" -eq 0 ]; then
+    mkdir -p /drives && chown "$(id -u):$(id -g)" /drives || true
+  else
+    { sudo -n mkdir -p /drives && sudo -n chown "$(id -u):$(id -g)" /drives; } 2>/dev/null \
+      || echo "[entrypoint] drive sync: cannot hand /drives to $(id -un) (no passwordless sudo); the daemon syncs into ~/drives" >&2
+  fi
+fi
+
 DEADLINE_S=120
 # Require 2 consecutive clean probes at a tight 0.25s cadence (~0.5s on the
 # common path where the dir is stable immediately) instead of 4×0.5s=2s. The
@@ -238,36 +416,26 @@ mkdir -p "${AGENT_STATE_DIR}" 2>/dev/null || true
 # and exits ${SWAP_CODE} for this loop to install, instead of self-swapping its
 # own running binary — which is unsafe and which warm-fork/resume/restart would
 # not re-run anyway. Export the resolved state dir so it stages into the exact
-# slot select_agent/promote_staged_agent read. See apps/kortix-sandbox-agent-server/src/cli.ts.
+# slot select_agent/promote_staged_agent read. See apps/kortix-sandbox-agent-server/src/app/cli.ts.
 export KORTIX_SUPERVISED=1
 export KORTIX_AGENT_STATE_DIR="${AGENT_STATE_DIR}"
 
-COMPILED_RUNTIME_PATH=""
-COMPILED_RUNTIME_ACTIVE=0
-case "${KORTIX_COMPILED_BOOT_MODE:-off}" in
-  off) ;;
-  shadow|prefer|required)
-    bootstrap_agent="$(select_agent)"
-    if COMPILED_RUNTIME_PATH="$("${bootstrap_agent}" install-compiled-runtime)" \
-      && [ -f "${COMPILED_RUNTIME_PATH}" ]; then
-      echo "[entrypoint] verified compiled server.mjs at ${COMPILED_RUNTIME_PATH}" >&2
-      case "${KORTIX_COMPILED_BOOT_MODE}" in
-        prefer|required) COMPILED_RUNTIME_ACTIVE=1 ;;
-      esac
-    else
-      COMPILED_RUNTIME_PATH=""
-      if [ "${KORTIX_COMPILED_BOOT_MODE}" = "required" ]; then
-        echo "[entrypoint] compiled runtime is required but unavailable" >&2
-        exit 1
-      fi
-      echo "[entrypoint] compiled runtime unavailable; using baked agent" >&2
-    fi
-    ;;
-  *)
-    echo "[entrypoint] invalid KORTIX_COMPILED_BOOT_MODE=${KORTIX_COMPILED_BOOT_MODE}" >&2
-    exit 1
-    ;;
-esac
+# ONE SUPERVISOR PER BOX. Platinum's pt-init launches this script once, but a
+# relaunch from outside (the control plane's runtime repair, an operator) starts
+# another. Prod 2026-10-13: four repairs raced, four supervisors started at once,
+# three daemons lost the :8000 bind, and their fast exits counted as a bad update
+# here: the box rolled back and pinned updates off. A second supervisor now
+# waits for the first one's lock (a relaunch that just killed it gets it within
+# seconds) and otherwise exits without launching anything. fd 9 is closed for
+# the daemon, so the lock dies with this loop and never with a stray child.
+# E2B wraps this script in `flock -n /run/kortix-entrypoint.lock` already; this
+# lock is a separate file so the two never contend.
+if command -v flock >/dev/null 2>&1 && exec 9>"${AGENT_STATE_DIR}/supervisor.lock"; then
+  if ! flock -w "${KORTIX_SUPERVISOR_LOCK_WAIT_S:-30}" 9; then
+    echo "[entrypoint] another supervisor owns this box; exiting without launching a daemon" >&2
+    exit 0
+  fi
+fi
 
 echo "[entrypoint] daemon takeover (cwd=/, workspace=${WORKSPACE})" >&2
 while :; do
@@ -278,23 +446,11 @@ while :; do
   agent_bin="$(select_agent)"
   started=$(date +%s)
   set +e
-  if [ "${COMPILED_RUNTIME_ACTIVE}" -eq 1 ]; then
-    KORTIX_AGENT_BIN="${agent_bin}" node "${COMPILED_RUNTIME_PATH}" "$@"
-  else
-    "${agent_bin}" "$@"
-  fi
+  "${agent_bin}" "$@" 9>&-
   status=$?
   set -e
   ran=$(( $(date +%s) - started ))
 
-  if [ "${COMPILED_RUNTIME_ACTIVE}" -eq 1 ] \
-     && { [ "${status}" -eq 78 ] || [ "${status}" -eq 127 ]; } \
-     && [ "${KORTIX_COMPILED_BOOT_MODE}" = "prefer" ]; then
-    echo "[entrypoint] compiled runtime rejected launch; falling back to baked agent" >&2
-    COMPILED_RUNTIME_ACTIVE=0
-    early_exits=0
-    continue
-  fi
 
   if [ "${status}" -eq "${SWAP_CODE}" ]; then
     echo "[entrypoint] daemon requested update swap (ran ${ran}s)" >&2
@@ -353,6 +509,19 @@ while :; do
       continue
     fi
     echo "[entrypoint] agent SIGKILLed ${sigkill_exits} times without a healthy run; giving up" >&2
+  fi
+
+  # On Platinum nothing that reaches this line is a deliberate stop: a stop
+  # there is a memory snapshot, never a signal to this script, and PID 1
+  # (`pt-init`) never relaunches us. Exiting leaves a VM that answers nothing
+  # on :8000 forever, and every resume of its snapshot resumes the corpse.
+  # Prod 2026-09-28: `agent exited 0 after 6000s; exiting`, dead for 18 h.
+  # So relaunch always. A daemon that dies on start loops at most every 5 s,
+  # still repairable from outside, which a corpse is not.
+  if grep -q pt-init "${PID1_CMDLINE:-/proc/1/cmdline}" 2>/dev/null; then
+    echo "[entrypoint] agent exited ${status} after ${ran}s; pt-init never relaunches, relaunching" >&2
+    [ "${ran}" -lt "${HEALTHY_AFTER_S}" ] && sleep 5
+    continue
   fi
 
   echo "[entrypoint] agent exited ${status} after ${ran}s; exiting" >&2

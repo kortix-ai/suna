@@ -5,7 +5,7 @@ import { clearSessionRuntime, getSessionRuntime,
 } from "../../session/session-runtime-registry";
 import { isSessionStartError,
   projectSessionStartSeed,
-  sessionStartKey, startProjectSession,
+  sessionStartKey, startProjectSession, startProjectSessionOrThrow,
 } from "./session-sandbox";
 import type { ProjectSession } from "./sessions";
 
@@ -101,6 +101,7 @@ test("projectSessionStartSeed turns a running inventory row into a ready cache s
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-02T00:00:00Z",
     },
+    runtime_session_id: "oc-1",
     opencode_session_id: "oc-1",
     runtime_url: "http://test.local/v1/p/ext-1/8000",
   });
@@ -180,6 +181,19 @@ test("startProjectSession explicitly requests the preserved previous-repository 
   expect(last().url).toBe(
     `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=5500&repository_mode=previous`,
   );
+});
+
+test("startProjectSession keepStopped asks the API to report a stopped box, never wake it", async () => {
+  nextResponse = {
+    status: 200,
+    body: { stage: "stopped", agent_name: "default", retriable: false, sandbox: null, opencode_session_id: null },
+  };
+  await startProjectSession(PROJECT, SESSION, { waitMs: 15_000, keepStopped: true });
+  expect(last().url).toBe(
+    `http://test.local/v1/projects/${PROJECT}/sessions/${SESSION}/start?wait_ms=15000&keep_stopped=1`,
+  );
+  await startProjectSession(PROJECT, SESSION, { waitMs: 15_000 });
+  expect(last().url).not.toContain("keep_stopped");
 });
 
 test("startProjectSession omits the query string for a zero or negative waitMs", async () => {
@@ -275,8 +289,28 @@ test("startProjectSession populates the shared session-runtime registry once sta
   const entry = getSessionRuntime(PROJECT, SESSION);
   expect(entry).toBeDefined();
   expect(entry?.opencodeSessionId).toBe("ocs-ready-1");
+  // A pre-W4 API sends only `opencode_session_id`; the neutral field still carries it.
+  expect(entry?.runtimeSessionId).toBe("ocs-ready-1");
   expect(entry?.sandboxId).toBe("ext-ready-1");
   expect(entry?.runtimeUrl).toBe("http://test.local/v1/p/ext-ready-1/8000");
+});
+
+test("startProjectSession reads the neutral runtime_session_id first", async () => {
+  nextResponse = {
+    status: 200,
+    body: {
+      stage: "ready",
+      agent_name: "default",
+      retriable: false,
+      sandbox: readySandbox({ external_id: "ext-ready-neutral" }),
+      runtime_session_id: "rs-neutral",
+      opencode_session_id: null,
+    },
+  };
+  await startProjectSession(PROJECT, SESSION);
+  const entry = getSessionRuntime(PROJECT, SESSION);
+  expect(entry?.runtimeSessionId).toBe("rs-neutral");
+  expect(entry?.opencodeSessionId).toBe("rs-neutral");
 });
 
 test("startProjectSession does NOT populate the registry when ready but sandbox has no external_id", async () => {
@@ -323,4 +357,36 @@ test("sessionStartKey returns a stable tuple keyed by project + session id", () 
   expect(sessionStartKey("PA", "SA")).toEqual(["session-start", "PA", "SA"]);
   expect(sessionStartKey("PA", "SA")).toEqual(sessionStartKey("PA", "SA"));
   expect(sessionStartKey("PA", "SA")).not.toEqual(sessionStartKey("PB", "SA"));
+});
+
+test("startProjectSessionOrThrow resolves the start answer and records a ready runtime", async () => {
+  nextResponse = {
+    status: 200,
+    body: { stage: "ready", agent_name: "default", retriable: false, sandbox: readySandbox(), runtime_session_id: "rt-1" },
+  };
+  const result = await startProjectSessionOrThrow(PROJECT, SESSION, { waitMs: 5000 });
+  expect(last()).toMatchObject({ method: "POST", url: "http://test.local/v1/projects/P1/sessions/S1/start?wait_ms=5000" });
+  expect(result.stage).toBe("ready");
+  expect(getSessionRuntime(PROJECT, SESSION)?.runtimeSessionId).toBe("rt-1");
+});
+
+test("startProjectSessionOrThrow rejects on a transient 503 where startProjectSession yields null", async () => {
+  nextResponse = { status: 503, body: { error: "provider unavailable" } };
+  expect(await startProjectSession(PROJECT, SESSION)).toBeNull();
+  const error = await startProjectSessionOrThrow(PROJECT, SESSION).catch((e: unknown) => e);
+  expect((error as { status?: number }).status).toBe(503);
+});
+
+test("startProjectSessionOrThrow keeps the billing detail of a 402 for the upgrade gate", async () => {
+  nextResponse = {
+    status: 402,
+    body: { message: "Out of credits", code: "insufficient_credits", account_id: "acct-1", balance: 0 },
+  };
+  const error = (await startProjectSessionOrThrow(PROJECT, SESSION).catch((e: unknown) => e)) as {
+    status?: number;
+    detail?: { code?: string; account_id?: string };
+  };
+  expect(error.status).toBe(402);
+  expect(error.detail?.code).toBe("insufficient_credits");
+  expect(error.detail?.account_id).toBe("acct-1");
 });

@@ -9,12 +9,12 @@
  * `apps/api/src/projects/session-lifecycle/runtime-wake-fence.ts:10`), after
  * which maintenance stamps `stopReason: 'runtime_wake_failed'` and every
  * subsequent `/start` short-circuits to a terminal payload
- * (`apps/api/src/projects/routes/shared.ts:672-694`)
+ * (`apps/api/src/projects/session-open/index.ts:672-694`)
  *
  *     "Couldn't start session <id> — The session runtime did not become
  *      reachable. Restart the session to try again."
  *
- * Measured on SampleCo (2026-08-26, box `inqwpv4a1cc1kynlg46k8`): that card
+ * Measured on SampleCo (2026-08-26, one E2B box): that card
  * painted while the box was SECONDS from ready — its daemon logged
  * `opencode ready` at 06:10:02, right after the budget expired. The card is a
  * dead end with no auto-recovery, and the human's fix is always the same one

@@ -151,3 +151,12 @@ describe('computeSnapshotHash', () => {
     expect(a.contentHash).toBe(b.contentHash);
   });
 });
+
+describe('computeSnapshotHash containerRuntime', () => {
+  const base = { dockerfile: 'FROM x\n', contextTreeOid: 't', runtimeFingerprint: 'r', spec: { cpu: 2 } };
+  test('false/absent keeps the existing identity; true moves it', () => {
+    const plain = computeSnapshotHash(base).contentHash;
+    expect(computeSnapshotHash({ ...base, containerRuntime: false }).contentHash).toBe(plain);
+    expect(computeSnapshotHash({ ...base, containerRuntime: true }).contentHash).not.toBe(plain);
+  });
+});

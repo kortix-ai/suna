@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { connectors, projectSecrets, projectSessionSecretHandles } from '@kortix/db';
+import { connectors, projectSecrets, projectSecretTombstones, projectSessionSecretHandles, projects, roleAssignments } from '@kortix/db';
 import type { SecretEgressPolicy } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../projects/lib/access';
@@ -20,7 +20,11 @@ const PROJECT_ACTIONS = {
   PROJECT_SECRET_READ: 'project.secret.read',
   PROJECT_SECRET_WRITE: 'project.secret.write',
 };
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realIam = await import('../iam');
+mock.module('../iam', () => ({ ...realIam, PROJECT_ACTIONS }));
 
 let agentGrant: Record<string, unknown> | null = null;
 let authType: 'service_account' | 'supabase' | 'pat' = 'supabase';
@@ -136,6 +140,16 @@ const databaseMock = {
       if (table === connectors) {
         return { where: async () => boundConnectorSlugs.map((slug) => ({ slug })) };
       }
+      // Secret audiences (secret-audience.ts): this project narrows none.
+      if (table === roleAssignments) return { where: async () => [] };
+      // The unset tombstone's project-row lock (`recordProjectSecretTombstone`).
+      if (table === projects) {
+        return {
+          where: () => ({
+            limit: () => Object.assign(Promise.resolve([{ status: 'active' }]), { for: async () => [{ status: 'active' }] }),
+          }),
+        };
+      }
       if (table !== projectSecrets) throw new Error('unexpected table');
       // The destination-collision query is the only projectSecrets select that
       // asks for identifier + policy and no secretId, and the only one that
@@ -167,6 +181,11 @@ const databaseMock = {
     };
   },
   insert: (table: unknown) => {
+    // The unset tombstone write (KRTX-2056): recorded, not asserted here —
+    // its behavior is covered by the integration test.
+    if (table === projectSecretTombstones) {
+      return { values: () => ({ onConflictDoUpdate: async () => undefined }) };
+    }
     if (table !== projectSecrets) throw new Error('unexpected table');
     return {
       values: (values: Record<string, unknown>) => {
@@ -184,6 +203,7 @@ const databaseMock = {
     };
   },
   delete: (table: unknown) => {
+    if (table === projectSecretTombstones) return { where: async () => undefined };
     if (table !== projectSecrets) throw new Error('unexpected table');
     return {
       where: async () => {
@@ -216,9 +236,12 @@ mock.module('../projects/lib/access', () => ({
     adminBypass: false,
   }),
   assertProjectCapability: async () => undefined,
+  projectCapabilityAllowed: async () => false,
 }));
 
+const realSync = await import('../projects/lib/sandbox-env-sync');
 mock.module('../projects/lib/sandbox-env-sync', () => ({
+  ...realSync,
   propagateProjectSecretsToActiveSandboxes: async (projectId: string, options: unknown) => {
     propagations.push({ projectId, options });
     if (propagationGate) await propagationGate;
@@ -245,9 +268,9 @@ mock.module('../shared/audit', () => ({
 const { projectsApp } = await import('../projects/lib/app');
 // The secret and provider-OAuth routes, in production registration order.
 // secrets.ts registers the `/secrets/*` write rate limit ahead of them.
-await import('../projects/routes/secrets');
-await import('../projects/routes/secret-delivery');
-await import('../projects/routes/provider-oauth');
+(await import('../projects/routes/secrets')).registerSecretsRoutes();
+(await import('../projects/routes/secret-delivery')).registerSecretDeliveryRoutes();
+(await import('../projects/routes/provider-oauth')).registerProviderOauthRoutes();
 
 function buildApp() {
   const app = new Hono<{

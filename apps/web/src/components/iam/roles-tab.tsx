@@ -13,6 +13,10 @@ import { useTranslations } from '@/i18n/use-translations';
 // or Projects (project scope) exactly like a built-in role is, and shows up as
 // the row's role there. The muted note under the header points at that.
 //
+// Enterprise-gated as a pane (Jay, 2026-10-13): without the `rbac`
+// entitlement the tab is `EnterpriseUpsell` and nothing else — no read-only
+// role list, no disabled New role, no banner.
+//
 // Built-in roles are read-only; only custom (is_system === false) roles can be
 // edited or deleted, and only when canManage is true. Built-ins can be
 // duplicated into a new custom role as a starting point. The capability picker
@@ -24,27 +28,25 @@ import { invalidatePermissionProbes } from '@kortix/sdk/react';
 import {
   CopyIcon as Copy,
   EyeIcon as Eye,
-  LockIcon as Lock,
   PencilSimpleIcon,
   PlusIcon as Plus,
   ShieldIcon as Shield,
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import Hint from '@kortix/ui/hint';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -53,27 +55,26 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Textarea } from '@/components/ui/textarea';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Textarea } from '@kortix/ui/textarea';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   AccessList,
-  AccessRow,
   type KebabItem,
   RBAC_UPSELL_MESSAGE,
   builtinRoleDescriptor,
   pluralize,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/access/access/index';
+import { AccessRow } from '@kortix/ui/access';
 import {
   type IamRole,
   type ResourceType,
@@ -87,6 +88,7 @@ import {
   updateRolePermissions,
 } from '@/lib/iam-client';
 import type { AccountRole, ProjectRole } from '@kortix/sdk';
+import { EnterpriseUpsell } from './enterprise-upsell';
 import { RoleCapabilityMatrix } from './role-capability-matrix';
 
 interface RolesTabProps {
@@ -108,26 +110,9 @@ interface RolePrefill {
 
 export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const openDemo = useRequestDemo();
+  if (!rbacEnabled) return <EnterpriseUpsell feature="roles" accountId={accountId} />;
   return (
     <div className="space-y-6">
-      {canManage && !rbacEnabled && (
-        <InfoBanner
-          tone="info"
-          title={tI18nComplete.raw('text9d48410d14d3')}
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openDemo({ source: 'accounts-roles' })}
-            >
-              {tI18nComplete.raw('text604abea32b49')}
-            </Button>
-          }
-        >
-          {RBAC_UPSELL_MESSAGE}
-        </InfoBanner>
-      )}
       {/* Where the "Custom-role assignments" table used to be. A role is
           defined here and handed out from Members or Projects — say so, so
           nobody hunts for a launcher this tab deliberately no longer has. */}
@@ -141,10 +126,11 @@ export function RolesTab({ accountId, canManage, rbacEnabled }: RolesTabProps) {
 
 function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createPrefill, setCreatePrefill] = useState<RolePrefill | null>(null);
-  const [editTarget, setEditTarget] = useState<IamRole | null>(null);
-  const [viewTarget, setViewTarget] = useState<IamRole | null>(null);
+  const [dialog, setDialog] = useState<
+    | { mode: 'create'; prefill: RolePrefill | null }
+    | { mode: 'edit' | 'view'; role: IamRole }
+    | null
+  >(null);
   const [deleteTarget, setDeleteTarget] = useState<IamRole | null>(null);
 
   const rolesQuery = useQuery({
@@ -158,30 +144,17 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
   const roles = rolesQuery.data ?? [];
 
   function openCreate(prefill: RolePrefill | null) {
-    setCreatePrefill(prefill);
-    setCreateOpen(true);
+    setDialog({ mode: 'create', prefill });
   }
 
-  const newRoleButton =
-    canManage &&
-    (rbacEnabled ? (
-      <Button size="sm" variant="secondary" onClick={() => openCreate(null)} className="gap-1.5">
-        <Plus className="size-4" />
-        {tI18nComplete.raw('text500f2f9d3956')}
-      </Button>
-    ) : (
-      <Hint label={RBAC_UPSELL_MESSAGE} side="top" className="max-w-xs">
-        <span className="inline-flex items-center gap-1.5">
-          <Button size="sm" variant="secondary" className="gap-1.5" disabled>
-            <Plus className="size-4" />
-            {tI18nComplete.raw('text500f2f9d3956')}
-          </Button>
-          <Badge variant="outline" size="sm">
-            {tI18nComplete.raw('text3fbe5ed156f1')}
-          </Badge>
-        </span>
-      </Hint>
-    ));
+  // `RolesTab` renders this only with the `rbac` entitlement, so the
+  // button never needs a disabled, upsold twin.
+  const newRoleButton = canManage && (
+    <Button size="sm" variant="secondary" onClick={() => openCreate(null)} className="gap-1.5">
+      <Plus className="size-4" />
+      {tI18nComplete.raw('text500f2f9d3956')}
+    </Button>
+  );
 
   // One header — "Roles · N" + New role — in every state, so the primary
   // action never disappears while the list loads or fails. Non-row states
@@ -235,8 +208,8 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
               role={role}
               canManage={canManage}
               rbacEnabled={rbacEnabled}
-              onEdit={() => setEditTarget(role)}
-              onView={() => setViewTarget(role)}
+              onEdit={() => setDialog({ mode: 'edit', role })}
+              onView={() => setDialog({ mode: 'view', role })}
               onDelete={() => setDeleteTarget(role)}
               onDuplicate={(prefill) => openCreate(prefill)}
             />
@@ -244,39 +217,14 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
         )}
       </AccessList>
 
-      {createOpen && (
+      {dialog && (
         <RoleDialog
+          key={dialog.mode === 'create' ? 'create' : `${dialog.mode}:${dialog.role.role_id}`}
+          {...dialog}
           accountId={accountId}
-          mode="create"
-          prefill={createPrefill}
-          open={createOpen}
+          open={true}
           onOpenChange={(o) => {
-            setCreateOpen(o);
-            if (!o) setCreatePrefill(null);
-          }}
-        />
-      )}
-
-      {editTarget && (
-        <RoleDialog
-          accountId={accountId}
-          mode="edit"
-          role={editTarget}
-          open={!!editTarget}
-          onOpenChange={(o) => {
-            if (!o) setEditTarget(null);
-          }}
-        />
-      )}
-
-      {viewTarget && (
-        <RoleDialog
-          accountId={accountId}
-          mode="view"
-          role={viewTarget}
-          open={!!viewTarget}
-          onOpenChange={(o) => {
-            if (!o) setViewTarget(null);
+            if (!o) setDialog(null);
           }}
         />
       )}
@@ -291,6 +239,9 @@ function RolesSection({ accountId, canManage, rbacEnabled }: RolesTabProps) {
     </div>
   );
 }
+
+/** Sentence-case sans text on the outline badge (the base badge is mono uppercase). */
+const ROLE_TAG = 'text-muted-foreground font-sans font-normal tracking-normal';
 
 function RoleRow({
   accountId,
@@ -355,17 +306,11 @@ function RoleRow({
   }
 
   // "What can this role do?" never requires permission to change it, so
-  // View capabilities is the one item everybody gets. Everything that writes
-  // sits behind `canManage`, and behind `rbacEnabled` on top of that when the
-  // backend would 402 (delete is never entitlement-gated — cleanup is always
-  // allowed).
-  const kebab: KebabItem[] = [
-    {
-      label: tI18nComplete.raw('text08138c207246'),
-      icon: <Eye className="size-3.5" />,
-      onSelect: onView,
-    },
-  ];
+  // View capabilities is an inline button on every row (`actions` below), not
+  // a kebab item. Everything that writes sits behind `canManage`, and behind
+  // `rbacEnabled` on top of that when the backend would 402 (delete is never
+  // entitlement-gated — cleanup is always allowed).
+  const kebab: KebabItem[] = [];
   if (canManage && isCustom) {
     kebab.push({
       label: tI18nComplete.raw('text464c4ffd019e'),
@@ -428,26 +373,32 @@ function RoleRow({
     <AccessRow
       leading={<EntityAvatar icon={Shield} label={title} size="sm" />}
       title={title}
+      // One calm tag, no lock: a built-in role says so in words (its Hint
+      // explains why it cannot be edited); a custom role says Custom.
       badges={
         role.is_system ? (
           <Hint label={tI18nComplete.raw('textc333cb48148a')} side="top">
             <span className="inline-flex">
-              <Badge variant="muted" size="sm" className="gap-1 font-normal">
-                <Lock className="size-3" />
+              <Badge variant="outline" size="sm" className={ROLE_TAG}>
                 {tI18nComplete.raw('text1f43948106d1')}
               </Badge>
             </span>
           </Hint>
         ) : (
-          <Badge variant="outline" size="sm" className="font-normal">
+          <Badge variant="outline" size="sm" className={ROLE_TAG}>
             {tI18nComplete.raw('text494ca78f7374')}
           </Badge>
         )
       }
+      actions={
+        <Button variant="ghost" size="xs" className="text-muted-foreground gap-1.5" onClick={onView}>
+          <Eye className="size-3.5" />
+          {tI18nComplete.raw('text08138c207246')}
+        </Button>
+      }
       meta={
         <div className="space-y-0.5">
           <InlineMeta>
-            <span className="font-mono">{role.key}</span>
             <span>{role.resource_type === 'account' ? 'Account' : 'Project'}</span>
             <span>{capabilityLabel}</span>
             {usageLabel ? <span>{usageLabel}</span> : null}
@@ -468,7 +419,9 @@ function RoleRow({
 
 const KEY_RE = /^[a-z0-9_]{2,64}$/;
 
-function slugifyKey(name: string): string {
+/** The create dialog's key auto-generation: the name as a URL-safe key.
+ *  Exported for the dialog's key tests. */
+export function slugifyKey(name: string): string {
   return name
     .toLowerCase()
     .replace(/[^a-z0-9_]+/g, '_')
@@ -476,35 +429,44 @@ function slugifyKey(name: string): string {
     .slice(0, 64);
 }
 
-function RoleDialog({
-  accountId,
-  mode,
-  role,
-  prefill,
-  open,
-  onOpenChange,
-}: {
-  accountId: string;
-  /** 'view' is read-only — everyone gets it (including non-managers and on
-   *  built-in roles), not just people who can edit. "What can this role
-   *  actually do?" should never require permission to change it. */
-  mode: 'create' | 'edit' | 'view';
-  role?: IamRole;
-  prefill?: RolePrefill | null;
-  open: boolean;
-  onOpenChange: (o: boolean) => void;
-}) {
+/** Create carries an optional duplicate-prefill and no role; edit and view
+ *  always carry the role they open. The union turns the impossible states — an
+ *  edit with no role, a create with one — into compile errors instead of
+ *  non-null assertions at every use. 'view' is read-only — everyone gets it
+ *  (including non-managers and on built-in roles), not just people who can
+ *  edit: "What can this role actually do?" should never require permission to
+ *  change it. */
+export type RoleDialogProps =
+  | {
+      accountId: string;
+      mode: 'create';
+      prefill?: RolePrefill | null;
+      open: boolean;
+      onOpenChange: (o: boolean) => void;
+    }
+  | {
+      accountId: string;
+      mode: 'edit' | 'view';
+      role: IamRole;
+      open: boolean;
+      onOpenChange: (o: boolean) => void;
+    };
+
+function RoleDialog(props: RoleDialogProps) {
+  const { accountId, open, onOpenChange } = props;
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
-  const isView = mode === 'view';
-  const isEdit = mode === 'edit' && !!role;
+  const isView = props.mode === 'view';
+  const isEdit = props.mode === 'edit';
   // Both edit and view load the role's existing grant set into the matrix —
   // view just never lets it change.
-  const hasExistingRole = (mode === 'edit' || mode === 'view') && !!role;
+  const hasExistingRole = props.mode !== 'create';
+  const role = props.mode === 'create' ? undefined : props.role;
+  const prefill = props.mode === 'create' ? props.prefill : undefined;
 
   const [name, setName] = useState(role?.name ?? prefill?.name ?? '');
   const [keyValue, setKeyValue] = useState(role?.key ?? (prefill ? slugifyKey(prefill.name) : ''));
-  const [keyTouched, setKeyTouched] = useState(isEdit);
+  const keyTouched = useRef(isEdit);
   const [description, setDescription] = useState(role?.description ?? '');
   const [resourceType, setResourceType] = useState<ResourceType>(
     role?.resource_type ?? prefill?.resourceType ?? 'project',
@@ -524,7 +486,11 @@ function RoleDialog({
   // role's existing grant set, view just never writes it back.
   const permsQuery = useQuery({
     queryKey: ['iam-role-permissions', accountId, role?.role_id],
-    queryFn: () => getRolePermissions(accountId, role!.role_id),
+    queryFn: () => {
+      // `enabled` gates the fetch but is not a type guard: narrow explicitly.
+      if (!role) throw new Error('Role permissions need the role they load');
+      return getRolePermissions(accountId, role.role_id);
+    },
     staleTime: 30_000,
     enabled: hasExistingRole,
   });
@@ -542,7 +508,7 @@ function RoleDialog({
 
   function handleNameChange(value: string) {
     setName(value);
-    if (!isEdit && !keyTouched) {
+    if (!isEdit && !keyTouched.current) {
       setKeyValue(slugifyKey(value));
     }
   }
@@ -566,15 +532,19 @@ function RoleDialog({
 
   const updateMutation = useMutation({
     mutationFn: async () => {
-      const nameChanged = name.trim() !== role!.name;
-      const descChanged = (description.trim() || null) !== (role!.description ?? null);
+      // The submit button only exists in edit mode, which always carries the
+      // role — narrowed here so this callback cannot compile against a create
+      // dialog.
+      if (!role) throw new Error('Edit needs the role it opens');
+      const nameChanged = name.trim() !== role.name;
+      const descChanged = (description.trim() || null) !== (role.description ?? null);
       if (nameChanged || descChanged) {
-        await updateRole(accountId, role!.role_id, {
+        await updateRole(accountId, role.role_id, {
           name: name.trim(),
           description: description.trim() || null,
         });
       }
-      await updateRolePermissions(accountId, role!.role_id, [...selected]);
+      await updateRolePermissions(accountId, role.role_id, [...selected]);
     },
     onSuccess: () => {
       successToast(tI18nComplete.raw('texta172f7fb3563'));
@@ -583,7 +553,7 @@ function RoleDialog({
       void invalidatePermissionProbes(queryClient, { accountId });
       queryClient.invalidateQueries({ queryKey: ['iam-roles', accountId] });
       queryClient.invalidateQueries({
-        queryKey: ['iam-role-permissions', accountId, role!.role_id],
+        queryKey: ['iam-role-permissions', accountId, role?.role_id],
       });
       onOpenChange(false);
     },
@@ -640,7 +610,7 @@ function RoleDialog({
                 id="role-key"
                 value={keyValue}
                 onChange={(e) => {
-                  setKeyTouched(true);
+                  keyTouched.current = true;
                   setKeyValue(e.target.value);
                 }}
                 placeholder={tI18nComplete.raw('textb96d63115850')}

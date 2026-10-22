@@ -1,19 +1,23 @@
 import { describe, expect, test } from 'bun:test';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TurnErrorDisplay } from './session-error-banner';
+import { TurnErrorDisplay } from '@kortix/ui/session';
 
 const render = (props: Parameters<typeof TurnErrorDisplay>[0]) =>
   renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-      <TurnErrorDisplay {...props} />
-    </NextIntlClientProvider>,
+    // The out-of-credits card reads the account's billing permission.
+    <QueryClientProvider client={new QueryClient()}>
+      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <TurnErrorDisplay {...props} />
+      </NextIntlClientProvider>
+    </QueryClientProvider>,
   );
 
 describe('a transport failure is never swallowed as an interruption', () => {
   // The exact string the sandbox daemon returns when it severs a live turn
-  // (`kortix-sandbox-agent-server/src/proxy.ts`). Before this guard, the word
+  // (`kortix-sandbox-agent-server/src/app/server.ts`). Before this guard, the word
   // "aborted" in the detail matched a bare substring pattern and the user got a
   // muted "Interrupted" with the cause thrown away. Now an abort renders
   // nothing at all, so a misclassification would hide the failure entirely —

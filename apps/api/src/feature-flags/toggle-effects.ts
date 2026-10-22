@@ -12,9 +12,9 @@
  * they call are themselves idempotent and re-run on their periodic sweeps.
  */
 import type { FeatureFlagKey } from '@kortix/api-contract';
-import { reconcileChannelConnectors, reconcileComputerConnectors } from '../connectors/sync';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
-import { propagateLlmGatewayModeToActiveSandboxes } from '../projects/lib/sandbox-env-sync';
+import { reconcileChannelConnectors } from '../connectors/sync';
+import { reconcileEventSubscriptionsFromCatalog, releaseProjectEventSubscriptions, retireWarmProjectSessions } from '../projects/surface';
+import { resolveFeatureFlag } from './registry';
 
 export interface FeatureFlagToggleContext {
   key: FeatureFlagKey;
@@ -31,21 +31,23 @@ const reconcileProjectChannels: ToggleEffect = async ({ projectId }) => {
 };
 
 /**
- * Effects by flag. Channel-backed flags (teams and agentmail_email) all
- * re-run channel-connector materialization so the connector row appears or
+ * Effects by flag. The channel-backed flag (agentmail_email) re-runs
+ * channel-connector materialization so the connector row appears or
  * disappears with the flag instead of waiting for the next periodic sweep.
  */
 const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
-  // Kept for parity with the historical route behavior: the computer connector
-  // is deliberately NOT flag-gated (see registry header), but a toggle still
-  // re-syncs account connectors so any UI-adjacent drift converges promptly.
-  agent_tunnel: async ({ accountId }) => {
-    await reconcileComputerConnectors(accountId);
-  },
-  teams: reconcileProjectChannels,
   agentmail_email: reconcileProjectChannels,
-  llm_gateway: async ({ projectId, metadata }) => {
-    await propagateLlmGatewayModeToActiveSandboxes(projectId, projectLlmGatewayEnabled(metadata));
+  // Also the Kortix event source: off, its triggers report the legacy "no app-event source" text and
+  // their poll streams are dropped; on, they subscribe without a re-save.
+  connectors_v2: async (ctx) => {
+    await reconcileProjectChannels(ctx);
+    if (resolveFeatureFlag(ctx.metadata, 'event_triggers')) await reconcileEventSubscriptionsFromCatalog(ctx.projectId, ctx.accountId);
+  },
+  // Off: drop every provider instance so no delivery outlives the switch.
+  // On: existing triggers go live without a re-save.
+  event_triggers: async ({ projectId, accountId, metadata }) => {
+    if (resolveFeatureFlag(metadata, 'event_triggers')) await reconcileEventSubscriptionsFromCatalog(projectId, accountId);
+    else await releaseProjectEventSubscriptions(projectId);
   },
 };
 
@@ -55,8 +57,13 @@ const TOGGLE_EFFECTS: Partial<Record<FeatureFlagKey, ToggleEffect>> = {
  * findable instead of a silent console.warn.
  */
 export async function runFeatureFlagToggleEffects(ctx: FeatureFlagToggleContext): Promise<void> {
-  const effect = TOGGLE_EFFECTS[ctx.key];
-  if (!effect) return;
+  // Every flag reaches the box as boot-only env (KORTIX_FEATURE_FLAGS, KORTIX_GENUI): a warm box
+  // from before the change must not be adopted, or its skills and CLI keep the old flag.
+  const own = TOGGLE_EFFECTS[ctx.key];
+  const effect: ToggleEffect = async (c) => {
+    await retireWarmProjectSessions(c.projectId);
+    if (own) await own(c);
+  };
   try {
     await effect(ctx);
     return;

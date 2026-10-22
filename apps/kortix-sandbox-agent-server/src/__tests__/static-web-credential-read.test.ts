@@ -23,14 +23,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 
-import { startStaticWebServer } from '../static-web'
+import { harnessProtectedPathSegments } from '@/harness/harness'
+import { startStaticWebServer } from '@/services/static-web/static-web'
 
 let server: ReturnType<typeof startStaticWebServer>
 let base: string
 let scratch: string
 
 beforeAll(() => {
-  server = startStaticWebServer(0)
+  server = startStaticWebServer(harnessProtectedPathSegments(), 0)
   base = `http://127.0.0.1:${server.port}`
   // Explicitly under `/tmp` — an allowed root. NOT os.tmpdir(), which on macOS
   // is /var/folders/... and would put the fixture outside the roots, making the
@@ -165,7 +166,10 @@ describe('symlinks cannot smuggle a path back out', () => {
   })
 
   test('a link reaching outside every allowed root is refused', async () => {
-    const outside = mkdtempSync(join(process.env.TMPDIR || '/var/tmp', 'kortix-outside-'))
+    // /var/tmp unconditionally: TMPDIR is /tmp on Linux CI and in this repo's
+    // runner env, and /tmp is an allowed root, so a TMPDIR fixture would sit
+    // INSIDE the roots and the link would resolve to a servable file.
+    const outside = mkdtempSync(join('/var/tmp', 'kortix-outside-'))
     writeFileSync(join(outside, 'secret.txt'), 'SECRET-PAYLOAD')
 
     const link = join(scratch, 'escape-file.txt')

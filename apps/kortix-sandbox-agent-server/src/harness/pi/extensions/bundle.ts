@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as tar from 'tar'
-import { logger } from '../../../logger'
+import { logger } from '@/lib/log/logger'
 
 const DOWNLOAD_TIMEOUT_MS = 60_000
 const DIGEST_RE = /^[0-9a-f]{64}$/

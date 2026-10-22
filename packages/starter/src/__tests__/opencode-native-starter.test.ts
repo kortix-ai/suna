@@ -17,7 +17,7 @@ const OPENCODE_ROOT = join(
   'starter',
   'templates',
   'base',
-  '.kortix',
+  'harnesses',
   'opencode',
 );
 
@@ -74,7 +74,7 @@ describe('the starter is OpenCode-native', () => {
     const manifest = manifestFor();
 
     expect(manifest).toContain('opencode:');
-    expect(manifest).toContain('config_dir: .kortix/opencode');
+    expect(manifest).toContain('config_dir: harnesses/opencode');
     expect(manifest).not.toContain('runtime:');
   });
 
@@ -115,8 +115,8 @@ describe('the starter is OpenCode-native', () => {
   test('keeps the general-knowledge skill kit', () => {
     const paths = filesFor().map((file) => file.path);
 
-    expect(paths).toContain('.kortix/opencode/skills/pdf/SKILL.md');
-    expect(paths).toContain('.kortix/opencode/agents/kortix.md');
+    expect(paths).toContain('skills/pdf/SKILL.md');
+    expect(paths).toContain('agents/kortix.md');
   });
 
   test('keeps the fast starter tool ABI independent of the full plugin SDK', () => {
@@ -132,26 +132,15 @@ describe('the starter is OpenCode-native', () => {
     expect(lock).not.toContain('"@opencode-ai/plugin"');
     expect(lock).not.toContain('"effect"');
     expect(readFileSync(join(OPENCODE_ROOT, '..', '..', '.gitignore'), 'utf8')).toContain(
-      '.kortix/opencode/package-lock.json',
+      'harnesses/opencode/package-lock.json',
     );
 
-    for (const file of [
-      'image_search.ts',
-      'memory.ts',
-      'scrape_webpage.ts',
-      'show.ts',
-      'web_search.ts',
-    ]) {
-      expect(readFileSync(join(OPENCODE_ROOT, 'tools', file), 'utf8')).toContain(
-        'from "./lib/tool"',
-      );
-    }
     expect(readFileSync(join(OPENCODE_ROOT, 'plugins', 'pty.ts'), 'utf8')).toContain(
-      "from '../tools/lib/tool'",
+      "from './lib/tool'",
     );
   });
 
-  test('keeps optional tools independent of provider SDKs', () => {
+  test('ships no tool copies: the runtime hosts the Kortix tools on every harness', () => {
     const packageJson = JSON.parse(readFileSync(join(OPENCODE_ROOT, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
     };
@@ -161,13 +150,7 @@ describe('the starter is OpenCode-native', () => {
     for (const dependency of ['@mendable/firecrawl-js', '@tavily/core', 'replicate']) {
       expect(lock).not.toContain(`\"${dependency}\"`);
     }
-
-    for (const file of ['image_search.ts', 'scrape_webpage.ts', 'web_search.ts']) {
-      const source = readFileSync(join(OPENCODE_ROOT, 'tools', file), 'utf8');
-      expect(source).not.toMatch(
-        /import\(["'](?:@mendable\/firecrawl-js|@tavily\/core|replicate)["']\)/,
-      );
-    }
+    expect(filesFor().map((file) => file.path).filter((path) => path.startsWith('harnesses/opencode/tools/'))).toEqual([]);
   });
 });
 
@@ -205,6 +188,6 @@ describe('internal minimal build', () => {
   test('carries no general-knowledge domain skill', () => {
     const paths = filesFor('minimal').map((file) => file.path);
 
-    expect(paths).not.toContain('.kortix/opencode/skills/pdf/SKILL.md');
+    expect(paths).not.toContain('skills/pdf/SKILL.md');
   });
 });

@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 import { getLocale, getTranslations } from '@/i18n/get-translations';
 
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { PUBLIC_METADATA_TRANSLATION_KEYS } from '@/i18n/public-metadata-translation-keys.generated';
 import { getMarketingRecord } from '@/lib/seo/public-content';
-import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN, siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 
 export const DEFAULT_OG_IMAGE = {
   url: '/banner.png',
@@ -39,6 +39,23 @@ export function socialMetadata(title: string, description: string | undefined, u
   } satisfies Pick<Metadata, 'openGraph' | 'twitter'>;
 }
 
+/** Search engines show about 155 characters. A record's description is
+ *  written in full for llms.txt and the .md mirrors; the meta description
+ *  keeps whole sentences up to that length; a longer first sentence is cut at
+ *  a word boundary. */
+export function metaDescription(description: string | undefined, max = 155): string | undefined {
+  if (!description || description.length <= max) return description;
+  const sentences = description.match(/[^.!?]+[.!?]+(?=\s|$)/g) ?? [description];
+  let out = '';
+  for (const sentence of sentences) {
+    const next = (out + sentence).trim();
+    if (next.length > max) break;
+    out = next;
+  }
+  // A first sentence longer than the limit is cut at a word, not mid-word.
+  return out || `${description.slice(0, max - 1).replace(/\s+\S*$/, '')}…`;
+}
+
 export function marketingMetadata(
   pathname: string,
   recordOverride?: ReturnType<typeof getMarketingRecord>,
@@ -46,11 +63,12 @@ export function marketingMetadata(
   const record = recordOverride ?? getMarketingRecord(pathname);
   if (!record) throw new Error(`Missing marketing SEO record for ${pathname}`);
   const url = `${CANONICAL_ORIGIN}${pathname}`;
+  const description = metaDescription(record.description);
   return {
     title: record.title,
-    description: record.description,
+    description,
     alternates: { canonical: url },
-    ...socialMetadata(record.title, record.description, url),
+    ...socialMetadata(record.title, description, url),
   };
 }
 

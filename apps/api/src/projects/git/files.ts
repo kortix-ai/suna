@@ -12,10 +12,9 @@ import {
 } from '@kortix/manifest-schema';
 import { validateRef } from '../git-ref';
 import { listCommits } from './commits';
-import { isGitPathNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitCapture, spawn } from './mirror';
+import { type MirrorRefresh, isGitOperationError, isGitPathNotFoundError, isGitRefNotFoundError, normalizeTreePath, refreshMirror, runGit, runGitBuffer, runGitCapture, spawn } from './mirror';
 import { cachedGitRead, resolveRefSha } from './read-cache';
 import type {
-  GetFileAtRefResult,
   GetFileHistoryOptions,
   GitBackedProject,
   GitLogEntry,
@@ -27,29 +26,207 @@ export async function listRepoFiles(
   project: GitBackedProject,
   ref?: string,
   path?: string | null,
+  opts?: FreshOnMiss,
 ): Promise<ProjectFileEntry[]> {
   const treeRef = validateRef(ref || project.defaultBranch);
-  const repoPath = await refreshMirror(project);
   const treePath = normalizeTreePath(path);
-  // Keyed by the commit the ref points at now (see read-cache.ts).
-  const sha = await resolveRefSha(repoPath, treeRef);
-  const listTree = (at: string) => {
-    const args = ['ls-tree', '-r', at, '--'];
-    if (treePath) args.push(treePath);
-    return runGit(args, repoPath, false).then((result) => result.stdout);
+  const list = async (repoPath: string): Promise<ProjectFileEntry[]> => {
+    // Keyed by the commit the ref points at now (see read-cache.ts).
+    const sha = await resolveRefSha(repoPath, treeRef);
+    const listTree = (at: string) => {
+      // -z: NUL-separated, unquoted paths (a unicode name is not octal-escaped).
+      const args = ['ls-tree', '-r', '-z', at, '--'];
+      if (treePath) args.push(treePath);
+      return runGit(args, repoPath, false).then((result) => result.stdout);
+    };
+    const stdout = sha
+      ? await cachedGitRead(repoPath, sha, 'ls-tree-r', treePath ?? '', () => listTree(sha))
+      : await listTree(treeRef);
+    if (!stdout.trim()) return [];
+    return stdout
+      .split('\0')
+      .map<ProjectFileEntry | null>((line) => {
+        const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\t([\s\S]+)$/);
+        if (!match || match[1] !== 'blob') return null;
+        return { path: match[2] || '', type: 'file', size: null };
+      })
+      .filter((entry): entry is ProjectFileEntry => Boolean(entry));
   };
-  const stdout = sha
-    ? await cachedGitRead(repoPath, sha, 'ls-tree-r', treePath ?? '', () => listTree(sha))
-    : await listTree(treeRef);
-  if (!stdout.trim()) return [];
-  return stdout
-    .split('\n')
-    .map<ProjectFileEntry | null>((line) => {
-      const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\t(.+)$/);
-      if (!match || match[1] !== 'blob') return null;
-      return { path: match[2] || '', type: 'file', size: null };
-    })
-    .filter((entry): entry is ProjectFileEntry => Boolean(entry));
+  const first = await list(await refreshMirror(project)).catch((err) => {
+    if (isMissingAtRef(err) && isExplicitBranch(project, ref, opts)) return null;
+    throw err;
+  });
+  if (first?.length || !isExplicitBranch(project, ref, opts)) return first ?? [];
+  // Empty or unresolvable at an explicit branch: a push may not be fetched yet.
+  return list(await refreshMirror(project, true, { freshRef: treeRef }));
+}
+
+/** One entry of a folder listing. */
+export interface ProjectDirectoryEntry {
+  path: string;
+  type: 'file' | 'directory';
+  /** Bytes of a file. A folder has none. */
+  size?: number;
+}
+
+/** Entry cap of one folder listing that asks for no page. */
+export const DIRECTORY_LISTING_LIMIT = 5000;
+/** Default and ceiling of a paged folder listing (`limit` or `cursor` sent). */
+export const DIRECTORY_PAGE_LIMIT = 500;
+export const DIRECTORY_PAGE_MAX_LIMIT = 2000;
+
+/** Where a paged folder listing resumes: the commit the first page read, and the last key it returned. */
+export interface DirectoryPageStart {
+  commit: string;
+  key: string;
+}
+
+/**
+ * The key of an entry: its path, a folder's with a trailing `/`. Git orders a
+ * tree's entries by the bytes of this key. A cursor holds the key of the last
+ * entry a page returned (`pageStart`).
+ */
+const entryKey = (entry: ProjectDirectoryEntry) => (entry.type === 'directory' ? `${entry.path}/` : entry.path);
+
+/** An opaque `next_cursor`: base64url JSON of the commit, the folder and the last key. */
+export function encodeDirectoryCursor(commit: string, path: string | null | undefined, key: string): string {
+  return Buffer.from(JSON.stringify({ v: 1, c: commit, p: normalizeTreePath(path) ?? '', k: key })).toString('base64url');
+}
+
+/** The page start a cursor names, or null when it is malformed or belongs to another folder. */
+export function decodeDirectoryCursor(cursor: string, path: string | null | undefined): DirectoryPageStart | null {
+  try {
+    const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    // `c` reaches `git ls-tree` as an argument: only a full sha passes.
+    if (value?.v !== 1 || !/^[0-9a-f]{40}$/.test(value.c) || typeof value.k !== 'string' || !value.k) return null;
+    if (value.p !== (normalizeTreePath(path) ?? '')) return null;
+    return { commit: value.c, key: value.k };
+  } catch {
+    return null;
+  }
+}
+
+/** `git ls-tree` at a commit this mirror does not hold. */
+const isUnknownCommit = (err: unknown) =>
+  isGitRefNotFoundError(err) || (isGitOperationError(err) && /not a tree object/i.test(`${err.message}\n${err.stderr}`));
+
+/**
+ * The read cache keeps one folder's `ls-tree` output up to this size (UTF-16
+ * bytes, ~146 per entry: about 110,000 entries). The default 2 MiB cap stops
+ * at ~14,000, and every "Load more" on a larger folder re-ran `ls-tree` over
+ * the whole folder.
+ */
+const DIRECTORY_CACHE_MAX_BYTES = 16 * 1024 * 1024;
+
+/**
+ * The index a page starts at: after the entry whose key is `key`. Found by
+ * position, not by comparison: `runGit` decodes a name that is not UTF-8
+ * lossily (U+FFFD), so a decoded key can sort out of git's byte order. Two
+ * names that decode to one string resume after the first: the second repeats,
+ * it is never skipped. Bytes are compared only when the key is gone (the
+ * first page's commit left the mirror and the ref tip lacks the entry).
+ */
+function pageStart(entries: readonly ProjectDirectoryEntry[], key: string): number {
+  const at = entries.findIndex((entry) => entryKey(entry) === key);
+  if (at >= 0) return at + 1;
+  const after = Buffer.from(key);
+  const next = entries.findIndex((entry) => Buffer.compare(Buffer.from(entryKey(entry)), after) > 0);
+  return next < 0 ? entries.length : next;
+}
+
+/**
+ * The immediate children of one folder (`path`, or the root), from a
+ * non-recursive `git ls-tree`: every folder is complete up to `limit`
+ * entries, however many files sort before it (KRTX-1723). A submodule is
+ * skipped, as in `listRepoFiles`.
+ *
+ * `visible` drops entries before the cut, so a page stays full and `nextKey`
+ * is always a visible entry. `after` resumes a paged listing: it reads the
+ * commit the first page read, so a push between pages skips or repeats
+ * nothing, and returns the entries after the one whose key is `after.key`.
+ *
+ * Every page parses the whole folder from the cached `ls-tree` output: O(n)
+ * per page, no git process while the output stays cached (up to
+ * `DIRECTORY_CACHE_MAX_BYTES`).
+ */
+export async function listRepoDirectory(
+  project: GitBackedProject,
+  ref?: string,
+  path?: string | null,
+  opts?: FreshOnMiss & {
+    limit?: number;
+    after?: DirectoryPageStart;
+    visible?: (path: string) => boolean;
+  },
+): Promise<{
+  entries: ProjectDirectoryEntry[];
+  truncated: boolean;
+  /** The commit this listing read; null only when the ref did not resolve to one. */
+  commit: string | null;
+  /** The key the next page starts after, while entries remain. */
+  nextKey: string | null;
+}> {
+  const treeRef = validateRef(ref || project.defaultBranch);
+  const treePath = normalizeTreePath(path);
+  const limit = opts?.limit ?? DIRECTORY_LISTING_LIMIT;
+  const list = async (repoPath: string, pinned?: string) => {
+    const sha = pinned ?? (await resolveRefSha(repoPath, treeRef));
+    const listLevel = (at: string) => {
+      // The trailing slash lists the folder's children, not the folder itself.
+      // -l adds each blob's size.
+      const args = ['ls-tree', '-z', '-l', at, '--'];
+      if (treePath) args.push(`${treePath}/`);
+      return runGit(args, repoPath, false).then((result) => result.stdout);
+    };
+    const stdout = sha
+      ? await cachedGitRead(repoPath, sha, 'ls-tree-1l', treePath ?? '', () => listLevel(sha), {
+          maxEntryBytes: DIRECTORY_CACHE_MAX_BYTES,
+        })
+      : await listLevel(treeRef);
+    const entries = stdout
+      .split('\0')
+      .map<ProjectDirectoryEntry | null>((line) => {
+        const match = line.match(/^\d+\s+(\w+)\s+[0-9a-f]+\s+(\d+|-)\t([\s\S]+)$/);
+        if (!match) return null;
+        if (match[1] === 'blob') return { path: match[3]!, type: 'file', size: Number(match[2]) };
+        if (match[1] === 'tree') return { path: match[3]!, type: 'directory' };
+        return null;
+      })
+      .filter((entry): entry is ProjectDirectoryEntry => Boolean(entry));
+    return { sha, entries };
+  };
+  const listAtRef = async () => {
+    let read = await list(await refreshMirror(project)).catch((err) => {
+      if (isMissingAtRef(err) && isExplicitBranch(project, ref, opts)) return null;
+      throw err;
+    });
+    if (!read?.entries.length && isExplicitBranch(project, ref, opts)) {
+      // Empty or unresolvable at an explicit branch: a push may not be fetched yet.
+      read = await list(await refreshMirror(project, true, { freshRef: treeRef }));
+    }
+    return read ?? { sha: null, entries: [] };
+  };
+  // Each API replica keeps its own mirror, so the next page can land on one
+  // that has not fetched the first page's commit yet: fetch once (skipped when
+  // the ref has not moved upstream). A commit the remote no longer has (a
+  // force-push) falls back to the ref's tip, from the same key.
+  const listAtCommit = async (commit: string) => {
+    for (const force of [false, true]) {
+      try {
+        return await list(await refreshMirror(project, force, { freshRef: treeRef }), commit);
+      } catch (err) {
+        if (!isUnknownCommit(err)) throw err;
+      }
+    }
+    return null;
+  };
+  const read = (opts?.after && (await listAtCommit(opts.after.commit))) || (await listAtRef());
+  let all = read.entries;
+  if (opts?.visible) all = all.filter((entry) => opts.visible!(entry.path));
+  if (opts?.after) all = all.slice(pageStart(all, opts.after.key));
+  const entries = all.slice(0, limit);
+  const truncated = all.length > limit;
+  return { entries, truncated, commit: read.sha, nextKey: truncated ? entryKey(entries.at(-1)!) : null };
 }
 
 /**
@@ -122,41 +299,97 @@ export async function grepRepoFiles(
   return matches;
 }
 
-export async function readRepoFile(project: GitBackedProject, filePath: string, ref?: string): Promise<string> {
+export async function readRepoFile(
+  project: GitBackedProject,
+  filePath: string,
+  ref?: string,
+  opts?: FreshOnMiss,
+): Promise<string> {
   const normalized = normalizeTreePath(filePath);
   if (!normalized) throw new Error('File path is required');
   const treeRef = validateRef(ref || project.defaultBranch);
   const repoPath = await refreshMirror(project);
   try {
-    const sha = await resolveRefSha(repoPath, treeRef);
-    if (!sha) return (await runGit(['show', `${treeRef}:${normalized}`], repoPath, false)).stdout;
-    // "Not in this commit" is an answer too, so it is cached as one; any other
-    // failure rejects and is retried by the next read.
-    const shown = await cachedGitRead(repoPath, sha, 'show', normalized, async () => {
-      try {
-        return { found: true as const, content: (await runGit(['show', `${sha}:${normalized}`], repoPath, false)).stdout };
-      } catch (err) {
-        if (isGitPathNotFoundError(err)) return { found: false as const, error: err };
-        throw err;
-      }
-    });
-    if (!shown.found) throw shown.error;
-    return shown.content;
+    return await readFileAt(repoPath, treeRef, normalized);
   } catch (err) {
-    // A "path does not exist in '<ref>'" `git show` failure is an expected
-    // client condition (the path simply isn't in the repo at this ref), not a
-    // server bug — convert it into a typed `RepoFileNotFoundError` instead of
-    // letting the `GitOperationError` propagate as an unhandled 500 (Better
-    // Stack pattern `a8d20288…`). Mirrors `getFileAtRef`'s `{ found: false }`
-    // sentinel from #3537, but as a typed throw so existing callers that wrap
-    // `readRepoFile` in try/catch (config/agent-config/compile-agent-config)
-    // keep working unchanged. Genuine git failures (auth, corrupt repo,
-    // timeout) still throw the original `GitOperationError`.
-    if (isGitPathNotFoundError(err)) {
-      throw new RepoFileNotFoundError(normalized, treeRef, err);
+    // A branch that a push created or moved since the last fetch reads as
+    // "not found" until the 60 s refresh interval passes. One ref-scoped fetch
+    // settles it. Default-branch reads and sha reads keep the cached answer.
+    if (!(isMissingAtRef(err) && isExplicitBranch(project, ref, opts))) throw missingFileError(err, normalized, treeRef);
+    const fresh = await refreshMirror(project, true, { freshRef: treeRef });
+    try {
+      return await readFileAt(fresh, treeRef, normalized);
+    } catch (retryErr) {
+      throw missingFileError(retryErr, normalized, treeRef);
     }
-    throw err;
   }
+}
+
+const isMissingAtRef = (err: unknown) => isGitPathNotFoundError(err) || isGitRefNotFoundError(err);
+/** User-facing reads opt in: internal probes for absent files must not pay a fetch per miss. */
+type FreshOnMiss = { freshOnMiss?: boolean };
+const isExplicitBranch = (project: GitBackedProject, ref?: string, opts?: FreshOnMiss) =>
+  !!opts?.freshOnMiss && !!ref && ref !== project.defaultBranch && !/^[0-9a-f]{40}$/i.test(ref);
+
+/** A "path does not exist" failure is an expected client condition, not a server bug. */
+function missingFileError(err: unknown, normalized: string, treeRef: string): unknown {
+  return isGitPathNotFoundError(err) ? new RepoFileNotFoundError(normalized, treeRef, err) : err;
+}
+
+/**
+ * Read a file's exact bytes at a ref (`git cat-file blob`).
+ *
+ * `readRepoFile` captures `git show` stdout as a UTF-8 string, which mangles
+ * every byte that is not valid UTF-8 — a PNG, PDF or DOCX read through it is
+ * corrupted before it leaves the API. This is the byte-accurate read the raw
+ * file route (`GET /files/raw`) serves, so previews and downloads of binary
+ * project files carry the real bytes. Unlike the string read it does not go
+ * through the read cache, whose sizing assumes strings.
+ */
+export async function readRepoFileBytes(
+  project: GitBackedProject,
+  filePath: string,
+  ref?: string,
+  opts?: FreshOnMiss,
+): Promise<Buffer> {
+  const normalized = normalizeTreePath(filePath);
+  if (!normalized) throw new Error('File path is required');
+  const treeRef = validateRef(ref || project.defaultBranch);
+  const repoPath = await refreshMirror(project);
+  const cat = (at: string) => runGitBuffer(['cat-file', 'blob', `${at}:${normalized}`], repoPath, false);
+  try {
+    const sha = await resolveRefSha(repoPath, treeRef);
+    return sha ? (await cat(sha)).stdout : (await cat(treeRef)).stdout;
+  } catch (err) {
+    // Same fresh-on-miss retry as the string read: a branch that a push created
+    // or moved since the last fetch reads as "not found" until the refresh
+    // interval passes; one ref-scoped fetch settles it.
+    if (!(isMissingAtRef(err) && isExplicitBranch(project, ref, opts))) throw missingFileError(err, normalized, treeRef);
+    const fresh = await refreshMirror(project, true, { freshRef: treeRef });
+    try {
+      const sha = await resolveRefSha(fresh, treeRef);
+      return sha ? (await cat(sha)).stdout : (await cat(treeRef)).stdout;
+    } catch (retryErr) {
+      throw missingFileError(retryErr, normalized, treeRef);
+    }
+  }
+}
+
+async function readFileAt(repoPath: string, treeRef: string, normalized: string): Promise<string> {
+  const sha = await resolveRefSha(repoPath, treeRef);
+  if (!sha) return (await runGit(['show', `${treeRef}:${normalized}`], repoPath, false)).stdout;
+  // "Not in this commit" is an answer too, so it is cached as one; any other
+  // failure rejects and is retried by the next read.
+  const shown = await cachedGitRead(repoPath, sha, 'show', normalized, async () => {
+    try {
+      return { found: true as const, content: (await runGit(['show', `${sha}:${normalized}`], repoPath, false)).stdout };
+    } catch (err) {
+      if (isGitPathNotFoundError(err)) return { found: false as const, error: err };
+      throw err;
+    }
+  });
+  if (!shown.found) throw shown.error;
+  return shown.content;
 }
 
 /**
@@ -207,7 +440,7 @@ export async function readManifestFromRepo(
   candidatePaths: string[],
   ref?: string,
   opts?: {
-    forceRefresh?: boolean;
+    forceRefresh?: MirrorRefresh;
     /** Throw when `ref` does not resolve instead of answering "absent".
      *  Authorization reads set this: an unreadable ref must not be laundered
      *  into the synthesized permissive manifest a blank project gets. */
@@ -415,30 +648,4 @@ export async function getFileHistory(
     limit: options.limit,
     skip: options.skip,
   });
-}
-
-export async function getFileAtRef(
-  project: GitBackedProject,
-  filePath: string,
-  ref: string,
-): Promise<GetFileAtRefResult> {
-  const normalized = normalizeTreePath(filePath);
-  if (!normalized) return { content: '', found: false };
-  validateRef(ref);
-  const repoPath = await refreshMirror(project);
-  const read = async (at: string): Promise<GetFileAtRefResult> => {
-    try {
-      const result = await runGit(['show', `${at}:${normalized}`], repoPath, false);
-      return { content: result.stdout, found: true };
-    } catch (err) {
-      if (isGitPathNotFoundError(err)) return { content: '', found: false };
-      throw err;
-    }
-  };
-  try {
-    const sha = await resolveRefSha(repoPath, ref);
-    return sha ? await cachedGitRead(repoPath, sha, 'show-at', normalized, () => read(sha)) : await read(ref);
-  } catch {
-    return { content: '', found: false };
-  }
 }

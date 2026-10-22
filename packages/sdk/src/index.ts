@@ -58,6 +58,7 @@ export {
   deleteFile,
   files,
   FileExistsError,
+  fileDownloadRequest,
   findFiles,
   findText,
   getCurrentProject,
@@ -74,10 +75,11 @@ export {
   toSandboxAbsolutePath,
   toWorkspaceRelative,
   uploadFile,
+  uploadNativeFile,
   uploadTimeoutMsForBytes,
   writeFile,
 } from './core/files/client';
-export type { UploadFileOptions, UploadProgressEvent } from './core/files/client';
+export type { NativeFilePart, UploadFileOptions, UploadProgressEvent } from './core/files/client';
 export type * from './core/files/types';
 
 /** Generate a session id (RFC 4122 v4, with a non-secure-context fallback). */
@@ -127,7 +129,8 @@ export {
  * stateless helpers live at `@kortix/sdk/session`. "Sandbox" never appears in the
  * public surface — a session owns its runtime.
  */
-export type { SessionHealthResponse, SessionHealthResult } from './core/session/health';
+export type { RuntimeCapability, SessionHealthResponse, SessionHealthResult } from './core/session/health';
+export { runtimeSupports } from './core/session/health';
 
 /**
  * A session's resolved runtime (opencode session id + runtime URL + sandbox
@@ -169,16 +172,17 @@ export type {
 /**
  * The framework-free SSE event-stream primitive — connect/reconnect/backoff,
  * heartbeat watchdog, and event coalescing, with ZERO react/react-query
- * imports. `@kortix/sdk/react`'s `useOpenCodeEventStream` is a thin wrapper
+ * imports. `@kortix/sdk/react`'s `useRuntimeEventStream` is a thin wrapper
  * around this for the React host; any other host (worker, CLI, non-React UI)
  * can call it directly.
  */
 export {
   openEventStream,
   type EventStreamClient,
+  type EventStreamConnectionState,
   type EventStreamHandle,
   type EventStreamTimers,
-  type OpenCodeEvent,
+  type RuntimeEvent,
   type OpenEventStreamOptions,
 } from './core/stream/event-stream';
 
@@ -197,11 +201,16 @@ export {
   BillingError,
   RequestTooLargeError,
   parseBillingError,
+  isAuthFailure,
   isBillingError,
   formatBillingErrorForUI,
   FEATURE_DISABLED_CODE,
   isFeatureDisabledError,
   featureDisabledKey,
+  REPOSITORY_DISCONNECTED_CODE,
+  isRepositoryDisconnectedError,
+  repositoryDisconnectedReason,
+  type RepositoryDisconnectedReason,
   type ApiErrorFields,
   type BillingErrorUI,
   type FeatureDisabledError,
@@ -246,7 +255,7 @@ export {
 } from './core/turns';
 
 /**
- * The curated chat-event union — narrows the full `OpenCodeEvent` wire union
+ * The curated chat-event union — narrows the full `RuntimeEvent` wire union
  * down to the ~12 events a product chat UI needs (message/part updates,
  * session status/idle/error, question asked/answered, permission
  * asked/replied, todo updated, connection, heartbeat-gap), reshaped into
@@ -334,6 +343,7 @@ export type {
   ProjectCommitDetail,
   ProjectCommitFile,
   ProjectBranch,
+  ProjectBranchSession,
   // Triggers
   ProjectTrigger,
   ProjectTriggerListing,
@@ -411,7 +421,7 @@ export type {
 export {
   // The functions behind `kortix.auth.*` — exported so `Kortix`'s inferred type
   // stays nameable from the root entry (TS2742 in a consumer's declaration
-  // emit otherwise, e.g. apps/whitelabel-demo `next build`).
+  // emit otherwise, e.g. apps/white-label/lumen `next build`).
   signUp,
   signInWithPassword,
   sendMagicLink,
@@ -480,7 +490,7 @@ export {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Ambiguity pins for names reachable both from our modules and from the
-// vendor type star (`export type * from '@opencode-ai/sdk/v2/client'` inside
+// vendor type star (`export type * from './core/runtime/runtime-types'` inside
 // core/runtime/client). Each is declared ONCE in this package; naming it here
 // picks the canonical module and silences the ambiguity without renaming.
 export { type FileContent, type FileNode } from './core/files/types';
@@ -494,12 +504,13 @@ export * from './core/client/kortix';
 export * from './core/http/abort-error';
 export * from './core/http/api-client';
 export * from './core/http/auth';
+export * from './core/http/authenticated-request';
 export * from './core/http/config';
 export * from './core/http/feature-flags';
 export * from './core/http/fresh-sessions';
 export * from './core/http/impersonation';
 export * from './core/http/instance-routes';
-export * from './core/http/opencode-errors';
+export * from './core/http/runtime-errors';
 export * from './core/rest/platform-client';
 export * from './core/rest/projects-client';
 export * from './core/cache/persisted-query-cache';
@@ -508,27 +519,33 @@ export * from './core/attachments/prompt-attachments';
 export * from './core/runtime/client';
 export * from './core/runtime/attachment-part';
 export * from './core/session';
+export * from './core/session-log';
+export * from './core/warm-session-pool';
 export {
   createHttpSessionSyncController,
   loadHttpSessionHistory,
   type SessionSyncMessage,
 } from './core/session-sync/session-sync-controller';
 export * from './core/session-sync/saved-copy-store';
+export {
+  type EmptyConversationInput,
+  type SavedSessionCopy,
+  isEmptyConversation,
+  readSavedSessionCopy,
+  savedCopyEmptyRoot,
+} from './core/session-sync/saved-transcript';
 export * from './core/session/url';
+/** The authenticated `/p/{externalId}/{port}` proxy URL of a session's sandbox port. */
+export { getSandboxUrlForExternalId } from './core/session/server-store/url-helpers';
+/** How this deployment addresses previews (`GET /v1/p/config`), cached per backend. */
+export { loadPreviewUrlTemplate } from './core/session/preview-config';
 export * from './core/stream/event-stream';
 export * from './core/stream/fetch-sse';
 export * from './core/turns';
 export * from './transcript';
 
-// Runtime-neutral compatibility names for host applications. The original
-// OpenCode-named exports remain public for backward compatibility.
-export { formatOpenCodeRuntimeError as formatRuntimeError } from './core/http/opencode-errors';
-export type {
-  ProjectOpenCodeSession as ProjectRuntimeSession,
-} from './core/rest/projects-client/sessions';
-export type {
-  OpencodeAgentConfig as RuntimeAgentConfig,
-} from './core/rest/projects-client/agent-config';
+// Runtime-neutral names are the declarations; each pre-W4 OpenCode name is a
+// separate `@deprecated` binding beside it, public until the next major.
 
 /**
  * Kortix Apps — the viewer, in the browser. An App hosted by Kortix is opened
@@ -539,7 +556,71 @@ export type {
 export {
   fetchKortixAppViewer,
   kortixAppViewerToken,
+  kortixToken,
+  kortixBinding,
   clearKortixAppViewerCache,
   type KortixAppViewerSession,
   type KortixAppViewerOptions,
+  type KortixTokenOptions,
+  type KortixTokenFetcher,
+  type KortixBinding,
+  type KortixBindingOptions,
 } from './core/auth/app-viewer';
+
+/**
+ * The signed-in Kortix member, on any runtime: one shape from the App gate,
+ * the signed viewer header, or a Kortix-signed token, plus group- and
+ * role-based access checks. See `core/auth/kortix-member.ts`.
+ */
+export {
+  readKortixMember,
+  requireKortixMember,
+  verifyKortixToken,
+  KortixMemberError,
+  type KortixMember,
+  type KortixMemberRequirement,
+  type KortixMemberKeySet,
+  type VerifyKortixTokenOptions,
+} from './core/auth/kortix-member';
+
+/**
+ * The session composer's agent and model lists — framework-free, so web
+ * (through the `./react` hooks) and mobile build the pickers and resolve what
+ * to send with the same functions.
+ *
+ * Agents: `projectConfigAgentsToRuntimeAgents` (project detail → roster,
+ * default first) → `composerSelectableAgents` (picker list) →
+ * `resolveComposerAgent` (what runs, and whether send is allowed).
+ * Models: `pickerProviderList` (raw sources → provider list) →
+ * `flattenModels` → `createModelVisibility` + `modelInDefaultView` (default
+ * view) → `resolveModelDefault` + `resolveComposerModel` (what runs).
+ */
+export {
+  composerSelectableAgents,
+  projectConfigAgentsToOpenCodeAgents,
+  projectConfigAgentsToRuntimeAgents,
+  resolveComposerAgent,
+  type ComposerAgentReason,
+  type ComposerAgentResolution,
+} from './core/agents/composer-agents';
+export { flattenModels, isOfferedModel, type FlatModel, type ModelOption } from './core/models/model-flatten';
+export { modelRefToKey, type ModelKey } from './core/models/model-key';
+export {
+  createModelVisibility,
+  modelInDefaultView,
+  type ModelVisibilityPin,
+} from './core/models/model-visibility';
+export {
+  pickerProviderList,
+  type PickerProviderListInput,
+} from './core/models/provider-selection';
+export {
+  latestPromptModel,
+  resolveComposerModel,
+  resolveModelDefault,
+  sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
+  type ComposerModelResolution,
+  type SessionModelFallback,
+} from './core/models/composer-model';

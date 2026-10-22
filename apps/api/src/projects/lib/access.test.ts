@@ -4,9 +4,7 @@ import {
   agentSessionStanding,
   deriveEffectiveRole,
   callerHasManagerStanding,
-  isAdminBypassEligible,
   sessionIsTombstoned,
-  shouldApplyAdminBypass,
   resolveUserIdentities,
   userIdentityIsCacheable,
   viewerManagerStanding,
@@ -22,14 +20,14 @@ import {
 describe('userIdentityIsCacheable', () => {
   test('a resolved user is cacheable', () => {
     expect(
-      userIdentityIsCacheable({ email: 'a@b.c', displayName: 'A', exists: true }),
+      userIdentityIsCacheable({ email: 'a@b.c', displayName: 'A', avatarUrl: null, exists: true }),
     ).toBe(true);
   });
 
   test('a resolved user with no email on file is still cacheable', () => {
     // "No email" is a real answer about a real user, not a failure.
     expect(
-      userIdentityIsCacheable({ email: null, displayName: null, exists: true }),
+      userIdentityIsCacheable({ email: null, displayName: null, avatarUrl: null, exists: true }),
     ).toBe(true);
   });
 
@@ -37,7 +35,7 @@ describe('userIdentityIsCacheable', () => {
     // A user created a moment ago (invite accepted, SSO JIT) must resolve on
     // the next request, not one TTL window later.
     expect(
-      userIdentityIsCacheable({ email: null, displayName: null, exists: false }),
+      userIdentityIsCacheable({ email: null, displayName: null, avatarUrl: null, exists: false }),
     ).toBe(false);
   });
 
@@ -49,6 +47,7 @@ describe('userIdentityIsCacheable', () => {
       userIdentityIsCacheable({
         email: null,
         displayName: null,
+        avatarUrl: null,
         exists: true,
         transient: true,
       }),
@@ -59,27 +58,18 @@ describe('userIdentityIsCacheable', () => {
 describe('callerHasManagerStanding', () => {
   // `canManageSharing` is `isOwner || canManageProject`, so this predicate also
   // decides the 403 on stop, restart, delete, change-sharing and change-model.
+  // An unbound caller's standing is the engine's project.members.manage
+  // verdict (covered by the HTTP flows); these pin the I/O-free refusals.
+  const loaded = { actor: { userId: 'u' } as any, row: { projectId: 'p' } };
 
-  test('an unbound human manager keeps manager standing', () => {
-    expect(callerHasManagerStanding('manager', null)).toBe(true);
-  });
-
-  test('a session-bound agent token never carries its user manager standing', () => {
+  test('a session-bound agent token never carries its user manager standing', async () => {
     // The hole: with standing it also gets the trigger-session override in
     // isProjectSessionVisibleTo, reaching sibling private sessions.
-    expect(callerHasManagerStanding('manager', 'agent-session-a')).toBe(false);
+    expect(await callerHasManagerStanding(loaded, 'agent-session-a')).toBe(false);
   });
 
-  test('a non-manager role gains nothing from being unbound', () => {
-    expect(callerHasManagerStanding('member', null)).toBe(false);
-  });
-
-  test('the Supabase login session id is NOT a binding — it must never reach here', () => {
-    // Pinned as documentation of the regression this signature exists to stop:
-    // `callerSessionId` is non-null for every signed-in human, so passing THAT
-    // value would return false and 403 every dashboard manager. Callers must
-    // pass `callerKortixSessionId(c)`, which is null for authType 'supabase'.
-    expect(callerHasManagerStanding('manager', null)).toBe(true);
+  test('a caller without a resolved principal has no standing', async () => {
+    expect(await callerHasManagerStanding({ actor: null, row: { projectId: 'p' } }, null)).toBe(false);
   });
 });
 
@@ -93,83 +83,13 @@ describe('viewerManagerStanding', () => {
     throw new Error('capability probe must not run');
   };
 
-  test('a bound credential is denied before any I/O, whatever the role', async () => {
-    expect(await viewerManagerStanding('manager', 'agent-session-a', probeNever as any)).toBe(
-      false,
-    );
+  test('a bound credential is denied before any I/O', async () => {
+    expect(await viewerManagerStanding('agent-session-a', probeNever as any)).toBe(false);
   });
 
-  test('the capability probe cannot resurrect standing for a bound credential', async () => {
-    expect(
-      await viewerManagerStanding('member', 'agent-session-a', async () => true),
-    ).toBe(false);
-  });
-
-  test('an unbound manager passes on role alone — no probe', async () => {
-    expect(await viewerManagerStanding('manager', null, probeNever as any)).toBe(true);
-  });
-
-  test('an unbound non-manager falls through to the capability probe', async () => {
-    expect(await viewerManagerStanding('member', null, async () => true)).toBe(true);
-    expect(await viewerManagerStanding('member', null, async () => false)).toBe(false);
-  });
-});
-
-describe('shouldApplyAdminBypass', () => {
-  const base = { action: 'read' as const, isServiceAccount: false, bypassHeaderPresent: true };
-
-  test('applies on a read action, header present, confirmed platform admin', () => {
-    expect(shouldApplyAdminBypass({ ...base, isPlatformAdmin: true })).toBe(true);
-  });
-
-  test('never applies when isPlatformAdmin resolves false, even with everything else true', () => {
-    expect(shouldApplyAdminBypass({ ...base, isPlatformAdmin: false })).toBe(false);
-  });
-
-  test('never applies for a write/session/manage action — bypass is read-only', () => {
-    for (const action of ['write', 'session', 'manage'] as const) {
-      expect(shouldApplyAdminBypass({ ...base, action, isPlatformAdmin: true })).toBe(false);
-    }
-  });
-
-  test('never applies for a service account, even if somehow flagged as a platform admin', () => {
-    expect(
-      shouldApplyAdminBypass({ ...base, isServiceAccount: true, isPlatformAdmin: true }),
-    ).toBe(false);
-  });
-
-  test('never applies without the explicit bypass header', () => {
-    expect(
-      shouldApplyAdminBypass({ ...base, bypassHeaderPresent: false, isPlatformAdmin: true }),
-    ).toBe(false);
-  });
-});
-
-describe('isAdminBypassEligible', () => {
-  test('eligible on a read action with the header present and no service account', () => {
-    expect(
-      isAdminBypassEligible({ action: 'read', isServiceAccount: false, bypassHeaderPresent: true }),
-    ).toBe(true);
-  });
-
-  test('not eligible for a write/session/manage action', () => {
-    for (const action of ['write', 'session', 'manage'] as const) {
-      expect(
-        isAdminBypassEligible({ action, isServiceAccount: false, bypassHeaderPresent: true }),
-      ).toBe(false);
-    }
-  });
-
-  test('not eligible for a service account', () => {
-    expect(
-      isAdminBypassEligible({ action: 'read', isServiceAccount: true, bypassHeaderPresent: true }),
-    ).toBe(false);
-  });
-
-  test('not eligible without the header — the DB round-trip is skipped entirely', () => {
-    expect(
-      isAdminBypassEligible({ action: 'read', isServiceAccount: false, bypassHeaderPresent: false }),
-    ).toBe(false);
+  test('an unbound caller gets the capability probe verdict', async () => {
+    expect(await viewerManagerStanding(null, async () => true)).toBe(true);
+    expect(await viewerManagerStanding(null, async () => false)).toBe(false);
   });
 });
 
@@ -191,10 +111,10 @@ describe('sessionIsTombstoned — a deleted session refuses every runtime verb',
     expect(sessionIsTombstoned({ metadata: { deletedAt: null } })).toBe(false);
   });
 
-  test('the /start and /restart handlers both ask it after loadVisibleSession', async () => {
+  test('the /start, /restart and /recover handlers all ask it after loadVisibleSession', async () => {
     const src = await Bun.file(new URL('../routes/session-runtime.ts', import.meta.url)).text();
     const occurrences = src.split('sessionIsTombstoned(visible.row)').length - 1;
-    expect(occurrences).toBe(2);
+    expect(occurrences).toBe(3);
   });
 });
 
@@ -215,7 +135,7 @@ describe('deriveEffectiveRole', () => {
 });
 
 /**
- * Spec §2 (agents as principals): under the `agent_principal` flag an agent
+ * Spec §2 (agents as principals): an agent
  * session acts as ITSELF. Ownership and visibility used to key on the launcher's
  * user id, so an agent session could see and stop its launcher's OTHER private
  * sessions. It owns only its own session and the sessions it spawned.
@@ -259,17 +179,23 @@ describe('resolveUserIdentities', () => {
       readAuthUsers: async (ids) => {
         reads.push(ids);
         return [
-          { id: A, email: 'a@example.test', name: 'Ada', full_name: 'Ada Full' },
-          { id: B, email: 'b@example.test', name: null, full_name: 'Bo Full' },
+          { id: A, email: 'a@example.test', name: 'Ada', full_name: 'Ada Full', avatar_url: 'https://img.example.test/a.png' },
+          { id: B, email: 'b@example.test', name: null, full_name: 'Bo Full', avatar_url: '' },
         ];
       },
     });
 
     expect(reads).toEqual([[A, B, GONE]]);
-    expect(identities.get(A)).toEqual({ email: 'a@example.test', displayName: 'Ada', exists: true });
-    expect(identities.get(B)).toEqual({ email: 'b@example.test', displayName: 'Bo Full', exists: true });
-    expect(identities.get(GONE)).toEqual({ email: null, displayName: null, exists: false });
-    expect(identities.get('trigger:nightly')).toEqual({ email: null, displayName: null, exists: false });
+    expect(identities.get(A)).toEqual({
+      email: 'a@example.test',
+      displayName: 'Ada',
+      avatarUrl: 'https://img.example.test/a.png',
+      exists: true,
+    });
+    // A cleared avatar is stored as '' (profile settings): it reads as no avatar.
+    expect(identities.get(B)).toEqual({ email: 'b@example.test', displayName: 'Bo Full', avatarUrl: null, exists: true });
+    expect(identities.get(GONE)).toEqual({ email: null, displayName: null, avatarUrl: null, exists: false });
+    expect(identities.get('trigger:nightly')).toEqual({ email: null, displayName: null, avatarUrl: null, exists: false });
   });
 
   test('never queries for an empty list or for ids that cannot be auth users', async () => {
@@ -292,11 +218,11 @@ describe('resolveUserIdentities', () => {
       },
       lookupUser: async (uid) => {
         looked.push(uid);
-        return { email: null, displayName: null, exists: true, transient: true };
+        return { email: null, displayName: null, avatarUrl: null, exists: true, transient: true };
       },
     });
 
     expect(looked.sort()).toEqual([A, B]);
-    expect(identities.get(A)).toEqual({ email: null, displayName: null, exists: true });
+    expect(identities.get(A)).toEqual({ email: null, displayName: null, avatarUrl: null, exists: true });
   });
 });

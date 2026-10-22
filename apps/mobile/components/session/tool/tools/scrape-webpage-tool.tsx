@@ -17,17 +17,13 @@
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { resolveScrapeResults, wsDomain, type ScrapeResult } from '@kortix/sdk';
+import { extractReadableHtml, safeHttpUrl } from '@kortix/shared';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
 import { GlobeIcon, WarningIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
-import {
-  extractReadableHtml,
-  getScrapeContent,
-  safeHttpUrl,
-  scrapeResultKeys,
-} from '@/lib/session/tools/web-fetch';
+import { getScrapeContent, scrapeResultKeys } from '@/lib/session/tools/web-fetch';
 import { webSpace } from '@/lib/session/user-message';
 import {
   BasicTool,
@@ -35,6 +31,7 @@ import {
   ToolMarkdown,
   partInput,
   partOutput,
+  partRawOutput,
   useToolRowVariant,
 } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
@@ -99,19 +96,19 @@ function ScrapeResultItem({ result, first }: { result: ScrapeResult; first: bool
   );
 }
 
-export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function ScrapeWebpageTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { chain } = useToolRowVariant();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
 
-  const rawOutput = part.state.status === 'completed' ? (part.state as { output?: unknown }).output : undefined;
+  const rawOutput = call.status === 'complete' ? partRawOutput(call) : undefined;
   const results = useMemo(() => resolveScrapeResults(rawOutput ?? output, input), [rawOutput, output, input]);
   const keys = useMemo(() => scrapeResultKeys(results), [results]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={GlobeIcon}
       trigger={
         <Text
@@ -137,5 +134,4 @@ export function ScrapeWebpageTool({ part, defaultOpen, forceOpen, locked }: Tool
   );
 }
 ToolRegistry.register('scrape-webpage', ScrapeWebpageTool);
-ToolRegistry.register('scrape_webpage', ScrapeWebpageTool);
 ToolRegistry.register('scrapewebpage', ScrapeWebpageTool);

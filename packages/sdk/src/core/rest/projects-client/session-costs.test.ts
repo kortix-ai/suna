@@ -326,6 +326,12 @@ test('costExportUrl builds the projects CSV export URL with format=csv', () => {
   );
 });
 
+test('costExportUrl filters a projects export to one project', () => {
+  expect(costExportUrl('projects', { projectId: 'proj-1' })).toBe(
+    'http://test.local/usage/cost-by-project?project_id=proj-1&format=csv',
+  );
+});
+
 test('costExportUrl builds the sessions CSV export URL with project and owner scope', () => {
   const url = costExportUrl('sessions', {
     accountId: 'acct-1',
@@ -345,7 +351,7 @@ test('costExportUrl emits only format=csv when no options are supplied', () => {
   expect(costExportUrl('projects')).toBe('http://test.local/usage/cost-by-project?format=csv');
 });
 
-// `project_id`/`owner_id` have no meaning on `/cost-by-project` (it has no
+// `owner_id` has no meaning on `/cost-by-project` (it has no
 // per-session filter), and `name_asc` has no meaning on `/session-costs` (a
 // session has no project name to sort on, mirroring SESSION_COST_SORTS on the
 // API). The discriminated overload on `costExportUrl`/`fetchCostExportCsv`
@@ -355,14 +361,10 @@ test('costExportUrl emits only format=csv when no options are supplied', () => {
 // `@ts-expect-error` is itself a typecheck error, so this only stays green if
 // every line below still fails to compile.
 test('costExportUrl and fetchCostExportCsv reject the wrong kind\'s fields at compile time', () => {
-  // @ts-expect-error project_id has no meaning on the /cost-by-project route
-  costExportUrl('projects', { projectId: 'proj-1' });
   // @ts-expect-error owner_id has no meaning on the /cost-by-project route
   costExportUrl('projects', { ownerId: 'user-9' });
   // @ts-expect-error name_asc is valid only for the project rollup, not sessions
   costExportUrl('sessions', { sort: 'name_asc' });
-  // @ts-expect-error project_id has no meaning on the /cost-by-project route
-  void fetchCostExportCsv('projects', { projectId: 'proj-1' });
   // @ts-expect-error name_asc is valid only for the project rollup, not sessions
   void fetchCostExportCsv('sessions', { sort: 'name_asc' });
 

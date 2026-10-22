@@ -1,15 +1,21 @@
 import { randomUUID } from 'node:crypto';
 import { teamsPendingUploads } from '@kortix/db';
 import { eq, lt } from 'drizzle-orm';
+import { dbChannelOwnership, gateChannelRead, type ChannelOwnership } from '../../connectors/channel-read-scope';
 import { db } from '../../shared/db';
+import { DOWNLOAD_TOO_LARGE, readCapped } from '../core/download';
 import { loadTeamsBotCredentials } from '../install-store';
 import { provenTeamsTenants } from './inbound';
 import { sendActivity, sendCard } from '../teams-api';
 import { buildNoticeCard } from './cards';
+import { resolveTeamsProjectConversation } from './post';
 import { assertValidTeamsServiceUrl } from '../teams-service-url';
 import { botConnectorToken, graphToken } from '../teams-auth';
+import { logger } from '../../lib/logger';
 import type { TeamsActivity, TeamsConversationRef } from './types';
+import type { TeamsInbound } from './inbound';
 
+const MAX_DOWNLOAD_REDIRECTS = 5;
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
 
@@ -20,13 +26,13 @@ const ALLOWED_DOWNLOAD_HOST =
  * Bot Framework attachment hosts — the only hosts that may receive the bot
  * connector token on the DOWNLOAD path.
  *
- * Deliberately narrower than `ALLOWED_SERVICE_HOST` (teams-service-url.ts),
- * which also allows `azurewebsites.net`, a customer-registrable namespace.
- * The download url is caller-supplied, so reusing the broad list let anyone
- * with project read point the proxy at their own `*.azurewebsites.net` host
- * and capture the bot connector token (CWE-918). `*.trafficmanager.net` is the
- * same class — any Azure customer can name a Traffic Manager profile — so only
- * the Teams connector's own profile, `smba.trafficmanager.net`, is accepted.
+ * The download url is caller-supplied, so a customer-registrable namespace
+ * here lets anyone with project read point the proxy at a host of their own
+ * and capture the bot connector token (CWE-918). `*.azurewebsites.net` is one
+ * (any Azure customer can register an app there), and `*.trafficmanager.net`
+ * is the same class — any Azure customer can name a Traffic Manager profile —
+ * so only the Teams connector's own profile, `smba.trafficmanager.net`, is
+ * accepted. `ALLOWED_SERVICE_HOST` (teams-service-url.ts) excludes both too.
  */
 const ALLOWED_BOT_ATTACHMENT_HOST = /(^smba\.trafficmanager\.net|(^|\.)botframework\.com|(^|\.)botframework\.us)$/i;
 
@@ -58,12 +64,60 @@ export function isAllowedGraphDownload(url: URL): boolean {
   return GRAPH_DOWNLOAD_PATHS.some((re) => re.test(url.pathname));
 }
 
+/**
+ * The conversation a hosted-content URL belongs to, as the read gate names it:
+ * a channel message's thread (`/teams/{t}/channels/{c}/messages/{m}/…`), or a
+ * chat (`/chats/{chat}/messages/…`). Null when an id does not decode.
+ */
+function hostedContentConversation(
+  url: URL,
+): { actionPath: 'get_message' | 'list_messages'; args: Record<string, string> } | null {
+  try {
+    const seg = url.pathname.split('/').map(decodeURIComponent);
+    return seg[2] === 'chats'
+      ? { actionPath: 'list_messages', args: { 'channel-id': seg[3] } }
+      : { actionPath: 'get_message', args: { 'channel-id': seg[5], 'message-id': seg[7] } };
+  } catch {
+    return null;
+  }
+}
+
 export type FileProxyError = { ok: false; error: string; status: number };
 
+/**
+ * Why a Teams token could not be minted (KRTX-2978). Microsoft's token endpoint
+ * answering 400/401 is configuration a person must fix, and its AADSTS code
+ * says which; anything else (network, 5xx) stays the transient 502. The log
+ * carries the status and the code, never the response body or the secret.
+ */
+function tokenFailure(kind: 'bot' | 'Graph', error: unknown): FileProxyError {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = /^Teams token request failed \((\d{3})\)/.exec(message)?.[1];
+  const aadsts = /AADSTS\d+/.exec(message)?.[0];
+  logger.warn('[teams] token mint failed', { kind, status: status ?? null, aadsts: aadsts ?? null });
+  if (status !== '400' && status !== '401') return { ok: false, error: `could not mint a ${kind} token`, status: 502 };
+  const code = aadsts ? ` (${aadsts})` : '';
+  return {
+    ok: false,
+    status: 409,
+    error: kind === 'bot'
+      ? `Microsoft refused the Teams bot token${code}. Renew the Teams bot secret.`
+      : `Microsoft refused the Microsoft Graph token${code}. Renew the Teams bot secret or grant admin consent for Microsoft Graph.`,
+  };
+}
+
+/**
+ * Fetch a file an inbound Teams message carried. A Graph hosted-content URL is
+ * confined like a read of its conversation: the Graph token is the tenant's,
+ * and one tenant can be connected to several projects. A Bot Framework
+ * attachment id and a SharePoint download URL name no conversation; both are
+ * unguessable and come only from an activity this project received.
+ */
 export async function downloadTeamsFile(
   projectId: string,
   url: string,
-): Promise<{ ok: true; body: ArrayBuffer; contentType: string } | FileProxyError> {
+  ownership: ChannelOwnership = dbChannelOwnership,
+): Promise<{ ok: true; body: Uint8Array; contentType: string } | FileProxyError> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -85,37 +139,81 @@ export async function downloadTeamsFile(
     // A Bot Framework attachment (an image pasted into the chat): the
     // connector token that posts our cards is the credential that reads it.
     const creds = await loadTeamsBotCredentials(projectId);
-    const token = await botConnectorToken(creds).catch(() => null);
-    if (!token) return { ok: false, error: 'could not mint a bot token', status: 502 };
+    let token: string;
+    try {
+      token = await botConnectorToken(creds);
+    } catch (error) {
+      return tokenFailure('bot', error);
+    }
     headers.Authorization = `Bearer ${token}`;
   } else if (GRAPH_HOST.test(parsed.hostname)) {
     // The tenant comes from the install record the connect paths proved, not
     // from a project secret an admin can overwrite.
     const [tenant] = await provenTeamsTenants(projectId);
     if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
+    const conversation = hostedContentConversation(parsed);
+    if (!conversation) return { ok: false, error: 'invalid url', status: 400 };
+    const gate = await gateChannelRead({ projectId, platform: 'teams', risk: 'read', ...conversation }, ownership);
+    if (gate.refusal) return { ok: false, error: gate.refusal.message, status: 403 };
     const creds = await loadTeamsBotCredentials(projectId);
-    const token = await graphToken(tenant, creds).catch(() => null);
-    if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
+    let token: string;
+    try {
+      token = await graphToken(tenant, creds);
+    } catch (error) {
+      return tokenFailure('Graph', error);
+    }
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(parsed.href, { headers, signal: AbortSignal.timeout(60_000) });
+  // Redirects are followed by hand. The default `fetch` follows them with the
+  // bot/Graph bearer attached, to any host: a pre-authenticated SharePoint link,
+  // or any `*.microsoft.com` page with an open redirect, would then receive the
+  // token. Each hop must pass the same https + host allowlist, and the bearer
+  // goes only to the host it was minted for.
+  let current = parsed;
+  let res: Response | null = null;
+  for (let hop = 0; hop <= MAX_DOWNLOAD_REDIRECTS; hop++) {
+    res = await fetch(current.href, {
+      headers: current.host === parsed.host ? headers : {},
+      redirect: 'manual',
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status < 300 || res.status >= 400) break;
+    const location = res.headers.get('location');
+    if (!location) break;
+    let next: URL;
+    try {
+      next = new URL(location, current);
+    } catch {
+      return { ok: false, error: 'invalid redirect', status: 502 };
+    }
+    if (
+      next.protocol !== 'https:' ||
+      (!ALLOWED_DOWNLOAD_HOST.test(next.hostname) && !ALLOWED_BOT_ATTACHMENT_HOST.test(next.hostname))
+    ) {
+      return { ok: false, error: 'redirect leaves the allowed Microsoft/SharePoint hosts', status: 502 };
+    }
+    current = next;
+    res = null;
+  }
+  if (!res) return { ok: false, error: 'too many redirects', status: 502 };
   if (!res.ok) return { ok: false, error: `download failed: HTTP ${res.status}`, status: 502 };
-  return {
-    ok: true,
-    body: await res.arrayBuffer(),
-    contentType: res.headers.get('content-type') ?? 'application/octet-stream',
-  };
+  const body = await readCapped(res);
+  if (!body) return { ok: false, error: DOWNLOAD_TOO_LARGE, status: 413 };
+  return { ok: true, body, contentType: res.headers.get('content-type') ?? 'application/octet-stream' };
 }
 
 export interface TeamsUploadArgs {
-  serviceUrl: string;
+  /** A conversation bound to the project. Its service URL and tenant come from the server, never the caller. */
   conversationId: string;
   botId?: string;
   filename: string;
   contentBase64: string;
   description?: string;
-  /** Where the file goes. Absent = personal (the pre-existing consent-card path). */
+  /**
+   * Where the file goes, when the binding does not record it. The binding's
+   * own type wins. Absent both = personal (the consent-card path).
+   */
   conversationType?: 'personal' | 'groupChat' | 'channel';
   /** The team's Microsoft 365 group id (channels only) — the drive the file is uploaded to. */
   teamGroupId?: string;
@@ -133,6 +231,12 @@ const IMAGE_TYPES: Record<string, string> = {
   gif: 'image/gif',
   webp: 'image/webp',
 };
+
+const UPLOAD_SCOPES = new Set(['personal', 'groupChat', 'channel']);
+
+function uploadScope(stored: string | null): TeamsUploadArgs['conversationType'] | null {
+  return stored && UPLOAD_SCOPES.has(stored) ? (stored as TeamsUploadArgs['conversationType']) : null;
+}
 
 function imageContentType(filename: string): string | null {
   const ext = filename.toLowerCase().split('.').pop() ?? '';
@@ -153,20 +257,11 @@ export async function initiateTeamsUpload(
   projectId: string,
   args: TeamsUploadArgs,
 ): Promise<TeamsUploadResult | FileProxyError> {
-  if (!args.serviceUrl || !args.conversationId || !args.filename || !args.contentBase64) {
+  const conversationId = args.conversationId?.trim();
+  if (!conversationId || !args.filename || !args.contentBase64) {
     return {
       ok: false,
-      error: 'serviceUrl, conversationId, filename and content_base64 are required',
-      status: 400,
-    };
-  }
-  // F-7: the caller-supplied serviceUrl must be a trusted Microsoft Bot Framework
-  // endpoint, otherwise the bot connector token would be leaked to an arbitrary
-  // host when the consent card is posted. Reject before persisting.
-  if (!assertValidTeamsServiceUrl(args.serviceUrl)) {
-    return {
-      ok: false,
-      error: 'serviceUrl must be an https Microsoft Bot Framework endpoint',
+      error: 'conversation_id, filename and content_base64 are required',
       status: 400,
     };
   }
@@ -180,13 +275,19 @@ export async function initiateTeamsUpload(
     };
   }
 
-  const ref: TeamsConversationRef = {
-    serviceUrl: args.serviceUrl,
-    conversationId: args.conversationId,
-    botId: args.botId,
-    projectId,
-  };
-  const scope = args.conversationType ?? 'personal';
+  // The address is the SERVER's: a conversation bound to this project, at the
+  // service URL its inbound activities stored. The route used to take
+  // `service_url` from the request body, and the allowlist accepted
+  // `*.azurewebsites.net`, so a caller with connector-write could have the
+  // bot's token sent to a host of their own, and post into any conversation
+  // the bot reaches (F-7, CWE-862).
+  const conversation = await resolveTeamsProjectConversation(projectId, conversationId);
+  if (!conversation.ok) return conversation;
+  if (!assertValidTeamsServiceUrl(conversation.ref.serviceUrl)) {
+    return { ok: false, error: 'The stored Teams service URL is not a Microsoft Bot Framework endpoint', status: 409 };
+  }
+  const ref: TeamsConversationRef = { ...conversation.ref, botId: args.botId };
+  const scope = uploadScope(conversation.conversationType) ?? args.conversationType ?? 'personal';
 
   // An IMAGE is shown inline first, in every scope — the way Slack shows one.
   //
@@ -237,8 +338,8 @@ export async function initiateTeamsUpload(
   await db.insert(teamsPendingUploads).values({
     uploadId,
     projectId,
-    serviceUrl: args.serviceUrl,
-    conversationId: args.conversationId,
+    serviceUrl: ref.serviceUrl,
+    conversationId: ref.conversationId,
     botId: args.botId ?? null,
     filename: args.filename,
     contentType: null,
@@ -309,8 +410,12 @@ async function uploadToTeamDrive(
   const [tenant] = await provenTeamsTenants(projectId);
   if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
   const creds = await loadTeamsBotCredentials(projectId);
-  const token = await graphToken(tenant, creds).catch(() => null);
-  if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
+  let token: string;
+  try {
+    token = await graphToken(tenant, creds);
+  } catch (error) {
+    return tokenFailure('Graph', error);
+  }
 
   // The drive is chosen by the TEAM THAT OWNS THIS CONVERSATION, verified
   // server-side — never by the client-supplied id alone. Without this, a
@@ -384,7 +489,17 @@ interface FileConsentValue {
   };
 }
 
-export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<void> {
+/** Where a consent card's file may be PUT: a Microsoft 365 upload session over https. */
+function isMicrosoftUploadUrl(url: string | undefined): url is string {
+  try {
+    const parsed = new URL(url ?? '');
+    return parsed.protocol === 'https:' && ALLOWED_DOWNLOAD_HOST.test(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+export async function handleFileConsentInvoke(activity: TeamsActivity, inbound: TeamsInbound): Promise<void> {
   const value = (activity as unknown as { value?: FileConsentValue }).value ?? {};
   const uploadId = value.context?.uploadId;
   if (!uploadId) return;
@@ -394,6 +509,16 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
     .from(teamsPendingUploads)
     .where(eq(teamsPendingUploads.uploadId, uploadId))
     .limit(1);
+  // A consent card is answered from the conversation it went to, through the
+  // bot that sent it. An answer from anywhere else leaves the upload alone: a
+  // bring-your-own bot's owner can write any activity body to its endpoint.
+  if (
+    row &&
+    (row.conversationId !== activity.conversation?.id ||
+      (inbound.kind === 'project' && row.projectId !== inbound.projectId))
+  ) {
+    return;
+  }
 
   const ref: TeamsConversationRef = {
     serviceUrl: activity.serviceUrl ?? row?.serviceUrl ?? '',
@@ -409,7 +534,9 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
       .catch(() => {});
     return;
   }
-  if (!row || !value.uploadInfo?.uploadUrl) {
+  const info = value.uploadInfo ?? {};
+  const uploadUrl = info.uploadUrl;
+  if (!row || !isMicrosoftUploadUrl(uploadUrl)) {
     if (ref.serviceUrl && ref.conversationId) {
       await sendActivity(ref, {
         type: 'message',
@@ -424,7 +551,7 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
   }
 
   const bytes = Buffer.from(row.contentBase64, 'base64');
-  const put = await fetch(value.uploadInfo.uploadUrl, {
+  const put = await fetch(uploadUrl, {
     method: 'PUT',
     headers: {
       'Content-Length': String(bytes.length),
@@ -451,9 +578,9 @@ export async function handleFileConsentInvoke(activity: TeamsActivity): Promise<
     attachments: [
       {
         contentType: 'application/vnd.microsoft.teams.card.file.info',
-        contentUrl: value.uploadInfo.contentUrl,
-        name: value.uploadInfo.name ?? row.filename,
-        content: { uniqueId: value.uploadInfo.uniqueId, fileType: value.uploadInfo.fileType },
+        contentUrl: info.contentUrl,
+        name: info.name ?? row.filename,
+        content: { uniqueId: info.uniqueId, fileType: info.fileType },
       },
     ],
   });

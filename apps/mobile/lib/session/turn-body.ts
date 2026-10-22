@@ -1,74 +1,105 @@
 /**
- * Pure rules behind the assistant side of a turn — which parts render, in which
- * section, and when the busy indicator, error, and action bar show.
+ * Pure rules behind the assistant side of a turn — which blocks render, in
+ * which section, and when the busy indicator, error, and action bar show.
  *
- * Ported from apps/web `features/session/session-chat.tsx` `SessionTurnImpl`
- * (`hasSteps`, `hasReasoning`, `answeredQuestionParts`, `inlineContentParts`,
- * the `segments` input, `response`, `turnError`, the action bar gate, the
- * compaction branch), `SessionChat` (`suppressWorkingTurnBusy`,
- * `someTurnDrawsBusyRow`, `hasCompactionTurn`, `lastCompactionTurnIndex`,
- * `suppressedFailedCompaction`), `turn-busy-visibility.ts`, and
- * `use-oc-file-open.ts` `toDisplayPath`.
+ * Ported from apps/web `features/session/session-chat/transcript.tsx`
+ * (`isStepBlock`, `response`, `collectAnsweredQuestions`, the inline content,
+ * the segments input, `resolveTurnError`, `deriveTurnErrorAbortState`, the
+ * action bar gate, the compaction branch), `session-chat.tsx`
+ * (`suppressWorkingTurnBusy`, `someTurnDrawsBusyRow`, `hasCompactionTurn`,
+ * `lastCompactionTurnIndex`, `suppressedFailedCompaction`),
+ * `turn-busy-visibility.ts`, and `use-oc-file-open.ts` `toDisplayPath`.
  *
+ * Every rule reads the SDK's block turn (`SessionLogTurn`, `sessionLogTurns`).
  * No React, no React Native. `components/session/SessionTurn.tsx` composes it.
  */
 
 import {
-  compactionTurnInfo,
-  findLastTextPart,
-  getTurnError,
-  isAbortError,
-  isReasoningPart,
-  isTextPart,
-  isToolPart,
+  sessionLogActivityText,
+  sessionLogAnsweredQuestionCall,
+  sessionLogOpenCall,
+  sessionLogTurnSegments,
   shouldShowToolPart,
-  unwrapError,
-  type CompactionTurnInfo,
-  type Part,
-  type Segment,
-  type TextPart,
-  type ToolPart,
-  type WorkingTurnResolution,
+  splitSessionLogTurnWork,
+  toolCallMetadata,
+  type SessionLogBlock,
+  type SessionLogCompaction,
+  type SessionLogMessage,
+  type SessionLogSegment,
+  type SessionLogTurn,
+  type SessionLogTurnWorkSplit,
+  type TextBlock,
+  type ToolCallBlock,
 } from '@kortix/sdk';
 
+import { burstView } from './activity';
 import { connectorHandoffCallIds } from './connector-handoff';
-
-/** The turn fields these rules read. Structural, so mobile and SDK turns both fit. */
-export interface TurnBodyTurn {
-  userMessage: { info: { id: string }; parts: ReadonlyArray<Part> };
-  assistantMessages: ReadonlyArray<{
-    info: { id: string; error?: unknown; time?: { completed?: number } };
-    parts: ReadonlyArray<Part>;
-  }>;
-}
-
-type PartEntry = { part: Part };
+import { partRawOutput } from './tool-part-accessors';
+import { messageAborted } from './turn-error';
 
 /** Web `isPlanWriteTool` (turn/plan-anchor.ts): the runtime emits both spellings. */
 function isPlanWriteTool(tool: string): boolean {
   return tool === 'todowrite' || tool === 'todo_write';
 }
 
+// ─── Blocks ──────────────────────────────────────────────────────────────────
+
+const visibleBlocks = new WeakMap<SessionLogTurn, SessionLogBlock[]>();
+
+/**
+ * The turn's reply blocks without reasoning (mobile never shows thinking),
+ * each call in its open shape (`sessionLogOpenCall`): the v1 live view and the
+ * v2 page at rest hand every rule below one shape. One array per turn object.
+ */
+export function turnBlocks(turn: SessionLogTurn): SessionLogBlock[] {
+  let list = visibleBlocks.get(turn);
+  if (!list) {
+    list = turn.blocks.flatMap((b) => (b.type === 'reasoning' ? [] : [b.type === 'tool_call' ? sessionLogOpenCall(b) : b]));
+    visibleBlocks.set(turn, list);
+  }
+  return list;
+}
+
 // ─── Sections ────────────────────────────────────────────────────────────────
 
 /**
- * True when the turn has work that renders in the steps section. Plan writes,
- * `task`, and `question` render elsewhere and do not count.
+ * A block that renders in the steps section: a snapshot, a patch or a
+ * compaction, or a visible call other than the plan write, `task` and
+ * `question` (each rendered elsewhere).
  */
-export function turnHasSteps(allParts: ReadonlyArray<PartEntry>): boolean {
-  return allParts.some(({ part }) => {
-    const type = (part as { type: string }).type;
-    if (type === 'compaction' || type === 'snapshot' || type === 'patch') return true;
-    if (isToolPart(part)) {
-      if (isPlanWriteTool(part.tool) || part.tool === 'task' || part.tool === 'question') return false;
-      return shouldShowToolPart(part);
-    }
-    return false;
-  });
+function isStepBlock(block: SessionLogBlock): boolean {
+  if (block.type === 'compaction') return true;
+  if (block.type === 'harness') return block.kind === 'compaction' || block.kind === 'snapshot' || block.kind === 'patch';
+  if (block.type !== 'tool_call') return false;
+  if (isPlanWriteTool(block.name) || block.name === 'task' || block.name === 'question') return false;
+  return shouldShowToolPart(block);
 }
 
-export function turnHasReasoning(allParts: ReadonlyArray<PartEntry>): boolean {
-  return allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim());
+/** True when the turn has work that renders in the steps section. */
+export function turnHasSteps(blocks: ReadonlyArray<SessionLogBlock>): boolean {
+  return blocks.some(isStepBlock);
+}
+
+/**
+ * The turn's activity line ("Reading files..."). A thought stays in, with its
+ * text blanked, so the line is a bare "Thinking..." (the SDK's status scan
+ * returns the last tool's phrase otherwise) and no thought text or heading
+ * reaches the screen.
+ */
+export function busyStatusText(blocks: ReadonlyArray<SessionLogBlock>): string {
+  return sessionLogActivityText({ blocks: blocks.map(blankedThought) });
+}
+
+/**
+ * One blanked copy per reasoning block: a fresh copy on every streamed frame
+ * made the SDK build a new v1 part for every thought of the live turn.
+ */
+const blankedThoughts = new WeakMap<SessionLogBlock, SessionLogBlock>();
+function blankedThought(block: SessionLogBlock): SessionLogBlock {
+  if (block.type !== 'reasoning') return block;
+  let blank = blankedThoughts.get(block);
+  if (!blank) blankedThoughts.set(block, (blank = { ...block, text: '' }));
+  return blank;
 }
 
 // ─── Answered questions ──────────────────────────────────────────────────────
@@ -95,57 +126,44 @@ export function parseAnswersFromOutput(output: string, input?: QuestionInput): s
   return null;
 }
 
-function withAnswers(part: ToolPart, answers: string[][]): ToolPart {
-  const state = part.state as unknown as Record<string, unknown>;
-  return {
-    ...part,
-    state: {
-      ...state,
-      status: 'completed',
-      metadata: { ...((state.metadata as Record<string, unknown>) ?? {}), answers },
-    },
-  } as unknown as ToolPart;
-}
-
 /**
  * The turn's question calls that were answered, in order. A question that is
  * pending (its call id is in `pendingCallIds`) with nothing after it is still
  * being asked and is left out. When the server has not attached
  * `metadata.answers`, the answers come from the output, or a placeholder when
- * the agent visibly continued. Web also consults an optimistic answer cache;
- * mobile has none.
+ * the agent visibly continued (`sessionLogAnsweredQuestionCall`). Web also
+ * consults an optimistic answer cache; mobile has none.
  */
-export function answeredQuestionParts(turn: TurnBodyTurn, pendingCallIds: ReadonlySet<string>): ToolPart[] {
-  const result: ToolPart[] = [];
-  const messages = turn.assistantMessages;
-  for (let mi = 0; mi < messages.length; mi++) {
-    const parts = messages[mi].parts;
-    for (let pi = 0; pi < parts.length; pi++) {
-      const part = parts[pi];
-      if (!isToolPart(part) || part.tool !== 'question') continue;
+export function answeredQuestionCalls(
+  replies: ReadonlyArray<SessionLogMessage>,
+  pendingCallIds: ReadonlySet<string>,
+): ToolCallBlock[] {
+  const result: ToolCallBlock[] = [];
+  for (let mi = 0; mi < replies.length; mi++) {
+    const blocks = replies[mi].blocks;
+    for (let bi = 0; bi < blocks.length; bi++) {
+      const block = blocks[bi];
+      if (block.type !== 'tool_call' || block.name !== 'question') continue;
+      const call = sessionLogOpenCall(block);
 
-      let hasSubsequentContent = mi < messages.length - 1;
-      for (let next = pi + 1; next < parts.length && !hasSubsequentContent; next++) {
-        const type = (parts[next] as { type: string }).type;
-        if (type !== 'step-finish' && type !== 'step-start') hasSubsequentContent = true;
+      let hasSubsequentContent = mi < replies.length - 1;
+      for (let next = bi + 1; next < blocks.length && !hasSubsequentContent; next++) {
+        if (blocks[next].type !== 'step') hasSubsequentContent = true;
       }
 
-      if (pendingCallIds.has(part.callID) && !hasSubsequentContent) continue;
+      if (pendingCallIds.has(call.call_id) && !hasSubsequentContent) continue;
 
-      const state = part.state as unknown as {
-        input?: QuestionInput;
-        output?: string;
-        metadata?: { answers?: string[][] };
-      };
-      const serverAnswers = state.metadata?.answers;
-      if (serverAnswers && serverAnswers.length > 0) {
-        result.push(part);
-      } else if (state.output && hasSubsequentContent) {
-        const parsed = parseAnswersFromOutput(state.output, state.input);
-        if (parsed) result.push(withAnswers(part, parsed));
-      } else if (!state.output && hasSubsequentContent) {
-        const asked = Array.isArray(state.input?.questions) ? state.input!.questions! : [];
-        if (asked.length > 0) result.push(withAnswers(part, asked.map(() => ['Answered'])));
+      const input = (typeof call.input === 'object' && call.input !== null ? call.input : {}) as QuestionInput;
+      const output = call.status === 'complete' ? partRawOutput(call) : '';
+      const serverAnswers = toolCallMetadata(call).answers;
+      if (Array.isArray(serverAnswers) && serverAnswers.length > 0) {
+        result.push(call);
+      } else if (output && hasSubsequentContent) {
+        const parsed = parseAnswersFromOutput(output, input);
+        if (parsed) result.push(sessionLogAnsweredQuestionCall(call, parsed));
+      } else if (!output && hasSubsequentContent) {
+        const asked = Array.isArray(input.questions) ? input.questions : [];
+        if (asked.length > 0) result.push(sessionLogAnsweredQuestionCall(call, asked.map(() => ['Answered'])));
       }
     }
   }
@@ -153,24 +171,24 @@ export function answeredQuestionParts(turn: TurnBodyTurn, pendingCallIds: Readon
 }
 
 export type InlineContentItem =
-  | { type: 'text'; part: TextPart; id: string }
-  | { type: 'question'; part: ToolPart; id: string };
+  | { type: 'text'; block: TextBlock; id: string }
+  | { type: 'question'; call: ToolCallBlock; id: string };
 
 /**
  * Text and answered questions in natural order — only when the turn has both.
- * The question entry carries the answered (possibly synthetic) part.
+ * The question entry carries the answered (possibly synthetic) call.
  */
 export function inlineContentItems(
-  allParts: ReadonlyArray<PartEntry>,
-  answeredById: ReadonlyMap<string, ToolPart>,
+  blocks: ReadonlyArray<SessionLogBlock>,
+  answeredById: ReadonlyMap<string, ToolCallBlock>,
 ): InlineContentItem[] | null {
   if (answeredById.size === 0) return null;
   const items: InlineContentItem[] = [];
-  for (const { part } of allParts) {
-    if (isTextPart(part) && part.text?.trim()) {
-      items.push({ type: 'text', part, id: part.id });
-    } else if (isToolPart(part) && part.tool === 'question' && answeredById.has(part.id)) {
-      items.push({ type: 'question', part: answeredById.get(part.id)!, id: part.id });
+  for (const block of blocks) {
+    if (block.type === 'text' && block.text.trim()) {
+      items.push({ type: 'text', block, id: block.id });
+    } else if (block.type === 'tool_call' && block.name === 'question' && answeredById.has(block.id)) {
+      items.push({ type: 'question', call: answeredById.get(block.id)!, id: block.id });
     }
   }
   const hasText = items.some((i) => i.type === 'text');
@@ -181,28 +199,45 @@ export function inlineContentItems(
 // ─── Segments ────────────────────────────────────────────────────────────────
 
 /**
- * The parts `segmentTurn` receives. Only answered questions stay, as their
- * answered part, and not when the inline content already shows them.
+ * The blocks the segments receive. Only answered questions stay, as their
+ * answered call, and not when the inline content already shows them.
  *
  * Deviation from web: web also drops plan writes (`todowrite`) because its
  * Plan card is the canonical todo surface. Mobile has no plan card, so the
  * plan write stays in its burst.
  */
-export function segmentInputParts(
-  allParts: ReadonlyArray<PartEntry>,
-  answeredById: ReadonlyMap<string, ToolPart>,
+export function segmentInputBlocks(
+  blocks: ReadonlyArray<SessionLogBlock>,
+  answeredById: ReadonlyMap<string, ToolCallBlock>,
   useInlineContent: boolean,
-): Part[] {
-  const parts: Part[] = [];
-  for (const { part } of allParts) {
-    if (isToolPart(part) && part.tool === 'question') {
-      if (!answeredById.has(part.id) || useInlineContent) continue;
-      parts.push(answeredById.get(part.id) ?? part);
+): SessionLogBlock[] {
+  const out: SessionLogBlock[] = [];
+  for (const block of blocks) {
+    if (block.type === 'tool_call' && block.name === 'question') {
+      if (!answeredById.has(block.id) || useInlineContent) continue;
+      out.push(answeredById.get(block.id) ?? block);
       continue;
     }
-    parts.push(part);
+    out.push(block);
   }
-  return parts;
+  return out;
+}
+
+/** A turn segment as mobile draws it: a burst, a text block, or one standalone call (no show carousel). */
+export type TurnSegment = Exclude<SessionLogSegment, { kind: 'show-group' }>;
+
+/**
+ * The SDK's segments (`sessionLogTurnSegments`) with each run of `show` calls
+ * back as one standalone segment per call: mobile draws every `show` call as
+ * its own card.
+ */
+export function turnSegments(
+  blocks: ReadonlyArray<SessionLogBlock>,
+  standaloneCallIds: ReadonlySet<string>,
+): TurnSegment[] {
+  return sessionLogTurnSegments(blocks, { standaloneCallIds }).flatMap((segment): TurnSegment[] =>
+    segment.kind === 'show-group' ? segment.blocks.map((block) => ({ kind: 'standalone', block })) : [segment],
+  );
 }
 
 /**
@@ -217,100 +252,205 @@ export function segmentInputParts(
 export function standaloneCallIdsFor(
   permissions: ReadonlyArray<{ sessionID?: string; tool?: { callID?: string } }>,
   sessionId: string | undefined,
-  parts: ReadonlyArray<PartEntry> = [],
+  blocks: ReadonlyArray<SessionLogBlock> = [],
 ): Set<string> {
   const ids = new Set<string>();
   for (const permission of permissions) {
     if (permission.sessionID === sessionId && permission.tool?.callID) ids.add(permission.tool.callID);
   }
-  for (const callId of connectorHandoffCallIds(parts)) ids.add(callId);
+  for (const callId of connectorHandoffCallIds(blocks)) ids.add(callId);
   return ids;
 }
 
 /** The id of the last text segment — the one that can still be streaming. */
-export function lastTextPartId(segments: ReadonlyArray<Segment>): string | undefined {
+export function lastTextBlockId(segments: ReadonlyArray<TurnSegment>): string | undefined {
   for (let i = segments.length - 1; i >= 0; i--) {
     const segment = segments[i];
-    if (segment.kind === 'text') return segment.part.id;
+    if (segment.kind === 'text') return segment.block.id;
   }
   return undefined;
+}
+
+/** Block id -> message, built once per reply list: a scan per text block was O(texts x blocks) per streamed frame. */
+const blockMessages = new WeakMap<ReadonlyArray<SessionLogMessage>, Map<string, SessionLogMessage>>();
+function messageOfBlockId(assistant: ReadonlyArray<SessionLogMessage>, blockId: string) {
+  let index = blockMessages.get(assistant);
+  if (!index) {
+    index = new Map();
+    for (const m of assistant) for (const b of m.blocks) if (!index.has(b.id)) index.set(b.id, m);
+    blockMessages.set(assistant, index);
+  }
+  return index.get(blockId);
+}
+
+/**
+ * KRTX-2933: the text block that can still grow, by the part's own state, not
+ * only the turn's. It is the last text segment, its message still streams,
+ * and no later block of that message follows it. Call only while the turn is
+ * live: `turn.live` follows the session's busy flag, which can read busy
+ * after the reply ended.
+ */
+export function liveTextBlockId(
+  assistant: ReadonlyArray<SessionLogMessage>,
+  segments: ReadonlyArray<TurnSegment>,
+): string | undefined {
+  const id = lastTextBlockId(segments);
+  return id !== undefined && isOpenTextBlock(assistant, id) ? id : undefined;
+}
+
+/** The block's message still streams and the block is that message's last block. */
+export function isOpenTextBlock(assistant: ReadonlyArray<SessionLogMessage>, blockId: string): boolean {
+  const message = messageOfBlockId(assistant, blockId);
+  return message?.status === 'streaming' && message.blocks[message.blocks.length - 1]?.id === blockId;
+}
+
+/** `message_id:block_id`: the key the stream pacer remembers a part's revealed length under. */
+export function textBlockRevealKey(assistant: ReadonlyArray<SessionLogMessage>, blockId: string): string {
+  const message = messageOfBlockId(assistant, blockId);
+  return message ? `${message.message_id}:${blockId}` : blockId;
+}
+
+// ─── Settled-turn fold (KRTX-2113) ───────────────────────────────────────────
+
+/** False when `SessionTurn` draws nothing for the segment (a plumbing-only burst, a hidden tool, blank text). */
+function segmentRendersSomething(segment: TurnSegment): boolean {
+  if (segment.kind === 'burst') return !burstView(segment.blocks, false).hidden;
+  if (segment.kind === 'standalone') return shouldShowToolPart(segment.block);
+  return !!segment.block.text.trim();
+}
+
+/**
+ * The SDK's `splitSessionLogTurnWork` over the segments that draw something,
+ * so the "Worked for" row never opens onto nothing and an invisible segment
+ * never stands between the final text and the end of the turn. `null` =
+ * render as today (working, or no work to fold). Interim text is work: the
+ * opened row shows it inline, between the bursts it narrates.
+ */
+export function turnWorkSplit(
+  segments: ReadonlyArray<TurnSegment>,
+  working: boolean,
+): { [K in keyof SessionLogTurnWorkSplit]: TurnSegment[] } | null {
+  if (working) return null;
+  // The split hands back the segments it was given: no show group goes in, none comes out.
+  return splitSessionLogTurnWork(segments.filter(segmentRendersSomething), { working }) as {
+    [K in keyof SessionLogTurnWorkSplit]: TurnSegment[];
+  } | null;
+}
+
+// ─── Layout ──────────────────────────────────────────────────────────────────
+
+export interface TurnBodyLayout {
+  /** The segments list (bursts, standalone rows, and text when `text` is 'segments') renders. */
+  segments: boolean;
+  /**
+   * Where the reply text renders:
+   * - 'segments': each text block in the segments list, keyed by its block id;
+   * - 'response': one block, in the slash-command card;
+   * - 'inline': the inline content (text + answered questions).
+   */
+  text: 'segments' | 'response' | 'inline';
+}
+
+/**
+ * Where each block of a turn renders (KRTX-1678). The reply text stays in the
+ * segments list for the whole stream: it does not depend on `working` or on
+ * whether a tool ran yet. A text-only reply that moved into the segments list
+ * on the first tool call remounted mid-stream, a visible jump, and the
+ * streaming block showed only the active message while the settled one joined
+ * every message. A slash-command reply keeps its card until a step arrives.
+ */
+export function turnBodyLayout({
+  working,
+  hasSteps,
+  hasAssistantContent,
+  showInlineContent,
+  isCommand,
+}: {
+  working: boolean;
+  hasSteps: boolean;
+  hasAssistantContent: boolean;
+  showInlineContent: boolean;
+  isCommand: boolean;
+}): TurnBodyLayout {
+  const text = showInlineContent ? 'inline' : isCommand && !hasSteps ? 'response' : 'segments';
+  const segments = hasAssistantContent && (text === 'segments' || working || hasSteps);
+  return { segments, text };
 }
 
 // ─── Response ────────────────────────────────────────────────────────────────
 
 /**
  * The turn's response text (web `response`):
- * - working: the text of the active (not yet completed) assistant message,
- *   falling back to the last text part;
- * - settled without steps: every non-blank text part, joined by a blank line;
- * - settled with steps: the last text part, trimmed; when that is empty and
- *   the turn errored, every non-blank text part.
+ * - working: the text of the active (not yet completed) reply, falling back
+ *   to the last text block;
+ * - settled without steps: every non-blank text block, joined by a blank line;
+ * - settled with steps: the last text block, trimmed; when that is empty and
+ *   the turn errored, every non-blank text block.
  */
 export function turnResponse({
   turn,
-  allParts,
+  blocks,
   working,
   hasSteps,
 }: {
-  turn: TurnBodyTurn;
-  allParts: ReadonlyArray<PartEntry>;
+  turn: SessionLogTurn;
+  blocks: ReadonlyArray<SessionLogBlock>;
   working: boolean;
   hasSteps: boolean;
 }): string {
-  const lastText = (findLastTextPart(allParts as PartEntry[]) as TextPart | undefined)?.text ?? '';
+  const lastText = turn.response?.text ?? '';
 
   if (working) {
-    const messages = turn.assistantMessages;
-    let active = messages[messages.length - 1];
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (!messages[i].info.time?.completed) {
-        active = messages[i];
+    const replies = turn.assistant;
+    let active = replies[replies.length - 1];
+    for (let i = replies.length - 1; i >= 0; i--) {
+      if (replies[i].completed_at === null) {
+        active = replies[i];
         break;
       }
     }
     let streaming = '';
-    for (const part of active?.parts ?? []) {
-      if (isTextPart(part)) streaming += part.text ?? '';
+    for (const block of active?.blocks ?? []) {
+      if (block.type === 'text') streaming += block.text;
     }
     return streaming || lastText;
   }
 
-  const texts = allParts
-    .map(({ part }) => (isTextPart(part) ? part.text?.trim() : ''))
+  const texts = blocks
+    .map((block) => (block.type === 'text' ? block.text.trim() : ''))
     .filter((value): value is string => Boolean(value));
 
   if (!hasSteps && texts.length > 0) return texts.join('\n\n');
   if (lastText.trim()) return lastText.trim();
-  const errored = turn.assistantMessages.some((m) => m.info.error);
+  const errored = turn.assistant.some((m) => m.error);
   return errored ? texts.join('\n\n').trim() : '';
 }
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
-/** The message-level error, else a dismissed question's error without its "Error:" prefix. */
-export function turnErrorText(turn: TurnBodyTurn): string | undefined {
-  const messageError = getTurnError(turn as never);
-  if (messageError) return messageError;
-  for (const message of turn.assistantMessages) {
-    for (const part of message.parts) {
-      if (!isToolPart(part) || part.tool !== 'question') continue;
-      const state = part.state as { status: string; error?: string };
-      if (state.status === 'error' && typeof state.error === 'string') {
-        return state.error.replace(/^Error:\s*/, '');
-      }
+/** The text a call's result carries (a v1 part's `output` or `error`). */
+function resultText(call: ToolCallBlock): string {
+  return (call.result?.content ?? []).flatMap((c) => (c.type === 'text' ? [c.text] : [])).join('');
+}
+
+/** The reply error, else a dismissed question's error without its "Error:" prefix. */
+export function turnErrorText(turn: SessionLogTurn): string | undefined {
+  if (turn.error) return turn.error.message;
+  for (const block of turn.blocks) {
+    if (block.type !== 'tool_call' || block.name !== 'question') continue;
+    const call = sessionLogOpenCall(block);
+    if (call.status === 'error' && call.result) {
+      return (call.result.error?.message ?? resultText(call)).replace(/^Error:\s*/, '');
     }
   }
   return undefined;
 }
 
-/** Web `deriveTurnErrorAbortState`: the first structured message error decides. */
-export function turnErrorIsAbort(turn: TurnBodyTurn): boolean {
-  for (const message of turn.assistantMessages) {
-    const error = message.info.error;
-    if (!error || typeof error !== 'object') continue;
-    return isAbortError(error);
-  }
-  return false;
+/** Web `deriveTurnErrorAbortState`: the first errored message (a compaction's marker first) decides. */
+export function turnErrorIsAbort(turn: Pick<SessionLogTurn, 'user' | 'assistant'>): boolean {
+  const sources = turn.user.kind === 'compaction' ? [turn.user, ...turn.assistant] : turn.assistant;
+  const message = sources.find((m) => m.error);
+  return !!message && messageAborted(message);
 }
 
 // ─── Visibility ──────────────────────────────────────────────────────────────
@@ -323,21 +463,15 @@ export function showTurnBusyIndicator(input: { working: boolean; hasError: boole
 }
 
 /**
- * Web `SessionChat` `suppressWorkingTurnBusy`: the resolved working turn has a
- * COMPLETED answer while prompts wait below it. Its busy row would sit above
- * the queued prompt and jump down once that prompt runs, so the turn draws no
- * row. A turn still streaming has an open assistant message and never
- * suppresses.
+ * Web `SessionChat` `suppressWorkingTurnBusy`: the live turn has a COMPLETED
+ * answer while prompts wait below it. Its busy row would sit above the queued
+ * prompt and jump down once that prompt runs, so the turn draws no row. A
+ * turn still streaming has an open reply and never suppresses.
  */
-export function suppressWorkingTurnBusy(
-  turns: ReadonlyArray<TurnBodyTurn>,
-  resolution: Pick<WorkingTurnResolution, 'workingTurnId' | 'pendingTurnIds'>,
-): boolean {
-  if (resolution.pendingTurnIds.length === 0) return false;
-  const working = turns.find((t) => t.userMessage.info.id === resolution.workingTurnId);
-  if (!working || working.assistantMessages.length === 0) return false;
-  const newest = working.assistantMessages[working.assistantMessages.length - 1];
-  return !!newest.info.time?.completed;
+export function suppressWorkingTurnBusy(turns: ReadonlyArray<SessionLogTurn>): boolean {
+  const live = turns.find((t) => t.live);
+  if (!live || live.assistant.length === 0 || !turns.some((t) => t.queued)) return false;
+  return live.assistant[live.assistant.length - 1].completed_at !== null;
 }
 
 /**
@@ -372,37 +506,27 @@ export type CompactionTurnView =
 /**
  * Web `SessionTurnImpl`'s compaction branch — the whole render of a compaction
  * turn:
- * - running (`working || info.inFlight`), a summary, or a compaction part →
- *   the divider marker;
- * - otherwise the failed row. Its error is the turn error, else the summary
- *   message's own error (a SYNTHETIC turn has no assistant messages for
- *   `getTurnError` to read), unwrapped. An abort is the turn's structured
- *   abort or a structured abort on the summary message.
+ * - running (`working || inFlight`), a summary, or a compaction block → the
+ *   divider marker;
+ * - otherwise the failed row, with the turn error (the marker's own error
+ *   first) and whether that error is an abort.
  */
 export function compactionTurnView(input: {
   working: boolean;
-  info: Pick<CompactionTurnInfo, 'inFlight' | 'hasContent' | 'error'>;
+  compaction: Pick<SessionLogCompaction, 'inFlight' | 'hasContent'>;
   response: string;
   turnError?: string;
   turnErrorIsAbort: boolean;
 }): CompactionTurnView {
-  const running = input.working || input.info.inFlight;
-  if (running || input.response || input.info.hasContent) return { kind: 'marker', running };
-  const raw = input.info.error;
-  const error = input.turnError ?? (raw != null ? unwrapError(raw) : undefined);
-  const isAbort = input.turnErrorIsAbort || (typeof raw === 'object' && raw !== null && isAbortError(raw));
-  return { kind: 'failed', error, isAbort };
-}
-
-/** Web `hasCompactionTurn`: any turn, in any state, is a compaction. */
-export function hasCompactionTurn(turns: ReadonlyArray<TurnBodyTurn>): boolean {
-  return turns.some((turn) => compactionTurnInfo(turn as never).isCompaction);
+  const running = input.working || input.compaction.inFlight;
+  if (running || input.response || input.compaction.hasContent) return { kind: 'marker', running };
+  return { kind: 'failed', error: input.turnError, isAbort: input.turnErrorIsAbort };
 }
 
 /** Web `lastCompactionTurnIndex`: the index of the last compaction turn, else -1. */
-export function lastCompactionTurnIndex(turns: ReadonlyArray<TurnBodyTurn>): number {
+export function lastCompactionTurnIndex(turns: ReadonlyArray<Pick<SessionLogTurn, 'compaction'>>): number {
   for (let i = turns.length - 1; i >= 0; i--) {
-    if (compactionTurnInfo(turns[i] as never).isCompaction) return i;
+    if (turns[i].compaction) return i;
   }
   return -1;
 }
@@ -413,26 +537,24 @@ export function lastCompactionTurnIndex(turns: ReadonlyArray<TurnBodyTurn>): num
  * retries collapse to the latest row.
  */
 export function isSuppressedFailedCompaction(input: {
-  info: Pick<CompactionTurnInfo, 'isCompaction' | 'hasContent' | 'inFlight'>;
+  compaction: Pick<SessionLogCompaction, 'hasContent' | 'inFlight'> | null;
   isTurnWorking: boolean;
   turnIndex: number;
   lastCompactionTurnIndex: number;
 }): boolean {
-  const { info } = input;
-  const failed = info.isCompaction && !info.hasContent && !info.inFlight && !input.isTurnWorking;
+  const { compaction } = input;
+  const failed = !!compaction && !compaction.hasContent && !compaction.inFlight && !input.isTurnWorking;
   return failed && input.turnIndex < input.lastCompactionTurnIndex;
 }
 
 // ─── Command ─────────────────────────────────────────────────────────────────
 
 /** The user's visible prompt text, for slash-command detection (web `userMessageText`). */
-export function commandPromptText(parts: ReadonlyArray<Part>): string {
+export function commandPromptText(blocks: ReadonlyArray<SessionLogBlock>): string {
   const texts: string[] = [];
-  for (const part of parts) {
-    if (!isTextPart(part)) continue;
-    const flags = part as TextPart & { synthetic?: boolean; ignored?: boolean };
-    if (flags.synthetic || flags.ignored) continue;
-    if (part.text?.trim()) texts.push(part.text);
+  for (const block of blocks) {
+    if (block.type !== 'text' || block.synthetic) continue;
+    if (block.text.trim()) texts.push(block.text);
   }
   return texts.join('\n').trim();
 }

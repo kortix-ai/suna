@@ -33,7 +33,7 @@ the last date it was updated, prior anomalies and how they resolved, and any
 noted seasonal or planned patterns to exclude:
 
 ```
-.kortix/memory/cloud-cost-baseline.md
+memory/cloud-cost-baseline.md
 ```
 
 This is a reuse session re-prompted daily, not a fresh session — the baseline
@@ -104,7 +104,7 @@ evidence. Never write to AWS — the Slack post is the only output.
 
 ## Step 6 — Update the ledger
 
-Update `.kortix/memory/cloud-cost-baseline.md` (see `<ledger-format>`) with
+Update `memory/cloud-cost-baseline.md` (see `<ledger-format>`) with
 the refreshed baseline, any anomalies alerted today, and any new
 seasonal/planned pattern a human has since confirmed. Land a scoped
 `memory: cloud-cost-baseline` change request for the ledger update only, after
@@ -113,7 +113,7 @@ the Slack alert (or no-alert) has been posted.
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/cloud-cost-baseline.md`. Keep one section per
+Lives at `memory/cloud-cost-baseline.md`. Keep one section per
 service/account pair with: the current baseline (trailing mean + spread, and
 the window it's computed over), the last-updated date, and a running note of
 whether it's stable or has an active anomaly. Below that, keep a dated

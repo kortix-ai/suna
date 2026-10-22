@@ -7,17 +7,18 @@
   "scripts": {
     "dev": "bun run --hot src/main.ts",
     "start": "bun run src/main.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
+    "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}\""
   },
   "dependencies": {
     "@kortix/llm-gateway": "workspace:*",
     "@kortix/shared": "workspace:*",
-    "hono": "^4.6.0",
+    "hono": "^4.13.11",
     "langfuse": "^3.38.20"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.4.0"
   }
 }

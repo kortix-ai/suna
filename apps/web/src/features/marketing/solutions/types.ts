@@ -40,7 +40,7 @@
  *  - ONE SANCTIONED SUPERLATIVE FORM: "the leading open-source alternative".
  *    No other superlative, ever.
  *
- * Voice rules: the `comms` skill. The product noun is CONNECTOR, never
+ * Voice rules: the `kortix-brand` skill. The product noun is CONNECTOR, never
  * "integration"; SESSION, never "chat"; CLOUD COMPUTER or SANDBOX, never
  * "container"; CHANGE REQUEST, never "PR" in prose.
  */

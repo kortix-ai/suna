@@ -1,0 +1,5 @@
+[test]
+# A hosted Kortix sandbox injects the live session's env (KORTIX_TOKEN,
+# KORTIX_SESSION_ID, …); CI and a laptop never carry it. See
+# packages/shared/src/host-config/test-sandbox-env.ts.
+preload = ["./src/__tests__/preload-clean-sandbox-env.ts"]

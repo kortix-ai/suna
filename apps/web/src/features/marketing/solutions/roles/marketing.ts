@@ -5,7 +5,7 @@ export const marketing: RoleContent = {
   slug: 'marketing',
   name: 'Marketing',
   navDescription: 'Production work that sounds like you, because the voice is a file',
-  seoTitle: 'Kortix for marketing teams',
+  seoTitle: 'AI agents for marketing teams',
   seoDescription:
     'Your voice, your claims and your banned words live in the repo as a skill file every session reads. Marketing work lands as a draft in a change request, so the review is a diff.',
 

@@ -4,12 +4,18 @@
 # lives in git alongside the code. `kortix_version` pins the schema so
 # the platform can evolve safely. v2 manifests are YAML-only, with one
 # `agents:` map per project — GOVERNANCE ONLY (connectors/secrets/
-# kortix_permissions/skills/workspace/enabled). OpenCode BEHAVIOR (description,
-# model, mode, temperature, permission, the prompt itself, …) lives
-# entirely in each agent's own native `.kortix/opencode/agents/<name>.md`
-# frontmatter + body — a stock OpenCode agent file, no Kortix-specific
-# split. The agent's NAME is the join between this map's keys and that
-# `.md`'s filename (decision 2026-07-05: "one home per concern").
+# kortix_permissions/skills/workspace/enabled), plus `file`, the path of the
+# agent's `.md`. Agent BEHAVIOR (description, model, mode, temperature,
+# permission, the prompt itself, …) lives entirely in that `.md`'s
+# frontmatter + body — a stock OpenCode agent file works as-is.
+#
+# Project layout — harness-neutral content at the root:
+#   agents/<name>.md          one file per agent (`agents.<name>.file`)
+#   skills/<name>/SKILL.md    skills, loaded by every harness
+#   memory/                   the project brain (the `kortix-memory` skill)
+#   tools/<name>.ts           project tools, loaded by every harness (`tools:` below)
+#   harnesses/opencode/       files only OpenCode reads (`opencode.config_dir`)
+#   harnesses/pi/             files only pi reads (`pi.config_dir`); create it when needed
 kortix_version: 2
 
 # The agent a session/trigger boots when it names no concrete agent (the
@@ -43,7 +49,7 @@ env:
 #   templates:
 #     - slug: ml
 #       name: ML Development
-#       dockerfile: .kortix/Dockerfile.ml
+#       dockerfile: Dockerfile.ml
 #       cpu: 4
 #       memory: 16
 #       disk: 50
@@ -62,35 +68,58 @@ env:
 # sandbox:
 #   default: python
 
-# OpenCode runtime config dir. The agent daemon launches opencode with
-# OPENCODE_CONFIG_DIR pointed here, so agents/skills/commands/tools live
-# under this folder. `opencode.jsonc` remains OpenCode's native registry
-# for plugins, MCP servers, providers, models, and runtime defaults.
-# Defaults to `.kortix/opencode` — relocate if you want to share a
-# single opencode config across multiple Kortix repos.
+# Files only OpenCode reads: `opencode.jsonc` (plugins, MCP servers,
+# providers, runtime defaults), `plugins/`, `commands/`. The agent
+# daemon launches opencode with OPENCODE_CONFIG_DIR pointed here. Agents and
+# skills do NOT live here — they sit at the root and serve every harness.
 opencode:
-  config_dir: .kortix/opencode
+  config_dir: harnesses/opencode
+
+# ─── Tools ───────────────────────────────────────────────────────────────
+# The tools every agent of this project gets, on every harness (OpenCode, pi).
+# `kortix:<name>` is a tool Kortix maintains and updates. A path is your own
+# module, in any folder (https://kortix.com/docs/project/tools).
+#   - Delete a line to remove that tool from every agent.
+#   - Run `kortix tools eject <name>` to own and change a Kortix tool.
+#   - Use `agents.<name>.tools` to limit one agent.
+# `kortix tools ls` lists what a session gets.
+tools:
+  web_search: kortix:web_search      # maintained by Kortix, updated automatically
+  image_search: kortix:image_search
+  scrape_webpage: kortix:scrape_webpage
+  memory: kortix:memory
+  show: kortix:show
+  # lookup_order: tools/lookup_order.ts   # your own tool: a module in your repo
 
 # ─── Agents ──────────────────────────────────────────────────────────────
 # One map per project, GOVERNANCE ONLY — connectors/secrets/kortix_permissions/
 # skills grants the runtime itself can't express, plus workspace (the git
-# boundary) and enabled. Everything else (description, mode, permission,
-# temperature, the prompt itself, …) lives in the matching
-# `.kortix/opencode/agents/<name>.md` — open those files to see/change what
-# each agent actually does. v2 is deny-by-default: an omitted connectors/
-# secrets/kortix_permissions/skills grant resolves to "none", so a scoped specialist
-# starts locked down. The starter's own `kortix` agent is deliberately
+# boundary) and enabled. `file` names the agent's `.md`; everything else
+# (description, mode, permission, temperature, the prompt itself, …) lives
+# in that file — open it to see/change what the agent actually does.
+# v2 is deny-by-default: an omitted connectors/secrets/kortix_permissions/
+# skills grant resolves to "none", so a scoped specialist starts locked down.
+# The starter's own `kortix` agent is deliberately
 # granted "all" across the board so a fresh project is capable out of the
 # box — narrow it once you know what this project actually needs.
 agents:
   kortix:
+    file: agents/kortix.md
     connectors: all
     secrets: all
     kortix_permissions: all
     skills: all
+    # Tools this agent may use (harness, Kortix and project tools). Default: all.
+    # tools: [read, grep, web_search, lookup_order]   # only these
+    # tools: { exclude: [bash] }                      # every tool but these
     # sandbox: python # Must name an available project template, or "default".
+    # What new sessions get in /workspace. true: a checkout of the project
+    # repository on the session's own branch. false: no checkout and no
+    # repository access. Omitted means true in kortix_version 2, false in 3.
+    workspace: { project_repository: true }
 
   harness-reflector:
+    file: agents/harness-reflector.md
     # Continual-harness reflector: refines the shared harness (prompts,
     # sub-agents, skills/tools, memory — memory curation is its fourth
     # pass) from session evidence. Fans out session-reviewer sub-agents,
@@ -101,14 +130,17 @@ agents:
     # gets NO connectors and NO project secrets — nothing to exfiltrate.
     kortix_permissions: all
     skills: all
+    workspace: { project_repository: true }   # it edits the harness and opens a CR
 
   session-reviewer:
+    file: agents/session-reviewer.md
     # Sub-agent of the harness-reflector: deep-reviews ONE session's full
     # history and reports failure-signature findings. "Read-only" (never
     # edits, never opens CRs) is its prompt discipline; it runs inside the
     # reflector's session with the same grant, so it mirrors it here.
     kortix_permissions: all
     skills: all
+    workspace: { project_repository: true }
 
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each entry spawns a fresh session that runs `prompt` as its initial

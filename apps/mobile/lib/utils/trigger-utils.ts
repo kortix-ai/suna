@@ -103,7 +103,7 @@ export const getTriggerTypeName = (triggerType: string): string => {
     case 'discord':
       return 'Discord';
     case 'event':
-      return 'Event';
+      return 'App event';
     default:
       return triggerType.charAt(0).toUpperCase() + triggerType.slice(1);
   }

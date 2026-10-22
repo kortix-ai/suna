@@ -2,7 +2,7 @@
 //
 // Creation and explicit rebuild already fan out through kickRoutedPreBuild.
 // Editing used to update only the database row, leaving the new content hash
-// absent on Daytona, Platinum, and E2B until a session happened to need one.
+// absent on Platinum and Daytona until a session happened to need one.
 // Keep the PATCH route on the same provider-neutral synchronization path.
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';

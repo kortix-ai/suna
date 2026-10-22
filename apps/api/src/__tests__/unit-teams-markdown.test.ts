@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { markdownToCardElements } from '../channels/teams/markdown';
 
 /**
- * The first live Teams answer on dev (2026-09-18, session 196a99f5…) rendered
+ * The first live Teams answer on dev (2026-09-18, a dev session) rendered
  * a `teams send` body as ONE TextBlock. Teams' TextBlock markdown knows bold,
  * italic, lists and links — nothing else — so every `filename` span vanished
  * and a fenced directory tree lost its fences and its monospace font. These
@@ -143,5 +143,97 @@ describe('markdownToCardElements — HTML entities', () => {
   test('entities that leak into the text are decoded, not shown literally (dev: "I&#39;ll take a look")', () => {
     const [p] = markdownToCardElements("Once it&#39;s attached, I&#39;ll take a look &amp; reply &lt;soon&gt; &quot;ok&quot;") as El[];
     expect(p.text).toBe(`Once it's attached, I'll take a look & reply <soon> "ok"`);
+  });
+});
+
+// An answer asking the user to act carried its link inline — "[Connect
+// Gmail](…) using the existing connector" (dev, 2026-09-28). In a Teams card
+// that is a small underlined word in a sentence; the card system has a real
+// button for it (`Action.OpenUrl`). A link the user is meant to click becomes
+// one: a line that is only a link, or a Kortix connect link anywhere.
+describe('markdownToCardElements — call-to-action links become buttons', () => {
+  const CONNECT = 'https://app.example.test/connect/ksl_c3ludGhldGlj';
+  const buttons = (el: El) => (el.actions as El[]).map((a) => [a.type, a.title, a.url]);
+  const texts = (els: El[]) => els.filter((e) => e.type === 'TextBlock').map((e) => e.text as string);
+
+  test('a connect link inside a sentence keeps its label as text and gets a button under the paragraph', () => {
+    const md = [
+      'I checked both Gmail connectors: **no connected accounts are available to me**.',
+      '',
+      `[Connect Gmail](${CONNECT}) using the existing Gmail Read Only connector. The link expires in 30 minutes.`,
+      '',
+      'Reply **done** after authorizing.',
+    ].join('\n');
+    const els = markdownToCardElements(md) as El[];
+    expect(els.map((e) => e.type)).toEqual(['TextBlock', 'TextBlock', 'ActionSet', 'TextBlock']);
+    expect(els[1].text).toBe('**Connect Gmail** using the existing Gmail Read Only connector. The link expires in 30 minutes.');
+    expect(buttons(els[2])).toEqual([['Action.OpenUrl', 'Connect Gmail', CONNECT]]);
+    expect(texts(els).join('\n')).not.toContain('ksl_');
+  });
+
+  test('a line that is only a link becomes a button', () => {
+    const els = markdownToCardElements('Linear is ready.\n\n[Connect Linear](https://example.test/oauth/start)') as El[];
+    expect(els.map((e) => e.type)).toEqual(['TextBlock', 'ActionSet']);
+    expect(buttons(els[1])).toEqual([['Action.OpenUrl', 'Connect Linear', 'https://example.test/oauth/start']]);
+  });
+
+  test('bullets, bold, arrows and emoji around a lone link still make it a button, with a clean title', () => {
+    for (const line of [
+      '- [Open the pull request](https://example.test/pr/1)',
+      '👉 **[Open the pull request](https://example.test/pr/1)**',
+      '→ [**Open the pull request**](https://example.test/pr/1).',
+    ]) {
+      const [el] = markdownToCardElements(line) as El[];
+      expect(el.type).toBe('ActionSet');
+      expect(buttons(el)).toEqual([['Action.OpenUrl', 'Open the pull request', 'https://example.test/pr/1']]);
+    }
+  });
+
+  test('a link line under text in the same paragraph moves to a button below that text', () => {
+    const els = markdownToCardElements('Here is your link:\n[Connect Gmail](https://example.test/a)') as El[];
+    expect(els.map((e) => e.type)).toEqual(['TextBlock', 'ActionSet']);
+    expect(els[0].text).toBe('Here is your link:');
+  });
+
+  test('up to three link lines share one row of buttons', () => {
+    const [el] = markdownToCardElements('- [Approve](https://example.test/a)\n- [Reject](https://example.test/r)') as El[];
+    expect(buttons(el).map((b) => b[1])).toEqual(['Approve', 'Reject']);
+  });
+
+  test('a list of more than three links is a reference list and stays text', () => {
+    const md = [1, 2, 3, 4].map((n) => `- [Doc ${n}](https://example.test/${n})`).join('\n');
+    const els = markdownToCardElements(md) as El[];
+    expect(els).toEqual([{ type: 'TextBlock', text: md, wrap: true }]);
+  });
+
+  test('a link label too long for a button, a non-https link, and an ordinary inline link stay text', () => {
+    const long = `[${'A very long pull request title that reads as a sentence'}](https://example.test/1)`;
+    expect(markdownToCardElements(long)).toEqual([{ type: 'TextBlock', text: long, wrap: true }]);
+    expect(markdownToCardElements('[Open](http://example.test/1)')).toEqual([
+      { type: 'TextBlock', text: '[Open](http://example.test/1)', wrap: true },
+    ]);
+    expect(markdownToCardElements('[Open](javascript:alert(1))')[0].type).toBe('TextBlock');
+    expect(markdownToCardElements('Read [the docs](https://example.test/d) first.')).toEqual([
+      { type: 'TextBlock', text: 'Read [the docs](https://example.test/d) first.', wrap: true },
+    ]);
+  });
+
+  test('links in code blocks and tables are never turned into buttons', () => {
+    const els = markdownToCardElements(
+      ['```', `[Connect](${CONNECT})`, '```', '', '| Link |', '|---|', `| [Connect](${CONNECT}) |`].join('\n'),
+    ) as El[];
+    expect(els.map((e) => e.type)).toEqual(['CodeBlock', 'Table']);
+  });
+
+  test('a rule before a lone link puts the separator on the button row', () => {
+    const [el] = markdownToCardElements('---\n\n[Connect Gmail](https://example.test/a)') as El[];
+    expect(el).toMatchObject({ type: 'ActionSet', separator: true });
+  });
+
+  test('scanning stays linear on hostile input (60 000 unclosed brackets)', () => {
+    const started = performance.now();
+    markdownToCardElements('['.repeat(60_000));
+    markdownToCardElements('[a]('.repeat(15_000));
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });

@@ -1,6 +1,6 @@
 /**
  * first-prompt-seed — the project-home send's first prompt, written into the
- * sync store as an optimistic user message before the thread mounts
+ * session store as an optimistic user message before the thread mounts
  * (COR-185).
  *
  * Without it, `SessionPage` mounts on an empty transcript: the loading page's
@@ -10,13 +10,12 @@
  *
  * The server already holds this prompt (`initial_prompt`, `pending_prompt`,
  * or the warm claim), so the seed never gets "Try again": a client re-send
- * through `prompt_async` would send it twice. The echo replaces the seed
- * through the ordinary optimistic swap (`sync-store.ts` `hydrate`,
- * `event-stream.ts` `message.updated`). Pure, so `bun test` runs it.
+ * would send it twice. The echo replaces the seed through the SDK store's
+ * ordinary optimistic swap. Pure, so `bun test` runs it.
  */
-import type { MessageWithParts } from '../opencode/types';
 import type { AttachedFile } from './attachments';
 import { optimisticUserParts } from './optimistic-parts';
+import type { OptimisticMessage } from './session-store';
 import { mintWireMessageId } from './wire-message-id';
 
 /**
@@ -28,12 +27,12 @@ export const SEED_BUSY_WATCHDOG_MS = 30_000;
 export function firstPromptSeed(i: {
   text: string;
   files: AttachedFile[];
-  /** The OpenCode root id the thread and SSE use — never the Kortix `session_id`. */
-  opencodeSessionId: string;
+  /** The runtime's root session id the thread and the live stream use — never the Kortix `session_id`. */
+  runtimeSessionId: string;
   /** Ids the store already holds for this root. Any id means no seed. */
   knownMessageIds: string[];
   nowMs: number;
-}): MessageWithParts | null {
+}): OptimisticMessage | null {
   const text = i.text.trim();
   if (!text && i.files.length === 0) return null;
   // The store already holds this root (a reopen, or the echo won the race).
@@ -41,11 +40,12 @@ export function firstPromptSeed(i: {
 
   const parts = optimisticUserParts(text, i.files, i.nowMs);
 
+  // A stub: the server's echo carries the full message (agent, model).
   return {
     info: {
       id: mintWireMessageId({ nowMs: i.nowMs, knownMessageIds: i.knownMessageIds }),
       role: 'user',
-      sessionID: i.opencodeSessionId,
+      sessionID: i.runtimeSessionId,
       time: { created: i.nowMs },
     },
     parts,
@@ -54,8 +54,9 @@ export function firstPromptSeed(i: {
 
 /**
  * True while nothing but the seed is in the transcript: no real user message
- * and no reply yet. An empty or missing list counts as undelivered.
+ * and no reply yet. `messageIds` are the ids the store holds; none counts as
+ * undelivered.
  */
-export function seedUndelivered(messages: MessageWithParts[] | undefined, seedId: string): boolean {
-  return (messages ?? []).every((message) => message.info.id === seedId);
+export function seedUndelivered(messageIds: readonly string[], seedId: string): boolean {
+  return messageIds.every((id) => id === seedId);
 }

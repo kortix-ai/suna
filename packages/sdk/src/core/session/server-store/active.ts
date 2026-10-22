@@ -19,7 +19,7 @@ import { resolvePreviewOptions, type ResolvedPreviewOptions } from '../preview-o
  * Prefers the per-session runtime; falls back to the local-dev default sandbox.
  * Use in non-React contexts (API modules, etc.).
  */
-export function getActiveOpenCodeUrl(): string {
+export function getActiveRuntimeUrl(): string {
   const current = getCurrentRuntimeUrl();
   if (current) return current;
   // Cloud/billing deployments have no local default — wait for the session to
@@ -82,3 +82,7 @@ export function deriveSubdomainOpts(): ResolvedPreviewOptions {
     apiBaseUrl: getBackendUrl(),
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `getActiveRuntimeUrl`. Removed in the next major. */
+export const getActiveOpenCodeUrl = getActiveRuntimeUrl;

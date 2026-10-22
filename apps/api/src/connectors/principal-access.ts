@@ -146,7 +146,7 @@ export function connectorDenialBody(
     case 'action_not_found':
       return {
         ...base,
-        hint: `Connector "${input.connector}" has no action "${input.action ?? ''}". Run \`kortix connectors describe ${input.connector}\` to list its actions.`,
+        hint: `Connector "${input.connector}" has no action "${input.action ?? ''}". Run \`kortix connectors show ${input.connector}\` to list its actions.`,
       };
   }
 }

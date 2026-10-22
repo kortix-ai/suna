@@ -3,9 +3,9 @@
  * gate against actual `iam_resource_grants` rows.
  *
  * This suite owns the authorization decision, with nothing about it mocked: a
- * member scoped OUT of an agent is refused before the re-mint, a member scoped IN
- * is not, the gate checks the REQUESTED agent (never the session's own), and an
- * account owner keeps the implicit-Manager bypass. The sibling unit test
+ * member scoped OUT of an agent is refused before the re-mint, an authorized
+ * switch re-mints, and an account owner keeps the implicit-Manager bypass.
+ * The sibling unit test
  * (sandbox-proxy/routes/preview-agent-authz.test.ts) keeps only the no-gate paths
  * and the undeclared-agent drop, with a stubbed `authorize`.
  *
@@ -28,7 +28,6 @@ import { eq, sql } from 'drizzle-orm';
 import * as realRequestContext from '../lib/request-context';
 import * as realEnvSync from '../projects/lib/sandbox-env-sync';
 import * as realGrant from '../projects/lib/session-token-grant';
-import * as realSnapshot from '../projects/opencode-session-snapshot';
 // Spread the real modules and override only what this test must control: these
 // modules have OTHER exports the surrounding graph imports, and a bare stub
 // makes bun fail the whole file on a missing export.
@@ -47,6 +46,8 @@ const SANDBOX = crypto.randomUUID();
 /** The provider external id the proxy addresses the box by. */
 const EXTERNAL_ID = `ext-${SANDBOX}`;
 
+/** The agent the proxy sees the session bound to. `default` is the legacy non-binding sentinel. */
+let boundAgent = SESSION_AGENT;
 let remintCalls: string[] = [];
 let envSyncCalls = 0;
 let upstreamCalls = 0;
@@ -80,10 +81,6 @@ mock.module('../projects/lib/session-token-grant', () => ({
     return { action: 'skip' };
   },
 }));
-mock.module('../projects/opencode-session-snapshot', () => ({
-  ...realSnapshot,
-  scheduleOpencodeSnapshotSync: () => {},
-}));
 mock.module('../sandbox-proxy/backend', () => ({
   ...realBackend,
   loadSandbox: async () => ({
@@ -94,7 +91,7 @@ mock.module('../sandbox-proxy/backend', () => ({
     accountId: ACCOUNT,
     externalId: EXTERNAL_ID,
     sandboxId: SANDBOX,
-    agentName: SESSION_AGENT,
+    agentName: boundAgent,
     provider: 'daytona',
   }),
   routeSandboxIngress: () => ({ effectivePort: 8000 }),
@@ -106,14 +103,14 @@ mock.module('../sandbox-proxy/backend', () => ({
   wakeSandbox: async () => {},
 }));
 
-// `projects/routes/shared` is imported LAST, after every other stub is in
-// place. Its graph evaluates `sandbox-proxy/routes/preview.ts`, which binds
+// `projects/session-open/index` is imported LAST, after every other stub is in
+// place. Its graph evaluates `sandbox-proxy/forward/turn-start.ts`, which binds
 // `REAL_PRE_PROMPT_DEPS` (the env sync and token re-mint) by VALUE at module
 // evaluation. A static import here would evaluate it before `mock.module` ran,
 // and every prompt would hit the real re-mint (a git read of a repo that does
 // not exist → 503) instead of the stub.
-const realShared = await import('../projects/routes/shared');
-mock.module('../projects/routes/shared', () => ({
+const realShared = await import('../projects/session-open');
+mock.module('../projects/session-open', () => ({
   ...realShared,
   resumeStoppedSandboxByExternalId: async () => true,
 }));
@@ -220,8 +217,7 @@ beforeAll(async () => {
     grantedBy: owner,
   });
   // A third agent, scoped to `scopedOut` ONLY. `scopedIn` holds grants on both
-  // other agents, so a gate that checked the session's agent instead of the
-  // requested one would let `scopedIn` run this one.
+  // other agents. The running-session switch guard rejects this request.
   await upsertResourceGrant({
     accountId: ACCOUNT,
     projectId: PROJECT,
@@ -250,13 +246,18 @@ afterAll(async () => {
 });
 
 beforeEach(() => {
+  boundAgent = SESSION_AGENT;
   remintCalls = [];
   envSyncCalls = 0;
   upstreamCalls = 0;
   __resetPromptDedupe();
 });
 
+// KRTX-1290: a concrete-bound session switches agents again, so the IAM agent
+// gate is reached by every switch — a member runs another agent exactly when
+// that agent is granted to them.
 test('a member scoped OUT of the agent cannot prompt as it, and never reaches the re-mint', async () => {
+  boundAgent = 'default';
   const response = await promptAs(scopedOut, SCOPED_AGENT);
 
   expect(response.status).toBe(403);
@@ -266,19 +267,8 @@ test('a member scoped OUT of the agent cannot prompt as it, and never reaches th
   expect(upstreamCalls).toBe(0);
 });
 
-test('the gate checks the REQUESTED agent: a grant on the session agent does not cover a switch', async () => {
-  const response = await promptAs(scopedIn, OTHER_SCOPED_AGENT);
-
-  expect(response.status).toBe(403);
-  expect(await response.json()).toMatchObject({
-    code: 'AGENT_NOT_AUTHORIZED',
-    requested_agent: OTHER_SCOPED_AGENT,
-  });
-  expect(remintCalls).toEqual([]);
-  expect(upstreamCalls).toBe(0);
-});
-
-test('the member the agent IS scoped to prompts as it normally', async () => {
+test('the member an agent IS scoped to passes the gate on a default-bound session and re-mints for it', async () => {
+  boundAgent = 'default';
   const response = await promptAs(scopedIn, SCOPED_AGENT);
 
   expect(response.status).toBe(200);
@@ -286,7 +276,36 @@ test('the member the agent IS scoped to prompts as it normally', async () => {
   expect(upstreamCalls).toBe(1);
 });
 
+test('the member the switched-to agent IS scoped to switches a running session and re-mints', async () => {
+  const response = await promptAs(scopedOut, OTHER_SCOPED_AGENT);
+
+  expect(response.status).toBe(200);
+  expect(remintCalls).toEqual([OTHER_SCOPED_AGENT]);
+  expect(upstreamCalls).toBe(1);
+});
+
+test('a member with no grant on the switched-to agent is refused with 403 before any grant work', async () => {
+  const response = await promptAs(scopedIn, OTHER_SCOPED_AGENT);
+
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
+  expect(remintCalls).toEqual([]);
+  expect(envSyncCalls).toBe(0);
+  expect(upstreamCalls).toBe(0);
+});
+
+// Same-agent turns re-point the token's grant at the running agent, so a
+// manifest that narrowed it is enforced from the first call of the turn.
+test('the member the session agent IS scoped to prompts as it normally', async () => {
+  const response = await promptAs(scopedIn, SESSION_AGENT);
+
+  expect(response.status).toBe(200);
+  expect(remintCalls).toEqual([SESSION_AGENT]);
+  expect(upstreamCalls).toBe(1);
+});
+
 test('an account owner keeps the implicit-Manager bypass over resource scoping', async () => {
+  boundAgent = 'default';
   const response = await promptAs(owner, SCOPED_AGENT);
 
   expect(response.status).toBe(200);

@@ -93,7 +93,7 @@ describe.skipIf(!dockerAvailable)('migrate status is read-only — real PostgreS
   }, 60_000);
 
   afterAll(() => {
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
     if (migrationsDir) rmSync(migrationsDir, { recursive: true, force: true });
   });
 

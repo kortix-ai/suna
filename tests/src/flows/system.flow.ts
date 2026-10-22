@@ -4,7 +4,7 @@
  */
 import { flow } from "../core/flow";
 
-flow("SYS-1", { domain: "system", tags: ["smoke", "health"], routes: ["GET /health", "GET /v1/health"] }, async (ctx) => {
+flow("SYS-1", { domain: "system", tags: ["deployed", "smoke", "health"], routes: ["GET /health", "GET /v1/health"] }, async (ctx) => {
   await ctx.step("GET /health", async () => {
     const r = await ctx.client.get("/health");
     r.status(200).body().has("$.status", "ok").has("$.service", "kortix-api").exists("$.version");
@@ -12,17 +12,17 @@ flow("SYS-1", { domain: "system", tags: ["smoke", "health"], routes: ["GET /heal
   await ctx.step("GET /v1/health", async () => {
     const r = await ctx.client.get("/v1/health");
     r.status(200).body().has("$.status", "ok").has("$.service", "kortix-api");
+    const body = JSON.parse(r.text()) as Record<string, unknown>;
+    for (const field of ["instance", "region", "database_region", "scheduler_leader", "trigger_scheduler"]) {
+      if (field in body) throw new Error(`public health exposed ${field}`);
+    }
   });
 });
 
-flow("SYS-2", { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/status", "POST /v1/prewarm"] }, async (ctx) => {
+flow("SYS-2", { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/status"] }, async (ctx) => {
   await ctx.step("GET /v1/system/status", async () => {
     const r = await ctx.client.get("/v1/system/status");
     r.status(200).body().has("$.maintenanceNotice.enabled", false).has("$.technicalIssue.enabled", false);
-  });
-  await ctx.step("POST /v1/prewarm", async () => {
-    const r = await ctx.client.post("/v1/prewarm", {});
-    r.status(200).body().has("$.success", true);
   });
 });
 
@@ -54,6 +54,21 @@ flow("SYS-7", { domain: "system", tags: ["smoke"], routes: ["POST /v1/system/dem
   });
 });
 
+// SYS-10 — the mobile app reads its release policy BEFORE login, so the route is public.
+// The values are operator settings (null when unset), so the flow asserts the shape on any target.
+flow("SYS-10", { domain: "system", tags: ["smoke"], routes: ["GET /v1/clients/mobile"] }, async (ctx) => {
+  const fields = ["minimum_version", "store_url_ios", "store_url_android"];
+  const assertPolicy = (body: Record<string, unknown>) => {
+    if (Object.keys(body).sort().join() !== [...fields].sort().join()) throw new Error(`unexpected keys: ${Object.keys(body)}`);
+    for (const f of fields) if (body[f] !== null && typeof body[f] !== "string") throw new Error(`${f} is neither string nor null`);
+  };
+  await ctx.step("GET /v1/clients/mobile without Authorization → 200, each field a string or null", async () => {
+    const r = await ctx.client.get("/v1/clients/mobile");
+    r.status(200);
+    assertPolicy(r.json());
+  });
+});
+
 flow("DOCS-1", { domain: "system", tags: ["smoke"], routes: ["GET /v1/openapi.json", "GET /v1/docs"] }, async (ctx) => {
   await ctx.step("GET /v1/openapi.json (public) → 200 OpenAPI 3.1 spec", async () => {
     const r = await ctx.client.get("/v1/openapi.json");
@@ -78,7 +93,7 @@ flow("SYS-4", { domain: "system", tags: ["smoke", "health"], routes: ["GET /v1/r
 // /v1 forms both wired so either can be the chart's livenessPath. Under normal
 // load `event_loop_lag_ms` stays well under the 5000ms default threshold, so a
 // live run should always see {status:"ok", event_loop_lag_ms}.
-flow("SYS-8", { domain: "system", tags: ["smoke", "health"], routes: ["GET /health/live", "GET /v1/health/live", "GET /health/ready", "GET /v1/health/ready"] }, async (ctx) => {
+flow("SYS-8", { domain: "system", tags: ["deployed", "smoke", "health"], routes: ["GET /health/live", "GET /v1/health/live", "GET /health/ready", "GET /v1/health/ready"] }, async (ctx) => {
   await ctx.step("GET /health/live", async () => {
     const r = await ctx.client.get("/health/live");
     r.status(200).body().has("$.status", "ok").exists("$.event_loop_lag_ms");
@@ -97,7 +112,7 @@ flow("SYS-8", { domain: "system", tags: ["smoke", "health"], routes: ["GET /heal
   });
 });
 
-flow("SYS-5", { domain: "system", tags: ["smoke"], routes: ["GET /v1/accounts/me"] }, async (ctx) => {
+flow("SYS-5", { domain: "system", tags: ["deployed", "smoke"], routes: ["GET /v1/accounts/me"] }, async (ctx) => {
   await ctx.step("404 shape on unknown route", async () => {
     const r = await ctx.client.get("/v1/this-route-does-not-exist");
     r.status(404).body().has("$.error", true).has("$.message", "Not found").has("$.status", 404);
@@ -115,7 +130,7 @@ flow("ACC-1", { domain: "access", tags: ["smoke"], routes: ["GET /v1/access/sign
   });
 });
 
-flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-email"] }, async (ctx) => {
+flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-email", "GET /v1/access/signup-status"] }, async (ctx) => {
   await ctx.step("POST /v1/access/check-email (missing email) → 400", async () => {
     const r = await ctx.client.post("/v1/access/check-email", {});
     r.status(400);
@@ -123,6 +138,19 @@ flow("ACC-2", { domain: "access", tags: [], routes: ["POST /v1/access/check-emai
   await ctx.step("POST /v1/access/check-email (valid) → 200 with flow mode", async () => {
     const r = await ctx.client.post("/v1/access/check-email", { email: `probe-${Date.now()}@ke2e.kortix.test` });
     r.status(200).body().exists("$.allowed").exists("$.mode");
+  });
+  await ctx.step("POST /v1/access/check-email (malformed email) → 400", async () => {
+    const r = await ctx.client.post("/v1/access/check-email", { email: "not-an-email" });
+    r.status(400);
+  });
+  await ctx.step("a new address → {allowed:true, mode:'signup'} while signups are open; allowed matches mode otherwise", async () => {
+    const status = await ctx.client.get("/v1/access/signup-status");
+    status.status(200);
+    const open = status.json<{ signupsEnabled: boolean }>().signupsEnabled;
+    const r = await ctx.client.post("/v1/access/check-email", { email: `probe-new-${Date.now()}@ke2e.kortix.test` });
+    r.status(200);
+    if (open) r.body().has("$.allowed", true).has("$.mode", "signup");
+    else r.body().has("$.allowed", r.json<{ mode: string }>().mode === "signup");
   });
 });
 

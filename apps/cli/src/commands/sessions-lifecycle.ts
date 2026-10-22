@@ -1,14 +1,17 @@
 /**
  * Session lifecycle verbs the dashboard has and the CLI did not: pause a
- * session, wake one back up, pre-warm one, change its model mid-flight, and
- * compact its conversation.
+ * session, wake one back up, pre-warm one, change its model mid-flight,
+ * compact its conversation, restore a deleted one, and continue a lost one.
  *
  * `restart` (re-provision) already lives in sessions.ts and is a different
  * thing: `stop`/`start` are the same pause/resume pair the session header's
  * Stop button and the session page's open call drive, disk kept.
  */
 
+import { ApiError, runtimeSupports } from '@kortix/sdk';
+
 import {
+  SESSION_UUID_RE,
   emitJson,
   locateSessionAnywhere,
   resolveProjectContext,
@@ -16,8 +19,9 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { unwrapRuntime, withKortixScope } from '../api/sdk.ts';
+import { withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
+import { readRuntimeCapabilities } from '../session-runtime.ts';
 import { C, help, status } from '../style.ts';
 import { loadSessionForChat } from './sessions-chat.ts';
 import { sessionPromptDefaults } from './sessions-files.ts';
@@ -50,10 +54,52 @@ Options:
 Needs project.session.stop, and the session owner or an account owner/admin.
 `;
 
+const RESTORE_HELP = help`Usage: kortix sessions restore <session-id> [options]
+
+Restore a deleted session. A deleted session stays restorable for 30 days:
+its messages, stored files and branch come back, and its next start boots a
+fresh sandbox from the branch. After 30 days its messages and files are
+deleted, and only the branch remains. Public links stay revoked.
+
+Pass the full session id: a deleted session is not in \`sessions ls\`, so a
+short id cannot be expanded, and no other project is searched for it.
+\`sessions ls --deleted\` lists the ones you can restore with their full id;
+\`sessions rm\` prints the exact command, with --project (and --host).
+
+Options:
+  --project <id>   Operate on this project id (default: linked).
+  --host <name>    Operate against a non-default Kortix host.
+  --json           Machine-readable output.
+  -h, --help       Show this help.
+
+Needs project.session.stop, and the session owner or a project manager.
+`;
+
+const RECOVER_HELP = help`Usage: kortix sessions recover <session-id> [options]
+
+Continue a lost session on a new computer. A session is lost when the provider
+removed its sandbox: \`sessions start\` then fails with
+runtime_identity_unavailable. Recover keeps the session and its
+saved conversation. Its next start boots a new sandbox from the session branch
+and restores the conversation, so the agent keeps the context.
+Work that was not committed and pushed stays lost.
+
+A session with no saved conversation cannot continue: recover refuses it and
+changes nothing. Delete it with \`sessions rm\` instead.
+
+Options:
+  --project <id>   Operate on this project id (default: linked).
+  --host <name>    Operate against a non-default Kortix host.
+  --json           Machine-readable output.
+  -h, --help       Show this help.
+
+Needs project.session.start, and the session owner or a project manager.
+`;
+
 const START_HELP = help`Usage: kortix sessions start <session-id> [options]
 
 Wake a session: provisions a missing sandbox, resumes a stopped one, and
-resolves its OpenCode runtime. Idempotent — calling it on a running session
+resolves its session runtime. Idempotent — calling it on a running session
 just reports \`ready\`. Without --wait it reports the stage it reached in one
 call and exits 0.
 
@@ -113,7 +159,8 @@ const COMPACT_HELP = help`Usage: kortix sessions compact <session-id> [options]
 Summarize the conversation so far and continue from the summary — what the
 dashboard's "Compact" does. Use it when a long session starts losing the
 thread or hits its context ceiling. The model is the session's own; the
-runtime's configured default is the fallback.
+runtime's configured default is the fallback. A session whose runtime cannot
+compact on demand exits 1 and nothing changes. A stopped session is started first.
 
 Options:
   --project <id>   Operate on this project id (default: linked).
@@ -173,6 +220,74 @@ export async function runSessionsStop(argv: string[]): Promise<number> {
   }
   process.stdout.write(
     `${status.ok(`Stopped ${C.bold}${short(session.session_id)}${C.reset}${C.dim} (${result.status}) — disk kept; \`kortix sessions start ${short(session.session_id)}\` resumes it${C.reset}`)}\n`,
+  );
+  return 0;
+}
+
+export async function runSessionsRestore(argv: string[]): Promise<number> {
+  const parsed = parseCommon(argv, RESTORE_HELP);
+  if (typeof parsed === 'number') return parsed;
+  const { rest, opts, json } = parsed;
+
+  const sessionId = rest.filter((a) => !a.startsWith('-'))[0];
+  if (!sessionId) {
+    process.stderr.write(`${status.err('Pass a session id.')}\n\n${RESTORE_HELP}`);
+    return 2;
+  }
+  if (!SESSION_UUID_RE.test(sessionId)) {
+    process.stderr.write(
+      `${status.err('Pass the full session id: `kortix sessions ls --deleted` lists it, and `kortix sessions rm` printed it.')}\n`,
+    );
+    return 2;
+  }
+  // Not located through the session read: that read answers 404 for a deleted session.
+  const ctx = await resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  try {
+    await ctx.client.post(`/projects/${ctx.projectId}/sessions/${sessionId}/restore`, {});
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson({ ok: true, session_id: sessionId });
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`Restored ${C.bold}${short(sessionId)}${C.reset}${C.dim}. Its next start boots a fresh sandbox from its branch: \`kortix sessions start ${short(sessionId)}\`${C.reset}`)}\n`,
+  );
+  return 0;
+}
+
+export async function runSessionsRecover(argv: string[]): Promise<number> {
+  const parsed = parseCommon(argv, RECOVER_HELP);
+  if (typeof parsed === 'number') return parsed;
+  const { rest, opts, json } = parsed;
+
+  const sessionId = rest.filter((a) => !a.startsWith('-'))[0];
+  if (!sessionId) {
+    process.stderr.write(`${status.err('Pass a session id.')}\n\n${RECOVER_HELP}`);
+    return 2;
+  }
+  const located = await locateSessionAnywhere(
+    sessionId,
+    opts,
+    (host) => `kortix sessions recover ${sessionId} --host ${host}`,
+  );
+  if (!located) return 1;
+  const { client, projectId, session } = located.located;
+
+  try {
+    await client.post(`/projects/${projectId}/sessions/${session.session_id}/recover`, {});
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+  if (json) {
+    emitJson({ ok: true, session_id: session.session_id });
+    return 0;
+  }
+  process.stdout.write(
+    `${status.ok(`${C.bold}${short(session.session_id)}${C.reset} continues on a new computer${C.dim}. Its next start restores the saved conversation: \`kortix sessions start ${short(session.session_id)} --wait\`${C.reset}`)}\n`,
   );
   return 0;
 }
@@ -240,6 +355,12 @@ export async function runSessionsStart(argv: string[]): Promise<number> {
     process.stderr.write(
       `${status.err(`Session ${result.stage}${result.reason ? `: ${result.reason}` : ''}.`)}\n`,
     );
+    // The provider removed the box. `recover` continues it on a new one.
+    if (result.reason === 'runtime_identity_unavailable') {
+      process.stderr.write(
+        `${C.dim}  Its computer was lost. Continue it on a new computer with its saved conversation: \`kortix sessions recover ${short(session.session_id)}\`${C.reset}\n`,
+      );
+    }
     return 1;
   }
   if (wait) {
@@ -326,6 +447,8 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   const { client, projectId, session } = located.located;
 
   let result: {
+    /** `model` since W4; an older API answers only `opencode_model`. */
+    model?: string;
     opencode_model: string;
     applied_live: boolean;
     push_failed?: true;
@@ -333,6 +456,7 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   };
   try {
     result = await client.put(`/projects/${projectId}/sessions/${session.session_id}/model`, {
+      model,
       opencode_model: model,
     });
   } catch (err) {
@@ -348,15 +472,15 @@ export async function runSessionsModel(argv: string[]): Promise<number> {
   // mechanism there.
   if (result.push_failed) {
     process.stderr.write(
-      `${status.err(`Stored ${result.opencode_model}, but the live push FAILED — the running agent still answers from the old model${result.detail ? `: ${result.detail}` : ''}.`)}\n`,
+      `${status.err(`Stored ${result.model ?? result.opencode_model}, but the live push FAILED — the running agent still answers from the old model${result.detail ? `: ${result.detail}` : ''}.`)}\n`,
     );
     return 1;
   }
   process.stdout.write(
     `${status.ok(
       result.applied_live
-        ? `Now running ${C.bold}${result.opencode_model}${C.reset}${C.dim} — the runtime restarted, so any turn in flight ended${C.reset}`
-        : `Stored ${C.bold}${result.opencode_model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
+        ? `Now running ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — the runtime restarted, so any turn in flight ended${C.reset}`
+        : `Stored ${C.bold}${result.model ?? result.opencode_model}${C.reset}${C.dim} — it applies when this session next starts${C.reset}`,
     )}\n`,
   );
   return 0;
@@ -372,56 +496,44 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err('Pass a session id.')}\n\n${COMPACT_HELP}`);
     return 2;
   }
-  const resolved = await loadSessionForChat(sessionId, opts, 'sessions compact');
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions compact', {
+    onNotRunning: 'start',
+    onStarting: (session) => {
+      process.stderr.write(`Waking ${session.session_id}…\n`);
+    },
+  });
   if (!resolved) return 1;
-
-  // The session's OWN persisted model is the right one to summarize with —
-  // same split the prompt path uses. Fall back to the runtime's configured
-  // default when the row carries none.
-  let model = sessionPromptDefaults(resolved.session).model;
-  if (!model) {
-    try {
-      const config = await withKortixScope(resolved.auth, async () =>
-        unwrapRuntime<{ model?: string }>(await resolved.runtime.global.config.get()),
-      );
-      const reference = typeof config?.model === 'string' ? config.model : '';
-      const separator = reference.indexOf('/');
-      if (separator > 0 && separator < reference.length - 1) {
-        model = {
-          providerID: reference.slice(0, separator),
-          modelID: reference.slice(separator + 1),
-        };
-      }
-    } catch {
-      // Fall through to the explicit error below — a guess would compact with
-      // a model the sandbox cannot serve.
-    }
-  }
-  if (!model) {
+  if (!runtimeSupports(await readRuntimeCapabilities(resolved), 'session.compact')) {
     process.stderr.write(
-      `${status.err('No model configured for this session — set one with `kortix sessions model <id> <model>` first.')}\n`,
+      `${status.err("This session's runtime does not support compacting the conversation.")}\n`,
     );
     return 1;
   }
 
+  // The session's OWN persisted model is the right one to summarize with —
+  // same split the prompt path uses. Without one, the runtime's configured
+  // default applies; with neither, `compact` refuses instead of guessing.
+  let model: { providerID: string; modelID: string };
+  process.stderr.write('Checking session and compacting conversation…\n');
   try {
-    await withKortixScope(resolved.auth, async () =>
-      unwrapRuntime(
-        await resolved.runtime.session.summarize({
-          sessionID: resolved.opencodeSessionId,
-          providerID: model!.providerID,
-          modelID: model!.modelID,
-        }),
-      ),
+    model = await withKortixScope(resolved.auth, () =>
+      resolved.handle.compact(sessionPromptDefaults(resolved.session).model),
     );
   } catch (err) {
+    if (err instanceof ApiError && err.code === 'MODEL_REQUIRED') {
+      process.stderr.write(
+        `${status.err('No model configured for this session — set one with `kortix sessions model <id> <model>` first.')}\n`,
+      );
+      return 1;
+    }
     return surfaceApiError(err);
   }
 
   if (json) {
     emitJson({
       session_id: resolved.session.session_id,
-      opencode_session_id: resolved.opencodeSessionId,
+      runtime_session_id: resolved.runtimeSessionId,
+      opencode_session_id: resolved.runtimeSessionId,
       model: `${model.providerID}/${model.modelID}`,
       compacted: true,
     });

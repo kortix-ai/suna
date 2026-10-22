@@ -12,16 +12,17 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { AuthFrame } from '@/features/auth/auth-card-shell';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { AuthFrame } from '@kortix/ui/internal/auth/auth-card-shell';
 import {
   AuthPendingScreen,
   AuthStatusScreen,
   DetailPanel,
   DetailRow,
-} from '@/features/auth/auth-consent';
-import { ErrorStrip, Rise, StepHeader } from '@/features/auth/auth-primitives';
+} from '@kortix/ui/internal/auth/auth-consent';
+import { ErrorStrip, Rise, StepHeader } from '@kortix/ui/internal/auth/auth-primitives';
+import { armPendingMfaAction, clearPendingMfaAction } from '@kortix/ui/internal/auth/mfa-pending-action';
 import { useAuth } from '@/features/providers/auth-provider';
 import type { ChatIdentityPreview } from '@kortix/sdk';
 
@@ -35,6 +36,7 @@ type Phase = 'idle' | 'binding' | 'success' | 'error';
 
 export function ChatIdentityConnect({
   service,
+  icon: ServiceIcon,
   token,
   loginPath,
   bind,
@@ -44,6 +46,8 @@ export function ChatIdentityConnect({
 }: {
   /** Display name used in titles and success copy ("Slack", "Teams"). */
   service: string;
+  /** The service's mark, shown beside the chat account it identifies. */
+  icon?: React.ComponentType<{ className?: string }>;
   token: string;
   /** Path back to this page, used as the sign-in redirect target. */
   loginPath: string;
@@ -85,6 +89,9 @@ export function ChatIdentityConnect({
     };
   }, [isLoading, user, token, preview]);
 
+  // Leaving the page drops its armed step-up action.
+  useEffect(() => clearPendingMfaAction, []);
+
   useEffect(() => {
     if (isLoading) return;
     if (!user) {
@@ -114,6 +121,12 @@ export function ChatIdentityConnect({
     } catch (err) {
       setError((err as Error).message);
       setPhase('error');
+      // Refused because the account requires MFA: the step-up dialog opens
+      // (mfa-step-up.tsx). Once the code verifies, connect again without a
+      // second click.
+      if ((err as { code?: string }).code === 'account_mfa_required') {
+        armPendingMfaAction(() => void connect());
+      }
     }
   }
 
@@ -164,7 +177,16 @@ export function ChatIdentityConnect({
         <DetailPanel>
           <DetailRow
             label={tHardcodedUi('chatIdentityConnect.chatAccount', { service })}
-            value={chatAccount}
+            value={
+              ServiceIcon ? (
+                <span className="inline-flex max-w-full items-center gap-2">
+                  <ServiceIcon className="size-4 shrink-0" />
+                  <span className="truncate">{chatAccount}</span>
+                </span>
+              ) : (
+                chatAccount
+              )
+            }
           />
           {identity?.workspaceName ? (
             <DetailRow
@@ -185,7 +207,7 @@ export function ChatIdentityConnect({
           <p>
             <Link
               href="/"
-              className="hover:text-foreground -my-2 inline-block py-2 underline-offset-4 transition-colors hover:underline"
+              className="hover:text-foreground -my-2 inline-block py-2 transition-colors"
             >
               {tI18nComplete.raw('text19766ed6ccb2')}
             </Link>

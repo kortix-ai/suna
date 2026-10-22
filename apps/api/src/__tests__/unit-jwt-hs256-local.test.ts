@@ -1,23 +1,20 @@
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import { createHmac } from 'node:crypto';
+import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
+import type { AuthVariables } from '../types';
 
 /**
- * Local HS256 verification + the GoTrue liveness cache (2026-09-23).
+ * Local HS256 verification + liveness (2026-09-23, no cache since 2026-10-20).
  *
- * Prod GoTrue signs HS256; before this change every authenticated request paid
- * a GoTrue `getUser` round trip. These tests pin the security contract that
- * made removing it acceptable:
  *   - a forged or mis-keyed token never passes locally,
  *   - an expired token is a definitive rejection,
- *   - GoTrue still decides liveness, at most once per token per TTL,
- *   - only positive answers are cached, never past the token's own `exp`,
- *   - sign-out drops the cached answer at once,
+ *   - liveness is asked on every verification, so a revoke ends the token at once,
  *   - our own misconfiguration degrades to the network path, never to a 401.
  */
 
 const SECRET = 'unit-test-hs256-secret-not-real-0123456789';
 process.env.SUPABASE_JWT_SECRET = SECRET;
-process.env.SUPABASE_JWT_LIVENESS_TTL_MS = '30000';
 
 type Verify = typeof import('../shared/jwt-verify').verifySupabaseJwt;
 type Liveness = typeof import('../shared/jwt-liveness');
@@ -56,7 +53,7 @@ afterEach(() => {
 });
 
 describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
-  test('a valid live token verifies locally and GoTrue is asked once per TTL', async () => {
+  test('a valid live token verifies locally', async () => {
     const calls = countingLoader(async () => ({ id: USER, email: 'synthetic@example.test' }));
     const token = sign({ sub: USER, role: 'authenticated', exp: inAnHour(), aal: 'aal1' });
 
@@ -70,8 +67,7 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
         expect(result.payload.aal).toBe('aal1');
       }
     }
-    // One burst of 5 concurrent requests + 1 later request = ONE GoTrue call.
-    expect(calls.length).toBe(1);
+    expect(calls.length).toBe(6);
   });
 
   test('a token signed with a different secret never passes, and routes to the network path', async () => {
@@ -104,7 +100,32 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
     expect(result).toEqual({ ok: false, reason: 'no-sub' });
   });
 
-  test('a revoked session is rejected, and the rejection is never cached', async () => {
+  test('a token revoked elsewhere is refused on its next verification', async () => {
+    let live = true;
+    const calls = countingLoader(async () => live ? { id: USER, email: '' } : null);
+    const token = sign({ sub: USER, exp: inAnHour() });
+    expect((await verifySupabaseJwt(token)).ok).toBe(true);
+    live = false;
+    expect((await verifySupabaseJwt(token)).ok).toBe(false);
+    expect(calls).toHaveLength(2);
+  });
+
+  test('the authenticated identity route refuses the same bearer after upstream logout', async () => {
+    const { supabaseAuth } = await import('../middleware/auth');
+    let live = true;
+    countingLoader(async () => live ? { id: USER, email: 'synthetic@example.test' } : null);
+    const token = sign({ sub: USER, exp: inAnHour() });
+    const app = new Hono<{ Variables: AuthVariables }>();
+    app.use('/v1/accounts/me', supabaseAuth);
+    app.get('/v1/accounts/me', (c) => c.json({ user_id: c.get('userId') }));
+    app.onError((error, c) => error instanceof HTTPException ? c.json({ error: error.message }, error.status) : c.json({ error: 'unexpected' }, 500));
+    const request = () => app.request('/v1/accounts/me', { headers: { authorization: `Bearer ${token}` } });
+    expect((await request()).status).toBe(200);
+    live = false;
+    expect((await request()).status).toBe(401);
+  });
+
+  test('a revoked session is rejected, and a later live answer passes', async () => {
     let live = false;
     const calls = countingLoader(async () => (live ? { id: USER, email: '' } : null));
     const token = sign({ sub: USER, exp: inAnHour() });
@@ -127,7 +148,7 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
     expect(result).toEqual({ ok: false, reason: 'session-not-live' });
   });
 
-  test('GoTrue being unreachable is inconclusive and is not cached', async () => {
+  test('GoTrue being unreachable is inconclusive', async () => {
     let fail = true;
     const calls = countingLoader(async () => {
       if (fail) throw new Error('gotrue unreachable');
@@ -142,37 +163,5 @@ describe('HS256 tokens with SUPABASE_JWT_SECRET configured', () => {
     fail = false;
     expect((await verifySupabaseJwt(token)).ok).toBe(true);
     expect(calls.length).toBe(2);
-  });
-
-  test('sign-out drops the cached confirmation, so the next request asks GoTrue again', async () => {
-    let live = true;
-    const calls = countingLoader(async () => (live ? { id: USER, email: '' } : null));
-    const token = sign({ sub: USER, exp: inAnHour() });
-
-    expect((await verifySupabaseJwt(token)).ok).toBe(true);
-    live = false;
-    liveness.forgetJwtLiveness(token);
-
-    expect((await verifySupabaseJwt(token)).ok).toBe(false);
-    expect(calls.length).toBe(2);
-  });
-});
-
-describe('confirmJwtLive cache bounds', () => {
-  test('a confirmation never outlives the token exp', async () => {
-    const calls = countingLoader(async () => ({ id: USER, email: '' }));
-    const exp = Math.floor(Date.now() / 1000) + 1; // expires in ≤ 1 s
-
-    await liveness.confirmJwtLive('token-a', exp);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-    await liveness.confirmJwtLive('token-a', exp);
-
-    expect(calls.length).toBe(2);
-  });
-
-  test('the raw token is not what the cache is keyed by', async () => {
-    countingLoader(async () => ({ id: USER, email: '' }));
-    await liveness.confirmJwtLive('token-b', inAnHour());
-    expect(liveness.jwtLivenessCacheSize()).toBe(1);
   });
 });

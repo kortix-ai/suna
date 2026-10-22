@@ -83,6 +83,7 @@ flow(
       'GET /v1/projects/:projectId/gateway/overview',
       'GET /v1/projects/:projectId/gateway/series',
       'GET /v1/projects/:projectId/gateway/sessions',
+      'GET /v1/projects/:projectId/gateway/sources',
       'GET /v1/projects/:projectId/gateway/breakdown',
       'GET /v1/projects/:projectId/gateway/errors',
       'GET /v1/projects/:projectId/gateway/logs',
@@ -115,6 +116,17 @@ flow(
         const r = await owner.get(route, { params });
         r.status([200, 403]);
       }
+    });
+    await ctx.step('gateway spend by source returns the windowed rollup shape', async () => {
+      const r = await owner.get('/v1/projects/:projectId/gateway/sources', {
+        params,
+        query: { hours: '6' },
+      });
+      r.status(200);
+      const body = r.json() as { window_hours: number; sources: unknown[]; total: { cost: number } };
+      if (body.window_hours !== 6) throw new Error(`window_hours ${body.window_hours} != 6`);
+      if (!Array.isArray(body.sources)) throw new Error('sources is not an array');
+      if (typeof body.total?.cost !== 'number') throw new Error('total.cost is not a number');
     });
     await ctx.step('gateway log detail unknown id returns boundary response', async () => {
       const r = await owner.get('/v1/projects/:projectId/gateway/logs/:logId', {
@@ -181,6 +193,15 @@ flow(
         });
       response.status([400, 404]);
     });
+    await ctx.step('a files.slack.com URL that names no file → 400, before any Slack call', async () => {
+      const response = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(
+          `/v1/projects/:projectId/channels/slack/file?url=${encodeURIComponent('https://files.slack.com/files-pri/T0KE2E-F0KE2E')}`,
+          { params: { projectId: project.id } },
+        );
+      response.status(400).body().matches('$.error', /must be a Slack file URL/);
+    });
   },
 );
 
@@ -188,7 +209,7 @@ flow(
   'SESS-20',
   {
     domain: 'sessions',
-    requires: ['daytona'],
+    requires: ['sandbox'],
     routes: [
       'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions/:sessionId/turn',
@@ -481,11 +502,13 @@ flow(
   {
     domain: 'llm-gateway',
     routes: [
+      'POST /internal/gateway/admit',
       'POST /internal/gateway/authenticate',
       'POST /internal/gateway/billing',
       'POST /internal/gateway/budget-check',
       'POST /internal/gateway/models',
       'POST /internal/gateway/pool-rate-limit',
+      'POST /internal/gateway/refresh-credential',
       'POST /internal/gateway/resolve-upstream',
       'POST /internal/gateway/trace',
       'POST /internal/gateway/usage',
@@ -493,11 +516,13 @@ flow(
   },
   async (ctx) => {
     for (const route of [
+      '/internal/gateway/admit',
       '/internal/gateway/authenticate',
       '/internal/gateway/billing',
       '/internal/gateway/budget-check',
       '/internal/gateway/models',
       '/internal/gateway/pool-rate-limit',
+      '/internal/gateway/refresh-credential',
       '/internal/gateway/resolve-upstream',
       '/internal/gateway/trace',
       '/internal/gateway/usage',
@@ -514,10 +539,11 @@ flow(
   'SBX-6',
   {
     domain: 'sandboxes',
+    tags: ['deployed'],
     routes: ['POST /v1/webhooks/sandbox/daytona', 'POST /v1/webhooks/sandbox/platinum'],
   },
   async (ctx) => {
-    await ctx.step('sandbox provider webhooks reject unsigned Daytona payload', async () => {
+    await ctx.step('the legacy Daytona sandbox webhook rejects an unsigned payload', async () => {
       const r = await ctx.client.as(ctx.P.ANON).post('/v1/webhooks/sandbox/daytona', {});
       r.status([400, 401, 403, 503]);
     });
@@ -582,23 +608,11 @@ flow(
   'GW-11',
   {
     domain: 'llm-gateway',
-    routes: ['GET /v1/generation', 'GET /v1/usage'],
+    routes: ['GET /v1/usage'],
   },
   async (ctx) => {
     const owner = ctx.client.as(ctx.P.OWNER);
 
-    await ctx.step('ANON cannot read generation forensics', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/generation', { query: { id: ZERO_UUID } });
-      r.status(401);
-    });
-    await ctx.step('missing id query param is a 400 boundary', async () => {
-      const r = await owner.get('/v1/generation');
-      r.status(400);
-    });
-    await ctx.step('unknown request id is a 404 boundary', async () => {
-      const r = await owner.get('/v1/generation', { query: { id: ZERO_UUID } });
-      r.status(404);
-    });
 
     await ctx.step('ANON cannot read the usage rollup', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/usage');

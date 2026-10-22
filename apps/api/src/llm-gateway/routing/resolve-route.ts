@@ -17,12 +17,20 @@ export interface ResolvedProjectRoutingPolicy {
 }
 
 export interface GatewayRouteResolverOptions {
-  defaultModel: string;
+  /** A function when the value can change while the process runs (the managed lineup refreshes). */
+  defaultModel: string | (() => string);
   /** Reroute target for image-bearing default requests; empty/undefined = no reroute. */
-  visionModel: string | undefined;
-  policies: readonly ModelFallbackPolicy[];
+  visionModel: string | undefined | (() => string | undefined);
+  /** Read per request: the managed fallbacks follow the live lineup. */
+  policies: readonly ModelFallbackPolicy[] | (() => readonly ModelFallbackPolicy[]);
   supportsImage: (model: string) => boolean;
   getProjectPolicy?: (projectId: string) => Promise<ResolvedProjectRoutingPolicy | null>;
+  /**
+   * The principal's account/project/agent default, for a principal that did
+   * not carry one (gateway admission leaves it unresolved). Called only when
+   * the route depends on it: an image request or a project default fallback.
+   */
+  resolveDefaultModel?: (principal: AuthedPrincipal) => Promise<string | undefined>;
   /**
    * Resolve `model`'s live catalog capability record (reasoning_options,
    * temperature, limit.output, ...) — used ONLY to clamp a project's
@@ -32,6 +40,12 @@ export interface GatewayRouteResolverOptions {
    * overridable so tests don't need a live runtime catalog.
    */
   catalogModelFor?: (model: string) => CatalogModel | undefined;
+  /**
+   * The canonical id a platform policy is keyed by. A legacy or `kortix/`-prefixed
+   * id (`kimi-k3`, `kortix/deepseek-v4.1-flash`) resolves to the same upstream as
+   * its canonical id and must get the same fallback chain.
+   */
+  canonicalModel?: (model: string) => string;
 }
 
 export type GatewayRouteResolver = (
@@ -59,17 +73,26 @@ function generationDefaultsFor(
  * Build the API/control-plane route resolver. The policy engine is generic;
  * this host-owned layer supplies the actual model ids and account defaults.
  */
+const valueOf = <T,>(v: T | (() => T)): T => (typeof v === 'function' ? (v as () => T)() : v);
+
 export function createGatewayRouteResolver(
   options: GatewayRouteResolverOptions,
 ): GatewayRouteResolver {
-  const fallbackPolicies = createModelFallbackPolicyEngine(options.policies);
   const catalogModelFor = options.catalogModelFor ?? (() => undefined);
 
   return async (principal, input) => {
+    const fallbackPolicies = createModelFallbackPolicyEngine(valueOf(options.policies));
     const projectPolicy = principal.projectId && options.getProjectPolicy
       ? await options.getProjectPolicy(principal.projectId)
       : null;
-    const concreteDefault = principal.defaultModel || options.defaultModel;
+    // The default decides only an image reroute (the project chain covers
+    // every model); a text request never reads it.
+    const defaultMatters = input.requires.imageInput;
+    const principalDefault = principal.defaultModel
+      ?? (defaultMatters && options.resolveDefaultModel
+        ? await options.resolveDefaultModel(principal).catch(() => undefined)
+        : undefined);
+    const concreteDefault = principalDefault || valueOf(options.defaultModel);
     const isDefaultRequest = input.requestedModel === concreteDefault;
     let primaryModel = input.requestedModel;
 
@@ -77,7 +100,7 @@ export function createGatewayRouteResolver(
       // No configured vision target (the managed lineup has no vision model
       // since the 2026-08-10 slim-down) → keep the default model rather than
       // rerouting to a dead ref that resolves as model_not_found.
-      const visionTarget = projectPolicy?.visionModel || options.visionModel;
+      const visionTarget = projectPolicy?.visionModel || valueOf(options.visionModel);
       if (visionTarget) primaryModel = visionTarget;
     }
 
@@ -101,7 +124,12 @@ export function createGatewayRouteResolver(
       };
     }
 
-    if (isDefaultRequest && projectPolicy?.defaultFallback) {
+    // The project's chain is a catch-all: it covers every model that has no
+    // exact rule. It never depends on `isDefaultRequest`, because the
+    // principal's default is one model. An agent with its own default, or a
+    // default with every account paused, would otherwise take a request for
+    // the project's own model out of the chain.
+    if (projectPolicy?.defaultFallback) {
       return {
         policyId: 'project:default',
         primaryModel,
@@ -112,7 +140,7 @@ export function createGatewayRouteResolver(
       };
     }
 
-    const policy = fallbackPolicies.route(primaryModel);
+    const policy = fallbackPolicies.route(options.canonicalModel?.(primaryModel) ?? primaryModel);
     if (!policy) {
       return {
         policyId: 'direct',

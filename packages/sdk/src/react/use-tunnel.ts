@@ -1,25 +1,30 @@
 'use client';
 
 /**
- * Tunnel hooks — TanStack React Query hooks for the tunnel API.
+ * Computer (tunnel) hooks — TanStack React Query hooks for paired machines.
  *
- * Provides:
- *   - useTunnelConnections()          — list tunnel connections
- *   - useTunnelConnection(tunnelId)   — single connection detail
- *   - useCreateTunnelConnection()     — create a new connection
- *   - useUpdateTunnelConnection()     — update connection
- *   - useDeleteTunnelConnection()     — delete connection
- *   - useTunnelPermissions(tunnelId)  — list permissions
- *   - useGrantTunnelPermission()      — grant permission
- *   - useRevokeTunnelPermission()     — revoke permission
- *   - useTunnelPermissionRequests()   — list pending requests
- *   - useApprovePermissionRequest()   — approve request
- *   - useDenyPermissionRequest()      — deny request
- *   - useTunnelAuditLogs(tunnelId)    — paginated audit logs
+ * A paired computer is an ACCOUNT of the project's `computer` connector: list
+ * and select it with the generic connection APIs (`listConnections`,
+ * `--account`). These hooks cover the machine itself:
+ *   - useTunnelConnections()          — the machines the caller paired
+ *   - useTunnelConnection(tunnelId)   — one machine
+ *   - useUpdateTunnelConnection()     — rename a machine
+ *   - useDeleteTunnelConnection()     — unpair a machine
+ *   - useSetComputerAccess()          — change when Kortix may use a machine
+ *   - useAddComputerToProject()       — add a paired machine to a project
+ *   - useDeviceAuthInfo / useApproveDeviceAuth / useDenyDeviceAuth — pairing
+ *
+ * Retired (the API deleted the routes; the hooks fail with ENDPOINT_RETIRED
+ * and send no request): useCreateTunnelConnection, useTunnelPermissions,
+ * useGrantTunnelPermission, useRevokeTunnelPermission,
+ * useTunnelPermissionRequests, useApprovePermissionRequest,
+ * useDenyPermissionRequest, useTunnelAuditLogs.
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { backendApi } from '../core/http/api-client';
+import { addComputerToProject, type ConnectorConnectOwner } from '../core/rest/projects-client';
+import { useRetiredMutation, useRetiredQuery } from './retired-endpoint';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,14 +34,62 @@ export interface TunnelConnection {
   sandboxId: string | null;
   name: string;
   status: 'online' | 'offline' | 'connecting';
+  /** What Kortix may use now: approved by the owner AND served by the agent. */
   capabilities: string[];
+  /** What the owner approved (`useUpdateTunnelConnection` changes it). Absent on older servers. */
+  approvedCapabilities?: string[];
   machineInfo: Record<string, unknown>;
   lastHeartbeatAt: string | null;
   isLive: boolean;
   createdAt: string;
   updatedAt: string;
+  /** The human who paired the machine. `null` for a machine paired before
+   *  computers became per-member accounts; absent on older servers. */
+  ownerUserId?: string | null;
+  /** When Kortix may use the machine, as its agent last reported it. `null`
+   *  before the first report; absent on older servers. */
+  access?: ComputerAccess | null;
 }
 
+/**
+ * Access on a paired machine, decided on the machine itself. Fields other
+ * than `mode`, `grantedUntil`, and `controllable` are absent while the
+ * machine runs an agent older than 0.1.4.
+ */
+export interface ComputerAccess {
+  /** `ask`: each agent call waits for the owner; `always`: calls run; `off`: calls are refused. */
+  mode: 'ask' | 'always' | 'off';
+  /** In `ask`: calls run without asking until then. */
+  grantedUntil: string | null;
+  /** In `ask`: the owner denied; calls fail at once until then. */
+  deniedUntil?: string | null;
+  keepAwake?: boolean;
+  keepAwakeSupported?: boolean;
+  /** What waits for the owner's answer on the machine now: an agent call, or (`change`) a wider access asked for through Kortix. */
+  pendingRequest?: { capability: string; requestedAt: string; change?: ComputerAccessChange } | null;
+  /** The macOS permissions the machine's agent process holds. `null`: not a Mac, or no Computer Use. */
+  desktopPermissions?: { accessibility: boolean; screenRecording: boolean } | null;
+  /** The machine accepts `useSetComputerAccess`. False: update Kortix on it. */
+  controllable: boolean;
+}
+
+/**
+ * One change to a machine's access. The machine applies a narrowing at once.
+ * A widening (`mode: 'always'`, a longer grant) needs its owner to confirm in
+ * the Kortix app on that machine; the request fails with HTTP 409 otherwise.
+ */
+export interface ComputerAccessChange {
+  mode?: ComputerAccess['mode'];
+  /** Allow calls for this many minutes (1–1440). */
+  grantMinutes?: number;
+  /** End the current grant now. */
+  revoke?: boolean;
+  /** Answer the pending request with No: calls are refused for 10 minutes. */
+  deny?: boolean;
+  keepAwake?: boolean;
+}
+
+/** @deprecated Per-machine permissions are no longer a product surface. Removed in the next major. */
 export interface TunnelPermission {
   permissionId: string;
   tunnelId: string;
@@ -49,6 +102,7 @@ export interface TunnelPermission {
   updatedAt: string;
 }
 
+/** @deprecated Permission requests were removed; approvals use connector policies. Removed in the next major. */
 export interface TunnelPermissionRequest {
   requestId: string;
   tunnelId: string;
@@ -61,6 +115,7 @@ export interface TunnelPermissionRequest {
   updatedAt: string;
 }
 
+/** @deprecated The tunnel audit log route was removed. Removed in the next major. */
 export interface TunnelAuditLog {
   logId: string;
   tunnelId: string;
@@ -75,6 +130,7 @@ export interface TunnelAuditLog {
   createdAt: string;
 }
 
+/** @deprecated The tunnel audit log route was removed. Removed in the next major. */
 export interface AuditLogPage {
   data: TunnelAuditLog[];
   pagination: {
@@ -99,7 +155,9 @@ export const tunnelKeys = {
 
 // ─── Connection Hooks ────────────────────────────────────────────────────────
 
-export function useTunnelConnections() {
+/** Machines the caller paired. Polls every 5 s; pass a slower `refetchInterval`
+ *  (or `false`) when only "has a machine?" matters. */
+export function useTunnelConnections(options: { refetchInterval?: number | false } = {}) {
   return useQuery({
     queryKey: tunnelKeys.connections(),
     queryFn: async () => {
@@ -107,11 +165,15 @@ export function useTunnelConnections() {
         showErrors: false,
         timeout: 10_000,
       });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch connections');
+      // Rethrow the API error itself, not a re-wrapped `new Error(message)`:
+      // the web QueryClient's default retry guard reads `error.status` to stop
+      // on 4xx. A re-wrapped error hides the status, so a dead token made this
+      // 5 s poller run full default-retry cycles of 401s.
+      if (!res.success) throw res.error ?? new Error('Failed to fetch connections');
       return res.data!;
     },
     staleTime: 2_000,
-    refetchInterval: 5_000,
+    refetchInterval: options.refetchInterval ?? 5_000,
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: 'always',
@@ -126,7 +188,8 @@ export function useTunnelConnection(tunnelId: string) {
         showErrors: false,
         timeout: 10_000,
       });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch connection');
+      // Same status-preservation rule as `useTunnelConnections` above.
+      if (!res.success) throw res.error ?? new Error('Failed to fetch connection');
       return res.data!;
     },
     enabled: !!tunnelId,
@@ -138,23 +201,22 @@ export function useTunnelConnection(tunnelId: string) {
   });
 }
 
+/** @deprecated Pairing is device-auth only. Removed in the next major. */
 export interface TunnelConnectionCreateResponse extends TunnelConnection {
   /** One-time setup token — only returned on creation, never retrievable again. */
   setupToken: string;
 }
 
+/**
+ * @deprecated The API removed `POST /tunnel/connections`: a machine pairs
+ * through device auth (`npx @kortix/agent-tunnel connect`). Fails with
+ * `ENDPOINT_RETIRED`. Removed in the next major.
+ */
 export function useCreateTunnelConnection() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (data: { name: string; sandboxId?: string; capabilities?: string[] }) => {
-      const res = await backendApi.post<TunnelConnectionCreateResponse>('/tunnel/connections', data);
-      if (!res.success) throw new Error(res.error?.message || 'Failed to create connection');
-      return res.data!;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
-    },
-  });
+  return useRetiredMutation<
+    TunnelConnectionCreateResponse,
+    { name: string; sandboxId?: string; capabilities?: string[] }
+  >('useCreateTunnelConnection');
 }
 
 export function useUpdateTunnelConnection() {
@@ -181,110 +243,101 @@ export function useDeleteTunnelConnection() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
+      // Unpairing revokes the machine's `computer` accounts in every project.
+      queryClient.invalidateQueries({ queryKey: ['connections'] });
     },
   });
 }
 
-// ─── Permission Hooks ────────────────────────────────────────────────────────
+/**
+ * Changes when Kortix may use a paired machine (`POST /tunnel/connections/:id/access`).
+ * Rejects with the `ApiError`. Its `code` on HTTP 409: `computer_offline`,
+ * `agent_update_required`, or `computer_access_unconfirmed` (a widening nobody
+ * confirmed on the machine). Its `message` says what to do.
+ */
+export function useSetComputerAccess() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tunnelId, ...change }: ComputerAccessChange & { tunnelId: string }) => {
+      const res = await backendApi.post<ComputerAccess>(`/tunnel/connections/${tunnelId}/access`, change, {
+        showErrors: false,
+        // A widening waits up to 20 s for the owner on the machine.
+        timeout: 60_000,
+      });
+      if (!res.success) throw res.error ?? new Error('Failed to change computer access');
+      return res.data!;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
+      queryClient.invalidateQueries({ queryKey: tunnelKeys.connection(vars.tunnelId) });
+    },
+    // The caller shows the error: its message says what to do on the machine.
+    // Without this, a host's default mutation `onError` would show it twice.
+    onError: () => {},
+  });
+}
 
+// ─── Retired permission hooks ───────────────────────────────────────────────
+// Per-machine permission editing and permission requests are no longer a
+// product surface. The local agent's config is the ceiling; human approval of
+// risky calls is a connector policy (`require_approval`).
+
+/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
 export function useTunnelPermissions(tunnelId: string) {
-  return useQuery({
-    queryKey: tunnelKeys.permissions(tunnelId),
-    queryFn: async () => {
-      const res = await backendApi.get<TunnelPermission[]>(`/tunnel/permissions/${tunnelId}`, {
-        showErrors: false,
-        timeout: 10_000,
-      });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch permissions');
-      return res.data!;
-    },
-    enabled: !!tunnelId,
-    staleTime: 10_000,
-  });
+  return useRetiredQuery<TunnelPermission[]>('useTunnelPermissions', tunnelKeys.permissions(tunnelId), !!tunnelId);
 }
 
+/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
 export function useGrantTunnelPermission() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ tunnelId, ...data }: {
-      tunnelId: string;
-      capability: string;
-      scope?: Record<string, unknown>;
-      expiresAt?: string;
-    }) => {
-      const res = await backendApi.post<TunnelPermission>(`/tunnel/permissions/${tunnelId}`, data);
-      if (!res.success) throw new Error(res.error?.message || 'Failed to grant permission');
-      return res.data!;
-    },
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.permissions(vars.tunnelId) });
-    },
-  });
+  return useRetiredMutation<
+    TunnelPermission,
+    { tunnelId: string; capability: string; scope?: Record<string, unknown>; expiresAt?: string }
+  >('useGrantTunnelPermission');
 }
 
+/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
 export function useRevokeTunnelPermission() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ tunnelId, permissionId }: { tunnelId: string; permissionId: string }) => {
-      const res = await backendApi.delete(`/tunnel/permissions/${tunnelId}/${permissionId}`);
-      if (!res.success) throw new Error(res.error?.message || 'Failed to revoke permission');
-    },
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.permissions(vars.tunnelId) });
-    },
-  });
+  return useRetiredMutation<void, { tunnelId: string; permissionId: string }>('useRevokeTunnelPermission');
 }
 
-// ─── Permission Request Hooks ────────────────────────────────────────────────
-
+/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
 export function useTunnelPermissionRequests() {
-  return useQuery({
-    queryKey: tunnelKeys.permissionRequests(),
-    queryFn: async () => {
-      const res = await backendApi.get<TunnelPermissionRequest[]>('/tunnel/permission-requests', {
-        showErrors: false,
-        timeout: 10_000,
-      });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch requests');
-      return res.data!;
-    },
-    staleTime: 5_000,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: false,
-  });
+  return useRetiredQuery<TunnelPermissionRequest[]>('useTunnelPermissionRequests', tunnelKeys.permissionRequests());
 }
 
+/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
 export function useApprovePermissionRequest() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ requestId, scope, expiresAt }: {
-      requestId: string;
-      scope?: Record<string, unknown>;
-      expiresAt?: string;
-    }) => {
-      const res = await backendApi.post(`/tunnel/permission-requests/${requestId}/approve`, {
-        scope,
-        expiresAt,
-      });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to approve request');
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.permissionRequests() });
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.all });
-    },
-  });
+  return useRetiredMutation<
+    unknown,
+    { requestId: string; scope?: Record<string, unknown>; expiresAt?: string }
+  >('useApprovePermissionRequest');
 }
 
+/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
 export function useDenyPermissionRequest() {
+  return useRetiredMutation<void, string>('useDenyPermissionRequest');
+}
+
+// ─── Project Hooks ───────────────────────────────────────────────────────────
+
+/**
+ * Share a machine the caller paired with a project (`share: 'project'`, needs
+ * the connector-manage capability): everyone in the project can use it,
+ * including unattended runs. A private account is not needed: the owner's own
+ * account follows them into every project they belong to. `share: 'me'`
+ * (the server default) stays accepted and is idempotent.
+ */
+export function useAddComputerToProject() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (requestId: string) => {
-      const res = await backendApi.post(`/tunnel/permission-requests/${requestId}/deny`);
-      if (!res.success) throw new Error(res.error?.message || 'Failed to deny request');
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.permissionRequests() });
+    mutationFn: ({ projectId, ...input }: {
+      projectId: string;
+      tunnelId: string;
+      share?: ConnectorConnectOwner;
+    }) => addComputerToProject(projectId, input),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['connections', vars.projectId] });
+      queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
     },
   });
 }
@@ -294,9 +347,22 @@ export function useDenyPermissionRequest() {
 export interface DeviceAuthInfo {
   deviceCode: string;
   machineHostname: string | null;
+  /** The project the machine named (`connect --project-id`): approving with
+   *  `share: 'project'` also shares the machine with it. `null` when it named
+   *  none; absent on older servers. */
+  projectId?: string | null;
   status: 'pending' | 'approved' | 'denied' | 'expired';
   expiresAt: string;
   createdAt: string;
+  /** The caller's existing registration of this machine (same hardware id).
+   *  Approving reconnects it: new credential, name, and grants, same accounts.
+   *  `null` for a machine new to the caller; absent on older servers. */
+  registered?: {
+    tunnelId: string;
+    name: string;
+    capabilities: string[];
+    isLive: boolean;
+  } | null;
 }
 
 export function useDeviceAuthInfo(code: string) {
@@ -307,7 +373,8 @@ export function useDeviceAuthInfo(code: string) {
         showErrors: false,
         timeout: 10_000,
       });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch device auth info');
+      // Same status-preservation rule as `useTunnelConnections` above.
+      if (!res.success) throw res.error ?? new Error('Failed to fetch device auth info');
       return res.data!;
     },
     enabled: !!code,
@@ -316,17 +383,33 @@ export function useDeviceAuthInfo(code: string) {
   });
 }
 
+/**
+ * Approve a pairing request. The machine belongs to the caller and is theirs
+ * in every project they are a member of, in their private sessions
+ * (`share: 'me'`, the default). `share: 'project'` also shares it with a
+ * project (needs the connector-manage capability there): `projectId`, or the
+ * project the machine named (`DeviceAuthInfo.projectId`) when it is omitted.
+ * Older servers need a project for every approval.
+ */
 export function useApproveDeviceAuth() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ code, ...data }: {
+    mutationFn: async ({ code, projectId, share, ...data }: {
       code: string;
       name?: string;
       capabilities?: string[];
+      projectId?: string;
+      share?: ConnectorConnectOwner;
     }) => {
-      const res = await backendApi.post<{ success: boolean; tunnelId: string }>(
+      // `connectionId` is the computer account created on the project: `null`
+      // when the approval named no project, absent on older servers.
+      const res = await backendApi.post<{ success: boolean; tunnelId: string; connectionId?: string | null }>(
         `/tunnel/device-auth/${code}/approve`,
-        data,
+        {
+          ...data,
+          ...(projectId ? { project_id: projectId } : {}),
+          ...(share ? { share } : {}),
+        },
       );
       if (!res.success) throw new Error(res.error?.message || 'Failed to approve device');
       return res.data!;
@@ -334,6 +417,7 @@ export function useApproveDeviceAuth() {
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: tunnelKeys.deviceAuth(vars.code) });
       queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
+      if (vars.projectId) queryClient.invalidateQueries({ queryKey: ['connections', vars.projectId] });
     },
   });
 }
@@ -351,20 +435,9 @@ export function useDenyDeviceAuth() {
   });
 }
 
-// ─── Audit Log Hooks ─────────────────────────────────────────────────────────
+// ─── Retired audit hook ──────────────────────────────────────────────────────
 
-export function useTunnelAuditLogs(tunnelId: string, page = 1, limit = 50) {
-  return useQuery({
-    queryKey: tunnelKeys.auditLogs(tunnelId, page),
-    queryFn: async () => {
-      const res = await backendApi.get<AuditLogPage>(`/tunnel/audit/${tunnelId}?page=${page}&limit=${limit}`, {
-        showErrors: false,
-        timeout: 10_000,
-      });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch audit logs');
-      return res.data!;
-    },
-    enabled: !!tunnelId,
-    staleTime: 15_000,
-  });
+/** @deprecated The API removed this route. Fails with `ENDPOINT_RETIRED`. Removed in the next major. */
+export function useTunnelAuditLogs(tunnelId: string, page = 1, _limit = 50) {
+  return useRetiredQuery<AuditLogPage>('useTunnelAuditLogs', tunnelKeys.auditLogs(tunnelId, page), !!tunnelId);
 }

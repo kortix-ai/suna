@@ -3,37 +3,25 @@
 # ALBs are discovered instead of named because the AWS Load Balancer Controller
 # includes a generated hash in Kubernetes-managed load balancer names. A plan
 # therefore adds coverage for a new ALB without a hand-maintained name list.
-
-data "aws_sns_topic" "usw2_alerts" {
-  name = "suna-api-alerts"
-}
+#
+# us-west-2 runs no workload since 2026-10-12. Its last alert source is the AWS
+# Backup job for the Terraform lock table, which forwards to eu-west-2 (below).
 
 data "aws_sns_topic" "euw2_alerts" {
   provider = aws.euw2
   name     = "kortix-compliance-alerts"
 }
 
-data "aws_lbs" "usw2" {}
-
 data "aws_lbs" "euw2" {
   provider = aws.euw2
 }
 
 # EKS worker instance IDs are ephemeral. Discover every running EC2 instance in
-# the two production-system regions so replacement workers receive the same CPU
-# alarm on the next plan/apply without maintaining an ID list by hand.
-data "aws_instances" "usw2" {
-  instance_state_names = ["running"]
-}
-
+# the production region so replacement workers receive the same CPU alarm on
+# the next plan/apply without maintaining an ID list by hand.
 data "aws_instances" "euw2" {
   provider             = aws.euw2
   instance_state_names = ["running"]
-}
-
-data "aws_wafv2_web_acl" "usw2" {
-  name  = "kortix-alb-waf"
-  scope = "REGIONAL"
 }
 
 data "aws_wafv2_web_acl" "euw2" {
@@ -43,25 +31,15 @@ data "aws_wafv2_web_acl" "euw2" {
 }
 
 locals {
-  usw2_albs = {
-    for arn in data.aws_lbs.usw2.arns : arn => {
-      name      = split("/", arn)[2]
-      dimension = replace(arn, "/^.*:loadbalancer\\//", "")
-    }
-  }
   euw2_albs = {
     for arn in data.aws_lbs.euw2.arns : arn => {
       name      = split("/", arn)[2]
       dimension = replace(arn, "/^.*:loadbalancer\\//", "")
     }
   }
-  usw2_compliance_waf_albs = {
-    for arn, alb in local.usw2_albs : arn => alb
-    if !contains(["kortix-dev-web-alb", "kortix-staging-web-alb"], alb.name)
-  }
   euw2_compliance_waf_albs = {
     for arn, alb in local.euw2_albs : arn => alb
-    if alb.name != "kortix-prod-web-alb"
+    if !contains(["kortix-prod-web-alb", "kortix-staging-euw2-web-alb"], alb.name)
   }
   alarm_tags = {
     ManagedBy = "kortix-compliance"
@@ -83,7 +61,6 @@ data "aws_iam_policy_document" "drata_sns_inspection" {
       "sns:ListTopics",
     ]
     resources = [
-      data.aws_sns_topic.usw2_alerts.arn,
       data.aws_sns_topic.euw2_alerts.arn,
       aws_sns_topic.use2_alerts.arn,
     ]
@@ -102,12 +79,6 @@ resource "aws_iam_role_policy" "drata_sns_inspection" {
   policy = data.aws_iam_policy_document.drata_sns_inspection.json
 }
 
-resource "aws_wafv2_web_acl_association" "usw2" {
-  for_each     = local.usw2_compliance_waf_albs
-  resource_arn = each.key
-  web_acl_arn  = data.aws_wafv2_web_acl.usw2.arn
-}
-
 resource "aws_wafv2_web_acl_association" "euw2" {
   provider     = aws.euw2
   for_each     = local.euw2_compliance_waf_albs
@@ -123,60 +94,6 @@ resource "aws_wafv2_web_acl_association" "euw2" {
 # restoration was ~25 s (dev API ALB), so Average > 30 s held for three
 # consecutive 5-minute periods only fires on a genuine stall. Keep the
 # threshold above observed streaming traffic if it is ever retuned.
-resource "aws_cloudwatch_metric_alarm" "usw2_target_response_time" {
-  for_each            = local.usw2_albs
-  alarm_name          = "kortix-alb-${each.value.name}-target-response-time"
-  alarm_description   = "SOC2 DCF-86: ALB target response time is elevated"
-  namespace           = "AWS/ApplicationELB"
-  metric_name         = "TargetResponseTime"
-  dimensions          = { LoadBalancer = each.value.dimension }
-  statistic           = "Average"
-  period              = 300
-  evaluation_periods  = 3
-  datapoints_to_alarm = 3
-  threshold           = 30
-  comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [data.aws_sns_topic.usw2_alerts.arn]
-  tags                = local.alarm_tags
-}
-
-resource "aws_cloudwatch_metric_alarm" "usw2_elb_5xx" {
-  for_each            = local.usw2_albs
-  alarm_name          = "kortix-alb-${each.value.name}-elb-5xx"
-  alarm_description   = "SOC2 DCF-86: ALB server errors detected"
-  namespace           = "AWS/ApplicationELB"
-  metric_name         = "HTTPCode_ELB_5XX_Count"
-  dimensions          = { LoadBalancer = each.value.dimension }
-  statistic           = "Sum"
-  period              = 300
-  evaluation_periods  = 1
-  datapoints_to_alarm = 1
-  threshold           = 5
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [data.aws_sns_topic.usw2_alerts.arn]
-  tags                = local.alarm_tags
-}
-
-resource "aws_cloudwatch_metric_alarm" "usw2_unhealthy_hosts" {
-  for_each            = local.usw2_albs
-  alarm_name          = "kortix-alb-${each.value.name}-unhealthy-hosts"
-  alarm_description   = "SOC2 DCF-86: ALB has unhealthy targets"
-  namespace           = "AWS/ApplicationELB"
-  metric_name         = "UnHealthyHostCount"
-  dimensions          = { LoadBalancer = each.value.dimension }
-  statistic           = "Maximum"
-  period              = 300
-  evaluation_periods  = 2
-  datapoints_to_alarm = 2
-  threshold           = 1
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [data.aws_sns_topic.usw2_alerts.arn]
-  tags                = local.alarm_tags
-}
-
 resource "aws_cloudwatch_metric_alarm" "euw2_target_response_time" {
   provider            = aws.euw2
   for_each            = local.euw2_albs
@@ -232,24 +149,15 @@ resource "aws_cloudwatch_metric_alarm" "euw2_unhealthy_hosts" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [data.aws_sns_topic.euw2_alerts.arn]
   tags                = local.alarm_tags
-}
 
-resource "aws_cloudwatch_metric_alarm" "usw2_instance_cpu" {
-  for_each            = toset(data.aws_instances.usw2.ids)
-  alarm_name          = "compliance-${each.value}-cpu-high"
-  alarm_description   = "EC2 CPU above 80 percent for 15 minutes"
-  namespace           = "AWS/EC2"
-  metric_name         = "CPUUtilization"
-  dimensions          = { InstanceId = each.value }
-  statistic           = "Average"
-  period              = 300
-  evaluation_periods  = 3
-  datapoints_to_alarm = 3
-  threshold           = 80
-  comparison_operator = "GreaterThanOrEqualToThreshold"
-  treat_missing_data  = "notBreaching"
-  alarm_actions       = [data.aws_sns_topic.usw2_alerts.arn]
-  tags                = local.alarm_tags
+  # The alb_alarm_reconciler Lambda (functions/alb_alarm_reconciler.py) owns the
+  # dimensions of this alarm: it writes {TargetGroup, LoadBalancer}, because
+  # UnHealthyHostCount has no LoadBalancer-only series. Terraform manages the
+  # alarm but must not reset the dimensions to the LoadBalancer-only set, which
+  # reads no data and so never fires (treat_missing_data = notBreaching).
+  lifecycle {
+    ignore_changes = [dimensions]
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "euw2_instance_cpu" {
@@ -269,56 +177,6 @@ resource "aws_cloudwatch_metric_alarm" "euw2_instance_cpu" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [data.aws_sns_topic.euw2_alerts.arn]
   tags                = local.alarm_tags
-}
-
-data "aws_iam_policy_document" "usw2_alerts" {
-  statement {
-    sid       = "AllowDrataSubscriptionInspection"
-    actions   = ["SNS:GetTopicAttributes", "SNS:ListSubscriptionsByTopic"]
-    resources = [data.aws_sns_topic.usw2_alerts.arn]
-    principals {
-      type        = "AWS"
-      identifiers = [local.drata_autopilot_role_arn]
-    }
-  }
-
-  statement {
-    sid       = "TopicOwnerAdministration"
-    actions   = ["SNS:GetTopicAttributes", "SNS:SetTopicAttributes", "SNS:AddPermission", "SNS:RemovePermission", "SNS:DeleteTopic", "SNS:Subscribe", "SNS:ListSubscriptionsByTopic", "SNS:Publish"]
-    resources = [data.aws_sns_topic.usw2_alerts.arn]
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::${local.account_id}:root"]
-    }
-  }
-  statement {
-    sid       = "AllowEventBridgeComplianceAlerts"
-    actions   = ["SNS:Publish"]
-    resources = [data.aws_sns_topic.usw2_alerts.arn]
-    principals {
-      type        = "Service"
-      identifiers = ["events.amazonaws.com"]
-    }
-    condition {
-      test     = "ArnLike"
-      variable = "aws:SourceArn"
-      values   = ["arn:aws:events:us-west-2:${local.account_id}:rule/kortix-*failures"]
-    }
-  }
-  statement {
-    sid       = "AllowCloudWatchAlarmPublish"
-    actions   = ["SNS:Publish"]
-    resources = [data.aws_sns_topic.usw2_alerts.arn]
-    principals {
-      type        = "Service"
-      identifiers = ["cloudwatch.amazonaws.com"]
-    }
-    condition {
-      test     = "ArnLike"
-      variable = "aws:SourceArn"
-      values   = ["arn:aws:cloudwatch:us-west-2:${local.account_id}:alarm:*"]
-    }
-  }
 }
 
 data "aws_iam_policy_document" "euw2_alerts" {
@@ -342,6 +200,9 @@ data "aws_iam_policy_document" "euw2_alerts" {
       identifiers = ["arn:aws:iam::${local.account_id}:root"]
     }
   }
+  # GuardDuty and root-login delivery rules (security-baseline) and the backup
+  # and snapshot rules below all publish through this one condition: every
+  # delivery rule in eu-west-2 is named kortix-*failures.
   statement {
     sid       = "AllowEventBridgeComplianceAlerts"
     actions   = ["SNS:Publish"]
@@ -372,11 +233,6 @@ data "aws_iam_policy_document" "euw2_alerts" {
   }
 }
 
-resource "aws_sns_topic_policy" "usw2_alerts" {
-  arn    = data.aws_sns_topic.usw2_alerts.arn
-  policy = data.aws_iam_policy_document.usw2_alerts.json
-}
-
 resource "aws_sns_topic_policy" "euw2_alerts" {
   provider = aws.euw2
   arn      = data.aws_sns_topic.euw2_alerts.arn
@@ -396,32 +252,8 @@ locals {
   })
 }
 
-resource "aws_cloudwatch_event_rule" "usw2_backup_failures" {
-  name          = "kortix-backup-job-failures"
-  description   = "Alert on failed, aborted, or expired AWS Backup jobs"
-  event_pattern = local.backup_failure_pattern
-  tags          = merge(local.tags, { Control = "DCF-99" })
-}
-
-resource "aws_cloudwatch_event_rule" "usw2_snapshot_failures" {
-  name          = "kortix-ebs-snapshot-failures"
-  description   = "Alert on failed EBS snapshot operations"
-  event_pattern = local.snapshot_failure_pattern
-  tags          = merge(local.tags, { Control = "DCF-99" })
-}
-
-resource "aws_cloudwatch_event_target" "usw2_backup_failures" {
-  rule      = aws_cloudwatch_event_rule.usw2_backup_failures.name
-  target_id = "compliance-sns"
-  arn       = data.aws_sns_topic.usw2_alerts.arn
-}
-
-resource "aws_cloudwatch_event_target" "usw2_snapshot_failures" {
-  rule      = aws_cloudwatch_event_rule.usw2_snapshot_failures.name
-  target_id = "compliance-sns"
-  arn       = data.aws_sns_topic.usw2_alerts.arn
-}
-
+# AWS Backup runs in eu-west-2 only (security-baseline/main.tf), so its
+# failures need no cross-region forwarder.
 resource "aws_cloudwatch_event_rule" "euw2_backup_failures" {
   provider      = aws.euw2
   name          = "kortix-backup-job-failures"
@@ -450,4 +282,42 @@ resource "aws_cloudwatch_event_target" "euw2_snapshot_failures" {
   rule      = aws_cloudwatch_event_rule.euw2_snapshot_failures.name
   target_id = "compliance-sns"
   arn       = data.aws_sns_topic.euw2_alerts.arn
+}
+
+# DCF-406: every VPC carries a flow log. kortix-prod-vpc writes to this group
+# through a flow log created by CLI; the staging VPC had none until 2026-10-12.
+data "aws_vpc" "euw2_staging" {
+  provider = aws.euw2
+  tags     = { Name = "kortix-staging-euw2-vpc" }
+}
+
+data "aws_iam_role" "flow_logs" {
+  name = "vpc-flow-logs-role"
+}
+
+resource "aws_flow_log" "euw2_staging" {
+  provider             = aws.euw2
+  iam_role_arn         = data.aws_iam_role.flow_logs.arn
+  log_destination      = "arn:aws:logs:eu-west-2:${local.account_id}:log-group:/vpc/flowlogs"
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id               = data.aws_vpc.euw2_staging.id
+  tags                 = local.tags
+}
+
+# Drata test 233 (CIS 5.4): the default security group allows no traffic.
+# Nothing attaches it; every ECS service carries its own group.
+resource "aws_default_security_group" "euw2_staging" {
+  provider = aws.euw2
+  vpc_id   = data.aws_vpc.euw2_staging.id
+
+  ingress = []
+  egress  = []
+
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-staging-euw2-default"
+  }
 }

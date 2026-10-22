@@ -7,7 +7,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 
-import { readControlPlaneEnv, sandboxRelayContext } from '../relay-context'
+import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 
 const KEYS = ['KORTIX_PROJECT_ID', 'KORTIX_SESSION_ID', 'KORTIX_TOKEN', 'KORTIX_API_URL'] as const
 const saved = new Map<string, string | undefined>()

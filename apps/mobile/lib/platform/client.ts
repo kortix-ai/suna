@@ -2,45 +2,31 @@
  * Platform API Client for Kortix Computer Mobile
  *
  * Communicates with the Computer backend to manage sandbox lifecycle
- * and provides the sandbox URL for OpenCode session operations.
+ * and provides the sandbox URL for runtime session operations.
  *
  * All sandbox operations are proxied through:
  *   {BACKEND_URL}/p/{sandboxId}/{containerPort}
  */
 
-import { API_URL, getAuthToken } from '@/api/config';
-import { log } from '@/lib/logger';
 import { mapConcurrent } from './map-concurrent';
 import {
   listProjectsForAccount,
   listProjectSessions as listProjectSessionsSdk,
-  startProjectSession,
-  createProjectSession,
-  restartProjectSession,
-  deleteProjectSession,
 } from '@/lib/projects/projects-client';
-// `stopProjectSession` was never re-exported by mobile's projects-client.ts
-// (mobile didn't have a "pause in place" caller before this file); pull it
-// straight from the SDK's public `projects-client` subpath instead of adding
-// an export mobile itself doesn't otherwise need.
 import {
-  getProviders as sdkGetProviders,
+  getLatestSandboxVersion as sdkGetLatestSandboxVersion,
+  getSandboxUrlForExternalId,
   getServiceLogs as sdkGetServiceLogs,
   listServices as sdkListServices,
-  type ProvidersInfo,
   reconcileServices as sdkReconcileServices,
   type SandboxProviderName,
   serviceAction as sdkServiceAction,
-  stopProjectSession,
 } from '@kortix/sdk';
 // The SDK's kortix-master service wrappers are public via the
 // canonical `@kortix/sdk` root entry (client.ts re-exports the module).
 // Mobile's service fns delegate transport to them but keep soft-fail
 // semantics (null/false/[] on any error) — the SDK wrappers throw, and
 // mobile's callers treat failures as quiet degradation, not exceptions.
-// `sandboxRuntimeReload` and `/pty` stay mobile-native: the SDK's
-// `systemReload` targets the globally-active runtime URL, not an explicit
-// sandboxUrl, and `/pty` has no explicit-url SDK wrapper.
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 
@@ -109,18 +95,18 @@ interface ProjectSessionSandbox {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Build the OpenCode server URL for a sandbox.
+ * Build the runtime URL for a sandbox.
  * Pattern: {BACKEND_URL}/p/{externalId}/8000
  */
 export function getSandboxUrl(sandboxExternalId: string): string {
-  return `${API_URL}/p/${sandboxExternalId}/${SANDBOX_PORTS.KORTIX_MASTER}`;
+  return getSandboxUrlForExternalId(sandboxExternalId, Number(SANDBOX_PORTS.KORTIX_MASTER));
 }
 
 /**
  * Build a URL to any port on the sandbox.
  */
 export function getSandboxPortUrl(sandboxExternalId: string, port: string): string {
-  return `${API_URL}/p/${sandboxExternalId}/${port}`;
+  return getSandboxUrlForExternalId(sandboxExternalId, Number(port));
 }
 
 function normalizeSessionStatus(status: string | undefined): string {
@@ -132,24 +118,17 @@ function normalizeSessionStatus(status: string | undefined): string {
   return status || 'unknown';
 }
 
-function toSandboxInfo(
-  project: ProjectSummary,
-  session: ProjectSessionSummary,
-  runtime?: ProjectSessionSandbox | null
-): SandboxInfo {
-  const externalId =
-    runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
-  const status = normalizeSessionStatus(runtime?.status || session.status);
+// Derived from the session row alone: the listing never calls /start (that would
+// wake every sandbox), so no runtime record exists here.
+function toSandboxInfo(project: ProjectSummary, session: ProjectSessionSummary): SandboxInfo {
   return {
-    sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
-    external_id: externalId,
+    sandbox_id: session.sandbox_id || session.session_id,
+    external_id:
+      session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id,
     name: session.name || `${project.name} session`,
-    provider: runtime?.provider || session.sandbox_provider || 'daytona',
-    base_url:
-      runtime?.base_url ||
-      session.sandbox_url ||
-      (runtime?.external_id ? getSandboxUrl(runtime.external_id) : ''),
-    status,
+    provider: session.sandbox_provider || 'platinum',
+    base_url: session.sandbox_url || '',
+    status: normalizeSessionStatus(session.status),
     version: null,
     metadata: {
       ...(session.metadata || {}),
@@ -157,10 +136,9 @@ function toSandboxInfo(
       session_id: session.session_id,
       project_name: project.name,
       error: session.error,
-      runtime_status: runtime?.status,
     },
-    created_at: runtime?.created_at || session.created_at,
-    updated_at: runtime?.updated_at || session.updated_at,
+    created_at: session.created_at,
+    updated_at: session.updated_at,
   };
 }
 
@@ -180,23 +158,6 @@ async function listProjects(): Promise<ProjectSummary[]> {
 
 async function listProjectSessions(projectId: string): Promise<ProjectSessionSummary[]> {
   return listProjectSessionsSdk(projectId) as unknown as Promise<ProjectSessionSummary[]>;
-}
-
-async function getProjectSessionSandbox(
-  projectId: string,
-  sessionId: string
-): Promise<ProjectSessionSandbox | null> {
-  // Unified session-open endpoint: provisions/resumes + resolves the pin
-  // server-side, returning the sandbox row in its payload. `startProjectSession`
-  // (mobile-native — see projects-client.ts for why) already swallows non-
-  // billing failures into `null`; billing-gate errors propagate, matching this
-  // function's own prior try/catch-everything behavior from the caller's POV.
-  try {
-    const result = await startProjectSession(projectId, sessionId);
-    return (result?.sandbox as ProjectSessionSandbox | null) ?? null;
-  } catch {
-    return null;
-  }
 }
 
 async function listProjectSessionSandboxes(): Promise<
@@ -230,7 +191,7 @@ async function listProjectSessionSandboxes(): Promise<
         project,
         session,
         runtime,
-        sandbox: toSandboxInfo(project, session, runtime),
+        sandbox: toSandboxInfo(project, session),
       });
     }
   });
@@ -243,73 +204,11 @@ async function listProjectSessionSandboxes(): Promise<
   });
 }
 
-export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
-  project: ProjectSummary;
-  session: ProjectSessionSummary;
-  runtime: ProjectSessionSandbox | null;
-  sandbox: SandboxInfo;
-} | null> {
-  const rows = await listProjectSessionSandboxes();
-  if (!sandboxId) return rows[0] ?? null;
-  return (
-    rows.find(
-      (row) =>
-        row.sandbox.sandbox_id === sandboxId ||
-        row.sandbox.external_id === sandboxId ||
-        row.session.session_id === sandboxId ||
-        row.runtime?.external_id === sandboxId
-    ) ?? null
-  );
-}
-
 // ─── API Methods ─────────────────────────────────────────────────────────────
 
 /**
- * Ensure the user has a sandbox provisioned. Creates one if needed.
- * POST /platform/init
- */
-export async function ensureSandbox(opts?: {
-  provider?: SandboxProviderName;
-  projectId?: string;
-}): Promise<{ sandbox: SandboxInfo; created: boolean }> {
-  log.log('📦 [Platform] Ensuring sandbox...');
-
-  const existing = await getActiveSandbox();
-  if (existing) return { sandbox: existing, created: false };
-
-  const projects = await listProjects();
-  const project = opts?.projectId
-    ? projects.find((item) => item.project_id === opts.projectId)
-    : projects[0];
-  if (!project) {
-    throw new Error('Create a project before starting a sandbox');
-  }
-
-  const session = (await createProjectSession(project.project_id, {
-    ...(opts?.provider ? { provider: opts.provider } : {}),
-  })) as unknown as ProjectSessionSummary;
-  const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
-  const sandbox = toSandboxInfo(project, session, runtime);
-
-  log.log('✅ [Platform] Project session sandbox ensured:', sandbox.external_id);
-  return { sandbox, created: true };
-}
-
-/**
- * Get user's active sandbox.
- * GET /platform/sandbox
- */
-export async function getActiveSandbox(): Promise<SandboxInfo | null> {
-  try {
-    const row = await findProjectSessionSandbox();
-    return row?.sandbox ?? null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * List all project-session sandboxes from the DB.
+ * List all project-session sandboxes from the DB: each project's first
+ * sessions page (Settings → Instances only).
  */
 export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
   try {
@@ -323,44 +222,6 @@ export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> 
   } catch {
     return [];
   }
-}
-
-/**
- * Restart the active sandbox.
- * POST /platform/sandbox/restart
- */
-export async function restartSandbox(sandboxId?: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('No project session sandbox found');
-  await restartProjectSession(row.project.project_id, row.session.session_id);
-}
-
-/**
- * Stop the active sandbox in place (disk kept, resumable via restart/start).
- * POST /projects/:projectId/sessions/:sessionId/stop
- */
-export async function stopSandbox(sandboxId?: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('No project session sandbox found');
-  await stopProjectSession(row.project.project_id, row.session.session_id);
-}
-
-/**
- * Delete/archive a sandbox by ID.
- * DELETE /platform/sandbox/:sandboxId
- */
-export async function deleteSandbox(sandboxId: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('Project session sandbox not found');
-  await deleteProjectSession(row.project.project_id, row.session.session_id);
-}
-
-/**
- * Get available sandbox providers.
- * GET /setup/sandbox-providers
- */
-export async function getProviders(): Promise<ProvidersInfo> {
-  return sdkGetProviders();
 }
 
 /**
@@ -432,70 +293,8 @@ export interface SandboxUpdateStatus {
   updatedAt: string | null;
 }
 
-export async function getLatestSandboxVersion(): Promise<SandboxVersionInfo> {
-  const res = await fetch(`${API_URL}/platform/sandbox/version/latest`, {
-    headers: { Accept: 'application/json' },
-  });
-  if (!res.ok) throw new Error(`Version check failed: ${res.status}`);
-  const data = await res.json();
-  // Handle nested response: { data: { version, changelog } } or direct { version, changelog }
-  const info = data?.data ?? data;
-  return {
-    version: info.version,
-    channel: info.channel,
-    changelog: info.changelog ?? null,
-  };
-}
-
-export type VersionChannel = 'stable' | 'dev';
-
-export interface VersionEntry {
-  version: string;
-  channel: VersionChannel;
-  date: string;
-  title: string;
-  body?: string;
-  sha?: string;
-  current: boolean;
-}
-
-export interface AllVersionsResponse {
-  versions: VersionEntry[];
-  current: {
-    version: string;
-    channel: VersionChannel;
-  };
-}
-
-export async function getAllVersions(): Promise<AllVersionsResponse> {
-  const token = await getAuthToken();
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const res = await fetch(`${API_URL}/platform/sandbox/version/all`, { headers });
-  if (!res.ok) throw new Error(`All versions fetch failed: ${res.status}`);
-  return res.json();
-}
-
-export async function getFullChangelog(): Promise<ChangelogEntry[]> {
-  try {
-    const token = await getAuthToken();
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
-
-    const res = await fetch(`${API_URL}/platform/sandbox/version/changelog`, { headers });
-    if (!res.ok) throw new Error(`Changelog fetch failed: ${res.status}`);
-    const data = await res.json();
-
-    // Handle various response shapes
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data.changelog)) return data.changelog;
-    if (data.data && Array.isArray(data.data.changelog)) return data.data.changelog;
-    if (data.data && Array.isArray(data.data)) return data.data;
-    return [];
-  } catch {
-    return [];
-  }
+export function getLatestSandboxVersion(): Promise<SandboxVersionInfo> {
+  return sdkGetLatestSandboxVersion();
 }
 
 export async function triggerSandboxUpdate(_version: string): Promise<void> {
@@ -578,36 +377,6 @@ export interface SandboxService {
 
 export type ServiceAction = 'start' | 'stop' | 'restart' | 'delete';
 
-async function serviceRequest<T = any>(
-  sandboxUrl: string,
-  path: string,
-  init?: RequestInit
-): Promise<T | null> {
-  try {
-    const token = await getAuthToken();
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      ...((init?.headers as Record<string, string>) || {}),
-    };
-    if (token) headers.Authorization = `Bearer ${token}`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    const res = await fetch(`${sandboxUrl}${path}`, {
-      ...init,
-      headers,
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) return null;
-    const text = await res.text();
-    return text ? JSON.parse(text) : null;
-  } catch {
-    return null;
-  }
-}
-
 export async function getSandboxServices(
   sandboxUrl: string,
   includeAll = false
@@ -653,18 +422,6 @@ export async function reconcileSandboxServices(
   } catch {
     return false;
   }
-}
-
-export async function sandboxRuntimeReload(
-  sandboxUrl: string,
-  mode: 'dispose-only' | 'full'
-): Promise<boolean> {
-  const data = await serviceRequest(sandboxUrl, `/kortix/services/system/reload`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode }),
-  });
-  return data !== null;
 }
 
 /** @deprecated Use sandboxServiceAction instead */

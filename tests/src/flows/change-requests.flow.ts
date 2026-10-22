@@ -7,6 +7,8 @@
  * all against real handlers. A bogus `head_ref` fails branch-tip resolution
  * (resolveBranchTip throws → 400). Unknown :crId → 404.
  */
+import { ChangeRequestListSchema } from "@kortix/api-contract";
+import { assert } from "../core/expect";
 import { flow } from "../core/flow";
 
 const RANDOM_UUID = "00000000-0000-4000-a000-0000000000c1";
@@ -16,11 +18,11 @@ flow(
   { domain: "change-requests", tags: ["smoke"], routes: ["GET /v1/projects/:projectId/change-requests"] },
   async (ctx) => {
     const p = await ctx.fixtures.sharedProject();
-    await ctx.step("OWNER lists change requests → 200 with envelope", async () => {
+    await ctx.step("OWNER lists change requests → 200 with the contract ChangeRequestList envelope", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get("/v1/projects/:projectId/change-requests", { params: { projectId: p.id } });
-      r.status(200).body().exists("$.change_requests");
+      r.status(200).body().exists("$.change_requests").schema(ChangeRequestListSchema);
     });
     await ctx.step("invalid status filter → 400", async () => {
       const r = await ctx.client
@@ -189,6 +191,41 @@ flow(
         { params: { projectId: p.id } },
       );
       r.status([403, 404]);
+    });
+  },
+);
+
+// KRTX-2316: the list is one page plus a cursor; the 500 ceiling refuses, it
+// no longer clamps. Cursor completeness over real rows is the DB suite
+// `integration-change-requests-list-filters` (a CR needs a session branch).
+flow(
+  "CR-13",
+  { domain: "change-requests", routes: ["GET /v1/projects/:projectId/change-requests"] },
+  async (ctx) => {
+    const p = await ctx.fixtures.sharedProject();
+    const get = (query: Record<string, string>) =>
+      ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/change-requests", { params: { projectId: p.id }, query });
+    await ctx.step("no limit → 200 one page; the contract requires next_cursor (null on the last page)", async () => {
+      const r = await get({});
+      r.status(200).body().schema(ChangeRequestListSchema);
+      const body = r.json<{ change_requests: unknown[]; next_cursor?: string | null }>();
+      assert({
+        kind: "body.has",
+        description: "next_cursor is present, at most 50 rows",
+        expected: "next_cursor key, ≤ 50 rows",
+        actual: { keys: Object.keys(body), rows: body.change_requests.length },
+        pass: "next_cursor" in body && body.change_requests.length <= 50,
+      });
+    });
+    await ctx.step("limit=500 → 200; limit=501 → 400 (the ceiling refuses, it does not clamp)", async () => {
+      (await get({ status: "all", limit: "500" })).status(200).body().schema(ChangeRequestListSchema);
+      (await get({ status: "all", limit: "501" })).status(400);
+    });
+    await ctx.step("limit=0 and a word → 400; a cursor that is not a CR number → 400; a number cursor → 200", async () => {
+      (await get({ limit: "0" })).status(400);
+      (await get({ limit: "many" })).status(400);
+      (await get({ cursor: "abc" })).status(400);
+      (await get({ cursor: "1" })).status(200).body().has("$.next_cursor", null);
     });
   },
 );

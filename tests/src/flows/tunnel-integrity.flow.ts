@@ -5,46 +5,17 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { TunnelAgent, CapabilityRegistry, createFilesystemCapability, type TunnelConfig } from '../../../packages/agent-tunnel/src/agent';
 import { flow } from '../core/flow';
-
-// The quarantine below applies to DEPLOYED targets only. Locally there is no
-// WAF in front of the API, the same handshake succeeds, and the local lane
-// (`localRunExitCode`) treats ANY skipped flow as a failure — so the flow keeps
-// running there and keeps its coverage. Read at module scope: the runner
-// discovers flow modules inside `runSuite`, after the local profile has put
-// `KE2E_TARGET=local` on `process.env`, and every deployed workflow sets
-// `KE2E_TARGET` in its job env.
-const KE2E_TARGET = process.env.KE2E_TARGET ?? process.env.E2E_TARGET ?? 'local';
-const WAF_FRONTED_TARGET = KE2E_TARGET !== 'local';
+import { pair } from '../fixtures/tunnel';
 
 flow('TUN-6', {
   domain: 'tunnel', serial: true, timeoutMs: 120_000,
-  // QUARANTINED 2026-09-15 — deterministic on every WAF-fronted target
-  // (staging, prod). The in-process TunnelAgent opens its WebSocket with the
-  // runtime's global `WebSocket`; under Bun (the ke2e runner) that handshake
-  // carries NO User-Agent, and AWS WAF's managed rule set answers 403 before the
-  // API sees it (curl proof: no UA → 403 text/html via Cloudflare; any UA → 401
-  // JSON from /v1/tunnel/ws). Node's global WebSocket sends `User-Agent: node`,
-  // so the published `@kortix/agent-tunnel` bin that users run is unaffected.
-  // Failed 5/5 handshakes in release gate run 34989061001 (v0.13.16, api shard 1,
-  // job 104486189580: "agent must become live" after five "WebSocket error").
-  // The flow was added by #7241 without a green deployed run, which the
-  // learnings register forbids. Un-quarantine ONLY in the PR that makes
-  // TunnelAgent send an identifying User-Agent under Bun (or gives the flow a
-  // UA-bearing WebSocket) AND links a green `tests-release.yml` dry run
-  // against staging.
-  ...(WAF_FRONTED_TARGET
-    ? {
-        quarantine:
-          'TunnelAgent WebSocket handshake from Bun carries no User-Agent; AWS WAF on staging/prod answers 403 (run 34989061001 attempt 4, job 104486189580)',
-      }
-    : {}),
+  // A deployed edge answers 403 to a WebSocket upgrade with no User-Agent.
+  // Under Bun the agent names itself through `openRelaySocket` (#9576).
   routes: [
-    'POST /v1/tunnel/connections', 'GET /v1/tunnel/connections/:tunnelId',
+    'POST /v1/tunnel/device-auth', 'GET /v1/tunnel/device-auth/:code/status',
+    'POST /v1/tunnel/device-auth/:code/approve', 'GET /v1/tunnel/connections/:tunnelId',
     'DELETE /v1/tunnel/connections/:tunnelId', 'POST /v1/tunnel/rpc/:tunnelId',
-    'GET /v1/tunnel/permission-requests', 'POST /v1/tunnel/permission-requests/:requestId/approve',
-    'POST /v1/tunnel/permission-requests/:requestId/deny',
-    'POST /v1/tunnel/permissions/:tunnelId',
-    'POST /v1/connectors/projects/:projectId/connectors', 'POST /v1/connectors/projects/:projectId/call',
+    'POST /v1/connectors/projects/:projectId/call',
   ],
 }, async ctx => {
   const root = await mkdtemp(join(tmpdir(), 'ke2e-tunnel-integrity-'));
@@ -56,22 +27,26 @@ flow('TUN-6', {
   let tunnelId = '';
   let agent: TunnelAgent | undefined;
   const rpc = (params: Record<string, unknown>) => client.post('/v1/tunnel/rpc/:tunnelId', { method: 'fs.write', params }, { params: { tunnelId } });
+  const project = await ctx.fixtures.project();
   try {
-    await ctx.step('register a filesystem tunnel and connect a real agent over WebSocket', async () => {
-      const response = await client.post('/v1/tunnel/connections', { name: ctx.fixtures.name('integrity'), capabilities: ['filesystem'] });
-      response.status(201);
-      const registration = response.json<any>();
-      tunnelId = registration.tunnelId;
+    await ctx.step('pair a filesystem-only machine into a project and connect a real agent over WebSocket', async () => {
+      const paired = await pair(ctx.client.as(ctx.P.ANON), client, {
+        name: ctx.fixtures.name('integrity'), projectId: project.id, capabilities: ['filesystem'],
+      });
+      tunnelId = paired.tunnelId;
       ctx.track('tunnelConnection', tunnelId);
       const config: TunnelConfig = {
-        token: registration.setupToken, tunnelId, apiUrl: `${ctx.env.apiUrl.replace(/\/$/, '')}/tunnel`, wsPath: '/ws',
+        token: paired.token, tunnelId, apiUrl: `${ctx.env.apiUrl.replace(/\/$/, '')}/tunnel`, wsPath: '/ws',
         maxFileSize: 4 * 1024 * 1024, allowedPaths: [root], blockedPaths: [],
         allowedCommands: [], blockedCommands: [], workingDir: root,
         shellTimeout: 1000, shellMaxTimeout: 1000, shellMaxOutputSize: 1024, shellEnvPassthrough: [],
       };
       const registry = new CapabilityRegistry();
       registry.register(createFilesystemCapability(config));
-      agent = new TunnelAgent(config, registry);
+      // `home`: the agent reads its owner's access.json there. Without it the
+      // flow read the developer's real ~/.agent-tunnel (an expired "ask" grant
+      // failed it with computer_access_pending and woke their desktop app).
+      agent = new TunnelAgent(config, registry, {}, { home: root });
       agent.connect();
       const deadline = Date.now() + 15000;
       while (true) {
@@ -82,33 +57,15 @@ flow('TUN-6', {
         await Bun.sleep(100);
       }
     });
-    await ctx.step('empty tool arguments return 400 and create no permission request', async () => {
+    await ctx.step('empty tool arguments return 400 and write nothing', async () => {
       (await rpc({})).status(400);
-      const pending = await client.get('/v1/tunnel/permission-requests');
-      pending.status(200);
-      assert.equal(pending.json<any[]>().filter(row => row.tunnelId === tunnelId).length, 0);
       assert.equal(await Bun.file(path).exists(), false);
     });
-    await ctx.step('valid unapproved write returns 403; denial leaves the destination absent', async () => {
-      const r = await rpc({ path, content: bytes.toString('base64'), encoding: 'base64', sha256 });
-      r.status(403);
-      const requestId = r.json<any>().requestId;
-      assert.ok(requestId);
-      (await client.post('/v1/tunnel/permission-requests/:requestId/deny', {}, { params: { requestId } })).status(200);
-      (await client.post('/v1/tunnel/permission-requests/:requestId/approve', {}, { params: { requestId } })).status(409);
-      assert.equal(await Bun.file(path).exists(), false);
+    await ctx.step('a capability not approved at pairing returns 403 computer_capability_not_approved', async () => {
+      const r = await client.post('/v1/tunnel/rpc/:tunnelId', { method: 'shell.exec', params: { command: 'true' } }, { params: { tunnelId } });
+      r.status(403).body().has('$.error', 'computer_capability_not_approved');
     });
-    await ctx.step('concurrent approve and deny produce one winner and one 409', async () => {
-      const r = await rpc({ path, content: 'pending' }); r.status(403);
-      const requestId = r.json<any>().requestId;
-      const outcomes = await Promise.all(['approve', 'deny'].map(action => client.post(`/v1/tunnel/permission-requests/:requestId/${action}`, {}, { params: { requestId } })));
-      // Both responses must be terminal, but only one decision may succeed.
-      const statuses = outcomes.map(r => { r.status([200, 409]); return r.statusCode; }).sort();
-      assert.deepEqual(statuses, [200, 409]);
-      assert.equal(await Bun.file(path).exists(), false);
-    });
-    await ctx.step('grant scoped filesystem write permission and run the real fs_upload CLI', async () => {
-      const r = await client.post('/v1/tunnel/permissions/:tunnelId', { capability: 'filesystem', scope: { paths: [path], operations: ['write'] } }, { params: { tunnelId } }); r.status(201);
+    await ctx.step('the pairing grant covers the write: the real fs_upload CLI delivers the XLSX', async () => {
       assert.equal(ctx.P.OWNER.auth.mode, 'bearer');
       if (ctx.P.OWNER.auth.mode !== 'bearer') throw new Error('OWNER bearer required');
       const proc = Bun.spawn([process.execPath, resolve(import.meta.dir, '../../../packages/agent-tunnel/src/client/cli.ts'), 'fs_upload', JSON.stringify({ source, path })], {
@@ -121,16 +78,10 @@ flow('TUN-6', {
       assert.deepEqual(JSON.parse(stdout), { success: true, path, size: bytes.length, sha256 });
       assert.deepEqual(await readFile(path), bytes);
     });
-    await ctx.step('Computer Tunnel connector preserves the XLSX payload and returns its persisted digest', async () => {
-      const project = await ctx.fixtures.project();
-      const projectParams = { params: { projectId: project.id } };
-      const created = await client.post('/v1/connectors/projects/:projectId/connectors', {
-        slug: 'integrity-computer', name: 'Integrity computer', provider: 'computer', tunnel_ids: [tunnelId], create_only: true,
-      }, projectParams);
-      created.status(200);
+    await ctx.step("the project's computer account preserves the XLSX payload and returns its persisted digest", async () => {
       const result = await client.post('/v1/connectors/projects/:projectId/call', {
-        connector: 'integrity-computer', action: 'fs.write', args: { path, content: bytes.toString('base64'), encoding: 'base64', sha256 },
-      }, projectParams);
+        connector: 'computer', action: 'fs.write', args: { path, content: bytes.toString('base64'), encoding: 'base64', sha256 },
+      }, { params: { projectId: project.id } });
       result.status(200).body().has('$.ok', true).has('$.data.sha256', sha256).has('$.data.size', bytes.length);
       assert.deepEqual(await readFile(path), bytes);
     });

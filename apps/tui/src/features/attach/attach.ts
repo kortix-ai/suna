@@ -28,14 +28,17 @@ import type { ChildProcess } from 'node:child_process';
 
 import type { Auth } from '@kortix/cli/src/api/auth.ts';
 import {
+  ATTACH_UNSUPPORTED,
   AttachOpenCodeError,
   type AttachOpenCodeOptions,
   type AttachOpenCodeResult,
   type AttachStage,
   attachOpenCodeSession,
 } from '@kortix/cli/src/attach-opencode.ts';
+import { runtimeSupports } from '@kortix/sdk';
 
 import { type ResolvedHost, hostOrigin } from '../../auth/hosts.ts';
+import { hintFor } from '../../keymap.ts';
 
 export type { AttachStage };
 
@@ -119,6 +122,20 @@ export function authFromHost(host: ResolvedHost): Auth {
     account_id: host.accountId,
     logged_in_at: new Date(0).toISOString(),
   };
+}
+
+/**
+ * Why attaching `target` is refused before the renderer suspends, or null.
+ * Only the open session's capabilities are known here; attaching any other
+ * session goes ahead, and `attachOpenCodeSession` refuses it by its own read.
+ */
+export function attachRefusal(
+  target: string,
+  openSessionId: string | null,
+  capabilities: readonly string[] | null,
+): string | null {
+  if (target !== openSessionId || runtimeSupports(capabilities, 'session.attach')) return null;
+  return `${ATTACH_UNSUPPORTED} ${hintFor('panel.terminal')} opens a shell in its sandbox.`;
 }
 
 export function attachFailureFrom(error: unknown): AttachFailure {

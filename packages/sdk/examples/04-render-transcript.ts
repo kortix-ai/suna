@@ -5,9 +5,9 @@
  * opencode part type (text, reasoning, tool, file, subtask, patch, snapshot,
  * agent, retry, compaction, step) into a `ClassifiedPart` with a
  * compile-time-exhaustive `kind`, plus a normalized `TurnError` for a failed
- * assistant turn. This is the exact same classification
- * `apps/whitelabel-demo/src/components/chat/message-view.tsx` uses to render
- * React — here we switch over `part.kind` and print plain text instead, to
+ * assistant turn. This is the exact same classification the terminal client
+ * (`apps/tui/src/features/session/transcript/turn.tsx`) renders from — here
+ * we switch over `part.kind` and print plain text instead, to
  * show the classification itself has no framework dependency.
  *
  * Run:
@@ -20,7 +20,6 @@
  */
 import { createKortix } from '../src/index';
 import { classifyTurn, type ClassifiedPart } from '../src/core/turns/index';
-import type { MessageWithParts } from '../src/transcript';
 
 function renderPart(part: ClassifiedPart): string {
   switch (part.kind) {
@@ -64,10 +63,7 @@ async function main() {
 
   const kortix = createKortix({ backendUrl, getToken: async () => apiKey });
   const session = kortix.session(projectId, sessionId);
-  const { opencodeSessionId } = await session.ensureReady();
-
-  const result = await session.runtime.session.messages({ sessionID: opencodeSessionId });
-  const messages = (result.data ?? []) as MessageWithParts[];
+  const { messages } = await session.messages();
 
   for (const message of messages) {
     const { parts, error, isEmpty } = classifyTurn(message);

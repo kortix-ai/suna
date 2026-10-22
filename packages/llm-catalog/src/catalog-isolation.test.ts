@@ -21,7 +21,8 @@ describe('catalog snapshot isolation', () => {
   test('CATALOG and catalogModelForWireModel stay on the public surface', async () => {
     const mod = await import('./index');
     expect(mod.CATALOG.providers.length).toBeGreaterThan(0);
-    expect(mod.catalogModelForWireModel('deepseek-v4.1-flash')?.id).toBeDefined();
+    const [provider] = mod.CATALOG.providers;
+    expect(mod.catalogModelForWireModel(`${provider!.id}/${provider!.models[0]!.id}`)?.id).toBeDefined();
   });
 
   test('CATALOG_PROVIDER_ENV is the id/env projection of the snapshot', async () => {
@@ -33,8 +34,29 @@ describe('catalog snapshot isolation', () => {
     );
   });
 
-  test('index.ts imports only the slim provider/env file', () => {
-    const index = readFileSync(new URL('./index.ts', import.meta.url), 'utf8');
-    expect(index).toContain("from './provider-env.generated.json'");
+  // The helpers moved from index.ts to lite.ts (index.ts re-exports them), so
+  // the slim-file import is asserted where it now lives.
+  test('lite.ts (the helpers index.ts re-exports) imports only the slim provider/env file', () => {
+    const lite = readFileSync(new URL('./lite.ts', import.meta.url), 'utf8');
+    expect(lite).toContain("from './provider-env.generated.json'");
+  });
+});
+
+// Metro (React Native) does not tree-shake: importing `index.ts` bundles the
+// snapshot even when `CATALOG` is never read. `./lite` is the same surface
+// minus the two snapshot readers, for bundlers that keep every import.
+describe('the ./lite entry', () => {
+  test('never imports catalog-data or the snapshot', () => {
+    const lite = readFileSync(new URL('./lite.ts', import.meta.url), 'utf8');
+    expect(lite).not.toMatch(IMPORTS_SNAPSHOT);
+    expect(lite).not.toMatch(/from\s+['"]\.\/catalog-data['"]/);
+  });
+
+  test('exports every index name except CATALOG and catalogModelForWireModel', async () => {
+    const index = Object.keys(await import('./index')).sort();
+    const lite = Object.keys(await import('./lite')).sort();
+    expect(lite).toEqual(
+      index.filter((name) => name !== 'CATALOG' && name !== 'catalogModelForWireModel'),
+    );
   });
 });

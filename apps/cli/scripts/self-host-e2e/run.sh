@@ -175,7 +175,7 @@ ok "Supabase auth healthy"
 section "Bootstrap Owner"
 BOOTSTRAP_BODY=$(printf '{"email":"%s","password":"%s"}' "$EMAIL" "$PASSWORD")
 BOOTSTRAP_JSON=$(curl -fsS -X POST "$API_PUBLIC_URL/v1/setup/bootstrap-owner" \
-  -H 'content-type: application/json' \
+  -H 'content-type: application/json' -H "X-Kortix-Internal-Key: $INTERNAL_SERVICE_KEY" \
   -d "$BOOTSTRAP_BODY")
 [ "$(printf '%s' "$BOOTSTRAP_JSON" | json_get success)" = "True" ] || die "bootstrap owner failed: $BOOTSTRAP_JSON"
 ok "Owner bootstrapped: $EMAIL"
@@ -209,7 +209,7 @@ wait_for_db_table "Kortix schema (post-update)" "kortix.project_snapshot_builds"
 ok "stack healthy after update; migrations idempotent"
 
 REBOOTSTRAP=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$API_PUBLIC_URL/v1/setup/bootstrap-owner" \
-  -H 'content-type: application/json' -d "$BOOTSTRAP_BODY")
+  -H 'content-type: application/json' -H "X-Kortix-Internal-Key: $INTERNAL_SERVICE_KEY" -d "$BOOTSTRAP_BODY")
 [ "$REBOOTSTRAP" = "409" ] || die "expected owner-exists 409 after update, got $REBOOTSTRAP"
 ok "data persisted across update (owner still present -> 409)"
 

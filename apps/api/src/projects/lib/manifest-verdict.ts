@@ -2,7 +2,7 @@
 //
 // The manifest declares its own schema version: `kortix_version` is REQUIRED by
 // every published schema (`kortix.v1.schema.json` and
-// `kortix.v2.schema.json` each pin it to a
+// `kortix.v2.schema.json` and `kortix.v3.schema.json` each pin it to a
 // `const`). So the version is read, never inferred — there is no sniffing of
 // which keys happen to be present.
 //
@@ -23,12 +23,12 @@ import { type ManifestFormat, parseManifestText } from '@kortix/manifest-schema'
 /** Highest manifest schema version this platform ships and reads. Mirrored by
  *  `MAX_SCHEMA_VERSION` in `../triggers` (kept separate to avoid an import
  *  cycle: `triggers` pulls in the git layer, which consumes this module). */
-export const LATEST_MANIFEST_VERSION = 2;
+export const LATEST_MANIFEST_VERSION = 3;
 
 /**
  * Implemented upgrade paths, `from` → `to`. Only v1 → v2 exists today (the
- * `kortix.toml` → `kortix.yaml` governance conversion). Version 2 is the
- * current schema, so a v2 project is reported as current and offered nothing.
+ * `kortix.toml` → `kortix.yaml` governance conversion). Version 3 is the
+ * current schema. No automatic v2 → v3 migration exists: v2 agents depend on Markdown files.
  */
 const MIGRATIONS: Readonly<Record<number, number>> = { 1: 2 };
 
@@ -39,8 +39,11 @@ export type ManifestUnknownReason =
   | 'unparsable'
   /** Parses, but declares no usable integer `kortix_version`. */
   | 'undeclared'
-  /** Hidden from this caller — no `project.customize.read`. */
-  | 'restricted';
+  /** Hidden from this caller — no `project.file.read`. */
+  | 'restricted'
+  /** The GitHub App can no longer reach the repository (KRTX-2955). The
+   *  project's `git_connection` carries the reason and the fix. */
+  | 'repository_disconnected';
 
 export interface ProjectManifestVerdict {
   /** Declared `kortix_version`. `null` whenever `unknown_reason` is set. */
@@ -66,6 +69,11 @@ function unknown(reason: ManifestUnknownReason, path: string | null): ProjectMan
     unknown_reason: reason,
     path,
   };
+}
+
+/** The verdict when the repository cannot be reached at all. */
+export function disconnectedManifestVerdict(): ProjectManifestVerdict {
+  return unknown('repository_disconnected', null);
 }
 
 /** The verdict for a caller who may not read the project's config. */

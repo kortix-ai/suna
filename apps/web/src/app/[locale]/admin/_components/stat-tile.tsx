@@ -2,15 +2,15 @@
 
 import type { ReactNode } from 'react';
 
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn } from '@/lib/utils';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { cn } from '@kortix/ui';
 
 /**
  * Tone for a stat's VALUE. Only ever a `kortix-*` accent, and only when the
  * number itself carries a verdict — an error count that is zero is not green,
  * it is just a number, so `default` is the honest answer far more often than
  * it looks. `idle` / `neutral` has no hue at all
- * (`kortix-brand-guidelines` → Brand accents).
+ * (`kortix-brand` → `color.md`).
  */
 export type StatTone = 'default' | 'success' | 'warning' | 'danger' | 'info';
 

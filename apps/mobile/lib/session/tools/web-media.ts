@@ -13,8 +13,8 @@
  */
 
 import { SANDBOX_FS_ROOTS } from '@kortix/sdk';
+import { safeHttpUrl } from '@kortix/shared';
 import { sandboxMediaPath, withoutEdgeQuotes } from '@kortix/shared/tool-output';
-import { safeHttpUrl } from './web-fetch';
 
 // ─── Image search ────────────────────────────────────────────────────────────
 

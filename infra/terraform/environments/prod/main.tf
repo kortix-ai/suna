@@ -4,7 +4,7 @@
 #   service (autoscaled on CPU/memory, min 3 tasks across 2 AZs) in private
 #   subnets, egress via per-AZ NAT.
 #
-# SAME modules as dev (../dev) — prod just runs bigger numbers, no Spot, a NAT
+# SAME modules as dev (../dev-us-east-2) — prod just runs bigger numbers, no Spot, a NAT
 # per AZ, and Container Insights on. min_capacity=3 preserves one healthy
 # replica if two tasks fail together. Applied by deploy-prod.yml's
 # terraform-prod-api job on every release, before the image rolls. See README.md.
@@ -28,7 +28,7 @@ provider "aws" {
 }
 
 provider "cloudflare" {
-  # Auth precedence (mirrors ../dev): scoped API token → global API key
+  # Auth precedence: scoped API token → global API key
   # (email + key) → format-valid dummy token (so an apply with no CF creds, e.g.
   # plan-only, doesn't reject an empty token). DNS/ACM validation needs real creds.
   api_token = var.cloudflare_api_token != "" ? var.cloudflare_api_token : (var.cloudflare_api_key != "" ? null : "0000000000000000000000000000000000000000")
@@ -102,6 +102,33 @@ module "project_snapshots" {
   tags   = local.tags
 }
 
+# ── Audit-event archive (WORM) ────────────────────────────────────────────────
+# Weekly kortix.audit_events partitions older than the 90-day hot window,
+# exported by the API as gzip JSONL with Object Lock retention (365 days). The
+# task names it through AUDIT_ARCHIVE_BUCKET / AUDIT_ARCHIVE_REGION in the
+# deploy workflow. Applying this creates the bucket, its KMS key, and the
+# task-role grant only.
+module "audit_archive" {
+  source = "../../modules/audit-archive-bucket"
+  name   = "${local.name}-audit-archive"
+  tags   = local.tags
+}
+
+# ── Kortix Capture store ──────────────────────────────────────────────────────
+# Private bucket the Kortix Capture desktop app writes the capture format to
+# (orgs/<account_id>/<device_id>/…), the SQS queue of its
+# `*.manifest.json` events, and the device role the API assumes with a
+# per-device session policy. The task names them through the non-secret
+# KORTIX_CAPTURE_S3_BUCKET / _S3_REGION / _SQS_QUEUE_URL / _STS_ROLE_ARN
+# overrides in the deploy workflow. Nothing records until an account turns
+# Capture on.
+module "capture_store" {
+  source            = "../../modules/capture-store"
+  name              = "${local.name}-capture-store"
+  api_task_role_arn = module.api.task_role_arn
+  tags              = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -127,20 +154,32 @@ module "api" {
   ses_send_identity_names     = ["kortix.com", "kortix.ai"]
   project_snapshots_enabled   = true
   project_snapshot_bucket_arn = module.project_snapshots.bucket_arn
+  audit_archive_enabled       = true
+  audit_archive_bucket_arn    = module.audit_archive.bucket_arn
+  audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
+  capture_enabled             = true
+  capture_bucket_arn          = module.capture_store.bucket_arn
+  capture_queue_arn           = module.capture_store.queue_arn
+  capture_device_role_arn     = module.capture_store.device_role_arn
 
   # Only Cloudflare's edge may reach the ALB (no direct-to-origin WAF bypass).
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
   # prod sizing: bigger tasks, HA floor of 2, no spot, insights on
-  task_cpu           = 1024
-  task_memory        = 4096
-  desired_count      = 3
-  min_capacity       = 3
-  max_capacity       = 10
-  use_fargate_spot   = false
-  container_insights = true
-  cpu_target         = 55
-  memory_target      = 65
+  task_cpu      = 1024
+  task_memory   = 4096
+  desired_count = 3
+  # Rolling overlap stays at the module default (maximum 200%, minimum healthy
+  # 100%), which is what the live service runs. AWS refuses
+  # deployment_maximum_percent <= 100 while Availability Zone Rebalancing is on
+  # ("InvalidParameterException"), which failed Deploy Prod for v0.13.54 and
+  # v0.13.55. Pinning 100 (KRTX-586) needs availability_zone_rebalancing =
+  # "DISABLED" on this service first; that is a resilience decision of its own.
+  min_capacity     = 3
+  max_capacity     = 10
+  use_fargate_spot = false
+  cpu_target       = 55
+  memory_target    = 65
   # Load-proportional scaling. CPU/mem alone left the service flat during the
   # 2026-06-08 DB-contention incident. ~200 req/min/target is normal and peaks
   # ~256; 600 only scales out on a genuine sustained surge (no flapping). Tune
@@ -207,7 +246,6 @@ module "gateway" {
   min_capacity               = 3
   max_capacity               = 20
   use_fargate_spot           = false
-  container_insights         = true
   deregistration_delay       = 300
   stop_timeout               = 120
   requests_per_target_target = 120

@@ -364,6 +364,38 @@ describe('ai-sdk request conversion', () => {
     );
   });
 
+  it('repairs replayed mixed tool pairs without losing text or the matched result', () => {
+    const { messages } = toModelMessages([
+      { role: 'user', content: 'run tools' },
+      {
+        role: 'assistant',
+        content: 'starting',
+        tool_calls: [
+          { id: 'complete', function: { name: 'lookup', arguments: '{"q":"a"}' } },
+          { id: 'cancelled', function: { name: 'lookup', arguments: '{}' } },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'complete', name: 'lookup', content: 'found' },
+      { role: 'tool', tool_call_id: 'unknown', name: 'lookup', content: 'stray' },
+      { role: 'user', content: 'continue' },
+    ]);
+    expect(messages).toEqual([
+      { role: 'user', content: 'run tools' },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'starting' },
+          { type: 'tool-call', toolCallId: 'complete', toolName: 'lookup', input: { q: 'a' } },
+        ],
+      },
+      {
+        role: 'tool',
+        content: [{ type: 'tool-result', toolCallId: 'complete', toolName: 'lookup', output: { type: 'text', value: 'found' } }],
+      },
+      { role: 'user', content: 'continue' },
+    ]);
+  });
+
   it('translates a data: image_url into a file part that carries the base64 untouched', () => {
     const { messages } = toModelMessages([
       {
@@ -518,6 +550,29 @@ describe('ai-sdk per-request capability gating (reuses @kortix/llm-catalog clamp
 // ported implementation and the exact @ai-sdk/anthropic +
 // @ai-sdk/amazon-bedrock field names it's built against.
 describe('ai-sdk anthropic/bedrock extended thinking (ported from native)', () => {
+  it('anthropic: nested reasoning effort drives adaptive thinking and preserves an explicit output cap', () => {
+    const args = buildAiSdkArgs(
+      { messages: [{ role: 'user', content: 'explain' }], reasoning: { effort: 'xhigh' }, max_tokens: 2048 },
+      'anthropic',
+    );
+    expect(args.providerOptions).toEqual({
+      anthropic: { thinking: { type: 'adaptive', display: 'summarized' }, effort: 'xhigh' },
+    });
+    expect(args.maxOutputTokens).toBe(2048);
+  });
+
+  it('bedrock Claude: a raw thinking budget becomes adaptive reasoning, not a legacy token budget', () => {
+    const args = buildAiSdkArgs(
+      { messages: [{ role: 'user', content: 'explain' }], thinking: { type: 'enabled', budget_tokens: 16000 } },
+      'bedrock',
+      { resolvedModel: BEDROCK_CLAUDE },
+    );
+    expect(args.providerOptions).toEqual({
+      bedrock: { reasoningConfig: { type: 'adaptive', maxReasoningEffort: 'high', display: 'summarized' } },
+    });
+    expect(args.maxOutputTokens).toBe(32000);
+  });
+
   it('anthropic: reasoning_effort maps to adaptive thinking + effort (never enabled/budgetTokens) and bumps maxOutputTokens', () => {
     const args = buildAiSdkArgs({ messages: [], reasoning_effort: 'high' }, 'anthropic');
     expect(args.providerOptions).toMatchObject({
@@ -1347,6 +1402,32 @@ describe('Piece A — OpenAI Responses API absorbed into the ai-sdk engine', () 
       });
       return { json: (await response.json()) as any, sentBodies };
     };
+
+    // Seen on dev 2026-09-28: a ChatGPT login ChatGPT refuses failed this path
+    // as a status-less NetworkError, because the settled result rejects with a
+    // generic no-output error while only the stream carried the 401. A chain
+    // retrying on service errors then moved past a refused login on a
+    // non-streaming request, and not on a streaming one.
+    it.each([false, true])('a refused login fails with its HTTP status and body (client stream: %p)', async (stream) => {
+      const refusal = JSON.stringify({
+        error: {
+          message: 'Could not parse your authentication token. Please try signing in again.',
+          type: null,
+          code: 'unauthorized_unknown',
+          param: null,
+        },
+        status: 401,
+      });
+      const failure = await callUpstreamViaAiSdk({ stream, messages: [{ role: 'user', content: 'hi' }] }, codex, {
+        fetch: async () => new Response(refusal, { status: 401, headers: { 'content-type': 'application/json' } }),
+      }).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(UpstreamHttpError);
+      expect(failure).toMatchObject({ status: 401 });
+      expect((failure as UpstreamHttpError).body).toContain('unauthorized_unknown');
+    });
 
     it('collapses a streamed tool call into the same JSON shape generateText would produce', async () => {
       const call = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'get_weather' };

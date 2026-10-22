@@ -50,7 +50,8 @@ export function newSessionCreateInput(i: {
   return {
     ...(i.sessionId ? { session_id: i.sessionId } : {}),
     ...firstPrompt,
-    ...(i.model ? { opencode_model: i.model } : {}),
+    // `opencode_model` is the pre-W4 name; an API older than W4 reads only that one.
+    ...(i.model ? { model: i.model, opencode_model: i.model } : {}),
     // The session is bound to this agent; the first prompt runs on it.
     ...(i.agent ? { agent_name: i.agent } : {}),
   };

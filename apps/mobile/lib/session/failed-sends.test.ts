@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 
-import { sendIdsFor, useFailedSendStore, withFailed, withoutFailed } from './failed-sends';
+import { localUriOf } from './optimistic-parts';
+import { sendIdsFor, useFailedSendStore, withFailed, withoutFailed, failedSendMessages } from './failed-sends';
 
 const send = { text: 'hello', options: { agent: 'kortix' } };
 
@@ -66,5 +67,32 @@ describe('sendIdsFor', () => {
 
   test('a retry with only one id kept mints the other', () => {
     expect(sendIdsFor({ messageId: 'msg_1' }, mint)).toEqual({ clientMessageId: 'fresh-client', messageId: 'msg_1' });
+  });
+});
+
+describe('failedSendMessages', () => {
+  test('each failed send is a user message under its id, oldest first, with its text and picked files', () => {
+    const messages = failedSendMessages('ses_1', {
+      msg_b: { text: 'second', options: {}, failedAtMs: 200 },
+      msg_a: {
+        text: 'first',
+        options: {},
+        failedAtMs: 100,
+        localFiles: [{ uri: 'file:///a.png', name: 'a.png', mimeType: 'image/png', isImage: true } as never],
+      },
+    });
+    expect(messages.map((m) => m.message_id)).toEqual(['msg_a', 'msg_b']);
+    expect(messages[0]).toMatchObject({ role: 'user', kind: 'turn', thread_id: 'ses_1', created_at: new Date(100).toISOString() });
+    expect(messages[0].blocks).toMatchObject([
+      { type: 'text', text: 'first' },
+      { type: 'attachment', name: 'a.png', mime: 'image/png' },
+    ]);
+    // The bubble finds the picked file's thumbnail by the attachment's id.
+    expect(localUriOf(messages[0].blocks[1].id)).toBe('file:///a.png');
+    expect(messages[1].blocks).toMatchObject([{ type: 'text', text: 'second' }]);
+  });
+
+  test('no failed send, no message', () => {
+    expect(failedSendMessages('ses_1', {})).toEqual([]);
   });
 });

@@ -5,6 +5,6 @@ export const nativeOAuth2CallbackApp = new Hono();
 
 nativeOAuth2CallbackApp.get('/callback', async (c) => {
   const result = await handleNativeOAuth2Callback(c.req.url);
-  if (result.location) return c.redirect(result.location, 302);
-  return c.text(result.body ?? 'OAuth2 authorization failed', result.status as 400);
+  if ('location' in result) return c.redirect(result.location, 302);
+  return c.text(result.body, result.status);
 });

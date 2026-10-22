@@ -5,6 +5,10 @@ import {
   completeSlackInstall,
   completeTeamsInstall,
   connectSlack,
+  connectTelegram,
+  disconnectTelegram,
+  getTelegramInstallation,
+  setTelegramAllowedUsers,
   bindSlackIdentity,
   bindTeamsIdentity,
   previewSlackIdentity,
@@ -21,6 +25,7 @@ import {
   updateChannelBinding,
   updateEmailPolicy,
   uploadSlackChannelFile,
+  type ChannelBinding,
 } from './channels';
 
 let calls: { url: string; method: string; body: unknown }[] = [];
@@ -304,6 +309,57 @@ test('listChannelBindings hits the bindings collection', async () => {
   expect(result.bindings[0]?.effectiveAgent).toEqual({ agent: 'support', source: 'project' });
 });
 
+// A deleted Slack channel, or one the bot left, has no name to show. The
+// server says so, so the settings page can say "Unavailable channel" instead
+// of a bare `C0…` id.
+test('listChannelBindings carries whether Slack still has the conversation', async () => {
+  const gone: ChannelBinding = {
+    bindingId: 'b2',
+    platform: 'slack',
+    workspaceId: 'W1',
+    channelId: 'C0GONE',
+    channelName: null,
+    channelType: null,
+    channelUnavailable: true,
+    agentName: null,
+    opencodeModel: null,
+    conversationPolicy: 'project_open',
+    installedAt: '2026-01-01',
+    effectiveAgent: { agent: 'support', source: 'project' },
+    effectiveModel: { model: null, source: 'platform' },
+  };
+  nextResponse = { status: 200, body: { projectDefaultAgent: null, bindings: [gone] } };
+
+  const result = await listChannelBindings('P1');
+
+  expect(result.bindings[0]?.channelUnavailable).toBe(true);
+});
+
+// Every thread of a Teams channel is its own binding, named `Team › Channel`.
+// The server adds the thread's session title so the threads can be told apart.
+test('listChannelBindings carries a Teams channel thread\'s title', async () => {
+  const thread: ChannelBinding = {
+    bindingId: 'b3',
+    platform: 'teams',
+    workspaceId: 'tenant-1',
+    channelId: '19:general@thread.tacv2;messageid=1700000000001',
+    channelName: 'Eng › General',
+    channelType: 'channel',
+    threadTitle: 'Deploy review',
+    agentName: null,
+    opencodeModel: null,
+    conversationPolicy: 'project_open',
+    installedAt: '2026-01-01',
+    effectiveAgent: { agent: 'support', source: 'project' },
+    effectiveModel: { model: null, source: 'platform' },
+  };
+  nextResponse = { status: 200, body: { projectDefaultAgent: null, bindings: [thread] } };
+
+  const result = await listChannelBindings('P1');
+
+  expect(result.bindings[0]?.threadTitle).toBe('Deploy review');
+});
+
 test('updateChannelBinding PATCHes the binding by id', async () => {
   nextResponse = {
     status: 200,
@@ -355,4 +411,44 @@ test('completeTeamsInstall surfaces the refusal code when another user started t
   expect(last().body).toEqual({ code: 'c2', state: 's2' });
   expect((error as { code?: string }).code).toBe('CHANNEL_INSTALL_STATE_MISMATCH');
   expect((error as { status?: number }).status).toBe(403);
+});
+
+test('getTelegramInstallation reads the installation and returns null when there is none', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] } };
+  expect(await getTelegramInstallation('P1')).toEqual({ bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] });
+  expect(last()).toMatchObject({ method: 'GET' });
+  expect(last().url).toContain('/projects/P1/channels/telegram/installation');
+
+  nextResponse = { status: 200, body: null };
+  expect(await getTelegramInstallation('P1')).toBeNull();
+  nextResponse = { status: 403, body: { error: 'off', code: 'feature_disabled' } };
+  expect(await getTelegramInstallation('P1')).toBeNull();
+});
+
+test('connectTelegram posts the bot token and allowed user ids', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: 'kortix_bot', allowed_user_ids: ['42'] } };
+  const result = await connectTelegram('P1', { bot_token: '123:abc', allowed_user_ids: ['42'] });
+  expect(last()).toMatchObject({ method: 'POST', body: { bot_token: '123:abc', allowed_user_ids: ['42'] } });
+  expect(last().url).toContain('/projects/P1/channels/telegram/connect');
+  expect(result.bot_id).toBe('123');
+});
+
+test('connectTelegram throws the API error message', async () => {
+  nextResponse = { status: 400, body: { error: 'Telegram rejected the bot token', code: 'telegram_token_rejected' } };
+  await expect(connectTelegram('P1', { bot_token: '123:abc' })).rejects.toThrow('Telegram rejected the bot token');
+});
+
+test('setTelegramAllowedUsers replaces the allowed list', async () => {
+  nextResponse = { status: 200, body: { bot_id: '123', username: null, allowed_user_ids: ['1', '2'] } };
+  const result = await setTelegramAllowedUsers('P1', ['1', '2']);
+  expect(last()).toMatchObject({ method: 'PUT', body: { user_ids: ['1', '2'] } });
+  expect(last().url).toContain('/projects/P1/channels/telegram/allowed-users');
+  expect(result.allowed_user_ids).toEqual(['1', '2']);
+});
+
+test('disconnectTelegram deletes the installation', async () => {
+  nextResponse = { status: 200, body: { ok: true } };
+  await disconnectTelegram('P1');
+  expect(last()).toMatchObject({ method: 'DELETE' });
+  expect(last().url).toMatch(/\/projects\/P1\/channels\/telegram$/);
 });

@@ -1,5 +1,5 @@
 /**
- * The daemon's environment contract (`src/config.ts`): what each `KORTIX_*`
+ * The daemon's environment contract (`src/lib/config/config.ts`): what each `KORTIX_*`
  * variable the API sets turns into, and the defaults a box boots with when it
  * is absent. One table, so a changed default or a dropped mapping fails one
  * named row.
@@ -9,7 +9,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { loadConfig, resolveSandboxOnBoot } from '../config'
+import { resolveSandboxOnBoot } from '@/lib/config/config'
+import { loadConfig } from '@/harness/harness'
 
 const BASE_ENV = { KORTIX_WORKSPACE: '/workspace', KORTIX_REPO_URL: 'https://example.test/r.git' }
 
@@ -18,14 +19,10 @@ describe('loadConfig env contract', () => {
     // Defaults a box boots with.
     ['clone depth defaults to a shallow depth-1 clone', {}, { cloneDepth: 1 }],
     ['no partial-clone filter by default (measured slower)', {}, { cloneFilter: '' }],
-    ['compiled boot defaults to off', {}, { compiledBootMode: 'off' }],
     ['the one-time branch restore is off by default', {}, { sessionBranchRestore: false }],
     // Mappings.
     ['depth 0 opts back into a full-history clone', { KORTIX_CLONE_DEPTH: '0' }, { cloneDepth: 0 }],
     ['an explicit depth is honoured', { KORTIX_CLONE_DEPTH: '25' }, { cloneDepth: 25 }],
-    ['compiled boot mode shadow', { KORTIX_COMPILED_BOOT_MODE: 'shadow' }, { compiledBootMode: 'shadow' }],
-    ['compiled boot mode prefer', { KORTIX_COMPILED_BOOT_MODE: 'prefer' }, { compiledBootMode: 'prefer' }],
-    ['compiled boot mode required', { KORTIX_COMPILED_BOOT_MODE: 'required' }, { compiledBootMode: 'required' }],
     ['the sandbox credential comes from KORTIX_TOKEN', { KORTIX_TOKEN: 'sandbox-token' }, { sandboxToken: 'sandbox-token' }],
     ['KORTIX_SESSION_BRANCH_RESTORE=1 arms the one-time branch restore', { KORTIX_SESSION_BRANCH_RESTORE: '1' }, { sessionBranchRestore: true }],
     [
@@ -47,7 +44,6 @@ describe('loadConfig env contract', () => {
 
   test.each([
     ['a negative clone depth', { KORTIX_CLONE_DEPTH: '-1' }],
-    ['an unknown compiled boot mode', { KORTIX_COMPILED_BOOT_MODE: 'enabled' }],
   ])('rejects %s instead of passing it to git', (_name, env) => {
     expect(() => loadConfig({ ...BASE_ENV, ...env } as NodeJS.ProcessEnv)).toThrow()
   })
@@ -70,6 +66,7 @@ describe('resolveSandboxOnBoot', () => {
   test.each([
     ['kortix.yaml', 'sandbox:\n  on_boot: "pnpm dev"\n', 'pnpm dev'],
     ['kortix.yaml', 'sandbox:\n  on_boot: pnpm dev\n', 'pnpm dev'],
+    ['kortix.yaml', 'sandbox:\n  on_boot: |\n    mkdir -p /mnt/data\n    printf ready > /mnt/data/status\n', 'mkdir -p /mnt/data\nprintf ready > /mnt/data/status'],
     ['kortix.toml', '[sandbox]\non_boot = "pnpm dev"\n', 'pnpm dev'],
     ['kortix.yaml', 'sandbox:\n  cpu: 4\n', null],
   ])('%s %j → %j', async (file, body, expected) => {

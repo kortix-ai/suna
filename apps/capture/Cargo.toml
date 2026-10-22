@@ -1,0 +1,153 @@
+[package]
+name = "kortix-backend"
+version = "0.1.0"
+edition = "2021"
+license = "Elastic-2.0"
+
+[[bin]]
+name = "kortix-backend"
+path = "src/main.rs"
+
+[[bin]]
+name = "kortix-capture"
+path = "src/bin/capture.rs"
+
+[[bin]]
+name = "kortix-capture-engine"
+path = "src/bin/capture_engine.rs"
+required-features = ["capture-engine"]
+
+[dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+base64 = "0.22"
+# Verifies the signature on capture-update.json (src/memory/managed/update.rs).
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+chrono = { version = "0.4", features = ["serde"] }
+directories = "5.0"
+mime_guess = "2.0"
+parking_lot = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls", "stream"] }
+# Presigned S3 requests (SigV4) for the capture cloud sync.
+rusty-s3 = "0.7"
+# Client-side encryption of synced objects (AES-256-GCM, STREAM segments).
+aes-gcm = { version = "0.10", features = ["stream"] }
+time = "0.3"
+url = "2"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+sha2 = "0.10"
+tokio = { version = "1.37", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+urlencoding = "2.1"
+uuid = { version = "1.8", features = ["v4", "v5", "serde"] }
+zstd = "0.13"
+tar = "0.4"
+rusqlite = { version = "0.31", features = ["bundled"] }
+regex = "1"
+image = { version = "0.24", default-features = false, features = ["jpeg", "png", "ico"] }
+
+# Native capture crates are intentionally feature-gated. They need OS packages
+# and user-level accessibility/input permissions on most platforms.
+rdev = { version = "0.5", optional = true }
+screenshots = { version = "0.8", optional = true }
+arboard = { version = "3", default-features = false, features = ["image-data"] }
+tracing-appender = "0.2"
+ort = { version = "=2.0.0-rc.11", default-features = false, features = ["std", "load-dynamic"] }
+tokenizers = { version = "0.22", default-features = false, features = ["fancy-regex"] }
+flate2 = "1"
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+proptest = "1"
+# A fake Kortix issuer in tests/sync_s3.rs.
+axum = "0.7"
+# Validates the format's JSON Schemas against the fixture bucket (tests/capture_format.rs).
+jsonschema = { version = "0.33", default-features = false }
+
+[features]
+default = []
+capture-engine = ["dep:windows", "dep:x11rb", "dep:cpal"]
+memory-ui = ["dep:wry", "dep:tao"]
+# Linux only: the tray (needs gtk + libayatana-appindicator). Windows and macOS
+# build the tray unconditionally. The Linux rollout lane turns this on.
+tray-linux = ["dep:tray-icon", "dep:tao"]
+native-recorders = ["capture-engine", "dep:rdev", "dep:screenshots", "dep:winapi", "dep:windows", "dep:core-graphics", "dep:core-foundation", "dep:cocoa", "dep:x11"]
+
+# Kortix Capture window: WKWebView / WebView2 on macOS / Windows always;
+# WebKitGTK on Linux only with the `memory-ui` feature (needs system libs).
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+wry = "0.57"
+tao = "0.37"
+# The cross-platform tray (src/memory/managed/tray.rs): Windows notification area,
+# macOS menu bar. No extra system libraries on these two.
+tray-icon = "0.23"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+# Audio memory on Windows: WASAPI microphone and loopback capture.
+cpal = { version = "0.15", optional = true }
+winapi = { version = "0.3", features = ["winuser"], optional = true }
+# The machine service (`kortix-capture machine run`) talks to the Service Control Manager.
+windows-service = "0.7"
+windows = { version = "0.58", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Credentials",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_UI_Accessibility",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+    # machine service and tray (src/memory/managed/)
+    "Win32_Security_Authentication_Identity",
+    "Win32_Security_Authorization",
+    "Win32_System_Environment",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    # capture engine (src/capture_engine/windows.rs)
+    "Win32_Graphics_Dwm",
+    "Win32_Media_MediaFoundation",
+    "Win32_Storage_FileSystem",
+    "Win32_Storage_Packaging_Appx",
+    "Win32_System_StationsAndDesktops",
+    "Win32_System_SystemInformation",
+    "Win32_UI_HiDpi",
+    "Foundation",
+    "Foundation_Collections",
+    "Globalization",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Storage_Streams",
+] }
+
+# The app icon as a Windows resource in every exe (build.rs).
+[target.'cfg(windows)'.build-dependencies]
+embed-resource = "3"
+
+[target.'cfg(unix)'.dependencies]
+# The machine service on macOS and Linux (src/memory/managed/unix.rs): getpwuid, geteuid.
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The organization's notice, delivered as the app's own notification (src/memory/managed/notify.rs).
+objc = "0.2"
+cocoa = { version = "0.22", optional = true }
+core-graphics = { version = "0.19", optional = true }
+core-foundation = { version = "0.9", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { version = "0.13", features = ["randr", "screensaver"], optional = true }
+wry = { version = "0.57", optional = true }
+tao = { version = "0.37", optional = true }
+x11 = { version = "2.18", features = ["xlib"], optional = true }
+# The tray on Linux (AppIndicator/StatusNotifier) needs gtk + libayatana-appindicator,
+# so it rides the memory-ui feature with wry/tao instead of a plain build.
+tray-icon = { version = "0.23", optional = true }

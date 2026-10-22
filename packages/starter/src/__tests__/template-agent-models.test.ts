@@ -2,8 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
-import { DEFAULT_MANAGED_MODEL_IDS, isManagedModelId } from '@kortix/llm-catalog';
-
 const TEMPLATES_ROOT = join(import.meta.dir, '..', '..', 'templates');
 
 interface AgentModelDeclaration {
@@ -53,9 +51,11 @@ function declaredAgentModels(): AgentModelDeclaration[] {
   return out;
 }
 
+// A Kortix managed model is a bare id (optionally `kortix/`-prefixed): the
+// lineup itself is whatever Platinum Inference lists, so no id list lives here.
 function resolvesToManagedModel(model: string): boolean {
   const bare = model.startsWith('kortix/') ? model.slice('kortix/'.length) : model;
-  return isManagedModelId(bare);
+  return bare.length > 0 && !bare.includes('/');
 }
 
 describe('starter template agent model declarations', () => {
@@ -63,7 +63,7 @@ describe('starter template agent model declarations', () => {
     const files = agentDefinitionFiles();
 
     expect(files.length).toBeGreaterThan(50);
-    expect(files.some((f) => f.endsWith('templates/base/.kortix/opencode/agents/kortix.md'))).toBe(
+    expect(files.some((f) => f.endsWith('templates/base/agents/kortix.md'))).toBe(
       true,
     );
     expect(
@@ -71,15 +71,12 @@ describe('starter template agent model declarations', () => {
     ).toBe(true);
   });
 
-  test('every declared model resolves to a real managed catalog id', () => {
+  test('every declared model is a managed model id', () => {
     const invalid = declaredAgentModels()
       .filter((d) => !resolvesToManagedModel(d.model))
       .map((d) => `${d.path} -> ${d.model}`);
 
-    expect({
-      invalid,
-      managedIds: DEFAULT_MANAGED_MODEL_IDS,
-    }).toEqual({ invalid: [], managedIds: DEFAULT_MANAGED_MODEL_IDS });
+    expect(invalid).toEqual([]);
   });
 
   test('first-party template agents pin no model and inherit the platform default', () => {
@@ -91,8 +88,8 @@ describe('starter template agent model declarations', () => {
     expect(resolvesToManagedModel('kortix/codex/gpt-5.5')).toBe(false);
   });
 
-  test('accepts every managed catalog id in both bare and kortix-prefixed form', () => {
-    for (const id of DEFAULT_MANAGED_MODEL_IDS) {
+  test('accepts a managed id in both bare and kortix-prefixed form', () => {
+    for (const id of ['deepseek-v4.1-flash', 'glm-5.3-flash']) {
       expect(resolvesToManagedModel(id)).toBe(true);
       expect(resolvesToManagedModel(`kortix/${id}`)).toBe(true);
     }

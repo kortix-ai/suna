@@ -34,3 +34,10 @@ test('isMobileAuthCallbackUrl accepts only opted-in Kortix HTTPS callbacks', () 
     false,
   );
 });
+
+test('buildMobileRegistrationUrl carries an SSO email after the state', () => {
+  assert.equal(
+    buildMobileRegistrationUrl('https://kortix.example/', 's1', 'user@example.test'),
+    'https://kortix.example/auth?mobile_callback=1&state=s1&email=user%40example.test&sso=1',
+  );
+});

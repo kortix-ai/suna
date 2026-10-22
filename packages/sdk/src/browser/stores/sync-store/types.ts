@@ -3,7 +3,7 @@ import type {
 	Message,
 	Part,
 	SnapshotFileDiff,
-} from "@opencode-ai/sdk/v2/client";
+} from "../../../core/runtime/runtime-types";
 import type { AbortReason } from "../../../core/http/abort-error";
 export type { SessionRewindState } from "../../../core/session/rewind";
 

@@ -3,7 +3,7 @@
  *
  * The project's agents, from the SERVER-side project config
  * (`ProjectConfigSummary.agents`) — the same source
- * `apps/web/src/features/workspace/capabilities/agents/agents-page.tsx` reads,
+ * `packages/ui/src/customize/agents/agents-page.tsx` reads,
  * and the one that works before any sandbox runtime exists.
  */
 
@@ -168,7 +168,7 @@ export function AgentsTabView({
         }}
         maxRows={Math.max(height - 1, 1)}
         width={width}
-        emptyText="No agents yet. Add one under .opencode/agent/ or kortix.yaml."
+        emptyText="No agents yet. Add agents/<name>.md and declare it under agents: in kortix.yaml."
       />
       {rows.length > 0 ? <text fg={theme.faint}>Enter details · ★ project default</text> : null}
     </box>

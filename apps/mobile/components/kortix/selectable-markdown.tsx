@@ -15,14 +15,23 @@
  * (`lib/markdown/math-plugin.ts`), which pair dollars the way web's remark-math
  * does. Mermaid fences, and unlabelled fences that start with a diagram type,
  * render as diagrams (`components/markdown/mermaid/MermaidBlock.tsx`).
+ * ```openui fences (`openui-lang`, `openui-vN`) render as generative UI
+ * (`components/genui/genui-message-block.tsx`).
  *
- * On Android the text is natively selectable; on iOS a double tap opens a
- * sheet with the raw text.
+ * Selection is native on both platforms: long press selects a range, and the
+ * handles extend it within one block (a paragraph, heading, list item, or
+ * table cell). Android uses React Native's selectable `Text`. iOS uses a
+ * `UITextView` (`react-native-uitextview`), because React Native's iOS `Text`
+ * only copies a whole paragraph. A binary built before that native view keeps
+ * the old double-tap sheet (`IOS_TEXT_VIEW`).
  *
  * Streaming: the text is split into top-level blocks (`splitMarkdown`), and
  * each block renders in its own memoized component keyed by its position.
  * When a message grows, only the last block's string changes, so completed
- * blocks are neither re-parsed nor remounted. A block that appears after the
+ * blocks are neither re-parsed nor remounted. The last block re-parses on every
+ * change; its AST keys are node paths
+ * (`patches/react-native-markdown-display+7.0.2.patch`), so its native views
+ * update in place instead of remounting. A block that appears after the
  * message mounted fades in; a fence that is still open renders plain and
  * highlights once it closes.
  *
@@ -31,40 +40,24 @@
  * placeholder that opens the source in the browser on tap.
  */
 
-import React, { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   StyleSheet,
   TextStyle,
   View,
   Text as RNText,
-  Pressable,
   LogBox,
   Platform,
-  useWindowDimensions,
+  type TextProps,
 } from 'react-native';
-import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
-import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import Markdown, { MarkdownIt, type MarkdownProps } from 'react-native-markdown-display';
-import { BottomSheetModal, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
-import * as Haptics from 'expo-haptics';
-import { CopyIcon as Copy, ImageIcon } from '@/lib/icons';
-import {
-  markdownParser,
-  lightMarkdownStyle,
-  darkMarkdownStyle,
-} from '@/lib/utils/live-markdown-config';
 import { useColorScheme } from 'nativewind';
-import { MOTION, THEME } from '@/lib/utils/theme';
+import { MOTION } from '@/lib/utils/theme';
 import { FONT_FAMILY } from '@/lib/utils/fonts';
-import * as Clipboard from 'expo-clipboard';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { log } from '@/lib/logger';
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
-import { Button } from '@/components/ui/button';
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { isMathFenceLanguage, isMermaidCode, prepareMarkdownForMath } from '@kortix/shared';
+import { genuiVersionOf, separateGenuiClosers } from '@kortix/sdk/genui/fence';
 import { CodeBlock, fenceCode, fenceLanguage } from '@/components/markdown/code-block';
 import { InlineCode } from '@/components/markdown/inline-code';
 import { BlockMath, InlineMath } from '@/components/markdown/math';
@@ -72,25 +65,46 @@ import { MermaidBlock } from '@/components/markdown/mermaid/MermaidBlock';
 import { mathPlugin } from '@/lib/markdown/math-plugin';
 import { markdownPalette, type MarkdownPalette } from '@/components/markdown/markdown-theme';
 import { isMarkdownSeparatorBlock, splitMarkdown } from '@/lib/markdown/split-blocks';
-import { isSafeExternalLink } from '@/lib/markdown/safe-link';
-import { describeMarkdownImage } from '@/lib/markdown/markdown-image';
+import { groupImageBlocks, imageSourceKey } from '@/lib/markdown/markdown-image';
+import { MarkdownImage, MarkdownImageGallery, MarkdownImagesContext, type MarkdownRemoteImages } from '@/components/markdown/markdown-image';
 import {
   classifyBlock,
   collapsedGap,
   kindOfNode,
   orderedListGutter,
-  RADIUS,
   TYPE,
   web,
   type BlockKind,
   type StackContext,
 } from '@/lib/markdown/markdown-layout';
-import { openLink } from '@/lib/utils/open-link';
+import { MarkdownText, IOS_TEXT_VIEW } from '@/components/markdown/markdown-text';
+import { openExternalLink } from '@/lib/utils/open-link';
+import {
+  MarkdownTable,
+  MarkdownSurfaceContext,
+  type AstNode,
+} from '@/components/markdown/markdown-table';
+import { IOSSelectableMarkdown } from '@/components/markdown/ios-selection-fallback';
+import { GenuiMessageBlock } from '@/components/genui/genui-message-block';
+
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
 
-export interface SelectableMarkdownTextProps {
+
+function noop() {}
+
+/**
+ * Android: a selectable text node with no press handler of its own never
+ * delivers a tap to a nested link (KRTX-562). A no-op handler on the outer node
+ * restores the link's `onPress` and keeps native selection (verified on a
+ * Pixel 9 emulator, RN 0.85). `accessibilityRole="text"` keeps the handler
+ * from announcing every paragraph as a link.
+ */
+const ANDROID_LINK_TAPS: Partial<TextProps> =
+  Platform.OS === 'android' ? { onPress: noop, accessibilityRole: 'text' } : {};
+
+interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
   children: string;
   /** Accepted for compatibility; the markdown renderer does not apply it. */
@@ -104,17 +118,22 @@ export interface SelectableMarkdownTextProps {
    * a finished message whose last fence was never closed still highlights.
    */
   isStreaming?: boolean;
+  /**
+   * `'load'` where the project's agent wrote the text (a reply, a project
+   * file): remote http(s) images load, as on web. Default `'placeholder'`.
+   * Sandbox images load either way.
+   */
+  remoteImages?: MarkdownRemoteImages;
+  /**
+   * The colour behind the text, when it is not the page background (a sheet,
+   * a card). Tables fill with it, and their edge fades start from it.
+   */
+  surface?: string;
 }
 
 /**
  * Opens a link from message markdown when its scheme is http(s) or mailto.
  * Any other scheme is ignored, and a failed open never becomes an unhandled
- * rejection.
- */
-function openExternalLink(href: unknown) {
-  if (!isSafeExternalLink(href)) return;
-  openLink(href).catch(() => {});
-}
 
 /**
  * `onLinkPress` for library rules the app does not override (`blocklink`, a
@@ -126,37 +145,6 @@ function handleLibraryLinkPress(url: string): boolean {
   return false;
 }
 
-/**
- * Stand-in for a markdown image. Remote images are not loaded: a URL can leak
- * data to its host on render, and a huge image can exhaust memory on decode.
- * An http(s) source opens in the browser on tap; data: and other sources only
- * show the label. Web's image frame (`rounded-lg`, 10% outline) is applied to
- * the placeholder, the only image surface the app draws.
- */
-function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; alt: unknown; isDark: boolean }) {
-  const { label, href } = describeMarkdownImage(src, alt);
-  return (
-    <Button
-      variant="secondary"
-      size="sm"
-      className="my-1 max-w-full self-start"
-      style={{
-        borderRadius: RADIUS.lg,
-        borderWidth: 1,
-        borderColor: markdownPalette(isDark).imageOutline,
-      }}
-      disabled={!href}
-      onPress={href ? () => openExternalLink(href) : undefined}
-      role={href ? 'link' : 'img'}
-      accessibilityLabel={`Image: ${label}`}
-    >
-      <Icon as={ImageIcon} size={16} />
-      <Text numberOfLines={1} className="shrink">
-        {label}
-      </Text>
-    </Button>
-  );
-}
 
 /**
  * The fence at the end of the current block has no closing marker yet. Code
@@ -164,16 +152,6 @@ function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; alt: unk
  */
 const OpenFenceContext = createContext(false);
 
-type AstNode = {
-  key: string;
-  type: string;
-  content?: string;
-  sourceInfo?: string;
-  markup?: string;
-  index: number;
-  attributes?: Record<string, unknown>;
-  children: AstNode[];
-};
 
 /**
  * Stacks rendered constructs with CSS-style collapsed margins: the gap between
@@ -202,24 +180,48 @@ function hasParent(parents: AstNode[], type: string): boolean {
   return parents.some((parent) => parent.type === type);
 }
 
-/** Plain text of an AST node. */
-function nodeText(node: AstNode | undefined): string {
-  if (!node) return '';
-  if (node.content) return node.content;
-  return (node.children ?? []).map(nodeText).join('');
+/**
+ * false inside a generative-UI fallback: an ```openui fence there renders as
+ * code, so a fallback can never re-enter `GenuiBlock`, and the fallback adds
+ * no second iOS selection Pressable inside the message's own.
+ */
+const GenuiRoutingContext = createContext(true);
+
+/**
+ * A generative-UI block's markdown fallback, under the message's remote-image
+ * policy. `GenuiBlock` needs a stable renderer, so there is one per theme.
+ */
+function GenuiFallback({ markdown, isDark }: { markdown: string; isDark: boolean }) {
+  const remoteImages = useContext(MarkdownImagesContext);
+  return (
+    <GenuiRoutingContext.Provider value={false}>
+      <SelectableMarkdownText isDark={isDark} remoteImages={remoteImages}>
+        {markdown}
+      </SelectableMarkdownText>
+    </GenuiRoutingContext.Provider>
+  );
 }
+const genuiFallback = (isDark: boolean) => (markdown: string) =>
+  markdown ? <GenuiFallback markdown={markdown} isDark={isDark} /> : null;
+const GENUI_FALLBACK_LIGHT = genuiFallback(false);
+const GENUI_FALLBACK_DARK = genuiFallback(true);
 
-/** Roobert average advance at `text-sm`, for estimating table column widths. */
-const TABLE_CHAR_WIDTH = 7.7;
-const TABLE_CELL_PADDING_X = web(4);
-const TABLE_CELL_PADDING_Y = web(2);
-const TABLE_MIN_COLUMN = 44;
-/** Body cells wrap past this width; headers never wrap (`whitespace-nowrap`). */
-const TABLE_MAX_BODY_TEXT = 240;
-
-/** Web's `MarkdownCode` routing: Mermaid first, then math fences, then code. */
+/** Web's `MarkdownCode` routing: generative UI, then Mermaid, then math fences, then code. */
 function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
   const isStreaming = useContext(OpenFenceContext);
+  const routeGenui = useContext(GenuiRoutingContext);
+  // The raw first word of the info string: `fenceLanguage` may normalize `openui-lang` away.
+  const genuiVersion = routeGenui ? genuiVersionOf((node.sourceInfo ?? '').trim().split(/\s+/)[0] ?? '') : null;
+  if (genuiVersion !== null) {
+    return (
+      <GenuiMessageBlock
+        code={fenceCode(node.content)}
+        version={genuiVersion}
+        isStreaming={isStreaming}
+        renderMarkdown={isDark ? GENUI_FALLBACK_DARK : GENUI_FALLBACK_LIGHT}
+      />
+    );
+  }
   const code = fenceCode(node.content);
   const language = fenceLanguage(node.sourceInfo);
   if (isMermaidCode(language, code)) {
@@ -232,6 +234,30 @@ function FencedCode({ node, isDark }: { node: AstNode; isDark: boolean }) {
 }
 
 /** Render rules for react-native-markdown-display, one set per theme. */
+/** The six heading levels differ only in the styles key the token picks. */
+const headingRule =
+  (level: number) =>
+  (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
+    <View key={node.key} accessibilityRole="header" style={styles[`_VIEW_SAFE_heading${level}`]}>
+      {children}
+    </View>
+  );
+
+/** The list bodies are byte-identical apart from the token (`space-y-1` between items). */
+const listRule =
+  () =>
+  (node: AstNode, children: React.ReactNode[]) => (
+    <View key={node.key}>
+      {children.map((child, index) =>
+        index === 0 ? child : (
+          <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
+            {child}
+          </View>
+        ),
+      )}
+    </View>
+  );
+
 const createMarkdownRules = (isDark: boolean) => {
   const palette = markdownPalette(isDark);
   return {
@@ -241,14 +267,15 @@ const createMarkdownRules = (isDark: boolean) => {
       </View>
     ),
     text: (node: AstNode, _children: unknown, _parent: unknown, styles: any, inheritedStyles: any = {}) => (
-      <RNText key={node.key} style={[inheritedStyles, styles.text]} selectable>
+      <MarkdownText key={node.key} style={[inheritedStyles, styles.text]}>
         {node.content}
-      </RNText>
+      </MarkdownText>
     ),
+    // The outermost text node: the one native selection reads `selectable` from.
     textgroup: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.textgroup} selectable>
+      <MarkdownText key={node.key} style={styles.textgroup} selectable {...ANDROID_LINK_TAPS}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     paragraph: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
       <View key={node.key} style={styles._VIEW_SAFE_paragraph}>
@@ -256,94 +283,51 @@ const createMarkdownRules = (isDark: boolean) => {
       </View>
     ),
     strong: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.strong} selectable>
+      <MarkdownText key={node.key} style={styles.strong}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     em: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.em} selectable>
+      <MarkdownText key={node.key} style={styles.em}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     s: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText key={node.key} style={styles.s} selectable>
+      <MarkdownText key={node.key} style={styles.s}>
         {children}
-      </RNText>
+      </MarkdownText>
     ),
     // Links: only http(s) and mailto open.
     link: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <RNText
+      <MarkdownText
         key={node.key}
         style={styles.link}
-        selectable
         accessibilityRole="link"
         onPress={() => openExternalLink(node.attributes?.href)}
       >
         {children}
-      </RNText>
+      </MarkdownText>
     ),
-    // Images: never fetched; a placeholder instead.
+    // Images: the image itself where it may load (`MarkdownImagesContext`),
+    // else the placeholder card. Node keys are positions, so the source is in
+    // the key: a different image at the same position mounts fresh load state.
     image: (node: AstNode) => (
-      <MarkdownImagePlaceholder
-        key={node.key}
-        src={node.attributes?.src}
-        alt={node.attributes?.alt}
+      <MarkdownImage
+        key={`${node.key}:${imageSourceKey(String(node.attributes?.src ?? ''))}`}
+        src={typeof node.attributes?.src === 'string' ? node.attributes.src : ''}
+        alt={typeof node.attributes?.alt === 'string' ? node.attributes.alt : ''}
         isDark={isDark}
       />
     ),
-    heading1: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading1}>
-        {children}
-      </View>
-    ),
-    heading2: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading2}>
-        {children}
-      </View>
-    ),
-    heading3: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading3}>
-        {children}
-      </View>
-    ),
-    heading4: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading4}>
-        {children}
-      </View>
-    ),
-    heading5: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading5}>
-        {children}
-      </View>
-    ),
-    heading6: (node: AstNode, children: React.ReactNode, _parent: unknown, styles: any) => (
-      <View key={node.key} accessibilityRole="header" style={styles._VIEW_SAFE_heading6}>
-        {children}
-      </View>
-    ),
+    heading1: headingRule(1),
+    heading2: headingRule(2),
+    heading3: headingRule(3),
+    heading4: headingRule(4),
+    heading5: headingRule(5),
+    heading6: headingRule(6),
     // Lists: `space-y-1` between items.
-    bullet_list: (node: AstNode, children: React.ReactNode[]) => (
-      <View key={node.key}>
-        {children.map((child, index) =>
-          index === 0 ? child : (
-            <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
-              {child}
-            </View>
-          ),
-        )}
-      </View>
-    ),
-    ordered_list: (node: AstNode, children: React.ReactNode[]) => (
-      <View key={node.key}>
-        {children.map((child, index) =>
-          index === 0 ? child : (
-            <View key={`item-${node.children[index]?.key ?? index}`} style={{ marginTop: web(1) }}>
-              {child}
-            </View>
-          ),
-        )}
-      </View>
-    ),
+    bullet_list: listRule(),
+    ordered_list: listRule(),
     // `list-outside`: the marker hangs in the list's inline-start padding,
     // end-aligned against the item text.
     list_item: (node: AstNode, children: React.ReactNode[], parent: AstNode[], styles: any) => {
@@ -412,153 +396,6 @@ function MarkdownRule({ palette }: { palette: MarkdownPalette }) {
   return <View style={{ height: 1, backgroundColor: palette.border }} />;
 }
 
-/** Inline content of a table cell: bold, italic, strike, code, links. */
-function renderCellContent(cell: AstNode, isDark: boolean, palette: MarkdownPalette): React.ReactNode {
-  const inline = cell.children ?? [];
-  // Cells usually hold one wrapper node around the actual inline content.
-  const nodes = inline.length === 1 && inline[0].children?.length ? inline[0].children : inline;
-  if (nodes.length === 0) return nodeText(cell);
-
-  return nodes.map((n, i) => {
-    switch (n.type) {
-      case 'text':
-        return n.content ?? '';
-      case 'softbreak':
-      case 'hardbreak':
-        return '\n';
-      case 'strong':
-        return (
-          <RNText key={i} style={{ fontFamily: FONT_FAMILY.semibold, fontWeight: '600', color: palette.strong }}>
-            {nodeText(n)}
-          </RNText>
-        );
-      case 'em':
-        return (
-          <RNText key={i} style={{ fontStyle: 'italic', color: palette.em }}>
-            {nodeText(n)}
-          </RNText>
-        );
-      case 's':
-        return (
-          <RNText key={i} style={{ textDecorationLine: 'line-through', color: palette.muted }}>
-            {nodeText(n)}
-          </RNText>
-        );
-      case 'code_inline':
-        return <InlineCode key={i} code={n.content ?? ''} isDark={isDark} line={TYPE.sm} />;
-      case 'math_inline':
-        return (
-          <InlineMath key={i} tex={n.content ?? ''} isDark={isDark} fontSize={TYPE.sm.fontSize} color={palette.strong} />
-        );
-      case 'link':
-        return (
-          <RNText
-            key={i}
-            accessibilityRole="link"
-            style={{
-              color: palette.link,
-              fontFamily: FONT_FAMILY.medium,
-              fontWeight: '500',
-              textDecorationLine: 'underline',
-              textDecorationColor: palette.linkDecoration,
-            }}
-            onPress={() => openExternalLink(n.attributes?.href)}
-          >
-            {nodeText(n)}
-          </RNText>
-        );
-      default:
-        return nodeText(n);
-    }
-  });
-}
-
-/**
- * Web: `border rounded-md` wrapper that scrolls horizontally, `w-full` table in
- * `text-sm`, `bg-muted` header, `px-4 py-2` cells, row dividers.
- */
-function MarkdownTable({ node, palette, isDark }: { node: AstNode; palette: MarkdownPalette; isDark: boolean }) {
-  const sections: { isHeader: boolean; rows: AstNode[][] }[] = [];
-  for (const section of node.children ?? []) {
-    const isHeader = section.type === 'thead';
-    const rows: AstNode[][] = [];
-    for (const row of section.children ?? []) {
-      if (row.type === 'tr') rows.push((row.children ?? []).filter((c) => c.type === 'th' || c.type === 'td'));
-    }
-    if (rows.length > 0) sections.push({ isHeader, rows });
-  }
-
-  const colCount = Math.max(0, ...sections.flatMap((s) => s.rows.map((r) => r.length)));
-  if (colCount === 0) return <View />;
-
-  const colWidths: number[] = [];
-  for (let col = 0; col < colCount; col++) {
-    let header = 0;
-    let body = 0;
-    for (const section of sections) {
-      for (const row of section.rows) {
-        const width = nodeText(row[col]).length * TABLE_CHAR_WIDTH;
-        if (section.isHeader) header = Math.max(header, width);
-        else body = Math.max(body, Math.min(width, TABLE_MAX_BODY_TEXT));
-      }
-    }
-    colWidths.push(Math.max(Math.max(header, body) + 2 * TABLE_CELL_PADDING_X, TABLE_MIN_COLUMN));
-  }
-
-  let rowIndex = 0;
-  return (
-    <View style={{ borderWidth: 1, borderColor: palette.border, borderRadius: RADIUS.md, overflow: 'hidden' }}>
-      <GHScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ minWidth: '100%' }}>
-        <View style={{ flexGrow: 1 }}>
-          {sections.map((section, sIdx) =>
-            section.rows.map((cells, rIdx) => {
-              const divider = rowIndex++ > 0;
-              return (
-                <View
-                  key={`${sIdx}-${rIdx}`}
-                  style={{
-                    flexDirection: 'row',
-                    borderTopWidth: divider ? 1 : 0,
-                    borderTopColor: palette.border,
-                    backgroundColor: section.isHeader ? palette.tableHeader : undefined,
-                  }}
-                >
-                  {cells.map((cell, cIdx) => (
-                    <View
-                      key={cIdx}
-                      style={{
-                        flexBasis: colWidths[cIdx],
-                        flexGrow: 1,
-                        flexShrink: 0,
-                        paddingHorizontal: TABLE_CELL_PADDING_X,
-                        paddingVertical: TABLE_CELL_PADDING_Y,
-                      }}
-                    >
-                      <RNText
-                        selectable
-                        numberOfLines={section.isHeader ? 1 : undefined}
-                        style={{
-                          fontFamily: section.isHeader ? FONT_FAMILY.semibold : FONT_FAMILY.regular,
-                          fontWeight: section.isHeader ? '600' : '400',
-                          fontSize: TYPE.sm.fontSize,
-                          lineHeight: TYPE.sm.lineHeight,
-                          color: palette.strong,
-                          textAlign: 'left',
-                        }}
-                      >
-                        {renderCellContent(cell, isDark, palette)}
-                      </RNText>
-                    </View>
-                  ))}
-                </View>
-              );
-            }),
-          )}
-        </View>
-      </GHScrollView>
-    </View>
-  );
-}
 
 /** Web heading classes: `text-foreground font-semibold`, sizes and margins in markdown-layout. */
 const heading = (palette: MarkdownPalette, size: { fontSize: number; lineHeight: number }) => ({
@@ -667,154 +504,6 @@ type MarkdownRendererProps = MarkdownProps & {
 };
 const MarkdownRenderer = Markdown as unknown as React.ComponentType<MarkdownRendererProps>;
 
-/**
- * iOS Text Selection Modal
- * Opens on double-tap to allow text selection from raw content
- * Uses BottomSheetModal for consistent styling with rest of app
- */
-interface TextSelectionModalProps {
-  sheetRef: React.RefObject<BottomSheetModal | null>;
-  text: string;
-  isDark: boolean;
-  onDismiss: () => void;
-}
-
-function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelectionModalProps) {
-  const insets = useSafeAreaInsets();
-  const snapPoints = useMemo(() => ['70%', '95%'], []);
-  const [copied, setCopied] = useState(false);
-  const [currentSnapIndex, setCurrentSnapIndex] = useState(0);
-  const { height: screenHeight } = useWindowDimensions();
-  
-  // Calculate available height based on current snap point
-  const snapPercent = currentSnapIndex === 1 ? 0.95 : 0.70;
-  const textInputHeight = screenHeight * snapPercent - 100 - insets.bottom;
-
-  const handleSheetChange = useCallback((index: number) => {
-    if (index >= 0) {
-      setCurrentSnapIndex(index);
-    }
-  }, []);
-
-  const colors = {
-    bg: isDark ? THEME.dark.background : THEME.light.background,
-    text: isDark ? THEME.dark.foreground : THEME.light.foreground,
-    muted: isDark ? THEME.dark.mutedForeground : THEME.light.mutedForeground,
-    card: isDark ? THEME.dark.card : THEME.light.card,
-  };
-
-
-  const handleCopyAll = useCallback(async () => {
-    try {
-      await Clipboard.setStringAsync(text);
-      setCopied(true);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      log.error('Failed to copy:', err);
-    }
-  }, [text]);
-
-  return (
-    <KortixBottomSheetModal
-      ref={sheetRef}
-      snapPoints={snapPoints}
-      index={0}
-      enablePanDownToClose
-      enableDynamicSizing={false}
-      onChange={handleSheetChange}
-      onDismiss={onDismiss}
-      style={{
-        zIndex: 999,
-        elevation: Platform.OS === 'android' ? 50 : undefined,
-      }}
-    >
-      <BottomSheetView style={{ flex: 1 }}>
-        {/* Header - fixed at top */}
-        <View style={[drawerStyles.header, { paddingHorizontal: 24 }]}>
-          <RNText style={[drawerStyles.title, { color: colors.text }]}>
-            Select Text
-          </RNText>
-          <BottomSheetTouchable 
-            onPress={handleCopyAll} 
-            style={[drawerStyles.copyButton, { 
-              backgroundColor: 'transparent',
-              borderColor: isDark ? THEME.dark.border : THEME.light.border,
-            }]}
-          >
-            <Copy size={16} color={colors.text} />
-            <RNText style={[drawerStyles.copyButtonText, { color: colors.text }]}>
-              {copied ? 'Copied!' : 'Copy All'}
-            </RNText>
-          </BottomSheetTouchable>
-        </View>
-
-        {/* Hint */}
-        <RNText style={[drawerStyles.hint, { color: colors.muted, paddingHorizontal: 24 }]}>
-          Tap and hold text to select
-        </RNText>
-
-        {/* Scrollable + selectable using Expensify MarkdownTextInput */}
-        <View style={{ paddingHorizontal: 24 }}>
-          <MarkdownTextInput
-            value={text}
-            onChangeText={() => {}}
-            parser={markdownParser}
-            markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-            editable={false}
-            multiline={true}
-            scrollEnabled={true}
-            style={[
-              drawerStyles.textContent, 
-              { 
-                height: textInputHeight,
-                color: colors.text,
-                textAlignVertical: 'top',
-              }
-            ]}
-          />
-        </View>
-      </BottomSheetView>
-    </KortixBottomSheetModal>
-  );
-}
-
-const drawerStyles = StyleSheet.create({
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 16,
-  },
-  title: {
-    fontSize: 20,
-    fontFamily: 'Roobert-SemiBold',
-  },
-  hint: {
-    fontSize: 13,
-    fontFamily: 'Roobert-Regular',
-    marginBottom: 16,
-  },
-  copyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  copyButtonText: {
-    fontSize: 14,
-    fontFamily: 'Roobert-Medium',
-  },
-  textContent: {
-    fontSize: 16,
-    lineHeight: 26,
-    fontFamily: 'Roobert-Regular',
-  },
-});
 
 
 /**
@@ -894,6 +583,12 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
+type BlockKinds = { first: BlockKind; last: BlockKind };
+
+function blockKinds(block: string): BlockKinds {
+  return isMarkdownSeparatorBlock(block) ? { first: 'hr', last: 'hr' } : classifyBlock(block);
+}
+
 function MarkdownBlocks({ text, isDark, isStreaming }: { text: string; isDark: boolean; isStreaming?: boolean }) {
   const { blocks, endsInOpenFence } = useMemo(() => splitMarkdown(prepareMarkdownForMath(text)), [text]);
   const fenceGrowing = useFenceStillGrowing(text, endsInOpenFence, isStreaming);
@@ -908,96 +603,75 @@ function MarkdownBlocks({ text, isDark, isStreaming }: { text: string; isDark: b
   }
   previousText.current = text;
 
-  const kinds = useMemo(
-    () => blocks.map((block) => (isMarkdownSeparatorBlock(block) ? { first: 'hr', last: 'hr' } as const : classifyBlock(block))),
-    [blocks],
-  );
+  // `classifyBlock` reads only a block's first and last lines, so this costs
+  // little per block however long the message grows.
+  const kinds = useMemo(() => blocks.map(blockKinds), [blocks]);
+
+  // A run of image-only blocks with two or more images is one swipeable
+  // gallery; every other block renders as markdown.
+  const items = useMemo(() => groupImageBlocks(blocks), [blocks]);
 
   return (
     <View>
-      {blocks.map((block, index) => (
-        // Position is the identity: streaming only appends, so block N stays block N.
-        <MarkdownBlock
-          key={index}
-          text={block}
-          isDark={isDark}
-          openFence={fenceGrowing && index === blocks.length - 1}
-          marginTop={collapsedGap(index === 0 ? null : kinds[index - 1].last, kinds[index].first)}
-          animate={index >= (firstCount.current ?? 0)}
-        />
-      ))}
+      {items.map((item, itemIndex) => {
+        // Position is the identity: streaming only appends, so block N stays
+        // block N, and a gallery keeps the index of its first block.
+        const index = item.index;
+        const previous = itemIndex === 0 ? null : items[itemIndex - 1];
+        const previousLast = previous ? (previous.kind === 'gallery' ? previous.last : previous.index) : null;
+        const marginTop = collapsedGap(previousLast === null ? null : kinds[previousLast].last, kinds[index].first);
+        if (item.kind === 'gallery') {
+          return (
+            <View key={index} style={marginTop ? { marginTop } : undefined}>
+              <MarkdownImageGallery images={item.images} isDark={isDark} />
+            </View>
+          );
+        }
+        return (
+          <MarkdownBlock
+            key={index}
+            text={item.text}
+            isDark={isDark}
+            openFence={fenceGrowing && index === blocks.length - 1}
+            marginTop={marginTop}
+            animate={index >= (firstCount.current ?? 0)}
+          />
+        );
+      })}
     </View>
   );
 }
 
-const DOUBLE_TAP_DELAY_MS = 300;
-
-function noop() {}
-
-/**
- * iOS: a double tap opens the selection sheet. The sheet mounts on the first
- * double tap, not with every text part, and stays mounted after dismiss.
- * `Pressable` is deliberate, NOT `Button`: this is a gesture target over body
- * text, so it must have no press animation at all.
- */
-function IOSSelectableMarkdown({ text, isDark, isStreaming }: { text: string; isDark: boolean; isStreaming?: boolean }) {
-  const bottomSheetRef = useRef<BottomSheetModal>(null);
-  const lastTapRef = useRef(0);
-  const presentOnMountRef = useRef(false);
-  const [sheetMounted, setSheetMounted] = useState(false);
-
-  useEffect(() => {
-    if (sheetMounted && presentOnMountRef.current) {
-      presentOnMountRef.current = false;
-      bottomSheetRef.current?.present();
-    }
-  }, [sheetMounted]);
-
-  const handlePress = useCallback(() => {
-    const now = Date.now();
-    if (now - lastTapRef.current >= DOUBLE_TAP_DELAY_MS) {
-      lastTapRef.current = now;
-      return;
-    }
-    lastTapRef.current = 0;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (sheetMounted) {
-      bottomSheetRef.current?.present();
-    } else {
-      presentOnMountRef.current = true;
-      setSheetMounted(true);
-    }
-  }, [sheetMounted]);
-
-  return (
-    <>
-      <Pressable onPress={handlePress}>
-        <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
-      </Pressable>
-      {sheetMounted ? (
-        <TextSelectionModal sheetRef={bottomSheetRef} text={text} isDark={isDark} onDismiss={noop} />
-      ) : null}
-    </>
-  );
-}
 
 /**
  * SelectableMarkdownText
  *
- * Renders markdown with selectable text: natively on Android, through a
- * double-tap selection sheet on iOS.
+ * Renders markdown with natively selectable text. On an iOS binary without
+ * the `UITextView` native view, a double tap opens a selection sheet instead.
  */
 export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = memo(
-  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming }: SelectableMarkdownTextProps) {
+  function SelectableMarkdownText({ children, isDark: isDarkProp, isStreaming, remoteImages = 'placeholder', surface }: SelectableMarkdownTextProps) {
     const { colorScheme } = useColorScheme();
     const isDark = isDarkProp ?? colorScheme === 'dark';
+    // A generative-UI fallback sits inside its message: the message's double tap covers it.
+    const isOutermost = useContext(GenuiRoutingContext);
 
-    // Trailing whitespace would add empty space below the last block.
-    const text = typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd();
+    // Trailing whitespace would add empty space below the last block. A closer the model glued to the
+    // last statement of a generative-UI block moves to its own line, so the block ends where it should.
+    const text = separateGenuiClosers(typeof children === 'string' ? children.trimEnd() : String(children || '').trimEnd());
 
-    if (Platform.OS === 'ios') {
-      return <IOSSelectableMarkdown text={text} isDark={isDark} isStreaming={isStreaming} />;
-    }
-    return <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />;
+    return (
+      <MarkdownImagesContext.Provider value={remoteImages}>
+        <MarkdownSurfaceContext.Provider value={surface}>
+          {Platform.OS === 'ios' && !IOS_TEXT_VIEW && isOutermost ? (
+            <IOSSelectableMarkdown text={text} isDark={isDark}>
+              <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
+            </IOSSelectableMarkdown>
+          ) : (
+            <MarkdownBlocks text={text} isDark={isDark} isStreaming={isStreaming} />
+          )}
+        </MarkdownSurfaceContext.Provider>
+      </MarkdownImagesContext.Provider>
+    );
   },
 );

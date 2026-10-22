@@ -32,7 +32,7 @@ the same gap or duplicating a PR still under review.
 ```sh
 # Read the durable ledger first — covered topics, drafted-but-unmerged
 # topics, and clusters seen before that didn't clear the bar.
-cat .kortix/memory/kb-gap-mining-log.md 2>/dev/null || echo "(no ledger yet)"
+cat memory/kb-gap-mining-log.md 2>/dev/null || echo "(no ledger yet)"
 
 # Check any open KB-gap PR from a prior run.
 gh pr list --repo {{kb_repo}} --state open \
@@ -144,13 +144,13 @@ publishes."
 
 ## Step 9 — Update the ledger
 
-Append a dated entry to `.kortix/memory/kb-gap-mining-log.md` (see
+Append a dated entry to `memory/kb-gap-mining-log.md` (see
 `<ledger-format>`).
 
 </workflow>
 
 <ledger-format>
-Lives at `.kortix/memory/kb-gap-mining-log.md`. Every run appends a dated
+Lives at `memory/kb-gap-mining-log.md`. Every run appends a dated
 entry with: run timestamp, branch, PR link (or "not opened — nothing cleared
 the bar"), a **Drafted topics** table (topic / article path / ticket count /
 source thread IDs), the **full candidate list** considered that week

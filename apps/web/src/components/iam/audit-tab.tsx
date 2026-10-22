@@ -2,7 +2,6 @@
 
 import {
   CaretRightIcon as CaretRight,
-  DownloadIcon as Download,
   FunnelIcon as Funnel,
   MagnifyingGlassIcon as Search,
   XIcon as X,
@@ -11,27 +10,26 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useTranslations } from '@/i18n/use-translations';
 import { type Dispatch, type ReactNode, type SetStateAction, useMemo, useState } from 'react';
 
-import { CopyOverlay, HighlightedCode } from '@/components/markdown/code';
-import { CopyButton } from '@/components/markdown/copy-button';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { CopyOverlay, HighlightedCode, CopyButton } from '@kortix/ui/markdown';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+} from '@kortix/ui/dropdown-menu';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
+import { Popover, PopoverContent, PopoverTrigger } from '@kortix/ui/popover';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -39,32 +37,29 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/table';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   EMPTY_PRINCIPAL_SELECTION,
   PROJECT_SELECT_ALL,
-  PrincipalPicker,
   type PrincipalSelection,
   ProjectSelect,
   formatRelative,
   singlePrincipal,
-} from '@/features/workspace/shared/access';
-import { localizeUiCatalog, translateUiCatalogText } from '@/i18n/localize-ui-catalog';
-import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@/i18n/product-catalog-translation-keys.generated';
+} from '@kortix/ui/access/access/index';
+import { PrincipalPicker } from '@kortix/ui/access';
+import { localizeUiCatalog, translateUiCatalogText } from '@kortix/ui/i18n';
+import { PRODUCT_CATALOG_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/product-catalog-translation-keys.generated';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
-import { type IamAuditEvent, listAuditEvents } from '@/lib/iam-client';
-import { cn } from '@/lib/utils';
-import {
-  downloadAccountAudit,
-  listAccountMembers,
-  listProjectSessions,
-  listProjectsForAccount,
-} from '@kortix/sdk';
+import { type IamAuditEvent, type ListAuditFilter, listAuditEvents } from '@/lib/iam-client';
+import { CREDENTIAL_KINDS, CREDENTIAL_LABEL_KEYS, credentialVia } from '@kortix/ui/session/panel/audit/audit-credential-label';
+import { AuditSessionPicker } from './audit-session-picker';
+import { cn } from '@kortix/ui';
+import { downloadAccountAudit, listAccountMembers, listProjectsForAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
   type AuditActionDescription,
@@ -72,6 +67,7 @@ import {
   describeAuditAction,
   formatResourcePill,
 } from './audit-display-helpers';
+import { Download } from '@kortix/ui/internal/icons/download';
 
 type ActorType = NonNullable<IamAuditEvent['actor_type']>;
 type Outcome = NonNullable<IamAuditEvent['outcome']>;
@@ -82,7 +78,7 @@ interface AuditFilterState {
   actorType: ActorType | '';
   projectId: string;
   sessionId: string;
-  source: string;
+  credentialKind: string;
   phase: string;
   outcome: Outcome | '';
   resourceType: string;
@@ -97,7 +93,7 @@ const EMPTY_FILTER: AuditFilterState = {
   actorType: '',
   projectId: '',
   sessionId: '',
-  source: '',
+  credentialKind: '',
   phase: '',
   outcome: '',
   resourceType: '',
@@ -106,19 +102,43 @@ const EMPTY_FILTER: AuditFilterState = {
   until: '',
 };
 
+/** The filter state as the audit wire type: a blank UI field drops out, a set
+ *  one maps to its wire key. The one projection for both callers — the list
+ *  query adds its `cursor`/`limit` and the paginated export its `format`/`
+ *  cursor` on top; each used to carry its own copy of these twelve mappings. */
+export function auditFilterWire(filter: AuditFilterState): ListAuditFilter {
+  return {
+    action: filter.action || undefined,
+    actor: filter.actor || undefined,
+    actor_type: filter.actorType || undefined,
+    project_id: filter.projectId || undefined,
+    session_id: filter.sessionId || undefined,
+    credential_kind: filter.credentialKind || undefined,
+    phase: filter.phase || undefined,
+    outcome: filter.outcome || undefined,
+    resource_type: filter.resourceType || undefined,
+    q: filter.q || undefined,
+    since: filter.since || undefined,
+    until: filter.until || undefined,
+  };
+}
+
+// `id` is the tab value. The label is translated (`localizeUiCatalog`), so a
+// tab keyed by its label matched nothing outside English (KRTX-2399).
 const QUICK_FILTERS: Array<{
+  id: string;
   label: string;
   action?: string;
   actorType?: ActorType;
   outcome?: Outcome;
   resourceType?: string;
 }> = [
-  { label: 'All activity' },
-  { label: 'People', actorType: 'human' },
-  { label: 'Agents', actorType: 'agent' },
-  { label: 'Sessions', resourceType: 'project_session' },
-  { label: 'Connectors', action: 'connector.' },
-  { label: 'Failures', outcome: 'failure' },
+  { id: 'all', label: 'All activity' },
+  { id: 'people', label: 'People', actorType: 'human' },
+  { id: 'agents', label: 'Agents', actorType: 'agent' },
+  { id: 'sessions', label: 'Sessions', resourceType: 'project_session' },
+  { id: 'connectors', label: 'Connectors', action: 'connector.' },
+  { id: 'failures', label: 'Failures', outcome: 'failure' },
 ];
 
 const RESOURCE_TYPES = [
@@ -133,23 +153,6 @@ const RESOURCE_TYPES = [
   { label: 'Account', value: 'account' },
   { label: 'Service account', value: 'service_account' },
   { label: 'Trigger', value: 'trigger' },
-];
-
-const SOURCES = [
-  { label: 'Any source', value: '' },
-  { label: 'Human', value: 'human' },
-  { label: 'API key', value: 'api_key' },
-  { label: 'Agent', value: 'agent' },
-  { label: 'OpenCode', value: 'opencode' },
-  { label: 'LLM gateway', value: 'llm_gateway' },
-  { label: 'Provider', value: 'provider' },
-  { label: 'Automation', value: 'automation' },
-  { label: 'Connector', value: 'connector' },
-  { label: 'Tunnel', value: 'tunnel' },
-  { label: 'API', value: 'api' },
-  { label: 'CLI client', value: 'cli' },
-  { label: 'Web client', value: 'web' },
-  { label: 'Mobile client', value: 'mobile' },
 ];
 
 const PHASES = ['pending', 'queued', 'running', 'completed', 'succeeded', 'failed', 'denied'];
@@ -224,13 +227,6 @@ export function AuditTab({ accountId }: { accountId: string }) {
     queryFn: () => listProjectsForAccount(accountId),
     ...contract('inventory'),
   });
-  const sessionsQuery = useQuery({
-    queryKey: ['audit-project-sessions', filter.projectId],
-    queryFn: () => listProjectSessions(filter.projectId, { scope: 'project' }),
-    enabled: !!filter.projectId,
-    staleTime: 15_000,
-  });
-
   const emailByUserId = useMemo(() => {
     const map = new Map<string, string>();
     for (const member of membersQuery.data ?? []) {
@@ -248,7 +244,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
     filter.actorType,
     filter.projectId,
     filter.sessionId,
-    filter.source,
+    filter.credentialKind,
     filter.phase,
     filter.outcome,
     filter.resourceType,
@@ -260,27 +256,12 @@ export function AuditTab({ accountId }: { accountId: string }) {
   const hasFilter = filterCount > 0;
   const activeQuickFilter = QUICK_FILTERS.find((preset) =>
     isQuickFilterActive(filter, preset),
-  )?.label;
+  )?.id;
 
   const query = useInfiniteQuery({
     queryKey: ['audit', accountId, filter],
     queryFn: ({ pageParam }) =>
-      listAuditEvents(accountId, {
-        action: filter.action || undefined,
-        actor: filter.actor || undefined,
-        actor_type: filter.actorType || undefined,
-        project_id: filter.projectId || undefined,
-        session_id: filter.sessionId || undefined,
-        source: filter.source || undefined,
-        phase: filter.phase || undefined,
-        outcome: filter.outcome || undefined,
-        resource_type: filter.resourceType || undefined,
-        q: filter.q || undefined,
-        since: filter.since || undefined,
-        until: filter.until || undefined,
-        cursor: pageParam,
-        limit: 50,
-      }),
+      listAuditEvents(accountId, { ...auditFilterWire(filter), cursor: pageParam, limit: 50 }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
   });
@@ -306,22 +287,7 @@ export function AuditTab({ accountId }: { accountId: string }) {
       for (;;) {
         const result = await downloadAccountAudit(
           accountId,
-          {
-            format,
-            action: filter.action || undefined,
-            actor: filter.actor || undefined,
-            actor_type: filter.actorType || undefined,
-            project_id: filter.projectId || undefined,
-            session_id: filter.sessionId || undefined,
-            source: filter.source || undefined,
-            phase: filter.phase || undefined,
-            outcome: filter.outcome || undefined,
-            resource_type: filter.resourceType || undefined,
-            q: filter.q || undefined,
-            since: filter.since || undefined,
-            until: filter.until || undefined,
-            cursor,
-          },
+          { format, ...auditFilterWire(filter), cursor },
           { backendUrl: getEnv().BACKEND_URL ?? '', accessToken: token },
         );
         filename ??= result.filename;
@@ -371,6 +337,9 @@ export function AuditTab({ accountId }: { accountId: string }) {
           <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
             {tI18nComplete.raw('text862397da3718')}
           </p>
+          <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
+            {tI18nComplete.raw('textd8b78d762ad0')}
+          </p>
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -393,13 +362,13 @@ export function AuditTab({ accountId }: { accountId: string }) {
       <Tabs
         value={activeQuickFilter}
         onValueChange={(value) => {
-          const preset = QUICK_FILTERS.find((item) => item.label === value);
+          const preset = QUICK_FILTERS.find((item) => item.id === value);
           if (preset) setFilter((current) => applyQuickFilter(current, preset));
         }}
       >
         <TabsList type="underline" className="h-auto w-full flex-wrap justify-start">
           {quickFilters.map((preset) => (
-            <TabsTrigger key={preset.label} value={preset.label} className="w-fit flex-none pb-3">
+            <TabsTrigger key={preset.id} value={preset.id} className="w-fit flex-none pb-3">
               {preset.label}
             </TabsTrigger>
           ))}
@@ -440,38 +409,11 @@ export function AuditTab({ accountId }: { accountId: string }) {
           }
         />
 
-        <Select
-          value={filter.sessionId || 'all'}
-          disabled={!filter.projectId}
-          onValueChange={(value) =>
-            setFilter((current) => ({
-              ...current,
-              sessionId: value === 'all' ? '' : value,
-            }))
-          }
-        >
-          <SelectTrigger size="sm" className="h-9 w-[220px]">
-            <SelectValue
-              placeholder={
-                filter.projectId
-                  ? tI18nComplete.raw('text78648d4d6649')
-                  : tI18nComplete.raw('textf7b9225a1fdc')
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">{tI18nComplete.raw('text78648d4d6649')}</SelectItem>
-            {(sessionsQuery.data ?? []).map((session) => (
-              <SelectItem
-                key={session.session_id}
-                value={session.session_id}
-                description={session.session_id}
-              >
-                {session.name || `Session ${session.session_id.slice(0, 8)}`}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <AuditSessionPicker
+          projectId={filter.projectId}
+          value={filter.sessionId}
+          onChange={(sessionId) => setFilter((current) => ({ ...current, sessionId }))}
+        />
 
         <AdvancedFilters
           accountId={accountId}
@@ -671,13 +613,13 @@ function AdvancedFilters({
             </Select>
           </FilterField>
 
-          <FilterField label={tI18nComplete.raw('text0e570ca6fabe')}>
+          <FilterField label={tI18nComplete.raw('text2ed8b8066255')}>
             <Select
-              value={filter.source || 'all'}
+              value={filter.credentialKind || 'all'}
               onValueChange={(value) =>
                 onChange((current) => ({
                   ...current,
-                  source: value === 'all' ? '' : value,
+                  credentialKind: value === 'all' ? '' : value,
                 }))
               }
             >
@@ -685,13 +627,12 @@ function AdvancedFilters({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {localizeUiCatalog(SOURCES, tI18nComplete, PRODUCT_CATALOG_TRANSLATION_KEYS).map(
-                  (source) => (
-                    <SelectItem key={source.value || 'all'} value={source.value || 'all'}>
-                      {source.label}
-                    </SelectItem>
-                  ),
-                )}
+                <SelectItem value="all">{tI18nComplete.raw('text36fe0f55b7f5')}</SelectItem>
+                {CREDENTIAL_KINDS.map((kind) => (
+                  <SelectItem key={kind} value={kind}>
+                    {tI18nComplete.raw(CREDENTIAL_LABEL_KEYS[kind])}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </FilterField>
@@ -861,6 +802,7 @@ function AuditRow({
       : event.actor_type === 'anonymous'
         ? tI18nComplete.raw('texte7a8aa2df7e5')
         : 'Unknown');
+  const via = credentialVia(event, (key) => tI18nComplete.raw(key) as string);
   const scopeLabel =
     projectName ?? (event.project_id ? `Project ${event.project_id.slice(0, 8)}` : 'Account');
 
@@ -894,7 +836,7 @@ function AuditRow({
               <div className="flex min-w-0 items-center gap-2">
                 <span className="text-foreground truncate text-sm font-medium">{action.title}</span>
                 {action.detail ? (
-                  <code className="bg-muted/50 text-muted-foreground truncate rounded px-1.5 py-0.5 font-mono text-xs">
+                  <code className="bg-muted/50 text-muted-foreground truncate rounded-sm px-1.5 py-0.5 font-mono text-xs">
                     {action.detail}
                   </code>
                 ) : null}
@@ -935,10 +877,9 @@ function AuditRow({
                 {(event.authoritative_source ?? event.source ?? '').replace('_', ' ')}
               </Badge>
             ) : null}
-            {event.client_reported_source ? (
-              <Badge variant="muted" size="xs" className="capitalize">
-                {tI18nComplete.raw('texta273a74aed9f')}{' '}
-                {event.client_reported_source.replace('_', ' ')}
+            {via ? (
+              <Badge variant="muted" size="xs">
+                {tI18nComplete.raw('text2ed8b8066255')} {via}
               </Badge>
             ) : null}
           </div>
@@ -1004,8 +945,8 @@ function AuditRow({
                 <Detail label={tI18nComplete.raw('texte511470b21a9')} value={event.project_id} />
                 <Detail label={tI18nComplete.raw('textcb9ac5c561da')} value={event.session_id} />
                 <Detail
-                  label={tI18nComplete.raw('text5a26f4425c82')}
-                  value={event.opencode_session_id ?? null}
+                  label={tI18nComplete.raw('text92fbc8484002')}
+                  value={event.runtime_session_id ?? event.opencode_session_id ?? null}
                 />
                 <Detail
                   label={tI18nComplete.raw('textef54a62ae880')}
@@ -1229,8 +1170,8 @@ function JsonPane({ label, data }: { label: string; data: unknown }) {
       </div>
       <CopyOverlay code={code}>
         {/* The capped scroller sits inside the overlay so the copy button stays
-            pinned while the JSON scrolls. `HighlightedCode` hardcodes
-            `text-sm leading-[1.65]` on its own `<code>`; a `[&_code]:` selector
+            pinned while the JSON scrolls. `HighlightedCode` hardcodes its own
+            text size and line height on its `<code>`; a `[&_code]:` selector
             is one specificity step above that class, so this pane's smaller type
             wins without `!important`. */}
         <div className="max-h-64 overflow-auto p-3 [&_code]:text-xs [&_code]:leading-relaxed">

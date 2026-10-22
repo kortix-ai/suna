@@ -2,6 +2,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and } from 'drizzle-orm';
 import { tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
+import { readJsonObject } from '../../shared/http-body';
 import { TunnelErrorCode } from 'agent-tunnel';
 import { executeTunnelRpc } from '../core/rpc-core';
 import { getTunnelReadContext } from './auth';
@@ -34,7 +35,7 @@ export function createRpcRouter() {
       responses: {
         // Opaque agent RPC result — shape depends on the relayed method.
         200: json(z.object({ result: z.any() }), 'The relayed RPC result'),
-        // 403 here carries a permission-required envelope (requestId), not a plain error.
+        // 403 = the capability was not approved at pairing (re-pair to allow it).
         ...errors(400, 401, 403, 404, 429, 500, 502, 504),
       },
     }),
@@ -42,8 +43,11 @@ export function createRpcRouter() {
       const { accountId, ownerClause } = await getTunnelReadContext(c);
       const tunnelId = c.req.param('tunnelId');
 
-      const body = await c.req.json();
-      const { method, params = {} } = body;
+      const body = await readJsonObject(c);
+      const { method = '', params = {} } = body as {
+        method?: string;
+        params?: Record<string, unknown>;
+      };
 
       // Ownership / existence: scoped to the caller's account (personal or team).
       // The shared core then handles rate-limit / capability / permission /
@@ -70,12 +74,12 @@ export function createRpcRouter() {
         return c.json({ result: outcome.result });
       }
       switch (outcome.kind) {
-        case 'permission_required':
+        case 'capability_not_approved':
           return c.json(
             {
-              error: 'Permission required',
+              error: 'computer_capability_not_approved',
               code: TunnelErrorCode.PERMISSION_DENIED,
-              requestId: outcome.requestId,
+              capability: outcome.capability,
               message: outcome.message,
             },
             403,

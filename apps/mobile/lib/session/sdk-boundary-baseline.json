@@ -1,0 +1,6 @@
+[
+  {
+    "violation": "host-kortix-network\tlib/network/use-online-status.ts\tAPI_URL.replace(/\\/v1\\/?$/, '') || API_URL",
+    "reason": "Reachability probe: an unauthenticated HEAD of the API origin, where any HTTP status means online. It reads no Kortix data and must not ride the SDK's auth, retry or 401 refresh."
+  }
+]

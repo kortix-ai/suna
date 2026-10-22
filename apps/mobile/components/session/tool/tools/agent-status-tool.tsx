@@ -75,15 +75,15 @@ function TaskStatusRow({ row, first, onOpen }: { row: TaskRow; first: boolean; o
   );
 }
 
-export function AgentStatusTool({ part, defaultOpen, forceOpen }: ToolProps) {
-  const status = partStatus(part);
-  const output = partOutput(part);
+export function AgentStatusTool({ call, defaultOpen, forceOpen }: ToolProps) {
+  const status = partStatus(call);
+  const output = partOutput(call);
   const { enabled: navigationEnabled, openSession } = useToolNavigation();
   const model = useMemo(() => agentStatusModel({ status, output }), [status, output]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={StackIcon}
       trigger={{ title: model.title }}
       badge={model.badge}
@@ -109,7 +109,5 @@ export function AgentStatusTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('agent_status', AgentStatusTool);
 ToolRegistry.register('agent-status', AgentStatusTool);
-ToolRegistry.register('agent_task_list', AgentStatusTool);
 ToolRegistry.register('agent-task-list', AgentStatusTool);

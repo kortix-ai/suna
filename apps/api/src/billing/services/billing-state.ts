@@ -26,9 +26,8 @@
  * - `no_account`      — no credit row at all (account setup incomplete).
  *
  * Rule of thumb this module exists to enforce (the lesson from PR #5141):
- * never infer "has a subscription" from `tier_key`. `tier_key` stays `free` for
- * plenty of paying accounts, and `per_seat` stays set long after a subscription
- * is cancelled.
+ * never infer "has a subscription" from `tier_key`. A stored paid tier can
+ * outlive its subscription, and a comped account pays nothing.
  */
 
 import { MINIMUM_CREDIT_FOR_RUN, isPaidTier } from './tier-facts';
@@ -93,7 +92,6 @@ export interface BillingSnapshot {
   /** False when there is no `credit_accounts` row for the account at all. */
   exists: boolean;
   balance: number;
-  billingModel?: string | null;
   tier?: string | null;
   subscriptionId?: string | null;
   subscriptionStatus?: string | null;
@@ -190,9 +188,8 @@ export function hasLiveSubscription(snapshot: BillingSnapshot): boolean {
 /**
  * "Is this account on a plan?" — the single question every surface used to
  * answer for itself. True for any account that has ever had a subscription row
- * (a lapsed Team account is a customer with a billing problem, NOT a prospect)
- * and for any paid tier. Deliberately does NOT look at `billing_model`:
- * `per_seat` is set at migration time and survives cancellation.
+ * (a lapsed paid account is a customer with a billing problem, NOT a prospect)
+ * and for any paid tier.
  */
 function hasPlan(snapshot: BillingSnapshot): boolean {
   if (!snapshot.exists) return false;
@@ -242,20 +239,11 @@ export function billingStateAllowsRun(state: BillingState): boolean {
   return state === 'active';
 }
 
-/**
- * Whether the account's problem is fixed by adding credits (top-up) rather
- * than by subscribing. Drives which CTA/modal every blocked surface shows.
- */
-export function billingStateNeedsTopUp(state: BillingState): boolean {
-  return state === 'out_of_credits' || state === 'payment_failed';
-}
-
 /** Build a snapshot from a `credit_accounts` row (or its absence). */
 export function billingSnapshotFromAccount(
   account:
     | {
         balance?: unknown;
-        billingModel?: string | null;
         tier?: string | null;
         stripeSubscriptionId?: string | null;
         stripeSubscriptionStatus?: string | null;
@@ -268,7 +256,6 @@ export function billingSnapshotFromAccount(
   return {
     exists: true,
     balance: Number(account.balance ?? 0) || 0,
-    billingModel: account.billingModel ?? null,
     tier: account.tier ?? null,
     subscriptionId: account.stripeSubscriptionId ?? null,
     subscriptionStatus: account.stripeSubscriptionStatus ?? null,

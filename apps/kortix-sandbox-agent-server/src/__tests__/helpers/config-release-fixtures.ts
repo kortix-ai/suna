@@ -6,9 +6,10 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { ConfigReleaseDescriptor, ConfigReleaseFile } from '../../config-release/descriptor'
+import type { ConfigReleaseDescriptor, ConfigReleaseFile, ConfigReleaseSnapshot } from '@/services/config-provider/descriptor'
 
 export function git(cwd: string, ...args: string[]): string {
   const r = spawnSync('git', args, { cwd, encoding: 'utf8' })
@@ -43,11 +44,14 @@ export interface BuiltRelease {
   archive: Buffer
 }
 
-/** The API's release builder, run against a real repository. */
+/**
+ * The API's release builder, run against a real repository: the commit's whole
+ * tree, with `configDir` naming OpenCode's config dir inside it.
+ */
 export function buildRelease(
   repo: string,
   commit: string,
-  configDir: string,
+  configDir: string | null,
   opts: {
     projectId?: string
     governance?: string | null
@@ -55,7 +59,7 @@ export function buildRelease(
     agentRepoint?: { from: string | null; to: string | null; applied: boolean; reason: string | null }
   } = {},
 ): BuiltRelease {
-  const tree = git(repo, 'rev-parse', `${commit}:${configDir}`)
+  const tree = git(repo, 'rev-parse', `${commit}^{tree}`)
   const listed = spawnSync('git', ['-C', repo, 'ls-tree', '-r', '-z', tree], { encoding: 'buffer' })
   const files: ConfigReleaseFile[] = []
   for (const row of listed.stdout.toString('utf8').split('\0').filter(Boolean)) {
@@ -73,7 +77,7 @@ export function buildRelease(
   const etag = governanceEtag(governance)
   const projectId = opts.projectId ?? 'proj-1'
   const descriptor: ConfigReleaseDescriptor = {
-    format: 'config-release-v1',
+    format: 'config-release-v2',
     release_id: createHash('sha256').update(`${tree}:${etag ?? ''}`).digest('hex'),
     mode: 'follow-base',
     source_commit: commit,
@@ -85,16 +89,51 @@ export function buildRelease(
     compiled_governance_etag: etag,
     agent_repoint: opts.agentRepoint ?? null,
     reason: null,
+    snapshot: null,
   }
   return { descriptor, archive }
 }
 
+/**
+ * The project snapshot of `commit`, as the API's producer ships it: the
+ * checked-out working tree plus `.git`, `tar.gz`, served from the fake
+ * storage under `key`. Returns the descriptor's `snapshot` block.
+ */
+export function serveSnapshot(api: FakeApi, repo: string, commit: string, key = `snapshot-${commit}`): ConfigReleaseSnapshot {
+  const dir = mkdtempSync(join(tmpdir(), 'kortix-snapshot-'))
+  try {
+    git(tmpdir(), 'clone', '-q', `file://${repo}`, dir)
+    git(dir, 'checkout', '-q', commit)
+    // The producer ships no hooks, and the box's tar guard refuses them.
+    rmSync(join(dir, '.git', 'hooks'), { recursive: true, force: true })
+    const env = { ...process.env, COPYFILE_DISABLE: '1' }
+    const bytes = spawnSync('tar', ['-czf', '-', '-C', dir, '.'], { encoding: 'buffer', env, maxBuffer: 1 << 28 }).stdout
+    const entries = spawnSync('tar', ['-tzf', '-'], { input: bytes, encoding: 'utf8', maxBuffer: 1 << 28 })
+      .stdout.split('\n')
+      .filter(Boolean).length
+    api.archives.set(key, bytes)
+    return {
+      url: `${api.storageUrl}/snapshots/${key}?X-Amz-Signature=signed`,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      bytes: bytes.length,
+      entries,
+      expires_at: new Date(Date.now() + 900_000).toISOString(),
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 export interface FakeApi {
   url: string
+  /** The fake object store: presigned URLs point here. */
+  storageUrl: string
   /** Every descriptor request: its body and Authorization header. */
   descriptorRequests: Array<{ body: unknown; authorization: string | null; path: string }>
   archiveRequests: Array<{ authorization: string | null; path: string }>
   storageRequests: Array<{ authorization: string | null; path: string }>
+  /** Store objects by path (a published descriptor), served before any archive. */
+  storageObjects: Map<string, Buffer>
   /** What the next descriptor request answers. */
   respond: (next: { status?: number; json?: unknown }) => void
   /** Archives by config tree ID. */
@@ -112,6 +151,7 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
     descriptorRequests: [] as FakeApi['descriptorRequests'],
     archiveRequests: [] as FakeApi['archiveRequests'],
     storageRequests: [] as FakeApi['storageRequests'],
+    storageObjects: new Map<string, Buffer>(),
     archives: new Map<string, Buffer>(),
     redirectToStorage: false,
     archiveOverride: null as { status: number; json: unknown } | null,
@@ -121,6 +161,8 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
     fetch(req) {
       const url = new URL(req.url)
       state.storageRequests.push({ authorization: req.headers.get('authorization'), path: url.pathname })
+      const object = state.storageObjects.get(url.pathname)
+      if (object) return new Response(object)
       const tree = url.pathname.split('/').pop()!
       const body = state.archives.get(tree)
       return body ? new Response(body) : new Response('missing', { status: 404 })
@@ -155,6 +197,7 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
   })
   return {
     url: `http://127.0.0.1:${api.port}/v1`,
+    storageUrl: `http://127.0.0.1:${storage.port}`,
     get descriptorRequests() {
       return state.descriptorRequests
     },
@@ -167,6 +210,7 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
     respond: (value) => {
       next = value
     },
+    storageObjects: state.storageObjects,
     archives: state.archives,
     get redirectToStorage() {
       return state.redirectToStorage
@@ -188,9 +232,9 @@ export function startFakeApi(token = 'sandbox-token'): FakeApi {
 }
 
 /**
- * The API's answer when the `config_releases` feature flag is off for the
- * project, or platform-wide (spec, "Feature flag"). Exactly what
- * `requireFeatureFlag` emits.
+ * The answer of an API from before config releases graduated, with the
+ * `config_releases` flag off for the project. Exactly what that API's
+ * `requireFeatureFlag` emitted.
  */
 export const FEATURE_DISABLED = {
   status: 403,
@@ -205,4 +249,23 @@ export const FEATURE_DISABLED = {
 export function serveRelease(api: FakeApi, release: BuiltRelease): void {
   if (release.descriptor.config_tree_id) api.archives.set(release.descriptor.config_tree_id, release.archive)
   api.respond({ status: 200, json: release.descriptor })
+}
+
+/**
+ * Publish `release` in the fake store, as the API does when a base ref moves,
+ * and return the `KORTIX_CONFIG_RELEASE` value session create signs for it.
+ */
+export function publishRelease(api: FakeApi, release: BuiltRelease, opts: { expiresInMs?: number } = {}): string {
+  const id = release.descriptor.release_id!
+  const tree = release.descriptor.config_tree_id!
+  api.storageObjects.set(`/releases/${id}.json`, Buffer.from(JSON.stringify(release.descriptor)))
+  api.archives.set(tree, release.archive)
+  const env = {
+    release_id: id,
+    source_commit: release.descriptor.source_commit,
+    descriptor_url: `${api.storageUrl}/releases/${id}.json?X-Amz-Signature=signed`,
+    archive_url: `${api.storageUrl}/signed/${tree}?X-Amz-Signature=signed`,
+    expires_at: new Date(Date.now() + (opts.expiresInMs ?? 900_000)).toISOString(),
+  }
+  return Buffer.from(JSON.stringify(env)).toString('base64')
 }

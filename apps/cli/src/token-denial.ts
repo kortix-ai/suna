@@ -1,5 +1,5 @@
-import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { clientFromAuth } from './api/client.ts';
+import { type Auth } from './api/auth.ts';
+import { clientFromAuth, type ApiErrorCredential } from './api/client.ts';
 import {
   cachedTokenIdentity,
   formatGrantList,
@@ -25,11 +25,17 @@ import { C } from './style.ts';
 
 interface RecordedDenial {
   status: number;
-  hostArg?: string;
   /** The server's verdict reason and action (spec 2026-09-22 §4). Absent on
    *  an older server; the hint then falls back to the manifest remedy. */
   code?: string;
   action?: string;
+  /** The credential the refused request carried (host + token, memory only).
+   *  The footer resolves the identity FROM it. The active host's identity is a
+   *  DIFFERENT credential — inside a sandbox it is the injected session token
+   *  — and naming that sent the customer looking at an unrelated token row
+   *  (KRTX-1564). Absent only for a refusal recorded before the client could
+   *  tag it; the footer then names nothing rather than the wrong credential. */
+  credential?: ApiErrorCredential;
 }
 
 /** The fields of a 403 body the hint reads. */
@@ -40,21 +46,30 @@ export interface DenialDetail {
 
 let denial: RecordedDenial | null = null;
 
+/** The session's workspace runs without the project repository. A workspace
+ *  policy, not a token scope: no kortix_permissions entry changes it. */
+export const SESSION_REPOSITORY_ACCESS_DENIED = 'session_repository_access_denied';
+const REPOSITORY_DENIAL_MESSAGE = 'session workspace does not allow repository access';
+
 /**
  * Note that a call was refused. Recorded rather than printed inline because
  * `surfaceApiError` is synchronous and resolving the identity may need a
  * request; the footer is emitted once, from the CLI's async tail.
  */
-export function recordPermissionDenial(status: number, hostArg?: string, detail?: DenialDetail): void {
+export function recordPermissionDenial(
+  status: number,
+  detail?: DenialDetail,
+  credential?: ApiErrorCredential,
+): void {
   if (status !== 401 && status !== 403) return;
   // Keep the FIRST denial: a command that probes several projects reports the
   // one that actually stopped it, not the last probe to fail.
   if (denial) return;
   denial = {
     status,
-    ...(hostArg ? { hostArg } : {}),
     ...(typeof detail?.code === 'string' ? { code: detail.code } : {}),
     ...(typeof detail?.action === 'string' ? { action: detail.action } : {}),
+    ...(credential ? { credential } : {}),
   };
 }
 
@@ -62,8 +77,15 @@ export function recordPermissionDenial(status: number, hostArg?: string, detail?
 export function denialDetailFromBody(body: unknown): DenialDetail {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
   const record = body as Record<string, unknown>;
+  // Servers before the typed code send the workspace denial as a bare message.
+  const code =
+    typeof record.code === 'string'
+      ? record.code
+      : record.message === REPOSITORY_DENIAL_MESSAGE || record.error === REPOSITORY_DENIAL_MESSAGE
+        ? SESSION_REPOSITORY_ACCESS_DENIED
+        : undefined;
   return {
-    ...(typeof record.code === 'string' ? { code: record.code } : {}),
+    ...(code ? { code } : {}),
     ...(typeof record.action === 'string' ? { action: record.action } : {}),
   };
 }
@@ -84,15 +106,22 @@ function agentFixLine(agent: string, pending: RecordedDenial): string {
       // A route that refuses every agent session outright (e.g. granting a
       // secret to an agent). No kortix_permissions entry unlocks it.
       return 'agent sessions cannot do this — a person with project access must do this';
+    case undefined:
     case 'agent_scope_insufficient':
       return (
         `add ${actionText} to ${C.cyan}agents.${agent}.kortix_permissions${C.reset}` +
         `${C.dim} in kortix.yaml, then merge${C.reset}`
       );
+    case 'CR_AGENT_GOVERNANCE_CHANGE':
+      // Servers before the permissions-only model refuse every agent merge of
+      // an agents/triggers change. No grant unlocks it there.
+      return 'this server lets only a person merge a change request that changes agents or triggers — ask a person to merge it';
     default:
+      // Any other code is not a grant miss: never send the agent to edit
+      // kortix.yaml for a refusal no grant can fix.
       return (
-        `add the action to ${C.cyan}agents.${agent}.kortix_permissions${C.reset}` +
-        `${C.dim} in kortix.yaml, then merge${C.reset}`
+        `refused with ${C.cyan}${pending.code}${C.reset} — read the error above; ` +
+        `${C.cyan}kortix whoami --token-only${C.reset} shows this session's permissions`
       );
   }
 }
@@ -102,19 +131,27 @@ export function resetPermissionDenial(): void {
   denial = null;
 }
 
-async function resolveIdentity(auth: Auth): Promise<TokenIdentity | null> {
-  const cached = cachedTokenIdentity(auth.token);
-  if (cached) return cached;
+async function resolveIdentity(credential: ApiErrorCredential): Promise<TokenIdentity | null> {
+  // Live first, WITH THE REFUSED CREDENTIAL: the session grant is re-derived
+  // on every prompt, so a cached identity can print `granted all` while the
+  // server already enforces less.
+  const auth: Auth = {
+    api_base: credential.host,
+    token: credential.token,
+    user_id: '',
+    user_email: '',
+    account_id: '',
+    logged_in_at: '',
+  };
   try {
     // The client records the identity for us (api/client.ts captureIdentity),
-    // so this both answers now and warms the host line for the next command.
+    // so this both answers now and warms the cache for the next command.
     await clientFromAuth(auth).get<MeResponse>('/accounts/me');
   } catch {
     // The token may be dead (401) or the network down. A stale entry still
-    // names the agent, which is the point.
-    return cachedTokenIdentity(auth.token, { allowStale: true });
+    // names the credential, which is the point.
   }
-  return cachedTokenIdentity(auth.token, { allowStale: true });
+  return cachedTokenIdentity(credential.token, { allowStale: true });
 }
 
 /**
@@ -128,19 +165,26 @@ export async function printPermissionDenialIdentity(): Promise<void> {
   const pending = denial;
   denial = null;
   if (!pending) return;
-  const auth = pending.hostArg ? loadAuthForHost(pending.hostArg) : loadAuth();
-  if (!auth?.token) return;
+  // No refused credential on the record → nothing this footer can name
+  // honestly. The active host's identity belongs to a DIFFERENT credential;
+  // printing it here is exactly the KRTX-1564 bug.
+  if (!pending.credential) return;
 
   let identity: TokenIdentity | null;
   try {
-    identity = await resolveIdentity(auth);
+    identity = await resolveIdentity(pending.credential);
   } catch {
     return;
   }
   if (!identity) return;
 
   const lines = [`  ${C.dim}acting as ${C.reset}${C.bold}${tokenKindLabel(identity)}${C.reset}`];
-  if (identity.agent) {
+  if (pending.code === SESSION_REPOSITORY_ACCESS_DENIED) {
+    // Two layers: the token's scopes allowed the call; the workspace policy refused it.
+    if (identity.agent) lines.push(`  ${C.dim}token     ${C.reset}scopes ${formatGrantList(identity.permissions)} (not the cause)`);
+    lines.push(`  ${C.dim}workspace ${C.reset}repository access denied: this session runs without the project repository`);
+    lines.push(`  ${C.dim}fix       ${C.reset}start a session with repository access, or ask a person with project access to do this`);
+  } else if (identity.agent) {
     lines.push(`  ${C.dim}granted   ${C.reset}${formatGrantList(identity.permissions)}`);
     lines.push(`  ${C.dim}fix       ${C.reset}${agentFixLine(identity.agent, pending)}`);
   } else if (identity.userEmail) {

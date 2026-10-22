@@ -3,7 +3,10 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 import * as realTiers from '../../billing/services/tiers';
 
 let modelAccess = { disabledProviders: [] as string[], disabledModels: [] as string[] };
-mock.module('../../repositories/project-model-access', () => ({ getProjectModelAccess: async () => modelAccess }));
+mock.module('../../repositories/project-model-access', () => ({
+  getProjectModelAccess: async () => modelAccess,
+  getProjectGatewayResolution: async () => ({ access: modelAccess, pooledEnabled }),
+}));
 
 let tierByAccount: Record<string, string> = {};
 const getAccountTier = mock(async (accountId: string) => tierByAccount[accountId] ?? 'pro');
@@ -15,7 +18,7 @@ mock.module('../../billing/services/entitlements', () => ({
   getAccountTier,
   getCachedAccountTier: getAccountTier,
   accountMayUseManagedModels: async (accountId: string) =>
-    !realTiers.accountIsFreeTierForModels(await getAccountTier(accountId)),
+    realTiers.tierGrantsAllModels(await getAccountTier(accountId)),
 }));
 
 const config: Record<string, unknown> = {};
@@ -30,20 +33,26 @@ let resolvedSecret: string | null = null;
 let secretsByName: Record<string, string | null> = {};
 let resolvedSecrets: Array<{ identifier: string; value: string }> = [];
 let pooledEnabled = false;
-let pooledSecrets: { configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: Array<{ secretId: string; label: string; value: string }> } = { configured: false, coolingDown: false, secrets: [] };
-let defaultCodexSecret: { secretId: string; label: string; value: string } | null = null;
-mock.module('../../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => pooledEnabled }));
+let flagHelperCalls = 0;
+type PooledSecret = { secretId: string; label: string; value: string | null; updatedAt?: Date };
+let pooledSecrets: { configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: PooledSecret[] } = { configured: false, coolingDown: false, secrets: [] };
+let defaultCodexSecret: PooledSecret | null = null;
+mock.module('../../feature-flags/for-project', () => ({
+  projectFeatureFlagEnabled: async () => { flagHelperCalls += 1; return pooledEnabled; },
+}));
 const resolveSessionProviderSecrets = mock(async (_input: unknown) => pooledSecrets);
 const resolveDefaultCodexAccountSecret = mock(async (..._args: unknown[]) => defaultCodexSecret);
 // The project's shared ChatGPT accounts an unconfigured session falls back to.
 // Which accounts are usable is the real SQL's job (integration-usable-gateway-
 // secrets.test.ts); here the stub answers what that read returned.
-let sharedSecrets: { coolingDown: boolean; retryAfterSeconds?: number; secrets: Array<{ secretId: string; label: string; value: string }> } = { coolingDown: false, secrets: [] };
+let sharedSecrets: { coolingDown: boolean; retryAfterSeconds?: number; secrets: PooledSecret[] } = { coolingDown: false, secrets: [] };
 const resolveProjectSharedProviderSecrets = mock(async (_input: unknown) => sharedSecrets);
 mock.module('../../secrets/account-resource', () => ({
   resolveSessionProviderSecrets,
   resolveDefaultCodexAccountSecret,
   resolveProjectSharedProviderSecrets,
+  encryptAccountSecret: (_accountId: string, value: string) => value,
+  decryptAccountSecret: (_accountId: string, value: string) => value,
 }));
 const getProjectSecretValueForConsumer = mock(async (input: { name: string }) => {
   const name = input.name;
@@ -69,8 +78,9 @@ const resolveCodexCredential = mock(async () => {
 });
 // Account secrets whose OAuth refresh throws `CodexRefreshError`.
 let codexAccountRefreshFails = new Set<string>();
-const resolveCodexAccountCredential = mock(async (input: { value: string; secretId?: string }) => {
+const resolveCodexAccountCredential = mock(async (input: { value: string | null; secretId?: string }) => {
   if (input.secretId && codexAccountRefreshFails.has(input.secretId)) throw new CodexRefreshError('revoked');
+  if (!input.value) return null;
   const parsed = JSON.parse(input.value) as { openai?: { access?: string } };
   return parsed.openai?.access ? { access: parsed.openai.access } : null;
 });
@@ -116,8 +126,12 @@ mock.module('./descriptors', () => ({
 }));
 
 let catalogUpstream: { baseUrl?: string; envVar: string; kind: string } | null = null;
+let catalogUpstreamCalls: unknown[][] = [];
 mock.module('../models/provider-registry', () => ({
-  resolveCatalogUpstream: () => catalogUpstream,
+  resolveCatalogUpstream: (...args: unknown[]) => {
+    catalogUpstreamCalls.push(args);
+    return catalogUpstream;
+  },
 }));
 
 mock.module('../routing', () => ({
@@ -129,7 +143,7 @@ let knownManagedModelId: string | null = null;
 const managedModels = await import('../models/managed-models');
 mock.module('../models/managed-models', () => ({
   ...managedModels,
-  RUNTIME_MANAGED_MODELS: [],
+  managedLineup: () => [],
   getRuntimeManagedModel: (id: string) =>
     runtimeManagedModel?.id === id ? runtimeManagedModel : undefined,
   isRuntimeManagedModelId: (id: string) => runtimeManagedModel?.id === id,
@@ -150,6 +164,7 @@ function principal(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   pooledEnabled = false;
+  flagHelperCalls = 0;
   resolveSessionProviderSecrets.mockClear();
   pooledSecrets = { configured: false, coolingDown: false, secrets: [] };
   defaultCodexSecret = null;
@@ -160,7 +175,6 @@ beforeEach(() => {
   modelAccess = { disabledProviders: [], disabledModels: [] };
   for (const key of Object.keys(config)) delete config[key];
   Object.assign(config, {
-    LLM_GATEWAY_ENABLED: true,
     KORTIX_MANAGED_PROVIDER_ENABLED: true,
     KORTIX_BILLING_INTERNAL_ENABLED: true,
     LLM_GATEWAY_BYOK_FALLBACK_MODEL: 'anthropic/claude-sonnet-4.6',
@@ -183,7 +197,34 @@ beforeEach(() => {
   resolveCodexAccountCredential.mockClear();
 });
 
+describe('resolveCandidates — Platinum BYOK', () => {
+  test("a project's PLATINUM_API_KEY reaches Platinum inference directly, billed by Platinum, with the session id", async () => {
+    catalogUpstream = { baseUrl: 'https://api.platinum.dev/v1/inference', envVar: 'PLATINUM_API_KEY', kind: 'openai-compat' };
+    secretsByName = { PLATINUM_API_KEY: 'pt_live_project' };
+    const [candidate, ...rest] = await resolveCandidates(principal({ sessionId: 'session-1' }), 'platinum/deepseek-v4.1-flash');
+    expect(rest).toEqual([]);
+    expect(candidate).toMatchObject({
+      provider: 'platinum', kind: 'openai-compat', baseUrl: 'https://api.platinum.dev/v1/inference',
+      apiKey: 'pt_live_project', billingMode: 'none', markup: 0, resolvedModel: 'deepseek-v4.1-flash',
+      headers: { 'x-platinum-session': 'session-1' },
+    });
+  });
+});
+
 describe('resolveCandidates — selected account key pool', () => {
+  test.each([
+    [false, undefined, 'provider_not_connected'],
+    [true, 11, 'provider_pool_rate_limited'],
+  ] as const)('selected BYOK pool coolingDown=%s refuses with %s', async (coolingDown, retryAfterSeconds, code) => {
+    pooledEnabled = true;
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    resolvedSecrets = [{ identifier: 'legacy', value: 'legacy-value' }];
+    pooledSecrets = { configured: true, coolingDown, retryAfterSeconds, secrets: [] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6'))
+      .rejects.toMatchObject({ code, retryAfterSeconds });
+    expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+  });
+
   test('the flag preserves legacy keys until enabled, then selects only granted pool keys', async () => {
     catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
     resolvedSecrets = [{ identifier: 'legacy', value: 'legacy-value' }];
@@ -199,12 +240,29 @@ describe('resolveCandidates — selected account key pool', () => {
     expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['key-a', 'key-b']);
   });
 
+  // The key exists; the agent may not use it. Its own code, so a client never
+  // offers "connect a key" for a fix that lives in the agent's secret grant.
   test('a narrowed agent grant blocks the pool at use time', async () => {
     catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
     pooledEnabled = true;
     pooledSecrets = { configured: true, coolingDown: false, secrets: [{ secretId: 'id-a', label: 'A', value: 'key-a' }] };
     await expect(resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: [] } }),
-      'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ code: 'provider_not_connected' });
+      'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ code: 'agent_grant_excludes' });
+  });
+
+  // A key this API cannot decrypt is unusable, not a server error.
+  test('a pooled key that cannot be read is skipped, and a pool of only such keys is not connected', async () => {
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'unreadable', label: 'Old', value: null },
+      { secretId: 'id-b', label: 'B', value: 'key-b' },
+    ] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((candidate) => candidate.poolSecretId)).toEqual(['id-b']);
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [{ secretId: 'unreadable', label: 'Old', value: null }] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6'))
+      .rejects.toMatchObject({ code: 'provider_not_connected' });
   });
 
   test('an exhausted selected pool returns a rate-limit reason and never uses a legacy key', async () => {
@@ -214,6 +272,19 @@ describe('resolveCandidates — selected account key pool', () => {
     pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 7, secrets: [] };
     await expect(resolveCandidates(principal({ sessionId: 'session-1' }),
       'anthropic/claude-sonnet-4.6')).rejects.toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: 7 });
+  });
+});
+
+describe('resolveCandidates — one projects-row read per resolve', () => {
+  test('the pooled flag never pays its own projects-row query', async () => {
+    pooledEnabled = true;
+    catalogUpstream = { baseUrl: 'https://api.anthropic.com/v1', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic' };
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'id-a', label: 'A', value: 'key-a' },
+    ] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'anthropic/claude-sonnet-4.6');
+    expect(candidates.map((candidate) => candidate.poolSecretId)).toEqual(['id-a']);
+    expect(flagHelperCalls).toBe(0);
   });
 });
 
@@ -269,6 +340,79 @@ describe('resolveCandidates — BYOK billing', () => {
     expect(candidates).toHaveLength(2);
     expect(candidates.map((candidate) => candidate.credentialRef)).toEqual(['primary', 'secondary']);
     expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['sk-primary', 'sk-secondary']);
+  });
+
+  // OpenCode Go refuses a request without `x-opencode-session` (MissingSessionID)
+  // and asks clients to name themselves in User-Agent. Routing is per model:
+  // its MiniMax/Grok models use other wire formats than its GLM models.
+  test('BYOK OpenCode: resolves each model transport and sends the session header', async () => {
+    catalogUpstream = { baseUrl: 'https://opencode.ai/zen/go/v1', envVar: 'OPENCODE_API_KEY', kind: 'anthropic' };
+    catalogUpstreamCalls = [];
+    resolvedSecret = 'sk-go';
+    const p = principal({ sessionId: 'ses_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'opencode-go/minimax-m3');
+    expect(catalogUpstreamCalls[0]).toEqual(['opencode-go', 'minimax-m3']);
+    expect(candidate).toMatchObject({ kind: 'anthropic', resolvedModel: 'minimax-m3' });
+    expect(candidate?.headers?.['x-opencode-session']).toBe('ses_1');
+    expect(candidate?.headers?.['User-Agent']).toMatch(/^Kortix/);
+  });
+
+  test('BYOK OpenCode without a session keys the session header to the API key', async () => {
+    catalogUpstream = { baseUrl: 'https://opencode.ai/zen/go/v1', envVar: 'OPENCODE_API_KEY', kind: 'openai-compat' };
+    resolvedSecret = 'sk-go';
+    const p = principal({ keyId: 'key_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'opencode-go/glm-5.3');
+    expect(candidate?.headers?.['x-opencode-session']).toBe('key_1');
+  });
+
+  // "Sign in with OpenCode" stores a Console login as the provider's key. Its
+  // token is refused on /zen/go/v1 and accepted on /inference/go/<format>/v1.
+  test('BYOK OpenCode Console login: inference endpoint, workspace header, refreshable', async () => {
+    catalogUpstream = { baseUrl: 'https://opencode.ai/zen/go/v1', envVar: 'OPENCODE_GO_API_KEY', kind: 'anthropic' };
+    resolvedSecrets = [{ identifier: 'OPENCODE_GO_API_KEY', secretId: 'secret-login', value: JSON.stringify({
+      type: 'oauth', access: 'st_access', refresh: 'rt_refresh', expires: Date.now() + 10 * 86_400_000, orgId: 'wrk_1',
+    }) } as { identifier: string; value: string }];
+    const p = principal({ sessionId: 'ses_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'opencode-go/minimax-m3');
+    resolvedSecrets = [];
+    expect(candidate).toMatchObject({
+      baseUrl: 'https://opencode.ai/inference/go/anthropic/v1', apiKey: 'st_access',
+      credentialRef: 'secret-login', refreshableCredential: true, billingMode: 'none',
+    });
+    expect(candidate?.headers).toMatchObject({ 'x-opencode-org-id': 'wrk_1', 'x-opencode-session': 'ses_1' });
+  });
+
+  test('BYOK OpenCode Console login that cannot renew asks for a new sign-in', async () => {
+    catalogUpstream = { baseUrl: 'https://opencode.ai/zen/go/v1', envVar: 'OPENCODE_GO_API_KEY', kind: 'openai-compat' };
+    resolvedSecrets = [{ identifier: 'OPENCODE_GO_API_KEY', secretId: 'secret-login', value: JSON.stringify({
+      type: 'oauth', access: 'st_access', refresh: 'rt_dead', expires: Date.now() - 1000,
+    }) } as { identifier: string; value: string }];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: 'invalid_grant' }), { status: 400 })) as unknown as typeof fetch;
+    const p = principal({ sessionId: 'ses_1' });
+    tierByAccount[p.accountId] = 'pro';
+    try {
+      await expect(resolveCandidates(p, 'opencode-go/glm-5.3')).rejects.toMatchObject({ code: 'provider_reauth_required' });
+    } finally {
+      globalThis.fetch = realFetch;
+      resolvedSecrets = [];
+    }
+  });
+
+  test('BYOK providers other than OpenCode get no OpenCode headers', async () => {
+    catalogUpstream = { baseUrl: 'https://api.groq.com/openai/v1', envVar: 'GROQ_API_KEY', kind: 'openai-compat' };
+    resolvedSecret = 'sk-groq';
+    const p = principal({ sessionId: 'ses_1' });
+    tierByAccount[p.accountId] = 'pro';
+
+    const [candidate] = await resolveCandidates(p, 'groq/llama-4');
+    expect(candidate?.headers).toBeUndefined();
   });
 
   test('BYOK descriptor carries the model capability flags for the transport', async () => {
@@ -430,6 +574,22 @@ describe('resolveCandidates — BYOK billing', () => {
 });
 
 describe('resolveCandidates — managed model tier gating', () => {
+  test('managed descriptor carries the conversation as x-platinum-session, without reading project keys', async () => {
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
+    const candidates = await resolveCandidates(principal({ sessionId: 'ses_1' }), 'glm-5.3-flash');
+    expect(candidates).toEqual([{
+      provider: 'kortix-managed', kind: 'bedrock', baseUrl: 'https://managed.test',
+      apiKey: 'm', billingMode: 'credits', markup: 1, resolvedModel: 'glm-5.3-flash',
+      headers: { 'x-platinum-session': 'ses_1' },
+    }]);
+    expect(resolveProjectSecretsForConsumer).not.toHaveBeenCalled();
+    // A gateway API-key call has no session: the key, then the user, stands in.
+    expect((await resolveCandidates(principal({ keyId: 'key_1' }), 'glm-5.3-flash'))[0]?.headers)
+      .toEqual({ 'x-platinum-session': 'key_1' });
+    expect((await resolveCandidates(principal(), 'glm-5.3-flash'))[0]?.headers)
+      .toEqual({ 'x-platinum-session': 'u1' });
+  });
+
   test('freeModelsOnly principal throws plan_upgrade_required before any tier lookup', async () => {
     runtimeManagedModel = { id: 'glm-5.3-flash' };
 
@@ -439,15 +599,31 @@ describe('resolveCandidates — managed model tier gating', () => {
     expect(getAccountTier).not.toHaveBeenCalled();
   });
 
+  test('a free-tier account is refused the platform default too', async () => {
+    config.LLM_GATEWAY_DEFAULT_MODEL = 'deepseek-v4.1-flash';
+    runtimeManagedModel = { id: 'deepseek-v4.1-flash' };
+
+    await expect(
+      resolveCandidates(principal({ freeModelsOnly: true }), 'deepseek-v4.1-flash'),
+    ).rejects.toMatchObject({ code: 'plan_upgrade_required' });
+  });
+
   // Both refusals keep the machine-readable `plan_upgrade_required`; clients
-  // branch on the code. The copy differs: a free plan is told to upgrade, a
-  // paid plan without managed models is told to bring a key, never to upgrade.
+  // branch on the code. The copy differs: an account with no plan is told to
+  // upgrade, a paid plan without managed models is told to bring a key, never
+  // to upgrade. Free gets no managed model.
   test.each([
     [
-      'a free account is told to upgrade',
+      'an account with no plan is told to upgrade',
+      'none',
+      '"glm-5.3-flash" requires a paid plan.',
+      'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.',
+    ],
+    [
+      'a Free account is told to upgrade',
       'free',
       '"glm-5.3-flash" requires a paid plan.',
-      'Upgrade your plan to use this model, or choose a model available on your current plan.',
+      'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.',
     ],
     [
       'a paid plan without managed models is told to bring a key',
@@ -467,10 +643,11 @@ describe('resolveCandidates — managed model tier gating', () => {
     });
   });
 
-  test('paid-tier account gets the managed candidates', async () => {
+  test('a pro account gets the managed candidates', async () => {
+    const tier = 'pro';
     runtimeManagedModel = { id: 'glm-5.3-flash' };
     const p = principal();
-    tierByAccount[p.accountId] = 'pro';
+    tierByAccount[p.accountId] = tier;
 
     const candidates = await resolveCandidates(p, 'glm-5.3-flash');
     expect(candidates).toHaveLength(1);
@@ -486,14 +663,103 @@ describe('resolveCandidates — managed model tier gating', () => {
       code: 'model_disabled_on_deployment',
     });
   });
+
+  // The evidence case (2026-09-28 sweep): a session pinned to an id known
+  // only because it's in RETIRED_MANAGED_MODEL_IDS — never in the Platinum
+  // lineup — must not collapse into the
+  // same "disabled on this deployment" message. Nothing is disabled; the id
+  // is gone. `grok-4.6` has no declared successor (managed-models.ts's
+  // LEGACY_MANAGED_IDS) — the message says so, without inventing one.
+  test('a retired managed model with no declared successor throws model_retired, distinct from model_disabled_on_deployment', async () => {
+    knownManagedModelId = 'grok-4.6';
+    runtimeManagedModel = undefined;
+
+    await expect(resolveCandidates(principal(), 'grok-4.6')).rejects.toMatchObject({
+      name: 'GatewayResolutionError',
+      code: 'model_retired',
+      message: 'The "grok-4.6" model was retired from Kortix\'s managed lineup.',
+    });
+  });
+
+  // `morph-dsv4flash`'s declared successor (`deepseek-v4-flash-0731`,
+  // managed-models.ts's LEGACY_MANAGED_IDS) is itself now retired, in favor of
+  // `deepseek-v4.1-flash`. `toWireModel`/`canonicalManagedModelId` resolve the
+  // WHOLE chain (2026-09-28's transitive-resolution fix, managed-models.test.ts),
+  // so `effectiveModel` here is already `deepseek-v4.1-flash` by the time
+  // resolution runs — this never reaches `model_retired` at all. It just
+  // works, transparently, the instant `deepseek-v4.1-flash` is servable.
 });
 
 describe('resolveCandidates — codex + unknown provider', () => {
+  // A project default saved before gpt-5.5 left the lineup kept pinning new
+  // sessions to it, and every turn died on ChatGPT's 400 (2026-10-16).
+  test('a slug the ChatGPT backend refuses is retired, even with a connected account', async () => {
+    pooledEnabled = true;
+    codexCredential = { access: 'legacy-token' };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5'))
+      .rejects.toMatchObject({ code: 'model_retired' });
+    expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    [false, undefined, 'provider_not_connected'],
+    [true, 13, 'provider_pool_rate_limited'],
+  ] as const)('selected Codex pool coolingDown=%s refuses with %s', async (coolingDown, retryAfterSeconds, code) => {
+    pooledEnabled = true;
+    codexCredential = { access: 'legacy-token' };
+    pooledSecrets = { configured: true, coolingDown, retryAfterSeconds, secrets: [] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol'))
+      .rejects.toMatchObject({ code, retryAfterSeconds });
+    expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+
+  // A rest longer than a rate limit is ChatGPT's plan limit (days). "Cooling
+  // down" and a 60 s retry told a prod Slack thread to try again in a minute.
+  test('a selected Codex pool resting for days says its usage limit and when it resets, with no retry', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 414_374, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
+    // No client retry hint, but the rest itself travels on for the gateway's route hold.
+    expect(refusal).toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: undefined, restSeconds: 414_374 });
+    // 414374 s is 4.8 days: rounded, not floored.
+    expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 5 days.');
+    expect(refusal.suggestion).toBe('Choose another model, or connect another ChatGPT account.');
+  });
+
+  // Dev showed "resets in 3 days" for a rest of 4 days less a few seconds.
+  test('a rest just under a whole number of days reads as that number', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: true, retryAfterSeconds: 4 * 86_400 - 30, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
+    expect(refusal.message).toBe('All selected ChatGPT connections reached their usage limit. The first resets in 4 days.');
+  });
+
+  test('every shared ChatGPT account resting for hours names the hours', async () => {
+    pooledEnabled = true;
+    sharedSecrets = { coolingDown: true, retryAfterSeconds: 3 * 3600 + 100, secrets: [] };
+    const refusal = await resolveCandidates(principal({ sessionId: 's', personalUserId: null }), 'codex/gpt-6').catch((e) => e);
+    expect(refusal.message).toBe('All ChatGPT connections shared with this project reached their usage limit. The first resets in 3 hours.');
+    expect(refusal.retryAfterSeconds).toBeUndefined();
+  });
+
+  test('selected Codex account descriptor retains its credential and pool references', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'selected', label: 'Selected', value: JSON.stringify({ openai: { access: 'oauth-token' } }) },
+    ] };
+    expect(await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol')).toEqual([{
+      provider: 'openai-codex', kind: 'openai-responses', baseUrl: 'https://codex.test',
+      apiKey: 'oauth-token', billingMode: 'none', markup: 0, resolvedModel: 'codex/gpt-6.1-sol',
+      credentialRef: 'selected', poolSecretId: 'selected', refreshableCredential: true,
+      headers: { session_id: 'session-1', conversation_id: 'session-1' },
+    }]);
+  });
+
   test('a shared project gateway key never borrows its creator’s personal ChatGPT account', async () => {
     pooledEnabled = true;
     codexCredential = { access: 'legacy-token' };
     defaultCodexSecret = { secretId: 'private', label: 'Private account', value: JSON.stringify({ openai: { access: 'private-token' } }) };
-    const candidates = await resolveCandidates(principal({ keyId: 'shared-project-key' }), 'codex/gpt-5.5');
+    const candidates = await resolveCandidates(principal({ keyId: 'shared-project-key' }), 'codex/gpt-6.1-sol');
     expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['legacy-token']);
   });
 
@@ -501,9 +767,35 @@ describe('resolveCandidates — codex + unknown provider', () => {
     pooledEnabled = true;
     codexCredential = { access: 'legacy-token' };
     defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }) };
-    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5');
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol');
     expect(candidates.map((candidate) => [candidate.credentialRef, candidate.apiKey])).toEqual([['mine', 'mine-token']]);
     expect(resolveCodexCredential).not.toHaveBeenCalled();
+  });
+
+  // The personal default skipped the rest a 429 recorded: every request went
+  // to ChatGPT again and was refused (dev, 2026-10-20).
+  test('a resting personal ChatGPT account is unavailable, with its rest, when nothing shared can serve', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }), restingSeconds: 180 } as PooledSecret;
+    const refusal = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol').catch((e) => e);
+    expect(refusal).toBeInstanceOf(GatewayResolutionError);
+    expect(refusal).toMatchObject({ code: 'provider_pool_rate_limited', retryAfterSeconds: undefined, restSeconds: 180 });
+    expect(refusal.message).toBe('Your ChatGPT connections reached their usage limit. The first resets in 3 minutes.');
+  });
+
+  test('a resting personal ChatGPT account yields to a ready shared account', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }), restingSeconds: 180 } as PooledSecret;
+    sharedSecrets = { coolingDown: false, secrets: [{ secretId: 'team', label: 'Team', value: JSON.stringify({ openai: { access: 'team-token' } }) }] };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol');
+    expect(candidates.map((candidate) => [candidate.credentialRef, candidate.apiKey])).toEqual([['team', 'team-token']]);
+  });
+
+  test('the personal ChatGPT account is a pool account, so a 429 records its rest', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }) };
+    const [candidate] = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol');
+    expect(candidate).toMatchObject({ credentialRef: 'mine', poolSecretId: 'mine' });
   });
 
   test('a selected ChatGPT pool uses separate OAuth accounts and never the project login', async () => {
@@ -513,16 +805,88 @@ describe('resolveCandidates — codex + unknown provider', () => {
       { secretId: 'account-a', label: 'Personal', value: JSON.stringify({ openai: { access: 'oauth-a' } }) },
       { secretId: 'account-b', label: 'Team', value: JSON.stringify({ openai: { access: 'oauth-b' } }) },
     ] };
-    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-5.5');
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol');
     expect(candidates.map((candidate) => [candidate.poolSecretId, candidate.apiKey])).toEqual([
       ['account-a', 'oauth-a'], ['account-b', 'oauth-b'],
     ]);
     expect(resolveCodexCredential).not.toHaveBeenCalled();
   });
 
+  test('a narrowed agent grant blocks a selected ChatGPT pool with its own code', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'account-a', label: 'Personal', value: JSON.stringify({ openai: { access: 'oauth-a' } }) },
+    ] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: ['GITHUB_TOKEN'] } }),
+      'codex/gpt-6.1-sol')).rejects.toMatchObject({ code: 'agent_grant_excludes' });
+    expect(resolveCodexAccountCredential).not.toHaveBeenCalled();
+  });
+
+  test('a narrowed agent grant blocks the personal ChatGPT default with its own code', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }) };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: [] } }),
+      'codex/gpt-6.1-sol')).rejects.toMatchObject({ code: 'agent_grant_excludes' });
+    expect(resolveCodexAccountCredential).not.toHaveBeenCalled();
+  });
+
+  test('an agent grant that names CODEX_AUTH_JSON reaches the personal ChatGPT default', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'My account', value: JSON.stringify({ openai: { access: 'mine-token' } }) };
+    const candidates = await resolveCandidates(principal({ sessionId: 'session-1', agentGrant: { env: ['codex_auth_json'] } }),
+      'codex/gpt-6.1-sol');
+    expect(candidates.map((candidate) => candidate.apiKey)).toEqual(['mine-token']);
+  });
+
+  // The error names the account to reconnect: a member with several ChatGPT
+  // accounts cannot otherwise tell which one stopped working.
+  test('a selected ChatGPT account whose login fails is named in the error', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'work', label: 'ChatGPT · Work', value: JSON.stringify({ openai: {} }) },
+    ] };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol')).rejects.toMatchObject({
+      code: 'provider_reauth_required',
+      message: 'The ChatGPT account "ChatGPT · Work" needs reconnection.',
+      suggestion: 'Reconnect it in your ChatGPT accounts, or select another granted connection in session settings.',
+    });
+  });
+
+  test('several failing ChatGPT accounts are listed, three at most', async () => {
+    pooledEnabled = true;
+    pooledSecrets = { configured: true, coolingDown: false, secrets: ['A', 'B', 'C', 'D', 'E'].map((label) => ({
+      secretId: `id-${label}`, label, value: null,
+    })) };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol')).rejects.toMatchObject({
+      code: 'provider_reauth_required',
+      message: '5 selected ChatGPT accounts need reconnection: "A", "B", "C" and 2 more.',
+      suggestion: 'Reconnect them in your ChatGPT accounts, or select another granted connection in session settings.',
+    });
+  });
+
+  test('the personal ChatGPT default names its account', async () => {
+    pooledEnabled = true;
+    defaultCodexSecret = { secretId: 'mine', label: 'ChatGPT · Me', value: null };
+    await expect(resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol')).rejects.toMatchObject({
+      code: 'provider_reauth_required',
+      message: 'Your ChatGPT account "ChatGPT · Me" needs reconnection.',
+      suggestion: 'Reconnect it in your ChatGPT accounts, then retry.',
+    });
+  });
+
+  test('the credential resolver receives the version each account was read at', async () => {
+    pooledEnabled = true;
+    const readAt = new Date('2026-09-25T10:00:00.123Z');
+    pooledSecrets = { configured: true, coolingDown: false, secrets: [
+      { secretId: 'account-a', label: 'A', value: JSON.stringify({ openai: { access: 'oauth-a' } }), updatedAt: readAt },
+    ] };
+    await resolveCandidates(principal({ sessionId: 'session-1' }), 'codex/gpt-6.1-sol');
+    expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ secretId: 'account-a', updatedAt: readAt }));
+  });
+
   test('codex provider without a projectId throws provider_not_connected', async () => {
     await expect(
-      resolveCandidates(principal({ projectId: undefined }), 'codex/gpt-5.5'),
+      resolveCandidates(principal({ projectId: undefined }), 'codex/gpt-6.1-sol'),
     ).rejects.toMatchObject({ code: 'provider_not_connected' });
   });
 
@@ -530,13 +894,13 @@ describe('resolveCandidates — codex + unknown provider', () => {
     codexCredential = { access: 'codex-token' };
     const candidates = await resolveCandidates(
       principal({ accountId: 'acct-1', sessionId: 'session-1' }),
-      'codex/gpt-5.5',
+      'codex/gpt-6.1-sol',
     );
     expect(candidates).toEqual([
       expect.objectContaining({
         provider: 'openai-codex',
         apiKey: 'codex-token',
-        resolvedModel: 'codex/gpt-5.5',
+        resolvedModel: 'codex/gpt-6.1-sol',
       }),
     ]);
     expect(resolveCodexCredential).toHaveBeenCalledWith('p1', 'u1', undefined, {
@@ -549,14 +913,14 @@ describe('resolveCandidates — codex + unknown provider', () => {
 
   test('codex with no resolvable credential throws provider_not_connected', async () => {
     codexCredential = null;
-    await expect(resolveCandidates(principal(), 'codex/gpt-5.5')).rejects.toMatchObject({
+    await expect(resolveCandidates(principal(), 'codex/gpt-6.1-sol')).rejects.toMatchObject({
       code: 'provider_not_connected',
     });
   });
 
   test('codex whose session expired (CodexRefreshError) throws provider_reauth_required', async () => {
     codexThrows = true;
-    await expect(resolveCandidates(principal(), 'codex/gpt-5.5')).rejects.toMatchObject({
+    await expect(resolveCandidates(principal(), 'codex/gpt-6.1-sol')).rejects.toMatchObject({
       code: 'provider_reauth_required',
     });
   });
@@ -600,7 +964,7 @@ test('a prospective ChatGPT pool validates through the same member-bound resolve
     { secretId: 'shared', label: 'Shared', value: JSON.stringify({ openai: { access: 'shared-token' } }) },
   ] };
   const actor = principal();
-  const candidates = await resolveCandidates(actor, 'codex/gpt-5.5', { providerSecretPools: { codex: ['shared'] } });
+  const candidates = await resolveCandidates(actor, 'codex/gpt-6.1-sol', { providerSecretPools: { codex: ['shared'] } });
   expect(candidates.map(candidate => candidate.poolSecretId)).toEqual(['shared']);
   expect(resolveSessionProviderSecrets).toHaveBeenCalledWith({ accountId: actor.accountId, projectId: actor.projectId, userId: actor.userId, grantUserId: actor.userId, providerId: 'codex', name: 'CODEX_AUTH_JSON', secretIds: ['shared'] });
   expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ sessionId: null }));
@@ -610,7 +974,7 @@ test('an explicitly empty prospective pool never borrows the legacy project cred
   pooledEnabled = true;
   codexCredential = { access: 'legacy-token' };
   pooledSecrets = { configured: true, coolingDown: false, secrets: [] };
-  await expect(resolveCandidates(principal(), 'codex/gpt-5.5', { providerSecretPools: { codex: [] } })).rejects.toMatchObject({ code: 'provider_not_connected' });
+  await expect(resolveCandidates(principal(), 'codex/gpt-6.1-sol', { providerSecretPools: { codex: [] } })).rejects.toMatchObject({ code: 'provider_not_connected' });
   expect(resolveCodexCredential).not.toHaveBeenCalled();
 });
 
@@ -706,6 +1070,30 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
       .rejects.toMatchObject({ code: 'provider_reauth_required' });
   });
 
+  test('the shared accounts whose login fails are named, with who can fix them', async () => {
+    pooledEnabled = true;
+    const unattended = principal({ sessionId: 's', personalUserId: null });
+    sharedSecrets = { coolingDown: false, secrets: [account('Team A', null)] };
+    await expect(resolveCandidates(unattended, 'codex/gpt-6')).rejects.toMatchObject({
+      code: 'provider_reauth_required',
+      message: 'The ChatGPT account "Team A" shared with this project needs reconnection.',
+      suggestion: 'The member who connected it must reconnect it, then retry.',
+    });
+    sharedSecrets = { coolingDown: false, secrets: [account('Team A', null), account('Team B', null)] };
+    await expect(resolveCandidates(unattended, 'codex/gpt-6')).rejects.toMatchObject({
+      message: '2 ChatGPT accounts shared with this project need reconnection: "Team A", "Team B".',
+      suggestion: 'The members who connected them must reconnect them, then retry.',
+    });
+  });
+
+  test('the credential resolver receives the version each shared account was read at', async () => {
+    pooledEnabled = true;
+    const readAt = new Date('2026-09-28T08:00:00.000Z');
+    sharedSecrets = { coolingDown: false, secrets: [{ ...account('team', 'team-token'), updatedAt: readAt }] };
+    await resolveCandidates(principal({ sessionId: 's', personalUserId: null }), 'codex/gpt-6');
+    expect(resolveCodexAccountCredential).toHaveBeenCalledWith(expect.objectContaining({ secretId: 'team', updatedAt: readAt }));
+  });
+
   test('every shared account expired but a legacy connection exists: the legacy connection serves', async () => {
     pooledEnabled = true;
     codexCredential = { access: 'legacy-token' };
@@ -726,7 +1114,7 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     sharedSecrets = { coolingDown: false, secrets: [account('team', 'team-token')] };
     const actor = principal({ sessionId: 's', personalUserId: null, agentGrant: { env: ['OTHER'] } });
     await expect(resolveCandidates(actor, 'codex/gpt-6')).rejects.toMatchObject({
-      code: 'provider_not_connected', message: 'The running agent cannot use ChatGPT connections.',
+      code: 'agent_grant_excludes', message: 'The running agent cannot use ChatGPT connections.',
     });
     expect(resolveCodexAccountCredential).not.toHaveBeenCalled();
     // The legacy project connection it could use before this change still serves it.
@@ -739,7 +1127,7 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     sharedSecrets = { coolingDown: true, retryAfterSeconds: 9, secrets: [] };
     const actor = principal({ sessionId: 's', personalUserId: null, agentGrant: { env: ['OTHER'] } });
     await expect(resolveCandidates(actor, 'codex/gpt-6')).rejects.toMatchObject({
-      code: 'provider_not_connected', message: 'The running agent cannot use ChatGPT connections.',
+      code: 'agent_grant_excludes', message: 'The running agent cannot use ChatGPT connections.',
     });
   });
 
@@ -776,5 +1164,16 @@ describe('resolveCandidates — codex, unconfigured session, project-shared Chat
     const candidates = await resolveCandidates(principal({ sessionId: 's' }), 'codex/gpt-6');
     expect(candidates.map((c) => c.apiKey)).toEqual(['legacy-token']);
     expect(resolveProjectSharedProviderSecrets).not.toHaveBeenCalled();
+  });
+});
+
+describe('Free plan recovery guidance', () => {
+  test('names the absence of managed access instead of promising another free model', async () => {
+    runtimeManagedModel = { id: 'glm-5.3-flash' };
+    await expect(resolveCandidates(principal({ freeModelsOnly: true }), 'glm-5.3-flash'))
+      .rejects.toMatchObject({
+        code: 'plan_upgrade_required',
+        suggestion: 'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.',
+      });
   });
 });

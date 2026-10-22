@@ -40,6 +40,8 @@ export async function scimAuth(c: Context, next: Next) {
     actorUserId: null,
     actorType: 'system',
     authoritativeSource: 'scim',
+    credentialKind: 'scim_token',
+    credentialId: result.tokenId,
     authMethod: { kind: 'scim_token', token_id: result.tokenId },
   });
 

@@ -23,12 +23,13 @@
  * ordinary typing is exact and only the overlay case is an estimate.
  */
 
-import { type MessageWithParts, classifyTurn } from '@kortix/sdk';
-import { useSession } from '@kortix/sdk/react';
+import { type SessionHealthResult, type SessionLogMessage, classifySessionLogMessage } from '@kortix/sdk';
+import { useSession, useSessionLogThread } from '@kortix/sdk/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ResolvedHost } from '../../auth/hosts.ts';
 import { hintFor } from '../../keymap.ts';
+import { kortix } from '../../kortix.ts';
 import { extractUrls, extractUrlsFromScreen } from '../../lib/links.ts';
 import { glyph, theme } from '../../theme.ts';
 import { Panel, type ToastKind } from '../../ui/index.ts';
@@ -40,11 +41,11 @@ import type { AppCommandId } from './composer/slash-commands.ts';
 import { SessionPrompts, Transcript } from './transcript/index.ts';
 
 /** Every assistant text part and tool output in the transcript, joined by newlines. */
-export function transcriptText(messages: readonly MessageWithParts[]): string {
+export function transcriptText(messages: readonly SessionLogMessage[]): string {
   const texts: string[] = [];
   for (const message of messages) {
-    if (message.info.role !== 'assistant') continue;
-    for (const part of classifyTurn(message).parts) {
+    if (message.role !== 'assistant') continue;
+    for (const part of classifySessionLogMessage(message).parts) {
       if (part.kind === 'text') texts.push(part.text);
       else if (part.kind === 'tool' && part.tool.outputText) texts.push(part.tool.outputText);
     }
@@ -53,7 +54,7 @@ export function transcriptText(messages: readonly MessageWithParts[]): string {
 }
 
 /** Every port-forwardable string in an assistant turn's text + tool output. */
-export function portsInTranscript(messages: readonly MessageWithParts[]): number[] {
+export function portsInTranscript(messages: readonly SessionLogMessage[]): number[] {
   return detectForwardablePorts(transcriptText(messages));
 }
 
@@ -136,6 +137,11 @@ export interface SessionViewProps {
   onPortsApi?: (api: UsePortsResult) => void;
   /** Links panel (`Alt+L`) rows, hoisted for the same reason. Newest first. */
   onLinks?: (rows: LinkRow[]) => void;
+  /** What the runtime serves (`/kortix/health` `capabilities`), hoisted so the
+   *  app can refuse `Alt+O` attach. Null until read. */
+  onCapabilities?: (capabilities: readonly string[] | null) => void;
+  /** Test seam for the one `/kortix/health` read. */
+  readHealth?: (projectId: string, sessionId: string) => Promise<SessionHealthResult>;
   /**
    * Test seam. Production passes nothing and the real `useSession` runs; a test
    * passes a fake so the focus and layout contract can be asserted without an
@@ -161,11 +167,34 @@ export function SessionView({
   onToast,
   onPortsApi,
   onLinks,
+  onCapabilities,
+  readHealth = readSessionHealth,
   useSessionImpl = useSession,
 }: SessionViewProps) {
   // The one call. Every child reads this object; none of them calls a hook.
   const session = useSessionImpl(projectId, sessionId);
   const [metrics, setMetrics] = useState<ComposerMetrics>({ rows: 1, overlayOpen: false });
+
+  // What this runtime serves (a pi session has no project commands and no
+  // attach): one `/kortix/health` read once the runtime is up. Null — not read
+  // yet, or the read failed — hides nothing.
+  const [capabilities, setCapabilities] = useState<readonly string[] | null>(null);
+  useEffect(() => {
+    setCapabilities(null);
+    if (!session.switched) return;
+    let live = true;
+    readHealth(projectId, sessionId)
+      .then((probe) => {
+        if (live) setCapabilities(probe.health?.capabilities ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [projectId, sessionId, session.switched, readHealth]);
+  useEffect(() => {
+    onCapabilities?.(capabilities);
+  }, [capabilities, onCapabilities]);
 
   const ports = usePorts({ host, projectId, sessionId, onToast });
   useEffect(() => {
@@ -177,10 +206,11 @@ export function SessionView({
   // every message-shape change; `ports.notice` is a no-op for a port already
   // known, so this is cheap in practice and never double-forwards.
   // biome-ignore lint/correctness/useExhaustiveDependencies(ports.notice): stable (see `usePorts`'s memoized return); only a transcript change should retrigger this scan.
+  const thread = useSessionLogThread(session);
   useEffect(() => {
-    const found = portsInTranscript(session.messages as unknown as MessageWithParts[]);
+    const found = portsInTranscript(thread?.messages ?? []);
     if (found.length) ports.notice(found, 'transcript');
-  }, [session.messages]);
+  }, [thread]);
 
   // Links panel rows. A ref, not state: nothing in this column renders them,
   // and a state update per terminal repaint would re-render the transcript.
@@ -197,11 +227,8 @@ export function SessionView({
   );
   // biome-ignore lint/correctness/useExhaustiveDependencies(noticeLinks): only a transcript change should retrigger this scan.
   useEffect(() => {
-    noticeLinks(
-      extractUrls(transcriptText(session.messages as unknown as MessageWithParts[])),
-      'transcript',
-    );
-  }, [session.messages]);
+    noticeLinks(extractUrls(transcriptText(thread?.messages ?? [])), 'transcript');
+  }, [thread]);
 
   const onMetrics = useCallback((next: ComposerMetrics) => {
     setMetrics((current) =>
@@ -286,6 +313,7 @@ export function SessionView({
               onToast={onToast}
               onRequestFocus={focusComposer}
               onMetrics={onMetrics}
+              capabilities={capabilities}
             />
           </box>
         </Panel>
@@ -309,6 +337,11 @@ export function SessionView({
       ) : null}
     </>
   );
+}
+
+/** `GET /kortix/health` through the session handle. Async so a throw is a rejection. */
+async function readSessionHealth(projectId: string, sessionId: string): Promise<SessionHealthResult> {
+  return kortix().session(projectId, sessionId).health();
 }
 
 /** The terminal's share of a wide layout: 40%, floored so a shell stays usable. */

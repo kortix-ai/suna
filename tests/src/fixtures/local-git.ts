@@ -9,7 +9,10 @@ export interface LocalGitRepository {
   dispose(): Promise<void>;
 }
 
-export async function createLocalGitRepository(name: string, opts?: { allowAllSecrets?: boolean }): Promise<LocalGitRepository> {
+export async function createLocalGitRepository(
+  name: string,
+  opts?: { allowAllSecrets?: boolean; allowAllConnectors?: boolean },
+): Promise<LocalGitRepository> {
   const root = await mkdtemp(join(tmpdir(), "ke2e-git-"));
   const repoUrl = join(root, "remote.git");
   const work = join(root, "work");
@@ -21,7 +24,11 @@ export async function createLocalGitRepository(name: string, opts?: { allowAllSe
     await writeFile(join(work, "README.md"), `# ${name}\n`);
     await writeFile(
       join(work, "kortix.yaml"),
-      `kortix_version: 2\nproject:\n  name: ${name}\ndefault_agent: kortix\nagents:\n  kortix:${opts?.allowAllSecrets ? '\n    secrets: all' : ' {}'}\n`,
+      `kortix_version: 2\nproject:\n  name: ${name}\ndefault_agent: kortix\nagents:\n  kortix:${
+        opts?.allowAllSecrets || opts?.allowAllConnectors
+          ? `${opts.allowAllSecrets ? '\n    secrets: all' : ''}${opts.allowAllConnectors ? '\n    connectors: all' : ''}`
+          : ' {}'
+      }\n`,
     );
     await git(["-C", work, "add", "README.md", "kortix.yaml"]);
     await git(["-C", work, "commit", "-m", "seed local e2e repository"]);
@@ -69,18 +76,33 @@ async function git(args: string[]): Promise<void> {
  * `repo_url` is not an HTTP origin. Returns null on a deployed target, whose
  * managed repository is already an HTTP origin.
  */
-export async function serveFixtureRepoLocally(
-  ctx: { env: { target: string } },
-  db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> },
-  projectId: string,
+/**
+ * The `git http-backend` answer closure: spawn git for one request, forward the
+ * body by hand, and answer only after BOTH the request body has ended and git
+ * has exited. The socket semantics are load-bearing:
+ *
+ * - `git receive-pack` can exit before the proxy's chunked body is fully
+ *   read (the terminator arrives late under load). Answering then lets the
+ *   API's fetch reuse this keep-alive socket while the server is still
+ *   parsing the old body: the next request fails parsing with a bare 400
+ *   before this handler ever runs (GH-17 / AGP-10 flakes, 2026-09-23).
+ * - Forward the body by hand rather than `req.pipe(child.stdin)`: once git
+ *   exits early, pipe() detaches, and Bun's node:http then never emits
+ *   'end' for the rest of the body. An explicit 'data' listener keeps the
+ *   request flowing and discards what git no longer reads.
+ * - git http-backend explains every refusal on STDERR. Discarding it is
+ *   why three CI failures of this flow (2026-09-21 run 35625012282,
+ *   2026-09-22 run 35701044493, and one re-run in between) produced a
+ *   bare `400` and no cause: the proxy forwards the upstream status, so
+ *   the failing request reads as "the API returned 400" when the API is
+ *   only relaying what this server said. Keep it, and print it with the
+ *   request that earned it.
+ */
+function answerGitHttpBackend(
+  repo: string,
   label: string,
-): Promise<import('node:http').Server | null> {
-  if (ctx.env.target !== 'local') return null;
-  const { createServer } = await import('node:http');
-  const { spawn } = await import('node:child_process');
-  const { rows } = await db.query('SELECT repo_url FROM kortix.projects WHERE project_id = $1', [projectId]);
-  const repo = rows[0].repo_url as string;
-  const localGitServer = createServer((req, res) => {
+): import('node:http').RequestListener {
+  return (req, res) => {
     const url = new URL(req.url!, 'http://localhost');
     const child = spawn('git', ['http-backend'], { env: { ...process.env,
       GIT_PROJECT_ROOT: repo, GIT_HTTP_EXPORT_ALL: '1',
@@ -88,12 +110,6 @@ export async function serveFixtureRepoLocally(
       REQUEST_METHOD: req.method!, CONTENT_TYPE: req.headers['content-type'] ?? '',
       REMOTE_USER: 'ke2e', REMOTE_ADDR: '127.0.0.1' } });
     const chunks: Buffer[] = [];
-    // Answer only after BOTH the request body has ended and git has exited.
-    // `git receive-pack` can exit before the proxy's chunked body is fully
-    // read (the terminator arrives late under load). Answering then lets the
-    // API's fetch reuse this keep-alive socket while the server is still
-    // parsing the old body: the next request fails parsing with a bare 400
-    // before this handler ever runs (GH-17 / AGP-10 flakes, 2026-09-23).
     let requestEnded = false;
     let childClosed = false;
     let answered = false;
@@ -103,10 +119,6 @@ export async function serveFixtureRepoLocally(
       answered = true;
       answer();
     };
-    // Forward the body by hand rather than `req.pipe(child.stdin)`: once git
-    // exits early, pipe() detaches, and Bun's node:http then never emits
-    // 'end' for the rest of the body. An explicit 'data' listener keeps the
-    // request flowing and discards what git no longer reads.
     let stdinOpen = true;
     child.stdin.on('error', () => {});
     child.stdin.on('close', () => {
@@ -126,13 +138,6 @@ export async function serveFixtureRepoLocally(
       answerWhenDone();
     });
     child.stdout.on('data', (chunk: Buffer) => chunks.push(chunk));
-    // git http-backend explains every refusal on STDERR. Discarding it is
-    // why three CI failures of this flow (2026-09-21 run 35625012282,
-    // 2026-09-22 run 35701044493, and one re-run in between) produced a
-    // bare `400` and no cause: the proxy forwards the upstream status, so
-    // the failing request reads as "the API returned 400" when the API is
-    // only relaying what this server said. Keep it, and print it with the
-    // request that earned it.
     let stderr = '';
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
@@ -168,7 +173,26 @@ export async function serveFixtureRepoLocally(
       }
       res.end(body.subarray(split + 4));
     };
-  });
+  };
+}
+
+/**
+ * Serve a local fixture project's bare repository over HTTP through Git's CGI
+ * backend, and point the project at it. The API proxy speaks HTTP; a filesystem
+ * `repo_url` is not an HTTP origin. Returns null on a deployed target, whose
+ * managed repository is already an HTTP origin.
+ */
+export async function serveFixtureRepoLocally(
+  ctx: { env: { target: string } },
+  db: { query: (sql: string, params?: unknown[]) => Promise<{ rows: any[] }> },
+  projectId: string,
+  label: string,
+): Promise<import('node:http').Server | null> {
+  if (ctx.env.target !== 'local') return null;
+  const { createServer } = await import('node:http');
+  const { rows } = await db.query('SELECT repo_url FROM kortix.projects WHERE project_id = $1', [projectId]);
+  const repo = rows[0].repo_url as string;
+  const localGitServer = createServer(answerGitHttpBackend(repo, label));
   await new Promise<void>((resolve) => localGitServer.listen(0, '127.0.0.1', resolve));
   const port = (localGitServer.address() as import('node:net').AddressInfo).port;
   await db.query('UPDATE kortix.projects SET repo_url = $1 WHERE project_id = $2',

@@ -9,8 +9,9 @@ import { ClientAbortError, UpstreamHttpError, isUnknownParameterRejection } from
 import { type FetchImpl, callUpstream } from '../http';
 import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/request';
 import { resolveTransportKind } from '../transports/route-kind';
-import { clampRetryAfterSeconds } from './error-response';
+import { MAX_RELAYED_RETRY_AFTER_SECONDS, clampRetryAfterSeconds, providerClientErrorBody } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
+import { type CircuitBreakers, breakerKey, tripsBreaker, upstreamBreakers } from './circuit-breaker';
 import { publicUpstreamError, shownModel, shownProvider } from './public-identity';
 
 /**
@@ -27,13 +28,16 @@ import { publicUpstreamError, shownModel, shownProvider } from './public-identit
  * 1. A variant of the same candidate: without `reasoning_effort` when a Bedrock
  *    model refuses that parameter, or the `global.` then `us.` inference
  *    profile when Bedrock refuses a bare model id.
- * 2. The next candidate of the same model: the next pool key after a 429, or
- *    the next provider when the candidates opted into `failover`.
+ * 2. The next candidate of the same model: the next pool key after a 429.
  * 3. The first candidate of the next fallback model, when the failure matches
- *    `fallbackOn`. A BYOK request never falls back to a Kortix-billed model.
+ *    `fallbackOn`. A BYOK request (an own key or ChatGPT plan, billing `none`)
+ *    falls back to a Kortix-billed model only when the project chose that chain
+ *    and `admitCharge` confirms the account can pay; a platform-supplied chain
+ *    never turns it into a Kortix charge.
  *
- * A client that left stops the plan. The final failure is returned unchanged
- * for the caller to present.
+ * A plan can start at a fallback model: the caller passes `unavailable` when the
+ * routed model had no usable upstream. A client that left stops the plan. The
+ * final failure is returned unchanged for the caller to present.
  */
 
 export interface DispatchPlan {
@@ -42,8 +46,20 @@ export interface DispatchPlan {
   candidates: readonly UpstreamDescriptor[];
   fallbackModels?: readonly string[];
   fallbackOn?: ModelFallbackCondition;
+  /**
+   * The project set `fallbackModels` itself (Customize → Gateway → Routing), so
+   * its Kortix-billed models may serve a BYOK request. False for the platform's
+   * inherited route.
+   */
+  fallbackChosenByProject?: boolean;
   /** Generation defaults for a model. Applied per attempt, so a fallback model gets its own. */
   defaultsFor?: (model: string) => ModelGenerationDefaults | undefined;
+  /**
+   * The routed model when it had no usable upstream and the plan starts at one
+   * of its fallback models (`model`). Its failure is recorded first, and
+   * fallback models are labelled against it.
+   */
+  unavailable?: { model: string; failure: GatewayAttemptFailure };
 }
 
 export interface DispatchContext {
@@ -54,6 +70,16 @@ export interface DispatchContext {
   /** Resolves a fallback model's candidates. Called only when the plan reaches that model. */
   resolveCandidates: (model: string) => Promise<UpstreamDescriptor[]>;
   notePoolRateLimit?: (secretId: string, seconds: number) => Promise<void>;
+  /** `GatewayHooks.refreshCredential`, bound to the request's principal. */
+  refreshCredential?: (descriptor: UpstreamDescriptor) => Promise<UpstreamDescriptor | null>;
+  /**
+   * Whether the account can pay for a Kortix-billed fallback of a BYOK request.
+   * The caller's wallet gate ran for the BYOK model alone, which bills nothing.
+   * Without it, a BYOK request never reaches a Kortix-billed model.
+   */
+  admitCharge?: () => Promise<boolean>;
+  /** Upstream circuit breakers; the gateway process's own by default. */
+  breakers?: CircuitBreakers;
 }
 
 interface DispatchProgress {
@@ -124,7 +150,7 @@ export function withUpstreamHeadersTimeout(
 
 /** The provider's own error, relayed with its status and a `retry-after` when it sent one. */
 export function rawProviderError(error: UpstreamHttpError): Response {
-  return new Response(error.body || JSON.stringify({ error: { message: error.message } }), {
+  return new Response(providerClientErrorBody(error.status, error.body || JSON.stringify({ error: { message: error.message } })), {
     status: error.status,
     headers: {
       'content-type': 'application/json',
@@ -137,9 +163,11 @@ export function rawProviderError(error: UpstreamHttpError): Response {
 const MAX_FALLBACK_MODELS = 8;
 
 // 4xx statuses that mean "this upstream will not serve you now" rather than
-// "the request is wrong". A `transient` fallback chain moves past these, every
+// "the request is wrong": the model is unavailable (404 — OpenAI's
+// `model_not_found`, Anthropic's `not_found_error`), the key or endpoint is
+// limited (402, 403, 429). A `transient` fallback chain moves past these, every
 // 5xx, and every failure without an HTTP status (network, timeout).
-const LIMIT_STATUSES = new Set([402, 403, 429]);
+const LIMIT_STATUSES = new Set([402, 403, 404, 429]);
 
 // Cross-region inference profile prefixes to try, best first. `global.` serves
 // every commercial region; `us.` is the widest regional profile.
@@ -192,19 +220,26 @@ function isPoolPeer(head: UpstreamDescriptor, candidate: UpstreamDescriptor): bo
 }
 
 // Whether `candidate`, a later candidate of the same model, takes over after
-// `failure`. Failover candidates take any failure; pool keys take a 429.
+// `failure`. Pool keys take a 429, and a 401 from a login that stayed refused
+// after its refresh.
 function peerTakesOver(head: UpstreamDescriptor, candidate: UpstreamDescriptor, failure: Failure): boolean {
-  if (head.failover && candidate.failover) return true;
-  return isPoolPeer(head, candidate) && failure.status === 429;
+  if (!isPoolPeer(head, candidate)) return false;
+  return failure.status === 429 || (failure.status === 401 && Boolean(failure.attempt.descriptor.refreshableCredential));
 }
 
-function fallbackTakesOver(on: ModelFallbackCondition, failure: Failure): boolean {
+function refreshable(descriptor: UpstreamDescriptor, ctx: DispatchContext): boolean {
+  return Boolean(descriptor.refreshableCredential && ctx.refreshCredential);
+}
+
+/** Whether a fallback chain retrying on `on` moves past a failure with this status. */
+export function fallbackTakesOver(on: ModelFallbackCondition, failure: { status?: number }): boolean {
   if (on === 'any-error') return true;
   const { status } = failure;
   return status === undefined || status >= 500 || LIMIT_STATUSES.has(status);
 }
 
-function fallbackModelsOf(plan: DispatchPlan): string[] {
+/** The plan's fallback models in order: deduplicated, without the routed model, at most eight. */
+export function fallbackModelsOf(plan: Pick<DispatchPlan, 'model' | 'fallbackModels'>): string[] {
   const models = (plan.fallbackModels ?? []).filter(
     (model, index, all) =>
       typeof model === 'string' && model.length > 0 && model !== plan.model && all.indexOf(model) === index,
@@ -215,6 +250,71 @@ function fallbackModelsOf(plan: DispatchPlan): string[] {
 function errorText(error: unknown): string {
   if (error instanceof UpstreamHttpError) return `${error.message} ${error.body}`;
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A fallback model's candidates, as a request whose own model failed may use
+ * them. A BYOK request reaches a Kortix-billed candidate only through a chain
+ * the project chose, and only after `admitCharge` confirms the account can pay.
+ */
+export async function fallbackCandidates(
+  model: string,
+  input: {
+    /** The request's own model is an own key or ChatGPT plan (billing `none`). */
+    byok: boolean;
+    chosenByProject: boolean;
+    resolveCandidates: (model: string) => Promise<UpstreamDescriptor[]>;
+    admitCharge?: () => Promise<boolean>;
+    logger: GatewayLogger;
+    requestId: string;
+  },
+): Promise<UpstreamDescriptor[]> {
+  const { logger, requestId } = input;
+  let resolved: UpstreamDescriptor[];
+  try {
+    resolved = await input.resolveCandidates(model);
+  } catch (error) {
+    logger.warn(`[gateway] ${requestId}: fallback model ${model} is unavailable: ${errorText(error).slice(0, 300)}`);
+    return [];
+  }
+  if (!input.byok) return resolved;
+  const own = resolved.filter((candidate) => candidate.billingMode === 'none');
+  if (own.length === resolved.length) return resolved;
+  if (input.chosenByProject && input.admitCharge && (await input.admitCharge())) return resolved;
+  if (!own.length) {
+    const why = input.chosenByProject
+      ? 'the wallet gate did not admit a Kortix-billed model'
+      : 'a BYOK request does not fall back to a Kortix-billed model';
+    logger.warn(`[gateway] ${requestId}: fallback model ${model} skipped: ${why}`);
+  }
+  return own;
+}
+
+/** ChatGPT's plan limit window is a week; an account rests at most a week and a day. */
+const MAX_USAGE_LIMIT_REST_SECONDS = 8 * 24 * 60 * 60;
+
+/**
+ * Seconds until a ChatGPT plan limit (`usage_limit_reached`) resets, from its
+ * `resets_in_seconds` or `resets_at`. A pooled account rests that long: a
+ * 30 s rest made every request in the window pay one more refused call.
+ */
+async function usageLimitResetSeconds(failure: Failure): Promise<number | undefined> {
+  const text = failure.response
+    ? await failure.response.clone().text().catch(() => '')
+    : failure.error instanceof UpstreamHttpError ? failure.error.body : '';
+  let error: unknown;
+  try {
+    error = (JSON.parse(text) as { error?: unknown }).error;
+  } catch {
+    return undefined;
+  }
+  if (!error || typeof error !== 'object') return undefined;
+  const { type, resets_in_seconds: inSeconds, resets_at: at } = error as Record<string, unknown>;
+  if (type !== 'usage_limit_reached') return undefined;
+  const seconds =
+    typeof inSeconds === 'number' ? inSeconds : typeof at === 'number' ? at - Date.now() / 1000 : undefined;
+  if (seconds === undefined || !(seconds > 0)) return undefined;
+  return Math.min(MAX_USAGE_LIMIT_REST_SECONDS, Math.ceil(seconds));
 }
 
 function retryAfterOf(failure: Failure): string | null | undefined {
@@ -246,17 +346,19 @@ export async function dispatch(
   // provider does not pin a multi-MB multimodal body for the whole prefill.
   const retained: Record<string, unknown> | null =
     fallbackModels.length > 0 ||
+    refreshable(primary, ctx) ||
     bedrockBareModelId(primary) !== null ||
     (isBedrock(primary) && typeof firstBody.reasoning_effort === 'string') ||
     plan.candidates
       .slice(1)
-      .some((candidate) => (primary.failover ? candidate.failover : isPoolPeer(primary, candidate)))
+      .some((candidate) => isPoolPeer(primary, candidate))
       ? body
       : null;
   body = null;
 
-  const attemptFailures: GatewayAttemptFailure[] = [];
-  const candidatesTried: string[] = [];
+  const { unavailable } = plan;
+  const attemptFailures: GatewayAttemptFailure[] = unavailable ? [unavailable.failure] : [];
+  const candidatesTried: string[] = unavailable ? [`${unavailable.model}:${unavailable.failure.code}`] : [];
   let attempts = 0;
   let earliestPoolRetryAt = Infinity;
 
@@ -264,7 +366,7 @@ export async function dispatch(
     const { descriptor } = attempt;
     return [
       shownProvider(descriptor),
-      attempt.model !== plan.model ? attempt.model : null,
+      attempt.model !== (unavailable?.model ?? plan.model) ? attempt.model : null,
       descriptor.poolSecretId ?? null,
       attempt.profile ? descriptor.resolvedModel : null,
     ].filter(Boolean).join(':');
@@ -294,8 +396,10 @@ export async function dispatch(
   const notePoolRateLimit = async (failure: Failure): Promise<void> => {
     const secretId = failure.attempt.descriptor.poolSecretId;
     if (!secretId || failure.status !== 429) return;
-    const seconds = clampRetryAfterSeconds(retryAfterOf(failure)) ?? 30;
-    earliestPoolRetryAt = Math.min(earliestPoolRetryAt, Date.now() + seconds * 1000);
+    const seconds = (await usageLimitResetSeconds(failure)) ?? clampRetryAfterSeconds(retryAfterOf(failure)) ?? 30;
+    // OpenCode waits out a retry-after verbatim, so the client hears at most a minute.
+    const clientSeconds = Math.min(seconds, MAX_RELAYED_RETRY_AFTER_SECONDS);
+    earliestPoolRetryAt = Math.min(earliestPoolRetryAt, Date.now() + clientSeconds * 1000);
     if (!ctx.notePoolRateLimit) return;
     try {
       await ctx.notePoolRateLimit(secretId, seconds);
@@ -361,29 +465,35 @@ export async function dispatch(
     };
   };
 
-  const resolveFallback = async (fallbackModel: string): Promise<readonly UpstreamDescriptor[]> => {
-    let resolved: UpstreamDescriptor[];
+  const resolveFallback = (fallbackModel: string): Promise<readonly UpstreamDescriptor[]> =>
+    fallbackCandidates(fallbackModel, {
+      byok: primary.billingMode === 'none',
+      chosenByProject: Boolean(plan.fallbackChosenByProject),
+      resolveCandidates: ctx.resolveCandidates,
+      admitCharge: ctx.admitCharge,
+      logger,
+      requestId,
+    });
+
+  // One refresh per request: a login refused again after it is final.
+  let refreshTried = false;
+  const refreshedAttempt = async (failure: Failure): Promise<Attempt | null> => {
+    const { attempt } = failure;
+    if (failure.status !== 401 || refreshTried || !refreshable(attempt.descriptor, ctx)) return null;
+    refreshTried = true;
     try {
-      resolved = await ctx.resolveCandidates(fallbackModel);
+      const fresh = await ctx.refreshCredential!(attempt.descriptor);
+      return fresh ? { ...attempt, descriptor: fresh } : null;
     } catch (error) {
-      logger.warn(
-        `[gateway] ${requestId}: fallback model ${fallbackModel} is unavailable: ${errorText(error).slice(0, 300)}`,
-      );
-      return [];
+      logger.warn(`[gateway] ${requestId}: login refresh failed: ${errorText(error).slice(0, 300)}`);
+      return null;
     }
-    // A failed BYOK request must fail as BYOK; it never becomes a Kortix charge.
-    if (primary.billingMode !== 'none') return resolved;
-    const byok = resolved.filter((candidate) => candidate.billingMode === 'none');
-    if (resolved.length > byok.length && !byok.length) {
-      logger.warn(
-        `[gateway] ${requestId}: fallback model ${fallbackModel} skipped: a BYOK request does not fall back to a Kortix-billed model`,
-      );
-    }
-    return byok;
   };
 
   const nextAttempt = async (failure: Failure): Promise<Attempt | null> => {
     if (!retained) return null;
+    const refreshed = await refreshedAttempt(failure);
+    if (refreshed) return refreshed;
     const variant = variantAfter(failure);
     if (variant) return variant;
     const head = candidates[0]!;
@@ -419,14 +529,48 @@ export async function dispatch(
     };
   };
 
+  const breakers = ctx.breakers ?? upstreamBreakers;
   let attempt = first;
   for (;;) {
+    const key = breakerKey(attempt.descriptor, attempt.model);
+    if (!breakers.allow(key)) {
+      // The circuit is open: skip this upstream without an attempt, as a
+      // rate limit would (pool peers and fallback models take over). With
+      // nothing else to try, it is tried anyway.
+      const skipped: Failure = { attempt, status: 429, error: new Error('upstream circuit open') };
+      const next = await nextAttempt(skipped);
+      if (next) {
+        candidatesTried.push(`${label(attempt)}:circuit_open`);
+        attemptFailures.push({
+          attempt: attemptFailures.length + 1,
+          provider: shownProvider(attempt.descriptor),
+          routeModel: attempt.model,
+          resolvedModel: shownModel(attempt.descriptor, attempt.model),
+          stage: 'dispatch',
+          code: 'circuit_open',
+          message: 'Skipped: the upstream failed repeatedly and is cooling down.',
+        });
+        logger.warn(`[gateway] ${requestId}: ${attempt.descriptor.provider} circuit open for ${attempt.descriptor.resolvedModel ?? attempt.model}; trying ${label(next)}`);
+        attempt = next;
+        continue;
+      }
+    }
     const result = await run(attempt);
     if (result instanceof Response) {
+      breakers.success(key);
       const { descriptor, model: servedModel } = attempt;
       return { descriptor, model: servedModel, attempts, candidatesTried, attemptFailures, response: result };
     }
     if (result.error instanceof ClientAbortError || ctx.signal?.aborted) return finish(result);
+    if (tripsBreaker(result.status)) {
+      const state = breakers.failure(key, {
+        provider: attempt.descriptor.provider,
+        model: attempt.descriptor.resolvedModel ?? attempt.model,
+        reason: result.status === undefined ? 'network_error' : String(result.status),
+        publicListing: attempt.descriptor.billingMode !== 'none',
+      });
+      if (state === 'open') logger.warn(`[gateway] ${requestId}: ${attempt.descriptor.provider} circuit OPEN for ${attempt.descriptor.resolvedModel ?? attempt.model} (${result.status ?? 'network error'})`);
+    }
     await notePoolRateLimit(result);
     const next = await nextAttempt(result);
     if (!next) return finish(result);

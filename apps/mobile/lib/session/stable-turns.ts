@@ -1,47 +1,16 @@
 /**
  * Turn identity helpers for the session thread.
  *
- * `groupMessagesIntoTurns` builds a new object for every turn on each call.
- * A memoized turn row can only skip a render when its `turn` prop keeps the
- * same reference, so the thread reuses the previous turn object whenever its
- * messages did not change.
+ * `sessionLogTurns` keeps a turn's object while its messages and derived
+ * fields do, but returns a new array on every call. The list skips a render
+ * only when its `data` keeps the same reference.
  */
 
-import type { MessageWithParts, Turn } from '@/lib/opencode/types';
-
-function sameTurnContent(prev: Turn, next: Turn): boolean {
-  if (prev.userMessage !== next.userMessage) return false;
-  if (prev.assistantMessages.length !== next.assistantMessages.length) return false;
-  for (let i = 0; i < next.assistantMessages.length; i++) {
-    if (prev.assistantMessages[i] !== next.assistantMessages[i]) return false;
-  }
-  return true;
-}
-
-/**
- * Returns `next` with each turn replaced by the previous turn object (matched
- * by user message id) when its user message and every assistant message are
- * reference-equal. Returns `prev` itself when every turn was reused and the
- * turn count is unchanged.
- */
-export function reuseStableTurns(prev: readonly Turn[], next: Turn[]): Turn[] {
-  if (prev.length === 0 || next.length === 0) return next;
-
-  const prevById = new Map<string, Turn>();
-  for (const turn of prev) prevById.set(turn.userMessage.info.id, turn);
-
-  let allReused = prev.length === next.length;
-  const result = next.map((turn, index) => {
-    const previous = prevById.get(turn.userMessage.info.id);
-    if (previous && sameTurnContent(previous, turn)) {
-      if (prev[index] !== previous) allReused = false;
-      return previous;
-    }
-    allReused = false;
-    return turn;
-  });
-
-  return allReused ? (prev as Turn[]) : result;
+/** `prev` itself when `next` holds the same turn objects in the same order; else `next`. */
+export function reuseStableTurns<T>(prev: readonly T[], next: T[]): T[] {
+  if (prev.length !== next.length) return next;
+  for (let i = 0; i < next.length; i++) if (prev[i] !== next[i]) return next;
+  return prev as T[];
 }
 
 /**
@@ -53,15 +22,6 @@ export function shouldUpdateSpacer(prevHeight: number, nextHeight: number, cap: 
   const limit = Math.max(0, cap);
   return Math.min(Math.max(0, prevHeight), limit) !== Math.min(Math.max(0, nextHeight), limit);
 }
-
-/** Id of the last user message in store order, or undefined when none exists. */
-export function findLastUserMessageId(messages: readonly MessageWithParts[]): string | undefined {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].info.role === 'user') return messages[i].info.id;
-  }
-  return undefined;
-}
-
 
 /** A user scroll that moves up further than this from the end releases the stick. */
 export const STICK_RELEASE_DISTANCE = 48;

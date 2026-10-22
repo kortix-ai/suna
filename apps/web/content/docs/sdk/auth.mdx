@@ -1,132 +1,468 @@
 ---
 title: Authentication
-description: Authenticate the SDK with a personal access token or a service account.
+description: Pick a credential, wire getToken, sign people in headlessly, add Sign in with Kortix to your own app, and isolate requests on a server.
 ---
 
-Kortix accepts one bearer token per request. Pass it through `getToken` in
-`createKortix`. The SDK sends it as `Authorization: Bearer <token>`.
+Every SDK request carries one bearer credential. `createKortix` reads it from
+your `getToken` function and sends it as `Authorization: Bearer <token>`. This
+page is for developers who call Kortix from a script, a backend, or an app
+that people sign in to.
 
 ```ts
 import { createKortix } from '@kortix/sdk';
 
 const kortix = createKortix({
   backendUrl: 'https://api.kortix.com/v1',
-  getToken: async () => process.env.KORTIX_API_KEY!,
+  getToken: async () => process.env.KORTIX_API_KEY ?? null,
 });
+
+await kortix.projects.list();
 ```
 
-`backendUrl` and `getToken` are required. The SDK caches nothing: it calls
-`getToken` on every request, so your app owns token storage and refresh.
-
-Set `clientSource` to `api`, `cli`, `mobile`, or `web` when your host needs a
-separate source in the centralized audit log. This value identifies the client
-surface. It does not change the authenticated actor or their permissions.
-
-## Personal access tokens
-
-A personal access token (PAT) is the credential for the SDK, the CLI, and CI.
-Create one in your own settings, at **Settings → API keys**
-(`/settings/tokens`). The key starts with `kortix_pat_` and shows only once, at
-creation. Store it as a secret.
-
-A PAT acts as the user who created it and holds exactly that user's role
-assignments. It adds no access of its own. Its scope only narrows the reach:
-
-| Scope | Reach |
-|---|---|
-| Account (default) | Every project in the account |
-| Project | One project only; every other project returns `403` |
-
-Choose the project scope for CI and other narrow-purpose credentials.
-`kortix login` mints a PAT and stores it locally — it is the same credential
-type, not a separate token kind.
-
-## Service accounts
-
-A service account is a separate credential family for non-human callers,
-prefixed `kortix_sa_`. Create one at **Account → Tokens**
-(`/accounts/<account-id>?tab=tokens`), the account-level surface for
-credentials that are not a person's.
-
-A service account is its own **principal** (`service_account`), not a person's
-credential. It has no membership, so it holds only the roles assigned to it
-directly. An agent's identity is a service account, which is how you assign a
-role to an agent. See
-[Accounts & access](/docs/accounts#one-access-model).
-
-:::warning
-  A new service account has no assignments and therefore no project access. If
-  you point `getToken` at one before you assign it a role, every call returns
-  `403 "You do not have access to this project"`. Assign it a project role
-  first, or use a personal access token for the SDK, the CLI, and demos
-  instead.
-:::
-
-## OAuth access tokens (Sign in with Kortix)
-
-A third-party app that signs users in through Kortix receives a `kortix_oat_`
-token per user. With the `kortix` scope it acts as that user on the whole API,
-exactly like a personal access token, but it expires after an hour and rotates
-through a refresh token. `createKortixAuth` in `@kortix/sdk/server` owns the
-whole lifecycle — see [Sign in with Kortix](/docs/sdk/sign-in).
-
-## Supabase JWT
-
-If your app uses Kortix's own sign-in, return the live session token instead
-of a PAT:
-
-```ts
-getToken: async () =>
-  (await supabase.auth.getSession()).data.session?.access_token ?? null,
-```
-
-The SDK calls `getToken` on every request, so a refreshed token takes effect
-automatically.
-
-## Headless sign-in (email, password, magic link, social)
-
-Every ordinary sign-in flow is available through the Kortix API, so a CLI, a
-native app, a script, or your own backend signs users up and in without a
-Supabase URL or key — on kortix.com and on a self-host alike.
-
-```ts
-import { createKortix } from '@kortix/sdk';
-
-const session = createKortix({ backendUrl, getToken: async () => null }).auth.session({
-  storage: {                                    // optional: any get/set/remove
-    get: () => localStorage.getItem('kortix'),
-    set: (v) => localStorage.setItem('kortix', v),
-    remove: () => localStorage.removeItem('kortix'),
-  },
-});
-const kortix = createKortix({ backendUrl, getToken: session.getToken });   // refreshes itself
-
-const { session: s, user } = await kortix.auth.signInWithPassword({ email, password });
-await session.set(s, user);
-await kortix.projects.list();                   // as that user
-```
-
-| Call | Route | Notes |
-|---|---|---|
-| `auth.signUp({ email, password, redirect_to? })` | `POST /v1/auth/signup` | `requires_email_confirmation: true` → no session until the emailed link/code is used. |
-| `auth.signInWithPassword({ email, password })` | `POST /v1/auth/sign-in/password` | |
-| `auth.sendMagicLink({ email, redirect_to? })` → `auth.verifyOtp({ email, token, type: 'magiclink' })` | `/sign-in/magic-link`, `/verify-otp` | The email carries a link and a 6-digit code. |
-| `auth.signInWithProvider({ provider, redirect_to })` → `auth.exchangeCode({ code, code_verifier })` | `/sign-in/oauth`, `/oauth/exchange` | PKCE: keep `code_verifier` until the provider redirects back with `?code=`. `redirect_to` must be on the instance's redirect allow-list. |
-| `auth.refresh({ refresh_token })` | `POST /v1/auth/refresh` | `createKortixSession` calls it for you. |
-| `auth.resetPassword({ email, redirect_to? })` → `auth.verifyOtp({ type: 'recovery' })` → `auth.updatePassword({ password }, token)` | `/password/reset`, `/verify-otp`, `/password/update` | |
-| `auth.user(token)` / `auth.signOut(token)` | `GET /v1/auth/user`, `POST /v1/auth/sign-out` | Sign-out revokes at Supabase and in the Kortix session gate. |
-
-Errors throw `HeadlessAuthError` with `code`, `message` and the upstream `status`
-(`invalid_credentials`, `over_request_rate_limit`, …). Each route is limited to
-30 attempts per minute per IP. Multi-factor enrolment/challenge is not on the
-API yet — it stays on the Kortix web app.
+On a self-hosted instance, set `backendUrl` to `<your API origin>/v1`.
 
 ## Choose a credential
 
-| You are building | Use |
+Pick the row that matches the caller. A credential holds the roles of the
+principal it acts as, and nothing more.
+
+| Caller | Credential | Acts as | Get it |
+|---|---|---|---|
+| A script, a CI job, your own backend | Personal access key, `kortix_pat_` | You, with your roles. Optionally one project only. | **Settings → Personal access keys**, or `kortix tokens new` |
+| Unattended automation that must not act as a person | Service account key, `kortix_sa_` | The service account. It has no access until you assign it a role. | **Account settings → API keys**, or `kortix tokens service-accounts new` |
+| Your product, where people sign in with their Kortix email, password, magic link, social login or SSO | The person's access token from [headless sign-in](#headless-sign-in) | The person who signed in | `kortix.auth.*` + `createKortixSession` |
+| Your own web app with a "Sign in with Kortix" button | OAuth access token, `kortix_oat_` (1 hour; refresh token `kortix_ort_`, 30 days) | The person who approved your app | [`createKortixAuth`](#sign-in-with-kortix) |
+| Code inside a Kortix App | App viewer token. The App's viewer scope must be `api`. | The person viewing the App, capped by their role | `kortix apps access <app> --viewer api`, then `kortixAppViewerToken()`. See [Apps](/docs/apps#know-who-is-looking). |
+| Code inside a session sandbox | `KORTIX_TOKEN` | The session's agent (its service account), limited to that project and session. Its permissions are the agent's `kortix_permissions` capped by its ceiling role. See [What an agent may do](/docs/project/agents#what-an-agent-may-do). | Kortix sets it, with `KORTIX_API_URL` as the `backendUrl`. See [Sandboxes & previews](/docs/work/runtime#environment-variables). |
+
+Creation, expiry, project binding and key rules are in
+[API keys and tokens](/docs/accounts/identity#api-keys-and-tokens).
+A web app that already signs people in through the instance's Supabase passes
+that JWT:
+`getToken: async () => (await supabase.auth.getSession()).data.session?.access_token ?? null`.
+New code uses [headless sign-in](#headless-sign-in) instead. A valid
+credential without the needed permission gets `403`. Grant the role in
+[Accounts & access](/docs/accounts).
+
+## getToken and 401 recovery
+
+The SDK calls `getToken` before every request. It caches nothing, so your code
+owns token storage and refresh.
+
+- `getToken` returns `null`: the SDK sends no request and throws `AuthError`
+  with `code: 'NO_SESSION'`.
+- The API answers `401`: the SDK calls `getToken.invalidate(rejectedToken)`
+  when you attached one, calls `getToken` again, and replays the request once
+  with the new token. A second `401` goes to the caller.
+- Parallel `401`s on the same token share one `invalidate` call and one
+  `getToken` call. A host that rotates a refresh token per call is not raced
+  by its own requests.
+- The SDK does not replay when the new token equals the rejected one, when the
+  request body is a `ReadableStream`, or when the caller set its own
+  `Authorization` header.
+
+A `getToken` that caches must attach `invalidate`. Without it, the second
+`getToken` call returns the same dead token and the SDK does not replay.
+`session.getToken` from `createKortixSession` has no `invalidate`. A `401` on a
+token that has not expired goes to the caller: handle it with `isAuthFailure`.
+
+```ts
+let cached: string | null = null;
+
+const getToken = Object.assign(
+  async () => (cached ??= await fetchTokenFromMyServer()),
+  { invalidate: (rejected: string) => { if (cached === rejected) cached = null; } },
+);
+
+const kortix = createKortix({ backendUrl: 'https://api.kortix.com/v1', getToken });
+```
+
+To branch on an auth failure, use `isAuthFailure(error)`. It is `true` for
+`AuthError` and for any error with `status` `401` or `403`. It reads the
+status, never the message text.
+
+```ts
+import { isAuthFailure } from '@kortix/sdk';
+
+try {
+  await kortix.projects.list();
+} catch (error) {
+  if (isAuthFailure(error)) redirectToSignIn();
+  else throw error;
+}
+```
+
+Set `clientVersion` to your app's name and version, for example
+`clientVersion: 'my-app/1.4.0'`. The SDK sends it as `X-Kortix-Client-Version`.
+Kortix writes it to request logs only. It grants nothing and never reaches the
+audit log, which records the credential `getToken` returned.
+
+Set `credentialHeader` when a backend proxy reads the credential from a custom
+header, for example `credentialHeader: 'x-app-reader-token'`. The SDK sends the
+raw token from `getToken` in that header and sends no `Authorization`. The `401`
+replay still calls `getToken` again. A header of the same name that a call sets
+itself wins.
+
+## Headless sign-in
+
+`kortix.auth.*` signs people up and in through the Kortix API at `/v1/auth/*`.
+It needs no Supabase URL or key and works the same on Kortix Cloud and on a
+self-hosted instance. Use it for a CLI, a native app, or your own sign-in
+screen.
+
+Create one session store and one client. The store keeps the tokens,
+refreshes them 60 s before they expire, and feeds `getToken`.
+
+```ts
+import { createKortix, createKortixSession } from '@kortix/sdk';
+
+const session = createKortixSession({
+  storage: {                                   // optional: anything with get/set/remove
+    get: () => localStorage.getItem('kortix'),
+    set: (value) => localStorage.setItem('kortix', value),
+    remove: () => localStorage.removeItem('kortix'),
+  },
+});
+
+const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: session.getToken,
+});
+
+const { session: tokens, user } = await kortix.auth.signInWithPassword({ email, password });
+await session.set(tokens, user);
+
+await kortix.projects.list();                  // runs as that person
+```
+
+Create the store with `createKortixSession` directly. Do not build a second
+`createKortix` client only to reach `kortix.auth.session`: every
+`createKortix` call shares one process-wide config, and the SDK warns when a
+second call changes `getToken`.
+
+### Sign-in flows
+
+| Flow | Calls |
 |---|---|
-| A backend, script, or CI job | A personal access token, account-wide or project-scoped |
-| The Kortix CLI | `kortix login` (mints a personal access token) |
-| A web app, CLI, or native app signing users in itself | `kortix.auth.*` + `createKortixSession` (headless sign-in, above) |
-| An automated caller with its own project assignment | A service account |
-| Your own app, signed in by its users with their Kortix account | [Sign in with Kortix](/docs/sdk/sign-in) — an OAuth access token the SDK manages for you |
+| Sign up | `auth.signUp({ email, password, data?, redirect_to? })` returns `{ user, session, requires_email_confirmation }`. When `requires_email_confirmation` is `true`, `session` is `null` until the person confirms with the emailed link or with `verifyOtp({ type: 'signup' })`. |
+| Password | `auth.signInWithPassword({ email, password })` |
+| Magic link or code | `auth.sendMagicLink({ email, create_user?, redirect_to?, data? })`, then `auth.verifyOtp({ email, token, type: 'magiclink' })` with the code from the email |
+| Social login (PKCE) | `auth.signInWithProvider({ provider, redirect_to, scopes? })` returns `{ url, code_verifier }`. Keep `code_verifier`, send the browser to `url`, then call `auth.exchangeCode({ code, code_verifier })` with the `code` from the redirect. `provider` is one the instance has configured, for example `google` or `github`. |
+| Enterprise SSO | `auth.signInWithSso({ domain, redirect_to? })` returns `{ url }` to send the browser to. A `404` means the domain has no identity provider. See [Single sign-on](/docs/accounts/identity#single-sign-on-saml). |
+| Password reset | `auth.resetPassword({ email, redirect_to? })`, then `auth.verifyOtp({ email, token, type: 'recovery' })`, then `auth.updatePassword({ password }, session.access_token)` with the session `verifyOtp` returned. The new password is 8 to 256 characters. |
+
+Every flow that returns a session returns `{ session, user }`. Pass both to
+`session.set(...)`. `redirect_to` must be an absolute `http` or `https` URL that
+the instance allows.
+
+### The signed-in person
+
+These calls take a token as an argument, so they work before `getToken` is
+wired. `user`, `updateUserMetadata`, `updatePassword` and `mfa.*` need the
+person's own access token. They refuse any other credential, such as a
+personal access key, with `401 invalid_token`.
+
+| Call | Does |
+|---|---|
+| `auth.user(accessToken)` | Returns `{ user }` |
+| `auth.updateUserMetadata({ data }, accessToken)` | Writes profile metadata: display name, avatar, language. A password or email change is refused. |
+| `auth.updatePassword({ password }, accessToken)` | Sets a new password |
+| `auth.mfa.enroll({ factor_type, friendly_name?, phone?, issuer? }, accessToken)` | Enrolls a `totp` or `phone` factor |
+| `auth.mfa.challenge(factorId, { channel? }, accessToken)` | Starts a challenge |
+| `auth.mfa.verify(factorId, { challenge_id, code }, accessToken)` | Verifies the code. Returns the new token pair at the second assurance level at the top level (`access_token`, `refresh_token`, `expires_at`), not as `{ session, user }`. Store it with `session.set(result as AuthSession)`. |
+| `auth.mfa.unenroll(factorId, accessToken)` | Removes a factor |
+| `auth.refresh({ refresh_token })` | Rotates the token pair. `createKortixSession` calls it for you. |
+| `auth.signOut(accessToken, { scope? })` | Revokes the session at Kortix. `scope`: `global` (default, every device), `local` (this session), `others` (every other session). |
+
+To sign out, revoke the session, then clear the store:
+
+```ts
+const token = await session.getToken();
+if (token) await kortix.auth.signOut(token);
+await session.clear();
+```
+
+### The session store
+
+`kortix.auth.session(options?)` is the same function as
+`createKortixSession(options?)`. Each call creates a new store, so create one
+and keep it.
+
+| Option | Default | Does |
+|---|---|---|
+| `storage` | none, memory only | `{ get, set, remove }`, sync or async: `localStorage`, a file, a cookie jar, a database row |
+| `onChange` | none | Called after every sign-in, refresh and sign-out |
+| `refreshSkewSeconds` | `60` | Refresh this many seconds before expiry |
+| `request` | the client's `backendUrl` | `{ backendUrl?, fetch?, signal? }` for refresh calls |
+
+| Method | Does |
+|---|---|
+| `getToken()` | A valid access token, refreshed first when needed. `null` when signed out. |
+| `set(session, user?)` | Stores a session a `kortix.auth.*` call returned |
+| `current()`, `user()` | The stored session and user. No refresh. |
+| `refresh()` | Rotates now. Concurrent callers share one refresh. |
+| `subscribe(listener)` | Calls `listener` on every change. Returns an unsubscribe function. |
+| `load()` | Reads storage now instead of on first use |
+| `clear()` | Forgets the session locally. Call `auth.signOut` first to revoke it. |
+
+A refresh that Kortix rejects with a `4xx` signs the person out: the store
+clears itself and `getToken()` returns `null`. A network failure keeps the
+stored session for the next call.
+
+### Errors and limits
+
+Every `kortix.auth.*` call throws `HeadlessAuthError` with `code`, `message` and
+`status`.
+
+| `code` | `status` | Cause |
+|---|---|---|
+| `sso_required` | `403` | The email's domain must sign in with SSO. Sign-up, password and magic link refuse it. Use `signInWithSso`. |
+| `signup_closed` | `403` | The instance does not accept sign-ups from this address |
+| `over_request_rate_limit` | `429` | Too many attempts. Wait for the `retry-after` header. |
+| `invalid_token` | `401` | A call that needs the person's access token got another credential |
+| `not_configured` | `0` | No `backendUrl`: create the client first |
+
+All public `/v1/auth/*` routes share one limit: 30 attempts per minute per
+client IP, counted on each API replica. Other codes come unchanged from the identity service.
+
+## Sign in with Kortix
+
+Sign in with Kortix makes Kortix the identity provider for a web app you run.
+People sign in with their Kortix account. Your server knows who they are, and
+your app calls Kortix as that person, with that person's roles. It is OAuth 2.1
+with PKCE, and the browser never holds a Kortix token.
+
+<Steps>
+  <Step title="Register your app">
+    Open **Account settings → API keys → OAuth apps** and select **Register app**, or
+    register it in code. Registering needs `token.create` on the account.
+
+    ```ts
+    const app = await kortix.iam.oauthClients.create(accountId, {
+      name: 'My dashboard',
+      client_type: 'confidential',   // 'public' for a browser or native app: PKCE, no secret
+      redirect_uris: ['https://dashboard.example.com/api/kortix/auth/callback'],
+      scopes: ['profile', 'email', 'kortix'],
+    });
+    // app.client_id; app.client_secret is shown once
+    ```
+
+    Kortix compares redirect URIs byte for byte. They must use `https`, except
+    on a loopback host (`localhost`, `*.localhost`, `127.0.0.1`, `[::1]`). `kortix.iam.oauthClients` also has `list`, `get`, `update`,
+    `rotateSecret` and `remove`. Field details are in
+    [OAuth apps and connected apps](/docs/accounts/identity#oauth-apps-and-connected-apps).
+  </Step>
+  <Step title="Create the auth kit on your server">
+    ```ts
+    // lib/kortix-auth.ts (server only)
+    import { createKortixAuth } from '@kortix/sdk/server';
+
+    export const auth = createKortixAuth({
+      backendUrl: 'https://api.kortix.com/v1',
+      clientId: process.env.KORTIX_OAUTH_CLIENT_ID!,
+      clientSecret: process.env.KORTIX_OAUTH_CLIENT_SECRET,   // omit for a public client
+      redirectUri: 'https://dashboard.example.com/api/kortix/auth/callback',
+      cookieSecret: process.env.KORTIX_AUTH_COOKIE_SECRET!,   // at least 32 characters
+    });
+    ```
+  </Step>
+  <Step title="Mount one catch-all route">
+    ```ts
+    // app/api/kortix/auth/[...kortix]/route.ts (Next.js App Router)
+    import { auth } from '@/lib/kortix-auth';
+
+    const handle = (request: Request) => auth.handler(request);
+    export { handle as GET, handle as POST };
+    ```
+
+    Any framework works: pass a Web `Request` to `auth.handler` and return its
+    `Response`.
+  </Step>
+  <Step title="Gate pages and call Kortix as the person">
+    ```ts
+    import { auth } from '@/lib/kortix-auth';
+
+    export async function GET(request: Request) {
+      const gate = await auth.requireViewer(request);
+      if (gate.response) return gate.response;          // 302 to /refresh or /signin
+
+      const kortix = await auth.kortix(request);        // acts as the signed-in person
+      return Response.json(await kortix.projects.list());
+    }
+    ```
+  </Step>
+  <Step title="Call Kortix from the browser">
+    ```tsx
+    import { createKortix } from '@kortix/sdk';
+    import { SignInWithKortix, useKortixViewer } from '@kortix/sdk/react';
+
+    const kortix = createKortix({
+      backendUrl: window.location.origin + '/api/kortix/auth/proxy',
+      getToken: async () => 'kortix-session',
+    });
+
+    function Header() {
+      const { status, viewer } = useKortixViewer();
+      if (status === 'signed-in') return <span>{viewer.email}</span>;
+      return <SignInWithKortix className="button" />;
+    }
+    ```
+
+    The browser sends the placeholder bearer `kortix-session`. The `/proxy`
+    route replaces it with the person's real token on your server. Every SDK
+    call works through it, including [`useSession`](/docs/sdk/react).
+  </Step>
+</Steps>
+
+<Callout type="warning">
+  Never import `@kortix/sdk/server` or a module that imports it, such as
+  `lib/kortix-auth.ts`, into browser code. It pulls in `node:async_hooks`, and
+  `createKortixAuth` throws without `cookieSecret`. Write the browser config
+  literally, as in step 5.
+</Callout>
+
+### Options
+
+| Option | Default | Does |
+|---|---|---|
+| `backendUrl` | required | Kortix API base, including `/v1` |
+| `clientId` | required | The registered client id |
+| `clientSecret` | none | The client secret. Omit it for a public client. |
+| `redirectUri` | required | Absolute callback URL, identical to a registered one |
+| `cookieSecret` | required | At least 32 characters. Encrypts the cookies with AES-256-GCM. |
+| `scopes` | `['profile', 'email', 'kortix']` | Scopes to request |
+| `basePath` | the `redirectUri` path without `/callback` | Where `handler` is mounted |
+| `sessionTtlSeconds` | `2592000` (30 days) | How long a session lives without a new sign-in |
+| `cookieSameSite` | `'lax'` | `'none'` only for an app that signs in while embedded in another origin. It needs `https`; over `http` the cookie stays `Lax`. |
+| `fetch` | global `fetch` | Custom fetch for tests or edge runtimes |
+
+| Scope | Grants your app |
+|---|---|
+| `profile` | The person's id, email and account memberships |
+| `email` | The email address |
+| `kortix` | Acting as the person on the whole Kortix API. Without it the token reaches only the identity routes. |
+
+### Routes the handler serves
+
+All paths are under `basePath`, `/api/kortix/auth` in the example.
+
+| Path | Does |
+|---|---|
+| `/signin?return_to=/path` | Starts sign-in with PKCE and a 10-minute transaction cookie, then redirects to Kortix |
+| `/callback` | Exchanges the code, sets the encrypted `HttpOnly` session cookie, redirects to `return_to` |
+| `/refresh?return_to=/path` | Rotates the token pair and redirects. `requireViewer` sends people here. |
+| `/signout?return_to=/path` | Revokes the refresh token at Kortix and clears the cookie |
+| `/me` | The person as JSON, or `401`. Refreshes an expired access token. |
+| `/proxy/*` | Forwards the request to the Kortix API as the person |
+
+`return_to` is always reduced to a same-origin path. When the person declines
+consent, the callback redirects to `return_to` with `?kortix_auth_error=<code>`.
+A missing or expired transaction answers `400` with `error: 'state_mismatch'`.
+A failed code exchange answers with `error: 'token_exchange_failed'`.
+
+### Server and browser API
+
+| From | API | Returns |
+|---|---|---|
+| `@kortix/sdk/server` | `auth.viewer(request)` | `{ userId, email, accounts, scopes, token, expiresAt }` or `null`. Read-only: it never rotates the refresh token. |
+| `@kortix/sdk/server` | `auth.requireViewer(request)` | `{ viewer }`, or `{ response }` with a redirect to `/refresh` or `/signin` |
+| `@kortix/sdk/server` | `auth.kortix(request)` | A request-scoped client that acts as the person. Throws `KortixAuthError` `unauthenticated` when signed out. |
+| `@kortix/sdk/server` | `auth.signInUrl(returnTo?)`, `auth.signOutUrl(returnTo?)` | Link targets |
+| `@kortix/sdk/react` | `useKortixViewer({ basePath? })` | `{ status, viewer, reload }`. `status` is `loading`, `signed-in`, `signed-out` or `error`. |
+| `@kortix/sdk/react` | `<SignInWithKortix basePath? returnTo? />` | A link that starts sign-in and returns to the current page |
+| `@kortix/sdk/react` | `kortixSignOutHref(basePath?, returnTo?)` | The sign-out link target |
+
+Use `requireViewer` to gate a page. A page then never renders signed out for a
+person whose refresh token is still valid. `createKortixAuth` throws
+`KortixAuthError` with code `invalid_options` when `backendUrl` or `clientId`
+is empty, `redirectUri` is not an absolute `http` or `https` URL, or
+`cookieSecret` is shorter than 32 characters.
+
+`useKortixViewer`, `<SignInWithKortix>` and `kortixSignOutHref` default
+`basePath` to `/api/kortix/auth`. Pass `basePath` when you mount `handler`
+elsewhere.
+
+### What the person sees
+
+The first sign-in shows a Kortix consent screen with your app's name and
+scopes. Kortix remembers the approval per person and app, so later sign-ins
+return straight to your app. People revoke an app in code with
+`kortix.accounts.connectedApps.list()` and `.revoke(clientId)`, or on the web
+and in the CLI as described in
+[Connected apps](/docs/accounts/identity#oauth-apps-and-connected-apps). After a revoke the
+app's tokens stop working and the app must ask again.
+
+### Discovery for other OAuth clients
+
+The SDK derives every endpoint from `backendUrl`. A generic OAuth client reads
+`GET /.well-known/oauth-authorization-server` on the API origin, also served at
+`/v1/oauth/.well-known/oauth-authorization-server`. Open dynamic client
+registration is at `POST /v1/oauth/register`. Kortix deletes a self-registered
+client after 7 days when it has no approval and no token.
+
+## Servers that act for many users
+
+`createKortix` stores its config in one process-wide slot. That is correct for
+a browser tab, a CLI or a single-tenant job. On a server that handles requests
+for different people at the same time, the last `createKortix` call wins for
+every request in flight. Use `@kortix/sdk/server` instead. It isolates each
+request's config in Node's `AsyncLocalStorage` and runs in Node and Bun.
+
+**One client per request.** `createScopedKortix` has the same shape as
+`createKortix` and never touches the global config.
+
+```ts
+import { createScopedKortix } from '@kortix/sdk/server';
+
+export async function GET(request: Request) {
+  const kortix = createScopedKortix({
+    backendUrl: 'https://api.kortix.com/v1',
+    getToken: async () => tokenFor(request),
+  });
+  return Response.json(await kortix.projects.list());
+}
+```
+
+A scoped client's top-level `kortix.runtime()` throws, because it would resolve
+another request's sandbox. Reach a session's runtime through its handle:
+`const s = kortix.session(projectId, sessionId); await s.ensureReady(); s.runtime`.
+
+**One scope per request.** `runWithKortix(config, fn)` sets the config for
+everything `fn` awaits, including calls on a client made with `createKortix`.
+
+```ts
+import { runWithKortix } from '@kortix/sdk/server';
+
+app.use(async (req, res, next) => {
+  await runWithKortix(
+    { backendUrl: 'https://api.kortix.com/v1', getToken: async () => tokenFor(req) },
+    async () => next(),
+  );
+});
+```
+
+**A proxy for your browser code.** `forwardKortixRequest` forwards one request
+from your own route to the Kortix API with a token your server holds.
+
+```ts
+import { forwardKortixRequest } from '@kortix/sdk/server';
+
+export async function handle(request: Request) {
+  const url = new URL(request.url);
+  const rest = url.pathname.replace(/^\/api\/kortix\//, '');
+  return forwardKortixRequest({
+    request,
+    upstreamUrl: 'https://api.kortix.com/v1/' + rest + url.search,
+    token: await tokenFor(request),
+  });
+}
+```
+
+It removes the browser's `cookie` and `host` headers, sets the bearer, keeps
+streamed response bodies, and removes `set-cookie` from the answer. When Kortix
+is unreachable it answers `502` with `{ "error": "Upstream request failed" }`.
+Point the browser client at the route with any non-null placeholder token:
+`createKortix({ backendUrl: '/api/kortix', getToken: async () => 'proxy' })`.
+
+To start sessions from such a server with session secrets and idempotency, see
+[Start sessions from your server](/docs/sdk/sessions#start-sessions-from-your-server).

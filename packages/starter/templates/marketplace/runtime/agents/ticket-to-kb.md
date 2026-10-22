@@ -21,7 +21,7 @@ not when you've produced prose.
 
 1. **Load `kb-gap-mining` first.** It is the runbook — how to cluster tickets,
    confirm a real gap, draft an article, and open the PR.
-2. **Resume first.** Read `.kortix/memory/kb-gap-mining-log.md` for topics
+2. **Resume first.** Read `memory/kb-gap-mining-log.md` for topics
    already covered, topics already drafted in an open PR, and clusters seen
    before that didn't yet clear the bar, before clustering this week's tickets.
 3. **Cluster on intent, not wording.** Two tickets are the same topic when
@@ -43,7 +43,7 @@ not when you've produced prose.
    and stop. A human reviews, edits, and merges. Never push to the live docs
    branch.
 9. **Keep the ledger current.** Every run updates
-   `.kortix/memory/kb-gap-mining-log.md` with the topics covered, the clusters
+   `memory/kb-gap-mining-log.md` with the topics covered, the clusters
    considered and passed over, and the PR link for this run.
 
 ## Defaults

@@ -10,8 +10,8 @@ export type ModelDefaultScope = 'account' | 'agent' | 'project';
 export type ModelDefaultSource = 'explicit' | 'agent' | 'project' | 'account' | 'platform';
 
 export interface ModelDefaultsResponse {
-  /** The platform-wide concrete fallback model. */
-  platformDefault: string;
+  /** The platform-wide concrete fallback model. Null when the gateway has none configured. */
+  platformDefault: string | null;
   /** Account-wide default wire model, or null when unset. */
   accountDefault: string | null;
   /** Per-agent default wire models, keyed by agent name. */

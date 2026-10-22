@@ -3,11 +3,11 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { activeHost } from '../api/config.ts';
 import { createApiClient } from '../api/client.ts';
+import { activeHost, useHost } from '../api/config.ts';
 import { resolveProjectContext } from '../command-helpers.ts';
 import { connectorProjectContext } from '../connector-gateway/gateway.ts';
-import { resolveProjectId } from '../project-link.ts';
+import { resolveProjectId, resolveProjectRef } from '../project-link.ts';
 
 // These tests pin the contract the platform relies on when it injects auth
 // into a session sandbox: KORTIX_TOKEN carries the session connector PAT,
@@ -105,11 +105,209 @@ describe('in-sandbox auth resolution', () => {
   });
 });
 
+describe('plain commands vs an explicitly selected stored host (KRTX-1705)', () => {
+  // The issue: inside a sandbox, `kortix hosts use <name>` must make plain
+  // commands honor that host's stored credential — while a KORTIX_TOKEN the
+  // platform merely injects (or a script exports) must keep outranking the
+  // stored login. The selection is an explicit in-sandbox act, so its marker
+  // can only live in the config file, never in the injected env.
+  const OWN_HOST = {
+    url: 'https://own.example/v1',
+    token: 'kortix_pat_own',
+    user_id: 'user_own',
+    user_email: 'owner@own.example',
+    account_id: 'acct_own',
+    logged_in_at: '2026-01-01T00:00:00.000Z',
+  };
+
+  let configDir: string;
+  let savedCwd: string;
+
+  /** Seed a config file whose active host `own` is logged in. */
+  function seedOwnHost(extra: Record<string, unknown> = {}): void {
+    configDir = mkdtempSync(join(tmpdir(), 'kortix-cli-selected-'));
+    const file = join(configDir, 'config.json');
+    writeFileSync(
+      file,
+      JSON.stringify({ active: 'own', hosts: { own: { ...OWN_HOST, ...extra } } }, null, 2),
+    );
+    process.env.KORTIX_CONFIG_FILE = file;
+  }
+
+  beforeEach(() => {
+    savedCwd = process.cwd();
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    rmSync(configDir, { recursive: true, force: true });
+  });
+
+  /** A linked project directory whose named host has NO stored credentials —
+   *  the standard sandbox workspace (the link binds the session's project). */
+  function enterLinkedProject(): void {
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-cli-selected-link-'));
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: 'proj_link',
+        account_id: 'acct_link',
+        host: 'cloud',
+        host_url: 'https://session.example/v1',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    process.chdir(dir);
+  }
+
+  it('keeps env-over-stored when the stored host was never selected in-sandbox', () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+
+    const host = activeHost();
+    expect(host?.token).toBe('kortix_pat_session');
+    expect(host?.url).toBe('https://session.example/v1');
+  });
+
+  it('acts as the stored host after `kortix hosts use` ran inside the sandbox', () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+
+    expect(useHost('own')).toBe(true);
+    const host = activeHost();
+    expect(host?.token).toBe('kortix_pat_own');
+    // The stored credential is bound to its own deployment — the injected
+    // KORTIX_API_URL must not re-point it (same as `--host own`).
+    expect(host?.url).toBe('https://own.example/v1');
+  });
+
+  it('keeps env-over-stored when `hosts use` ran outside a sandbox', () => {
+    seedOwnHost();
+    expect(useHost('own')).toBe(true);
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+
+    const host = activeHost();
+    expect(host?.token).toBe('kortix_pat_session');
+  });
+
+  it('re-selecting a host outside the sandbox clears an earlier in-sandbox selection', () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    expect(useHost('own')).toBe(true);
+
+    // The user carries the same config to a machine without the delegation.
+    delete process.env.KORTIX_TOKEN;
+    delete process.env.KORTIX_API_URL;
+    expect(useHost('own')).toBe(true);
+
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    expect(activeHost()?.token).toBe('kortix_pat_session');
+  });
+
+  it('with an in-sandbox selection, a project-scoped command resolves the project from the selected host when the injected base differs', async () => {
+    seedOwnHost({
+      default_project: { project_id: 'proj_own', account_id: 'acct_own' },
+    });
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+
+    const ctx = await resolveProjectContext({});
+    // The ambient project id belongs to the injected deployment; pairing it
+    // with the selected host's credential would 404 cross-deployment — the
+    // same branch an explicit `--host own` already uses.
+    expect(ctx?.projectId).toBe('proj_own');
+  });
+
+  it('keeps the linked directory project when its host has no stored credentials, even with a selection', async () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+    enterLinkedProject();
+
+    // The link is the most specific binding and its project lives on the
+    // deployment the link names — the env fallback (not the selection) pairs
+    // with it, exactly as without a selection.
+    const ctx = await resolveProjectContext({});
+    expect(ctx?.projectId).toBe('proj_link');
+    expect(ctx?.auth.token).toBe('kortix_pat_session');
+  });
+
+  it('keeps the connector data plane on the injected identity even with a selection', () => {
+    seedOwnHost({ default_project: { project_id: 'proj_own', account_id: 'acct_own' } });
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+
+    // A session only ever invokes `kortix connectors` / `kortix connectors
+    // mcp` (template runtime fingerprint): the data plane stays pinned to the
+    // injected identity and the session's own project — the selection must
+    // never redirect it at the selected host.
+    const ctx = connectorProjectContext();
+    expect(ctx.projectId).toBe('proj_session');
+  });
+
+  it('scopes stored-credential project resolution to the selected host, as --host does', () => {
+    seedOwnHost({ default_project: { project_id: 'proj_own', account_id: 'acct_own' } });
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+
+    // Callers that pair the id with the stored host credential (access
+    // grants, projects clone/info/open/rm) must not read the ambient project
+    // id — it belongs to the injected deployment and would 404.
+    expect(resolveProjectId(undefined, { hostScoped: true })).toBe('proj_own');
+    // The ambient chain itself stays untouched for the env-pinned callers.
+    expect(resolveProjectId()).toBe('proj_session');
+  });
+
+  it('honors a link bound to the selected host itself, as resolveProjectContext does', () => {
+    seedOwnHost();
+    process.env.KORTIX_TOKEN = 'kortix_pat_session';
+    process.env.KORTIX_API_URL = 'https://session.example/v1';
+    process.env.KORTIX_PROJECT_ID = 'proj_session';
+    expect(useHost('own')).toBe(true);
+    // A directory bound to the SELECTED host itself, naming a project that is
+    // NOT the host's global default — the link must win for this credential.
+    const dir = mkdtempSync(join(tmpdir(), 'kortix-cli-selected-self-link-'));
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: 'proj_own_dir',
+        account_id: 'acct_own',
+        host: 'own',
+        host_url: 'https://own.example/v1',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    process.chdir(dir);
+
+    // The link binds THIS directory to a project on the SELECTED host — the
+    // most specific binding for exactly this credential. hostScoped must
+    // honor it, the same precedence resolveProjectContext applies, instead of
+    // falling through to the host's global default project.
+    expect(resolveProjectId(undefined, { hostScoped: true })).toBe('proj_own_dir');
+  });
+});
+
 describe('env token vs .kortix/link.json host', () => {
   // A repo may carry a committed link.json naming a host (per-repo binding).
-  // Inside a session sandbox that named host has no stored credentials, so
-  // the platform-injected env token must outrank it — otherwise every
-  // project-scoped command dies with "host not logged in".
+  // The env token and the link must never mix (KRTX-1486): the token is bound
+  // to the sandbox's own project, so a link project may only be paired with
+  // the LINK host's stored credential — or the command stops with an explicit
+  // pointer to --host.
   let dir: string;
   let savedCwd: string;
 
@@ -134,15 +332,70 @@ describe('env token vs .kortix/link.json host', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('resolveProjectContext uses the env token even when link.json names a host', async () => {
+  it('without onePrincipal the env token still backs the linked project (main fallback)', async () => {
+    // The documented non-cr contract: a link naming a host with no stored
+    // credentials never dead-ends the command — the injected env token stays
+    // the credential. (The cr commands opt into the stricter one-principal
+    // guard; see cr-principal.test.ts.)
     process.env.KORTIX_TOKEN = 'kortix_pat_cli';
     process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
     const ctx = await resolveProjectContext();
     expect(ctx).not.toBeNull();
     expect(ctx?.auth.token).toBe('kortix_pat_cli');
     expect(ctx?.auth.api_base).toBe('https://tunnel.example/v1');
-    // Project still comes from the link — only the HOST binding is overridden.
     expect(ctx?.projectId).toBe('proj-from-link');
+  });
+
+  it('uses the link host credential when the named host is logged in', async () => {
+    process.env.KORTIX_TOKEN = 'kortix_pat_cli';
+    process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
+    const configPath = join(dir, 'config.json');
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        active: 'other',
+        hosts: {
+          'kortix-internal-dev': {
+            url: 'https://internal.example/v1',
+            token: 'kortix_pat_link_host',
+            user_id: 'user_1',
+            user_email: 'user@example.test',
+            account_id: 'account_1',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    process.env.KORTIX_CONFIG_FILE = configPath;
+
+    const ctx = await resolveProjectContext();
+    expect(ctx).not.toBeNull();
+    // One principal: the link's project with the link host's credential.
+    expect(ctx?.projectId).toBe('proj-from-link');
+    expect(ctx?.auth.token).toBe('kortix_pat_link_host');
+    expect(ctx?.auth.api_base).toBe('https://internal.example/v1');
+  });
+
+  it('onePrincipal stops with an explicit login pointer when the link host is not logged in', async () => {
+    process.env.KORTIX_TOKEN = 'kortix_pat_cli';
+    process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
+    // KORTIX_CONFIG_FILE still points at a nonexistent path → the named host
+    // has no stored credentials. The mixed call the fallback allows
+    // (ambient token + link project) is exactly the 403/404 KRTX-1486 filed.
+    const writes: string[] = [];
+    const realWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: unknown) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      const ctx = await resolveProjectContext({ onePrincipal: true });
+      expect(ctx).toBeNull();
+      expect(writes.join('')).toContain('kortix-internal-dev');
+      expect(writes.join('')).toContain('kortix login --host kortix-internal-dev');
+    } finally {
+      process.stderr.write = realWrite;
+    }
   });
 
   it('without an env token the link host is still honored (and fails logged-out)', async () => {
@@ -158,6 +411,101 @@ describe('env token vs .kortix/link.json host', () => {
     // rather than silently falling back to the env token the caller did not ask for.
     const ctx = await resolveProjectContext({ hostArg: 'nonexistent-host' });
     expect(ctx).toBeNull();
+  });
+});
+
+describe('resolveProjectRef source tracking', () => {
+  // The order is the documented one: --project → link.json → KORTIX_PROJECT_ID
+  // → the active host's default. When the link names the env project itself,
+  // the env source is kept: the ambient session token is a valid credential
+  // for its own project.
+  let dir: string;
+  let savedCwd: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kortix-cli-ref-'));
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: 'proj-from-link',
+        account_id: 'acct',
+        host: 'team',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    savedCwd = process.cwd();
+    process.chdir(dir);
+    delete process.env.KORTIX_TOKEN;
+    delete process.env.KORTIX_API_URL;
+    delete process.env.KORTIX_PROJECT_ID;
+    delete process.env.KORTIX_CONFIG_FILE;
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function writeConfigDefault(): void {
+    rmSync(join(dir, '.kortix', 'link.json'));
+    writeFileSync(
+      join(dir, 'config.json'),
+      JSON.stringify({
+        active: 'team',
+        hosts: {
+          team: {
+            url: 'https://config-host.example/v1',
+            token: 'kortix_pat_config_host',
+            user_id: 'user_1',
+            user_email: 'user@example.test',
+            account_id: 'acct',
+            logged_in_at: '2026-01-01T00:00:00.000Z',
+            default_project: { project_id: 'proj-from-default', account_id: 'acct' },
+          },
+        },
+      }),
+    );
+    process.env.KORTIX_CONFIG_FILE = join(dir, 'config.json');
+  }
+
+  it('the link outranks the env project (the directory link is the most specific binding)', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    const ref = resolveProjectRef();
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'link' });
+  });
+
+  it('reports the link source when no env project is set', () => {
+    const ref = resolveProjectRef();
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'link' });
+  });
+
+  it('keeps the env source when the link names the env project', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-link';
+    const ref = resolveProjectRef();
+    // The ambient session token is a valid credential for its own project.
+    expect(ref).toEqual({ projectId: 'proj-from-link', source: 'env' });
+  });
+
+  it('the env project outranks the active host default', () => {
+    writeConfigDefault();
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    const ref = resolveProjectRef();
+    expect(ref).toEqual({ projectId: 'proj-from-env', source: 'env' });
+  });
+
+  it('falls through to the active host default when nothing else is set', () => {
+    writeConfigDefault();
+    const ref = resolveProjectRef();
+    expect(ref).toEqual({ projectId: 'proj-from-default', source: 'default' });
+  });
+
+  it('an explicit --project flag wins over every other source', () => {
+    process.env.KORTIX_PROJECT_ID = 'proj-from-env';
+    expect(resolveProjectRef('proj-from-flag')).toEqual({
+      projectId: 'proj-from-flag',
+      source: 'flag',
+    });
   });
 });
 

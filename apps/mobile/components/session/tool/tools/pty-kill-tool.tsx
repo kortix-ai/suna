@@ -8,25 +8,26 @@
 
 import { useMemo } from 'react';
 import { isErrorOutput } from '@kortix/sdk';
+import { stripMarkupForToolOutput } from '@kortix/shared';
 import { Text } from '@/components/ui/text';
 import { TerminalWindowIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
-import { PTY_TEXT, ptyKillId, stripMarkupForToolOutput } from '@/lib/session/tools/files-pty';
+import { PTY_TEXT, ptyKillId } from '@/lib/session/tools/files-pty';
 import { webSpace } from '@/lib/session/user-message';
 import { BasicTool, partInput, partOutput, ToolOutputFallback, ToolResultCard } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function PtyKillTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const ptyId = ptyKillId(partInput(part));
-  const output = partOutput(part);
+  const ptyId = ptyKillId(partInput(call));
+  const output = partOutput(call);
   const cleanOutput = useMemo(() => (output ? stripMarkupForToolOutput(output) : ''), [output]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TerminalWindowIcon}
       trigger={{ title: PTY_TEXT.stoppedProcess, subtitle: ptyId || undefined }}
       defaultOpen={defaultOpen}

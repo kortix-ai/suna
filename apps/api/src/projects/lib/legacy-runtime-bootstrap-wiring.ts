@@ -4,11 +4,12 @@
  * legacy-runtime-bootstrap.ts and is tested without any of this.
  */
 import { sessionSandboxes } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getProvider, type ProviderName } from '../../platform/providers';
+import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { readFileSync } from 'node:fs';
 import { RUNTIME_VERSIONS as runtimeVersions } from '@kortix/shared/runtime-versions';
-import { runtimeAssetsManifest, runtimeEntrypointPath } from '../../runtime-assets/manifest';
+import { runtimeAssetsManifest, runtimeEntrypointPath, type RuntimeAssetsManifest } from '../../runtime-assets/manifest';
 import { projectSessions, projects } from '@kortix/db';
 import { sql } from 'drizzle-orm';
 import { createAccountToken, revokeAccountToken } from '../../repositories/account-tokens';
@@ -20,16 +21,18 @@ import { OPENCODE_PRIMARY_PORT } from '../../shared/opencode-ports';
 import { mergeMetadata } from '../reaping/sandbox-state-sync';
 import {
   bootstrapLegacyRuntime,
+  bootstrapWouldSkip,
+  updatesItself,
   classifyDaemonHealth,
   describeLegacyBootstrapRetry,
   opencodeIdle,
+  type ExpectedRunningAssets,
   type LegacyBootstrapDeps,
   type LegacyBootstrapResult,
   type LegacyBootstrapRetrySummary,
   type RuntimeClassification,
 } from './legacy-runtime-bootstrap';
 
-const SANDBOX_SERVICE_PORT = 8000;
 const HEALTH_TIMEOUT_MS = 8_000;
 
 export interface LegacyBootstrapRow {
@@ -247,7 +250,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
   const provider = getProvider(row.provider as ProviderName);
   return {
     now: () => Date.now(),
-    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+    sleep: Bun.sleep,
     manifestBuild: async () => {
       try {
         return (await runtimeAssetsManifest()).build;
@@ -259,12 +262,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
     // this deploy's own manifest, never the box's opinion of itself.
     expectedRunningAssets: async () => {
       try {
-        const manifest = await runtimeAssetsManifest();
-        return {
-          cli_sha256: manifest.cli_sha256,
-          managed_skills_hash: manifest.managed_skills_hash,
-          agent_sha256: manifest.components.agent?.sha256 ?? null,
-        };
+        return expectedRunningAssetsFrom(await runtimeAssetsManifest());
       } catch {
         return null;
       }
@@ -321,6 +319,23 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
         .set({ metadata: mergeMetadata(patch) })
         .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
     },
+    claimRun: async (patch, staleBeforeIso) => {
+      const record = sql`${sessionSandboxes.metadata}->'legacyRuntimeBootstrap'`;
+      const [won] = await db
+        .update(sessionSandboxes)
+        .set({ metadata: mergeMetadata(patch) })
+        .where(
+          and(
+            eq(sessionSandboxes.sandboxId, row.sandboxId),
+            sql`(
+              coalesce(${record}->>'state', '') <> 'running'
+              OR coalesce(${record}->>'lastAttemptAt', '') <= ${staleBeforeIso}
+            )`,
+          ),
+        )
+        .returning({ sandboxId: sessionSandboxes.sandboxId });
+      return Boolean(won);
+    },
     audit: async (event) => {
       await recordAuditEvent({
         accountId: row.accountId ?? null,
@@ -350,7 +365,7 @@ export function buildLegacyBootstrapDeps(row: LegacyBootstrapRow): LegacyBootstr
 export async function runLegacyRuntimeBootstrap(
   row: LegacyBootstrapRow,
   reason: string,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; unpin?: boolean } = {},
 ): Promise<LegacyBootstrapResult> {
   return bootstrapLegacyRuntime(
     {
@@ -359,7 +374,8 @@ export async function runLegacyRuntimeBootstrap(
       provider: row.provider,
       metadata: row.metadata,
       reason,
-      force: opts.force,
+      force: opts.force || opts.unpin,
+      unpin: opts.unpin,
     },
     buildLegacyBootstrapDeps(row),
   );
@@ -371,6 +387,20 @@ export { MAX_IN_FLIGHT };
 /** Tests only: forget every in-flight sandbox between runs. Production never calls this. */
 export function __resetLegacyBootstrapInFlightForTests(): void {
   inFlight.clear();
+}
+
+/**
+ * The shas a box must run for this deploy. With `policy.agent_self_update`
+ * off no box stages the agent, so the agent is not compared (as
+ * `runningAssetsVerdict` does): a frozen fleet reads current, and the repair
+ * script never installs the agent past the kill switch.
+ */
+export function expectedRunningAssetsFrom(manifest: RuntimeAssetsManifest): ExpectedRunningAssets {
+  return {
+    cli_sha256: manifest.cli_sha256,
+    managed_skills_hash: manifest.managed_skills_hash,
+    agent_sha256: manifest.policy.agent_self_update === false ? null : manifest.components.agent?.sha256 ?? null,
+  };
 }
 
 /**
@@ -471,6 +501,23 @@ export async function guaranteeCurrentRuntimeOnOpen(
     return { action: 'proceed', classification };
   }
 
+  if (updatesItself(health, classification)) {
+    // Behind only on its own pending update, on a daemon that installs it
+    // itself: serve the box. The same predicate keeps the reaper off it.
+    return { action: 'proceed', classification };
+  }
+
+  const manifestBuild = await deps.manifestBuild();
+  if (bootstrapWouldSkip(row.metadata, manifestBuild, deps.now(), row.externalId)) {
+    // The scheduled repair would return without touching the box: a
+    // `current` check from before this deploy (6 h TTL), or an agent already
+    // staged for this build. Reporting `repairing` held idle, serving boxes in
+    // `starting` for 122-390 s after each dev deploy on 2026-10-14, until the
+    // daemon swapped itself. Serve the box; the daemon converges at its idle
+    // boundary, and the reaper repairs it once the check expires.
+    return { action: 'proceed', classification, retry: describeLegacyBootstrapRetry(row.metadata, manifestBuild, deps.now()) };
+  }
+
   const status = await deps.fetchOpencodeStatus();
   if (!opencodeIdle(status)) {
     // A live turn owns this box. Relaunching would kill it. The reaper's own
@@ -479,7 +526,6 @@ export async function guaranteeCurrentRuntimeOnOpen(
     return { action: 'defer_turn_running', classification };
   }
 
-  const manifestBuild = await deps.manifestBuild();
   const retry = describeLegacyBootstrapRetry(row.metadata, manifestBuild, deps.now());
   if (retry.status === 'exhausted') {
     return { action: 'exhausted', classification, retry };

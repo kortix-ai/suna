@@ -90,7 +90,7 @@ describe('getStarterFiles', () => {
       projectName: 'My Cool Project',
       template: 'general-knowledge-worker',
     });
-    const memory = byPath(files).get('.kortix/memory/MEMORY.md');
+    const memory = byPath(files).get('memory/MEMORY.md');
     expect(memory).toBeDefined();
     expect(memory!).toContain('My Cool Project');
     expect(memory!).not.toContain('{{projectName}}');
@@ -165,6 +165,15 @@ describe('getStarterFiles', () => {
     expect(byPath(files).has('kortix.yaml')).toBe(true);
   });
 
+  test('every starter agent declares its project repository explicitly', () => {
+    const manifest = byPath(getStarterFiles({ projectName: 'X' })).get('kortix.yaml') ?? '';
+    const agents = manifest.slice(manifest.indexOf('\nagents:\n'), manifest.indexOf('\ntriggers:\n'));
+    const names = [...agents.matchAll(/^  ([a-z][a-z0-9-]*):$/gm)].map((m) => m[1]);
+    expect(names).toEqual(['kortix', 'harness-reflector', 'session-reviewer']);
+    // One explicit, uncommented line per agent: v3 defaults it to false.
+    expect(agents.match(/^    workspace: \{ project_repository: true \}/gm)?.length).toBe(names.length);
+  });
+
   test('ships scheduled starter automation disabled by default', () => {
     const manifest = byPath(getStarterFiles({ projectName: 'X', template: 'minimal' })).get(
       'kortix.yaml',
@@ -181,17 +190,17 @@ describe('getStarterFiles', () => {
   test('default starter ships the general knowledge worker skills; internal minimal does not', () => {
     // The one user-facing starter (the default) carries the domain skill kit.
     const dflt = getStarterFiles({ projectName: 'X' });
-    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/presentations/SKILL.md')).toBe(
+    expect(dflt.some((f) => f.path === 'skills/presentations/SKILL.md')).toBe(
       true,
     );
-    expect(dflt.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(true);
+    expect(dflt.some((f) => f.path === 'skills/pdf/SKILL.md')).toBe(true);
 
     // `minimal` stays base-only (used internally by the project-clone seed path).
     const minimal = getStarterFiles({ projectName: 'X', template: 'minimal' });
-    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/presentations/SKILL.md')).toBe(
+    expect(minimal.some((f) => f.path === 'skills/presentations/SKILL.md')).toBe(
       false,
     );
-    expect(minimal.some((f) => f.path === '.kortix/opencode/skills/pdf/SKILL.md')).toBe(false);
+    expect(minimal.some((f) => f.path === 'skills/pdf/SKILL.md')).toBe(false);
   });
 
   /**
@@ -216,7 +225,7 @@ describe('getStarterFiles', () => {
    */
   test('no SKILL.md is nested inside another skill', () => {
     const nested = getStarterFiles({ projectName: 'X' })
-      .map((f) => f.path.match(/^\.kortix\/opencode\/skills\/(.+)\/SKILL\.md$/)?.[1])
+      .map((f) => f.path.match(/^skills\/(.+)\/SKILL\.md$/)?.[1])
       .filter((slug): slug is string => typeof slug === 'string' && slug.includes('/'));
     expect(nested).toEqual([]);
   });
@@ -227,7 +236,7 @@ describe('getStarterFiles', () => {
    * one is universal" skill at a time.
    */
   test('the scaffold ships exactly the agreed skill floor', () => {
-    const prefix = '.kortix/opencode/skills/';
+    const prefix = 'skills/';
     const names = new Set<string>();
     for (const f of getStarterFiles({ projectName: 'X' })) {
       if (!f.path.startsWith(prefix)) continue;
@@ -254,23 +263,20 @@ describe('getStarterFiles', () => {
     ].sort());
   });
 
-  test('minimal starter includes the default runtime tools but not optional marketplace skills', () => {
+  test('minimal starter includes the runtime plugin but no tool copies or optional marketplace skills', () => {
     const files = getStarterFiles({ projectName: 'X', template: 'minimal' });
     const paths = new Set(files.map((f) => f.path));
 
-    expect(paths.has('.kortix/opencode/tools/show.ts')).toBe(true);
+    // The Kortix tools (show, memory, web_search, …) are hosted by the runtime on every harness.
+    expect([...paths].filter((path) => path.startsWith('harnesses/opencode/tools/'))).toEqual([]);
     // `kortix-cli` is the sole managed skill left in the scaffold; the rest of the
     // `kortix-*` family lives in `templates/managed/` and is injected at boot.
-    expect(paths.has('.kortix/opencode/skills/kortix-cli/SKILL.md')).toBe(true);
-    expect(paths.has('.kortix/opencode/skills/kortix-system/SKILL.md')).toBe(false);
-    expect(paths.has('.kortix/opencode/skills/agent-browser/SKILL.md')).toBe(false);
-    expect(paths.has('.kortix/opencode/plugins/pty.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/memory.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/web_search.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/scrape_webpage.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/image_search.ts')).toBe(true);
-    expect(paths.has('.kortix/opencode/tools/lib/get-env.ts')).toBe(true);
+    expect(paths.has('skills/kortix-cli/SKILL.md')).toBe(true);
+    expect(paths.has('skills/kortix-system/SKILL.md')).toBe(false);
+    expect(paths.has('skills/agent-browser/SKILL.md')).toBe(false);
+    expect(paths.has('harnesses/opencode/plugins/pty.ts')).toBe(true);
+    expect(paths.has('harnesses/opencode/plugins/opencode-pty/src/plugin/pty/manager.ts')).toBe(true);
+    expect(paths.has('harnesses/opencode/plugins/lib/tool.ts')).toBe(true);
   });
 
   test('marketplace source contains optional first-party skills only', () => {
@@ -298,16 +304,24 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-apps',
       'kortix-computer',
       'kortix-connectors',
+      'kortix-drives',
+      'kortix-genui',
+      'kortix-goals',
       'kortix-harness-refinement',
       'kortix-marketplace',
       'kortix-memory',
       'kortix-onboarding',
+      'kortix-rooms',
       'kortix-slack',
       'kortix-system',
       'kortix-teams',
+      'kortix-ui',
+      'kortix-user-memory',
     ]);
 
     expect(isKortixManagedSkillName('kortix-system')).toBe(true);
+    // @kortix/ui's skill (packages/ui/skills/kortix-ui mirrored here): every session loads it.
+    expect(isKortixManagedSkillName('kortix-ui')).toBe(true);
     expect(isKortixManagedSkillName('agent-browser')).toBe(false);
     expect(isKortixManagedSkillName('kortix')).toBe(false);
     expect(isKortixManagedSkillName('harness-reflector')).toBe(false);
@@ -327,7 +341,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
    * without putting its SKILL.md in a walked root fails here.
    */
   test('every managed skill is actually in the injected set', () => {
-    const prefix = '.kortix/opencode/skills/';
+    const prefix = 'skills/';
     const injected = new Set<string>();
     for (const f of [
       ...getManagedSkillFiles(),
@@ -349,7 +363,7 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
    * `kortix-cli` is the deliberate exception — the visible front door to the rest.
    */
   test('only kortix-cli is scaffolded into a new project', () => {
-    const prefix = '.kortix/opencode/skills/';
+    const prefix = 'skills/';
     const scaffolded = new Set<string>();
     for (const f of getStarterFiles({ projectName: 'K', template: 'general-knowledge-worker' })) {
       if (!f.path.startsWith(prefix)) continue;

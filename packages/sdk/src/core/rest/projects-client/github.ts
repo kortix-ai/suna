@@ -3,6 +3,7 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap, type ProjectGitConnection } from './shared';
 import type { KortixProject, ProjectGlyph } from './projects';
+import type { RepositoryDisconnectedReason } from '../../http/api/errors';
 
 export interface GitHubRepository {
   id: string;
@@ -123,6 +124,28 @@ export interface LinkableGitHubInstallationsResponse {
   installations: LinkableGitHubInstallation[];
 }
 
+/**
+ * Is a project's git connection usable, and if not, can the account fix it?
+ * `reconnect_required` carries `install_url`, the GitHub App install link that
+ * reconnects it. With `reason: 'repository_disconnected'` it also carries
+ * `disconnected_reason` and `message` (the cause and the fix).
+ */
+export interface ProjectGitConnectionState {
+  state: 'connected' | 'reconnect_required' | 'unavailable' | 'not_connected';
+  reason?: string;
+  install_url?: string | null;
+  disconnected_reason?: RepositoryDisconnectedReason;
+  message?: string;
+}
+
+/** `GET /projects/:projectId/git/connection`. */
+export async function getProjectGitConnectionState(projectId: string) {
+  return unwrap(
+    await backendApi.get<ProjectGitConnectionState>(`/projects/${projectId}/git/connection`),
+    'Failed to read the Git connection',
+  );
+}
+
 export async function linkRepository(input: LinkRepositoryInput) {
   return unwrap(
     await backendApi.post<LinkRepositoryResponse>(
@@ -236,6 +259,37 @@ export async function linkGitHubInstallation(input: {
   return unwrap(
     await backendApi.post<GitHubInstallationStatus>(
       '/projects/github/installations/link',
+      input,
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * Store the caller's GitHub App USER access token for one account.
+ *
+ * GitHub refuses `POST /user/repos` for an App installation token and accepts a
+ * user access token, so creating a repository inside a PERSONAL GitHub account
+ * needs the user's own authorization. The browser obtains that token through
+ * the GitHub authorization popup; this hands it to the server, which verifies
+ * it against GitHub, encrypts it, and never returns it to any caller.
+ *
+ * `expires_in` is GitHub's own value in seconds, present only when the App is
+ * configured to expire user tokens.
+ *
+ * `showErrors: false`: the caller decides what a failure means — the create
+ * flow retries or explains it inline, and a global toast would say the same
+ * thing twice.
+ */
+export async function storeGitHubUserToken(input: {
+  account_id: string;
+  github_user_token: string;
+  expires_in?: number;
+  refresh_token?: string;
+}) {
+  return unwrap(
+    await backendApi.post<{ ok: true; github_login: string }>(
+      '/projects/github/user-token',
       input,
       { showErrors: false },
     ),

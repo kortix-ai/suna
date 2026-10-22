@@ -21,6 +21,12 @@
  *
  * HTTP-path work (the proxy, `/start`, `prompt_async` through the proxy) is
  * deliberately NOT scoped: the user's browser talks to one stack on purpose.
+ *
+ * One exception: an HTTP route that hands work to the scoped queue. The drain
+ * here never claims a command for a foreign sandbox, so accepting one strands
+ * it when the owner is down. `POST .../prompts` refuses it (409
+ * `SESSION_OWNED_BY_OTHER_INSTANCE`) and the warm lookup
+ * (`findWarmProjectSession`) never offers a foreign session.
  */
 import { config } from '../config';
 

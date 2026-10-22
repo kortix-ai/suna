@@ -26,13 +26,16 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Conversation Density': 'textd0fffb7fa940',
   'Credits & usage': 'text23715dba027a',
   Customize: 'textc5276e27afba',
+  'Customize Sidebar': 'texta37dd5ef6ef2',
   'Dark Theme': 'text6f2a09157622',
   Dashboard: 'text67b696468610',
   Desktop: 'text9bd88f2485ac',
+  Drive: 'text6312b4b9baf1',
   Files: 'textabc7e9892806',
   Home: 'text3a78695388b3',
   'Internal Browser': 'text875c0e464942',
   'Invite members': 'texte85663498c96',
+  'Kortix Capture': 'texta67e3dc962e8',
   'LLM Providers': 'textf9e89f3cc0c8',
   'Light Theme': 'textceab50a6f7f4',
   'Log Out': 'textd57d48b71020',
@@ -43,6 +46,8 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Open Files': 'text6e60f9c42ef8',
   'Open Session': 'text113463edeb06',
   'Open Terminal': 'textae088e141617',
+  Reminders: 'text7971dd752669',
+  Repo: 'text91dba14806eb',
   'Restart: Config Only': 'texta7d9f625e2f8',
   Review: 'textaff0766a5290',
   'Review changes': 'text6a47708f4e14',
@@ -55,6 +60,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Settings · General': 'textaf7dbdd174f2',
   'Settings · Sandbox templates': 'text56c63e70bc99',
   'Settings · Upgrades': 'text8938f078dd1e',
+  'Shared files': 'text5d1ac5e7432c',
   Skills: 'text66d0f523a379',
   Support: 'textbe91940b79f4',
   'Switch to Advanced View': 'text5f7c8d97889a',
@@ -66,7 +72,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'View Changes': 'textf65ed2ec9c30',
   Workspace: 'text87bb59ba2f92',
   'Project members': 'textab95d456c6bb',
-  'account members organization roster owners admins seats': 'text1a24578b099b',
+  'account members organization roster owners admins': 'textf651529d7e60',
   'accounts teams organizations switch manage': 'textb6bb289a7a2c',
   'agent sync branch base pull merge conflict resolve reconcile reload restart refresh workspace':
     'textcb97e7f77a44',
@@ -80,6 +86,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textd440cfc72edc',
   'browser chromium agent viewport automation live stream': 'texta019a77aa6df',
   'browser preview app port localhost session': 'textb597cb0305b9',
+  'capture recording screen devices install enrollment': 'textf12162aa6ac0',
   'channels channel slack teams discord email agentmail inbox inbound messaging':
     'text508121aba2d4',
   'connectors connections pipedream mcp openapi postman collections connector': 'text40f61622c4a4',
@@ -90,6 +97,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'desktop selkies novnc full screen xfce sandbox vnc remote': 'text3ae19e194379',
   'easy advanced simple panel session detail mode view': 'text726d0a8ba362',
   'files explorer workspace session': 'text9a1647988c99',
+  'files folders drive shared company my folder access share': 'text991f9b694b39',
   'files repository drive browser explorer': 'text6fdcee27400f',
   'general organization org company name sign in rules teams manage security mfa danger zone rename delete':
     'text2f13c3b24e4f',
@@ -101,8 +109,8 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'invite members add teammate email collaborator people access send': 'text07cbfe83d4d0',
   'llm providers models anthropic openai openrouter google groq xai': 'text73149a51d652',
   'log out sign out logout signout disconnect': 'text35fc0e79987e',
-  'members member workspace access collaborators people teammates roster who can see permissions grant share seats':
-    'text1b85843d53b1',
+  'members member workspace access collaborators people teammates roster who can see permissions grant share':
+    'textad828837ddd8',
   'models model llm gateway providers provider budgets limits anthropic openai openrouter claude gpt gemini reasoning byok':
     'text3e076e95c0eb',
   'permissions help what does mean reference explain owner admin member viewer': 'text06c4e75ab508',
@@ -120,6 +128,7 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'service manager services orchestration process manager sandbox active restart reload':
     'text5844ecb027f7',
   'sessions runs threads conversations open': 'text390ae89f8320',
+  'sidebar customize reorder hide show navigation rows': 'text8c712bd7c1ec',
   'skills abilities': 'text871b6d3b6b19',
   'support help faq contact refund bug report issue question': 'text45a12827a72e',
   'switch workspace workspaces project projects change move open all list': 'text544792b85010',
@@ -131,4 +140,8 @@ export const MENU_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
     'textaffaf0c2671a',
   'workspace access grants who can open repositories per workspace membership': 'text592dbd5acab8',
   'workspace agents skills commands tools build create': 'texta6dc82e13869',
+  'Pure Light Theme': 'text64ad7399fb9e',
+  'theme light mode pure white': 'texte6ebf219f591',
+  'Pure Dark Theme': 'textc433363f9a4e',
+  'theme dark mode pure black': 'textbc9543239440',
 };

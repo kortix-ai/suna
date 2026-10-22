@@ -13,6 +13,7 @@
  */
 import { platformConfig } from '../../http/config';
 import { stripTrailingSlashes } from '../../../platform/strings';
+import { platformApiBase } from './shared';
 import type { KortixSession, KortixSessionOptions } from '../../auth/session';
 
 export interface AuthSession {
@@ -74,22 +75,18 @@ export interface AuthRequestOptions {
   signal?: AbortSignal;
 }
 
-function apiBase(opts?: AuthRequestOptions): string {
-  const raw = stripTrailingSlashes(opts?.backendUrl ?? platformConfig().backendUrl ?? '');
-  if (!raw) throw new HeadlessAuthError('not_configured', 'backendUrl is not configured (configureKortix / createKortix first)', 0);
-  return raw.endsWith('/v1') ? raw : `${raw}/v1`;
-}
-
 async function call<T>(
   path: string,
   init: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown; bearer?: string },
   opts?: AuthRequestOptions,
 ): Promise<T> {
   const fetchImpl = opts?.fetch ?? platformConfig().fetch ?? ((input: RequestInfo | URL, i?: RequestInit) => fetch(input, i));
+  const raw = stripTrailingSlashes(opts?.backendUrl ?? platformConfig().backendUrl ?? '');
+  if (!raw) throw new HeadlessAuthError('not_configured', 'backendUrl is not configured (configureKortix / createKortix first)', 0);
   const headers: Record<string, string> = { accept: 'application/json' };
   if (init.body !== undefined) headers['content-type'] = 'application/json';
   if (init.bearer) headers.authorization = `Bearer ${init.bearer}`;
-  const res = await fetchImpl(`${apiBase(opts)}${path}`, {
+  const res = await fetchImpl(`${platformApiBase(raw)}${path}`, {
     method: init.method ?? (init.body !== undefined ? 'POST' : 'GET'),
     headers,
     ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),

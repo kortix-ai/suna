@@ -1,7 +1,9 @@
 'use client';
 
+import type { QueryClient } from '@tanstack/react-query';
+
 import { useSandboxConnectionStore } from '../../browser/stores/sandbox-connection-store';
-import { getActiveOpenCodeUrl } from '../../core/session/server-store/active';
+import { getActiveRuntimeUrl } from '../../core/session/server-store/active';
 import { useCurrentRuntime } from '../use-current-runtime';
 import { activeServerKey } from './shared';
 import type {
@@ -21,7 +23,7 @@ import type {
   WorktreeCreateInput,
   WorktreeRemoveInput,
   WorktreeResetInput,
-} from '@opencode-ai/sdk/v2/client';
+} from '../../core/runtime/runtime-types';
 
 // ============================================================================
 // Re-export SDK types for consumers
@@ -116,11 +118,13 @@ export interface ToolListItem {
 // Query Keys
 // ============================================================================
 
-export const opencodeKeys = {
+export const runtimeKeys = {
   all: ['opencode'] as const,
   sessions: (serverId?: string) => ['opencode', 'sessions', serverId ?? activeServerKey()] as const,
   session: (id: string) => ['opencode', 'session', id] as const,
   messages: (sessionId: string) => ['opencode', 'session', sessionId, 'messages'] as const,
+  /** The runtime's todo list for a session; the event stream writes it on `todo.updated`. */
+  sessionTodo: (sessionId: string) => ['opencode', 'session-todo', sessionId] as const,
   runtimeSession: (id: string, serverId?: string) =>
     ['opencode', 'session', id, serverId ?? activeServerKey()] as const,
   runtimeMessages: (sessionId: string, serverId?: string) =>
@@ -148,7 +152,16 @@ export const opencodeKeys = {
   vcsDiffAll: () => ['opencode', 'vcs-diff'] as const,
 };
 
-export function useOpenCodeRuntimeReady() {
+/**
+ * Drop every cached runtime query (sessions, messages, agents, commands, diffs,
+ * ...). Call it when the session's runtime is replaced, e.g. after a restart:
+ * the next read then comes from the new runtime, not from the old one's cache.
+ */
+export function resetRuntimeQueries(queryClient: Pick<QueryClient, 'removeQueries'>): void {
+  queryClient.removeQueries({ queryKey: runtimeKeys.all });
+}
+
+export function useRuntimeReady() {
   const connectedHealthy = useSandboxConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
   );
@@ -157,9 +170,15 @@ export function useOpenCodeRuntimeReady() {
   // setCurrentRuntime(). Firing an opencode query in that gap makes getClient()
   // throw "Server URL not ready — sandbox is still loading". So also require a
   // resolved URL: subscribe to the runtime url (recomputes the instant the
-  // runtime pins) and fall back to getActiveOpenCodeUrl(), which covers the
+  // runtime pins) and fall back to getActiveRuntimeUrl(), which covers the
   // self-hosted default-sandbox case where the store url stays null.
   const runtimeUrl = useCurrentRuntime((s) => s.url);
-  const hasUrl = !!(runtimeUrl || getActiveOpenCodeUrl());
+  const hasUrl = !!(runtimeUrl || getActiveRuntimeUrl());
   return connectedHealthy && hasUrl;
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `runtimeKeys`. Removed in the next major. */
+export const opencodeKeys = runtimeKeys;
+/** @deprecated Renamed to `useRuntimeReady`. Removed in the next major. */
+export const useOpenCodeRuntimeReady = useRuntimeReady;

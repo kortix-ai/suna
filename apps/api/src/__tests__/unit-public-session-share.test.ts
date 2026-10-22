@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+// The real module namespace, so the mock below only overrides the calls this
+// suite stubs and still carries every export the shared forwarder imports.
+import * as realBackend from '../sandbox-proxy/backend';
 
 const SHARE_TOKEN = 'kps_11111111111141118111111111111111';
 const SHARE_ID = '11111111-1111-4111-8111-111111111111';
@@ -12,6 +15,10 @@ let shareRow: any;
 let personalBindingRow: { connectionId: string } | null;
 let updateCalls = 0;
 let fetchUrls: string[] = [];
+let fetchInits: RequestInit[] = [];
+let ingressResolves = 0;
+let invalidations = 0;
+let wakes = 0;
 
 mock.module('../shared/db', () => ({
   hasDatabase: true,
@@ -43,23 +50,33 @@ mock.module('../shared/db', () => ({
 }));
 
 mock.module('../sandbox-proxy/backend', () => ({
+  ...realBackend,
   buildSandboxUpstreamHeaders: async ({ serviceKey, providerHeaders }: any) => ({
     ...providerHeaders,
     ...(serviceKey ? { Authorization: `Bearer ${serviceKey}` } : {}),
   }),
-  invalidatePreviewLink: () => {},
+  invalidatePreviewLink: () => {
+    invalidations += 1;
+  },
   loadSandbox: async () => ({
     externalId: EXTERNAL_ID,
     status: 'active',
     serviceKey: 'service-key',
   }),
+  markSandboxErrored: async () => {},
   markSandboxUsed: async () => {},
-  resolveSandboxIngress: async () => ({
-    url: 'https://preview.test',
-    headers: { 'e2b-traffic-access-token': 'preview-token' },
-    effectivePort: 3000,
-  }),
-  wakeSandbox: async () => {},
+  resolveSandboxIngress: async () => {
+    ingressResolves += 1;
+    return {
+      url: 'https://preview.test',
+      headers: { 'x-provider-traffic-token': 'preview-token' },
+      effectivePort: 3000,
+    };
+  },
+  routeSandboxIngress: (_record: any, request: any) => ({ effectivePort: request.port }),
+  wakeSandbox: async () => {
+    wakes += 1;
+  },
 }));
 
 const originalFetch = globalThis.fetch;
@@ -85,8 +102,13 @@ beforeEach(() => {
   personalBindingRow = null;
   updateCalls = 0;
   fetchUrls = [];
-  globalThis.fetch = (async (url: RequestInfo | URL) => {
+  fetchInits = [];
+  ingressResolves = 0;
+  invalidations = 0;
+  wakes = 0;
+  globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
     fetchUrls.push(String(url));
+    fetchInits.push(init ?? {});
     return new Response('ok', { status: 200 });
   }) as unknown as typeof fetch;
 });
@@ -227,6 +249,58 @@ describe('public session preview shares', () => {
 
 });
 
+describe('path-form public shares delegate to the shared sandbox forwarder', () => {
+  test('a preview share and a file share return the same status and body', async () => {
+    const preview = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+    expect(preview.status).toBe(200);
+    expect(await preview.text()).toBe('ok');
+    expect(updateCalls).toBe(1);
+
+    shareRow = {
+      ...shareRow,
+      resourceType: 'file',
+      label: 'index.html',
+      port: null,
+      filePath: '/workspace/app/index.html',
+    };
+    const file = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/file`);
+    expect(file.status).toBe(200);
+    expect(await file.text()).toBe('ok');
+  });
+
+  test('a 502 invalidates the link and re-resolves the ingress once before it succeeds', async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response('bad gateway', { status: 502 })
+        : new Response('ok', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(calls).toBe(2);
+    expect(invalidations).toBe(1);
+    expect(ingressResolves).toBe(2);
+  });
+
+  test('a dead-signal 400 wakes the sandbox and re-resolves the ingress', async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response('no IP address found', { status: 400 })
+        : new Response('ok', { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+    expect(res.status).toBe(200);
+    expect(wakes).toBe(1);
+    expect(ingressResolves).toBe(2);
+  });
+});
+
 describe('public transcript shares on the proxy edge', () => {
   beforeEach(() => {
     shareRow = {
@@ -266,5 +340,47 @@ describe('public shares of a deleted session', () => {
       const res = await app().request(`/v1/p/public-share/${SHARE_TOKEN}`);
       expect(res.status).toBe(410);
     }
+  });
+});
+
+// The public origin is derived from the client-facing request, not from the
+// hop that reached the API. A chained proxy appends to `x-forwarded-proto`
+// ("https, http"); the scheme is its FIRST value, never the raw header value.
+// The no-header URL-scheme fallback is pinned by the first test of this file.
+describe('public share origin across chained proxies', () => {
+  test('a single x-forwarded-proto value becomes the scheme', async () => {
+    const res = await app().request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`, {
+      headers: { 'x-forwarded-proto': 'https' },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.share.public_url).toBe(`https://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+  });
+
+  test('a plain-http value keeps the http scheme', async () => {
+    const res = await app().request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`, {
+      headers: { 'x-forwarded-proto': 'http' },
+    });
+    const body = await res.json() as any;
+    expect(body.share.public_url).toBe(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+  });
+
+  test('a chained proxy that appended to x-forwarded-proto gets the first value', async () => {
+    const res = await app().request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}`, {
+      headers: { 'x-forwarded-proto': 'https, http' },
+    });
+    const body = await res.json() as any;
+    expect(body.share.public_url).toBe(`https://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`);
+  });
+
+  test('the X-Forwarded-Prefix handed to the sandbox app carries the first proto value too', async () => {
+    const res = await app().request(`http://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000/`, {
+      headers: { 'x-forwarded-proto': 'https, http' },
+    });
+    expect(res.status).toBe(200);
+    const headers = fetchInits.at(-1)?.headers as Headers | undefined;
+    expect(headers?.get('x-forwarded-prefix')).toBe(
+      `https://localhost:8008/v1/p/public-share/${SHARE_TOKEN}/3000`,
+    );
   });
 });

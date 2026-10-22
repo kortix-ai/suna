@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { skillsApp } from '../skills';
 
-// Mounted the same way index.ts mounts it, minus combinedAuth — the auth gate is
-// index.ts's `app.use('/v1/skills', ...)` registration; what is asserted here is
+// Mounted the same way app.ts mounts it, minus combinedAuth — the auth gate is
+// app.ts's `app.use('/v1/skills', ...)` registration; what is asserted here is
 // the contract the CLI and any harness agent read.
 const app = new OpenAPIHono();
 app.route('/v1/skills', skillsApp);

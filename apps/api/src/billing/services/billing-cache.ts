@@ -9,8 +9,8 @@
  * It REPLACES two caches that used to hold overlapping views of the same row:
  *   - `accountTierCache` in `billing/services/entitlements.ts` (30s) — effective
  *     tier + managed-models entitlement, read on the gateway auth hot path.
- *   - `accountLimitCache` in `shared/account-limits.ts` (60s) — effective tier +
- *     the max_concurrent_sessions override, read by the project/session limits.
+ *   - `accountLimitCache` in `shared/account-limits.ts` (60s) — effective tier,
+ *     read by the project limits.
  * Two caches over one row means two expiry clocks: for up to 60s after an
  * upgrade, downgrade, trial grant, or trial revoke the limit layer and the
  * entitlement layer could disagree about the same account. One cache with one
@@ -37,7 +37,7 @@ export interface ResolveAccountBillingOptions {
   /**
    * Bypass the cached value and re-read the row. The fresh result still
    * populates the cache. Use where a stale answer is not acceptable — e.g.
-   * `resolveAccountSessionLimit`, which must observe an operator-set override
+   * `maxProjectsForAccount`, which must observe a just-funded account
    * immediately, and every entitlement gate that an admin action can flip.
    */
   fresh?: boolean;

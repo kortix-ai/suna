@@ -4,12 +4,6 @@ import { accountMembers, accounts, projectMembers, projects } from '@kortix/db';
 import { insertIntoView } from './helpers/compat-views';
 import { createLocalGitUpstream, type LocalGitUpstream } from './helpers/local-git-upstream';
 
-// The model-defaults routes 404 `llm_gateway_disabled` BEFORE their leaf gate
-// when the gateway is unavailable, so the leaf would never be measured. The
-// operator master switch (config.LLM_GATEWAY_ENABLED) defaults off and is read
-// once at config import, so it must be set before the app loads. The project
-// row below also opts in explicitly.
-process.env.LLM_GATEWAY_ENABLED = 'true';
 const { db } = await import('../shared/db');
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
@@ -46,9 +40,7 @@ beforeAll(async () => {
     // Flag-gated routes in CASES (channels/email/*, channels/teams/*) reject
     // with 403 `feature_disabled` when off. Turn them on so this suite measures
     // the LEAF gate, not the flag.
-    // `llm_gateway` likewise: model-defaults PUT 404s `llm_gateway_disabled`
-    // before the leaf gate when the project has the gateway off.
-    metadata: { experimental: { agentmail_email: true, teams: true, llm_gateway: true } },
+    metadata: { experimental: { agentmail_email: true, teams: true } },
   });
   await insertIntoView(db, accountMembers, [
     { userId: MEMBER, accountId: ACCOUNT, accountRole: 'member', isSuperAdmin: false },
@@ -245,46 +237,42 @@ const CASES: WCase[] = [
     path: () => `/v1/projects/${PROJECT}/channels/bindings`,
     tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CONNECTOR_READ],
   },
-  // ── Customize (write) ────────────────────────────────────────────────────
+  // ── Models, default agent, settings (write) ─────────────────────────────
   {
     // Strict body (ModelDefaultBody) is validated at the OpenAPI layer BEFORE the
     // handler, so send a schema-valid body — otherwise a 400 pre-empts the gate.
-    name: 'model-defaults PUT (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
+    name: 'model-defaults PUT (model.write)',
+    leaf: A.PROJECT_MODEL_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/model-defaults`, body: { scope: 'project', model: 'openai/gpt-4o' },
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_MODEL_WRITE],
   },
   {
-    name: 'model-defaults DELETE (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'DELETE',
+    name: 'model-defaults DELETE (model.write)',
+    leaf: A.PROJECT_MODEL_WRITE, method: 'DELETE',
     path: () => `/v1/projects/${PROJECT}/model-defaults?scope=project`,
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_MODEL_WRITE],
   },
   {
-    name: 'default-agent PUT (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PUT',
+    name: 'default-agent PUT (agent.write)',
+    leaf: A.PROJECT_AGENT_WRITE, method: 'PUT',
     path: () => `/v1/projects/${PROJECT}/default-agent`, body: { agent: 'support' },
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_AGENT_WRITE],
   },
   {
-    name: 'feature-flag toggle (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
+    name: 'feature-flag toggle (settings.write)',
+    leaf: A.PROJECT_SETTINGS_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/features`, body: {},
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SETTINGS_WRITE],
   },
   {
     // The deprecated alias published SDKs still call must gate identically.
-    name: 'feature-flag toggle via the /experimental alias (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
+    name: 'feature-flag toggle via the /experimental alias (settings.write)',
+    leaf: A.PROJECT_SETTINGS_WRITE, method: 'PATCH',
     path: () => `/v1/projects/${PROJECT}/experimental`, body: {},
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
+    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_SETTINGS_WRITE],
   },
-  {
-    name: 'sandbox-provider (customize.write)',
-    leaf: A.PROJECT_CUSTOMIZE_WRITE, method: 'PATCH',
-    path: () => `/v1/projects/${PROJECT}/sandbox-provider`, body: {},
-    tier: 'manager', denyGrant: [A.PROJECT_TRIGGER_FIRE], allowGrant: [A.PROJECT_CUSTOMIZE_WRITE],
-  },
+  // The provider pin is a session-principal refusal, not a leaf gate — it has
+  // its own block below ("the provider pin is a person's action").
   // ── Agent scope (agent.write) ────────────────────────────────────────────
   {
     name: 'agent scope PUT (agent.write)',
@@ -302,6 +290,32 @@ const CASES: WCase[] = [
 ];
 
 describe('HTTP enforcement — project write/lifecycle leaf gates (every checkbox authoritative)', () => {
+  // The per-project sandbox-provider pin routes EVERY new session in the
+  // project, so a session principal may never flip it — whatever grant it
+  // holds (KRTX-1681: a security-audit agent pinned its whole project to
+  // daytona). Humans keep the settings.write leaf: a member PAT is denied by
+  // the leaf, a manager PAT routes the write.
+  describe('the provider pin is a person\'s action (sandbox-provider PATCH)', () => {
+    test('a session-bound agent token → refused outright (agent_session_forbidden), grant irrelevant', async () => {
+      const granted = await mint(MANAGER, [A.PROJECT_SETTINGS_WRITE]);
+      const res = await req('PATCH', `/v1/projects/${PROJECT}/sandbox-provider`, granted, {});
+      expect(res.status).toBe(403);
+      expect(await res.json()).toMatchObject({ code: 'agent_session_forbidden' });
+    });
+
+    test('plain MEMBER (lacks the manager-tier settings.write leaf) → denied', async () => {
+      const secret = await mint(MEMBER, null);
+      const res = await req('PATCH', `/v1/projects/${PROJECT}/sandbox-provider`, secret, {});
+      expect(await iamDenied(res)).toBe(true);
+    });
+
+    test('plain MANAGER (holds the leaf) → NOT denied', async () => {
+      const secret = await mint(MANAGER, null);
+      const res = await req('PATCH', `/v1/projects/${PROJECT}/sandbox-provider`, secret, {});
+      expect(await iamDenied(res)).toBe(false);
+    });
+  });
+
   for (const c of CASES) {
     describe(c.name, () => {
       test('scoped agent with an UNRELATED grant → denied by the leaf gate', async () => {

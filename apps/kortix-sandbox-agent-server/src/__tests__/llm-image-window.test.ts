@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { applyInlineImageWindow, imageWindowFromEnv, isChatRequestPath } from '../llm-image-window';
+import { applyInlineImageWindow, imageWindowFromEnv, isChatRequestPath } from '@/services/llm-proxy/llm-image-window';
 
 const img = (n: number) => ({
   type: 'image_url',

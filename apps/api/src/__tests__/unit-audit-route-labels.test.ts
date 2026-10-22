@@ -39,9 +39,10 @@ const manifest = JSON.parse(
 ) as { routes: Array<{ method: string; path: string }> };
 const manifestKeys = new Set(manifest.routes.map((route) => `${route.method} ${route.path}`));
 
-const indexSource = readFileSync(new URL('../index.ts', import.meta.url), 'utf8');
+// The pre-Hono entrypoints moved into inbound-dispatch.ts (KRTX-347 split).
+const dispatchSource = readFileSync(new URL('../inbound-dispatch.ts', import.meta.url), 'utf8');
 const entrypointKeys = new Set(
-  [...indexSource.matchAll(/setInboundAuditEntrypoint\(\s*'[a-z_]+',\s*'([^']+)'\s*\)/g)].map(
+  [...dispatchSource.matchAll(/setInboundAuditEntrypoint\(\s*'[a-z_]+',\s*'([^']+)'\s*\)/g)].map(
     (match) => `ENTRY ${match[1]}`,
   ),
 );

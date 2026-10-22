@@ -11,10 +11,10 @@
  * `{ role, text, tools, files, error }` shape (text + tool names only, no
  * parts), which is NOT what `classifyTurn` classifies and doesn't typecheck
  * against it. `classifyTurn` (`core/turns/classify.ts`) takes a
- * `MessageWithParts` (`{ info: Message; parts: Part[] }`) — the raw opencode
- * runtime shape. To render with `classifyTurn`, read from the runtime
- * directly, exactly like `examples/04-render-transcript.ts` does:
- * `session.runtime.session.messages({ sessionID })`.
+ * `MessageWithParts` (`{ info: Message; parts: Part[] }`) — a message of the
+ * Kortix transcript (`kortix.transcript.v1`). To render with `classifyTurn`,
+ * read the session's messages, exactly like `examples/04-render-transcript.ts`
+ * does: `session.messages()`.
  *
  * Run:
  *   KORTIX_API_URL=http://localhost:8008/v1 KORTIX_API_KEY=kortix_pat_... \
@@ -23,10 +23,8 @@
  *
  * As an npm consumer, one import line changes:
  *   import { classifyTurn, createKortix, narrowChatEvent } from '@kortix/sdk';
- *   import type { MessageWithParts } from '@kortix/sdk';
  */
 import { classifyTurn, createKortix, narrowChatEvent } from '../src/index';
-import type { MessageWithParts } from '../src/index';
 
 async function main() {
   const backendUrl = process.env.KORTIX_API_URL ?? 'http://localhost:8008/v1';
@@ -47,10 +45,7 @@ async function main() {
 
   const session = kortix.session(projectId, sessionId);
 
-  // Connect BEFORE sending so no early events are missed. `ensureReady()`
-  // also hands back this handle's own resolved opencode session id, which
-  // the final render loop below needs to read the runtime's own messages.
-  const { opencodeSessionId } = await session.ensureReady();
+  // Connect BEFORE sending so no early events are missed.
   const handle = await session.stream({
     onEvent: (event) => {
       const narrowed = narrowChatEvent(event);
@@ -65,8 +60,7 @@ async function main() {
   await new Promise((resolve) => setTimeout(resolve, 15_000));
   handle.close();
 
-  const result = await session.runtime.session.messages({ sessionID: opencodeSessionId });
-  const messages = (result.data ?? []) as MessageWithParts[];
+  const { messages } = await session.messages();
   for (const message of messages) {
     for (const part of classifyTurn(message).parts) {
       if (part.kind === 'text') console.log(part.text);

@@ -1,135 +1,19 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { HTTPException } from 'hono/http-exception';
 import type { AppEnv } from '../../types';
-import { calculateTokenCost } from '../services/credits';
-import { wallet } from '../wallet';
-import { getVisibleTiers } from '../services/tiers';
+import { PLAN_MAX_MONTHLY_USD, PLAN_MIN_MONTHLY_USD, PLAN_PRESETS } from '../services/tiers';
 import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
-import type { TokenUsageRequest } from '../../types';
-import { makeOpenApiApp, json, errors, auth } from '../../openapi';
+import { makeOpenApiApp, json, auth, errors } from '../../openapi';
+import { resolveBillingReadAccountId } from '../http-require-billing-write';
 
 export const creditsRouter = makeOpenApiApp<AppEnv>();
-
-const DeductResultSchema = z.object({
-  success: z.boolean(),
-  cost: z.number(),
-  new_balance: z.number(),
-  transaction_id: z.string().optional(),
-});
-
-creditsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/deduct',
-    tags: ['billing'],
-    summary: 'Deduct credits for LLM token usage',
-    ...auth,
-    request: {
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              prompt_tokens: z.number(),
-              completion_tokens: z.number(),
-              model: z.string(),
-            }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(DeductResultSchema, 'Deduction result'),
-      ...errors(422),
-    },
-  }),
-  async (c) => {
-    const accountId = c.get('userId');
-    // Manual parse: the existing contract accepts the raw TokenUsageRequest and
-    // never rejects on missing/zero fields (cost<=0 short-circuits to success).
-    const body = await c.req.json<TokenUsageRequest>();
-
-    let cost: number;
-    try {
-      cost = calculateTokenCost(body.prompt_tokens, body.completion_tokens, body.model);
-    } catch {
-      throw new HTTPException(422, {
-        message: `No billing price for model ${body.model}. No credits were deducted.`,
-      });
-    }
-    if (cost <= 0) {
-      return c.json({ success: true, cost: 0, new_balance: 0 });
-    }
-
-    const result = await wallet.debit({
-      accountId,
-      amount: cost,
-      description: `LLM: ${body.model} (${body.prompt_tokens}/${body.completion_tokens} tokens)`,
-      kind: 'usage',
-      key: null,
-    });
-
-    return c.json({
-      success: true,
-      cost: result.amount,
-      new_balance: result.balance,
-      transaction_id: result.transactionId,
-    });
-  },
-);
-
-creditsRouter.openapi(
-  createRoute({
-    method: 'post',
-    path: '/deduct-usage',
-    tags: ['billing'],
-    summary: 'Deduct a flat credit amount for agent run usage',
-    ...auth,
-    request: {
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({ amount: z.number(), description: z.string().optional() }),
-          },
-        },
-      },
-    },
-    responses: {
-      200: json(DeductResultSchema, 'Deduction result'),
-    },
-  }),
-  async (c) => {
-    const accountId = c.get('userId');
-    // Manual parse: contract accepts missing/zero amount (short-circuits to success).
-    const body = await c.req.json<{ amount: number; description?: string }>();
-
-    if (!body.amount || body.amount <= 0) {
-      return c.json({ success: true, cost: 0, new_balance: 0 });
-    }
-
-    const result = await wallet.debit({
-      accountId,
-      amount: body.amount,
-      description: body.description || `Agent run usage: $${body.amount.toFixed(4)}`,
-      kind: 'usage',
-      key: null,
-    });
-
-    return c.json({
-      success: true,
-      cost: result.amount,
-      new_balance: result.balance,
-      transaction_id: result.transactionId,
-    });
-  },
-);
 
 creditsRouter.openapi(
   createRoute({
     method: 'get',
     path: '/tier-configurations',
     tags: ['billing'],
-    summary: 'List visible tier configurations',
+    summary: 'List the credits plan tier ladder and amount bounds',
     ...auth,
     responses: {
       200: json(
@@ -144,22 +28,26 @@ creditsRouter.openapi(
               can_purchase_credits: z.boolean(),
             }),
           ),
+          min_monthly_usd: z.number(),
+          max_monthly_usd: z.number(),
         }),
-        'Visible tiers',
+        'Tier ladder: monthly amounts of the one credits plan; any whole amount in bounds',
       ),
     },
   }),
   async (c) => {
-    const tiers = getVisibleTiers().map((t) => ({
-      name: t.name,
-      display_name: t.displayName,
-      monthly_price: t.monthlyPrice,
-      yearly_price: t.yearlyPrice,
-      monthly_credits: t.monthlyCredits,
-      can_purchase_credits: t.canPurchaseCredits,
+    // Each preset grants its price in credits (1 credit = $0.01): monthly_credits
+    // stays in USD, as on every other billing response.
+    const tiers = PLAN_PRESETS.map((p) => ({
+      name: `credits_${p.monthlyUsd}`,
+      display_name: `${(p.monthlyUsd * 100).toLocaleString('en-US')} credits`,
+      monthly_price: p.monthlyUsd,
+      yearly_price: 0,
+      monthly_credits: p.monthlyUsd,
+      can_purchase_credits: true,
     }));
 
-    return c.json({ tiers });
+    return c.json({ tiers, min_monthly_usd: PLAN_MIN_MONTHLY_USD, max_monthly_usd: PLAN_MAX_MONTHLY_USD });
   },
 );
 
@@ -180,10 +68,14 @@ creditsRouter.openapi(
         }),
         'Credit breakdown',
       ),
+      ...errors(403),
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
+    // The account the caller asked for (account_id), gated by billing.read,
+    // like every sibling billing read; never the caller's personal account by
+    // default (KRTX-2989).
+    const accountId = await resolveBillingReadAccountId(c);
     const balance = await getCreditBalance(accountId);
 
     if (!balance) {
@@ -209,10 +101,11 @@ creditsRouter.openapi(
     request: { query: z.object({ days: z.coerce.number().optional() }) },
     responses: {
       200: json(z.record(z.string(), z.any()), 'Usage summary'),
+      ...errors(403),
     },
   }),
   async (c) => {
-    const accountId = c.get('userId');
+    const accountId = await resolveBillingReadAccountId(c);
     const days = Number(c.req.query('days') ?? 30);
     const summary = await getTransactionsSummary(accountId, days);
     return c.json(summary);

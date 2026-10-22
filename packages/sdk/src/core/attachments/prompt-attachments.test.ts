@@ -379,14 +379,22 @@ test('an expired upload reports attachment_expired, from Retry and from the read
   });
   stale.dispose();
 
-  const expiresAt = new Date(Date.now() + 30).toISOString();
   configureKortix({
     backendUrl: 'https://api.test',
     getToken: async () => 'token',
     fetch: async (url, init) => {
       if (init?.method === 'PUT') return Response.json({ received_bytes: 3, size: 3 });
       if (String(url).endsWith('/complete'))
-        return Response.json({ ...metadata, expires_at: expiresAt });
+        // The 30 ms expiry window starts when the server stamps the upload, not
+        // when the test starts: computing it at test start raced the scheduler —
+        // under load the upload completed after the window had already passed
+        // and the controller flipped to attachment_expired before the 'ready'
+        // assertion below ran. 30 ms after completion is the same contract with
+        // no race between the two statements.
+        return Response.json({
+          ...metadata,
+          expires_at: new Date(Date.now() + 30).toISOString(),
+        });
       return Response.json({ ...metadata, upload: { kind: 'chunked', chunk_size: 65536 } });
     },
   });
@@ -861,4 +869,66 @@ test('remove during an initiation that never yields a handle deletes nothing', a
   expect(wire.requests.filter((line) => line.startsWith('DELETE'))).toEqual([]);
   expect(controller.getSnapshot().attachments).toEqual([]);
   controller.dispose();
+});
+
+// A stored draft keeps the handles of its finished uploads, so a session
+// switch or a reload brings the files back instead of asking for them again.
+test('restore lists finished uploads as ready without a request, and Send uses their handles', async () => {
+  const wire = transport();
+  const controller = createPromptAttachmentController('project-1');
+  const second = { ...metadata, attachment_id: 'attachment-2', filename: 'b.txt' };
+  const ids = controller.restore([{ attachment: metadata }, { attachment: second }]);
+  expect(ids).toHaveLength(2);
+  expect(controller.getSnapshot().attachments.map((item) => [item.filename, item.status])).toEqual([
+    ['a.txt', 'ready'],
+    ['b.txt', 'ready'],
+  ]);
+  expect(await controller.whenReady(ids as string[])).toEqual([
+    { type: 'file', attachment_id: 'attachment-1', filename: 'a.txt', mime: 'text/plain' },
+    { type: 'file', attachment_id: 'attachment-2', filename: 'b.txt', mime: 'text/plain' },
+  ]);
+  expect(wire.requests).toEqual([]);
+});
+
+test('restore skips a handle past its expiry and keeps the File it is given', () => {
+  transport();
+  const controller = createPromptAttachmentController('project-1');
+  const file = new File(['abc'], 'a.txt', { type: 'text/plain' });
+  const ids = controller.restore([
+    { attachment: { ...metadata, attachment_id: 'old', expires_at: '2001-01-01T00:00:00Z' } },
+    { attachment: metadata, file },
+  ]);
+  expect(ids[0]).toBeUndefined();
+  expect(typeof ids[1]).toBe('string');
+  const [item] = controller.getSnapshot().attachments;
+  expect(controller.getSnapshot().attachments).toHaveLength(1);
+  expect(item!.file).toBe(file);
+});
+
+test('restored uploads count toward the 20-file limit', () => {
+  transport();
+  const controller = createPromptAttachmentController('project-1');
+  controller.restore(
+    Array.from({ length: MAX_PROMPT_ATTACHMENT_FILES }, (_, index) => ({
+      attachment: { ...metadata, attachment_id: `attachment-${index}` },
+    })),
+  );
+  expect(() => controller.add(new File(['x'], 'x.txt'))).toThrow(/up to 20/);
+});
+
+test('remove deletes a restored upload; forget releases it, so dispose deletes nothing', async () => {
+  const wire = transport();
+  const removed = createPromptAttachmentController('project-1');
+  const [id] = removed.restore([{ attachment: metadata }]);
+  await removed.remove(id!);
+  await settle();
+  expect(wire.requests).toEqual(['DELETE https://api.test/projects/project-1/attachments/attachment-1']);
+
+  wire.requests.length = 0;
+  const kept = createPromptAttachmentController('project-1');
+  const [keptId] = kept.restore([{ attachment: metadata }]);
+  kept.forget([keptId!]);
+  kept.dispose();
+  await settle();
+  expect(wire.requests).toEqual([]);
 });

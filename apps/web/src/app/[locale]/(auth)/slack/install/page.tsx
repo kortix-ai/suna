@@ -2,8 +2,9 @@
 
 import { Suspense } from 'react';
 
-import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import { AuthPendingScreen } from '@kortix/ui/internal/auth/auth-consent';
 import { ChannelInstallComplete } from '@/features/auth/channel-install-complete';
+import { Slack } from '@kortix/ui/internal/icons/slack';
 import { completeSlackInstall } from '@kortix/sdk';
 
 /**
@@ -14,7 +15,12 @@ import { completeSlackInstall } from '@kortix/sdk';
 export default function SlackInstallPage() {
   return (
     <Suspense fallback={<AuthPendingScreen />}>
-      <ChannelInstallComplete service="Slack" path="/slack/install" complete={completeSlackInstall} />
+      <ChannelInstallComplete
+        service="Slack"
+        icon={Slack}
+        path="/slack/install"
+        complete={completeSlackInstall}
+      />
     </Suspense>
   );
 }

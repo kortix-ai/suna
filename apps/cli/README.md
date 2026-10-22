@@ -7,16 +7,17 @@ kortix init my-project
 ```
 
 Makes `./my-project/`, runs `git init -b main`, and writes the Kortix
-project floor at the repo root (`kortix.yaml`, `README.md`,
-`.kortix/opencode/`, `.kortix/memory/MEMORY.md`), stages every file, and
-makes an initial commit.
+project floor at the repo root (`kortix.yaml`, `README.md`, `agents/`,
+`skills/`, `memory/MEMORY.md`), stages every file, and makes an initial commit.
 
 ## Usage
 
 ```sh
 kortix init                  # interactive flow: pick a name and wire local coding agents
 kortix init my-project       # use the given name
-kortix ship                  # create the cloud project (first run) + push your code
+kortix projects create my-project # create a remote project and print its id
+kortix projects use <project_id>  # select it without a local scaffold
+kortix ship                  # push to linked/default project; create when neither exists
 kortix self-host start       # run your own Kortix Cloud from Docker images
 ```
 
@@ -29,6 +30,36 @@ Run `kortix init --help` for the full flag list, or `kortix --help`
 for the full command list (project, auth, work, and resource subcommands —
 sessions, triggers, connectors, secrets, sandboxes, marketplace, and more).
 
+## Log out of a custom host
+
+`kortix logout --host <name>` clears the token and keeps the registered API URL.
+The signed-out `whoami --host <name>` recovery command includes that URL explicitly.
+
+Older installed CLIs (including v0.13.56) remove the host entry on logout.
+Until you install a release with the host-retention fix, restore the registration
+before signing in:
+
+```sh
+kortix hosts add custom --api http://localhost:8008
+kortix hosts login custom
+```
+
+Replace `custom` and the URL with your host name and original API origin. Do not
+run `hosts login custom` on an older CLI after logout without restoring the URL:
+it otherwise uses the default cloud origin.
+
+## Use Kortix from an MCP client
+
+Claude, ChatGPT, Cursor, VS Code and Codex reach the same projects and sessions
+as this CLI through one hosted MCP server. Nothing to install:
+
+```sh
+claude mcp add --transport http kortix https://api.kortix.com/v1/mcp
+```
+
+Setup for each client, sign-in and revocation (`kortix tokens apps ls|rm`):
+<https://kortix.com/docs/connect/mcp>.
+
 ## What gets written
 
 ```
@@ -36,22 +67,31 @@ my-project/
 ├── .git/                              ← initialized on the `main` branch
 ├── .gitignore
 ├── README.md
-├── kortix.yaml                        ← v2 OpenCode manifest
-└── .kortix/
-    ├── memory/MEMORY.md               ← project-wide memory for agents
-    └── opencode/                      ← OpenCode native config dir
-        ├── opencode.jsonc             ← runtime config (providers, plugins, MCP servers, …)
-        ├── agents/{kortix,harness-reflector}.md
-        └── skills/kortix-cli/SKILL.md (+ the artifact skill floor)
+├── kortix.yaml                        ← kortix_version 3: registries + one block per agent
+├── agents/*.md                        ← agent prompts, named by `prompt_file`
+├── skills/<name>/SKILL.md             ← skills, registered under `skills:`
+└── memory/MEMORY.md                   ← project-wide memory for agents
 ```
 
-The local coding tools you wire up (`--primary`/`--agents`, default Codex)
-receive native discovery links to the canonical `.kortix/opencode` source.
-OpenCode uses `.opencode`. Claude Code uses `.claude/skills`,
-`.claude/agents`, and `.claude/commands`. Codex uses `.agents`. Pi uses
-`.pi/skills`. Codex, Pi, and Cursor also get a root `AGENTS.md` pointer.
+`kortix.yaml` is `kortix_version: 3`. The project registers skills, tools,
+commands and extensions; each agent block enables them by name. A v3 session
+reads no `harnesses/`, `.kortix/`, `.opencode/` or `.pi/` folder. Reference:
+<https://kortix.com/docs/project/manifest>.
 
-The public starter uses `kortix_version: 2`. Cloud sessions run OpenCode REST.
+Projects on `kortix_version` 1 or 2 keep their layout (`agents/<name>.md` with
+frontmatter, `harnesses/opencode/`, `harnesses/pi/`, or `.kortix/opencode/`)
+and still run. `kortix migrate` prints the v3 manifest for a v2 project, and
+`kortix migrate --write` writes it.
+
+The local coding tools you wire up (`--primary`/`--agents`, default Codex)
+receive native discovery links to the canonical sources. Claude Code uses
+`.claude/skills`, `.claude/agents`, and `.claude/commands`. Codex uses
+`.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root
+`AGENTS.md` pointer. Sessions in the cloud never read these links.
+
+A cloud session runs one of two harnesses: OpenCode (the default) or pi
+(`runtime: pi` in `kortix.yaml`, or the `pi_harness` project flag; pi needs the
+LLM gateway). The CLI talks to the same Kortix routes on both.
 
 Create a project with:
 
@@ -59,7 +99,7 @@ Create a project with:
 kortix init my-project --yes --no-git
 ```
 
-Agents can retrieve the deployed platform manual from OpenCode:
+Agents can retrieve the deployed platform manual from inside a session, on either harness:
 
 ```sh
 kortix system-skills
@@ -75,7 +115,8 @@ chore: init kortix project
 ```
 
 Then it's yours. Add a remote, push, open in your coding agent of choice —
-or run `kortix ship` to create the cloud project and push in one step.
+or run `kortix ship` to push to the linked project or saved host default. With neither,
+ship creates the cloud project and pushes in one step.
 
 ## Self-host
 

@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-// Account display names must fall back to the account OWNER's email, not the
-// caller's — otherwise every unnamed account a user is invited into renders
-// as "<caller>'s Account" and shared projects look like they live in the
-// caller's personal account.
+// Placeholder accounts use a neutral fallback regardless of caller or owner email.
 
 let dbResults: unknown[][] = [];
 function makeChain(): any {
@@ -41,7 +38,7 @@ const {
   resolveAccountDisplayNames,
 } = await import('../accounts/core/app');
 
-const CALLER = { userId: 'u-caller', email: 'marko@kortix.ai' };
+const CALLER = { userId: 'u-caller', email: 'caller@gmail.com' };
 
 beforeEach(() => {
   dbResults = [];
@@ -60,10 +57,10 @@ describe('properAccountName / accountDisplayName', () => {
     expect(properAccountName('Acme Corp')).toBe('Acme Corp');
   });
 
-  test('accountDisplayName falls back to email-derived name', () => {
-    expect(accountDisplayName('Personal', 'a@b.com')).toBe("a@b.com's Account");
-    expect(accountDisplayName('Acme', 'a@b.com')).toBe('Acme');
-    expect(accountDisplayName(null, null)).toBe('Account');
+  test('accountDisplayName falls back to a suggested name, never the email (KRTX-638)', () => {
+    expect(accountDisplayName('Personal', 'ada@gmail.com')).toBe('My workspace');
+    expect(accountDisplayName('Acme', 'ada@gmail.com')).toBe('Acme');
+    expect(accountDisplayName(null, null)).toBe('My workspace');
   });
 });
 
@@ -76,61 +73,61 @@ describe('resolveAccountDisplayNames', () => {
     expect(names.get('a1')).toBe('Acme Corp');
   });
 
-  test("unnamed account owned by the caller → caller's email", async () => {
+  test("unnamed account owned by the caller → neutral name", async () => {
     dbResults = [[{ accountId: 'a1', userId: 'u-caller' }]];
     const names = await resolveAccountDisplayNames(
       [{ accountId: 'a1', name: 'Personal' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("marko@kortix.ai's Account");
+    expect(names.get('a1')).toBe('My workspace');
   });
 
-  test("unnamed account owned by someone else → OWNER's email, not the caller's", async () => {
+  test("unnamed account owned by someone else → neutral name", async () => {
     dbResults = [[{ accountId: 'a1', userId: 'u-owner' }]];
-    emailsById = { 'u-owner': 'bob@example.com' };
+    emailsById = { 'u-owner': 'bob@gmail.com' };
     const names = await resolveAccountDisplayNames(
       [{ accountId: 'a1', name: 'Personal' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("bob@example.com's Account");
+    expect(names.get('a1')).toBe('My workspace');
   });
 
-  test('multiple owners → earliest-joined owner wins (first row)', async () => {
+  test('multiple owners → neutral fallback', async () => {
     dbResults = [[
       { accountId: 'a1', userId: 'u-first' },
       { accountId: 'a1', userId: 'u-second' },
     ]];
-    emailsById = { 'u-first': 'first@example.com', 'u-second': 'second@example.com' };
+    emailsById = { 'u-first': 'first@gmail.com', 'u-second': 'second@gmail.com' };
     const names = await resolveAccountDisplayNames(
       [{ accountId: 'a1', name: '' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("first@example.com's Account");
+    expect(names.get('a1')).toBe('My workspace');
   });
 
-  test("no owner rows → caller's email as last resort", async () => {
+  test("no owner rows → neutral fallback", async () => {
     dbResults = [[]];
     const names = await resolveAccountDisplayNames(
       [{ accountId: 'a1', name: 'User' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("marko@kortix.ai's Account");
+    expect(names.get('a1')).toBe('My workspace');
   });
 
-  test('owner whose email cannot be resolved → caller email fallback', async () => {
+  test('owner whose email cannot be resolved → neutral fallback', async () => {
     dbResults = [[{ accountId: 'a1', userId: 'u-ghost' }]];
     const names = await resolveAccountDisplayNames(
       [{ accountId: 'a1', name: 'Personal' }],
       CALLER,
     );
-    expect(names.get('a1')).toBe("marko@kortix.ai's Account");
+    expect(names.get('a1')).toBe('My workspace');
   });
 
   test('mixed batch resolves each account independently', async () => {
     dbResults = [[
       { accountId: 'a2', userId: 'u-owner' },
     ]];
-    emailsById = { 'u-owner': 'owner@example.com' };
+    emailsById = { 'u-owner': 'owner@gmail.com' };
     const names = await resolveAccountDisplayNames(
       [
         { accountId: 'a1', name: 'Acme Corp' },
@@ -139,6 +136,6 @@ describe('resolveAccountDisplayNames', () => {
       CALLER,
     );
     expect(names.get('a1')).toBe('Acme Corp');
-    expect(names.get('a2')).toBe("owner@example.com's Account");
+    expect(names.get('a2')).toBe('My workspace');
   });
 });

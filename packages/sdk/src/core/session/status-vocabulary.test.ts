@@ -76,6 +76,12 @@ describe("the session's computer", () => {
       expect(notice).not.toMatch(/\b(sandbox|runtime|workspace|box)\b/i);
     }
   });
+
+  test('a parked computer, not the conversation, sleeps until the next message', () => {
+    expect(SESSION_NOTICE.idle).toMatch(/computer is asleep/i);
+    expect(SESSION_NOTICE.idle).toMatch(/next message wakes.*delivered/i);
+    expect(SESSION_NOTICE.idle).not.toMatch(/session is idle/i);
+  });
 });
 
 describe('a turn waiting to retry', () => {
@@ -85,3 +91,11 @@ describe('a turn waiting to retry', () => {
     expect(turnRetryLabel(null)).toBe('Waiting to retry');
   });
 });
+
+ test('canonical work activity settles an awake session without changing lifecycle', () => {
+  const idle: ProjectSession = { ...session('running'), working: { state: 'idle', since: null, turn_token: null, pending_delivery: false } };
+  expect(sessionListStatus(idle)).toBe('done');
+  expect(sessionListStatus(idle, 1)).toBe('needs-you');
+  expect(idle.status).toBe('running');
+  expect(sessionListStatus({ ...idle, working: { state: 'working', since: null, turn_token: null, pending_delivery: true } })).toBe('running');
+ });

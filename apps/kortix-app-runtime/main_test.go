@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -322,5 +323,309 @@ func TestRunStopsChildrenWhenContextEnds(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("run did not stop after context cancellation")
+	}
+}
+
+// The access log is readable through `kortix apps logs`. Request headers carry
+// credentials the App never owns: the viewer's Kortix token
+// (X-Kortix-App-Viewer-Token), the signed viewer identity, and the provider's
+// ingress token. Caddy redacts only Cookie and Authorization by default.
+func TestCaddyAccessLogDropsRequestHeaders(t *testing.T) {
+	for _, spec := range []appSpec{
+		{Command: []string{"server"}, TargetPort: 3000},
+		{StaticRoot: "/srv"},
+	} {
+		config, err := renderCaddyfile(spec)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, expected := range []string{"format filter {", "wrap json", "request>headers delete"} {
+			if !strings.Contains(config, expected) {
+				t.Fatalf("missing %q in Caddyfile:\n%s", expected, config)
+			}
+		}
+	}
+}
+
+func TestMountPointsDecodesOctalEscapes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "mountinfo")
+	contents := "22 1 0:21 / / rw - ext4 /dev/vda rw\n" +
+		"40 22 252:16 / /data rw,relatime - ext4 /dev/vdb rw\n" +
+		"41 22 252:32 / /my\\040volume rw - ext4 /dev/vdc rw\n"
+	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
+		t.Fatal(err)
+	}
+	points, err := mountPoints(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"/", "/data", "/my volume"} {
+		if !points[want] {
+			t.Fatalf("missing mount point %q in %v", want, points)
+		}
+	}
+	if points["/my\\040volume"] {
+		t.Fatal("escaped form must be decoded")
+	}
+}
+
+func fakeCaddy(t *testing.T) {
+	original := caddyCommand
+	caddyCommand = func(string) *exec.Cmd {
+		return exec.Command("sh", "-c", "trap 'exit 0' TERM INT; while :; do sleep 1; done")
+	}
+	t.Cleanup(func() { caddyCommand = original })
+}
+
+func TestRunReportsMountMissingAndNeverStartsTheApp(t *testing.T) {
+	fakeCaddy(t)
+	dir := t.TempDir()
+	info := filepath.Join(dir, "mountinfo")
+	if err := os.WriteFile(info, []byte("22 1 0:21 / / rw - ext4 /dev/vda rw\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	originalPath, originalWindow := mountInfoPath, mountWaitWindow
+	mountInfoPath, mountWaitWindow = info, 300*time.Millisecond
+	t.Cleanup(func() { mountInfoPath, mountWaitWindow = originalPath, originalWindow })
+
+	marker := filepath.Join(dir, "started")
+	state := &runtimeState{}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- runWithState(ctx, appSpec{
+			Command: []string{"sh", "-c", "touch " + marker + "; sleep 30"},
+			Mounts:  []string{"/data"},
+		}, state)
+	}()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if state.snapshot()["reason"] == "mount_missing" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	snapshot := state.snapshot()
+	if snapshot["status"] != "failed" || snapshot["reason"] != "mount_missing" || snapshot["ready"] != false {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	if snapshot["last_exit"] != "mount /data is not mounted" {
+		t.Fatalf("last_exit = %v", snapshot["last_exit"])
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("the app started on a missing mount")
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("run returned %v", err)
+	}
+}
+
+func TestRunStartsWhenEveryMountIsPresent(t *testing.T) {
+	fakeCaddy(t)
+	dir := t.TempDir()
+	info := filepath.Join(dir, "mountinfo")
+	if err := os.WriteFile(info, []byte("40 22 252:16 / /data rw - ext4 /dev/vdb rw\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	originalPath := mountInfoPath
+	mountInfoPath = info
+	t.Cleanup(func() { mountInfoPath = originalPath })
+
+	state := &runtimeState{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		_ = runWithState(ctx, appSpec{Command: []string{"sh", "-c", "sleep 30"}, Mounts: []string{"/data"}}, state)
+	}()
+	waitFor(t, func() bool { return state.ready.Load() })
+	if state.snapshot()["status"] != "running" {
+		t.Fatalf("snapshot = %#v", state.snapshot())
+	}
+}
+
+func waitFor(t *testing.T, condition func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatal("condition not met in time")
+}
+
+func serverPort(t *testing.T, url string) int {
+	t.Helper()
+	port, err := strconv.Atoi(url[strings.LastIndex(url, ":")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return port
+}
+
+func TestRunCheck(t *testing.T) {
+	healthy := true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/redirect":
+			http.Redirect(w, r, "/elsewhere", http.StatusFound)
+		case healthy:
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	port := serverPort(t, server.URL)
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closedPort := serverPort(t, closed.URL)
+	closed.Close()
+
+	for _, tc := range []struct {
+		name  string
+		check appCheck
+		port  int
+		pass  bool
+	}{
+		{"http 200", appCheck{Type: "http", Path: "/health", TimeoutS: 1}, port, true},
+		{"http 302 passes", appCheck{Type: "http", Path: "/redirect", TimeoutS: 1}, port, true},
+		{"tcp open", appCheck{Type: "tcp", TimeoutS: 1}, port, true},
+		{"tcp closed", appCheck{Type: "tcp", TimeoutS: 1}, closedPort, false},
+		{"http closed", appCheck{Type: "http", Path: "/", TimeoutS: 1}, closedPort, false},
+	} {
+		err := runCheck(context.Background(), tc.check, tc.port)
+		if (err == nil) != tc.pass {
+			t.Fatalf("%s: err = %v, want pass=%v", tc.name, err, tc.pass)
+		}
+	}
+	healthy = false
+	if err := runCheck(context.Background(), appCheck{Type: "http", Path: "/health", TimeoutS: 1}, port); err == nil || err.Error() != "HTTP 404" {
+		t.Fatalf("404 must fail with HTTP 404, got %v", err)
+	}
+}
+
+func TestChecksGateReadinessAndFlipBack(t *testing.T) {
+	var healthy atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if healthy.Load() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	spec := appSpec{
+		Command: []string{"server"}, TargetPort: serverPort(t, server.URL),
+		Checks: []appCheck{
+			{Name: "web", Type: "http", Path: "/up", IntervalS: 1, TimeoutS: 1},
+			{Type: "tcp", IntervalS: 1, TimeoutS: 1},
+		},
+	}
+	if err := spec.validate(); err != nil {
+		t.Fatal(err)
+	}
+	state := &runtimeState{status: "starting", logs: newLogRing(10)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startChecks(ctx, spec, state)
+	waitFor(t, func() bool {
+		checks, _ := state.snapshot()["checks"].([]checkResult)
+		return len(checks) == 2 && checks[0].Status == "failing" && checks[1].Status == "passing"
+	})
+	if state.ready.Load() {
+		t.Fatal("ready with a failing check")
+	}
+	healthy.Store(true)
+	waitFor(t, func() bool { return state.ready.Load() })
+	snapshot := state.snapshot()
+	checks := snapshot["checks"].([]checkResult)
+	if snapshot["status"] != "running" || checks[0].Name != "web" || checks[1].Name != "tcp-1" || checks[0].CheckedAt == nil {
+		t.Fatalf("snapshot = %#v", snapshot)
+	}
+	healthy.Store(false)
+	waitFor(t, func() bool { return !state.ready.Load() })
+	cancel()
+}
+
+func TestWorkerIsReadyOnceTheProcessRuns(t *testing.T) {
+	fakeCaddy(t)
+	spec := appSpec{Command: []string{"sh", "-c", "sleep 30"}}
+	if err := spec.validate(); err != nil {
+		t.Fatalf("a worker spec must be valid: %v", err)
+	}
+	config, err := renderCaddyfile(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(config, `respond "this machine serves no http service" 503`) || strings.Contains(config, "reverse_proxy") {
+		t.Fatalf("worker Caddyfile:\n%s", config)
+	}
+	state := &runtimeState{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = runWithState(ctx, spec, state) }()
+	waitFor(t, func() bool { return state.ready.Load() && state.snapshot()["status"] == "running" })
+	if _, ok := state.snapshot()["checks"]; ok {
+		t.Fatal("a spec without checks reports none")
+	}
+}
+
+func TestValidateSpecChecksAndMounts(t *testing.T) {
+	base := appSpec{Command: []string{"server"}, TargetPort: 3000}
+	ok := appCheck{Type: "http", Path: "/", IntervalS: 15, TimeoutS: 5, GracePeriodS: 10}
+	for _, tc := range []struct {
+		name  string
+		edit  func(*appSpec)
+		valid bool
+	}{
+		{"valid check and mount", func(s *appSpec) { s.Checks = []appCheck{ok}; s.Mounts = []string{"/data"} }, true},
+		{"bad type", func(s *appSpec) { c := ok; c.Type = "grpc"; s.Checks = []appCheck{c} }, false},
+		{"relative http path", func(s *appSpec) { c := ok; c.Path = "health"; s.Checks = []appCheck{c} }, false},
+		{"zero interval", func(s *appSpec) { c := ok; c.IntervalS = 0; s.Checks = []appCheck{c} }, false},
+		{"zero timeout", func(s *appSpec) { c := ok; c.TimeoutS = 0; s.Checks = []appCheck{c} }, false},
+		{"negative grace", func(s *appSpec) { c := ok; c.GracePeriodS = -1; s.Checks = []appCheck{c} }, false},
+		{"reserved check port", func(s *appSpec) { c := ok; c.Port = ingressPort; s.Checks = []appCheck{c} }, false},
+		{"worker check without port", func(s *appSpec) { s.TargetPort = 0; s.Checks = []appCheck{ok} }, false},
+		{"worker check with port", func(s *appSpec) { s.TargetPort = 0; c := ok; c.Port = 9000; s.Checks = []appCheck{c} }, true},
+		{"relative mount", func(s *appSpec) { s.Mounts = []string{"data"} }, false},
+		{"unclean mount", func(s *appSpec) { s.Mounts = []string{"/data/"} }, false},
+		{"root mount", func(s *appSpec) { s.Mounts = []string{"/"} }, false},
+		{"mount with newline", func(s *appSpec) { s.Mounts = []string{"/da\nta"} }, false},
+	} {
+		spec := base
+		tc.edit(&spec)
+		if err := spec.validate(); (err == nil) != tc.valid {
+			t.Fatalf("%s: validate() = %v, want valid=%v", tc.name, err, tc.valid)
+		}
+	}
+}
+
+func TestLegacySpecKeepsIngressReadiness(t *testing.T) {
+	var raw = `{"command":["server"],"target_port":3000,"readiness_path":"/health","restart_limit":3}`
+	var spec appSpec
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		t.Fatal(err)
+	}
+	if err := spec.validate(); err != nil {
+		t.Fatal(err)
+	}
+	if spec.worker() || len(spec.Checks) != 0 {
+		t.Fatalf("legacy spec misread: %#v", spec)
+	}
+	if got := spec.readinessURL(); got != "http://127.0.0.1:8080/health" {
+		t.Fatalf("readiness URL = %q", got)
+	}
+}
+
+func TestRunReportsAppStartFailure(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "missing-app")
+	state := &runtimeState{logs: newLogRing(defaultLogCapacity)}
+	err := runWithState(context.Background(), appSpec{
+		Command: []string{missing}, TargetPort: 32126,
+	}, state)
+	if err == nil || !strings.HasPrefix(err.Error(), "start app: ") || !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("run error = %v, want wrapped app start failure", err)
 	}
 }

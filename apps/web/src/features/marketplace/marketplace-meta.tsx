@@ -10,10 +10,10 @@ import {
   type Icon as LucideIcon,
 } from '@phosphor-icons/react';
 
-import { translateUiCatalogText } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { translateUiCatalogText } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 
 interface TypeMeta {
@@ -106,17 +106,3 @@ export const TYPE_SECTIONS: Array<{ type: string; label: string }> = [
   { type: 'registry:tool', label: 'Tools' },
   { type: 'registry:bundle', label: 'Bundles' },
 ];
-
-export function localizedTypeFilters(tI18nComplete: UiTranslator) {
-  return TYPE_FILTERS.map((filter) => ({
-    ...filter,
-    label: translateUiCatalogText(filter.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
-  }));
-}
-
-export function localizedTypeSections(tI18nComplete: UiTranslator) {
-  return TYPE_SECTIONS.map((section) => ({
-    ...section,
-    label: translateUiCatalogText(section.label, tI18nComplete, REMAINING_UI_TRANSLATION_KEYS),
-  }));
-}

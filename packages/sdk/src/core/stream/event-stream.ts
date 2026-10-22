@@ -17,8 +17,20 @@
  * (see `maxConsecutiveHardFailures`/`onParked`).
  */
 
-import type { Event as OpenCodeSdkEvent } from '@opencode-ai/sdk/v2/client';
-import { getSupabaseAccessToken, invalidateTokenCache } from '../http/auth';
+import {
+  CONNECT_TIMEOUT_MS,
+  HEARTBEAT_MS,
+  MAX_CONSECUTIVE_HARD_FAILURES,
+  abortableDelay,
+  connectAttempt,
+  createEventCoalescer,
+  dispatchToStreamSubscribers,
+  isHardAttemptFailure,
+  parkStream,
+  reconnectDelay,
+} from './event-attempt';
+import type { Event as OpenCodeSdkEvent } from '../runtime/runtime-types';
+import { getClientForUrl } from '../runtime/client';
 import { logger } from '../http/logger';
 
 /**
@@ -26,7 +38,7 @@ import { logger } from '../http/logger';
  * `react/use-opencode-events/types.ts` so existing importers keep working —
  * this module is now the canonical definition.
  */
-export type OpenCodeEvent =
+export type RuntimeEvent =
   | OpenCodeSdkEvent
   | {
       id: string;
@@ -34,7 +46,7 @@ export type OpenCodeEvent =
       properties: { serverID: string; path: string };
     };
 
-/** The minimal slice of `OpencodeClient` this machine actually calls. */
+/** The minimal slice of `RuntimeClient` this machine actually calls. */
 export interface EventStreamClient {
   global: {
     event: (opts: {
@@ -56,22 +68,37 @@ export interface EventStreamTimers {
   now: () => number;
   setTimeout: (handler: () => void, timeoutMs?: number) => EventStreamTimerHandle;
   clearTimeout: (handle: EventStreamTimerHandle | undefined) => void;
+  /** Uniform `[0, 1)`; spreads reconnect delays. Defaults to `() => 0` (no
+   *  jitter) when omitted, so a fake clock stays exact. */
+  random?: () => number;
 }
 
 const realTimers: EventStreamTimers = {
   now: () => Date.now(),
   setTimeout: (handler, timeoutMs) => setTimeout(handler, timeoutMs),
   clearTimeout: (handle) => clearTimeout(handle),
+  random: () => Math.random(),
 };
 
 export interface OpenEventStreamOptions {
-  /** The opencode client to stream events from (same client the rest of the
-   *  SDK obtains via `getClient()`). */
-  client: EventStreamClient;
+  /** The session runtime to stream from: `${backendUrl}/p/{externalId}/{port}`
+   *  (a session handle's `runtimeUrl`). Streams to one URL share one connection. */
+  url?: string;
+  /**
+   * A runtime client to stream from, instead of `url`.
+   * @deprecated Pass `url`. Removed in the next major.
+   */
+  client?: EventStreamClient;
   /** Called once per event, in dispatch order, after coalescing/flush. A
    *  throw here is caught and logged — one bad handler must never break the
-   *  stream or crash the host. */
-  onEvent: (event: OpenCodeEvent) => void;
+   *  stream or crash the host.
+   *
+   *  Consecutive `message.part.delta` events of one part field (or
+   *  `log.block.delta` events of one session-log block) that land in
+   *  the same 16ms flush arrive as ONE event: `properties.delta` is their
+   *  text joined, `id` is the last one's, and `coalesced` lists the wire
+   *  events it replaced. Appending `delta` gives the same text either way. */
+  onEvent: (event: RuntimeEvent) => void;
   /** Called once a reconnect is ESTABLISHED, with the gap in ms from the last
    *  frame received to the new connection. Fires when the dropped stream had
    *  delivered events, or when the gap exceeds 5s. Lets the host re-hydrate
@@ -93,9 +120,8 @@ export interface OpenEventStreamOptions {
   connectTimeoutMs?: number;
   /**
    * Max quiet time on an ESTABLISHED stream before the heartbeat watchdog
-   * declares it dead, aborts it, and reconnects. Defaults to 60s — see the
-   * `HEARTBEAT_MS` comment for why it must stay well above any real idle gap
-   * until the server ships keepalive frames.
+   * declares it dead, aborts it, and reconnects. Defaults to 60s: three of the
+   * sandbox daemon's 20 s keepalive frames. See the `HEARTBEAT_MS` comment.
    */
   heartbeatTimeoutMs?: number;
   /**
@@ -119,9 +145,19 @@ export interface OpenEventStreamOptions {
    * handle stays safe/idempotent.
    */
   onParked?: (reason: EventStreamParkedInfo) => void;
+  /**
+   * The connection's state, for a host indicator: `connecting` when an attempt
+   * starts, `open` on the attempt's first frame, `lost` when it drops and a
+   * retry is scheduled. A park reports through `onParked`, a `close()` reports
+   * nothing. A subscriber that joins a live stream is told its current state.
+   */
+  onConnectionChange?: (state: EventStreamConnectionState) => void;
   /** Test-only clock/timer override. Defaults to real `Date.now`/`setTimeout`. */
   timers?: EventStreamTimers;
 }
+
+/** See {@link OpenEventStreamOptions.onConnectionChange}. */
+export type EventStreamConnectionState = 'connecting' | 'open' | 'lost';
 
 /** Payload for {@link OpenEventStreamOptions.onParked}. */
 export interface EventStreamParkedInfo {
@@ -138,85 +174,30 @@ export interface EventStreamHandle {
   close: () => void;
 }
 
-// ---- Tunables ----
-const COALESCE_FLUSH_MS = 16;
-const YIELD_INTERVAL_MS = 8;
-/**
- * Idle watchdog budget for an ESTABLISHED stream. The server currently emits
- * NO idle keepalive frames, so a healthy-but-quiet session produces genuinely
- * long silent stretches — a budget below the real idle gap makes the watchdog
- * kill perfectly healthy connections on a timer (the old 15s value guaranteed
- * a kill every 15s of quiet, by design). 60s keeps the watchdog able to catch
- * genuinely dead sockets while tolerating normal idle. When the server ships
- * `: keepalive` comment frames this can come back down toward 2× the
- * keepalive cadence. Configurable per-stream via
- * `OpenEventStreamOptions.heartbeatTimeoutMs`.
- */
-const HEARTBEAT_MS = 60_000;
 const GAP_REHYDRATE_MS = 5_000;
-const FAST_RECONNECT_DELAY_MS = 250;
-const BASE_RECONNECT_DELAY_MS = 1000;
-const MAX_RECONNECT_DELAY_MS = 30_000;
-const MAX_BACKOFF_EXPONENT = 5;
-const SSE_DEFAULT_RETRY_DELAY_MS = 3000;
-const SSE_MAX_RETRY_DELAY_MS = 30_000;
-const CONNECT_TIMEOUT_MS = 20_000;
-/** An event-less attempt that dies faster than this is a "hard failure" —
- *  the fast-503 signature of a dead sandbox — even when the error carries no
- *  HTTP status (edge-generated failures surface as opaque network/CORS
- *  errors). See `maxConsecutiveHardFailures`. */
-const HARD_FAILURE_WINDOW_MS = 2_000;
-const MAX_CONSECUTIVE_HARD_FAILURES = 8;
-
-/**
- * Coalescing keys — determines which events can replace earlier ones in the
- * same 16ms flush batch.
- *
- * NOTE: message.part.updated is intentionally NOT coalesced. While the server
- * sends full part state each time, coalescing can cause a stale snapshot to be
- * the sole survivor of a batch. When that stale snapshot is processed before
- * any deltas, it inserts the part with wrong/partial text (prefix-growth guard
- * can't help — nothing to compare against). The upsertPart prefix-growth guard
- * efficiently rejects stale snapshots with a no-op return, so processing every
- * snapshot has minimal cost.
- */
-function getCoalesceKey(event: OpenCodeEvent): string | undefined {
-  if (event.type === 'session.status') {
-    return `session.status:${(event.properties as any).sessionID}`;
-  }
-  if (event.type === 'lsp.updated') return 'lsp.updated';
-  return undefined;
-}
-
-/**
- * A promise that resolves the moment `signal` fires 'abort' (or immediately,
- * if it's already aborted), plus a `cleanup` to remove the listener when it
- * loses a race. Used to make an in-flight `iterator.next()` read abortable:
- * without this, a parked read (server stops sending, no error, no close)
- * would never let a fired heartbeat/abort be observed, since nothing wakes
- * the pending read.
- */
-function onceAborted(signal: AbortSignal): { promise: Promise<void>; cleanup: () => void } {
-  if (signal.aborted) return { promise: Promise.resolve(), cleanup: () => {} };
-  let handler: () => void = () => {};
-  const promise = new Promise<void>((resolve) => {
-    handler = () => resolve();
-    signal.addEventListener('abort', handler, { once: true });
-  });
-  return { promise, cleanup: () => signal.removeEventListener('abort', handler) };
-}
+/** A worked stream that closes sooner than this is not "stable"... */
+const STABLE_LIFETIME_MS = 10_000;
+/** ...and this many of them in a row drop the fast path (a server that sends
+ *  one frame and closes would otherwise reconnect 4 times a second). */
+const MAX_CONSECUTIVE_SHORT_STABLE = 4;
 
 /** One `openEventStream()` caller's callbacks, held by the shared connection
  *  for the lifetime of its subscription — see `LiveStream` below. */
-interface StreamSubscriber {
-  onEvent: (event: OpenCodeEvent) => void;
+export interface StreamSubscriber {
+  onEvent: (event: RuntimeEvent) => void;
   onGapRehydrate?: (gapMs: number) => void;
   onParked?: (reason: EventStreamParkedInfo) => void;
+  onConnectionChange?: (state: EventStreamConnectionState) => void;
 }
 
 /** The shared underlying connection for one client — see `liveStreamsByClient`. */
 interface LiveStream {
   subscribers: Set<StreamSubscriber>;
+  /** The connection's last reported state; null once parked or torn down. */
+  connectionState: () => EventStreamConnectionState | null;
+  /** True once the connect loop gave up. A parked stream never reconnects, so
+   *  a later `openEventStream` replaces it instead of joining it. */
+  isParked: () => boolean;
   /** Aborts the connection and releases its timers. Called once, when the
    *  LAST subscriber leaves. */
   teardown: () => void;
@@ -268,20 +249,18 @@ function createLiveStream(
 
   /** Calls `fn` on every current subscriber. A throwing subscriber must
    *  never break dispatch to the others or crash the host. */
-  function dispatchToSubscribers<A extends unknown[]>(
+  const dispatchToSubscribers = <A extends unknown[]>(
     pick: (sub: StreamSubscriber) => ((...a: A) => void) | undefined,
     ...args: A
-  ): void {
-    for (const sub of subscribers) {
-      const fn = pick(sub);
-      if (!fn) continue;
-      try {
-        fn(...args);
-      } catch (e) {
-        console.warn('[opencode-events] subscriber handler threw, skipping', e);
-      }
-    }
-  }
+  ): void => dispatchToStreamSubscribers(subscribers, pick, ...args);
+
+  let connectionState: EventStreamConnectionState | null = null;
+  let parked = false;
+  const setConnectionState = (state: EventStreamConnectionState | null) => {
+    if (connectionState === state) return;
+    connectionState = state;
+    if (state) dispatchToSubscribers((sub) => sub.onConnectionChange, state);
+  };
 
   // Track last stream activity (connect or event) to gate reconnect hydration.
   // Using only "last event" causes hydrate storms when the server rotates
@@ -296,41 +275,37 @@ function createLiveStream(
   // still ends in exactly one rehydrate.
   let pendingGap: { lastActivityAt: number; eventful: boolean } | null = null;
 
-  // Event coalescing queue (like the SolidJS reference)
-  let queue: ({ type: string; event: OpenCodeEvent } | undefined)[] = [];
-  let flushTimer: EventStreamTimerHandle | undefined;
-  let lastFlush = 0;
-
-  // Coalescing map — replaces earlier events of the same key
-  const coalesced = new Map<string, number>();
-
-  const flush = () => {
-    if (flushTimer) t.clearTimeout(flushTimer);
-    flushTimer = undefined;
-    if (queue.length === 0) return;
-
-    const events = queue;
-    queue = [];
-    coalesced.clear();
-    lastFlush = t.now();
+  const coalescer = createEventCoalescer(t, (event) => {
+    // A flush that delivered events is stream activity: the gap clock
+    // restarts here (see `pendingGap`).
     lastStreamActivityTime = t.now();
+    dispatchToSubscribers((sub) => sub.onEvent, event);
+  });
 
-    for (const item of events) {
-      if (!item) continue;
-      // A single subscriber's handler must never break the stream OR crash
-      // the host, and must never stop the OTHER subscribers from receiving
-      // this event — `dispatchToSubscribers` catches per-subscriber. e.g. a
-      // handler calls getClient() before the sandbox URL is pinned (during a
-      // session switch) — that throw used to escape to the route error
-      // boundary. Swallow + log; the next events + retries recover.
-      dispatchToSubscribers((sub) => sub.onEvent, item.event);
-    }
-  };
-
-  const schedule = () => {
-    if (flushTimer) return;
-    const elapsed = t.now() - lastFlush;
-    flushTimer = t.setTimeout(flush, Math.max(0, COALESCE_FLUSH_MS - elapsed));
+  const attemptDeps = {
+    client,
+    t,
+    connectTimeoutMs,
+    heartbeatTimeoutMs,
+    outerSignal: abortController.signal,
+    setConnectionState,
+    onConnected: () => {
+      // Repair the previous drop now that a live stream exists. The gap runs
+      // from the last frame received to this connection. A dropped stream
+      // that was delivering events always repairs — its outage window may
+      // have held any frame. An idle one repairs only past 5s, so routine
+      // idle rotation does not re-read every transcript.
+      if (pendingGap) {
+        const gap = t.now() - pendingGap.lastActivityAt;
+        const eventful = pendingGap.eventful;
+        pendingGap = null;
+        if (eventful || gap > GAP_REHYDRATE_MS) {
+          dispatchToSubscribers((sub) => sub.onGapRehydrate, gap);
+        }
+      }
+      lastStreamActivityTime = t.now();
+    },
+    coalescer,
   };
 
   // Consume the stream in the background with automatic retry
@@ -340,235 +315,13 @@ function createLiveStream(
     // Survives across attempts; reset by any attempt that delivered events
     // or that failed slowly without an HTTP status.
     let consecutiveHardFailures = 0;
+    let consecutiveShortStable = 0;
     while (!abortController.signal.aborted) {
-      let streamHadEvents = false;
-      // Events other than the connection's own `server.connected` greeting.
-      let streamHadWork = false;
-      let stableConnection = false;
-      let heartbeatTimer: EventStreamTimerHandle | undefined;
-      let connectTimer: EventStreamTimerHandle | undefined;
-      // What this attempt died to (null = clean end), plus when it started —
-      // both feed the hard-failure classification below the try block.
-      let attemptError: unknown = null;
       const attemptStartedAt = t.now();
-      // Per-attempt controller passed to the SSE client. Aborting it is what
-      // actually cancels the underlying network reader — the vendor client
-      // only cancels on the signal IT was handed. It aborts when EITHER the
-      // heartbeat fires OR the outer controller aborts (linked below), so a
-      // heartbeat-forced reconnect tears the old connection down instead of
-      // leaving it parked/leaking while a new one opens.
-      const attemptAbort = new AbortController();
-      const outerLink = onceAborted(abortController.signal);
-      outerLink.promise.then(() => attemptAbort.abort());
-      try {
-        // Race the connect call itself against `connectTimeoutMs`. A
-        // black-holed proxy can swallow this request with no error, no data,
-        // and no close — the heartbeat watchdog below only starts once this
-        // resolves, so it can't rescue a hung connect. On timeout, abort this
-        // attempt (cancels the underlying request, same as any other
-        // reconnect) and reject so it falls into the catch block below and
-        // retries through the normal backoff path, exactly like any other
-        // connect failure.
-        const result = await new Promise<{ stream: AsyncIterable<unknown> }>((resolve, reject) => {
-          let settled = false;
-          connectTimer = t.setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            logger.warn('SSE connect timed out, forcing reconnect', { connectTimeoutMs });
-            attemptAbort.abort();
-            reject(new Error(`SSE connect timed out after ${connectTimeoutMs}ms`));
-          }, connectTimeoutMs);
-          client.global
-            .event({
-              signal: attemptAbort.signal,
-              sseDefaultRetryDelay: SSE_DEFAULT_RETRY_DELAY_MS,
-              sseMaxRetryDelay: SSE_MAX_RETRY_DELAY_MS,
-              // CRITICAL: caps the vendor client's OWN internal reconnect loop
-              // to a single attempt. `@opencode-ai/sdk`'s `createSseClient`
-              // wraps every connection in its own `while(true)` retry-with-
-              // backoff generator that swallows failures and silently
-              // schedules its next fetch via a plain `setTimeout` sleep that
-              // does NOT observe `signal` — aborting mid-sleep only stops it
-              // once the sleep elapses and the generator wakes up to check
-              // `signal.aborted`. Left unset (the old default), that inner
-              // loop runs CONCURRENTLY with this module's own outer
-              // connect/backoff loop below: the moment we abort a stalled
-              // attempt (heartbeat timeout, gap reconnect, or a fresh `close()`)
-              // and immediately open the next one, the previous vendor-level
-              // generator can still be mid-sleep and — on a race — wakes up
-              // and fires ONE MORE fetch before it finally notices the abort,
-              // stacking a second live connection on top of the new attempt.
-              // On a flaky self-host sandbox (frequent brief-unreachable →
-              // reconnect cycles) this piles up fast: every retry can leave a
-              // stray in-flight fetch behind, and under HTTP/1.1's 6-per-origin
-              // cap those leaked connections alone can saturate the pool and
-              // queue out every other request (/projects, /sessions, ...).
-              // Setting this to 1 makes a failed fetch complete the generator
-              // (a clean `done`, no throw, no internal retry/sleep) instead of
-              // scheduling its own reconnect — so THIS module's outer loop is
-              // the only thing that ever decides to open a new connection, and
-              // it only ever does so after the previous attempt's
-              // `attemptAbort.abort()` has already run (see the `finally`
-              // block below).
-              sseMaxRetryAttempts: 1,
-            })
-            .then(
-              (value) => {
-                if (settled) return;
-                settled = true;
-                t.clearTimeout(connectTimer);
-                resolve(value);
-              },
-              (err) => {
-                if (settled) return;
-                settled = true;
-                t.clearTimeout(connectTimer);
-                reject(err);
-              },
-            );
-        });
-        const { stream } = result;
-
-        // Repair the previous drop now that a live stream exists. The gap runs
-        // from the last frame received to this connection. A dropped stream
-        // that was delivering events always repairs — its outage window may
-        // have held any frame. An idle one repairs only past 5s, so routine
-        // idle rotation does not re-read every transcript.
-        if (pendingGap) {
-          const gap = t.now() - pendingGap.lastActivityAt;
-          const eventful = pendingGap.eventful;
-          pendingGap = null;
-          if (eventful || gap > GAP_REHYDRATE_MS) {
-            dispatchToSubscribers((sub) => sub.onGapRehydrate, gap);
-          }
-        }
-        lastStreamActivityTime = t.now();
-
-        // Heartbeat timeout — if no events arrive within the idle budget
-        // (default 60s, see HEARTBEAT_MS for why), abort and reconnect. This
-        // is the ONLY recovery mechanism we need on an established stream —
-        // replaces the stall watchdog, reconciler, and visibility handler.
-        const resetHeartbeat = () => {
-          t.clearTimeout(heartbeatTimer);
-          heartbeatTimer = t.setTimeout(() => {
-            logger.warn('SSE heartbeat timeout, forcing reconnect');
-            attemptAbort.abort();
-          }, heartbeatTimeoutMs);
-        };
-        resetHeartbeat();
-
-        // Consume stream: queue + coalesce + 16ms flush + yield every 8ms.
-        //
-        // The read itself has to be abortable, not just checked between
-        // reads. If the underlying `.next()` parks (server stops sending, no
-        // error, no close), a plain `for await` never yields control back to
-        // this loop body, so a heartbeat/abort that fires while parked would
-        // never actually be observed. Race each read against the
-        // heartbeat/abort signals instead — whichever settles first wins.
-        let yieldedAt = t.now();
-        const iterator = stream[Symbol.asyncIterator]();
-        while (!attemptAbort.signal.aborted) {
-          const nextOutcome = iterator.next().then(
-            (result) => ({ kind: 'next' as const, result }),
-            (error) => ({ kind: 'error' as const, error }),
-          );
-          const abortWatch = onceAborted(attemptAbort.signal);
-          const outcome = await Promise.race([
-            nextOutcome,
-            abortWatch.promise.then(() => ({ kind: 'aborted' as const })),
-          ]);
-          abortWatch.cleanup();
-
-          if (outcome.kind === 'aborted') break;
-          if (outcome.kind === 'error') throw outcome.error;
-          if (outcome.result.done) break;
-
-          streamHadEvents = true;
-          resetHeartbeat();
-          const raw = outcome.result.value as any;
-          const e = (
-            raw && typeof raw === 'object' && 'payload' in raw ? raw.payload : raw
-          ) as OpenCodeEvent;
-          if (!e?.type) continue;
-          // The connection's own greeting is not work that a drop could lose.
-          if (e.type !== 'server.connected') streamHadWork = true;
-
-          const ck = getCoalesceKey(e);
-          if (ck) {
-            const existing = coalesced.get(ck);
-            if (existing !== undefined) {
-              queue[existing] = undefined;
-            }
-            coalesced.set(ck, queue.length);
-          }
-          queue.push({ type: (e as any).type, event: e });
-          schedule();
-
-          if (t.now() - yieldedAt < YIELD_INTERVAL_MS) continue;
-          yieldedAt = t.now();
-          await new Promise<void>((resolve) => t.setTimeout(resolve, 0));
-        }
-
-        // Healthy stream ONLY if it actually delivered events. There used to
-        // be a time-based OR-branch here ("or stayed open >10s") — that was a
-        // prod reconnect storm: anything that kills idle connections on a
-        // period ABOVE that threshold (our own heartbeat watchdog, an idle
-        // proxy timeout, server-side rotation) made every idle disconnect
-        // look "stable", which reset retryCount and locked the loop into the
-        // 250ms fast-reconnect path forever (~236 reconnects/hour/stream).
-        // An idle disconnect — watchdog-triggered or natural — must ride the
-        // exponential backoff (1s → 30s cap) instead; the moment a
-        // reconnected stream delivers a real event, backoff resets and the
-        // fast path returns. Missed-while-waiting events are covered by the
-        // gap-rehydrate signal below.
-        stableConnection = streamHadEvents;
-      } catch (err) {
-        if (abortController.signal.aborted) break;
-        attemptError = err;
-        const errStr = String(err);
-        const isAuthError =
-          errStr.includes('401') ||
-          errStr.includes('403') ||
-          errStr.includes('Unauthorized') ||
-          errStr.includes('Token refresh failed');
-        logger.error('SSE event stream error', {
-          error: errStr,
-          retryCount,
-          isAuthError,
-        });
-
-        // On auth errors, invalidate the token cache and fetch a fresh token.
-        // This ensures all callers (SSE, health check, SDK) immediately use
-        // the refreshed token instead of serving stale cached ones for 30s.
-        if (isAuthError) {
-          try {
-            invalidateTokenCache();
-            await getSupabaseAccessToken();
-            logger.info('SSE: refreshed auth token after auth error');
-          } catch (refreshErr) {
-            logger.error('SSE: failed to refresh auth token', {
-              error: String(refreshErr),
-            });
-          }
-        }
-      } finally {
-        t.clearTimeout(heartbeatTimer);
-        t.clearTimeout(connectTimer);
-        // Release the reader/connection if we left the loop for any reason
-        // other than an already-fired abort (e.g. stream `done`, or a thrown
-        // error), and detach the outer-abort listener so it can't accumulate
-        // across reconnects.
-        attemptAbort.abort();
-        outerLink.cleanup();
-        flush();
-      }
-
-      // Stream ended or errored — reconnect with exponential backoff.
-      // ERR_INCOMPLETE_CHUNKED_ENCODING is normal when the server closes the
-      // SSE connection between response cycles. Minimum 1s delay even on
-      // first retry to avoid reconnection storms when the server is flapping
-      // (connect → immediate disconnect loops).
+      const outcome = await connectAttempt({ ...attemptDeps, retryCount });
       if (abortController.signal.aborted) break;
+      const attemptError = outcome.error;
+      const { streamHadWork, stableConnection } = outcome;
 
       // ── Give-up (park) check — the "dead sandbox" terminal state. ────────
       // A stream pointed at an archived/stopped session's sandbox otherwise
@@ -584,27 +337,15 @@ function createLiveStream(
       // the streak. After `maxConsecutiveHardFailures` in a row — spread
       // over ~2 minutes by the exponential backoff below — park for good.
       const attemptDurationMs = t.now() - attemptStartedAt;
-      const httpStatus = (attemptError as { cause?: { status?: unknown } } | null)?.cause?.status;
-      const isHardFailure =
-        !streamHadEvents &&
-        ((typeof httpStatus === 'number' && httpStatus >= 400) ||
-          attemptDurationMs < HARD_FAILURE_WINDOW_MS);
+      const isHardFailure = isHardAttemptFailure(streamHadWork, attemptError, attemptDurationMs);
       consecutiveHardFailures = isHardFailure ? consecutiveHardFailures + 1 : 0;
       if (consecutiveHardFailures >= maxConsecutiveHardFailures) {
-        logger.error('SSE event stream parked — giving up after consecutive hard failures', {
-          consecutiveFailures: consecutiveHardFailures,
-          lastError: String(attemptError),
-        });
-        // A subscriber's park handler must never crash the (already-
-        // terminal) stream machine, and must never stop another
-        // subscriber's from firing — `dispatchToSubscribers` catches per
-        // subscriber.
-        dispatchToSubscribers((sub) => sub.onParked, {
-          consecutiveFailures: consecutiveHardFailures,
-          lastError: attemptError,
-        });
+        parkStream(subscribers, consecutiveHardFailures, attemptError);
+        connectionState = null;
+        parked = true;
         break;
       }
+      setConnectionState('lost');
 
       // Record the drop. Events missed while no connection exists (e.g. a
       // streaming assistant response, a permission ask) never arrive, so the
@@ -616,7 +357,10 @@ function createLiveStream(
         eventful: (unrepaired?.eventful ?? false) || streamHadWork,
       };
 
-      if (stableConnection) {
+      consecutiveShortStable =
+        stableConnection && attemptDurationMs < STABLE_LIFETIME_MS ? consecutiveShortStable + 1 : 0;
+      const fastPath = stableConnection && consecutiveShortStable <= MAX_CONSECUTIVE_SHORT_STABLE;
+      if (fastPath) {
         // Fast reconnect after healthy streams so live streaming resumes
         // immediately.
         retryCount = 0;
@@ -626,28 +370,17 @@ function createLiveStream(
           logger.warn('SSE event stream reconnecting', { retryCount });
         }
       }
-      const delay = stableConnection
-        ? FAST_RECONNECT_DELAY_MS
-        : Math.min(
-            BASE_RECONNECT_DELAY_MS * 2 ** Math.min(retryCount - 1, MAX_BACKOFF_EXPONENT),
-            MAX_RECONNECT_DELAY_MS,
-          );
-      await new Promise<void>((resolve) => {
-        const timer = t.setTimeout(resolve, delay);
-        const onAbort = () => {
-          t.clearTimeout(timer);
-          resolve();
-        };
-        abortController.signal.addEventListener('abort', onAbort, { once: true });
-      });
+      await abortableDelay(t, abortController.signal, reconnectDelay(retryCount, fastPath, t));
     }
   })();
-
   return {
     subscribers,
+    connectionState: () => connectionState,
+    isParked: () => parked,
     teardown: () => {
+      connectionState = null;
       abortController.abort();
-      if (flushTimer) t.clearTimeout(flushTimer);
+      coalescer.clearTimer();
     },
   };
 }
@@ -682,16 +415,28 @@ function createLiveStream(
  * connection (unless it was the last one standing).
  */
 export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle {
-  const { client, onEvent, onGapRehydrate, onParked, signal: externalSignal } = opts;
-  const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked };
+  const { onEvent, onGapRehydrate, onParked, onConnectionChange, signal: externalSignal } = opts;
+  const client: EventStreamClient | undefined = opts.client ?? (opts.url ? getClientForUrl(opts.url) : undefined);
+  if (!client) throw new Error('openEventStream needs the session runtime `url`');
+  const subscriber: StreamSubscriber = { onEvent, onGapRehydrate, onParked, onConnectionChange };
 
   let liveStream = liveStreamsByClient.get(client);
+  // A parked stream has no connect loop left. Joining it would hand this caller
+  // a stream that never delivers and never says so, and would make a revival's
+  // fresh open join the corpse too. Replace it: its old subscribers keep their
+  // handles, and their `leave` only deletes the registry entry it still owns.
+  if (liveStream?.isParked()) {
+    liveStreamsByClient.delete(client);
+    liveStream = undefined;
+  }
   if (!liveStream) {
     const subscribers = new Set<StreamSubscriber>([subscriber]);
     liveStream = createLiveStream(client, opts, subscribers);
     liveStreamsByClient.set(client, liveStream);
   } else {
     liveStream.subscribers.add(subscriber);
+    const state = liveStream.connectionState();
+    if (state) onConnectionChange?.(state);
   }
   const stream = liveStream;
 
@@ -721,7 +466,7 @@ export function openEventStream(opts: OpenEventStreamOptions): EventStreamHandle
   return { close: leave };
 }
 
-// The curated chat-event union built on top of this stream's `OpenCodeEvent` —
+// The curated chat-event union built on top of this stream's `RuntimeEvent` —
 // re-exported here (additive only) so a host that imports the SSE primitive
 // from this subpath (`@kortix/sdk/event-stream`) can reach the chat-narrowing
 // helpers from the same import without a second subpath. Canonical definition
@@ -748,3 +493,7 @@ export {
   type KortixChatQuestionOption,
   type KortixChatToolRef,
 } from './chat-events';
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `RuntimeEvent`. Removed in the next major. */
+export type OpenCodeEvent = RuntimeEvent;

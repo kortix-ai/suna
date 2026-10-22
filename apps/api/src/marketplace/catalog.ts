@@ -23,6 +23,7 @@ import {
   getStarterFiles,
   isKortixManagedSkillName,
 } from "@kortix/starter";
+import { AGENTS_DIR, agentFileCandidates, SKILLS_DIR } from "@kortix/manifest-schema";
 import { parse as parseYaml } from "yaml";
 import {
   buildRegistry,
@@ -31,14 +32,15 @@ import {
   loadRegistry,
   parseRegistryAddress,
   rawGithubUrl,
-  resolveOpencodeDir,
   type BuildSource,
   type RegistryItem,
   type RegistryJson,
   type RegistryRef,
 } from "@kortix/registry";
 import type { MarketplaceSource } from "./sources-store";
+import { config } from "../config";
 import { safeEgressFetch } from "../shared/ssrf-guard";
+import { mapWithConcurrency } from "../shared/map-with-concurrency";
 
 export interface ItemCapabilities {
   secrets: string[];
@@ -149,7 +151,10 @@ function projectAgentsAndTriggers(
 
   const agentNames = m.agents && typeof m.agents === "object" ? Object.keys(m.agents) : [];
   const agents: ProjectAgent[] = agentNames.map((name) => {
-    const md = files.find((f) => pathOf(f) === `.kortix/opencode/agents/${name}.md`);
+    const candidates = agentFileCandidates(manifest, name);
+    const md = candidates
+      .map((candidate) => files.find((f) => pathOf(f) === candidate))
+      .find((file) => file !== undefined);
     // Parse the agent's own `.md` frontmatter with the YAML parser (not a
     // line-based one) so folded block scalars (`description: >-`) resolve to the
     // real text, and collapse it to a single line for the card.
@@ -560,10 +565,9 @@ agents that run them.
   [use-case pages](https://kortix.com/use-cases) — the wizard wires the agent,
   its skill, grants, and any scheduled trigger into your project.
 - **Bulk clone:** clone this pack as a project to get every runbook skill under
-  \`.kortix/opencode/skills/\` and every persona agent file under
-  \`.kortix/opencode/agents/\`. Agent files ship undeclared — add the ones you
-  want to \`kortix.yaml\`'s \`agents:\` map (grants are deny-by-default) before
-  using them.
+  \`skills/\` and every persona agent file under \`agents/\`. Agent files ship
+  undeclared — add the ones you want to \`kortix.yaml\`'s \`agents:\` map
+  (grants are deny-by-default, \`file: agents/<name>.md\`) before using them.
 
 Everything is plain files in your repo: read, edit, and adapt them to how your
 team actually works.
@@ -571,13 +575,13 @@ team actually works.
 
 /** Rewrite a marketplace-template `runtime/` path to its conventional
  *  in-project location, mirroring the install wizard's target mapping
- *  (`@skills/y` → `.kortix/opencode/skills/y`, `@agents/x.md` →
- *  `.kortix/opencode/agents/x.md`). Non-runtime paths return undefined. */
+ *  (`@skills/y` → `skills/y`, `@agents/x.md` → `agents/x.md`). Non-runtime
+ *  paths return undefined. */
 function useCasePackRepoPath(path: string): string | undefined {
   if (path.startsWith("runtime/skills/"))
-    return `.kortix/opencode/skills/${path.slice("runtime/skills/".length)}`;
+    return `${SKILLS_DIR}/${path.slice("runtime/skills/".length)}`;
   if (path.startsWith("runtime/agents/"))
-    return `.kortix/opencode/agents/${path.slice("runtime/agents/".length)}`;
+    return `${AGENTS_DIR}/${path.slice("runtime/agents/".length)}`;
   return undefined;
 }
 
@@ -1006,6 +1010,15 @@ export function assertAllowedEndpointUrl(address: string): void {
       `Connector endpoint must be an absolute https URL: "${address}"`,
     );
   }
+  if (parsed.username || parsed.password) {
+    throw new AllowedSourceValidationError(
+      "Connector endpoints must not embed credentials.",
+    );
+  }
+  // A host the operator listed (self-host internal APIs, the local test stack's
+  // loopback) passes, as it does for the connector egress fetch itself.
+  const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  if (config.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.some((h) => h.toLowerCase() === host)) return;
   if (parsed.protocol !== "https:") {
     throw new AllowedSourceValidationError(
       "Connector endpoints must use https on a public host.",
@@ -1014,11 +1027,6 @@ export function assertAllowedEndpointUrl(address: string): void {
   if (isPrivateHost(parsed.hostname)) {
     throw new AllowedSourceValidationError(
       "Connector endpoints must use https on a public host.",
-    );
-  }
-  if (parsed.username || parsed.password) {
-    throw new AllowedSourceValidationError(
-      "Connector endpoints must not embed credentials.",
     );
   }
 }
@@ -1048,25 +1056,6 @@ function startExternalBuild(): Promise<Catalog> {
 
 type LoadedRegistry = Awaited<ReturnType<typeof loadRegistry>>;
 
-async function forEachWithConcurrency<T>(
-  values: readonly T[],
-  concurrency: number,
-  operation: (value: T, index: number) => Promise<void>,
-): Promise<void> {
-  let nextIndex = 0;
-  const workers = Array.from(
-    { length: Math.min(concurrency, values.length) },
-    async () => {
-      while (nextIndex < values.length) {
-        const index = nextIndex;
-        nextIndex += 1;
-        await operation(values[index]!, index);
-      }
-    },
-  );
-  await Promise.all(workers);
-}
-
 async function buildExternalCatalog(): Promise<Catalog> {
   const refs = await externalRefs();
   CACHE.pending = refs.length;
@@ -1092,7 +1081,7 @@ async function buildExternalCatalog(): Promise<Catalog> {
   // Resolve sources concurrently with isolation — one slow/huge/dead source
   // neither blocks the others nor sinks the catalog; each folds in the instant
   // it arrives so the list streams Kortix-first, then source-by-source.
-  await forEachWithConcurrency(
+  await mapWithConcurrency(
     refs,
     MARKETPLACE_EXTERNAL_BUILD_CONCURRENCY,
     async ({ ref, sourceId }, i) => {
@@ -1414,6 +1403,13 @@ export const FEATURED_MARKETPLACES: FeaturedMarketplace[] = [
     label: "Claude SEO",
     owner: "AgricIDaniel",
     description: "Technical SEO, schema, GEO/AEO",
+    license: "MIT",
+  },
+  {
+    address: "CosmoBlk/email-marketing-bible",
+    label: "Email Marketing Bible",
+    owner: "CosmoBlk",
+    description: "Email marketing: flows, deliverability, copy, ESP via MCP",
     license: "MIT",
   },
   {
@@ -2245,5 +2241,3 @@ export function _resetExternalCache(): void {
 export function warmMarketplaceCatalog(): void {
   void startExternalBuild().catch(() => undefined);
 }
-
-export { resolveOpencodeDir };

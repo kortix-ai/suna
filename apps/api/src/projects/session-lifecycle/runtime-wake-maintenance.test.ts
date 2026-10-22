@@ -100,6 +100,81 @@ describe('reconcileRuntimeWakeCandidate', () => {
     expect(events).toEqual(['claim', 'preserve-unavailable']);
   });
 
+  // A `removed` answer alone has condemned LIVE boxes in prod (2026-10-02/03):
+  // Platinum reported `removed` for two parked runtimes — a transient
+  // failed-start during their own start retry — and their boxes served traffic
+  // minutes later. The `/start` open phase and the parked sweep both ask the
+  // in-place recovery gate before writing a loss; this pass must too. Either
+  // non-preserve gate outcome — the gate accepted a recovery, or another
+  // writer already owns one — leaves the row to the recovery flow, never to a
+  // gravestone.
+  test.each(['recovered', 'recovery-in-flight'] as const)(
+    'a removed box the recovery gate does not condemn (%s) is not preserved as lost',
+    async (outcome) => {
+      const events: string[] = [];
+      const result = await reconcileRuntimeWakeCandidate({
+        claim: async () => {
+          events.push('claim');
+          return true;
+        },
+        getStatus: async () => 'removed',
+        stop: async () => {
+          events.push('stop');
+        },
+        markChecked: async (status) => {
+          events.push(`check:${status}`);
+        },
+        markStopped: async () => {
+          events.push('record-stop');
+        },
+        markRemoved: async () => {
+          events.push('preserve-unavailable');
+        },
+        recoverRemoved: async () => {
+          events.push('recover');
+          return outcome;
+        },
+      });
+
+      expect(result).toBe('recovering');
+      expect(events).toEqual(['claim', 'recover', 'check:removed']);
+    },
+  );
+
+  // The gate refines the verdict; it does not retire it. A `removed` the
+  // recovery gate answers `unavailable` for (or a provider without a recovery
+  // gate at all) is still the 2026-08-13 case: this pass is the only component
+  // that asks the provider about a parked row, so its preserve must stand.
+  test('a removed box the recovery gate cannot save is still preserved', async () => {
+    const events: string[] = [];
+    const result = await reconcileRuntimeWakeCandidate({
+      claim: async () => {
+        events.push('claim');
+        return true;
+      },
+      getStatus: async () => 'removed',
+      stop: async () => {
+        events.push('stop');
+      },
+      markChecked: async (status) => {
+        events.push(`check:${status}`);
+      },
+      markStopped: async () => {
+        events.push('record-stop');
+      },
+      markRemoved: async () => {
+        events.push('preserve-unavailable');
+      },
+      recoverRemoved: async () => {
+        events.push('recover');
+        return 'preserve-lost';
+      },
+    });
+
+    expect(result).toBe('removed');
+    expect(events).toEqual(['claim', 'recover', 'preserve-unavailable']);
+  });
+
   // A provider round-trip that throws must never be read as proof of removal:
   // `getStatus` rejecting degrades to `unknown`, which is explicitly
   // non-terminal. Preserving on a network blip would strand a healthy session.

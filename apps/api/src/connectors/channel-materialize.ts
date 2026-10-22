@@ -4,6 +4,7 @@ import {
   listAgentMailInstalls,
   loadSlackInstall,
   loadTeamsInstall,
+  loadTelegramInstall,
 } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 /**
@@ -80,9 +81,8 @@ export async function synthesizeChannelConnectors(
 ): Promise<ConnectorSpec[]> {
   const specs: ConnectorSpec[] = [];
 
-  // Slack — no feature flag: the install IS the registration (Telegram
-  // slots in here the same way — see KORTIX-206 Phase D). Teams sits below,
-  // with the other flag-gated channels.
+  // Slack and Teams — no feature flag: the install IS the registration
+  // (Telegram slots in here the same way — see KORTIX-206 Phase D).
   // Use the reserved platform-owned slug so user-defined connectors like
   // `[[connectors]] slug="slack" provider="pipedream" app="slack"` cannot
   // shadow the built-in Slack CLI's channel catalog.
@@ -92,23 +92,31 @@ export async function synthesizeChannelConnectors(
     if (install) specs.push(channelSpec('slack', slackSlug));
   }
 
+  const teamsSlug = channelDefaultSlug('teams');
+  if (!channelAlreadyDeclared(declared, 'teams', teamsSlug)) {
+    const install = await loadTeamsInstall(projectId).catch(() => null);
+    if (install) specs.push(channelSpec('teams', teamsSlug));
+  }
+
   const [project] = await db
     .select({ metadata: projects.metadata })
     .from(projects)
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
-  // Teams — gated on the per-project `teams` feature flag, then the
-  // install, exactly like email below.
-  if (project && resolveFeatureFlag(project.metadata, 'teams')) {
-    const teamsSlug = channelDefaultSlug('teams');
-    if (!channelAlreadyDeclared(declared, 'teams', teamsSlug)) {
-      const install = await loadTeamsInstall(projectId).catch(() => null);
-      if (install) specs.push(channelSpec('teams', teamsSlug));
-    }
+  if (!project) return specs;
+
+  // Telegram (connectors_v2): the bot install is the registration, like Slack.
+  const telegramSlug = channelDefaultSlug('telegram');
+  if (
+    resolveFeatureFlag(project.metadata, 'connectors_v2') &&
+    !channelAlreadyDeclared(declared, 'telegram', telegramSlug) &&
+    (await loadTelegramInstall(projectId).catch(() => null))
+  ) {
+    specs.push(channelSpec('telegram', telegramSlug));
   }
 
-  if (!project || !resolveFeatureFlag(project.metadata, 'agentmail_email')) {
+  if (!resolveFeatureFlag(project.metadata, 'agentmail_email')) {
     return specs;
   }
 

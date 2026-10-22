@@ -4,6 +4,78 @@ import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '../..');
 const skipSdkTests = process.env.KORTIX_PACKAGE_SKIP_SDK_TESTS === '1';
+// `--package-group` (KORTIX_PACKAGE_GROUP) runs one slice, so CI runs the
+// slices on parallel runners: on one 4 vCPU runner the API, CLI and kortixd
+// suites plus three `tsc` shared the CPU and the lane took 18.5 min
+// (run 38777589705). Unset: every group, one after another as before.
+const GROUP_DIRS: Record<string, string> = {
+  api: 'apps/api',
+  cli: 'apps/cli',
+  kortixd: 'apps/kortix-sandbox-agent-server',
+};
+const group = process.env.KORTIX_PACKAGE_GROUP || null;
+if (group !== null && group !== 'rest' && !GROUP_DIRS[group]) {
+  throw new Error(`unknown package group ${group}: use api, cli, kortixd or rest`);
+}
+const inGroup = (dir: string) =>
+  group === null ||
+  (group === 'rest' ? !Object.values(GROUP_DIRS).includes(dir) : GROUP_DIRS[group] === dir);
+/** The repo-wide checks that belong to no package run once, in the `rest` group. */
+const repoChecks = group === null || group === 'rest';
+/** Run `task` only when `dir` is in this group. */
+const when = (dir: string, task: () => Promise<unknown>): Promise<unknown> =>
+  inGroup(dir) ? task() : Promise.resolve();
+
+/**
+ * Runner controls that must survive the hermetic scrub below.
+ *
+ * A Kortix-managed sandbox exports the agent session's own identity into the
+ * environment (KORTIX_TOKEN, KORTIX_PROJECT_ID, KORTIX_SUPERVISED, …) and
+ * writes it to /dev/shm/kortix/agent-env.sh, which the CLI reads through
+ * `sandboxEnvValue()`. Workspace suites inherit that identity and then fail
+ * on tests that need a CI-shaped env (a supervised box refuses binary
+ * downloads; a direct KORTIX_REPO_URL is refused). On a laptop or a GitHub runner none of these
+ * vars exist, so dropping them here reproduces exactly what CI sees. Suites
+ * that need a value set it themselves (apps/api/scripts/test.env, per-test
+ * setup); the Kortix-shared `sandboxEnvValue()` path is cut off with
+ * KORTIX_DISABLE_SANDBOX_ENV_FILE=1, matching the flag every spawn harness
+ * in the repo already sets.
+ */
+const RUNNER_CONTROLS = new Set([
+  'KORTIX_API_TEST_WORKERS',
+  'KORTIX_MIN_TEST_FILES',
+  'KORTIX_PACKAGE_SKIP_SDK_TESTS',
+]);
+
+function hermeticWorkspaceEnv(): Record<string, string | undefined> {
+  const env: Record<string, string | undefined> = {};
+  for (const [name, value] of Object.entries(process.env)) {
+    if (name.startsWith('KORTIX_') && !RUNNER_CONTROLS.has(name)) continue;
+    // The session also exports BASH_ENV=/dev/shm/kortix/agent-env.sh. A bash
+    // script started while the stack under test has written that file sources
+    // it at startup and injects the host's project identity into every test
+    // worker. Dropping it here reproduces CI, where BASH_ENV is unset.
+    if (name === 'BASH_ENV') continue;
+    env[name] = value;
+  }
+  env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
+  // The platform points BASH_ENV at its agent-env file; every bash a lane
+  // spawns (apps/api/scripts/test.sh) would source it and re-export the
+  // ambient platform env right back. ENV covers the same hook for /bin/sh.
+  delete env.BASH_ENV;
+  delete env.ENV;
+  // The same CI-shape rule for the two host files a Kortix sandbox image bakes:
+  // the session env file the daemon's readiness gate reads, and the image's
+  // baked model catalog. Neither exists on a laptop or a GitHub runner, so the
+  // suites are written against their absence; point the overrides at paths
+  // that do not exist instead of asking every suite to know about them.
+  env.KORTIX_PT_ENV_PATH = '/nonexistent/kortix-test-pt-env';
+  env.KORTIX_BAKED_LLM_CATALOG_PATH = '/nonexistent/kortix-test-llm-catalog.json';
+  // Same rule for the image's baked managed-skills dir: suites assert the
+  // exact skill lists their fixtures create, and CI has no baked dir.
+  env.KORTIX_MANAGED_SKILLS_DIR = '/nonexistent/kortix-test-managed-skills';
+  return env;
+}
 
 async function run(
   command: string[],
@@ -30,21 +102,21 @@ async function runAll(tasks: Promise<unknown>[]): Promise<void> {
 }
 
 async function rejectFocusedTests(): Promise<void> {
+  // git grep, never rg: GitHub's runner images ship no ripgrep. It searches
+  // tracked and untracked files minus .gitignore (no node_modules), and exits
+  // 1 on no match, like rg.
+  // A pathspec `*` crosses directories, so `apps/*.test.ts` is recursive.
+  const extensions = ['spec.ts', 'test.ts', 'test.tsx', 'test.mts', 'test.js'];
   const child = Bun.spawn(
     [
-      'rg',
+      'git',
+      'grep',
+      '--untracked',
       '-n',
-      String.raw`\b(describe|test|it)\.only\(`,
-      'apps',
-      'packages',
-      '-g',
-      '*.test.ts',
-      '-g',
-      '*.test.tsx',
-      '-g',
-      '*.test.mts',
-      '-g',
-      '*.test.js',
+      '-E',
+      String.raw`(^|[^A-Za-z0-9_$.])(describe|test|it)\.only\(`,
+      '--',
+      ...['apps', 'packages', 'tests'].flatMap((dir) => extensions.map((ext) => `${dir}/*.${ext}`)),
     ],
     { cwd: root, stdout: 'pipe', stderr: 'inherit' },
   );
@@ -88,6 +160,8 @@ async function verifyAgentTunnelCli(): Promise<void> {
     'install-service',
     'service-status',
     'uninstall-service',
+    'access',
+    'keep-awake',
     '--daemon',
     '--foreground',
   ]) {
@@ -125,13 +199,15 @@ async function runWorkspaceTests(
       'pnpm',
       `--workspace-concurrency=${workspaceConcurrency}`,
       '--no-sort',
+      // Report every failing package in one run, not only the first.
+      '--no-bail',
       ...filters.flatMap((filter) => ['--filter', filter]),
       '--if-present',
       'test',
     ],
     {
       env: {
-        ...process.env,
+        ...hermeticWorkspaceEnv(),
         // The CLI includes an intentional 11-second idle-stream contract.
         // Concurrent API and agent workers can push it past 15 seconds.
         KORTIX_TEST_TIMEOUT_MS: '30000',
@@ -144,40 +220,81 @@ async function runWorkspaceTests(
   );
 }
 
+if (repoChecks) {
+  await runAll([
+    run(['node', 'scripts/stage-npm-publish.test.mjs']),
+    run(['node', 'scripts/publish-npm-package.test.mjs']),
+    run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
+    run(['node', '--test', 'scripts/dev-local.test.mjs']),
+    run(['node', '--test', 'scripts/dev-local-cleanup.test.mjs']),
+    run(['node', '--test', 'scripts/test-guard.test.mjs']),
+  ]);
+  await rejectFocusedTests();
+}
+// apps/web's download-layout test launches Playwright Chromium. CI installs
+// the browser in the workflow before this lane; a worker sandbox that runs the
+// lane bare does not, and the test then fails with "Executable doesn't exist".
+// `playwright install` is idempotent (near-instant when the browser is
+// present) and honors PLAYWRIGHT_BROWSERS_PATH, so a CI cache still hits.
+await when('apps/web', () => run(['pnpm', '--dir', 'tests', 'run', 'playwright:install']));
 await runAll([
-  run(['node', 'scripts/stage-npm-publish.test.mjs']),
-  run(['node', 'scripts/publish-npm-package.test.mjs']),
-  run(['node', '--test', 'scripts/check-blocked-terms.test.mjs']),
-  run(['node', '--test', 'scripts/prod-us-east-2/*.test.mjs']),
-]);
-await rejectFocusedTests();
-await runAll([
-  run(['pnpm', '--filter', '@kortix/sdk', 'typecheck']),
-  run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install']),
+  when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'typecheck'])),
+  when('packages/sdk', () => run(['pnpm', '--filter', '@kortix/sdk', 'run', 'smoke:install'])),
+  when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'typecheck'])),
+  // The apps/web rules (SDK boundary, query keys, icons) over the moved session UI.
+  when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'lint'])),
+  // Frozen counts (apps/api/eslint.config.mjs): new violations fail, fixed ones must be pruned.
+  when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'lint'])),
+  // The migration file lint (backfill-safe sign-off, CONCURRENTLY, safety header).
+  // A PR into dev runs no CI, so without this it first ran after the merge,
+  // where a merged file can no longer be fixed (migrations are immutable).
+  when('packages/db', () => run(['pnpm', '--filter', '@kortix/db', 'run', 'migrate:lint'])),
 ]);
 await runAll([
   ...['llm-catalog', 'sdk'].map((directory) =>
-    verifyPublishablePackage(directory, false),
+    when(`packages/${directory}`, () => verifyPublishablePackage(directory, false)),
   ),
-  verifyAgentTunnelCli(),
+  // @kortix/ui has no earlier build in this lane: build it, stage, dry-pack.
+  when('packages/ui', () => verifyPublishablePackage('ui')),
+  when('packages/agent-tunnel', verifyAgentTunnelCli),
 ]);
+// @kortix/ui's install smoke stages and packs @kortix/sdk and @kortix/llm-catalog
+// too, so it runs alone: concurrent with the SDK smoke or the stage above, two
+// processes would rewrite and restore the same package.json.
+await when('packages/ui', () => run(['pnpm', '--filter', '@kortix/ui', 'run', 'smoke:install']));
 
 // Run two explicit bounded waves. This avoids a generic workspace fan-out while
 // removing idle CPU time between independent load classes. Keep the CLI and
 // agent server sequential. Concurrent isolated Bun workers can spin indefinitely.
 await runAll([
-  runWorkspaceTests(['kortix-api'], 1),
+  when('apps/api', () => runWorkspaceTests(['kortix-api'], 1)),
+  // Bun runs TypeScript without checking types, so unit tests pass with type
+  // errors. Each `typecheck` script runs tsgo, the native TypeScript 7 compiler
+  // (~7 s API, ~6 s web, ~3 s CLI cold on a laptop), so it rides inside this
+  // wave next to the two test chains instead of adding a wave. kortixd's
+  // image build runs its typecheck (noUncheckedIndexedAccess) over the workspace
+  // packages it imports, so an api-contract change that only kortixd's flags
+  // reject failed the dev API image build (#9556) with every lane green.
+  when('apps/api', () => run(['pnpm', '--filter', 'kortix-api', 'typecheck'])),
+  when('apps/cli', () => run(['pnpm', '--filter', '@kortix/cli', 'typecheck'])),
+  when('apps/kortix-sandbox-agent-server', () => run(['pnpm', '--filter', 'kortixd', 'typecheck'])),
+  when('apps/web', () => run(['pnpm', '--filter', 'Kortix-Computer-Frontend', 'typecheck'])),
   (async () => {
-    await runWorkspaceTests(['@kortix/cli'], 1);
-    await runWorkspaceTests(['kortixd'], 1);
+    await when('apps/cli', () => runWorkspaceTests(['@kortix/cli'], 1));
+    await when('apps/kortix-sandbox-agent-server', () => runWorkspaceTests(['kortixd'], 1));
   })(),
 ]);
-await runAll([
-  // `@kortix/db`'s PostgreSQL contracts (`*.integration.test.ts`) and
-  // `tests/migration` run in the `db-suites` lane of the core run.
-  runWorkspaceTests(['@kortix/db'], 1),
-  runWorkspaceTests(
-    [
+// The root `.npmrc` sets `ignore-scripts=true`, so `pnpm install` never runs
+// apps/mobile's `postinstall: patch-package`. Its tests assert the patched
+// libraries (`lib/markdown/markdown-keys.test.ts`), so apply the patches here.
+// patch-package is idempotent: a checkout that already applied them passes.
+await when('apps/mobile', async () => {
+  await run(['pnpm', '--filter', './apps/mobile', 'exec', 'patch-package']);
+  // The patched type declarations (react-native-drawer-layout) are part of the typecheck.
+  await run(['pnpm', '--filter', './apps/mobile', 'typecheck']);
+});
+const rest = repoChecks
+  ? [
       './packages/**',
       './apps/**',
       '!kortix-api',
@@ -185,7 +302,11 @@ await runAll([
       '!kortixd',
       '!@kortix/db',
       ...(skipSdkTests ? ['!@kortix/sdk'] : []),
-    ],
-    2,
-  ),
+    ]
+  : [];
+await runAll([
+  // `@kortix/db`'s PostgreSQL contracts (`*.integration.test.ts`) and
+  // `tests/migration` run in the `db-suites` lane of the core run.
+  when('packages/db', () => runWorkspaceTests(['@kortix/db'], 1)),
+  rest.length > 0 ? runWorkspaceTests(rest, 2) : Promise.resolve(),
 ]);

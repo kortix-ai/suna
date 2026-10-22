@@ -331,7 +331,7 @@ describe('recoverFromSendFailure', () => {
 
   test('removes the optimistic message outright when the runtime client is not resolvable', () => {
     beginOptimisticSend('sess-1', 'msg-1', 'never made it');
-    getClientThrows = new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+    getClientThrows = new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
 
     const classified = recoverFromSendFailure('sess-1', 'msg-1', new Error('boom'));
 
@@ -652,7 +652,7 @@ describe('replayStartStash', () => {
   test('a network send failure restores the stash and reports the classified error via onFailure', async () => {
     const timers = createFakeTimers();
     writeStartStash('sess-1', { prompt: 'network will fail', model: null, agent: null });
-    // A real 4xx (never retried by `promptOpenCodeMessage`) so this test
+    // A real 4xx (never retried by `promptRuntimeMessage`) so this test
     // doesn't ride out that function's own transient-failure backoff, which
     // uses the real clock independently of the `timers` this test controls.
     promptImpl = async () => ({

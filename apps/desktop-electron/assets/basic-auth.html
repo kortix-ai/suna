@@ -5,13 +5,16 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
     <title>Sign in</title>
     <style>
-      :root { color-scheme: light dark; }
+      /* Kortix tokens: .agents/skills/kortix-brand/references/visual/tokens.css. The CSP
+         blocks web fonts, so Roobert applies only where installed; the system stack follows. */
+      :root { color-scheme: light dark; --background: #ffffff; --card: #f4f4f4; --foreground: #1f1f1f; --muted-foreground: #666666; --border: #e2e2e2; --primary: #1f1f1f; --primary-foreground: #ffffff; --destructive: #e7000b; --font-sans: Roobert, ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", "Noto Sans", sans-serif; }
+      @media (prefers-color-scheme: dark) { :root { --background: #0b0b0b; --card: #141414; --foreground: #ffffff; --muted-foreground: #999999; --border: #262626; --primary: #ffffff; --primary-foreground: #090909; --destructive: #ff6467; } }
       html, body {
         margin: 0;
         height: 100%;
-        background: #ffffff;
-        color: rgba(0, 0, 0, 0.9);
-        font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--background);
+        color: var(--foreground);
+        font: 13px/1.45 var(--font-sans);
         -webkit-user-select: none;
         user-select: none;
         overflow: hidden;
@@ -48,8 +51,8 @@
         height: 30px;
         padding: 0 9px;
         border-radius: 6px;
-        border: 1px solid rgba(0, 0, 0, 0.18);
-        background: #ffffff;
+        border: 1px solid var(--border);
+        background: var(--background);
         color: inherit;
         font: inherit;
         outline: none;
@@ -63,11 +66,11 @@
         gap: 7px;
         margin-top: 2px;
       }
-      .remember input { margin: 0; accent-color: #ffffff; }
+      .remember input { margin: 0; accent-color: var(--primary); }
       #error {
         min-height: 16px;
         font-size: 12px;
-        color: #ff6b6b;
+        color: var(--destructive);
       }
       .actions {
         margin-top: auto;
@@ -79,7 +82,7 @@
         height: 30px;
         padding: 0 14px;
         border-radius: 6px;
-        border: 1px solid rgba(0, 0, 0, 0.18);
+        border: 1px solid var(--border);
         background: transparent;
         color: inherit;
         font: inherit;
@@ -87,22 +90,22 @@
         cursor: default;
       }
       button.primary {
-        background: #0a0a0a;
-        border-color: #0a0a0a;
-        color: #ffffff;
+        background: var(--primary);
+        border-color: var(--primary);
+        color: var(--primary-foreground);
       }
       button:focus-visible { outline: 2px solid rgba(0, 0, 0, 0.45); outline-offset: 1px; }
       @media (prefers-color-scheme: dark) {
-        html, body { background: #141414; color: rgba(255, 255, 255, 0.92); }
-        p.sub { color: rgba(255, 255, 255, 0.6); }
-        label { color: rgba(255, 255, 255, 0.7); }
+        html, body { background: var(--card); color: var(--foreground); }
+        p.sub { color: var(--muted-foreground); }
+        label { color: var(--muted-foreground); }
         input[type="text"], input[type="password"] {
-          border-color: rgba(255, 255, 255, 0.14);
-          background: #0a0a0a;
+          border-color: var(--border);
+          background: var(--background);
         }
         input:focus { border-color: rgba(255, 255, 255, 0.45); }
-        button { border-color: rgba(255, 255, 255, 0.14); }
-        button.primary { background: #ffffff; border-color: #ffffff; color: #0a0a0a; }
+        button { border-color: var(--border); }
+        button.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
         button:focus-visible { outline-color: rgba(255, 255, 255, 0.45); }
       }
     </style>

@@ -31,9 +31,8 @@ Object.assign(process.env, {
   STRIPE_SECRET_KEY: 'sk_test_compute_metering',
   STRIPE_WEBHOOK_SECRET: 'whsec_compute_metering',
   KORTIX_URL: 'http://127.0.0.1:1',
-  DAYTONA_API_KEY: 'compute-metering-test',
-  DAYTONA_SERVER_URL: 'http://127.0.0.1:1',
-  DAYTONA_TARGET: 'us',
+  PLATINUM_API_KEY: 'compute-metering-test',
+  PLATINUM_API_URL: 'http://127.0.0.1:1',
 });
 
 /** Provider status per external id; an Error makes the probe throw. */
@@ -71,7 +70,9 @@ const { countBillingInvariantViolations, countStaleLivenessWindows, reconcileOrp
 
 const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
 /** 2 vCPU / 4 GB / 20 GB for one hour, at list price. */
-const HOURLY = 0.201312;
+const HOURLY = 0.10944109589041096;
+/** Five minutes of the default machine, as the ledger stores it (10 decimals); the window's cost_usd keeps 6. */
+const FIVE_MINUTES = Math.round((HOURLY / 12) * 1e10) / 1e10;
 const MINUTE = 60_000;
 const USER = '00000000-0000-4000-a000-000000009d01';
 
@@ -79,12 +80,11 @@ function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
 
-async function account(credit: { billingModel?: string; tier?: string | null } | null): Promise<string> {
+async function account(credit: { tier?: string | null } | null): Promise<string> {
   const accountId = await fixtures.seedAccount('compute-metering');
   if (credit) {
     await db.insert(creditAccounts).values({
       accountId,
-      billingModel: credit.billingModel ?? 'per_seat',
       tier: credit.tier === undefined ? 'free' : credit.tier,
       balance: '100',
       nonExpiringCredits: '100',
@@ -120,7 +120,7 @@ async function openWindow(input: {
   startedAt: string;
   lastBilledAt?: string;
   metadata?: Record<string, unknown>;
-  workloadType?: 'session' | 'app' | 'monitor';
+  workloadType?: 'session' | 'app' | 'monitor' | 'backend'; // 'backend': a retired workload, kept to test leftover rows
   appRuntimeId?: string;
 }): Promise<{ id: string; sandboxId: string }> {
   const sandboxId = input.sandboxId ?? crypto.randomUUID();
@@ -273,19 +273,19 @@ withDb('compute metering on PostgreSQL', () => {
 
   describe('a window opens, settles, and closes', () => {
     test('start opens one active window with its cursor at its start and moves no credit', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const sandboxId = await sandbox(accountId);
 
-      const id = await startComputeSession({ sandboxId, accountId, provider: 'e2b', spec: SPEC });
+      const id = await startComputeSession({ sandboxId, accountId, provider: 'daytona', spec: SPEC });
 
       const [open] = await windowsOf(sandboxId);
-      expect(open).toMatchObject({ id, state: 'active', endedAt: null, provider: 'e2b', costUsd: 0 });
+      expect(open).toMatchObject({ id, state: 'active', endedAt: null, provider: 'daytona', costUsd: 0 });
       expect(open!.lastBilledAt).toBe(open!.startedAt);
       expect(await ledgerOf(accountId)).toEqual([]);
     });
 
     test('a second start for the same sandbox returns the open window', async () => {
-      const accountId = await account({ billingModel: 'credit' });
+      const accountId = await account({ tier: 'credits' });
       const sandboxId = await sandbox(accountId);
 
       const first = await startComputeSession({ sandboxId, accountId, spec: SPEC });
@@ -295,16 +295,16 @@ withDb('compute metering on PostgreSQL', () => {
       expect(await windowsOf(sandboxId)).toHaveLength(1);
     });
 
-    test('a legacy paid plan opens no window', async () => {
-      const accountId = await account({ billingModel: 'legacy', tier: 'tier_6_50' });
+    test('a legacy flat plan pays for compute like every other account', async () => {
+      const accountId = await account({ tier: 'tier_6_50' });
       const sandboxId = await sandbox(accountId);
 
-      expect(await startComputeSession({ sandboxId, accountId, spec: SPEC })).toBeNull();
-      expect(await windowsOf(sandboxId)).toEqual([]);
+      expect(await startComputeSession({ sandboxId, accountId, spec: SPEC })).not.toBeNull();
+      expect(await windowsOf(sandboxId)).toHaveLength(1);
     });
 
     test('pause stops the window and settles one compute_debit keyed on the window end', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const sandboxId = await sandbox(accountId);
       const id = await startComputeSession({ sandboxId, accountId, spec: SPEC });
       const start = Math.floor(Date.now() / 1000) * 1000 - 10 * MINUTE;
@@ -314,12 +314,12 @@ withDb('compute metering on PostgreSQL', () => {
 
       const end = iso(start + 300_000);
       expect(await windowsOf(sandboxId)).toEqual([
-        expect.objectContaining({ id, state: 'stopped', endedAt: end, lastBilledAt: end, costUsd: 0.016776 }),
+        expect.objectContaining({ id, state: 'stopped', endedAt: end, lastBilledAt: end, costUsd: Math.round(FIVE_MINUTES * 1e6) / 1e6 }),
       ]);
       expect(await ledgerOf(accountId)).toEqual([
         {
           type: 'usage',
-          amount: -0.016776,
+          amount: -FIVE_MINUTES,
           description: 'Sandbox compute · 2vCPU/4GB/20GB · 300s',
           idempotencyKey: `compute:${id}:${end}`,
           metadata: expect.objectContaining({ ledger_type: 'compute_debit' }),
@@ -327,8 +327,29 @@ withDb('compute metering on PostgreSQL', () => {
       ]);
     });
 
+    test('pause settles one compute_debit that names the session that ran the box', async () => {
+      const accountId = await account({});
+      const sandboxId = await sandbox(accountId);
+      const id = await startComputeSession({ sandboxId, accountId, sessionId: 'sess-ledger-ref', spec: SPEC });
+      const start = Math.floor(Date.now() / 1000) * 1000 - 10 * MINUTE;
+      await backdate(sandboxId, iso(start));
+
+      await pauseComputeSession(sandboxId, new Date(start + 300_000));
+
+      const end = iso(start + 300_000);
+      expect(await ledgerOf(accountId)).toEqual([
+        {
+          type: 'usage',
+          amount: -FIVE_MINUTES,
+          description: 'Sandbox compute · sess-ledger-ref · 2vCPU/4GB/20GB · 300s',
+          idempotencyKey: `compute:${id}:${end}`,
+          metadata: expect.objectContaining({ ledger_type: 'compute_debit' }),
+        },
+      ]);
+    });
+
     test('end finalizes the window and settles it', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const sandboxId = await sandbox(accountId);
       await startComputeSession({ sandboxId, accountId, spec: SPEC });
       await backdate(sandboxId, iso(Date.now() - MINUTE));
@@ -346,7 +367,7 @@ withDb('compute metering on PostgreSQL', () => {
     // Stop, hibernate, and delete paths call pause/end best-effort, often for a
     // sandbox that never opened a window or whose window is already closed.
     test('pause and end of a sandbox without an open window write nothing', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const sandboxId = await sandbox(accountId);
 
       await expect(pauseComputeSession(sandboxId)).resolves.toBeUndefined();
@@ -357,7 +378,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('two concurrent closes settle one window and close it at its own cursor', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const sandboxId = await sandbox(accountId);
       await startComputeSession({ sandboxId, accountId, spec: SPEC });
       const start = Math.floor(Date.now() / 1000) * 1000 - 10 * MINUTE;
@@ -378,17 +399,17 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('a reopened sandbox gets a new window at its last spec and provider', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const sandboxId = await sandbox(accountId);
       const first = await startComputeSession({
         sandboxId,
         accountId,
-        provider: 'e2b',
+        provider: 'daytona',
         spec: { cpuCores: 4, memoryGb: 8, diskGb: 40, gpuCount: 0 },
       });
       await pauseComputeSession(sandboxId);
 
-      const second = await reopenComputeForSandbox(sandboxId, accountId, null, null, 'daytona');
+      const second = await reopenComputeForSandbox(sandboxId, accountId, null, null, 'platinum');
 
       expect(second).not.toBe(first);
       expect(await windowsOf(sandboxId)).toEqual([
@@ -397,7 +418,7 @@ withDb('compute metering on PostgreSQL', () => {
           id: second,
           state: 'active',
           endedAt: null,
-          provider: 'e2b',
+          provider: 'daytona',
           cpuCores: 4,
           memoryGb: 8,
           diskGb: 40,
@@ -408,7 +429,7 @@ withDb('compute metering on PostgreSQL', () => {
 
   describe('settlement is bounded by evidence and by the cursor', () => {
     test('a window never observed alive bills only the grace past its start', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const start = Date.now() - 10 * 60 * MINUTE;
       const window = await openWindow({ accountId, startedAt: iso(start) });
 
@@ -424,7 +445,7 @@ withDb('compute metering on PostgreSQL', () => {
     // The cursor can sit past the grace after an earlier settle. A partial
     // settle there has no window: the cursor must not move back to the grace.
     test('a window already billed past its grace settles nothing and keeps its cursor', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const start = Date.now() - 10 * 60 * MINUTE;
       const window = await openWindow({ accountId, startedAt: iso(start), lastBilledAt: iso(start + 90 * MINUTE) });
 
@@ -437,7 +458,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('a close evidenced before the cursor closes at the cursor and charges nothing', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const start = Date.now() - 30 * MINUTE;
       const window = await openWindow({ accountId, startedAt: iso(start), lastBilledAt: iso(start + 20 * MINUTE) });
 
@@ -471,7 +492,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('an observation of a live box extends only its open window', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const sandboxId = crypto.randomUUID();
       const closed = await openWindow({ accountId, sandboxId, startedAt: iso(Date.now() - 60 * MINUTE) });
       await db
@@ -492,8 +513,8 @@ withDb('compute metering on PostgreSQL', () => {
 
   describe('the maintenance tick', () => {
     test('settles a window older than one maintenance interval without closing it', async () => {
-      const due = await account({ billingModel: 'per_seat' });
-      const fresh = await account({ billingModel: 'per_seat' });
+      const due = await account({});
+      const fresh = await account({});
       const dueWindow = await openWindow({ accountId: due, startedAt: iso(Date.now() - 6 * MINUTE) });
       const freshStart = iso(Date.now() - 4 * MINUTE);
       const freshWindow = await openWindow({ accountId: fresh, startedAt: freshStart });
@@ -512,7 +533,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('opens a missing window in the same pass', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const sandboxId = await sandbox(accountId);
 
       expect(await tickRunningComputeCharges()).toEqual({ settled: 0, reconciled: 1 });
@@ -521,32 +542,27 @@ withDb('compute metering on PostgreSQL', () => {
   });
 
   describe('the missing-window sweep', () => {
-    test('meters every account that pays for compute and skips legacy paid plans', async () => {
+    test('meters every account with a credit row, legacy plans included', async () => {
       const metered = {
-        perSeat: await sandbox(await account({ billingModel: 'per_seat' }), { externalId: 'per-seat' }),
-        credit: await sandbox(await account({ billingModel: 'credit' }), { externalId: 'credit' }),
-        legacyFree: await sandbox(await account({ billingModel: 'legacy', tier: 'free' }), {
-          externalId: 'legacy-free',
-        }),
-        legacyNoTier: await sandbox(await account({ billingModel: 'legacy', tier: null }), {
-          externalId: 'legacy-no-tier',
-        }),
+        credits: await sandbox(await account({ tier: 'credits' }), { externalId: 'credits' }),
+        legacySeat: await sandbox(await account({ tier: 'per_seat' }), { externalId: 'legacy-per-seat' }),
+        legacyFlat: await sandbox(await account({ tier: 'tier_2_20' }), { externalId: 'legacy-tier-2-20' }),
+        free: await sandbox(await account({ tier: 'free' }), { externalId: 'free' }),
+        noTier: await sandbox(await account({ tier: null }), { externalId: 'no-tier' }),
       };
-      await sandbox(await account({ billingModel: 'legacy', tier: 'tier_2_20' }), { externalId: 'legacy-tier-2-20' });
-      await sandbox(await account({ billingModel: 'legacy', tier: 'pro' }), { externalId: 'legacy-pro' });
       await sandbox(await account(null), { externalId: 'no-credit-row' });
 
       const result = await reconcileMissingComputeSessions();
 
-      expect(result).toEqual({ checked: 4, reconciled: 4, errors: 0 });
-      expect(probed.sort()).toEqual(['credit', 'legacy-free', 'legacy-no-tier', 'per-seat']);
+      expect(result).toEqual({ checked: 5, reconciled: 5, errors: 0 });
+      expect(probed.sort()).toEqual(['credits', 'free', 'legacy-per-seat', 'legacy-tier-2-20', 'no-tier']);
       for (const sandboxId of Object.values(metered)) {
         expect(await windowsOf(sandboxId)).toEqual([expect.objectContaining({ state: 'active' })]);
       }
     });
 
     test('only an active sandbox without an open window is a candidate', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       await sandbox(accountId, { status: 'stopped', externalId: 'stopped' });
       const alreadyMetered = await sandbox(accountId, { externalId: 'already-metered' });
       await openWindow({ accountId, sandboxId: alreadyMetered, startedAt: iso(Date.now()) });
@@ -562,7 +578,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('a bounded pass takes the oldest sandboxes first', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       await sandbox(accountId, { externalId: 'newest', createdAt: iso(Date.now() - MINUTE) });
       await sandbox(accountId, { externalId: 'oldest', createdAt: iso(Date.now() - 3 * MINUTE) });
       await sandbox(accountId, { externalId: 'middle', createdAt: iso(Date.now() - 2 * MINUTE) });
@@ -572,7 +588,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('a sandbox the provider cannot confirm running stays unmetered', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const noTarget = await sandbox(accountId, { externalId: null });
       const stopped = await sandbox(accountId, { externalId: 'provider-stopped' });
       providerStatus['provider-stopped'] = 'stopped';
@@ -584,7 +600,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('one failing sandbox does not stop the pass', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       await sandbox(accountId, { externalId: 'probe-fails', createdAt: iso(Date.now() - 2 * MINUTE) });
       const healthy = await sandbox(accountId, { externalId: 'healthy', createdAt: iso(Date.now() - MINUTE) });
       providerStatus['probe-fails'] = new Error('provider unreachable');
@@ -596,13 +612,13 @@ withDb('compute metering on PostgreSQL', () => {
 
   describe('the missing-window sweep for Apps', () => {
     test('meters only the running runtime of the active deployment of a running, live App', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const billable = await app(accountId);
       await app(accountId, { runtimeStatus: 'stopped' });
       await app(accountId, { activeDeployment: false });
       await app(accountId, { desiredState: 'stopped' });
       await app(accountId, { deleted: true });
-      await app(await account({ billingModel: 'legacy', tier: 'tier_6_50' }));
+      await app(await account(null));
       const metered = await app(accountId);
       await openWindow({
         accountId,
@@ -617,7 +633,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('an App window carries the App machine and its attribution', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const billable = await app(accountId, { spec: { cpuCores: 4, memoryGb: 8, diskGb: 40 } });
 
       await reconcileMissingAppComputeSessions();
@@ -635,7 +651,7 @@ withDb('compute metering on PostgreSQL', () => {
     });
 
     test('a runtime the provider reports stopped stays unmetered', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const billable = await app(accountId);
       providerStatus[billable.externalId] = 'stopped';
 
@@ -646,7 +662,7 @@ withDb('compute metering on PostgreSQL', () => {
 
   describe('the billing invariant', () => {
     test('the sweep keeps session, App, and monitor windows of live boxes open and closes an orphan', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const now = Date.now();
       const sessionBox = await sandbox(accountId);
       const session = await openWindow({ accountId, sandboxId: sessionBox, startedAt: iso(now - MINUTE) });
@@ -688,8 +704,55 @@ withDb('compute metering on PostgreSQL', () => {
       expect(await windowsOf(orphan.sandboxId)).toEqual([expect.objectContaining({ state: 'stopped' })]);
     });
 
+    test('provider outages leave live session, App, and monitor windows open and mark them unresolved', async () => {
+      const accountId = await account({});
+      const now = Date.now();
+      const sessionBox = await sandbox(accountId, { externalId: 'session-unavailable' });
+      const session = await openWindow({ accountId, sandboxId: sessionBox, startedAt: iso(now - MINUTE) });
+      const runningApp = await app(accountId);
+      const appWindow = await openWindow({
+        accountId, sandboxId: runningApp.runtimeId, startedAt: iso(now - MINUTE),
+        workloadType: 'app', appRuntimeId: runningApp.runtimeId,
+      });
+      const project = await fixtures.seedProject('compute-monitor-unavailable', { accountId });
+      const [box] = await db.insert(projectMonitorBoxes).values({
+        projectId: project.project_id, accountId, provider: 'daytona',
+        externalId: 'monitor-unavailable', status: 'running', boxEpoch: 'epoch-1',
+      }).returning({ boxId: projectMonitorBoxes.boxId });
+      const monitor = await openWindow({
+        accountId, sandboxId: box!.boxId, startedAt: iso(now - MINUTE), workloadType: 'monitor',
+      });
+      for (const id of ['session-unavailable', runningApp.externalId, 'monitor-unavailable']) {
+        providerStatus[id] = new Error('provider unavailable');
+      }
+
+      expect(await reconcileOrphanComputeSessions(new Date(now))).toMatchObject({
+        checked: 3, closed: 0, errors: 0,
+      });
+      expect(probed.sort()).toEqual(['monitor-unavailable', runningApp.externalId, 'session-unavailable'].sort());
+      for (const window of [session, appWindow, monitor]) {
+        expect(await windowsOf(window.sandboxId)).toEqual([
+          expect.objectContaining({ state: 'active', endedAt: null,
+            metadata: expect.objectContaining({ unresolvedSince: iso(now) }) }),
+        ]);
+      }
+    });
+
+    test('a leftover backend window (the retired convex machine) has no runtime row, so the sweep closes it', async () => {
+      const accountId = await account({});
+      const now = Date.now();
+      const leftover = await openWindow({ accountId, startedAt: iso(now - MINUTE), workloadType: 'backend' });
+
+      expect(await countBillingInvariantViolations()).toBe(1);
+      const result = await reconcileOrphanComputeSessions(new Date(now));
+
+      expect(result).toMatchObject({ checked: 1, closed: 1, errors: 0 });
+      expect(result.byReason['sandbox-row-missing']).toBe(1);
+      expect(await windowsOf(leftover.sandboxId)).toEqual([expect.objectContaining({ state: 'stopped' })]);
+    });
+
     test('the monitors count open windows of dead boxes and live boxes not observed inside the grace', async () => {
-      const accountId = await account({ billingModel: 'per_seat' });
+      const accountId = await account({});
       const now = Date.now();
       const stoppedBox = await sandbox(accountId, { status: 'stopped' });
       await openWindow({ accountId, sandboxId: stoppedBox, startedAt: iso(now - MINUTE) });

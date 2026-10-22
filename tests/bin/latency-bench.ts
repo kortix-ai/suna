@@ -137,8 +137,6 @@ interface HealthResponse {
   status?: string;
   environment?: string;
   commit?: string;
-  region?: string | null;
-  database_region?: string | null;
 }
 
 async function fetchHealth(cfg: Config): Promise<HealthResponse> {
@@ -306,15 +304,9 @@ async function main(): Promise<number> {
   console.log(`[latency] target=${cfg.apiBase} sandbox=${cfg.sandboxId} iterations=${cfg.iterations}`);
 
   const health = await fetchHealth(cfg);
-  const topology: RegionTopology = {
-    apiRegion: health.region ?? null,
-    databaseRegion: health.database_region ?? null,
-  };
+  const topology: RegionTopology = { apiRegion: null, databaseRegion: null };
   const resolved = resolveWarmTurnBudget(topology);
-  console.log(
-    `[latency] deployment commit=${health.commit ?? 'unknown'} environment=${health.environment ?? 'unknown'} ` +
-      `api_region=${topology.apiRegion ?? 'unknown'} database_region=${topology.databaseRegion ?? 'unknown'}`,
-  );
+  console.log(`[latency] deployment commit=${health.commit ?? 'unknown'} environment=${health.environment ?? 'unknown'}`);
   console.log(
     resolved.colocated === true
       ? `[latency] topology: COLOCATED — applying the strict §2 budget ` +

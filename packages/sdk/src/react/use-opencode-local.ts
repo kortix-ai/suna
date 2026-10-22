@@ -12,14 +12,18 @@
  */
 
 import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
-import { featureFlags } from '../core/http/feature-flags';
-import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
+import { composerSelectableAgents } from '../core/agents/composer-agents';
+import {
+  resolveComposerModel,
+  sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
+  type SessionModelFallback,
+} from '../core/models/composer-model';
+import type { Agent, Config, ProviderListResponse } from '../core/runtime/runtime-types';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createAgentSelectionScope } from './agent-selection-scope';
 import { useKortixRouteProjectId } from './route-project';
-import { autoSeedableModels } from '@kortix/llm-catalog';
-import { healBedrockModelKey } from './bedrock-invokable';
-import { normalizeProviderList } from './provider-selection';
 import { useModelStore, type ModelKey } from './use-model-store';
 
 export type { ModelKey };
@@ -28,7 +32,7 @@ export type { ModelKey };
 // Types
 // ============================================================================
 
-export interface UseOpenCodeLocalOptions {
+export interface UseRuntimeLocalOptions {
   agents?: Agent[];
   providers?: ProviderListResponse;
   config?: Config;
@@ -60,9 +64,18 @@ export interface UseOpenCodeLocalOptions {
    * falling through to `globalDefault` / `agent.model` / the generic fallback.
    */
   resolveServerDefault?: (agentName: string | undefined) => ModelKey | undefined;
+  /**
+   * The project session row (`getProjectSession`). Its model pin is the model
+   * the session was set to, from any surface. With `lastPromptModel` it ranks
+   * after a pick made in this composer for this session and before every
+   * cross-session pick and default (`sessionModelCandidates`). Never persisted.
+   */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
+  /** The model of the session's newest user message, from its transcript. */
+  lastPromptModel?: ModelKey;
 }
 
-export interface OpenCodeLocalAgent {
+export interface RuntimeLocalAgent {
   /** Currently selected agent (or first available) */
   current: Agent | undefined;
   /** List of visible (non-hidden) agents, including subagents */
@@ -73,7 +86,7 @@ export interface OpenCodeLocalAgent {
   move: (direction: 1 | -1) => void;
 }
 
-export interface OpenCodeLocalModel {
+export interface RuntimeLocalModel {
   /** Current resolved model (ephemeral override -> agent.model -> fallback) */
   current: FlatModel | undefined;
   /** Current model as ModelKey — for DISPLAY in the picker (the resolved default). */
@@ -96,6 +109,12 @@ export interface OpenCodeLocalModel {
   cycle: (direction: 1 | -1) => void;
   /** Whether this session has an explicit per-session model selection in localStorage */
   hasSessionModel: boolean;
+  /**
+   * Set while the composer runs on a fallback the gateway switched this
+   * session to because its own model could not serve. `set(fallback.from)`
+   * switches back.
+   */
+  fallback?: SessionModelFallback;
   /** Variant management */
   variant: {
     current: string | undefined;
@@ -105,27 +124,14 @@ export interface OpenCodeLocalModel {
   };
 }
 
-export interface OpenCodeLocal {
-  agent: OpenCodeLocalAgent;
-  model: OpenCodeLocalModel;
+export interface RuntimeLocal {
+  agent: RuntimeLocalAgent;
+  model: RuntimeLocalModel;
 }
 
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function uniqueBy<T>(arr: T[], key: (item: T) => string): T[] {
-  const seen = new Set<string>();
-  const result: T[] = [];
-  for (const item of arr) {
-    const k = key(item);
-    if (!seen.has(k)) {
-      seen.add(k);
-      result.push(item);
-    }
-  }
-  return result;
-}
 
 /**
  * Normalize a model value into a ModelKey.
@@ -194,12 +200,15 @@ export function resolveHiddenAutoModel(
   return resolvePromptModel(resolved, undefined);
 }
 
+/** The persisted model-selection scope. `'native'` is deprecated: the LLM gateway is the only model path. */
 export type ModelProviderMode = 'native' | 'gateway';
 
-export function modelProviderMode(providers: ProviderListResponse | undefined): ModelProviderMode {
-  if (!providers) return 'native';
-  const normalized = normalizeProviderList(providers);
-  return normalized.connected?.includes('kortix') ? 'gateway' : 'native';
+/**
+ * @deprecated Always `'gateway'`: the LLM gateway is the only model path for
+ * every project. Removed in the next major.
+ */
+export function modelProviderMode(_providers?: ProviderListResponse): ModelProviderMode {
+  return 'gateway';
 }
 
 export function scopedModelSelectionKey(
@@ -268,7 +277,7 @@ export function resolveCurrentAgentName(input: {
 // Hook
 // ============================================================================
 
-export function useOpenCodeLocal({
+export function useRuntimeLocal({
   agents: rawAgents,
   providers,
   config,
@@ -276,17 +285,13 @@ export function useOpenCodeLocal({
   boundAgentName,
   defaultAgentName,
   resolveServerDefault,
-}: UseOpenCodeLocalOptions): OpenCodeLocal {
-  // ---- Flatten models from providers (shared with the chat input). The
-  // filter follows the provider MODE: gateway mode keeps the kortix-only
-  // allowlist (native bypass providers never leak in); native mode
-  // (llm_gateway off) flattens OpenCode's own connected providers — that IS
-  // the catalog off-gateway. ----
-  const providerMode = useMemo(() => modelProviderMode(providers), [providers]);
-  const flatModels = useMemo<FlatModel[]>(
-    () => flattenModels(providers, { providerMode }),
-    [providers, providerMode],
-  );
+  projectSession,
+  lastPromptModel,
+}: UseRuntimeLocalOptions): RuntimeLocal {
+  // ---- Flatten models from providers (shared with the chat input): the
+  // kortix-only allowlist, so a native bypass provider never leaks in. ----
+  const providerMode = modelProviderMode();
+  const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
   const projectId = useKortixRouteProjectId();
 
   // ---- Model store (persisted: recent, variant, per-agent/session selection) ----
@@ -303,19 +308,6 @@ export function useOpenCodeLocal({
     [flatModels],
   );
 
-  // ---- First valid model from a list of fallback sources ----
-  const getFirstValidModel = useCallback(
-    (...modelFns: (() => ModelKey | undefined)[]): ModelKey | undefined => {
-      for (const modelFn of modelFns) {
-        const model = modelFn();
-        if (!model) continue;
-        if (isModelValid(model)) return model;
-      }
-      return undefined;
-    },
-    [isModelValid],
-  );
-
   // ---- Find FlatModel from ModelKey ----
   const findModel = useCallback(
     (key: ModelKey): FlatModel | undefined =>
@@ -327,13 +319,11 @@ export function useOpenCodeLocal({
   // Project-only agents (orchestrator/project-maintainer/worker) are hidden
   // when the project paradigm is off; their bodies reference project
   // tools that aren't registered in default mode.
-  const visibleAgents = useMemo<Agent[]>(() => {
-    // Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
-    const projectOnlyAgents = new Set(['project-manager']);
-    return (Array.isArray(rawAgents) ? rawAgents : []).filter(
-      (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),
-    );
-  }, [rawAgents]);
+  const visibleAgents = useMemo<Agent[]>(
+    () =>
+      composerSelectableAgents(rawAgents, { includeSubagents: true }),
+    [rawAgents],
+  );
 
   // Resolve the current agent name (see `resolveCurrentAgentName`): per-session
   // slot -> server-bound project agent -> project default -> global last-used.
@@ -413,132 +403,98 @@ export function useOpenCodeLocal({
     [providerMode, currentAgent?.name],
   );
 
-  // ---- Per-agent model overrides (persisted to localStorage so selection survives refresh/new tabs) ----
-
-  // ---- Fallback model (matching SolidJS local.tsx:94-126) ----
-  const fallbackModel = useMemo<ModelKey | undefined>(() => {
-    // Priority 1: Config model (from opencode.json)
-    if (config?.model) {
-      const parts = config.model.split('/');
-      if (parts.length >= 2) {
-        const [providerID, ...rest] = parts;
-        const modelID = rest.join('/');
-        if (isModelValid({ providerID, modelID })) {
-          return { providerID, modelID };
-        }
-      }
-    }
-
-    // Priority 2: Most recent valid model from persisted recent list
-    for (const item of modelStore.recent) {
-      if (isModelValid(item)) {
-        return item;
-      }
-    }
-
-    // Priority 3: Provider defaults -> first model of first connected provider
-    if (providers) {
-      const defaults = providers.default || {};
-      const all = Array.isArray(providers.all) ? providers.all : [];
-      const connectedIds = Array.isArray(providers.connected) ? providers.connected : [];
-      const connected = all.filter((p) => connectedIds.includes(p.id));
-      for (const p of connected) {
-        const configured = defaults[p.id];
-        if (configured) {
-          const key = { providerID: p.id, modelID: configured };
-          if (isModelValid(key)) return key;
-        }
-        // `autoSeedableModels`, not the raw key order: on Bedrock the newest
-        // id is the BARE `xai.grok-4.6`, which Bedrock refuses for on-demand
-        // use. Auto-picking must never surface a bare id while the provider
-        // serves inference profiles. Inert for every other provider.
-        for (const model of autoSeedableModels(
-          Object.keys(p.models).map((modelID) => ({ id: modelID })),
-        )) {
-          const key = { providerID: p.id, modelID: model.id };
-          if (isModelValid(key)) return key;
-        }
-      }
-    }
-
-    return undefined;
-  }, [config?.model, modelStore.recent, providers, isModelValid]);
-
-  // ---- Explicit per-conversation/per-agent picks (highest priority, localStorage) ----
-  const explicitModelKey = useMemo<ModelKey | undefined>(
+  // What the server says this session runs on. A new object each render from
+  // the caller must not recompute the resolution, so key it by value.
+  const sessionModels = useMemo(
     () =>
-      getFirstValidModel(
-        // Per-session model (user's explicit choice in this session — survives reload)
-        () =>
-          scopedSessionModelKey ? modelStore.getSessionModel(scopedSessionModelKey) : undefined,
-        // Back-compat: the old unscoped slot, only if valid in the current mode.
-        () => (sessionId ? modelStore.getSessionModel(sessionId) : undefined),
-        // Per-agent model (persisted across sessions for this agent, or in the
-        // agent-less slot when the caller has access to no agent at all).
-        () => modelStore.getSelectedModel(agentModelSlotKey),
-        () => (currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined),
-      ),
+      sessionModelCandidates({ session: projectSession, lastPromptModel }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [
-      currentAgent,
-      agentModelSlotKey,
-      sessionId,
-      scopedSessionModelKey,
-      modelStore,
-      getFirstValidModel,
+      projectSession?.metadata?.opencode_model,
+      projectSession?.metadata?.opencode_model_source,
+      projectSession?.metadata?.opencode_model_restored,
+      lastPromptModel?.providerID,
+      lastPromptModel?.modelID,
     ],
   );
 
-  // The gateway-configured default for the current agent (agent -> project ->
-  // account -> platform), when the host supplies a resolver. Validated against
-  // the catalog. Used for DISPLAY of "on default" and as a resolution step
-  // between the explicit pick and the legacy globalDefault cache.
-  const serverDefaultKey = useMemo<ModelKey | undefined>(() => {
-    const candidate = resolveServerDefault?.(currentAgent?.name);
-    return candidate && isModelValid(candidate) ? candidate : undefined;
-  }, [resolveServerDefault, currentAgent?.name, isModelValid]);
+  // A gateway fallback switch outranks this browser's session picks made
+  // before it: sending one would name the model that cannot serve again.
+  const sessionFallback = useMemo(
+    () => sessionModelFallback(projectSession),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      projectSession?.metadata?.opencode_model,
+      projectSession?.metadata?.opencode_model_source,
+      projectSession?.metadata?.opencode_model_fallback_from,
+      projectSession?.metadata?.opencode_model_fallback_at,
+      providerMode,
+    ],
+  );
+  const sessionPick = (key: string | undefined): ModelKey | undefined =>
+    key && sessionPickStands(modelStore.getSessionModelFallbackAt(key), sessionFallback)
+      ? modelStore.getSessionModel(key)
+      : undefined;
 
-  // ---- Current model resolution ----
-  // Priority: explicit (session/per-agent) > server default > globalDefault >
-  // agent.model > fallback. Model selection must NOT depend on a loaded agent:
-  // the session/global/fallback slots resolve fine without one, and the agent
-  // roster can be empty (e.g. a project with no configured agents, or
-  // `enableProjects` off) — the agent-keyed slots are simply skipped then.
-  const currentModelKey = useMemo<ModelKey | undefined>(() => {
-    const resolved =
-      explicitModelKey ??
-      getFirstValidModel(
-        () => serverDefaultKey,
-        () => modelStore.globalDefault,
-        () => (currentAgent?.model as ModelKey | undefined),
-        () => fallbackModel,
-      );
-    // EVERY source above can hand back a bare Bedrock in-region id — the
-    // explicit slot most of all, because it is browser-global rather than
-    // project-scoped (see `agentScopedModelSelectionKey`), so one wedged
-    // workspace pins the bare id for every future one. Bedrock answers a hard
-    // 400 for those and OpenCode retries forever, so heal here, at the single
-    // seam every source funnels through. No-op off Bedrock.
-    return healBedrockModelKey(resolved, flatModels);
-  }, [
-    explicitModelKey,
-    serverDefaultKey,
-    currentAgent,
-    modelStore,
-    getFirstValidModel,
-    isModelValid,
-    fallbackModel,
-    flatModels,
-  ]);
+  // ---- Model resolution — the framework-free chain (`resolveComposerModel`):
+  // explicit (session slots > the session's own model > per-agent slots) >
+  // server default > globalDefault >
+  // agent.model > fallback (config > recent > provider default), every
+  // candidate validated against the offered list, bare Bedrock ids healed.
+  // Model selection must NOT depend on a loaded agent: the session/global/
+  // fallback slots resolve fine without one, and the agent roster can be empty
+  // (e.g. a project with no configured agents, or `enableProjects` off) — the
+  // agent-keyed slots are simply skipped then. ----
+  const modelResolution = useMemo(
+    () =>
+      resolveComposerModel({
+        models: flatModels,
+        picks: [
+          // Per-session model (user's explicit choice in this session — survives reload)
+          sessionPick(scopedSessionModelKey),
+          // Back-compat: the old unscoped slot, only if valid in the current mode.
+          sessionPick(sessionId),
+          // The model the session already runs on, from the server. Above the
+          // per-agent slots: those are this browser's picks for OTHER sessions.
+          ...sessionModels,
+          // Per-agent model (persisted across sessions for this agent, or in the
+          // agent-less slot when the caller has access to no agent at all).
+          modelStore.getSelectedModel(agentModelSlotKey),
+          currentAgent ? modelStore.getSelectedModel(currentAgent.name) : undefined,
+        ],
+        // The gateway-configured default for the current agent (agent -> project
+        // -> account -> platform), when the host supplies a resolver.
+        serverDefault: resolveServerDefault?.(currentAgent?.name),
+        globalDefault: modelStore.globalDefault,
+        agentModel: currentAgent?.model as ModelKey | undefined,
+        configModel: config?.model,
+        recent: modelStore.recent,
+        providers,
+      }),
+    [
+      flatModels,
+      scopedSessionModelKey,
+      sessionId,
+      agentModelSlotKey,
+      currentAgent,
+      resolveServerDefault,
+      sessionModels,
+      sessionFallback,
+      config?.model,
+      providers,
+      modelStore,
+    ],
+  );
+  const fallbackModel = modelResolution.fallback;
+  const explicitModelKey = modelResolution.explicit;
+  const currentModelKey = modelResolution.model;
 
   // True when the user has not made an explicit pick.
   const onDefaultModel = !explicitModelKey;
 
-  // Healed as well as `currentModelKey`: `resolvePromptModel` can prefer the
-  // RAW explicit slot, and a chip that reads "Claude Opus 5" while the request
-  // carries `xai.grok-4.6` would be a lie that still wedges the turn.
   const sendModelKey = useMemo<ModelKey | undefined>(
-    () => healBedrockModelKey(resolvePromptModel(explicitModelKey, currentModelKey), flatModels),
-    [explicitModelKey, currentModelKey, flatModels],
+    () => resolvePromptModel(explicitModelKey, currentModelKey),
+    [explicitModelKey, currentModelKey],
   );
 
   const currentModel = useMemo<FlatModel | undefined>(
@@ -572,7 +528,10 @@ export function useOpenCodeLocal({
       }
       // Also persist per-session so the selection survives page reload
       if (scopedSessionModelKey && next) {
-        modelStore.setSessionModel(scopedSessionModelKey, next);
+        // A person's pick records the switch it was made over, so it outranks
+        // that switch and no newer one. A seed was picked before this session
+        // existed: it records none and never outranks a switch.
+        modelStore.setSessionModel(scopedSessionModelKey, next, options?.autoSeed ? undefined : sessionFallback?.atMs);
       }
       if (options?.recent && model) {
         modelStore.pushRecent(model);
@@ -582,7 +541,7 @@ export function useOpenCodeLocal({
         // for NEW sessions even when they change model in an existing session.
       }
     },
-    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid],
+    [agentModelSlotKey, scopedSessionModelKey, fallbackModel, modelStore, isModelValid, sessionFallback?.atMs],
   );
 
   // ---- Agent set (matching SolidJS local.tsx:52-63) ----
@@ -745,6 +704,13 @@ export function useOpenCodeLocal({
       setVisibility: modelStore.setVisibility,
       cycle: cycleModel,
       hasSessionModel,
+      // Only while the composer is on the fallback: a later pick ends the note.
+      fallback:
+        sessionFallback &&
+        currentModelKey?.providerID === sessionFallback.model.providerID &&
+        currentModelKey?.modelID === sessionFallback.model.modelID
+          ? sessionFallback
+          : undefined,
       variant: {
         current: variantCurrent,
         list: variantList,
@@ -754,3 +720,15 @@ export function useOpenCodeLocal({
     },
   };
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `UseRuntimeLocalOptions`. Removed in the next major. */
+export type UseOpenCodeLocalOptions = UseRuntimeLocalOptions;
+/** @deprecated Renamed to `RuntimeLocalAgent`. Removed in the next major. */
+export type OpenCodeLocalAgent = RuntimeLocalAgent;
+/** @deprecated Renamed to `RuntimeLocalModel`. Removed in the next major. */
+export type OpenCodeLocalModel = RuntimeLocalModel;
+/** @deprecated Renamed to `RuntimeLocal`. Removed in the next major. */
+export type OpenCodeLocal = RuntimeLocal;
+/** @deprecated Renamed to `useRuntimeLocal`. Removed in the next major. */
+export const useOpenCodeLocal = useRuntimeLocal;

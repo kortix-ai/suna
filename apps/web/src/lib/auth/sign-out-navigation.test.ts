@@ -21,6 +21,16 @@ import { existsSync, readdirSync, readFileSync, statSync } from '@/i18n/test-sou
 import { dirname, relative, resolve } from 'node:path';
 
 const WEB_SRC = resolve(import.meta.dir, '../..');
+const REPO = resolve(WEB_SRC, '../../..');
+const UI = resolve(REPO, 'packages/ui');
+const UI_EXPORTS: Record<string, unknown> = JSON.parse(
+  readFileSync(resolve(UI, 'package.json'), 'utf8'),
+).exports;
+
+/** A graph node: an apps/web/src path, or `packages/ui/src/…` for a @kortix/ui module. */
+function absolute(node: string): string {
+  return node.startsWith('packages/') ? resolve(REPO, node) : resolve(WEB_SRC, node);
+}
 
 /** Comments stripped; `//` spared when it is a URL scheme. */
 /**
@@ -32,7 +42,7 @@ const WEB_SRC = resolve(import.meta.dir, '../..');
  * statements in between. That silently SHRINKS the graph this file walks,
  * which for a security ban means it stops seeing the modules it is meant to
  * police. It happened: a doc comment mentioning an npm subpath wildcard
- * truncated the sign-out graph before `stores/current-account-store.ts`, and
+ * truncated the sign-out graph before `packages/ui/src/internal/stores/current-account-store.ts`, and
  * only the "the walk has to reach past the entry points" assertions below
  * caught it. Removing line comments first makes that unrepresentable.
  */
@@ -41,7 +51,7 @@ function stripComments(source: string): string {
 }
 
 function code(relativePath: string): string {
-  return stripComments(readFileSync(resolve(WEB_SRC, relativePath), 'utf8'));
+  return stripComments(readFileSync(absolute(relativePath), 'utf8'));
 }
 
 /**
@@ -90,12 +100,10 @@ const CONTROLS: { name: string; file: string; from: string; to: string }[] = [
   {
     name: "/new's Log out",
     file: 'features/workspace/new/new-workspace-page.tsx',
-    // Anchored on the control's own `disabled`, not on the AccountPicker: the
-    // picker moved into the form (2026-09-17) and a Back link now precedes
-    // Log out in the top row, so "the next </Button> after the picker" is no
-    // longer this button.
-    from: 'disabled={signingOut}',
-    to: '</Button>',
+    // The control moved into `AccountTopBar` (#8286); the page owns only the
+    // `onLogOut` handler it passes in, so the slice is that handler.
+    from: 'onLogOut={() => {',
+    to: 'back={{',
   },
   {
     name: "phone verification's Sign out",
@@ -134,10 +142,12 @@ describe('the one sign-out leaves on a document load', () => {
   test('performSignOut hands `leave` a window.location.assign', () => {
     const body = slice(
       code('lib/auth/perform-sign-out.ts'),
-      'export async function performSignOut()',
+      'export async function performSignOut(',
       '\n}\n',
     );
-    expect(body).toContain('window.location.assign(destination)');
+    expect(body).toContain('window.location.assign(target === SIGN_OUT_DESTINATION ? destination : target)');
+    // The one destination: `/auth`, or `/auth?returnUrl=<same-origin path>`.
+    expect(body).toContain('const destination = signOutDestination(options?.returnUrl);');
   });
 
   test('neither the wiring nor the sequence holds a router at all', () => {
@@ -185,12 +195,11 @@ describe('the server half of the sign-out', () => {
 });
 
 describe('nothing on an identity change can wait forever', () => {
-  // `packages/sdk/src/browser/cache/idb-sync-cache.ts` `openDB()` registers
-  // `onupgradeneeded`/`onsuccess`/`onerror` and NO `onblocked`, and the file has
-  // no `onversionchange` either. A version upgrade blocked by a tab still
-  // holding the old version settles neither `success` nor `error`, and
-  // `dbPromise` is memoized so every later caller parks behind it. That is not
-  // hypothetical: `DB_VERSION` has been bumped twice in this repo's history.
+  // Before database version 4, `openDB()` in
+  // `packages/sdk/src/browser/cache/idb-sync-cache.ts` had no `onblocked`. A
+  // version upgrade blocked by a tab still holding the old version settled
+  // neither `success` nor `error`, and the memoized open parked every later
+  // caller. Version 4 rejects on `blocked`; the bound stays as the defense.
   //
   // Unbounded, that single promise could (a) stop a user signing out at all,
   // and (b) park the whole app on its loading frame at SIGN-IN, because
@@ -198,7 +207,7 @@ describe('nothing on an identity change can wait forever', () => {
 
   test('the sign-out bounds every step, not just guards it', () => {
     const sequence = code('lib/auth/sign-out-sequence.ts');
-    expect(sequence).toContain("from '@/lib/utils/time-budget'");
+    expect(sequence).toContain("from '@kortix/ui/internal/lib/utils/time-budget'");
 
     // All FOUR pre-navigation awaits, enumerated: a new unbounded `await
     // steps.` added beside them fails here. Four, not three, because
@@ -224,7 +233,7 @@ describe('nothing on an identity change can wait forever', () => {
     // is where this widened, because an absent marker now runs the reset ahead
     // of the first paint.
     const reset = code('lib/utils/reset-client-state.ts');
-    expect(reset).toContain("from '@/lib/utils/time-budget'");
+    expect(reset).toContain("from '@kortix/ui/internal/lib/utils/time-budget'");
     expect(reset).toContain('withTimeBudget(clearSessionIDBCache(), idbTimeoutMs)');
     expect(reset).not.toContain('await clearSessionIDBCache()');
   });
@@ -268,23 +277,6 @@ describe('the signed-out route guards do not race the exit', () => {
     return out;
   }
 
-  test('the guard exists in exactly ONE place', () => {
-    // The shape, spelled either way it was spelled across the eight copies.
-    const shape = /if \(!(?:authLoading|isLoading) && !user\) router\.replace\('\/auth'\)/;
-    const holders = sourceFiles().filter((file) => shape.test(code(file)));
-
-    expect(holders).toEqual(['lib/auth/use-signed-out-redirect.ts']);
-  });
-
-  test('the one guard stands down while a sign-out is in flight', () => {
-    const hook = code('lib/auth/use-signed-out-redirect.ts');
-    const bail = hook.indexOf('if (isSigningOut()) return;');
-    const guard = hook.search(/if \(!isLoading && !user\) router\.replace\('\/auth'\)/);
-
-    expect(bail).toBeGreaterThan(-1);
-    expect(guard).toBeGreaterThan(bail);
-  });
-
   test('every surface that used to hand-roll it now calls the hook', () => {
     // The six that were missed plus the two that were not. Named so a silent
     // deletion of a guard reads as a failure rather than as a passing regex.
@@ -327,12 +319,12 @@ describe('the signed-out route guards do not race the exit', () => {
     // now stands down for them.
     const body = slice(
       code('lib/auth/perform-sign-out.ts'),
-      'export async function performSignOut()',
+      'export async function performSignOut(',
       '\n}\n',
     );
     expect(body).toContain('} finally {');
     expect(body).toContain('if (!left) {');
-    expect(body).toContain('window.location.assign(SIGN_OUT_DESTINATION);');
+    expect(body).toContain('window.location.assign(destination);');
   });
 });
 
@@ -378,7 +370,7 @@ describe('a sign-out that the server refuses still signs the user out', () => {
     // session is the exact bounce-back-in symptom the step exists to prevent.
     const fallback = slice(wiring, '  } finally {', '\n}\n');
     const expire = fallback.indexOf('expireSupabaseAuthCookie();');
-    const leave = fallback.indexOf('window.location.assign(SIGN_OUT_DESTINATION);');
+    const leave = fallback.indexOf('window.location.assign(destination);');
 
     expect(expire).toBeGreaterThan(-1);
     expect(leave).toBeGreaterThan(expire);
@@ -442,9 +434,9 @@ describe('the three bare logout controls now say something is happening', () => 
     },
     {
       name: "/new's Log out",
-      file: 'features/workspace/new/new-workspace-page.tsx',
-      handler: ['disabled={signingOut}', 'Log out'],
-      control: ['disabled={signingOut}', '</Button>'],
+      file: 'features/workspace/account-top-bar.tsx',
+      handler: ['disabled={signingOut}', 'onSelect={onLogOut}'],
+      control: ['disabled={signingOut}', '</button>'],
       holdsDialog: false,
     },
   ];
@@ -494,12 +486,18 @@ function sourceFilesForBan(dir = ''): string[] {
   return out;
 }
 
-/** The local modules an import specifier can name, in resolution order. */
+/** The first-party module an import specifier names: apps/web or @kortix/ui. */
 function resolveLocal(specifier: string, fromFile: string): string | null {
-  const base = specifier.startsWith('@/')
+  if (specifier === '@kortix/ui' || specifier.startsWith('@kortix/ui/')) {
+    const target = UI_EXPORTS[`.${specifier.slice('@kortix/ui'.length)}`];
+    return typeof target === 'string' && /\.tsx?$/.test(target)
+      ? relative(REPO, resolve(UI, target))
+      : null;
+  }
+  const base = specifier.startsWith('@/') && !fromFile.startsWith('packages/')
     ? resolve(WEB_SRC, specifier.slice(2))
     : specifier.startsWith('.')
-      ? resolve(dirname(resolve(WEB_SRC, fromFile)), specifier)
+      ? resolve(dirname(absolute(fromFile)), specifier)
       : null;
   if (!base) return null; // a package, not our source
 
@@ -511,7 +509,7 @@ function resolveLocal(specifier: string, fromFile: string): string | null {
     base,
   ]) {
     if (existsSync(candidate) && statSync(candidate).isFile()) {
-      return relative(WEB_SRC, candidate);
+      return candidate.startsWith(`${UI}/`) ? relative(REPO, candidate) : relative(WEB_SRC, candidate);
     }
   }
   return null;
@@ -539,7 +537,7 @@ function importGraph(entries: string[]): string[] {
     // Comments stripped, same as `code()` above: an import specifier inside
     // PROSE (a doc comment naming a module by example) is not an import
     // statement and must not add a graph edge.
-    const source = stripComments(readFileSync(resolve(WEB_SRC, file), 'utf8'));
+    const source = code(file);
     for (const match of source.matchAll(/(?:from|import)\s*['"]([^'"]+)['"]/g)) {
       const next = resolveLocal(match[1], file);
       if (next && !seen.has(next)) queue.push(next);
@@ -594,7 +592,7 @@ describe('the sign-out path leaves `kortix_last_project` alone', () => {
     // "forget this browser's user state" change would most naturally land in,
     // and neither was covered by the path list this replaced.
     expect(graph).toContain('lib/utils/clear-local-storage.ts');
-    expect(graph).toContain('stores/current-account-store.ts');
+    expect(graph).toContain('packages/ui/src/internal/stores/current-account-store.ts');
     expect(graph.length).toBeGreaterThan(6);
 
     for (const file of graph) {

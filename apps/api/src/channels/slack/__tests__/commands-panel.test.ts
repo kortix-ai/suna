@@ -37,7 +37,7 @@ mock.module('../selection', () => ({
   setChannelModel: mock(async () => true),
 }));
 
-let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
+let gate: any = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
 mock.module('../model-gate', () => ({
   channelModelContext: async () => gate,
   projectModelContext: async () => gate,
@@ -103,7 +103,7 @@ function actionIds(resp: any): string[] {
 beforeEach(() => {
   dbResults = [];
   selection = { projectId: 'p1', agentName: null, opencodeModel: null, conversationPolicy: null };
-  gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false, llmGatewayEnabled: true };
+  gate = { projectId: 'p1', accountId: 'a1', ownerUserId: 'u1', freeManagedOnly: false };
   servable = true;
   setChannelModel.mockClear();
 });
@@ -138,9 +138,9 @@ describe('/kortix models → real served catalog', () => {
 });
 
 describe('/kortix model <id> → servability gate (never store a 404)', () => {
-  test('servable id is stored as the opencode ref', async () => {
+  test('servable id is stored as the wire id', async () => {
     const resp = await handleSlashCommand('model', 'glm-5.3-flash', ctx);
-    expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), 'kortix/glm-5.3-flash');
+    expect(setChannelModel).toHaveBeenCalledWith(expect.anything(), 'glm-5.3-flash');
     expect(resp.text).toContain('set to');
   });
 

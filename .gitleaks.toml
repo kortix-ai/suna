@@ -81,7 +81,30 @@ paths = [
   '''apps/web/src/i18n/marketing-secondary-translation-keys\.generated\.ts$''',
   '''apps/web/src/i18n/site-config-translation-keys\.generated\.ts$''',
   '''apps/web/src/i18n/remaining-ui-translation-keys\.generated\.ts$''',
+  '''packages/ui/src/i18n/ui-catalog/remaining-ui-translation-keys\.generated\.ts$''',
 ]
 regexes = [
   '''(?i)linkedin''',
+]
+
+[[allowlists]]
+description = "Placeholder tokens in public docs examples (`Bearer kortix_pat_...`, `kortix_gw_...`). The curl-auth-header rule matches any Authorization value. This exception requires a docs .mdx path AND a line whose token is the literal prefix followed by `...`, so a real token pasted into the docs still fails."
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''apps/web/content/docs/.*\.mdx$''',
+]
+regexes = [
+  '''kortix_[a-z]+_\.\.\.''',
+]
+
+[[allowlists]]
+description = "The synthetic Kortix Capture fixture bucket. device.json holds `machine_key_sha256`, the SHA-256 of a made-up key: a hash, not a secret. This exception requires the fixture path AND that field name on the line."
+condition = "AND"
+regexTarget = "line"
+paths = [
+  '''apps/capture/fixtures/capture-format-v2/.*/device\.json$''',
+]
+regexes = [
+  '''"machine_key_sha256"''',
 ]

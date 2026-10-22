@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { ToolPart } from '@kortix/sdk';
+import { toolCallBlock, type ToolCallBlock, type ToolPart } from '@kortix/sdk';
 
 import {
   cleanErrorMessage,
@@ -15,21 +15,25 @@ import {
   parsePartialJSON,
   partInput,
   partMetadata,
+  partError,
   partOutput,
+  partRawOutput,
   partStatus,
   partStreamingInput,
 } from './tool-part-accessors';
 
-function part(state: Record<string, unknown>, tool = 'bash'): ToolPart {
-  return { id: 'prt_1', callID: 'call_1', tool, type: 'tool', state } as unknown as ToolPart;
+/** The block a v1 part converts to (`toolCallBlock`, live: an open call stays open). */
+function part(state: Record<string, unknown>, tool = 'bash'): ToolCallBlock {
+  return toolCallBlock({ id: 'prt_1', callID: 'call_1', tool, type: 'tool', state } as unknown as ToolPart);
 }
 
 describe('partStreamingInput / partInput', () => {
   test('a settled call returns its own input object', () => {
     const input = { command: 'ls' };
     const p = part({ status: 'completed', input, output: '' });
-    expect(partInput(p)).toBe(input);
-    expect(partStreamingInput(p)).toBe(input);
+    expect(partInput(p)).toEqual(input);
+    expect(partInput(p)).toBe(p.input as Record<string, unknown>);
+    expect(partStreamingInput(p)).toBe(partInput(p));
   });
 
   test('a streaming call parses the half-arrived raw JSON', () => {
@@ -37,8 +41,8 @@ describe('partStreamingInput / partInput', () => {
     expect(partStreamingInput(p)).toEqual({ command: 'ls -la' });
   });
 
-  test('the parsed streaming input is memoised per part while raw is unchanged', () => {
-    const p = part({ status: 'running', input: {}, raw: '{"a": "b"' });
+  test('the parsed streaming input is memoised per call', () => {
+    const p = part({ status: 'pending', input: {}, raw: '{"a": "b"' });
     expect(partStreamingInput(p)).toBe(partStreamingInput(p));
   });
 
@@ -86,12 +90,24 @@ describe('partOutput', () => {
 describe('partMetadata / partStatus', () => {
   test('metadata is read on completed, running and error', () => {
     const metadata = { diagnostics: {} };
-    expect(partMetadata(part({ status: 'completed', input: {}, metadata }))).toBe(metadata);
-    expect(partMetadata(part({ status: 'error', input: {}, metadata }))).toBe(metadata);
+    const completed = part({ status: 'completed', input: {}, metadata });
+    expect(partMetadata(completed)).toEqual(metadata);
+    expect(partMetadata(completed)).toBe(partMetadata(completed));
+    expect(partMetadata(part({ status: 'running', input: {}, metadata }))).toEqual(metadata);
+    expect(partMetadata(part({ status: 'error', input: {}, metadata }))).toEqual(metadata);
     expect(partMetadata(part({ status: 'pending', input: {}, metadata }))).toEqual({});
   });
-  test('status is the raw state status', () => {
+  test('status reads in the v1 words the renderers compare', () => {
     expect(partStatus(part({ status: 'error', input: {} }))).toBe('error');
+    expect(partStatus(part({ status: 'completed', input: {}, output: '' }))).toBe('completed');
+    expect(partStatus(part({ status: 'running', input: {} }))).toBe('running');
+    expect(partStatus(part({ status: 'pending', input: {} }))).toBe('pending');
+  });
+  test('error text and raw output', () => {
+    expect(partError(part({ status: 'error', input: {}, error: 'boom' }))).toBe('boom');
+    expect(partError(part({ status: 'completed', input: {}, output: 'x' }))).toBeUndefined();
+    expect(partRawOutput(part({ status: 'completed', input: {}, output: '  x  ' }))).toBe('  x  ');
+    expect(partRawOutput(part({ status: 'running', input: {} }))).toBe('');
   });
 });
 

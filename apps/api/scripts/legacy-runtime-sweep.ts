@@ -1,12 +1,14 @@
 /**
  * Operator sweep: converge sandboxes whose daemon predates runtime convergence.
  *
- *   dotenvx run -f apps/api/.env.prod -- bun run apps/api/scripts/legacy-runtime-sweep.ts --session <id> [--session <id>…] [--force] [--dry-run]
+ *   dotenvx run -f apps/api/.env.prod -- bun run apps/api/scripts/legacy-runtime-sweep.ts --session <id> [--session <id>…] [--force] [--unpin] [--dry-run]
  *   dotenvx run -f apps/api/.env.prod -- bun run apps/api/scripts/legacy-runtime-sweep.ts --running [--limit 20] [--dry-run]
  *
  * `--dry-run` classifies (health probe) and prints, never execs.
  * Runs the same code path the reaper schedules; the only difference is that
  * an operator asks for the truth now (`--force` skips the 6 h recent-check TTL).
+ * `--unpin` (implies --force) also repairs a `blocked` box whose supervisor
+ * pinned updates off; use it only for a pin a race caused, not a bad build.
  */
 import { sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNotNull } from 'drizzle-orm';
@@ -19,11 +21,12 @@ import {
 import { classifyDaemonHealth, describeLegacyBootstrapRetry } from '../src/projects/lib/legacy-runtime-bootstrap';
 
 function args() {
-  const out: { sessions: string[]; running: boolean; limit: number; force: boolean; dryRun: boolean } = {
+  const out: { sessions: string[]; running: boolean; limit: number; force: boolean; unpin: boolean; dryRun: boolean } = {
     sessions: [],
     running: false,
     limit: 20,
     force: false,
+    unpin: false,
     dryRun: false,
   };
   const argv = process.argv.slice(2);
@@ -33,6 +36,7 @@ function args() {
     else if (a === '--running') out.running = true;
     else if (a === '--limit') out.limit = Number(argv[++i]);
     else if (a === '--force') out.force = true;
+    else if (a === '--unpin') out.unpin = true;
     else if (a === '--dry-run') out.dryRun = true;
     else throw new Error(`unknown arg ${a}`);
   }
@@ -99,7 +103,7 @@ async function main() {
     }
     const started = Date.now();
     try {
-      const result = await runLegacyRuntimeBootstrap(row, 'sweep', { force: opts.force });
+      const result = await runLegacyRuntimeBootstrap(row, 'sweep', { force: opts.force, unpin: opts.unpin });
       console.log(`[sweep] ${label} → ${result.outcome}${result.detail ? ` (${result.detail})` : ''} in ${Math.round((Date.now() - started) / 1000)}s`);
     } catch (err) {
       console.log(`[sweep] ${label} → threw: ${err instanceof Error ? err.message : String(err)}`);

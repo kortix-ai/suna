@@ -1,5 +1,6 @@
-import { bootConfigRoot, pointBootLink, readBootLinkTarget } from '../../boot-config'
-import { logger } from '../../logger'
+import { rm } from 'node:fs/promises'
+import { bootConfigRoot, bootReleaseLinkPath, pointBootLink, readBootLinkTarget } from '@/services/config-provider/boot-config'
+import { logger } from '@/lib/log/logger'
 
 /**
  * THE writer of the boot link (PLAN-one-boot-path T2).
@@ -15,10 +16,13 @@ import { logger } from '../../logger'
  * The link is an implementation detail of the store, so it is created under the
  * same root the releases live in.
  */
-export async function serveConfigDir(dir: string, why: string, root: string = bootConfigRoot()): Promise<void> {
+export async function serveConfigDir(dir: string, why: string, root: string = bootConfigRoot(), releaseRoot: string | null = null): Promise<void> {
   const previous = await readBootLinkTarget(root)
+  // The release first: a config composed after this call loads its project tools.
+  if (releaseRoot) await pointBootLink(releaseRoot, root, bootReleaseLinkPath(root))
+  else await rm(bootReleaseLinkPath(root), { force: true })
   await pointBootLink(dir, root)
-  logger.info('[boot-link] opencode now reads', { dir, previous, why })
+  logger.info('[boot-link] opencode now reads', { dir, previous, releaseRoot, why })
 }
 
 /** The directory OpenCode reads right now, or null before the link exists. */

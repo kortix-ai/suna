@@ -24,14 +24,15 @@
  */
 
 import { createHash } from 'node:crypto';
+import { SKILLS_DIR } from '@kortix/manifest-schema';
 import {
   getManagedSkillFiles,
   getStarterFiles,
   isKortixManagedSkillName,
 } from '@kortix/starter';
 
-/** Where skills live inside a Kortix project (and inside the starter templates). */
-const SKILLS_PREFIX = '.kortix/opencode/skills/';
+/** Where skills live inside the starter templates (and a root-layout Kortix project). */
+const SKILLS_PREFIX = `${SKILLS_DIR}/`;
 
 export interface ManagedSkillOverlayFile {
   /** Path relative to the overlay root, e.g. `kortix-system/SKILL.md`. */

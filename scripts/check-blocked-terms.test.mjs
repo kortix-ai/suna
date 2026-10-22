@@ -17,18 +17,21 @@ function repo() {
   git('init', '-q', '-b', 'main');
   git('config', 'user.email', 't@example.com');
   git('config', 'user.name', 't');
+  // A developer's global attributes file can map `.env*` to a clean filter
+  // (dotenvx's global install does), which refuses the plaintext fixture below.
+  git('config', 'core.attributesfile', '/dev/null');
   writeFileSync(join(dir, 'a.txt'), 'one\ntwo\n');
   git('add', '.');
   git('commit', '-q', '-m', 'init');
   return { dir, git, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-function run(dir, args, { input = '', terms = TERMS } = {}) {
+function run(dir, args, { input = '', terms = TERMS, env = {} } = {}) {
   const r = spawnSync('sh', [SCRIPT, ...args], {
     cwd: dir,
     input,
     encoding: 'utf8',
-    env: { ...process.env, BLOCKED_COMMIT_TERMS: terms },
+    env: { ...process.env, BLOCKED_COMMIT_TERMS: terms, ...env },
   });
   return { code: r.status, stderr: r.stderr };
 }
@@ -53,6 +56,17 @@ test('staged: matching is whole-word and case-insensitive', () => {
   assert.equal(staged('one\ntwo\nacme-prod\n').code, 1);
   assert.equal(staged('one\ntwo\nglobex\n').code, 1);
   assert.equal(staged('one\ntwo\nacmeist acme_x xacme\n').code, 0);
+});
+
+test('staged: an invalid UTF-8 line in a UTF-8 locale is scanned, not a crash read as a match', () => {
+  for (const [line, code] of [['synthetic screen one', 0], ['synthetic acme screen', 1]]) {
+    const r = repo();
+    writeFileSync(join(r.dir, 'a.txt'), Buffer.concat([Buffer.from('one\ntwo\n'), Buffer.from([0xff, 0xfe]), Buffer.from(`${line}\n`)]));
+    r.git('add', '.');
+    const result = run(r.dir, ['staged'], { env: { LC_ALL: 'en_US.UTF-8' } });
+    r.cleanup();
+    assert.equal(result.code, code, line);
+  }
 });
 
 test('staged: deleting a line that holds a term is allowed', () => {

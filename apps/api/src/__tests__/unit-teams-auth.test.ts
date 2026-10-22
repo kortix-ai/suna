@@ -55,6 +55,16 @@ describe('teamsConfigured', () => {
 });
 
 describe('mintTeamsToken', () => {
+  test('concurrent mints on a cold cache share one token request', async () => {
+    const tokens = await Promise.all([
+      mintTeamsToken({ scope: BOT_CONNECTOR_SCOPE }),
+      mintTeamsToken({ scope: BOT_CONNECTOR_SCOPE }),
+      mintTeamsToken({ scope: BOT_CONNECTOR_SCOPE }),
+    ]);
+    expect(tokens).toEqual(['tok-1', 'tok-1', 'tok-1']);
+    expect(calls).toHaveLength(1);
+  });
+
   test('posts client-credentials to the tenant token endpoint and returns the token', async () => {
     const tok = await mintTeamsToken({ scope: BOT_CONNECTOR_SCOPE });
     expect(tok).toBe('tok-1');

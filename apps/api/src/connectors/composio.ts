@@ -5,9 +5,10 @@ import {
   type ToolkitConnectionsDetails,
 } from '@composio/core';
 import { HTTPException } from 'hono/http-exception';
-import type { ExecResult } from './call';
+import { type ExecResult, parseRetryAfter } from './call';
 import {
   composioHiddenToolkits,
+  NATIVE_TOOLKITS,
   composioRestClient,
   customAuthConfigIds,
   searchComposioCatalog,
@@ -44,6 +45,9 @@ export interface ComposioRuntime {
           logo?: string | null;
           description?: string | null;
           categories?: Array<{ slug: string; name: string }>;
+          /** `@composio/core` camel-cases the API's `triggers_count`; the raw key survives the meta spread. */
+          triggersCount?: number;
+          triggers_count?: number;
         };
       }>
     >;
@@ -51,6 +55,27 @@ export interface ComposioRuntime {
   /** Read one connected account. Only the non-secret `displayName` is used. */
   connectedAccounts?: {
     get(id: string): Promise<{ state?: { val?: Record<string, unknown> } | null } | null | undefined>;
+  };
+  /** App-event trigger instances and their catalog (`@composio/core` `Triggers`). */
+  triggers?: {
+    listTypes(query?: { cursor?: string; limit?: number | null; toolkits?: string[] | null }): Promise<{
+      items: Array<{
+        slug: string;
+        name: string;
+        description: string;
+        type?: string;
+        toolkit: { slug: string; name: string; logo?: string };
+        payload: Record<string, unknown>;
+        config: Record<string, unknown>;
+      }>;
+      nextCursor?: string | null;
+    }>;
+    create(
+      userId: string,
+      slug: string,
+      body?: { connectedAccountId?: string; triggerConfig?: Record<string, unknown> },
+    ): Promise<{ triggerId: string }>;
+    delete(triggerId: string): Promise<{ triggerId: string }>;
   };
 }
 
@@ -493,14 +518,28 @@ export async function composioCatalogPage(input: {
       nextCursor?: string;
       hasMore: boolean;
     }
+  | {
+      items: Array<{
+        slug: string;
+        name: string;
+        logo: string | null;
+        description: string | null;
+        categories: string[];
+        isNoAuth: boolean;
+        connected: boolean;
+      }>;
+      cursor: string | null;
+      totalPages: number;
+    }
 > {
   const runtime = input.runtime ?? getComposioRuntime();
   // The hidden set is read from the REST catalogue snapshot. A caller that
-  // injects a runtime without a REST client has no snapshot, so hides nothing.
+  // injects a runtime without a REST client has no snapshot, so hides only the
+  // toolkits Kortix provides natively.
   const hiddenToolkits =
     input.catalogClient || !input.runtime
       ? composioHiddenToolkits(input.catalogClient ?? composioRestClient())
-      : Promise.resolve(new Set<string>());
+      : Promise.resolve(new Set<string>(NATIVE_TOOLKITS));
   const category = input.category?.trim();
   if (category) {
     if (!runtime.toolkits) throw new Error('Composio toolkit catalogue is unavailable');
@@ -540,13 +579,39 @@ export async function composioCatalogPage(input: {
       hasMore: false,
     };
   }
+  // Every search answers from the catalogue snapshot: it matches category
+  // names as well as app names, and it has no three-character floor. The
+  // provider's session search matches names only.
   const query = input.q?.trim();
-  if (query && query.length < 3) {
-    return searchComposioCatalog({ ...input, q: query });
+  if (query) {
+    const searched = await searchComposioCatalog({ ...input, q: query });
+    // Wire contract: `items` + `cursor` (+ `totalPages`), exactly like the
+    // unsearched page below — `EnrichedToolkitConnectionsPage`. Before the
+    // "no three-character floor" fix, only a 1-2 char query reached
+    // `searchComposioCatalog`; every longer query fell through to the
+    // unsearched branch and answered `items`. Reusing that snapshot's
+    // `toolkits` shape here for EVERY query broke the endpoint's own
+    // contract (CONN-24, gate run 36497729410: "body $.items exists —
+    // expected <defined>, got undefined"). Normalize here so a direct REST
+    // caller sees one shape regardless of which branch answered — the SDK
+    // (`packages/sdk/src/core/rest/projects-client/connectors.ts`
+    // `listConnectToolkits`) already treats `items` as the canonical page
+    // and `toolkits` as a legacy shape kept only for rolling deploys.
+    // `totalPages` is a PAGE count (same convention as
+    // `apps/api/src/tunnel/routes/audit.ts`: `Math.ceil(total / limit)`),
+    // never an item count — `searched.total` (the snapshot's match count) is
+    // the item count and must be converted, not passed through.
+    const limit = Math.min(Math.max(input.limit ?? 48, 1), 100);
+    return {
+      items: searched.toolkits,
+      cursor: searched.nextCursor ?? null,
+      totalPages: Math.ceil(searched.total / limit),
+    };
   }
   // The discovery identity never connects anything, so a page is the same for
   // every project and is cached deployment-wide (see `cachedCatalogCall`).
-  const pageKey = `search\u0000${query?.toLowerCase() ?? ''}\u0000${input.cursor ?? ''}\u0000${input.limit ?? ''}`;
+  // Only unsearched pages reach here; every query returned above.
+  const pageKey = `search\u0000\u0000${input.cursor ?? ''}\u0000${input.limit ?? ''}`;
   const [page, meta, hidden] = await Promise.all([
     cachedCatalogCall(runtime, pageKey, async () => {
       const session = await runtime.sessions.create(`kortix-discovery:${input.projectId}`, {
@@ -554,7 +619,6 @@ export async function composioCatalogPage(input: {
         sandbox: { enable: false },
       });
       return session.toolkits({
-        ...(query ? { search: query } : {}),
         ...(input.cursor ? { cursor: input.cursor } : {}),
         ...(input.limit != null ? { limit: input.limit } : {}),
       });
@@ -656,7 +720,22 @@ export async function executeComposio(
   // binding, and the state check above proves it is the expected account. Passing
   // `options.account` again opts into Composio's multi-account selector, which is
   // rejected (code 4300) on ordinary single-account projects.
-  const response = await session.execute(input.toolSlug, input.args);
+  let response: Awaited<ReturnType<ComposioSessionLike['execute']>>;
+  try {
+    response = await session.execute(input.toolSlug, input.args);
+  } catch (error) {
+    // Composio's own rate limit (`RateLimitError`, HTTP 429) is a retry-later
+    // answer, not a fault: the gateway turns it into a 429 with Retry-After.
+    const limited = error as { status?: unknown; headers?: { get?: (name: string) => string | null } };
+    if (limited?.status !== 429) throw error;
+    const retryAfterSeconds = parseRetryAfter(limited.headers?.get?.('retry-after'));
+    return {
+      ok: false,
+      status: 429,
+      data: `composio_rate_limited: ${error instanceof Error ? error.message : String(error)}`,
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    };
+  }
   const logId = typeof response.logId === 'string' ? response.logId.trim() : '';
   if (!logId) throw new Error('composio execution returned no log id');
 
@@ -668,8 +747,18 @@ export async function executeComposio(
     result: response.data,
     ...(response.error ? { error: response.error } : {}),
   };
-  return response.error ? { ok: false, status: 502, data } : { ok: true, status: 200, data };
+  // Linear rejects malformed GraphQL from the caller, not from an unavailable provider.
+  const callerError = input.toolkit === 'linear' && input.toolSlug === 'LINEAR_RUN_QUERY_OR_MUTATION' &&
+    typeof response.error === 'string' && /\bCode: (?:GRAPHQL_VALIDATION_FAILED|INPUT_ERROR)\b/.test(response.error);
+  // A provider's rate limit arrives inside Composio's error text.
+  // ponytail: text match, no structured provider status in the execute response; read it when Composio exposes one.
+  const rateLimited = typeof response.error === 'string' && COMPOSIO_RATE_LIMIT.test(response.error);
+  return response.error
+    ? { ok: false, status: callerError ? 400 : rateLimited ? 429 : 502, data }
+    : { ok: true, status: 200, data };
 }
+
+const COMPOSIO_RATE_LIMIT = /\b429\b|rate[ _-]?limit|too many requests/i;
 
 /** Composio's `ConnectedAccount_BadRequest` for a reused alias. */
 function isAliasConflict(error: unknown): boolean {

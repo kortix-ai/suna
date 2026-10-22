@@ -33,6 +33,7 @@
 // the module free of any Daytona-client/config side effects, which matters
 // for testability (a bare `deps` contract needs no module mocking at all).
 import type { DaytonaStoppedSandboxSummary } from '../shared/daytona';
+import { mapWithConcurrency } from '../shared/map-with-concurrency';
 
 /** Hard safety cap on how many sandboxes one sweep pass will even consider —
  *  not a target: every candidate under this cap gets archived. Sized far
@@ -71,20 +72,15 @@ export async function runDiskArchiveSweep(
   result.candidates = candidates.length;
   if (candidates.length === 0) return result;
 
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < candidates.length) {
-      const sb = candidates[cursor++];
-      const ok = await deps.archive(sb.id);
-      if (ok) {
-        result.archived += 1;
-        result.freedGib += sb.disk;
-      } else {
-        result.errors += 1;
-      }
+  await mapWithConcurrency(candidates, SWEEP_CONCURRENCY, async (sb) => {
+    const ok = await deps.archive(sb.id);
+    if (ok) {
+      result.archived += 1;
+      result.freedGib += sb.disk;
+    } else {
+      result.errors += 1;
     }
-  };
-  await Promise.all(Array.from({ length: Math.min(SWEEP_CONCURRENCY, candidates.length) }, worker));
+  });
   return result;
 }
 

@@ -256,6 +256,33 @@ test('command payload and reference commit together; retries do not add referenc
   ).rejects.toThrow('unavailable');
 });
 
+test('an attachment retry with the same key but another project rejects without binding a reference', async () => {
+  const id = await ready();
+  const clientMessageId = crypto.randomUUID();
+  const first = await enqueue(id, clientMessageId);
+  const referencesBefore = await db.select().from(promptAttachmentReferences)
+    .where(eq(promptAttachmentReferences.attachmentId, id));
+  expect(referencesBefore).toHaveLength(1);
+
+  await expect(enqueueContinueSessionCommand({
+    source: 'ui',
+    ...scope,
+    actorUserId: scope.userId,
+    projectId: crypto.randomUUID(),
+    sessionId,
+    text: 'proof',
+    clientMessageId,
+    idempotencyKey: `prompt:${sessionId}:${clientMessageId}`,
+    parts: [{ type: 'file', attachment_id: id, filename: 'spoof.txt' }],
+  })).rejects.toThrow('Prompt idempotency conflict');
+
+  const [persisted] = await db.select().from(sessionLifecycleCommands)
+    .where(eq(sessionLifecycleCommands.commandId, first.row.commandId));
+  expect(persisted.sessionId).toBe(sessionId);
+  expect(await db.select().from(promptAttachmentReferences)
+    .where(eq(promptAttachmentReferences.attachmentId, id))).toHaveLength(1);
+});
+
 // Guard ORDER, not just the two guards. A wrong part index is a permanent
 // caller error; the command's status is a transient server state. Resolving the
 // status first made the permanent 404 unreachable whenever the command had left
@@ -339,6 +366,7 @@ test('runtime descriptor requires the live sandbox and exact running command par
     attachment_id: id,
     part_index: 0,
     filename: 'proof.txt',
+    // KRTX-778: a declared type outside the model-native allowlist is stored as binary.
     mime: 'text/plain',
     size_bytes: 3,
     target_path: `/workspace/uploads/.kortix-inbox/${command.row.commandId}/0-proof.txt`,
@@ -477,7 +505,7 @@ test('removing an expired queued command gives Undo a fresh owner-scoped attachm
   const id = await ready();
   const first = await enqueue(id);
   await expire(id);
-  expect((await deleteInboxPrompt(sessionId, first.row.commandId)).outcome).toBe('deleted');
+  expect((await deleteInboxPrompt(sessionId, first.row.commandId, { userId: scope.userId })).outcome).toBe('deleted');
   await cleanupExpiredPromptAttachments();
   const restored = await enqueue(id);
   expect(restored.row.payload.parts).toEqual([
@@ -746,7 +774,7 @@ test('session delete releases references', async () => {
       accountId: scope.accountId,
       userId: scope.userId,
     }),
-  ).toEqual({ ok: true });
+  ).toMatchObject({ ok: true });
   expect(await referenceCount(only)).toBe(0);
   expect(await referenceCount(shared)).toBe(1);
 

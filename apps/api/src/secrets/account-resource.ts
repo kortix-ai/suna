@@ -1,8 +1,10 @@
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
-import { accountMembers, accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
+import { accountSecretGrants, accountSecretResources, sessionProviderSecretPools } from '@kortix/db';
+import type { SecretValueStatus } from '@kortix/api-contract';
 import { config } from '../config';
 import { db } from '../shared/db';
+import { accountMemberJoin } from '../iam/membership-read';
 
 const envelopeVersion = 'v1';
 
@@ -28,12 +30,90 @@ export function decryptAccountSecret(accountId: string, envelope: string): strin
   return Buffer.concat([decipher.update(Buffer.from(encryptedText, 'base64url')), decipher.final()]).toString('utf8');
 }
 
-/** Record a provider limit across gateway replicas. A concurrent limit never shortens the cooldown. */
+/** Can this server decrypt the envelope? The plaintext is discarded. */
+export function probeAccountSecret(accountId: string, envelope: string): SecretValueStatus {
+  try {
+    decryptAccountSecret(accountId, envelope);
+    return 'ok';
+  } catch {
+    return 'undecryptable';
+  }
+}
+
+/**
+ * A stored value this API can no longer decrypt (a rotated API_KEY_SECRET, a
+ * damaged row) is unusable, not a server error: `null` lets the caller treat
+ * that one secret as needing a new value.
+ */
+export function readAccountSecret(accountId: string, secretId: string, envelope: string): string | null {
+  try {
+    return decryptAccountSecret(accountId, envelope);
+  } catch (err) {
+    console.warn(`[account-secret] cannot decrypt secret ${secretId}: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/** A stored credential as the gateway reads it. `value` is null when it cannot
+ *  be decrypted; `updatedAt` is the version a later write-back is guarded by. */
+export interface ResolvedAccountSecret {
+  secretId: string;
+  label: string;
+  value: string | null;
+  updatedAt: Date;
+}
+
+/**
+ * How long a resting account waits before one re-try. A user can reset a
+ * ChatGPT plan's usage before the reset the provider named; without a re-try the
+ * project stays on paid fallback models until that date (2026-10-06).
+ */
+export const COOLDOWN_PROBE_SECONDS = 15 * 60;
+
+/** The longest rest: ChatGPT's weekly plan limit, plus a day. */
+export const MAX_ACCOUNT_SECRET_REST_SECONDS = 8 * 24 * 60 * 60;
+
+/**
+ * Record a provider limit across gateway replicas: seconds for a rate limit,
+ * days for a plan's usage limit. A concurrent limit never shortens the cooldown.
+ */
 export async function coolDownAccountSecret(secretId: string, accountId: string, seconds: number): Promise<void> {
-  const until = new Date(Date.now() + Math.max(1, Math.min(60, Math.floor(seconds))) * 1000);
+  const until = new Date(Date.now() + Math.max(1, Math.min(MAX_ACCOUNT_SECRET_REST_SECONDS, Math.floor(seconds))) * 1000);
   await db.update(accountSecretResources).set({
     cooldownUntil: sql`greatest(coalesce(${accountSecretResources.cooldownUntil}, '-infinity'::timestamptz), ${until.toISOString()}::timestamptz)`,
+    cooldownProbeAt: new Date(Date.now() + COOLDOWN_PROBE_SECONDS * 1000),
   }).where(and(eq(accountSecretResources.secretId, secretId), eq(accountSecretResources.accountId, accountId)));
+}
+
+/**
+ * Lift the rest of every row whose re-try is due, once across replicas: the
+ * update claims the row only while its probe time is still the one read, and
+ * schedules the next re-try. A lifted row is usable again; when the provider
+ * still refuses, its next limit rests the account again (`coolDownAccountSecret`).
+ */
+async function liftDueCooldowns<T extends { secretId: string; cooldownUntil: Date | null; cooldownProbeAt: Date | null }>(accountId: string, rows: T[]): Promise<T[]> {
+  const now = Date.now();
+  return Promise.all(rows.map(async (row) => {
+    if (!row.cooldownUntil || row.cooldownUntil.getTime() <= now || !row.cooldownProbeAt || row.cooldownProbeAt.getTime() > now) return row;
+    const [claimed] = await db.update(accountSecretResources)
+      .set({ cooldownUntil: null, cooldownProbeAt: new Date(now + COOLDOWN_PROBE_SECONDS * 1000) })
+      .where(and(
+        eq(accountSecretResources.secretId, row.secretId),
+        eq(accountSecretResources.accountId, accountId),
+        eq(accountSecretResources.cooldownProbeAt, row.cooldownProbeAt),
+      ))
+      .returning({ secretId: accountSecretResources.secretId });
+    return claimed ? { ...row, cooldownUntil: null } : row;
+  }));
+}
+
+/** An owner's "retry now": end the rest of one stored account. False when no row matched. */
+export async function clearAccountSecretCooldown(secretId: string, accountId: string): Promise<boolean> {
+  const cleared = await db.update(accountSecretResources)
+    .set({ cooldownUntil: null, cooldownProbeAt: null })
+    .where(and(eq(accountSecretResources.secretId, secretId), eq(accountSecretResources.accountId, accountId)))
+    .returning({ secretId: accountSecretResources.secretId });
+  return cleared.length > 0;
 }
 
 /** Provider names visible to a member for model discovery. Never reads secret values. */
@@ -50,11 +130,29 @@ export function personalKeyGranted(rowGrantUserId: string | null, grantUserId: s
   return grantUserId !== null && rowGrantUserId === grantUserId;
 }
 
-export async function memberMayReadProject(accountId: string, projectId: string, userId: string): Promise<boolean> {
+/**
+ * May `userId` read `projectId`? By default a question about a member, by
+ * role. Account-wide MFA (authorize step 6) guards a person's own browser
+ * requests, and the route that led here authorized its request with that
+ * request's level. Asked with no level, the gate refused every member of an
+ * account that requires MFA except a super admin. So no pooled key reached
+ * their sessions: a Teams channel never reached the ChatGPT login shared with
+ * the whole project, and failed every turn with "Connect Codex" (2026-10-01).
+ *
+ * A route that asks about the caller's own request, with no authorize call of
+ * its own, passes `request` with that request's level.
+ */
+export async function memberMayReadProject(
+  accountId: string,
+  projectId: string,
+  userId: string,
+  request?: { mfaAal: string | undefined },
+): Promise<boolean> {
   const [{ actorForUser }, { authorize }, { PROJECT_ACTIONS }] = await Promise.all([
     import('../iam/actor'), import('../iam/authorize'), import('../iam/actions'),
   ]);
-  return (await authorize(actorForUser(userId, accountId), PROJECT_ACTIONS.PROJECT_READ, { type: 'project', id: projectId })).allowed;
+  const mfaAal = request ? request.mfaAal : 'aal2';
+  return (await authorize(actorForUser(userId, accountId, { mfaAal }), PROJECT_ACTIONS.PROJECT_READ, { type: 'project', id: projectId })).allowed;
 }
 
 export async function listGrantedGatewaySecretNames(
@@ -165,21 +263,53 @@ export async function listUsableGatewaySecrets(input: Omit<GatewaySecretQuery, '
   const q = { ...input, grantUserId: input.grantUserId === undefined ? input.userId : input.grantUserId };
   if (!(await memberMayReadProject(input.accountId, input.projectId, input.userId))) return [];
   return usableRows(q, await gatewaySecretRows(q)
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId))));
+    .innerJoin(...accountMemberJoin(input.accountId, input.userId)));
 }
 
-/** An unconfigured session uses the caller's newest personal ChatGPT connection. */
-export async function resolveDefaultCodexAccountSecret(accountId: string, projectId: string, userId: string): Promise<{
-  secretId: string; label: string; value: string;
-} | null> {
-  if (!(await memberMayReadProject(accountId, projectId, userId))) return null;
+/** A stored ChatGPT login, read again when the provider refused its token. */
+export interface CodexAccountLogin {
+  value: string | null;
+  updatedAt: Date;
+  needsReauthAt: Date | null;
+}
+
+export async function loadCodexAccountLogin(accountId: string, secretId: string): Promise<CodexAccountLogin | null> {
   const [row] = await db.select({
+    valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
+    needsReauthAt: accountSecretResources.needsReauthAt,
+  }).from(accountSecretResources).where(and(
+    eq(accountSecretResources.accountId, accountId),
+    eq(accountSecretResources.secretId, secretId),
+    eq(accountSecretResources.providerId, 'codex'),
+    eq(accountSecretResources.name, 'CODEX_AUTH_JSON'),
+    eq(accountSecretResources.active, true),
+  )).limit(1);
+  return row
+    ? { value: readAccountSecret(accountId, secretId, row.valueEnc), updatedAt: row.updatedAt, needsReauthAt: row.needsReauthAt }
+    : null;
+}
+
+/**
+ * An unconfigured session uses the caller's newest personal ChatGPT
+ * connection, preferring one whose login still works and that is not resting
+ * after a rate or usage limit: a connection marked for reconnection, or
+ * resting, is the default only when every other one is too. `restingSeconds`
+ * is set when the chosen connection rests, so the caller can fall back
+ * instead of sending to an account that will refuse.
+ */
+export async function resolveDefaultCodexAccountSecret(accountId: string, projectId: string, userId: string): Promise<(ResolvedAccountSecret & { restingSeconds?: number }) | null> {
+  if (!(await memberMayReadProject(accountId, projectId, userId))) return null;
+  const [found] = await db.select({
     secretId: accountSecretResources.secretId,
     label: accountSecretResources.label,
     valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
+    cooldownUntil: accountSecretResources.cooldownUntil,
+    cooldownProbeAt: accountSecretResources.cooldownProbeAt,
   }).from(accountSecretResources)
     .innerJoin(accountSecretGrants, and(eq(accountSecretGrants.secretId, accountSecretResources.secretId), eq(accountSecretGrants.accountId, accountId)))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+    .innerJoin(...accountMemberJoin(accountId, userId))
     .where(and(
       eq(accountSecretResources.accountId, accountId),
       eq(accountSecretResources.providerId, 'codex'),
@@ -190,9 +320,20 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
       eq(accountSecretGrants.userId, userId),
       or(eq(accountSecretResources.projectId, projectId), isNull(accountSecretResources.projectId)),
     ))
-    .orderBy(desc(accountSecretResources.createdAt), desc(accountSecretResources.secretId))
+    .orderBy(
+      sql`${accountSecretResources.needsReauthAt} is not null`,
+      sql`coalesce(${accountSecretResources.cooldownUntil} > now(), false)`,
+      desc(accountSecretResources.createdAt),
+      desc(accountSecretResources.secretId),
+    )
     .limit(1);
-  return row ? { secretId: row.secretId, label: row.label, value: decryptAccountSecret(accountId, row.valueEnc) } : null;
+  if (!found) return null;
+  const [row] = await liftDueCooldowns(accountId, [found]);
+  const restingMs = row!.cooldownUntil ? row!.cooldownUntil.getTime() - Date.now() : 0;
+  return {
+    secretId: row!.secretId, label: row!.label, value: readAccountSecret(accountId, row!.secretId, row!.valueEnc), updatedAt: row!.updatedAt,
+    ...(restingMs > 0 ? { restingSeconds: Math.ceil(restingMs / 1000) } : {}),
+  };
 }
 
 /**
@@ -209,19 +350,21 @@ export async function resolveDefaultCodexAccountSecret(accountId: string, projec
 export async function resolveProjectSharedProviderSecrets(input: Omit<GatewaySecretQuery, 'providerId'> & {
   userId: string;
   providerId: string;
-}): Promise<{ coolingDown: boolean; retryAfterSeconds?: number; secrets: { secretId: string; label: string; value: string }[] }> {
+}): Promise<{ coolingDown: boolean; retryAfterSeconds?: number; secrets: ResolvedAccountSecret[] }> {
   const usable = await listUsableGatewaySecrets(input);
   if (!usable.length) return { coolingDown: false, secrets: [] };
   const rows = await db.select({
     secretId: accountSecretResources.secretId,
     valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
     cooldownUntil: accountSecretResources.cooldownUntil,
+    cooldownProbeAt: accountSecretResources.cooldownProbeAt,
   }).from(accountSecretResources).where(and(
     eq(accountSecretResources.accountId, input.accountId),
     eq(accountSecretResources.active, true),
     inArray(accountSecretResources.secretId, usable.map((row) => row.secretId)),
   ));
-  const byId = new Map(rows.map((row) => [row.secretId, row]));
+  const byId = new Map((await liftDueCooldowns(input.accountId, rows)).map((row) => [row.secretId, row]));
   const ordered = usable.flatMap((key) => {
     const row = byId.get(key.secretId);
     return row ? [{ ...key, ...row }] : [];
@@ -234,7 +377,7 @@ export async function resolveProjectSharedProviderSecrets(input: Omit<GatewaySec
     return { coolingDown: true, retryAfterSeconds: Math.max(1, Math.ceil((earliest - now) / 1000)), secrets: [] };
   }
   return { coolingDown: false, secrets: ready.map((row) => ({
-    secretId: row.secretId, label: row.label, value: decryptAccountSecret(input.accountId, row.valueEnc),
+    secretId: row.secretId, label: row.label, value: readAccountSecret(input.accountId, row.secretId, row.valueEnc), updatedAt: row.updatedAt,
   })) };
 }
 
@@ -251,7 +394,7 @@ export async function resolveSessionProviderSecrets(input: {
   providerId: string;
   name: string;
   advanceIndex?: boolean;
-} & ({ sessionId: string; secretIds?: never } | { secretIds: string[]; sessionId?: never })): Promise<{ configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: { secretId: string; label: string; value: string }[] }> {
+} & ({ sessionId: string; secretIds?: never } | { secretIds: string[]; sessionId?: never })): Promise<{ configured: boolean; coolingDown: boolean; retryAfterSeconds?: number; secrets: ResolvedAccountSecret[] }> {
   const grantUserId = input.grantUserId === undefined ? input.userId : input.grantUserId;
   let pool: { secretIds: string[]; nextIndex: number } | undefined;
   if (input.secretIds !== undefined) {
@@ -273,7 +416,9 @@ export async function resolveSessionProviderSecrets(input: {
     secretId: accountSecretResources.secretId,
     label: accountSecretResources.label,
     valueEnc: accountSecretResources.valueEnc,
+    updatedAt: accountSecretResources.updatedAt,
     cooldownUntil: accountSecretResources.cooldownUntil,
+    cooldownProbeAt: accountSecretResources.cooldownProbeAt,
     projectId: accountSecretResources.projectId,
     accessMode: accountSecretResources.accessMode,
     grantUserId: accountSecretGrants.userId,
@@ -282,7 +427,7 @@ export async function resolveSessionProviderSecrets(input: {
       eq(accountSecretGrants.secretId, accountSecretResources.secretId),
       grantUserId ? eq(accountSecretGrants.userId, grantUserId) : sql`false`,
     ))
-    .innerJoin(accountMembers, and(eq(accountMembers.accountId, input.accountId), eq(accountMembers.userId, input.userId)))
+    .innerJoin(...accountMemberJoin(input.accountId, input.userId))
     .where(and(
       eq(accountSecretResources.accountId, input.accountId),
       eq(accountSecretResources.providerId, input.providerId),
@@ -291,9 +436,10 @@ export async function resolveSessionProviderSecrets(input: {
       eq(accountSecretResources.active, true),
       inArray(accountSecretResources.secretId, pool.secretIds),
     ));
-  const byId = new Map(rows.filter((row) => secretUsableInProject(
+  const usableRows = rows.filter((row) => secretUsableInProject(
     row, input.projectId, personalKeyGranted(row.grantUserId, grantUserId),
-  )).map((row) => [row.secretId, row]));
+  ));
+  const byId = new Map((await liftDueCooldowns(input.accountId, usableRows)).map((row) => [row.secretId, row]));
   const ordered = pool.secretIds.flatMap((id) => {
     const row = byId.get(id);
     return row ? [row] : [];
@@ -310,6 +456,6 @@ export async function resolveSessionProviderSecrets(input: {
   const first = (pool.nextIndex - 1) % ready.length;
   const rotated = [...ready.slice(first), ...ready.slice(0, first)];
   return { configured: true, coolingDown: false, secrets: rotated.map((row) => ({
-    secretId: row.secretId, label: row.label, value: decryptAccountSecret(input.accountId, row.valueEnc),
+    secretId: row.secretId, label: row.label, value: readAccountSecret(input.accountId, row.secretId, row.valueEnc), updatedAt: row.updatedAt,
   })) };
 }

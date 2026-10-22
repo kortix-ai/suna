@@ -50,17 +50,18 @@ let continueCalls: Array<{
 }> = [];
 let createCalls: Array<any> = [];
 
+// The email tools go through the `kortix connectors` CLI, which every harness's
+// shell has. OpenCode alone has the MCP face, so an MCP-only prompt left a pi
+// session unable to read or answer the thread (W1 B8).
 function expectConnectorEmailPrompt(prompt: string) {
-  for (const tool of ['connectors', 'discover', 'describe', 'call']) {
-    expect(prompt).toContain(`\`${tool}\``);
-  }
-  expect(prompt).toContain('"connector":"email"');
-  expect(prompt).toContain('"action":"reply_message"');
-  expect(prompt).toContain('"inbox_id":"inb-1"');
-  expect(prompt).toContain('"message_id":"msg-1"');
-  expect(prompt).toContain('"text":"<reply>"');
+  expect(prompt).toContain(`kortix connectors call email.get_thread '{"inbox_id":"inb-1","thread_id":"thr-1"}'`);
+  expect(prompt).toContain(
+    `kortix connectors call email.reply_message '{"inbox_id":"inb-1","message_id":"msg-1","text":"<reply>"}'`,
+  );
+  expect(prompt).toContain('kortix connectors call email.send_message');
+  expect(prompt).toContain('kortix connectors show email.<action>');
   expect(prompt).toContain('Use `html` instead of `text` only when needed.');
-  expect(prompt).not.toContain('call `email.reply_message`');
+  expect(prompt).not.toContain('MCP');
 }
 
 const {
@@ -71,7 +72,7 @@ const {
   setEmailSessionLifecycleForTest,
 } = await import('../channels/email/session');
 const { emailWebhookApp } = await import('../channels/email/app');
-await import('../channels/email/routes');
+(await import('../channels/email/routes')).registerEmailWebhookRoutes();
 
 const event: AgentMailMessageReceivedEvent = {
   type: 'event',
@@ -107,7 +108,7 @@ beforeEach(() => {
   createCalls = [];
   setEmailSessionLifecycleForTest({
     resolveProjectAutomationActor: async () => 'user-1',
-    continueSession: async (input) => {
+    deliverFollowUp: async (input) => {
       continueCalls.push({
         sessionId: input.sessionId,
         text: input.text,
@@ -360,7 +361,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls[0].postCreate[1].text).toContain('Need help');
     expectConnectorEmailPrompt(createCalls[0].postCreate[1].text);
     expect(createCalls[0].extraEnvVars.KORTIX_EMAIL_INBOX_ID).toBe('inb-1');
-    expect(createCalls[0].extraEnvVars.KORTIX_CONNECTORS_MCP_ENABLED).toBe('1');
+    expect(createCalls[0].extraEnvVars.KORTIX_CONNECTORS_MCP_ENABLED).toBeUndefined();
     expect(createCalls[0].body.connector_bindings).toEqual({
       email: { connection_id: 'connection-email-1' },
     });
@@ -447,7 +448,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe('sess-1');
-    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_CONNECTORS_MCP_ENABLED: '1' });
+    expect(continueCalls[0].opencodeEnv).toBeUndefined();
   });
 
   test('known thread routes a new email into the existing session', async () => {
@@ -475,7 +476,7 @@ describe('dispatchAgentMailEvent', () => {
     expect(createCalls).toHaveLength(0);
     expect(continueCalls).toHaveLength(1);
     expect(continueCalls[0].sessionId).toBe('sess-1');
-    expect(continueCalls[0].opencodeEnv).toEqual({ KORTIX_CONNECTORS_MCP_ENABLED: '1' });
+    expect(continueCalls[0].opencodeEnv).toBeUndefined();
     expect(continueCalls[0].text).toContain('Customer <customer@example.com>');
     expectConnectorEmailPrompt(continueCalls[0].text);
   });

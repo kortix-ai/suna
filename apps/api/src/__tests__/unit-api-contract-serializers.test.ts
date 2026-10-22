@@ -9,7 +9,7 @@ import {
 import type { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
 import { buildSecretView, serializeProject, serializeSession } from '../projects/lib/serializers';
-import { serializeSandboxRow } from '../projects/routes/shared';
+import { serializeSandboxRow } from '../projects/session-open';
 
 const NOW = new Date('2026-07-01T12:00:00.000Z');
 const PROJECT_ID = '11111111-2222-4333-8444-555555555555';
@@ -51,7 +51,7 @@ function sessionRow(
     sandboxProvider: 'daytona',
     sandboxId: null,
     sandboxUrl: null,
-    opencodeSessionId: 'ses_abc',
+    runtimeSessionId: 'ses_abc',
     agentName: 'default',
     status: 'running',
     error: null,
@@ -59,10 +59,14 @@ function sessionRow(
     visibility: 'private',
     origin: 'user',
     originRef: null,
+    parentSessionId: null,
+    initiatorType: null,
+    initiatorId: null,
     secretsAllowlist: null,
     requiredConnectors: null,
     connectorBindingsInheritUnbound: false,
     connectorBindingsConfigured: false,
+    labels: [],
     metadata: { name: 'Fix the login bug' },
     createdAt: NOW,
     updatedAt: NOW,
@@ -143,22 +147,7 @@ describe('serializeProject ⇄ ProjectSchema', () => {
     );
   });
 
-  test('surfaces a configured E2B project pin', () => {
-    const originalAllowed = config.ALLOWED_SANDBOX_PROVIDERS;
-    const originalKey = config.E2B_API_KEY;
-    config.ALLOWED_SANDBOX_PROVIDERS = ['e2b'];
-    config.E2B_API_KEY = 'test-only';
-    try {
-      const out = serializeProject(projectRow({ metadata: { default_sandbox_provider: 'e2b' } }));
-      expect(out.default_sandbox_provider).toBe('e2b');
-      expect(ProjectSchema.strict().parse(out)).toEqual(out);
-    } finally {
-      config.ALLOWED_SANDBOX_PROVIDERS = originalAllowed;
-      config.E2B_API_KEY = originalKey;
-    }
-  });
-
-  test.each(['managed', 'justavps', 'unknown'])(
+  test.each(['managed', 'justavps', 'e2b', 'unknown'])(
     'does not surface retired or unknown project pin %s',
     (provider) => {
       const out = serializeProject(
@@ -186,6 +175,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
       canManageProject: true,
       ownerEmail: 'owner@acme.dev',
       ownerName: 'Build Agent',
+      ownerAvatarUrl: 'https://img.example.test/owner.png',
       ownerType: 'service_account',
       canAccess: false,
       runtimeStatus: 'stopped',
@@ -196,6 +186,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
     expect(parsed.sharing).toEqual({ mode: 'members', memberIds: [USER_ID], groupIds: [] });
     expect(parsed.owner_email).toBe('owner@acme.dev');
     expect(parsed.owner_name).toBe('Build Agent');
+    expect(parsed.owner_avatar_url).toBe('https://img.example.test/owner.png');
     expect(parsed.owner_type).toBe('service_account');
     expect(parsed.can_access).toBe(false);
     expect(parsed.runtime_status).toBe('stopped');
@@ -231,7 +222,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
   test('runtime root is matched by the pinned root id, not list order', () => {
     const out = serializeSession(
       sessionRow({
-        opencodeSessionId: 'ses_root',
+        runtimeSessionId: 'ses_root',
         metadata: {
           name: 'Auto title',
           opencode_sessions: [
@@ -247,7 +238,7 @@ describe('serializeSession ⇄ ProjectSessionSchema', () => {
   test('a parentless entry stands in when no snapshot entry matches the pin', () => {
     const out = serializeSession(
       sessionRow({
-        opencodeSessionId: null,
+        runtimeSessionId: null,
         metadata: {
           name: 'Auto title',
           opencode_sessions: [
@@ -475,7 +466,9 @@ describe('buildSecretView ⇄ SecretSchema', () => {
     const parsed = SecretSchema.strict().parse(out);
     expect(parsed.configured).toBe(false);
     expect(parsed.effective_source).toBe('mine');
-    expect(parsed.mine).toEqual({ active: true, updated_at: NOW.toISOString() });
+    // The fixture's `valueEnc` is no real envelope, so the override reads undecryptable.
+    expect(parsed.mine).toEqual({ active: true, updated_at: NOW.toISOString(), status: 'undecryptable' });
+    expect(parsed.status).toBeUndefined();
   });
 
   test('system git-auth secret parses and cannot be managed even by an editor', () => {

@@ -176,4 +176,118 @@ describe('agent tunnel device authorization CLI', () => {
       server.stop(true);
     }
   });
+
+  test('--json emits NDJSON events, sends --project-id, and honours AGENT_TUNNEL_HOME', async () => {
+    const projectId = '11111111-2222-4333-8444-555555555555';
+    let requestBody: Record<string, unknown> | null = null;
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const url = new URL(request.url);
+        if (request.method === 'POST' && url.pathname === '/v1/tunnel/device-auth') {
+          requestBody = (await request.json()) as Record<string, unknown>;
+          return Response.json(
+            {
+              deviceCode: 'TEST-0003',
+              deviceSecret: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ123456',
+              verificationUrl: 'https://dev.kortix.com/tunnel/authorize/TEST-0003',
+              expiresAt: new Date(Date.now() + 60_000).toISOString(),
+              pollIntervalMs: 250,
+            },
+            { status: 201 },
+          );
+        }
+        if (request.method === 'GET' && url.pathname.endsWith('/TEST-0003/status')) {
+          return Response.json({
+            status: 'approved',
+            tunnelId: '00000000-0000-4000-8000-000000000003',
+            token: 'kortix_tnl_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456',
+            capabilities: ['filesystem'],
+          });
+        }
+        return new Response('not found', { status: 404 });
+      },
+    });
+
+    const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-json-home-'));
+    const agentHome = join(home, 'isolated-agent-home');
+    temporaryHomes.add(home);
+    const child = spawn(
+      process.execPath,
+      [
+        'run', CLI_PATH, 'connect', '--json', '--foreground',
+        '--project-id', projectId,
+        '--api-url', `http://127.0.0.1:${server.port}/v1/tunnel`,
+      ],
+      {
+        // No KORTIX_AGENT_TUNNEL_NO_BROWSER: --json alone must never open one.
+        env: { ...process.env, HOME: home, AGENT_TUNNEL_HOME: agentHome },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    children.add(child);
+    let stdout = '';
+    child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+
+    try {
+      const statePath = join(agentHome, 'state.json');
+      await waitForFile(statePath);
+      const events = stdout.trim().split('\n').map((line) => JSON.parse(line));
+      expect(events).toEqual([
+        {
+          event: 'challenge',
+          deviceCode: 'TEST-0003',
+          verificationUrl: 'https://dev.kortix.com/tunnel/authorize/TEST-0003',
+          expiresAt: expect.any(String),
+        },
+        { event: 'approved', tunnelId: '00000000-0000-4000-8000-000000000003', capabilities: ['filesystem'] },
+      ]);
+      expect(requestBody).toMatchObject({ project_id: projectId });
+
+      // Credentials and state live in AGENT_TUNNEL_HOME, not ~/.agent-tunnel.
+      const config = JSON.parse(await readFile(join(agentHome, 'config.json'), 'utf8'));
+      expect(config.tunnelId).toBe('00000000-0000-4000-8000-000000000003');
+      await expect(access(join(home, '.agent-tunnel', 'config.json'))).rejects.toThrow();
+      const state = JSON.parse(await readFile(statePath, 'utf8'));
+      expect(state).toMatchObject({ tunnelId: '00000000-0000-4000-8000-000000000003', pid: child.pid });
+      expect(['connecting', 'offline']).toContain(state.status);
+
+      const exited = new Promise((resolve) => child.once('exit', resolve));
+      child.kill('SIGTERM');
+      await exited;
+      expect(JSON.parse(await readFile(statePath, 'utf8')).status).toBe('offline');
+    } finally {
+      child.kill('SIGTERM');
+      children.delete(child);
+      server.stop(true);
+    }
+  });
+
+  test('--json reports a malformed --project-id as an error event', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-json-home-'));
+    temporaryHomes.add(home);
+    const result = Bun.spawnSync(
+      [process.execPath, 'run', CLI_PATH, 'connect', '--json', '--project-id', 'nope', '--api-url', 'http://127.0.0.1:9/v1/tunnel'],
+      { env: { ...process.env, HOME: home, AGENT_TUNNEL_HOME: join(home, 'agent') } },
+    );
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(result.stdout.toString().trim())).toEqual({
+      event: 'error',
+      message: '--project-id must be a project UUID',
+    });
+  });
+
+  test('service-status --json names the isolated home and its suffixed label', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-json-home-'));
+    temporaryHomes.add(home);
+    const agentHome = join(home, 'agent');
+    const result = Bun.spawnSync([process.execPath, 'run', CLI_PATH, 'service-status', '--json'], {
+      env: { ...process.env, HOME: home, AGENT_TUNNEL_HOME: agentHome },
+    });
+    expect(result.exitCode).toBe(0);
+    const status = JSON.parse(result.stdout.toString());
+    expect(status).toMatchObject({ paired: false, home: agentHome, state: null });
+    expect(status.serviceLabel).toMatch(/^ai\.kortix\.agent-tunnel\.[0-9a-f]{8}$/);
+    expect(status.service.installed).toBe(false);
+  });
 });

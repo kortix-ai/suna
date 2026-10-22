@@ -102,3 +102,22 @@ describe('createStreamRevival', () => {
     expect(h.revives()).toBe(0);
   });
 });
+
+describe('createStreamRevival host signals', () => {
+  test('a parked stream revives once on a host visible or online signal (a host with no DOM events)', async () => {
+    const { notifyHostSignal } = await import('../../core/session/host-signals');
+    for (const signal of ['visible', 'online'] as const) {
+      let revives = 0;
+      const revival = createStreamRevival(() => {
+        revives += 1;
+      }, { reviveAfterMs: 30_000, setTimeout: () => 1, clearTimeout: () => {} });
+      notifyHostSignal(signal);
+      expect(revives).toBe(0);
+      revival.park();
+      notifyHostSignal(signal);
+      notifyHostSignal(signal);
+      expect(revives).toBe(1);
+      revival.stop();
+    }
+  });
+});

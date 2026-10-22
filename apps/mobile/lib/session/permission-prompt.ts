@@ -13,7 +13,7 @@ import { permissionLabel } from './activity';
 
 /**
  * The permission the pinned card shows when more than one is pending. The
- * oldest ask (array order matches arrival order — `sync-store.addPermission`
+ * oldest ask (array order matches arrival order — the SDK pending store
  * appends) wins, same as the question prompt's `pendingQuestions[0]`.
  */
 export function pinnedPermission<T extends { id: string }>(permissions: readonly T[]): T | undefined {

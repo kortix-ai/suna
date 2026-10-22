@@ -7,11 +7,16 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
+import type { KortixToolState } from '../../runtime/transcript-types';
+import { inputPath, toolKind } from '../tool-kind';
+import { asToolPart, isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
+import type { ToolCallBlock } from '../../session-log/types';
 import { humanizeSearchQuery } from './search-query';
 import { stripTrailingSlashes } from '../text-scan';
 
 // ─── Context tool grouping ───────────────────────────────────────────────
 
+/** The tool kinds (`toolKind`) that group into a context block. */
 export const CONTEXT_TOOLS = new Set(['read', 'glob', 'grep', 'list']);
 
 /** Normalize `oc-foo_bar` → `foo_bar`, `foo-bar` → `foo_bar`. */
@@ -20,8 +25,7 @@ export function normalizeName(name: string): string {
 }
 
 export function isContextTool(toolName: string): boolean {
-  const n = normalizeName(toolName);
-  return CONTEXT_TOOLS.has(n);
+  return CONTEXT_TOOLS.has(toolKind(toolName));
 }
 
 /**
@@ -37,10 +41,10 @@ export function contextToolSummary(parts: ToolPart[]): {
   let search = 0;
   let list = 0;
   for (const part of parts) {
-    const n = normalizeName(part.tool);
-    if (n === 'read') read++;
-    else if (n === 'glob' || n === 'grep') search++;
-    else if (n === 'list') list++;
+    const kind = toolKind(part.tool);
+    if (kind === 'read') read++;
+    else if (kind === 'glob' || kind === 'grep') search++;
+    else if (kind === 'list') list++;
   }
   return { read, search, list };
 }
@@ -63,10 +67,12 @@ function truncate(s: string, max = 60): string {
 /**
  * Extract the one thing that identifies a tool call in a one-liner.
  * Used for context-group item labels and any future compact views.
+ * Reads a session-log tool call block the same way as its v1 part.
  */
-export function getToolPrimaryArg(part: ToolPart): string {
-  const state = (part.state ?? {}) as any;
-  const input = (state.input ?? {}) as Record<string, any>;
+export function getToolPrimaryArg(call: ToolPart | ToolCallBlock): string {
+  const part = asToolPart(call);
+  const state = (part.state ?? {}) as KortixToolState;
+  const input = state.input ?? {};
   const key = normalizeName(part.tool);
 
   switch (key) {
@@ -74,8 +80,8 @@ export function getToolPrimaryArg(part: ToolPart): string {
     case 'edit':
     case 'write':
     case 'morph_edit': {
-      const p = input.filePath ?? input.file_path ?? input.path;
-      return p ? basename(String(p)) : '';
+      const p = inputPath(input);
+      return p ? basename(p) : '';
     }
     case 'glob':
       return input.pattern ? String(input.pattern) : '';
@@ -172,16 +178,17 @@ export const DEFAULT_CONTEXT_TOOL_TRIGGER_LABELS: Readonly<ContextToolTriggerLab
 
 /**
  * Build a trigger { title, subtitle } for any tool inside the expanded
- * UnifiedGroup. Context tools get friendly names; others use their
+ * UnifiedGroup (a v1 tool part or a session-log tool call block). Context tools get friendly names; others use their
  * canonical name in Title Case.
  */
 export function contextToolTrigger(
-  part: ToolPart,
+  call: ToolPart | ToolCallBlock,
   labels: Partial<ContextToolTriggerLabels> = {},
 ): {
   title: string;
   subtitle: string;
 } {
+  const part = isToolCallBlock(call) ? toolPartOf(call) : call;
   const l = { ...DEFAULT_CONTEXT_TOOL_TRIGGER_LABELS, ...labels };
   const n = normalizeName(part.tool);
   const sub = getToolPrimaryArg(part);

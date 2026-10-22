@@ -41,7 +41,12 @@ import { useLogoPaletteStore } from '@/stores/logo-palette-store';
 /** How long the symbol must be held before the colour sheet opens. */
 const LOGO_SHEET_HOLD_MS = 5_000;
 
-export function ProjectHero() {
+/**
+ * Memoized, with no props: a parent re-render (a keystroke in a composer, a
+ * streamed delta) never reaches the shader. It still updates on its own
+ * inputs: theme, window width, keyboard, and the palette store.
+ */
+export const ProjectHero = React.memo(function ProjectHero() {
   const { colorScheme } = useColorScheme();
   const tone = colorScheme === 'dark' ? 'dark' : 'light';
   const { width } = useWindowDimensions();
@@ -77,7 +82,6 @@ export function ProjectHero() {
           delayLongPress={LOGO_SHEET_HOLD_MS}
           onLongPress={() => {
             haptics.success();
-            Keyboard.dismiss();
             sheetRef.current?.open();
           }}>
           <MetalKortixLogo
@@ -92,4 +96,4 @@ export function ProjectHero() {
       <LogoPaletteSheet ref={sheetRef} />
     </>
   );
-}
+});

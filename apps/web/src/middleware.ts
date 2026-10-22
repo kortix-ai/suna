@@ -16,9 +16,15 @@ import {
   PROJECT_LANDING_PATH,
   resolveDefaultLandingPath,
   serializeAuthBounce,
-} from '@/lib/onboarding/landing-destination';
+} from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import { resolveMiddlewareIdentity, type MiddlewareUser } from '@/lib/supabase/middleware-identity';
+import {
+  cookieIdentityPlan,
+  isDeadSessionAuthError,
+  resolveMiddlewareIdentity,
+  type MiddlewareUser,
+} from '@/lib/supabase/middleware-identity';
+import { readUnverifiedSession } from '@/lib/supabase/session-cookie';
 import { redirectPreservingCookies } from '@/lib/supabase/redirect-preserving-session';
 import { createServerClient } from '@supabase/ssr';
 import type { NextRequest } from 'next/server';
@@ -38,7 +44,6 @@ const MARKETING_ROUTES = [
   '/agent-computer',
   '/agents-and-skills',
   '/automations',
-  '/blog',
   '/careers',
   '/channels',
   '/changelog',
@@ -57,6 +62,7 @@ const MARKETING_ROUTES = [
   '/solutions',
   '/support',
   '/use-cases',
+  '/white-label',
 ];
 
 // Pure marketing/promo routes that a self-host with the landing page disabled
@@ -66,6 +72,7 @@ const MARKETING_ROUTES = [
 // marketing site itself is deactivated.
 const SELF_HOST_MARKETING_ONLY = [
   '/about',
+  '/launch',
   '/agent-computer',
   '/agents-and-skills',
   '/automations',
@@ -73,7 +80,6 @@ const SELF_HOST_MARKETING_ONLY = [
   '/self-hosted',
   '/company-as-code',
   '/careers',
-  '/blog',
   '/changelog',
   '/contact',
   '/developers',
@@ -83,6 +89,7 @@ const SELF_HOST_MARKETING_ONLY = [
   '/solutions',
   '/connectors',
   '/security',
+  '/white-label',
 ];
 
 // Routes that don't require authentication
@@ -110,17 +117,18 @@ const PUBLIC_ROUTES = [
   '/automations', // marketing page should be public
   '/channels', // marketing page should be public
   '/self-hosted', // marketing page should be public
+  '/white-label', // marketing page should be public
   '/company-as-code', // marketing page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
-  '/blog', // Public blog (MDX posts under content/blog) should be public
   '/install',
   '/install.sh',
-  '/mcp', // Public read-only MCP server and server card
+  '/mcp', // Public MCP server card (/mcp/server-card) naming the API's MCP server
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
   '/presentation', // Legacy deck paths, now 307'd to /presentations (next.config.ts)
   '/presentations', // Deck index + every registered deck. Link-shared, noindex, no login
+  '/launch', // Launch page + marketing design reference. Link-shared, noindex until announced
 
   '/rauch', // Rauch-style particle rendering of the Kortix symbol — public, unauthenticated
   '/contact', // Request-a-demo / contact page should be public
@@ -162,10 +170,7 @@ const AGENT_DISCOVERY_LINK_HEADER =
 function supportsMarkdownNegotiation(pathname: string): boolean {
   if (MARKDOWN_NEGOTIATION_ROUTES.has(pathname)) return true;
   return (
-    pathname === '/docs' ||
-    pathname.startsWith('/docs/') ||
-    /^\/blog\/[^/]+$/.test(pathname) ||
-    /^\/use-cases\/[^/]+$/.test(pathname)
+    pathname === '/docs' || pathname.startsWith('/docs/') || /^\/use-cases\/[^/]+$/.test(pathname)
   );
 }
 
@@ -192,6 +197,9 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/oauth',
   '/checkout',
   '/tunnel',
+  // The Kortix Capture area (`/capture/[accountId]/…`): the app menu item
+  // "Kortix Capture…" and its menu bar item open it.
+  '/capture',
   '/github',
   '/cli',
   '/marketplace',
@@ -201,7 +209,7 @@ const DESKTOP_ALLOWED_ROUTES = [
 ];
 
 export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  let { pathname } = request.nextUrl;
   // These are probes for server files, not product routes. A plain response also
   // avoids rendering the translated application shell for sensitive-file probes.
   if (/^\/(?:\.env(?:[./]|$)|\.git(?:\/|$)|package\.json$|etc\/passwd$)/i.test(pathname)) {
@@ -307,36 +315,78 @@ export async function middleware(request: NextRequest) {
     );
   }
 
+  // /blog is proxied to a separate deployment (the blog app, next.config.ts
+  // rewrites). It serves public pages only, so a kortix.com session never
+  // crosses to it: the Supabase cookie and any Authorization header stay here.
+  if (pathname === '/blog' || pathname.startsWith('/blog/')) {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.delete('cookie');
+    requestHeaders.delete('authorization');
+    return finalizeEnvironmentAccess(NextResponse.next({ request: { headers: requestHeaders } }));
+  }
+
+  // The locale a request carries when no identity check ran: the profile
+  // locale read (unverified) from the session cookie, else English. The cookie
+  // read only picks the language of content that is identical for every
+  // visitor; it never grants anything.
+  const cookieLocale = (): Locale =>
+    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ?? defaultLocale;
+
   // Skip middleware for static files, API routes, and telemetry endpoints.
+  // The auth route handlers (KRTX-2072) invoke the same server actions the
+  // /auth page used to call directly: a server action posted to /auth picked
+  // up X-NEXT-INTL-LOCALE from the page rewrite, but a Route Handler has no
+  // page rewrite, so without this forwarding the actions would translate their
+  // rate-limit and confirmation copy in the default locale for every visitor
+  // whose session cookie carries another language. Keep the skip itself (no
+  // auth gate, no rewrite onto a locale) and forward the cookie locale only.
+  if (pathname.startsWith('/api/auth/')) {
+    const locale = cookieLocale();
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-locale', locale);
+    requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
+    return finalizeEnvironmentAccess(NextResponse.next({ request: { headers: requestHeaders } }));
+  }
   if (
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/v1/') ||
     pathname.startsWith('/supabase/') || // same-origin Supabase proxy (sandbox preview) — must reach the next.config rewrite, never the auth-gate
-    pathname.includes('.') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') || // Sentry error tracking tunnel (Better Stack)
     pathname.startsWith('/_betterstack') || // Better Stack browser telemetry proxy
-    // Route Handlers, next.config rewrite sources (/scim, /ingest), and the
-    // static /docs site: none is a page under app/[locale], so none may be
-    // rewritten onto a locale. See i18n/routing.ts.
+    // Files (a dotted path, except a chat sign-in link), Route Handlers,
+    // next.config rewrite sources (/scim, /ingest), and the static /docs
+    // site: none is a page under app/[locale], so none may be rewritten onto
+    // a locale. See i18n/routing.ts.
     isNonPagePath(pathname)
   ) {
     return finalizeEnvironmentAccess(NextResponse.next());
   }
 
-  // ── Terms of Service → public Drive file (permanent 308) ────────────────
-  // The Terms document moved to an externally-owned Google Drive file. Both
-  // the new stable path (`/legal/terms`) and the legacy tab query
-  // (`/legal?tab=terms`), including every supported locale prefix
-  // (`/de/legal/terms`, `/de/legal?tab=terms`, …), permanently redirect there
-  // so existing links/bookmarks keep resolving. Privacy and imprint stay local
-  // on `/legal`. This runs before auth/locale logic — the destination is an
-  // external URL that needs no session. See `lib/legal-terms-redirect.ts`.
-  const termsDestination = legalTermsRedirectUrl(pathname, request.nextUrl.searchParams);
+  // ── Terms of Service → the Terms tab of /legal (permanent 308) ─────────
+  // Every link points at the stable `/legal/terms`, in each locale prefix.
+  // It maps onto `<prefix>/legal?tab=terms`, where the Terms render. This runs
+  // before auth/locale logic: the legal page needs no session. See
+  // `lib/legal-terms-redirect.ts`.
+  const termsDestination = legalTermsRedirectUrl(
+    pathname,
+    request.nextUrl.searchParams,
+    request.nextUrl,
+  );
   if (termsDestination) {
     return finalizeEnvironmentAccess(NextResponse.redirect(termsDestination, 308));
   }
+
+  // Normalize app paths before maintenance, desktop and authentication gates.
+  const pathSegments = pathname.split('/').filter(Boolean);
+  const explicitLocale = locales.find((locale) => locale === pathSegments[0]);
+  const remainingPath = '/' + pathSegments.slice(1).join('/');
+  const isRemainingPathMarketing = MARKETING_ROUTES.some(
+    (route) => remainingPath === route ||
+      (route !== '/' && remainingPath.startsWith(route + '/')),
+  );
+  if (explicitLocale && !isRemainingPathMarketing) pathname = remainingPath;
 
   // ── Blocking maintenance mode ──────────────────────────────────────────
   // When maintenance level is "blocking" (Full Lockdown), redirect DASHBOARD /
@@ -412,7 +462,10 @@ export async function middleware(request: NextRequest) {
   // docs/external links in the user's real browser.
   if (request.headers.get('user-agent')?.includes('KortixDesktop')) {
     const isAuthPath = pathname === '/auth' || pathname.startsWith('/auth/');
+    // The site root passes: the identity-aware `/` redirects below send it into
+    // the remembered project, exactly as on web. The shell launches here.
     const isAllowed =
+      pathname === '/' ||
       isAuthPath ||
       DESKTOP_ALLOWED_ROUTES.some(
         (route) => pathname === route || pathname.startsWith(route + '/'),
@@ -430,56 +483,32 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Extract path segments
-  const pathSegments = pathname.split('/').filter(Boolean);
-  const firstSegment = pathSegments[0];
-
-  // Check if first segment is a locale (e.g., /de, /it)
-  if (firstSegment && locales.includes(firstSegment as Locale)) {
-    const locale = firstSegment as Locale;
-    const remainingPath = '/' + pathSegments.slice(1).join('/') || '/';
-
-    // Verify remaining path is a marketing route
-    const isRemainingPathMarketing = MARKETING_ROUTES.some((route) => {
-      if (route === '/') {
-        return remainingPath === '/' || remainingPath === '';
-      }
-      return remainingPath === route || remainingPath.startsWith(route + '/');
+  // Explicit marketing locales retain their static, identity-free rewrite.
+  if (explicitLocale && isRemainingPathMarketing) {
+    const locale = explicitLocale;
+    // /de/pricing is already the internal path app/[locale]/…/pricing with
+    // locale=de. Rewrite onto its normalized form (/de/ -> /de) and name the
+    // locale for Server Actions. Static per-locale HTML; no identity lookup.
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-locale', locale);
+    requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
+    const target = request.nextUrl.clone();
+    target.pathname = localizedPathname(locale, remainingPath);
+    const response = NextResponse.rewrite(target, {
+      request: { headers: requestHeaders },
     });
+    // Keep the locale response header for diagnostics and cache inspection.
+    // Do not persist it: language only changes permanently via profile settings.
+    response.headers.set('x-locale', locale);
 
-    if (isRemainingPathMarketing) {
-      // /de/pricing is already the internal path app/[locale]/…/pricing with
-      // locale=de. Rewrite onto its normalized form (/de/ -> /de) and name the
-      // locale for Server Actions. Static per-locale HTML; no identity lookup.
-      const requestHeaders = new Headers(request.headers);
-      requestHeaders.set('x-locale', locale);
-      requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
-      const target = request.nextUrl.clone();
-      target.pathname = localizedPathname(locale, remainingPath);
-      const response = NextResponse.rewrite(target, {
-        request: { headers: requestHeaders },
-      });
-      // Keep the locale response header for diagnostics and cache inspection.
-      // Do not persist it: language only changes permanently via profile settings.
-      response.headers.set('x-locale', locale);
-
-      return finalizeEnvironmentAccess(response);
-    }
+    return finalizeEnvironmentAccess(response);
   }
 
-  // Every unprefixed page URL is rewritten onto app/[locale]. The locale is the
-  // verified profile locale when this request resolves an identity, else the
-  // profile locale read (unverified) from the session cookie, else English.
-  // The cookie read only picks the language of a page that is identical for
-  // every visitor; it never grants anything. A path that still carries a
-  // locale-looking first segment here (/de/projects) is not a localized route:
-  // it rewrites under the locale (/en/de/projects) and renders not-found, as
-  // it always did.
-  const cookieLocale = (): Locale =>
-    unverifiedSessionLocale(request.cookies.getAll(), KORTIX_SUPABASE_AUTH_COOKIE) ??
-    defaultLocale;
+  // Every unprefixed page URL is rewritten onto app/[locale] (see the
+  // cookieLocale definition above for where the locale comes from).
   const rewriteToLocale = (locale: Locale, base?: NextResponse) => {
     const requestHeaders = new Headers(request.headers);
+    locale = explicitLocale ?? locale;
     requestHeaders.set('x-locale', locale);
     requestHeaders.set(NEXT_INTL_LOCALE_HEADER, locale);
     const target = request.nextUrl.clone();
@@ -536,7 +565,6 @@ export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
-
   // Every redirect issued after the Supabase client below runs must go
   // through this (see redirect-preserving-session.ts for why): otherwise the
   // browser gets bounced while still carrying the very cookie that caused the
@@ -562,57 +590,78 @@ export async function middleware(request: NextRequest) {
     process.env.SUPABASE_ANON_KEY ||
     process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookieOptions: {
-      name: KORTIX_SUPABASE_AUTH_COOKIE,
-      path: '/',
-      sameSite: 'lax',
-      // `@supabase/ssr` never sets this itself — see the doc comment in
-      // `lib/supabase/client.ts`.
-      secure: process.env.NODE_ENV === 'production',
-    },
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        supabaseResponse = NextResponse.next({
-          request,
-        });
-        cookiesToSet.forEach(({ name, value, options }) =>
-          supabaseResponse.cookies.set(name, value, options),
-        );
-      },
-    },
-  });
 
-  // Resolve the identity ONCE and reuse it for every auth check below.
-  //
-  // The common path verifies the access token's ES256 signature in-process
-  // (see lib/supabase/middleware-identity.ts) instead of round-tripping
-  // GoTrue, so a client-side navigation no longer pays an edge -> Supabase hop
-  // before its RSC payload can start. getUser() still runs for what cannot be
-  // settled locally.
-  //
-  // IMPORTANT: Skip the lookup entirely for auth routes — the auth page
-  // handles its own session client-side. Resolving here can trigger a
-  // server-side token refresh that consumes the refresh token (GoTrue refresh
-  // tokens are single-use). The updated cookie is set on the response, but if
-  // the browser does a client-side navigation (router.push) instead of a full
-  // page load, the Set-Cookie header may not be processed, leaving the browser
-  // with a stale (revoked) refresh token → "Refresh Token Not Found" on the
-  // next request. Local verification also shrinks that window: the fast path
-  // never refreshes.
   let user: MiddlewareUser | null = null;
   let authError: Error | null = null;
 
   const isAuthRoute = pathname === '/auth' || pathname.startsWith('/auth/');
 
   if (!isAuthRoute) {
-    const identity = await resolveMiddlewareIdentity(supabase.auth);
-    user = identity.user;
-    authError = identity.authError;
+    // What the cookie alone says, before any auth client exists. Creating the
+    // client is not read-only: auth-js refreshes a session whose access token
+    // is expired or inside its refresh margin, and a refresh here rotates the
+    // single-use refresh token (GoTrue refresh tokens are single-use). The
+    // updated cookie is set on the response, but on the surfaces the
+    // middleware serves that Set-Cookie may not reach the browser — dev's edge
+    // strips `set-cookie` from `next-action` responses (KRTX-2095) and a
+    // client-side navigation may not process it either. The browser then
+    // still holds the refresh token THIS request consumed; its next refresh
+    // is rejected as already used and GoTrue's reuse detection can revoke the
+    // whole token family — the hard sign-out of KRTX-2111, where the only way
+    // back in was another auth email.
+    //
+    // So a cookie that is expired or inside the refresh margin never reaches
+    // the auth client: the request resolves as unauthenticated and bounces,
+    // the cookie is left untouched, and the browser client — the one writer
+    // that always sees its own rotation — refreshes the session on /auth and
+    // carries the user back to `redirect`.
+    const cookieSession = readUnverifiedSession(
+      request.cookies.getAll(),
+      KORTIX_SUPABASE_AUTH_COOKIE,
+    );
+    const plan = cookieIdentityPlan(
+      typeof cookieSession?.expires_at === 'number' ? cookieSession.expires_at : null,
+      Date.now(),
+    );
+    if (plan === 'fresh') {
+      const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+        cookieOptions: {
+          name: KORTIX_SUPABASE_AUTH_COOKIE,
+          path: '/',
+          sameSite: 'lax',
+          // `@supabase/ssr` never sets this itself — see the doc comment in
+          // `lib/supabase/client.ts`.
+          secure: process.env.NODE_ENV === 'production',
+        },
+        cookies: {
+          getAll() {
+            return request.cookies.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+            supabaseResponse = NextResponse.next({
+              request,
+            });
+            cookiesToSet.forEach(({ name, value, options }) =>
+              supabaseResponse.cookies.set(name, value, options),
+            );
+          },
+        },
+      });
+
+      // Resolve the identity ONCE and reuse it for every auth check below.
+      //
+      // The common path verifies the access token's ES256 signature in-process
+      // (see lib/supabase/middleware-identity.ts) instead of round-tripping
+      // GoTrue, so a client-side navigation no longer pays an edge -> Supabase
+      // hop before its RSC payload can start. getUser() still runs for what
+      // cannot be settled locally, and once per session per 30 s to confirm it
+      // was not signed out (KRTX-2387). With the stale-cookie skip above, that
+      // getUser() never has a refresh to fire: only fresh cookies get here.
+      const identity = await resolveMiddlewareIdentity(supabase.auth);
+      user = identity.user;
+      authError = identity.authError;
+    }
   }
 
   // Who is being bounced. Captured HERE, before the self-heal below can null
@@ -631,30 +680,29 @@ export async function middleware(request: NextRequest) {
   const bounceOwnerId =
     user?.id || parseLastProjectOwner(request.cookies.get(LAST_PROJECT_COOKIE)?.value);
 
-  // Self-heal a stale/rotated session. A refresh token that's invalid or
-  // "already used" (e.g. after a redeploy or a two-tab refresh race) keeps
-  // erroring on every request and dead-ends the user on /auth. Drop the Supabase
-  // auth cookies (they can be chunked: name, name.0, name.1, …) so the next load
-  // starts clean instead of looping on the bad token.
-  if (authError) {
-    const message = authError.message || '';
-    const code = (authError as { code?: string }).code;
-    if (
-      code === 'refresh_token_already_used' ||
-      code === 'refresh_token_not_found' ||
-      /refresh token/i.test(message) ||
-      /invalid.*(jwt|token)/i.test(message)
-    ) {
-      for (const { name } of request.cookies.getAll()) {
-        if (
-          name === KORTIX_SUPABASE_AUTH_COOKIE ||
-          name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
-        ) {
-          supabaseResponse.cookies.delete(name);
-        }
+  // Self-heal a session GoTrue has VERDICTED dead. `session_not_found` is the
+  // signed-out session's 403 (KRTX-2387); the refresh-token verdicts cover
+  // older GoTrue builds that name them only in the message. Both mean the
+  // cookie can never come back: drop the Supabase auth cookies (they can be
+  // chunked: name, name.0, name.1, …) so the next load starts clean instead of
+  // looping on the bad token.
+  //
+  // Everything else keeps its cookie. An "Invalid JWT" 401 is also what GoTrue
+  // answers for an access token that merely EXPIRED while the refresh token is
+  // still alive — deleting the cookie there threw away the one credential that
+  // could have restored the session (KRTX-2111). Such a request bounces to
+  // /auth with the cookie intact, and the browser client either refreshes it
+  // or signs out cleanly when it really is dead.
+  if (authError && isDeadSessionAuthError(authError)) {
+    for (const { name } of request.cookies.getAll()) {
+      if (
+        name === KORTIX_SUPABASE_AUTH_COOKIE ||
+        name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`)
+      ) {
+        supabaseResponse.cookies.delete(name);
       }
-      user = null;
     }
+    user = null;
   }
 
   // The default destination is a PROJECT, not the projects list. When the

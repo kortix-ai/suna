@@ -27,6 +27,33 @@ describe('API image sandbox runtime artifacts', () => {
     expect(artifactRefresh).toBeGreaterThan(sourceCopy);
   });
 
+  test('runtime SDK keeps its node_modules link to @kortix/llm-catalog', () => {
+    // The context copy has no node_modules (.dockerignore); the API crash-looped
+    // on "Cannot find module '@kortix/llm-catalog/lite'" from the SDK.
+    const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
+    const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+    expect(runtime).toContain('COPY --from=deps /app/packages/sdk ./packages/sdk');
+    expect(runtime).not.toMatch(/^COPY packages\/sdk \.\/packages\/sdk$/m);
+  });
+
+  test('a package copied piecemeal keeps the node_modules links to its workspace dependencies', () => {
+    // 2026-10-11: manifest-schema gained a runtime import of @kortix/shared; the
+    // runtime stage copied only its src, so dev API tasks exited at boot with
+    // "Cannot find module '@kortix/shared/app-config'". Same class as the SDK
+    // link above.
+    const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
+    const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '));
+    const piecemeal = [...runtime.matchAll(/^COPY --from=deps \/app\/packages\/([\w-]+)\/src /gm)].map((m) => m[1]!);
+    expect(piecemeal.length).toBeGreaterThan(3);
+    const missing = piecemeal.filter((name) => {
+      const manifest = JSON.parse(readFileSync(resolve(repoRoot, 'packages', name, 'package.json'), 'utf8'));
+      const deps: Record<string, string> = { ...manifest.dependencies, ...manifest.peerDependencies };
+      const workspaceDeps = Object.values(deps).some((version) => version.startsWith('workspace:'));
+      return workspaceDeps && !runtime.includes(`COPY --from=deps /app/packages/${name}/node_modules ./packages/${name}/node_modules`);
+    });
+    expect(missing).toEqual([]);
+  });
+
   test('copies every migration runner dependency into the self-host image', () => {
     const dockerfile = readFileSync(resolve(repoRoot, 'apps/api/Dockerfile'), 'utf8');
     const scriptsDir = resolve(repoRoot, 'packages/db/scripts');

@@ -10,12 +10,12 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
-import { cn } from '@/lib/utils';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@kortix/ui/internal/lib/kortix-cli';
+import { cn } from '@kortix/ui';
 import {
   ArrowRightIcon as ArrowRight,
   RobotIcon as Bot,
@@ -417,7 +417,9 @@ export function useSlides(): SlideDef[] {
                     )}
                   </>,
                   <>
-                    <Mono>{tI18nHardcoded.raw('i18nComplete.text46c0b3f64f0d')}</Mono>{' '}
+                    <Mono>{tI18nHardcoded.raw('i18nComplete.text21025012cda7')}</Mono>{' '}
+                    <Mono>{tI18nHardcoded.raw('i18nComplete.textf1e8d760c12c')}</Mono>{' '}
+                    <Mono>{tI18nHardcoded.raw('i18nComplete.textac29bffc7691')}</Mono>{' '}
                     {tI18nHardcoded.raw(
                       'autoAppPresentationSlidesPlatformJsxTextTheRuntimeAgentsSkillscceeb26a',
                     )}
@@ -624,7 +626,7 @@ export function useSlides(): SlideDef[] {
       ),
     },
 
-    /* 9 — COMMAND CENTER OVERVIEW ───────────────────────────────────────── */
+    /* 9 — AI OS OVERVIEW ──────────────────────────────────────────────── */
     {
       id: 'command-center',
       label: tI18nHardcoded.raw('i18nComplete.text2522f9d16f3b'),

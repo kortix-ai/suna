@@ -96,7 +96,7 @@ export function bashExitLine(exitCode: number | undefined): string | null {
 }
 
 export type BashTriggerContent =
-  /** An input-less call from a turn that is over: "Working..." shimmer. */
+  /** An input-less call from a turn that is over: static "Working..." text. */
   | { kind: 'stale'; label: string }
   /** Still running under a live stream. Open: the label shimmers, no command. */
   | { kind: 'live'; label: string; labelShimmers: boolean; preview: string | null }

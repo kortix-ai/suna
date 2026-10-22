@@ -1,10 +1,11 @@
 import { OPENCODE_HOME } from './paths'
 import type { OpenCodeConfig as Config } from './config'
-import type { ProjectEnvStore } from '../../project-env'
+import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService } from '../harness'
-import { loadOpenCodeEnvironment, requireOpenCodeConfig, resolveOpenCodeSkillDirectories } from './config'
+import { bootstrapRuntimeSessionRequested, loadOpenCodeEnvironment, requireOpenCodeConfig, resolveOpenCodeSkillDirectories } from './config'
 import { createOpenCodeAssetsService } from './assets'
 import { createOpenCodeProxyService } from './proxy'
+import { createOpenCodeTurnService } from './turns'
 import { createOpenCodeControlService } from './control'
 import { createOpenCodeDiagnosticsService } from './diagnostics'
 import { createOpenCodeQueryService } from './queries'
@@ -17,6 +18,7 @@ import {
 } from './events'
 import { createOpencodeLifecycle, type Opencode, type OpencodeLifecycleOptions } from './lifecycle'
 import { createInstanceGuard, type InstanceGuard } from './instance-guard'
+import { stopSessionLogJournal } from '../shared/session-log-journal'
 
 /** Native reload semantics remain explicit; these are not universal promises. */
 export type OpenCodeConfigurationService = Pick<
@@ -71,10 +73,12 @@ export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode):
     getInternalUrl: () => lifecycle.getInternalUrl(),
     workspace: () => cfg.workspace,
   })
+  const proxy = createOpenCodeProxyService(lifecycle, instanceGuard)
   return {
     id: 'opencode',
     environment: { home: OPENCODE_HOME },
-    proxy: createOpenCodeProxyService(lifecycle, instanceGuard),
+    proxy,
+    turns: createOpenCodeTurnService(proxy, () => cfg.workspace || '/workspace'),
     control: createOpenCodeControlService(lifecycle, quickQueue),
     diagnostics: createOpenCodeDiagnosticsService(lifecycle),
     queries: createOpenCodeQueryService(lifecycle),
@@ -90,7 +94,17 @@ export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode):
     }),
     // Keep the method owner: restart/reload/reconfigure call sibling methods
     // through `this`. Copying unbound methods into separate objects breaks it.
-    lifecycle,
+    // Only the host's stop goes through the wrapper: the journal reads the
+    // store, so its last flush runs first. A restart (`this.stop()`) keeps it.
+    lifecycle: {
+      start: () => lifecycle.start(),
+      async stop(signal) {
+        await stopSessionLogJournal()
+        await lifecycle.stop(signal)
+      },
+      restart: (opts) => lifecycle.restart(opts),
+      getState: () => lifecycle.getState(),
+    },
     configuration: lifecycle,
     native: lifecycle,
     instanceGuard,
@@ -113,9 +127,9 @@ export const openCodeDefinition: HarnessDefinition = {
   createBootState: () => ({
     repoMaterializationError: null,
     timeline: [],
-    initialOpenCodeSessionRequired: (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1',
-    initialOpenCodeSessionId: null,
-    initialOpenCodeSessionError: null,
+    initialRuntimeSessionRequired: bootstrapRuntimeSessionRequested(),
+    initialRuntimeSessionId: null,
+    initialRuntimeSessionError: null,
   }),
   bootDetails: (cfg) => {
     const native = requireOpenCodeConfig(cfg)
@@ -130,5 +144,4 @@ export const openCodeDefinition: HarnessDefinition = {
   },
   run: async (context) => (await import('./boot')).runOpenCode({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),
   runWarmSeed: async (context) => (await import('./boot')).runOpenCodeWarmSeed({ ...context, cfg: requireOpenCodeConfig(context.cfg) }),
-  installCompiledRuntime: async (cfg) => (await import('./compiled-runtime')).installCompiledRuntime(requireOpenCodeConfig(cfg)),
 }

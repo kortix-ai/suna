@@ -1,30 +1,46 @@
 ---
 name: kortix-release
-description: "How to cut a Kortix production release — the versioning philosophy (when patch vs minor vs major) and the exact flow: derive the release title + notes from the FULL git log since the last release, run the Promote workflow, then deploy + verify prod. Load WHENEVER the user wants to release, promote, cut/ship a version, publish a release, or bump the version. The release notes ARE the public /changelog, so they must be 100% accurate to what shipped."
+description: "How to cut a Kortix production release — the versioning philosophy (when patch vs minor vs major) and the exact flow: one Promote to Production dispatch takes the dev HEAD through staging to a release PR into prod, whose one release suite is the only gate; fix forward on dev until it is green, then merge and verify prod. Load WHENEVER the user wants to release, promote, cut/ship a version, publish a release, bump the version, or asks why a promotion is stuck. Load it too whenever another skill or doc needs to describe the release/promotion flow — this file is the one place it is written out in full."
 ---
 
 # Kortix Release
 
-How a clean, accurate production release happens. Two halves: **what version** (the
-bump philosophy) and **how** (notes derived from the real staging candidate, then
-promote → deploy → verify). The release notes you write become the GitHub Release, which is
-exactly what the public **`/changelog`** page renders — so they must reflect what
-actually shipped, nothing invented, nothing missed.
+How a clean, accurate production release happens. Three parts: **what version**
+(the bump philosophy), **how a candidate gets tested** (one Promote dispatch takes
+the `dev` HEAD through staging to a release PR; its one release suite is the
+only gate), and **how prod gets it** (merge → deploy → verify). The release notes you write become the GitHub Release, which
+is exactly what the public **`/changelog`** page renders — so they must reflect
+what actually shipped, nothing invented, nothing missed.
 
-Pairs with **kortix-voice** (how the notes read). The version source of truth is the
-root **`VERSION`** file; `vX.Y.Z` tags are immutable and map 1:1 to a commit + image.
+Pairs with **kortix-voice** (how the notes read) and **kortix-rollback** (the
+reverse direction). The version source of truth is the root **`VERSION`** file;
+`vX.Y.Z` tags are immutable and map 1:1 to a commit + image.
 
-## 0. Golden rule — prod ships ONLY from staging
+This file is the single source of truth for the promotion flow. `AGENTS.md`
+(`CLAUDE.md`), `.agents/skills/contributing/SKILL.md`, and
+`.agents/skills/testing/SKILL.md` state only their own slice — what CI runs on
+a PR into `dev` versus the release PR — and point here for the rest.
 
-**The only normal way to change prod is: get the release candidate onto
-`staging`, then run Promote to Production (`staging` → reviewed release PR →
-`prod`).** Never `git push …:prod`, never open a manual PR into `prod`, never
-cherry-pick onto `prod`.
+## 0. Golden rule — one dispatch, one suite, one gate
 
-`main` is dev. It can move fast and can temporarily be broken. `staging` is the
-production candidate branch: only promote a dev ref to staging when it is ready
-to ship, or open a targeted PR directly into `staging` for a specific release
-candidate/hotfix. Production promotion always reads from `staging`.
+**The only normal way to change prod is one Promote to Production dispatch.**
+It takes the `dev` HEAD, merges it into `staging` itself (a PR that runs
+nothing), waits until staging serves that SHA, and opens the release PR into
+`prod`. That PR runs the **release suite** once: the contract lanes on the
+release tree, the deployed smoke and the browser journeys against staging,
+CI, CodeQL and the scanners. Its check `full suite + quality gates` requires
+every one of them green, and it is the only check that blocks anything
+(testing reset, 2026-10-16). Never `git push …:prod`, never open a manual PR
+into `prod`, never cherry-pick onto `prod`.
+
+Nothing else tests the release tree: no `Tests` run on a push to `dev`, no
+check on the PR into `staging`. Staging is the deploy target the suite runs
+against, not a test stage. The nightly `Tests` run on `dev` (contract lanes,
+no browser) warns early: check it before you promote, and fix `dev` forward
+when it is red, because the release suite fails on the same lanes.
+
+`dev` is the dev trunk. It can move fast and can temporarily be broken.
+Production promotion always reads from `staging`.
 
 ## 1. Versioning philosophy — what bump?
 
@@ -41,175 +57,290 @@ If the change set is "fixes + a couple small features" → **patch**. Don't infl
 
 ## 2. The flow (do this every time)
 
-Releases run off the **`staging`** branch. `main` is only the dev trunk.
+### Step 1 — `dev` takes verified merges; the nightly run warns
 
-### Step 1 — find the last released version
+`dev` takes PRs with no required CI: the developer verifies the change by
+using it (the **testing** skill). A push to `dev` runs no `Tests` lane. The
+nightly run on `dev` (`.github/workflows/tests.yml`, 05:41 UTC) comments a red
+result on the commit. Fix it forward on `dev`, or revert the culprit after 1 hour.
+
+### Step 2 — check the nightly run and cost migrations
+
 ```bash
-cd suna
-git fetch origin --tags --quiet
-PREV="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)"   # e.g. v0.9.6
-echo "last release: $PREV  | staging: $(git rev-parse --short origin/staging) | prod VERSION: $(git show origin/prod:VERSION)"
+gh run list --repo kortix-ai/suna --workflow tests.yml --branch dev --event schedule \
+  --limit 1 --json conclusion,headSha --jq '.[0]'
 ```
 
-### Step 2 — read EVERY commit since that release (this is the source of truth)
-```bash
-git log "$PREV..origin/staging" --no-merges --pretty='- %s (%h)'
-```
-This complete list is the raw material for the notes. Skim full bodies for anything
-non-obvious: `git log "$PREV..origin/staging" --no-merges`. Also useful for scope:
-`git diff --stat "$PREV..origin/staging"`.
+A red night means fix `dev` first. Then cost every new migration (Step 5)
+before you dispatch: Promote applies it to the staging database within minutes.
 
-> The notes must account for **all** of these commits — that's the whole point.
-> Don't summarize from memory; summarize from this log. Nothing invented, nothing dropped.
+### Step 3 — one dispatch: Promote to Production
 
-### Step 3 — write the title + notes FROM that log
-- **title** — one human line capturing the theme (sentence case, plain, outcome-first).
-  e.g. `"Warm pool, billing fixes, and a faster session boot"`.
-- **notes** — a readable, grouped summary of what's in the log. Lead with user-facing
-  changes; fold internal/infra commits into plain outcomes. Markdown bullets. Follow
-  **kortix-voice**: plain language, no hype/banned words, say "open source" and never
-  name a license (see the `comms` skill).
-  Group loosely (e.g. new / improved / fixed) when there's enough to group.
-
-Quality bar: a non-technical reader understands what changed; a teammate can map every
-notable commit in the log to a line in the notes.
-
-### Step 3.5 — staging must be live and green
-
-Before promoting, verify the selected staging SHA is the live staging runtime:
+Write the title and notes (Step 7 shows how), then:
 
 ```bash
-curl -fsS https://staging-api.kortix.com/v1/health | jq '{environment,version,commit}'
-curl -fsS https://staging.kortix.com/api/runtime-config | grep 'staging-api.kortix.com'
-gh run list --repo kortix-ai/suna --branch staging --limit 10
-```
-
-The staging gates, in order:
-
-1. The PR into `staging` runs the six-lane `Tests` suite (`tests.yml`). It must be
-   green before that PR merges. It is not a required check — you enforce it.
-2. The push to `staging` runs `build-staging.yml` and `deploy-staging.yml`.
-3. The release PR into `prod` runs `tests-release.yml` against deployed staging.
-   Its `full suite + quality gates` job is the only required check in the repo.
-
-A green run against dev is not a staging gate. (`qa-staging.yml` no longer exists.)
-
-### Step 3.6 — cost the pending PROD migrations
-
-Diff prod's `kortix_migrations.pgmigrations` against the promoted tree and cost
-every pending migration at prod data volume (a tag tree containing a file is
-NOT proof it ran — only the ledger is):
-```bash
-psql "$(aws secretsmanager get-secret-value --secret-id kortix-prod-env \
-  --query SecretString --output text | jq -r .DATABASE_URL)" \
-  -Atc "select name from kortix_migrations.pgmigrations order by id desc limit 5;"
-```
-Anything that rewrites a large hot table runs as a supervised batched
-out-of-band pass BEFORE the deploy. Full rule + the worked pattern: the
-**learnings** skill ("Never backfill data inside a single-transaction
-migration" / "Cost every pending prod migration", 2026-08-10 v0.12.7 outage).
-
-### Step 4 — run Promote to Production
-
-`promote.yml` **requires** `title` and `notes` (this is enforced — you cannot cut a
-release without describing it). They're written into the annotated tag (subject =
-title, body = notes), which deploy-prod turns into the GitHub Release + changelog.
-```bash
-gh workflow run promote.yml --repo kortix-ai/suna --ref staging \
-  -f title="<title>" -f notes="$(cat <<'EOF'
+gh workflow run promote.yml --repo kortix-ai/suna --ref dev \
+  -f ref=dev -f title="<title>" -f notes="$(cat <<'EOF'
 <markdown notes>
 EOF
 )" -f bump=patch
 ```
-Use `-f version=X.Y.Z` instead of `-f bump=` only for an explicit version (e.g. the
-first `1.0.0`). Watch it: `gh run watch <id> --exit-status`. It opens a
-review-gated `release/vX.Y.Z` PR into `prod` with the version, notes, release
-source SHA, and prod GitOps image pins. Production does not move until that PR is
-merged.
 
-### Step 5 — make sure the staging images for this commit are built
-deploy-prod retags the exact staging images. It does NOT rebuild. So the staging
-build for the promoted commit must be green first:
+Promote then:
+
+1. Resolves `ref` (default `dev`) to a SHA and pushes it to
+   `promote/dev-<sha10>`. On a conflict with `staging` it builds the branch as
+   a merge whose tree equals the dev SHA's tree (`git read-tree --reset -u`).
+2. Opens the PR into `staging` and merges it as a merge commit (never squash).
+   That PR runs no check.
+3. Dispatches `build-staging.yml` for the merge SHA (a merge made with the
+   workflow token starts no push workflow), waits for Build and Deploy
+   Staging, then needs 8 consecutive `/health` reads where API, gateway and web
+   all serve the merge SHA.
+4. Creates or updates `release/vX.Y.Z`, opens the PR into `prod`, and approves
+   the held runs on it, so the release suite starts.
+
+`-f dry_run=true` prints every decision (SHA, conflict, PR, version) and
+changes nothing. `-f ref=staging` skips the dev leg: the hotfix path for a
+commit already on `staging`.
+
+### Step 4 — the release suite is the gate; fix forward
+
+Merge only when `full suite + quality gates` is green on the release PR's head
+SHA. A red suite is fixed **at the root, on `dev`** — never on the release or
+promotion branch, never by weakening a check (the fix-forward traps are in
+[references/fix-forward-traps.md](references/fix-forward-traps.md)). Then
+dispatch Promote again: one new tree, one new run. Nothing runs twice on the
+same tree.
+
+### Step 5 — cost every new migration against prod, before merging
+
+For every migration file new in the diff versus what's already applied to prod
+(`select name from kortix_migrations.pgmigrations order by id desc limit 5;` on
+the real prod database), run it read-only against prod first:
+
 ```bash
-gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging --limit 3 \
-  --json status,conclusion,headSha
+PGOPTIONS='-c default_transaction_read_only=on -c statement_timeout=15000' \
+  psql "$PROD_DATABASE_URL" -c "explain (analyze, buffers) <the migration's statement, read-only form>"
 ```
 
-### Step 6 — merge the release PR, then verify
-After the release PR merges to `prod`, `deploy-prod.yml` retags staging images to
-`:X.Y.Z` + `:latest`, runs prod migrations, rolls ECS Fargate
-(`infra/scripts/ecs-deploy.sh` for `api` + `gateway`), cuts the GitHub Release,
-and Vercel deploys `prod` to `kortix.com`.
+Get exact row counts, table size, and lock profile for the target table before
+judging a migration safe. Pre-build any large `CREATE INDEX CONCURRENTLY` out of
+band on prod, with the migration's **exact** statement, so the real deploy step
+is a no-op (`CREATE INDEX CONCURRENTLY IF NOT EXISTS` on an index that already
+exists does nothing). If the deploy step still hits `55P03` (lock timeout),
+**retry by rerunning the migration job** — never by raising `lock_timeout` in a
+plain migration (the **learnings** ledger, "Retry a hot-table ADD COLUMN that
+hit its 2 s lock_timeout; never raise the timeout", 2026-09-25). Full costing
+method: §4 "Gotchas" below and `packages/db/MIGRATIONS.md`.
+
+### Step 6 — staging deploy
+
+Promote dispatches `Build Staging Artifacts`, which starts `Deploy Staging`:
+it applies pending migrations to the staging database and rolls staging.
+Promote waits for the proof itself; to check by hand:
 
 ```bash
-gh run list --repo kortix-ai/suna --workflow deploy-prod.yml --limit 1
+curl -fsS https://staging-api.kortix.com/v1/health | jq '{environment,version,commit}'
+curl -fsS https://gateway-staging.kortix.com/health | jq '{version,commit}'
+curl -fsS https://staging.kortix.com/api/health | jq '{version,commit}'
+```
+
+All three must report the exact SHA you promoted. A staging runtime check that
+points at `dev.kortix.com` / `dev-api.kortix.com` is a broken staging setup, not
+a passing gate.
+
+### Step 7 — open the release PR
+
+Derive the title and notes from the **full** commit log since the last release —
+not from memory:
+
+```bash
+git fetch origin --tags --quiet
+PREV="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)"
+git log "$PREV..origin/dev" --no-merges --pretty='- %s (%h)'
+```
+
+- **title** — one human line, sentence case, outcome-first
+  (e.g. `"Warm pool, billing fixes, and a faster session boot"`).
+- **notes** — markdown bullets grouped loosely (new / improved / fixed),
+  user-facing changes first, internal/infra commits folded into plain outcomes.
+  Follow **kortix-voice**: plain language, no hype, "open source" never a
+  license name. Every notable commit in the log maps to a line in the notes;
+  nothing invented, nothing dropped — the notes are the public `/changelog`.
+
+Then run:
+
+```bash
+Dispatch Promote with them (Step 3).
+
+`promote.yml` **creates the `release/vX.Y.Z` PR into `prod` once**, then on every
+later dispatch **updates the branch in place** (pushes the new content, keeps
+the same PR). **It does not rewrite an already-open release PR's title or
+body** — if the version, title, or notes need to change after the PR exists,
+edit them by hand with `gh pr edit`. GitHub holds the bot-opened PR's
+`tests-release.yml` run (`action_required`); `promote.yml` then approves it.
+Only that pull request run's `full suite + quality gates` counts for the `prod`
+ruleset. A dispatched run on the same SHA does not (v0.13.57: green dispatched
+gate, PR still `BLOCKED`), so never dispatch a second gate. If the Promote
+summary warns that approval failed, approve it yourself:
+`gh api -X POST repos/kortix-ai/suna/actions/runs/<run id>/approve`.
+
+### Step 8 — release gate triage
+
+`tests-release.yml`'s `full suite + quality gates` job is the only *required*
+check in the repository (on the PR into `prod`). Until 2026-10-06 staging's API
+ran in `us-west-2` and its database in `eu-west-2`, so the owner decision of
+2026-09-29 classified a `503 request_deadline` (55 s) or a flow timeout on the
+release gate as **environmental**. Since 2026-10-06 both run in `eu-west-2`, so
+that cross-region reason no longer holds: confirm with the owner before you
+classify a timeout as environmental. Every other failure is fixed on
+`dev` and re-promoted with one new dispatch (Step 3). A failed gate run reruns its failed jobs once by
+itself (`rerun-failed-once.yml`) and names them on the release PR. A job that
+fails twice is real. A job that passes on the rerun is a flake: fix it or
+delete it (the **testing** skill) in the same release cycle; nothing is quarantined. A shard that
+never gets past its own bootstrap gives no signal: it is rerun like any other.
+
+### Step 9 — prod
+
+Merge the release PR once `full suite + quality gates` is green on its head
+SHA:
+
+```bash
+gh pr merge <release-pr> --repo kortix-ai/suna --merge
+```
+
+Never add `--admin` to merge over a red or missing gate unless the owner
+approves that exact release in the conversation. Over v0.13.45 to v0.13.56, 9 of
+12 releases merged that way, and a gate that is bypassed by habit stops
+catching anything.
+
+Confirm a `Deploy Prod` run exists for that merge SHA and succeeds, then verify
+every surface on the new version:
+
+```bash
 curl -fsS https://api.kortix.com/v1/health | jq '{environment,version,commit}'
-gh release view "vX.Y.Z" --repo kortix-ai/suna --json name,body   # title + notes present
+curl -fsS https://gateway.kortix.com/health | jq '{version,commit}'
+curl -fsS https://kortix.com/api/health | jq '{version,commit}'
+npm view @kortix/sdk version
+npm view @kortix/agent-tunnel version
+npm view @kortix/llm-catalog version
+gh release view "vX.Y.Z" --repo kortix-ai/suna --json name,body,assets --jq '{name,assetCount:(.assets|length)}'   # 24 assets
 ```
 
-## 3. Gotchas (hard-won)
+Then check Better Stack for an API error, 5xx, or frontend-exception spike in
+the minutes after the rollout.
+
+### Step 10 — self-host `:stable`
+
+`:stable` moves **only** on the user's explicit, per-release consent — never
+implied by "we released" or "prod is healthy." Run `promote-self-host-stable.yml`
+by hand when that consent is given.
+
+### Step 11 — rollback
+
+If a shipped version needs to come back: the **kortix-rollback** skill, not this
+one. It is the inverse of Steps 7–9 (`rollback-prod.yml`, zero rebuild, the
+frontend "clobber" trap, the DB-drift safety check).
+
+## 3. Fix-forward traps
+
+The failures that most often block Step 4 have known fixes. Read
+[references/fix-forward-traps.md](references/fix-forward-traps.md) before
+debugging one from scratch: out-of-order migration timestamps, stale
+`mock.module` stubs after a refactor, source-anchor tests after a file move,
+unintentional i18n catalog reordering, a stale `learnings/MEMORY.md`, and a
+CodeQL alert in old code that a large diff surfaced for the first time — fix a
+real finding on `dev`; dismiss a *proven* false positive on GitHub with a
+written, evidence-backed justification, never silently.
+
+## 4. Gotchas (hard-won)
 
 - **deploy-prod concurrency = `cancel-in-progress: false`.** A slow desktop build or a
   zombie queued run blocks the next deploy — cancel it first.
-- **Don't promote a moving `staging`.** If commits are still landing, wait until
-  staging deploy + QA settles, then promote that exact HEAD.
-- **Staging is not dev.** If `staging.kortix.com/api/runtime-config` references
-  `dev-api.kortix.com`, stop and fix staging before releasing.
+- **deploy-prod retags; it does not rebuild.** The staging build for the exact
+  promoted commit must already be green:
+  `gh run list --repo kortix-ai/suna --workflow build-staging.yml --branch staging --limit 3 --json status,conclusion,headSha`.
 - **The `/changelog` page shows only `≥ 1.0.0`** and reads GitHub Release bodies — so a
-  thin/auto-generated body shows up as a thin entry. Write real notes (Step 3).
+  thin/auto-generated body shows up as a thin entry. Write real notes (Step 7).
 - **VERSION is the source of truth**; the version field in `/v1/health` is stamped by
   deploy-prod's task-def, not baked into the image.
+- **A promotion PR is not a normal PR.** Do not squash it, do not push new
+  commits onto it to "fix" a failure — fix on `dev` and open a fresh promotion
+  (Step 4). Squashing or force-pushing it breaks the SHA trail the migration
+  cost pass and the release notes were verified against.
 
-## 4. Undo a bad / premature release
+## 5. Undo a bad / premature release
 
 If a release was cut by mistake (and not yet truly published — i.e. no ECS roll / no
-real Release), remove it cleanly. `main` is protected from force-push, so revert there.
+real Release), remove it cleanly. `dev` is protected from force-push, so revert there.
 ```bash
 git push origin :refs/tags/vX.Y.Z                       # delete the tag
 git push -f origin <prev-release-sha>:refs/heads/prod    # reset prod to the prior release
-git revert --no-edit <version-bump-commit>               # put main VERSION back; then push
+git revert --no-edit <version-bump-commit>               # put dev VERSION back; then push
 gh release delete vX.Y.Z --repo kortix-ai/suna           # only if a Release was actually cut
 # cancel any deploy-prod the prod reset triggered
 ```
-Verify: tag gone, `prod` VERSION = prior, `main` VERSION = prior, api-prod unchanged,
+Verify: tag gone, `prod` VERSION = prior, `dev` VERSION = prior, api-prod unchanged,
 no `vX.Y.Z` Release.
 
 > Note: `prod` branch protection is `allow_force_pushes:false` + `enforce_admins:true`,
 > so the `git push -f …:refs/heads/prod` above only works if protection is temporarily
-> relaxed. For a release that's ALREADY LIVE, do NOT force-push — use §5.
-
-## 5. Roll back a LIVE release (prod is already serving it)
-
-When a shipped version is broken and you need prod on an OLDER already-released
-version NOW, **do not force-push prod and do not reverse migrations.** Use the
-`rollback-prod.yml` workflow — the inverse of promote (forward → back), reusing the
-target's prebuilt images (zero rebuild):
-```bash
-gh workflow run rollback-prod.yml --repo kortix-ai/suna --ref main \
-  -f version=vX.Y.Z -f reason="<incident summary>" -f confirm="ROLLBACK PROD"
-```
-It re-tags the prebuilt, immutable `:vX.Y.Z` API and gateway images as `:latest`
-and runs `infra/scripts/ecs-deploy.sh` for both services — one dispatch, no PR,
-no GitOps step. Full mechanics and the Vercel clobber trap: the **kortix-rollback**
-skill. Then:
-- **Frontend:** Vercel → kortix.com → Deployments → the `vX.Y.Z` prod deployment →
-  **Instant Rollback** (do this AFTER the merge so the Vercel rebuild can't clobber it).
-- **DB:** left as-is. Forward-only migrations are additive, so the live schema is a
-  superset of any older release — older code runs fine; reversing migrations is unsafe.
-- **VERSION** stays at the current prod number so deploy-prod's retag can't overwrite
-  the `:X.Y.Z` rollback image. A deploy-prod run may go partly red
-  (version-watch / release-create) — cosmetic; ECS does the real roll.
-
-The next promote of `staging` supersedes the rollback cleanly (`merge -s ours`) and moves
-prod forward — i.e. "fix forward" just works again.
+> relaxed. For a release that's ALREADY LIVE, do NOT force-push — use the
+> **kortix-rollback** skill instead.
 
 ## Checklist
 
-1. `git log $PREV..origin/staging` read in full — notes account for all of it.
-2. Bump chosen per §1 (default patch).
-3. title + notes written in kortix-voice, accurate to the log.
-4. `Tests` was green on the PR into `staging`; `staging.kortix.com` and
-   `staging-api.kortix.com` verified on the staging SHA.
-5. `promote.yml` run with title + notes; release PR merged into `prod`.
-6. deploy-prod ran, ECS services green, api.kortix.com on the new version.
-7. GitHub Release shows the title + notes → `/changelog` reads cleanly.
+1. Last nightly `Tests` run on `dev` checked; red lanes fixed on `dev` first.
+2. Every new migration in the diff costed read-only against prod before the dispatch.
+3. `git log $PREV..origin/dev` read in full; title + notes written in
+   kortix-voice, accurate to that log.
+4. One `promote.yml` dispatch (`ref=dev`, title, notes); it merged into
+   `staging`, staging served the SHA, and the release PR opened.
+5. `full suite + quality gates` green on the release PR head (every check on
+   that commit green); red fixed on `dev` and re-promoted with a new dispatch.
+6. Release PR merged into `prod` with `--merge` (`--admin` only with the
+   owner's explicit OK).
+7. `Deploy Prod` confirmed for the merge SHA; api/gateway/frontend `/health`,
+   the three npm packages, the GitHub Release (24 assets), and Better Stack all
+   verified on the new version.
+8. `:stable` moved only if the user explicitly asked for it this release.
+9. **One-time per env: the `/internal/*` edge key** (#9272, and the pentest
+   2026-10-13 fix that made the API enforce it too). Done on dev; staging and
+   prod are open until this runs. Two gates read the key: the api-router worker
+   (`INTERNAL_EDGE_KEY`, 404s a public caller) and the API itself
+   (`KORTIX_INTERNAL_EDGE_KEY`, 404s `/internal/gateway/*` without the header,
+   which also covers the public backend origins such as
+   `api-ecs-fargate.kortix.com` that skip the worker). The worker forwards the
+   header. Do it after a release carrying the pentest fix is live in the env,
+   in this order. A wrong order breaks LLM inference, because the gateway calls
+   `/internal/gateway/*` through the public API host.
+   1. Generate a random 32-byte key. Never print it.
+   2. Add `KORTIX_INTERNAL_EDGE_KEY` to the env's Secrets Manager blob
+      `kortix-<env>-env` in its `blob_region` region (the **dotenvx-secrets**
+      skill, "Which region to edit"; needs an MFA session) and to
+      `apps/api/.env.<env>` with `dotenvx set`.
+   3. Redeploy the GATEWAY only (new ECS deployment). Confirm it sends the
+      header: gateway `GET /v1/models` with a PAT still returns 200.
+   4. Redeploy the API. It now enforces the key.
+   5. `wrangler secret put INTERNAL_EDGE_KEY --env <env>` on the api-router
+      worker, and redeploy the worker.
+   6. Verify: `curl -X POST https://<api-host>/internal/gateway/authenticate`
+      and the same on `/%69nternal/...` and on the backend origin host all
+      return 404, and a gateway chat call gives the same answer as before.
+   Rollback: remove the key from the blob and redeploy the API, then delete the
+   worker secret. The gateway header is harmless.
+10. **One-time per env: dedicated App and preview edge secrets** (pentest
+    2026-10-13, M-5). Unset, `KORTIX_APPS_EDGE_SECRET` and
+    `KORTIX_PREVIEW_EDGE_SECRET` fall back to `API_KEY_SECRET`, so the master
+    key is also a Cloudflare Worker secret. The API accepts a comma-separated
+    `new,old` value, so the switch has no gap. Per env, for each of the two keys
+    (Worker secrets `<ENV>_EDGE_SECRET` on `apps-router` and `preview-router`):
+    1. Generate a random 32-byte value. Never print it.
+    2. Set the key to `<new>,<API_KEY_SECRET value>` in `kortix-<env>-env` and
+       `apps/api/.env.<env>`; redeploy the API.
+    3. `wrangler secret put <ENV>_EDGE_SECRET --env <worker env>` with `<new>` on
+       the matching Worker.
+    4. Verify an App host and a preview host still answer, then set the key to
+       `<new>` alone and redeploy the API.
+    Rollback: restore `<new>,<old>` (step 2) and put the old Worker secret back.

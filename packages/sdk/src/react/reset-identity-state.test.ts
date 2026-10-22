@@ -1,11 +1,13 @@
 import { beforeEach, expect, test } from 'bun:test';
-import type { Message } from '@opencode-ai/sdk/v2/client';
+import type { Message } from '../core/runtime/runtime-types';
 import React from 'react';
 import { act, create } from 'react-test-renderer';
 import { useDiagnosticsStore } from '../browser/stores/diagnostics-store';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSessionWorkingStore } from '../browser/stores/session-working-store';
 import { useSyncStore } from '../browser/stores/sync-store';
+import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
+import { heldSavedWindow, holdSavedWindow } from '../core/session/open-bundle';
 import { resetIdentityState } from './reset-identity-state';
 import { useModelStore } from './use-model-store';
 
@@ -74,9 +76,9 @@ test('resetIdentityState forgets the previous user\'s transcripts, asks, receipt
     role: 'user',
     time: { created: 1 },
   } as unknown as Message);
-  useOpenCodePendingStore.getState().addPermission({ id: 'per_A', sessionID: 'ses_A' } as never);
-  useOpenCodePendingStore.getState().addQuestion({ id: 'que_A', sessionID: 'ses_A', questions: [] } as never);
-  useOpenCodePendingStore.getState().setAutoApproveAll('ses_A', true);
+  useRuntimePendingStore.getState().addPermission({ id: 'per_A', sessionID: 'ses_A' } as never);
+  useRuntimePendingStore.getState().addQuestion({ id: 'que_A', sessionID: 'ses_A', questions: [] } as never);
+  useRuntimePendingStore.getState().setAutoApproveAll('ses_A', true);
   useSessionWorkingStore.getState().noteAbortReceipt('kses_A', 1);
 
   const models = renderModelStore();
@@ -91,7 +93,7 @@ test('resetIdentityState forgets the previous user\'s transcripts, asks, receipt
   });
 
   expect(useSyncStore.getState().messages.ses_A).toBeUndefined();
-  const pending = useOpenCodePendingStore.getState();
+  const pending = useRuntimePendingStore.getState();
   expect(pending.permissions).toEqual({});
   expect(pending.questions).toEqual({});
   expect(pending.autoApproveAllSessions).toEqual({});
@@ -127,4 +129,24 @@ test('resetIdentityState forgets the previous user\'s LSP diagnostics', () => {
   resetIdentityState();
 
   expect(useDiagnosticsStore.getState().byFile).toEqual({});
+});
+
+test("resetIdentityState forgets the previous user's held saved window (KRTX-189)", () => {
+  // A connecting view's saved window is held for the session's open, up to
+  // minutes. It is that user's conversation.
+  holdSavedWindow('p1', 's1', {
+    available: true,
+    reason: null,
+    source: 'mirror',
+    complete: true,
+    captured_at: '2026-09-26T10:00:00Z',
+    opencode_session_id: 'ses_root',
+    message_count: 0,
+    messages: [],
+  } as unknown as SessionTranscriptSyncEnvelope);
+  expect(heldSavedWindow('p1', 's1')).not.toBeNull();
+
+  resetIdentityState();
+
+  expect(heldSavedWindow('p1', 's1')).toBeNull();
 });

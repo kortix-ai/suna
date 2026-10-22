@@ -879,4 +879,7 @@ export const ROLES_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   'Your warehouse and BI stack': 'textb0615966b833',
   'Your warehouse, however it is actually reachable.': 'text8f32a6089679',
   'Zendesk, Intercom and the rest of the support stack': 'text0c63ee561c0b',
+  'License and seat reconciliation': 'textf729ef1ea584',
+  'A cron trigger opens the quarterly access review and the monthly license reconciliation. Triggers name the agent they run as, so the unattended session has exactly the reach the attended one has — no more.':
+    'text7912f8e97c06',
 };

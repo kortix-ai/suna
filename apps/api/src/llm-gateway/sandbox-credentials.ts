@@ -1,3 +1,4 @@
+import { primaryAuthEnvVars } from '@kortix/llm-catalog';
 import { runtimeModelCatalog } from './models/runtime-catalog';
 
 // Provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …). When any of these is
@@ -14,7 +15,7 @@ function providerCredentialEnv(): Set<string> {
   if (revision === cachedRevision) return cachedProviderEnv;
   const names = new Set<string>();
   for (const provider of runtimeModelCatalog.snapshot().providers) {
-    for (const envVar of provider.env ?? []) names.add(envVar);
+    for (const envVar of [...(provider.env ?? []), ...primaryAuthEnvVars(provider)]) names.add(envVar);
   }
   cachedProviderEnv = names;
   cachedRevision = revision;
@@ -27,19 +28,6 @@ function isManagedEnv(name: string): boolean {
     || providerCredentialEnv().has(name);
 }
 
-/** Provider API-key env names opencode must never see (gateway-only routing). */
-export function nativeProviderEnvNames(): string[] {
-  return [...providerCredentialEnv()];
-}
-
 export function isGatewayManagedEnv(name: string): boolean {
   return isManagedEnv(name);
-}
-
-export function stripGatewayManagedCredentials(env: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (!isManagedEnv(key)) out[key] = value;
-  }
-  return out;
 }

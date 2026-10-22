@@ -393,6 +393,12 @@ export interface GatewayErrorDetails {
   upstreamStatus?: number;
   requestId?: string;
   attemptFailures?: GatewayAttemptFailure[];
+  /** The model the request named (`requested_model`). A resolution error has
+   *  no provider yet, so this is how a host tells which connection failed —
+   *  `codex/…` is the member's ChatGPT subscription. */
+  requestedModel?: string;
+  /** The model after routing (`resolved_model`), e.g. what `auto` became. */
+  resolvedModel?: string;
 }
 
 export interface GatewayAttemptFailure {
@@ -463,6 +469,10 @@ function gatewayFieldsFrom(obj: Record<string, unknown>): GatewayErrorDetails | 
   const requestId =
     typeof obj.request_id === 'string' && obj.request_id ? obj.request_id : undefined;
   const attemptFailures = attemptFailuresFrom(obj.attempt_failures);
+  const requestedModel =
+    typeof obj.requested_model === 'string' && obj.requested_model ? obj.requested_model : undefined;
+  const resolvedModel =
+    typeof obj.resolved_model === 'string' && obj.resolved_model ? obj.resolved_model : undefined;
   if (
     !provider &&
     !code &&
@@ -474,7 +484,11 @@ function gatewayFieldsFrom(obj: Record<string, unknown>): GatewayErrorDetails | 
     return undefined;
   const message =
     (typeof obj.message === 'string' && obj.message) || extractErrorFromObject(obj) || '';
-  return { message, provider, code, suggestion, upstreamStatus, requestId, attemptFailures };
+  return {
+    message, provider, code, suggestion, upstreamStatus, requestId, attemptFailures,
+    ...(requestedModel ? { requestedModel } : {}),
+    ...(resolvedModel ? { resolvedModel } : {}),
+  };
 }
 
 /**
@@ -510,7 +524,11 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
   const record = raw as Record<string, unknown>;
 
   const direct = gatewayFieldsFrom(record);
-  if (direct) return direct;
+  // A runtime error `{ name, data, code }` is not the gateway body: its `code`
+  // is the daemon's own class (`rate_limit`), and the envelope, when there is
+  // one, sits in `data`. That outer `code` is the answer only when it does not.
+  const runtimeError = typeof record.name === 'string' && typeof record.data === 'object';
+  if (direct && !runtimeError) return direct;
 
   const errorField = record.error;
   if (errorField && typeof errorField === 'object' && !Array.isArray(errorField)) {
@@ -543,5 +561,5 @@ export function extractGatewayErrorDetails(raw: unknown): GatewayErrorDetails | 
     }
   }
 
-  return undefined;
+  return direct;
 }

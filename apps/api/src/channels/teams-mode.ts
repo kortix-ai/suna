@@ -13,14 +13,14 @@ export interface TeamsMode {
 
 export function teamsMode(
   baseUrl: string,
-  opts: { enabled: boolean; projectId?: string; byoAppId?: string | null },
+  opts: { projectId?: string; byoAppId?: string | null },
 ): TeamsMode {
-  // `enabled` is the project's `teams` feature flag, resolved by the
-  // caller from the project row it already holds.
-  const enabled = opts.enabled;
+  // Every project can connect Teams (the `teams` feature flag graduated on
+  // 2026-10-01). `enabled` stays in the response for older clients.
+  const enabled = true;
   const byo = Boolean(opts?.byoAppId);
   const appId = opts?.byoAppId || config.MICROSOFT_APP_ID || null;
-  if (!enabled || (!byo && !teamsConfigured()) || !appId) {
+  if ((!byo && !teamsConfigured()) || !appId) {
     return { enabled, available: false, appId: null, messagingEndpoint: null, adminConsentUrl: null, deepLinkUrl: null, byo };
   }
   const base = baseUrl.replace(/\/$/, '');

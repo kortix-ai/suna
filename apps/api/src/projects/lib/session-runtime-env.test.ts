@@ -1,9 +1,40 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  COMPILED_AGENT_CONFIG_ENV,
+  COMPILED_AGENT_CONFIG_GZ_PARTS_ENV,
+  MAX_ENV_STRING_BYTES,
+  envStringBytes,
+  readCompiledAgentConfigEnv,
+} from '@kortix/api-contract/compiled-agent-config-env';
+import { agentConfigEtag } from './compile-agent-config';
+import {
   auditRelayEnvPassthrough,
-  buildPiWorkerSessionEnvVars,
   buildSessionRuntimeEnv,
 } from './session-runtime-env';
+
+/**
+ * Compiled agent config JSON whose `KORTIX_COMPILED_AGENT_CONFIG=<json>\0` is
+ * exactly `envBytes` long: agents with prompt-length prose, the last one
+ * trimmed to land on the size.
+ */
+function oversizedCompiledConfig(envBytes: number): string {
+  const words = 'agent reads the repository plans then edits files and reports what changed with a short summary'.split(' ');
+  const prose = (seed: number, chars: number) => {
+    let out = '';
+    for (let i = seed; out.length < chars; i = (i * 1103515245 + 12345) % 2147483648) out += `${words[i % words.length]} `;
+    return out.slice(0, chars);
+  };
+  const config = { default_agent: 'build', agent: {} as Record<string, { mode: string; prompt: string; permission: unknown }> };
+  const size = () => envStringBytes(COMPILED_AGENT_CONFIG_ENV, JSON.stringify(config));
+  let index = 0;
+  while (size() < envBytes - 20_000) {
+    config.agent[`agent-${index}`] = { mode: 'subagent', prompt: prose(index + 1, 15_000), permission: { bash: 'ask' } };
+    index++;
+  }
+  config.agent.build = { mode: 'primary', prompt: '', permission: { edit: 'allow' } };
+  config.agent.build.prompt = prose(7, envBytes - size());
+  return JSON.stringify(config);
+}
 
 const BASE_INPUT = {
   projectId: 'proj-1',
@@ -39,8 +70,11 @@ describe('buildSessionRuntimeEnv — KORTIX_HARNESS', () => {
       compiledAgentConfig: JSON.stringify({ agent: { build: { prompt: 'x' } } }),
     });
     expect(env.KORTIX_HARNESS).toBe('pi');
+    // D3: the harness-neutral name, plus the pre-W3 name for an older daemon.
+    expect(env.KORTIX_MODEL).toBe('kortix/claude-sonnet-5');
     expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/claude-sonnet-5');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toContain('"build"');
+    expect(env.KORTIX_BOOTSTRAP_RUNTIME_SESSION).toBe('1');
     expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
   });
 });
@@ -70,6 +104,15 @@ describe('buildSessionRuntimeEnv — KORTIX_PI_PACKAGES', () => {
   });
 });
 
+describe('buildSessionRuntimeEnv — KORTIX_PI_CODEMODE', () => {
+  test('a pi session carries the manifest value; none leaves the daemon default', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: 'only' }).KORTIX_PI_CODEMODE).toBe('only');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: 'off' }).KORTIX_PI_CODEMODE).toBe('off');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: null })).not.toHaveProperty('KORTIX_PI_CODEMODE');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piCodemode: 'only' })).not.toHaveProperty('KORTIX_PI_CODEMODE');
+  });
+});
+
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
   test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
@@ -96,6 +139,35 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     });
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+  });
+
+  // Platinum prod, 2026-10-14: every create whose `KORTIX_COMPILED_AGENT_CONFIG=…\0`
+  // was over 131,072 bytes failed to exec in the guest (kortix-ai/platinum#1569).
+  test.each([131_734, 269_979])(
+    'a %d-byte config leaves the create with no env string over the exec limit, and the etag names the JSON',
+    (envBytes) => {
+      const compiled = oversizedCompiledConfig(envBytes);
+      expect(envStringBytes(COMPILED_AGENT_CONFIG_ENV, compiled)).toBe(envBytes);
+
+      const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledAgentConfig: compiled });
+
+      for (const [name, value] of Object.entries(env)) {
+        expect(envStringBytes(name, value), name).toBeLessThanOrEqual(MAX_ENV_STRING_BYTES);
+      }
+      expect(env).not.toHaveProperty(COMPILED_AGENT_CONFIG_ENV);
+      expect(env[COMPILED_AGENT_CONFIG_GZ_PARTS_ENV]).toBe('1');
+      expect(readCompiledAgentConfigEnv(env)).toBe(compiled);
+      // The etag stays the hash of the JSON, so the box reports the same
+      // identity whichever form the config travelled in.
+      expect(env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(agentConfigEtag(compiled)!);
+    },
+  );
+
+  test('a config at the exec limit still travels raw, for a daemon that predates the gzip form', () => {
+    const compiled = oversizedCompiledConfig(MAX_ENV_STRING_BYTES);
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledAgentConfig: compiled });
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+    expect(Object.keys(env).filter((name) => name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ'))).toEqual([]);
   });
 
   test('ignores legacy attribution input and emits no attribution variables', () => {
@@ -153,57 +225,6 @@ describe('buildSessionRuntimeEnv — workspace mode', () => {
 });
 
 describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
-  test('enables compiled checkout for a fresh session', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      compiledBootMode: 'prefer',
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-    });
-
-    expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('prefer');
-    expect(env.KORTIX_SESSION_FRESH).toBe('1');
-    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
-  });
-
-  test('emits required mode for strict compiled runtime verification', () => {
-    const env = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      compiledBootMode: 'required',
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-    });
-
-    expect(env.KORTIX_COMPILED_BOOT_MODE).toBe('required');
-    expect(env.KORTIX_BASE_SHA).toBe('a'.repeat(40));
-  });
-
-  test('keeps off, resumed, and repository-free sessions on the existing path', () => {
-    for (const env of [
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        compiledBootMode: 'off',
-        freshSession: true,
-        baseSha: 'a'.repeat(40),
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        compiledBootMode: 'prefer',
-        freshSession: false,
-        baseSha: 'a'.repeat(40),
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        repositoryAccess: false,
-        compiledBootMode: 'prefer',
-        freshSession: true,
-        baseSha: 'a'.repeat(40),
-      }),
-    ]) {
-      expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
-    }
-  });
-
   test('marks replacement runtimes for remote session-branch restoration', () => {
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
@@ -225,9 +246,8 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
   });
 
   test('sends fresh-session and base-tip hints for a fresh session', () => {
-    // 2026-08-27: the fresh-session fast path is the default boot
-    // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create). Only the compiled-boot
-    // mode stays gated here (see the compiled-boot tests above).
+    // 2026-08-27: the fresh-session fast path is the default boot (decided at
+    // create).
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       freshSession: true,
@@ -242,10 +262,9 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
     expect(env.KORTIX_GIT_DELTA_BUNDLE_BASE64).toBe('R0lUIEJVTkRMRQ==');
     expect(env.KORTIX_GIT_DELTA_PARENT_SHA).toBe('b'.repeat(40));
     expect(env.KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64).toBe('dHJlZSBkZWFkYmVlZgo=');
-    expect(env).not.toHaveProperty('KORTIX_COMPILED_BOOT_MODE');
   });
 
-  test('marks a remote delta and ships the OpenCode config-dir hint for fresh sessions only', () => {
+  test('marks a remote delta for fresh sessions only; no config-dir hint (nothing reads it)', () => {
     const fresh = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       freshSession: true,
@@ -253,37 +272,16 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
       gitDeltaBundleRemote: true,
       gitDeltaParentSha: 'b'.repeat(40),
       gitDeltaParentCommitBase64: 'dHJlZSBkZWFkYmVlZgo=',
-      opencodeConfigDir: '.kortix/opencode',
     });
     expect(fresh.KORTIX_GIT_DELTA_BUNDLE_REMOTE).toBe('1');
     expect(fresh).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
-    expect(fresh.KORTIX_OPENCODE_CONFIG_DIR_HINT).toBe('.kortix/opencode');
-
-    // '' = "this tip ships no project OpenCode config" — still a usable hint.
-    const bare = buildSessionRuntimeEnv({
-      ...BASE_INPUT,
-      freshSession: true,
-      baseSha: 'a'.repeat(40),
-      opencodeConfigDir: null,
-    });
-    expect(bare.KORTIX_OPENCODE_CONFIG_DIR_HINT).toBe('');
+    expect(fresh).not.toHaveProperty('KORTIX_OPENCODE_CONFIG_DIR_HINT');
 
     for (const env of [
       buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: true, baseSha: 'a'.repeat(40) }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        freshSession: false,
-        opencodeConfigDir: '.kortix/opencode',
-        gitDeltaBundleRemote: true,
-      }),
-      buildSessionRuntimeEnv({
-        ...BASE_INPUT,
-        repositoryAccess: false,
-        freshSession: true,
-        opencodeConfigDir: '.kortix/opencode',
-      }),
+      buildSessionRuntimeEnv({ ...BASE_INPUT, freshSession: false, gitDeltaBundleRemote: true }),
+      buildSessionRuntimeEnv({ ...BASE_INPUT, repositoryAccess: false, freshSession: true }),
     ]) {
-      expect(env).not.toHaveProperty('KORTIX_OPENCODE_CONFIG_DIR_HINT');
       expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_REMOTE');
     }
   });
@@ -339,49 +337,6 @@ describe('audit relay emission knobs', () => {
       KORTIX_AUDIT_RELAY_DROP_TYPES: '',
       KORTIX_AUDIT_RELAY_COALESCE: '0',
     });
-  });
-});
-
-describe('buildPiWorkerSessionEnvVars — minimal worker boot env', () => {
-  const input = {
-    projectId: 'proj-1',
-    sessionId: 'sess-1',
-    agentName: 'dev',
-    apiUrl: 'https://api.kortix.test/v1',
-    frontendUrl: 'https://kortix.test',
-    opencodeModel: 'openrouter/anthropic/claude-sonnet-4.5',
-  };
-
-  test('emits exactly the worker contract, nothing from the OpenCode chain', () => {
-    const env = buildPiWorkerSessionEnvVars(input);
-    expect(env).toEqual({
-      KORTIX_PROJECT_ID: 'proj-1',
-      KORTIX_SESSION_ID: 'sess-1',
-      KORTIX_SERVICE_PORT: '8000',
-      KORTIX_AGENT_NAME: 'dev',
-      KORTIX_AGENT: 'dev',
-      KORTIX_API_URL: 'https://api.kortix.test/v1',
-      KORTIX_FRONTEND_URL: 'https://kortix.test',
-      KORTIX_PROJECT_AUTO_CLONE: '0',
-      KORTIX_MODEL: 'openrouter/anthropic/claude-sonnet-4.5',
-    });
-    // The heavy chain must never leak in: no compiled config (baked into the
-    // artifact), no secret plumbing (v0 grants the worker none), no git.
-    expect(env).not.toHaveProperty('KORTIX_COMPILED_AGENT_CONFIG');
-    expect(env).not.toHaveProperty('KORTIX_PROJECT_SECRET_NAMES');
-    expect(env).not.toHaveProperty('KORTIX_REPO_URL');
-    expect(env).not.toHaveProperty('KORTIX_GIT_DELTA_BUNDLE_BASE64');
-  });
-
-  test('model and frontend URL are optional', () => {
-    const env = buildPiWorkerSessionEnvVars({
-      projectId: 'proj-1',
-      sessionId: 'sess-1',
-      agentName: 'dev',
-      apiUrl: 'https://api.kortix.test/v1',
-    });
-    expect(env).not.toHaveProperty('KORTIX_MODEL');
-    expect(env).not.toHaveProperty('KORTIX_FRONTEND_URL');
   });
 });
 

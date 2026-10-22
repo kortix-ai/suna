@@ -162,11 +162,11 @@ function MemoryBody({ body, output }: { body: MemoryToolBody; output: string }) 
   }
 }
 
-export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const streamingInput = partStreamingInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+export function MemoryTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const streamingInput = partStreamingInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const { openFile } = useToolNavigation();
 
@@ -176,7 +176,7 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={BrainIcon}
       trigger={{ title: memoryToolTitle(m.command), subtitle: m.subtitle }}
       onSubtitleClick={m.canOpen ? () => openFile(m.openPath) : undefined}
@@ -189,4 +189,3 @@ export function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) 
   );
 }
 ToolRegistry.register('memory', MemoryTool);
-ToolRegistry.register('oc-memory', MemoryTool);

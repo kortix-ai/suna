@@ -5,17 +5,24 @@ import 'react-native-url-polyfill/auto';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
 import { createDeadlineFetch } from '@/lib/utils/with-deadline';
+import { createRefreshGuardFetch } from '@/lib/auth/refresh-fetch';
+import { resolveEndpoints } from '@/lib/deployment/deployment';
+import { activeDeployment } from '@/lib/deployment/store';
 
 /**
  * Supabase Configuration
- * 
- * Configure with environment variables:
- * - EXPO_PUBLIC_SUPABASE_URL
- * - EXPO_PUBLIC_SUPABASE_ANON_KEY
+ *
+ * The build's EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_ANON_KEY, or the
+ * private deployment chosen on the auth screen (lib/deployment): its web
+ * runtime config names its own Supabase, so sign-in moves with the API.
  */
 
-const supabaseUrl = resolveLocalUrl(process.env.EXPO_PUBLIC_SUPABASE_URL ?? '');
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+const endpoints = resolveEndpoints(activeDeployment, {
+  EXPO_PUBLIC_SUPABASE_URL: process.env.EXPO_PUBLIC_SUPABASE_URL,
+  EXPO_PUBLIC_SUPABASE_ANON_KEY: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+});
+const supabaseUrl = resolveLocalUrl(endpoints.supabaseUrl);
+const supabaseAnonKey = endpoints.supabaseAnonKey;
 
 // Validate environment variables
 if (!supabaseUrl || supabaseUrl === 'YOUR_SUPABASE_URL' || (!supabaseUrl.startsWith('https://') && !supabaseUrl.startsWith('http://'))) {
@@ -42,15 +49,22 @@ export const SUPABASE_AUTH_STORAGE_KEY = (() => {
 })();
 
 /**
- * Auth calls abort after 15 s. React Native's Android HTTP client has no
- * timeout, so a stalled token refresh would otherwise hang sign-in and session
- * restore forever. Storage uploads are not capped: they can run longer.
+ * The client's fetch:
+ * - Auth calls abort after 15 s. React Native's Android HTTP client has no
+ *   timeout, so a stalled token refresh would otherwise hang sign-in and
+ *   session restore forever. Storage uploads are not capped: they can run
+ *   longer.
+ * - A token refresh answer that is not ok and not a definitive GoTrue
+ *   rejection becomes a network error (`lib/auth/refresh-fetch.ts`). auth-js
+ *   then keeps the stored session and retries, instead of signing out.
  */
 const AUTH_REQUEST_TIMEOUT_MS = 15_000;
-const authDeadlineFetch = createDeadlineFetch((input, init) => fetch(input, init), {
-  timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
-  shouldTimeout: (url) => url.includes('/auth/v1/'),
-});
+const authFetch = createRefreshGuardFetch(
+  createDeadlineFetch((input, init) => fetch(input, init), {
+    timeoutMs: AUTH_REQUEST_TIMEOUT_MS,
+    shouldTimeout: (url) => url.includes('/auth/v1/'),
+  })
+);
 
 /**
  * Supabase client instance with AsyncStorage for session persistence
@@ -72,7 +86,7 @@ export const supabase = (() => {
       global: {
         // The wrapper has fetch's call signature; `typeof fetch` also carries
         // static members no caller uses.
-        fetch: authDeadlineFetch as typeof fetch,
+        fetch: authFetch as typeof fetch,
       },
     });
   } catch (error) {

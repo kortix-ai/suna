@@ -1,8 +1,14 @@
 import { supabase } from './supabase';
+import { createRefreshingToken } from './refreshing-token';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
+import { resolveEndpoints } from '@/lib/deployment/deployment';
+import { activeDeployment } from '@/lib/deployment/store';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8008/v1';
+// A private deployment chosen on the auth screen replaces the build's API URL.
+const BACKEND_URL = resolveEndpoints(activeDeployment, {
+  EXPO_PUBLIC_BACKEND_URL: process.env.EXPO_PUBLIC_BACKEND_URL,
+}).backendUrl;
 
 export function getServerUrl(): string {
   const url = resolveLocalUrl(BACKEND_URL);
@@ -17,11 +23,11 @@ export async function getAuthToken(): Promise<string | null> {
   return session?.access_token || null;
 }
 
-export async function getAuthHeaders(): Promise<HeadersInit> {
-  const token = await getAuthToken();
-  
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+/** The SDK's `getToken`: a 401 makes the next read refresh the Supabase session. */
+export const kortixGetToken = createRefreshingToken({
+  read: getAuthToken,
+  refresh: async () => {
+    const { data } = await supabase.auth.refreshSession();
+    return data.session?.access_token ?? null;
+  },
+});

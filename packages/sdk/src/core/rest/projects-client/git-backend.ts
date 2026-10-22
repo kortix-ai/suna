@@ -16,6 +16,10 @@ export interface ManagedGitBackend {
   kind: 'app' | 'pat' | null;
   /** The GitHub user or org that owns every managed repository. */
   owner: string | null;
+  /** Whether THIS caller is a self-host operator — the only principal the
+   * repositories listing route answers. Clients gate the listing call on
+   * this instead of firing it and eating a 403 (KRTX-1892). */
+  operator: boolean;
 }
 
 export interface ManagedGitRepositoriesResponse {

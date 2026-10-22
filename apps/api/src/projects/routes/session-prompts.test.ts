@@ -11,6 +11,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
+import * as realWatchers from '../../notifications/watchers';
 import * as realAccess from '../lib/access';
 import * as realLifecycle from '../session-lifecycle';
 import * as realHoldSettle from '../session-lifecycle/inbox-hold-settle';
@@ -35,6 +36,8 @@ type CommandRow = {
   lastError: string | null;
   createdAt: Date;
   availableAt: Date;
+  /** The member the prompt runs as. Only they edit, send or retry it. */
+  actorUserId?: string | null;
 };
 
 let commandTable: CommandRow[] = [];
@@ -59,6 +62,8 @@ function row(overrides: Partial<CommandRow> = {}): CommandRow {
     lastError: null,
     createdAt: new Date('2026-08-18T00:00:00.000Z'),
     availableAt: new Date('2026-08-18T00:00:00.000Z'),
+    // The caller of every route below sent it.
+    actorUserId: USER_ID,
     ...overrides,
   };
 }
@@ -170,7 +175,14 @@ function jsonbPatch(
  *  the route bound into them and re-applies them as a predicate. */
 function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const rendered = render(predicate);
-  const ids = [...rendered.matchAll(/"([0-9a-f-]{36})"/g)].map((m) => m[1]);
+  // `ne(command_id, id)`: an id bound after `<>` EXCLUDES that row (the "send
+  // now" check for OTHER held rows) rather than scoping to it.
+  const excludedIds = new Set(
+    [...rendered.matchAll(/<>\s*\$"([0-9a-f-]{36})"/g)].map((m) => m[1]),
+  );
+  const ids = [...rendered.matchAll(/"([0-9a-f-]{36})"/g)]
+    .map((m) => m[1])
+    .filter((id) => !excludedIds.has(id));
   const statuses = [...rendered.matchAll(/"(queued|running|succeeded|failed|dead_lettered)"/g)].map(
     (m) => m[1],
   );
@@ -181,14 +193,14 @@ function predicateOf(predicate: unknown): (r: CommandRow) => boolean {
   const wantsStopPaused = rendered.includes("->>'stop_paused', '') = 'true'");
   const wantsHeld = rendered.includes("->>'held', '') = 'true'");
   return (r) => {
+    if (excludedIds.has(r.commandId)) return false;
     if (ids.length > 0) {
       const wanted = new Set(ids);
       if (!wanted.has(r.commandId) && !wanted.has(r.sessionId ?? '')) return false;
-      if (wanted.has(r.commandId) === false && wanted.has(r.sessionId ?? '') === false) return false;
-      // Both a session scope and a command scope may be present; every bound id
-      // must match one of the row's own ids.
+      // A session scope, a command scope and an author may be present; every
+      // bound id must match one of the row's own ids.
       for (const id of wanted) {
-        if (id !== r.commandId && id !== r.sessionId) return false;
+        if (id !== r.commandId && id !== r.sessionId && id !== r.actorUserId) return false;
       }
     }
     if (wantsHeld && r.result?.held !== true) return false;
@@ -238,15 +250,24 @@ mock.module('../../billing/services/billing-gate', () => ({
           message: 'out of credits',
           reason: 'no_credits',
           balance: 0,
-          billingModel: 'credits',
           hasSubscription: false,
           billingState: 'drained',
         };
   },
 }));
 
+/** What the inbox read answers a new send. Null: the real read, over the mocked rows. */
+let sendState: { held: boolean; pending: boolean } | null = null;
+let edits: Array<{ sessionId: string; promptId: string; text: string }> = [];
+let editOutcome: 'edited' | 'delivering' | 'missing' | 'not_author' = 'edited';
+let interrupts: string[] = [];
+let interruptOutcome: 'edited' | 'delivering' | 'missing' | 'not_author' = 'edited';
+/** Who the route said is writing, per edit or interrupt call. */
+let writers: unknown[] = [];
+
 mock.module('../session-lifecycle', () => ({
   ...realLifecycle,
+  inboxSendState: async (sessionId: string) => sendState ?? realLifecycle.inboxSendState(sessionId),
   enqueueContinueSessionCommand: async (input: Record<string, unknown>) => {
     if (enqueueDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, enqueueDelayMs));
     enqueueSettledAtMs = Date.now();
@@ -264,13 +285,35 @@ mock.module('../session-lifecycle', () => ({
     commandTable.push(created);
     return { row: created, deduped: false };
   },
+  editInboxPrompt: async (sessionId: string, promptId: string, text: string, actor: unknown) => {
+    edits.push({ sessionId, promptId, text });
+    writers.push(actor);
+    if (editOutcome !== 'edited') return { outcome: editOutcome };
+    return {
+      outcome: 'edited',
+      row: row({ payload: { text, clientMessageId: 'q_1', wireMessageId: WIRE_ID } }),
+    };
+  },
+  interruptInboxPrompt: async (_sessionId: string, promptId: string, actor: unknown) => {
+    interrupts.push(promptId);
+    writers.push(actor);
+    if (interruptOutcome !== 'edited') return { outcome: interruptOutcome };
+    return {
+      outcome: 'edited',
+      row: row({
+        idempotencyKey: `prompt:${SESSION_ID}:q_1`,
+        payload: { text: 'say hi', clientMessageId: 'q_1', wireMessageId: WIRE_ID, delivery: 'interrupt', placement: 'transcript' },
+        result: { promoted: true },
+      }),
+    };
+  },
   drainSessionLifecycleQueue: async (input: Record<string, unknown>) => {
     drains.push(input);
     return { claimed: 0, succeeded: 0, failed: 0, queued: 0 };
   },
 }));
 
-let loadedProject: { row: { accountId: string; projectId: string }; userId: string } | null = null;
+let loadedProject: { row: { accountId: string; projectId: string; metadata?: unknown }; userId: string } | null = null;
 let visibleSession: Record<string, unknown> | null = null;
 let loadProjectCalls: Array<{ projectId: string; action: string }> = [];
 let capabilityCalls: string[] = [];
@@ -324,11 +367,41 @@ mock.module('../lib/agent-access', () => ({
 // must stamp the requested stop on the open turn BEFORE the settle starts.
 // Both are recorded into one ordered log.
 const stopLog: unknown[][] = [];
+const realTurnLedger = await import('../session-turn-ledger');
+mock.module('../session-turn-ledger', () => ({
+  ...realTurnLedger,
+  markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown, by?: unknown) => {
+    stopLog.push(['stamp', sessionId, name, scope, by ?? null]);
+  },
+}));
+
+// Who may stop the running turn (`turn-stop-authority.ts`). The rule itself is
+// the real `decideTurnStop`; this suite sets the turn it reads and records what
+// the route asked, so it falsifies the route's wiring. The reads are proven in
+// `turn-stop-authority.test.ts`.
+const OTHER_MEMBER = '22222222-2222-4222-8222-222222222222';
+let turnRunning = false;
+let turnPrompter: string | null = null;
+let stopChecks: Array<{ callerUserId: string | null; canManageLifecycle: boolean }> = [];
+const realStopAuthority = await import('../session-lifecycle/turn-stop-authority');
+mock.module('../session-lifecycle/turn-stop-authority', () => ({
+  ...realStopAuthority,
+  mayStopRunningTurn: async (input: { callerUserId: string | null; canManageLifecycle: boolean }) => {
+    stopChecks.push({ callerUserId: input.callerUserId, canManageLifecycle: !!input.canManageLifecycle });
+    return realStopAuthority.decideTurnStop({
+      canManageLifecycle: !!input.canManageLifecycle,
+      callerUserId: input.callerUserId,
+      running: turnRunning,
+      prompterUserId: turnPrompter,
+    });
+  },
+}));
+const NOT_TURN_PROMPTER_BODY = {
+  error: realStopAuthority.NOT_TURN_PROMPTER_MESSAGE,
+  code: realStopAuthority.NOT_TURN_PROMPTER,
+};
 mock.module('../sandbox-turn-lifecycle', () => ({
   ...realTurnLifecycle,
-  markTurnStopRequested: async (sessionId: string, name: string, scope?: unknown) => {
-    stopLog.push(['stamp', sessionId, name, scope]);
-  },
 }));
 mock.module('../session-lifecycle/inbox-hold-settle', () => ({
   ...realHoldSettle,
@@ -337,14 +410,28 @@ mock.module('../session-lifecycle/inbox-hold-settle', () => ({
   },
 }));
 
+// KRTX-1742: who starts following a session by prompting it.
+let autoWatches: Array<{ projectId: string; sessionId: string; userId: string }> = [];
+mock.module('../../notifications/watchers', () => ({
+  ...realWatchers,
+  autoWatchSession: async (projectId: string, sessionId: string, userId: string) => {
+    autoWatches.push({ projectId, sessionId, userId });
+  },
+}));
+
 const { projectsApp } = await import('../lib/app');
-await import('./session-prompts');
+(await import('./session-prompts')).registerSessionPromptsRoutes();
+
+/** The credential the test request carries. */
+let callerAuthType = 'pat';
+let callerSessionId: string | undefined;
 
 function app() {
-  const application = new Hono<{ Variables: { userId: string; authType: string } }>();
+  const application = new Hono<{ Variables: { userId: string; authType: string; sessionId: string } }>();
   application.use('*', async (c, next) => {
     c.set('userId', USER_ID);
-    c.set('authType', 'pat');
+    c.set('authType', callerAuthType);
+    if (callerSessionId) c.set('sessionId', callerSessionId);
     await next();
   });
   application.route('/v1/projects', projectsApp);
@@ -374,6 +461,10 @@ beforeEach(() => {
   sessionMetadata = {};
   enqueued = [];
   drains = [];
+  edits = [];
+  editOutcome = 'edited';
+  interrupts = [];
+  interruptOutcome = 'edited';
   enqueueResult = null;
   billingOk = true;
   dbReadDelayMs = 0;
@@ -385,6 +476,12 @@ beforeEach(() => {
   stopLog.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
   visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
+  autoWatches = [];
+  callerAuthType = 'pat';
+  callerSessionId = undefined;
+  turnRunning = false;
+  turnPrompter = null;
+  stopChecks = [];
 });
 
 describe('POST .../prompts', () => {
@@ -412,6 +509,19 @@ describe('POST .../prompts', () => {
       deduped: false,
       observed_at: expect.any(String),
     });
+  });
+
+  test('delivery sets the stored placement; placement alone keeps its meaning (R10)', async () => {
+    await post({ ...validBody, delivery: 'steer' });
+    await post({ ...validBody, client_message_id: 'q_2', delivery: 'interrupt', placement: 'composer' });
+    await post({ ...validBody, client_message_id: 'q_3', placement: 'transcript' });
+    expect(enqueued.map((e) => [e.delivery, e.placement])).toEqual([
+      ['steer', 'composer'],
+      ['interrupt', 'transcript'],
+      [undefined, 'transcript'],
+    ]);
+    expect((await post({ ...validBody, client_message_id: 'q_4', delivery: 'now' })).status).toBe(400);
+    expect(enqueued).toHaveLength(3);
   });
 
   test('carries the client-minted wire id, the parts and the overrides into the payload', async () => {
@@ -505,7 +615,33 @@ describe('POST .../prompts', () => {
 
   test('kicks a targeted drain for the row it just enqueued', async () => {
     await post(validBody);
-    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+    // No `client_sent_at_ms`: the route cannot tell the send is alone.
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1`, burst: true }]);
+  });
+
+  describe('the burst wait is kept only where sends can race', () => {
+    const drainFor = async (sentMsAgo: number, state: { held: boolean; pending: boolean }) => {
+      sendState = state;
+      try {
+        await post({ ...validBody, client_sent_at_ms: Date.now() - sentMsAgo });
+      } finally {
+        sendState = null;
+      }
+      return drains.at(-1);
+    };
+    const idle = { held: false, pending: false };
+
+    test('a send that arrives right after Enter, alone in its session, is claimed at once', async () => {
+      expect(await drainFor(50, idle)).toEqual({ idempotencyKey: `prompt:${SESSION_ID}:q_1`, burst: false });
+    });
+
+    test('a send whose POST waited on the client keeps the wait', async () => {
+      expect((await drainFor(5_000, idle))?.burst).toBe(true);
+    });
+
+    test('a send into a session with another prompt queued or in delivery keeps the wait', async () => {
+      expect((await drainFor(50, { held: false, pending: true }))?.burst).toBe(true);
+    });
   });
 
   test('re-authorizes the agent on EVERY send, not just at session create', async () => {
@@ -521,6 +657,17 @@ describe('POST .../prompts', () => {
     // The REQUESTED agent is what gets checked; the session's own agent is only
     // the fallback for a send that names none.
     expect(agentAccessCalls).toEqual([{ requested: 'other-agent', sessionAgent: 'kortix' }]);
+  });
+
+  test('a prompt with no message_id gets a server-minted id, placed on delivery (R5.2)', async () => {
+    const { message_id: _omitted, ...withoutId } = validBody as Record<string, unknown>;
+    const res = await post(withoutId);
+    expect(res.status).toBe(202);
+    expect(enqueued[0].wireMessageId).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+    // The server owns the order: the drain re-mints it above the transcript.
+    expect(enqueued[0].remintOnDelivery).toBe(true);
+    const body = (await res.json()) as { message_id: string };
+    expect(body.message_id).toBe(enqueued[0].wireMessageId as string);
   });
 
   test('rejects a message id OpenCode cannot order', async () => {
@@ -563,6 +710,69 @@ describe('POST .../prompts', () => {
     expect((await post(validBody, 'not-a-uuid')).status).toBe(400);
     expect(loadProjectCalls).toEqual([]);
   });
+
+  describe('a person who prompts a session follows it (KRTX-1742)', () => {
+    const OTHER_CREATOR = '77777777-7777-4777-8777-777777777777';
+    const asCredential = (authType: string, kind: string, sessionId?: string) => {
+      callerAuthType = authType;
+      callerSessionId = sessionId;
+      loadedProject = { ...loadedProject!, actor: { credential: { kind } } } as never;
+    };
+    beforeEach(() => {
+      loadedProject = {
+        row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: { experimental: { notification_center: true } } },
+        userId: USER_ID,
+      };
+      visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: OTHER_CREATOR } };
+    });
+
+    test('with the notification_center flag off, the prompt is accepted and nobody follows', async () => {
+      for (const metadata of [{}, { experimental: { notification_center: false } }]) {
+        loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata }, userId: USER_ID };
+        asCredential('supabase', 'jwt');
+        expect((await post({ ...validBody, client_message_id: `off_${enqueued.length}` })).status).toBe(202);
+      }
+      expect(enqueued).toHaveLength(2);
+      expect(autoWatches).toEqual([]);
+    });
+
+    test('a browser sign-in and a personal CLI token start following the session', async () => {
+      asCredential('supabase', 'jwt');
+      expect((await post(validBody)).status).toBe(202);
+      asCredential('pat', 'pat');
+      expect((await post({ ...validBody, client_message_id: 'q_2' })).status).toBe(202);
+      expect(autoWatches).toEqual([
+        { projectId: PROJECT_ID, sessionId: SESSION_ID, userId: USER_ID },
+        { projectId: PROJECT_ID, sessionId: SESSION_ID, userId: USER_ID },
+      ]);
+    });
+
+    test('the creator needs no row: they follow their own session already', async () => {
+      asCredential('supabase', 'jwt');
+      visibleSession = { row: { sessionId: SESSION_ID, metadata: {}, createdBy: USER_ID } };
+      expect((await post(validBody)).status).toBe(202);
+      expect(autoWatches).toEqual([]);
+    });
+
+    test('an agent session token, a session-bound PAT and an API key never follow', async () => {
+      asCredential('pat', 'agent_session', SESSION_ID);
+      expect((await post(validBody)).status).toBe(202);
+      asCredential('pat', 'pat', SESSION_ID);
+      expect((await post({ ...validBody, client_message_id: 'q_2' })).status).toBe(202);
+      asCredential('apiKey', 'sandbox');
+      expect((await post({ ...validBody, client_message_id: 'q_3' })).status).toBe(202);
+      expect(autoWatches).toEqual([]);
+    });
+
+    test('a refused prompt follows nothing', async () => {
+      asCredential('supabase', 'jwt');
+      billingOk = false;
+      expect((await post(validBody)).status).toBe(402);
+      visibleSession = null;
+      expect((await post(validBody)).status).toBe(404);
+      expect(autoWatches).toEqual([]);
+    });
+  });
 });
 
 describe('GET .../prompts', () => {
@@ -601,12 +811,18 @@ describe('GET .../prompts', () => {
         text: 'say hi',
         full_text: 'say hi',
         placement: 'composer',
+        // A row from before steering: `queue`, as its placement implies.
+        delivery: 'queue',
+        steer_fallback: null,
         attempts: 0,
         runtime_retries: 0,
         last_error: null,
         // A text-only prompt names no files. The list is always present so a
         // client never has to distinguish "no attachments" from "old server".
         attachments: [],
+        no_reply: false,
+        // The member it runs as.
+        author_user_id: USER_ID,
         created_at: '2026-08-18T00:00:00.000Z',
         available_at: '2026-08-18T00:00:00.000Z',
       },
@@ -745,6 +961,7 @@ describe('DELETE .../prompts/:promptId', () => {
     expect(await response.json()).toEqual({
       removed: {
         placement: 'composer',
+        delivery: 'queue',
         prompt_id: PROMPT_ID,
         removed_message_ids: [WIRE_ID],
         client_message_id: 'q_1',
@@ -794,6 +1011,71 @@ describe('DELETE .../prompts/:promptId', () => {
   test('404s a prompt id this session does not own', async () => {
     commandTable = [];
     expect((await remove()).status).toBe(404);
+  });
+});
+
+describe('PATCH .../prompts/:promptId', () => {
+  function edit(body: unknown, promptId = PROMPT_ID) {
+    return app().request(`${base()}/${promptId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('replaces the queued text in place and sends nothing', async () => {
+    const response = await edit({ text: 'say hello' });
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.prompt_id).toBe(PROMPT_ID);
+    expect(body.text).toBe('say hello');
+    expect(edits).toEqual([{ sessionId: SESSION_ID, promptId: PROMPT_ID, text: 'say hello' }]);
+    // An edit is not a send: no new row, no drain kick.
+    expect(enqueued).toHaveLength(0);
+    expect(drains).toHaveLength(0);
+  });
+
+  test('refuses a prompt already on the wire', async () => {
+    editOutcome = 'delivering';
+    expect((await edit({ text: 'too late' })).status).toBe(409);
+  });
+
+  test('404s a prompt id this session does not own', async () => {
+    editOutcome = 'missing';
+    expect((await edit({ text: 'x' })).status).toBe(404);
+  });
+
+  test('refuses empty or missing text without touching the row', async () => {
+    expect((await edit({ text: '   ' })).status).toBe(400);
+    expect((await edit({})).status).toBe(400);
+    expect(edits).toHaveLength(0);
+  });
+
+  test('refuses a prompt id that is not a row id', async () => {
+    expect((await edit({ text: 'x' }, 'not-a-uuid')).status).toBe(400);
+  });
+
+  test('"Stop and send": delivery interrupt converts the row and kicks the drain (R10)', async () => {
+    const response = await edit({ delivery: 'interrupt' });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ delivery: 'interrupt', placement: 'transcript' });
+    expect(interrupts).toEqual([PROMPT_ID]);
+    expect(edits).toHaveLength(0);
+    expect(drains).toEqual([{ idempotencyKey: `prompt:${SESSION_ID}:q_1` }]);
+  });
+
+  test('text and delivery together: the edit, then the conversion', async () => {
+    expect((await edit({ text: 'say hello', delivery: 'interrupt' })).status).toBe(200);
+    expect(edits).toHaveLength(1);
+    expect(interrupts).toEqual([PROMPT_ID]);
+  });
+
+  test('a row on its way cannot be converted; another delivery value is refused', async () => {
+    interruptOutcome = 'delivering';
+    expect((await edit({ delivery: 'interrupt' })).status).toBe(409);
+    expect(drains).toHaveLength(0);
+    expect((await edit({ delivery: 'steer' })).status).toBe(400);
+    expect(interrupts).toEqual([PROMPT_ID]);
   });
 });
 
@@ -942,13 +1224,13 @@ describe('POST .../prompts/hold', () => {
     // prod 2026-09-25: the settle's abort reached OpenCode ~450 ms before the
     // client's proxied abort, the turn closed on a bare "Aborted" frame, and
     // the user's own Stop read as "stopped before it finished".
-    visibleSession = { row: { sessionId: SESSION_ID, opencodeSessionId: 'ses_root', metadata: {} } };
+    visibleSession = { row: { sessionId: SESSION_ID, runtimeSessionId: 'ses_root', metadata: {} } };
     commandTable = [
       row({ status: 'succeeded', result: { status: 'delivered', forwarded_message_id: WIRE_ID } }),
     ];
     expect((await hold({ held: true })).status).toBe(200);
     expect(stopLog).toEqual([
-      ['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_root' }],
+      ['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: 'ses_root' }, USER_ID],
       ['settle', SESSION_ID],
     ]);
   });
@@ -959,5 +1241,205 @@ describe('POST .../prompts/hold', () => {
     await hold({ held: 'yes' });
     expect(stopLog.filter((entry) => entry[0] === 'stamp')).toEqual([]);
   });
+
+  describe("another member's running turn", () => {
+    test('a member who did not prompt it cannot Stop it: 403, and nothing is stamped or held', async () => {
+      turnRunning = true;
+      turnPrompter = OTHER_MEMBER;
+      commandTable = [row()];
+      const response = await hold({ held: true });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual(NOT_TURN_PROMPTER_BODY);
+      expect(stopChecks).toEqual([{ callerUserId: USER_ID, canManageLifecycle: false }]);
+      expect(stopLog).toEqual([]);
+      expect(commandTable[0].result?.held).not.toBe(true);
+    });
+
+    test('its prompter Stops it, and the stamp names them', async () => {
+      turnRunning = true;
+      turnPrompter = USER_ID;
+      commandTable = [row()];
+      expect((await hold({ held: true })).status).toBe(200);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, USER_ID]);
+      expect(commandTable[0].result?.held).toBe(true);
+    });
+
+    test('the session owner or a project manager Stops it, and the stamp names them', async () => {
+      turnRunning = true;
+      turnPrompter = OTHER_MEMBER;
+      visibleSession = { ...visibleSession, canManageLifecycle: true };
+      commandTable = [row()];
+      expect((await hold({ held: true })).status).toBe(200);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, USER_ID]);
+    });
+
+    test('with no running turn a hold only pauses the queue, open to anyone who may send', async () => {
+      turnPrompter = OTHER_MEMBER;
+      commandTable = [row()];
+      expect((await hold({ held: true })).status).toBe(200);
+      expect(commandTable[0].result?.held).toBe(true);
+    });
+
+    test('Resume stays open: it asks nothing', async () => {
+      turnRunning = true;
+      turnPrompter = OTHER_MEMBER;
+      commandTable = [row()];
+      expect((await hold({ held: false })).status).toBe(200);
+      expect(stopChecks).toEqual([]);
+    });
+
+    test('an agent credential is never the prompter, and its stop names nobody', async () => {
+      callerSessionId = '77777777-7777-4777-8777-777777777777';
+      turnRunning = true;
+      // The agent's launcher prompted the turn; the agent is still not them.
+      turnPrompter = USER_ID;
+      commandTable = [row()];
+      expect((await hold({ held: true })).status).toBe(403);
+      expect(stopChecks).toEqual([{ callerUserId: null, canManageLifecycle: false }]);
+      visibleSession = { ...visibleSession, canManageLifecycle: true };
+      expect((await hold({ held: true })).status).toBe(200);
+      expect(stopLog[0]).toEqual(['stamp', SESSION_ID, 'UserStop', { opencodeSessionId: null }, null]);
+    });
+  });
 });
 
+// "Stop and send" ends the running turn after its current tool, so it asks
+// what Stop asks. Refused before any write.
+describe('Stop and send on a turn another member prompted', () => {
+  test('PATCH delivery interrupt → 403 not_turn_prompter; nothing is edited or sent', async () => {
+    turnRunning = true;
+    turnPrompter = OTHER_MEMBER;
+    const response = await app().request(`${base()}/${PROMPT_ID}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'rewritten', delivery: 'interrupt' }),
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual(NOT_TURN_PROMPTER_BODY);
+    expect(edits).toEqual([]);
+    expect(interrupts).toEqual([]);
+    expect(drains).toEqual([]);
+  });
+
+  test('POST delivery interrupt → 403 not_turn_prompter; nothing is queued', async () => {
+    turnRunning = true;
+    turnPrompter = OTHER_MEMBER;
+    const response = await post({ ...validBody, delivery: 'interrupt' });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual(NOT_TURN_PROMPTER_BODY);
+    expect(enqueued).toEqual([]);
+  });
+
+  test('the prompter, the owner or a manager may; a steer or queue send never asks', async () => {
+    turnRunning = true;
+    turnPrompter = USER_ID;
+    expect((await post({ ...validBody, delivery: 'interrupt' })).status).toBe(202);
+    const patched = await app().request(`${base()}/${PROMPT_ID}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delivery: 'interrupt' }),
+    });
+    expect(patched.status).toBe(200);
+    expect(interrupts).toEqual([PROMPT_ID]);
+    turnPrompter = OTHER_MEMBER;
+    visibleSession = { ...visibleSession, canManageLifecycle: true };
+    expect((await post({ ...validBody, client_message_id: 'q_2', delivery: 'interrupt' })).status).toBe(202);
+    stopChecks = [];
+    visibleSession = { ...visibleSession, canManageLifecycle: false };
+    expect((await post({ ...validBody, client_message_id: 'q_3', delivery: 'steer' })).status).toBe(202);
+    expect((await post({ ...validBody, client_message_id: 'q_4', delivery: 'queue' })).status).toBe(202);
+    expect(stopChecks).toEqual([]);
+  });
+
+  test("an owner's or manager's send carries mayStopAnyTurn; anyone else's does not", async () => {
+    await post(validBody);
+    visibleSession = { ...visibleSession, canManageLifecycle: true };
+    await post({ ...validBody, client_message_id: 'q_2' });
+    expect(enqueued.map((e) => e.mayStopAnyTurn)).toEqual([undefined, true]);
+  });
+});
+
+describe('POST .../prompts authorship', () => {
+  const OTHER_SESSION = '77777777-7777-4777-8777-777777777777';
+
+  /** `fromSession` = the caller holds a session credential of that session. */
+  function send(fromSession?: string) {
+    loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID, metadata: {} }, userId: USER_ID } as never;
+    visibleSession = { row: { sessionId: SESSION_ID, metadata: {} } };
+    const application = new Hono<{ Variables: { userId: string; authType: string; sessionId?: string } }>();
+    application.use('*', async (c, next) => {
+      c.set('userId', USER_ID);
+      c.set('authType', 'pat');
+      if (fromSession) c.set('sessionId', fromSession);
+      await next();
+    });
+    application.route('/v1/projects', projectsApp);
+    return application.request(base(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...validBody, parts: [{ type: 'text', text: 'say hi' }] }),
+    });
+  }
+  const sentText = () => (enqueued.at(-1)?.parts as Array<{ text: string }>)[0]!.text;
+
+  test('sent by another session: the author is recorded and the text is unchanged', async () => {
+    expect((await send(OTHER_SESSION)).status).toBe(202);
+    expect(enqueued.at(-1)!.authorSessionId).toBe(OTHER_SESSION);
+    expect(sentText()).toBe('say hi');
+  });
+
+  test('sent by a person, or by the session into itself: no author session', async () => {
+    await send();
+    expect(enqueued.at(-1)!.authorSessionId).toBeNull();
+    await send(SESSION_ID);
+    expect(enqueued.at(-1)!.authorSessionId).toBeNull();
+  });
+});
+
+// A queued prompt runs as its author: the drain binds the session credential
+// to them. Another member who could rewrite or send it would run their own
+// text under the author's identity.
+describe("another member's queued prompt", () => {
+  const call = (method: string, suffix = '', body?: unknown) =>
+    app().request(`${base()}/${PROMPT_ID}${suffix}`, {
+      method,
+      ...(body === undefined
+        ? {}
+        : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+    });
+  const notAuthor = async (response: Response) => {
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'not_prompt_author' });
+  };
+
+  test('send now and remove → 403 not_prompt_author; the row is unchanged', async () => {
+    commandTable = [row({ actorUserId: OTHER_MEMBER })];
+    const before = structuredClone(commandTable[0]);
+    await notAuthor(await call('POST', '/retry'));
+    await notAuthor(await call('DELETE'));
+    expect(commandTable).toEqual([before]);
+    expect(drains).toEqual([]);
+  });
+
+  test('edit and Stop and send name the caller as the writer and answer the refusal with 403', async () => {
+    writers = [];
+    editOutcome = 'not_author';
+    interruptOutcome = 'not_author';
+    try {
+      await notAuthor(await call('PATCH', '', { text: 'rewritten' }));
+      await notAuthor(await call('PATCH', '', { delivery: 'interrupt' }));
+    } finally {
+      editOutcome = 'edited';
+      interruptOutcome = 'edited';
+    }
+    expect(writers).toEqual([{ userId: USER_ID }, { userId: USER_ID }]);
+  });
+
+  test('someone who manages the session removes it, and does not send it', async () => {
+    commandTable = [row({ actorUserId: OTHER_MEMBER })];
+    visibleSession = { ...visibleSession, canManageLifecycle: true };
+    await notAuthor(await call('POST', '/retry'));
+    expect((await call('DELETE')).status).toBe(200);
+    expect(commandTable).toEqual([]);
+  });
+});

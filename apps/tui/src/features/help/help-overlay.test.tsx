@@ -10,7 +10,7 @@ import { testRender } from '@opentui/react/test-utils';
 import { act } from 'react';
 
 import { allBindings } from '../../keymap.ts';
-import { HelpOverlay, helpLines, sectionRule } from './help-overlay.tsx';
+import { HelpOverlay, helpLines, sectionRule, supportedBindings } from './help-overlay.tsx';
 
 describe('helpLines', () => {
   const lines = helpLines();
@@ -58,6 +58,24 @@ describe('helpLines', () => {
   test('a scope with no bindings prints no heading', () => {
     const subset = helpLines(allBindings().filter((binding) => binding.scope === 'terminal'));
     expect(subset.filter((line) => line.kind === 'section').length).toBe(1);
+  });
+});
+
+describe('supportedBindings', () => {
+  const ids = (capabilities: readonly string[] | null) =>
+    supportedBindings(capabilities).map((binding) => binding.id);
+
+  test('a pi runtime (no session.attach) lists neither attach key', () => {
+    const pi = ids(['session.subagents']);
+    expect(pi).not.toContain('attach');
+    expect(pi).not.toContain('sidebar.attach');
+    expect(pi.length).toBe(allBindings().length - 2);
+  });
+
+  test('an OpenCode runtime and an unknown runtime list every key', () => {
+    expect(ids(['session.attach', 'session.subagents'])).toContain('attach');
+    expect(ids(['session.attach', 'session.subagents'])).toContain('sidebar.attach');
+    expect(ids(null).length).toBe(allBindings().length);
   });
 });
 

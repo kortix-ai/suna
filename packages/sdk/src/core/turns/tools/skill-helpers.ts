@@ -61,15 +61,16 @@ export function skillInputDir(input: Record<string, unknown>): string {
  * Where this product installs a skill, relative to the workspace root.
  *
  * Not a guess and not a convention borrowed from upstream — it is this repo's
- * own layout, asserted in three places: `injectManagedSkills` copies each skill
- * to `<configDir>/skills/<name>/` (kortix-sandbox-agent-server), that configDir
- * falls back to `.kortix/opencode` (`resolveOpencodeConfigDir`), and the product
- * tells users the same path in prose (`entity-modal.tsx`, `use-configure-thread`).
+ * own layout: a project keeps its skills in the root `skills/` (marketplace
+ * installs land there in every project), and the product tells users the same
+ * path in prose (`configure-prompts.ts`). Projects created before 2026-09 keep
+ * theirs in `.kortix/opencode/skills`; the runtime states that location in its
+ * output (a `Base directory:` line), which wins over this fallback.
  *
  * The panel takes workspace-relative paths — `apply-patch-tool` already hands it
  * one — so this needs no sandbox prefix.
  */
-const SKILLS_DIR = '.kortix/opencode/skills';
+const SKILLS_DIR = 'skills';
 
 /**
  * The directory a named skill occupies, or '' when the name cannot be trusted.
@@ -103,7 +104,7 @@ function conventionalSkillDir(skillName?: string): string {
  *
  *   1. a location the tool actually stated — a tag attribute, a `Base
  *      directory:` line, or a directory on the call's input;
- *   2. `.kortix/opencode/skills/<name>/`, where this product installs skills;
+ *   2. `skills/<name>/`, where this product installs skills;
  *   3. nothing, and only when there is no usable name either.
  *
  * (3) is now nearly unreachable, and that matters more than it looks. The row

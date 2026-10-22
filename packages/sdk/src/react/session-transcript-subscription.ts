@@ -7,7 +7,8 @@ import {
   sessionCacheOwnerScopesConflict,
 } from '../browser/session-sync/session-cache-ownership';
 import type { MessageWithParts } from '../browser/stores/sync-store';
-import type { Message, Part } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part } from '../core/runtime/runtime-types';
+import { sessionLogRowsFor } from '../core/session-log/v1-view';
 import { useCurrentRuntime } from './use-current-runtime';
 
 /**
@@ -29,9 +30,14 @@ export function useReadableSessionId(sessionId: string, kortixSessionScope?: str
 
 type SyncSnapshot = ReturnType<typeof useSyncStore.getState>;
 
-/** The joined rows for `sessionId` from one store snapshot. */
+/**
+ * The joined rows for `sessionId` from one store snapshot. When a session log
+ * (v2) holds this runtime session's thread, its records read through `toV1`,
+ * merged with what only the v1 store holds (`core/session-log/v1-view.ts`).
+ */
 export function selectSessionRows(state: SyncSnapshot, sessionId: string): MessageWithParts[] {
-  return state.buildSessionMessages(sessionId, state.messages[sessionId], state.parts);
+  const rows = state.buildSessionMessages(sessionId, state.messages[sessionId], state.parts);
+  return sessionLogRowsFor(state.sessionLogs, sessionId, rows, (id) => state.optimisticEchoOf(sessionId, id));
 }
 
 /** Each part array's tool signature, computed once per array identity. */

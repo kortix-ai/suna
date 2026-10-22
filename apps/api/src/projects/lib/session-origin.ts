@@ -79,6 +79,19 @@ export function resolveSessionOrigin(input: {
   return 'user';
 }
 
+// The unattended classes a spawned session takes from its parent. A worker a
+// trigger's coordinator spawns resolves `user` from its in-session token, yet
+// nobody attended its run. These classes are never broader than `user`
+// (canOverride), and on-behalf-of already gives such a child no human.
+// `backend` is NEVER inherited: the in-session token must not gain
+// backend-only overrides (the connector-PAT exclusion above).
+const PARENT_INHERITED_ORIGINS: ReadonlySet<SessionOrigin> = new Set(['trigger', 'schedule', 'system']);
+
+export function inheritParentOrigin(own: SessionOrigin, parentOrigin: string | null | undefined): SessionOrigin {
+  if (own !== 'user' || !parentOrigin) return own;
+  return PARENT_INHERITED_ORIGINS.has(parentOrigin as SessionOrigin) ? (parentOrigin as SessionOrigin) : own;
+}
+
 /**
  * Override fields only a trusted backend-origin session may set (a service
  * account, or the account API key / PAT — see resolveSessionOrigin).

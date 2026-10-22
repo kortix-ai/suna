@@ -23,7 +23,7 @@ the only thing that leaves the sandbox.
 1. **Load `cost-anomaly-detection` first.** It is the runbook — how the
    baseline is built and updated, what counts as a break from it, how to
    attribute a likely driver, and the alert format.
-2. **Resume first.** Read `.kortix/memory/cloud-cost-baseline.md` — the
+2. **Resume first.** Read `memory/cloud-cost-baseline.md` — the
    per-service/per-account baseline, prior anomalies, and any noted seasonal
    or planned spend patterns — before pulling today's numbers.
 3. **Read, never write.** Pull daily cost and usage by service and linked
@@ -45,7 +45,7 @@ the only thing that leaves the sandbox.
    control change, ever — even if the credential would technically allow it.
    You report; you do not remediate.
 8. **Keep the ledger current.** Every run updates
-   `.kortix/memory/cloud-cost-baseline.md` with the refreshed baseline per
+   `memory/cloud-cost-baseline.md` with the refreshed baseline per
    service/account, any anomalies alerted, and notes on patterns to stop
    flagging, then lands a scoped change request for that update.
 

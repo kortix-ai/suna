@@ -1,3 +1,4 @@
+import { encodeCompiledAgentConfigEnv } from '@kortix/api-contract/compiled-agent-config-env';
 import { agentConfigEtag } from './compile-agent-config';
 
 export interface SessionRuntimeEnvInput {
@@ -12,8 +13,6 @@ export interface SessionRuntimeEnvInput {
   opencodeModel?: string | null;
   /** Project file delivery mode selected by the session's agent. */
   repositoryAccess?: boolean;
-  /** Experimental compiled checkout and OpenCode launcher rollout mode. */
-  compiledBootMode?: 'off' | 'shadow' | 'prefer' | 'required';
   /** True only for a newly-created session branch that still equals base. */
   freshSession?: boolean;
   /** Replacement runtime must fetch the existing remote session branch once. */
@@ -28,12 +27,6 @@ export interface SessionRuntimeEnvInput {
   gitDeltaParentCommitBase64?: string;
   /** Delta too large for the env: daemon downloads it with one authenticated GET. */
   gitDeltaBundleRemote?: boolean;
-  /**
-   * OpenCode config dir at `baseSha` (repo-relative), `null` when the tip ships
-   * none, undefined when unknown. The daemon spawns OpenCode on it BEFORE the
-   * checkout exists and only falls back to the serial boot without a hint.
-   */
-  opencodeConfigDir?: string | null;
   /**
    * S3 config provider rollout mode for THIS session (platform env, or the
    * project's `metadata.project_snapshot_mode` canary override). `git`/absent
@@ -66,6 +59,8 @@ export interface SessionRuntimeEnvInput {
    * byte-for-byte unchanged. The daemon's `resolveHarness` rejects any other id.
    */
   harness?: 'opencode' | 'pi';
+  /** kortix.yaml `harnesses.pi.codemode`; sent as `KORTIX_PI_CODEMODE` to a pi session only. Null: the daemon default (`on`). */
+  piCodemode?: 'off' | 'on' | 'only' | null;
   /** kortix.yaml `harnesses.pi.packages`; sent as `KORTIX_PI_PACKAGES` to a pi session only. */
   piPackages?: unknown[];
   /** The prebuilt bundle of those packages (apps/api/src/pi-packages/bundle.ts); null when not built. */
@@ -105,8 +100,6 @@ export function auditRelayEnvPassthrough(
 
 export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<string, string> {
   const allowsFullRepository = input.repositoryAccess ?? true;
-  const compiledBootMode = input.compiledBootMode ?? 'off';
-  const compiledBootEnabled = compiledBootMode !== 'off';
   const projectGitEnv: Record<string, string> = allowsFullRepository
     ? {
         KORTIX_REPO_URL: input.repoUrl,
@@ -117,15 +110,12 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     : {};
   // A brand-new session's branch IS the base tip: the daemon creates it
   // locally and materializes from the baked scaffold + the API's delta, so no
-  // in-sandbox `git fetch` runs at all. This used to hide behind the
-  // compiled-boot experiment; measured 2026-08-27 on dev,
-  // the two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
+  // in-sandbox `git fetch` runs at all. The two proxied fetches it removes cost 5.4 s + 2.6 s of a 7.9 s
   // `repo-materialized`, measured on dev 2026-08-27.
   const fastGitBootEnv: Record<string, string> =
     allowsFullRepository && input.freshSession
       ? {
           KORTIX_SESSION_FRESH: '1',
-          ...(compiledBootEnabled ? { KORTIX_COMPILED_BOOT_MODE: compiledBootMode } : {}),
           ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
           ...(input.gitDeltaBundleBase64
             ? { KORTIX_GIT_DELTA_BUNDLE_BASE64: input.gitDeltaBundleBase64 }
@@ -138,13 +128,6 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
             ? { KORTIX_GIT_DELTA_PARENT_COMMIT_BASE64: input.gitDeltaParentCommitBase64 }
             : {}),
         }
-      : {};
-  // Known for fresh sessions only (resolved at the same tip as the clone).
-  // '' = "this revision has no project OpenCode config"; the daemon then
-  // spawns on its baked default dir without waiting for the checkout.
-  const opencodeConfigDirHintEnv: Record<string, string> =
-    allowsFullRepository && input.freshSession && input.opencodeConfigDir !== undefined
-      ? { KORTIX_OPENCODE_CONFIG_DIR_HINT: input.opencodeConfigDir ?? '' }
       : {};
   const restoreGitEnv: Record<string, string> =
     allowsFullRepository && input.restoreSessionBranch
@@ -167,7 +150,6 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
   return {
     ...projectGitEnv,
     ...fastGitBootEnv,
-    ...opencodeConfigDirHintEnv,
     ...restoreGitEnv,
     ...projectSnapshotEnv,
     ...auditRelayEnvPassthrough(),
@@ -181,6 +163,7 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // Which harness kortixd boots. Absent = OpenCode (the daemon default).
     ...(input.harness === 'pi' ? { KORTIX_HARNESS: 'pi' } : {}),
     ...(input.harness === 'pi' && input.piPackages?.length ? { KORTIX_PI_PACKAGES: JSON.stringify(input.piPackages) } : {}),
+    ...(input.harness === 'pi' && input.piCodemode ? { KORTIX_PI_CODEMODE: input.piCodemode } : {}),
     ...(input.harness === 'pi' && input.piPackagesBundle
       ? {
           KORTIX_PI_PACKAGES_BUNDLE_URL: input.piPackagesBundle.url,
@@ -193,8 +176,16 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
     // The sandbox daemon owns OpenCode root creation for every cold session.
     // The API adopts/persists that root; it must not create a competing one.
+    KORTIX_BOOTSTRAP_RUNTIME_SESSION: '1',
+    // The pre-W3 name of the variable above, for a daemon built before W3.
     KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
-    ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
+    ...(input.opencodeModel
+      ? {
+          KORTIX_MODEL: input.opencodeModel,
+          // The pre-W3 name of `KORTIX_MODEL`; the OpenCode adapter still falls back to it.
+          KORTIX_OPENCODE_MODEL: input.opencodeModel,
+        }
+      : {}),
     // The sandbox daemon merges this as the BASE of its own composed opencode
     // config (connector MCP / gateway provider / Slack overlays still apply on
     // top — see apps/kortix-sandbox-agent-server/src/harness/open-code/lifecycle.ts). Per-call
@@ -202,7 +193,11 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
     // model on a prompt request, still wins over this compiled fallback.
     ...(input.compiledAgentConfig
       ? {
-          KORTIX_COMPILED_AGENT_CONFIG: input.compiledAgentConfig,
+          // `KORTIX_COMPILED_AGENT_CONFIG=<json>` whenever it fits in one env
+          // string, which is every config today's daemons read. Past 128 KiB the
+          // guest cannot exec with it, so it travels gzipped in parts that each
+          // fit (@kortix/api-contract/compiled-agent-config-env).
+          ...encodeCompiledAgentConfigEnv(input.compiledAgentConfig),
           // Content hash of the line above, echoed by the daemon's /kortix/health.
           // It is what makes "is this session running the latest config?" a
           // question anyone can answer — the box reports what it actually
@@ -210,48 +205,5 @@ export function buildSessionRuntimeEnv(input: SessionRuntimeEnvInput): Record<st
           KORTIX_COMPILED_AGENT_CONFIG_ETAG: agentConfigEtag(input.compiledAgentConfig) ?? '',
         }
       : {}),
-  };
-}
-
-/**
- * The minimal env for a pi worker boot. The per-commit compiled artifact
- * already carries the agent map (its etag is what /kortix/health reports), the
- * v0 worker receives no project secrets (the gateway resolves BYOK server-side
- * per request), and nothing clones — so none of buildSessionRuntimeEnv's
- * git/scaffold work and none of buildSessionSandboxEnvVars' secret work
- * applies. Synchronous on purpose: this map must never put a network read on
- * the provision critical path (the OpenCode env chain it replaces cost
- * 1.1–2.4 s per cold boot, measured on dev 2026-08-27).
- *
- * KORTIX_TOKEN and KORTIX_LLM_BASE_URL are injected by
- * provisionSessionSandbox(); KORTIX_PI_RUNTIME_REF/SHA are threaded by the
- * session-create call; KORTIX_API_URL/KORTIX_FRONTEND_URL are also guaranteed
- * at the provider boundary (daytona.ts) — set here too so the map is
- * self-sufficient.
- */
-export function buildPiWorkerSessionEnvVars(input: {
-  projectId: string;
-  sessionId: string;
-  agentName: string;
-  apiUrl: string;
-  frontendUrl?: string;
-  opencodeModel?: string | null;
-}): Record<string, string> {
-  return {
-    KORTIX_PROJECT_ID: input.projectId,
-    KORTIX_SESSION_ID: input.sessionId,
-    KORTIX_SERVICE_PORT: '8000',
-    // Both names: KORTIX_AGENT_NAME is the fleet convention (daemon,
-    // dashboards); KORTIX_AGENT is what the worker's baked-config overlay
-    // reads to select a non-default agent (apps/kortix-worker/src/main.ts).
-    KORTIX_AGENT_NAME: input.agentName,
-    KORTIX_AGENT: input.agentName,
-    KORTIX_API_URL: input.apiUrl,
-    ...(input.frontendUrl ? { KORTIX_FRONTEND_URL: input.frontendUrl } : {}),
-    // No repo checkout exists on a worker box.
-    KORTIX_PROJECT_AUTO_CLONE: '0',
-    // The resolved session model override. The worker maps it onto the
-    // gateway exactly like a baked model ref (env wins over bake).
-    ...(input.opencodeModel ? { KORTIX_MODEL: input.opencodeModel } : {}),
   };
 }

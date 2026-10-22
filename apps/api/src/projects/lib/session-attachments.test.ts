@@ -1,4 +1,4 @@
-import { beforeEach, expect, mock, test } from "bun:test";
+import { beforeEach, expect, test } from "bun:test";
 import { createSessionAttachmentStore } from "./session-attachments";
 const scope = {
   projectId: "11111111-1111-4111-8111-111111111111",
@@ -6,9 +6,8 @@ const scope = {
   attachmentId: "33333333-3333-4333-8333-333333333333",
 };
 const objects = new Map<string, Blob>();
+// No getBucket/createBucket/updateBucket: a migration owns the bucket, and a call to one fails the test.
 const storage = {
-  getBucket: async () => ({ data: { public: false }, error: null }),
-  createBucket: mock(async () => ({ error: null })),
   from: (bucket: string) => {
     expect(bucket).toBe("session-attachments");
     return {
@@ -85,22 +84,40 @@ test("cleanup removes only this session objects", async () => {
   expect(await store.read(scope)).toBeNull();
   expect(objects.size).toBe(1);
 });
-test("refuses a public bucket", async () => {
-  const store = createSessionAttachmentStore({
-    ...storage,
-    getBucket: async () => ({ data: { public: true }, error: null }),
-  } as never);
-  await expect(store.put(input())).rejects.toThrow("private");
-  expect(objects.size).toBe(0);
+test("removeProject deletes the files of every session under the project, and only that project", async () => {
+  // Real Storage lists ONE level: a project prefix names its session folders.
+  const bucket = new Set([
+    "p1/s1/a1",
+    "p1/s1/a2",
+    "p1/s2/a3",
+    "p2/s3/a4",
+  ]);
+  const oneLevel = {
+    from: () => ({
+      list: async (prefix: string) => ({
+        data: [...new Set([...bucket]
+          .filter((k) => k.startsWith(prefix + "/"))
+          .map((k) => k.slice(prefix.length + 1).split("/")[0]!))].map((name) => ({ name })),
+        error: null,
+      }),
+      remove: async (keys: string[]) => {
+        keys.forEach((k) => bucket.delete(k));
+        return { error: null };
+      },
+    }),
+  };
+  const store = createSessionAttachmentStore(oneLevel as never);
+  await store.removeProject("p1");
+  expect([...bucket]).toEqual(["p2/s3/a4"]);
 });
 
-test('raises an older private bucket limit to the current composer limit', async () => {
-  const updateBucket = mock(async () => ({ error: null }));
-  const store = createSessionAttachmentStore({
-    ...storage,
-    getBucket: async () => ({ data: { public: false, file_size_limit: 25 * 1024 * 1024 }, error: null }),
-    updateBucket,
-  } as never);
-  await store.put(input());
-  expect(updateBucket).toHaveBeenCalledWith('session-attachments', { public: false, fileSizeLimit: 50 * 1024 * 1024 });
+test("removeProject stops with an error when a folder does not empty", async () => {
+  const stuck = {
+    from: () => ({
+      list: async (prefix: string) => ({ data: [{ name: prefix === "p1" ? "s1" : "a1" }], error: null }),
+      remove: async () => ({ error: null }),
+    }),
+  };
+  const store = createSessionAttachmentStore(stuck as never);
+  await expect(store.removeProject("p1")).rejects.toThrow("Could not delete the files under p1/s1");
 });

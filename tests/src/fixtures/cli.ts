@@ -182,6 +182,14 @@ export class CliSandbox {
       // Make the CLI deterministic + non-interactive-friendly.
       KORTIX_CONFIG_FILE: this.configFile,
       KORTIX_DEFAULT_API_BASE: targetApiBase(),
+      // CI-shape rule (same reason `tests/bin/package-quality.ts` sets it): a
+      // Kortix sandbox session can carry a live /dev/shm/kortix/agent-env.sh
+      // written by the stack under test. Without this flag the CLI reads that
+      // file through `sandboxEnvValue()` and every hermetic sandbox here
+      // silently targets the host's identity instead of `targetApiBase()`.
+      // On a laptop or a GitHub runner the file does not exist, so this
+      // changes nothing.
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
       // A stable git identity so `create`/`ship` commits don't fail on a
       // machine without a configured user.
       GIT_AUTHOR_NAME: 'ke2e',
@@ -300,6 +308,82 @@ export async function runCliOnce(args: string[], opts?: CliRunOptions): Promise<
   }
 }
 
+/** What `kortix login` prints on stdout once its loopback server is up. */
+interface AuthorizeUrl {
+  callbackUrl: string;
+  state: string;
+  port: string | null;
+}
+
+/** The loopback-callback delivery evidence, as `browserLogin` reports it. */
+interface CliCallbackResult {
+  status: number | null;
+  body: string;
+  attempts: number;
+  error: string | null;
+}
+
+/** No callback was delivered (stdout ended before the authorize URL appeared). */
+const noCallback: CliCallbackResult = { status: null, body: '', attempts: 0, error: null };
+
+/**
+ * Phase 1 of the login ceremony: read `kortix login`'s stdout incrementally
+ * until the authorize URL appears (or the 20s deadline passes / the stream
+ * ends). Returns everything read so far plus the parsed URL, state and
+ * loopback port.
+ */
+async function readAuthorizeUrl(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<{ stdoutBuf: string; found: AuthorizeUrl | null }> {
+  const decoder = new TextDecoder();
+  let stdoutBuf = '';
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    const { value, done } = await reader.read();
+    if (value) stdoutBuf += decoder.decode(value, { stream: true });
+    const m = stdoutBuf.match(/callback=([^&\s]+)&state=([0-9a-f]+)/i);
+    if (m) {
+      const callbackUrl = decodeURIComponent(m[1]);
+      const pm = callbackUrl.match(/:(\d+)\//);
+      return {
+        stdoutBuf,
+        found: { callbackUrl, state: m[2], port: pm ? pm[1] : null },
+      };
+    }
+    if (done) break;
+  }
+  return { stdoutBuf, found: null };
+}
+
+/**
+ * Phase 2 of the login ceremony: simulate the dashboard POSTing the minted
+ * token to the loopback callback. Retry connection failures only. The CLI
+ * starts listening before it prints the URL, but a short bounded retry removes
+ * scheduler-dependent flakes on constrained CI workers. HTTP responses are
+ * product results, not retries.
+ */
+async function deliverCliCallback(
+  port: string,
+  state: string,
+  token: string,
+): Promise<CliCallbackResult> {
+  let lastError = '';
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/callback`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ state, token }),
+      });
+      return { status: response.status, body: await response.text(), attempts: attempt, error: null };
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      if (attempt < 3) await Bun.sleep(25 * attempt);
+    }
+  }
+  return { status: null, body: '', attempts: 3, error: lastError };
+}
+
 /**
  * Drive the CLI's browser-callback login flow (LOGIN-2) WITHOUT a browser.
  *
@@ -324,66 +408,25 @@ export async function browserLogin(
     stderr: 'pipe',
   });
 
-  const decoder = new TextDecoder();
-  let stdoutBuf = '';
-  let callbackUrl: string | null = null;
-  let state: string | null = null;
-  let port: string | null = null;
-  let callbackStatus: number | null = null;
-  let callbackBody = '';
-  let callbackAttempts = 0;
-  let callbackError: string | null = null;
-
   // Read stdout incrementally until we see the authorize URL (or the stream ends).
   const reader = proc.stdout.getReader();
-  const deadline = Date.now() + 20_000;
-  while (Date.now() < deadline) {
-    const { value, done } = await reader.read();
-    if (value) stdoutBuf += decoder.decode(value, { stream: true });
-    const m = stdoutBuf.match(/callback=([^&\s]+)&state=([0-9a-f]+)/i);
-    if (m) {
-      callbackUrl = decodeURIComponent(m[1]);
-      state = m[2];
-      const pm = callbackUrl.match(/:(\d+)\//);
-      port = pm ? pm[1] : null;
-      break;
-    }
-    if (done) break;
-  }
+  const { stdoutBuf, found } = await readAuthorizeUrl(reader);
 
-  if (callbackUrl && port && state) {
-    // Simulate the dashboard POSTing the minted token to the loopback callback.
-    // Retry connection failures only. The CLI starts listening before it prints
-    // the URL, but a short bounded retry removes scheduler-dependent flakes on
-    // constrained CI workers. HTTP responses are product results, not retries.
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      callbackAttempts = attempt;
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/callback`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            state: opts.badState ? `${state}-wrong` : state,
-            token: pat,
-          }),
-        });
-        callbackStatus = response.status;
-        callbackBody = await response.text();
-        callbackError = null;
-        break;
-      } catch (error) {
-        callbackError = error instanceof Error ? error.message : String(error);
-        if (attempt < 3) await Bun.sleep(25 * attempt);
-      }
-    }
-  }
+  // Simulate the dashboard POSTing the minted token to the loopback callback.
+  const callback = found && found.port
+    ? await deliverCliCallback(
+        found.port,
+        opts.badState ? `${found.state}-wrong` : found.state,
+        pat,
+      )
+    : noCallback;
 
   // A rejected state leaves the real CLI waiting for another callback. The
   // 403 already proves rejection, so stop the process immediately instead of
   // spending the full CLI_PROCESS_BUDGET_MS on a timeout that adds no contract
   // coverage. This explicit kill is why raising that budget does not slow the
   // state-mismatch path.
-  if (opts.badState && callbackStatus === 403) {
+  if (opts.badState && callback.status === 403) {
     try {
       proc.kill();
     } catch {
@@ -411,7 +454,7 @@ export async function browserLogin(
   try {
     for (;;) {
       const { value, done } = await reader.read();
-      if (value) restStdout += decoder.decode(value, { stream: true });
+      if (value) restStdout += new TextDecoder().decode(value, { stream: true });
       if (done) break;
     }
   } catch {
@@ -422,16 +465,5 @@ export async function browserLogin(
   clearTimeout(killer);
 
   const stdout = stdoutBuf + restStdout;
-  return {
-    exitCode,
-    stdout,
-    stderr,
-    all: `${stdout}\n${stderr}`,
-    callback: {
-      status: callbackStatus,
-      body: callbackBody,
-      attempts: callbackAttempts,
-      error: callbackError,
-    },
-  };
+  return { exitCode, stdout, stderr, all: `${stdout}\n${stderr}`, callback };
 }

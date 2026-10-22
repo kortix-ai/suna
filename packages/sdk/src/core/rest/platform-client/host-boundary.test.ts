@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 const boundary = await import('./host-boundary');
-import type { OAuthConsentRequest, SecretSetupLinkSubmitResult } from './host-boundary';
+import type { OAuthConsentRequest, SecretSetupLinkInfo, SecretSetupLinkSubmitResult } from './host-boundary';
 
 describe('host boundary transport', () => {
   test('consent request carries whether the client registered itself and where approval redirects', async () => {
@@ -52,6 +52,22 @@ describe('host boundary transport', () => {
     expect(result.saved).toEqual(['API_KEY']);
     expect(result.agent).toBe('analyst');
     expect(result.withheld?.[0]?.reason).toBe('agent_grant');
+  });
+
+  test('secret link names who asked, and submit can keep the value to them', async () => {
+    responseFactory = () =>
+      Response.json({ project_name: 'P', fields: [], expires_at: '2026-10-08T00:00:00.000Z', requester: { label: 'Requester' } });
+    const info: SecretSetupLinkInfo = await boundary.getSecretSetupLink('secret-token', { backendUrl: 'https://api.example.test/v1' });
+    expect(info.requester?.label).toBe('Requester');
+
+    responseFactory = () => Response.json({ ok: true, saved: ['API_KEY'] });
+    await boundary.submitSecretSetupLink(
+      'secret-token',
+      { API_KEY: 'value' },
+      { backendUrl: 'https://api.example.test/v1' },
+      { only_requester: true },
+    );
+    expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({ values: { API_KEY: 'value' }, only_requester: true });
   });
 
   test('secret submit from an older server carries no withheld names', async () => {
@@ -256,6 +272,7 @@ describe('host boundary transport', () => {
         session_id: 'session-1',
         actor_type: 'agent',
         source: 'connector',
+        credential_kind: 'personal_access_token',
         phase: 'completed',
         outcome: 'failure',
         cursor: 'cursor-1',
@@ -271,6 +288,7 @@ describe('host boundary transport', () => {
       session_id: 'session-1',
       actor_type: 'agent',
       source: 'connector',
+      credential_kind: 'personal_access_token',
       phase: 'completed',
       outcome: 'failure',
       cursor: 'cursor-1',

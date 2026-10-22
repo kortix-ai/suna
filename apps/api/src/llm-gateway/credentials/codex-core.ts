@@ -27,10 +27,55 @@ export interface RefreshTokenResponse {
 }
 
 export class CodexRefreshError extends Error {
-  constructor(reason: string, readonly status?: number) {
+  /** The provider's error code, when it sent one. */
+  readonly code?: string;
+  /** Only signing in again fixes it (`isPermanentRefreshRejection`). */
+  readonly permanent: boolean;
+
+  constructor(reason: string, readonly status?: number, details: { code?: string; permanent?: boolean } = {}) {
     super(`codex token refresh failed: ${reason}${status ? ` (status ${status})` : ''}`);
     this.name = 'CodexRefreshError';
+    this.code = details.code;
+    this.permanent = details.permanent ?? false;
   }
+}
+
+/**
+ * Codes that mean the refresh token itself is dead. OpenAI answers an unknown
+ * or revoked token with 401 `invalid_refresh_token` (measured 2026-09-25);
+ * Codex CLI also names `refresh_token_expired`, `refresh_token_reused` and
+ * `refresh_token_invalidated`; RFC 6749 servers answer 400 `invalid_grant`.
+ */
+const DEAD_REFRESH_TOKEN_CODES = new Set([
+  'invalid_grant',
+  'invalid_refresh_token',
+  'refresh_token_expired',
+  'refresh_token_reused',
+  'refresh_token_invalidated',
+]);
+
+/** The code of a rejected refresh: `{ error: { code } }` (OpenAI) or `{ error: '<code>' }` (RFC 6749). */
+export function refreshErrorCode(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const error = (body as { error?: unknown }).error;
+  if (typeof error === 'string') return error;
+  if (error && typeof error === 'object') {
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+  }
+  return undefined;
+}
+
+/**
+ * Whether a rejected refresh can only be fixed by signing in again. A 401 is:
+ * the provider no longer accepts the login. A 400 or 403 is only with a
+ * dead-token code; without one it is our malformed request. Rate limits,
+ * timeouts and server errors are transient.
+ */
+export function isPermanentRefreshRejection(status: number, code: string | undefined): boolean {
+  if (status === 401) return true;
+  if (status === 400 || status === 403) return code !== undefined && DEAD_REFRESH_TOKEN_CODES.has(code);
+  return false;
 }
 
 export function parseCodexAuth(value: string): StoredCodexAuth | null {

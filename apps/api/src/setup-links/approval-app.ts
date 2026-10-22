@@ -1,4 +1,5 @@
-import { connectors, connectorCalls, projectSessions, projects } from '@kortix/db';
+import { connectors, connectorCalls, projects } from '@kortix/db';
+import { composioToolkitLogo } from '../connectors/composio';
 /**
  * Approval links — the AUTHENTICATED half, mounted at /v1/approval-links.
  *
@@ -26,19 +27,65 @@ import { connectors, connectorCalls, projectSessions, projects } from '@kortix/d
  * subtly-weaker door to it.
  */
 import { and, eq } from 'drizzle-orm';
-import { Hono } from 'hono';
-import { summarizeArgsPreview } from '../connectors/args-preview';
-import { PROJECT_ACTIONS } from '../iam';
-import { assertProjectCapability, loadProjectForUser } from '../projects/lib/access';
-import { mayResolveApproval } from '../projects/lib/approval-authority';
-import { callerKortixSessionId } from '../projects/lib/caller-session';
+import { createRoute, z } from '@hono/zod-openapi';
+import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { enrichPendingCallOnce } from '../connectors/approval-enrich-pending';
+import { isApprovalExpired } from '../connectors/approval-expiry';
+import { isPlainRecord, summarizeArgsPreview } from '../connectors/args-preview';
+import {
+  approvalCallerOf,
+  approvalTargetSession,
+  loadProjectForUser,
+  mayResolveApproval,
+} from '../projects/surface';
 import { db } from '../shared/db';
 import { resolveSetupLink } from './token';
+import type { AppEnv } from '../types';
 
-const approvalLinksApp = new Hono();
+// AppEnv: every route here is authenticated and the project gate reads the
+// auth variables the middleware sets (authType, accountId, ...).
+const approvalLinksApp = makeOpenApiApp<AppEnv>();
+
+/** What an approval link asks the signed-in human to decide. */
+const ApprovalLinkSchema = z.object({
+  kind: z.literal('approval'),
+  project_id: z.string(),
+  project_name: z.string(),
+  execution_id: z.string(),
+  session_id: z.string().nullable(),
+  action: z.string(),
+  connector: z.string().nullable(),
+  connector_name: z.string().nullable(),
+  connector_icon_url: z.string().nullable(),
+  risk: z.string().nullable(),
+  status: z.string(),
+  /** Only `pending_approval` is actionable; every other status is an outcome. */
+  pending: z.boolean(),
+  args_preview: z.record(z.string(), z.unknown()).nullable(),
+  review_complete: z.boolean(),
+  args_summary: z.string().nullable(),
+  approval_context: z.string().nullable(),
+  /** Content Kortix read from the provider for a reference-only call
+   *  (`gmail.send_draft {draft_id}` → the draft), redacted. */
+  resolved_preview: z.record(z.string(), z.unknown()).nullable(),
+  /** `unavailable` when that read failed or timed out. */
+  resolved_error: z.string().nullable(),
+  policy_source: z.string().nullable(),
+  requested_at: z.string(),
+  resolved_at: z.string().nullable(),
+  expires_at: z.string(),
+});
 
 /** GET /v1/approval-links/:token — what am I being asked to approve? */
-approvalLinksApp.get('/:token', async (c) => {
+approvalLinksApp.openapi(createRoute({
+  method: 'get',
+  path: '/{token}',
+  tags: ['approvals'],
+  summary: 'Read the decision an approval link asks for',
+  ...auth,
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: json(ApprovalLinkSchema, 'The pending decision'), ...errors(400, 403, 404, 410) },
+}), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
   if (resolved.payload.kind !== 'approval') return c.json({ error: 'Wrong link type' }, 400);
@@ -54,6 +101,9 @@ approvalLinksApp.get('/:token', async (c) => {
   const [row] = await db
     .select({
       executionId: connectorCalls.executionId,
+      accountId: connectorCalls.accountId,
+      projectId: connectorCalls.projectId,
+      connectionId: connectorCalls.connectionId,
       sessionId: connectorCalls.sessionId,
       actingUserId: connectorCalls.actingUserId,
       actionPath: connectorCalls.actionPath,
@@ -63,6 +113,7 @@ approvalLinksApp.get('/:token', async (c) => {
       resultSummary: connectorCalls.resultSummary,
       createdAt: connectorCalls.createdAt,
       resolvedAt: connectorCalls.resolvedAt,
+      expiresAt: connectorCalls.expiresAt,
     })
     .from(connectorCalls)
     .where(
@@ -75,44 +126,14 @@ approvalLinksApp.get('/:token', async (c) => {
   if (!row) return c.json({ error: 'Not found' }, 404);
 
   // Same authority test as the resolve endpoint — applied to the READ too,
-  // because `args_preview` can carry the content of the pending action.
-  let isManager = false;
-  try {
-    await assertProjectCapability(
-      c,
-      loaded.userId,
-      loaded.row.accountId,
-      projectId,
-      PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
-    );
-    isManager = true;
-  } catch {
-    isManager = false;
-  }
-
-  let targetCreatedBy: string | null = row.sessionId ? null : row.actingUserId;
-  let targetOrigin: string | null = row.sessionId ? null : 'user';
-  if (row.sessionId) {
-    const [session] = await db
-      .select({ createdBy: projectSessions.createdBy, origin: projectSessions.origin })
-      .from(projectSessions)
-      .where(
-        and(eq(projectSessions.sessionId, row.sessionId), eq(projectSessions.projectId, projectId)),
-      )
-      .limit(1);
-    targetCreatedBy = session?.createdBy ?? null;
-    targetOrigin = session?.origin ?? null;
-  }
-
+  // because `args_preview` can carry the content of the pending action. The
+  // same `approvalCallerOf` + target the resolve route and `can_resolve` read,
+  // so this page never disagrees with them.
+  const target = await approvalTargetSession(projectId, row);
   const verdict = mayResolveApproval({
-    isManager,
-    targetSessionOrigin: targetOrigin,
-    targetSessionCreatedBy: targetCreatedBy,
-    callerUserId: loaded.userId,
-    callerAuthType:
-      ((c as unknown as { get(key: string): unknown }).get('authType') as string | undefined) ??
-      null,
-    callerSessionId: callerKortixSessionId(c),
+    ...(await approvalCallerOf(c, loaded, projectId)),
+    targetSessionOrigin: target.origin,
+    targetSessionCreatedBy: target.createdBy,
   });
   if (!verdict.allowed) {
     return c.json(
@@ -137,45 +158,71 @@ approvalLinksApp.get('/:token', async (c) => {
     .where(eq(projects.projectId, projectId))
     .limit(1);
 
+  // The connector's own name and logo, so the approval page can say WHICH
+  // connector for any of the catalogue's thousands, not only the ones a client
+  // could guess a logo for from the slug. Same source as the connect card: the
+  // row's stored icon, else the Composio catalogue logo for its app.
   let connectorSlug: string | null = null;
+  let connectorName: string | null = null;
+  let connectorIconUrl: string | null = null;
   if (row.connectorId) {
     const [connector] = await db
-      .select({ slug: connectors.slug })
+      .select({ slug: connectors.slug, name: connectors.name, config: connectors.config })
       .from(connectors)
       .where(eq(connectors.connectorId, row.connectorId))
       .limit(1);
     connectorSlug = connector?.slug ?? null;
+    connectorName = connector?.name ?? null;
+    const config = (connector?.config ?? {}) as { icon_url?: unknown; app?: unknown };
+    connectorIconUrl =
+      typeof config.icon_url === 'string' && config.icon_url
+        ? config.icon_url
+        : typeof config.app === 'string' && config.app
+          ? await composioToolkitLogo(config.app)
+          : null;
   }
 
+  const expired = isApprovalExpired(row);
+  // Only reached by a caller allowed to resolve: a row held before its action
+  // had an enricher reads its content once (approval-enrich-pending.ts).
+  const resultSummary = await enrichPendingCallOnce(row);
   const summary =
-    typeof row.resultSummary === 'object' && row.resultSummary
-      ? (row.resultSummary as Record<string, unknown>)
-      : {};
+    typeof resultSummary === 'object' && resultSummary ? (resultSummary as Record<string, unknown>) : {};
   const argsPreview =
     typeof summary.args_preview === 'object' && summary.args_preview
       ? (summary.args_preview as Record<string, unknown>)
       : null;
 
   return c.json({
-    kind: 'approval',
+    kind: 'approval' as const,
     project_id: projectId,
     project_name: project?.name ?? 'this project',
     execution_id: row.executionId,
     session_id: row.sessionId,
     action: row.actionPath,
     connector: connectorSlug,
+    connector_name: connectorName,
+    connector_icon_url: connectorIconUrl,
     risk: row.risk,
     // 'pending_approval' is actionable. Every terminal status renders a
     // read-only outcome instead of buttons that would return 409.
-    status: row.status,
-    pending: row.status === 'pending_approval' && !row.resolvedAt,
+    // A pending row past its window reads as expired before the worker flips it.
+    status: expired ? 'expired' : row.status,
+    pending: row.status === 'pending_approval' && !row.resolvedAt && !expired,
     args_preview: argsPreview,
     review_complete: summary.args_preview_complete === true,
     args_summary: summarizeArgsPreview(argsPreview),
+    approval_context:
+      typeof summary.approval_context === 'string' ? summary.approval_context : null,
+    resolved_preview: isPlainRecord(summary.resolved_preview) ? summary.resolved_preview : null,
+    resolved_error: typeof summary.resolved_error === 'string' ? summary.resolved_error : null,
     policy_source: typeof summary.policy_source === 'string' ? summary.policy_source : null,
     requested_at: row.createdAt.toISOString(),
     resolved_at: row.resolvedAt?.toISOString() ?? null,
-    expires_at: new Date(resolved.payload.exp).toISOString(),
+    // The earlier of the link token's expiry and the approval's own window.
+    expires_at: new Date(
+      Math.min(resolved.payload.exp, row.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY),
+    ).toISOString(),
   });
 });
 

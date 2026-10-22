@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { markdownToMrkdwn, mrkdwnToRichTextElements } from './mrkdwn';
+import { markdownToMrkdwn, mrkdwnToRichTextElements, slackMentionsAsText } from './mrkdwn';
 
 describe('markdownToMrkdwn', () => {
   test('converts double-asterisk bold to single', () => {
@@ -109,5 +109,55 @@ describe('mrkdwnToRichTextElements', () => {
 
   test('empty string yields one empty text element', () => {
     expect(mrkdwnToRichTextElements('')).toEqual([{ type: 'text', text: '' }]);
+  });
+});
+
+// A `<@U…>` in a plan step printed as raw markup (2026-10-02), and as a live
+// mention it would notify that person on every repaint. Steps carry names as
+// text; a channel reference renders natively and notifies no one.
+describe('slackMentionsAsText', () => {
+  const names = new Map([['U0TEST2', 'Alex Kim']]);
+
+  test('a mention becomes @Name: its own label, else the looked-up name, else the id', () => {
+    expect(slackMentionsAsText('ask <@U0TEST1|Sam> and <@U0TEST2>, cc <@U0TEST3>', names)).toBe(
+      'ask @Sam and @Alex Kim, cc @U0TEST3',
+    );
+  });
+
+  test('broadcasts, user groups and dates become text that pings no one', () => {
+    expect(
+      slackMentionsAsText('<!here> <!channel> <!everyone> <!subteam^S0TEAM|@oncall> <!subteam^S0TEAM> <!date^1700000000^{date}|Nov 14>', names),
+    ).toBe('@here @channel @everyone @oncall @group Nov 14');
+  });
+
+  test('channel references, links and other markup stay as written', () => {
+    const text = 'see <#C0OPS|ops>, <#C0DEV> and <https://example.test|docs>; a <b> & *bold*';
+    expect(slackMentionsAsText(text, names)).toBe(text);
+  });
+
+  test("a name's markup characters are escaped", () => {
+    expect(slackMentionsAsText('ask <@U0TEST2>', new Map([['U0TEST2', 'A <b> & c']]))).toBe('ask @A &lt;b&gt; &amp; c');
+  });
+
+  const within = (label: string, run: () => unknown) =>
+    test(label, () => {
+      const started = performance.now();
+      run();
+      expect(performance.now() - started).toBeLessThan(100);
+    });
+  within('120k > and no <', () => slackMentionsAsText('>'.repeat(120_000), names));
+  within('80k <@ openers and no >', () => slackMentionsAsText('<@U0'.repeat(80_000), names));
+  within('60k nested < openers before one >', () => slackMentionsAsText(`${'<'.repeat(60_000)}@U0X>`, names));
+});
+
+describe('mrkdwnToRichTextElements: channel references', () => {
+  test('a channel reference becomes a channel element, labelled or not', () => {
+    expect(mrkdwnToRichTextElements('see <#C0OPS|ops> and <#C0DEV> now')).toEqual([
+      { type: 'text', text: 'see ' },
+      { type: 'channel', channel_id: 'C0OPS' },
+      { type: 'text', text: ' and ' },
+      { type: 'channel', channel_id: 'C0DEV' },
+      { type: 'text', text: ' now' },
+    ]);
   });
 });

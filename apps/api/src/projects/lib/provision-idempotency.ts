@@ -237,7 +237,7 @@ export function classifyProvisionReplay(
  * Drizzle wraps the postgres-js error as `cause`; the wrapper's own message is
  * the formatted "Failed query: …" string and carries no SQLSTATE. Some adapters
  * surface the code on the top-level error instead, so both are checked (same
- * shape as `accounts/iam/helpers.ts`'s `isUniqueViolation`).
+ * shape as `accounts/iam/http-helpers.ts`'s `isUniqueViolation`).
  */
 export function isProvisionIdempotencyConflict(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;

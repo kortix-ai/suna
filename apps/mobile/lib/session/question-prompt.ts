@@ -5,7 +5,7 @@
  * options plus the typed text: a single-choice question keeps only one (the
  * typed text wins over a pick), a multi-choice question keeps both.
  */
-import type { QuestionAnswer, QuestionInfo } from '@/lib/opencode/types';
+import type { QuestionAnswer, QuestionInfo } from '@/lib/session/types';
 
 /** The answer a step sends when the user moves past it. */
 export function questionStepAnswer(

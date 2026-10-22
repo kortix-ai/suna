@@ -3,9 +3,7 @@
 import { useTranslations } from '@/i18n/use-translations';
 
 import { Button } from '@/components/ui/marketing/button';
-import { getThemeById } from '@/lib/themes';
-import { cn } from '@/lib/utils';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { cn } from '@kortix/ui';
 import { useTheme } from 'next-themes';
 import * as React from 'react';
 
@@ -125,8 +123,6 @@ export function ThemeToggle({ variant = 'icon', className, systemTheme = true }:
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
-  const themeId = useUserPreferencesStore((s) => s.preferences.themeId);
-  const currentTheme = getThemeById(themeId);
 
   React.useEffect(() => {
     setMounted(true);
@@ -194,8 +190,8 @@ export function ThemeToggle({ variant = 'icon', className, systemTheme = true }:
     );
   }
 
-  const lightIcon = THEME_OPTIONS.find((o) => o.id === 'light')!.icon;
-  const darkIcon = THEME_OPTIONS.find((o) => o.id === 'dark')!.icon;
+  const lightIcon = THEME_OPTIONS.find((o) => o.id === 'light')?.icon;
+  const darkIcon = THEME_OPTIONS.find((o) => o.id === 'dark')?.icon;
 
   return (
     <div className="flex items-center gap-1.5">

@@ -26,20 +26,26 @@ Tools every contributor needs:
 
 ## The pull request loop
 
+A pull request into `dev` runs **no** CI job by itself. Your development machine runs the
+tests, the stack, and the demo before the PR opens, and the PR is mergeable at once. In the
+rare case you want CI before the merge, add the `test` or `preview` label (one run each).
+
 1. **Branch.** One canonical branch per objective, in its own worktree.
 2. **Commit.** Conventional subjects (`fix(api): …`, `feat(web): …`). The hooks must pass.
    Never use `--no-verify`.
-3. **Open a draft PR against `main` with the `preview` label.** Fill every section of
-   `.github/pull_request_template.md`.
-4. **Test.** Run the narrowest relevant test, then `pnpm test`. CI runs the suite on a PR
-   into `main` only with the `test` or `preview` label.
-5. **Record a demo video** of the change with agent-browser, on the PR's preview origin.
-6. **Attach it** with `gh pr edit <pr> --body-file output/pr/body.md --attach ./output/pr/demo.mp4`.
-   `gh` uploads the video and puts a player in the PR body.
-7. **Merge.** Mark the PR ready and squash-merge it to `main` when it is verified: the
-   local checks passed and the `Tests` lanes are green. No approval is needed for `main`.
-   `main` deploys to dev for the whole team, so verify the change on dev after the merge.
-   Merging into `staging` or `prod`, and every release step, still needs explicit approval.
+3. **Test in your box.** Run the tests that cover the change, narrowest first. A diff that no
+   test reads (docs, a skill, a script) needs no run. Run the changed behaviour on the
+   worktree's local stack (`pnpm worktree start <slug>`).
+4. **Record a demo video** of the change with agent-browser, on the local stack.
+5. **Open the PR against `dev`.** Write the title and body for a human reviewer who decides
+   "merge or iterate" without reading the diff: English only, in the section order of
+   `.github/pull_request_template.md` (the **create-pr** skill). Attach the video:
+   `gh pr create --base dev --body-file output/pr/body.md --attach ./output/pr/demo.mp4`.
+6. **Merge.** Squash-merge it to `dev` when it is verified: the local checks passed and the
+   PR has no conflict. No approval and no CI check is needed for `dev`. The merge does not
+   deploy: run `gh workflow run deploy-dev.yml -f surface=changed`, then verify the change on
+   dev. Merging into `staging` or `prod`, and every release step, still needs explicit
+   approval.
 
 The skill covers each step with its commands and completion check.
 
@@ -47,16 +53,13 @@ The skill covers each step with its commands and completion check.
 
 | Label | Effect |
 | --- | --- |
-| `preview` | Deploys a full self-host environment for the branch: its own PostgreSQL, Supabase, API, gateway, frontend, Mailpit, and HTTPS origin. Runs the six-lane `Tests` suite. It does not run `--target-full`: `gh workflow run deploy-preview.yml -f pr_number=<N>` does. A push redeploys it in place. Removing the label or deleting the branch tears it down. Closing the PR does not. |
-| `test` | Runs the six-lane `Tests` suite (~8 min) without a push. |
-| `i18n-reorder` | Allows an intentional key reorder in the translation catalogs. |
+| `test` | Runs the `Tests` lanes once, on the head SHA when the label is added. A push does not re-run it. |
+| `preview` | Deploys a self-host environment for the branch on Platinum (~7 min), once, and runs no tests. A push does not redeploy. Removing the label or deleting the branch tears it down. Closing the PR does not. |
+| `i18n-reorder` | Allows an intentional key reorder in the translation catalogs on a release PR. |
 
 - The preview origin appears in the sticky PR comment and in the `preview/pr-<N>` GitHub
   deployment. `.agents/skills/contributing/scripts/preview-origin.sh <pr> --wait` prints it
   once the head commit is live.
-- Sign in with a synthetic email. The magic link arrives in the preview's own Mailpit
-  (API: `<origin>/_mailpit/api/v1/messages`). `.agents/skills/contributing/scripts/preview-sign-in.sh <origin>
-  <agent-browser-session>` does the whole sign-in.
 - Previews run only for branches of this repository, and the label needs write access.
 - Full reference: `.agents/skills/contributing/references/preview-environments.md`.
 
@@ -151,8 +154,7 @@ comments, or attached media. Those are your responsibility.
 
 `apps/web/translations/<locale>.json` holds the UI text for 9 locales. Each catalog is exactly
 what `JSON.stringify(value, null, 2)` writes, and keeps its keys in the order they were added.
-Nothing at runtime reads that order, but every merge and review diff does, and
-`starterPrompts.items` must follow `STARTER_PROMPTS` (`src/lib/starter-prompts.test.ts`).
+Nothing at runtime reads that order, but every merge and review diff does.
 
 - **Merges go key by key.** `.gitattributes` routes the catalogs to an order-preserving merge
   driver, and `pnpm install` registers it (`scripts/register-merge-drivers.sh`). Two branches
@@ -164,8 +166,8 @@ Nothing at runtime reads that order, but every merge and review diff does, and
   `git checkout -m apps/web/translations/<locale>.json` and `git add` it.
 - **CI checks it.** `i18n-catalogs.yml` runs on every pull request that touches a catalog: each
   one must be canonical and keep the base branch's key order. The same check, locally:
-  `node apps/web/scripts/i18n-catalogs.mjs check --base=origin/main`. Repair a reorder without
-  changing a value: `node apps/web/scripts/i18n-catalogs.mjs restore-order --from=origin/main`.
+  `node apps/web/scripts/i18n-catalogs.mjs check --base=origin/dev`. Repair a reorder without
+  changing a value: `node apps/web/scripts/i18n-catalogs.mjs restore-order --from=origin/dev`.
   An intentional reorder takes the `i18n-reorder` label.
 
 ## Testing
@@ -211,12 +213,10 @@ ordinary development stack before either command.
 
 ### What CI runs
 
-| Pull request into | Runs |
+| Event | Runs |
 | --- | --- |
-| `main`, no label | `ci.yml`, security and compliance scans, migration checks. `Tests` shows as skipped. |
-| `main` + `test` | the above + the six-lane `Tests` suite (`core`, `browser-1`…`4`, `packages`) |
-| `main` + `preview` | the above + the preview deploy (`--target-full` only on dispatch) |
-| `staging` | the no-label checks + `Tests`, always |
-| `prod` | `tests-release.yml` against deployed staging. Its `full suite + quality gates` check is the only required check. |
-
-Every push to `main` also runs `Tests`. A red run comments the failing lanes on the commit.
+| Pull request into `dev` | nothing, unless a person adds `test` (the `Tests` lanes, once) or `preview` (~7 min deploy, once) |
+| Push to `dev` (the merge) | only seconds-long guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations`, `i18n-catalogs`, `Terraform Apply Global`, `deploy-api-router-dev`. No `Tests` lane and no deploy. |
+| Nightly on `dev` | the `Tests` lanes. A red night comments the failing lanes on the commit. |
+| Pull request into `staging` | nothing: Promote to Production opens and merges it |
+| Pull request into `prod` | the release suite, once: `tests-release.yml` (contract lanes, deployed smoke, browser journeys against staging) plus `CI`, `CodeQL`, security and compliance checks. Its `full suite + quality gates` check is the only required check. |

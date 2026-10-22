@@ -5,7 +5,7 @@ export const people: RoleContent = {
   slug: 'people',
   name: 'People',
   navDescription: 'Scheduling, kits and onboarding — never the hiring decision',
-  seoTitle: 'Kortix for people and recruiting teams',
+  seoTitle: 'AI agents for people and recruiting teams',
   seoDescription:
     'Interview kits, scheduling, onboarding runs and policy answers drawn from your own handbook. Kortix does the coordination; a person makes every decision about a person.',
 

@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { RUNTIME_CAPABILITIES } from '@kortix/api-contract/runtime-relay'
 import { createHmac } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { Opencode } from '@/harness/open-code/lifecycle'
 import { buildOpenCodeTestApp } from './helpers/open-code-harness'
-import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
+import { KORTIX_USER_CONTEXT_HEADER } from '@/lib/kortix-api/kortix-user-context'
 
 const TEST_TOKEN = 'files-test-kortix-token'
 
@@ -39,7 +40,6 @@ function baseConfig(): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
-    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -138,7 +138,8 @@ describe('daemon file write routes', () => {
     expect(body).toMatchObject({
       daemon: 'ok',
       opencode: 'ok',
-      capabilities: ['file.import', 'file.append', 'config.release.v1'],
+      // The fake OpenCode reports no version, so steering (1.18.15 and later) is not listed.
+      capabilities: ['file.import', 'file.append', 'agent-config.env-gz.v1', 'runtime.turns.v1', 'runtime.retract.v1', 'config.release.v1', ...RUNTIME_CAPABILITIES.filter((capability) => capability !== 'session.steer')],
     })
     // The config block and the legacy config_dir_sha field.
     expect(Object.keys(body.config as object).sort()).toEqual([
@@ -510,6 +511,34 @@ describe('daemon file write routes', () => {
       headers: authHeaders(),
     })
     expect(res.status).toBe(403)
+  })
+
+  // A symlink inside the workspace is lexically inside the allowed roots, so a
+  // prefix check on the unresolved path let it read and write anywhere.
+  it('refuses reads and writes through a workspace symlink that points outside the allowed roots (403)', async () => {
+    await fs.symlink('/', `${WORKSPACE}/escape`)
+    const read = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/escape/etc/hosts`)}`, {
+      headers: authHeaders(),
+    })
+    expect(read.status).toBe(403)
+    const content = await fetch(`${base}/file/content?path=${encodeURIComponent('escape/etc/hosts')}`, {
+      headers: authHeaders(),
+    })
+    expect(content.status).toBe(403)
+    const mkdir = await fetch(`${base}/file/mkdir`, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ path: `${WORKSPACE}/escape/etc/kortix-escape-probe/a` }),
+    })
+    expect(mkdir.status).toBe(403)
+    // A symlink that stays inside the workspace still works.
+    await fs.writeFile(`${WORKSPACE}/inside.txt`, 'inside')
+    await fs.symlink(`${WORKSPACE}/inside.txt`, `${WORKSPACE}/inside-link.txt`)
+    const ok = await fetch(`${base}/file/raw?path=${encodeURIComponent(`${WORKSPACE}/inside-link.txt`)}`, {
+      headers: authHeaders(),
+    })
+    expect(ok.status).toBe(200)
+    expect(await ok.text()).toBe('inside')
   })
 })
 

@@ -123,3 +123,44 @@ export function connectionFromHealth(result: SessionHealthResult | null): Sessio
   if (result.ok || result.health?.status === 'starting') return 'connecting';
   return 'unreachable';
 }
+
+/**
+ * How long a fault must persist before a surface says so. A probe is one
+ * sample: a loaded box misses one, a proxy hop drops one, a phone waking from
+ * the background sends one before its radio is up. Drawing each sample as the
+ * state made the status flap connecting → unreachable → live on a computer that
+ * never went away. A computer that is really gone is still gone after this.
+ */
+export const CONNECTION_FAULT_GRACE_MS = 10_000;
+
+/** What a surface draws, plus when the current run of bad probes began. */
+export interface SettledConnection {
+  connection: SessionConnection;
+  /** When probes stopped saying `live`. `null` while they say it. */
+  faultSinceMs: number | null;
+}
+
+export const INITIAL_SETTLED_CONNECTION: SettledConnection = { connection: 'unknown', faultSinceMs: null };
+
+/**
+ * Fold one observation (`connectionFromHealth`, or a host's own evidence) into
+ * the state a surface draws. Good news lands at once; bad news must persist for
+ * `graceMs`. `waking` is the control plane stating the box is not up — an
+ * answer, not a missed sample — so it also lands at once.
+ */
+export function settleSessionConnection(
+  prev: SettledConnection,
+  observed: SessionConnection,
+  nowMs: number,
+  graceMs: number = CONNECTION_FAULT_GRACE_MS,
+): SettledConnection {
+  if (observed === 'unknown') return prev;
+  if (observed === 'live' || observed === 'waking') return { connection: observed, faultSinceMs: null };
+  const faultSinceMs = prev.faultSinceMs ?? nowMs;
+  const persisted = nowMs - faultSinceMs >= graceMs;
+  if (!persisted) {
+    const held = prev.connection === 'unknown' ? 'connecting' : prev.connection;
+    return { connection: held, faultSinceMs };
+  }
+  return { connection: observed, faultSinceMs };
+}

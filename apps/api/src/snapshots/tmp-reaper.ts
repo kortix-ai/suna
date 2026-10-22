@@ -20,11 +20,9 @@ import { logger } from '../lib/logger';
 
 const PREFIX = 'kortix-';
 const MAX_AGE_MS = 30 * 60 * 1000; // older than this ⇒ abandoned
-const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 
-let timer: ReturnType<typeof setInterval> | null = null;
-
-async function sweepOnce(): Promise<void> {
+/** One sweep. workers/tmp-reaper-worker.ts runs it every 10 min on every replica. */
+export async function runTmpReaperSweep(): Promise<void> {
   const dir = tmpdir();
   let entries: string[];
   try {
@@ -64,20 +62,5 @@ async function sweepOnce(): Promise<void> {
     logger.warn('[tmp-reaper] git-cache sweep failed', {
       error: err instanceof Error ? err.message : String(err),
     });
-  }
-}
-
-export function startTmpReaper(): void {
-  if (timer) return;
-  void sweepOnce();
-  timer = setInterval(() => void sweepOnce(), SWEEP_INTERVAL_MS);
-  // Don't keep the process alive for the reaper.
-  if (typeof timer.unref === 'function') timer.unref();
-}
-
-export function stopTmpReaper(): void {
-  if (timer) {
-    clearInterval(timer);
-    timer = null;
   }
 }

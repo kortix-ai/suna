@@ -8,8 +8,8 @@ controlled. This file pins the invariants that keep that safe. Every assertion
 below states one rule; a rule that stops being true must be deleted on purpose,
 not by accident.
 
-PR #6347 (7074ffd25e) replaced the per-PR ECS runtime with a warm Platinum or
-Daytona sandbox that boots the full self-host distribution:
+PR #6347 (7074ffd25e) replaced the per-PR ECS runtime with a warm cloud
+sandbox that boots the full self-host distribution:
 
     old: build 3 images -> push -> infra/scripts/ecs-preview.sh deploy <pr>
          -> Fargate service on pr-<n>.preview{-api}.kortix.com
@@ -18,8 +18,9 @@ Daytona sandbox that boots the full self-host distribution:
             provider-issued HTTPS origin, then `pnpm test -- --target-full`
 
 fad008f63c (#7482, 2026-09-22) made previews Platinum only, host and sessions.
-It deleted the Daytona deploy and the Daytona fallback. Daytona code remains
-only to delete previews created before that commit.
+It deleted the Daytona deploy and the Daytona fallback. The legacy Daytona
+preview teardown and sweep were deleted on 2026-10-19: Platinum is the
+reference provider and previews hold no Daytona credential.
 
 The gate structure is unchanged: an approval job resolves exactly one head SHA,
 three credential-free jobs build it, and one default-branch job holds the
@@ -27,9 +28,8 @@ credentials and never executes pull request code. The assertions follow the new
 implementation files; each obsolete assertion is kept as a comment that records
 which rule replaced it.
 
-`infra/terraform/environments/preview` still exists and is still applied, so its
-guardrails are still asserted here. `infra/scripts/ecs-preview.sh` is no longer
-reachable from any workflow; this file asserts it stays disconnected.
+The ECS preview Terraform root and `infra/scripts/ecs-preview.sh` are deleted.
+This file asserts the workflow never reconnects to them.
 """
 
 from pathlib import Path
@@ -57,9 +57,6 @@ PREVIEW_SOURCES = {
     "tests/src/core/sandbox-preview-providers.ts": PREVIEW_PROVIDERS,
     "tests/src/core/preview-stack.ts": PREVIEW_STACK,
 }
-TERRAFORM = read("infra/terraform/environments/preview/main.tf")
-VARIABLES = read("infra/terraform/environments/preview/variables.tf")
-README = read("infra/terraform/environments/preview/README.md")
 
 JOB_HEADING = re.compile(r"^  [a-z][a-z0-9-]*:$", re.MULTILINE)
 
@@ -95,7 +92,7 @@ class PreviewApproval(unittest.TestCase):
 
     def test_preview_label_approves_one_exact_sha(self):
         self.assertIn("pull_request_target:", WORKFLOW)
-        self.assertIn("branches: [main]", WORKFLOW)
+        self.assertIn("branches: [dev]", WORKFLOW)
         self.assertIn("github.event.action == 'labeled'", WORKFLOW)
         self.assertIn("github.event.label.name == 'preview'", WORKFLOW)
         # Automatic previews on open/synchronize would deploy unreviewed code.
@@ -182,12 +179,12 @@ class PreviewBuildIsolation(unittest.TestCase):
     def test_build_jobs_have_no_secret_no_registry_and_no_push(self):
         self.assertEqual(WORKFLOW.count("push: false"), 3)
         self.assertEqual(WORKFLOW.count("type=docker,dest=/tmp/preview-"), 3)
-        self.assertEqual(WORKFLOW.count("actions/download-artifact@v8"), 3)
+        self.assertEqual(WORKFLOW.count("actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8"), 3)
         for name in BUILD_JOBS:
             section = job(name)
             self.assertIn("permissions:\n      contents: read", section)
             self.assertIn("submodules: false", section)
-            self.assertEqual(section.count("actions/upload-artifact@v7"), 1)
+            self.assertEqual(section.count("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7"), 1)
             self.assertIn("if-no-files-found: error", section)
             self.assertNotIn("${{ secrets.", section)
             self.assertNotIn("DOCKERHUB_", section)
@@ -200,7 +197,7 @@ class PreviewBuildIsolation(unittest.TestCase):
         self.assertIn("ref: ${{ github.event.repository.default_branch }}", deploy)
         # The privileged runner must not check out pull request code at all.
         self.assertNotIn("ref: ${{ needs.authorize.outputs.sha }}", deploy)
-        self.assertIn("docker/login-action@v3", deploy)
+        self.assertIn("docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3", deploy)
         self.assertIn("docker load --input", deploy)
         self.assertIn("docker push", deploy)
         self.assertIn(
@@ -230,7 +227,7 @@ class PreviewBuildIsolation(unittest.TestCase):
         self.assertNotIn("submodule update --init --recursive --remote", WORKFLOW)
         # NEW (2026-09, aws-env migration): the default-branch-only jobs below
         # (never the PR-code build-* jobs) hold an OIDC token to read
-        # DAYTONA_API_KEY/MORPH_API_KEY from kortix-preview-env through
+        # PLATINUM_API_KEY/PLATINUM_INFERENCE_API_KEY from the env secrets through
         # .github/actions/aws-env — never a direct role assumption. The
         # invariant this test guards is narrower than "no identity anywhere":
         # a job that checks out or compiles pull request code must never hold
@@ -270,17 +267,12 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # ...and cleanup deletes only a sandbox this run CREATED. Deleting a
         # reused one discards the stable origin the environment exists to hold.
         self.assertIn("if (sandboxId && !reusedSandboxId) await deletePlatinum(", PREVIEW_PROVIDERS)
-        # Previews run on Platinum only (fad008f63c, #7482). Nothing may create
-        # a Daytona sandbox, so no preview or branch environment can land on a
-        # provider-issued Daytona origin. Daytona code remains for deletion only.
-        self.assertNotIn("createDaytonaSandbox(", PREVIEW_PROVIDERS)
-        self.assertNotIn("deployDaytonaPreview", PREVIEW_PROVIDERS + PREVIEW_CLI)
+        # Previews run on Platinum, the reference provider. No preview code
+        # touches Daytona, the legacy fallback, at all.
+        self.assertNotIn("daytona", (PREVIEW_PROVIDERS + PREVIEW_CLI).lower())
         # OLD: rollback_deploy / PREVIOUS_TASK_DEFINITION rolled a live service
         # back. A sandbox is disposable, so a redeploy deletes and recreates it.
-        # (replaceExistingDaytonaPreview went with the Daytona deploy in
-        # fad008f63c; the Daytona teardown keeps the same ownership refusal.)
         self.assertIn("async function replaceExistingPlatinumPreview(", PREVIEW_PROVIDERS)
-        self.assertIn("refused to delete unowned Daytona sandbox", PREVIEW_PROVIDERS)
         # The owner a PR preview is stamped with (previewSandboxIdentity) is the
         # same one every destructive read filters on, so a redeploy, a teardown,
         # and the nightly sweep can only ever touch a sandbox this system made.
@@ -294,16 +286,8 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         self.assertIn("sandbox.name === ephemeral &&", PREVIEW_CORE)
         self.assertIn("owner === 'kortix-preview' &&", PREVIEW_CORE)
         self.assertIn("sandbox.name === persistent && owner === 'kortix-branch-env'", PREVIEW_CORE)
-        # Legacy Daytona previews are found and deleted only by the owner label
-        # the old deploy stamped (deploy stamping deleted in fad008f63c).
-        self.assertIn("return JSON.stringify({ 'kortix-preview': 'true' });", PREVIEW_PROVIDERS)
-        self.assertIn("sandbox.labels?.['kortix-preview-pr'] !== String(input.prNumber)", PREVIEW_PROVIDERS)
-        # A provider switch must not leave the other provider's sandbox running.
-        # Every deploy is Platinum since fad008f63c (#7482), so every deploy
-        # deletes this pull request's pre-cutover Daytona sandbox.
         deploy_action = cli_action("deploy")
         self.assertIn("platinum: () => deployPlatinumPreview(deployment),", deploy_action)
-        self.assertIn("await teardownDaytonaPreview({ ...daytona, prNumber }).catch(", deploy_action)
 
     def test_the_preview_origin_is_credential_free_https(self):
         # OLD: WEB_PROTECTION_PASSWORD plus the anonymous/wrong/cookie_only
@@ -322,13 +306,16 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # as configuration (PREVIEW_PUBLIC_ORIGIN) and is validated like any
         # other origin — the sources above still name no host of their own.
         self.assertIn("PREVIEW_PUBLIC_ORIGIN", PREVIEW_CLI)
+        # Both candidate origins pass validatedPreviewUrl: the provider URL when
+        # the sandbox is provisioned, the configured stable name when it is used.
+        self.assertIn("sandboxOrigin: validatedPreviewUrl(previewUrl)", PREVIEW_PROVIDERS)
         self.assertIn(
-            "const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : sandboxOrigin;",
+            "const origin = input.publicOrigin ? validatedPreviewUrl(input.publicOrigin) : provisioned.sandboxOrigin;",
             PREVIEW_PROVIDERS,
         )
         # The provider origin is always reported, because whatever serves the
         # stable name has to be told which sandbox to send traffic to.
-        self.assertIn("sandboxOrigin,", PREVIEW_PROVIDERS)
+        self.assertIn("sandboxOrigin: provisioned.sandboxOrigin,", PREVIEW_PROVIDERS)
 
     def test_only_the_edge_port_is_published_and_the_gateway_stays_internal(self):
         # OLD: LLM_GATEWAY_PROXY_TARGET http://127.0.0.1:8090, an API container
@@ -386,7 +373,7 @@ class PreviewRuntimeIsolation(unittest.TestCase):
         # values land in one 0600 file inside the sandbox.
         self.assertIn("export const PREVIEW_RUNTIME_SECRET_ALLOWLIST = [", PREVIEW_STACK)
         for name in (
-            "'DAYTONA_API_KEY',",
+            "'PLATINUM_API_KEY',",
             "'KE2E_STRIPE_SECRET_KEY',",
             "'KE2E_STRIPE_WEBHOOK_SECRET',",
             "'KORTIX_GITHUB_APP_ID',",
@@ -394,7 +381,7 @@ class PreviewRuntimeIsolation(unittest.TestCase):
             "'KORTIX_GITHUB_APP_SLUG',",
             "'MANAGED_GIT_GITHUB_INSTALL_ID',",
             "'MANAGED_GIT_GITHUB_OWNER',",
-            "'OPENROUTER_API_KEY',",
+            "'PLATINUM_INFERENCE_API_KEY',",
         ):
             self.assertIn(name, PREVIEW_STACK)
         self.assertIn("preview runtime secret is not allowlisted", PREVIEW_STACK)
@@ -428,9 +415,10 @@ class PreviewTeardown(unittest.TestCase):
         # off (the explicit switch) and the branch being deleted.
         teardown = job("teardown")
         self.assertNotIn("github.event.action == 'closed'", WORKFLOW)
-        self.assertIn("types: [labeled, unlabeled, synchronize]", WORKFLOW)
+        self.assertIn("types: [labeled, unlabeled]", WORKFLOW)
         self.assertIn("github.event.action == 'unlabeled' && github.event.label.name == 'preview'", WORKFLOW)
-        self.assertIn("github.event.action == 'synchronize'", WORKFLOW)
+        # A push never deploys (2026-09-28): adding the label is the one trigger.
+        self.assertNotIn("synchronize", WORKFLOW)
         # Teardown runs default-branch code, never the pull request head.
         self.assertIn("ref: ${{ github.event.repository.default_branch }}", teardown)
         # OLD: bash infra/scripts/ecs-preview.sh teardown "$NUM".
@@ -456,40 +444,24 @@ class PreviewTeardown(unittest.TestCase):
 
         # OLD: aws ecs delete-service / elbv2 delete-rule / delete-target-group
         # / ecs deregister-task-definition removed the four ECS resources.
-        # NEW: one sandbox holds the whole stack, so teardown deletes it on both
-        # providers and refuses to touch a sandbox it does not own.
+        # NEW: one sandbox holds the whole stack, so teardown deletes it on
+        # Platinum and refuses to touch a sandbox it does not own.
         teardown_action = cli_action("teardown")
         # Both shapes are deleted, and either key alone is enough: the PR-named
         # sandbox when a number is known, the branch-named one when a branch is.
         self.assertIn("...(prNumber === undefined ? {} : { prNumber }),", teardown_action)
         self.assertIn("...(branchEnv ? { branchEnv } : {}),", teardown_action)
-        # Daytona only ever holds the EPHEMERAL shape — a branch environment is
-        # pinned to Platinum — and its teardown is keyed by pull request number,
-        # so a branch-only teardown has nothing to ask it for.
-        self.assertIn(
-            "prNumber === undefined ? Promise.resolve(0) : teardownDaytonaPreview({ ...daytona, prNumber })",
-            teardown_action,
-        )
-        self.assertIn("refused to delete unowned Daytona sandbox", PREVIEW_PROVIDERS)
         self.assertIn("sandbox.metadata?.owner === 'kortix-preview' &&", PREVIEW_PROVIDERS)
         self.assertIn("Mark GitHub deployment inactive", teardown)
         self.assertNotIn("branch-scoped Vercel", WORKFLOW)
 
-    def test_a_new_head_sha_redeploys_instead_of_revoking_the_approval(self):
-        # WAS: a push deleted the sandbox AND stripped the `preview` label, so
-        # every push cost a human re-approval and a NEW url. A labelled preview
-        # now stays online until the label comes off or the pull request closes.
-        #
-        # The approval bar is unchanged, only re-expressed: `authorize` still
-        # runs on the push, still accepts SAME-REPOSITORY pull requests only, and
-        # still requires the actor to hold write. On `synchronize` that actor is
-        # whoever pushed — who necessarily already holds write on this
-        # repository — so nothing is loosened. The exact-SHA revalidation before
-        # deploy is untouched.
+    def test_only_an_explicit_label_or_dispatch_deploys(self):
+        # Only an explicit act deploys: a writer adds the label or dispatches.
+        # A push to a labelled branch starts nothing (2026-09-28).
         authorize = job("authorize")
-        self.assertIn("github.event.action == 'synchronize'", authorize)
+        self.assertNotIn("synchronize", authorize)
         self.assertIn(
-            "contains(github.event.pull_request.labels.*.name, 'preview')", authorize
+            "github.event.action == 'labeled' && github.event.label.name == 'preview'", authorize
         )
         self.assertIn(
             "github.event.pull_request.head.repo.full_name == github.repository", authorize
@@ -520,9 +492,7 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn(
             "PREVIEW_PUBLIC_ORIGIN: ${{ needs.authorize.outputs.public_origin }}", job("deploy")
         )
-        # The label deploys and does not test (2026-09-28: five concurrent
-        # label suites rate-limited each other for ~80 min each). Only an
-        # explicit dispatch runs --target-full against a preview.
+        # The label deploys only (~7 min). Only a dispatch runs --target-full.
         self.assertIn(
             "PREVIEW_RUN_TESTS: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}",
             job("deploy"),
@@ -549,9 +519,6 @@ class PreviewTeardown(unittest.TestCase):
             "reconcilePlatinumPreviews({ ...platinum, activePullRequests: active, liveBranchSandboxNames })",
             reconcile_action,
         )
-        self.assertIn(
-            "reconcileDaytonaPreviews({ ...daytona, activePullRequests: active })", reconcile_action
-        )
         self.assertIn("selectStalePreviewSandboxIds", PREVIEW_CORE)
         # Both owners are reaped, by different rules, because they are identified
         # by different things. An EPHEMERAL preview is built for exactly one
@@ -577,11 +544,6 @@ class PreviewTeardown(unittest.TestCase):
         self.assertIn("auto_delete_days: identity.autoDeleteDays,", PREVIEW_PROVIDERS)
         self.assertIn("autoArchiveDays: 7,", PREVIEW_CORE)
         self.assertIn("autoDeleteDays: 7,", PREVIEW_CORE)
-        # The Daytona 7-day intervals (autoArchiveInterval/autoDeleteInterval
-        # 10_080) went with the Daytona deploy in fad008f63c (#7482). Sandboxes
-        # created before it keep them and the Daytona reconcile above still
-        # sweeps them; nothing may create a new Daytona sandbox without them.
-        self.assertNotIn("createDaytonaSandbox(", PREVIEW_PROVIDERS)
         # A branch environment carries NO provider expiry — it is retired by the
         # `preview` label coming off or by its BRANCH being deleted, and nothing
         # else. Teardown must therefore know the branch, or the box outlives
@@ -654,48 +616,6 @@ class PreviewHealthGate(unittest.TestCase):
         self.assertNotIn("daytona", run.lower())
         self.assertIn("export type SandboxPreviewProvider = 'auto' | 'platinum';", PREVIEW_CORE)
         self.assertIn("PREVIEW_SANDBOX_PROVIDER must be auto or platinum", PREVIEW_CLI)
-
-
-class SharedPreviewEdge(unittest.TestCase):
-    """The ECS preview root no longer serves previews but is still applied."""
-
-    # `infra/terraform/environments/preview` provisions a real ALB, WAF, DNS
-    # records, and a GitHub OIDC role in account 935064898258. #6347 stopped
-    # using them; it did not destroy them. Until the root is removed, its
-    # guardrails stay gated here. Retiring it must delete this class and the
-    # root together.
-
-    def test_shared_edge_has_tls_waf_logs_and_preview_only_oidc_role(self):
-        for fragment in (
-            'name = "kortix-preview"',
-            "certificate_arn   = var.preview_certificate_arn",
-            'resource "aws_wafv2_web_acl_association" "preview"',
-            "drop_invalid_header_fields = true",
-            "enable_deletion_protection = true",
-            'name    = "*.preview-api"',
-            'name    = "*.preview"',
-            'domain_name = "*.preview.kortix.com"',
-            'resource "aws_lb_listener_certificate" "frontend"',
-            'data "aws_secretsmanager_secret" "web"',
-            'name = "kortix-preview-web-env"',
-            "proxied = false",
-            'name = "kortix-gha-preview-deploy"',
-            '"repo:kortix-ai/suna:pull_request"',
-            '"repo:kortix-ai/suna:ref:refs/heads/main"',
-            '"token.actions.githubusercontent.com:job_workflow_ref" = "kortix-ai/suna/.github/workflows/deploy-preview.yml@refs/heads/main"',
-            'description = "DNS over UDP"',
-            'resource "aws_iam_role_policy" "execution_logs_kms"',
-            'resource "aws_wafv2_web_acl" "preview"',
-            'name        = "AWSManagedRulesKnownBadInputsRuleSet"',
-            'resource "aws_wafv2_web_acl_logging_configuration" "preview"',
-        ):
-            self.assertIn(fragment, TERRAFORM)
-
-    def test_database_egress_and_bootstrap_are_bounded(self):
-        self.assertIn("cidr_blocks = var.postgres_egress_cidrs", TERRAFORM)
-        self.assertIn('!contains(var.postgres_egress_cidrs, "0.0.0.0/0")', VARIABLES)
-        for heading in ("## Existing-resource import", "## Cutover", "## Reconciliation and rollback"):
-            self.assertIn(heading, README)
 
 
 if __name__ == "__main__":

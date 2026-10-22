@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  foldForTest,
   jsonTail,
   hasPhrasePair,
   labelledValue,
@@ -50,7 +49,12 @@ function strings(tokens: string[], count: number, maxTokens: number, seed: numbe
 }
 
 /** Runs `fn` and fails when it takes longer than `ms`. */
-function fast(fn: () => unknown, ms = 250): void {
+function fast(fn: () => unknown, ms = 1000): void {
+  // The bound only separates linear from quadratic: these inputs scan 100k–
+  // 240k chars in ~1–10 ms linear, while the quadratic blowup the guards exist
+  // to catch takes seconds-to-minutes. 1 s absorbs scheduler noise when the
+  // suite runs under parallel load (-P4 bun workers, db-suite children); at
+  // 250 ms the guards flaked on a healthy implementation (113 ms observed).
   const start = performance.now();
   fn();
   expect(performance.now() - start).toBeLessThan(ms);
@@ -287,16 +291,17 @@ describe('urlError', () => {
     expect(found).toBeGreaterThan(600);
   });
   test('linear on a long whitespace run in the error', () => {
-    fast(() => urlError(`https://a.io: x${' '.repeat(240_000)}y`, 'https://a.io'), 100);
+    fast(() => urlError(`https://a.io: x${' '.repeat(240_000)}y`, 'https://a.io'));
   });
 });
 
-describe('fold', () => {
-  test('folds a character to an ASCII letter only when a non-unicode /i regex does', () => {
+describe('fold (pinned through hasPhrasePair, the public path)', () => {
+  test('case-folds a character to an ASCII letter only when a non-unicode /i regex does', () => {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
     for (let code = 0; code < 0x10000; code++) {
       const ch = String.fromCharCode(code);
-      const folded = foldForTest(ch);
-      expect(folded.length === 1 && /[A-Z]/.test(folded)).toBe(/^[a-z]$/i.test(ch));
+      const matched = [...letters].some((l) => hasPhrasePair(ch, l, ''));
+      expect(matched).toBe(/^[a-z]$/i.test(ch));
     }
   });
 });

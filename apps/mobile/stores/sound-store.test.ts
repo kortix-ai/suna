@@ -1,18 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'bun:test';
 
-// In-memory AsyncStorage: the sound store persists through it.
-const storage = new Map<string, string>();
-mock.module('@react-native-async-storage/async-storage', () => ({
-  default: {
-    getItem: async (key: string) => storage.get(key) ?? null,
-    setItem: async (key: string, value: string) => {
-      storage.set(key, value);
-    },
-    removeItem: async (key: string) => {
-      storage.delete(key);
-    },
-  },
-}));
+import { storage } from './in-memory-async-storage';
 
 const { useSoundStore } = await import('./sound-store');
 

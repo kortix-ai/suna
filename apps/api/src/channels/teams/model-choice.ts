@@ -10,7 +10,6 @@
  */
 import { labelForModelRef } from '../../llm-gateway/models/picker';
 import { toWireModel } from '../../llm-gateway/resolution/effective';
-import { validateNativeOpencodeModelRef } from '../../projects/lib/session-model-change';
 import { config } from '../../config';
 import {
   type ChannelModelScope,
@@ -67,14 +66,6 @@ export async function buildTeamsModelsCard(activity: TeamsActivity, tenantId: st
   if (!scope) return buildNoticeCard('Connect a project to this conversation first — try /projects.', '📁');
   const selection = await currentChannelSelection(ctx);
   const current = selection?.opencodeModel ?? null;
-  if (!scope.llmGatewayEnabled) {
-    return buildNoticeCard(
-      current
-        ? `This conversation uses \`${current}\`. This project runs native OpenCode models (LLM gateway off) — set any connected provider's model with \`/model provider/model\`, or \`/model default\` to reset.`
-        : 'This conversation uses the project default (resolved by OpenCode in the sandbox). This project runs native OpenCode models (LLM gateway off) — set any connected provider\'s model with `/model provider/model`, e.g. `/model anthropic/claude-sonnet-4-6`.',
-      '🧠',
-    );
-  }
   const { models, defaultModel } = await listChannelModels(scope);
   const currentWire = current ? toWireModel(current) : null;
   const keys = currentWire ? await channelKeySelection(scope, currentWire) : null;
@@ -107,26 +98,16 @@ export async function applyTeamsModelChoice(
   );
   if (!auth.ok) return buildNoticeCard(teamsSettingsRefusal(auth.reason, 'Connect a project to this conversation first.'));
   const reset = !id || id.toLowerCase() === 'default';
-  // Native mode (gateway off): no gateway catalog — accept a native
-  // `provider/model` ref verbatim. A choice waits for the next session.
-  if (!scope.llmGatewayEnabled) {
-    if (reset) {
-      await setChannelModel(ctx, null);
-      return buildNoticeCard('Model reset to the project default.', '✅');
-    }
-    if (validateNativeOpencodeModelRef(id)) {
-      return buildNoticeCard(`\`${id}\` isn't usable here — this project runs native OpenCode models (LLM gateway off). Use \`provider/model\`, e.g. \`anthropic/claude-sonnet-4-6\`.`);
-    }
-    await setChannelModel(ctx, id);
-    return buildNoticeCard(`Model set to \`${id}\`. New sessions will use it.`);
-  }
 
   const selection = await currentChannelSelection(ctx);
   // The live session decides what the next message can use: its agent's
   // secret grant, and whether it reaches the person's own keys. A personal
   // chat's session created before these became private is shared, so it
   // cannot, whatever the chat is.
-  const live = await conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null);
+  // Only a session of the conversation's own project: after a `/use` the
+  // conversation's session may still belong to the project it started in,
+  // and this project's keys must never be attached to it.
+  const live = await conversationSession(tenantId, conversationId, sessionProjectId ?? scope.projectId).catch(() => null);
   if (live?.sessionId) {
     // The choice reaches the live session: every message in it runs on the
     // new model and keys. Choosing needs the same standing as sending one.
@@ -197,16 +178,14 @@ export async function applyTeamsModelChoice(
  * it reaches the live session too — else the model the live session started
  * with, else the project default. "project default" beside a session pinned
  * to another model was how a chat stuck on a model it could not run looked
- * fine here. Off the gateway a choice waits for `/new`, so both are named.
+ * fine here.
  */
 export function statusModel(
   choice: string | null,
   session: Pick<TeamsConversationSession, 'opencodeModel'> | null,
-  gatewayOn: boolean,
 ): string {
   const pinned = session?.opencodeModel ?? null;
-  if (choice && (gatewayOn || !pinned || pinned === choice)) return labelForModelRef(choice);
-  if (choice && pinned) return `${labelForModelRef(pinned)} (this session; ${labelForModelRef(choice)} from /new)`;
+  if (choice) return labelForModelRef(choice);
   if (pinned) return `${labelForModelRef(pinned)} (this session)`;
   return 'project default';
 }

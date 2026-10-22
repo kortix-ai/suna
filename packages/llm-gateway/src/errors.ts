@@ -89,11 +89,15 @@ export type NoUpstreamReasonCode =
   | 'model_not_found'
   | 'model_disabled_on_deployment'
   | 'model_disabled'
+  | 'model_retired'
   | 'provider_disabled'
   | 'plan_upgrade_required'
   | 'provider_not_connected'
   | 'provider_reauth_required'
-  | 'provider_pool_rate_limited';
+  | 'provider_pool_rate_limited'
+  // The credential exists, but the running agent's secret grant does not name
+  // it. The fix is the agent's `secrets` list, not a new connection.
+  | 'agent_grant_excludes';
 
 export class GatewayResolutionError extends Error {
   constructor(
@@ -101,6 +105,12 @@ export class GatewayResolutionError extends Error {
     message: string,
     readonly suggestion: string,
     readonly retryAfterSeconds?: number,
+    /**
+     * How long the routed upstream rests: a ChatGPT usage limit lasts hours or
+     * days. Not a retry hint (a client gets `retryAfterSeconds` only); the
+     * gateway holds the route this long (pipeline/route-memory.ts).
+     */
+    readonly restSeconds?: number,
   ) {
     super(message);
     this.name = 'GatewayResolutionError';

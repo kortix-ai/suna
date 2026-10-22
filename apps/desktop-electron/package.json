@@ -8,7 +8,7 @@
   "repository": "https://github.com/kortix-ai/suna",
   "main": "src/main.js",
   "scripts": {
-    "test": "bun test src",
+    "test": "node ../../scripts/test-guard.mjs \"bun test src\"",
     "setup": "node scripts/ensure-runtime.js",
     "dev": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=http://localhost:3000/projects electron .",
     "dev:dev-env": "node scripts/ensure-runtime.js && KORTIX_DESKTOP_URL=https://dev.kortix.com/projects electron .",
@@ -21,10 +21,11 @@
     "build:linux": "electron-builder --linux"
   },
   "devDependencies": {
-    "electron": "^39.8.1",
-    "electron-builder": "^25.1.8"
+    "electron": "^42.11.3",
+    "electron-builder": "^26.18.0"
   },
   "dependencies": {
+    "@sentry/electron": "^7.3.0",
     "electron-updater": "^6.8.9"
   }
 }

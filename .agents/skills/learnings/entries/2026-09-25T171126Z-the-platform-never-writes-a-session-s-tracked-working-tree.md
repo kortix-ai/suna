@@ -5,8 +5,8 @@ commit: cd6b6ab7af
 ---
 # The platform never writes a session's tracked working tree
 
-**Near miss.** `kortix sessions reload` exited 0 and printed a moved etag on dev
-session `6d8dfdae`, which nobody had touched. The live agent answered
+**Near miss.** `kortix sessions reload` exited 0 and printed a moved etag on a dev
+session which nobody had touched. The live agent answered
 `NO_MARKER`. OpenCode read its agents, skills and tools from
 `/workspace/.kortix/opencode`, so the reload checked the base branch's copy out
 into the session's tracked tree. A scripted run on the #7403 preview then found

@@ -2,7 +2,7 @@
  * Customize · Skills.
  *
  * `ProjectConfigSummary.skills` — the same server-side read
- * `apps/web/src/features/workspace/capabilities/skills/skills-page.tsx` uses.
+ * `packages/ui/src/customize/skills/skills-page.tsx` uses.
  * Skills do NOT require a session: they are project config, so this tab works
  * with no sandbox running. That is why `CustomizeScreen` takes no session
  * prop.
@@ -30,8 +30,8 @@ export interface SkillRowData {
  * Where a skill comes from.
  *
  * The web splits the same list into All / Project / Kortix. A baked platform
- * skill lives under a `.kortix` path inside the sandbox image; anything under
- * the repo's own `.opencode` tree is the project's.
+ * skill lives under a `.kortix` path inside the sandbox image; anything else
+ * is the project's.
  */
 export function skillScope(path: string): SkillRowData['scope'] {
   return /(^|\/)\.kortix(\/|$)/.test(path) ? 'kortix' : 'project';
@@ -127,7 +127,7 @@ export function SkillsTabView({
         }}
         maxRows={Math.max(height - 1, 1)}
         width={width}
-        emptyText="No skills yet. Add one under .opencode/skill/<name>/SKILL.md."
+        emptyText="No skills yet. Add one under skills/<name>/SKILL.md."
       />
       {rows.length > 0 ? <text fg={theme.faint}>Enter details</text> : null}
     </box>

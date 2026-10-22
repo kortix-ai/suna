@@ -10,6 +10,8 @@
  * Pure so the palette can be asserted without a renderer.
  */
 
+import { runtimeSupports } from '@kortix/sdk';
+
 import type { ListItem } from '../../../ui/index.ts';
 
 /** A built-in the app owns: the composer just reports it. */
@@ -68,9 +70,17 @@ const BUILTIN_PREFIX = 'builtin:';
  * `commands` is defensively normalized: the runtime's `GET /command` has been
  * observed answering with a truthy non-array (see `detect-command.ts` in
  * apps/web), and one bad response must not take the composer down.
+ *
+ * `capabilities` is the runtime's `/kortix/health` list: a runtime without
+ * `session.commands` (pi) gets no project rows, and one without
+ * `session.attach` no `/attach` row. Null hides nothing.
  */
-export function commandItems(commands: readonly RuntimeCommand[] | undefined): ListItem[] {
-  const runtime = Array.isArray(commands) ? commands : [];
+export function commandItems(
+  commands: readonly RuntimeCommand[] | undefined,
+  capabilities: readonly string[] | null = null,
+): ListItem[] {
+  const runtime =
+    Array.isArray(commands) && runtimeSupports(capabilities, 'session.commands') ? commands : [];
   const items: ListItem[] = [];
   for (const command of runtime) {
     if (!command || typeof command.name !== 'string' || !command.name) continue;
@@ -81,6 +91,7 @@ export function commandItems(commands: readonly RuntimeCommand[] | undefined): L
     });
   }
   for (const builtin of BUILTIN_COMMANDS) {
+    if (builtin.name === 'attach' && !runtimeSupports(capabilities, 'session.attach')) continue;
     items.push({
       id: `${BUILTIN_PREFIX}${builtin.name}`,
       label: `/${builtin.name}`,

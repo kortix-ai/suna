@@ -6,9 +6,11 @@ import {
   createAppAccessSession,
   createAppDeployment,
   deleteApp,
+  deleteAppDeployment,
   finalizeAppArtifact,
   getApp,
   getAppAccess,
+  getAppAuthEnv,
   getAppDeployment,
   getAppDeploymentLogs,
   listAppAgents,
@@ -21,10 +23,22 @@ import {
   updateApp,
   updateAppAccess,
   uploadAppArtifactArchive,
+  type App,
   type AppDeployment,
+  type AppDeployStrategy,
+  type AppReleaseConfig,
+  type AppRollback,
+  type AppImageRelease,
+  type CreateAppInput,
+  type UpdateAppInput,
+  type DeleteAppDeploymentResult,
   type AppAccessMode,
   type AppHostingProvider,
   type UpdateAppAccessInput,
+  type AppAuth,
+  type AppCapability,
+  type AppToken,
+  createAppToken,
 } from './apps';
 
 type Equal<A, B> =
@@ -60,7 +74,7 @@ beforeEach(() => {
 const last = () => calls.at(-1)!;
 
 test('AppHostingProvider is exactly the supported hosted provider set', () => {
-  const exactProviderSet: Equal<AppHostingProvider, 'daytona' | 'platinum' | 'e2b'> = true;
+  const exactProviderSet: Equal<AppHostingProvider, 'platinum' | 'daytona'> = true;
   expect(exactProviderSet).toBe(true);
 });
 
@@ -73,6 +87,21 @@ test('AppDeployment exposes the immutable deploying actor', () => {
   expect(deployment.created_by).toBe('user-1');
   expect(deployment.source_session_id).toBe('session-1');
   expect(deployment.actor_type).toBe('agent');
+});
+
+test('AppDeployment is a release: its resolved config, strategy and release command outcome', () => {
+  const config: Equal<AppDeployment['config'], AppReleaseConfig | null> = true;
+  const strategy: Equal<AppDeployment['strategy'], AppDeployStrategy | null> = true;
+  const releaseCommand: Equal<AppDeployment['release_command_status'], 'running' | 'succeeded' | 'failed' | null> = true;
+  expect([config, strategy, releaseCommand]).toEqual([true, true, true]);
+});
+
+test('rollbackApp resolves with the App and the NEW release it queued', async () => {
+  const shape: Equal<Awaited<ReturnType<typeof rollbackApp>>, AppRollback> = true;
+  expect(shape).toBe(true);
+  responses.push({ body: { app_id: 'app-1', deployment: { deployment_id: 'deployment-4', version: 4, status: 'queued' } } });
+  const rolled = await rollbackApp('project-1', 'app-1', 'deployment-1');
+  expect(rolled.deployment).toMatchObject({ deployment_id: 'deployment-4', version: 4, status: 'queued' });
 });
 
 test('Apps hosting excludes the retired same-machine provider', () => {
@@ -107,7 +136,6 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-08-07T00:00:00.000Z',
     updated_at: '2026-08-07T00:00:00.000Z',
@@ -138,6 +166,75 @@ test('Apps CRUD uses the project-scoped API contract', async () => {
 
   await deleteApp('project-1', 'app-1');
   expect(last().method).toBe('DELETE');
+});
+
+test('an App names the Apps it uses and the Apps that use it; create and update send `uses`', async () => {
+  const app = { app_id: 'app-1', uses: ['db'], used_by: [] as string[] } as App;
+  const uses: string[] | undefined = app.uses;
+  const usedBy: string[] | undefined = app.used_by;
+  expect(uses).toEqual(['db']);
+  expect(usedBy).toEqual([]);
+  responses.push({ status: 201, body: app }, { body: app });
+
+  const created: CreateAppInput = { slug: 'crm', name: 'CRM', uses: ['db'] };
+  await createApp('project-1', created);
+  expect(last()).toMatchObject({ method: 'POST', body: { slug: 'crm', name: 'CRM', uses: ['db'] } });
+
+  const update: UpdateAppInput = { uses: [] };
+  await updateApp('project-1', 'app-1', update);
+  expect(last()).toMatchObject({ method: 'PATCH', url: 'http://backend.test/v1/projects/project-1/apps/app-1', body: { uses: [] } });
+});
+
+test('getAppAuthEnv: issuer, audience and the key set inline as a data: URL (a backend that fetches nothing verifies offline)', async () => {
+  const keys = { keys: [{ kty: 'EC', kid: 'k1', crv: 'P-256', x: 'x', y: 'y' }] };
+  responses.push(
+    { body: { app_id: 'app-2', auth: { issuer: 'https://api.test/v1/projects/project-1', audience: 'app-2', jwks_uri: 'https://api.test/v1/projects/project-1/jwks.json' } } },
+    { body: keys },
+  );
+  const env = await getAppAuthEnv('project-1', 'app-2');
+  expect(last().url).toBe('http://backend.test/v1/projects/project-1/jwks.json');
+  expect(env.KORTIX_AUTH_ISSUER).toBe('https://api.test/v1/projects/project-1');
+  expect(env.KORTIX_AUTH_AUDIENCE).toBe('app-2');
+  const prefix = 'data:application/json;base64,';
+  expect(env.KORTIX_AUTH_JWKS.startsWith(prefix)).toBe(true);
+  expect(JSON.parse(atob(env.KORTIX_AUTH_JWKS.slice(prefix.length)))).toEqual(keys);
+});
+
+test('getAppAuthEnv refuses an App the server reports no sign-in values for', async () => {
+  responses.push({ body: { app_id: 'app-3' } });
+  await expect(getAppAuthEnv('project-1', 'app-3')).rejects.toThrow('sign-in values');
+});
+
+test('an App carries its capabilities and sign-in values; no kind, no instance', () => {
+  type Has<T, K extends string> = K extends keyof T ? true : false;
+  const kind: Has<App, 'kind'> = false;
+  const instance: Has<App, 'instance'> = false;
+  const createKind: Has<CreateAppInput, 'kind'> = false;
+  expect([kind, instance, createKind]).toEqual([false, false, false]);
+  const app = {
+    app_id: 'app-2',
+    capabilities: ['deployments', 'rollback', 'preview', 'sleep', 'member_tokens'],
+    auth: {
+      issuer: 'https://api.test/v1/projects/project-1',
+      audience: 'app-2',
+      jwks_uri: 'https://api.test/v1/projects/project-1/jwks.json',
+    },
+    hosting_type: 'sandbox',
+  } as App;
+  const capabilities: AppCapability[] | undefined = app.capabilities;
+  const auth: AppAuth | undefined = app.auth;
+  expect(capabilities).toContain('member_tokens');
+  expect(auth?.audience).toBe('app-2');
+});
+
+test('AppCapability is exactly the generic capabilities (machines, scale, exec, volumes, snapshots)', () => {
+  const exact: Equal<AppCapability, 'deployments' | 'rollback' | 'preview' | 'sleep' | 'static' | 'member_tokens' | 'machines' | 'scale' | 'exec' | 'volumes' | 'snapshots'> = true;
+  expect(exact).toBe(true);
+});
+
+test('a deployment source is a build: static, bundle, dockerfile or oci_image', () => {
+  const exact: Equal<import('./apps').AppSourceKind, 'static' | 'bundle' | 'dockerfile' | 'oci_image'> = true;
+  expect(exact).toBe(true);
 });
 
 test('App access reads, updates, and creates a browser exchange URL through project-scoped REST routes', async () => {
@@ -298,4 +395,131 @@ test('listAppAgents reads the agents whose kortix.yaml `apps:` grant names the A
     method: 'GET',
     url: 'http://backend.test/v1/projects/project-1/apps/app-1/agents',
   });
+});
+
+test('deleteApp returns how many deployment images the delete freed', async () => {
+  const images: AppImageRelease = { released: 3, pending: 1 };
+  responses.push({ body: { ok: true, images } });
+
+  const result = await deleteApp('project-1', 'app-1');
+
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1',
+  });
+  expect(result).toEqual({ ok: true, images });
+});
+
+test('deleteAppDeployment deletes one deployment and reports its image outcome', async () => {
+  const deleted: DeleteAppDeploymentResult = {
+    ok: true,
+    deployment_id: 'deployment-1',
+    image: 'released',
+  };
+  responses.push({ body: deleted });
+
+  const result = await deleteAppDeployment('project-1', 'app-1', 'deployment-1');
+
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://backend.test/v1/projects/project-1/apps/app-1/deployments/deployment-1',
+  });
+  expect(result).toEqual(deleted);
+});
+
+test('deleteAppDeployment surfaces the 409 for the live deployment', async () => {
+  responses.push({
+    status: 409,
+    body: {
+      error: 'This deployment serves live traffic. Roll back to another deployment first, or delete the App.',
+      code: 'deployment_live',
+    },
+  });
+
+  await expect(deleteAppDeployment('project-1', 'app-1', 'deployment-1')).rejects.toMatchObject({
+    status: 409,
+  });
+});
+
+test('DeleteAppDeploymentResult.image is exactly released, pending, or none', () => {
+  const exact: Equal<DeleteAppDeploymentResult['image'], 'released' | 'pending' | 'none'> = true;
+  expect(exact).toBe(true);
+});
+
+test('an App runs always-on or on demand: create and update send always_on, and the App reads it back', async () => {
+  const app: import('./apps').App = {
+    app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
+    url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
+    active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+    always_on: false, last_request_at: null,
+    created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  };
+  responses.push({ status: 201, body: { ...app, always_on: true } }, { body: app });
+  expect((await createApp('project-1', { slug: 'demo', name: 'Demo', always_on: true })).always_on).toBe(true);
+  expect(last().body).toMatchObject({ always_on: true });
+  expect((await updateApp('project-1', 'app-1', { always_on: false })).always_on).toBe(false);
+  expect(last().body).toEqual({ always_on: false });
+});
+
+test('Apps have no budget: no App, create or update type carries one, and an always-on App reads its monthly cost', async () => {
+  type Has<T, K extends string> = K extends keyof T ? true : false;
+  const appBudget: Has<App, 'monthly_budget_usd'> = false;
+  const createBudget: Has<CreateAppInput, 'monthly_budget_usd'> = false;
+  const updateBudget: Has<UpdateAppInput, 'monthly_budget_usd'> = false;
+  expect([appBudget, createBudget, updateBudget]).toEqual([false, false, false]);
+  const app: App = {
+    app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'demo', name: 'Demo',
+    url: 'https://demo.apps.kortix.com', access_mode: 'private', access_revision: 1, desired_state: 'running',
+    active_deployment_id: null, machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+    always_on: true, estimated_monthly_usd: 39.95, last_request_at: null, warnings: [],
+    created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  };
+  responses.push({ status: 201, body: app });
+  const created = await createApp('project-1', { slug: 'demo', name: 'Demo' });
+  expect(created.estimated_monthly_usd).toBe(39.95);
+  expect(last().body).toEqual({ slug: 'demo', name: 'Demo' });
+});
+
+test('an App says how its active deployment is hosted: hosting_type', async () => {
+  const app = {
+    app_id: 'app-1', account_id: 'account-1', project_id: 'project-1', slug: 'site', name: 'Site',
+    url: 'https://site.apps.kortix.com', access_mode: 'public', access_revision: 1, desired_state: 'stopped',
+    active_deployment_id: 'deployment-1', machine: { cpu: 1, memory_gb: 2, disk_gb: 10 }, idle_timeout_seconds: 300,
+    estimated_monthly_usd: 0, hosting_type: 'static', retained_deployments: 5, last_request_at: null,
+    created_at: '2026-10-07T00:00:00.000Z', updated_at: '2026-10-07T00:00:00.000Z',
+  } satisfies import('./apps').App;
+  responses.push({ body: { apps: [app] } });
+  const [listed] = await listApps('project-1');
+  const hosting: import('./apps').App['hosting_type'] = listed!.hosting_type;
+  expect(hosting).toBe('static');
+  const retained: number | undefined = listed!.retained_deployments;
+  expect(retained).toBe(5);
+});
+
+test('a static deployment says so: hosting_type static', () => {
+  const hosting: import('./apps').AppDeployment['hosting_type'] = 'static';
+  expect(hosting).toBe('static');
+});
+
+test('createAppToken mints a sign-in token for the App naming the caller', async () => {
+  const minted: AppToken = { token: 'header.payload.signature', expires_at: '2026-10-09T00:15:00.000Z' };
+  responses.push({ body: minted });
+
+  expect(await createAppToken('project-1', 'app-1')).toEqual(minted);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://backend.test/v1/projects/project-1/apps/app-1/token' });
+});
+
+test('an external App: created and moved by external_url, carried on the App', async () => {
+  const external: Equal<App['external_url'], string | null | undefined> = true;
+  const createInput: Equal<CreateAppInput['external_url'], string | undefined> = true;
+  const updateInput: Equal<UpdateAppInput['external_url'], string | undefined> = true;
+  expect([external, createInput, updateInput]).toEqual([true, true, true]);
+  responses.push({ status: 201, body: { app_id: 'app-ext', external_url: 'https://grafana.example.com', capabilities: ['preview'] } });
+  const app = await createApp('project-1', { slug: 'grafana', name: 'Grafana', external_url: 'https://grafana.example.com' });
+  expect(calls[0]!.body).toEqual({ slug: 'grafana', name: 'Grafana', external_url: 'https://grafana.example.com' });
+  expect(app.external_url).toBe('https://grafana.example.com');
+  responses.push({ body: { app_id: 'app-ext', external_url: 'https://grafana.example.org' } });
+  await updateApp('project-1', 'app-ext', { external_url: 'https://grafana.example.org' });
+  expect(calls[1]!.method).toBe('PATCH');
+  expect(calls[1]!.body).toEqual({ external_url: 'https://grafana.example.org' });
 });

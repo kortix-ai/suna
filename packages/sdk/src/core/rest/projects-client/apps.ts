@@ -1,14 +1,132 @@
-// Kortix Apps — project-scoped, provider-neutral application deployments.
+// Kortix Apps — project-scoped, provider-neutral applications. Clients branch
+// on an App's `capabilities`.
 
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
 
-export type AppHostingProvider = 'daytona' | 'platinum' | 'e2b';
+/** Platinum is the reference App host. Daytona is a legacy fallback. */
+export type AppHostingProvider = 'platinum' | 'daytona';
 export type AppDesiredState = 'running' | 'stopped';
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppArtifactKind = 'archive' | 'oci_image';
 export type AppArtifactStatus = 'uploading' | 'uploaded' | 'ready' | 'rejected' | 'deleted';
 export type AppSourceKind = 'static' | 'bundle' | 'dockerfile' | 'oci_image';
+
+/**
+ * What an App supports now. The only thing a client branches on. A route
+ * for a capability the App lacks answers `409 app_capability_unsupported`.
+ *
+ * - `deployments`: has a deployment history.
+ * - `rollback`: traffic can move to an older ready deployment.
+ * - `preview`: opens in a browser through an access session.
+ * - `sleep`: a server that stops when idle (`start` / `stop`).
+ * - `static`: served from storage, no runtime.
+ * - `member_tokens`: Kortix sign-in tokens for the App ({@link createAppToken}).
+ */
+export type AppCapability =
+  | 'deployments'
+  | 'rollback'
+  | 'preview'
+  | 'sleep'
+  | 'static'
+  | 'member_tokens'
+  | 'machines'
+  | 'scale'
+  | 'exec'
+  | 'volumes'
+  | 'snapshots';
+
+/* ─── The release config (kortix.yaml `apps.<name>`) ─── */
+
+export type AppDeployStrategy = 'rolling' | 'immediate' | 'bluegreen' | 'canary';
+export type AppAutoStop = 'off' | 'stop' | 'suspend';
+/** `public`: no gate (the service checks sign-in itself). `app`: the App's access policy. `admins`: project admins. */
+export type AppServiceAccess = 'public' | 'app' | 'admins';
+
+export interface AppCheck {
+  type: 'http' | 'tcp';
+  port?: number;
+  path?: string;
+  interval_s: number;
+  timeout_s: number;
+  grace_period_s: number;
+}
+
+export interface AppServiceConfig {
+  /** `http` is the primary service, on the App's own host. */
+  name: string;
+  internal_port: number;
+  protocol: 'http' | 'tcp';
+  access: AppServiceAccess;
+  auto_stop_machines: AppAutoStop;
+  auto_start_machines: boolean;
+  min_machines_running: number;
+  processes: string[];
+  checks: AppCheck[];
+}
+
+export interface AppMountConfig {
+  source: string;
+  destination: string;
+  initial_size_gb: number;
+  snapshot_retention_days: number;
+  processes: string[];
+}
+
+export interface AppVmConfig {
+  cpu: number;
+  memory_gb: number;
+  disk_gb: number;
+  processes: string[];
+}
+
+/** A release's resolved config: what the platform runs. */
+export interface AppReleaseConfig {
+  processes: Record<string, string>;
+  services: AppServiceConfig[];
+  mounts: AppMountConfig[];
+  vm: AppVmConfig[];
+  deploy: { strategy: AppDeployStrategy; release_command: string | null };
+}
+
+type Partial2<T> = { [K in keyof T]?: T[K] extends Array<infer U> ? Array<Partial<U>> : T[K] };
+
+/** The authored config a deploy sends: every field optional, plus the shorthands. */
+export interface AppReleaseConfigInput {
+  processes?: Record<string, string>;
+  http_service?: Partial2<Omit<AppServiceConfig, 'name'>>;
+  services?: Array<Partial2<AppServiceConfig>>;
+  mounts?: Array<Partial<AppMountConfig>>;
+  vm?: Partial<AppVmConfig> | Array<Partial<AppVmConfig>>;
+  deploy?: { strategy?: AppDeployStrategy; release_command?: string | null };
+  port?: number;
+  command?: string;
+  readiness_path?: string;
+  always_on?: boolean;
+  resources?: { cpu?: number; memory_gb?: number; disk_gb?: number };
+}
+
+/** A service of the active release as an App lists it, with its URL. */
+export interface AppServiceSummary {
+  name: string;
+  protocol: 'http' | 'tcp';
+  access: AppServiceAccess;
+  internal_port: number;
+  processes: string[];
+  /** Null for a TCP service, or when the host label would be too long (reach it through a binding). */
+  url: string | null;
+}
+
+/**
+ * The public values that verify the Kortix sign-in tokens minted for an App:
+ * the project issuer, `aud` = the App id, and the issuer's key set. No secret.
+ */
+export interface AppAuth {
+  issuer: string;
+  audience: string;
+  jwks_uri: string;
+}
+
 export type AppDeploymentStatus =
   | 'queued'
   | 'validating'
@@ -29,32 +147,103 @@ export interface App {
   app_id: string;
   account_id: string;
   project_id: string;
+  /** What the App supports now. Optional for wire compatibility with a server that predates it. */
+  capabilities?: AppCapability[];
   slug: string;
   name: string;
+  /** Where the App is reached: its Kortix host, or `external_url` for an external App. */
   url: string;
+  /**
+   * Set: the App is hosted elsewhere at this https URL. Kortix lists and frames
+   * it and never deploys it. Its `capabilities` are `['preview']` when the site
+   * allows framing, else `[]` (open it in a new tab). Optional for wire
+   * compatibility with a server that predates it.
+   */
+  external_url?: string | null;
   access_mode: AppAccessMode;
   access_revision: number;
   desired_state: AppDesiredState;
   active_deployment_id: string | null;
   machine: AppMachineSpec;
   idle_timeout_seconds: number;
-  monthly_budget_usd: number;
+  /**
+   * `true`: the App runs 24/7 (cron jobs, workers, websockets keep working)
+   * and bills 24/7. `false`: it stops after
+   * `idle_timeout_seconds` without requests and wakes on the next one. `false`
+   * for a static App, which has no runtime. Optional for wire compatibility
+   * with a server that predates it.
+   */
+  always_on?: boolean;
+  /**
+   * @deprecated Kortix shows no prices: never display this value. It stays on
+   * the wire for compatibility and will be removed in a future major version.
+   */
+  estimated_monthly_usd?: number;
+  /**
+   * How the active deployment is hosted. `static`: served from storage, with
+   * no runtime: it serves whatever `desired_state` says, and start/stop
+   * answer `409 static_app_no_runtime`. `sandbox`: a server App. `null`: not
+   * deployed yet. Optional for wire
+   * compatibility with a server that predates it.
+   */
+  hosting_type?: 'sandbox' | 'static' | null;
+  /**
+   * Ready deployments the App keeps besides its active one, as rollback
+   * targets. Older ones are retired. Optional for wire compatibility.
+   */
+  retained_deployments?: number;
+  /** Set on the create and update responses only: `app_external_not_frameable` when an external site refuses a frame. */
+  warnings?: Array<{ code: string; message: string }>;
   last_request_at: string | null;
   /**
-   * May the caller OPEN this App, as opposed to merely see it listed?
-   *
-   * These are different verdicts. A project manager is shown every App in the
-   * project so a private one stays manageable when its creator leaves, which
-   * says nothing about whether they may look at it. Check this before asking
-   * for an access session; asking anyway is how a grid of Apps turns into a
-   * console full of 403s.
+   * May the caller OPEN this App? `listApps` returns only Apps the caller
+   * may open (a project manager: every App), so a listed App reads `true`;
+   * an App left out answers 404 on `getApp`.
    *
    * Optional for wire compatibility with a server that predates the field.
    * Treat `undefined` as "unknown", not as "denied".
    */
   viewer_can_access?: boolean;
+  /**
+   * The Apps, by slug, this App uses. Its code may mint their sign-in tokens
+   * (`kortixToken({ audience })`) and reach them through the bindings mount
+   * (`kortixBinding(slug)`). Any other App answers `403 app_not_linked`.
+   * Optional for wire compatibility with a server that predates it.
+   */
+  uses?: string[];
+  /** The Apps, by slug, that use this App. Optional for wire compatibility. */
+  used_by?: string[];
+  /** Verifies the sign-in tokens minted for this App. Optional for wire compatibility. */
+  auth?: AppAuth;
+  /** Free-form labels (e.g. `backend`): they group and filter, nothing more. Optional for wire compatibility. */
+  labels?: string[];
+  /** Where Kortix shows the App. Optional for wire compatibility; absent means the defaults. */
+  display?: AppDisplay;
+  /** Machines per process group; a group not listed runs one. Optional for wire compatibility. */
+  scale?: Record<string, number>;
+  /** The active release's services and their URLs. Optional for wire compatibility. */
+  services?: AppServiceSummary[];
+  /** Machine counts. Optional for wire compatibility. */
+  machines?: { total: number; running: number; stopped: number };
+  /** Volume count and allotted size. Optional for wire compatibility. */
+  volumes?: { count: number; size_gb: number };
+  /** The active release's config, or null (static App, never deployed). Optional for wire compatibility. */
+  config?: AppReleaseConfig | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Where Kortix shows an App (`kortix.yaml` `apps.<name>.display`). Presentation
+ * only: how the App runs and who may open it do not change.
+ */
+export interface AppDisplay {
+  /** A card in the Apps grid. Default true; an App with a `parent` has none. */
+  listed?: boolean;
+  /** The card thumbnail: `live` frames the App, `none` shows an icon. Default `live`. */
+  preview?: 'live' | 'none';
+  /** The App, by slug, whose detail shows this one as a tab (a backend's admin dashboard). */
+  parent?: string;
 }
 
 export interface CreateAppInput {
@@ -64,7 +253,12 @@ export interface CreateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
-  monthly_budget_usd?: number;
+  /** Run 24/7. Defaults to the server's setting (Kortix Cloud: `true`). */
+  always_on?: boolean;
+  /** The Apps, by slug, this App uses. Each must exist. Default: none. */
+  uses?: string[];
+  /** An https URL: create an external App that Kortix lists and frames, and never deploys. */
+  external_url?: string;
 }
 
 export interface UpdateAppInput {
@@ -73,7 +267,15 @@ export interface UpdateAppInput {
   memory_gb?: number;
   disk_gb?: number;
   idle_timeout_seconds?: number;
-  monthly_budget_usd?: number;
+  always_on?: boolean;
+  /** Replaces the Apps this App uses. `[]` removes every link. */
+  uses?: string[];
+  /** Replaces the App's labels (each `^[a-z0-9][a-z0-9-]{0,30}$`, at most 10). */
+  labels?: string[];
+  /** Replaces where Kortix shows the App. `{}` restores the defaults. */
+  display?: AppDisplay;
+  /** Moves an external App to another https URL (`409 app_not_external` for an App Kortix runs). */
+  external_url?: string;
 }
 
 /**
@@ -155,7 +357,8 @@ export interface DockerfileAppSource extends BaseAppSource {
   kind: 'dockerfile';
   dockerfile?: string;
   command: string[];
-  port: number;
+  /** The primary service's port; omitted for a worker-only App. */
+  port?: number;
   restart_limit?: number;
 }
 
@@ -163,7 +366,8 @@ export interface OciImageAppSource extends BaseAppSource {
   kind: 'oci_image';
   image: string;
   command: string[];
-  port: number;
+  /** The primary service's port; omitted for a worker-only App. */
+  port?: number;
   restart_limit?: number;
 }
 
@@ -173,7 +377,10 @@ export type AppSource =
   | DockerfileAppSource
   | OciImageAppSource;
 
-export interface CreateAppDeploymentInput {
+/** A build of an uploaded artifact. */
+export type CreateAppDeploymentInput = CreateAppBuildInput;
+
+export interface CreateAppBuildInput {
   artifact_id: string;
   source: AppSource;
   /** Optional infrastructure preference. Omit it to use the server policy. */
@@ -182,16 +389,24 @@ export interface CreateAppDeploymentInput {
   environment?: Record<string, string>;
   /** Runtime environment key -> project secret identifier. */
   secrets?: Record<string, string>;
+  /**
+   * The release config. Omitted: one `app` process group on the
+   * source port, sized like the App. Invalid: `400 app_config_invalid` with
+   * `issues: [{path, message}]`.
+   */
+  config?: AppReleaseConfigInput;
 }
 
 export interface AppDeployment {
   deployment_id: string;
   app_id: string;
-  artifact_id: string;
+  /** `null` for a historic record made without an artifact. */
+  artifact_id: string | null;
   version: number;
   status: AppDeploymentStatus;
   source_kind: AppSourceKind;
-  hosting_type: 'sandbox';
+  /** `static`: served from storage, no runtime. `sandbox`: runs in its own machine. */
+  hosting_type: 'sandbox' | 'static';
   hosting_provider: AppHostingProvider | null;
   runtime_spec: Record<string, unknown>;
   build_spec: Record<string, unknown>;
@@ -207,9 +422,18 @@ export interface AppDeployment {
   source_session_id: string | null;
   /** Immutable caller class recorded when the deployment was created. */
   actor_type: 'human' | 'agent' | 'service_account' | 'system';
+  /** The release's resolved config; `null` for a release made before releases carried one. */
+  config: AppReleaseConfig | null;
+  /** How this release rolls out; `null` before the worker resolves it. */
+  strategy: AppDeployStrategy | null;
+  /** The `deploy.release_command` outcome; `null` when the release has none. */
+  release_command_status: 'running' | 'succeeded' | 'failed' | null;
   created_at: string;
   updated_at: string;
 }
+
+/** What `rollbackApp` resolves with: the App and the NEW release it queued from the target's artifact and config. */
+export type AppRollback = App & { deployment: AppDeployment };
 
 export interface AppDeploymentEvent {
   event_id: string;
@@ -243,6 +467,7 @@ export interface AppLogsOptions {
   limit?: number;
 }
 
+/** The project's Apps the caller may open (a project manager: every App). */
 export async function listApps(projectId: string): Promise<App[]> {
   const data = unwrap(
     await backendApi.get<{ apps: App[] }>(`/projects/${projectId}/apps`),
@@ -276,11 +501,75 @@ export async function updateApp(
   );
 }
 
-export async function deleteApp(projectId: string, appId: string): Promise<{ ok: boolean }> {
+/**
+ * Provider images a delete freed. Each deployment build leaves one image, and
+ * providers cap how many an organization may hold. `pending` images were not
+ * released yet (a stopping sandbox still pins one, or the provider call
+ * failed); the platform retries them.
+ */
+export interface AppImageRelease {
+  released: number;
+  pending: number;
+}
+
+/** Deletes the App, its runtimes, and every deployment image it built. */
+export async function deleteApp(
+  projectId: string,
+  appId: string,
+): Promise<{ ok: boolean; images?: AppImageRelease }> {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/apps/${appId}`),
+    await backendApi.delete<{ ok: boolean; images?: AppImageRelease }>(`/projects/${projectId}/apps/${appId}`),
     'Failed to delete App',
   );
+}
+
+// ── Capability routes ────────────────────────────────────────────────────────
+
+export interface AppToken {
+  /** ES256 JWT from the project issuer, `aud` = the App id. Verify it with the App's `auth` values. */
+  token: string;
+  expires_at: string;
+}
+
+/**
+ * Capability `member_tokens`. A 15-minute Kortix sign-in token for the App,
+ * naming the caller. In an agent session it names the agent.
+ */
+export async function createAppToken(projectId: string, appId: string): Promise<AppToken> {
+  return unwrap(
+    await backendApi.post<AppToken>(`/projects/${projectId}/apps/${appId}/token`, {}),
+    'Failed to mint an App token',
+  );
+}
+
+/** What verifies an App's Kortix sign-in tokens offline, as env values (public, no secret). */
+export interface AppAuthEnv {
+  KORTIX_AUTH_ISSUER: string;
+  KORTIX_AUTH_AUDIENCE: string;
+  /** The project key set inline, as a `data:application/json;base64,…` URL: the reader fetches nothing. */
+  KORTIX_AUTH_JWKS: string;
+}
+
+/**
+ * The env a backend needs to verify the App's sign-in tokens without a network
+ * call (self-hosted Convex takes the key set as a URL and fetches nothing;
+ * `verifyKortixToken` reads the same values). A rotated project key needs a re-run.
+ */
+export async function getAppAuthEnv(projectId: string, appId: string): Promise<AppAuthEnv> {
+  const app = await getApp(projectId, appId);
+  if (!app.auth) throw new Error('This server does not report sign-in values for Apps.');
+  const keySet = unwrap(
+    await backendApi.get<unknown>(`/projects/${projectId}/jwks.json`),
+    'Failed to read the project key set',
+  );
+  const bytes = new TextEncoder().encode(JSON.stringify(keySet));
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return {
+    KORTIX_AUTH_ISSUER: app.auth.issuer,
+    KORTIX_AUTH_AUDIENCE: app.auth.audience,
+    KORTIX_AUTH_JWKS: `data:application/json;base64,${btoa(binary)}`,
+  };
 }
 
 export async function getAppAccess(projectId: string, appId: string): Promise<AppAccessConfig> {
@@ -473,13 +762,44 @@ export async function stopApp(projectId: string, appId: string): Promise<App> {
   );
 }
 
+export interface DeleteAppDeploymentResult {
+  ok: boolean;
+  deployment_id: string;
+  /**
+   * `released`: the provider no longer holds the deployment's image.
+   * `pending`: not released yet (a stopping sandbox pins it, or the provider
+   *   call failed); the platform retries the delete.
+   * `none`: the deployment never built an image.
+   */
+  image: 'released' | 'pending' | 'none';
+}
+
+/**
+ * Deletes one deployment, its runtime, and its image. The live deployment
+ * (`409 deployment_live`) and an in-progress build (`409
+ * deployment_in_progress`) are refused. A deleted deployment is no longer
+ * listed and can no longer receive rollback traffic.
+ */
+export async function deleteAppDeployment(
+  projectId: string,
+  appId: string,
+  deploymentId: string,
+): Promise<DeleteAppDeploymentResult> {
+  return unwrap(
+    await backendApi.delete<DeleteAppDeploymentResult>(
+      `/projects/${projectId}/apps/${appId}/deployments/${deploymentId}`,
+    ),
+    'Failed to delete App deployment',
+  );
+}
+
 export async function rollbackApp(
   projectId: string,
   appId: string,
   deploymentId: string,
-): Promise<App> {
+): Promise<AppRollback> {
   return unwrap(
-    await backendApi.post<App>(`/projects/${projectId}/apps/${appId}/rollback`, {
+    await backendApi.post<AppRollback>(`/projects/${projectId}/apps/${appId}/rollback`, {
       deployment_id: deploymentId,
     }),
     'Failed to roll back App',

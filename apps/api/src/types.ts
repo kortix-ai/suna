@@ -1,60 +1,7 @@
-import { z } from 'zod';
 import type { AgentGrant } from '@kortix/db';
 import type { BillingState } from './billing/services/billing-state';
 
-// === Request Schemas (Router) ===
-
-export const WebSearchRequestSchema = z.object({
-  query: z.string().min(1, 'Query is required'),
-  max_results: z.number().int().min(1).max(10).default(5),
-  search_depth: z.enum(['basic', 'advanced']).default('basic'),
-  session_id: z.string().optional(),
-});
-
-export const ImageSearchRequestSchema = z.object({
-  query: z.string().min(1, 'Query is required'),
-  max_results: z.number().int().min(1).max(20).default(5),
-  safe_search: z.boolean().default(true),
-  session_id: z.string().optional(),
-});
-
-// === Response Types (Router) ===
-
-export interface WebSearchResult {
-  title: string;
-  url: string;
-  snippet: string;
-  published_date: string | null;
-}
-
-export interface WebSearchResponse {
-  results: WebSearchResult[];
-  query: string;
-  cost: number;
-}
-
-export interface ImageSearchResult {
-  title: string;
-  url: string;
-  thumbnail_url: string;
-  source_url: string;
-  width: number | null;
-  height: number | null;
-}
-
-export interface ImageSearchResponse {
-  results: ImageSearchResult[];
-  query: string;
-  cost: number;
-}
-
 // === Billing Types (Router billing service) ===
-
-export interface BillingCheckResult {
-  hasCredits: boolean;
-  message: string;
-  balance: number | null;
-}
 
 export interface BillingDeductResult {
   success: boolean;
@@ -64,6 +11,8 @@ export interface BillingDeductResult {
   reason?: string;
   transactionId?: string;
   error?: string;
+  /** The wallet could not answer (infra fault, not a refusal). The caller answers 503. */
+  retryable?: boolean;
 }
 
 // === Context Types ===
@@ -163,33 +112,67 @@ export interface TierEntitlements {
 export interface TierConfig {
   name: string;
   displayName: string;
-  monthlyPrice: number;
-  yearlyPrice: number;
+  /** Fixed monthly allowance (USD). 0 for `credits`, whose amount lives on the account. */
   monthlyCredits: number;
   canPurchaseCredits: boolean;
   models: string[];
-  dailyCreditConfig: DailyCreditConfig | null;
-  hidden: boolean;
-  /** Max concurrent project sessions allowed for accounts on this tier. */
-  concurrentSessionLimit: number;
+  /** Apps an account on this tier may own, and App runtimes it may run at once. */
+  appLimit: number;
   /** Enterprise feature gates. Absent ⇒ treated as all-false. */
   entitlements: TierEntitlements;
 }
 
-export interface DailyCreditConfig {
-  dailyAmount: number;
-  refreshIntervalHours: number;
-  maxAccumulation: number;
-}
-
 // ─── Account State (API response) ───────────────────────────────────────────
 
+/** A dated grant of a plan (`credit_accounts.trial_*`). */
+export interface AccountTrial {
+  plan: 'credits' | 'enterprise';
+  started_at: string | null;
+  ends_at: string;
+  /** Whole days until `ends_at`, rounded up; 0 on the last day. */
+  days_left: number;
+}
+
+/** An Enterprise contract (`kortix.enterprise_contracts`). */
+export interface AccountContract {
+  id: string;
+  /** Annual platform fee, USD. */
+  license_usd: number;
+  /** Annual credit commitment, USD, granted as one pool per term. */
+  term_months: number;
+  collection: 'checkout' | 'invoice' | 'manual';
+  starts_at: string | null;
+  /** End of the current term. Null for an open-ended contract. */
+  ends_at: string | null;
+  /** True when the term renews on its own (a Stripe subscription not set to cancel). */
+  renews: boolean;
+}
+
+export interface AccountEnterpriseOffer {
+  id: string;
+  license_usd: number;
+  term_months: number;
+  /** `checkout`: a billing manager accepts and pays by card in the app
+   *  (`POST /v1/billing/enterprise-offer/checkout`). */
+  collection: 'checkout' | 'invoice' | 'manual';
+}
+
+export interface AccountAccessGrace {
+  reason: 'trial_ended' | 'contract_ended';
+  ends_at: string;
+}
+
 export interface AccountStateResponse {
+  /** Account entitlement, not project readiness: BYOK still requires a connected key. */
+  model_access: { managed: boolean; requires_provider_key: boolean };
   credits: {
     total: number;
     daily: number;
     monthly: number;
+    /** Next scheduled reset of the expiring credit bucket. */
+    expires_at?: string | null;
     extra: number;
+    /** Wallet admission only. Project model availability is resolved by /model-picker. */
     can_run: boolean;
     /** Lifetime rollups derived from credit_ledger (see the
      *  apply_credit_ledger_lifetime_rollup trigger). Reporting figures only —
@@ -218,42 +201,40 @@ export interface AccountStateResponse {
    * The plan the account BEHAVES as, named the way the product names plans.
    *
    * Distinct from `subscription` on purpose. `subscription.tier_key` is the
-   * STORED `credit_accounts.tier` — the plan Stripe sold. This block is the
-   * RESOLVED plan: an active admin-issued trial and the per-seat self-heal
-   * overlay the stored tier (billing/services/resolve-billing.ts), so a
-   * trialing account reports the plan its gates actually enforce. `tier.name`,
-   * `tier.display_name`, `tier.entitlements` and `limits.concurrent_sessions`
-   * come from the same resolved view.
+   * STORED plan — the plan Stripe sold. This block is the RESOLVED plan: an
+   * active admin-issued trial overlays the stored tier
+   * (billing/services/resolve-billing.ts), so a trialing account reports the
+   * plan its gates actually enforce. `tier.name`,
+   * `tier.display_name`, and `tier.entitlements` come from the same
+   * resolved view.
    *
    * Optional: additive field, so a client built against the older shape still
    * type-checks. The API always sends it.
    */
   plan?: {
-    /** Plan key — e.g. 'free', 'per_seat', 'tier_25_200', 'enterprise'. */
+    /** Plan key: 'none' | 'free' | 'credits' | 'enterprise'. */
     key: string;
-    /** Public ladder position: there are exactly three families. */
-    family: 'free' | 'team' | 'enterprise';
-    /** Customer-facing family name — 'Free' | 'Team' | 'Enterprise'. */
+    family: 'free' | 'credits' | 'enterprise';
+    /** Customer-facing name — 'Free' | 'Credits' | 'Enterprise'. */
     label: string;
-    /** Qualifier under the label, e.g. '$200/mo · grandfathered'. Null when
-     *  the plan needs no qualifier. */
+    /** Qualifier under the label. Null when the plan needs none. */
     sublabel: string | null;
-    /** Lifecycle: sellable today, sold-once-and-honored, defined-but-never-sold,
-     *  or the absence of a plan. */
-    status: 'current' | 'grandfathered' | 'retired' | 'non_plan';
+    status: 'current' | 'non_plan';
     /** How the recurring charge is computed. */
-    shape: 'none' | 'flat' | 'seat' | 'contract';
+    shape: 'none' | 'credits' | 'contract';
     /** Strictly ordered ladder position (0 = no plan). Compare, don't display. */
     rank: number;
-    /** `status === 'grandfathered'`, surfaced directly so the UI can render the
-     *  plan as sold rather than mapping it onto a current plan it is not. */
-    is_grandfathered: boolean;
+    /** Monthly amount of a paid credits plan, in USD (1 credit = $0.01). Null
+     *  for free, enterprise and an admin trial. */
+    monthly_usd: number | null;
   };
   subscription: {
-    /** STORED `credit_accounts.tier` — the plan Stripe sold. For the plan the
-     *  account behaves as (trial / per-seat self-heal applied), read `plan`. */
+    /** STORED plan — the plan Stripe sold (legacy keys read as 'credits'). For
+     *  the plan the account behaves as (trial applied), read `plan`. */
     tier_key: string;
     tier_display_name: string;
+    /** The credits plan's monthly amount the account pays (USD), kept during a trial. */
+    monthly_usd: number | null;
     status: string;
     billing_period: 'monthly' | 'yearly' | 'yearly_commitment' | null;
     provider: 'stripe' | 'revenuecat' | 'local';
@@ -280,70 +261,40 @@ export interface AccountStateResponse {
     entitlements: TierEntitlements;
   };
   /** True when a self-host operator's ENTERPRISE_LICENSE_AVAILABLE env var
-   *  forces every enterprise entitlement on platform-wide. When true, the
-   *  frontend hides the self-serve "Enterprise features — Demo" toggle and
-   *  any "Request enterprise access" upsell — there's nothing to demo-enable
-   *  or upsell when the license already turned it on unconditionally. */
+   *  forces every enterprise entitlement on platform-wide. The frontend then
+   *  hides every Enterprise upsell. */
   enterprise_license_available: boolean;
-  /** True when an operator has flagged this account as a contracted cloud
-   *  Enterprise customer via `credit_accounts.enterprise_entitled`. The
-   *  account then resolves all enterprise entitlements (SSO/SCIM/RBAC/audit)
-   *  regardless of its billing tier, so a deal that is BOTH Enterprise
-   *  (entitlements) AND per-seat (billing) can hold both at once. Surfaced
-   *  for the admin console and for the frontend to hide the self-serve demo
-   *  toggle (a real Enterprise contract supersedes the demo). */
+  /** @deprecated Read `plan.family === 'enterprise'`. True on the Enterprise
+   *  plan (a contract or an Enterprise trial). */
   enterprise_entitled: boolean;
+  /** The active trial: a dated grant of a plan. Null when there is none. */
+  /** @deprecated Trials are removed: always null. */
+  trial: AccountTrial | null;
+  /** The Enterprise feature layer: off, demo (self-serve) or licensed (a contract). */
+  enterprise: { state: 'off' | 'demo' | 'licensed' };
+  /** The active Enterprise contract. Null when there is none. */
+  contract: AccountContract | null;
+  /** An Enterprise contract offered and not yet accepted. Billing managers see
+   *  it with an Accept button. Null when there is none. */
+  enterprise_offer: AccountEnterpriseOffer | null;
+  /** SSO and SCIM stay on after an Enterprise trial or contract ends, until
+   *  `ends_at`, so nobody is locked out. Null outside that window. */
+  grace: AccountAccessGrace | null;
   /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
   models: ModelInfo[];
   auto_topup: {
     enabled: boolean;
     threshold: number;
     amount: number;
+    /** Why a failed charge turned auto top-up off (KRTX-1718). */
+    disabled_reason: string | null;
+    /** The decline code or failure text of the last failed charge. */
+    last_failure_reason: string | null;
+    last_failure_at: string | null;
   };
-  instances: Array<{
-    sandbox_id: string;
-    external_id: string | null;
-    name: string;
-    provider: string;
-    status: string;
-    server_type: string | null;
-    location: string | null;
-    error_message?: string | null;
-    is_included: boolean;
-    stripe_subscription_item_id: string | null;
-    created_at: string;
-  }>;
-  can_add_instances: boolean;
-  /** True when a legacy paid user has no active machine and can claim one. */
-  can_claim_computer?: boolean;
-  /** True only for genuine legacy per-machine accounts with a machine to migrate
-   *  to per-seat — gates the "Claim seat-based pricing" card so new per-seat-era
-   *  users never see a no-op claim. */
-  can_claim_per_seat?: boolean;
-
-  // Billing v2 — surfaced for per-seat accounts only. Legacy accounts get
-  // billing_model='legacy' here and the frontend renders the legacy UI.
-  billing_model: 'legacy' | 'per_seat';
-  seats?: {
-    count: number;
-    price_per_seat_usd: number;
-    /** Pricing-page transparency only — not a wallet partition. */
-    typical_compute_budget_per_seat_usd: number;
-    /** Pricing-page transparency only — not a wallet partition. */
-    typical_llm_budget_per_seat_usd: number;
-  };
-  /**
-   * Live count of account members — the seat quantity a per-seat subscribe will
-   * be billed for RIGHT NOW (createPerSeatCheckoutSession uses the same
-   * countActiveMembers). Always present (unlike `seats`, which only appears once
-   * the account is already on per-seat), so the subscribe modal can show the real
-   * projected total (members × price) BEFORE redirecting to Stripe.
-   */
-  member_count: number;
   /**
    * Spend breakdown by category for the current billing period. Sourced from
-   * credit_ledger aggregation, not from a partitioned wallet. Null for legacy
-   * accounts.
+   * credit_ledger aggregation, not from a partitioned wallet.
    */
   usage_this_period?: {
     compute_usd: number;
@@ -352,23 +303,13 @@ export interface AccountStateResponse {
     period_start: string | null;
     period_end: string | null;
   } | null;
-  /**
-   * Account-level resource limits + current usage. The `concurrent_sessions`
-   * field surfaces the same cap the API enforces at session-create time
-   * (see shared/account-limits.ts).
-   */
-  limits?: {
-    concurrent_sessions: {
-      active: number;
-      limit: number;
-    };
-  };
 }
 
 export interface ScheduledChange {
   type: 'downgrade';
-  current_tier: { name: string; display_name: string; monthly_credits?: number };
-  target_tier: { name: string; display_name: string; monthly_credits?: number };
+  /** `monthly_credits` is in credits (1 credit = $0.01); `monthly_usd` is the same amount in USD. */
+  current_tier: { name: string; display_name: string; monthly_credits?: number; monthly_usd?: number };
+  target_tier: { name: string; display_name: string; monthly_credits?: number; monthly_usd?: number };
   effective_date: string;
 }
 
@@ -391,8 +332,3 @@ interface ModelInfo {
   priority: number;
 }
 
-export interface TokenUsageRequest {
-  prompt_tokens: number;
-  completion_tokens: number;
-  model: string;
-}

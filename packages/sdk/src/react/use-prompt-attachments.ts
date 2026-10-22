@@ -53,6 +53,7 @@ export function usePromptAttachments(
     (): UsePromptAttachmentsResult => ({
       add: controller.add,
       addMany: controller.addMany,
+      restore: controller.restore,
       retry: controller.retry,
       remove: controller.remove,
       abort: controller.abort,

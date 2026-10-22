@@ -9,7 +9,12 @@ import {
   accountSsoProviders,
   accountGroups,
 } from '@kortix/db';
+import { isUuid } from '../shared/validate';
 import { db } from '../shared/db';
+import { nonSsoIdentitySql, ssoProviderIdOf } from '../shared/auth-identity';
+import { selfHostOperatorAllowlist } from '../shared/self-host-operator';
+import { accountGroupNameRow, ssoGroupByNameRow } from '../iam/group-read';
+import { invalidateIamCacheForAccount } from '../iam/cache-invalidation';
 
 export type SsoProvider = {
   ssoProviderId: string;
@@ -40,6 +45,18 @@ export type SsoGroupMapping = {
 };
 
 // ─── Provider ─────────────────────────────────────────────────────────────
+
+/**
+ * A personal account: its id is its owner's auth user id
+ * (`bootstrapPersonalAccount`).
+ */
+export async function isPersonalAccount(accountId: string): Promise<boolean> {
+  if (!isUuid(accountId)) return false;
+  const rows = (await db.execute(
+    sql`SELECT 1 FROM auth.users WHERE id = ${accountId}::uuid LIMIT 1`,
+  )) as unknown as unknown[];
+  return rows.length > 0;
+}
 
 export async function getSsoProvider(accountId: string): Promise<SsoProvider | null> {
   const [row] = await db
@@ -152,7 +169,59 @@ export async function setSsoDomainVerified(accountId: string, verified: boolean)
     .set({ domainVerifiedAt: verified ? new Date() : null, updatedAt: new Date() })
     .where(eq(accountSsoProviders.accountId, accountId))
     .returning();
+  // A verified domain turns SSO-only enforcement on or off for its members
+  // (`authorize`, `sso_required`): drop their cached verdicts now, not after
+  // the cache TTL. Break-glass depends on this.
+  await invalidateIamCacheForAccount(accountId);
   return row ?? null;
+}
+
+/**
+ * End every GoTrue sign-in the SSO-only gate refuses on this account: a member
+ * whose email is in the enforced, verified domain and whose auth user is not
+ * an identity of the account's own IdP. The predicate is `ssoRequired` in
+ * `iam/authorize.ts`; keep the two identical. One exception: a platform admin
+ * (the rule of `getPlatformRole`) keeps the sign-in. Break-glass on the admin
+ * routes needs it, and a self-host operator in the enforced domain cannot sign
+ * in again. The gate still refuses that sign-in on this account.
+ *
+ * Deleting the session cascades to its refresh tokens, so it cannot renew, and
+ * its access token fails GoTrue's liveness check. API keys stay: the gate
+ * refuses them while enforcement is on. Call it after every provider write
+ * that can make enforcement effective. A member who joins later is refused by
+ * the gate and keeps the sign-in until the next such write. Returns the number
+ * of sign-ins ended: 0 when enforcement is not effective, and 0 on a repeat.
+ */
+export async function signOutNonSsoMembers(accountId: string, revokedBy: string | null): Promise<number> {
+  const operators = selfHostOperatorAllowlist();
+  const ended = (await db.execute(sql`
+    WITH ended AS (
+      DELETE FROM auth.sessions s
+       USING kortix.account_sso_providers enforcing, kortix.account_memberships m, auth.users person
+       WHERE enforcing.account_id = ${accountId}::uuid
+         AND enforcing.enforce_sso
+         AND enforcing.domain_verified_at IS NOT NULL
+         AND m.account_id = enforcing.account_id
+         AND person.id = m.user_id
+         AND enforcing.primary_domain = split_part(lower(trim(person.email)), '@', 2)
+         AND ${ssoProviderIdOf(sql`person`)} IS DISTINCT FROM enforcing.supabase_sso_provider_id::text
+         AND s.user_id = person.id
+         AND NOT EXISTS (
+           SELECT 1 FROM kortix.platform_user_roles r
+            WHERE r.account_id = person.id AND r.role IN ('admin', 'super_admin')
+         )
+         ${operators.length > 0 ? sql`AND NOT (${nonSsoIdentitySql(sql`person`)} AND lower(trim(person.email)) = ANY(${sql.param(operators)}::text[]))` : sql``}
+      RETURNING s.id, s.user_id
+    ), stamped AS (
+      -- The session gate (iam/session-gate.ts) reads this row and refuses.
+      UPDATE kortix.account_session_activity a
+         SET revoked_at = now(), revoked_reason = 'sso_enforced', revoked_by = ${revokedBy}::uuid
+        FROM ended
+       WHERE a.session_id = ended.id AND a.user_id = ended.user_id AND a.revoked_at IS NULL
+    )
+    SELECT ended.user_id::text AS user_id FROM ended
+  `)) as unknown as Array<{ user_id: string }>;
+  return ended.length;
 }
 
 export async function upsertSsoProvider(args: {
@@ -190,6 +259,8 @@ export async function upsertSsoProvider(args: {
       })
       .where(eq(accountSsoProviders.ssoProviderId, existing.ssoProviderId))
       .returning();
+    // enforce_sso, the domain or the IdP may have changed: see setSsoDomainVerified.
+    await invalidateIamCacheForAccount(args.accountId);
     return row;
   }
   const [row] = await db
@@ -215,6 +286,7 @@ export async function deleteSsoProvider(accountId: string): Promise<boolean> {
     .delete(accountSsoProviders)
     .where(eq(accountSsoProviders.accountId, accountId))
     .returning({ ssoProviderId: accountSsoProviders.ssoProviderId });
+  await invalidateIamCacheForAccount(accountId);
   return rows.length > 0;
 }
 
@@ -250,13 +322,7 @@ export async function createSsoGroupMapping(args: {
 }): Promise<SsoGroupMapping | null> {
   // Verify group belongs to the account first — guard against pointing
   // a mapping at a group from a different tenant.
-  const [grp] = await db
-    .select({ groupId: accountGroups.groupId, name: accountGroups.name })
-    .from(accountGroups)
-    .where(
-      and(eq(accountGroups.accountId, args.accountId), eq(accountGroups.groupId, args.groupId)),
-    )
-    .limit(1);
+  const [grp] = await accountGroupNameRow(args.accountId, args.groupId);
   if (!grp) return null;
 
   const [row] = await db
@@ -340,17 +406,7 @@ export async function ensureAutoProvisionedGroup(args: {
     .returning({ groupId: accountGroups.groupId });
   let groupId = created?.groupId;
   if (!groupId) {
-    const [existing] = await db
-      .select({ groupId: accountGroups.groupId })
-      .from(accountGroups)
-      .where(
-        and(
-          eq(accountGroups.accountId, args.accountId),
-          eq(accountGroups.name, claimValue),
-          eq(accountGroups.source, 'sso'),
-        ),
-      )
-      .limit(1);
+    const [existing] = await ssoGroupByNameRow(args.accountId, claimValue);
     groupId = existing?.groupId;
   }
   if (!groupId) return null;

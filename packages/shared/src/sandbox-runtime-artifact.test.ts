@@ -27,6 +27,11 @@ async function createCliFixture(): Promise<{ cliRoot: string; sdkRoot: string }>
   await mkdir(join(sdkRoot, 'src'), { recursive: true });
   await writeFile(join(sdkRoot, 'src', 'index.ts'), 'export const sdk = "v1";\n');
   await writeFile(join(sdkRoot, 'package.json'), '{"name":"@kortix/sdk"}\n');
+  const sharedRoot = join(root, 'packages', 'shared');
+  await mkdir(join(sharedRoot, 'src', 'host-config'), { recursive: true });
+  await writeFile(join(sharedRoot, 'src', 'host-config', 'config.ts'), 'config:v1\n');
+  await writeFile(join(sharedRoot, 'src', 'host-config', 'sandbox-env.ts'), 'sandbox-env:v1\n');
+  await writeFile(join(sharedRoot, 'package.json'), '{"name":"@kortix/shared"}\n');
   return { cliRoot, sdkRoot };
 }
 
@@ -59,6 +64,13 @@ describe('sandbox CLI source digest', () => {
 
     await writeFile(join(sdkRoot, 'src', 'index.ts'), 'export const sdk = "v2";\n');
 
+    expect(await buildCliConnectorSourceDigest(cliRoot, sdkRoot)).not.toBe(before);
+  });
+
+  test.each(['config.ts', 'sandbox-env.ts'])('changes when moved host source %s changes', async (file) => {
+    const { cliRoot, sdkRoot } = await createCliFixture();
+    const before = await buildCliConnectorSourceDigest(cliRoot, sdkRoot);
+    await writeFile(join(cliRoot, '../../packages/shared/src/host-config', file), `${file}:v2\n`);
     expect(await buildCliConnectorSourceDigest(cliRoot, sdkRoot)).not.toBe(before);
   });
 

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { stripAnsi } from '../style.ts';
-import { deliveryCell, describeLinkValidity, parseExposure } from './secrets.ts';
+import { deliveryCell } from './secrets-ls.ts';
+import { describeLinkValidity } from './secrets-audience.ts';
+import { parseExposure } from './secrets-delivery.ts';
 
 describe('describeLinkValidity', () => {
   const now = Date.parse('2026-08-07T12:00:00.000Z');

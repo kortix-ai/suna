@@ -80,6 +80,22 @@ describe('narrateStep', () => {
     expect(narrateStep('edit', [part('write'), part('edit')])).toBe('Updated 2 files');
   });
 
+  it('counts files, not calls: a write then an edit of one file names that file', () => {
+    expect(
+      narrateStep('edit', [part('write', { path: 'hello.py' }), part('edit', { path: 'hello.py' })]),
+    ).toBe('Updated hello.py');
+  });
+
+  it('counts distinct files across repeated edits', () => {
+    expect(
+      narrateStep('edit', [
+        part('edit', { filePath: '/a/one.ts' }),
+        part('edit', { filePath: '/a/one.ts' }),
+        part('edit', { filePath: '/a/two.ts' }),
+      ]),
+    ).toBe('Updated 2 files');
+  });
+
   it('counts reads', () => {
     expect(narrateStep('explore', [part('read'), part('read'), part('read')])).toBe('Read 3 files');
   });
@@ -126,6 +142,28 @@ describe('narrateStep', () => {
   it('is count-aware when the same unrecognized tool is called more than once', () => {
     const line = narrateStep('other', [part('linear/create_issue'), part('linear/create_issue')]);
     expect(line).toBe('Used Create Issue · 2 times');
+  });
+});
+
+describe('narrateStep - a codemode script is a script, not the tool name', () => {
+  it('codemode resolves to its own script family, never the other fallback', () => {
+    expect(familyForTool('codemode')).toBe('script');
+  });
+
+  it('narrates one script and several scripts', () => {
+    expect(narrateStep('script', [part('codemode', { code: 'return 1' })])).toBe('Ran a script');
+    expect(narrateStep('script', [part('codemode'), part('codemode')])).toBe('Ran 2 scripts');
+  });
+
+  it('a group of unrecognized/MCP tools still names every tool', () => {
+    expect(narrateStep('other', [part('linear/create_issue'), part('slack/send')])).toBe(
+      'Used Create Issue and Send',
+    );
+  });
+
+  it('a failed script says so', () => {
+    const failed = { ...part('codemode'), state: { status: 'error', input: {}, error: 'Script failed' } } as unknown as ToolPart;
+    expect(narrateFailedStep('script', [failed])).toBe('A script failed');
   });
 });
 
@@ -659,7 +697,7 @@ describe('narrateStep - show/show_user never leak a raw path or URL', () => {
       part('show', {
         title: 'Q3 report',
         path: '/workspace/reports/q3.html',
-        url: 'https://8080-abc123.e2b.app/preview',
+        url: 'https://8080-abc123.preview.example.com/preview',
       }),
     ]);
     expect(line).toBe('Showed you Q3 report');
@@ -680,11 +718,11 @@ describe('narrateStep - show/show_user never leak a raw path or URL', () => {
 
   it('never renders a raw URL — falls back to a domain', () => {
     const line = narrateStep('create', [
-      part('show', { type: 'url', url: 'https://8080-abc123.e2b.app/preview' }),
+      part('show', { type: 'url', url: 'https://8080-abc123.preview.example.com/preview' }),
     ]);
     expect(line).not.toContain('https://');
     expect(line).not.toContain('/preview');
-    expect(line).toBe('Showed you 8080-abc123.e2b.app');
+    expect(line).toBe('Showed you 8080-abc123.preview.example.com');
   });
 
   it('never renders an unparseable url — falls back to the generic "a link" label', () => {
@@ -757,6 +795,7 @@ describe('narrateFailedStep (W7)', () => {
     'skills',
     'ask',
     'retired',
+    'script',
     'other',
   ];
 

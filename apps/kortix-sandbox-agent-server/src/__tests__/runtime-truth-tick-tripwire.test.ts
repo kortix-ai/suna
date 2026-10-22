@@ -9,8 +9,8 @@ import { resolve } from 'node:path'
  * (the runtime-convergence contract (PR #7785) §1) and failure #5 (a resumed box never
  * re-runs boot at all).
  *
- * `src/runtime-truth.ts` is host code and must not import a concrete adapter
- * directly (harness-boundary.test.ts), so it drives every component through
+ * `src/services/runtime-assets/runtime-truth.ts` is host code and must not
+ * import a concrete adapter directly (the boundary lint, eslint.config.mjs), so it drives every component through
  * injected closures (`RuntimeTruthDeps`) instead of calling the real
  * materializing functions itself. The check therefore has two halves:
  *
@@ -24,18 +24,21 @@ import { resolve } from 'node:path'
  * unproven: every component the daemon owns is reachable from the recurring
  * tick, not only from boot.
  *
- * In the shape of this package's other tripwires (`harness-boundary.test.ts`,
+ * In the shape of this package's other tripwires (`boot-path-tripwire.test.ts`,
  * `test-state-reset-tripwire.test.ts`): a small reusable checker, tested with
  * both a passing fixture and a NEGATIVE PROBE (a fixture the checker must
  * catch), then applied to the real files.
  */
 
-const runtimeTruthSource = readFileSync(resolve(import.meta.dir, '..', 'runtime-truth.ts'), 'utf8')
+const runtimeTruthSource = readFileSync(resolve(import.meta.dir, '..', 'services', 'runtime-assets', 'runtime-truth.ts'), 'utf8')
 const glueSource = readFileSync(resolve(import.meta.dir, '..', 'harness', 'open-code', 'runtime-truth-glue.ts'), 'utf8')
 
-/** Every `name` in `names` must be called (`name(`) somewhere in `source`. Returns the ones that are not. */
+/**
+ * Every `name` in `names` must be called (`name(`, or `name?.(` for a hook a
+ * runtime may leave out) somewhere in `source`. Returns the ones that are not.
+ */
 export function callsMissingFrom(source: string, names: readonly string[]): string[] {
-  return names.filter((name) => !new RegExp(`\\b${name}\\s*\\(`).test(source))
+  return names.filter((name) => !new RegExp(`\\b${name}\\s*(?:\\?\\.)?\\s*\\(`).test(source))
 }
 
 /** The tick's own hooks — one per component `runtime-truth.ts` owns. */
@@ -49,8 +52,8 @@ const MATERIALIZING_ENTRY_POINTS = [
   'convergeConfigRelease',
   // catalog — the live managed-lineup fetch this spec's failure #1 is about.
   'startManagedModelsPrefetch',
-  // catalog's repair half — writes the overlay and restarts opencode onto it.
-  'writeManagedOverlayCatalogFile',
+  // catalog's repair half — writes the overlay and reloads opencode's config onto it.
+  'applyCatalogIfIdle',
 ] as const
 
 describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', () => {
@@ -61,6 +64,8 @@ describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', (
 
   test('the checker accepts a fixture that calls everything', () => {
     expect(callsMissingFrom('foo(); bar()\n', ['foo', 'bar'])).toEqual([])
+    // An optional hook is still called: pi has no model catalog, so `readCatalog` is optional.
+    expect(callsMissingFrom('deps.readCatalog?.()\n', ['readCatalog'])).toEqual([])
   })
 
   test('runReconcileTick calls every hook RuntimeTruthDeps defines — no dead wiring', () => {
@@ -84,6 +89,12 @@ describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', (
   test('the glue file is wired from a runtime-ready exit, not a one-shot boot script that could stop being called', () => {
     const bootSource = readFileSync(resolve(import.meta.dir, '..', 'harness', 'open-code', 'boot.ts'), 'utf8')
     expect(bootSource).toContain('wireRuntimeTruth(')
+  })
+
+  test('pi wires the tick from its runtime-ready path: config releases and runtime assets are reconciled every tick', () => {
+    const piBoot = readFileSync(resolve(import.meta.dir, '..', 'harness', 'pi', 'boot.ts'), 'utf8')
+    expect(callsMissingFrom(piBoot, ['configureRuntimeTruth', 'startRuntimeTruthTicker', 'scheduleRuntimeAssetsReconcile'])).toEqual([])
+    expect(piBoot).toMatch(/reconcileConfigRelease:[\s\S]{0,120}harness\.releases\s*\.converge\(/)
   })
 
   test('boot is not the only caller: runtime-truth.ts itself starts the periodic floor, not just a one-shot boot pass', () => {

@@ -28,23 +28,34 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
 import {
+  convergeManagedModelCatalog,
   createOpencodeLifecycle,
+  resetManagedModelsStateForTests,
   waitForOpencodeReady,
   type Opencode,
   type OpencodeLifecycleOptions,
-} from '../harness/open-code/lifecycle'
-import { createOpenCodeHarnessService } from '../harness/open-code/service'
-import { bootLinkPath } from '../boot-config'
+} from '@/harness/open-code/lifecycle'
+import { createOpenCodeHarnessService } from '@/harness/open-code/service'
+import { bootLinkPath } from '@/services/config-provider/boot-config'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
-import { createProjectEnvStore, type ProjectEnvStore } from '../project-env'
+import { reserveOpenCodePortPair } from './helpers/open-code-harness'
+import { createProjectEnvStore, type ProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 let root: string
 let ctl: string
 let lifecycle: Opencode | null
 
-const ENV_KEYS = ['KORTIX_COMPILED_RUNTIME_FORMAT', 'KORTIX_CONTINUATION_DISABLED'] as const
+const ENV_KEYS = [
+  'KORTIX_CONTINUATION_DISABLED',
+  'KORTIX_LLM_PROXY_URL',
+  'KORTIX_LLM_CATALOG_FILE',
+  'KORTIX_LLM_BASE_URL',
+  'KORTIX_TOKEN',
+  'KORTIX_RUNTIME_STATE_DIR',
+  'KORTIX_BAKED_LLM_CATALOG_PATH',
+] as const
 const savedEnv = new Map<string, string | undefined>()
 
 beforeEach(() => {
@@ -73,7 +84,7 @@ afterEach(async () => {
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 function reservePort(): number {
-  const server = Bun.serve({ port: 0, fetch: () => new Response('reserved') })
+  const server = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response('reserved') })
   const port = server.port
   server.stop(true)
   if (typeof port !== 'number') throw new Error('Bun did not assign a port')
@@ -162,6 +173,7 @@ writeFileSync(CTL + '/env-' + process.pid + '.json', JSON.stringify({
   port,
   KORTIX_CONTINUATION_DISABLED: process.env.KORTIX_CONTINUATION_DISABLED ?? null,
   OPENCODE_DISABLE_MODELS_FETCH: process.env.OPENCODE_DISABLE_MODELS_FETCH ?? null,
+  OPENCODE_CONFIG_CONTENT: process.env.OPENCODE_CONFIG_CONTENT ?? null,
 }))
 const mode = read('mode-' + port)
 if (mode === 'exit') process.exit(1)
@@ -213,14 +225,13 @@ interface Rig {
 }
 
 function rig(
-  options: OpencodeLifecycleOptions & { projectEnv?: ProjectEnvStore; binary?: string } = {},
+  options: OpencodeLifecycleOptions & { projectEnv?: ProjectEnvStore; binary?: string; ports?: [number, number] } = {},
 ): Rig {
   const workspace = join(root, 'workspace')
   mkdirSync(workspace, { recursive: true })
   const binary = options.binary ?? join(root, 'opencode')
   if (!options.binary && !options.binaryPathResolverOverride) writeFakeOpencode(binary)
-  const primary = reservePort()
-  const standby = reservePort()
+  const [primary, standby] = options.ports ?? reserveOpenCodePortPair()
   const cfg = {
     workspace,
     projectTarget: workspace,
@@ -230,7 +241,7 @@ function rig(
     gitUserEmail: 'agent@kortix.ai',
   } as Config
   const marks: Rig['marks'] = []
-  const { projectEnv, binary: _binary, ...lifecycleOptions } = options
+  const { projectEnv, binary: _binary, ports: _ports, ...lifecycleOptions } = options
   const created = createOpencodeLifecycle(cfg, projectEnv, {
     ...(options.binaryPathResolverOverride ? {} : { binaryPathOverride: binary }),
     configPathOverride: join(root, 'runtime-config.json'),
@@ -250,6 +261,10 @@ function rig(
     marks,
     spawned: () => marks.filter((mark) => mark.label === 'runtime-process-spawned').length,
   }
+}
+
+function kortixModels(configFile: string): Record<string, { name?: string; limit?: { context?: number } }> {
+  return JSON.parse(readFileSync(configFile, 'utf8')).provider.kortix.models
 }
 
 async function startReady(r: Rig): Promise<number> {
@@ -329,16 +344,13 @@ describe('spawn and readiness', () => {
   }, 90_000)
 
   test('the spawn env carries the Kortix-managed values over conflicting inputs', async () => {
-    // Compiled boot: the binary embeds a models snapshot; a remote refresh is
-    // network contention. Passive continuation is a platform decision a
-    // project or daemon env value cannot turn back on.
-    process.env.KORTIX_COMPILED_RUNTIME_FORMAT = 'kortix.compiled-runtime.v1'
+    // Passive continuation is a platform decision a project or daemon env
+    // value cannot turn back on.
     process.env.KORTIX_CONTINUATION_DISABLED = 'false'
     const r = rig()
     const pid = await startReady(r)
 
     expect(spawnEnv(pid)).toMatchObject({
-      OPENCODE_DISABLE_MODELS_FETCH: '1',
       KORTIX_CONTINUATION_DISABLED: '1',
     })
   }, 30_000)
@@ -496,8 +508,7 @@ describe('verified reload', () => {
     const binary = join(root, 'opencode')
     mkdirSync(workspace)
     writeFakeOpencode(binary)
-    const primary = reservePort()
-    const standby = reservePort()
+    const [primary, standby] = reserveOpenCodePortPair()
     const cfg = {
       workspace,
       projectTarget: workspace,
@@ -657,9 +668,12 @@ describe('verified reload', () => {
     expect(r.lifecycle.getInternalUrl()).toBe(`http://127.0.0.1:${r.standby}`)
     expect(await sessionAnswers(r.lifecycle.getInternalUrl())).toBe(true)
     // reconfigure() marks `starting` until the next probe; the probe asks the
-    // process's real port, so it comes back `ok` on its own.
-    await waitFor(() => r.lifecycle.getState() === 'ok', 5_000)
-  }, 20_000)
+    // process's real port, so it comes back `ok` on its own. That probe is the
+    // liveness timer armed at promotion: up to READY_LIVENESS_MS (5 s) away,
+    // plus its 2 s timeout. A 5 s wait raced that timer and lost under load, so
+    // this takes the file's default budget.
+    await waitFor(() => r.lifecycle.getState() === 'ok')
+  }, 40_000)
 
   test('stop and reload retire the whole process group, grandchildren included', async () => {
     // OpenCode forks its own `bun install` for the config dir. A grandchild
@@ -753,6 +767,166 @@ describe('reloadConfig', () => {
   }, 30_000)
 })
 
+// ── agent .md model refs ────────────────────────────────────────────────────
+
+/**
+ * Prod 2026-09-30: an agent `.md` declared `model: codex/gpt-6-sol`. OpenCode
+ * reads the `.md` AFTER the composed `OPENCODE_CONFIG` file and splits a ref
+ * at its first slash, so the agent named provider `codex`, which a kortix-only
+ * config does not have. Every Slack follow-up (a prompt that names no model) failed
+ * "Model not found: codex/gpt-6-sol." `OPENCODE_CONFIG_CONTENT` is the only
+ * layer OpenCode merges after the config dir.
+ */
+describe('agent .md model refs', () => {
+  function writeAgent(configDir: string, rel: string, model: string | null): void {
+    const path = join(configDir, rel)
+    mkdirSync(join(path, '..'), { recursive: true })
+    writeFileSync(path, `---\nmode: primary\n${model ? `model: ${model}\n` : ''}---\n\nYou are ${rel}.\n`)
+  }
+
+  function useGateway(): void {
+    process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:9/v1'
+    process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // A Kortix sandbox carries the image's own baked catalog at the default
+    // baked path; hide it so this rig pins the no-catalog registration set.
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
+  }
+
+  test('routes every .md model through kortix, after the config dir', async () => {
+    useGateway()
+    const configDir = join(root, 'config')
+    writeAgent(configDir, 'agents/kortix.md', 'codex/gpt-6-sol')
+    writeAgent(configDir, 'agent/team/triage.md', '"glm-5.3-flash"')
+    writeAgent(configDir, 'agents/routed.md', 'kortix/deepseek-v4-flash')
+    writeAgent(configDir, 'agents/plain.md', null)
+    await serveTestConfigDir(configDir, join(root, 'boot-store'))
+    const r = rig()
+    const pid = await startReady(r)
+
+    expect(JSON.parse(spawnEnv(pid).OPENCODE_CONFIG_CONTENT as string)).toEqual({
+      agent: {
+        kortix: { model: 'kortix/codex/gpt-6-sol' },
+        'team/triage': { model: 'kortix/glm-5.3-flash' },
+      },
+    })
+  }, 30_000)
+
+  // A prompt that names no model runs on the agent's model, so no turn-start
+  // gate sees it. The provider map must carry it whatever the catalog says.
+  test('an .md model no catalog carries is registered on the kortix provider', async () => {
+    useGateway()
+    const configDir = join(root, 'config')
+    writeAgent(configDir, 'agents/kortix.md', 'codex/gpt-6.1-sol')
+    writeAgent(configDir, 'agents/routed.md', 'kortix/brand-new-managed')
+    await serveTestConfigDir(configDir, join(root, 'boot-store'))
+    const r = rig()
+    await startReady(r)
+
+    const models = kortixModels(join(root, 'runtime-config.json'))
+    expect(models['codex/gpt-6.1-sol']?.limit?.context).toBeGreaterThan(0)
+    expect(models['brand-new-managed']?.limit?.context).toBeGreaterThan(0)
+  }, 30_000)
+
+  // A dispose re-reads config files but not the process env the patch rides.
+  test('a changed .md model restarts instead of disposing; an unchanged one disposes', async () => {
+    useGateway()
+    setCtl('dispose', 'json-true')
+    const configDir = join(root, 'config')
+    writeAgent(configDir, 'agents/kortix.md', 'codex/gpt-6-sol')
+    await serveTestConfigDir(configDir, join(root, 'boot-store'))
+    const r = rig()
+    const pid = await startReady(r)
+
+    expect(await r.lifecycle.reloadConfig()).toEqual({ how: 'disposed', turnEnded: false })
+    expect(r.lifecycle.getPid()).toBe(pid)
+
+    writeAgent(configDir, 'agents/kortix.md', 'anthropic/claude-opus-4-8')
+    const result = await r.lifecycle.reloadConfig()
+
+    expect(result.how).toBe('restarted')
+    const next = r.lifecycle.getPid() as number
+    expect(next).not.toBe(pid)
+    expect(JSON.parse(spawnEnv(next).OPENCODE_CONFIG_CONTENT as string)).toEqual({
+      agent: { kortix: { model: 'kortix/anthropic/claude-opus-4-8' } },
+    })
+  }, 60_000)
+})
+
+// ── a model a turn names ─────────────────────────────────────────────────────
+
+/**
+ * Prod 2026-10-02: "Model not found: kortix/codex/gpt-6.1-sol". The box ran an
+ * image catalog older than the model. The repair took a verified restart
+ * (3.3 s on a small local box) and a 5 MB catalog fetch. A dispose re-reads the
+ * provider map on the same process in 3 ms (measured on OpenCode 1.18.23).
+ */
+describe('a model a turn names', () => {
+  const LISTED = { name: 'GPT-6.1 Sol (ChatGPT)', provider: 'codex', limit: { context: 272_000, output: 128_000 } }
+
+  function gatewayBox(listing: () => Response) {
+    const gateway = Bun.serve({
+      port: 0,
+      fetch: (req) =>
+        new URL(req.url).searchParams.get('scope') === 'picker' ? listing() : new Response('not found', { status: 404 }),
+    })
+    process.env.KORTIX_LLM_BASE_URL = `http://127.0.0.1:${gateway.port}/v1`
+    process.env.KORTIX_TOKEN = 'kortix_pat_test'
+    process.env.KORTIX_LLM_CATALOG_FILE = join(root, 'no-catalog.json')
+    // A Kortix box bakes the real catalog at the well-known path; it must not
+    // answer for the absent file above (its model defs would beat the listing).
+    process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
+    process.env.KORTIX_RUNTIME_STATE_DIR = join(root, 'state')
+    resetManagedModelsStateForTests()
+    return gateway
+  }
+
+  test.each([
+    ['the listing carries it', () => Response.json({ models: { 'codex/gpt-6.1-sol': LISTED } }), 272_000],
+    ['the listing fetch fails', () => new Response('down', { status: 503 }), 200_000],
+  ])('is registered by a dispose on the same process when %s', async (_name, listing, context) => {
+    setCtl('dispose', 'json-true')
+    const gateway = gatewayBox(listing)
+    try {
+      const r = rig()
+      const pid = await startReady(r)
+      expect(kortixModels(join(root, 'runtime-config.json'))['codex/gpt-6.1-sol']).toBeUndefined()
+
+      const result = await convergeManagedModelCatalog(r.lifecycle, r.cfg, {
+        model: 'codex/gpt-6.1-sol',
+        catalogTargetFile: join(root, 'session-catalog.json'),
+      })
+
+      expect(result).toMatchObject({ outcome: 'reloaded', modelPresent: true })
+      expect(r.lifecycle.getPid()).toBe(pid)
+      expect(r.spawned()).toBe(1)
+      expect(kortixModels(join(ctl, 'config-at-dispose.json'))['codex/gpt-6.1-sol']?.limit?.context).toBe(context)
+    } finally {
+      gateway.stop(true)
+      resetManagedModelsStateForTests()
+    }
+  }, 30_000)
+
+  test('an OpenCode with no dispose endpoint gets the model by a verified swap', async () => {
+    const gateway = gatewayBox(() => Response.json({ models: { 'codex/gpt-6.1-sol': LISTED } }))
+    try {
+      const r = rig()
+      const pid = await startReady(r)
+
+      const result = await convergeManagedModelCatalog(r.lifecycle, r.cfg, {
+        model: 'codex/gpt-6.1-sol',
+        catalogTargetFile: join(root, 'session-catalog.json'),
+      })
+
+      expect(result).toMatchObject({ outcome: 'restarted', modelPresent: true })
+      expect(r.lifecycle.getPid()).not.toBe(pid)
+      expect(kortixModels(join(root, 'runtime-config.json'))['codex/gpt-6.1-sol']).toMatchObject({ name: LISTED.name })
+    } finally {
+      gateway.stop(true)
+      resetManagedModelsStateForTests()
+    }
+  }, 30_000)
+})
+
 // ── unplanned-respawn hook (orphaned-turn finalize) ──────────────────────────
 
 describe('onUnplannedRespawn', () => {
@@ -829,4 +1003,114 @@ describe('onUnplannedRespawn', () => {
     expect(r.lifecycle.getPid()).toBeNull()
     expect(calls).toHaveLength(0)
   }, 30_000)
+})
+
+// ── a daemon that dies hard ──────────────────────────────────────────────────
+
+describe('a daemon killed with SIGKILL', () => {
+  const LIFECYCLE_MODULE = join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts')
+
+  /**
+   * A real daemon process: the production lifecycle spawns the fake OpenCode, then idles. It
+   * also starts an OpenCode on `foreignPort` in its own group, which the SIGKILL orphans
+   * exactly like the real one, so only the port filter can spare it.
+   */
+  async function startDaemonProcess(
+    binary: string,
+    primary: number,
+    standby: number,
+    foreignPort: number,
+  ): Promise<{ daemonPid: number; opencodePid: number; foreignPid: number }> {
+    const workspace = join(root, 'workspace')
+    mkdirSync(workspace, { recursive: true })
+    const script = join(root, 'daemon.ts')
+    writeFileSync(
+      script,
+      `import { createOpencodeLifecycle, waitForOpencodeReady } from ${JSON.stringify(LIFECYCLE_MODULE)}
+const workspace = ${JSON.stringify(workspace)}
+const lifecycle = createOpencodeLifecycle(
+  { workspace, projectTarget: workspace, opencodeInternalPort: ${primary}, opencodeStandbyPort: ${standby}, gitUserName: 'Kortix Agent', gitUserEmail: 'agent@kortix.ai' } as any,
+  undefined,
+  { binaryPathOverride: ${JSON.stringify(binary)}, configPathOverride: ${JSON.stringify(join(root, 'daemon-config.json'))} },
+)
+const { spawn } = await import('node:child_process')
+const foreign = spawn(${JSON.stringify(binary)}, ['serve', '--port', '${foreignPort}', '--hostname', '127.0.0.1'], { stdio: 'ignore', detached: true })
+await lifecycle.start()
+if (!(await waitForOpencodeReady(lifecycle, workspace))) process.exit(2)
+console.log('daemon-ready ' + lifecycle.getPid() + ' ' + foreign.pid)
+setInterval(() => {}, 1 << 30)
+`,
+    )
+    const daemon = Bun.spawn(['bun', script], {
+      cwd: join(import.meta.dir, '..', '..'),
+      env: { ...process.env, HOME: join(root, 'home'), KORTIX_BOOT_CONFIG_ROOT: join(root, 'boot') },
+      stdout: 'pipe',
+      stderr: 'inherit',
+    })
+    let out = ''
+    const decoder = new TextDecoder()
+    for await (const chunk of daemon.stdout) {
+      out += decoder.decode(chunk)
+      const ready = out.match(/^daemon-ready (\d+) (\d+)$/m)
+      if (ready) return { daemonPid: daemon.pid, opencodePid: Number(ready[1]), foreignPid: Number(ready[2]) }
+    }
+    throw new Error(`daemon exited before OpenCode was ready: ${out.slice(-2_000)}`)
+  }
+
+  test('the next daemon reaps the OpenCode the dead one left on its ports, and only that one', async () => {
+    const binary = join(root, 'opencode')
+    writeFakeOpencode(binary)
+    const [primary, standby] = reserveOpenCodePortPair()
+    // An OpenCode on a port outside the pair, orphaned by the same crash, must survive.
+    const [foreignPort] = reserveOpenCodePortPair()
+    const { daemonPid, opencodePid: orphan, foreignPid } = await startDaemonProcess(binary, primary, standby, foreignPort)
+    await waitFor(() => sessionAnswers(`http://127.0.0.1:${foreignPort}`))
+
+    // The crash: no shutdown path runs, so OpenCode is orphaned and keeps the port.
+    process.kill(daemonPid, 'SIGKILL')
+    await waitFor(() => !processExists(daemonPid))
+    expect(processExists(orphan)).toBe(true)
+    expect(await sessionAnswers(`http://127.0.0.1:${primary}`)).toBe(true)
+
+    try {
+      const r = rig({ binary, ports: [primary, standby] })
+      const pid = await startReady(r)
+
+      expect(pid).not.toBe(orphan)
+      expect(processExists(orphan)).toBe(false)
+      expect(await sessionAnswers(r.lifecycle.getInternalUrl())).toBe(true)
+      expect(requestLog(primary).at(-1)?.split(' ')[0]).toBe(String(pid))
+      expect(processExists(foreignPid)).toBe(true)
+      expect(await sessionAnswers(`http://127.0.0.1:${foreignPort}`)).toBe(true)
+    } finally {
+      for (const pid of [orphan, foreignPid]) {
+        try {
+          process.kill(-pid, 'SIGKILL')
+        } catch {}
+      }
+    }
+  }, 60_000)
+
+  test('a ps that never answers delays the first spawn by its timeout, then the boot goes on', async () => {
+    // `ps` blocked on a D-state process's /proc entry must not stall the boot. The stub's
+    // background child keeps stdout open after the stub itself is killed.
+    const stubBin = join(root, 'stub-bin')
+    mkdirSync(stubBin)
+    writeFileSync(join(stubBin, 'ps'), `#!/bin/sh\nsleep 30 &\necho $! > ${ctl}/ps-bg.pid\nexec sleep 30\n`)
+    chmodSync(join(stubBin, 'ps'), 0o755)
+    const savedPath = process.env.PATH
+    process.env.PATH = `${stubBin}:${savedPath}`
+    try {
+      const r = rig()
+      const started = Date.now()
+      await startReady(r)
+      expect(Date.now() - started).toBeLessThan(8_000)
+      expect(existsSync(join(ctl, 'ps-bg.pid'))).toBe(true)
+    } finally {
+      process.env.PATH = savedPath
+      try {
+        process.kill(Number(readFileSync(join(ctl, 'ps-bg.pid'), 'utf8')), 'SIGKILL')
+      } catch {}
+    }
+  }, 40_000)
 })

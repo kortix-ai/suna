@@ -106,3 +106,29 @@ test('SSO domain verification: a missing TXT record is not reported to the globa
   await expect(verifySsoDomain('acc-1')).rejects.toBeDefined();
   expect(reportedErrors).toBe(0);
 });
+
+test('IAM write and list contracts preserve paths, payloads, and results', async () => {
+  const iam = await import('./iam');
+  const calls: Array<[string, string, unknown]> = [];
+  globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+    calls.push([init?.method ?? 'GET', new URL(url).pathname + new URL(url).search, init?.body ? JSON.parse(String(init.body)) : null]);
+    return new Response(JSON.stringify({ groups: [], tokens: [], service_accounts: [], webhooks: [], events: [], next_cursor: null, deleted: true, imported: 1, enabled: false }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as unknown as typeof fetch;
+  await iam.listGroups('a');
+  await iam.deleteGroup('a', 'g');
+  await iam.listScimTokens('a');
+  await iam.listServiceAccountsApi('a');
+  await iam.listAuditWebhooks('a');
+  await iam.listAuditEvents('a', { actor: 'u', limit: 2 });
+  await iam.getPatPolicy('a');
+  await iam.bulkDeletePolicies('a', ['p']);
+  await iam.bulkImportPolicies('a', []);
+  expect(calls.map(([method, path]) => [method, path])).toEqual([
+    ['GET', '/accounts/a/iam/groups'], ['DELETE', '/accounts/a/iam/groups/g'],
+    ['GET', '/accounts/a/iam/scim/tokens'], ['GET', '/accounts/a/iam/service-accounts'],
+    ['GET', '/accounts/a/audit/webhooks'], ['GET', '/accounts/a/audit?actor=u&limit=2'],
+    ['GET', '/accounts/a/iam/pat-policy'], ['POST', '/accounts/a/iam/policies:bulk-delete'],
+    ['POST', '/accounts/a/iam/policies:bulk-import'],
+  ]);
+});

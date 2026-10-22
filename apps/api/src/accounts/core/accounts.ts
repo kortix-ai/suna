@@ -1,17 +1,19 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 import { json, errors, auth } from "../../openapi";
-import { accountMembers, accountMemberships, accounts, projects } from "@kortix/db";
+import { accountMemberships, accounts, projects } from "@kortix/db";
 import { config } from "../../config";
 import { db } from "../../shared/db";
 import { ACCOUNT_ACTIONS, assertAuthorized } from "../../iam";
 import { actorOf } from '../../iam/actor';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { countAccountMembers, countBillableAccountMembers, userAccountRows } from '../../iam/membership-read';
 import { accountRolesForUser } from '../../iam/read-models';
 import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
 import { effectiveBranding } from '../branding';
 import { sortAccountsForListing } from "./account-order";
+import { accountNameError } from "./account-name";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
   AccountDetailSchema,
@@ -40,10 +42,10 @@ export function registerAccountRoutes(): void {
       ...auth,
       responses: {
         200: json(z.array(AccountSummarySchema), 'Accounts the user belongs to'),
-        ...errors(401),
+        ...errors(401, 500),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const userEmail = c.get('userEmail') as string;
 
@@ -82,19 +84,10 @@ export function registerAccountRoutes(): void {
       // `account_members` says WHICH accounts; `role_assignments` says at what
       // role. Reading the role off the join labelled the switcher with a value
       // the engine no longer decides on.
+      const readMembershipRows = () => userAccountRows(userId);
       const loadMemberships = async () => {
         const [membershipRows, rolesByAccount] = await Promise.all([
-          db
-            .select({
-              accountId: accountMembers.accountId,
-              name: accounts.name,
-              createdAt: accounts.createdAt,
-              updatedAt: accounts.updatedAt,
-              branding: accounts.branding,
-            })
-            .from(accountMembers)
-            .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
-            .where(eq(accountMembers.userId, userId)),
+          readMembershipRows(),
           accountRolesForUser(userId),
         ]);
         return membershipRows.map((m) => ({
@@ -128,8 +121,10 @@ export function registerAccountRoutes(): void {
       // both would trade a 10-line ordering discipline for a multi-parameter
       // abstraction that hides the one real asymmetry that matters — this
       // route's bootstrap failure is fatal (500 below), /me's is not.
-      let memberships = await loadMemberships();
-      if (memberships.length === 0) {
+      //
+      // The decision needs only WHETHER a membership exists, so this read
+      // skips the roles. The list below reads both.
+      if ((await readMembershipRows()).length === 0) {
         try {
           await bootstrapPersonalAccount(userId, userEmail);
         } catch (err) {
@@ -152,12 +147,12 @@ export function registerAccountRoutes(): void {
       // invite must not roll back the others, or the account just bootstrapped).
       await autoClaimPendingInvites(userId, userEmail);
 
-      // Re-read unconditionally. Skipping it when this request claimed nothing
-      // races a concurrent list: the first call of a fresh sign-in claims the
-      // invite between this call's first read and its claim, so this call sees
-      // no pending invite, claims 0, and would return the list without the
-      // workspace the user was just added to.
-      memberships = await loadMemberships();
+      // Read unconditionally, after the claim. Reusing the pre-claim rows when
+      // this request claimed nothing races a concurrent list: the first call of
+      // a fresh sign-in claims the invite between this call's first read and
+      // its claim, so this call sees no pending invite, claims 0, and would
+      // return the list without the workspace the user was just added to.
+      const memberships = await loadMemberships();
       if (memberships.length === 0) {
         console.warn(`[accounts] No memberships for ${userId} after bootstrap+claim`);
         return c.json({ error: 'Failed to initialize account' }, 500);
@@ -210,7 +205,7 @@ export function registerAccountRoutes(): void {
         ...errors(400, 401, 403),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get("userId") as string;
 
       // Self-host account-creation restriction: gate the creation of
@@ -232,8 +227,8 @@ export function registerAccountRoutes(): void {
 
       const body = await readJsonObject(c);
       const name = normalizeString(body.name);
-      if (!name) return c.json({ error: 'name is required' }, 400);
-      if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
+      const nameError = accountNameError(name);
+      if (nameError || !name) return c.json({ error: nameError }, 400);
 
       const [account] = await db.insert(accounts).values({ name }).returning();
 
@@ -282,9 +277,12 @@ export function registerAccountRoutes(): void {
         ...errors(401, 403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
+
+      const membership = await getMembership(userId, accountId);
+      if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
       const [row] = await db
         .select()
@@ -293,9 +291,6 @@ export function registerAccountRoutes(): void {
         .limit(1);
       if (!row) return c.json({ error: 'Not found' }, 404);
 
-      const membership = await getMembership(userId, accountId);
-      if (!membership) return c.json({ error: 'Forbidden' }, 403);
-
       // Member count EXCLUDING phantom self-memberships (user_id == account_id with
       // no auth user) — same definition as billing/countActiveMembers and the
       // members-list filter, so the "Members" counter matches the visible list and
@@ -303,24 +298,13 @@ export function registerAccountRoutes(): void {
       // real auth user) are kept; falls back to a plain count if auth is unreachable.
       let memberCount = 0;
       try {
-        const res = await db.execute<{ n: number }>(sql`
-      SELECT COUNT(*)::int AS n
-      FROM kortix.account_members am
-      WHERE am.account_id = ${accountId}::uuid
-        AND NOT (
-          am.user_id = am.account_id
-          AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = am.user_id)
-        )
-    `);
+        const res = await countBillableAccountMembers(accountId);
         const countRows =
           (res as unknown as { rows?: Array<{ n: number }> }).rows ??
           (res as unknown as Array<{ n: number }>);
         memberCount = Number(countRows?.[0]?.n ?? 0);
       } catch {
-        const [memberCountRow] = await db
-          .select({ n: count() })
-          .from(accountMembers)
-          .where(eq(accountMembers.accountId, accountId));
+        const [memberCountRow] = await countAccountMembers(accountId);
         memberCount = Number(memberCountRow?.n ?? 0);
       }
       const [projectCountRow] = await db
@@ -368,7 +352,7 @@ export function registerAccountRoutes(): void {
         ...errors(400, 401, 403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
 
@@ -378,8 +362,8 @@ export function registerAccountRoutes(): void {
 
       const body = await readJsonObject(c);
       const name = normalizeString(body.name);
-      if (!name) return c.json({ error: 'name is required' }, 400);
-      if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
+      const nameError = accountNameError(name);
+      if (nameError || !name) return c.json({ error: nameError }, 400);
 
       const [row] = await db
         .update(accounts)

@@ -5,12 +5,12 @@ import worker from './worker.mjs';
 const env = {
   ACTIVE_BACKEND: 'ecs-fargate',
   BACKEND_ECS_FARGATE: 'https://api-fargate.kortix.com',
-  BACKEND_US_EAST_2: 'https://api-use2-shadow.kortix.com',
+  BACKEND_US_EAST_2: 'https://dev-api-use2.kortix.com',
   // Gateway is deliberately on a DIFFERENT active backend than the API, to prove
   // the two services flip independently.
   GATEWAY_ACTIVE_BACKEND: 'ecs-fargate',
   GATEWAY_BACKEND_ECS_FARGATE: 'https://gateway-fargate.kortix.com',
-  GATEWAY_BACKEND_US_EAST_2: 'https://gateway-use2-shadow.kortix.com',
+  GATEWAY_BACKEND_US_EAST_2: 'https://gateway-dev-use2.kortix.com',
 };
 
 const originalFetch = globalThis.fetch;
@@ -24,12 +24,12 @@ afterEach(() => {
 });
 
 describe('api-router worker', () => {
-  test('deploys the dev router from main and verifies its commit and SCIM boundary', () => {
+  test('deploys the dev router from dev and verifies its commit and SCIM boundary', () => {
     const workflow = Bun.YAML.parse(readFileSync(new URL('../../../../.github/workflows/deploy-api-router-dev.yml', import.meta.url), 'utf8'));
-    expect(workflow.on.push.branches).toEqual(['main']);
+    expect(workflow.on.push.branches).toEqual(['dev']);
     expect(workflow.on.push.paths).toContain('infra/cloudflare/workers/api-router/**');
     const job = workflow.jobs.deploy;
-    expect(job.if).toBe("github.ref == 'refs/heads/main'");
+    expect(job.if).toBe("github.ref == 'refs/heads/dev'");
     expect(job['continue-on-error']).toBeUndefined();
     const commands = job.steps.map((step) => step.run ?? '').join('\n');
     expect(commands).toContain('deploy --env dev');
@@ -43,7 +43,7 @@ describe('api-router worker', () => {
     expect(commands).toContain('urn:ietf:params:scim:api:messages:2.0:Error');
   });
 
-  test('keeps the staging API on EKS in config and deployment metadata', () => {
+  test('routes staging to its eu-west-2 stack in config and deployment metadata', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),
       'utf8',
@@ -59,13 +59,41 @@ describe('api-router worker', () => {
     const stagingVars = wrangler.match(
       /\[env\.staging\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
     )?.[1];
-    expect(stagingVars).toContain('ACTIVE_BACKEND = "ecs-fargate"');
-    expect(deployWorkflow).toContain(
-      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"ecs-fargate"}',
-    );
+    expect(stagingVars).toContain('ACTIVE_BACKEND = "eu-west-2"');
+    expect(stagingVars).toContain('GATEWAY_ACTIVE_BACKEND = "eu-west-2"');
+    expect(stagingVars).toContain('BACKEND_EU_WEST_2 = "https://staging-api-euw2.kortix.com"');
+    for (const binding of [
+      '{type:"plain_text", name:"ACTIVE_BACKEND", text:"eu-west-2"}',
+      '{type:"plain_text", name:"BACKEND_EU_WEST_2", text:"https://staging-api-euw2.kortix.com"}',
+      '{type:"plain_text", name:"GATEWAY_ACTIVE_BACKEND", text:"eu-west-2"}',
+      '{type:"plain_text", name:"GATEWAY_BACKEND_EU_WEST_2", text:"https://gateway-staging-euw2.kortix.com"}',
+    ]) {
+      expect(deployWorkflow).toContain(binding);
+    }
+    // The us-west-2 origins were destroyed on 2026-10-12.
+    expect(stagingVars).not.toContain('ECS_FARGATE');
+    expect(deployWorkflow).not.toContain('staging-api-ecs-fargate');
+    expect(deployWorkflow).not.toContain('gateway-staging-ecs-fargate');
   });
 
-  test('keeps the prepared US East 2 origins inactive in production config', () => {
+  test('routes dev only to its us-east-2 stack', () => {
+    const wrangler = readFileSync(
+      new URL('./wrangler.toml', import.meta.url),
+      'utf8',
+    );
+    const devVars = wrangler.match(
+      /\[env\.dev\.vars\]([\s\S]*?)(?=\n\[env\.|\s*$)/,
+    )?.[1];
+
+    expect(devVars).toContain('ACTIVE_BACKEND = "us-east-2"');
+    expect(devVars).toContain('GATEWAY_ACTIVE_BACKEND = "us-east-2"');
+    expect(devVars).toContain('BACKEND_US_EAST_2 = "https://dev-api-use2.kortix.com"');
+    expect(devVars).toContain('GATEWAY_BACKEND_US_EAST_2 = "https://gateway-dev-use2.kortix.com"');
+    // The us-west-2 origins were destroyed on 2026-10-12.
+    expect(devVars).not.toContain('ECS_FARGATE');
+  });
+
+  test('keeps production on its eu-west-2 ECS origins only', () => {
     const wrangler = readFileSync(
       new URL('./wrangler.toml', import.meta.url),
       'utf8',
@@ -76,26 +104,14 @@ describe('api-router worker', () => {
 
     expect(productionVars).toContain('ACTIVE_BACKEND = "ecs-fargate"');
     expect(productionVars).toContain('GATEWAY_ACTIVE_BACKEND = "ecs-fargate"');
-    expect(productionVars).toContain(
-      'BACKEND_US_EAST_2 = "https://api-use2-shadow.kortix.com"',
-    );
-    expect(productionVars).toContain(
-      'GATEWAY_BACKEND_US_EAST_2 = "https://gateway-use2-shadow.kortix.com"',
-    );
+    expect(productionVars).not.toContain('US_EAST_2');
     expect(productionVars).not.toContain('us-west-2');
     expect(productionVars).not.toContain('usw2');
   });
 
-  test('removes stale ECS commit overrides and verifies both shadow commits', () => {
+  test('removes stale ECS commit overrides', () => {
     const ecsDeploy = readFileSync(
       new URL('../../../scripts/ecs-deploy.sh', import.meta.url),
-      'utf8',
-    );
-    const shadowWorkflow = readFileSync(
-      new URL(
-        '../../../../.github/workflows/deploy-prod-us-east-2-shadow.yml',
-        import.meta.url,
-      ),
       'utf8',
     );
 
@@ -104,12 +120,6 @@ describe('api-router worker', () => {
     // exact formatting went stale. Assert the two invariants instead.
     expect(ecsDeploy).toContain('.name != "KORTIX_VERSION"');
     expect(ecsDeploy).toContain('.name != "KORTIX_COMMIT"');
-    expect(shadowWorkflow).toContain(
-      'api_commit="$(jq -r \'.commit // empty\'',
-    );
-    expect(shadowWorkflow).toContain(
-      '[ "$api_commit" != "$SOURCE_SHA" ] || [ "$gateway_commit" != "$SOURCE_SHA" ]',
-    );
   });
 
   test('injects the environment secret as one JSON blob instead of per-key selectors', () => {
@@ -145,19 +155,11 @@ describe('api-router worker', () => {
       new URL('../../../../.github/workflows/deploy-prod.yml', import.meta.url),
       'utf8',
     );
-    const shadowWorkflow = readFileSync(
-      new URL(
-        '../../../../.github/workflows/deploy-prod-us-east-2-shadow.yml',
-        import.meta.url,
-      ),
-      'utf8',
-    );
 
     expect(ecsDeploy).toContain('refusing live $ENV rollout without --database-migrated');
     // Three live prod rolls now carry the gate: api, gateway, and the web
     // service added at deploy-prod.yml:1238.
     expect(prodWorkflow.match(/--database-migrated/g)?.length).toBe(3);
-    expect(shadowWorkflow.match(/--database-migrated/g)?.length).toBe(2);
   });
 
   test('keeps production API tasks at the incident-tested 4 GiB and three-task floor', () => {
@@ -165,25 +167,19 @@ describe('api-router worker', () => {
       new URL('../../../terraform/environments/prod/main.tf', import.meta.url),
       'utf8',
     );
-    const shadowTerraform = readFileSync(
-      new URL('../../../terraform/environments/prod-us-east-2-shadow/main.tf', import.meta.url),
-      'utf8',
-    );
 
     expect(prodTerraform).toMatch(/module "api"[\s\S]*?task_memory\s*=\s*4096/);
     expect(prodTerraform).toMatch(/module "api"[\s\S]*?desired_count\s*=\s*3/);
     expect(prodTerraform).toMatch(/module "api"[\s\S]*?min_capacity\s*=\s*3/);
-    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?task_memory\s*=\s*4096/);
-    expect(shadowTerraform).toMatch(/module "api"[\s\S]*?secrets_blob_arn\s*=\s*var\.secret_arn/);
   });
 
-  test('keeps staging sized for the release gate, with an on-demand floor', () => {
+  test('keeps staging sized for the release gate, on-demand like prod', () => {
     const stagingTerraform = readFileSync(
-      new URL('../../../terraform/environments/staging/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/staging-eu-west-2/main.tf', import.meta.url),
       'utf8',
     );
     const devTerraform = readFileSync(
-      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/dev-us-east-2/main.tf', import.meta.url),
       'utf8',
     );
 
@@ -204,16 +200,25 @@ describe('api-router worker', () => {
     expect(num(stagingApi, 'task_memory')).toBeGreaterThanOrEqual(
       num(devApi, 'task_memory'),
     );
-    expect(num(stagingApi, 'min_capacity')).toBeGreaterThanOrEqual(
-      num(devApi, 'min_capacity'),
+    // staging's floor is var.api_task_count (2 only while the old stack still
+    // holds database connections), so read the variable's default.
+    const stagingVariables = readFileSync(
+      new URL('../../../terraform/environments/staging-eu-west-2/variables.tf', import.meta.url),
+      'utf8',
     );
+    expect(stagingApi).toMatch(/min_capacity\s*=\s*var\.api_task_count/);
+    const stagingFloor = Number(
+      stagingVariables.match(/variable "api_task_count"[\s\S]*?default\s*=\s*(\d+)/)?.[1],
+    );
+    expect(stagingFloor).toBeGreaterThanOrEqual(num(devApi, 'min_capacity'));
 
-    // A Spot-only service with no on-demand base goes to zero tasks on one
-    // reclaim, and the edge then reports that as MAINTENANCE_MODE.
-    expect(stagingApi).toMatch(/fargate_base_on_demand\s*=\s*1/);
+    // No Spot on staging, API or gateway: a reclaim killed in-flight requests
+    // and agent turns during the v0.13.57 release gate (2026-10-13).
+    expect(stagingApi).toMatch(/use_fargate_spot\s*=\s*false/);
     expect(stagingTerraform).toMatch(
-      /module "gateway"[\s\S]*?fargate_base_on_demand\s*=\s*1/,
+      /module "gateway"[\s\S]*?use_fargate_spot\s*=\s*false/,
     );
+    expect(stagingTerraform).not.toMatch(/use_fargate_spot\s*=\s*true/);
     // Without a NON-ZERO value the module never creates the
     // ALBRequestCountPerTarget policy (0 is its default and the module skips
     // it), and an I/O-bound gateway blocked on upstream models never moves
@@ -240,7 +245,7 @@ describe('api-router worker', () => {
       'utf8',
     );
     const devTerraform = readFileSync(
-      new URL('../../../terraform/environments/dev/main.tf', import.meta.url),
+      new URL('../../../terraform/environments/dev-us-east-2/main.tf', import.meta.url),
       'utf8',
     );
     const prodTerraform = readFileSync(
@@ -253,28 +258,6 @@ describe('api-router worker', () => {
     );
     expect(devTerraform).not.toContain('fargate_base_on_demand');
     expect(prodTerraform).not.toContain('fargate_base_on_demand');
-  });
-
-  test('runs privileged US workflows only from the protected prod branch', () => {
-    const workflows = [
-      'activate-prod-us-east-2-writers.yml',
-      'cutover-prod-us-east-2.yml',
-      'deploy-prod-us-east-2-shadow.yml',
-      'finalize-prod-us-east-2-database.yml',
-      'reconcile-prod-us-east-2-shadow.yml',
-    ];
-
-    for (const workflow of workflows) {
-      const source = readFileSync(
-        new URL(`../../../../.github/workflows/${workflow}`, import.meta.url),
-        'utf8',
-      );
-      expect(source).toContain('ref: prod');
-      expect(source).toContain(
-        'if [ "$GITHUB_REF" != "refs/heads/prod" ]; then',
-      );
-      expect(source).toContain('environment: prod-use2-shadow');
-    }
   });
 
   test('redirects plaintext API requests to HTTPS before proxying', async () => {
@@ -317,8 +300,19 @@ describe('api-router worker', () => {
       'max-age=31536000',
     );
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('api');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
+  });
+
+  test('strips backend-identifying headers supplied by an origin', async () => {
+    globalThis.fetch = async () => new Response('ok', {
+      headers: { 'X-Backend': 'internal', 'X-Backend-Service': 'internal' },
+    });
+    const response = await worker.fetch(new Request('https://api.kortix.com/v1/health'), env);
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
+    expect(response.headers.get('Strict-Transport-Security')).toBe('max-age=31536000');
+    expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
   test.each([
@@ -441,6 +435,64 @@ describe('api-router worker', () => {
     expect(proxiedUserAgent).toBeNull();
   });
 
+  // A GET or HEAD that arrives carrying a body must still reach the origin.
+  // The Workers runtime throws inside `new Request` when a GET/HEAD carries a
+  // body, the origin request is built outside the try/catch, and Cloudflare
+  // answers the client with its bare "error code: 1101" 500 before the origin
+  // ever ran (reproduced on workerd: GET/HEAD with a body returned 500
+  // "TypeError: Request with a GET or HEAD method cannot have a body." at the
+  // origin-request construction). GET and HEAD bodies have no defined
+  // semantics, so the origin request never carries one: the body is dropped
+  // and the content-length that framed it goes with it. Bun's Request
+  // constructor does not enforce the GET/HEAD rule the Workers runtime does,
+  // so the incoming request is modeled by shadowing `body` on a real Request.
+  test.each(['GET', 'HEAD'])('a %s with a body reaches the origin without a body', async (method) => {
+    const incoming = new Request('https://api.kortix.com/v1/projects', { method });
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('unexpected'));
+        controller.close();
+      },
+    });
+    Object.defineProperty(incoming, 'body', { get: () => stream });
+    incoming.headers.set('content-length', '9');
+
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ ok: true });
+    };
+
+    const response = await worker.fetch(incoming, env);
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.method).toBe(method);
+    expect(proxiedRequest.body).toBeNull();
+    expect(proxiedRequest.headers.get('content-length')).toBeNull();
+    expect(await proxiedRequest.text()).toBe('');
+  });
+
+  test('a POST body is forwarded to the origin unchanged', async () => {
+    let proxiedRequest;
+    globalThis.fetch = async (request) => {
+      proxiedRequest = request;
+      return Response.json({ ok: true });
+    };
+
+    const response = await worker.fetch(
+      new Request('https://api.kortix.com/v1/projects', {
+        method: 'POST',
+        headers: { 'content-length': '7' },
+        body: 'payload',
+      }),
+      env,
+    );
+
+    expect(response.status).toBe(200);
+    expect(proxiedRequest.headers.get('content-length')).toBe('7');
+    expect(await proxiedRequest.text()).toBe('payload');
+  });
+
   test('routes gateway hostnames to the gateway backend, independent of the API toggle', async () => {
     let proxiedUrl = '';
     globalThis.fetch = async (request) => {
@@ -455,11 +507,11 @@ describe('api-router worker', () => {
 
     // API is on eks, but the gateway is on ecs-fargate → the gateway origin wins.
     expect(proxiedUrl).toBe('https://gateway-fargate.kortix.com/health/live');
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('gateway');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
   });
 
-  test('routes API and gateway requests to the prepared us-east-2 origins', async () => {
+  test('routes API and gateway requests to the us-east-2 origins', async () => {
     const use2Env = {
       ...env,
       ACTIVE_BACKEND: 'us-east-2',
@@ -481,11 +533,11 @@ describe('api-router worker', () => {
     );
 
     expect(proxiedUrls).toEqual([
-      'https://api-use2-shadow.kortix.com/v1/health',
-      'https://gateway-use2-shadow.kortix.com/health/live',
+      'https://dev-api-use2.kortix.com/v1/health',
+      'https://gateway-dev-use2.kortix.com/health/live',
     ]);
-    expect(apiResponse.headers.get('X-Backend')).toBe('us-east-2');
-    expect(gatewayResponse.headers.get('X-Backend')).toBe('us-east-2');
+    expect(apiResponse.headers.get('X-Backend')).toBeNull();
+    expect(gatewayResponse.headers.get('X-Backend')).toBeNull();
   });
 
   test('serves the independent maintenance state without contacting the API origin', async () => {
@@ -864,8 +916,8 @@ describe('api-router worker', () => {
     expect(response.headers.get('x-request-id')).toBe('req-abc123');
     expect(response.headers.get('content-type')).toBe('application/json');
     expect(response.headers.get('X-Maintenance-Mode')).toBeNull();
-    expect(response.headers.get('X-Backend')).toBe('ecs-fargate');
-    expect(response.headers.get('X-Backend-Service')).toBe('api');
+    expect(response.headers.get('X-Backend')).toBeNull();
+    expect(response.headers.get('X-Backend-Service')).toBeNull();
     expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
   });
 
@@ -878,7 +930,7 @@ describe('api-router worker', () => {
       );
       expect(response.status).toBe(status);
       expect(await response.text()).toBe('origin body');
-      expect(response.headers.get('X-Backend-Service')).toBe('gateway');
+      expect(response.headers.get('X-Backend-Service')).toBeNull();
       expect(response.headers.get('X-Maintenance-Mode')).toBeNull();
     }
   });
@@ -908,6 +960,38 @@ describe('api-router worker', () => {
       retry_after_seconds: 30,
     });
     expect(body.error.message).toBe('Kortix API origin is unreachable: connection refused');
+  });
+
+  test('a GET whose origin connection drops is sent once more; a POST never is', async () => {
+    // Staging release gate, 2026-10-13: a reset Cloudflare→ALB connection
+    // threw "Network connection lost" before any response. A GET or HEAD is
+    // safe to repeat; a POST may already have run at the origin.
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('Network connection lost.');
+      return Response.json({ ok: true }, { status: 200 });
+    };
+    const get = await worker.fetch(new Request('https://api.kortix.com/v1/accounts'), env);
+    expect(get.status).toBe(200);
+    expect(calls).toBe(2);
+
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error('Network connection lost.');
+    };
+    const post = await worker.fetch(
+      new Request('https://api.kortix.com/v1/accounts', { method: 'POST', body: '{}' }),
+      env,
+    );
+    expect(post.status).toBe(503);
+    expect(calls).toBe(1);
+
+    calls = 0;
+    const getTwice = await worker.fetch(new Request('https://api.kortix.com/v1/accounts'), env);
+    expect(getTwice.status).toBe(503);
+    expect(calls).toBe(2);
   });
 
   test('a healthy origin response carries no origin-status header', async () => {
@@ -972,5 +1056,69 @@ describe('api-router worker', () => {
     expect(proxiedUpgrade).toBe('websocket');
     expect(response).toBe(upgradeResponse);
     expect(response.webSocket).toBe(webSocket);
+  });
+
+  describe('/internal edge gate', () => {
+    const gated = { ...env, INTERNAL_EDGE_KEY: 'edge-key-1' };
+    const call = (path, headers = {}, e = gated, host = 'api.kortix.com') => {
+      const seen = [];
+      globalThis.fetch = async (input) => {
+        seen.push(input.headers.get('x-kortix-internal-edge-key'));
+        return new Response('{"principal":null}', { status: 200 });
+      };
+      return worker
+        .fetch(new Request(`https://${host}${path}`, { method: 'POST', headers }), e)
+        .then((response) => ({ response, seen }));
+    };
+
+    test('public caller without the key gets 404 and never reaches the origin', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate');
+      expect(response.status).toBe(404);
+      expect(seen).toEqual([]);
+      expect((await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'nope' })).response.status).toBe(404);
+    });
+
+    test('gateway with the key is forwarded with the key, which the API checks again', async () => {
+      const { response, seen } = await call('/internal/gateway/authenticate', { 'x-kortix-internal-edge-key': 'edge-key-1' });
+      expect(response.status).toBe(200);
+      expect(seen).toEqual(['edge-key-1']);
+    });
+
+    // The API routes the decoded path, so an encoded or case-shifted prefix is gated too.
+    test.each(['/%69nternal/gateway/refresh-credential', '/%49NTERNAL/gateway/x', '/Internal/gateway/x'])(
+      '%s without the key gets 404',
+      async (path) => {
+        const { response, seen } = await call(path);
+        expect(response.status).toBe(404);
+        expect(seen).toEqual([]);
+      },
+    );
+
+    test('non-internal paths and an unset key are unaffected', async () => {
+      expect((await call('/v1/health')).response.status).toBe(200);
+      expect((await call('/internal/gateway/authenticate', {}, env)).response.status).toBe(200);
+    });
+  });
+
+  describe('security headers', () => {
+    const call = (body, contentType) => {
+      globalThis.fetch = async () => new Response(body, { status: 200, headers: { 'Content-Type': contentType } });
+      return worker.fetch(new Request('https://api.kortix.com/v1/health'), env);
+    };
+
+    test('a JSON response cannot be framed and names a referrer policy', async () => {
+      const response = await call('{}', 'application/json');
+      expect(response.headers.get('X-Frame-Options')).toBe('DENY');
+      expect(response.headers.get('Content-Security-Policy')).toBe("default-src 'none'; frame-ancestors 'none'");
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+      expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    });
+
+    test('an HTML response (a framed sandbox preview) keeps its own framing headers', async () => {
+      const response = await call('<p>hi</p>', 'text/html');
+      expect(response.headers.get('X-Frame-Options')).toBeNull();
+      expect(response.headers.get('Content-Security-Policy')).toBeNull();
+      expect(response.headers.get('Referrer-Policy')).toBe('strict-origin-when-cross-origin');
+    });
   });
 });

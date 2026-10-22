@@ -1,17 +1,21 @@
+import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { UUID_RE } from '../iam.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // Resource-access grants — the inheritance PYRAMID. Resources (secrets +
 // connectors) live on AGENTS; you assign an agent to a member or group and
 // they inherit everything that agent declares. This wraps the same
 // /projects/:id/resource-grants routes the dashboard's "Members → Resource
-// access" panel uses. Grantable resource types: agent, skill, secret.
+// access" panel uses. The route lists agents and skills; secret sharing was
+// retired (a secret's only gate is the agent-side `secrets` grant).
 
 const RESOURCE_TYPES = ['agent', 'skill', 'secret'] as const;
 type ResourceType = (typeof RESOURCE_TYPES)[number];
@@ -24,7 +28,6 @@ interface GrantableAgent {
 interface GrantableResources {
   agents?: GrantableAgent[];
   skills?: { id: string; name: string }[];
-  secrets?: { id: string; name: string }[];
 }
 interface ResourceGrant {
   grant_id: string;
@@ -48,8 +51,6 @@ interface AccessMember {
   email: string | null;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 const HELP = help`Usage: kortix grants <subcommand> [options]
 
 Assign project resources to people — the inheritance PYRAMID. Secrets and
@@ -57,10 +58,10 @@ connectors live on AGENTS; assign an agent to a member (or group) and they
 inherit everything that agent declares. Mirrors the dashboard's
 "Members → Resource access" panel. Authorization is centralized on the agent:
 \`assign\` only ever creates agent grants now (\`ls\` still lists any legacy
-skill/secret rows for visibility — see Resource types: ${RESOURCE_TYPES.join(', ')}).
+skill grants for visibility).
 
 Subcommands:
-  ls [--json]                          List grants + grantable agents/skills/secrets.
+  ls [--json]                          List grants + grantable agents and skills.
   assign <agent-name> --to <who> [--group]   Assign an agent to a member (or a group with --group).
   revoke <grant-id>                    Remove a grant.
 
@@ -80,11 +81,6 @@ Examples:
   kortix grants assign support-bot --to 8f3c… --group
   kortix grants revoke 2f1a…
 `;
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
-}
 
 /** Resolve a member's user-id from an email via the project access list. */
 async function resolveMemberId(
@@ -106,20 +102,10 @@ async function resolveMemberId(
 }
 
 export async function runGrants(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   const f: Record<string, string | undefined> = {};
   let json = false;
   let group = false;
@@ -151,13 +137,10 @@ export async function runGrants(argv: string[]): Promise<number> {
         }
         const agents = resp.resources.agents ?? [];
         const skills = resp.resources.skills ?? [];
-        const secrets = resp.resources.secrets ?? [];
         process.stdout.write('\n');
         process.stdout.write(`  ${C.dim}GRANTABLE${C.reset}\n`);
-        if (agents.length === 0 && skills.length === 0 && secrets.length === 0) {
-          process.stdout.write(
-            `  ${C.faded}(none — add agents/skills to kortix.yaml or secrets in the dashboard)${C.reset}\n`,
-          );
+        if (agents.length === 0 && skills.length === 0) {
+          process.stdout.write(`  ${C.faded}(none — add agents or skills to kortix.yaml)${C.reset}\n`);
         }
         for (const a of agents) {
           const decl = a.declares;
@@ -178,7 +161,6 @@ export async function runGrants(argv: string[]): Promise<number> {
           );
         }
         for (const s of skills) process.stdout.write(`  ${C.cyan}skill${C.reset}   ${s.name}\n`);
-        for (const s of secrets) process.stdout.write(`  ${C.cyan}secret${C.reset}  ${s.name}\n`);
 
         process.stdout.write(`\n  ${C.dim}GRANTS${C.reset}\n`);
         if (resp.grants.length === 0) {

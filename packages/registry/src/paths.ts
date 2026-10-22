@@ -3,10 +3,12 @@
  * repo-relative POSIX path in the consuming project.
  */
 
+import { AGENTS_DIR, MEMORY_DIR, SKILLS_DIR } from '@kortix/manifest-schema/layout';
+
 export interface TargetContext {
-  /** The OpenCode config dir, e.g. ".kortix/opencode". */
+  /** The OpenCode config dir (`@opencode`, `@commands`, `@tools`), e.g. "harnesses/opencode". */
   configDir: string;
-  /** Memory dir, e.g. ".kortix/memory". */
+  /** Memory dir. Defaults to the root `memory`. */
   memoryDir?: string;
 }
 
@@ -18,7 +20,7 @@ export function trimTrailingSlashes(value: string): string {
 
 export function expandTarget(target: string, ctx: TargetContext): string {
   const cd = trimTrailingSlashes(ctx.configDir);
-  const mem = trimTrailingSlashes(ctx.memoryDir ?? '.kortix/memory');
+  const mem = trimTrailingSlashes(ctx.memoryDir ?? MEMORY_DIR);
   let out: string;
 
   if (target === '~' || target === '~/') {
@@ -33,11 +35,13 @@ export function expandTarget(target: string, ctx: TargetContext): string {
         case 'opencode':
           out = `${cd}/${rest}`;
           break;
+        // Skills and agents are harness-neutral: they install at the root in
+        // every project, the legacy `.kortix/opencode` layout included.
         case 'skills':
-          out = `${cd}/skills/${rest}`;
+          out = `${SKILLS_DIR}/${rest}`;
           break;
         case 'agents':
-          out = `${cd}/agents/${rest}`;
+          out = `${AGENTS_DIR}/${rest}`;
           break;
         case 'commands':
           out = `${cd}/commands/${rest}`;

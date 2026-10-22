@@ -8,11 +8,11 @@ import {
   opencodeStopRequestedSince,
   resetStopRequestsForTests,
   type InstanceGuard,
-} from '../harness/open-code/instance-guard'
-import { composeOpenCodeHarnessService } from '../harness/open-code/service'
+} from '@/harness/open-code/instance-guard'
+import { composeOpenCodeHarnessService } from '@/harness/open-code/service'
 import { testOpenCodeConfig } from './helpers/open-code-harness'
-import { unrequestedAbortCause } from '../harness/open-code/boot'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import { unrequestedAbortCause } from '@/harness/open-code/boot'
+import type { Opencode } from '@/harness/open-code/lifecycle'
 
 // A mock OpenCode that keeps the one behavior this guard exists for, as
 // measured on the real opencode 1.18.23 binary (2026-09-25, a project custom
@@ -46,8 +46,8 @@ function startMockOpencode() {
   const sessions = new Map<string, { rows: Row[]; busy: boolean; abort?: () => void }>()
   const stats = { disposes: 0, toolIdCalls: 0, prompts: 0 }
   // Two failure modes of the registry endpoint: held open with no answer, or
-  // a single transient 503.
-  const modes = { holdToolIds: false, failToolIdsOnce: false }
+  // a single transient 503. `holdTurns`: a turn runs until it is aborted.
+  const modes = { holdToolIds: false, failToolIdsOnce: false, holdTurns: false }
   let release: () => void = () => {}
   const stopped = new Promise<void>((resolve) => {
     release = resolve
@@ -126,7 +126,7 @@ function startMockOpencode() {
       if (aborted) return end(false)
     }
     if (registry !== 'ready') return end(false)
-    await Promise.race([Bun.sleep(MODEL_MS), abortSignal])
+    await (modes.holdTurns ? abortSignal : Promise.race([Bun.sleep(MODEL_MS), abortSignal]))
     end(!aborted)
   }
 
@@ -392,11 +392,14 @@ describe('healIfPoisoned', () => {
 
   test('a forced heal never disposes under another busy session', async () => {
     await guard.warm('boot')
+    // A 40 ms turn can end before the heal's probe finishes on a loaded runner.
+    mock.modes.holdTurns = true
     await mock.prompt('ses_other')
     await until(() => mock.busy('ses_other'))
     const result = await guard.healIfPoisoned('forced', { force: true, endingSessionId: 'ses_a' })
     expect(result.disposed).toBe(false)
     expect(mock.stats.disposes).toBe(0)
+    await mock.abort('ses_other')
     await until(() => !mock.busy('ses_other'))
   })
 })
@@ -566,6 +569,29 @@ describe('proxy', () => {
     // A Stop now cannot poison: the build is done.
     await stopDuringTurn(mock, 'ses_a', 5)
     expect(mock.registry()).toBe('ready')
+  })
+
+  test('a prompt that waits out the warm-up goes to the port that is live after the wait (CFG-12)', async () => {
+    // A config convergence promotes its candidate while the prompt waits: the
+    // live port moves and the old process is killed. Port 1 refuses, like it.
+    let live = 'http://127.0.0.1:1'
+    const { proxy, instanceGuard } = composeOpenCodeHarnessService(testOpenCodeConfig(), {
+      getInternalUrl: () => live,
+      getState: () => 'ok',
+      getPid: () => null,
+    } as unknown as Opencode)
+    const warming = instanceGuard.warm('boot').then(() => {})
+    const sent = proxy.forward({
+      method: 'POST',
+      path: '/session/ses_a/prompt_async',
+      search: '?directory=%2Fworkspace',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: new Response(JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] })).body,
+    })
+    live = mock.base
+    expect((await sent).status).toBe(204)
+    await warming
+    await until(() => !mock.busy('ses_a'))
   })
 })
 

@@ -33,7 +33,7 @@ import { rewriteStorageOrigin } from '../shared/storage-url';
 import { getSupabase } from '../shared/supabase';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
-import { auditIam, requireEntitlement } from './iam/helpers';
+import { auditIam, requireEntitlement } from './iam/http-helpers';
 
 export const BRANDING_BUCKET = 'branding';
 /** Same ceiling the bucket enforces (`storage.buckets.file_size_limit`). */

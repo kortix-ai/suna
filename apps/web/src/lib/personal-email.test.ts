@@ -51,6 +51,14 @@ describe('isPersonalEmail', () => {
     expect(isPersonalEmail('a@b@gmail.com')).toBe(true);
   });
 
+  test('normalizes padded and malformed input at the web import', () => {
+    expect(isPersonalEmail('  X@GMAIL.COM  ')).toBe(true);
+    expect(isPersonalEmail('x@mailinator.com')).toBe(true);
+    expect(isPersonalEmail('x@')).toBe(false);
+    expect(isWorkEmail('x@')).toBe(false);
+    expect(emailDomain('  X@CORP.COM  ')).toBe('corp.com');
+  });
+
   test('does not flag corporate domains', () => {
     expect(isPersonalEmail('x@corp.com')).toBe(false);
     expect(isPersonalEmail('x@acme-inc.com')).toBe(false);

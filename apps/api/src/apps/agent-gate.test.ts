@@ -164,6 +164,17 @@ describe('header carriage', () => {
     expect(appUpstreamHeaders(basic, {}, host).get('authorization')).toBe('Basic abc');
   });
 
+  test('upstream never receives X-Kortix-Token or a Kortix key in X-Api-Key; the App keeps its own key', () => {
+    const request = new Request(`https://${host}/`, {
+      headers: { 'x-kortix-token': 'kortix_pat_abc', 'x-api-key': 'kortix_sa_abc' },
+    });
+    const headers = appUpstreamHeaders(request, {}, host);
+    expect(headers.get('x-kortix-token')).toBeNull();
+    expect(headers.get('x-api-key')).toBeNull();
+    const own = new Request(`https://${host}/`, { headers: { 'x-api-key': 'app-own-key' } });
+    expect(appUpstreamHeaders(own, {}, host).get('x-api-key')).toBe('app-own-key');
+  });
+
   test('upstream never receives Kortix cookies; the App keeps its own cookies', () => {
     const request = new Request(`https://${host}/`, {
       headers: {
@@ -202,12 +213,5 @@ describe('header carriage', () => {
   test('flag OFF: the header is still deleted upstream', () => {
     const request = new Request(`https://${host}/`, { headers: { 'x-kortix-app-authorization': 'Bearer x' } });
     expect(appUpstreamHeaders(request, {}, host).get('x-kortix-app-authorization')).toBeNull();
-  });
-
-  test('the registered agent_principal flag is ON unless the project switched it off', async () => {
-    const { agentPrincipalEnabled } = await import('./access');
-    expect(agentPrincipalEnabled({ experimental: { agent_principal: true } })).toBe(true);
-    expect(agentPrincipalEnabled({ experimental: { agent_principal: false } })).toBe(false);
-    expect(agentPrincipalEnabled(null)).toBe(true);
   });
 });

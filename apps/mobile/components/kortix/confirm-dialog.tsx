@@ -12,7 +12,7 @@
  *   confirm({ title: 'Delete secret', description: '…', confirmLabel: 'Delete', destructive: true, onConfirm });
  *   return <>…{dialog}</>;
  *
- * Footer: `AlertDialogCancel asChild` secondary pill · the action pill
+ * Footer: a `secondary` Cancel pill · the action pill
  * (`destructive` or `default`), both `size="lg" rounded-full`. The dialog
  * closes before `onConfirm` runs; the action reports its own result
  * (`useToast`). The last request stays rendered while the dialog animates
@@ -25,10 +25,10 @@
  */
 
 import * as React from 'react';
+import { Keyboard } from 'react-native';
 
 import {
   AlertDialog,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -59,6 +59,8 @@ export function useConfirmDialog(options?: { portalHost?: string }): {
   const [request, setRequest] = React.useState<ConfirmRequest | null>(null);
 
   const confirm = React.useCallback((next: ConfirmRequest) => {
+    // A confirm has no text field, and the keyboard would cover it.
+    Keyboard.dismiss();
     setRequest(next);
     setOpen(true);
   }, []);
@@ -70,8 +72,10 @@ export function useConfirmDialog(options?: { portalHost?: string }): {
 
   const dialog = (
     <AlertDialog open={open} onOpenChange={setOpen}>
+      {/* pt-5 under the title's 28pt line box reads as the same 24pt as pb-6;
+          gap-6 parts the text from the buttons, gap-3 parts the buttons. */}
       <AlertDialogContent
-        className="rounded-3xl"
+        className="gap-6 rounded-3xl pb-6 pt-5"
         portalHost={options?.portalHost ?? OVERLAY_PORTAL_HOST}>
         <AlertDialogHeader>
           <AlertDialogTitle>{request?.title ?? ''}</AlertDialogTitle>
@@ -79,12 +83,17 @@ export function useConfirmDialog(options?: { portalHost?: string }): {
             <AlertDialogDescription>{request.description}</AlertDialogDescription>
           ) : null}
         </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel asChild>
-            <Button variant="secondary" size="lg" className="rounded-full">
-              <Text>{request?.cancelLabel ?? 'Cancel'}</Text>
-            </Button>
-          </AlertDialogCancel>
+        <AlertDialogFooter className="gap-3">
+          {/* A plain Button, not AlertDialogCancel asChild: the primitive's
+              outline classes merged over `secondary` and drew a bordered
+              white pill. */}
+          <Button
+            variant="secondary"
+            size="lg"
+            className="rounded-full"
+            onPress={() => setOpen(false)}>
+            <Text>{request?.cancelLabel ?? 'Cancel'}</Text>
+          </Button>
           <Button
             variant={request?.destructive ? 'destructive' : 'default'}
             size="lg"

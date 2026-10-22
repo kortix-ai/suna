@@ -1,4 +1,4 @@
-import type { Part } from '@opencode-ai/sdk/v2/client';
+import type { Part } from '../../core/runtime/runtime-types';
 import type { RefObject } from 'react';
 import {
   parseDiagnosticsFromToolOutput,

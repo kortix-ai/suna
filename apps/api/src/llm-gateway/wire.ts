@@ -1,6 +1,7 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from '../config';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import { createLlmGatewayRateLimitMiddleware } from '../middleware/rate-limit';
 import { createInternalGatewayRoutes } from './internal-routes';
 
 // ─── OpenAPI documentation for the inference surface ────────────────────────
@@ -19,8 +20,7 @@ import { createInternalGatewayRoutes } from './internal-routes';
 // the SHARED `{error:true,message:"Validation failed",...}` envelope instead of
 // the gateway's own OpenAI/Anthropic-shaped error body — changing the wire
 // contract for a compatibility surface whose whole point is to match those
-// SDKs' expectations (see `/v1/router/chat/completions` in router/routes/llm.ts,
-// which avoids attaching a body schema for the same reason). `registerPath()`
+// SDKs' expectations. `registerPath()`
 // adds the operation (incl. the documented request body below) to the SAME
 // OpenAPI registry `.openapi()` would have, WITHOUT touching request handling
 // at all — the actual runtime route is still a plain `llm.post()/get()` with
@@ -30,8 +30,11 @@ const GATEWAY_INFERENCE_TAG = 'gateway-inference';
 const AUTH_DESCRIPTION =
   'Bearer token: a project gateway key (`kortix_gw_…`, created via ' +
   'POST /v1/projects/{projectId}/gateway/keys) or a Kortix account token ' +
-  '(PAT `kortix_pat_…`, API key, or sandbox key). Unlike most of the API, the ' +
-  'raw Supabase user JWT is NOT accepted here — mint a gateway key or PAT first.';
+  '(PAT `kortix_pat_…`, API key, or sandbox key). Inference requires a project ' +
+  'context: a project-scoped or session token is admitted, while a bare ' +
+  'account-wide PAT is refused with 403 project_required. Unlike most of the ' +
+  'API, the raw Supabase user JWT is NOT accepted here — mint a gateway key or ' +
+  'PAT first.';
 
 const ChatMessageSchema = z
   .object({
@@ -117,7 +120,7 @@ const CHAT_COMPLETIONS_RESPONSES = {
       },
     },
   },
-  ...errors(400, 401, 402, 413, 429, 502),
+  ...errors(400, 401, 402, 403, 413, 429, 502),
 };
 
 function chatCompletionsRoute(path: string) {
@@ -126,7 +129,7 @@ function chatCompletionsRoute(path: string) {
     method: 'post' as const,
     path,
     tags: [GATEWAY_INFERENCE_TAG],
-    summary: `POST ${fullPath}`,
+    summary: "Chat completions (OpenAI-compatible LLM gateway call)",
     description: `OpenAI-compatible chat completions, proxied through the Kortix LLM gateway (model routing/failover, budgets, usage billing, and request tracing all apply). The body is forwarded close to verbatim to the resolved upstream provider.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} \\\n  -H "Authorization: Bearer $KORTIX_GATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"claude-sonnet-4-5","messages":[{"role":"user","content":"Say hello in one word."}]}\'\n\`\`\``,
     ...auth,
     request: {
@@ -213,7 +216,7 @@ const MESSAGES_RESPONSES = {
       },
     },
   },
-  ...errors(400, 401, 402, 413, 429, 502),
+  ...errors(400, 401, 402, 403, 413, 429, 502),
 };
 
 function messagesRoute(path: string) {
@@ -222,7 +225,7 @@ function messagesRoute(path: string) {
     method: 'post' as const,
     path,
     tags: [GATEWAY_INFERENCE_TAG],
-    summary: `POST ${fullPath}`,
+    summary: "Messages (Anthropic-compatible LLM gateway call)",
     description: `Anthropic-Messages-compatible ingress. Translated at the edges only — the request is converted to the gateway\'s internal chat.completions shape, driven through the SAME auth/billing/routing/failover/trace pipeline as chat completions, then the response (or SSE stream) is translated back to the Anthropic Messages wire format.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} \\\n  -H "Authorization: Bearer $KORTIX_GATEWAY_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"claude-sonnet-4-5","max_tokens":1024,"messages":[{"role":"user","content":"Say hello in one word."}]}\'\n\`\`\``,
     ...auth,
     request: {
@@ -283,6 +286,9 @@ const GatewayModelModalitiesSchema = z
 const GatewayModelSchema = z
   .object({
     name: z.string(),
+    availability: z.enum(['available', 'plan', 'login', 'provider']).optional().openapi({
+      description: 'Discovery access path: available for managed plan access, plan for a managed upgrade, login for ChatGPT, provider for a provider key. External credentials are not checked; use scope=picker for connected project models.',
+    }),
     released: z.string().nullable().optional(),
     release_date: z.string().nullable().optional(),
     family: z.string().optional(),
@@ -339,7 +345,7 @@ function modelsRoute(path: string) {
     method: 'get' as const,
     path,
     tags: [GATEWAY_INFERENCE_TAG],
-    summary: `GET ${fullPath}`,
+    summary: "List models served by the LLM gateway",
     description: `Servable model catalog for the caller\'s account/project — a keyed object (NOT the OpenAI \`{object:"list",data:[...]}\` array shape) mapping model id → capabilities.\n\nAuth: ${AUTH_DESCRIPTION}\n\n\`\`\`\ncurl -sS $KORTIX_API_URL${fullPath} -H "Authorization: Bearer $KORTIX_GATEWAY_KEY"\n\`\`\``,
     request: {
       query: z.object({
@@ -377,9 +383,6 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   }
 
   const proxy = async (c: import('hono').Context, path: string): Promise<Response> => {
-    if (!config.LLM_GATEWAY_ENABLED) {
-      return c.json({ error: 'LLM gateway is disabled', code: 'gateway_disabled' }, 503);
-    }
     if (!proxyBase) {
       return c.json(
         { error: 'Standalone LLM gateway is not configured', code: 'gateway_unavailable' },
@@ -446,11 +449,26 @@ export function mountLlmGateway(app: OpenAPIHono): void {
         headers,
       });
     } catch (error) {
+      const err = error as { code?: unknown; name?: unknown; message?: unknown };
+      // A request the CALLER already gave up on is not a gateway failure and
+      // must not be counted as one. The sandbox boot fetch gives the model
+      // catalog a 2 s budget (`MANAGED_MODELS_TIMEOUT_MS` in the sandbox agent)
+      // and aborts the rest; this hop then rejected with
+      // `gateway_proxy_error: The connection was closed.` and answered 503, so
+      // a routine client cancel was logged and counted as a 5xx on
+      // GET /v1/llm-gateway/v1/models. `req.signal` is the exact signal this hop
+      // forwards to the gateway, so an abort here is always the client
+      // cancelling: `aborted` covers a signal already marked dead, the
+      // `AbortError` covers the same disconnect before that flag settles. 499
+      // ("client closed request") keeps it out of the 5xx metric; the client is
+      // gone, so the body is never read.
+      if (c.req.raw.signal.aborted || err?.name === 'AbortError') {
+        return new Response(null, { status: 499 });
+      }
       // Say what actually happened. Until 2026-08-24 every throw here was
       // reported as "unreachable", which is what a ZlibError (the gateway
       // forwarded `content-encoding: gzip` on a body fetch had already
       // inflated) looked like to users and to the edge worker for days.
-      const err = error as { code?: unknown; name?: unknown; message?: unknown };
       const cause =
         typeof err?.code === 'string'
           ? err.code
@@ -476,6 +494,10 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   };
 
   const llm = makeOpenApiApp();
+  // Per-principal bound on every inference request. Registered before the
+  // catch-all so it wraps every path; the `registerPath` calls below add
+  // OpenAPI metadata only, no middleware.
+  llm.use('*', createLlmGatewayRateLimitMiddleware());
   llm.openAPIRegistry.registerPath(chatCompletionsRoute('/chat/completions'));
   llm.openAPIRegistry.registerPath(modelsRoute('/models'));
   llm.openAPIRegistry.registerPath(messagesRoute('/messages'));
@@ -489,7 +511,8 @@ export function mountLlmGateway(app: OpenAPIHono): void {
   app.route('/v1/llm', llm);
 
   // Temporary compatibility alias for clients configured with the old proxy
-  // prefix. New clients use /v1/llm directly.
+  // prefix. New clients use /v1/llm directly. Same per-principal bound.
+  app.use('/v1/llm-gateway/*', createLlmGatewayRateLimitMiddleware());
   app.all('/v1/llm-gateway/*', (c) => {
     const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
     return proxy(c, tail);

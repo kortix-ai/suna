@@ -24,8 +24,8 @@ const deleteCalls: Array<{ table: unknown; where: unknown }> = [];
 const propagateCalls: Array<{ projectId: string; opts: unknown }> = [];
 const capabilityChecks: Array<{ userId: string; accountId: string; projectId: string; action: string }> = [];
 const auditEvents: Array<Record<string, unknown>> = [];
-// The caller's project role label. `roleAllows(role, 'manage')` is true only
-// for 'manager'; the GET secrets route uses the same test for `canManageShared`.
+// Whether the caller holds project.secret.write, which decides `canManageShared`
+// (the GET secrets route asks the same leaf). 'manager' holds it.
 let effectiveRole: 'manager' | 'member' = 'manager';
 
 mock.module('../shared/db', () => ({
@@ -53,6 +53,8 @@ mock.module('../projects/lib/access', () => ({
     effectiveRole,
     adminBypass: false,
   }),
+  projectCapabilityAllowed: async (_c: any, _u: string, _a: string, _p: string, action: string) =>
+    action === PROJECT_ACTIONS.PROJECT_SECRET_WRITE && effectiveRole === 'manager',
   assertProjectCapability: async (_c: any, userId: string, accountId: string, projectId: string, action: string) => {
     capabilityChecks.push({ userId, accountId, projectId, action });
     if (userId !== AUTHORIZED_USER_ID) {
@@ -83,7 +85,7 @@ mock.module('../shared/audit', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/provider-oauth');
+(await import('../projects/routes/provider-oauth')).registerProviderOauthRoutes();
 
 function buildApp(userId: string) {
   const app = new Hono();

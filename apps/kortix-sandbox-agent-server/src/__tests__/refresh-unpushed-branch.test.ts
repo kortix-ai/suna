@@ -26,8 +26,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { Config } from '../config'
-import { refreshRepo } from '../git'
+import type { Config } from '@/lib/config/config'
+import { refreshRepo } from '@/lib/git/git'
 
 function git(args: string[], cwd?: string) {
   execFileSync('git', args, {

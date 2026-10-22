@@ -35,20 +35,17 @@ import { sessionSandboxes } from '@kortix/db';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import type { AppEnv } from '../../types';
+import { RuntimeProjectionRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 import {
   PROJECTION_MAX_BYTES,
   saveRuntimeProjection,
 } from '../../projects/lib/session-runtime-projection';
 
-const RuntimeProjectionRequestSchema = z.object({
-  session_id: z.string(),
-  /** ISO-8601. The DAEMON's capture clock, not ours — an out-of-order retry
-   *  must lose to a newer capture, and only the daemon knows which is newer. */
-  captured_at: z.string().optional(),
-  projection_etag: z.string().optional(),
-  projection: z.record(z.string(), z.unknown()),
-});
+// The daemon's body: `captured_at` is the DAEMON's capture clock, not ours —
+// an out-of-order retry must lose to a newer capture, and only the daemon
+// knows which is newer.
+const RuntimeProjectionRequestSchema = RuntimeProjectionRelayBodySchema;
 
 export const runtimeProjectionRouter = makeOpenApiApp<AppEnv>();
 

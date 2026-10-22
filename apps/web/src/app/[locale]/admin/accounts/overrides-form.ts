@@ -12,7 +12,7 @@
  *     every entry it writes is permanent. Re-sending an untouched
  *     `{value, expires_at}` would silently convert a timed grant into a forever
  *     one — an expiry that quietly stops expiring is the worst failure here.
- *  2. **The stored map is raw JSONB.** Admin routes, the trial primitive, data
+ *  2. **The stored map is raw JSONB.** Admin routes, license grace, data
  *     migrations and operator SQL all write it, so a wrong-typed value reads as
  *     "no override" (the same way `readOverride` treats it server-side) instead
  *     of rendering as a control that lies.
@@ -22,16 +22,12 @@
  * disabled Save button and an inline message, not a 400 the operator has to
  * decode.
  */
-import type {
-  AdminEntitlementOverrideEntry,
-  AdminEntitlementOverridePatch,
-  AdminEntitlementOverrides,
+import {
+  ADMIN_ENTITLEMENT_OVERRIDE_KEYS,
+  type AdminEntitlementOverrideEntry,
+  type AdminEntitlementOverridePatch,
+  type AdminEntitlementOverrides,
 } from '@/hooks/admin/use-admin-accounts';
-
-/** Server ceiling for `maxConcurrentSessions` (MAX_CONCURRENT_SESSIONS_OVERRIDE). */
-export const MAX_CONCURRENT_SESSIONS_OVERRIDE = 100_000;
-/** Server ceiling for `computeRateMultiplier`. The floor is 0 — free compute. */
-export const MAX_COMPUTE_RATE_MULTIPLIER = 10;
 
 /**
  * A boolean override row. `inherit` is not a third value on the wire — it means
@@ -39,24 +35,12 @@ export const MAX_COMPUTE_RATE_MULTIPLIER = 10;
  */
 export type OverrideTriState = 'inherit' | 'on' | 'off';
 
-/** The per-entitlement booleans, applied AFTER the enterprise expansion. */
-export const BOOLEAN_OVERRIDE_KEYS = [
-  'sso',
-  'scim',
-  'rbac',
-  'auditAccess',
-  'branding',
-  'managedModels',
-] as const;
+/** The per-key booleans the server accepts: the SDK list is the only source. */
+export const BOOLEAN_OVERRIDE_KEYS = ADMIN_ENTITLEMENT_OVERRIDE_KEYS;
 export type BooleanOverrideKey = (typeof BOOLEAN_OVERRIDE_KEYS)[number];
 
-/** The two numeric overrides, edited as text so "" can mean inherit. */
-export const NUMERIC_OVERRIDE_KEYS = ['maxConcurrentSessions', 'computeRateMultiplier'] as const;
-export type NumericOverrideKey = (typeof NUMERIC_OVERRIDE_KEYS)[number];
-
-/** Form state. Numbers are strings: `''` = inherit, and `'0'` is a real value. */
-export type OverridesDraft = Record<BooleanOverrideKey, OverrideTriState> &
-  Record<NumericOverrideKey, string>;
+/** Form state: one tri-state per key. */
+export type OverridesDraft = Record<BooleanOverrideKey, OverrideTriState>;
 
 function entryOf(
   stored: AdminEntitlementOverrides | null | undefined,
@@ -75,15 +59,6 @@ function booleanValue(
 ): boolean | null {
   const value = entryOf(stored, key)?.value;
   return typeof value === 'boolean' ? value : null;
-}
-
-/** The stored number, or null when the key is absent or wrong-typed. */
-function numericValue(
-  stored: AdminEntitlementOverrides | null | undefined,
-  key: NumericOverrideKey,
-): number | null {
-  const value = entryOf(stored, key)?.value;
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -116,20 +91,8 @@ export function draftFromOverrides(
     const value = booleanValue(stored, key);
     draft[key] = value === null ? 'inherit' : value ? 'on' : 'off';
   }
-  for (const key of NUMERIC_OVERRIDE_KEYS) {
-    const value = numericValue(stored, key);
-    draft[key] = value === null ? '' : String(value);
-  }
   return draft;
 }
-
-export type OverridesPatchResult =
-  { ok: true; patch: AdminEntitlementOverridePatch } | { ok: false; error: string };
-
-const NUMERIC_LABEL: Record<NumericOverrideKey, string> = {
-  maxConcurrentSessions: 'Max concurrent sessions',
-  computeRateMultiplier: 'Compute rate multiplier',
-};
 
 /**
  * The merge patch for one save: every row whose draft differs from what the
@@ -143,7 +106,7 @@ const NUMERIC_LABEL: Record<NumericOverrideKey, string> = {
 export function overridesPatch(
   draft: OverridesDraft,
   stored: AdminEntitlementOverrides | null | undefined,
-): OverridesPatchResult {
+): AdminEntitlementOverridePatch {
   const base = draftFromOverrides(stored);
   const patch: AdminEntitlementOverridePatch = {};
 
@@ -153,40 +116,7 @@ export function overridesPatch(
     patch[key] = next === 'inherit' ? null : { value: next === 'on' };
   }
 
-  for (const key of NUMERIC_OVERRIDE_KEYS) {
-    const next = draft[key].trim();
-    const current = base[key];
-    if (next === '') {
-      // Empty means inherit. Only send the delete when something is there.
-      if (current !== '') patch[key] = null;
-      continue;
-    }
-
-    const value = Number(next);
-    if (!Number.isFinite(value)) {
-      return { ok: false, error: `${NUMERIC_LABEL[key]} must be a number, or blank to inherit.` };
-    }
-    if (key === 'maxConcurrentSessions') {
-      if (!Number.isInteger(value) || value < 1 || value > MAX_CONCURRENT_SESSIONS_OVERRIDE) {
-        return {
-          ok: false,
-          error: `${NUMERIC_LABEL[key]} must be a whole number from 1 to ${MAX_CONCURRENT_SESSIONS_OVERRIDE}.`,
-        };
-      }
-    } else if (value < 0 || value > MAX_COMPUTE_RATE_MULTIPLIER) {
-      return {
-        ok: false,
-        error: `${NUMERIC_LABEL[key]} must be from 0 to ${MAX_COMPUTE_RATE_MULTIPLIER} (0 = free compute).`,
-      };
-    }
-
-    // `'0.50'` and `0.5` are the same override: comparing numerically keeps a
-    // cosmetic re-type from rewriting the entry (and dropping its expiry).
-    if (current !== '' && Number(current) === value) continue;
-    patch[key] = { value };
-  }
-
-  return { ok: true, patch };
+  return patch;
 }
 
 /** Nothing to save — the Save button's disabled state, in one place. */

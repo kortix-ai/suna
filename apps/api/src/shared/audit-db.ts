@@ -40,7 +40,8 @@ function intFromEnv(name: string, fallback: number): number {
 
 const AUDIT_POOL_MAX = intFromEnv('DB_AUDIT_POOL_MAX', DEFAULT_AUDIT_POOL_MAX);
 export const AUDIT_STATEMENT_TIMEOUT_MS_DEFAULT = 10_000;
-const AUDIT_STATEMENT_TIMEOUT_MS = intFromEnv(
+/** The resolved audit-pool statement timeout (env `DB_AUDIT_STATEMENT_TIMEOUT_MS`). */
+export const AUDIT_STATEMENT_TIMEOUT_MS = intFromEnv(
   'DB_AUDIT_STATEMENT_TIMEOUT_MS',
   AUDIT_STATEMENT_TIMEOUT_MS_DEFAULT,
 );

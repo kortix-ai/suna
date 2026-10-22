@@ -29,6 +29,36 @@ function projectRow(metadata: Record<string, unknown> | null) {
   };
 }
 
+describe('serializeProject default_reasoning_effort', () => {
+  test('exposes a published metadata.default_reasoning_effort as a top-level field', () => {
+    expect(
+      serializeProject(projectRow({ default_reasoning_effort: 'high' })).default_reasoning_effort,
+    ).toBe('high');
+  });
+
+  test('is null when metadata has no default effort', () => {
+    expect(serializeProject(projectRow({})).default_reasoning_effort).toBeNull();
+  });
+
+  test('is null when the stored value is not a published effort label', () => {
+    // A value written directly to the DB, or before the route validated, must
+    // read as automatic (null) — never as garbage the gateway would 400 on.
+    expect(
+      serializeProject(projectRow({ default_reasoning_effort: 'ultra' })).default_reasoning_effort,
+    ).toBeNull();
+  });
+
+  test('trims a hand-written value with surrounding whitespace', () => {
+    expect(
+      serializeProject(projectRow({ default_reasoning_effort: ' low ' })).default_reasoning_effort,
+    ).toBe('low');
+  });
+
+  test('is null when metadata itself is null', () => {
+    expect(serializeProject(projectRow(null)).default_reasoning_effort).toBeNull();
+  });
+});
+
 describe('serializeProject icon', () => {
   test('exposes a valid metadata.icon as a top-level field', () => {
     expect(serializeProject(projectRow({ icon: '🚀' })).icon).toBe('🚀');
@@ -200,11 +230,60 @@ describe('secretDeliveryBlockedReason', () => {
   });
 
   test('a declarative config with zero agents is ambiguous, so it reports null', () => {
-    // `resolveConfigAgents` only reaches 'declarative' with an empty list when the
-    // manifest FAILED to parse (specs empty, errors present) or every agent is
-    // disabled. Neither proves the absence of a grant, and warning on a manifest
-    // we could not read is worse than not warning at all.
+    // `resolveConfigAgents` only reaches 'declarative' with an empty list when
+    // the manifest FAILED to parse (specs empty, errors present). Disabled
+    // agents stay listed with `enabled: false` and are skipped below, so an
+    // all-disabled manifest is the certain `no_agent_grant`, not this null.
     expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'egress', declarative([]))).toBeNull();
+  });
+
+  test('a disabled registered agent does not make a secret deliverable', () => {
+    // The summary lists disabled agents (enabled: false); only an agent a
+    // session could launch makes "granted somewhere" certain. Before the
+    // listing carried disabled agents at all, this state was unreachable —
+    // the filter here keeps the answer byte-identical.
+    const config: SecretAgentGrantConfig = {
+      agent_discovery: 'declarative',
+      agents: [
+        {
+          name: 'off',
+          path: 'kortix.yaml#agents.off',
+          description: null,
+          mode: null,
+          source: 'kortix.yaml',
+          enabled: false,
+          scope: { env: ['BOUNDARY_TEST'], connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all' },
+        },
+        {
+          name: 'on',
+          path: 'kortix.yaml#agents.on',
+          description: null,
+          mode: null,
+          source: 'kortix.yaml',
+          enabled: true,
+          scope: { env: ['OTHER_KEY'], connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all' },
+        },
+      ],
+    };
+    expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'egress', config)).toBe('no_agent_grant');
+  });
+
+  test('an all-disabled manifest is certain: no launchable agent may receive the secret', () => {
+    const config: SecretAgentGrantConfig = {
+      agent_discovery: 'declarative',
+      agents: [
+        {
+          name: 'off',
+          path: 'kortix.yaml#agents.off',
+          description: null,
+          mode: null,
+          source: 'kortix.yaml',
+          enabled: false,
+          scope: { env: 'all', connectors: 'all', kortix_permissions: 'all', kortix_cli: 'all' },
+        },
+      ],
+    };
+    expect(secretDeliveryBlockedReason('BOUNDARY_TEST', 'egress', config)).toBe('no_agent_grant');
   });
 
   test('broker secrets take the same rule as egress', () => {
@@ -381,8 +460,8 @@ describe('buildSecretView — delivery_blocked_reason', () => {
       agentGrants: declarative([['OTHER_KEY']]),
     });
     expect(before.delivery_blocked_reason).toBeNull();
-    const { delivery_blocked_reason: _omitted, ...beforeRest } = before;
-    const { delivery_blocked_reason: _flagged, ...afterRest } = after;
+    const { delivery_blocked_reason: _omitted, agents: _unknownAgents, ...beforeRest } = before;
+    const { delivery_blocked_reason: _flagged, agents: _knownAgents, ...afterRest } = after;
     expect(beforeRest).toEqual(afterRest);
   });
 
@@ -402,5 +481,77 @@ describe('buildSecretView — delivery_blocked_reason', () => {
     });
     expect(view.delivery_blocked_reason).toBeNull();
     expect(view.delivery_status).toBe('available');
+  });
+});
+
+describe('buildSecretView — consumer and availability characterization', () => {
+  const strategies = ['runtime', 'egress', 'broker', 'denied'] as const;
+  const scopes = ['runtime', 'connector'] as const;
+  const backends = [undefined, 'llm_gateway', 'connector', 'git_proxy', 'kortix_fetch'] as const;
+  const consumers = [undefined, null, 'sandbox', 'network', 'connector', 'llm_gateway', 'git_proxy', 'http_broker'] as const;
+  const legacyBroker = {
+    llm_gateway: 'llm_gateway',
+    connector: 'connector',
+    git_proxy: 'git_proxy',
+    kortix_fetch: 'http_broker',
+  } as const;
+
+  for (const strategy of strategies) {
+    for (const scope of scopes) {
+      for (const backend of backends) {
+        for (const stored of consumers) {
+          test(`${strategy}/${scope}/${backend ?? 'none'}/${stored === undefined ? 'undefined' : stored ?? 'null'}`, () => {
+            const legacy = strategy === 'runtime' ? 'sandbox'
+              : strategy === 'denied' ? null
+                : strategy === 'egress' ? 'network'
+                  : backend ? legacyBroker[backend] : null;
+            const expected = strategy === 'denied' ? null
+              : scope === 'connector' ? 'connector' : stored ?? legacy;
+            const available = (strategy === 'runtime' && expected === 'sandbox') ||
+              (strategy === 'egress' && expected === 'network') ||
+              (strategy === 'broker' && (expected === 'llm_gateway' || expected === 'git_proxy' ||
+                (expected === 'http_broker' && backend === 'kortix_fetch'))) ||
+              expected === 'connector';
+            const view = buildSecretView({
+              identifier: 'BOUNDARY_TEST',
+              name: 'BOUNDARY_TEST',
+              shared: secretRow({ strategy, scope, consumer: stored, egressPolicy: backend ? { backend, rules: [] } : null }),
+              canManageShared: true,
+            });
+            expect([view.consumer, view.delivery_status]).toEqual([
+              expected, available ? 'available' : strategy === 'denied' ? 'disabled' : 'unavailable',
+            ]);
+          });
+        }
+      }
+    }
+  }
+});
+
+describe('secret audit agent grants', () => {
+  test('lists enabled agents granted the identifier, not another identifier sharing its key', () => {
+    const config = declarative([['audit-primary'], ['AUDIT_KEY'], [], ['all-other']]);
+    for (const agent of config.agents.slice(3)) agent.enabled = false;
+    expect(buildSecretView({
+      identifier: 'AUDIT-primary', name: 'AUDIT_KEY', shared: secretRow({ strategy: 'runtime' }),
+      canManageShared: true, agentGrants: config,
+    })).toHaveProperty('agents', ['agent-0']);
+  });
+  test('reports unrestricted runtime agents and no agents for denied delivery', () => {
+    const base = { identifier: 'AUDIT_KEY', name: 'AUDIT_KEY', canManageShared: true };
+    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'runtime' }),
+      agentGrants: { agent_discovery: 'opencode', agents: [] } })).toHaveProperty('agents', 'all');
+    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'denied' }),
+      agentGrants: declarative([['AUDIT_KEY']]) })).toHaveProperty('agents', []);
+  });
+  test('unscoped grants apply only to runtime delivery; unreadable rosters stay unknown', () => {
+    const base = { identifier: 'AUDIT_KEY', name: 'AUDIT_KEY', canManageShared: true };
+    const grants = declarative(['all', undefined, ['audit_key']]);
+    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'runtime' }), agentGrants: grants }))
+      .toHaveProperty('agents', ['agent-0', 'agent-1', 'agent-2']);
+    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'egress' }), agentGrants: grants }))
+      .toHaveProperty('agents', ['agent-2']);
+    expect(buildSecretView({ ...base, shared: secretRow(), agentGrants: declarative([]) }))
+      .toHaveProperty('agents', null);
   });
 });

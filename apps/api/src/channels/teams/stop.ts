@@ -1,57 +1,36 @@
-import { and, eq } from 'drizzle-orm';
-import { chatThreadParticipants } from '@kortix/db';
-import { db } from '../../shared/db';
+import { config } from '../../config';
+import { chatUser } from '../core/identity';
+import { CHAT_TURN_STOP_REFUSED, type ChatTurnStopVerdict, chatTurnStopVerdict } from '../core/turn-stop';
 import { claimFinalize, deleteTurn, finalizeTurn, loadTurn } from './turn';
 import type { TeamsLiveTurn } from './types';
 
-const PLATFORM = 'teams';
-
 /**
- * Who may press Stop on a live turn.
- *
- * An Adaptive Card is posted to the conversation, so the button is visible to
- * everyone in it — the check has to happen when it is pressed, not when it is
- * drawn. Two people may stop a run:
- *
- *  - whoever sent the message this turn is answering (`originatingActivity`),
- *    which is the only correct answer under `project_open`, where the session
- *    owner and the person actually waiting are routinely different people;
- *  - anyone already approved on this conversation, which is how the session
- *    owner and every accepted joiner are recorded.
- *
- * Anyone else is refused. Failing closed on a stop is the safe direction: the
- * worst case is that a bystander waits for the run to end, instead of a
- * bystander ending someone else's work.
+ * Who may press Stop on a live turn: the sender of the message it answers,
+ * the session owner, a project manager, or the linked user who prompted the
+ * running turn from another surface (`chatTurnStopVerdict`). An approved
+ * participant who is none of these is refused, under `project_open` and
+ * `owner_approval` alike. A lookup that fails refuses too.
  */
-async function mayStopTeamsTurn(
-  handle: TeamsLiveTurn,
-  teamsUserId: string,
-): Promise<boolean> {
-  if (!teamsUserId) return false;
+async function mayStopTeamsTurn(handle: TeamsLiveTurn, teamsUserId: string): Promise<ChatTurnStopVerdict> {
   // Callers pass `teamsUserId(activity)`: the AAD object id when Teams sends
   // one, which it does for every signed-in user. Comparing that with the
   // sender's Bot Framework id (`29:…`) alone never matched, so the person who
-  // sent the message could not stop it unless a participant row also existed —
-  // and under `project_open` a non-owner has none.
+  // sent the message could not stop it.
   const origin = handle.originatingActivity?.from;
-  if (origin && (origin.aadObjectId === teamsUserId || origin.id === teamsUserId)) return true;
+  const sentIt = Boolean(teamsUserId && origin && (origin.aadObjectId === teamsUserId || origin.id === teamsUserId));
   try {
-    const [row] = await db
-      .select({ status: chatThreadParticipants.status })
-      .from(chatThreadParticipants)
-      .where(
-        and(
-          eq(chatThreadParticipants.platform, PLATFORM),
-          eq(chatThreadParticipants.workspaceId, handle.tenantId),
-          eq(chatThreadParticipants.threadId, handle.conversationId),
-          eq(chatThreadParticipants.platformUserId, teamsUserId),
-        ),
-      )
-      .limit(1);
-    return row?.status === 'approved';
+    return await chatTurnStopVerdict({
+      user: chatUser('teams', handle.tenantId, teamsUserId),
+      projectId: handle.projectId,
+      sessionId: handle.sessionId,
+      sentIt,
+      // Without linked identities the conversation runs as the installer, and
+      // only the sender is known.
+      requireIdentity: config.TEAMS_REQUIRE_USER_IDENTITY,
+    });
   } catch (err) {
-    console.warn('[teams-webhook] stop participant lookup failed (refusing)', err);
-    return false;
+    console.warn('[teams-webhook] stop authorization failed (refusing)', err);
+    return { allowed: false };
   }
 }
 
@@ -81,12 +60,8 @@ export async function stopTeamsTurn(input: {
   if (!handle || handle.finalized) {
     return { stopped: false, notice: 'That run has already finished.' };
   }
-  if (!(await mayStopTeamsTurn(handle, input.teamsUserId))) {
-    return {
-      stopped: false,
-      notice: 'Only the person who sent this message, or someone already working in this session, can stop it.',
-    };
-  }
+  const verdict = await mayStopTeamsTurn(handle, input.teamsUserId);
+  if (!verdict.allowed) return { stopped: false, notice: CHAT_TURN_STOP_REFUSED };
 
   // Claim the finalize BEFORE touching the runtime. The abort makes OpenCode
   // end the turn, which relays back as `relayTurnEnd(status: 'error')` — and
@@ -103,7 +78,7 @@ export async function stopTeamsTurn(input: {
     // Lazily imported so the channel modules keep no static edge into the
     // session-lifecycle engine (the same rule turn.ts follows for the GC).
     const { abortRuntimeTurn } = await import('../../projects/session-lifecycle/abort-runtime-turn');
-    stoppedRuntime = await abortRuntimeTurn(input.sessionId, { requestedStop: true });
+    stoppedRuntime = await abortRuntimeTurn(input.sessionId, { requestedStop: true, stoppedBy: verdict.userId });
   } catch (err) {
     console.warn('[teams-webhook] runtime abort failed on stop', {
       sessionId: input.sessionId,

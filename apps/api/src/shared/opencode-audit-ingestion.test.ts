@@ -57,6 +57,23 @@ describe('parseOpenCodeAuditBatch', () => {
     });
   });
 
+  test('a W3 batch names its source and harness; a pre-W3 batch is OpenCode', () => {
+    const w3 = parseOpenCodeAuditBatch(
+      { source: 'runtime', harness: 'pi', events: [event({ runtime_session_id: 'ses_pi' })] },
+      scope,
+    );
+    expect(w3.values[0]).toMatchObject({
+      source: 'runtime',
+      authoritativeSource: 'runtime',
+      metadata: { harness: 'pi', reported_provenance: { runtime_session_id: 'ses_pi' } },
+    });
+    const legacy = parseOpenCodeAuditBatch({ events: [event()] }, scope);
+    expect(legacy.values[0]).toMatchObject({ source: 'opencode', metadata: { harness: 'opencode' } });
+    // A harness value is an identifier or nothing.
+    const forged = parseOpenCodeAuditBatch({ source: 'runtime', harness: 'pi; drop', events: [event()] }, scope);
+    expect(forged.values[0]).toMatchObject({ metadata: { harness: 'opencode' } });
+  });
+
   test('preserves relay lineage only as sandbox-reported metadata', () => {
     const parsed = parseOpenCodeAuditBatch(
       {
@@ -120,7 +137,7 @@ describe('parseOpenCodeAuditBatch', () => {
     );
 
     expect(parsed.values[0]).toMatchObject({
-      opencodeSessionId: 'ses_trusted',
+      runtimeSessionId: 'ses_trusted',
       agentId: 'a7400000-0000-4000-a000-000000000001',
       agentName: 'trusted-agent',
       initiatorActorType: 'human',
@@ -151,7 +168,7 @@ describe('parseOpenCodeAuditBatch', () => {
     );
 
     expect(parsed.values[0]).toMatchObject({
-      opencodeSessionId: null,
+      runtimeSessionId: null,
       agentId: null,
       agentName: null,
       initiatorActorType: null,
@@ -161,8 +178,9 @@ describe('parseOpenCodeAuditBatch', () => {
       delegationDepth: 0,
       metadata: {
         provenance_trust: 'sandbox_reported',
+        // A pre-W3 daemon's `opencode_session_id` is stored under the neutral key.
         reported_provenance: {
-          opencode_session_id: 'ses_forged',
+          runtime_session_id: 'ses_forged',
           agent_id: 'ceo-agent',
           agent_name: 'ceo-agent',
           initiator_actor_type: 'human',
@@ -325,5 +343,40 @@ describe('parseOpenCodeAuditBatch', () => {
       outcome: 'pending',
       toolCallId: 'call_test',
     });
+  });
+});
+
+describe('parseOpenCodeAuditBatch: instants the partitioned table cannot hold', () => {
+  const now = new Date('2026-10-01T10:30:00.000Z');
+  const DAY = 86_400_000;
+  const parseOne = (occurredAt: Date) =>
+    parseOpenCodeAuditBatch({ events: [event({ occurred_at: occurredAt.toISOString() })] }, { ...scope, now })
+      .values[0]!;
+
+  test('an instant inside [now - 80 days, now + 1 day] is stored as sent', () => {
+    for (const at of [new Date(now.getTime() - 79 * DAY), new Date(now.getTime() - 5_000), new Date(now.getTime() + 0.5 * DAY)]) {
+      const value = parseOne(at);
+      expect(value.occurredAt).toEqual(at);
+      expect(value.metadata).not.toHaveProperty('original_occurred_at');
+    }
+  });
+
+  test('an older or later instant moves to the start of today (UTC) and keeps the real one in metadata', () => {
+    const today = new Date('2026-10-01T00:00:00.000Z');
+    for (const at of [new Date(now.getTime() - 81 * DAY), new Date(now.getTime() + 2 * DAY)]) {
+      const value = parseOne(at);
+      expect(value.occurredAt).toEqual(today);
+      expect(value.metadata).toMatchObject({ original_occurred_at: at.toISOString() });
+    }
+  });
+
+  test('a re-send of a clamped event produces the same instant, so the dedupe key still matches', () => {
+    const at = new Date(now.getTime() - 200 * DAY);
+    const later = new Date(now.getTime() + 3 * 3_600_000); // same UTC day
+    const again = parseOpenCodeAuditBatch(
+      { events: [event({ occurred_at: at.toISOString() })] },
+      { ...scope, now: later },
+    ).values[0]!;
+    expect(again.occurredAt).toEqual(parseOne(at).occurredAt);
   });
 });

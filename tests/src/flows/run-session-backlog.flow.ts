@@ -1,160 +1,99 @@
 /**
  * Agent-run + session happy-path backlog.
  *
- * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, SESS-12, FILE-8, FILE-9,
- * GOLD-1, CHN-6, SESS-10, CONN-26.
+ * Maps 1:1 to spec IDs: RUN-1..8, RUN-10, RUN-12, SESS-2, SESS-3, SESS-9, SESS-12,
+ * FILE-8, FILE-9, GOLD-1, CHN-6, SESS-10.
  *
- * REALITY: every flow here needs a REAL booted Daytona sandbox and/or a funded
+ * REALITY: every flow here needs a REAL booted sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
- * FLOW level on `requires: ["funded"]` and/or `["daytona"]`. The runner
- * self-skips a flow whose capability is absent (apps/api lives behind Stripe +
- * Daytona on dev-api), so these SKIP cleanly locally and run for real against
- * dev-api. The flows below are authored as REAL, correct flows derived from
- * code (apps/api/src/projects/index.ts + apps/api/src/channels + the preview
- * proxy at apps/api/src/sandbox-proxy) so they pass once those capabilities are
- * present.
+ * FLOW level on `requires: ["funded"]` and/or `["sandbox"]`. The runner
+ * self-skips a flow whose capability is absent, so these SKIP cleanly locally
+ * and run for real against a deployed target.
  *
- * ── Preview-proxy coverage note (IMPORTANT) ──────────────────────────────────
- * The OpenCode agent-run surface (RUN-1..8) lives under the preview proxy
- * catch-all `/p/:sandboxId/:port/*` (a Hono wildcard mount). Like the billed
- * `router.all('/:service/*')` passthrough, this catch-all is NOT a discrete
- * entry in app.routes / spec/routes.generated.json, so it CANNOT appear in a
- * flow's `meta.routes` (Gate B fails on routes absent from the manifest). We
- * therefore declare ONLY manifest-real routes in `meta.routes` (session create,
- * sandbox status, the `/v1/p/auth` + `/v1/p/share` mounts, CR routes, etc.) and
- * drive the proxy itself via `ctx.client.request(...)` against the live
- * `/v1/p/<sbx>/8000/...` path WITHOUT declaring it as a coverage route. The
- * proxy's auth boundary is additionally covered transitively by PRX-1/PRX-2.
+ * ── One body, every harness ─────────────────────────────────────────────────
+ * The flows that run a turn are registered with `harnessFlow`: `RUN-1` boots
+ * OpenCode and `RUN-1-pi` boots pi (a project with the `pi_harness` flag on).
+ * They drive the session through the Kortix routes (`/start`, `/prompts`,
+ * `/turn`, `/transcript`, `/events`, `/commit-push`) and never through a
+ * harness's own REST API, so a difference between the harnesses fails a named
+ * flow. Two calls still use the runtime behind the preview proxy
+ * `/p/:sandboxId/:port/*`, because no Kortix route exists for them yet: the
+ * Stop abort and the daemon's `/kortix/health` (see fixtures/session-run.ts).
+ * That proxy is a Hono wildcard mount, not a manifest route, so it never
+ * appears in `meta.routes`; its auth boundary is RUN-8, PRX-1 and PRX-2.
  */
-import { flow } from '../core/flow';
+import { createHash } from 'node:crypto';
+import { flow, harnessFlow } from '../core/flow';
 import { isKe2eRetryableError } from '../core/client';
-import { waitFor, sleep } from '../core/poll';
-import { markSessionReadinessTimeoutRetryable } from '../core/session-runtime-retry';
+import { waitFor } from '../core/poll';
 import type { FlowContext } from '../core/types';
+import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { CliSandbox } from '../fixtures/cli';
 import { subscribe } from '../fixtures/billing';
+import {
+  abortTurn,
+  assertRuntimeHarness,
+  bootSession,
+  endedAfter,
+  pinnedRoot,
+  readTranscript,
+  readTurn,
+  runtimePath,
+  sandboxIdOf,
+  sendPrompt,
+  stopSessionAndWait,
+  streamedReplies,
+  waitForAssistantText,
+  waitForSessionReady,
+  waitForTurn,
+  watchSessionEvents,
+} from '../fixtures/session-run';
 
-// ── Shared helpers ───────────────────────────────────────────────────────────
-
-/** Poll the canonical unified session-open endpoint until the runtime is ready. */
-async function waitForSessionReady(
-  ctx: FlowContext,
-  projectId: string,
-  sessionId: string,
-  timeoutMs = 540_000,
-): Promise<any> {
-  try {
-    return await waitFor(
-      async () => {
-        const r = await ctx.client.as(ctx.P.OWNER).post(
-          '/v1/projects/:projectId/sessions/:sessionId/start',
-          {},
-          {
-            params: { projectId, sessionId },
-            query: { wait_ms: '8000' },
-            // The server may hold the request for the full 8s wait window, and
-            // Cloudflare/ECS transit can add several more seconds under load.
-            timeoutMs: 25_000,
-          },
-        );
-        if (r.statusCode >= 500 && r.statusCode <= 599) return null;
-        r.status(200);
-        return r.json<any>();
-      },
-      {
-        until: (s) =>
-          s?.stage === 'ready' && Boolean(s?.sandbox?.external_id ?? s?.sandbox?.externalId),
-        timeoutMs,
-        intervalMs: 3_000,
-        description: `session runtime ready for ${sessionId}`,
-        retryOnError: isKe2eRetryableError,
-      },
-    );
-  } catch (error) {
-    throw markSessionReadinessTimeoutRetryable(error, sessionId);
-  }
+/** A reply the flow can find by content: the model is told to answer with exactly `marker`. */
+function echo(marker: string): string {
+  return `Reply with exactly this single token and nothing else: ${marker}`;
 }
 
-flow(
+harnessFlow(
   'SESS-10',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
-    // Raised from 360_000 because THIS change adds a real proxy turn (conversation
-    // list/boot + prompt + assistant output) ahead of the mirror wait. Sum of the
-    // bounded waits below now exceeds 360s. Forced arithmetic, not timeout tuning.
+    // Boot (≤540s) + one turn (≤240s) + the mirror wait (≤180s) exceeds 360s.
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'GET /v1/projects/:projectId/sessions',
       'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
-  async (ctx) => {
-    const project = await ctx.fixtures.sharedSeededProject();
-    const session = await ctx.fixtures.session(project, {
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness, {
       prompt: 'Summarize why deterministic end-to-end tests reduce release risk in one sentence.',
     });
+    const { projectId, sessionId } = session;
 
-    let sandboxId = '';
-    await ctx.step('the real sandbox reaches OpenCode readiness after the initial prompt', async () => {
-      const started = await waitForSessionReady(ctx, project.id, session.id);
-      sandboxId = String(started?.sandbox?.external_id ?? started?.sandbox?.externalId ?? '');
-      if (!sandboxId) throw new Error(`session ${session.id} became ready without a sandbox id`);
-    });
-
-    // The mirror is populated by the PRE-PROMPT hooks on the preview proxy —
-    // `generateSessionTitleFromFirstPrompt` + `scheduleOpencodeSnapshotSync`
-    // (apps/api/src/sandbox-proxy/routes/preview.ts REAL_PRE_PROMPT_DEPS). A
-    // session whose only prompt was claimed by the daemon during boot
-    // never crosses that proxy, so it "never crosses a titling hook again" —
-    // apps/api/src/projects/routes/turn-stream.ts says exactly that in its own comment.
-    // Waiting for the mirror straight after an initial_prompt boot is therefore
-    // unsatisfiable by construction. Drive ONE real turn through the proxy, the
-    // way every client does, and then assert the mirror the flow is about.
-    const MIRROR_PROMPT =
-      'Summarize why deterministic end-to-end tests reduce release risk in one sentence.';
-    /** Prompt the pinned root through the proxy — this is what arms the snapshot. */
-    const promptPinnedRoot = async (ocId: string) => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: MIRROR_PROMPT }],
-        });
-      r.status([200, 202, 204]);
-    };
-
-    let ocSessionId = '';
-    await ctx.step('a real prompt through the preview proxy produces assistant output', async () => {
-      ocSessionId = await pinnedOcRoot(ctx, project.id, session.id, sandboxId);
-      await promptPinnedRoot(ocSessionId);
-      await waitForAssistantOutput(ctx, sandboxId, ocSessionId);
+    const marker = `SESS10_MIRROR_${Date.now()}`;
+    await ctx.step('a prompt through the session inbox produces assistant output', async () => {
+      await sendPrompt(ctx, projectId, sessionId, echo(marker));
+      await waitForAssistantText(ctx, projectId, sessionId, marker);
     });
 
     let mirrored: any = null;
-    await ctx.step('the session read exposes a non-placeholder root OpenCode title and tree', async () => {
-      // `metadata.opencode_sessions` has exactly ONE writer:
-      // `scheduleOpencodeSnapshotSync`, armed by the proxy's pre-prompt hook.
-      // It fires at prompt+20s and prompt+60s and then STOPS
-      // (apps/api/src/projects/opencode-session-snapshot.ts). The session read
-      // itself is a pure DB read — a source-level guard test enforces that. So
-      // a poll that merely waits is reading a value whose writer has already
-      // retired: run 32306385663 spent 120 of its 180 s that way. Re-arm the
-      // writer by re-prompting the pinned root, instead of waiting on a dead one.
-      const REARM_AFTER_MS = 75_000;
-      let lastPromptAt = Date.now();
+    await ctx.step('the session read exposes a non-placeholder root title and tree', async () => {
+      // `metadata.opencode_sessions` follows the runtime's state document: it
+      // is written when the turn end refreshes the projection and when the
+      // daemon pushes one for a new session or title (R7.4). No timer, so a
+      // poll needs no second prompt to re-arm a writer.
       mirrored = await waitFor(
         async () => {
-          if (Date.now() - lastPromptAt > REARM_AFTER_MS) {
-            lastPromptAt = Date.now();
-            await promptPinnedRoot(ocSessionId);
-          }
           const response = await ctx.client
             .as(ctx.P.OWNER)
-            .get('/v1/projects/:projectId/sessions/:sessionId', {
-              params: { projectId: project.id, sessionId: session.id },
-            });
+            .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
           response.status(200);
           return response.json<any>();
         },
@@ -172,7 +111,7 @@ flow(
           },
           timeoutMs: 180_000,
           intervalMs: 3_000,
-          description: `the OpenCode title/tree mirror for ${session.id}`,
+          description: `the root title/tree mirror for ${sessionId}`,
           retryOnError: isKe2eRetryableError,
         },
       );
@@ -181,623 +120,351 @@ flow(
     await ctx.step('the project session list returns the same mirrored title and tree', async () => {
       const response = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/projects/:projectId/sessions', { params: { projectId: project.id } });
+        .get('/v1/projects/:projectId/sessions', { params: { projectId } });
       response.status(200);
       const body = response.json<any>();
       const rows = Array.isArray(body) ? body : (body.sessions ?? []);
-      const listed = rows.find((row: any) => row?.session_id === session.id);
-      if (!listed) throw new Error(`session list omitted ${session.id}`);
+      const listed = rows.find((row: any) => row?.session_id === sessionId);
+      if (!listed) throw new Error(`session list omitted ${sessionId}`);
       if (listed.name !== mirrored.name) {
         throw new Error(`list title ${String(listed.name)} != detail title ${String(mirrored.name)}`);
       }
       if (JSON.stringify(listed.opencode_sessions) !== JSON.stringify(mirrored.opencode_sessions)) {
-        throw new Error('list and detail returned different OpenCode session trees');
+        throw new Error('list and detail returned different session trees');
       }
     });
   },
 );
 
-/**
- * Boot a fresh session and wait for its runtime to reach `ready`, returning the
- * proxy id (`external_id`, the value `:sandboxId` in the preview proxy path).
- *
- * The body runs INSIDE a `ctx.step`, and that is the whole point of the wrapper.
- * Request capture is `AsyncLocalStorage`-scoped to a step (core/context.ts
- * `withRecorder`, entered only by `ctx.step` in core/runner.ts), so every
- * `POST /start` poll made outside one is recorded NOWHERE. RUN-4 failed in run
- * 32330628092 with `Timed out waiting for session runtime ready` and produced a
- * flow record with `"steps": []` — no request, no body, no `provisioningStage`,
- * no `lastInitError`, on the single failure mode these flows actually fail with.
- * Boot is the most expensive and most failure-prone part of every flow here; it
- * must leave evidence behind.
- */
-async function bootSandbox(
-  ctx: FlowContext,
-  opts?: { prompt?: string; readinessTimeoutMs?: number },
-): Promise<{ projectId: string; sessionId: string; sandboxId: string; sandbox: any }> {
-  return ctx.step('a fresh session boots to a ready runtime', async () => {
-    const project = await ctx.fixtures.sharedSeededProject();
-    const session = await ctx.fixtures.session(project, { prompt: opts?.prompt ?? 'say hello' });
-    const started = await waitForSessionReady(
-      ctx,
-      project.id,
-      session.id,
-      opts?.readinessTimeoutMs,
-    );
-
-    const sandbox = started.sandbox;
-    const sandboxId = String(sandbox.external_id ?? sandbox.externalId);
-    return { projectId: project.id, sessionId: session.id, sandboxId, sandbox };
-  });
-}
-
-/** The workspace directory the session's OpenCode root lives under (see
- * apps/api/src/projects/opencode-mapping.ts WORKSPACE). Session create/list must
- * carry `?directory=` or the daemon can't locate the repo root → persistent 503. */
-const WORKSPACE = '/workspace';
-
-/** Build the live (non-manifest) preview-proxy path for an OpenCode call. */
-function ocPath(sandboxId: string, suffix: string): string {
-  const tail = suffix.startsWith('/') ? suffix : `/${suffix}`;
-  return `/v1/p/${sandboxId}/8000${tail}`;
-}
-
-/**
- * Create an OpenCode conversation on a booted sandbox; returns its ocId.
- * The sandbox reaching `active` precedes OpenCode (port 4096, fronted by the
- * daemon on 8000) finishing its own boot, so the daemon returns 502/503 for a
- * window after active. Poll through that window before asserting.
- */
-async function createOcConversation(ctx: FlowContext, sandboxId: string): Promise<string> {
-  const ready = await waitFor(
-    async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session?directory=${encodeURIComponent(WORKSPACE)}`), {});
-      // 502/503/504 = OpenCode upstream not up yet; keep polling.
-      if (r.statusCode === 502 || r.statusCode === 503 || r.statusCode === 504) return null;
-      return r;
-    },
-    {
-      until: (r) => Boolean(r),
-      timeoutMs: 120_000,
-      intervalMs: 3_000,
-      description: `OpenCode REST ready on sandbox ${sandboxId}`,
-    },
-  );
-  ready!.status([200, 201]);
-  const id = ready!.json<any>()?.id;
-  if (!id) throw new Error(`OpenCode session create returned no id: ${ready!.text()}`);
-  return id;
-}
-
-/**
- * The OpenCode conversation the server will treat as this session's canonical
- * root. The snapshot pass scopes `metadata.opencode_sessions` to exactly that
- * root (apps/api/src/projects/opencode-session-snapshot.ts), so a prompt sent to
- * any OTHER root is filtered straight back out of the mirror. Mirror the
- * server's own rule — most-recently-active parentless root, per
- * `pickCanonicalRoot` in apps/api/src/projects/opencode-session-resolver.ts —
- * and only create a conversation when the guest has none at all.
- */
-async function canonicalOcConversation(ctx: FlowContext, sandboxId: string): Promise<string> {
-  const listed = await waitFor(
-    async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, '/session'));
-      if (r.statusCode === 502 || r.statusCode === 503 || r.statusCode === 504) return null;
-      return r.statusCode === 200 ? r.json<any[]>() : null;
-    },
-    {
-      until: (rows) => Array.isArray(rows),
-      timeoutMs: 120_000,
-      intervalMs: 3_000,
-      description: `OpenCode conversation list on sandbox ${sandboxId}`,
-    },
-  );
-
-  const roots = (listed ?? []).filter((s: any) => !(s?.parentID ?? s?.parent_id));
-  if (roots.length === 0) return createOcConversation(ctx, sandboxId);
-  const activity = (s: any) => s?.time?.updated ?? s?.time?.created ?? 0;
-  roots.sort(
-    (a: any, b: any) =>
-      activity(b) - activity(a) ||
-      (b?.time?.created ?? 0) - (a?.time?.created ?? 0) ||
-      String(a?.id).localeCompare(String(b?.id)),
-  );
-  const id = roots[0]?.id;
-  if (!id) throw new Error(`no canonical OpenCode root on sandbox ${sandboxId}`);
-  return String(id);
-}
-
-/**
- * The root the SERVER has pinned for this session, preferred over re-deriving it.
- *
- * `resolveRootSessionId` (apps/api/src/projects/opencode-session-resolver.ts)
- * returns an EXISTING pin unconditionally — "most recently active parentless
- * root" is the server's rule only for the FIRST resolution. Once a pin exists
- * the two rules can disagree (a daemon restart or a warm-fork seed rotation
- * leaves a second root), and then the flow prompts root B while the snapshot
- * mirrors pinned root A. Root A is never prompted, so its title never changes,
- * and the mirror wait can never be satisfied at any budget — SESS-10's 410 s
- * failure in run 32306385663. Ask the server which root it pinned.
- */
-async function pinnedOcRoot(
-  ctx: FlowContext,
-  projectId: string,
-  sessionId: string,
-  sandboxId: string,
-): Promise<string> {
-  const r = await ctx.client
-    .as(ctx.P.OWNER)
-    .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
-  const pinned = r.statusCode === 200 ? r.json<any>()?.opencode_session_id : null;
-  if (typeof pinned === 'string' && pinned.length > 0) return pinned;
-  // Nothing pinned yet — the server's first resolution will adopt whatever
-  // root is most recently active, which is exactly what this derives.
-  return canonicalOcConversation(ctx, sandboxId);
-}
-
-function hasAssistantOutput(messages: unknown): boolean {
-  return (
-    Array.isArray(messages) &&
-    messages.some((message: any) => {
-      if (message?.info?.role !== 'assistant') return false;
-      if (message?.info?.error) return true;
-      return Array.isArray(message?.parts) && message.parts.length > 0;
-    })
-  );
-}
-
-async function waitForAssistantOutput(
-  ctx: FlowContext,
-  sandboxId: string,
-  ocId: string,
-  timeoutMs = 240_000,
-): Promise<any[]> {
-  const messages = await waitFor(
-    async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}/message`));
-      return r.statusCode === 200 ? r.json<any[]>() : [];
-    },
-    {
-      until: hasAssistantOutput,
-      timeoutMs,
-      intervalMs: 4_000,
-      description: `observable assistant output in OpenCode session ${ocId}`,
-    },
-  );
-  const failed = messages.find((message: any) => message?.info?.role === 'assistant' && message?.info?.error);
-  if (failed) {
-    throw new Error(`OpenCode assistant failed: ${failed.info.error.data?.message ?? failed.info.error.name}`);
-  }
-  return messages;
-}
-
-// ─── CONN-26: a real agent selects Composio for Gmail ─────────────────────────
-flow(
-  'CONN-26',
+// ─── RUN-1: a ready session names its runtime conversation ────────────────────
+harnessFlow(
+  'RUN-1',
   {
-    domain: 'connectors',
-    requires: ['funded', 'daytona', 'managedGit'],
-    serial: true,
-    timeoutMs: 720_000,
-    // Added in 5b070ebb18 (2026-08-24, direct push) and never run on a
-    // deployed gate before the v0.13.6 release (run 32992496089, api shard
-    // 1), where it failed after 392s: `Timed out waiting for Composio Gmail
-    // authorization request from agent session ses_fc0decd80ffeYPyIR1B5efRcz3`.
-    // CONN-25 passed in the same run (real connect.composio.dev link in 7.4s),
-    // so staging holds a working COMPOSIO_API_KEY — the unproven part is the
-    // live morph-dsv41flash turn calling `add_connector` inside the 300s wait, and
-    // the harness dumps no transcript on that timeout. Quarantined until it
-    // passes a staging dry run of tests-release.yml with the transcript
-    // captured on failure; un-quarantine ONLY in the PR that carries that
-    // green run.
-    quarantine:
-      'real-agent Composio selection: morph-dsv41flash turn produced no add_connector call / connect.composio.dev link within 300s on staging (gate run 32992496089, api shard 1) — unproven flow, quarantined 2026-08-26 pending a green staging dry run',
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      'GET /v1/connectors/projects/:projectId/connectors',
-      'GET /v1/connectors/projects/:projectId/connectors/:slug/config',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
     ],
   },
-  async (ctx) => {
-    const project = await ctx.fixtures.project({ managedGit: true });
-    const session = await ctx.fixtures.session(project, {
-      prompt: 'Reply with the single word READY. Do not call any tools.',
-    });
-
-    let sandboxId = '';
-    await ctx.step('a fresh remote session boots to a ready Daytona runtime', async () => {
-      const started = await waitForSessionReady(ctx, project.id, session.id, 360_000);
-      sandboxId = String(started?.sandbox?.external_id ?? started?.sandbox?.externalId ?? '');
-      if (!sandboxId) throw new Error(`session ${session.id} became ready without a sandbox id`);
-    });
-
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('GLM-5.3 744B receives the real Gmail connector request', async () => {
-      const prompted = await ctx.client
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    await ctx.step('the ready session names the root conversation its runtime serves', async () => {
+      const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          model: { providerID: 'kortix', modelID: 'morph-dsv41flash' },
-          parts: [
-            {
-              type: 'text',
-              text:
-                'Use the Kortix connector tools now. Add Gmail with the default managed provider and start authorization. Never use Pipedream or any legacy provider. Do not complete OAuth, read mail, or send mail. Stop after you give me the authorization link and ask me to open it.',
-            },
-          ],
+        .get('/v1/projects/:projectId/sessions/:sessionId', {
+          params: { projectId: session.projectId, sessionId: session.sessionId },
         });
-      prompted.status([200, 202, 204]);
+      r.status(200).body().has('$.session_id', session.sessionId);
+      const root = r.json<any>()?.opencode_session_id;
+      if (typeof root !== 'string' || !root) {
+        throw new Error(`a ready ${harness} session names no root conversation: ${r.text()}`);
+      }
     });
+  },
+);
 
-    let messages: any[] = [];
-    await ctx.step('the agent calls the connector tools and asks the user to authorize', async () => {
-      messages = await waitFor(
+// ─── RUN-2: a prompt is accepted durably, then delivered ──────────────────────
+harnessFlow(
+  'RUN-2',
+  {
+    domain: 'agent-run',
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 660_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const marker = `RUN2_PONG_${Date.now()}`;
+    let promptId = '';
+    await ctx.step('POST .../prompts → 202 with a durable prompt id', async () => {
+      promptId = await sendPrompt(ctx, projectId, sessionId, echo(marker));
+    });
+    await ctx.step('the runtime consumes the prompt: the inbox drops it and the transcript holds it', async () => {
+      await waitFor(
         async () => {
-          const response = await ctx.client
+          const r = await ctx.client
             .as(ctx.P.OWNER)
-            .get(ocPath(sandboxId, `/session/${ocId}/message`));
-          return response.statusCode === 200 ? response.json<any[]>() : [];
+            .get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params: { projectId, sessionId } });
+          r.status(200);
+          const mine = (r.json<any>().prompts ?? []).find((p: any) => p.prompt_id === promptId);
+          if (mine?.state === 'failed') throw new Error(`prompt delivery failed: ${JSON.stringify(mine)}`);
+          return mine ? null : await readTranscript(ctx, projectId, sessionId);
         },
         {
-          until: (rows) => {
-            const parts = rows.flatMap((message: any) =>
-              Array.isArray(message?.parts) ? message.parts : [],
-            );
-            const calledAdd = parts.some((part: any) => {
-              const tool = String(part?.tool ?? part?.toolName ?? part?.name ?? '');
-              return part?.type === 'tool' && /add[_ -]?connector/i.test(tool);
-            });
-            const assistantText = rows
-              .filter((message: any) => message?.info?.role === 'assistant')
-              .flatMap((message: any) => (Array.isArray(message?.parts) ? message.parts : []))
-              .filter((part: any) => part?.type === 'text' && typeof part?.text === 'string')
-              .map((part: any) => part.text)
-              .join('\n');
-            return (
-              calledAdd &&
-              assistantText.includes('connect.composio.dev') &&
-              /open|authorize|connect/i.test(assistantText)
-            );
-          },
-          timeoutMs: 300_000,
-          intervalMs: 4_000,
-          description: `Composio Gmail authorization request from agent session ${ocId}`,
+          until: (transcript) =>
+            Boolean(transcript?.messages.some((m) => m.role === 'user' && m.text.includes(marker))),
+          timeoutMs: 180_000,
+          intervalMs: 3_000,
+          description: `prompt ${promptId} consumed into the transcript`,
           retryOnError: isKe2eRetryableError,
         },
       );
     });
-
-    await ctx.step('no connector tool call attempted the legacy Pipedream escape hatch', async () => {
-      const toolParts = messages
-        .flatMap((message: any) => (Array.isArray(message?.parts) ? message.parts : []))
-        .filter((part: any) => part?.type === 'tool');
-      const addCalls = toolParts.filter((part: any) =>
-        /add[_ -]?connector/i.test(String(part?.tool ?? part?.toolName ?? part?.name ?? '')),
-      );
-      if (addCalls.length === 0) throw new Error('agent emitted no add-connector tool call');
-      for (const part of toolParts) {
-        const input = part?.state?.input ?? part?.input ?? {};
-        if (input?.provider === 'pipedream' || input?.allow_legacy_pipedream === true) {
-          throw new Error('agent attempted the legacy Pipedream provider');
-        }
-      }
-      for (const part of addCalls) {
-        const input = part?.state?.input ?? part?.input ?? {};
-        if (input?.provider !== undefined && input.provider !== 'composio') {
-          throw new Error(`agent selected unexpected managed provider ${String(input.provider)}`);
-        }
-      }
-    });
-
-    await ctx.step('project readback proves the agent persisted Gmail through Composio', async () => {
-      const listed = await ctx.client
+    // The SDK's `session.messages()` and the CLI read this route, and every
+    // real client negotiates compression: the proxy must hand the daemon's
+    // gzip answer through with its `content-encoding`, or no client can read it.
+    await ctx.step('a client reads the conversation from the runtime: the gzip answer of …/kortix/runtime/messages/<root> decodes', async () => {
+      const detail = await ctx.client
         .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors', {
-          params: { projectId: project.id },
-        });
-      listed.status(200);
-      const body = listed.json<any>();
-      const rows = Array.isArray(body) ? body : (body?.connectors ?? []);
-      const gmail = rows.find(
-        (row: any) =>
-          row?.provider === 'composio' &&
-          (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
-            String(row?.name ?? '').toLowerCase().includes('gmail')),
-      );
-      if (!gmail?.slug) throw new Error('project connector list omitted agent-created Gmail');
-      if (
-        rows.some(
-          (row: any) =>
-            row?.provider === 'pipedream' &&
-            (String(row?.slug ?? '').toLowerCase().includes('gmail') ||
-              String(row?.name ?? '').toLowerCase().includes('gmail')),
-        )
-      ) {
-        throw new Error('project persisted a Pipedream-backed Gmail connector');
-      }
-
-      const config = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/connectors/projects/:projectId/connectors/:slug/config', {
-          params: { projectId: project.id, slug: gmail.slug },
-        });
-      config.status(200).body().has('$.provider', 'composio').has('$.app', 'gmail');
-    });
-  },
-);
-
-// ─── RUN-1: create an OpenCode conversation through the proxy ─────────────────
-// POST /p/<sbx>/8000/session → { id }.  (proxy path is not a manifest route)
-flow(
-  'RUN-1',
-  {
-    domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 660_000,
-    // Only manifest-real routes are declared; the /p/<sbx>/8000/* proxy
-    // catch-all is exercised at runtime but is not a coverage target.
-    routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-    ],
-  },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    await ctx.step('POST /p/<sbx>/8000/session → 200 {id}', async () => {
-      const ocId = await createOcConversation(ctx, sandboxId);
-      ctx.track('opencode-session', ocId, { sandboxId });
-    });
-  },
-);
-
-// ─── RUN-2: async prompt → 204 (agent runs in background) ─────────────────────
-flow(
-  'RUN-2',
-  {
-    domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 660_000,
-    routes: [
-      'POST /v1/projects/:projectId/sessions',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
-    ],
-  },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('POST .../session/<ocId>/prompt_async → 204', async () => {
+        .get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } });
+      const root = detail.status(200).json<any>()?.opencode_session_id;
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: 'Reply with the single word: pong' }],
-        });
-      r.status([200, 202, 204]);
+        .get(runtimePath(session.sandboxId, `/kortix/runtime/messages/${root}?limit=200`), { headers: { 'accept-encoding': 'gzip' } });
+      const messages = r.status(200).json<any>()?.messages;
+      if (!Array.isArray(messages) || !messages.some((m: any) => m.info?.role === 'user' && JSON.stringify(m.parts).includes(marker))) {
+        throw new Error(`the runtime transcript did not decode to the prompt: ${r.text().slice(0, 200)}`);
+      }
     });
   },
 );
 
-// ─── RUN-3: SSE event stream shows message/part deltas after a prompt ─────────
-// We don't keep an SSE connection open (the client buffers the full body); we
-// assert structural progress instead via RUN-6 message listing in RUN-3 too:
-// after prompting, a message/part must appear within N seconds.
-flow(
+// ─── RUN-3: the session event stream carries the reply as it is written ───────
+harnessFlow(
   'RUN-3',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/events',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('prompt the agent', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: 'Reply with a short greeting.' }],
-        });
-      r.status([200, 202, 204]);
-    });
-    await ctx.step('a message/part appears in the conversation within ~3min', async () => {
-      // A user message and empty assistant placeholder appear immediately.
-      // Require an assistant part (or an explicit assistant error) so this
-      // proves execution progressed beyond request acceptance.
-      await waitForAssistantOutput(ctx, sandboxId, ocId, 180_000);
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
+    const marker = `RUN3_STREAM_${Date.now()}`;
+    await ctx.step('GET .../events streams the reply text and the turn state after a prompt', async () => {
+      await watchSessionEvents(
+        ctx,
+        projectId,
+        sessionId,
+        async () => {
+          await sendPrompt(ctx, projectId, sessionId, echo(marker));
+        },
+        (seen) =>
+          seen.some((frame) => frame.event === 'kortix.control.turn') &&
+          streamedReplies(seen).some((text) => text.includes(marker)),
+      );
     });
   },
 );
 
-// ─── RUN-4: busy/idle status read ────────────────────────────────────────────
-// GET .../session/<ocId> → status.type ∈ busy|retry ⇒ busy (idle otherwise).
-flow(
+// ─── RUN-4: busy → idle, read from the lifecycle authority ────────────────────
+harnessFlow(
   'RUN-4',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('kick off a run, then observe busy state', async () => {
-      await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-        parts: [{ type: 'text', text: 'Count slowly to ten in words.' }],
-      });
-      // Race the model: the session should report busy/retry at some point soon
-      // after a prompt. If we miss the window (fast model) it's idle — both are
-      // valid structural states, so we assert the field is present + readable.
-      const observed = await waitFor(
-        async () => {
-          const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${ocId}`));
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
-        {
-          until: (s) => Boolean(s?.status?.type) || Boolean(s?.id),
-          timeoutMs: 120_000,
-          intervalMs: 2_000,
-          description: `readable status for OpenCode session ${ocId}`,
-        },
-      );
-      if (observed?.status?.type) {
-        const busy = observed.status.type === 'busy' || observed.status.type === 'retry';
-        // Either busy (still running) or a terminal/idle state — both legal.
-        void busy;
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
+    let before: string | undefined;
+    await ctx.step('GET .../turn → idle once the boot prompt has ended', async () => {
+      before = (await waitForTurn(ctx, projectId, sessionId, (t) => t.turns.length === 0, 'an idle session'))
+        .last_ended?.turn_token;
+    });
+    await ctx.step('a prompt makes GET .../turn report a running turn', async () => {
+      await sendPrompt(ctx, projectId, sessionId, 'Count from one to thirty in words, one number per line.');
+      await waitForTurn(ctx, projectId, sessionId, (t) => t.turns.length > 0, 'a running turn', 120_000);
+    });
+    await ctx.step('the turn ends: no running turn, and last_ended names a completed turn', async () => {
+      const ended = await waitForTurn(ctx, projectId, sessionId, endedAfter(before), 'the turn to end');
+      if (ended.last_ended?.end_reason !== 'completed') {
+        throw new Error(`the turn ended as ${String(ended.last_ended?.end_reason)}, not completed`);
       }
     });
   },
 );
 
-// ─── RUN-5: abort a running agent ─────────────────────────────────────────────
-flow(
+// ─── RUN-5: Stop ends a running turn ──────────────────────────────────────────
+harnessFlow(
   'RUN-5',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.step('start a long run', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-          parts: [{ type: 'text', text: 'Write a very long essay about the sea.' }],
-        });
-      r.status([200, 202, 204]);
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    let before: string | undefined;
+    const marker = `RUN5_SEA_${Date.now()}`;
+    await ctx.step('a long turn is running', async () => {
+      before = (await waitForTurn(ctx, projectId, sessionId, (t) => t.turns.length === 0, 'an idle session'))
+        .last_ended?.turn_token;
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Start with the line ${marker}, then write a very long (2000+ word) essay about the sea. Do not stop early.`,
+      );
+      await waitForTurn(
+        ctx,
+        projectId,
+        sessionId,
+        (t) => t.turns.some((turn) => turn.state === 'active'),
+        'the long turn to become active',
+        120_000,
+      );
     });
-    await ctx.step('abort → 200/204', async () => {
-      // Give the run a moment to actually start before aborting.
-      await sleep(2_000);
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post(ocPath(sandboxId, `/session/${ocId}/abort`), {});
-      r.status([200, 204]);
+    await ctx.step('Stop (the runtime abort the web sends) → 200/204', async () => {
+      await abortTurn(ctx, session);
+    });
+    await ctx.step('the turn ends within 60s and its reply is finalized', async () => {
+      await waitForTurn(ctx, projectId, sessionId, endedAfter(before), 'the aborted turn to end', 60_000);
+      const transcript = await readTranscript(ctx, projectId, sessionId);
+      const prompt = transcript.messages.findIndex((m) => m.role === 'user' && m.text.includes(marker));
+      const replies = transcript.messages.slice(prompt + 1).filter((m) => m.role === 'assistant');
+      if (prompt < 0 || replies.length === 0) {
+        throw new Error('the aborted prompt or its assistant message is missing from the transcript');
+      }
+      const last = replies[replies.length - 1]!;
+      if (!last.completed) throw new Error(`the aborted reply was never finalized: ${JSON.stringify(last)}`);
     });
   },
 );
 
-// ─── RUN-6: list / get messages (results) ────────────────────────────────────
-flow(
+// ─── RUN-6: the transcript returns the turn's messages ────────────────────────
+harnessFlow(
   'RUN-6',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 420_000,
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 660_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
     ],
   },
-  async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
-    const ocId = await createOcConversation(ctx, sandboxId);
-    await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-      parts: [{ type: 'text', text: 'Reply with one short sentence.' }],
-    });
-
-    let firstMessageId = '';
-    await ctx.step('list messages → 200 array (eventually non-empty)', async () => {
-      const msgs = await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get(ocPath(sandboxId, `/session/${ocId}/message`));
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
-        {
-          until: (m) => Array.isArray(m) && m.length > 0,
-          timeoutMs: 180_000,
-          intervalMs: 4_000,
-          description: `messages list non-empty for ${ocId}`,
-        },
-      );
-      const first = msgs[0];
-      firstMessageId = first?.info?.id ?? first?.id ?? '';
-    });
-    await ctx.step('get a single message by id → 200', async () => {
-      if (!firstMessageId) ctx.skip('no message id surfaced to fetch individually');
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get(ocPath(sandboxId, `/session/${ocId}/message/${firstMessageId}`));
-      r.status(200);
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
+    const marker = `RUN6_RESULT_${Date.now()}`;
+    await sendPrompt(ctx, projectId, sessionId, echo(marker));
+    await ctx.step('GET .../transcript → the prompt, then a completed reply with the marker', async () => {
+      await waitForAssistantText(ctx, projectId, sessionId, marker);
+      const transcript = await waitFor(() => readTranscript(ctx, projectId, sessionId), {
+        until: (t) =>
+          t.messages.some((m) => m.role === 'assistant' && m.text.includes(marker) && Boolean(m.completed)),
+        timeoutMs: 60_000,
+        intervalMs: 2_000,
+        description: 'the reply to be completed',
+        retryOnError: isKe2eRetryableError,
+      });
+      if (!transcript.available || transcript.source !== 'live') {
+        throw new Error(`a running session must answer live, got ${transcript.source} (${transcript.reason})`);
+      }
+      const prompt = transcript.messages.findIndex((m) => m.role === 'user' && m.text.includes(marker));
+      const reply = transcript.messages.findIndex((m) => m.role === 'assistant' && m.text.includes(marker));
+      if (prompt < 0 || reply < prompt) {
+        throw new Error(`the reply (index ${reply}) does not follow its prompt (index ${prompt})`);
+      }
+      for (const m of transcript.messages) {
+        if (!m.id || !m.role || !m.created) throw new Error(`a transcript row lacks id/role/created: ${JSON.stringify(m)}`);
+      }
     });
   },
 );
 
-// ─── RUN-7: working-tree diff; agent commits land on branch <sessionId> ───────
-flow(
+// ─── RUN-7: an agent change lands on branch <sessionId> ───────────────────────
+harnessFlow(
   'RUN-7',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 480_000,
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 780_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
-      // The durable truth (commits on branch <sessionId>) is observed via the
-      // project git API — a manifest-real route.
-      'GET /v1/projects/:projectId/commits',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
+      'GET /v1/projects/:projectId/files/content',
     ],
   },
-  async (ctx) => {
-    const { projectId, sessionId, sandboxId } = await bootSandbox(ctx);
-    await ctx.step('ask the agent to create + commit a file', async () => {
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const path = `ke2e-run7-${Date.now()}.md`;
+    const content = `ke2e-run7-${crypto.randomUUID()}`;
+    const done = `RUN7_DONE_${Date.now()}`;
+    await ctx.step('the agent writes the requested file in the workspace', async () => {
+      const before = (await readTurn(ctx, projectId, sessionId)).last_ended?.turn_token;
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Create the file ${path} containing exactly this single line: ${content}. Use the file-writing tool; do not describe the change. Do not commit. Then reply with exactly: ${done}`,
+      );
+      // The file is the proof, not the closing marker: a model sometimes ends
+      // the turn without echoing it (staging, 2026-10-11).
+      await waitForTurn(ctx, projectId, sessionId, endedAfter(before), 'the write turn to end');
+      const file = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+      file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
+    });
+    await ctx.step('POST .../commit-push → 200 pushed', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          ocPath(sandboxId, `/session/${await createOcConversation(ctx, sandboxId)}/prompt_async`),
-          {
-            parts: [
-              {
-                type: 'text',
-                text: "Create a file named KE2E.md with the text 'hello' and commit it.",
-              },
-            ],
-          },
+          '/v1/projects/:projectId/sessions/:sessionId/commit-push',
+          { message: 'ke2e RUN-7 agent change' },
+          { params: { projectId, sessionId } },
         );
-      r.status([200, 202, 204]);
+      r.status(200).body().has('$.pushed', true);
     });
-    await ctx.step('working-tree diff endpoint is reachable → 200', async () => {
-      // We don't assert specific diff content (LLM-driven); only that the
-      // OpenCode diff endpoint responds structurally.
-      const conv = await createOcConversation(ctx, sandboxId);
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, `/session/${conv}/diff`));
-      r.status([200, 204]);
-    });
-    await ctx.step('commits eventually land on branch <sessionId>', async () => {
-      // Structural: poll the git commit log for the session branch and assert it
-      // is readable (the branch exists once the session pushed). We don't require
-      // a specific commit count since timing of the agent commit is LLM-bound.
-      await waitFor(
-        async () => {
-          const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/commits', {
-            params: { projectId },
-            query: { ref: sessionId },
-          });
-          return r.statusCode;
-        },
+    await ctx.step('the project API reads the file on branch <sessionId>', async () => {
+      const file = await waitFor(
+        async () =>
+          ctx.client
+            .as(ctx.P.OWNER)
+            .get('/v1/projects/:projectId/files/content', {
+              params: { projectId },
+              query: { path, ref: sessionId },
+            }),
         {
-          until: (code) => code === 200,
+          until: (r) => r.statusCode === 200,
           timeoutMs: 120_000,
           intervalMs: 5_000,
-          description: `commits readable on branch ${sessionId}`,
+          description: `${path} on branch ${sessionId}`,
+          retryOnError: isKe2eRetryableError,
         },
       );
+      file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
     });
   },
 );
@@ -805,12 +472,14 @@ flow(
 // ─── RUN-8: proxy authz — no token → 401; share-token → scoped 200 ───────────
 // The 401 boundary is on the proxy catch-all (not a manifest route). The
 // /v1/p/share mount IS manifest-real and is what mints a scoped preview token.
+// One harness: the proxy authenticates before any request reaches a runtime.
 flow(
   'RUN-8',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 660_000,
     retry: { attempts: 2 },
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -820,24 +489,16 @@ flow(
     ],
   },
   async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx);
+    const { sandboxId } = await bootSession(ctx, 'opencode');
     await ctx.step('proxy request with NO token/cookie → 401', async () => {
-      // Auth is enforced at the proxy before forwarding, so this is 401
-      // regardless of OpenCode readiness.
-      const r = await ctx.client.as(ctx.P.ANON).get(ocPath(sandboxId, '/app'));
+      const r = await ctx.client.as(ctx.P.ANON).get(runtimePath(sandboxId, '/kortix/health'));
       r.status(401);
     });
-
-    // /v1/p/share requires the sandbox runtime ready (503 "opencode starting"
-    // otherwise). Block on OpenCode readiness before minting the share token.
-    await createOcConversation(ctx, sandboxId);
 
     // The mint proxies to the sandbox daemon's /kortix/share. A daemon without
     // share routes answers its /kortix catch-all 404, which the API reports as
     // 501 — so we assert the platform endpoint responds and extract a token if
-    // present, without failing the auth-boundary flow when the daemon doesn't
-    // implement share. (Core coverage here is the 401 boundary + the
-    // /v1/p/share mount.)
+    // present. (Core coverage here is the 401 boundary + the /v1/p/share mount.)
     let shareToken = '';
     await ctx.step('mint a scoped preview share token (endpoint responds)', async () => {
       const r = await ctx.client
@@ -850,8 +511,8 @@ flow(
       await ctx.step('the share token grants scoped proxy access → 200', async () => {
         const r = await ctx.client
           .as({ label: 'share', auth: { mode: 'query-token', token: shareToken } })
-          .get(ocPath(sandboxId, '/app'));
-        r.status([200, 204, 404]); // 404 = path-not-served-by-OpenCode but auth passed
+          .get(runtimePath(sandboxId, '/kortix/health'));
+        r.status([200, 204, 404]); // 404 = path not served, but auth passed
       });
       await ctx.step('revoke the share token → 200', async () => {
         const r = await ctx.client.as(ctx.P.OWNER).del('/v1/p/share/:token', {
@@ -864,79 +525,36 @@ flow(
   },
 );
 
-// ─── SESS-2: concurrency cap — second session at limit 1 → 429 + headers ────
+// ─── SESS-2: no session cap — creates past the old Starter cap (3) → 201 ────
 flow(
   'SESS-2',
   {
     domain: 'sessions',
-    requires: ['admin', 'funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 300_000,
-    routes: [
-      'POST /v1/admin/api/accounts/:id/session-limit',
-      'POST /v1/projects/:projectId/sessions',
-    ],
+    routes: ['POST /v1/projects/:projectId/sessions'],
   },
   async (ctx) => {
-    if (!ctx.env.adminToken) {
-      throw new Error('SESS-2 requires the run-scoped platform-admin token');
-    }
-    const admin = ctx.client.withBearer(ctx.env.adminToken, 'ADMIN_TOKEN');
-    let previousLimit: number | null | undefined;
     const team = await ctx.fixtures.team();
-
-    await ctx.step('fund the isolated session-limit account', async () => {
+    await ctx.step('fund the isolated account', async () => {
       await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
     });
+    const project = await team.project({ seed: true });
 
-    await ctx.step('set the run account concurrent-session override to 1', async () => {
-      const r = await admin.post(
-        '/v1/admin/api/accounts/:id/session-limit',
-        { max_concurrent_sessions: 1 },
-        { params: { id: team.id } },
-      );
-      r.status(200);
-      previousLimit = r.json<{ previous: number | null }>().previous;
-    });
-
-    try {
-      const project = await team.project({ seed: true });
-      await ctx.step('first session at limit 1 → 201', async () => {
+    for (let n = 1; n <= 4; n += 1) {
+      await ctx.step(`session ${n} of 4 → 201 with no X-RateLimit headers`, async () => {
         const r = await ctx.client
           .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/sessions',
-            { initial_prompt: 'noop' },
-            { params: { projectId: project.id } },
-          );
+          .post('/v1/projects/:projectId/sessions', {}, { params: { projectId: project.id } });
         r.status(201);
+        const limit = r.header('x-ratelimit-limit');
+        if (limit !== undefined) throw new Error(`session create still sends X-RateLimit-Limit: ${limit}`);
         const body = r.json<{ session_id?: string; id?: string }>();
         const id = body.session_id ?? body.id;
         if (!id) throw new Error(`session create returned no id: ${r.text()}`);
         ctx.track('session', id, { projectId: project.id });
       });
-
-      await ctx.step('second session over limit 1 → 429 + X-RateLimit headers', async () => {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .post(
-            '/v1/projects/:projectId/sessions',
-            { initial_prompt: 'noop' },
-            { params: { projectId: project.id } },
-          );
-        r.status(429).headerExists('x-ratelimit-limit').headerExists('x-ratelimit-remaining');
-      });
-    } finally {
-      if (previousLimit !== undefined) {
-        await ctx.step('restore the previous concurrent-session override', async () => {
-          const r = await admin.post(
-            '/v1/admin/api/accounts/:id/session-limit',
-            { max_concurrent_sessions: previousLimit },
-            { params: { id: team.id } },
-          );
-          r.status(200);
-        });
-      }
     }
   },
 );
@@ -950,7 +568,7 @@ flow(
   'SESS-3',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 240_000,
     routes: ['POST /v1/projects/:projectId/sessions'],
   },
@@ -980,21 +598,21 @@ flow(
   },
 );
 
-// ─── SESS-9: restart → 202; re-provisions with rotated tokens; branch preserved
-flow(
+// ─── SESS-9: restart → 202; re-provisions on the same harness ─────────────────
+harnessFlow(
   'SESS-9',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
       'POST /v1/projects/:projectId/sessions/:sessionId/restart',
     ],
   },
-  async (ctx) => {
-    const { projectId, sessionId } = await bootSandbox(ctx);
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
     await ctx.step('restart → 202 status provisioning', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).post(
         '/v1/projects/:projectId/sessions/:sessionId/restart',
@@ -1005,37 +623,31 @@ flow(
       );
       r.status(202).body().has('$.status', 'provisioning');
     });
-    await ctx.step('sandbox re-provisions back to active (branch preserved)', async () => {
-      await waitForSessionReady(ctx, projectId, sessionId);
+    await ctx.step(`the sandbox re-provisions back to a ready ${harness} runtime`, async () => {
+      const started = await waitForSessionReady(ctx, projectId, sessionId);
+      await assertRuntimeHarness(ctx, sandboxIdOf(started), harness);
     });
   },
 );
 
 // ─── SESS-12: manual stop → 200 status stopped; resumable via /start ──────────
-flow(
+harnessFlow(
   'SESS-12',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
-    timeoutMs: 360_000,
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
       'POST /v1/projects/:projectId/sessions/:sessionId/stop',
-      'POST /v1/projects/:projectId/sessions/:sessionId/start',
     ],
   },
-  async (ctx) => {
-    const { projectId, sessionId } = await bootSandbox(ctx);
-    await ctx.step('stop → 200 status stopped', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post(
-        '/v1/projects/:projectId/sessions/:sessionId/stop',
-        {},
-        {
-          params: { projectId, sessionId },
-        },
-      );
-      r.status(200).body().has('$.status', 'stopped');
+  async (ctx, harness) => {
+    const { projectId, sessionId } = await bootSession(ctx, harness);
+    await ctx.step('stop → 200 stopped (or stopping, then stopped)', async () => {
+      await stopSessionAndWait(ctx, projectId, sessionId);
     });
     await ctx.step('stopping an already-stopped session → 409', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).withTransientGatewayRetries().post(
@@ -1047,8 +659,9 @@ flow(
       );
       r.status(409);
     });
-    await ctx.step('start resumes the stopped sandbox (disk preserved)', async () => {
-      await waitForSessionReady(ctx, projectId, sessionId);
+    await ctx.step(`start resumes the stopped sandbox on ${harness} (disk preserved)`, async () => {
+      const started = await waitForSessionReady(ctx, projectId, sessionId);
+      await assertRuntimeHarness(ctx, sandboxIdOf(started), harness);
     });
   },
 );
@@ -1092,7 +705,7 @@ flow(
   'FILE-8',
   {
     domain: 'files',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 360_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1105,7 +718,7 @@ flow(
     // A booted session pushes a branch named <sessionId>; diffing it against main
     // exercises a REAL two-ref diff. (version-diff itself only needs `read`, but
     // we gate the whole flow so it runs where a session branch actually exists.)
-    const { projectId, sessionId } = await bootSandbox(ctx);
+    const { projectId, sessionId } = await bootSession(ctx, 'opencode');
     await ctx.step('the session branch is published to origin before diffing it', async () => {
       await waitForRemoteBranch(ctx, projectId, sessionId);
     });
@@ -1133,15 +746,17 @@ flow(
   },
 );
 
-// ─── FILE-9: live file CRUD inside the sandbox via the OpenCode file API ──────
+// ─── FILE-9: live file CRUD inside the sandbox via the daemon file API ────────
 // Through the preview proxy on :8000. Durable truth is the git repo; the sandbox
-// tree is ephemeral. The OpenCode file endpoints live under the proxy catch-all,
-// so they are driven at runtime but not declared as coverage routes.
+// tree is ephemeral. The daemon's /file routes live under the proxy catch-all,
+// so they are driven at runtime but not declared as coverage routes. They are
+// host routes, the same on every harness, so one harness proves them.
 flow(
   'FILE-9',
   {
     domain: 'files',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 600_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -1149,28 +764,27 @@ flow(
     ],
   },
   async (ctx) => {
-    const { sandboxId } = await bootSandbox(ctx, { readinessTimeoutMs: 420_000 });
-    // The daemon file routes 503 ("opencode not ready") until OpenCode is up;
-    // block on readiness first.
-    await createOcConversation(ctx, sandboxId);
+    // `/start` answers `ready` only once the daemon reports its runtime ready,
+    // so the file routes below never meet a booting daemon.
+    const { sandboxId } = await bootSession(ctx, 'opencode', { readinessTimeoutMs: 420_000 });
     const path = `ke2e-file-${Date.now()}.txt`;
     const content = 'ke2e live file crud';
 
     await ctx.step('upload a file into the sandbox workspace → 200', async () => {
       // The daemon owns writes through multipart POST /file/upload. A raw PUT
-      // /file is not a write contract and falls through to the OpenCode SPA.
+      // /file is not a write contract and falls through to the runtime catch-all.
       const form = new FormData();
       form.append('path', '.');
       form.append('file', new File([content], path, { type: 'text/plain' }));
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .request('POST', ocPath(sandboxId, '/file/upload'), { body: form });
+        .request('POST', runtimePath(sandboxId, '/file/upload'), { body: form });
       r.status(200).body().has('$[0].size', content.length);
     });
     await ctx.step('read it back → 200 with the content', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+        .get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
       r.status(200)
         .body()
         .has('$.type', 'text')
@@ -1178,7 +792,7 @@ flow(
         .has('$.size', content.length);
     });
     await ctx.step('list the directory → 200', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get(ocPath(sandboxId, '/file?path=.'));
+      const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/file?path=.'));
       r.status([200, 204]);
     });
     await ctx.step('delete it → 200', async () => {
@@ -1186,7 +800,7 @@ flow(
       // query param (routes/files.ts: `app.delete('/', … req.json().path`).
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .del(ocPath(sandboxId, '/file'), { body: { path } });
+        .del(runtimePath(sandboxId, '/file'), { body: { path } });
       r.status([200, 204, 404]);
     });
   },
@@ -1201,12 +815,15 @@ flow(
   'GOLD-1',
   {
     domain: 'golden',
-    requires: ['funded', 'daytona'],
+    tags: ['deployed'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 600_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
       'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
       'POST /v1/projects/:projectId/sessions/:sessionId/commit-push',
       'GET /v1/projects/:projectId/snapshots',
       'POST /v1/projects/:projectId/change-requests',
@@ -1259,42 +876,23 @@ flow(
     });
     let sandboxId = '';
     await ctx.step('session sandbox boots to active', async () => {
-      const sandbox = (await waitForSessionReady(ctx, project.id, session.id)).sandbox;
-      sandboxId = String(sandbox.external_id ?? sandbox.externalId);
+      sandboxId = sandboxIdOf(await waitForSessionReady(ctx, project.id, session.id));
     });
 
     const goldenPath = `golden-e2e-${Date.now()}.md`;
     const goldenMarker = `golden-e2e-${crypto.randomUUID()}`;
+    const goldenDone = `GOLD1_DONE_${Date.now()}`;
     await ctx.step('agent writes the requested file and produces output', async () => {
-      const ocId = await createOcConversation(ctx, sandboxId);
-      await ctx.client.as(ctx.P.OWNER).post(ocPath(sandboxId, `/session/${ocId}/prompt_async`), {
-        parts: [
-          {
-            type: 'text',
-            text: `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change.`,
-          },
-        ],
-      });
-      await waitForAssistantOutput(ctx, sandboxId, ocId);
-      // An assistant part can precede its file-writing tool. Wait for the
-      // requested artifact, and surface terminal model errors while waiting.
-      const file = await waitFor(async () => {
-        const messages = await ctx.client.as(ctx.P.OWNER)
-          .get(ocPath(sandboxId, `/session/${ocId}/message`));
-        messages.status(200);
-        const failed = messages.json<any[]>().find((m) => m?.info?.error);
-        if (failed) throw new Error(`golden agent turn failed: ${JSON.stringify(failed.info.error)}`);
-        const result = await ctx.client.as(ctx.P.OWNER)
-          .get(ocPath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
-        result.status([200, 404]);
-        return result;
-      }, {
-        until: (result) => result.statusCode === 200 &&
-          new RegExp(`^${goldenMarker}\\n?$`).test(String(result.json<any>()?.content ?? '')),
-        timeoutMs: 240_000,
-        intervalMs: 2000,
-        description: 'the golden agent writes the complete requested file',
-      });
+      await sendPrompt(
+        ctx,
+        project.id,
+        session.id,
+        `Create the file ${goldenPath} containing exactly this single line: ${goldenMarker}. Use the file-writing tool; do not merely describe the change. Then reply with exactly: ${goldenDone}`,
+      );
+      await waitForAssistantText(ctx, project.id, session.id, goldenDone);
+      const file = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(goldenPath)}`));
       file
         .status(200)
         .body()
@@ -1391,13 +989,13 @@ flow(
 // closest real boundary: a `event_callback`/`app_mention` POST is accepted and
 // (when an install + signature are present on the target) acknowledged 200
 // `{ok:true}` and a `source:slack` session subsequently appears; otherwise the
-// install gate (404) is asserted. This flow is gated on funded+daytona because a
+// install gate (404) is asserted. This flow is gated on funded+sandbox because a
 // successful dispatch spins a real sandbox.
 flow(
   'CHN-6',
   {
     domain: 'channels',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 240_000,
     routes: ['POST /v1/webhooks/slack/:projectId', 'GET /v1/projects/:projectId/sessions'],
@@ -1455,5 +1053,847 @@ flow(
         },
       );
     });
+  },
+);
+
+/**
+ * A manifest with one extra agent, `no-edit`, whose `.md` denies every way to
+ * write a file: the file tools (`edit`), the shell (`bash`, which also covers
+ * OpenCode's `pty_*` tools, W5 E9), and delegation.
+ */
+const NO_EDIT_FILES = {
+  'kortix.yaml': [
+    'kortix_version: 2',
+    'default_agent: kortix',
+    'agents:',
+    '  kortix:',
+    '    kortix_permissions: all',
+    '    skills: all',
+    '  no-edit:',
+    '    kortix_permissions: all',
+    '',
+  ].join('\n'),
+  '.kortix/opencode/agents/no-edit.md': [
+    '---',
+    'description: Reads this repository and never writes files.',
+    'mode: primary',
+    'permission:',
+    '  edit: deny',
+    '  bash: deny',
+    '  task: deny',
+    '---',
+    'You answer questions about this repository. Follow the user instructions exactly.',
+    '',
+  ].join('\n'),
+};
+
+harnessFlow(
+  'RUN-10',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    // Boot (≤540s) + the boot turn (≤240s).
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step(`the project declares a no-edit agent and runs ${harness}`, async () => {
+        await world.setFeature('pi_harness', harness === 'pi');
+        await world.commitToMain(NO_EDIT_FILES, 'ke2e RUN-10: a no-edit agent');
+      });
+      const path = `ke2e-run10-${Date.now()}.txt`;
+      const done = `RUN10_DONE_${Date.now()}`;
+      // The boot prompt runs on the session's agent on every harness; a later
+      // /prompts delivery may name no agent.
+      const session = await bootSession(ctx, harness, {
+        project,
+        agentName: 'no-edit',
+        prompt:
+          `Call your file-writing tool (write) once to create the file ${path} containing the single line OK. ` +
+          // OpenCode's pty plugin tools never asked for permission, so `bash: deny` did not stop them.
+          (harness === 'opencode'
+            ? `If you have no file-writing tool but have a pty_spawn tool, call pty_spawn once with command "sh" and args ["-c", "printf OK > ${path}"] instead. `
+            : '') +
+          `Use no other tool. Whatever the tool returns, then reply with exactly: ${done}`,
+      });
+      await ctx.step('no file or pty tool ran; on pi the write was attempted and refused', async () => {
+        // The tool calls are the proof, not the closing marker: a model that was
+        // offered no file tool sometimes declines to send it (staging, 2026-10-11).
+        await waitForTurn(ctx, session.projectId, session.sessionId, endedAfter(undefined), 'the boot turn to end');
+        const { messages } = await readTranscript(ctx, session.projectId, session.sessionId);
+        if (!messages.some((m) => m.role === 'assistant')) throw new Error('the boot turn ended with no assistant message');
+        // `bash: deny` and `edit: deny` also cover the shell and file-writing
+        // tools that do the same job: pty_* and memory.
+        const fileTools = messages
+          .flatMap((m) => m.tools ?? [])
+          .filter((t) => t.tool === 'write' || t.tool === 'edit' || t.tool === 'memory' || t.tool.startsWith('pty_'));
+        const ran = fileTools.filter((t) => t.status !== 'error');
+        if (ran.length > 0) throw new Error(`a denied file tool ran: ${JSON.stringify(ran)}`);
+        // OpenCode never offers a tool its policy denies, so its model has no
+        // write tool to call. pi offers every tool and refuses the call; a
+        // refused `write` is the proof that `edit: deny` reached it.
+        if (harness === 'pi' && fileTools.length === 0) {
+          throw new Error(`the pi agent never called a file tool, so the policy was not exercised: ${JSON.stringify(messages.map((m) => m.tools))}`);
+        }
+      });
+      await ctx.step('the file does not exist in the workspace', async () => {
+        const file = await ctx.client
+          .as(ctx.P.OWNER)
+          .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+        file.status(404);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+harnessFlow(
+  'RUN-12',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 780_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const path = `memory/ke2e-run12-${Date.now()}.md`;
+    const content = `ke2e-run12-${crypto.randomUUID()}`;
+    const done = `RUN12_DONE_${Date.now()}`;
+    // The daemon hosts both tools (services/tools) and runs the same module for
+    // either harness: pi in process, OpenCode through the bridge plugin.
+    await ctx.step('the agent writes project memory with `memory` and presents it with `show`', async () => {
+      await sendPrompt(
+        ctx,
+        projectId,
+        sessionId,
+        `Call the memory tool with command "create", path "${path}" and file_text "${content}". ` +
+          `Then call the show tool with action "show", type "file" and path "${path}". ` +
+          `Use no other tool. Then reply with exactly: ${done}`,
+      );
+      const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
+      const tools = messages.flatMap((m) => m.tools ?? []);
+      for (const tool of ['memory', 'show']) {
+        if (!tools.some((t) => t.tool === tool && t.status === 'completed')) {
+          throw new Error(`no completed ${tool} call on ${harness}: ${JSON.stringify(tools)}`);
+        }
+      }
+    });
+    await ctx.step('the memory file exists in the workspace with the requested content', async () => {
+      const file = await ctx.client
+        .as(ctx.P.OWNER)
+        .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(path)}`));
+      file.status(200).body().matches('$.content', new RegExp(`^${content}\\n?$`));
+    });
+  },
+);
+
+// ─── RUN-20: a codemode script runs its tool calls on pi ─────────────────────
+// pi only: codemode is a pi tool. The project sets `harnesses.pi.codemode: only`, so the
+// manifest reaches the box (API -> KORTIX_PI_CODEMODE) and the model has no other tool to
+// call: a direct bash call cannot pass for a script. The script's two bash calls write
+// files, so the flow reads the effect back; the runtime's own message list holds the
+// nested calls the transcript flattens away.
+const RUN20_MANIFEST = [
+  'kortix_version: 2',
+  'default_agent: kortix',
+  'agents:',
+  '  kortix:',
+  '    kortix_permissions: all',
+  '    skills: all',
+  'harnesses:',
+  '  pi:',
+  '    codemode: only',
+  '',
+].join('\n');
+
+flow(
+  'RUN-20',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 780_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step('the project runs pi with harnesses.pi.codemode: only', async () => {
+        await world.setFeature('pi_harness', true);
+        await world.commitToMain({ 'kortix.yaml': RUN20_MANIFEST }, 'ke2e RUN-20: codemode only');
+      });
+      const session = await bootSession(ctx, 'pi', { project });
+      const { projectId, sessionId } = session;
+      const nonce = `ke2e-run20-${Date.now()}`;
+      const done = `RUN20_DONE_${Date.now()}`;
+      await ctx.step('the agent runs one codemode script that makes two bash calls', async () => {
+        await sendPrompt(
+          ctx,
+          projectId,
+          sessionId,
+          `Use the codemode tool exactly once. In that one script, call tools.bash twice: ` +
+            `the first command is: printf ${nonce}-a > ${nonce}-a.txt ` +
+            `and the second command is: printf ${nonce}-b > ${nonce}-b.txt ` +
+            `Then return the text "wrote both". Then reply with exactly: ${done}`,
+        );
+        const messages = await waitForAssistantText(ctx, projectId, sessionId, done);
+        const tools = messages.flatMap((m) => m.tools ?? []);
+        if (!tools.some((t) => t.tool === 'codemode' && t.status === 'completed')) {
+          throw new Error(`no completed codemode call: ${JSON.stringify(tools)}`);
+        }
+        // The script's calls are not calls of their own in the conversation.
+        if (tools.some((t) => t.tool === 'bash')) throw new Error(`a bash call ran outside the script: ${JSON.stringify(tools)}`);
+      });
+      await ctx.step('the runtime records the script\'s two bash calls on the codemode part', async () => {
+        const root = await pinnedRoot(ctx, projectId, sessionId);
+        const parts = (await runtimeMessages(ctx, session.sandboxId, root)).flatMap((m) => m.parts);
+        const codemode = parts.find((p) => p.type === 'tool' && p.tool === 'codemode' && p.state?.status === 'completed');
+        const calls = (codemode?.state?.metadata?.calls ?? []) as Array<{ name?: string; status?: string }>;
+        const ran = calls.map((c) => `${c.name}:${c.status}`);
+        if (ran.length !== 2 || !ran.every((c) => c === 'bash:ok' || c === 'bash:complete')) {
+          throw new Error(`codemode metadata.calls is ${JSON.stringify(calls)}`);
+        }
+      });
+      await ctx.step('both files the script wrote exist with their content', async () => {
+        for (const suffix of ['a', 'b']) {
+          const file = await ctx.client
+            .as(ctx.P.OWNER)
+            .get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(`${nonce}-${suffix}.txt`)}`));
+          file.status(200).body().matches('$.content', new RegExp(`^${nonce}-${suffix}$`));
+        }
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+// ─── RUN-15: a project tool runs on every harness ────────────────────────────
+// A harness-neutral module: a plain default export, no harness import. It
+// writes its proof to the workspace, so the flow reads the effect back instead
+// of trusting the model's text.
+const PROJECT_TOOL_FILES = {
+  'kortix.yaml': [
+    'kortix_version: 2',
+    'default_agent: kortix',
+    'tools:',
+    '  ke2e_marker: tools/ke2e_marker.ts',
+    'agents:',
+    '  kortix:',
+    '    kortix_permissions: all',
+    '    skills: all',
+    '  limited:',
+    '    kortix_permissions: all',
+    '    tools: [read]',
+    // No checkout and no file tools: the box receives only the tool's modules.
+    '  locked:',
+    '    kortix_permissions: all',
+    '    workspace:',
+    '      project_repository: false',
+    '    tools: [ke2e_marker]',
+    '',
+  ].join('\n'),
+  'agents/locked.md': [
+    '---',
+    'description: Records markers with the ke2e_marker tool only.',
+    'mode: primary',
+    '---',
+    'You record markers. Follow the user instructions exactly.',
+    '',
+  ].join('\n'),
+  'tools/lib/marker-text.ts': 'export const markerText = (nonce: string, agent: string) => `${nonce}:${agent}`\n',
+  'agents/limited.md': [
+    '---',
+    'description: Reads this repository with the read tool only.',
+    'mode: primary',
+    '---',
+    'You answer questions about this repository. Follow the user instructions exactly.',
+    '',
+  ].join('\n'),
+  'tools/ke2e_marker.ts': [
+    "import { writeFileSync } from 'node:fs'",
+    "import { join } from 'node:path'",
+    "import { markerText } from './lib/marker-text'",
+    '',
+    'export default {',
+    "  description: 'Records a ke2e marker: writes <nonce>:<agent> to ke2e-run15-<nonce>.txt and returns that text.',",
+    "  parameters: { type: 'object', properties: { nonce: { type: 'string', description: 'The nonce to record' } }, required: ['nonce'] },",
+    '  execute(args, context) {',
+    '    const text = markerText(args.nonce, context.agent)',
+    "    writeFileSync(join(context.directory, `ke2e-run15-${args.nonce}.txt`), text)",
+    '    return text',
+    '  },',
+    '}',
+    '',
+  ].join('\n'),
+};
+
+harnessFlow(
+  'RUN-15',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    // Three sessions: boot (≤540s) + one turn (≤240s) each.
+    timeoutMs: 2_500_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    const ask = (nonce: string, done: string) =>
+      `Call the ke2e_marker tool once with nonce "${nonce}". Use no other tool. ` +
+      `If you have no ke2e_marker tool, call nothing. Then reply with exactly: ${done}`;
+    const file = (sandboxId: string, nonce: string) =>
+      ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/file/content?path=${encodeURIComponent(`ke2e-run15-${nonce}.txt`)}`));
+    try {
+      await ctx.step(`the project declares the ke2e_marker tool and a limited agent, and runs ${harness}`, async () => {
+        await world.setFeature('pi_harness', harness === 'pi');
+        await world.commitToMain(PROJECT_TOOL_FILES, 'ke2e RUN-15: a project tool and a limited agent');
+      });
+
+      const nonce = `n${Date.now()}`;
+      const done = `RUN15_DONE_${Date.now()}`;
+      const session = await bootSession(ctx, harness, { project, prompt: ask(nonce, done) });
+      await ctx.step('the default agent calls the project tool; its proof is in the workspace', async () => {
+        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
+        const calls = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker');
+        if (!calls.some((t) => t.status === 'completed')) throw new Error(`no completed ke2e_marker call on ${harness}: ${JSON.stringify(calls)}`);
+        (await file(session.sandboxId, nonce)).status(200).body().matches('$.content', new RegExp(`^${nonce}:kortix$`));
+      });
+
+      const limitedNonce = `n${Date.now()}`;
+      const limitedDone = `RUN15_LIMITED_${Date.now()}`;
+      const limited = await bootSession(ctx, harness, { project, agentName: 'limited', prompt: ask(limitedNonce, limitedDone) });
+      await ctx.step("an agent whose tool list omits the tool cannot run it", async () => {
+        const messages = await waitForAssistantText(ctx, limited.projectId, limited.sessionId, limitedDone);
+        const ran = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker' && t.status !== 'error');
+        if (ran.length > 0) throw new Error(`the limited agent ran ke2e_marker on ${harness}: ${JSON.stringify(ran)}`);
+        (await file(limited.sandboxId, limitedNonce)).status(404);
+      });
+
+      const lockedNonce = `n${Date.now()}`;
+      const lockedDone = `RUN15_LOCKED_${Date.now()}`;
+      const locked = await bootSession(ctx, harness, { project, agentName: 'locked', prompt: ask(lockedNonce, lockedDone) });
+      await ctx.step('an agent without the project repository still runs the project tool and its relative import', async () => {
+        const messages = await waitForAssistantText(ctx, locked.projectId, locked.sessionId, lockedDone);
+        const calls = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'ke2e_marker');
+        if (!calls.some((t) => t.status === 'completed')) throw new Error(`no completed ke2e_marker call for the locked agent on ${harness}: ${JSON.stringify(calls)}`);
+        (await file(locked.sandboxId, lockedNonce)).status(200).body().matches('$.content', new RegExp(`^${lockedNonce}:locked$`));
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+// ─── RUN-19: Kortix tools in kortix.yaml, removed and ejected ────────────────
+// The project lists four Kortix tools (no `show`) and owns a changed copy of
+// `web_search`, made by the real `kortix tools eject`. The copy answers a
+// `ke2e-` query itself and writes its proof to the workspace, so the flow reads
+// the effect back instead of trusting the model's text.
+const RUN19_MANIFEST = [
+  'kortix_version: 2',
+  'default_agent: kortix',
+  'tools:',
+  '  web_search: kortix:web_search',
+  '  image_search: kortix:image_search',
+  '  scrape_webpage: kortix:scrape_webpage',
+  '  memory: kortix:memory',
+  'agents:',
+  '  kortix:',
+  '    kortix_permissions: all',
+  '    skills: all',
+  '',
+].join('\n');
+const EJECTED_EXECUTE = '  async execute(args: Record<string, any>, { env, signal }: ToolContext): Promise<string> {\n';
+const CHANGED_EXECUTE = [
+  '  async execute(args: Record<string, any>, { env, signal, directory }: ToolContext & { directory: string }): Promise<string> {',
+  "    if (String(args.query).startsWith('ke2e-')) {",
+  '      const text = `EJECTED ${args.query}`',
+  "      ;(await import('node:fs')).writeFileSync(`${directory}/${args.query}.txt`, text)",
+  '      return text',
+  '    }',
+  '',
+].join('\n');
+
+harnessFlow(
+  'RUN-19',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    // One session: boot (≤540s) + one turn (≤240s).
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    const cli = new CliSandbox('run19');
+    const query = `ke2e-run19-${Date.now()}`;
+    const done = `RUN19_DONE_${Date.now()}`;
+    try {
+      await ctx.step(`the project ejects web_search with kortix tools eject, changes the copy, lists no show, and runs ${harness}`, async () => {
+        cli.writeFile('kortix.yaml', RUN19_MANIFEST);
+        const ejected = await cli.run(['tools', 'eject', 'web_search']);
+        if (ejected.exitCode !== 0) throw new Error(`kortix tools eject web_search exited ${ejected.exitCode}: ${ejected.all}`);
+        const manifest = cli.readFile('kortix.yaml');
+        if (!manifest.includes('  web_search: tools/web_search.ts  # ejected from kortix:web_search\n')) throw new Error(`eject did not point kortix.yaml at the copy:\n${manifest}`);
+        const source = cli.readFile('tools/web_search.ts');
+        if (!source.includes(EJECTED_EXECUTE)) throw new Error('the ejected web_search no longer has the execute line this flow changes');
+        await world.setFeature('pi_harness', harness === 'pi');
+        await world.commitToMain({ 'kortix.yaml': manifest, 'tools/web_search.ts': source.replace(EJECTED_EXECUTE, CHANGED_EXECUTE) }, 'ke2e RUN-19: four Kortix tools and an ejected web_search');
+      });
+
+      const session = await bootSession(ctx, harness, {
+        project,
+        prompt:
+          `Call the web_search tool once with query "${query}". Then call the show tool once with type "text" and content "${query}". ` +
+          `If you have no show tool, skip that call. Use no other tool. Then reply with exactly: ${done}`,
+      });
+      await ctx.step("the project's changed web_search ran; its proof is in the workspace", async () => {
+        const messages = await waitForAssistantText(ctx, session.projectId, session.sessionId, done);
+        const calls = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'web_search');
+        if (!calls.some((t) => t.status === 'completed')) throw new Error(`no completed web_search call on ${harness}: ${JSON.stringify(calls)}`);
+        (await ctx.client.as(ctx.P.OWNER).get(runtimePath(session.sandboxId, `/file/content?path=${encodeURIComponent(`${query}.txt`)}`)))
+          .status(200)
+          .body()
+          .matches('$.content', new RegExp(`^EJECTED ${query}$`));
+      });
+
+      await ctx.step('show is not loaded: no show call completes and the daemon answers 404 for it; a listed Kortix tool runs', async () => {
+        const { messages } = await readTranscript(ctx, session.projectId, session.sessionId);
+        const shown = messages.flatMap((m) => m.tools ?? []).filter((t) => t.tool === 'show' && t.status === 'completed');
+        if (shown.length > 0) throw new Error(`a show call completed on ${harness}: ${JSON.stringify(shown)}`);
+        const owner = ctx.client.as(ctx.P.OWNER);
+        (await owner.post(runtimePath(session.sandboxId, '/kortix/tools/show'), { args: { action: 'show', type: 'text', content: query }, agent: 'kortix' }))
+          .status(404)
+          .body()
+          .matches('$.error', /^no tool named show is loaded$/);
+        (await owner.post(runtimePath(session.sandboxId, '/kortix/tools/memory'), { args: { command: 'view', path: 'memory' }, agent: 'kortix' })).status(200);
+      });
+    } finally {
+      cli.dispose();
+      await world.close();
+    }
+  },
+);
+
+type RuntimeMessage = { info: Record<string, any>; parts: Array<Record<string, any>> };
+
+/**
+ * The session runtime's own message list (`/kortix/runtime/messages/<root>`),
+ * read through the sandbox proxy. `GET …/transcript` flattens parts to text and
+ * tools; a compaction and an expanded command are visible only here.
+ */
+async function runtimeMessages(ctx: FlowContext, sandboxId: string, root: string): Promise<RuntimeMessage[]> {
+  const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, `/kortix/runtime/messages/${root}`));
+  r.status(200);
+  return r.json<{ messages?: RuntimeMessage[] }>().messages ?? [];
+}
+
+async function runtimeCapabilities(ctx: FlowContext, sandboxId: string): Promise<string[]> {
+  const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/kortix/health'));
+  r.status(200);
+  return r.json<{ capabilities?: string[] }>().capabilities ?? [];
+}
+
+const messageText = (message: RuntimeMessage): string =>
+  message.parts.map((part) => (part.type === 'text' && typeof part.text === 'string' ? part.text : '')).join('');
+
+// pi keeps the last `keepRecentTokens` (20,000 by default) of a conversation out
+// of a summary, so a two-turn session has nothing to summarize. 1 makes it compactable.
+const PI_COMPACT_FILES = { 'harnesses/pi/settings.json': `${JSON.stringify({ compaction: { keepRecentTokens: 1 } })}\n` };
+
+// ─── RUN-13: a session compacts its conversation on demand ───────────────────
+harnessFlow(
+  'RUN-13',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step(`the project runs ${harness}`, async () => {
+        if (harness !== 'pi') return;
+        await world.setFeature('pi_harness', true);
+        await world.commitToMain(PI_COMPACT_FILES, 'ke2e RUN-13: pi keeps no recent context out of a summary');
+      });
+      const session = await bootSession(ctx, harness, { project });
+      const { projectId, sessionId, sandboxId } = session;
+      const root = await pinnedRoot(ctx, projectId, sessionId);
+
+      await ctx.step('the runtime lists `session.compact`, and the session answers a second prompt', async () => {
+        const capabilities = await runtimeCapabilities(ctx, sandboxId);
+        if (!capabilities.includes('session.compact')) throw new Error(`${harness} lists no session.compact: ${JSON.stringify(capabilities)}`);
+        const marker = `RUN13_BEFORE_${Date.now()}`;
+        await sendPrompt(ctx, projectId, sessionId, echo(marker));
+        await waitForAssistantText(ctx, projectId, sessionId, marker);
+      });
+
+      await ctx.step('summarize is accepted with the model of the last reply', async () => {
+        const last = (await runtimeMessages(ctx, sandboxId, root)).filter((m) => m.info.role === 'assistant' && m.info.modelID).at(-1);
+        if (!last) throw new Error('no assistant message names a model');
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(runtimePath(sandboxId, `/session/${root}/summarize`), { providerID: last.info.providerID, modelID: last.info.modelID });
+        r.status(200);
+      });
+
+      await ctx.step('the conversation carries the compaction request and a finished summary with text', async () => {
+        await waitFor(() => runtimeMessages(ctx, sandboxId, root), {
+          until: (messages) => {
+            const summary = messages.find((m) => m.info.role === 'assistant' && m.info.summary === true);
+            if (summary?.info.error) throw new Error(`the compaction failed on ${harness}: ${JSON.stringify(summary.info.error)}`);
+            return (
+              messages.some((m) => m.info.role === 'user' && m.parts.some((part) => part.type === 'compaction')) &&
+              Boolean(summary?.info.time?.completed) &&
+              messageText(summary!).trim().length > 0
+            );
+          },
+          timeoutMs: 180_000,
+          intervalMs: 2_000,
+          description: `a finished compaction summary in session ${sessionId}`,
+          retryOnError: isKe2eRetryableError,
+        });
+      });
+
+      await ctx.step('the compacted session answers the next prompt', async () => {
+        const marker = `RUN13_AFTER_${Date.now()}`;
+        await sendPrompt(ctx, projectId, sessionId, echo(marker));
+        await waitForAssistantText(ctx, projectId, sessionId, marker);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+const COMMAND = 'ke2e-echo';
+const COMMAND_LEAD = 'Reply with exactly this single token and nothing else:';
+const COMMAND_TEMPLATE = `---\ndescription: Echo one token (ke2e)\n---\n${COMMAND_LEAD} $ARGUMENTS\n`;
+
+// ─── RUN-14: a project slash command runs its template ───────────────────────
+harnessFlow(
+  'RUN-14',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    try {
+      await ctx.step(`the project runs ${harness} and commits the command where that harness reads it`, async () => {
+        await world.setFeature('pi_harness', harness === 'pi');
+        const path = harness === 'pi' ? `harnesses/pi/prompts/${COMMAND}.md` : `harnesses/opencode/commands/${COMMAND}.md`;
+        await world.commitToMain({ [path]: COMMAND_TEMPLATE }, `ke2e RUN-14: the ${COMMAND} command`);
+      });
+      const session = await bootSession(ctx, harness, { project });
+      const { projectId, sessionId, sandboxId } = session;
+      const root = await pinnedRoot(ctx, projectId, sessionId);
+
+      await ctx.step('the runtime lists `session.commands` and the command list names the command', async () => {
+        const capabilities = await runtimeCapabilities(ctx, sandboxId);
+        if (!capabilities.includes('session.commands')) throw new Error(`${harness} lists no session.commands: ${JSON.stringify(capabilities)}`);
+        const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/command'));
+        r.status(200);
+        const names = r.json<Array<{ name?: string }>>().map((command) => command.name);
+        if (!names.includes(COMMAND)) throw new Error(`${harness} does not list ${COMMAND}: ${JSON.stringify(names)}`);
+      });
+
+      const marker = `RUN14_${Date.now()}`;
+      await ctx.step('running the command with an argument answers with the argument', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(runtimePath(sandboxId, `/session/${root}/command`), { command: COMMAND, arguments: marker });
+        r.status(200);
+        await waitForAssistantText(ctx, projectId, sessionId, marker);
+      });
+
+      await ctx.step('the user message of that turn is the expanded template', async () => {
+        const expanded = `${COMMAND_LEAD} ${marker}`;
+        const messages = await runtimeMessages(ctx, sandboxId, root);
+        if (!messages.some((m) => m.info.role === 'user' && messageText(m).includes(expanded))) {
+          throw new Error(`no user message carries the expanded template on ${harness}: ${JSON.stringify(messages.filter((m) => m.info.role === 'user').map(messageText))}`);
+        }
+      });
+
+      await ctx.step('a command the project does not have is refused: 400 on pi, 500 on OpenCode', async () => {
+        const r = await ctx.client
+          .as(ctx.P.OWNER)
+          .post(runtimePath(sandboxId, `/session/${root}/command`), { command: 'ke2e-no-such-command', arguments: '' });
+        r.status(harness === 'pi' ? 400 : 500);
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+/** A second primary agent whose prompt names it `token` (RUN-17). */
+function agentPickFiles(token: string): Record<string, string> {
+  return {
+    'kortix.yaml': [
+      'kortix_version: 2',
+      'default_agent: kortix',
+      'agents:',
+      '  kortix:',
+      '    kortix_permissions: all',
+      '    skills: all',
+      '  marker:',
+      '    kortix_permissions: all',
+      '',
+    ].join('\n'),
+    '.kortix/opencode/agents/marker.md': [
+      '---',
+      'description: Knows its own name.',
+      'mode: primary',
+      '---',
+      `Your name is ${token}. When anyone asks for your name, answer with exactly ${token} and nothing else.`,
+      '',
+    ].join('\n'),
+  };
+}
+
+/**
+ * Send `text` (with the run-unique `tag`), wait for its turn to end, and
+ * return the agents the runtime recorded on the replies to it: each assistant
+ * message's `info.agent` (OpenCode also writes it as `mode`).
+ */
+async function agentsThatAnswered(
+  ctx: FlowContext,
+  session: { projectId: string; sessionId: string; sandboxId: string },
+  text: string,
+  tag: string,
+  agent?: string,
+): Promise<string[]> {
+  const before = (await readTurn(ctx, session.projectId, session.sessionId)).last_ended?.turn_token;
+  await sendPrompt(ctx, session.projectId, session.sessionId, `${text} (${tag})`, agent ? { agent } : undefined);
+  await waitForTurn(ctx, session.projectId, session.sessionId, endedAfter(before), `the turn for ${tag} to end`);
+  const messages = await runtimeMessages(ctx, session.sandboxId, await pinnedRoot(ctx, session.projectId, session.sessionId));
+  const asked = messages.find((m) => m.info.role === 'user' && messageText(m).includes(tag));
+  if (!asked) throw new Error(`the prompt ${tag} is not in the runtime transcript`);
+  const replies = messages.filter((m) => m.info.role === 'assistant' && m.info.parentID === asked.info.id);
+  if (replies.length === 0) throw new Error(`no assistant message answers ${tag}`);
+  return replies.map((m) => String(m.info.agent ?? m.info.mode ?? ''));
+}
+
+// R7.2: pi fixed its agent at boot and ignored a prompt's pick.
+harnessFlow(
+  'RUN-17',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    // Boot (≤540s) + the boot turn + two turns (≤240s each).
+    timeoutMs: 1_200_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    const token = `Agentpick${Date.now()}`;
+    try {
+      await ctx.step(`the project declares a second primary agent and runs ${harness}`, async () => {
+        await world.setFeature('pi_harness', harness === 'pi');
+        await world.commitToMain(agentPickFiles(token), 'ke2e RUN-17: a marker agent');
+      });
+      const session = await bootSession(ctx, harness, { project, prompt: 'Reply with the word ready.' });
+      await ctx.step('the session runtime lists the marker agent', async () => {
+        // The commit and the boot race: a box that booted on the previous
+        // config converges to the new one, and only then has the agent.
+        await waitFor(
+          async () => {
+            const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(session.sandboxId, '/kortix/runtime/agents'));
+            r.status(200);
+            return (r.json<{ agents?: Array<{ name?: string }> }>().agents ?? []).map((a) => a.name);
+          },
+          {
+            until: (names) => names.includes('marker'),
+            timeoutMs: 180_000,
+            intervalMs: 3_000,
+            description: `the marker agent in the runtime of ${session.sessionId}`,
+            retryOnError: isKe2eRetryableError,
+          },
+        );
+      });
+      await ctx.step('a prompt that picks no agent runs on the session agent', async () => {
+        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN17PLAIN${Date.now()}`);
+        if (agents.some((name) => name !== 'kortix')) throw new Error(`a reply ran on ${JSON.stringify(agents)}, not the session agent kortix`);
+      });
+      await ctx.step('a prompt that picks the marker agent runs its whole turn on it', async () => {
+        const agents = await agentsThatAnswered(ctx, session, 'Reply with one word.', `RUN17PICKED${Date.now()}`, 'marker');
+        if (agents.some((name) => name !== 'marker')) {
+          throw new Error(`the picked agent did not run the turn on ${harness}: the replies ran on ${JSON.stringify(agents)}`);
+        }
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+// R7.5: pi reports no OpenCode port, and the proxy dialed 4096 where nothing listens.
+flow(
+  'RUN-16',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 900_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx) => {
+    const session = await bootSession(ctx, 'pi');
+    await ctx.step('an OpenCode PTY upgrade on the pi box answers 409 pty_unsupported_runtime and names the Kortix PTY', async () => {
+      const owner = ctx.P.OWNER.auth;
+      if (owner.mode !== 'bearer') throw new Error(`the owner principal has no bearer token (${owner.mode})`);
+      await owner.ensureFresh?.();
+      const r = await ctx.client
+        .as({ label: 'OWNER-ws', auth: { mode: 'query-token', token: owner.token } })
+        .get(`/v1/p/${session.sandboxId}/4096/pty/pty_ke2e_run16/connect`, {
+          headers: {
+            upgrade: 'websocket',
+            connection: 'Upgrade',
+            'sec-websocket-key': btoa('ke2e-run16-key!!'),
+            'sec-websocket-version': '13',
+          },
+        });
+      r.status(409);
+      const error = r.json<{ error?: string }>()?.error ?? '';
+      if (!error.includes('pty_unsupported_runtime') || !error.includes('/kortix/pty/')) {
+        throw new Error(`the refusal does not name the reason and the Kortix PTY: ${error}`);
+      }
+    });
+    await ctx.step('the daemon\'s own PTY, the one every terminal opens, serves the pi box', async () => {
+      const created = await ctx.client.as(ctx.P.OWNER).post(runtimePath(session.sandboxId, '/kortix/pty'), { title: 'ke2e RUN-16' });
+      created.status(200);
+      const id = created.json<{ id?: string }>()?.id;
+      if (!id) throw new Error(`POST /kortix/pty returned no id: ${created.text()}`);
+      const removed = await ctx.client.as(ctx.P.OWNER).del(runtimePath(session.sandboxId, `/kortix/pty/${encodeURIComponent(id)}`));
+      removed.status(200);
+    });
+  },
+);
+
+// ─── RUN-18: the project's root AGENTS.md reaches the agent ──────────────────
+harnessFlow(
+  'RUN-18',
+  {
+    domain: 'agent-run',
+    requires: ['funded', 'sandbox'],
+    timeoutMs: 900_000,
+    routes: [
+      'PATCH /v1/projects/:projectId/features',
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const project = await ctx.fixtures.project({ seed: true });
+    const world = await AgentPrincipalsWorld.open(ctx, { accountId: project.accountId ?? ctx.P.OWNER.accountId!, projectId: project.id });
+    // A NAME the conversation never held: only the system prompt can supply its value (the CFG-12 technique).
+    const name = `RUN18_PROJECT_RULE_${Date.now()}`;
+    const value = `run18-${crypto.randomUUID()}`;
+    const agentsMd = `# Project rules\n\n${name}: ${value}\n`;
+    try {
+      await ctx.step(`the project runs ${harness} and commits a root AGENTS.md`, async () => {
+        await world.setFeature('pi_harness', harness === 'pi');
+        await world.commitToMain({ 'AGENTS.md': agentsMd }, 'ke2e RUN-18: a root AGENTS.md');
+      });
+      const { projectId, sessionId, sandboxId } = await bootSession(ctx, harness, { project });
+
+      await ctx.step('asked for the directive, the agent answers with its value from AGENTS.md', async () => {
+        await sendPrompt(ctx, projectId, sessionId, `Answer with the ${name} value from your project instructions and nothing else.`);
+        await waitForAssistantText(ctx, projectId, sessionId, value);
+      });
+
+      if (harness === 'pi') {
+        // Config releases run for every project (#9432), so pi normally reads the
+        // released copy (/opt/kortix/config/<hash>/AGENTS.md); with no release it
+        // reads the working tree. Either way it is the committed file.
+        await ctx.step('the daemon health names the AGENTS.md pi loaded: the config release or the working tree, at the committed sha', async () => {
+          const r = await ctx.client.as(ctx.P.OWNER).get(runtimePath(sandboxId, '/kortix/health'));
+          r.status(200);
+          const loaded = r.json<any>().harness?.details?.agentsMd;
+          const sha = createHash('sha256').update(agentsMd).digest('hex').slice(0, 12);
+          const fromRelease = loaded?.source === 'release' && String(loaded?.path ?? '').startsWith('/opt/kortix/config/');
+          if (!(fromRelease || loaded?.source === 'workspace') || loaded?.sha !== sha) {
+            throw new Error(`pi reports ${JSON.stringify(loaded)}; expected the config release or the working tree at sha ${sha}`);
+          }
+        });
+      }
+    } finally {
+      await world.close();
+    }
   },
 );

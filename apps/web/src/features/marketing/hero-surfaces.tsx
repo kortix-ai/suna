@@ -1,15 +1,15 @@
 'use client';
 
-import { CopyButton } from '@/components/markdown/copy-button';
+import { CopyButton } from '@kortix/ui/markdown';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
-import { MicrosoftTeams } from '@/features/icon/icons/microsoft-teams';
-import { Slack } from '@/features/icon/icons/slack';
+import { MicrosoftTeams } from '@kortix/ui/internal/icons/microsoft-teams';
+import { Slack } from '@kortix/ui/internal/icons/slack';
 import { SdkSurface, SurfaceLink } from '@/features/marketing/landing/code-panels';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
-import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
-import { cn } from '@/lib/utils';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@kortix/ui/internal/lib/kortix-cli';
+import { cn } from '@kortix/ui';
 import {
   CodeSimpleIcon as Code2,
   EnvelopeSimpleIcon as EnvelopeIcon,
@@ -17,6 +17,7 @@ import {
   DeviceMobileIcon as Smartphone,
   TerminalWindowIcon as Terminal,
 } from '@phosphor-icons/react';
+import { MOBILE_SHOTS } from '@/features/marketing/download/card-images';
 import { useTranslations } from '@/i18n/use-translations';
 import { useTheme } from 'next-themes';
 import Image from 'next/image';
@@ -37,7 +38,7 @@ const SURFACES: Surface[] = [
   { id: 'web', label: 'Web', icon: Monitor },
   { id: 'cli', label: 'CLI', icon: Terminal },
   { id: 'slack', label: 'Slack', icon: Slack },
-  { id: 'teams', label: 'MS Teams', icon: MicrosoftTeams },
+  { id: 'teams', label: 'Microsoft Teams', icon: MicrosoftTeams },
   { id: 'email', label: 'Email', icon: EnvelopeIcon },
   { id: 'mobile', label: 'Mobile', icon: Smartphone },
   { id: 'sdk', label: 'API / SDK', icon: Code2 },
@@ -298,8 +299,8 @@ function EmailSurface() {
         </div>
       </div>
 
-      {/* The channel enum is closed: slack, teams, email. Slack is live,
-          Teams is behind an operator switch, and email is experimental.
+      {/* The channel enum is closed: slack, teams, email. Slack and Teams
+          are live; email is an experimental per-project flag.
 
           Hidden on phones. It wraps to three lines there and takes ~56px off a
           frame that could not already fit the Kortix reply — and a rollout
@@ -307,17 +308,11 @@ function EmailSurface() {
           same status is stated on /channels, which is where a reader who cares
           about it goes. */}
       <div className="border-border text-muted-foreground hidden shrink-0 border-t px-4 py-3 text-center text-xs sm:block">
-        {tI18nComplete.raw('text0e0b01710c4b')}
+        {tI18nComplete.raw('text81b004dc7e0b')}
       </div>
     </div>
   );
 }
-
-const MOBILE_SHOTS = [
-  '/images/mobile-app/app-1.png',
-  '/images/mobile-app/app-2.png',
-  '/images/mobile-app/app-3.png',
-];
 
 function MobileSurface() {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -334,7 +329,7 @@ function MobileSurface() {
 
       {/* Which axis binds flips at sm. On a phone the row is 344px wide, so the
           binding constraint is width: each card takes a third of it and derives
-          its height from the shots' real 1080x2337 aspect, which is why the
+          its height from the shots' real 640x1385 aspect, which is why the
           ratio is written out rather than rounded. Height-bound (the desktop
           rule) measured 386px of phones inside 344px and sliced the outer two in
           half. From sm up there is width to spare and height is the binding
@@ -347,7 +342,7 @@ function MobileSurface() {
             key={src}
             className={cn(
               'border-border bg-background flex justify-center overflow-hidden rounded-2xl border shadow-md',
-              'aspect-[1080/2337] max-h-full min-w-0 flex-1',
+              'aspect-[640/1385] max-h-full min-w-0 flex-1',
               'sm:aspect-auto sm:h-full sm:max-h-[460px] sm:w-auto sm:flex-none',
               i === 1 ? 'sm:-translate-y-3' : 'sm:translate-y-3',
             )}

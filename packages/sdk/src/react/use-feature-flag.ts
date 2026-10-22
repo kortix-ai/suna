@@ -13,7 +13,15 @@ import { qk } from './query-keys';
  * would hide a surface that is meant to be visible. Deprecated members of
  * `FeatureFlagKey`; removed with them in the next major.
  */
-const GRADUATED_FEATURE_FLAG_KEYS: ReadonlySet<FeatureFlagKey> = new Set(['review_center']);
+const GRADUATED_FEATURE_FLAG_KEYS: ReadonlySet<FeatureFlagKey> = new Set([
+  'review_center',
+  'agent_tunnel',
+  'session_transcript_history',
+  'teams',
+  'config_releases',
+  'apps',
+  'llm_gateway',
+]);
 
 /** What {@link useFeatureFlag} tells a caller about one flag. */
 export interface FeatureFlagState {
@@ -36,9 +44,10 @@ export interface FeatureFlagState {
  * serve the flag map, and a non-boolean wire value all resolve to `false`.
  * A disabled feature's surface must be invisible, not merely inert.
  *
- * The one exception is a graduated key (`review_center`): it reports
- * `enabled: true` for every project, because the feature no longer has an off
- * state.
+ * The one exception is a graduated key (`review_center`, `agent_tunnel`,
+ * `session_transcript_history`, `teams`, `config_releases`, `apps`,
+ * `llm_gateway`): it reports `enabled: true` for every project, because the
+ * feature no longer has an off state.
  */
 export function useFeatureFlag(
   projectId: string | null | undefined,

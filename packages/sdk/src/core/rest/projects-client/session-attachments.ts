@@ -182,6 +182,36 @@ function showItems(raw: unknown): unknown[] {
   }
 }
 
+/** The three places of a session-log record, in the v1 shape the scan reads. */
+function asV1Message(record: Record<string, unknown>): Record<string, unknown> {
+  const parts = (record.blocks as unknown[]).filter(isObject).map((block) => {
+    if (block.type === "attachment") return { type: "file", url: block.ref ?? block.url, filename: block.name, mime: block.mime };
+    if (block.type === "tool_call") return { type: "tool", tool: block.name, state: { input: block.input } };
+    // A part the harness keeps in its own form (OpenCode inlines a text file) holds its v1 part.
+    if (block.type === "harness" && isObject(block.data)) return block.data;
+    return block;
+  });
+  return { info: { id: record.message_id, role: record.role }, parts };
+}
+
+type AttachmentSink = (url: unknown, filename: string | null, mime: string | null) => void;
+
+function attachmentsFromTextPart(text: string, add: AttachmentSink): void {
+  for (const attrs of fileTagAttributes(text)) {
+    add(
+      tagAttribute(attrs, "attachment"),
+      tagAttribute(attrs, "filename") ?? basename(tagAttribute(attrs, "path")),
+      tagAttribute(attrs, "mime"),
+    );
+  }
+}
+
+function attachmentsFromToolPart(input: Record<string, unknown>, add: AttachmentSink): void {
+  for (const card of [input, ...showItems(input.items)]) {
+    if (isObject(card)) add(card.attachment, basename(card.path), null);
+  }
+}
+
 /**
  * Every stored file a transcript references, in the order it appears, each
  * listed once.
@@ -195,49 +225,41 @@ function showItems(raw: unknown): unknown[] {
  * carousel items) recorded by saved history. Anything that is not a stored
  * reference — inline bytes, a sandbox path, a look-alike — is not listed,
  * because a download of it would fail or fetch something else.
+ *
+ * A session-log record (`kortix.session/2`) reads the same three places: an
+ * attachment block's `ref` (or the v1 `url` a converted block keeps), or the
+ * v1 file part a harness block holds; a text block; a `show` tool-call block's input.
  */
 export function findSessionAttachments(messages: readonly unknown[]): SessionAttachmentReference[] {
   if (!Array.isArray(messages)) return [];
   const found: SessionAttachmentReference[] = [];
   const seen = new Set<string>();
-  const add = (
-    url: unknown,
-    filename: string | null,
-    mime: string | null,
-    messageId: string,
-    role: string,
-  ) => {
-    const scope = parseSessionAttachmentRef(url);
-    if (!scope || seen.has(url as string)) return;
-    seen.add(url as string);
-    found.push({
-      url: url as string,
-      attachment_id: scope.attachmentId,
-      filename,
-      mime,
-      message_id: messageId,
-      role,
-    });
-  };
-  for (const message of messages) {
+  for (const entry of messages) {
+    const message = isObject(entry) && Array.isArray(entry.blocks) ? asV1Message(entry) : entry;
     if (!isObject(message) || !isObject(message.info) || !Array.isArray(message.parts)) continue;
     const messageId = stringOrNull(message.info.id);
     if (!messageId) continue;
     const role = stringOrNull(message.info.role) ?? "unknown";
+    // `add` with this message's id and role already bound.
+    const add = (url: unknown, filename: string | null, mime: string | null) => {
+      const scope = parseSessionAttachmentRef(url);
+      if (!scope || seen.has(url as string)) return;
+      seen.add(url as string);
+      found.push({
+        url: url as string,
+        attachment_id: scope.attachmentId,
+        filename,
+        mime,
+        message_id: messageId,
+        role,
+      });
+    };
     for (const part of message.parts) {
       if (!isObject(part)) continue;
       if (part.type === "file") {
-        add(part.url, stringOrNull(part.filename), stringOrNull(part.mime), messageId, role);
+        add(part.url, stringOrNull(part.filename), stringOrNull(part.mime));
       } else if (part.type === "text" && typeof part.text === "string") {
-        for (const attrs of fileTagAttributes(part.text)) {
-          add(
-            tagAttribute(attrs, "attachment"),
-            tagAttribute(attrs, "filename") ?? basename(tagAttribute(attrs, "path")),
-            tagAttribute(attrs, "mime"),
-            messageId,
-            role,
-          );
-        }
+        attachmentsFromTextPart(part.text, add);
       } else if (
         part.type === "tool" &&
         typeof part.tool === "string" &&
@@ -245,10 +267,7 @@ export function findSessionAttachments(messages: readonly unknown[]): SessionAtt
         isObject(part.state) &&
         isObject(part.state.input)
       ) {
-        const input = part.state.input;
-        for (const card of [input, ...showItems(input.items)]) {
-          if (isObject(card)) add(card.attachment, basename(card.path), null, messageId, role);
-        }
+        attachmentsFromToolPart(part.state.input, add);
       }
     }
   }

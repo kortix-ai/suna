@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "The Kortix LLM model catalog — the models the Kortix gateway supports and the managed-model set and defaults. Generated from models.dev; consumed across the Kortix platform and by the @kortix/sdk.",
   "license": "Elastic-2.0",
-  "homepage": "https://github.com/kortix-ai/suna/tree/main/packages/llm-catalog",
+  "homepage": "https://github.com/kortix-ai/suna/tree/dev/packages/llm-catalog",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/kortix-ai/suna.git",
@@ -14,7 +14,8 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./lite": "./src/lite.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -25,18 +26,23 @@
       ".": {
         "types": "./dist/index.d.ts",
         "import": "./dist/index.js"
+      },
+      "./lite": {
+        "types": "./dist/lite.d.ts",
+        "import": "./dist/lite.js"
       }
     },
     "files": ["dist", "README.md"]
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
+    "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}\"",
     "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && node scripts/copy-catalog.mjs",
     "prepublishOnly": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json --resolve-full-paths && node scripts/copy-catalog.mjs"
   },
   "devDependencies": {
     "@types/bun": "^1.3.9",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "tsc-alias": "^1.8.17",
     "typescript": "^5.0.0"
   }

@@ -1,6 +1,6 @@
 'use client';
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { m, useReducedMotion } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';
 import type { ReactNode } from 'react';
@@ -27,9 +27,9 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 const TREE = [
   { path: 'your-company/', depth: 0, open: false },
   { path: 'kortix.yaml', depth: 1, open: true },
-  { path: '.kortix/opencode/', depth: 1, open: false },
-  { path: 'agents/', depth: 2, open: false },
-  { path: 'skills/', depth: 2, open: false },
+  { path: 'agents/', depth: 1, open: false },
+  { path: 'skills/', depth: 1, open: false },
+  { path: 'harnesses/opencode/', depth: 1, open: false },
   { path: 'commands/', depth: 2, open: false },
   { path: 'plugins/', depth: 2, open: false },
 ] as const;

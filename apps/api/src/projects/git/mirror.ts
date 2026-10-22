@@ -11,6 +11,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm, stat, utimes } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema';
 import { validateRef } from '../git-ref';
 import { invalidateBranchList } from './branch-list-cache';
 import type { GitBackedProject } from './types';
@@ -19,8 +20,41 @@ import { timeStage } from '../../lib/server-timing';
 
 export const execFileAsync = promisify(execFile);
 
-const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean }>();
+const refreshLocks = new Map<string, { promise: Promise<string>; forced: boolean; epoch: number }>();
 const lastRefreshAt = new Map<string, number>();
+/** projectId → branch → when that branch was last proven to be at the remote's tip. */
+// replica-local: each API replica refreshes its own bare mirror on local disk
+// (`KORTIX_GIT_CACHE_DIR`), so the proof describes that replica's copy. Every
+// base move Kortix makes or proxies broadcasts `invalidateProjectMirror` to
+// every process, so the copy expires on time; the interval only bounds pushes
+// made directly on the upstream, where a missed proof costs one
+// `git ls-remote`, never a stale read.
+const tipProvenAt = new Map<string, Map<string, number>>();
+/** Bumped by every invalidation: a refresh in flight across one records nothing. */
+// replica-local: the broadcast increments every replica's counter, so a
+// cross-replica refresh never records across an invalidation that mattered.
+const invalidations = new Map<string, number>();
+
+/**
+ * How fresh a mirror read must be.
+ *
+ * - `false`: serve the mirror, fetch when the refresh interval has passed.
+ * - `true`: ask the remote now.
+ * - `'tip-proof'`: the branch being read must have been at the remote's tip at
+ *   most one refresh interval ago. The per-prompt grant read uses it: it ran
+ *   `git ls-remote` (~600 ms) on every prompt and every connector call to learn
+ *   that nothing moved. Every base move Kortix makes or proxies drops the proof
+ *   in every API process (`notifyBaseBranchMoved` → `invalidateProjectMirror`),
+ *   so the interval only bounds a push made directly on the upstream: the same
+ *   backstop the desired config release has (`DESIRED_TTL_MS`).
+ *   Only for a base branch. A session branch push is not broadcast.
+ */
+export type MirrorRefresh = boolean | 'tip-proof';
+
+function tipProven(projectId: string, ref: string): boolean {
+  const at = Math.max(lastRefreshAt.get(projectId) ?? 0, tipProvenAt.get(projectId)?.get(ref) ?? 0);
+  return Date.now() - at < refreshIntervalMs();
+}
 
 /**
  * The per-project bare mirror is a SHARED resource: session provisioning, the
@@ -47,7 +81,7 @@ interface ResolvedMirrorAccess {
   headers: Record<string, string>;
 }
 
-async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
+export async function ensureMirrorAccess(project: GitBackedProject): Promise<ResolvedMirrorAccess> {
   if (project.gitAuthToken || Object.keys(project.gitAuthHeaders ?? {}).length > 0) {
     return {
       repoUrl: project.repoUrl,
@@ -160,19 +194,21 @@ export function stripGitProgress(text: string): string {
  * a retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the Platinum
  * / request-deadline de-noise pattern), since the mirror's own retry usually
  * clears them and they are upstream/network noise, not a code bug.
+ * `kind: 'busy'` means base moves exhausted the bounded freshness retries;
+ * it uses the same retryable 503 without ever returning an invalidated mirror.
  * `kind: 'failed'` is a real non-zero exit (auth, missing repo, bad ref) —
  * still surfaced to Sentry, but now with a meaningful `fatal:` message instead
  * of progress noise.
  */
 export class GitOperationError extends Error {
-  readonly kind: 'timeout' | 'failed';
+  readonly kind: 'timeout' | 'failed' | 'busy';
   readonly gitArgs: readonly string[];
   readonly signal: string | null;
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   constructor(opts: {
-    kind: 'timeout' | 'failed';
+    kind: 'timeout' | 'failed' | 'busy';
     message: string;
     gitArgs: readonly string[];
     signal?: string | null;
@@ -283,11 +319,44 @@ export function isGitOperationError(err: unknown): err is GitOperationError {
 const TRANSIENT_MIRROR_ERROR_PATTERN =
   /repository '[^']*' not found|could not resolve host|temporary failure in name resolution|network is unreachable|couldn't connect to server|connection (?:reset|refused|timed out|closed)|remote end hung up unexpectedly|early eof|rpc failed|the requested url returned error: 5\d\d|operation timed out|timed out|ssl_error|gnutls_handshake|tls handshake/i;
 
+/**
+ * A push the REMOTE rejected with its own server-side 5xx reason (KRTX-1683,
+ * Better Stack FE pattern `a1ed728e…`):
+ *
+ *   ! [remote rejected] <sha> -> main (Internal Server Error)
+ *   error: failed to push some refs to 'https://github.com/<org>/<repo>.git'
+ *
+ * GitHub's receive-pack 500'd mid-receive. The remote tip does NOT move, so
+ * re-pushing the same commit is safe, and a retry seconds later is what
+ * recovered the observed incident (the same POST returned 200 ~8s later).
+ * Neither the transient pattern above (no "returned error: 5xx" text) nor the
+ * policy pattern below (no rule-violation phrase) matches it, so the raw git
+ * stderr surfaced as a `Failed to commit …` 502 that paged Sentry from the
+ * connector-add flow. Anchored on the push subcommand and the explicit 5xx
+ * refusal reasons so a policy rejection (its own classifier) and a permanent
+ * reason like `insufficient permission` stay loud, and a `[remote rejected]`
+ * seen in a fetch error is not reclassified.
+ */
+const REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN =
+  /\[remote rejected\][^\n]*\((?:internal server error|internal error)\)/i;
+
 export function isTransientGitMirrorError(err: unknown): err is GitOperationError {
   if (!isGitOperationError(err)) return false;
-  if (err.kind === 'timeout') return true;
+  if (err.kind === 'timeout' || err.kind === 'busy') return true;
   const text = `${err.message}\n${err.stderr}\n${err.stdout}`;
+  if (err.gitArgs[0] === 'push' && REMOTE_PUSH_TRANSIENT_REJECTION_PATTERN.test(text)) return true;
   return TRANSIENT_MIRROR_ERROR_PATTERN.test(text);
+}
+
+/** Grant-resolution wrappers retain the original git failure via Error.cause. */
+export function transientGitMirrorCause(err: unknown): GitOperationError | null {
+  const seen = new Set<unknown>();
+  while (err instanceof Error && !seen.has(err)) {
+    if (isTransientGitMirrorError(err)) return err;
+    seen.add(err);
+    err = err.cause;
+  }
+  return null;
 }
 
 /**
@@ -369,8 +438,7 @@ export async function retryTransientGitMirror(deps: {
 }): Promise<void> {
   const maxAttempts = deps.maxAttempts ?? MIRROR_RETRY_MAX_ATTEMPTS;
   const delayMs = deps.delayMs ?? MIRROR_RETRY_DELAY_MS;
-  const sleep =
-    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const sleep = deps.sleep ?? Bun.sleep;
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -437,6 +505,43 @@ export function isGitPathNotFoundError(err: unknown): boolean {
   return text.includes('does not exist in');
 }
 
+/** `git` could not resolve the ref itself (a branch, tag or commit that does not exist). */
+export function isGitRefNotFoundError(err: unknown): boolean {
+  if (!isGitOperationError(err)) return false;
+  return /invalid object name|not a valid object name|unknown revision|bad revision/i.test(`${err.message}\n${err.stderr}`);
+}
+
+/** Like runGit, but stdout stays bytes: the only capture a binary blob survives. */
+export async function runGitBuffer(
+  args: string[],
+  cwd?: string,
+  auth = true,
+  authToken?: string | null,
+  extraEnv?: Record<string, string>,
+  authHost = 'github.com',
+  timeoutMs: number = GIT_DEFAULT_TIMEOUT_MS,
+  authHeaders?: Record<string, string>,
+  maxBufferBytes: number = 10 * 1024 * 1024,
+): Promise<{ stdout: Buffer; stderr: string }> {
+  const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
+  try {
+    const result = await timeStage('git', () => execFileAsync('git', args, {
+      cwd,
+      encoding: 'buffer',
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
+      maxBuffer: maxBufferBytes,
+      timeout: timeoutMs,
+    }));
+    const raw = result.stdout;
+    return {
+      stdout: Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw), 'utf8'),
+      stderr: result.stderr.toString(),
+    };
+  } catch (error) {
+    throw classifyGitError(error, args, timeoutMs);
+  }
+}
+
 export async function runGit(
   args: string[],
   cwd?: string,
@@ -447,22 +552,11 @@ export async function runGit(
   timeoutMs: number = GIT_DEFAULT_TIMEOUT_MS,
   authHeaders?: Record<string, string>,
 ) {
-  const authEnv = auth ? gitAuthEnv(authToken, authHost, authHeaders) : {};
-  try {
-    // `Server-Timing: git` — clone/fetch/ls-tree/show on the request path.
-    const result = await timeStage('git', () => execFileAsync('git', args, {
-      cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
-      maxBuffer: 10 * 1024 * 1024,
-      timeout: timeoutMs,
-    }));
-    return {
-      stdout: result.stdout.toString(),
-      stderr: result.stderr.toString(),
-    };
-  } catch (error) {
-    throw classifyGitError(error, args, timeoutMs);
-  }
+  const result = await runGitBuffer(args, cwd, auth, authToken, extraEnv, authHost, timeoutMs, authHeaders);
+  return {
+    stdout: result.stdout.toString(),
+    stderr: result.stderr,
+  };
 }
 
 /**
@@ -500,7 +594,7 @@ export async function runGitCapture(
 /** Re-export so callers that spawn directly (archive streaming) share one import surface. */
 export { spawn };
 
-function refreshIntervalMs() {
+export function refreshIntervalMs() {
   const value = Number(process.env.KORTIX_GIT_REFRESH_INTERVAL_MS || 60_000);
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
 }
@@ -587,11 +681,31 @@ async function mirrorMatchesRemoteTip(
   }
 }
 
+/**
+ * The remote tip of `ref`, read from the mirror, when that branch was proven
+ * current inside the refresh interval (see `MirrorRefresh`). Null otherwise:
+ * the caller asks the remote. Saves the `ls-remote` a caller would run right
+ * after a `'tip-proof'` read of the same branch.
+ */
+export async function provenMirrorTip(project: GitBackedProject, ref: string): Promise<string | null> {
+  if (!tipProven(project.projectId, ref)) return null;
+  const repoPath = existingProjectMirrorPath(project);
+  if (!repoPath) return null;
+  const local = await runGitCapture(
+    ['rev-parse', '--verify', '--quiet', `refs/heads/${ref}^{commit}`],
+    repoPath,
+  ).catch(() => null);
+  const sha = local?.exitCode === 0 ? local.stdout.trim() : '';
+  return /^[0-9a-f]{40}$/i.test(sha) ? sha : null;
+}
+
 async function doRefreshMirror(
   project: GitBackedProject,
-  force = false,
+  force: MirrorRefresh = false,
   freshRef?: string,
 ) {
+  const epoch = invalidations.get(project.projectId) ?? 0;
+  const unmoved = () => (invalidations.get(project.projectId) ?? 0) === epoch;
   const repoPath = repoCachePath(project);
   await mkdir(dirname(repoPath), { recursive: true });
   if (existsSync(join(repoPath, 'shallow'))) {
@@ -607,8 +721,11 @@ async function doRefreshMirror(
     lastRefreshAt.delete(project.projectId);
     needsClone = true;
   }
+  if (!needsClone && force === 'tip-proof' && freshRef && tipProven(project.projectId, freshRef)) {
+    return repoPath;
+  }
   const lastRefresh = lastRefreshAt.get(project.projectId) || 0;
-  const needsFetch = !needsClone && (force || Date.now() - lastRefresh >= refreshIntervalMs());
+  const needsFetch = !needsClone && (!!force || Date.now() - lastRefresh >= refreshIntervalMs());
   // Nothing to do over the network — serve the warm cache without touching git.
   if (!needsClone && !needsFetch) return repoPath;
 
@@ -641,7 +758,7 @@ async function doRefreshMirror(
         runGit([...cloneArgs], undefined, true, access.token, undefined, authHost, BARE_CLONE_TIMEOUT_MS, access.headers),
       cleanup: () => rm(repoPath, { recursive: true, force: true }),
     });
-    lastRefreshAt.set(project.projectId, Date.now());
+    if (unmoved()) lastRefreshAt.set(project.projectId, Date.now());
     return repoPath;
   }
 
@@ -652,6 +769,10 @@ async function doRefreshMirror(
   // first. `lastRefreshAt` is deliberately NOT bumped: only that branch was
   // compared, so the next interval-driven refresh must still fetch the rest.
   if (force && freshRef && (await mirrorMatchesRemoteTip(repoPath, access, authHost, freshRef))) {
+    if (unmoved()) {
+      const proofs = tipProvenAt.get(project.projectId) ?? new Map<string, number>();
+      tipProvenAt.set(project.projectId, proofs.set(freshRef, Date.now()));
+    }
     return repoPath;
   }
   // A warm fetch hits the SAME transient upstream class as a cold clone (see
@@ -661,7 +782,7 @@ async function doRefreshMirror(
     run: () =>
       runGit(['fetch', '--prune', 'origin'], repoPath, true, access.token, undefined, authHost, GIT_DEFAULT_TIMEOUT_MS, access.headers),
   });
-  lastRefreshAt.set(project.projectId, Date.now());
+  if (unmoved()) lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }
 
@@ -715,14 +836,20 @@ function viewableWarmMirror(project: GitBackedProject): string | null {
 
 export async function refreshMirror(
   project: GitBackedProject,
-  force = false,
+  force: MirrorRefresh = false,
   opts?: {
-    /** Freshness is only needed for THIS branch: prove it with one `ls-remote`
-     *  and skip the whole-mirror fetch when it has not moved. Ignored unless
-     *  `force` is set. */
+    /** Freshness is only needed for THIS ref. Forced: prove a branch with one
+     *  `ls-remote` and skip the whole-mirror fetch when it has not moved.
+     *  Unforced, a full commit SHA the mirror already holds skips the fetch:
+     *  nothing at a commit can change. */
     freshRef?: string;
   },
+  epochRetries = 0,
 ) {
+  if (!force && opts?.freshRef && /^[0-9a-f]{40}$/.test(opts.freshRef)) {
+    const held = await mirrorHoldingCommit(project, opts.freshRef);
+    if (held) return held;
+  }
   if (!force && staleMirrorReadsAllowed()) {
     const warm = viewableWarmMirror(project);
     if (warm) {
@@ -737,24 +864,56 @@ export async function refreshMirror(
       return warm;
     }
   }
-  return lockedRefreshMirror(project, force, opts);
+  const epoch = invalidations.get(project.projectId) ?? 0;
+  const repoPath = await lockedRefreshMirror(project, force, opts, epochRetries);
+  // A base move can land while a fetch (including one shared with another
+  // reader) is finishing. Dropping its proof is not enough: this reader must
+  // not ground a new session on the checkout that the move invalidated.
+  if (epoch !== (invalidations.get(project.projectId) ?? 0)) {
+    if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new GitOperationError({ kind: 'busy', message: 'Project mirror changed repeatedly during refresh', gitArgs: [] });
+    return refreshMirror(project, force, opts, epochRetries + 1);
+  }
+  return repoPath;
+}
+
+/** The mirror path when it already holds `commit`, else null. */
+async function mirrorHoldingCommit(project: GitBackedProject, commit: string): Promise<string | null> {
+  const repoPath = repoCachePath(project);
+  if (!existsSync(repoPath) || !looksLikeBareMirror(repoPath)) return null;
+  const held = await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], repoPath).catch(() => null);
+  if (held?.exitCode !== 0) return null;
+  const now = new Date();
+  void utimes(repoPath, now, now).catch(() => {});
+  return repoPath;
 }
 
 async function lockedRefreshMirror(
   project: GitBackedProject,
-  force: boolean,
+  force: MirrorRefresh,
   opts?: { freshRef?: string },
+  epochRetries = 0,
 ): Promise<string> {
   // A ref-scoped refresh may skip the fetch, so it must not satisfy a caller
   // that forced a full one: it registers as unforced, and such a caller waits
   // for it and then runs its own real fetch.
-  const lockForced = force && !opts?.freshRef;
+  const lockForced = !!force && !opts?.freshRef;
   const current = refreshLocks.get(project.projectId);
   if (current) {
-    if (!force || current.forced) return current.promise;
-    await current.promise;
-    return refreshMirror(project, true);
+    if (!force || current.forced) {
+      const repoPath = await current.promise;
+      if (current.epoch === (invalidations.get(project.projectId) ?? 0)) return repoPath;
+      if (epochRetries >= MIRROR_RETRY_MAX_ATTEMPTS) throw new GitOperationError({ kind: 'busy', message: 'Project mirror changed repeatedly during refresh', gitArgs: [] });
+      return refreshMirror(project, force, opts, epochRetries + 1);
+    }
+    // The in-flight refresh belongs to another caller, often with another
+    // credential: create-repo's template prebuild clones with the token it
+    // held. Its failure is not this caller's. Wait for it to settle, then run
+    // this caller's own forced refresh — rethrowing it failed the first
+    // session on a new project with 503 git_mirror_unavailable.
+    await current.promise.catch(() => {});
+    return refreshMirror(project, force, opts, epochRetries);
   }
+  const epoch = invalidations.get(project.projectId) ?? 0;
   const next = doRefreshMirror(project, force, opts?.freshRef)
     .then(async (repoPath) => {
       // Bump the mirror dir's mtime on EVERY access (warm hits included) — the
@@ -769,7 +928,7 @@ async function lockedRefreshMirror(
         refreshLocks.delete(project.projectId);
       }
     });
-  refreshLocks.set(project.projectId, { promise: next, forced: lockForced });
+  refreshLocks.set(project.projectId, { promise: next, forced: lockForced, epoch });
   return next;
 }
 
@@ -864,6 +1023,8 @@ export async function reapGitCacheOverBudget(
  */
 export function invalidateProjectMirror(projectId: string): void {
   lastRefreshAt.delete(projectId);
+  tipProvenAt.delete(projectId);
+  invalidations.set(projectId, (invalidations.get(projectId) ?? 0) + 1);
   invalidateBranchList(projectId);
 }
 
@@ -871,39 +1032,6 @@ export function normalizeTreePath(input?: string | null) {
   if (!input || input === '.' || input === '/') return null;
   if (input.startsWith('/') || input.includes('..')) throw new Error('Invalid path');
   return input.replace(/^\.\/+/, '').replace(/\/+$/, '');
-}
-
-/**
- * Get the tree OID for a subtree at a given commit. This is git's own
- * content-addressed hash of every file under that path — perfect input
- * for snapshot cache invalidation: same files → same tree OID → same
- * snapshot. When `contextPath` is null/`.`/empty, returns the commit's
- * root tree OID.
- */
-export async function resolveTreeOid(
-  project: GitBackedProject,
-  ref: string,
-  contextPath?: string | null,
-): Promise<string> {
-  validateRef(ref);
-  const repoPath = await refreshMirror(project);
-  const normalized = normalizeTreePath(contextPath);
-  if (!normalized) {
-    // Root tree of the commit.
-    const result = await runGit(['rev-parse', `${ref}^{tree}`], repoPath, false);
-    const oid = result.stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(oid)) {
-      throw new Error(`Unexpected tree OID for ${ref}: ${oid}`);
-    }
-    return oid;
-  }
-  // ls-tree of the parent, parse the entry for normalized's basename.
-  const result = await runGit(['ls-tree', ref, '--', normalized], repoPath, false);
-  const line = result.stdout.split('\n').find((l) => l.trim());
-  if (!line) throw new Error(`Path "${normalized}" not found at ${ref}`);
-  const match = line.match(/^\d+\s+(tree|blob)\s+([0-9a-f]{40})\t/);
-  if (!match) throw new Error(`Unparseable ls-tree line: ${line}`);
-  return match[2]!;
 }
 
 /**
@@ -977,14 +1105,14 @@ async function scrubGeneratedSnapshotFiles(root: string): Promise<void> {
     await fs.rm(path.join(root, relativePath), { recursive: true, force: true }).catch(() => {});
   };
 
-  await Promise.all([
-    removeIfPresent('.kortix/opencode/node_modules'),
-    removeIfPresent('.kortix/opencode/package-lock.json'),
-    removeIfPresent('.kortix/opencode/npm-shrinkwrap.json'),
-    removeIfPresent('.kortix/opencode/pnpm-lock.yaml'),
-    removeIfPresent('.kortix/opencode/yarn.lock'),
-    removeIfPresent('.kortix/opencode/bun.lockb'),
-  ]);
+  // Both the current and the legacy default OpenCode config dir.
+  await Promise.all(
+    [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR].flatMap((dir) =>
+      ['node_modules', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb'].map(
+        (name) => removeIfPresent(`${dir}/${name}`),
+      ),
+    ),
+  );
 
   async function walk(dir: string): Promise<void> {
     let entries: import('node:fs').Dirent[];

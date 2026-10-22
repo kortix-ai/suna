@@ -2,10 +2,15 @@ import { afterEach, describe, expect, test } from 'bun:test';
 
 import {
   GitHubApiError,
+  addRepositoryToInstallation,
+  commitFiles,
+  createRepo,
+  deleteRepo,
   getRepositoryBranch,
   listOwnerRepositories,
   listRepositoryBranches,
 } from './github';
+import { GitHubPersonalAccountCreateUnsupportedError } from './lib/github-create-errors';
 
 const originalFetch = globalThis.fetch;
 
@@ -46,6 +51,53 @@ describe('GitHub repository branches', () => {
       'https://api.github.com/repos/Kortix%20AI/suna%2Fweb/branches?per_page=100&page=2',
     ]);
   });
+
+  test('requests an empty page after consecutive full pages', async () => {
+    const pages: number[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      const page = Number(url.searchParams.get('page'));
+      pages.push(page);
+      return Response.json(page < 3
+        ? Array.from({ length: 100 }, (_, index) => ({
+            name: `page-${page}-branch-${index}`,
+            protected: page === 2,
+          }))
+        : []);
+    }) as typeof fetch;
+
+    const branches = await listRepositoryBranches({
+      owner: 'example', repo: 'demo', auth: { token: 'test-token' },
+    });
+
+    expect(pages).toEqual([1, 2, 3]);
+    expect(branches).toHaveLength(200);
+    expect(branches[0]).toEqual({ name: 'page-1-branch-0', protected: false });
+    expect(branches[199]).toEqual({ name: 'page-2-branch-99', protected: true });
+  });
+
+  for (const status of [401, 404] as const) {
+    test(`preserves ${status} from a later branch page`, async () => {
+      const requests: string[] = [];
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        requests.push(url);
+        return url.includes('page=2')
+          ? Response.json({ message: 'GitHub request failed' }, { status })
+          : Response.json(Array.from({ length: 100 }, (_, index) => ({
+              name: `branch-${index}`, protected: false,
+            })));
+      }) as typeof fetch;
+
+      await expect(listRepositoryBranches({
+        owner: 'example', repo: 'demo', auth: { token: 'test-token' },
+      })).rejects.toMatchObject({ status });
+      expect(requests).toEqual([
+        'https://api.github.com/repos/example/demo/branches?per_page=100&page=1',
+        'https://api.github.com/repos/example/demo/branches?per_page=100&page=2',
+      ]);
+    });
+  }
 
   test('looks up a selected branch without confusing slashes for path segments', async () => {
     let requested = '';
@@ -187,5 +239,233 @@ describe('listOwnerRepositories — the managed-git PAT backend\'s repo lister',
 
     expect(repos.map((r) => r.full_name)).toEqual(['agent-kortix/demo']);
     expect(requests[0]).toBe('https://api.github.com/users/agent-kortix');
+  });
+});
+
+/**
+ * `POST /user/repos` is absent from GitHub's "Endpoints available for GitHub
+ * App installation access tokens"; `POST /orgs/{org}/repos` is present. So an
+ * installation token can never create a repository under a personal owner —
+ * GitHub answers `403 Resource not accessible by integration`, which prod
+ * surfaced verbatim on `POST /projects/create-repo`.
+ *
+ * The rule lives beside the endpoint choice in `createRepo`, so EVERY caller is
+ * covered: the route, and `git-backends/github.ts`'s managed provision, whose
+ * `managedAdminAuth` also returns `source: 'app_installation'` for a personal
+ * owner. A PAT is unaffected — a classic/fine-grained token may create a repo
+ * for its own user.
+ */
+describe('createRepo under a personal owner', () => {
+  test('an installation token is refused before any request to GitHub', async () => {
+    let called = false;
+    globalThis.fetch = (async (_input: string | URL | Request) => {
+      called = true;
+      return new Response('{}', { status: 200 });
+    }) as typeof fetch;
+
+    const promise = createRepo({
+      name: 'company',
+      auth: { token: 't', source: 'app_installation', owner: 'octo-person', ownerType: 'User' },
+    });
+
+    await expect(promise).rejects.toBeInstanceOf(GitHubPersonalAccountCreateUnsupportedError);
+    await promise.catch((error: GitHubPersonalAccountCreateUnsupportedError) => {
+      expect(error.owner).toBe('octo-person');
+      expect(error.message).toContain('octo-person');
+      expect(error.message).toMatch(/import/i);
+    });
+    expect(called).toBe(false);
+  });
+
+  test('a PAT still creates the repository through /user/repos', async () => {
+    const paths: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      paths.push(String(input instanceof Request ? input.url : input));
+      return new Response(JSON.stringify({ full_name: 'octo-person/company' }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const repo = await createRepo({
+      name: 'company',
+      auth: { token: 't', source: 'pat', owner: 'octo-person', ownerType: 'User' },
+    });
+
+    expect(repo.full_name).toBe('octo-person/company');
+    expect(paths).toHaveLength(1);
+    expect(paths[0]).toContain('/user/repos');
+  });
+
+  test('an organization owner is untouched by the rule', async () => {
+    const paths: string[] = [];
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      paths.push(String(input instanceof Request ? input.url : input));
+      return new Response(JSON.stringify({ full_name: 'acme/company' }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    const repo = await createRepo({
+      name: 'company',
+      auth: { token: 't', source: 'app_installation', owner: 'acme', ownerType: 'Organization' },
+    });
+
+    expect(repo.full_name).toBe('acme/company');
+    expect(paths[0]).toContain('/orgs/acme/repos');
+  });
+});
+
+/**
+ * An installation with `repository_selection: 'selected'` sees only the
+ * repositories it was granted. A repository created a second ago is not one of
+ * them, so the starter commits — which run on the installation token — would
+ * 404 against a repository that plainly exists.
+ *
+ * `PUT /user/installations/{installation_id}/repositories/{repository_id}` adds
+ * it. That endpoint takes a USER access token, which is the same credential the
+ * personal create already used.
+ */
+describe('addRepositoryToInstallation', () => {
+  test('grants the installation access to one repository, by id', async () => {
+    const calls: Array<{ url: string; method: string; auth: string | null }> = [];
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      calls.push({
+        url: String(input instanceof Request ? input.url : input),
+        method: init?.method ?? 'GET',
+        auth: headers.get('authorization'),
+      });
+      return new Response(null, { status: 204 });
+    }) as typeof fetch;
+
+    await addRepositoryToInstallation({
+      installationId: '777001',
+      repositoryId: 4242,
+      auth: { token: 'ghu_live' },
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toContain('/user/installations/777001/repositories/4242');
+    expect(calls[0]?.method).toBe('PUT');
+    expect(calls[0]?.auth).toBe('Bearer ghu_live');
+  });
+
+  test('a GitHub refusal is raised, never swallowed', async () => {
+    globalThis.fetch = (async (_input: string | URL | Request) =>
+      new Response(JSON.stringify({ message: 'Not Found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      })) as typeof fetch;
+
+    await expect(
+      addRepositoryToInstallation({
+        installationId: '777001',
+        repositoryId: 4242,
+        auth: { token: 'ghu_live' },
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+/**
+ * GitHub answers 204 with no body for a repository delete and for adding a
+ * repository to an installation. `res.json()` on an empty body throws
+ * `SyntaxError: Unexpected end of JSON input` after the call already
+ * succeeded, so the caller is told a delete failed that in fact happened —
+ * `deleteRepo` is the rollback path of a failed provision.
+ */
+describe('a 204 answer', () => {
+  test('deleteRepo resolves instead of throwing on the empty body', async () => {
+    globalThis.fetch = (async (_input: string | URL | Request) =>
+      new Response(null, { status: 204 })) as typeof fetch;
+
+    await expect(
+      deleteRepo({ owner: 'acme', repo: 'company', auth: { token: 't' } }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * The starter is ~180 files. Committing them one Contents-API PUT at a time is
+ * ~180 sequential round trips, which ran past the API's 25 s request deadline:
+ * the repository was created and the user got `503 request_deadline` while the
+ * files were still trickling in. One tree, one commit, one ref move instead.
+ */
+describe('commitFiles', () => {
+  test('writes every file in ONE commit on top of the branch tip', async () => {
+    const calls: Array<{ method: string; path: string; body: any }> = [];
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      const method = init?.method ?? 'GET';
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      calls.push({ method, path: url.pathname, body });
+      const json = (value: unknown, status = 200) =>
+        new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
+      if (method === 'GET' && url.pathname.endsWith('/git/ref/heads/main')) return json({ object: { sha: 'a'.repeat(40) } });
+      if (method === 'GET' && url.pathname.endsWith(`/git/commits/${'a'.repeat(40)}`)) return json({ tree: { sha: 't'.repeat(40) } });
+      if (method === 'POST' && url.pathname.endsWith('/git/trees')) return json({ sha: 'n'.repeat(40) }, 201);
+      if (method === 'POST' && url.pathname.endsWith('/git/commits')) return json({ sha: 'c'.repeat(40) }, 201);
+      if (method === 'PATCH' && url.pathname.endsWith('/git/refs/heads/main')) return json({ object: { sha: 'c'.repeat(40) } });
+      return json({ message: 'unexpected' }, 500);
+    }) as typeof fetch;
+
+    const files = Array.from({ length: 179 }, (_, i) => ({ path: `dir/file-${i}.md`, content: `# ${i}` }));
+    await commitFiles({
+      owner: 'octo-person',
+      repo: 'company',
+      branch: 'main',
+      files,
+      message: 'chore: scaffold the Kortix starter',
+      auth: { token: 'ghs_x', source: 'app_installation' },
+    });
+
+    // 5 requests, not 179.
+    expect(calls.map((c) => `${c.method} ${c.path.replace('/repos/octo-person/company', '')}`)).toEqual([
+      'GET /git/ref/heads/main',
+      `GET /git/commits/${'a'.repeat(40)}`,
+      'POST /git/trees',
+      'POST /git/commits',
+      'PATCH /git/refs/heads/main',
+    ]);
+    const tree = calls[2]!.body;
+    expect(tree.base_tree).toBe('t'.repeat(40));
+    expect(tree.tree).toHaveLength(179);
+    expect(tree.tree[0]).toEqual({ path: 'dir/file-0.md', mode: '100644', type: 'blob', content: '# 0' });
+    const commit = calls[3]!.body;
+    expect(commit.tree).toBe('n'.repeat(40));
+    expect(commit.parents).toEqual(['a'.repeat(40)]);
+    expect(commit.author).toEqual({ name: 'Kortix', email: 'noreply@kortix.ai' });
+    expect(calls[4]!.body).toEqual({ sha: 'c'.repeat(40), force: false });
+  });
+
+  test('a GitHub refusal is raised, and the branch is never moved', async () => {
+    const methods: string[] = [];
+    globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+      methods.push(init?.method ?? 'GET');
+      if ((init?.method ?? 'GET') === 'POST') {
+        return new Response(JSON.stringify({ message: 'tree too large' }), {
+          status: 422,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify({ object: { sha: 'a'.repeat(40) }, tree: { sha: 't'.repeat(40) } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as typeof fetch;
+
+    await expect(
+      commitFiles({
+        owner: 'o',
+        repo: 'r',
+        branch: 'main',
+        files: [{ path: 'a.md', content: 'a' }],
+        message: 'm',
+        auth: { token: 't', source: 'app_installation' },
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(methods).not.toContain('PATCH');
   });
 });

@@ -19,4 +19,4 @@ export * from './permissions';
 export * from './vcs';
 
 // Public session/cache helpers that live in ./shared (otherwise internal).
-export { canQueryOpenCodeSession, clearProjectProviderCache } from './shared';
+export { canQueryOpenCodeSession, canQueryRuntimeSession, clearProjectProviderCache } from './shared';

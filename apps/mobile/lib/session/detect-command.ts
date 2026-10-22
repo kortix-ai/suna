@@ -1,4 +1,4 @@
-import type { Command } from '@/lib/opencode/hooks/use-opencode-data';
+import type { Command } from '@/lib/session/runtime-data';
 
 // ---------------------------------------------------------------------------
 // detectCommandFromText — detect if a user message matches a command template

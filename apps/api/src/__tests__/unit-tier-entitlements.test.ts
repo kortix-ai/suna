@@ -1,17 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  getTier,
-  getTierEntitlements,
-  getVisibleTiers,
-  tierHasEntitlement,
-} from '../billing/services/tiers';
+import { getTierEntitlements } from '../billing/services/tiers';
+
+const tierHasEntitlement = (tier: string, key: keyof ReturnType<typeof getTierEntitlements>) =>
+  getTierEntitlements(tier)[key] === true;
 
 // Locks in the plan-gating contract for the enterprise surfaces: SAML SSO,
 // SCIM, groups + custom roles (`rbac`), and audit access. Only the
 // sales-assigned `enterprise` tier unlocks them; every self-serve / legacy
 // tier is gated (rbac re-gated 2026-07-09 — it was briefly open on every
 // tier). The IAM route guard (requireEntitlement) and the /scim/v2
-// data-plane middleware both key off tierHasEntitlement, so these
+// data-plane middleware both resolve these per-plan gates, so these
 // invariants ARE the access-control policy. Reads/revokes/deletes stay
 // ungated route-side so downgraded accounts can unwind what they have.
 describe('tier entitlements (enterprise gating)', () => {
@@ -27,6 +25,7 @@ describe('tier entitlements (enterprise gating)', () => {
     for (const t of [
       'none',
       'free',
+      'credits',
       'pro',
       'per_seat',
       'tier_2_20',
@@ -58,12 +57,9 @@ describe('tier entitlements (enterprise gating)', () => {
     });
   });
 
-  test('the Team (per_seat) plan kept its $40 anchor — gating did not touch price', () => {
-    expect(getTier('per_seat').monthlyPrice).toBe(40);
-  });
-
-  test('enterprise is sales-assigned: hidden from the self-serve pricing grid', () => {
-    const visibleNames = getVisibleTiers().map((t) => t.name);
-    expect(visibleNames).not.toContain('enterprise');
+  test('a legacy plan key is gated exactly like credits', () => {
+    for (const t of ['per_seat', 'pro', 'tier_25_200']) {
+      expect(getTierEntitlements(t)).toEqual(getTierEntitlements('credits'));
+    }
   });
 });

@@ -177,3 +177,43 @@ test('an already aborted caller reports ABORTED on hosts without DOMException', 
     if (original) Object.defineProperty(globalThis, 'DOMException', original);
   }
 });
+
+for (const status of [400, 503]) {
+  test(`deadlineCoversBody bounds a stalled ${status} error body`, async () => {
+    configureKortix({
+      backendUrl: 'https://api.test',
+      getToken: async () => 'token',
+      fetch: async () => {
+        const response = Response.json({}, { status });
+        response.json = () => new Promise(() => {});
+        return response;
+      },
+    });
+    const observed = await Promise.race([
+      backendApi.post('/complete', {}, { timeout: 10, deadlineCoversBody: true }),
+      new Promise((resolve) => setTimeout(() => resolve({ error: { code: 'STILL_PENDING' } }), 60)),
+    ]);
+    expect(observed).toMatchObject({ success: false, error: { code: 'TIMEOUT' } });
+  });
+}
+
+test('caller cancellation normalizes a stalled error body to ABORTED', async () => {
+  const abort = new AbortController();
+  const reading = Promise.withResolvers<void>();
+  configureKortix({
+    backendUrl: 'https://api.test',
+    getToken: async () => 'token',
+    fetch: async () => {
+      const response = Response.json({}, { status: 400 });
+      response.json = () => {
+        reading.resolve();
+        return new Promise(() => {});
+      };
+      return response;
+    },
+  });
+  const pending = backendApi.post('/complete', {}, { signal: abort.signal });
+  await reading.promise;
+  abort.abort();
+  expect(await pending).toMatchObject({ success: false, error: { code: 'ABORTED' } });
+});

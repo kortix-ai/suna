@@ -1,5 +1,5 @@
-import type { ConfigReleaseFile } from '../../config-release/descriptor'
-import { bootLinkPath } from '../../boot-config'
+import type { ConfigReleaseFile } from '@/services/config-provider/descriptor'
+import { bootLinkPath } from '@/services/config-provider/boot-config'
 
 /**
  * The proven check.

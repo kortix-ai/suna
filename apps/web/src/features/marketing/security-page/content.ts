@@ -1,4 +1,4 @@
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { SECURITY_SELFHOST_TRANSLATION_KEYS } from '@/i18n/security-selfhost-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 
@@ -9,7 +9,7 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill. ACCURACY GATE for this page specifically —
+ * Voice rules: the `kortix-brand` skill. ACCURACY GATE for this page specifically —
  * every line below traces to shipped code, and the citation is in the comment
  * above it. This is the page an enterprise reviewer will hold us to.
  *
@@ -34,12 +34,12 @@ import type { UiTranslator } from '@/i18n/translator';
  *     upstream keys never enter it either, and a session only receives the
  *     secrets both the person's role and the agent's declared grant allow.
  *  2. "Each session runs in its own VM" / blanket "microVM" is NOT true of the
- *     DEFAULT provider. Platinum is a Cloud Hypervisor microVM; Daytona, the
- *     default, is not. The copy claims one isolated sandbox per session, and
+ *     legacy Daytona provider. Platinum is a Cloud Hypervisor microVM; Daytona,
+ *     the legacy fallback, is not. The copy claims one isolated sandbox per session, and
  *     names microVM only where it is accurate.
- *  3. "Egress controlled at the network" (a `comms` proof point) is NOT
- *     substantiated anywhere in this tree — E2B ships `allowInternetAccess:
- *     true` and the network design is "Proposed — not scheduled". Dropped.
+ *  3. "Egress controlled at the network" (a `kortix-brand` proof point) is NOT
+ *     substantiated anywhere in this tree — the network design is
+ *     "Proposed — not scheduled". Dropped.
  *  4. Approval gates are NOT on by default. `policy.default_mode` falls back to
  *     `allow_all` for a project with no `policy:` block
  *     (apps/api/src/projects/policies.ts). The copy says "turn it on".
@@ -108,7 +108,7 @@ export const isolation = {
     {
       id: 'microvm',
       k: 'microVM where you ask for it',
-      v: 'On Kortix’s own Platinum compute a sandbox is a Cloud Hypervisor microVM. Daytona and E2B are also supported. The provider is a deployment choice, and we will tell you which one you are on rather than blur them together.',
+      v: 'On Platinum, Kortix’s own compute and the reference provider, a sandbox is a Cloud Hypervisor microVM. Daytona remains a legacy fallback, and its removal is scheduled. We will tell you which one you are on rather than blur them together.',
     },
     {
       id: 'branch',
@@ -132,7 +132,7 @@ export const isolation = {
    (buildSessionSandboxEnvVars builds the sandbox env from project secrets, never
    from the API's own env) with apps/api/src/projects/lib/sandbox-env-names.ts
    (the names a sandbox never receives) and
-   apps/kortix-sandbox-agent-server/src/agent-env-file.ts (tmpfs, 0600,
+   apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts (tmpfs, 0600,
    shredded on shutdown).
 
    DO NOT reintroduce "the model never sees it" for project secrets. It is
@@ -210,7 +210,7 @@ export const identity = {
     label: 'Built-in roles — on every plan',
     account: [
       { k: 'Owner', v: 'Full account control.' },
-      { k: 'Admin', v: 'Manage members, groups, roles and tokens.' },
+      { k: 'Admin', v: 'Manage members, groups, roles, tokens and billing.' },
       { k: 'Member', v: 'Baseline account membership.' },
     ],
     project: [
@@ -237,7 +237,7 @@ export const identity = {
       },
       { k: 'Groups', v: 'Grant to a group once instead of to twenty people twenty times.' },
     ],
-    note: 'Available on Enterprise, and on a self-hosted instance with an Enterprise licence. The built-in roles above are free on every plan.',
+    note: 'Available on Enterprise, and on a self-hosted instance with an Enterprise license. The built-in roles above are free on every plan.',
   },
   agents: {
     title: 'Service accounts',
@@ -396,7 +396,7 @@ export const posture = {
     {
       id: 'vpc',
       k: 'Your VPC or on-prem',
-      v: 'A single-tenant deployment inside your own network. Air-gapped and other isolated topologies are scoped with us rather than self-served.',
+      v: 'A single-tenant deployment inside your own network. Isolated topologies are scoped with us rather than self-served.',
     },
   ],
   compliance: {

@@ -4,38 +4,34 @@
  */
 import { describe, expect, test } from 'bun:test';
 import type { Actor } from '../../iam/actor';
-import { actorPersonalScope, filterPersonalTunnelOwners, personalResourceOwner } from './personal-resources';
+import { actorPersonalScope, personalResourceOwner } from './personal-resources';
 
 const HUMAN = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const LAUNCHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 describe('personalResourceOwner', () => {
   test('flag OFF / ungoverned: the legacy user is returned unchanged', () => {
-    expect(
-      personalResourceOwner({ agentPrincipal: false, legacyUserId: LAUNCHER, onBehalfOfUserId: null, visibility: 'project' }),
-    ).toBe(LAUNCHER);
-    expect(
-      personalResourceOwner({ agentPrincipal: false, legacyUserId: null, onBehalfOfUserId: HUMAN, visibility: 'private' }),
-    ).toBeNull();
+    expect(personalResourceOwner({ agentPrincipal: false, legacyUserId: LAUNCHER })).toBe(LAUNCHER);
+    expect(personalResourceOwner({ agentPrincipal: false, legacyUserId: null })).toBeNull();
   });
 
   test("agent principal, private session: the on-behalf-of human, never the launcher", () => {
     expect(
-      personalResourceOwner({ agentPrincipal: true, legacyUserId: LAUNCHER, onBehalfOfUserId: HUMAN, visibility: 'private' }),
+      personalResourceOwner({ agentPrincipal: true, onBehalfOfUserId: HUMAN, visibility: 'private' }),
     ).toBe(HUMAN);
   });
 
   test('agent principal, shared session: none', () => {
     for (const visibility of ['project', 'restricted', null] as const) {
       expect(
-        personalResourceOwner({ agentPrincipal: true, legacyUserId: LAUNCHER, onBehalfOfUserId: HUMAN, visibility }),
+        personalResourceOwner({ agentPrincipal: true, onBehalfOfUserId: HUMAN, visibility }),
       ).toBeNull();
     }
   });
 
   test('agent principal, unattended or cleared (on_behalf_of null): none', () => {
     expect(
-      personalResourceOwner({ agentPrincipal: true, legacyUserId: LAUNCHER, onBehalfOfUserId: null, visibility: 'private' }),
+      personalResourceOwner({ agentPrincipal: true, onBehalfOfUserId: null, visibility: 'private' }),
     ).toBeNull();
   });
 });
@@ -78,21 +74,5 @@ describe('actorPersonalScope', () => {
 
   test('the fresh per-request value wins over the memoized credential (a clear takes effect at once)', () => {
     expect(actorPersonalScope(agentActor(), null)).toEqual({ agentPrincipal: true, onBehalfOfUserId: null });
-  });
-});
-
-describe('filterPersonalTunnelOwners (own computer)', () => {
-  const TEAM = '11111111-1111-4111-8111-111111111111';
-  test('keeps the team account and only the personal owner the rule allows', () => {
-    expect(
-      filterPersonalTunnelOwners({ accountId: TEAM, owners: [TEAM, HUMAN, LAUNCHER], personalOwner: HUMAN }),
-    ).toEqual([TEAM, HUMAN]);
-  });
-  test('no personal owner (unattended, shared, cleared): team machines only', () => {
-    expect(filterPersonalTunnelOwners({ accountId: TEAM, owners: [TEAM, HUMAN], personalOwner: null })).toEqual([TEAM]);
-    expect(filterPersonalTunnelOwners({ accountId: TEAM, owners: [HUMAN], personalOwner: null })).toEqual([]);
-  });
-  test('a legacy aggregate (null owners) passes through', () => {
-    expect(filterPersonalTunnelOwners({ accountId: TEAM, owners: null, personalOwner: null })).toBeNull();
   });
 });

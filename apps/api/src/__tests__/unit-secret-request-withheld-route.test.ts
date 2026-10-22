@@ -14,7 +14,11 @@ const ACCOUNT_ID = '44444444-4444-4444-8444-444444444444';
 const USER_ID = '11111111-1111-4111-8111-111111111111';
 const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 
-mock.module('../iam', () => ({ PROJECT_ACTIONS }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#7936 added importers), and bun reports it as an
+// unhandled `Export named ... not found` between tests.
+const realIam = await import('../iam');
+mock.module('../iam', () => ({ ...realIam, PROJECT_ACTIONS }));
 // If anything in the import graph reaches `routes/projects.ts`, it attaches
 // `supabaseAuth` to every project route. Pass through; `buildApp` sets the
 // caller context the real middleware would.
@@ -43,8 +47,13 @@ mock.module('../projects/lib/session-secret-reach', () => ({
   },
 }));
 
+// These route tests isolate withheld-name reporting; real persistence and rotation
+// are exercised by SEC-7 against PostgreSQL.
+const { mintSetupLink } = await import('../setup-links/token');
+mock.module('../setup-links/mint-secret-link', () => ({ mintSecretLink: mintSetupLink, secretLinkSuperseded: async () => false }));
+
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/setup-links');
+(await import('../projects/routes/setup-links')).registerSetupLinksRoutes();
 
 let sessionId: string | undefined;
 

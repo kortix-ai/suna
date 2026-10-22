@@ -15,7 +15,7 @@
  *
  * THE MECHANISM. The control plane cannot ask the old daemon to replace
  * itself, so it goes through the PROVIDER's exec channel (Platinum `/exec`,
- * Daytona toolbox, E2B commands — `SandboxProvider.exec`), which is
+ * Daytona toolbox — `SandboxProvider.exec`), which is
  * independent of the in-box daemon, and runs one idempotent script that:
  *   1. reads the box's own API URL + sandbox token from /etc/environment (no
  *      secret crosses the control plane; the box converges on the API it
@@ -28,7 +28,7 @@
  *      keeping `kortix-entrypoint.legacy`;
  *   4. relaunches the runtime. On Platinum pt-init runs the image entrypoint
  *      once and never respawns it, so the script stops the legacy chain and
- *      starts `/sbin/pt-app` detached. Daytona and E2B re-run the entrypoint
+ *      starts `/sbin/pt-app` detached. Daytona re-runs the entrypoint
  *      on every start, so staging alone converges them at the next wake.
  * The new daemon then converges OpenCode, CLI and skills by itself — this
  * module installs a supervisor and a current daemon, nothing else.
@@ -40,10 +40,13 @@
  * and in the audit ledger, never silent. The script restores the legacy
  * entrypoint and relaunches the old chain if the new daemon does not answer.
  */
+import { healthHarnessId, healthRuntimeState } from '@kortix/api-contract/runtime-relay';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { ProviderName, SandboxExecResult } from '../../platform/providers';
 import { CONFIG_RELEASE_CAPABILITY } from './session-config-release';
+import { exponentialBackoffMs } from '../../shared/backoff';
+import { isRecord } from '@kortix/shared/guards';
 
 /**
  * The in-box script ships as a sidecar file, not a template literal: bash is
@@ -90,8 +93,11 @@ export const LEGACY_BOOTSTRAP_MAX_ATTEMPTS = 3;
  * fine": widening the wait is the point.
  */
 export function legacyBootstrapCooldownMs(attempts: number): number {
-  const exponent = Math.max(0, attempts - 1);
-  return Math.min(LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS, LEGACY_BOOTSTRAP_COOLDOWN_MS * 2 ** exponent);
+  return exponentialBackoffMs({
+    attempt: attempts,
+    baseMs: LEGACY_BOOTSTRAP_COOLDOWN_MS,
+    capMs: LEGACY_BOOTSTRAP_MAX_COOLDOWN_MS,
+  });
 }
 /** A `running` stamp older than this is a crashed attempt, not a live one. */
 export const LEGACY_BOOTSTRAP_STALE_RUNNING_MS = 20 * 60 * 1000;
@@ -111,7 +117,7 @@ export const LEGACY_OPENCODE_HOME = 'auto';
  * stopped looking.
  *
  * THE GROUND TRUTH, per the daemon's own contract
- * (`apps/kortix-sandbox-agent-server/src/runtime-assets.ts`,
+ * (`apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts`,
  * `RuntimeConvergenceReport.running`): `build` and `components` describe a
  * PASS — an attempt — not what is running now; a daemon restart reports
  * `build: null` until its first pass completes, and `build` is written even
@@ -178,13 +184,41 @@ export interface RuntimeClassification {
   detail: string[];
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
 function shaField(running: Record<string, unknown>, key: string): string | null {
   const v = running[key];
   return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+/**
+ * How long after boot a digest mismatch in `runtime.running` is not, by itself,
+ * evidence that the box runs stale bytes.
+ *
+ * Until a daemon's first convergence pass writes the state file, `running` is
+ * the record the IMAGE BUILD baked (`bakeRuntimeAssetsState` deliberately omits
+ * `build`, so `running.build` is null), and the in-process pass has not run
+ * either (`runtime.build` is null). The Platinum agent-swap fast path replaces
+ * the agent binary after that bake and keeps the predecessor's record, and its
+ * CLI is the predecessor's until the boot pass replaces it in place. Measured
+ * on Dev 2026-10-02 (both regions, template kortix-default-6bacca9b52cc): the
+ * record said agent efd19aa3… / cli 9ba28976… while the box ran agent
+ * d2019d30… — exactly the manifest's — and the boot pass finished ~20 s after
+ * start. Session open read the record, called the box stale, and relaunched a
+ * correct daemon: +17 s on every session from a swapped template.
+ *
+ * Bounded so a daemon whose first pass never completes cannot hide a genuinely
+ * stale agent forever: past the grace, the record counts as evidence again.
+ */
+export const FIRST_CONVERGENCE_GRACE_S = 300;
+
+function awaitingFirstConvergence(
+  health: Record<string, unknown>,
+  runtime: Record<string, unknown>,
+  running: Record<string, unknown>,
+): boolean {
+  if (runtime.build !== null && runtime.build !== undefined) return false;
+  if (running.build !== null && running.build !== undefined) return false;
+  const uptime = typeof health.uptime_s === 'number' ? health.uptime_s : null;
+  return uptime !== null && uptime >= 0 && uptime < FIRST_CONVERGENCE_GRACE_S;
 }
 
 /**
@@ -208,7 +242,7 @@ export function classifyDaemonHealth(
     return { klass: 'unreachable', ...empty };
   }
   const h = body as Record<string, unknown>;
-  const opencode = typeof h.opencode === 'string' ? h.opencode : null;
+  const opencode = healthRuntimeState(h);
   if (h.daemon !== 'ok') {
     return { klass: 'not-ok', ...empty, opencode };
   }
@@ -259,15 +293,30 @@ export function classifyDaemonHealth(
       if (have !== wanted) mismatches.push(key);
     });
     if (mismatches.length > 0) {
-      staleReasons.push('running_assets_stale');
-      detail.push(`runtime.running does not match the manifest: ${mismatches.join(', ')}`);
+      if (awaitingFirstConvergence(h, r, running)) {
+        // Not evidence yet — see FIRST_CONVERGENCE_GRACE_S. The daemon's own
+        // boot pass re-hashes these files and converges the CLI and skills in
+        // place; if the agent really is behind, that pass stages it and the next
+        // read reports `agentSwapPending`, which still repairs.
+        detail.push(
+          `runtime.running differs from the manifest (${mismatches.join(', ')}) but is still the image bake record; awaiting the first convergence pass`,
+        );
+      } else {
+        staleReasons.push('running_assets_stale');
+        detail.push(`runtime.running does not match the manifest: ${mismatches.join(', ')}`);
+      }
     }
   }
 
   const capabilities = Array.isArray(h.capabilities)
     ? h.capabilities.filter((c): c is string => typeof c === 'string')
     : [];
-  const missingCapabilities = REQUIRED_RUNTIME_CAPABILITIES.filter((cap) => !capabilities.includes(cap));
+  // pi daemons advertise `config.release.v1` since pi applies config releases
+  // (harness/pi/config-release.ts). It is still not REQUIRED of a pi box: one
+  // that runs an older daemon gets it through its runtime-assets update, and
+  // requiring it relaunched every idle pi box on session open (W0).
+  const required = healthHarnessId(h) === 'pi' ? [] : REQUIRED_RUNTIME_CAPABILITIES;
+  const missingCapabilities = required.filter((cap) => !capabilities.includes(cap));
   if (missingCapabilities.length > 0) {
     staleReasons.push('missing_capability');
     detail.push(`missing required capabilit${missingCapabilities.length === 1 ? 'y' : 'ies'}: ${missingCapabilities.join(', ')}`);
@@ -301,24 +350,59 @@ export function classifyDaemonHealth(
 
 /** Gap between the two health reads that must BOTH be silent before a relaunch. */
 export const DEAD_DAEMON_CONFIRM_MS = 5_000;
+/** The daemon as the box itself sees it — no provider ingress in the path. */
+const LOOPBACK_HEALTH_URL = 'http://127.0.0.1:8000/kortix/health';
+const LOOPBACK_PROBE_TIMEOUT_MS = 15_000;
 
 export type RelaunchStrategy = 'pt-app' | 'next-start';
 
 /**
  * How a provider re-runs the image entrypoint. Platinum's pt-init launches it
  * once and never again (the VM survives its exit), so the script must relaunch
- * in place. Daytona and E2B run the entrypoint on every sandbox start.
+ * in place. Daytona runs the entrypoint on every sandbox start.
  */
 export function relaunchStrategyFor(provider: ProviderName | string): RelaunchStrategy | null {
   switch (provider) {
     case 'platinum':
       return 'pt-app';
     case 'daytona':
-    case 'e2b':
       return 'next-start';
     default:
       return null;
   }
+}
+
+/** Metadata stamp: when a session open asked for a dead-daemon relaunch. */
+export const DEAD_DAEMON_REPAIR_REQUESTED_KEY = 'deadDaemonRepairRequestedAt';
+/** One open-time relaunch: download + relaunch + the script's own health wait, then the open parks. */
+export const DEAD_DAEMON_REPAIR_BUDGET_MS = 4 * 60_000;
+
+export type DeadDaemonOpenAction = 'request' | 'wait' | 'park';
+
+/**
+ * A provider-running box whose daemon stayed unreachable past the open budget.
+ * Where the provider's init never relaunches the runtime (Platinum), parking it
+ * only freezes the corpse: every later open resumes the same snapshot with
+ * nothing on :8000, forever (prod 2026-09-28: 18 h, every `/start` parked it
+ * again). So ask for the relaunch once per unreachable spell, and park only
+ * after it had its chance. Daytona reruns the entrypoint on its next
+ * start, so parking IS its repair.
+ */
+export function decideDeadDaemonOnOpen(input: {
+  provider: string;
+  metadata: Record<string, unknown> | null;
+  unreachableSinceMs: number | null;
+  nowMs: number;
+}): DeadDaemonOpenAction {
+  if (relaunchStrategyFor(input.provider) !== 'pt-app') return 'park';
+  const requestedMs = Date.parse(String(input.metadata?.[DEAD_DAEMON_REPAIR_REQUESTED_KEY] ?? ''));
+  if (!Number.isFinite(requestedMs)) return 'request';
+  if (input.unreachableSinceMs !== null && requestedMs < input.unreachableSinceMs) return 'request';
+  const record = readRecord(input.metadata);
+  if (record?.state === 'failed' && Date.parse(record.finishedAt ?? record.lastAttemptAt) >= requestedMs) {
+    return 'park';
+  }
+  return input.nowMs - requestedMs < DEAD_DAEMON_REPAIR_BUDGET_MS ? 'wait' : 'park';
 }
 
 export interface RenderScriptOptions {
@@ -437,12 +521,16 @@ export interface LegacyCheckRecord {
   klass: RuntimeClass;
   /** `[]` for every klass but `stale`. */
   staleReasons: StaleReason[];
+  /** The manifest build and the box the verdict was taken against. A check from another build or box proves nothing; absent on rows written before 2026-10-15. */
+  manifestBuild?: number | null;
+  externalId?: string | null;
 }
 
 export type LegacyBootstrapOutcome =
   | 'not-legacy'
   | 'unreachable'
   | 'skipped-recent-check'
+  | 'skipped-self-updating'
   | 'skipped-cooldown'
   | 'skipped-exhausted'
   | 'skipped-in-progress'
@@ -463,6 +551,13 @@ export interface LegacyBootstrapInput {
   reason: string;
   /** Skip the recent-check TTL (an operator sweep wants the truth now). */
   force?: boolean;
+  /**
+   * Operator only: repair a `blocked` (pinned) box. The script deletes the pin
+   * before it relaunches, and a build that is really bad gets rolled back and
+   * pinned again by the supervisor, so one run cannot loop. For pins a race
+   * caused, not a bad build (prod 2026-10-13: four concurrent repairs).
+   */
+  unpin?: boolean;
   /** Internal: this call is the relaunch pass after an OpenCode install. */
   postInstallPass?: boolean;
 }
@@ -513,6 +608,13 @@ export interface LegacyBootstrapDeps {
    */
   mintRepairToken?: () => Promise<{ secret: string; release: () => Promise<void> } | null>;
   patchMetadata: (patch: Record<string, unknown>) => Promise<void>;
+  /**
+   * Write the `running` record ONLY if no other attempt holds a fresh one
+   * (`lastAttemptAt` after `staleBeforeIso`). True = this call owns the run.
+   * The in-progress gate in `probeRuntimeForBootstrap` reads a snapshot, and
+   * each API replica dedupes only its own runs, so the write must be the lock.
+   */
+  claimRun: (patch: Record<string, unknown>, staleBeforeIso: string) => Promise<boolean>;
   audit: (event: {
     outcome: 'success' | 'failure';
     phase: string;
@@ -567,7 +669,80 @@ function readCheck(metadata: Record<string, unknown> | null | undefined): Legacy
     klass: r.klass as RuntimeClass,
     // Absent on a check written before this deploy — never invented.
     staleReasons: Array.isArray(r.staleReasons) ? (r.staleReasons as StaleReason[]) : [],
+    manifestBuild: typeof r.manifestBuild === 'number' || r.manifestBuild === null ? r.manifestBuild : undefined,
+    externalId: typeof r.externalId === 'string' ? r.externalId : undefined,
   };
+}
+
+/**
+ * A `current` verdict younger than {@link LEGACY_CHECK_TTL_MS}, taken against
+ * this manifest build on this box: an unforced bootstrap skips the box. A deploy
+ * (new build) or a new box under the row (new `externalId`) expires it, so the
+ * guarantee, the repair and the reaper re-probe once.
+ */
+function recentCurrentCheck(
+  check: LegacyCheckRecord | null,
+  nowMs: number,
+  manifestBuild: number | null,
+  externalId: string | null,
+): boolean {
+  if (check?.klass !== 'current') return false;
+  if (check.manifestBuild === undefined || check.manifestBuild !== manifestBuild) return false;
+  if (check.externalId !== externalId) return false;
+  const atMs = Date.parse(check.at);
+  return Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS;
+}
+
+const SELF_UPDATE_MAX_TICKS = 360;
+const FRESH_BOX_S = 600;
+const SELF_CONVERGING_REASONS: ReadonlySet<StaleReason> = new Set(['agent_swap_pending', 'running_assets_stale']);
+
+/**
+ * Is this box behind only on its OWN pending update, on a daemon that installs
+ * that update by itself? Then neither the open nor the reaper relaunches it:
+ * a legacy relaunch costs ~2 min of `starting` and races the daemon's swap.
+ *
+ * The marker is `runtime_truth` in the health body: daemons report it since
+ * the runtime-truth tick (#7792, 2026-09-27), which re-runs the asset pass and
+ * its swap request every 60 s. Every such daemon runs under the entrypoint
+ * supervisor loop that installs `agent.next` (since 2026-08-20). Any other
+ * stale reason, a daemon without the tick, or a daemon entry that is not
+ * `current` or young `converging` still repairs.
+ */
+export function updatesItself(health: unknown, classification: RuntimeClassification): boolean {
+  if (classification.klass !== 'stale') return false;
+  if (!classification.staleReasons.every((reason) => SELF_CONVERGING_REASONS.has(reason))) return false;
+  const truth = isRecord(health) ? health.runtime_truth : null;
+  if (!isRecord(truth) || !isRecord(truth.components)) return false;
+  // Positive evidence only: the box's own daemon entry reads current, or has
+  // been converging for under ~6 h (`attempts` grows by 1 per 60 s tick). A
+  // fresh box reads `unknown` until the tick after its first asset pass; its
+  // staged agent (`runtime.components.agent`) is the evidence there, within
+  // the first 10 min. Self-update off reports agent `skipped` and repairs.
+  const daemon = truth.components.daemon;
+  if (!isRecord(daemon)) return false;
+  if (daemon.state === 'current') return true;
+  if (daemon.state === 'converging') return Number(daemon.attempts) < SELF_UPDATE_MAX_TICKS;
+  if (daemon.state !== 'unknown' || !isRecord(health) || !isRecord(health.runtime)) return false;
+  const agent = isRecord(health.runtime.components) ? health.runtime.components.agent : null;
+  return agent === 'staged' && !(typeof health.uptime_s === 'number' && health.uptime_s >= FRESH_BOX_S);
+}
+
+/**
+ * Would an unforced bootstrap of this box, run now, return without touching
+ * it? True for a recent `current` check and for a box already staged on this
+ * manifest build. The open guarantee asks this before it reports `repairing`:
+ * a repair that will not run must not hold a serving box in `starting`.
+ */
+export function bootstrapWouldSkip(
+  metadata: Record<string, unknown> | null | undefined,
+  currentManifestBuild: number | null,
+  nowMs: number,
+  externalId: string | null,
+): boolean {
+  if (recentCurrentCheck(readCheck(metadata), nowMs, currentManifestBuild, externalId)) return true;
+  const record = readRecord(metadata);
+  return record?.state === 'staged' && record.manifestBuild === currentManifestBuild;
 }
 
 export function opencodeIdle(status: Record<string, unknown> | null): boolean {
@@ -580,7 +755,7 @@ export type LegacyBootstrapRetryStatus = 'idle' | 'running' | 'staged' | 'cooldo
 export interface LegacyBootstrapRetrySummary {
   /** `idle`: nothing recorded, or the record is settled and free to retry now.
    *  `running`: an attempt is currently in flight (this replica or another).
-   *  `staged`: converges at the provider's next start (Daytona/E2B); nothing to retry.
+   *  `staged`: converges at the provider's next start (Daytona); nothing to retry.
    *  `cooldown`: a failed attempt is backing off; see `nextRetryAt`.
    *  `exhausted`: the attempt budget for this manifest build is spent; only a
    *  new build or an operator `--force` moves this forward — `nextRetryAt` is
@@ -653,18 +828,98 @@ export async function bootstrapLegacyRuntime(
   const record = readRecord(input.metadata);
   const check = readCheck(input.metadata);
 
+  const probed = await probeRuntimeForBootstrap(input, deps, nowMs, nowIso, record, check);
+  if ('result' in probed) return probed.result;
+  const { classification, deadDaemonOnRunningBox, expectedRunningAssets } = probed;
+
+  const budgeted = await checkBootstrapBudget(
+    input,
+    deps,
+    nowMs,
+    record,
+    classification,
+    deadDaemonOnRunningBox,
+  );
+  if ('result' in budgeted) return budgeted.result;
+  const { build, attempts } = budgeted;
+
+  const running: LegacyBootstrapRecord = {
+    state: 'running',
+    attempts: attempts + 1,
+    manifestBuild: build,
+    lastAttemptAt: nowIso,
+    reason: input.reason,
+    from: { opencode: classification.opencode },
+    classification: { klass: classification.klass, staleReasons: classification.staleReasons },
+  };
+  // Four concurrent `/start` polls on four replicas each relaunched the chain
+  // on one prod box (2026-10-13): the fresh daemon was killed, four
+  // supervisors fought over :8000, and the entrypoint rolled back and pinned.
+  const claimed = await deps.claimRun(
+    {
+      [LEGACY_BOOTSTRAP_METADATA_KEY]: running,
+      [LEGACY_CHECK_METADATA_KEY]: {
+        at: nowIso,
+        klass: classification.klass,
+        staleReasons: classification.staleReasons,
+        manifestBuild: build,
+        externalId: input.externalId,
+      } satisfies LegacyCheckRecord,
+    },
+    new Date(nowMs - LEGACY_BOOTSTRAP_STALE_RUNNING_MS).toISOString(),
+  );
+  if (!claimed) return { outcome: 'skipped-in-progress' };
+  deps.log('legacy runtime bootstrap starting', {
+    sandboxId: input.sandboxId,
+    externalId: input.externalId,
+    provider: input.provider,
+    attempt: running.attempts,
+    strategy,
+    reason: input.reason,
+  });
+
+  const attempt: BootstrapAttempt = {
+    input,
+    deps,
+    strategy,
+    running,
+    classification,
+    expectedRunningAssets,
+  };
+  const ran = await runBootstrapScript(attempt);
+  if ('result' in ran) return ran.result;
+  return settleBootstrapReport(attempt, ran.execResult, ran.report);
+}
+
+/**
+ * The gates before any repair: the cheap metadata gates, then the daemon's own
+ * health. Returns the classification to repair against, or the final result.
+ */
+async function probeRuntimeForBootstrap(
+  input: LegacyBootstrapInput,
+  deps: LegacyBootstrapDeps,
+  nowMs: number,
+  nowIso: string,
+  record: LegacyBootstrapRecord | null,
+  check: LegacyCheckRecord | null,
+): Promise<
+  | { result: LegacyBootstrapResult }
+  | {
+      classification: RuntimeClassification;
+      deadDaemonOnRunningBox: boolean;
+      expectedRunningAssets: ExpectedRunningAssets | null | undefined;
+    }
+> {
   // Cheap gates first — none of these touch the box.
   if (record?.state === 'running') {
     const startedMs = Date.parse(record.lastAttemptAt);
     if (Number.isFinite(startedMs) && nowMs - startedMs < LEGACY_BOOTSTRAP_STALE_RUNNING_MS) {
-      return { outcome: 'skipped-in-progress' };
+      return { result: { outcome: 'skipped-in-progress' } };
     }
   }
-  if (!input.force && check && check.klass === 'current') {
-    const atMs = Date.parse(check.at);
-    if (Number.isFinite(atMs) && nowMs - atMs < LEGACY_CHECK_TTL_MS) {
-      return { outcome: 'skipped-recent-check' };
-    }
+  const manifestBuild = await deps.manifestBuild();
+  if (!input.force && recentCurrentCheck(check, nowMs, manifestBuild, input.externalId)) {
+    return { result: { outcome: 'skipped-recent-check' } };
   }
 
   const health = await deps.fetchHealth();
@@ -672,7 +927,7 @@ export async function bootstrapLegacyRuntime(
   // this module owns what to DO with each class.
   const expectedRunningAssets = await deps.expectedRunningAssets?.();
   let classification = classifyDaemonHealth(health, expectedRunningAssets ?? undefined);
-  if (classification.klass === 'not-ok') return { outcome: 'unreachable', classification };
+  if (classification.klass === 'not-ok') return { result: { outcome: 'unreachable', classification } };
   // A DEAD DAEMON ON A RUNNING BOX. Silence alone means nothing — a stopped box
   // answers exactly the same way, and there is nothing there to repair. The
   // provider's own state is what tells the two apart, and it is asked only
@@ -696,7 +951,7 @@ export async function bootstrapLegacyRuntime(
     const running = deps.providerRunning
       ? await deps.providerRunning().catch(() => false)
       : false;
-    if (!running) return { outcome: 'unreachable', classification };
+    if (!running) return { result: { outcome: 'unreachable', classification } };
     // TWO SILENT READS, never one. An 8 s ingress timeout, a restarting proxy
     // or a GC pause reads exactly like a corpse, and a relaunch kills PTYs and
     // restages assets under whoever is using the box. This is
@@ -707,6 +962,20 @@ export async function bootstrapLegacyRuntime(
     await deps.sleep(DEAD_DAEMON_CONFIRM_MS);
     const second = classifyDaemonHealth(await deps.fetchHealth(), expectedRunningAssets ?? undefined);
     if (second.klass === 'unreachable') {
+      // Both reads crossed the provider ingress, and an ingress that times out
+      // reads exactly like a corpse (prod 2026-09-29: ~18 min of edge timeouts
+      // to a healthy daemon). The box's own loopback is the authority, asked
+      // before any record, token or script touches the box.
+      const loopback = await deps
+        .exec(['bash', '-c', `curl -fsS --max-time 3 -o /dev/null ${LOOPBACK_HEALTH_URL}`], LOOPBACK_PROBE_TIMEOUT_MS)
+        .catch(() => null);
+      if (loopback?.exitCode === 0) {
+        deps.log('daemon answers on the box loopback; the ingress was silent, nothing to repair', {
+          sandboxId: input.sandboxId,
+          externalId: input.externalId,
+        });
+        return { result: { outcome: 'not-legacy', detail: 'daemon alive in the box; the ingress was unreachable', classification } };
+      }
       deadDaemonOnRunningBox = true;
       deps.log('daemon gone on a running box; relaunching the runtime chain', {
         sandboxId: input.sandboxId,
@@ -715,10 +984,16 @@ export async function bootstrapLegacyRuntime(
       });
     } else {
       classification = second;
-      if (classification.klass === 'not-ok') return { outcome: 'unreachable', classification };
+      if (classification.klass === 'not-ok') return { result: { outcome: 'unreachable', classification } };
     }
   }
-  if (classification.klass === 'blocked') {
+  if (!input.force && updatesItself(health, classification)) {
+    // The daemon installs its own pending update (see `updatesItself`); a
+    // relaunch now would race that swap. Nothing is recorded, so the next
+    // pass probes again and repairs if the daemon stops converging.
+    return { result: { outcome: 'skipped-self-updating', classification } };
+  }
+  if (classification.klass === 'blocked' && !input.unpin) {
     // The daemon's own supervisor already tried, rolled back, and latched
     // updates off. Repairing again would relaunch into the same rollback —
     // never loop on it. Record the check so it stays visible, and stop.
@@ -727,18 +1002,20 @@ export async function bootstrapLegacyRuntime(
         at: nowIso,
         klass: 'blocked',
         staleReasons: [],
+        manifestBuild,
+        externalId: input.externalId,
       } satisfies LegacyCheckRecord,
     });
     deps.log('daemon is pinned after a rollback — blocked, not repaired', {
       sandboxId: input.sandboxId,
       detail: classification.detail,
     });
-    return { outcome: 'skipped-blocked', detail: classification.detail.join('; '), classification };
+    return { result: { outcome: 'skipped-blocked', detail: classification.detail.join('; '), classification } };
   }
   if (classification.klass === 'current' && classification.runtimeBuild === null) {
     // A current daemon that has not finished (or has failed) its first
     // convergence pass: not legacy, nothing for this module to do yet.
-    return { outcome: 'not-legacy', detail: 'daemon current, convergence pending', classification };
+    return { result: { outcome: 'not-legacy', detail: 'daemon current, convergence pending', classification } };
   }
   if (classification.klass === 'current' && input.force) {
     // Operator-forced re-run on a current daemon: its OpenCode install failed
@@ -752,7 +1029,7 @@ export async function bootstrapLegacyRuntime(
     });
   } else if (classification.klass === 'current') {
     const patch: Record<string, unknown> = {
-      [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
+      [LEGACY_CHECK_METADATA_KEY]: { at: nowIso, klass: 'current', staleReasons: [], manifestBuild, externalId: input.externalId } satisfies LegacyCheckRecord,
     };
     // A bootstrap that was mid-flight is proven done by a current daemon.
     if (record && record.state !== 'converged') {
@@ -764,9 +1041,20 @@ export async function bootstrapLegacyRuntime(
       } satisfies LegacyBootstrapRecord;
     }
     await deps.patchMetadata(patch);
-    return { outcome: 'not-legacy', classification };
+    return { result: { outcome: 'not-legacy', classification } };
   }
+  return { classification, deadDaemonOnRunningBox, expectedRunningAssets };
+}
 
+/** The per-build attempt budget, the cooldown and the idle gate for a legacy or stale box. */
+async function checkBootstrapBudget(
+  input: LegacyBootstrapInput,
+  deps: LegacyBootstrapDeps,
+  nowMs: number,
+  record: LegacyBootstrapRecord | null,
+  classification: RuntimeClassification,
+  deadDaemonOnRunningBox: boolean,
+): Promise<{ result: LegacyBootstrapResult } | { build: number | null; attempts: number }> {
   // Legacy or stale. Budget and cooldown are per manifest build: a new deploy
   // earns a fresh set of attempts, a box that keeps failing on the same build
   // does not.
@@ -775,7 +1063,7 @@ export async function bootstrapLegacyRuntime(
   const attempts = sameBuild && record ? record.attempts : 0;
   if (record && sameBuild && record.state === 'failed') {
     if (attempts >= LEGACY_BOOTSTRAP_MAX_ATTEMPTS && !input.force) {
-      return { outcome: 'skipped-exhausted', detail: `${attempts} attempts on build ${build}`, classification };
+      return { result: { outcome: 'skipped-exhausted', detail: `${attempts} attempts on build ${build}`, classification } };
     }
     const lastMs = Date.parse(record.lastAttemptAt);
     // ESCALATING per-box backoff (30m, 60m, 120m, …, capped): a box that has
@@ -783,15 +1071,15 @@ export async function bootstrapLegacyRuntime(
     // cadence forever — the repair-storm guard for a box that CANNOT be
     // repaired but has not yet spent its attempt budget.
     if (!input.force && Number.isFinite(lastMs) && nowMs - lastMs < legacyBootstrapCooldownMs(attempts)) {
-      return { outcome: 'skipped-cooldown', classification };
+      return { result: { outcome: 'skipped-cooldown', classification } };
     }
   }
   if (record && sameBuild && record.state === 'staged' && !deadDaemonOnRunningBox) {
-    // Daytona/E2B: staged and waiting for the provider's next start. Nothing
+    // Daytona: staged and waiting for the provider's next start. Nothing
     // to redo until a current daemon proves it or the build moves on. A box
     // with no daemon is the exception: nothing will start it again, so
     // "converges at next start" is a promise that can never be kept.
-    return { outcome: 'staged', detail: 'already staged; converges at next start', classification };
+    return { result: { outcome: 'staged', detail: 'already staged; converges at next start', classification } };
   }
 
   // Never under a running turn. OpenCode's own busy state is the authority —
@@ -800,71 +1088,67 @@ export async function bootstrapLegacyRuntime(
   // says nothing. That is one fact, not two, and it cannot gate its own repair.
   const status = deadDaemonOnRunningBox ? {} : await deps.fetchOpencodeStatus();
   if (!opencodeIdle(status)) {
-    return { outcome: 'skipped-busy', detail: status ? 'opencode busy' : 'opencode unreachable', classification };
+    return { result: { outcome: 'skipped-busy', detail: status ? 'opencode busy' : 'opencode unreachable', classification } };
   }
+  return { build, attempts };
+}
 
-  const running: LegacyBootstrapRecord = {
-    state: 'running',
-    attempts: attempts + 1,
-    manifestBuild: build,
-    lastAttemptAt: nowIso,
-    reason: input.reason,
-    from: { opencode: classification.opencode },
-    classification: { klass: classification.klass, staleReasons: classification.staleReasons },
+/** One repair attempt after its `running` record is written. */
+interface BootstrapAttempt {
+  input: LegacyBootstrapInput;
+  deps: LegacyBootstrapDeps;
+  strategy: RelaunchStrategy;
+  running: LegacyBootstrapRecord;
+  classification: RuntimeClassification;
+  expectedRunningAssets: ExpectedRunningAssets | null | undefined;
+}
+
+/** Write the attempt's final record, audit it and log it. */
+async function finishBootstrap(
+  attempt: BootstrapAttempt,
+  state: LegacyBootstrapState,
+  extra: Partial<LegacyBootstrapRecord>,
+  outcome: LegacyBootstrapOutcome,
+  detail?: string,
+): Promise<LegacyBootstrapResult> {
+  const { input, deps, strategy, running, classification } = attempt;
+  const finished: LegacyBootstrapRecord = {
+    ...running,
+    ...extra,
+    state,
+    finishedAt: new Date(deps.now()).toISOString(),
   };
-  await deps.patchMetadata({
-    [LEGACY_BOOTSTRAP_METADATA_KEY]: running,
-    [LEGACY_CHECK_METADATA_KEY]: {
-      at: nowIso,
-      klass: classification.klass,
-      staleReasons: classification.staleReasons,
-    } satisfies LegacyCheckRecord,
+  await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: finished });
+  await deps.audit({
+    outcome: state === 'failed' ? 'failure' : 'success',
+    phase: state,
+    summary: {
+      attempt: finished.attempts,
+      strategy,
+      reason: input.reason,
+      from: finished.from ?? null,
+      to: finished.to ?? null,
+      detail: detail ?? null,
+    },
+    error: finished.error,
   });
-  deps.log('legacy runtime bootstrap starting', {
+  deps.log(`legacy runtime bootstrap ${state}`, {
     sandboxId: input.sandboxId,
     externalId: input.externalId,
-    provider: input.provider,
-    attempt: running.attempts,
-    strategy,
-    reason: input.reason,
+    outcome,
+    detail,
+    error: finished.error,
   });
+  return { outcome, detail, classification };
+}
 
-  const finish = async (
-    state: LegacyBootstrapState,
-    extra: Partial<LegacyBootstrapRecord>,
-    outcome: LegacyBootstrapOutcome,
-    detail?: string,
-  ): Promise<LegacyBootstrapResult> => {
-    const finished: LegacyBootstrapRecord = {
-      ...running,
-      ...extra,
-      state,
-      finishedAt: new Date(deps.now()).toISOString(),
-    };
-    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: finished });
-    await deps.audit({
-      outcome: state === 'failed' ? 'failure' : 'success',
-      phase: state,
-      summary: {
-        attempt: finished.attempts,
-        strategy,
-        reason: input.reason,
-        from: finished.from ?? null,
-        to: finished.to ?? null,
-        detail: detail ?? null,
-      },
-      error: finished.error,
-    });
-    deps.log(`legacy runtime bootstrap ${state}`, {
-      sandboxId: input.sandboxId,
-      externalId: input.externalId,
-      outcome,
-      detail,
-      error: finished.error,
-    });
-    return { outcome, detail, classification };
-  };
-
+/** Run the repair script on the box with a repair credential and, on Platinum, a rotated token. */
+async function runBootstrapScript(
+  attempt: BootstrapAttempt,
+): Promise<
+  { result: LegacyBootstrapResult } | { execResult: SandboxExecResult; report: ScriptReport | null }
+> {
+  const { input, deps, strategy } = attempt;
   let execResult: SandboxExecResult;
   // Never let the box's own credential decide whether its repair can run.
   const repair = await deps.mintRepairToken?.().catch((error) => {
@@ -888,7 +1172,7 @@ export async function bootstrapLegacyRuntime(
     );
   };
   // Token rotation only where the box's own environment is what the daemon
-  // boots from (Platinum: /etc/environment via pt-init). Daytona and E2B hand
+  // boots from (Platinum: /etc/environment via pt-init). Daytona hands
   // the daemon its env from the provider on every start, so a rotated secret
   // in the box would diverge from what the daemon actually runs with.
   const kortixToken =
@@ -914,14 +1198,33 @@ export async function bootstrapLegacyRuntime(
     const message = error instanceof Error ? error.message : String(error);
     await commitToken(null);
     await releaseRepair();
-    return finish('failed', { error: `exec: ${message}`.slice(0, 500) }, 'failed', 'provider exec failed');
+    return {
+      result: await finishBootstrap(
+        attempt,
+        'failed',
+        { error: `exec: ${message}`.slice(0, 500) },
+        'failed',
+        'provider exec failed',
+      ),
+    };
   }
   await releaseRepair();
   const report = parseScriptReport(execResult);
   await commitToken(report ? report.token_rotated === true : null);
+  return { execResult, report };
+}
+
+/** Act on the script's report: fail, defer, stage, or wait for the relaunched daemon to converge. */
+async function settleBootstrapReport(
+  attempt: BootstrapAttempt,
+  execResult: SandboxExecResult,
+  report: ScriptReport | null,
+): Promise<LegacyBootstrapResult> {
+  const { input, deps, running, classification, expectedRunningAssets } = attempt;
   if (!report) {
     const tail = (execResult.stderr || execResult.stdout).trim().slice(-400);
-    return finish(
+    return finishBootstrap(
+      attempt,
       'failed',
       { error: `no report (exit ${execResult.exitCode}): ${tail}`.slice(0, 500) },
       'failed',
@@ -929,16 +1232,25 @@ export async function bootstrapLegacyRuntime(
     );
   }
   if (!report.ok) {
-    return finish(
+    return finishBootstrap(
+      attempt,
       'failed',
       { error: `${report.stage}: ${report.error ?? 'unknown'}`.slice(0, 500) },
       'failed',
       `script failed at ${report.stage}`,
     );
   }
+  if (report.stage === 'deferred_busy') {
+    // A turn started between the idle gate above and the relaunch. Nothing
+    // ran, so this was not an attempt: put the prior record back and the next
+    // idle pass retries with no cooldown and no budget spent.
+    await deps.patchMetadata({ [LEGACY_BOOTSTRAP_METADATA_KEY]: input.metadata?.[LEGACY_BOOTSTRAP_METADATA_KEY] ?? null });
+    deps.log('legacy runtime bootstrap deferred: a turn started during the repair', { sandboxId: input.sandboxId });
+    return { outcome: 'skipped-busy', detail: 'a turn started during the repair; relaunch deferred', classification };
+  }
   const to = { agentSha256: report.agent_sha256, entrypointSha256: report.entrypoint_sha256 };
   if (report.stage === 'staged') {
-    return finish('staged', { to }, 'staged', 'staged; converges at the provider\'s next start');
+    return finishBootstrap(attempt, 'staged', { to }, 'staged', 'staged; converges at the provider\'s next start');
   }
 
   // Relaunched. The new daemon must now report a runtime block AND a serving
@@ -956,7 +1268,8 @@ export async function bootstrapLegacyRuntime(
     // component still catching up, or `running` not yet re-reported this
     // pass) and the failure is just as final either way.
     if (after.opencodeComponent === 'failed') {
-      return finish(
+      return finishBootstrap(
+        attempt,
         'failed',
         { to: { ...to, runtimeBuild: after.runtimeBuild }, error: 'daemon converged but its OpenCode install failed (see /kortix/diag runtime.reasons.opencode)' },
         'failed',
@@ -970,9 +1283,15 @@ export async function bootstrapLegacyRuntime(
       (after.opencodeComponent === 'current' || after.opencodeComponent === 'updated')
     ) {
       await deps.patchMetadata({
-        [LEGACY_CHECK_METADATA_KEY]: { at: new Date(deps.now()).toISOString(), klass: 'current', staleReasons: [] } satisfies LegacyCheckRecord,
+        [LEGACY_CHECK_METADATA_KEY]: {
+          at: new Date(deps.now()).toISOString(),
+          klass: 'current',
+          staleReasons: [],
+          manifestBuild: attempt.running.manifestBuild,
+          externalId: input.externalId,
+        } satisfies LegacyCheckRecord,
       });
-      const converged = await finish('converged', { to: { ...to, runtimeBuild: after.runtimeBuild } }, 'converged');
+      const converged = await finishBootstrap(attempt, 'converged', { to: { ...to, runtimeBuild: after.runtimeBuild } }, 'converged');
       // `updated` = this daemon installed OpenCode during its boot pass. Daemon
       // builds before the restart re-detection fix keep spawning the binary
       // they memoised at boot, so one more relaunch is what makes the installed
@@ -1003,11 +1322,21 @@ export async function bootstrapLegacyRuntime(
     }
     await deps.sleep(LEGACY_BOOTSTRAP_POLL_MS);
   }
-  return finish(
+  return finishBootstrap(
+    attempt,
     'failed',
     {
       to,
-      error: `relaunched but not converged within budget (last: ${last?.klass ?? 'unreachable'}/${last?.opencode ?? '-'})`,
+      // Name EVERY condition the acceptance gate above tests, not two of them.
+      // The old message printed `klass/opencode` only, so a box that timed out
+      // on `runtimeBuild === null` reported `last: current/ok` — a reading that
+      // says "converged" next to the word "not converged" and sent the next
+      // reader looking in the wrong place (a dev session, 2026-09-28).
+      error: `relaunched but not converged within budget (last: klass=${
+        last?.klass ?? 'unreachable'
+      } opencode=${last?.opencode ?? '-'} opencodeComponent=${
+        last?.opencodeComponent ?? '-'
+      } runtimeBuild=${last?.runtimeBuild == null ? 'null' : 'present'})`,
     },
     'failed',
     'converge timeout',

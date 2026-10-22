@@ -5,9 +5,10 @@
  * activity first) with the next cursor in the `x-next-cursor` header
  * (`listProjectSessionsPage` in @kortix/sdk). The drawer and the Sessions page
  * walk it with `useInfiniteQuery` (`useProjectSessionsPaged`). These are the
- * pure pieces of that wiring, the same rules as the SDK's web hook
- * (`packages/sdk/src/react/use-project-sessions.ts`), which this app cannot
- * import: `@kortix/sdk/react` is web's React surface.
+ * pure pieces of that wiring, the same rules as the SDK's
+ * `useProjectSessions` (`packages/sdk/src/react/use-project-sessions.ts`).
+ * The hook reads past empty pages with the SDK's own
+ * `shouldScanPastEmptySessionPages`.
  *
  * Pure data and pure functions only: `bun test` cannot load native modules.
  */
@@ -59,37 +60,6 @@ export function shouldLoadMoreSessions(state: {
 }
 
 /**
- * A filter with fewer matches than this over the loaded pages keeps loading
- * older pages on its own: about one screen of rows.
- */
-export const FILTER_AUTO_FETCH_MIN_MATCHES = 20;
-
-/**
- * KRTX-250: whether a filtered list loads its next page without a scroll.
- * `onEndReached` alone strands a filter: while the filtered list stays empty
- * (or short) its content size never changes, so FlatList stops calling it and
- * "No matching sessions" shows while unfetched pages hold matches. The page
- * runs this from an effect on every change instead. It stops at one screen of
- * matches (scrolling loads the rest), when the pages run out, and after a
- * failed page fetch (a scroll or a pull retries), so a failure never loops.
- */
-export function shouldAutoFetchForFilter(state: {
-  filterActive: boolean;
-  matchCount: number;
-  hasNextPage: boolean;
-  isFetchingNextPage: boolean;
-  isRefreshing: boolean;
-  fetchNextPageFailed: boolean;
-}): boolean {
-  return (
-    state.filterActive &&
-    state.matchCount < FILTER_AUTO_FETCH_MIN_MATCHES &&
-    !state.fetchNextPageFailed &&
-    shouldLoadMoreSessions(state)
-  );
-}
-
-/**
  * Which state a paged session list shows (COR-146: a failure must never look
  * like an empty list; a list not loaded yet must never look empty either).
  * The drawer's session list and the Sessions page share this decision so they
@@ -103,19 +73,27 @@ export function shouldAutoFetchForFilter(state: {
  *   the saved search and filter of a project that has sessions.
  * - `error` — the query failed and no session survived (nothing loaded
  *   before the failure, or a refetch failed with nothing cached).
- * - `empty` — the query succeeded with zero sessions.
+ * - `more` — no session loaded yet, but a next page exists (KRTX-1727). The
+ *   server drops rows the viewer may not see, and deleted ones, after a
+ *   bounded scan, so a page can be empty and still carry a cursor. The list
+ *   offers the next page, never "No sessions yet". A failed next page stays
+ *   `more`: its Show more button is the retry.
+ * - `empty` — the query succeeded with zero sessions and no next page.
  * - `rows` — at least one session loaded. A background poll or pull-refresh
  *   failure that still has rows counts as `rows`, not `error`: the failure
  *   never hides data the user already saw.
  */
-export type SessionListState = 'loading' | 'error' | 'empty' | 'rows';
+export type SessionListState = 'loading' | 'error' | 'empty' | 'more' | 'rows';
 
 export function sessionListState(state: {
   isPending: boolean;
   isError: boolean;
   hasSessions: boolean;
+  /** A list has a next page (`hasNextPage`). */
+  hasMore?: boolean;
 }): SessionListState {
   if (state.isPending) return 'loading';
   if (state.hasSessions) return 'rows';
+  if (state.hasMore) return 'more';
   return state.isError ? 'error' : 'empty';
 }

@@ -3,8 +3,8 @@
 import type { CostSummary } from '@kortix/sdk';
 import { useTranslations } from '@/i18n/use-translations';
 
-import { DateRangePicker, type CostRange } from '@/components/ui/date-range-picker';
-import { InfoBanner } from '@/components/ui/info-banner';
+import { DateRangePicker, type CostRange } from '@kortix/ui/date-range-picker';
+import { InfoBanner } from '@kortix/ui/info-banner';
 
 import { CostChart } from './cost-chart';
 import { CostModelList } from './cost-model-list';
@@ -68,7 +68,7 @@ export function CostLevelShell({
       <CostSummaryTiles summary={summary} isLoading={isSummaryLoading} extraTiles={extraTiles} />
 
       {showChart !== false ? (
-        <CostChart series={summary?.series ?? []} isLoading={isSummaryLoading} />
+        <CostChart series={summary?.series ?? []} isLoading={isSummaryLoading || !summary} />
       ) : null}
 
       <CostModelList models={summary?.models ?? []} />

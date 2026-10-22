@@ -23,12 +23,12 @@ import { ToolScroll } from '../shared/surface';
 
 const NO_ARGS: string[] = [];
 
-export function TaskListTool({ part, forceOpen }: ToolProps) {
-  const output = partOutput(part);
+export function TaskListTool({ call, forceOpen }: ToolProps) {
+  const output = partOutput(call);
   const isError = useMemo(() => isErrorOutput(output), [output]);
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={ListChecksIcon}
       trigger={{ title: 'Tasks', subtitle: '', args: NO_ARGS }}
       defaultOpen={false}
@@ -44,9 +44,6 @@ export function TaskListTool({ part, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('task_list', TaskListTool);
 ToolRegistry.register('task-list', TaskListTool);
-ToolRegistry.register('task_get', TaskListTool);
 ToolRegistry.register('task-get', TaskListTool);
-ToolRegistry.register('agent_task_get', TaskListTool);
 ToolRegistry.register('agent-task-get', TaskListTool);

@@ -1,9 +1,9 @@
 'use client';
 
-import { SessionDotMatrix } from '@/components/ui/dot-matrix/session-dot-matrix';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import Loading from '@/components/ui/loading';
+import { SessionDotMatrix } from '@kortix/ui/dot-matrix/session-dot-matrix';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -12,8 +12,8 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { AddAccountFields } from '@/features/workspace/customize/sections/add-account-fields';
+} from '@kortix/ui/modal';
+import { AddAccountFields } from '@kortix/ui/customize/sections/add-account-fields';
 import {
   accountVisibility,
   connectorConnectionRows,
@@ -21,13 +21,12 @@ import {
   newAccountLabelTaken,
   newAccountReady,
   type NewAccountDraft,
-} from '@/features/workspace/customize/sections/view/connector-connections';
+} from '@kortix/ui/customize/sections/view/connector-connections';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useAddManagedAccount } from '@/hooks/connectors/use-add-managed-account';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useAddManagedAccount } from '@kortix/ui/internal/hooks/connectors/use-add-managed-account';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
-import { useProjectCan } from '@/lib/use-project-can';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { useProjectCan, PROJECT_ACTIONS } from '@kortix/ui/workspace';
 import {
   finalizeConnectorSetupLink,
   listConnections,
@@ -38,10 +37,10 @@ import { CheckIcon, WarningIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
-import { ConnectorHandshake } from './connector-handshake';
+import { ConnectorHandshake } from '@kortix/ui/markdown/setup-links/connector-handshake';
 import { useConnectorIntake } from './connector-intake';
-import { connectorHeadline, useConnectorLinkInfo } from './connector-link-info';
-import { setupLinkApiBase } from './util';
+import { connectorHeadline, useConnectorLinkInfo } from '@kortix/ui/markdown/setup-links/connector-link-info';
+import { setupLinkApiBase } from '@kortix/ui/markdown/setup-links/api-base';
 
 const COPY = {
   title: 'Connect {app}',
@@ -176,6 +175,7 @@ function AddAccountDialogBody({
     label: string;
     connectedAs: string | null;
   } | null>(null);
+  const [authorizedId, setAuthorizedId] = useState<string | null>(null);
   const { user } = useAuth();
   const managed = useAddManagedAccount(projectId, info.slug, accountId, () => undefined);
 
@@ -183,15 +183,16 @@ function AddAccountDialogBody({
   const ready =
     phase === 'form' &&
     connectionsQuery.isSuccess &&
-    newAccountReady(draft, rows, { canManageConnections, accountId });
+    (authorizedId !== null || newAccountReady(draft, rows, { canManageConnections, accountId }));
 
   const submit = async () => {
     if (!ready) return;
     setError(null);
     setPhase('waiting');
     try {
-      const { connectionId } = await managed.add(draft);
+      const connectionId = authorizedId ?? (await managed.add(draft)).connectionId;
       if (!connectionId) throw new Error(tSharing('connectFailed'));
+      setAuthorizedId(connectionId);
       // Names THIS account to the link, which tells the session that asked.
       const done = await finalizeConnectorSetupLink(
         token,
@@ -282,17 +283,21 @@ function AddAccountDialogBody({
             <p className="text-sm text-pretty">{fill(copy.waiting, { app })}</p>
           </div>
         ) : (
-          <AddAccountFields
-            projectId={projectId}
-            value={draft}
-            onChange={setDraft}
-            labelTaken={labelTaken}
-            canManageConnections={canManageConnections}
-            accountId={accountId}
-            everyoneLabel={everyoneLabelFor(tSharing, headline.project)}
-            hint={fill(copy.description, { app })}
-            autoFocus={!info.label}
-          />
+          authorizedId ? (
+            <p className="text-sm">{tSharing('savedAs', { label: draft.label.trim() })}</p>
+          ) : (
+            <AddAccountFields
+              projectId={projectId}
+              value={draft}
+              onChange={setDraft}
+              labelTaken={labelTaken}
+              canManageConnections={canManageConnections}
+              accountId={accountId}
+              everyoneLabel={everyoneLabelFor(tSharing, headline.project)}
+              hint={fill(copy.description, { app })}
+              autoFocus={!info.label}
+            />
+          )
         )}
       </ModalBody>
 

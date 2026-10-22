@@ -331,7 +331,7 @@ export const AGENTS_SESSIONS_TOOL_GROUP: FixtureToolGroup = {
       ].join('\n'),
       error: 'Error: Failed to provision sandbox for session: provider returned 503 Service Unavailable (retry in 30 s)',
       durationMs: 6_800,
-      note: 'Child id only from the completed OUTPUT (`**Session:** ses_…`); running resolves no child. Web draws "Open session" as a Next Link to /projects/:id/sessions/:sid?oc=<child> plus a pulsing dot while running; mobile opens the session in the app and draws KortixLoader. Steps list shows only with forceOpen on both.',
+      note: 'Child id only from the completed OUTPUT (`**Session:** ses_…`); running resolves no child. Web draws "Open session" as a Next Link to /projects/:id/sessions/:sid?rs=<child> plus a pulsing dot while running; mobile opens the session in the app and draws KortixLoader. Steps list shows only with forceOpen on both.',
     },
     {
       renderer: 'session-spawn-tool.tsx',

@@ -1,147 +1,523 @@
 ---
 title: Sessions
-description: A session is a git branch and a sandbox where the agent works.
+description: "One unit of agent work in its own sandbox on its own branch: start it, talk to it, keep it awake, share it, orchestrate workers, and get notified."
 ---
 
-A session is one unit of agent work. Kortix cuts a git branch and provisions
-a sandbox for it. The session id, the branch name, and the sandbox id are the
-same value.
+A session is one unit of agent work. It runs in its own sandbox, on its own git branch. This page is for everyone who starts sessions, talks to agents, and acts on what they produce.
 
-## Status
+## What a session is
 
-A session reaches one of 4 states in practice.
+<Steps>
+  <Step title="Kortix creates the session">
+    It cuts a branch from `base_ref`. The default `base_ref` is the project's default branch. The branch name is the `session_id`.
+  </Step>
+  <Step title="The sandbox boots">
+    Kortix boots a sandbox from the session's sandbox template, or from the platform default image when the project has none. See [Sandboxes & previews](/docs/work/runtime#the-image-and-templates).
+  </Step>
+  <Step title="The agent starts">
+    The sandbox clones the repo to `/workspace` and starts the harness, OpenCode or pi. The session status becomes `running`.
+  </Step>
+  <Step title="The agent works and pushes">
+    The agent commits and pushes to its session branch. By default a session may push only its own branch.
+  </Step>
+  <Step title="A person merges the change request">
+    The agent opens a [change request](/docs/git#change-requests). A person reviews it and merges it. A merge does not stop the session.
+  </Step>
+</Steps>
+
+The `session_id`, the branch name, and the session's `sandbox_id` field are the same value. The provider's own box id is a different value.
 
 | Status | Meaning |
-|---|---|
-| `provisioning` | Kortix cuts the branch and requests the sandbox. |
-| `running` | The sandbox is live and reachable. |
-| `stopped` | The session is paused, by you or by idle auto-stop. |
-| `failed` | Provisioning failed. |
+| --- | --- |
+| `provisioning` | Kortix cuts the branch and boots the sandbox. |
+| `running` | The sandbox is live. |
+| `stopped` | You stopped the session, or it went to sleep. It wakes on demand. |
+| `failed` | Provisioning failed. The session's `error` field says why. |
 
-The database defines 3 more values (`queued`, `branching`, `completed`).
-Kortix does not write them for a session today.
+Each session also has an `origin`, the class of caller that started it.
 
-## Stop, resume, and idle auto-stop
+| `origin` | Started by |
+| --- | --- |
+| `user` | A person in the web, desktop, or mobile app; a Slack, Teams, or email message; or an agent inside a session. |
+| `trigger` | A webhook, app event, monitor, or manual [trigger](/docs/connect/triggers) run, or a [reminder](/docs/connect/triggers#reminders). |
+| `schedule` | A cron trigger. |
+| `backend` | A personal access key, which includes the `kortix` CLI on your machine, or a service account, for example the [SDK](/docs/sdk) on your server. |
+| `system` | Kortix itself. |
 
-You can stop a session yourself. Resume brings back the same sandbox with the
-same filesystem and runtime identity. Only the running processes and memory
-reset. The OpenCode conversation remains attached to the session.
+## Start a session
 
-Kortix also stops an idle session for you:
+You need the `project.session.start` permission. The agent you pick, or the project's default agent, must be one you may launch.
 
-- After 15 minutes idle, for a normal session.
-- After 5 minutes idle, for a session a trigger started.
+- **Web, desktop, or mobile app:** write a prompt in the composer and send it. See [Web, desktop & mobile](/docs/clients).
+- **Desktop app, from any other app:** press **Command+Shift+Space** (**Ctrl+Shift+Space** on Windows and Linux), type the prompt, and press Enter. See [Quick Entry](/docs/clients#quick-entry).
+- **CLI:** run `kortix sessions new` from a linked project directory.
+- **API and SDK:** `POST /v1/projects/<project_id>/sessions` answers `201` with the session, or `202` when the create continues in the background. See [Sessions from code](/docs/sdk/sessions).
+- **Slack, Microsoft Teams, and email:** a message to the bot starts a session. See [Slack, Teams & email](/docs/connect/channels).
+- **Triggers:** a schedule, webhook, app event, or monitor starts one. See [Triggers & reminders](/docs/connect/triggers).
 
-An open dashboard tab does not keep a session alive. A busy agent turn blocks
-the stop. The maintenance sweep runs every 5 minutes. A normal automatic Stop
-therefore occurs approximately 15 to 20 minutes after the terminal turn.
+```bash
+kortix sessions new -p "Fix the failing test in src/billing and open a change request" --wait
+```
 
-Self-host operators can set `KORTIX_SANDBOX_AUTOSTOP_MINUTES` to change the
-normal idle grace. This setting does not change active-turn protection.
+| Flag | Effect |
+| --- | --- |
+| `--prompt`, `-p <text>` | The first prompt. |
+| `--agent <name>` | Run this agent. Default: the project's default agent. |
+| `--model <id>` | Run this model. See [Models](/docs/project/models). |
+| `--wait` | Return when the sandbox is ready, after at most about 5 minutes. |
+| `--connect` | Attach the OpenCode TUI when the session is ready. Implies `--wait`. |
+| `--with-file <path>` | Upload a local file to `/workspace/incoming/<name>` before the prompt runs. Repeatable. Implies `--wait`. |
+| `--label <label>` | Add a label. Repeatable. |
+| `--meta <key>=<value>` | Set a metadata key. Repeatable. |
+| `--connector <alias>=<connection-id>`, `--no-connectors` | Bind a connector account, or use none. See [Connectors](/docs/connect/connectors). |
+| `--secret <id>`, `--no-secrets` | Narrow the project secrets the session gets. Kortix refuses it with `403` from inside a session sandbox. See [Secrets](/docs/project/secrets). |
+| `--context <key>=<value>` | Set a runtime context value. Repeatable. |
+| `--json` | Print the session object. Read `session_id` from it. |
 
-## What stop and delete keep
+A create answers `402` when the account has no credits left. See [Plans & credits](/docs/credits#running-out).
 
-:::warning[Deletion is permanent]
-Deleting a session destroys its sandbox for good. Kortix keeps the session
-record and the git branch, so you can still recover pushed work. Anything not
-pushed is gone.
-:::
+## Talk to a running agent
 
-Stop and resume keep the sandbox's identity and filesystem. Delete destroys
-the sandbox. Git is the only durable record: work the agent commits and
-pushes survives; everything else does not.
+A turn is one round of agent work, from a message to the agent's last reply.
 
-## Runtime
+A message you send from the app, the API, or `kortix sessions chat --queue` or `--steer` is stored on the server first, in the session's prompt inbox. It survives a closed tab, a device switch, and a sleeping sandbox. Kortix delivers it when the session can take it.
 
-Every session uses OpenCode REST. Kortix stores the selected OpenCode agent and
-model when the session starts. Restart and resume keep the same session runtime.
+A message reaches a running turn in one of 3 ways. With no turn running, all 3 start a new turn.
 
-## Session access
+| Delivery | What happens |
+| --- | --- |
+| `steer` | The running turn reads the message at its next step. The turn does not stop. |
+| `queue` | The message waits until the turn ends, then runs as its own turn. |
+| `interrupt` | The turn ends after its running tool, then the message runs. |
 
-A session is private to the person who created it. The owner opens **Session
-access** and picks one of 3 options.
+In the composer:
 
-| Option | Who can open the session |
-|---|---|
-| Only you | The owner alone. This is the default. |
-| Specific people | The owner, plus the members and groups the owner picks. |
-| Whole project | Every member of the project. |
+- **Enter** while a turn runs steers.
+- **Cmd+Enter** or **Ctrl+Enter** queues the message in the **Queue List**.
+- **Enter** with no turn running starts a turn.
+- **Stop and send** on a queued message interrupts.
 
-Everyone with access reads the conversation and continues it.
+A steered message falls back to `queue` and shows the reason:
 
-**Only the owner changes this.** A project manager who did not create the
-session can open it once it is shared with them, and can stop, restart, or
-delete it. They cannot rewrite who else can open it. Sharing a session with a
-manager is not handing them its access list.
+| Reason | Cause |
+| --- | --- |
+| `unsupported` | The session's runtime cannot steer, for example OpenCode 1.18.14 or earlier. |
+| `not_prompter` | The running turn belongs to another member, or no person sent the message. |
+| `turn_ended` | The turn ended before the message reached it. |
 
-One kind of session has no human owner: the ones a trigger creates, which run
-under the trigger agent's identity. Project managers govern those. Set the
-policy for all of them on the trigger itself, under **Session access** on the
-trigger — saving there also updates the sessions that trigger already created.
+From the CLI:
+
+```bash
+kortix sessions chat <session_id> -p "Also update the changelog" --steer
+kortix sessions chat <session_id> -p "Then run the full test suite" --queue
+kortix sessions queue <session_id>                 # list what waits
+kortix sessions queue <session_id> rm <prompt_id>  # drop one message
+kortix sessions queue <session_id> now <prompt_id> # run this one next
+```
+
+`kortix sessions chat -p` without `--steer` or `--queue` hands the message to the running sandbox directly and prints the reply. Without `-p` it opens a REPL. `kortix sessions queue <id> rm` is refused with `409` after a model step reads the message.
+
+### Mention files, agents and sessions
+
+In the composer, type `@` to mention a file, an agent or another session, and `/` to run a command.
+
+- Kortix sends each mention to the agent as a reference: a file's path, an agent's name, a session's id. The agent can open the file, hand off to the agent, or read the session.
+- References work on a chat's first message, on every later message, and in a command's arguments.
+- On a new chat, the `@` list shows agents only. Files show once the session's sandbox runs.
+
+### Stop a turn or stop the session
+
+- **The Stop button** ends the running turn and holds the queue. The sandbox keeps running. Send any new message to release the hold. From the CLI: `kortix sessions queue <id> hold` and `kortix sessions queue <id> release`.
+- **`kortix sessions stop <id>`** ends the running turn and stops the sandbox. See [Stop, resume and delete](#stop-resume-and-delete).
+
+In a shared session, only the member who started a run, the session owner or a project manager can stop it. Everyone else sees no Stop button, and their messages queue. Under a run that another member stopped, the transcript shows **Stopped by** and that member's name. Any other stop request answers `403` with `code: not_turn_prompter`.
+
+### Change a running session
+
+| Command | Effect |
+| --- | --- |
+| `kortix sessions model <id> <model-id>` | Switches the model. A live sandbox restarts its runtime, which ends the running turn. A stopped session uses the new model at its next start. |
+| `kortix sessions reload <id>` | Pulls the repo and reloads the agent config into the running sandbox. It refuses during a turn unless you pass `--force`. `--status` only reports whether the session is behind. See [Git](/docs/git#config-comes-from-the-base-branch). |
+| `kortix sessions compact <id>` | Summarizes the conversation and continues from the summary. |
+
+## Questions, permissions and approvals
+
+An agent waits on a person in 2 cases:
+
+- It calls the `question` tool.
+- It runs a tool whose permission is set to `ask`. See [Agents & permissions](/docs/project/agents#ask-allow-or-deny).
+
+The session page shows a card to answer. From the CLI:
+
+```bash
+kortix sessions pending <session_id>                         # open asks and questions
+kortix sessions approve <session_id> [<request_id>] --always # or --reject, --message "<why>"
+kortix sessions answer <session_id> [<request_id>] --option "<value>" --text "<answer>"
+```
+
+A turn that waits does no work. It keeps its sandbox for at most 2 hours. A session with origin `trigger`, `schedule`, or `system` has no one to ask, and its limit is 30 minutes. Then the turn ends and the sandbox stops. Kortix stores an open question outside the sandbox, so the session still reads **Needs you**. The session page then shows no answer card, and `kortix sessions answer` finds no question: send a message to continue. That message answers the question and closes it.
+
+### Needs you in the session lists
+
+A session reads **Needs you** in the sidebar, on the Sessions page, and in the mobile app while something waits on you: an open agent question, a connector call under an **Ask** policy, or a review item. `GET /v1/projects/<project_id>/approvals/needs-input` lists the sessions with an open question or a pending connector call. The lists read it every 30 seconds, and again when a question opens or closes in an open session or you decide a connector call. A project manager sees every session. Any other member sees the sessions they started.
+
+An open question closes when:
+
+- you answer or dismiss it,
+- a new message starts a turn in the session,
+- the turn ends, or
+- a Slack or Teams thread takes the question. Your reply in the thread starts a new turn.
+
+A message that joins a running turn does not close that turn's question: the turn still waits for the answer. A question stays open while its sandbox is stopped after the wait limit. A permission request shows on the session page only.
+
+A connector call under an **Ask** policy is a different thing: a durable approval that waits until a person decides.
+
+```bash
+kortix sessions approvals <session_id>                       # list
+kortix sessions approvals <session_id> approve <execution_id>
+kortix sessions approvals <session_id> deny <execution_id>
+```
+
+See [Connectors](/docs/connect/connectors#policies-and-approvals).
+
+## Read a session
+
+| Read | CLI | API |
+| --- | --- | --- |
+| Recent messages | `kortix sessions log [<id>] [--limit N] [--json]` | `GET .../sessions/<session_id>/log` |
+| One session's fields | `kortix sessions info <id>` | `GET .../sessions/<session_id>` |
+| What every agent does now | `kortix sessions status [--all]` | — |
+| Stored files: uploads and what the agent showed | `kortix sessions attachments <id> [--download <id> \| --all]` | — |
+| Live events | — | `GET .../sessions/<session_id>/events` |
+
+The transcript, `log`, `info`, `attachments`, and the events stream never wake a stopped sandbox. `kortix sessions log` reads the session log the server stores at the end of every turn; a running session adds the turn it runs now. A session with no stored log yet is read from its v1 transcript. `--json` prints the session log (`"schema": "kortix.session/2"`): the session record, `source` (`log`, or `v1` for a converted transcript) and `threads`, the root thread and each sub-agent's, with their newest messages and `has_more`. A running turn's messages the log does not hold yet carry `ext.kortix.data.provisional: true`. Read that key: the top-level `"provisional": true` they also carry is deprecated and goes in the next release. Without `--json`, the header names the sandbox status (`sandbox running`) and, for a running session, whether the agent is `working` or `idle`. `--schema v1` prints the old message array for one more release. To build a live view, use the SDK: see [Sessions from code](/docs/sdk/sessions#stream-events) and [React](/docs/sdk/react).
+
+## Stop, resume and delete
+
+| Action | Command | What it keeps | What it removes |
+| --- | --- | --- | --- |
+| Stop | `kortix sessions stop <id>` | The sandbox disk, the branch, the conversation | Running processes and memory. It ends the running turn. |
+| Start | `kortix sessions start <id> [--wait]` | Everything a stop keeps | Nothing. It resumes a stopped sandbox, or boots a missing one. |
+| Restart | `kortix sessions restart <id>` | Everything a stop keeps | Running processes and memory. It stops and starts the sandbox in place, or boots a new one when the sandbox is gone. |
+| Delete | `kortix sessions rm <id>...` | The pushed branch. For 30 days also the conversation and the stored files. | The sandbox and its public links. The session leaves the list. |
+| Restore | `kortix sessions restore <id>` | Everything a delete keeps | Nothing. The session returns to the list, stopped. |
+| Recover | `kortix sessions recover <id>` | The branch and the conversation of a lost session | Nothing more: the lost sandbox is already gone. The next start boots a new one. |
+
+The session branch persists after a stop and after a delete. Only work the agent committed and pushed survives a delete: the sandbox and its uncommitted files are gone.
+
+### Restore a deleted session
+
+A deleted session stays restorable for 30 days. The delete answers `restore_until`, the last moment a restore works. To restore it:
+
+- In the web app, select **Undo** in the toast that confirms the delete. While the old sandbox is still being removed, Undo tries again for about 30 seconds, then offers **Try again**.
+- Later, open **Recently deleted**: the tab on the Sessions page, also in the sidebar's session menu. It lists the deleted sessions you can restore, with the date each one stays restorable. Select **Restore session** on a row. A delete of several sessions from the Sessions page lands here too.
+- From the CLI, `kortix sessions ls --deleted` lists the same sessions with their full IDs. Run `kortix sessions restore <session_id>` with the full session ID. `kortix sessions rm` prints the exact command, with the date, `--project` and, for a session on another host, `--host`.
+- From code, call `s.restore()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/restore`. `GET /v1/projects/<project_id>/sessions?deleted=only` lists what you can restore, each row with `deleted_at`, `deleted_by` and `restore_until` (`listProjectSessionsPage(projectId, { view: 'deleted' })` in the SDK).
+
+A restore needs the same permission as the delete: the session owner or a person who manages the project. Recently deleted follows the same rule: you see the sessions you deleted, and a person who manages the project sees every deleted session they can open. The conversation, the stored files and the branch come back. The session's next start boots a new sandbox from the branch, and the new sandbox loads the saved conversation back into the agent: the agent keeps the context of the earlier turns, as when you [continue a lost session](#continue-a-lost-session). The same restore limit applies. Public links the delete revoked stay revoked: create new ones.
+
+| Restore answer | Meaning |
+| --- | --- |
+| `200` | The session is back. |
+| `409` `session_not_deleted` | The session is not deleted. |
+| `409` `session_sandbox_removal_pending` | The provider has not confirmed that the old sandbox is gone, or the session was deleted while its first sandbox was starting and that sandbox can still arrive (up to 10 minutes). Try again in a minute. |
+| `410` `session_purged` | More than 30 days passed. Its conversation and files are deleted; only the branch remains. |
+
+Kortix deletes a deleted session's conversation 30 days after the delete, and its stored files 7 days after that.
+
+A stopped session wakes when it gets:
+
+- `kortix sessions start`, or the session page's start control;
+- a new prompt;
+- a request to one of its preview ports;
+- a `kortix sessions files` or `kortix sessions cp` call.
+
+### Continue a lost session
+
+A session is lost when the provider removed its sandbox and Kortix could not bring it back in place. The session page then shows **This session's computer was lost**, and `kortix sessions start` exits 1 with `runtime_identity_unavailable`. The branch and the saved conversation remain. The sandbox disk is gone, and with it every change that was not committed and pushed.
+
+To continue a lost session on a new sandbox:
+
+- In the web app, select **Continue session** in the banner. The page boots the new sandbox.
+- From the CLI, run `kortix sessions recover <session_id>`, then `kortix sessions start <session_id> --wait`.
+- From code, call `s.recover()` ([Sessions from code](/docs/sdk/sessions#control-the-session)), or `POST /v1/projects/<project_id>/sessions/<session_id>/recover`.
+
+The next start boots a new sandbox from the session branch. The new sandbox loads the saved conversation back into the agent, so the agent keeps the context of the earlier turns. The transcript does not change. A saved conversation over the restore limit (24 MB by default; attachments and long tool outputs count at two fifths of their size) is not loaded: the agent starts with only a note that the earlier conversation was not restored, and the session page shows **Some earlier content could not be restored**. A continue needs the same permission as a delete: the session owner or a person who manages the project.
+
+| Continue answer | Meaning |
+| --- | --- |
+| `200` | The next start boots a new sandbox with the saved conversation. |
+| `409` `session_not_lost` | The session is not lost. Open it to resume it. |
+| `409` `session_transcript_missing` | The session has no saved conversation, so it cannot continue. Nothing changed. Delete it, or start a new session. |
+| `409` `session_sandbox_removal_pending` | The provider has not confirmed that the lost sandbox is gone. Nothing changed. Try again in a minute. |
+| `503` `session_log_restore_off` | This deployment turned off the session log. |
+
+### When the sandbox stops during a turn
+
+The provider can stop a sandbox while a turn runs, and a runtime restart (for example, to apply a config change) ends the running turn. Nobody asked for either. After a provider stop the turn ends with the reason "The sandbox stopped unexpectedly while this turn was running." Kortix then gives the work back once:
+
+| What the turn did before the stop | What Kortix sends |
+| --- | --- |
+| The agent did not answer the message | The same message again. |
+| The agent started an answer and did not finish it | One continuation message: `[auto-recovery] The previous turn was interrupted at <time> UTC. <reason> Continue from where you left off. Do not repeat steps that already completed.` The original message is not sent again. |
+| The agent finished its answer | Nothing. |
+
+When it goes out:
+
+- **A session people use.** The message waits in the queue, held, so the stopped sandbox stays stopped. When the sandbox wakes, for example when someone opens the session, the message goes out. To send it before that, select **Resume** above the composer (web) or **Send now** on the message (mobile), or send any message. From the CLI: `kortix sessions queue <session_id> release`. A session's first turn has no queued message, so Kortix puts a held continuation in the queue of the person who created the session.
+- **A `trigger`, `schedule` or `system` session, or a worker session another session started.** At once. Each sandbox recovers at most 2 times per rolling hour. After that the message waits, held, until the sandbox wakes, and a session's first turn gets no continuation.
+- **A runtime restart on a sandbox that runs again.** At once.
+
+When the continuation reaches the sandbox, the turn's reason changes to "The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn." After a runtime restart it changes to "The runtime restarted during this turn. Kortix resumed it."
+
+Kortix never continues a turn that someone ended: the Stop button (also when the sandbox stopped before the Stop reached it), `kortix sessions stop`, a model change (`kortix sessions model` restarts the runtime and ends the turn in flight), or an idle stop. A message comes back at most 3 times. The 4th time it fails, and the queue shows it with a retry. A continuation counts as a message: when the sandbox stops during the continuation, Kortix continues it again.
+
+Limits:
+
+- A session on the pi harness keeps the running turn in memory until the turn ends. After a provider stop the cut-off answer is gone, so Kortix sends the original message again.
+- A sandbox that stops between two steps of a turn leaves a finished answer, so Kortix sends nothing. Send a message to continue.
+
+## When a session sleeps
+
+Kortix stops a sandbox when nothing keeps it awake. Each event below keeps the sandbox for a set time. The longest one wins.
+
+| Event | Keeps the sandbox for |
+| --- | --- |
+| The last turn ends | 15 minutes |
+| The last turn of a [child session](#child-sessions) ends | 2 minutes |
+| A turn runs | 4 hours, renewed while Kortix sees the turn running |
+| The agent makes an LLM call through the gateway | 4 hours |
+| A person uses a preview port | 30 minutes after the last request |
+| A turn waits on a person | 2 hours. 30 minutes for `trigger`, `schedule`, and `system` sessions. |
+| A person has the session page open | No extra time. The sandbox stops 15 minutes after the last turn whether a page is open or not. The page holds the sandbox to that window when a shorter deadline was set (after a failed turn, say), and its presence routes notifications. |
+
+- The stop check runs about every 5 minutes. An idle session stops about 15 to 20 minutes after its last turn.
+- Above the composer, a line shows when the sandbox stops: 15 minutes after the last turn, unless another event in the table keeps it awake longer. The line is hidden while a turn runs.
+- A new message starts a turn and moves that window to the new turn.
+- An open page counts only for a person who may start sessions in the project. A read-only viewer's tab never keeps a sandbox awake. An open page never keeps the sandbox past the window: the next interaction resumes it in place instead.
+- Other requests a sandbox makes itself, with its own token or its own `kortix` CLI, never keep it awake. Only its LLM calls through the gateway count.
+
+Self-hosted operators change these times. See [Self-hosting](/docs/host#operate-and-tune).
+
+## Labels and names
+
+A label classifies a session: `bug`, `needs-review`, `worker`. Labels are free-form, 1 to 64 characters each, at most 20 per session.
+
+- **Web:** open the session's **⋯** menu and choose **Edit labels**. The **Labels** filter in the session list shows sessions that carry every label you pick.
+- **CLI:**
+
+```bash
+kortix sessions update <session_id> --label needs-review --unlabel bug
+kortix sessions update --meta ticket=1234      # inside a sandbox, no id: updates $KORTIX_SESSION_ID
+kortix sessions rename <session_id> "Billing test fix"
+kortix sessions rename <session_id> ""         # back to the automatic title
+kortix sessions ls --label needs-review
+```
+
+`kortix sessions update` also takes `--clear-labels` and `--unmeta <key>`. Kortix refuses a metadata key it manages itself with `400`.
+
+### Pin and archive
+
+Pin a session to keep it at the top of your session list. Archive a session to take it out of your session list. A pin and an archive are yours alone: they change only your list, and other people see the session as before.
+
+- Archiving a pinned session unpins it. Pinning an archived session unarchives it.
+- Neither stops the session or changes its `updated_at`.
+- Only a person can pin or archive. A personal access token acts as you. An agent's session token, an API key and a service account get `403`.
+
+- **Web:** open the `⋯` menu of a session in the sidebar, on the Sessions page or in the session header, then choose **Pin session** or **Archive session**. Pinned sessions sit in the **Pinned** section at the top of the sidebar. The **Archived** tab of the Sessions page lists your archived sessions; **Archived sessions** in the sidebar's session menu opens it. On the Sessions page, **Select** archives several sessions at once. An archive toast offers **Undo**.
+- **Mobile:** the session actions sheet has **Pin** and **Archive**. Pinned sessions sit in the **Pinned** section of the project drawer. The Sessions page's filter sheet opens the **Archived** view.
+- **CLI:**
+
+```bash
+kortix sessions pin <session_id>...
+kortix sessions unpin <session_id>...
+kortix sessions archive <session_id>...
+kortix sessions unarchive <session_id>...
+kortix sessions ls --pinned      # only your pinned sessions
+kortix sessions ls --archived    # only your archived sessions
+```
+
+`kortix sessions ls` leaves out the sessions you archived and marks a pinned session `(pinned)`. A short ID from `ls --archived` resolves like any other short ID.
+
+- **API:** `PUT /v1/projects/<project_id>/sessions/<session_id>/pin` with `{"pinned": true}` or `false`, and `PUT …/archive` with `{"archived": true}` or `false`. Both answer `200` with `pinned_at` and `archived_at`, `null` when not set. `GET /v1/projects/<project_id>/sessions` leaves out your archived sessions; `?pinned=only` or `?archived=only` lists only those. Every row carries your `pinned_at` and `archived_at`.
+
+## Who can open a session
+
+A session is private to the person who created it. The owner opens **Session access** and picks one option.
+
+| Option | Who can open it | CLI |
+| --- | --- | --- |
+| **Only you** | The owner. This is the default. | `--mode private` |
+| **Specific people** | The owner, plus the members and groups the owner picks | `--mode members --member <id-or-email> --group <group-id>` |
+| **Whole project** | Every member of the project | `--mode project` |
+
+```bash
+kortix sessions share <session_id> --mode project
+kortix sessions share <session_id> --show
+```
+
+- **Everyone with access reads and continues the conversation.**
+- **A shared session uses only provider keys shared with the whole project.** If its model ran on your own keys, sharing switches it to the project's keys for that provider. If no shared key runs the model, Kortix refuses the share. See [Models](/docs/project/models#shared-keys-and-chatgpt-accounts).
+- **Only the owner changes access.** A project manager who can open the session can stop, restart, and delete it, but cannot change its access.
+- **A trigger's sessions take their access from the trigger.** See [Triggers & reminders](/docs/connect/triggers#session-access).
+- **A removed member keeps their sessions.** Their access stays as it was. A project manager can stop or delete those sessions.
+
+The project's **Sessions** page shows each session's owner and access. **Filter** narrows by **Owner** or **Access**, and **Grouping → Owner** groups the list.
 
 ### Admins can open every session
 
-An account owner can let account owners and admins open **every** session in
-the account, including sessions members keep private. Turn it on under
-**Account → Settings → Security → Admins can open every session**. It is off by
-default.
+An account owner can let account owners and admins open every session in the account, private ones included. The switch is **Admins can open every session** in **Account settings → Settings → Security**. It is off by default.
 
-- **Only an account owner changes it.** An admin sees the switch but cannot
-  flip it, so no admin can grant themselves access to everyone's work.
-- **Admins find these sessions on the project's Sessions page.** The sidebar
-  still lists only the sessions you started or that are shared with you.
-- **Access is full access.** An admin opens, reads, and continues the session,
-  the same as a session shared with the whole project.
-- **Members see it.** While it is on, the Session access dialog says that
-  owners and admins can open every session.
-- **Everything is audited.** Each flip is recorded as
-  `iam.session_oversight.enable` or `iam.session_oversight.disable`, and each
-  session an admin opens through it as `project.admin_oversight_session_read`
-  (at most once per admin and session per hour).
-- Agent and sandbox tokens never gain this access, even when an admin launched
-  them.
+- Only an account owner changes it.
+- Admins find these sessions on the project's **Sessions** page, and get full access to them.
+- While it is on, the **Session access** dialog tells members.
+- Kortix audits each change as `iam.session_oversight.enable` or `iam.session_oversight.disable`, and each session an admin opens through it as `project.admin_oversight_session_read`, at most once per admin and session per hour. See [Audit actions](/docs/audit-actions).
+- Agent and sandbox tokens never get this access.
 
-### Find a session by owner or access
+## Public links
 
-The project's **Sessions** page shows each session's owner and access on its
-row: the owner's avatar and name (**You** for your own), then an icon for who
-can open it: a lock for **Only the owner**, people for **Specific people**, a
-globe for **Whole project**.
+A public link opens one part of a session to anyone with the URL, without sign-in.
 
-Open **Filter** on the Sessions page to narrow the list:
+| Link | Shows | Create it |
+| --- | --- | --- |
+| Conversation | The conversation, read-only, at `/share/session/<token>`. One live link per session. | **Session access** → **Public link** → **Create public link** |
+| Preview | One port of the sandbox. `view` allows only reads. `interactive` allows writes and WebSockets. | `kortix sessions links <id> create --port 3000 [--mode interactive]` |
+| File | One workspace file, read-only | `kortix sessions links <id> create --file out/report.pdf` |
 
-- **Owner** — one entry per person, with a count.
-- **Access** — Only the owner, Specific people, or Whole project.
-- **Grouping → Owner** — one section per person, yours first.
+```bash
+kortix sessions links <session_id> ls
+kortix sessions links <session_id> create --port 5173 --path /dashboard --expires 2026-12-31T00:00:00Z
+kortix sessions links <session_id> revoke <share_id>
+```
 
-The filters combine with **Status**, **Source**, and search. **Reset** clears
-them all.
+- Only the session owner creates a link. A project manager lists and revokes links.
+- Kortix refuses a preview link for ports 22, 4096, 4097, 8000, and 3211.
+- Kortix refuses any link with `409` for a session that holds a secret shared only with you, or that uses a personal connector account. Start a new session to share.
+- A revoked or expired link answers `410`. Deleting the session revokes all its links.
 
-:::warning[A session keeps its owner]
-Removing someone from the account does not move their sessions to anyone else.
-Their access policy freezes as it was. A project manager can still stop or
-delete those sessions — deleting is the way to revoke a session nobody owns any
-more.
-:::
+For signed-in previews and ports, see [Sandboxes & previews](/docs/work/runtime#ports-and-previews).
 
-## Sharing a preview
+## Child sessions
 
-You can share a session's live preview with a public link, in view-only or
-interactive mode. Minting that link is the session owner's call, for the same
-reason: the link is unauthenticated, so anyone holding the URL reads the
-session without signing in. A project manager can list and revoke a session's
-links without owning it — revoking only ever removes access.
+An agent can split work across child sessions. It runs `kortix sessions new` inside its sandbox. The new session records the caller in `parent_session_id`. A child of a `trigger`, `schedule`, or `system` session takes that origin.
 
-## Providers
+```bash
+# Inside the coordinator's sandbox
+kortix sessions new -p "Add tests for src/billing and commit them" --json   # read session_id
+kortix sessions wait-for <child_id> --timeout 1800
+kortix sessions cp <child_id>:coverage/summary.txt ./billing-coverage.txt
+kortix sessions ls --children "$KORTIX_SESSION_ID"
+```
 
-Kortix runs sessions on Daytona, Platinum, or E2B Cloud. A project follows
-the platform default, or requests a provider switch through the SDK — see
-[SDK reference](/docs/sdk/reference). A switch to a different provider is
-durable: the current provider keeps serving while the target warms, then
-activates. Every provider runs the same sandbox image.
+| Command | Use |
+| --- | --- |
+| `kortix sessions wait-for <id> [--timeout <seconds>]` | Blocks until the agent settles. Exits `0` when it is idle, `3` when it waits on a question or permission, `124` at the timeout. Default timeout: 300 seconds. |
+| `kortix sessions pending`, `approve`, `answer` | Unblock a child that exited `3`. |
+| `kortix sessions cp <a>:<path> <b>:<path> [-r]` | Copies files between two sandboxes, or between a sandbox and your machine. Relative paths resolve under `/workspace`. It wakes stopped sandboxes. |
+| `kortix sessions digest [--since 7d]` | Prints a compact review of recent sessions. |
 
-For the full status enum, injected environment variables, and daemon
-endpoints, see [Runtime](/docs/work/runtime). For how a session picks its
-agent, see [Agents](/docs/project/agents). For sessions a schedule or webhook
-starts, see [Triggers](/docs/connect/triggers). To land session work on the
-default branch, see [Change requests](/docs/work/change-requests).
+- A child's sandbox sleeps 2 minutes after its last turn.
+- A child's turn end notifies nobody. The parent reports.
+- The API lists one session's children with `GET /v1/projects/<project_id>/sessions?parent=<session_id>`, and top-level sessions with `?parent=root`. Each top-level row carries `child_count`.
+
+The `meta_agent` project flag, off by default, adds a coordinator agent that Kortix maintains and makes it the default agent for new sessions. See [Feature flags](/docs/project#feature-flags).
+
+## Warm sessions
+
+A warm session is a pre-booted session that waits for your first prompt, so the session starts without a cold boot. While the `warm_sessions` flag is on, the web app asks for one when you open a project. Each person has at most one per project. The session list and `kortix sessions ls` hide it until its first prompt.
+
+- A warm session waits at most 60 minutes.
+- It uses compute while it waits.
+- The per-project `warm_sessions` flag is off by default. Turn it on only if you want to spend idle compute for faster starts. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
+
+```bash
+kortix sessions warm                        # create or reuse your warm session
+kortix sessions warm --exclude <session_id> # never hand back this session
+```
+
+`POST /v1/projects/<project_id>/sessions/warm` answers `409` with `WARM_SESSION_UNAVAILABLE` when Kortix cannot prepare a warm session, and `403` with `feature_disabled` when the `warm_sessions` flag is off. In both cases, create a normal session. The SDK call is `project.sessions.ensureWarm()`.
+
+## Notifications
+
+A notification tells you that a session or a trigger needs you. Kortix writes each one to the bell, then sends it to your phone, your browser, or your email, as your settings allow.
+
+### In the app
+
+These need no flag and no browser permission. A turn that ends while you are elsewhere in the web or desktop app shows a **Task complete** toast with **Open session**. A failed turn shows **Session error**. Elsewhere means another page, another session, another tab or another app. The browser tab's icon gets a dot until you open the session.
+
+This covers the sessions you open in that window, also one you leave while its turn runs. The session on your screen shows no toast: its transcript shows the end. For turns that start elsewhere, such as a trigger or another device, turn on the notification center below.
+
+### Turn notifications on
+
+Notifications need the per-project `notification_center` flag. It is off by default. Turn it on in **Customize → Settings → Feature flags**, or:
+
+```bash
+kortix projects features enable notification_center
+```
+
+With the flag off:
+
+- only the session creator's phone gets a session push, for a turn that ends, fails, asks a question, or asks for permission. Kortix skips the push while the creator has the session open;
+- an account owner's phone gets one when a trigger starts failing;
+- the project shows no bell and no **Mute notifications**, and sends no Web Push and no email;
+- `GET` and `PUT /v1/projects/<project_id>/sessions/<session_id>/watch` answer `403` with `feature_disabled`.
+
+### Kinds
+
+| Kind | In the app | Sent when | Push default | Email default |
+| --- | --- | --- | --- | --- |
+| `turn_done` | Turn finished | A turn ends. | On | Off. On: in the digest. |
+| `turn_error` | Turn failed | A turn ends with an error. | On | Digest |
+| `question` | Question | The agent asks a question and waits. | On | Digest |
+| `permission` | Permission request | The agent asks to run a tool. | On | Never |
+| `shared` | Shared with you | Someone shares a session with you. | On | Digest |
+| `automation_failed` | Failure alert | A trigger or a reminder starts failing. | On | At once |
+| `automation_recovered` | Recovery alert | That trigger or reminder works again. | On | Off. On: at once. |
+
+### Who gets them
+
+A session's notifications go to:
+
+- **the prompter**, the person whose message started the turn;
+- **the watchers**, the session's creator and each person who sent a message in it as themselves. A message an agent sends with its session token makes nobody a watcher.
+
+| Session | Turn ends | Questions and permission requests |
+| --- | --- | --- |
+| Started in an app, the CLI, or the API | The prompter and the watchers | The prompter and the watchers |
+| Started from Slack, Teams, or email | The prompter, in the bell only. The reply in the Slack thread, Teams chat, or email is the notice. | Slack and Teams post a question in the thread. If that fails, and for every permission request and every email session, the prompter and the watchers. |
+| Started by a trigger | The prompter only. A failed run raises an [alert](/docs/connect/triggers#failures-and-alerts) instead. | The prompter and the trigger's alert recipients |
+| A child session | Nobody | The prompter and the watchers |
+
+- A person who muted the session, or who cannot open it, gets nothing from it.
+- A turn you stop yourself sends nothing. A turn whose next queued message starts at once sends no `turn_done`.
+- `shared` goes to each person and group member added under **Specific people**, at most once per person and session per UTC day. Sharing with the whole project sends none.
+- A trigger or [reminder](/docs/connect/triggers#reminders) alert goes to the people who wrote the trigger or set the reminder.
+
+### Where they appear
+
+- **The bell**, at the top of the project sidebar and on the projects page, in the web and desktop apps. Choose a notification to open its session, or the **Triggers** or **Reminders** page for an alert. **Mark all as read** clears the count. Opening a session marks its notifications read, in every app. A new notification also shows as a toast, unless it is about the session on your screen.
+- **The mobile app** gets a push for each kind your **Push** switches allow. **Notifications** in the drawer lists them across projects.
+- **The browser**, with every Kortix tab closed, through Web Push in Chrome, Edge, Firefox, and Safari on macOS. Open **Settings → Notifications**, turn on **Enable notifications**, and allow it when the browser asks. The setting is per browser. Signing out stops it. An account that requires MFA sends browser push only to a browser signed in with MFA; its super admins get it either way, as the app lets them in without MFA.
+- **The desktop app** checks about once a minute while its window is open. When the window is not in focus, it shows up to 3 new ones per check as OS notifications.
+- **Email:** `automation_failed` goes at once. A digest kind joins your next digest when it is still unread 15 minutes after it arrives. You get at most one digest per hour, listing up to 10 notifications plus a count of the rest. A self-hosted instance needs an email provider. Without one, the **Email** switches do not show.
+
+### Choose what you get
+
+Open **Settings → Notifications**. Under **Notification types**, each kind has a **Push** and an **Email** switch. **Permission request** has no **Email** switch.
+
+- The switches follow you across accounts, phones, and browsers.
+- A phone also has its own switch for **Turn finished**, **Turn failed**, **Question**, and **Permission request**. It gets these only while both switches are on. A change in the mobile app sets both. A change on the web sets only the shared switch.
+- The bell lists every notification of a project with the flag on, whatever the switches say.
+
+### Mute a session
+
+Open the session menu next to the session title and choose **Mute notifications**. You then get nothing from that session, even for turns you prompt. **Unmute notifications** turns them back on. On a session you do not watch, unmuting makes you a watcher.
+
+### Privacy and retention
+
+- Kortix writes a notification only for a person who can open its session, or read the project's triggers for an alert. A notification leaves your bell when you lose that access.
+- Leaving an account deletes your notifications in it.
+- In an account that requires two-factor authentication, the bell shows its notifications only after you sign in with your second factor.
+- A push or an email carries the session title and a short detail, such as the question or the error.
+- Kortix deletes notifications after 90 days.
+- The `/v1/notifications` routes accept a person's sign-in or personal access key only. An agent token or a service account gets `403`. See [SDK reference](/docs/sdk/reference).

@@ -11,7 +11,7 @@
  * folder as the description · +a −d · chevron. A tap pushes the file.
  * `SessionChangeFileView`: that file's `PatchDiffView`.
  *
- * Data: `useSessionChanges` (`lib/opencode/hooks/use-session-changes.ts`),
+ * Data: `useSessionChanges` (`hooks/useSessionChanges.ts`),
  * rules: `lib/session/session-actions.ts`.
  */
 import * as React from 'react';

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -121,6 +122,17 @@ func daemonize(pidPath, logPath string) error {
 	return cmd.Process.Release()
 }
 
+// One health check of a process group (Fly `[checks]`). Port defaults to target_port.
+type appCheck struct {
+	Name         string `json:"name,omitempty"`
+	Type         string `json:"type"`
+	Port         int    `json:"port,omitempty"`
+	Path         string `json:"path,omitempty"`
+	IntervalS    int    `json:"interval_s"`
+	TimeoutS     int    `json:"timeout_s"`
+	GracePeriodS int    `json:"grace_period_s"`
+}
+
 type appSpec struct {
 	Command       []string          `json:"command"`
 	Workdir       string            `json:"workdir,omitempty"`
@@ -130,6 +142,32 @@ type appSpec struct {
 	SPA           bool              `json:"spa,omitempty"`
 	RestartLimit  int               `json:"restart_limit,omitempty"`
 	Environment   map[string]string `json:"environment,omitempty"`
+	// Guest paths that must be real mountpoints (volumes) before the app starts.
+	Mounts []string `json:"mounts,omitempty"`
+	// When set, these checks gate readiness instead of the ingress readiness path.
+	Checks []appCheck `json:"checks,omitempty"`
+}
+
+// A worker serves no port: no static root and no target port.
+func (s appSpec) worker() bool {
+	return s.StaticRoot == "" && s.TargetPort == 0
+}
+
+func (c appCheck) port(spec appSpec) int {
+	if c.Port > 0 {
+		return c.Port
+	}
+	return spec.TargetPort
+}
+
+func validPort(port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("port must be between 1 and 65535")
+	}
+	if port == controlPort || port == ingressPort {
+		return fmt.Errorf("port %d is reserved", port)
+	}
+	return nil
 }
 
 func (s appSpec) validate() error {
@@ -147,12 +185,9 @@ func (s appSpec) validate() error {
 			return errors.New("static_root contains an invalid control character")
 		}
 	}
-	if s.StaticRoot == "" {
-		if s.TargetPort < 1 || s.TargetPort > 65535 {
-			return fmt.Errorf("target_port must be between 1 and 65535")
-		}
-		if s.TargetPort == controlPort || s.TargetPort == ingressPort {
-			return fmt.Errorf("target_port %d is reserved", s.TargetPort)
+	if s.StaticRoot == "" && s.TargetPort != 0 {
+		if err := validPort(s.TargetPort); err != nil {
+			return fmt.Errorf("target_port: %w", err)
 		}
 	}
 	if s.ReadinessPath != "" && !strings.HasPrefix(s.ReadinessPath, "/") {
@@ -160,6 +195,28 @@ func (s appSpec) validate() error {
 	}
 	if s.RestartLimit < 0 || s.RestartLimit > 20 {
 		return errors.New("restart_limit must be between 0 and 20")
+	}
+	for _, mount := range s.Mounts {
+		if !filepath.IsAbs(mount) || filepath.Clean(mount) != mount || mount == "/" || strings.ContainsAny(mount, "\r\n\x00") {
+			return fmt.Errorf("mount %q must be a clean absolute path other than /", mount)
+		}
+	}
+	for i, check := range s.Checks {
+		if check.Type != "http" && check.Type != "tcp" {
+			return fmt.Errorf("checks[%d].type must be http or tcp", i)
+		}
+		if check.Type == "http" && !strings.HasPrefix(check.Path, "/") {
+			return fmt.Errorf("checks[%d].path must start with /", i)
+		}
+		if check.IntervalS < 1 || check.TimeoutS < 1 || check.GracePeriodS < 0 {
+			return fmt.Errorf("checks[%d] needs interval_s >= 1, timeout_s >= 1, grace_period_s >= 0", i)
+		}
+		if check.port(s) == 0 {
+			return fmt.Errorf("checks[%d] needs a port: this machine serves no target_port", i)
+		}
+		if err := validPort(check.port(s)); err != nil {
+			return fmt.Errorf("checks[%d].port: %w", i, err)
+		}
 	}
 	return nil
 }
@@ -177,10 +234,6 @@ func (s appSpec) readinessURL() string {
 	return fmt.Sprintf("http://127.0.0.1:%d%s", ingressPort, s.readinessPath())
 }
 
-func (s appSpec) restartLimit() int {
-	return s.RestartLimit
-}
-
 func renderCaddyfile(spec appSpec) (string, error) {
 	if err := spec.validate(); err != nil {
 		return "", err
@@ -193,6 +246,8 @@ func renderCaddyfile(spec appSpec) (string, error) {
 			spa = "\ttry_files {path} /index.html\n"
 		}
 		body = fmt.Sprintf("\troot * %s\n%s\tfile_server\n", root, spa)
+	} else if spec.worker() {
+		body = "\trespond \"this machine serves no http service\" 503\n"
 	} else {
 		body = fmt.Sprintf(`	reverse_proxy 127.0.0.1:%d {
 		header_up Host {http.request.header.X-Kortix-App-Host}
@@ -210,7 +265,12 @@ func renderCaddyfile(spec appSpec) (string, error) {
 	encode zstd gzip
 	log {
 		output stdout
-		format json
+		# Request headers carry credentials the App does not own: the viewer
+		# token, the signed viewer identity, the provider ingress token.
+		format filter {
+			wrap json
+			request>headers delete
+		}
 	}
 %s}
 `, ingressPort, body), nil
@@ -306,13 +366,25 @@ func caddyEnvironment(parent []string) []string {
 	)
 }
 
+type checkResult struct {
+	Name      string     `json:"name"`
+	Type      string     `json:"type"`
+	Port      int        `json:"port"`
+	Path      string     `json:"path,omitempty"`
+	Status    string     `json:"status"`
+	Output    string     `json:"output,omitempty"`
+	CheckedAt *time.Time `json:"checked_at,omitempty"`
+}
+
 type runtimeState struct {
 	startedAt time.Time
 	ready     atomic.Bool
 	statusMu  sync.RWMutex
 	status    string
+	reason    string
 	restarts  int
 	lastExit  string
+	checks    []checkResult
 	logs      *logRing
 }
 
@@ -325,10 +397,17 @@ func (r *runtimeState) setStatus(status string) {
 func (r *runtimeState) snapshot() map[string]any {
 	r.statusMu.RLock()
 	defer r.statusMu.RUnlock()
-	return map[string]any{
+	out := map[string]any{
 		"status": r.status, "ready": r.ready.Load(), "started_at": r.startedAt,
 		"restarts": r.restarts, "last_exit": r.lastExit,
 	}
+	if r.reason != "" {
+		out["reason"] = r.reason
+	}
+	if len(r.checks) > 0 {
+		out["checks"] = append([]checkResult(nil), r.checks...)
+	}
+	return out
 }
 
 func pipeLines(reader io.Reader, source string, logs *logRing) {
@@ -487,26 +566,220 @@ func childExitError(name string, err error) error {
 	return fmt.Errorf("%s exited: %w", name, err)
 }
 
-func startApp(spec appSpec, state *runtimeState) (*childProcess, error) {
-	child, err := startLogged(commandFor(spec), "app", state.logs)
-	if err != nil {
-		return nil, fmt.Errorf("start app: %w", err)
-	}
-	return child, nil
-}
-
 func startReadinessWatch(ctx context.Context, spec appSpec, state *runtimeState) context.CancelFunc {
 	readyCtx, cancel := context.WithCancel(ctx)
-	go waitReady(readyCtx, spec, state)
+	switch {
+	case len(spec.Checks) > 0:
+		startChecks(readyCtx, spec, state)
+	case spec.worker():
+		// A process group with no service and no checks is ready once it runs.
+		state.ready.Store(true)
+		state.setStatus("running")
+	default:
+		go waitReady(readyCtx, spec, state)
+	}
 	return cancel
+}
+
+func checkName(check appCheck, index int) string {
+	if check.Name != "" {
+		return check.Name
+	}
+	return fmt.Sprintf("%s-%d", check.Type, index)
+}
+
+// startChecks resets every check to pending and runs each on its interval
+// after its grace period. Ready means every check passed on its latest run.
+func startChecks(ctx context.Context, spec appSpec, state *runtimeState) {
+	state.statusMu.Lock()
+	state.checks = make([]checkResult, len(spec.Checks))
+	for i, check := range spec.Checks {
+		state.checks[i] = checkResult{Name: checkName(check, i), Type: check.Type, Port: check.port(spec), Path: check.Path, Status: "pending"}
+	}
+	state.statusMu.Unlock()
+	for i, check := range spec.Checks {
+		go func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Duration(check.GracePeriodS) * time.Second):
+			}
+			ticker := time.NewTicker(time.Duration(check.IntervalS) * time.Second)
+			defer ticker.Stop()
+			for {
+				err := runCheck(ctx, check, check.port(spec))
+				if !recordCheck(ctx, state, i, err) {
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+	}
+}
+
+func runCheck(ctx context.Context, check appCheck, port int) error {
+	timeout := time.Duration(check.TimeoutS) * time.Second
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+	if check.Type == "tcp" {
+		conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", address)
+		if err != nil {
+			return err
+		}
+		return conn.Close()
+	}
+	client := &http.Client{
+		Timeout:       timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+address+check.Path, nil)
+	if err != nil {
+		return err
+	}
+	response, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	_ = response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 400 {
+		return fmt.Errorf("HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
+// recordCheck stores one result and recomputes readiness. It returns false
+// once the watch ended: a result after the process exited must not mark it ready.
+func recordCheck(ctx context.Context, state *runtimeState, index int, err error) bool {
+	state.statusMu.Lock()
+	defer state.statusMu.Unlock()
+	if ctx.Err() != nil {
+		return false
+	}
+	now := time.Now().UTC()
+	result := &state.checks[index]
+	result.CheckedAt = &now
+	result.Status, result.Output = "passing", "ok"
+	if err != nil {
+		result.Status, result.Output = "failing", truncate(err.Error(), 200)
+	}
+	ready := true
+	for _, check := range state.checks {
+		ready = ready && check.Status == "passing"
+	}
+	state.ready.Store(ready)
+	if ready {
+		state.status = "running"
+	}
+	return true
+}
+
+func truncate(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	return value[:limit]
+}
+
+var (
+	mountInfoPath   = "/proc/self/mountinfo"
+	mountWaitWindow = 15 * time.Second
+)
+
+// mountPoints reads the mount point (field 5) of every line of a mountinfo
+// file, decoding the kernel's octal escapes (`\040` is a space).
+func mountPoints(path string) (map[string]bool, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	points := map[string]bool{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		points[unescapeMountPath(fields[4])] = true
+	}
+	return points, nil
+}
+
+func unescapeMountPath(value string) string {
+	var out strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] == '\\' && i+3 < len(value) {
+			if code, err := strconv.ParseUint(value[i+1:i+4], 8, 8); err == nil {
+				out.WriteByte(byte(code))
+				i += 3
+				continue
+			}
+		}
+		out.WriteByte(value[i])
+	}
+	return out.String()
+}
+
+// waitForMounts polls until every mount is a real mountpoint. After an
+// in-guest reboot a volume path can be a plain empty directory while the
+// provider still reports it mounted; starting a database there loses its data.
+func waitForMounts(ctx context.Context, mounts []string) error {
+	deadline := time.Now().Add(mountWaitWindow)
+	for {
+		points, err := mountPoints(mountInfoPath)
+		missing := ""
+		for _, mount := range mounts {
+			if err != nil || !points[mount] {
+				missing = mount
+				break
+			}
+		}
+		if missing == "" {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("mount %s is not mounted", missing)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 func run(ctx context.Context, spec appSpec, token string) error {
 	if err := spec.validate(); err != nil {
 		return err
 	}
-	state := &runtimeState{startedAt: time.Now().UTC(), status: "starting", logs: newLogRing(defaultLogCapacity)}
+	state := &runtimeState{status: "starting", logs: newLogRing(defaultLogCapacity)}
 	serveControl(ctx, token, state)
+	return runWithState(ctx, spec, state)
+}
+
+// runWithState supervises the app and Caddy, reporting into state (the control
+// server reads it).
+func runWithState(ctx context.Context, spec appSpec, state *runtimeState) error {
+	state.statusMu.Lock()
+	state.startedAt, state.status = time.Now().UTC(), "starting"
+	if state.logs == nil {
+		state.logs = newLogRing(defaultLogCapacity)
+	}
+	state.statusMu.Unlock()
+
+	if len(spec.Mounts) > 0 {
+		if err := waitForMounts(ctx, spec.Mounts); err != nil {
+			// Never start the app on a missing volume. Keep answering /v1/status
+			// so the control plane sees why and restarts the machine.
+			state.statusMu.Lock()
+			state.status, state.reason, state.lastExit = "failed", "mount_missing", err.Error()
+			state.statusMu.Unlock()
+			state.logs.append("appd", err.Error())
+			<-ctx.Done()
+			return nil
+		}
+	}
 
 	caddyfile, err := renderCaddyfile(spec)
 	if err != nil {
@@ -519,9 +792,9 @@ func run(ctx context.Context, spec appSpec, token string) error {
 
 	var app *childProcess
 	if spec.StaticRoot == "" {
-		app, err = startApp(spec, state)
+		app, err = startLogged(commandFor(spec), "app", state.logs)
 		if err != nil {
-			return err
+			return fmt.Errorf("start app: %w", err)
 		}
 	}
 
@@ -556,12 +829,12 @@ func run(ctx context.Context, spec appSpec, token string) error {
 			terminate(app)
 			return childExitError("caddy", err)
 		case err := <-appExited:
-			state.ready.Store(false)
 			cancelReady()
 			state.statusMu.Lock()
+			state.ready.Store(false)
 			state.lastExit = fmt.Sprint(err)
 			state.statusMu.Unlock()
-			if state.restarts >= spec.restartLimit() {
+			if state.restarts >= spec.RestartLimit {
 				state.setStatus("failed")
 				terminate(caddy)
 				return fmt.Errorf(
@@ -575,7 +848,7 @@ func run(ctx context.Context, spec appSpec, token string) error {
 			restart := state.restarts
 			state.status = "restarting"
 			state.statusMu.Unlock()
-			state.logs.append("appd", fmt.Sprintf("app exited; restart %d/%d in %s", restart, spec.restartLimit(), restartDelay(restart)))
+			state.logs.append("appd", fmt.Sprintf("app exited; restart %d/%d in %s", restart, spec.RestartLimit, restartDelay(restart)))
 			timer := time.NewTimer(restartDelay(restart))
 			select {
 			case <-ctx.Done():
@@ -585,11 +858,11 @@ func run(ctx context.Context, spec appSpec, token string) error {
 				return nil
 			case <-timer.C:
 			}
-			app, err = startApp(spec, state)
+			app, err = startLogged(commandFor(spec), "app", state.logs)
 			if err != nil {
 				terminate(caddy)
 				state.setStatus("failed")
-				return err
+				return fmt.Errorf("start app: %w", err)
 			}
 			cancelReady = startReadinessWatch(ctx, spec, state)
 		}

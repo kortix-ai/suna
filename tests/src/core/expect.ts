@@ -64,6 +64,12 @@ export interface Validator<T = unknown> {
   safeParse(input: unknown): { success: boolean; error?: unknown; data?: T };
 }
 
+/** A zod error as `path: message` lines, so a contract drift reads in the report. */
+function schemaIssues(error: unknown): unknown {
+  const issues = (error as { issues?: Array<{ path: Array<string | number>; message: string }> })?.issues;
+  return Array.isArray(issues) ? issues.slice(0, 10).map((i) => `$.${i.path.join(".")}: ${i.message}`) : error;
+}
+
 export class BodyAssert {
   constructor(private body: unknown) {}
 
@@ -110,7 +116,7 @@ export class BodyAssert {
       kind: "body.schema",
       description: `body ${path} matches schema`,
       expected: "<valid schema>",
-      actual: result.success ? "<valid>" : result.error,
+      actual: result.success ? "<valid>" : schemaIssues(result.error),
       pass: result.success,
     });
     return this;

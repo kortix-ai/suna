@@ -6,6 +6,10 @@ Dependency-free on purpose: `python3 test_audit_nacl_admin_ports.py`.
 The case that matters most is `test_udp_hole_is_caught`. The ACL that failed
 the Drata control had SSH and RDP correctly carved out of its TCP rules but
 left UDP wide open, so a TCP-only reading of the ruleset called it compliant.
+
+The mixed-family cases guard the per-family walk: AWS applies a packet only
+to rules whose CIDR matches the packet's address family, so an IPv6-wide
+deny must never decide an IPv4 verdict, and vice versa.
 """
 
 from __future__ import annotations
@@ -37,7 +41,8 @@ def allow(rule_no, protocol, from_port=None, to_port=None, cidr="0.0.0.0/0"):
         "Protocol": protocol,
         "RuleAction": "allow",
         "Egress": False,
-        "CidrBlock": cidr,
+        # An entry carries exactly one CIDR; the family follows the address.
+        ("Ipv6CidrBlock" if ":" in cidr else "CidrBlock"): cidr,
     }
     if from_port is not None:
         entry["PortRange"] = {"From": from_port, "To": to_port}
@@ -139,18 +144,50 @@ def test_egress_is_ignored():
 
 
 def test_ipv6_open_source_is_caught():
-    entries = [
-        {
-            "RuleNumber": 100,
-            "Protocol": "6",
-            "RuleAction": "allow",
-            "Egress": False,
-            "Ipv6CidrBlock": "::/0",
-            "PortRange": {"From": 22, "To": 22},
-        },
-        DENY_ALL,
-    ]
+    entries = [allow(100, "6", 22, 22, cidr="::/0"), DENY_ALL]
     assert ("tcp", 22) in ports(audit.audit_acl(acl(entries), "us-west-2"))
+
+
+def test_ipv6_deny_does_not_hide_ipv4_allow():
+    """A v6-wide deny applies only to v6 packets: the v4-wide allow behind it decides."""
+    entries = [
+        deny(90, "6", 22, 22, cidr="::/0"),
+        allow(100, "6", 22, 22),
+    ]
+    found = ports(audit.audit_acl(acl(entries), "us-west-2"))
+    assert found == {("tcp", 22)}, found
+
+
+def test_ipv4_deny_does_not_hide_ipv6_allow():
+    """Mirror case: a v4-wide deny leaves the v6-wide allow behind it decisive."""
+    entries = [
+        deny(90, "6", 22, 22),
+        allow(100, "6", 22, 22, cidr="::/0"),
+    ]
+    found = ports(audit.audit_acl(acl(entries), "us-west-2"))
+    assert found == {("tcp", 22)}, found
+
+
+def test_first_wide_rule_of_each_family_decides():
+    """Each family walks the rules on its own: its own deny still wins over a later allow."""
+    entries = [
+        deny(90, "6", 22, 22, cidr="::/0"),
+        deny(95, "6", 22, 22),
+        allow(100, "6", 22, 22),
+        allow(105, "6", 22, 22, cidr="::/0"),
+    ]
+    assert audit.audit_acl(acl(entries), "us-west-2") == []
+
+
+def test_narrow_and_other_family_rules_never_decide():
+    """Narrow sources never match internet packets, and only the family's own rules apply."""
+    entries = [
+        deny(80, "6", 22, 22, cidr="10.0.0.0/8"),
+        deny(90, "6", 22, 22, cidr="::/0"),
+        allow(100, "6", 22, 22),
+    ]
+    found = ports(audit.audit_acl(acl(entries), "us-west-2"))
+    assert found == {("tcp", 22)}, found
 
 
 if __name__ == "__main__":

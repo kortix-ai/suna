@@ -12,6 +12,10 @@
 	<true/>
 	<key>com.apple.security.cs.allow-dyld-environment-variables</key>
 	<true/>
+	<!-- Computer Use: the bundled driver sends Apple Events to the apps it
+	     works with. The hardened runtime blocks them without this. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 	<!-- Outbound network (the whole app is a remote web client). -->
 	<key>com.apple.security.network.client</key>
 	<true/>

@@ -25,7 +25,7 @@ import {
   projectSessions,
   projectStatuses,
   projectTranscript,
-} from '../harness/open-code/opencode-projection'
+} from '@/harness/open-code/opencode-projection'
 
 const bigPrompt = 'You are a careful engineer. '.repeat(600) // ~16 KB
 
@@ -90,6 +90,32 @@ describe('projectCommands', () => {
       template_bytes: template.length,
     })
     expect(JSON.stringify(projected)).not.toContain('# Init')
+    // v1/v2: no `agents`, so every agent shows every command.
+    expect(projected[0]).not.toHaveProperty('agents')
+  })
+
+  test('kortix.yaml v3: only the compiled commands, each with the agents that enable it', () => {
+    const projected = projectCommands(
+      [
+        { name: 'weekly', description: 'Weekly summary', source: 'command', hints: ['$ARGUMENTS'], template: 'Summarize $ARGUMENTS' },
+        { name: 'init', description: 'guided AGENTS.md setup', source: 'command', template: 'x' },
+        { name: 'research', description: 'a skill', source: 'skill', template: 'y' },
+      ],
+      { weekly: { template: 'Summarize $ARGUMENTS', agents: ['lead', 'helper'] } },
+    )
+    expect(projected).toEqual([
+      {
+        name: 'weekly',
+        description: 'Weekly summary',
+        agent: null,
+        model: null,
+        source: 'command',
+        subtask: null,
+        hints: ['$ARGUMENTS'],
+        template_bytes: 'Summarize $ARGUMENTS'.length,
+        agents: ['lead', 'helper'],
+      },
+    ])
   })
 })
 
@@ -139,7 +165,7 @@ describe('session, status, permission and question projections', () => {
         title: 'Child',
         parent_id: 'ses_root',
         directory: '/workspace',
-        time: { created: 1, updated: 9, compacting: 7 },
+        time: { created: 1, updated: 9, compacting: 7, archived: 5 },
         revert: { messageID: 'msg_3', partID: 'prt_1' },
       },
     ]
@@ -150,7 +176,7 @@ describe('session, status, permission and question projections', () => {
           title: 'Child',
           parentID: 'ses_root',
           directory: '/workspace',
-          time: { created: 1, updated: 9, compacting: 7 },
+          time: { created: 1, updated: 9, compacting: 7, archived: 5 },
           revert: { messageID: 'msg_3', partID: 'prt_1' },
         },
       ]),
@@ -165,6 +191,7 @@ describe('session, status, permission and question projections', () => {
           time_created: 1,
           time_updated: 9,
           time_compacting: 7,
+          time_archived: 5,
           revert: JSON.stringify({ messageID: 'msg_3', partID: 'prt_1' }),
         },
       ]),

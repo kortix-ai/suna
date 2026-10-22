@@ -1,12 +1,28 @@
-import { accountMembers, accountMemberships, accounts } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { accountMemberships, accounts } from '@kortix/db';
 
 import { initializeFreeTierAccount } from '../../billing/services/free-tier';
 import { config } from '../../config';
 import { syncSignupContactToMailtrap } from '../mailtrap-contacts';
+import { sendSignupWebhook } from '../signup-webhook';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
+import { anyAccountMembershipOf } from '../../iam/membership-read';
 import { db } from '../../shared/db';
+import { getSupabase } from '../../shared/supabase';
+import { profileNameFromMetadata } from './account-name';
 import { defaultAccountName } from './app';
+
+/**
+ * The sign-in profile's name (Google/GitHub OAuth fill `full_name` / `name`).
+ * Best effort: a miss only means the suggestion falls back to the email.
+ */
+async function profileName(userId: string): Promise<string | null> {
+  try {
+    const { data } = await getSupabase().auth.admin.getUserById(userId);
+    return profileNameFromMetadata(data?.user?.user_metadata);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Idempotent personal-account bootstrap for a new auth user.
@@ -18,8 +34,14 @@ import { defaultAccountName } from './app';
 export async function bootstrapPersonalAccount(
   userId: string,
   email?: string | null,
+  /** Pass it when the caller already has the auth user; `undefined` looks it up. */
+  fullName?: string | null,
+  lookupProfileName: (userId: string) => Promise<string | null> = profileName,
 ): Promise<{ accountId: string; created: boolean }> {
-  const name = defaultAccountName(email);
+  // Never `"<email>'s Account"` (KRTX-638): a suggested name the user confirms
+  // or changes on their first project (`/new`).
+  const profile = fullName === undefined ? await lookupProfileName(userId) : fullName;
+  const name = defaultAccountName(email, profile);
 
   const created = await db
     .insert(accounts)
@@ -60,15 +82,13 @@ export async function bootstrapPersonalAccount(
     void syncSignupContactToMailtrap(email).catch((err) =>
       console.warn(`[accounts] Mailtrap contact sync failed for ${userId}:`, err),
     );
+    // Same contract for the sales factory's signup webhook (inert when unset).
+    if (email) void sendSignupWebhook({ userId, email, name: profile });
 
     return { accountId: userId, created: true };
   }
 
-  const [membership] = await db
-    .select({ accountId: accountMembers.accountId })
-    .from(accountMembers)
-    .where(eq(accountMembers.userId, userId))
-    .limit(1);
+  const [membership] = await anyAccountMembershipOf(userId);
 
   return { accountId: membership?.accountId ?? userId, created: false };
 }

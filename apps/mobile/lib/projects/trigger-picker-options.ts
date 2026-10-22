@@ -4,6 +4,7 @@
  * (importing hooks.ts directly drags in the whole client + RN runtime).
  */
 
+import { isSelectableAgent } from '@kortix/sdk';
 import type { ProjectAgentEntry, ProjectLlmCatalogResponse } from './projects-client';
 
 export interface TriggerAgentOption {
@@ -11,10 +12,10 @@ export interface TriggerAgentOption {
   description: string | null;
 }
 
-/** Non-subagent roles a trigger can run as. */
+/** The roles a trigger can run as: the SDK's selectable-agent rule. */
 export function filterTriggerAgents(agents: ProjectAgentEntry[] | undefined): TriggerAgentOption[] {
   return (agents ?? [])
-    .filter((a) => a.mode !== 'subagent')
+    .filter(isSelectableAgent)
     .map((a) => ({ name: a.name, description: a.description }));
 }
 

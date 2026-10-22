@@ -35,6 +35,7 @@ const SESSION_ID = 'session-1';
 function secret(overrides: Record<string, unknown> = {}) {
   return {
     secretId: '33333333-3333-4333-8333-333333333333',
+    name: 'PROVIDER_KEY',
     identifier: 'provider-primary',
     ownerUserId: null,
     valueEnc: encryptProjectSecret(PROJECT_ID, 'plaintext-test-value'),

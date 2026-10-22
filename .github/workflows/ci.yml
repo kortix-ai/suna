@@ -4,8 +4,14 @@ name: CI
 # (SOC 2 CC8.1 — automated checks run on every change before review/merge).
 
 on:
+  # A push or pull request into `dev` runs no CI (Actions minutes, 2026-10-03).
+  # The release pull request into `prod` is the gate; the pull request into
+  # `staging` runs nothing (2026-10-16). A weekly schedule runs every job as a
+  # safety net on `dev`.
   pull_request:
-    branches: [main, staging, prod]
+    branches: [prod]
+  schedule:
+    - cron: '53 4 * * 1' # weekly, Monday 04:53 UTC
   workflow_dispatch:
 
 concurrency:
@@ -27,11 +33,11 @@ jobs:
   #
   # A job gated `if: needs.changes.outputs.* == 'true'` reports as "skipped" when
   # it doesn't run, and GitHub treats a skipped job as passing — safe even if
-  # these are later made required checks. workflow_dispatch always runs the full
-  # suite (the `|| workflow_dispatch` guard on each job).
+  # these are later made required checks. workflow_dispatch and schedule always run the
+  # full suite (the `|| github.event_name != 'pull_request'` guard on each job).
   changes:
     name: Detect changes
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 5
     outputs:
       api: ${{ steps.filter.outputs.api }}
@@ -79,6 +85,9 @@ jobs:
               - '.github/workflows/ci.yml'
               - 'tsconfig.base.json'
               - 'apps/kortix-sandbox-agent-server/**'
+              # Bundled into the daemon (KORTIXD_SHARED_SOURCES).
+              - 'packages/api-contract/src/**'
+              - 'packages/sdk/src/core/session/wire-message-id.ts'
             sandbox_image:
               - '.github/workflows/ci.yml'
               - 'apps/sandbox/Dockerfile'
@@ -99,52 +108,22 @@ jobs:
               - 'apps/cli/src/self-host/**'
               - 'apps/cli/scripts/self-host-e2e/**'
 
-  api-typecheck:
-    name: API typecheck
-    needs: changes
-    if: needs.changes.outputs.api == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Install Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: 22
-
-      - name: Install pnpm
-        # The lockfile is pnpm 8 format (lockfileVersion 6.0), matching the
-        # packageManager pin. corepack provides exactly that version.
-        run: |
-          corepack enable pnpm
-          echo "pnpm: $(pnpm -v)  node: $(node -v)"
-
-      - name: Install dependencies (kortix-api + workspace deps)
-        # engine-strict is relaxed for CI only: an out-of-scope web dep declares
-        # engines pnpm>=10/node>=24, which conflicts with the repo's pnpm 8
-        # lockfile. This relaxes the version check only — supply-chain controls
-        # (minimum-release-age, ignore-scripts) stay enforced.
-        run: pnpm install --frozen-lockfile --filter "kortix-api..."
-        env:
-          npm_config_engine_strict: "false"
-
-      - name: Typecheck
-        run: pnpm --filter kortix-api typecheck
+  # No API typecheck here: the `packages-api` contract lane runs
+  # `pnpm --filter kortix-api typecheck` on the same release tree
+  # (tests/bin/package-quality.ts), so a job here was the same tsc twice.
 
   frontend-build:
     name: Frontend build
     needs: changes
-    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    if: needs.changes.outputs.frontend == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -163,10 +142,10 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Enforce frontend SDK boundary
-        run: |
-          pnpm --dir apps/web exec bun test src/sdk-boundary.test.ts
-          pnpm --dir apps/web exec eslint src --quiet
+      # src/sdk-boundary.test.ts runs in the `packages-rest` contract lane
+      # (apps/web `bun test`); only the lint is unique to this job.
+      - name: Enforce frontend lint
+        run: pnpm --dir apps/web exec eslint src --quiet
 
       - name: Lint translations
         run: pnpm --dir apps/web run lint:i18n
@@ -216,8 +195,8 @@ jobs:
   sandbox-agent-build:
     name: Sandbox agent build
     needs: changes
-    if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -228,16 +207,21 @@ jobs:
         with:
           bun-version: latest
 
+      # The import-boundary lint runs under Node: ESLint's config validation
+      # crashes under the Bun runtime (apps/kortix-sandbox-agent-server/ARCHITECTURE.md).
+      - name: Install Node
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 22
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
         working-directory: apps/kortix-sandbox-agent-server
 
-      - name: Install worker dependencies
-        run: bun install --frozen-lockfile
-        working-directory: apps/kortix-worker
-
-      - name: Typecheck
-        run: bun run typecheck
+      # No typecheck: the `packages-kortixd` contract lane runs
+      # `pnpm --filter kortixd typecheck` on the same release tree.
+      - name: Import boundaries
+        run: bun run lint && bun run test:architecture
         working-directory: apps/kortix-sandbox-agent-server
 
       - name: Build Linux sandbox agent daemon
@@ -256,8 +240,8 @@ jobs:
   sandbox-image-packages:
     name: Sandbox image apt packages
     needs: changes
-    if: needs.changes.outputs.sandbox_image == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    if: needs.changes.outputs.sandbox_image == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:
       - name: Checkout
@@ -269,15 +253,15 @@ jobs:
   cli-binary-smoke:
     name: CLI binary smoke
     needs: changes
-    if: needs.changes.outputs.cli == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    if: needs.changes.outputs.cli == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -317,15 +301,15 @@ jobs:
   self-host-schema:
     name: Self-host schema bootstrap
     needs: changes
-    if: needs.changes.outputs.self_host == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    if: needs.changes.outputs.self_host == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -344,16 +328,13 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Same cache-key as the dev/staging/preview API image builds, so this
-        # smoke build starts warm from layers those workflows already built.
-        uses: useblacksmith/setup-docker-builder@v2
-        with:
-          cache-key: apps/api/Dockerfile:linux/amd64
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build API image
-        # --load: the Blacksmith builder is a separate buildkitd, so the result
+        # --load: the buildx builder is a separate buildkitd, so the result
         # must be exported into the local daemon for the compose stack below.
-        run: docker build --load --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
+        # The dev image's registry cache warms it (read-only).
+        run: docker build --load --cache-from type=registry,ref=kortix/kortix-api:dev-buildcache --build-arg SERVICE=apps/api -f apps/api/Dockerfile -t kortix/kortix-api:selfhost-local .
 
       - name: Self-host schema-bootstrap check (fresh DB)
         run: bash apps/cli/scripts/self-host-e2e/schema-check.sh
@@ -362,26 +343,32 @@ jobs:
 
   desktop-installer-smoke:
     name: Desktop installer smoke
-    # Skip on PRs that don't touch desktop code. Push-to-main builds (desktop.yml)
+    # Skip on PRs that don't touch desktop code. Push-to-dev builds (desktop.yml)
     # still cover the full signed release artifacts.
     needs: changes
-    if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'blacksmith-4vcpu-ubuntu-2204' }}
+    if: needs.changes.outputs.desktop == 'true' || github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_RUNNER_M_2204 || 'ubuntu-22.04' }}
     timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Install Node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
       - name: Install pnpm
         run: corepack enable pnpm
 
+      # The installer bundles the computer agent (packages/agent-tunnel), built
+      # with bun by scripts/ensure-runtime.js before electron-builder runs.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron
+        run: pnpm install --frozen-lockfile --filter @kortix/desktop-electron --filter @kortix/agent-tunnel
         env:
           npm_config_engine_strict: "false"
 
@@ -403,10 +390,10 @@ jobs:
 
   dependency-scan:
     name: Dependency + secret scan
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Trivy filesystem (fail on CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

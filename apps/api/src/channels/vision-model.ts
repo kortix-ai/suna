@@ -1,8 +1,6 @@
-import { config } from '../config';
 import { gatewayModelCatalog } from '../llm-gateway/models/catalog-models';
 import { servableProjectCatalog } from '../llm-gateway/models/servable-catalog';
-import { platformDefaultModelId } from '../llm-gateway/models/served-managed-models';
-import { projectLlmGatewayEnabledById } from '../llm-gateway/enablement';
+import { platformDefaultModelId, platformVisionModelId } from '../llm-gateway/models/served-managed-models';
 import { isModelServableForAccount } from '../llm-gateway/resolution/default-model';
 import { accountMayUseManagedModels } from '../billing/services/entitlements';
 
@@ -13,8 +11,8 @@ import { accountMayUseManagedModels } from '../billing/services/entitlements';
  * was given for the model. When they say no image, the agent downloads the
  * file, calls `read`, gets "Image read successfully", and still has nothing to
  * look at — then hunts for ImageMagick / tesseract / an OCR API and the turn
- * dies with no answer. Observed live on Teams 2026-09-19 (session
- * 196a99f5-8d4d-4d48-988e-cec7152e0d10, `deepseek-v4-flash`).
+ * dies with no answer. Observed live on Teams 2026-09-19 (a dev
+ * session, `deepseek-v4-flash`).
  *
  * `LLM_GATEWAY_VISION_MODEL` already encodes the platform's answer for this —
  * "route image-bearing DEFAULT-model requests to this model" — but the gateway
@@ -105,6 +103,20 @@ export function capabilityReadsImages(model: CapabilityView | undefined): boolea
   return model.attachment === true;
 }
 
+/**
+ * The prompt note for a turn whose image no model in reach can read. Without
+ * it the agent called `read`, saw nothing, and hunted for ImageMagick and
+ * tesseract (Teams, 2026-09-19).
+ */
+export const NO_VISION_NOTE = [
+  '',
+  'IMPORTANT: no image-capable model is available in this project, so you',
+  'cannot see the attached image even after downloading it. Do not call `read`',
+  'on it and do not look for OCR tools. Tell the user plainly that you cannot',
+  'view images here, ask them to paste the text or describe it, and mention',
+  'that a project admin can enable an image-capable model.',
+].join('\n');
+
 /** The cheap, synchronous check used on the channel hot path. */
 export function modelReadsImages(projectId: string, model: string | null | undefined): boolean {
   if (!model) return false;
@@ -144,7 +156,7 @@ async function replacementCandidates(input: {
     ([, m]) => m.enabled !== false && (!needsVision || capabilityReadsImages(m)),
   );
   const preferred = [
-    ...(needsVision ? [config.LLM_GATEWAY_VISION_MODEL?.trim()] : []),
+    ...(needsVision ? [platformVisionModelId()] : []),
     catalog.defaultModel,
     platformDefaultModelId(),
   ].filter((m): m is string => !!m);
@@ -181,7 +193,9 @@ async function replacementCandidates(input: {
 }
 
 /**
- * The model this channel turn must run on, or `null` to leave it alone.
+ * The model this channel turn must run on: the servable pin, or a
+ * replacement. `null` only when there is nothing to send (no pin, no image)
+ * or nothing servable to send.
  *
  * Two things make a turn unanswerable before it starts, and both are
  * invisible to the person typing in Teams or Slack:
@@ -211,12 +225,6 @@ export async function channelTurnModel(input: {
   sessionId?: string;
   /** A session not created yet: the keys it will select count in the check. */
   providerSecretPools?: Record<string, string[]>;
-  /**
-   * The session does not run `currentModel` yet — a conversation's `/model`
-   * choice made after it started. A servable one is returned, so the choice
-   * travels with this prompt.
-   */
-  explicit?: boolean;
 }): Promise<string | null> {
   const { projectId, accountId, userId, currentModel, hasImage } = input;
   if (!userId) return null;
@@ -235,8 +243,6 @@ export async function channelTurnModel(input: {
   // would have skipped exactly those. The probe is cached per person, session
   // and model, so a burst of chat costs one resolution.
   if (!hasImage && !currentModel) return null;
-
-  if (!(await projectLlmGatewayEnabledById(projectId).catch(() => false))) return null;
 
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId).catch(() => false));
   const probe = async (model: string): Promise<boolean> => {
@@ -274,7 +280,12 @@ export async function channelTurnModel(input: {
   if (hasImage && effectiveReadsImages && pinServable && currentModel) {
     return wireModelId(currentModel);
   }
-  if (!hasImage && pinServable) return input.explicit && currentModel ? wireModelId(currentModel) : null;
+  // A text message carries its servable pin for the same reason: with no model
+  // on the prompt, OpenCode answers on the model of the session's last prompt.
+  // A Teams channel pinned to DeepSeek answered on `codex/gpt-6-astra` from
+  // 2026-09-24 to 2026-10-01, because one earlier prompt had carried it, and
+  // failed every turn with "Connect Codex".
+  if (!hasImage && pinServable) return currentModel ? wireModelId(currentModel) : null;
 
   const needsVision = hasImage;
   const candidates = await replacementCandidates({

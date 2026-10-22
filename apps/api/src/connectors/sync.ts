@@ -8,6 +8,7 @@ import {
   connectorSyncFences,
   projectSessionConnectorBindings,
   projects,
+  tunnelConnections,
 } from '@kortix/db';
 /**
  * Connector materialization sweep — read `connectors:` from kortix.yaml,
@@ -18,12 +19,13 @@ import {
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
+import { getImpersonationContext } from '../shared/impersonation';
 import { parse as parseToml } from 'smol-toml';
 import { listAgentMailInstalls, loadSlackInstall } from '../channels/install-store';
 import { resolveFeatureFlag } from '../feature-flags/registry';
 import { assertAllowedEndpointUrl, assertAllowedSourceAddress } from '../marketplace/catalog';
-import { safeEgressFetch } from '../shared/ssrf-guard';
+import { safeEgressFetch, UnsafeEgressError } from '../shared/ssrf-guard';
 import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 import { config } from '../config';
 import {
@@ -32,22 +34,33 @@ import {
   manifestHashForConnector,
 } from '../projects/connectors';
 import { type GitBackedProject, isRepoFileNotFoundError, readRepoFile } from '../projects/git';
-import { withProjectGitAuth } from '../projects/index';
+import { withProjectGitAuth } from '../projects/surface';
 import { extractProjectPolicies } from '../projects/policies';
+import { hideSupersededSlack } from './channel-rules';
 import {
   confineSharedProjectSecretToConnector,
   getProjectSecretValueForConsumer,
 } from '../projects/secrets';
-import { extractTriggers, readManifest } from '../projects/triggers';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
+import { type GitTriggerSpec, extractTriggers, readManifest } from '../projects/triggers';
 import { reconcileProjectTriggerRuntime } from '../projects/trigger-runtime-catalog';
+import { reconcileEventSubscriptions } from '../projects/surface';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import { ensureChannelConnectorDeclared, removeChannelConnectorDeclared } from './channel-manifest';
 import { synthesizeChannelConnectors } from './channel-materialize';
 import { channelApiBase, channelCatalog, channelDefaultSlug } from './channels';
-import { synthesizeComputerConnectors } from './computer-materialize';
-import { COMPUTER_SLUG, computerCatalog } from './computers';
-import { ensureDefaultConnection, resolveCredentialValue } from './credentials';
+import {
+  COMPUTER_CONNECTOR_NAME,
+  COMPUTER_SLUG,
+  attachComputerConnection,
+  computerCatalog,
+} from './computers';
+import {
+  ensureDefaultConnection,
+  resolveCredentialValue,
+  resolveFirstMemberCredential,
+} from './credentials';
 import { listMcpTools, type FetchImpl } from './call';
 import { assertConnectorEndpointUrl, connectorEgressFetch } from './egress';
 import type { ProjectPolicySpec } from '../projects/policies';
@@ -64,8 +77,9 @@ import {
 import { composioCatalogTools, composioConfigured } from './composio';
 import { pipedreamAppIcon, pipedreamCatalog, pipedreamConfigured } from './pipedream';
 import type { PolicyAction } from './policy';
+import { mcpAppForUrl } from './mcp-apps';
 import { resolvePostmanSource, type PostmanSourceDocument } from './postman-source';
-import { parseSpecDocument } from './spec-doc';
+import { isSpecLoadError, parseSpecDocument, SpecLoadError } from './spec-doc';
 import {
   type ConnectorAuthDiscovery,
   discoverHttpAuthChallenge,
@@ -111,19 +125,23 @@ export async function rematerializeCatalogAfterCredentialUpdate(
   },
   sync: typeof syncProjectConnectors = syncProjectConnectors,
 ): Promise<SyncResult | undefined> {
-  // connectorActions is one project-wide catalog. Only its canonical shared
-  // credential may write it. A member-owned or non-default connection can have
-  // tenant-specific tools and must never publish those tools to other users.
-  if (input.provider !== 'mcp' || input.ownerType !== 'project' || !input.isDefault) {
-    return undefined;
-  }
+  // connectorActions is one project-wide catalog. A project default account
+  // forces its own token. A member account's sign-in only re-syncs:
+  // `resolveMcpCatalogCredential` still prefers the project account, and uses
+  // a member token only when no project account has one. A non-default project
+  // account never publishes.
+  if (input.provider !== 'mcp') return undefined;
+  const projectDefault = input.ownerType === 'project' && input.isDefault;
+  if (input.ownerType === 'project' && !input.isDefault) return undefined;
   const mcpCredentialOverrides =
-    input.connectorId && input.credential
+    projectDefault && input.connectorId && input.credential
       ? new Map([[input.connectorId, input.credential]])
       : undefined;
   return sync(input.projectId, input.accountId, {
     force: true,
     ...(mcpCredentialOverrides ? { mcpCredentialOverrides } : {}),
+    // A member's update refreshes only its own connector.
+    ...(!projectDefault && input.connectorId ? { onlyConnectorId: input.connectorId } : {}),
   });
 }
 
@@ -140,6 +158,7 @@ export function catalogPersistenceState(
 export function mcpCatalogCredentialError(error: unknown): string {
   const message = error instanceof Error ? error.message : '';
   if (
+    error instanceof SecretUndecryptableError ||
     /^OAuth2 token request failed \([1-5][0-9]{2}\): [A-Za-z0-9_.-]{1,128}$/.test(message) ||
     message === 'OAuth2 token response has no access_token' ||
     message === 'Invalid stored OAuth2 credential'
@@ -149,12 +168,30 @@ export function mcpCatalogCredentialError(error: unknown): string {
   return 'MCP catalog credential resolution failed';
 }
 
+/**
+ * The credential an MCP catalog is fetched with: an explicit override, else
+ * the project account's, else the earliest signed-in member account's (an
+ * app signed in only "for you" still loads its tools, 2026-10-09). `member`
+ * says the catalog came from a personal account: the connector list then
+ * shows it only to people with an account on the connector, so one member's
+ * tool names never reach the rest of the project.
+ */
 export async function resolveMcpCatalogCredential(
   connectorId: string,
   overrides: ReadonlyMap<string, string> | undefined,
   resolve: typeof resolveCredentialValue = resolveCredentialValue,
-): Promise<string | null> {
-  return overrides?.get(connectorId) ?? resolve(connectorId, null);
+  resolveMember: typeof resolveFirstMemberCredential = resolveFirstMemberCredential,
+  resolveBoundSecret: () => Promise<string | null> = async () => null,
+): Promise<{ value: string | null; member: boolean }> {
+  const override = overrides?.get(connectorId);
+  if (override) return { value: override, member: false };
+  const project = await resolve(connectorId, null);
+  if (project) return { value: project, member: false };
+  // A project secret bound with `kortix connectors secret` is project-wide too.
+  const bound = await resolveBoundSecret();
+  if (bound) return { value: bound, member: false };
+  const member = await resolveMember(connectorId);
+  return { value: member, member: member !== null };
 }
 
 /**
@@ -209,7 +246,8 @@ export async function discoverDraftConnectorAuth(
   return discoverConnectorAuthFromSource(await withProjectGitAuth(row), draft);
 }
 
-async function discoverConnectorAuthFromSource(
+/** Exported for contract tests (`unit-connector-spec-load-discovery.test.ts`). */
+export async function discoverConnectorAuthFromSource(
   project: GitBackedProject,
   draft: Record<string, unknown>,
 ): Promise<ConnectorAuthDiscovery> {
@@ -234,6 +272,17 @@ async function discoverConnectorAuthFromSource(
     try {
       return discoverOpenApiAuth(await loadSpecDoc(project, spec), spec);
     } catch (e) {
+      if (isSpecLoadError(e)) {
+        // The spec the user pointed at cannot be loaded: a non-OK HTTP status
+        // (an auth-walled or wrong URL — Better Stack `3e5bd849…`), a landing
+        // page, or an unparseable body. Expected user-input state, not a
+        // server fault — there is no auth to discover from an unreadable spec,
+        // so degrade like the missing-repo case below instead of letting the
+        // throw 500 → Sentry. The real reason surfaces through the sync path's
+        // catalog error (connector status `error` + the create flow's
+        // sync-error toast).
+        return { ...EMPTY_AUTH_DISCOVERY, warnings: [e.message] };
+      }
       if (
         isRepoFileNotFoundError(e) ||
         String((e as Error).message).startsWith('connector spec not found in repository:')
@@ -253,6 +302,12 @@ async function discoverConnectorAuthFromSource(
         resolveWorkspace: resolvePostmanWorkspace,
       });
     } catch (e) {
+      if (isSpecLoadError(e)) {
+        // Same expected user-input state as the openapi branch above: a
+        // remote Postman source the API could not load degrades to the empty
+        // discovery instead of a 500 → Sentry.
+        return { ...EMPTY_AUTH_DISCOVERY, warnings: [e.message] };
+      }
       if (
         isRepoFileNotFoundError(e) ||
         String((e as Error).message).startsWith('connector spec not found in repository:')
@@ -278,6 +333,11 @@ async function discoverConnectorAuthFromSource(
           ? draft.baseUrl
           : null;
   if (typeof endpoint !== 'string' || !endpoint.trim()) return EMPTY_AUTH_DISCOVERY;
+  // A catalogue app Kortix signs in to with its own OAuth client takes a
+  // bearer token, even when its server lists tools without one (Google's do).
+  if (provider === 'mcp' && mcpAppForUrl(endpoint)?.auth.kind === 'kortix_client') {
+    return discoverHttpAuthChallenge('Bearer', 'mcp endpoint');
+  }
   assertAllowedEndpointUrl(endpoint);
   const response = await safeEgressFetch(
     endpoint,
@@ -355,31 +415,6 @@ export async function reconcileChannelConnectors(
   }
 }
 
-/**
- * Best-effort re-materialization after a tunnel (computer) changes for an
- * ACCOUNT (machine connected / removed). Tunnels are account-scoped but
- * connectors are project-scoped, so every machine profile must be reconciled
- * across every project of the account. Each profile exists iff its tunnel has
- * completed a handshake, so this is idempotent.
- * Never throws: a sync hiccup must not fail the connect/remove request.
- */
-export async function reconcileComputerConnectors(accountId: string): Promise<void> {
-  try {
-    const rows = await db
-      .select({ projectId: projects.projectId })
-      .from(projects)
-      .where(eq(projects.accountId, accountId));
-    for (const r of rows) {
-      await syncProjectConnectors(r.projectId, accountId);
-    }
-  } catch (e) {
-    console.warn('[connector] computer connector reconcile failed', {
-      accountId,
-      err: (e as Error).message,
-    });
-  }
-}
-
 export interface SyncOptions {
   /**
    * Re-fetch every connector's catalog even when its manifest hash is
@@ -391,10 +426,16 @@ export interface SyncOptions {
   force?: boolean;
   /** Exact connection credentials used only for this in-memory MCP refresh. */
   mcpCredentialOverrides?: ReadonlyMap<string, string>;
+  /** Re-fetch only this connector. A member's credential update refreshes its
+   *  own connector, not the whole project, so repeated saves cannot fan out
+   *  into every connector's catalog fetch. */
+  onlyConnectorId?: string;
 }
 
 interface ResolvedCatalog {
   actions: NormalizedAction[];
+  /** Fetched with a member's personal credential (`resolveMcpCatalogCredential`). */
+  memberPublished?: boolean;
   /** OpenAPI server discovered from the doc (folded into config). */
   server: string | null;
   iconUrl?: string | null;
@@ -466,8 +507,10 @@ async function syncProjectConnectorsFenced(
   // kortix.yaml" OR a transient git error — either way we must not treat it as
   // "zero declared connectors" and delete the project's real ones below.
   let declaredSpecs: ConnectorSpec[] = [];
+  let triggerSpecs: GitTriggerSpec[] | null = null;
   if (manifest) {
     const triggers = extractTriggers(manifest);
+    triggerSpecs = triggers.specs;
     await reconcileProjectTriggerRuntime(projectId, triggers.specs);
     errors.push(...triggers.errors.map((e) => ({ slug: e.slug, error: e.error })));
 
@@ -489,11 +532,27 @@ async function syncProjectConnectorsFenced(
   // connector just appears" must hold for any project. Synthetic specs are
   // materialized like any other connector but never written back to git.
   const channelSpecs = await synthesizeChannelConnectors(projectId, declaredSpecs);
-  // Computer connectors are install-driven the same way: one synthetic profile
-  // for each machine that has completed a tunnel handshake.
-  // A regular connector — no experimental opt-in — also manifest-independent.
-  const computerSpecs = await synthesizeComputerConnectors(projectId, declaredSpecs);
+  // Computer connectors are created by pairing a machine, never by kortix.yaml
+  // (the parser rejects `provider="computer"`). Every existing one stays
+  // materialized, which also keeps its native catalog current after a code change.
+  const computerSpecs = await existingComputerConnectorSpecs(projectId, declaredSpecs);
   const specs = [...declaredSpecs, ...channelSpecs, ...computerSpecs];
+  // The summary must agree with `connectors ls` (KRTX-2669): the list applies
+  // two hiding predicates (`hideMachinelessComputers` and `hideSupersededSlack`,
+  // see `listConnectors`), so the summary counts a spec only when the list
+  // would show its row after the sync. A machineless computer connector is
+  // re-upserted for catalog freshness but stays out of both; a legacy `slack`
+  // connector stays hidden while the Slack channel exists.
+  const machinelessSlugs = await machinelessComputerSlugs(projectId);
+  const visibleSpecSlugs = new Set(
+    hideSupersededSlack(
+      specs.map((spec) => ({
+        slug: spec.slug,
+        providerType: spec.provider,
+        config: { app: spec.app },
+      })),
+    ).map((view) => view.slug),
+  );
 
   // A connector binding is server-side by definition. Convert legacy runtime
   // rows before catalog discovery or a concurrent sandbox start can read them.
@@ -520,6 +579,7 @@ async function syncProjectConnectorsFenced(
       manifestHash: connectors.manifestHash,
       status: connectors.status,
       providerType: connectors.providerType,
+      authSecret: connectors.authSecret,
     })
     .from(connectors)
     .where(eq(connectors.projectId, projectId));
@@ -539,6 +599,12 @@ async function syncProjectConnectorsFenced(
 
   let synced = 0;
   for (const sourceSpec of specs) {
+    if (
+      opts.onlyConnectorId &&
+      existingBySlug.get(sourceSpec.slug)?.connectorId !== opts.onlyConnectorId
+    ) {
+      continue;
+    }
     try {
       let spec = sourceSpec;
       if (sourceSpec.authAuto) {
@@ -592,20 +658,28 @@ async function syncProjectConnectorsFenced(
         manifestMatches: ex?.manifestHash === manifestHashForConnector(spec),
       });
       let catalogCredential: string | null = null;
+      let memberPublished = false;
       let catalogCredentialError: string | null = null;
       if (!catalogUnchanged && spec.provider === 'mcp') {
         try {
-          catalogCredential = ex
-            ? await resolveMcpCatalogCredential(ex.connectorId, opts.mcpCredentialOverrides)
-            : null;
-          if (catalogCredential === null && spec.auth.secret) {
-            catalogCredential = await getProjectSecretValueForConsumer({
-              projectId,
-              accountId,
-              name: spec.auth.secret,
-              consumer: 'connector',
-            });
-          }
+          // The binding `kortix connectors secret` writes lives on the row, not
+          // in kortix.yaml: read both, or tools/list goes out unauthenticated.
+          const boundSecret = spec.auth.secret ?? ex?.authSecret ?? null;
+          const resolveBoundSecret = async () =>
+            boundSecret
+              ? getProjectSecretValueForConsumer({ projectId, accountId, name: boundSecret, consumer: 'connector' })
+              : null;
+          const resolved = ex
+            ? await resolveMcpCatalogCredential(
+                ex.connectorId,
+                opts.mcpCredentialOverrides,
+                undefined,
+                undefined,
+                resolveBoundSecret,
+              )
+            : { value: await resolveBoundSecret(), member: false };
+          catalogCredential = resolved.value;
+          memberPublished = resolved.member;
         } catch (error) {
           catalogCredentialError = mcpCatalogCredentialError(error);
         }
@@ -614,12 +688,13 @@ async function syncProjectConnectorsFenced(
         ? null
         : catalogCredentialError
           ? { actions: [], server: null, error: catalogCredentialError }
-          : await resolveCatalog(gitProject, spec, {
-              credential: catalogCredential,
-            });
+          : {
+              ...(await resolveCatalog(gitProject, spec, { credential: catalogCredential })),
+              memberPublished,
+            };
       await upsertConnector(projectId, accountId, spec, catalog, ex?.connectorId ?? null, fence);
       if (catalog?.error) errors.push({ slug: spec.slug, error: catalog.error });
-      synced++;
+      if (!machinelessSlugs.has(spec.slug) && visibleSpecSlugs.has(spec.slug)) synced++;
     } catch (e) {
       errors.push({ slug: sourceSpec.slug, error: (e as Error).message });
     }
@@ -632,10 +707,13 @@ async function syncProjectConnectorsFenced(
   // desiredSlugs, so they're kept). When the manifest is UNREADABLE we must not
   // touch manifest-declared connectors (could be a transient git error) — only
   // reconcile CHANNEL rows whose install is gone, so a disconnect still cleans up.
+  // Computer connectors are never removed here: pairing creates them outside
+  // any fence, so one created after `computerSpecs` was read is not desired yet.
   const removed = existing.filter(
     (e) =>
+      e.providerType !== 'computer' &&
       !desiredSlugs.has(e.slug) &&
-      (manifest || e.providerType === 'channel' || e.providerType === 'computer'),
+      (manifest || e.providerType === 'channel'),
   );
   for (const e of removed) {
     await withConnectorSyncWrite(fence, connectorScope(e.slug), async (tx) => {
@@ -645,25 +723,19 @@ async function syncProjectConnectorsFenced(
         .where(eq(projectSessionConnectorBindings.connectorId, e.connectorId))
         .limit(1);
       if (bound) {
-        if (e.providerType === 'computer' && e.slug === COMPUTER_SLUG) {
-          // Existing sessions can remain durably bound to the retired aggregate
-          // connector. DB-backed catalog and call resolution expose this row only
-          // to a session with an exact durable binding.
-          await tx
-            .update(connectors)
-            .set({ enabled: true, status: 'active', updatedAt: new Date() })
-            .where(eq(connectors.connectorId, e.connectorId));
-        } else {
-          await tx
-            .update(connectors)
-            .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
-            .where(eq(connectors.connectorId, e.connectorId));
-        }
+        await tx
+          .update(connectors)
+          .set({ enabled: false, status: 'disabled', updatedAt: new Date() })
+          .where(eq(connectors.connectorId, e.connectorId));
       } else {
         await tx.delete(connectors).where(eq(connectors.connectorId, e.connectorId));
       }
     });
   }
+
+  // After the connector rows above exist: an event trigger resolves its connector row.
+  // The periodic sweep also retries `error` / `needs_connection` subscriptions here.
+  if (triggerSpecs) await reconcileEventSubscriptions(projectId, accountId, triggerSpecs);
 
   return { synced, errors };
 }
@@ -672,7 +744,7 @@ export async function reconcileEmailConnections(
   projectId: string,
   accountId: string,
 ): Promise<void> {
-  const installs = await listAgentMailInstalls(projectId).catch(() => []);
+  const installs = await listAgentMailInstalls(projectId);
   const canonicalSlug = channelDefaultSlug('email');
   const [connector] = await db
     .select({ connectorId: connectors.connectorId })
@@ -776,7 +848,9 @@ class SupersededConnectorSyncError extends Error {
 
 /** Open a sync's write fence: the database time the sync starts. */
 export async function openConnectorSyncFence(projectId: string): Promise<ConnectorSyncFence> {
-  const rows = (await db.execute(sql`select clock_timestamp()::text as started_at`)) as unknown as Array<{
+  const rows = (await db.execute(
+    sql`select clock_timestamp()::text as started_at`,
+  )) as unknown as Array<{
     started_at: string;
   }>;
   const startedAt = rows[0]?.started_at;
@@ -885,19 +959,38 @@ async function upsertConnector(
           .limit(1);
     const currentId = current?.connectorId ?? null;
     const isNew = !currentId;
-    let resolvedConfig = catalog ? connectorConfig(spec, catalog.server, catalog.iconUrl) : null;
-    // Computer profiles are synthetic. Their sensitive flag is edited in the
-    // database, so preserve it when a lifecycle reconcile refreshes the native
-    // catalog and bound tunnel config.
-    if (resolvedConfig && spec.provider === 'computer' && currentId) {
-      const [stored] = await tx
-        .select({ config: connectors.config })
-        .from(connectors)
-        .where(eq(connectors.connectorId, currentId))
-        .limit(1);
-      if ((stored?.config as { sensitive?: unknown } | null)?.sensitive === true) {
-        resolvedConfig = { ...resolvedConfig, sensitive: true };
-      }
+    let resolvedConfig = catalog
+      ? {
+          ...connectorConfig(spec, catalog.server, catalog.iconUrl),
+          // A personal account's catalog: listed only to people with an account.
+          ...(catalog.memberPublished ? { catalog_source: 'member' } : {}),
+        }
+      : null;
+    // Computer connectors are not in kortix.yaml. A sync refreshes their native
+    // catalog but must keep every stored key: `sensitive` is edited in the
+    // database, and the legacy keys (tunnel_ids, tunnel_account_ids,
+    // computer_profile, computer_accounts_backfilled) keep the previous API
+    // image correct during a rolling deploy or a rollback until the contract
+    // migration drops them.
+    if (resolvedConfig && spec.provider === 'computer') {
+      const [stored] = currentId
+        ? await tx
+            .select({ config: connectors.config })
+            .from(connectors)
+            .where(eq(connectors.connectorId, currentId))
+            .limit(1)
+        : [];
+      resolvedConfig = {
+        // A new connector is an explicit profile with no machines to the
+        // previous API: its gateway denies calls, its sync neither folds it
+        // into the account-wide aggregate nor deletes it.
+        ...(currentId ? {} : LEGACY_EMPTY_COMPUTER_PROFILE),
+        ...((stored?.config as Record<string, unknown> | null) ?? {}),
+        ...resolvedConfig,
+        ...((stored?.config as { sensitive?: unknown } | null)?.sensitive === true
+          ? { sensitive: true }
+          : {}),
+      };
     }
 
     let id = currentId;
@@ -960,8 +1053,8 @@ async function upsertConnector(
       }
     }
 
-    // Computer profiles have no manifest entry. Their policies are edited on the
-    // materialized connector and must survive rename/heartbeat reconciliation.
+    // Computer connectors have no manifest entry. Their policies are edited on
+    // the materialized connector and must survive every sync.
     if (spec.provider !== 'computer' || isNew) {
       await tx.delete(connectorPolicies).where(eq(connectorPolicies.connectorId, rowId));
       const policyRows = toPolicyRows(spec);
@@ -993,29 +1086,276 @@ async function upsertConnector(
     null;
 
   // After commit: the connection row references the connector, and
-  // `ensureDefaultConnection` writes through its own connection.
-  if (connectorId && spec.authorizationStrategy === 'project') {
+  // `ensureDefaultConnection` writes through its own connection. A computer
+  // account is always one paired machine, so a computer connector never gets
+  // a machine-less project default.
+  if (
+    connectorId &&
+    spec.authorizationStrategy === 'project' &&
+    spec.provider !== 'computer' &&
+    !(await skipsEmptyProjectAccount(projectId, spec))
+  ) {
     await ensureDefaultConnection({ projectId, connectorId });
   }
 }
 
-/** Materialize one platform-managed Computers profile without writing kortix.yaml. */
-export async function materializeComputerConnectorProfile(input: {
-  projectId: string;
-  accountId: string;
-  spec: ConnectorSpec;
-  existingId: string | null;
-}): Promise<void> {
-  if (input.spec.provider !== 'computer') {
-    throw new Error('computer profile materialization requires provider="computer"');
-  }
-  await upsertConnector(
-    input.projectId,
-    input.accountId,
-    input.spec,
-    { actions: computerCatalog(), server: null },
-    input.existingId,
+/**
+ * connectors_v2: an account is personal unless someone shares it, so sync seeds
+ * no empty "Everyone in project" account (KRTX-2317). Two kinds keep the
+ * project account, because it is not empty: a channel connector (the install
+ * token is the project's own identity) and a server with no auth (a public
+ * MCP server such as DeepWiki: the account is the whole connection).
+ */
+export async function skipsEmptyProjectAccount(projectId: string, spec: ConnectorSpec): Promise<boolean> {
+  if (spec.provider === 'channel' || spec.auth?.type === 'none') return false;
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return resolveFeatureFlag(row?.metadata, 'connectors_v2');
+}
+
+/**
+ * Config keys the previous API image reads (computer-materialize.ts). Remove
+ * with the contract migration that drops them.
+ */
+const LEGACY_EMPTY_COMPUTER_PROFILE = {
+  computer_profile: true,
+  tunnel_ids: [],
+  computer_accounts_backfilled: true,
+} as const;
+
+function computerConnectorSpec(input: {
+  slug: string;
+  name: string;
+  sensitive: boolean;
+}): ConnectorSpec {
+  return {
+    slug: input.slug,
+    path: `platform: computers#${input.slug}`,
+    name: input.name,
+    enabled: true,
+    provider: 'computer',
+    credentialMode: 'shared',
+    authorizationStrategy: 'project',
+    sensitive: input.sensitive,
+    app: null,
+    account: null,
+    url: null,
+    transport: null,
+    endpoint: null,
+    baseUrl: null,
+    platform: null,
+    spec: null,
+    auth: { type: 'none', in: 'header', name: null, prefix: null, secret: null },
+    headers: {},
+    policies: [],
+  };
+}
+
+function storedSensitive(config: unknown): boolean {
+  return (config as { sensitive?: unknown } | null)?.sensitive === true;
+}
+
+async function existingComputerConnectorSpecs(
+  projectId: string,
+  declared: ConnectorSpec[],
+): Promise<ConnectorSpec[]> {
+  const declaredSlugs = new Set(declared.map((spec) => spec.slug));
+  const rows = await db
+    .select({ slug: connectors.slug, name: connectors.name, config: connectors.config })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+  return rows
+    .filter((row) => !declaredSlugs.has(row.slug))
+    .map((row) =>
+      computerConnectorSpec({
+        slug: row.slug,
+        name: row.name,
+        sensitive: storedSensitive(row.config),
+      }),
+    );
+}
+
+/**
+ * Which computer connectors have no machine — no `connector_connections` row
+ * bound to a tunnel. The same predicate `hideMachinelessComputers` applies to
+ * the admin list (KRTX-1492), so the sync summary can count exactly what the
+ * list shows (KRTX-2669). Declared computer specs cannot exist (the parser
+ * rejects `provider="computer"`), so the existing rows are the whole story.
+ */
+async function machinelessComputerSlugs(projectId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ connectorId: connectors.connectorId, slug: connectors.slug })
+    .from(connectors)
+    .where(and(eq(connectors.projectId, projectId), eq(connectors.providerType, 'computer')));
+  if (rows.length === 0) return new Set();
+  const withMachine = new Set(
+    (
+      await db
+        .selectDistinct({ connectorId: connectorConnections.connectorId })
+        .from(connectorConnections)
+        .where(
+          and(
+            inArray(
+              connectorConnections.connectorId,
+              rows.map((row) => row.connectorId),
+            ),
+            isNotNull(connectorConnections.tunnelId),
+          ),
+        )
+    ).map((row) => row.connectorId),
   );
+  return new Set(rows.filter((row) => !withMachine.has(row.connectorId)).map((row) => row.slug));
+}
+
+/**
+ * The project's computer connector, created on first use. Pairing a machine
+ * and adding a paired machine to a project both call this; kortix.yaml cannot
+ * declare one (`projects/connectors.ts`). A project that already holds a
+ * computer connector under another slug keeps it. Refreshes the native catalog.
+ */
+export async function ensureComputerConnector(
+  projectId: string,
+  accountId: string,
+  requested: { slug?: string; name?: string } = {},
+): Promise<string> {
+  const find = () =>
+    db
+      .select({
+        connectorId: connectors.connectorId,
+        slug: connectors.slug,
+        name: connectors.name,
+        config: connectors.config,
+      })
+      .from(connectors)
+      .where(
+        and(
+          eq(connectors.projectId, projectId),
+          eq(connectors.providerType, 'computer'),
+          ...(requested.slug ? [eq(connectors.slug, requested.slug)] : []),
+        ),
+      )
+      .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+      .limit(1);
+  const [existing] = await find();
+  // The catalog is served from code (withComputerCatalog), so an existing
+  // connector needs no rewrite unless the caller renames or re-slugs it.
+  if (existing && !requested.slug && !requested.name) return existing.connectorId;
+  try {
+    await upsertConnector(
+      projectId,
+      accountId,
+      computerConnectorSpec({
+        slug: existing?.slug ?? requested.slug ?? COMPUTER_SLUG,
+        name: requested.name || existing?.name || COMPUTER_CONNECTOR_NAME,
+        sensitive: storedSensitive(existing?.config),
+      }),
+      { actions: computerCatalog(), server: null },
+      existing?.connectorId ?? null,
+    );
+  } catch (error) {
+    // A concurrent first pairing created it; use that row.
+    if (!isUniqueViolation(error)) throw error;
+  }
+  const [row] = await find();
+  if (!row) throw new Error('computer connector was not created');
+  return row.connectorId;
+}
+
+/**
+ * v2 F1+F2: every project holds the built-in computer connector, and every
+ * machine a person paired is their private account in it. Runs on connection
+ * and connector listing and when a call or catalog resolves `computer`.
+ *
+ * Idempotent and cheap when nothing is missing (two indexed reads). A missing
+ * account is created through `attachComputerConnection` under the connector
+ * row lock; the unique index (connector, owner, machine) backs it. An account
+ * that exists in any state is left alone, so an account the owner revoked in
+ * this project, or one revoked by unpairing, never comes back by itself.
+ * `userId` null (API keys, service accounts) ensures only the connector.
+ */
+export async function ensureProjectComputer(
+  projectId: string,
+  userId: string | null,
+): Promise<void> {
+  // An operator acting as a customer (impersonation) must never write their
+  // own machines, or anything else, into the customer's project: the grant
+  // allows reads, and the rows would outlive it.
+  if (!config.TUNNEL_ENABLED || getImpersonationContext()) return;
+  const [project] = await db
+    .select({ accountId: projects.accountId, existing: connectors.connectorId })
+    .from(projects)
+    .leftJoin(
+      connectors,
+      and(eq(connectors.projectId, projects.projectId), eq(connectors.providerType, 'computer')),
+    )
+    .where(eq(projects.projectId, projectId))
+    .orderBy(sql`${connectors.slug} = ${COMPUTER_SLUG} desc`, connectors.createdAt)
+    .limit(1);
+  if (!project) return;
+  const connectorId =
+    project.existing ?? (await ensureComputerConnector(projectId, project.accountId));
+  if (!userId) return;
+
+  type Reader = Pick<typeof db, 'select'>;
+  // Held: the owner's own account in any state (a revoked one stays revoked),
+  // or any active account for the machine, such as the project-shared one. A
+  // second, private account for a shared machine would give the owner two
+  // pinned accounts for one computer, and every unnamed call would answer
+  // account_required.
+  const held = (reader: Reader, tunnelId: typeof tunnelConnections.tunnelId) =>
+    reader
+      .select({ one: sql`1` })
+      .from(connectorConnections)
+      .where(
+        and(
+          eq(connectorConnections.connectorId, connectorId),
+          eq(connectorConnections.tunnelId, tunnelId),
+          or(
+            and(
+              eq(connectorConnections.ownerType, 'member'),
+              eq(connectorConnections.ownerId, userId),
+            ),
+            eq(connectorConnections.status, 'active'),
+          ),
+        ),
+      );
+  const missing = (reader: Reader) =>
+    reader
+      .select({ tunnelId: tunnelConnections.tunnelId, name: tunnelConnections.name })
+      .from(tunnelConnections)
+      .where(
+        and(
+          eq(tunnelConnections.ownerUserId, userId),
+          notExists(held(reader, tunnelConnections.tunnelId)),
+        ),
+      )
+      .orderBy(tunnelConnections.createdAt);
+  if ((await missing(db)).length === 0) return;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .select({ connectorId: connectors.connectorId })
+      .from(connectors)
+      .where(eq(connectors.connectorId, connectorId))
+      .for('update');
+    // Re-read under the lock: a concurrent ensure may have created them. A
+    // machine unpaired meanwhile is skipped by the attach (its key-share lock).
+    for (const machine of await missing(tx)) {
+      await attachComputerConnection(tx, {
+        accountId: project.accountId,
+        projectId,
+        connectorId,
+        ownerType: 'member',
+        ownerId: userId,
+        tunnelId: machine.tunnelId,
+        name: machine.name,
+        createdBy: userId,
+      });
+    }
+  });
 }
 
 /** Fetch + normalize a connector's catalog. Best-effort; never throws. */
@@ -1159,17 +1499,29 @@ async function loadSourceText(project: GitBackedProject, spec: string): Promise<
   let raw: string;
   if (/^https?:\/\//i.test(spec)) {
     assertAllowedSourceAddress(spec);
-    const res = await safeEgressFetch(spec, {
-      // Signal we accept either form; servers that content-negotiate may hand
-      // back JSON, but we parse whatever comes regardless.
-      headers: {
-        accept: 'application/json, application/yaml, text/yaml, text/plain, */*',
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`);
+    try {
+      const res = await safeEgressFetch(spec, {
+        // Signal we accept either form; servers that content-negotiate may hand
+        // back JSON, but we parse whatever comes regardless.
+        headers: {
+          accept: 'application/json, application/yaml, text/yaml, text/plain, */*',
+        },
+      });
+      if (!res.ok) {
+        throw new SpecLoadError(
+          `failed to fetch spec at ${spec}: HTTP ${res.status} ${res.statusText}`,
+        );
+      }
+      raw = await res.text();
+    } catch (e) {
+      // Everything after the guards that stops the spec body from being read
+      // is a spec-load failure (Better Stack `3e5bd849…`), not a server fault.
+      // A URL the egress guard refused keeps its typed envelope — the routes
+      // map it to the structured `invalid_source_address` 400
+      // (Better Stack `f5c0ce61…`).
+      if (e instanceof SpecLoadError || e instanceof UnsafeEgressError) throw e;
+      throw new SpecLoadError(`failed to fetch spec at ${spec}: ${(e as Error).message}`);
     }
-    raw = await res.text();
   } else {
     // `readRepoFile` throws a typed `RepoFileNotFoundError` when the path isn't
     // in the repo at the ref (see #3537 / `isGitPathNotFoundError`) instead of
@@ -1341,6 +1693,7 @@ export async function reconcileProjectPolicies(
   parsed: {
     policies: ProjectPolicySpec[];
     settings: { defaultMode: 'risk' | 'allow_all' };
+    approvalTtlSeconds?: number | null;
   },
   fence: ConnectorSyncFence | null = null,
 ): Promise<void> {
@@ -1369,7 +1722,11 @@ export async function reconcileProjectPolicies(
     const updateExisting = () =>
       tx
         .update(connectorProjectSettings)
-        .set({ defaultMode: parsed.settings.defaultMode, updatedAt: new Date() })
+        .set({
+          defaultMode: parsed.settings.defaultMode,
+          approvalTtlSeconds: parsed.approvalTtlSeconds ?? null,
+          updatedAt: new Date(),
+        })
         .where(eq(connectorProjectSettings.projectId, projectId))
         .returning({ projectId: connectorProjectSettings.projectId });
     if ((await updateExisting()).length > 0) return;
@@ -1378,7 +1735,11 @@ export async function reconcileProjectPolicies(
       await tx.transaction(async (savepoint) => {
         await savepoint
           .insert(connectorProjectSettings)
-          .values({ projectId, defaultMode: parsed.settings.defaultMode });
+          .values({
+            projectId,
+            defaultMode: parsed.settings.defaultMode,
+            approvalTtlSeconds: parsed.approvalTtlSeconds ?? null,
+          });
       });
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;

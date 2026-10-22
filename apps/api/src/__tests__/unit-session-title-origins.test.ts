@@ -52,7 +52,8 @@ describe('session-title origins — create-time title source', () => {
       'Triage the new Sentry issue and open a change request',
     );
 
-    const source = createBody('projects/lib/triggers.ts', 'enforceAccountCap: false');
+    // The fresh fire, not the reminder successor create above it.
+    const source = createBody('projects/lib/trigger-fire.ts', 'source: `trigger:${source}`');
     expect(source).toContain('initial_prompt: renderedPrompt');
     expect(source).not.toContain('title_source');
   });

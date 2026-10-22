@@ -20,18 +20,21 @@ interface AudienceGrant {
   principalId: string;
 }
 
-/** One shared account's grants, resolved for one person. */
+/** One shared account's grants, resolved for one person and, optionally, the
+ *  calling session's agent (its service account). The person wins. */
 export function audienceReachOf(
   grants: readonly AudienceGrant[] | undefined,
   userId: string | null,
   groupIds: ReadonlySet<string>,
+  agentId: string | null = null,
 ): ConnectionAudienceReach {
   if (!grants || grants.length === 0) return 'open';
   if (grants.some((grant) => grant.principalType === 'project')) return 'open';
-  if (!userId) return 'out';
-  return grants.some((grant) => iamAuthorize.objectGrantReaches(grant, userId, groupIds))
-    ? 'in'
-    : 'out';
+  if (userId && grants.some((grant) => iamAuthorize.objectGrantReaches(grant, userId, groupIds))) return 'in';
+  if (agentId && grants.some((grant) => grant.principalType === 'service_account' && grant.principalId === agentId)) {
+    return 'agent';
+  }
+  return 'out';
 }
 
 /**
@@ -42,7 +45,7 @@ export function audienceReachOf(
 export function audiencePersonId(input: {
   actingUserId: string;
   actingPrincipalIsServiceAccount: boolean;
-  agentPrincipal?: { onBehalfOfUserId: string | null } | null;
+  agentPrincipal?: { onBehalfOfUserId: string | null; agentId?: string | null } | null;
 }): string | null {
   if (input.agentPrincipal) return input.agentPrincipal.onBehalfOfUserId;
   if (input.actingPrincipalIsServiceAccount) return null;
@@ -58,6 +61,8 @@ export async function loadConnectionAudience(input: {
   projectId: string;
   accountId: string;
   userId: string | null;
+  /** The calling session's agent service account, when it acts as one. */
+  agentId?: string | null;
 }): Promise<(connectionId: string) => ConnectionAudienceReach> {
   const grants = await iamAuthorize.loadObjectGrants(input.projectId, 'connection');
   if (grants.size === 0) return () => 'open';
@@ -66,5 +71,5 @@ export async function loadConnectionAudience(input: {
     ? await iamAuthorize.resolvePrincipal({ type: 'user', id: userId }, input.accountId)
     : null;
   const groupIds = new Set(record?.groupIds ?? []);
-  return (connectionId) => audienceReachOf(grants.get(connectionId), userId, groupIds);
+  return (objectId) => audienceReachOf(grants.get(objectId), userId, groupIds, input.agentId ?? null);
 }

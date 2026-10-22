@@ -1,40 +1,8 @@
-# us-east-2 became a production region in July 2026. Keep its edge, alerting,
-# network, and backup-failure controls equivalent to the established us-west-2
-# and eu-west-2 controls.
+# us-east-2 runs the dev stack (environments/dev-us-east-2). Keep its edge,
+# alerting, and backup-failure controls equivalent to the eu-west-2 controls.
 
 data "aws_lbs" "use2" {
   provider = aws.use2
-}
-
-data "aws_vpc" "use2" {
-  provider = aws.use2
-
-  tags = {
-    Name = "kortix-prod-use2-vpc"
-  }
-}
-
-data "aws_subnets" "use2" {
-  provider = aws.use2
-
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.use2.id]
-  }
-}
-
-data "aws_network_acls" "use2_default" {
-  provider = aws.use2
-  vpc_id   = data.aws_vpc.use2.id
-
-  filter {
-    name   = "default"
-    values = ["true"]
-  }
-}
-
-data "aws_iam_role" "flow_logs" {
-  name = "vpc-flow-logs-role"
 }
 
 locals {
@@ -43,6 +11,18 @@ locals {
       name      = split("/", arn)[2]
       dimension = replace(arn, "/^.*:loadbalancer\\//", "")
     }
+  }
+  # environments/dev-web-us-east-2 associates its own ALB with this WAF.
+  use2_compliance_waf_albs = {
+    for arn, alb in local.use2_albs : arn => alb
+    if alb.name != "kortix-dev-use2-web-alb"
+  }
+  # SQS queues monitored below. Module capture_store (modules/capture-store/
+  # main.tf) composes both names from its caller's `name`; the dev-us-east-2
+  # root passes kortix-dev-use2-capture-store. The value is the alarm stem.
+  use2_sqs_queues = {
+    "kortix-dev-use2-capture-store-manifests"     = "manifests"
+    "kortix-dev-use2-capture-store-manifests-dlq" = "manifests-dlq"
   }
 }
 
@@ -105,7 +85,11 @@ resource "aws_kms_key" "use2_alerts" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.use2_alerts_kms.json
-  tags                    = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_kms_alias" "use2_alerts" {
@@ -118,7 +102,11 @@ resource "aws_sns_topic" "use2_alerts" {
   provider          = aws.use2
   name              = "kortix-compliance-alerts"
   kms_master_key_id = aws_kms_key.use2_alerts.arn
-  tags              = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 data "aws_iam_policy_document" "use2_alerts" {
@@ -230,6 +218,11 @@ resource "aws_wafv2_web_acl" "use2" {
             "GenericLFI_BODY",
             "GenericRFI_BODY",
             "SizeRestrictions_BODY",
+            # Setup-link tokens (/v1/setup-links/{secret,connectors}/ksl_…) are
+            # encrypted envelopes that grow with the requested fields and pass
+            # 1024 bytes of path; Block returned a CORS-less 403 to the intake
+            # page. The ALB still caps the request line.
+            "SizeRestrictions_URIPATH",
           ])
           content {
             name = rule_action_override.value
@@ -368,7 +361,7 @@ resource "aws_wafv2_web_acl" "use2" {
 
 resource "aws_wafv2_web_acl_association" "use2" {
   provider     = aws.use2
-  for_each     = local.use2_albs
+  for_each     = local.use2_compliance_waf_albs
   resource_arn = each.key
   web_acl_arn  = aws_wafv2_web_acl.use2.arn
 }
@@ -415,7 +408,11 @@ resource "aws_kms_key" "use2_logs" {
   enable_key_rotation     = true
   deletion_window_in_days = 30
   policy                  = data.aws_iam_policy_document.use2_logs_kms.json
-  tags                    = local.tags
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+  }
 }
 
 resource "aws_kms_alias" "use2_logs" {
@@ -436,6 +433,49 @@ resource "aws_wafv2_web_acl_logging_configuration" "use2" {
   provider                = aws.use2
   resource_arn            = aws_wafv2_web_acl.use2.arn
   log_destination_configs = [aws_cloudwatch_log_group.use2_waf.arn]
+}
+
+# DCF-406: every VPC carries a flow log. The dev VPC had none until 2026-10-12
+# (environments/dev-us-east-2 creates it; the delivery role lives in
+# security-baseline/main.tf and monitoring.tf reads it).
+data "aws_vpc" "use2_dev" {
+  provider = aws.use2
+  tags     = { Name = "kortix-dev-use2-vpc" }
+}
+
+resource "aws_cloudwatch_log_group" "use2_flow_logs" {
+  provider          = aws.use2
+  name              = "/vpc/flowlogs"
+  retention_in_days = 365
+  kms_key_id        = aws_kms_key.use2_logs.arn
+  tags              = local.tags
+}
+
+resource "aws_flow_log" "use2_dev" {
+  provider             = aws.use2
+  iam_role_arn         = data.aws_iam_role.flow_logs.arn
+  log_destination      = aws_cloudwatch_log_group.use2_flow_logs.arn
+  log_destination_type = "cloud-watch-logs"
+  traffic_type         = "ALL"
+  vpc_id               = data.aws_vpc.use2_dev.id
+  tags                 = local.tags
+}
+
+# Drata test 233 (CIS 5.4): the default security group allows no traffic.
+# Nothing attaches it; every ECS service carries its own group.
+resource "aws_default_security_group" "use2_dev" {
+  provider = aws.use2
+  vpc_id   = data.aws_vpc.use2_dev.id
+
+  ingress = []
+  egress  = []
+
+  tags = {
+    ManagedBy  = "terraform"
+    Stack      = "compliance-monitoring"
+    Compliance = "soc2"
+    Name       = "kortix-dev-use2-default"
+  }
 }
 
 resource "aws_cloudwatch_metric_alarm" "use2_target_response_time" {
@@ -493,6 +533,53 @@ resource "aws_cloudwatch_metric_alarm" "use2_unhealthy_hosts" {
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.use2_alerts.arn]
   tags                = local.alarm_tags
+
+  # The alb_alarm_reconciler Lambda (functions/alb_alarm_reconciler.py) owns the
+  # dimensions of this alarm: it writes {TargetGroup, LoadBalancer}, because
+  # UnHealthyHostCount has no LoadBalancer-only series. Terraform manages the
+  # alarm but must not reset the dimensions to the LoadBalancer-only set, which
+  # reads no data and so never fires (treat_missing_data = notBreaching).
+  lifecycle {
+    ignore_changes = [dimensions]
+  }
+}
+
+# ── SQS manifest queue monitoring (Drata test 115) ───────────────────────────
+#
+# Drata test 115 (DCF-86) fails every SQS queue without a CloudWatch alarm on
+# ApproximateAgeOfOldestMessage that notifies a subscribed SNS topic. The AWS
+# provider has no SQS discovery data source to mirror data.aws_lbs, so this
+# root repeats the dev manifest queue names literally (local.use2_sqs_queues,
+# composed by module capture_store for the environments/dev-us-east-2
+# caller); scripts/test_sqs_message_age_alarms.py keeps the three trees in
+# agreement.
+resource "aws_cloudwatch_metric_alarm" "use2_sqs_oldest_message_age" {
+  provider            = aws.use2
+  for_each            = local.use2_sqs_queues
+  alarm_name          = "kortix-sqs-${each.value}-oldest-message-age"
+  alarm_description   = "SOC2 DCF-86: SQS manifest queue message age is elevated"
+  namespace           = "AWS/SQS"
+  metric_name         = "ApproximateAgeOfOldestMessage"
+  dimensions          = { QueueName = each.key }
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 3
+  datapoints_to_alarm = 3
+  threshold           = 900
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.use2_alerts.arn]
+  tags                = local.alarm_tags
+
+  # Manifest events normally ingest in seconds (the capture-events-reader
+  # long-polls the queue continuously in apps/api/src/workers/capture-worker.ts),
+  # so this fires on a sustained stall: the oldest message waits 15 minutes
+  # for three consecutive 5-minute periods before alerting, above any deploy
+  # blip; Maximum cannot average a spike away. An empty queue publishes no
+  # series, so treat_missing_data = notBreaching keeps it green. Nothing in
+  # apps/api consumes the DLQ: it is a parking lot, so its oldest message age
+  # grows monotonically once a dead message arrives — firing and staying red
+  # is the intended signal for failed captures.
 }
 
 # ── Backup failure monitoring ─────────────────────────────────────────────────
@@ -525,156 +612,4 @@ resource "aws_cloudwatch_event_target" "use2_snapshot_failures" {
   rule      = aws_cloudwatch_event_rule.use2_snapshot_failures.name
   target_id = "compliance-sns"
   arn       = aws_sns_topic.use2_alerts.arn
-}
-
-# ── VPC baseline ───────────────────────────────────────────────────────────────
-
-resource "aws_default_security_group" "use2" {
-  provider = aws.use2
-  vpc_id   = data.aws_vpc.use2.id
-
-  ingress = []
-  egress  = []
-
-  tags = merge(local.tags, {
-    Name = "kortix-prod-use2-default"
-  })
-}
-
-resource "aws_network_acl" "use2_restricted" {
-  # checkov:skip=CKV2_AWS_1:All discovered VPC subnets attach through aws_network_acl_association.use2_restricted below.
-  provider = aws.use2
-  vpc_id   = data.aws_vpc.use2.id
-
-  # Preserve unrestricted VPC-internal traffic.
-  ingress {
-    protocol   = -1
-    rule_no    = 50
-    action     = "allow"
-    cidr_block = data.aws_vpc.use2.cidr_block
-    from_port  = 0
-    to_port    = 0
-  }
-
-  # Permit public TCP except SSH (22) and RDP (3389).
-  ingress {
-    protocol   = "tcp"
-    rule_no    = 100
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 0
-    to_port    = 21
-  }
-  ingress {
-    protocol   = "tcp"
-    rule_no    = 110
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 23
-    to_port    = 3388
-  }
-  ingress {
-    protocol   = "tcp"
-    rule_no    = 120
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 3390
-    to_port    = 65535
-  }
-  # Permit public UDP except SSH (22) and RDP (3389), mirroring the TCP carve-out.
-  ingress {
-    protocol   = "udp"
-    rule_no    = 130
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 0
-    to_port    = 21
-  }
-  ingress {
-    protocol   = "udp"
-    rule_no    = 140
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 23
-    to_port    = 3388
-  }
-  ingress {
-    protocol   = "udp"
-    rule_no    = 150
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 3390
-    to_port    = 65535
-  }
-  ingress {
-    protocol   = "icmp"
-    rule_no    = 160
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 0
-    to_port    = 0
-    icmp_type  = -1
-    icmp_code  = -1
-  }
-
-  egress {
-    protocol   = -1
-    rule_no    = 100
-    action     = "allow"
-    cidr_block = "0.0.0.0/0"
-    from_port  = 0
-    to_port    = 0
-  }
-
-  tags = merge(local.tags, {
-    Name = "kortix-prod-use2-restricted"
-  })
-
-  lifecycle {
-    prevent_destroy = true
-  }
-}
-
-resource "aws_network_acl_association" "use2_restricted" {
-  provider       = aws.use2
-  for_each       = toset(data.aws_subnets.use2.ids)
-  network_acl_id = aws_network_acl.use2_restricted.id
-  subnet_id      = each.value
-}
-
-# Adopt and lock the unassociated default ACL only after every production subnet
-# uses the fully populated restricted ACL. The AWS provider clears existing
-# default ACL rules during first adoption.
-resource "aws_default_network_acl" "use2" {
-  provider               = aws.use2
-  default_network_acl_id = one(data.aws_network_acls.use2_default.ids)
-
-  tags = merge(local.tags, {
-    Name = "kortix-prod-use2-default-deny"
-  })
-
-  lifecycle {
-    ignore_changes = [subnet_ids]
-  }
-
-  depends_on = [aws_network_acl_association.use2_restricted]
-}
-
-resource "aws_cloudwatch_log_group" "use2_flow_logs" {
-  provider          = aws.use2
-  name              = "/vpc/flowlogs"
-  retention_in_days = 365
-  kms_key_id        = aws_kms_key.use2_logs.arn
-  tags              = local.tags
-}
-
-resource "aws_flow_log" "use2" {
-  provider                 = aws.use2
-  iam_role_arn             = data.aws_iam_role.flow_logs.arn
-  log_destination          = aws_cloudwatch_log_group.use2_flow_logs.arn
-  log_destination_type     = "cloud-watch-logs"
-  max_aggregation_interval = 60
-  traffic_type             = "ALL"
-  vpc_id                   = data.aws_vpc.use2.id
-  tags                     = local.tags
 }

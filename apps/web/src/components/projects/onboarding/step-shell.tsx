@@ -4,7 +4,6 @@
  * The shared shapes onboarding is allowed to draw.
  *
  * Every step renders inside `StepShell`. Survey choices use `SelectionRow`.
- * Actions use `ActionRow`.
  *
  * Adding an eighth step must never require inventing new chrome.
  */
@@ -12,9 +11,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { createContext, useContext, useId, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { RadioGroupItem } from '@/components/ui/radio-group';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { RadioGroupItem } from '@kortix/ui/radio-group';
+import { cn } from '@kortix/ui';
 
 const StepIdentityContext = createContext<string | null>(null);
 
@@ -80,6 +79,7 @@ export function StepShell({
   onPrimary,
   skipLabel,
   onSkip,
+  footerNote,
 }: {
   title: string;
   description?: string;
@@ -89,6 +89,8 @@ export function StepShell({
   onPrimary: () => void;
   skipLabel?: string;
   onSkip?: () => void;
+  /** Quiet status on the footer's left, e.g. "4 selected". */
+  footerNote?: string;
 }) {
   const generatedId = useId();
   const idPrefix = useContext(StepIdentityContext) ?? `onboarding-step-${generatedId}`;
@@ -121,11 +123,19 @@ export function StepShell({
           footnote to it; side by side it reads as the other choice, which is
           what it is. */}
       <div className="mt-8 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+        {footerNote && (
+          <p
+            aria-live="polite"
+            className="text-muted-foreground order-last text-center text-sm tabular-nums md:order-first md:mr-auto md:text-left"
+          >
+            {footerNote}
+          </p>
+        )}
         {skipLabel && onSkip && (
           <Button
             size="lg"
             variant="ghost"
-            className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto"
+            className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto hit-area-y-2"
             onClick={onSkip}
           >
             {skipLabel}
@@ -133,7 +143,7 @@ export function StepShell({
         )}
         <Button
           size="lg"
-          className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto md:min-w-36"
+          className="w-full whitespace-nowrap active:scale-[0.96] motion-reduce:active:scale-100 md:w-auto md:min-w-36 hit-area-y-2"
           onClick={onPrimary}
           disabled={primaryDisabled}
         >
@@ -147,12 +157,15 @@ export function StepShell({
 export function SelectionRow({
   value,
   label,
+  badge,
   description,
   leading,
   disabled,
 }: {
   value: string;
   label: string;
+  /** Sits after the label, e.g. "Recommended". */
+  badge?: ReactNode;
   description?: string;
   leading?: ReactNode;
   disabled?: boolean;
@@ -171,61 +184,15 @@ export function SelectionRow({
     >
       <span className="flex size-5 shrink-0 items-center justify-center">{leading}</span>
       <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{label}</span>
+        <span className="flex items-center gap-2 text-sm font-medium">
+          {label}
+          {badge}
+        </span>
         {description && (
           <span className="text-muted-foreground block text-xs text-pretty">{description}</span>
         )}
       </span>
       <RadioGroupItem id={id} value={value} disabled={disabled} />
     </label>
-  );
-}
-
-export function ActionRow({
-  label,
-  description,
-  leading,
-  trailing,
-  active,
-  disabled,
-  onSelect,
-  onPreload,
-  'aria-label': ariaLabel,
-  'aria-describedby': ariaDescribedBy,
-  className,
-}: {
-  label: string;
-  description?: string;
-  leading?: ReactNode;
-  trailing?: ReactNode;
-  active?: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  onPreload?: () => void;
-  'aria-label'?: string;
-  'aria-describedby'?: string;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      aria-pressed={active === undefined ? undefined : active}
-      aria-label={ariaLabel}
-      aria-describedby={ariaDescribedBy}
-      onClick={onSelect}
-      onPointerEnter={onPreload}
-      onFocus={onPreload}
-      className={cn(rowClassName, active && 'border-primary/40 bg-primary/[0.05]', className)}
-    >
-      <span className="flex size-5 shrink-0 items-center justify-center">{leading}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{label}</span>
-        {description && (
-          <span className="text-muted-foreground block text-xs text-pretty">{description}</span>
-        )}
-      </span>
-      {trailing && <span className="shrink-0">{trailing}</span>}
-    </button>
   );
 }

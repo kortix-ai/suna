@@ -217,14 +217,14 @@ describe('buildLayeredDockerfile', () => {
     expect(installIdx).toBeLessThan(verifyIdx);
   });
 
-  test('also verifies the real starter tool files bundle when opencodeConfigPath is provided', () => {
+  test('also verifies the real starter plugin files bundle when opencodeConfigPath is provided', () => {
     const withConfig = buildLayeredDockerfile({
       userDockerfile: 'FROM ubuntu:24.04',
       ...COMMON,
       opencodeConfigPath: 'kortix-opencode-config',
       catalogPath: 'kortix-llm-catalog.json',
     });
-    const verifyIdx = withConfig.indexOf('bun build tools/*.ts');
+    const verifyIdx = withConfig.indexOf('bun build plugins/*.ts');
     expect(verifyIdx).toBeGreaterThanOrEqual(0);
     const ownershipIdx = withConfig.indexOf(
       'RUN sudo chown -R kortix:kortix /opt/kortix/warm-config',
@@ -234,14 +234,14 @@ describe('buildLayeredDockerfile', () => {
     const precedingRun = withConfig.lastIndexOf('RUN', verifyIdx);
     const stepText = withConfig.slice(precedingRun, verifyIdx);
     expect(stepText).not.toContain('set +e');
-    // Without opencodeConfigPath there's no starter tool tree to verify, so
+    // Without opencodeConfigPath there's no starter plugin tree to verify, so
     // this stricter check is correctly absent — only the axios/form-data
     // override check (always present) still runs.
     const withoutConfig = buildLayeredDockerfile({
       userDockerfile: 'FROM ubuntu:24.04',
       ...COMMON,
     });
-    expect(withoutConfig).not.toContain('bun build tools/*.ts');
+    expect(withoutConfig).not.toContain('bun build plugins/*.ts');
     expect(withoutConfig).toContain(
       'bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js',
     );
@@ -431,5 +431,36 @@ describe('buildDefaultSandboxTemplate', () => {
     const tpl = buildDefaultSandboxTemplate();
     expect(tpl.isDefault).toBe(true);
     expect(tpl.slug).toBe(DEFAULT_SANDBOX_SLUG);
+  });
+});
+
+// kortix.yaml `container_runtime: true` asks for a sandbox that runs Docker with
+// bridge + overlay networking. The layer adds only what the guest needs to load
+// the provider-supplied kernel modules (kmod), lets the runtime user reach the
+// daemon, and marks the image so the entrypoint starts dockerd at boot.
+describe('container_runtime', () => {
+  test('extractSandboxTemplates reads container_runtime: true', () => {
+    const out = extractSandboxTemplates({
+      sandbox: {
+        templates: [
+          { slug: 'dev', dockerfile: '.kortix/Dockerfile.dev', container_runtime: true },
+          { slug: 'plain', image: 'python:3.12-slim' },
+          { slug: 'typo', image: 'python:3.12-slim', container_runtime: 'yes' },
+        ],
+      },
+    });
+    expect(out.map((t) => t.containerRuntime)).toEqual([true, undefined, undefined]);
+  });
+
+  test('the layer installs kmod, joins the docker group and marks the image only when requested', () => {
+    const on = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04\n', containerRuntime: true, ...COMMON });
+    const off = buildLayeredDockerfile({ userDockerfile: 'FROM ubuntu:24.04\n', ...COMMON });
+    expect(on).toContain('ENV KORTIX_CONTAINER_RUNTIME=1');
+    expect(on).toMatch(/apt-get install -y --no-install-recommends kmod/);
+    expect(on).toContain('usermod -aG docker kortix');
+    expect(off).not.toContain('KORTIX_CONTAINER_RUNTIME');
+    expect(off).not.toContain('kmod');
+    // Runs as root, after the kortix user exists, before the image drops to it.
+    expect(on.indexOf('KORTIX_CONTAINER_RUNTIME')).toBeGreaterThan(on.indexOf('useradd --create-home'));
   });
 });

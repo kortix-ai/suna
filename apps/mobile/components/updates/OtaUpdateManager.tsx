@@ -4,7 +4,8 @@
  * - Launch: the native module checks on load (`checkAutomatically: "ON_LOAD"`,
  *   launch wait 0 ms), so launch never waits on the network. A found update
  *   downloads in the background.
- * - Foreground: checks again at most once every 6 hours and downloads silently.
+ * - Foreground: checks again at most once every 6 hours, 800 ms after the
+ *   return, and downloads silently.
  * - A downloaded update applies on the next cold start. The running app is
  *   never reloaded: a reload mid-session reads to the user as a crash.
  *
@@ -13,11 +14,13 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { AppState } from 'react-native';
 import * as Updates from 'expo-updates';
+import { addResumeListener } from '@/lib/utils/app-resume';
 import { log } from '@/lib/logger';
 
 const FOREGROUND_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Last of the deferred resume work: nothing on screen waits for it. */
+const OTA_RESUME_DELAY_MS = 800;
 
 export function OtaUpdateManager() {
   const { isUpdateAvailable, isUpdatePending, isDownloading } = Updates.useUpdates();
@@ -57,10 +60,7 @@ export function OtaUpdateManager() {
       }
     };
 
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void checkInBackground();
-    });
-    return () => subscription.remove();
+    return addResumeListener(() => void checkInBackground(), OTA_RESUME_DELAY_MS);
   }, []);
 
   return null;

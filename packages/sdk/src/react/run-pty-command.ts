@@ -3,13 +3,13 @@ import {
   getKortixPtyWebSocketUrl,
   removeKortixPty,
 } from '../core/runtime/pty';
-import { getActiveOpenCodeUrl } from '../browser/stores/server-store';
+import { getActiveRuntimeUrl } from '../browser/stores/server-store';
 
 export async function runPtyCommand(
   command: string,
   options?: { timeoutMs?: number; title?: string },
 ): Promise<string> {
-  const baseUrl = getActiveOpenCodeUrl();
+  const baseUrl = getActiveRuntimeUrl();
   const pty = await createKortixPty(baseUrl, {
     command: '/bin/sh',
     args: ['-c', command],

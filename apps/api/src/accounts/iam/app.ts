@@ -3,13 +3,13 @@
 // This is the LEAF module of the accounts/iam/ split: it imports only the
 // openapi foundation, db types, and the IAM engine type used by the shared
 // schemas. Route modules import `iamRouter` (and these schemas) from here
-// and register their routes via side effect. The barrel at ../iam.ts wires
-// them all in the original order.
+// and export a registerIam<Group>Routes() function. registerIamRoutes() in
+// ../iam.ts calls them all in the original order.
 
 import { z } from '@hono/zod-openapi';
 import { makeOpenApiApp } from '../../openapi';
 import type { AppEnv } from '../../types';
-import type { ResourceType } from '../../iam';
+import { RESOURCE_TYPES, type ResourceType } from '../../iam/actions';
 
 export const iamRouter = makeOpenApiApp<AppEnv>();
 
@@ -143,16 +143,6 @@ export const ServiceAccountSchema = z
   })
   .openapi('IamServiceAccount');
 
-const VALID_RESOURCE_TYPES: readonly ResourceType[] = [
-  'account',
-  'project',
-  'sandbox',
-  'trigger',
-  'channel',
-  'member',
-  'group',
-];
-
 export function isResourceType(value: unknown): value is ResourceType {
-  return typeof value === 'string' && (VALID_RESOURCE_TYPES as readonly string[]).includes(value);
+  return typeof value === 'string' && (RESOURCE_TYPES as readonly string[]).includes(value);
 }

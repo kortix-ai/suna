@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ttlMemo } from '../../shared/ttl-memo';
-import { CONFIG_WITH_FILES_TTL_MS } from './project-resources';
+import { CONFIG_WITH_FILES_TTL_MS, skillSlugFromPath } from './project-resources';
 
 /**
  * `loadConfigWithFilesCached` (project-resources.ts) exists so a read that
@@ -78,5 +78,13 @@ describe('loadConfigWithFilesCached TTL contract', () => {
 
     await expect(cached('p1')).rejects.toThrow('repo unreachable');
     expect(await cached('p1')).toBe(2);
+  });
+});
+
+describe('skillSlugFromPath', () => {
+  test('reads the slug in the root layout and the legacy one', () => {
+    expect(skillSlugFromPath('skills/deploy/SKILL.md')).toBe('deploy');
+    expect(skillSlugFromPath('.kortix/opencode/skills/deploy/SKILL.md')).toBe('deploy');
+    expect(skillSlugFromPath('agents/deploy.md')).toBeNull();
   });
 });

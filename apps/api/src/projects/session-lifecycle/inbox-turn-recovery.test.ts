@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { settleCompletedInboxTurns, scheduleSessionTurnRecovery } from './inbox-turn-recovery';
 
-const turn = { token: 'token-1', state: 'active', opencodeSessionId: 'ses-1', messageId: 'msg-1', startedAtMs: 1 };
+const turn = { token: 'token-1', state: 'active', runtimeSessionId: 'ses-1', messageId: 'msg-1', startedAtMs: 1 };
 const box = { sessionId: 'session-1', sandboxId: 'box-1', externalId: 'ext-1', provider: 'platinum' as const, metadata: { activeTurns: { 'token-1': turn } } };
 
 describe('queue terminal recovery', () => {

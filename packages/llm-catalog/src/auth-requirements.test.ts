@@ -103,6 +103,32 @@ describe('providerAuthRequirement — default (no override)', () => {
   });
 });
 
+describe('providerAuthRequirement — one key name per provider', () => {
+  const name = (id: string, env: string[]) => primaryAuthEnvVars({ id, env });
+
+  test('OpenCode Zen keeps OPENCODE_API_KEY; OpenCode Go reads its own key', () => {
+    expect(name('opencode', ['OPENCODE_API_KEY'])).toEqual(['OPENCODE_API_KEY']);
+    expect(name('opencode-go', ['OPENCODE_API_KEY'])).toEqual(['OPENCODE_GO_API_KEY']);
+  });
+
+  test('with no provider named after the key, the shortest id owns it', () => {
+    expect(name('zai', ['ZHIPU_API_KEY'])).toEqual(['ZHIPU_API_KEY']);
+    expect(name('zhipuai', ['ZHIPU_API_KEY'])).toEqual(['ZHIPUAI_API_KEY']);
+    expect(name('zai-coding-plan', ['ZHIPU_API_KEY'])).toEqual(['ZAI_CODING_PLAN_API_KEY']);
+    expect(name('moonshotai-cn', ['MOONSHOT_API_KEY'])).toEqual(['MOONSHOTAI_CN_API_KEY']);
+  });
+
+  test('no two catalog providers read the same single key', () => {
+    const owners = new Map<string, string>();
+    for (const provider of CATALOG.providers) {
+      const vars = primaryAuthEnvVars(provider);
+      if (vars.length !== 1) continue;
+      expect([provider.id, owners.get(vars[0]!) ?? provider.id]).toEqual([provider.id, provider.id]);
+      owners.set(vars[0]!, provider.id);
+    }
+  });
+});
+
 describe('isProviderAuthSatisfied — any-of-methods semantics (synthetic)', () => {
   test('satisfied when ANY method is fully present, even if other methods are only partially set', () => {
     const requirement: ProviderAuthRequirement = {

@@ -200,4 +200,35 @@ describe('connector router provider-neutral connect routes', () => {
     const finalize = await request(app, `/projects/${PROJECT}/connectors/github/connect/finalize`, { method: 'POST', headers: ADMIN });
     expect(await finalize.json()).toEqual({ provider: 'pipedream', connected: true, accountId: 'pd-account' });
   });
+
+  test('legacy Pipedream connect and finalize preserve the HTTP payload and forwarding shape', async () => {
+    const calls: unknown[] = [];
+    const app = createConnectorRouter(deps({
+      pipedreamConnect: async (...args) => {
+        calls.push(['connect', ...args]);
+        return { token: 'synthetic-token', app: 'gmail', connectUrl: 'https://example.test/connect', expiresAt: '2030-01-01T00:00:00Z' };
+      },
+      pipedreamFinalize: async (...args) => {
+        calls.push(['finalize', ...args]);
+        return { connected: false };
+      },
+    }));
+    const connect = await request(app, `/projects/${PROJECT}/connectors/gmail/connect`, {
+      method: 'POST', headers: { ...ADMIN, 'content-type': 'application/json' },
+      body: JSON.stringify({ success_redirect_uri: 'kortix://done', error_redirect_uri: 'kortix://error' }),
+    });
+    expect(connect.status).toBe(200);
+    expect(await connect.json()).toEqual({ provider: 'pipedream', token: 'synthetic-token', app: 'gmail', connectUrl: 'https://example.test/connect', expiresAt: '2030-01-01T00:00:00Z' });
+
+    const finalize = await request(app, `/projects/${PROJECT}/connectors/gmail/connect/finalize`, {
+      method: 'POST', headers: { ...ADMIN, 'content-type': 'application/json' },
+      body: JSON.stringify({ connection_id: '11111111-1111-4111-8111-111111111111', request_id: 'req-1' }),
+    });
+    expect(finalize.status).toBe(200);
+    expect(await finalize.json()).toEqual({ provider: 'pipedream', connected: false });
+    expect(calls).toEqual([
+      ['connect', PROJECT, 'gmail', 'user-1', { success: 'kortix://done', error: 'kortix://error' }],
+      ['finalize', PROJECT, 'gmail', 'user-1'],
+    ]);
+  });
 });

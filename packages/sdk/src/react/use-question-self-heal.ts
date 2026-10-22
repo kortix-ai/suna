@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { getClient } from '../core/runtime/client';
 import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
@@ -42,7 +42,7 @@ export interface UseQuestionSelfHealOptions {
  * is rendering as running/pending but the pending-request store has nothing
  * for this session, re-hydrate from `question.list()`.
  *
- * This is a LIVE-CONNECTION safety net, distinct from `useOpenCodeEventStream`'s
+ * This is a LIVE-CONNECTION safety net, distinct from `useRuntimeEventStream`'s
  * reconnect-gap hydration (which only re-hydrates questions/permissions after
  * an SSE gap >5s): it covers a `question.asked` event being dropped, or racing
  * the `message.part.updated` event that renders the tool as running, while the
@@ -64,8 +64,8 @@ export function useQuestionSelfHeal(
   options: UseQuestionSelfHealOptions = {},
 ): void {
   const { enabled = true, isSuppressed } = options;
-  const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
-  const pendingCount = useOpenCodePendingStore(
+  const addQuestion = useRuntimePendingStore((s) => s.addQuestion);
+  const pendingCount = useRuntimePendingStore(
     (s) =>
       Object.values(s.questions).filter((q) => q.sessionID === sessionId && !isSuppressed?.(q.id))
         .length,

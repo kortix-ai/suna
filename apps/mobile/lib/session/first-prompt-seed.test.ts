@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts } from '../opencode/types';
 import type { AttachedFile } from './attachments';
 import { firstPromptSeed, SEED_BUSY_WATCHDOG_MS, seedUndelivered } from './first-prompt-seed';
 import { mintWireMessageId } from './wire-message-id';
@@ -18,16 +17,14 @@ function seed(i: Partial<Parameters<typeof firstPromptSeed>[0]> = {}) {
   return firstPromptSeed({
     text: 'hello',
     files: [],
-    opencodeSessionId: ROOT,
+    runtimeSessionId: ROOT,
     knownMessageIds: [],
     nowMs: NOW,
     ...i,
   });
 }
 
-function msg(id: string, role: 'user' | 'assistant'): MessageWithParts {
-  return { info: { id, role, sessionID: ROOT, time: { created: NOW } }, parts: [] };
-}
+
 
 describe('firstPromptSeed', () => {
   test('returns null for empty text and no files', () => {
@@ -79,11 +76,10 @@ describe('seedUndelivered', () => {
   const SEED_ID = 'msg_seed';
 
   test('seedUndelivered is true for [seed] and [] and false once an assistant or real user message exists', () => {
-    expect(seedUndelivered([msg(SEED_ID, 'user')], SEED_ID)).toBe(true);
+    expect(seedUndelivered([SEED_ID], SEED_ID)).toBe(true);
     expect(seedUndelivered([], SEED_ID)).toBe(true);
-    expect(seedUndelivered(undefined, SEED_ID)).toBe(true);
-    expect(seedUndelivered([msg(SEED_ID, 'user'), msg('msg_a', 'assistant')], SEED_ID)).toBe(false);
-    expect(seedUndelivered([msg('msg_real', 'user')], SEED_ID)).toBe(false);
+    expect(seedUndelivered([SEED_ID, 'msg_a'], SEED_ID)).toBe(false);
+    expect(seedUndelivered(['msg_real'], SEED_ID)).toBe(false);
   });
 
   test('the watchdog waits 30 s', () => {

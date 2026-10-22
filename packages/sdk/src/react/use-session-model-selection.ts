@@ -1,9 +1,9 @@
 'use client';
 
 import {
-  useOpenCodeLocal,
-  type OpenCodeLocal,
-  type UseOpenCodeLocalOptions,
+  useRuntimeLocal,
+  type RuntimeLocal,
+  type UseRuntimeLocalOptions,
 } from './use-opencode-local';
 import {
   useModelDefaults,
@@ -11,8 +11,8 @@ import {
 } from './use-model-defaults';
 import { useKortixRouteProjectId } from './route-project';
 
-export interface SessionModelSelection extends OpenCodeLocal {
-  model: OpenCodeLocal['model'] & {
+export interface SessionModelSelection extends RuntimeLocal {
+  model: RuntimeLocal['model'] & {
     defaults: UseModelDefaults;
   };
 }
@@ -24,11 +24,11 @@ export interface SessionModelSelection extends OpenCodeLocal {
  * the runtime capabilities and optional explicit overrides.
  */
 export function useSessionModelSelection(
-  options: UseOpenCodeLocalOptions,
+  options: UseRuntimeLocalOptions,
 ): SessionModelSelection {
   const projectId = useKortixRouteProjectId();
   const defaults = useModelDefaults(projectId);
-  const base = useOpenCodeLocal({
+  const base = useRuntimeLocal({
     ...options,
     freeTier: options.freeTier ?? defaults.freeTier,
     resolveServerDefault:

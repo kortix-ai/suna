@@ -1,6 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
-import { exportAccountAudit, listAccountAudit, listProjectAudit } from './audit';
+import { auditFilterQuery } from './audit-filter';
+import { exportAccountAudit, getAccountAuditActivity, listAccountAudit, listProjectAudit } from './audit';
 import { listAuditEvents } from './iam';
 
 let calls: Array<{ url: string; method: string }> = [];
@@ -72,12 +73,30 @@ test('exportAccountAudit sends the same reconstruction filters', async () => {
   });
 });
 
+test('audit querystrings preserve fully-populated filters', async () => {
+  const full = { action: 'a', actor: 'b', actorType: 'agent', projectId: 'p', sessionId: 's',
+    source: 'api_key', credentialKind: 'oauth_app', phase: 'completed', outcome: 'success',
+    resourceType: 'session', requestId: 'r', correlationId: 'c', since: '2026-01-01',
+    until: '2026-01-02', q: 'gmail + inbox', cursor: 'cursor|1', limit: 200 } as const;
+  await listAccountAudit('a', full);
+  await exportAccountAudit('a', { format: 'csv', ...full });
+  const expected = 'action=a&actor=b&actor_type=agent&project_id=p&session_id=s&source=api_key&credential_kind=oauth_app&phase=completed&outcome=success&resource_type=session&request_id=r&correlation_id=c&since=2026-01-01&until=2026-01-02&q=gmail+%2B+inbox&cursor=cursor%7C1&limit=200';
+  expect(new URL(calls[0]!.url).search.slice(1)).toBe(expected);
+  expect(new URL(calls[1]!.url).search.slice(1)).toBe(`format=csv&${expected}`);
+});
+
+test('audit filter rejects unknown runtime keys', () => {
+  expect(auditFilterQuery({ format: 'csv', action: 'iam.policy', ...{ unexpected: 'secret' } }).toString())
+    .toBe('format=csv&action=iam.policy');
+});
+
 test('listAuditEvents sends project and session reconstruction filters', async () => {
   await listAuditEvents('account-1', {
     project_id: 'project-1',
     session_id: 'session-1',
     actor_type: 'agent',
     source: 'connector',
+    credential_kind: 'oauth_app',
     outcome: 'success',
   });
 
@@ -87,6 +106,7 @@ test('listAuditEvents sends project and session reconstruction filters', async (
     session_id: 'session-1',
     actor_type: 'agent',
     source: 'connector',
+    credential_kind: 'oauth_app',
     outcome: 'success',
   });
 });
@@ -121,6 +141,9 @@ test('AuditEvent exposes the canonical reconstruction envelope', () => {
     event.agent_id,
     event.authoritative_source,
     event.client_reported_source,
+    event.credential_kind,
+    event.credential_id,
+    event.credential_name,
     event.phase,
     event.causation_id,
     event.source_ledger,
@@ -128,7 +151,7 @@ test('AuditEvent exposes the canonical reconstruction envelope', () => {
     event.input_sha256,
     event.integrity_hash,
   ];
-  expect(fields).toHaveLength(16);
+  expect(fields).toHaveLength(19);
 });
 
 test('AuditEvent carries on_behalf_of_user_id (agents as principals, spec 2026-09-22 §2)', () => {
@@ -165,4 +188,29 @@ test('an anonymous audit row is typed and filterable on every audit surface', as
     'anonymous',
     'anonymous',
   ]);
+});
+
+test('getAccountAuditActivity reads per-user activity with snake_case filters', async () => {
+  await getAccountAuditActivity('account-1');
+  await getAccountAuditActivity('account-1', {
+    since: '2026-09-09',
+    until: '2026-10-21',
+    projectId: 'project-1',
+    actor: 'user-1',
+    client: 'browser',
+    actorType: 'human',
+    credentialKind: 'browser_session',
+  });
+  expect(new URL(calls[0]!.url).pathname).toBe('/accounts/account-1/audit/activity');
+  expect(new URL(calls[0]!.url).search).toBe('');
+  expect(new URL(calls[1]!.url).search.slice(1)).toBe(
+    'since=2026-09-09&until=2026-10-21&project_id=project-1&actor=user-1&client=browser&actor_type=human&credential_kind=browser_session',
+  );
+  const actor: import('./audit').AuditActivityActor = {
+    actor_user_id: 'user-1', email: null, active_days: 1, active_hours: 2, events: 3,
+    first_at: '2026-10-20T10:00:00.000Z', last_at: '2026-10-20T11:00:00.000Z',
+    days: [{ day: '2026-10-20', events: 3, active_hours: 2 }],
+  };
+  const page: import('./audit').AuditActivity = { since: 'a', until: 'b', rolled_through: null, actors: [actor] };
+  expect(page.actors[0]!.days[0]!.active_hours).toBe(2);
 });

@@ -1,7 +1,8 @@
-import { spawn } from 'child_process';
-import { existsSync, realpathSync, statSync } from 'fs';
-import { homedir, platform } from 'os';
-import { join } from 'path';
+import { spawn, type ChildProcess } from 'child_process';
+import { existsSync, readFileSync, realpathSync, rmSync, statSync } from 'fs';
+import { homedir, platform, tmpdir, userInfo } from 'os';
+import { basename, dirname, join } from 'path';
+import { agentTunnelHome, serviceLabelFor, SERVICE_LABEL } from '../../service-paths';
 
 interface ExecResult {
   stdout: string;
@@ -22,16 +23,53 @@ const DRIVER_ENV_KEYS = [
   'XDG_RUNTIME_DIR',
   'XAUTHORITY',
   'DBUS_SESSION_BUS_ADDRESS',
+  // Windows: without these a Rust binary cannot start COM, Winsock, or UI
+  // Automation, and finds no profile or temp directory.
+  'SystemRoot',
+  'windir',
+  'USERPROFILE',
+  'USERNAME',
+  'USERDOMAIN',
+  'APPDATA',
+  'LOCALAPPDATA',
+  'ProgramData',
+  'TEMP',
+  'TMP',
+  'ComSpec',
+  'PATHEXT',
 ] as const;
+
+/** The driver's own product telemetry stays off on a customer's machine. */
+function driverEnvironment(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { CUA_DRIVER_RS_TELEMETRY_ENABLED: '0' };
+  for (const key of DRIVER_ENV_KEYS) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return { ...env, ...extra };
+}
 
 export interface CuaToolCall {
   tool: string;
   args?: Record<string, unknown>;
 }
 
+/**
+ * The driver the desktop app ships in its own bundle, beside the agent:
+ * `Resources/agent-tunnel/agent-cli.js` → `Resources/cua-driver/cua-driver`.
+ * Running it embedded keeps every macOS permission prompt and grant on the
+ * Kortix app, not on a separate CuaDriver app. `null` for an npm install.
+ */
+export function bundledCuaDriverPath(agentEntry: string | undefined = process.argv[1]): string | null {
+  if (!agentEntry || basename(dirname(agentEntry)) !== 'agent-tunnel') return null;
+  const exe = process.platform === 'win32' ? 'cua-driver.exe' : 'cua-driver';
+  const candidate = join(dirname(dirname(agentEntry)), 'cua-driver', exe);
+  return existsSync(candidate) ? candidate : null;
+}
+
 function candidateBins(): string[] {
   const candidates = [
     process.env.CUA_DRIVER_BIN,
+    bundledCuaDriverPath(),
     join(
       homedir(),
       '.local',
@@ -67,19 +105,27 @@ export function findCuaDriverBinary(): string | null {
   return null;
 }
 
-function driverEnvironment(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const key of DRIVER_ENV_KEYS) {
-    if (process.env[key] !== undefined) env[key] = process.env[key];
+/** The `CFBundleIdentifier` of the app whose binary runs this agent, if any. */
+function hostBundleId(): string {
+  try {
+    const plist = readFileSync(join(dirname(dirname(process.execPath)), 'Info.plist'), 'utf8');
+    return /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/.exec(plist)?.[1] ?? '';
+  } catch {
+    return '';
   }
-  return env;
 }
 
-function execFile(cmd: string, args: string[], timeoutMs = 30_000): Promise<ExecResult> {
+function execFile(
+  cmd: string,
+  args: string[],
+  timeoutMs = 30_000,
+  env: NodeJS.ProcessEnv = driverEnvironment(),
+): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const proc = spawn(cmd, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: driverEnvironment(),
+      env,
+      windowsHide: true,
     });
     let stdout = '';
     let stderr = '';
@@ -120,7 +166,8 @@ function execFile(cmd: string, args: string[], timeoutMs = 30_000): Promise<Exec
       clearTimeout(timer);
       if (code !== 0) {
         const detail = stderr.trim() || stdout.trim();
-        reject(new Error(`${cmd} failed (${code})${detail ? `: ${detail}` : ''}`));
+        // The driver's name, not its install path: agents read this message.
+        reject(new Error(`${basename(cmd)} failed (${code})${detail ? `: ${detail}` : ''}`));
       } else {
         resolve({ stdout, stderr });
       }
@@ -168,9 +215,67 @@ function sanitizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   return sanitized;
 }
 
+export interface CuaDriverOptions {
+  /** A resolved driver binary. Default: the bundled one, else an installed one. */
+  binary?: string;
+  /** Run the driver inside this app's macOS permissions. Default: the bundled driver. */
+  embedded?: boolean;
+  socketPath?: string;
+  hostBundleId?: string;
+}
+
+/**
+ * The local computer-use driver (trycua `cua-driver`).
+ *
+ * - Embedded (the driver the desktop app bundles): this agent spawns
+ *   `serve --embedded` as its own child on a private socket. The agent runs as
+ *   the Kortix app's binary, so macOS attributes Accessibility and Screen
+ *   Recording to Kortix: one grant, one entry in System Settings, no CuaDriver
+ *   app. The driver never shows its own permission UI (`--no-permissions-gate`);
+ *   the desktop app asks for the grants.
+ * - Standalone (a separately installed CuaDriver.app): unchanged, it starts
+ *   through LaunchServices and owns its own grants.
+ */
 export class CuaDriver {
-  private binary: string | null = null;
+  private binary: string | null;
+  private readonly embedded: boolean | undefined;
+  private readonly socketPath: string;
+  private readonly hostBundleId: string | undefined;
   private daemonReady = false;
+  private daemon: ChildProcess | null = null;
+
+  constructor(options: CuaDriverOptions = {}) {
+    this.binary = options.binary ?? null;
+    this.embedded = options.embedded;
+    // One driver per agent home (the label's suffix), so two homes never share
+    // or steal a driver. Under $TMPDIR: a socket path is capped at 104 bytes on
+    // macOS. Windows: the driver listens on a named pipe, one per user.
+    const home = serviceLabelFor(agentTunnelHome()).slice(SERVICE_LABEL.length);
+    this.socketPath =
+      options.socketPath ??
+      (process.platform === 'win32'
+        ? `\\\\.\\pipe\\kortix-cua-${userInfo().username}${home}`
+        : join(tmpdir(), `kortix-cua-${typeof process.getuid === 'function' ? process.getuid() : 'user'}${home}.sock`));
+    this.hostBundleId = options.hostBundleId;
+  }
+
+  private isEmbedded(binary: string): boolean {
+    return this.embedded ?? binary === bundledCuaDriverPath();
+  }
+
+  /** Environment and trailing arguments every driver command needs in this mode. */
+  private mode(binary: string): { env: NodeJS.ProcessEnv; socket: string[] } {
+    if (!this.isEmbedded(binary)) return { env: driverEnvironment(), socket: [] };
+    // macOS only: a Windows or Linux host has no bundle id.
+    const bundleId = this.hostBundleId ?? hostBundleId();
+    return {
+      env: driverEnvironment({
+        CUA_DRIVER_EMBEDDED: '1',
+        ...(bundleId ? { CUA_DRIVER_HOST_BUNDLE_ID: bundleId } : {}),
+      }),
+      socket: ['--socket', this.socketPath],
+    };
+  }
 
   async ensureInstalled(): Promise<string> {
     if (this.binary && existsSync(this.binary)) return this.binary;
@@ -188,25 +293,26 @@ export class CuaDriver {
 
   async version(): Promise<string> {
     const bin = await this.ensureInstalled();
-    const { stdout } = await execFile(bin, ['--version'], 10_000);
+    const { stdout } = await execFile(bin, ['--version'], 10_000, this.mode(bin).env);
     return stdout.trim();
   }
 
   async listTools(): Promise<string> {
     const bin = await this.ensureInstalled();
-    const { stdout } = await execFile(bin, ['list-tools'], 10_000);
+    const { stdout } = await execFile(bin, ['list-tools'], 10_000, this.mode(bin).env);
     return stdout.trim();
   }
 
   async describe(tool: string): Promise<string> {
     const bin = await this.ensureInstalled();
-    const { stdout } = await execFile(bin, ['describe', tool], 10_000);
+    const { stdout } = await execFile(bin, ['describe', tool], 10_000, this.mode(bin).env);
     return stdout.trim();
   }
 
   async status(): Promise<string> {
     const bin = await this.ensureInstalled();
-    const { stdout } = await execFile(bin, ['status'], 10_000);
+    const { env, socket } = this.mode(bin);
+    const { stdout } = await execFile(bin, ['status', ...socket], 10_000, env);
     return stdout.trim();
   }
 
@@ -214,12 +320,13 @@ export class CuaDriver {
     if (!tool || typeof tool !== 'string') throw new Error('CUA tool name is required');
     await this.ensureDaemonReady();
     const bin = await this.ensureInstalled();
+    const { env, socket } = this.mode(bin);
     const payload = JSON.stringify(sanitizeArgs(args));
     let lastError: unknown;
 
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
-        const { stdout, stderr } = await execFile(bin, ['call', tool, payload], 60_000);
+        const { stdout, stderr } = await execFile(bin, ['call', tool, payload, ...socket], 60_000, env);
         if (isDaemonProxyFallback(stderr)) {
           lastError = new Error(stderr.trim());
           await sleep(150 * (attempt + 1));
@@ -242,23 +349,30 @@ export class CuaDriver {
   async startDaemon(): Promise<{ ok: true; status?: string }> {
     const bin = await this.ensureInstalled();
 
-    if (platform() === 'darwin') {
+    if (this.isEmbedded(bin)) {
+      await this.startEmbeddedDaemon(bin);
+      this.daemonReady = true;
+      return { ok: true };
+    } else if (platform() === 'darwin') {
       const child = spawn('open', ['-n', '-g', '-a', 'CuaDriver', '--args', 'serve'], {
         detached: true,
         stdio: 'ignore',
         env: driverEnvironment(),
+        windowsHide: true,
       });
       child.unref();
+      await sleep(750);
     } else {
       const child = spawn(bin, ['serve'], {
         detached: true,
         stdio: 'ignore',
         env: driverEnvironment(),
+        windowsHide: true,
       });
       child.unref();
+      await sleep(750);
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 750));
     try {
       const status = await this.status();
       this.daemonReady = true;
@@ -268,7 +382,93 @@ export class CuaDriver {
     }
   }
 
+  /**
+   * A direct child (never `open`, which would hand it to LaunchServices and
+   * out of this app's permission chain). It exits with the agent.
+   */
+  private async startEmbeddedDaemon(bin: string): Promise<void> {
+    if (this.daemon && this.daemon.exitCode === null) return;
+    const { env, socket } = this.mode(bin);
+    // A socket this agent did not just start is stale: a previous agent left it
+    // when it exited, and the driver refuses to start over an existing endpoint.
+    // Stop whatever may still answer on it (it runs outside this process's
+    // macOS permissions), then remove it.
+    // A Windows named pipe is no file: always ask, it goes away with its server.
+    if (process.platform === 'win32') {
+      await execFile(bin, ['stop', ...socket], 10_000, env).catch(() => undefined);
+    } else if (existsSync(this.socketPath)) {
+      await execFile(bin, ['stop', ...socket], 10_000, env).catch(() => undefined);
+      rmSync(this.socketPath, { force: true });
+    }
+    const child = spawn(bin, ['serve', '--embedded', '--no-permissions-gate', ...socket], {
+      stdio: 'ignore',
+      env,
+      windowsHide: true,
+    });
+    child.unref();
+    child.on('exit', () => {
+      if (this.daemon === child) {
+        this.daemon = null;
+        this.daemonReady = false;
+      }
+    });
+    this.daemon = child;
+    process.once('exit', () => child.kill());
+    const started = Date.now();
+    while (Date.now() - started < 10_000 && !(await this.endpointUp(bin))) {
+      if (child.exitCode !== null) break;
+      await sleep(50);
+    }
+    if (!(await this.endpointUp(bin))) {
+      child.kill();
+      throw new Error('cua-driver did not start (no socket after 10 s)');
+    }
+  }
+
+  /** The daemon endpoint answers: a Unix socket is a file, a Windows named pipe is asked. */
+  private async endpointUp(bin: string): Promise<boolean> {
+    if (process.platform !== 'win32') return existsSync(this.socketPath);
+    const { env, socket } = this.mode(bin);
+    return execFile(bin, ['status', ...socket], 5_000, env).then(
+      ({ stdout }) => !/not\s+running|unhealthy/i.test(stdout),
+      () => false,
+    );
+  }
+
+  /**
+   * The macOS grants the driver reports missing for its permission owner:
+   * Kortix when embedded, CuaDriver otherwise. Empty when nothing is missing
+   * or the platform has no such grants.
+   */
+  /** The app macOS shows in Privacy & Security for this driver's grants. */
+  async permissionOwner(): Promise<string> {
+    return this.isEmbedded(await this.ensureInstalled()) ? 'Kortix' : 'CuaDriver';
+  }
+
+  async missingPermissions(): Promise<string[]> {
+    const report = (await this.call('check_permissions', {})) as Record<string, unknown> | null;
+    const missing: string[] = [];
+    if (report?.accessibility === false) missing.push('Accessibility');
+    if (report?.screen_recording === false) missing.push('Screen Recording');
+    return missing;
+  }
+
+  /** Stops an embedded daemon this agent started. Restarting picks up new grants. */
+  stop(): void {
+    this.daemon?.kill();
+    this.daemon = null;
+    this.daemonReady = false;
+  }
+
   private async ensureDaemonReady(): Promise<void> {
+    const bin = await this.ensureInstalled();
+    // Embedded: only a driver this agent started runs inside its permissions.
+    if (this.isEmbedded(bin)) {
+      if (this.daemon?.exitCode === null && (process.platform === 'win32' ? this.daemonReady : existsSync(this.socketPath))) return;
+      this.stop();
+      await this.startDaemon();
+      return;
+    }
     if (this.daemonReady) return;
     try {
       const status = await this.status();

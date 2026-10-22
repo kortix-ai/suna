@@ -39,7 +39,7 @@ export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): W
       const timer = setTimeout(() => {
         pendingConnections.delete(ws);
         try {
-          ws.close(4001, 'auth timeout');
+          ws.close(1013, 'auth timeout');
         } catch {}
       }, authTimeoutMs);
 
@@ -135,7 +135,7 @@ export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): W
             );
           } catch {
             try {
-              ws.close(4001, 'authentication response failed');
+              ws.close(1011, 'authentication response failed');
             } catch {}
             return;
           }
@@ -149,7 +149,7 @@ export function createWsHandlers(relay: TunnelRelay, opts?: WsHandlerOptions): W
           pendingConnections.delete(ws);
           console.error(`[tunnel-ws] Auth error for ${tunnelId}:`, err);
           try {
-            ws.close(4001, 'authentication error');
+            ws.close(1011, 'authentication error');
           } catch {}
         }
 

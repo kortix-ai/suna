@@ -38,13 +38,10 @@ export interface UpstreamDescriptor {
    */
   poolSecretId?: string;
   /**
-   * Provider failover. When the first candidate sets this, a failed dispatch
-   * (thrown error or non-2xx before any output) moves the same request to the
-   * next candidate that also sets it, in order. Kortix-managed models set it on
-   * the primary provider and its fallbacks. BYOK never sets it: a failed BYOK
-   * key must fail as BYOK.
+   * The login behind `apiKey` can be refreshed (a ChatGPT OAuth login). A 401
+   * asks the host for a fresh descriptor once and retries with it.
    */
-  failover?: boolean;
+  refreshableCredential?: boolean;
   /**
    * The provider name clients see instead of `provider`. When set, every
    * client-visible surface — response bodies, SSE events, headers, error
@@ -60,6 +57,13 @@ export interface UpstreamDescriptor {
   resolvedModel?: string;
   headers?: Record<string, string>;
   omitAuthorization?: boolean;
+  /**
+   * The base URL came from a user (a project's custom provider), not from the
+   * catalog. The request then connects only to a public address, pinned at
+   * resolve time, unless the host is in `allowPrivateHosts`; redirects are
+   * not followed.
+   */
+  egress?: { allowPrivateHosts: readonly string[] };
   pricing?: UpstreamPricing;
   // Model capability flags mirrored from the catalog (models.dev enrichment,
   // see apps/api/src/llm-gateway/models/catalog-models.ts capabilitiesOf).
@@ -71,10 +75,6 @@ export interface UpstreamDescriptor {
   // (managed models, custom/self-hosted) — treated as "unknown, don't guess".
   reasoning?: boolean;
   temperature?: boolean;
-  // Upstream-specific fields merged into the outgoing request body, overriding
-  // any same-named client fields (e.g. OpenRouter's `provider` routing
-  // preferences pinning managed models to reliable hosts). openai-compat only.
-  bodyExtras?: Record<string, unknown>;
   // The models.dev `npm` field for the provider (e.g. '@ai-sdk/openai',
   // '@ai-sdk/anthropic', '@ai-sdk/amazon-bedrock'). Selects the AI SDK provider
   // package under the 'ai-sdk' transport engine. Optional: when absent the engine

@@ -6,15 +6,13 @@ import { cn } from '@/lib/utils';
 
 interface KortixLoaderProps {
   /**
-   * Size preset for the loader
-   * @default 'medium'
+   * Size preset. `small` is the loader everywhere: lists, pages, sheets,
+   * previews, buttons. `large` is the boot screens only (it matches the 80 pt
+   * native splash mark); `medium` is the session-wake screen only
+   * (`SessionConnecting`). `kortix-loader-size.test.ts` enforces this (KRTX-559).
+   * @default 'small'
    */
-  size?: 'small' | 'medium' | 'large' | 'xlarge';
-  /**
-   * Animation speed multiplier
-   * @default 1.2
-   */
-  speed?: number;
+  size?: 'small' | 'medium' | 'large';
   /**
    * Custom size in pixels (overrides size preset)
    */
@@ -28,20 +26,6 @@ interface KortixLoaderProps {
    */
   style?: ViewStyle;
   /**
-   * Whether the animation should autoPlay
-   * @default true
-   */
-  autoPlay?: boolean;
-  /**
-   * Whether the animation should loop
-   * @default true
-   */
-  loop?: boolean;
-  /**
-   * Ref to control the Lottie animation
-   */
-  lottieRef?: React.RefObject<LottieView>;
-  /**
    * Force a specific color (overrides theme)
    * Use 'light' or 'dark' to force a specific theme color
    */
@@ -52,7 +36,6 @@ const SIZE_MAP = {
   small: 20,
   medium: 40,
   large: 80,
-  xlarge: 120,
 } as const;
 
 // The shipped animation is white. Light mode needs a black loader, and
@@ -97,27 +80,16 @@ const BLACK_SOURCE = recolorLottie(WHITE_SOURCE, [0, 0, 0]);
  * ```tsx
  * // Simple usage (auto-themed)
  * <KortixLoader />
- * 
- * // Custom size
- * <KortixLoader size="large" />
- * 
+ *
  * // Force dark theme (white loader)
  * <KortixLoader forceTheme="dark" />
- * 
- * // With ref for manual control
- * const lottieRef = useRef<LottieView>(null);
- * <KortixLoader lottieRef={lottieRef} autoPlay={false} />
  * ```
  */
 export function KortixLoader({
-  size = 'medium',
-  speed = 1.2,
+  size = 'small',
   customSize,
   className,
   style,
-  autoPlay = true,
-  loop = true,
-  lottieRef,
   forceTheme,
 }: KortixLoaderProps) {
   const { colorScheme } = useColorScheme();
@@ -133,12 +105,11 @@ export function KortixLoader({
         // Remount when the theme flips — LottieView doesn't reliably reload
         // a changed `source` in place.
         key={effectiveTheme}
-        ref={lottieRef}
         source={source}
         style={{ width: loaderSize, height: loaderSize }}
-        autoPlay={autoPlay}
-        loop={loop}
-        speed={speed}
+        autoPlay
+        loop
+        speed={1.2}
       />
     </View>
   );

@@ -14,38 +14,41 @@ mock.module('./db', () => ({
   },
 }));
 
-let listResult: { ok: true; sessions: unknown[] } | { ok: false; reason: 'no_key' | 'not_ready' | 'unreachable' } = {
-  ok: true,
-  sessions: [],
-};
-let endpointResult: { url: string; headers: Record<string, string> } | null = {
-  url: 'http://daemon.local',
-  headers: {},
-};
-// When set, `sandboxOpencodeEndpoint` throws this error instead of resolving —
-// simulates a Daytona 429 `ThrottlerException` / archived box on preview-link
-// resolution (the post-#3567 recurrence path).
-let endpointThrow: Error | null = null;
-let resolvedRootId: string | null = 'oc-root-1';
+type StateFetch =
+  | { ok: true; status: 200; doc: Record<string, unknown>; etag: string | null }
+  | { ok: false; reason: string; status: number | null };
+type MessagesFetch = { ok: true; messages: unknown[] } | { ok: false; reason: string; status: number | null };
 
-mock.module('../projects/opencode-mapping', () => ({
-  sandboxOpencodeEndpoint: async () => {
-    if (endpointThrow) throw endpointThrow;
-    return endpointResult;
+const liveState = (root: string | null): StateFetch => ({
+  ok: true,
+  status: 200,
+  doc: { identity: { opencode_session_id: root } },
+  etag: null,
+});
+let stateResult: StateFetch = liveState('oc-root-1');
+let messagesResult: MessagesFetch = { ok: true, messages: [] };
+let stateTargets: unknown[] = [];
+let messageReads: Array<{ target: unknown; sessionId: string; limit: number }> = [];
+
+mock.module('../projects/lib/session-runtime-transport', () => ({
+  fetchRuntimeState: async (target: unknown) => {
+    stateTargets.push(target);
+    return stateResult;
   },
-  listSandboxOpencodeSessions: async () => listResult,
-  resolveRootSessionId: () => resolvedRootId,
+  fetchRuntimeMessages: async (target: unknown, sessionId: string, options: { limit: number }) => {
+    messageReads.push({ target, sessionId, limit: options.limit });
+    return messagesResult;
+  },
 }));
 
 const { getPublicSessionInfo, getPublicSessionMessages } = await import('./public-session-share-view');
 
 beforeEach(() => {
   sessionRows = [];
-  listResult = { ok: true, sessions: [] };
-  endpointResult = { url: 'http://daemon.local', headers: {} };
-  endpointThrow = null;
-  resolvedRootId = 'oc-root-1';
-  globalThis.fetch = mock(async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
+  stateResult = liveState('oc-root-1');
+  messagesResult = { ok: true, messages: [] };
+  stateTargets = [];
+  messageReads = [];
 });
 
 describe('getPublicSessionInfo', () => {
@@ -105,105 +108,171 @@ describe('getPublicSessionInfo', () => {
   });
 });
 
+/** No saved transcript: the stored read answers null. */
+const nothingSaved = { readMirror: async () => null };
+
+const PUBLIC_MESSAGE_KEYS = ['completed', 'created', 'files', 'reasoning_omitted', 'role', 'text', 'tools'];
+
 describe('getPublicSessionMessages', () => {
   const activeShare = { sessionId: 'sess-1', externalId: 'ext-1', sandboxStatus: 'active' };
 
   test('503s when the sandbox is not active — never touches the daemon', async () => {
-    const result = await getPublicSessionMessages({ ...activeShare, sandboxStatus: 'stopped' });
+    const result = await getPublicSessionMessages({ ...activeShare, sandboxStatus: 'stopped' }, nothingSaved);
     expect(result).toEqual({ ok: false, status: 503, error: 'Sandbox is not running' });
+    expect(stateTargets).toEqual([]);
+    expect(messageReads).toEqual([]);
   });
 
-  test('degrades to an unavailable digest (still 200) when the daemon reports not_ready', async () => {
-    listResult = { ok: false, reason: 'not_ready' };
-    const result = await getPublicSessionMessages(activeShare);
+  test('reads the root the daemon names, anonymously, through the runtime namespace', async () => {
+    await getPublicSessionMessages(activeShare, nothingSaved);
+    expect(stateTargets).toEqual([{ externalId: 'ext-1' }]);
+    expect(messageReads).toEqual([{ target: { externalId: 'ext-1' }, sessionId: 'oc-root-1', limit: 200 }]);
+  });
+
+  test('falls back to the row pin when the daemon names no root yet', async () => {
+    stateResult = liveState(null);
+    sessionRows = [{ opencodeSessionId: 'oc-pinned' }];
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
+    expect(messageReads.map((read) => read.sessionId)).toEqual(['oc-pinned']);
+    expect(result.ok && result.transcript.opencode_session_id).toBe('oc-pinned');
+  });
+
+  test('degrades to an unavailable digest (still 200) when the daemon is not ready', async () => {
+    stateResult = { ok: false, reason: 'daemon_503', status: 503 };
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
       expect(result.transcript.reason).toContain('not ready');
     }
+    expect(messageReads).toEqual([]);
   });
 
-  test('degrades to unavailable when no canonical root session can be resolved', async () => {
-    resolvedRootId = null;
-    const result = await getPublicSessionMessages(activeShare);
+  test('degrades to unavailable when neither the daemon nor the row names a root', async () => {
+    stateResult = liveState(null);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
       expect(result.transcript.opencode_session_id).toBeNull();
     }
+    expect(messageReads).toEqual([]);
   });
 
   test('degrades to unavailable when the sandbox has no service key', async () => {
-    endpointResult = null;
-    const result = await getPublicSessionMessages(activeShare);
+    stateResult = { ok: false, reason: 'no_service_key', status: null };
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.transcript.available).toBe(false);
+    if (result.ok) {
+      expect(result.transcript.available).toBe(false);
+      expect(result.transcript.reason).toBe('Sandbox credentials unavailable');
+    }
   });
 
-  test('sanitizes a real message list: joins text parts, strips tool args, keeps only file name+mime', async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(
-        JSON.stringify([
-          {
-            info: { role: 'assistant', time: { created: 1000, completed: 2000 } },
-            parts: [
-              { type: 'text', text: 'first line' },
-              { type: 'text', text: 'second line' },
-              { type: 'text', text: 'synthetic', synthetic: true },
-              { type: 'tool', tool: 'bash', state: { status: 'completed', input: 'rm -rf /', output: 'secret output' } },
-              { type: 'file', filename: 'report.pdf', mime: 'application/pdf', content: 'base64-data-should-be-dropped' },
-              { type: 'reasoning', text: 'internal thoughts' },
-            ],
+  test('sanitizes a real message list: joins text parts by line, strips tool args, keeps only file name+mime', async () => {
+    messagesResult = {
+      ok: true,
+      messages: [
+        {
+          info: {
+            id: 'msg_secret_id',
+            role: 'assistant',
+            time: { created: 1000, completed: 2000 },
+            error: { name: 'ProviderError', message: 'upstream key sk-live-123 rejected' },
           },
-        ]),
-        { status: 200 },
-      ),
-    ) as unknown as typeof fetch;
+          parts: [
+            { type: 'text', text: 'first line' },
+            { type: 'text', text: 'second line' },
+            { type: 'text', text: 'synthetic', synthetic: true },
+            { type: 'tool', tool: 'bash', state: { status: 'completed', input: 'rm -rf /', output: 'secret output' } },
+            { type: 'file', filename: 'report.pdf', mime: 'application/pdf', content: 'base64-data-should-be-dropped' },
+            { type: 'reasoning', text: 'internal thoughts' },
+          ],
+        },
+      ],
+    };
 
-    const result = await getPublicSessionMessages(activeShare);
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     const { transcript } = result;
     expect(transcript.available).toBe(true);
+    expect(transcript.source).toBe('live');
     expect(transcript.message_count).toBe(1);
     const [msg] = transcript.messages;
+    expect(Object.keys(msg).sort()).toEqual(PUBLIC_MESSAGE_KEYS);
     expect(msg.role).toBe('assistant');
-    expect(msg.text).toBe('first line second line');
+    expect(msg.created).toBe('1970-01-01T00:00:01.000Z');
+    expect(msg.text).toBe('first line\nsecond line\n\nThe assistant could not complete this response.');
     expect(msg.tools).toEqual([{ tool: 'bash', status: 'completed' }]);
     expect(msg.files).toEqual([{ filename: 'report.pdf', mime: 'application/pdf' }]);
     expect(msg.reasoning_omitted).toBe(true);
-    expect(JSON.stringify(msg)).not.toContain('secret output');
-    expect(JSON.stringify(msg)).not.toContain('base64-data-should-be-dropped');
-  });
-
-  test('truncates an overlong message body', async () => {
-    const longText = 'x'.repeat(5000);
-    globalThis.fetch = mock(async () =>
-      new Response(
-        JSON.stringify([{ info: { role: 'user', time: {} }, parts: [{ type: 'text', text: longText }] }]),
-        { status: 200 },
-      ),
-    ) as unknown as typeof fetch;
-    const result = await getPublicSessionMessages(activeShare);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.transcript.messages[0].text.length).toBeLessThan(5000);
-      expect(result.transcript.messages[0].text.endsWith('…')).toBe(true);
+    const wire = JSON.stringify(msg);
+    for (const secret of ['secret output', 'rm -rf', 'base64-data-should-be-dropped', 'msg_secret_id', 'sk-live-123', 'internal thoughts']) {
+      expect(wire).not.toContain(secret);
     }
   });
 
-  test('a 503 from the daemon degrades to an unavailable digest, not a hard error', async () => {
-    globalThis.fetch = mock(async () => new Response('{}', { status: 503 })) as unknown as typeof fetch;
-    const result = await getPublicSessionMessages(activeShare);
+  test.each(['live', 'mirror'])('%s reads show failed assistant outcomes without exposing provider errors', async (source) => {
+    const messages = [
+      { info: { role: 'assistant', error: { message: 'private provider detail' } }, parts: [] },
+      { info: { role: 'assistant', error: { message: 'private provider detail' } }, parts: [{ type: 'text', text: 'Partial answer' }] },
+      { info: { role: 'assistant' }, parts: [{ type: 'text', text: 'Complete answer' }] },
+      { info: { role: 'user', error: { message: 'private provider detail' } }, parts: [{ type: 'text', text: 'Question' }] },
+    ];
+    messagesResult = { ok: true, messages };
+    const result = await getPublicSessionMessages(
+      { ...activeShare, sandboxStatus: source === 'mirror' ? 'stopped' : 'active' },
+      { readMirror: async () => ({ opencode_session_id: 'oc-root-1', captured_at: '2026-01-01T00:00:00.000Z', total: messages.length, head_complete: true, next_cursor: null, messages }) },
+    );
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.transcript.available).toBe(false);
+    if (!result.ok) return;
+    expect(result.transcript.source).toBe(source);
+    expect(result.transcript.messages.map((message) => message.text)).toEqual([
+      'The assistant could not complete this response.',
+      'Partial answer\n\nThe assistant could not complete this response.',
+      'Complete answer',
+      'Question',
+    ]);
+    expect(JSON.stringify(result.transcript)).not.toContain('private provider detail');
   });
 
-  test('a daemon fetch throw degrades to an unavailable digest instead of propagating', async () => {
-    globalThis.fetch = mock(async () => {
-      throw new Error('ECONNRESET');
-    }) as unknown as typeof fetch;
-    const result = await getPublicSessionMessages(activeShare);
+  test('keeps markdown intact: line breaks and code fences survive, so the page renders them as in the session', async () => {
+    const markdown = 'Here is the JSX:\n\n```tsx\n<svg\n  viewBox="0 0 12 12"\n/>\n```\n\n- one\n- two';
+    messagesResult = { ok: true, messages: [{ info: { role: 'assistant', time: {} }, parts: [{ type: 'text', text: markdown }] }] };
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
+    expect(result.ok && result.transcript.messages[0].text).toBe(markdown);
+  });
+
+  test('keeps a long answer whole and marks a cut past the full-text cap', async () => {
+    const long = 'x'.repeat(5000);
+    const huge = 'y'.repeat(20_000);
+    messagesResult = {
+      ok: true,
+      messages: [long, huge].map((text) => ({ info: { role: 'assistant', time: {} }, parts: [{ type: 'text', text }] })),
+    };
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.transcript.messages[0].text).toBe(long);
+      expect(result.transcript.messages[1].text.endsWith('…[truncated: 16000 of 20000 chars]')).toBe(true);
+    }
+  });
+
+  test('a 503 from the daemon messages read degrades to an unavailable digest, not a hard error', async () => {
+    messagesResult = { ok: false, reason: 'daemon_503', status: 503 };
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.transcript.available).toBe(false);
+      expect(result.transcript.reason).toContain('not ready');
+      expect(result.transcript.opencode_session_id).toBe('oc-root-1');
+    }
+  });
+
+  test('a failed daemon read degrades with a generic reason, never the error text', async () => {
+    messagesResult = { ok: false, reason: 'ECONNRESET', status: null };
+    const result = await getPublicSessionMessages(activeShare, nothingSaved);
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.transcript.available).toBe(false);
@@ -215,22 +284,32 @@ describe('getPublicSessionMessages', () => {
   });
 
   test('a Daytona 429 rate-limit on endpoint resolution degrades to unavailable (post-#3567 regression)', async () => {
-    // Regression: sandboxOpencodeEndpoint resolves the Daytona preview link,
-    // which throws DaytonaRateLimitError / ThrottlerException when the shared
-    // org is throttled. The public share route must NOT 500 / surface an
-    // unhandled Sentry event — it must degrade to an unavailable digest
-    // (sibling of the #3567 title-sync fix; this is the post-#3567 call site
-    // that was left unguarded).
-    endpointThrow = new Error('DaytonaRateLimitError: ThrottlerException: Too Many Requests');
-    const result = await getPublicSessionMessages(activeShare);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.transcript.available).toBe(false);
-      // Anonymous audience: the raw provider error text must NOT leak.
-      expect(result.transcript.reason).not.toContain('ThrottlerException');
-      expect(result.transcript.reason).not.toContain('DaytonaRateLimit');
-      expect(result.transcript.reason).toBeTruthy();
-      expect(result.transcript.opencode_session_id).toBe('oc-root-1');
+    // Regression: resolving the sandbox ingress can throw
+    // DaytonaRateLimitError / ThrottlerException when the shared org is
+    // throttled. The public share route must NOT 500 or leak the provider
+    // text — it degrades to an unavailable digest (sibling of the #3567
+    // title-sync fix). The transport turns the throw into a reason; both
+    // daemon reads are covered.
+    const throttled = { ok: false as const, reason: 'DaytonaRateLimitError: ThrottlerException: Too Many Requests', status: null };
+    for (const setup of [
+      () => {
+        stateResult = throttled;
+      },
+      () => {
+        messagesResult = throttled;
+      },
+    ]) {
+      stateResult = liveState('oc-root-1');
+      messagesResult = { ok: true, messages: [] };
+      setup();
+      const result = await getPublicSessionMessages(activeShare, nothingSaved);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.transcript.available).toBe(false);
+        expect(result.transcript.reason).not.toContain('ThrottlerException');
+        expect(result.transcript.reason).not.toContain('DaytonaRateLimit');
+        expect(result.transcript.reason).toBeTruthy();
+      }
     }
   });
 });
@@ -246,7 +325,7 @@ describe('getPublicSessionMessages — saved transcript fallback', () => {
     messages: [
       {
         info: { id: 'msg_1', role: 'user', time: { created: 1000 } },
-        parts: [{ type: 'text', text: 'Summarize the launch plan.' }],
+        parts: [{ type: 'text', text: 'Summarize the launch plan.\n\n```\nstep 1\n```' }],
       },
       {
         info: { id: 'msg_2', role: 'assistant', time: { created: 2000, completed: 3000 } },
@@ -265,13 +344,9 @@ describe('getPublicSessionMessages — saved transcript fallback', () => {
   });
 
   test('a stopped sandbox serves the saved transcript, sanitized, never touching the daemon', async () => {
-    let fetched = false;
-    globalThis.fetch = mock(async () => {
-      fetched = true;
-      return new Response('[]');
-    }) as unknown as typeof fetch;
     const result = await getPublicSessionMessages({ ...activeShare, sandboxStatus: 'stopped' }, { readMirror });
-    expect(fetched).toBe(false);
+    expect(stateTargets).toEqual([]);
+    expect(messageReads).toEqual([]);
     expect(readMirror).toHaveBeenCalledWith('sess-1', 200);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -282,15 +357,17 @@ describe('getPublicSessionMessages — saved transcript fallback', () => {
     expect(transcript.opencode_session_id).toBe('oc-root-1');
     expect(transcript.message_count).toBe(2);
     expect(transcript.messages.map((m) => [m.role, m.text])).toEqual([
-      ['user', 'Summarize the launch plan.'],
+      ['user', 'Summarize the launch plan.\n\n```\nstep 1\n```'],
       ['assistant', 'Here is the summary.'],
     ]);
+    expect(Object.keys(transcript.messages[1]).sort()).toEqual(PUBLIC_MESSAGE_KEYS);
     expect(transcript.messages[1].tools).toEqual([{ tool: 'bash', status: 'completed' }]);
     expect(transcript.messages[1].reasoning_omitted).toBe(true);
     const wire = JSON.stringify(transcript);
     expect(wire).not.toContain('SECRET=1');
     expect(wire).not.toContain('cat .env');
     expect(wire).not.toContain('private reasoning');
+    expect(wire).not.toContain('msg_2');
   });
 
   test('a session with no sandbox row serves the saved transcript', async () => {
@@ -308,7 +385,7 @@ describe('getPublicSessionMessages — saved transcript fallback', () => {
   });
 
   test('a running sandbox whose daemon is not ready serves the saved transcript and says why', async () => {
-    listResult = { ok: false, reason: 'not_ready' };
+    stateResult = { ok: false, reason: 'daemon_503', status: 503 };
     const result = await getPublicSessionMessages(activeShare, { readMirror });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -327,7 +404,7 @@ describe('getPublicSessionMessages — saved transcript fallback', () => {
   });
 
   test('nothing live and nothing saved says so', async () => {
-    listResult = { ok: false, reason: 'unreachable' };
+    stateResult = { ok: false, reason: 'timeout', status: null };
     const result = await getPublicSessionMessages(activeShare, { readMirror: async () => null });
     expect(result.ok).toBe(true);
     if (!result.ok) return;

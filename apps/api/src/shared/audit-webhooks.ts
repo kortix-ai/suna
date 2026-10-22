@@ -4,15 +4,15 @@
 // SKIP LOCKED, so slow or failed receivers never block the audit write path.
 
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
-import { and, eq, sql } from 'drizzle-orm';
+import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
+import { and, eq, getViewSelectedFields, sql } from 'drizzle-orm';
 import { accountHasEntitlement } from '../billing/services/entitlements';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { serializeAuditEvent } from './audit-query';
 import { auditWebhookFailureSummary } from './audit-webhook-privacy';
 import { db } from './db';
-import { runWorkerTick } from './audit-scope';
 import { safeEgressFetch } from './ssrf-guard';
+import { exponentialBackoffMs } from './backoff';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
  *  schema_version if ever changing the shape. */
@@ -71,13 +71,7 @@ export interface DeliveryResult {
 
 const MAX_DELIVERY_ATTEMPTS = 8;
 const DELIVERY_BATCH_SIZE = 50;
-const WORKER_IDLE_MS = 2_000;
-const WORKER_ERROR_MS = 5_000;
 const WORKER_ID = `audit-webhook-${process.pid}-${randomBytes(4).toString('hex')}`;
-let workerTimer: ReturnType<typeof setTimeout> | null = null;
-let workerRunning = false;
-let workerStopped = true;
-let activeWorkerTick: Promise<void> | null = null;
 
 interface ClaimedDelivery extends Record<string, unknown> {
   deliveryId: string;
@@ -108,15 +102,29 @@ async function claimDeliveries(): Promise<string[]> {
 }
 
 function retryDelayMs(attempts: number): number {
-  return Math.min(3_600_000, 30_000 * 2 ** Math.max(0, attempts - 1));
+  return exponentialBackoffMs({ attempt: attempts, baseMs: 30_000, capMs: 3_600_000 });
+}
+
+/** The row update for a delivery whose entitlement lookup threw: retry, or dead-letter at the cap. */
+export function entitlementLookupFailure(attempts: number, message: string, now = Date.now()) {
+  const dead = attempts >= MAX_DELIVERY_ATTEMPTS;
+  return {
+    status: dead ? ('dead_letter' as const) : ('retry' as const),
+    attempts,
+    nextAttemptAt: new Date(now + retryDelayMs(attempts)),
+    lastError: `entitlement lookup failed: ${message}`.slice(0, 1000),
+    lockedBy: null,
+    lockedUntil: null,
+    updatedAt: new Date(now),
+  };
 }
 
 async function processDelivery(deliveryId: string): Promise<void> {
   const [row] = await db
-    .select({ delivery: auditWebhookDeliveries, hook: auditWebhooks, event: auditEvents })
+    .select({ delivery: auditWebhookDeliveries, hook: auditWebhooks, event: getViewSelectedFields(auditEventsAll) })
     .from(auditWebhookDeliveries)
     .innerJoin(auditWebhooks, eq(auditWebhooks.webhookId, auditWebhookDeliveries.webhookId))
-    .innerJoin(auditEvents, eq(auditEvents.eventId, auditWebhookDeliveries.eventId))
+    .innerJoin(auditEventsAll, eq(auditEventsAll.eventId, auditWebhookDeliveries.eventId))
     .where(
       and(
         eq(auditWebhookDeliveries.deliveryId, deliveryId),
@@ -130,8 +138,20 @@ async function processDelivery(deliveryId: string): Promise<void> {
   try {
     entitled =
       !!row.event.accountId && (await accountHasEntitlement(row.event.accountId, 'auditAccess'));
-  } catch {
-    entitled = false;
+  } catch (error) {
+    // A lookup error is not "not entitled". Dead-lettering here lost a SIEM
+    // customer's events for any billing-layer blip; retry on the delivery backoff.
+    const attempts = row.delivery.attempts + 1;
+    await db
+      .update(auditWebhookDeliveries)
+      .set(entitlementLookupFailure(attempts, error instanceof Error ? error.message : String(error)))
+      .where(
+        and(
+          eq(auditWebhookDeliveries.deliveryId, deliveryId),
+          eq(auditWebhookDeliveries.lockedBy, WORKER_ID),
+        ),
+      );
+    return;
   }
   if (!entitled || !row.hook.enabled) {
     await db
@@ -202,45 +222,11 @@ async function processDelivery(deliveryId: string): Promise<void> {
     );
 }
 
-async function workerTick(): Promise<void> {
-  if (workerRunning || workerStopped) return;
-  workerRunning = true;
-  try {
-    const ids = await claimDeliveries();
-    await Promise.all(ids.map(processDelivery));
-    scheduleWorker(ids.length > 0 ? 0 : WORKER_IDLE_MS);
-  } catch (error) {
-    console.warn('[audit-webhook] worker tick failed', error);
-    scheduleWorker(WORKER_ERROR_MS);
-  } finally {
-    workerRunning = false;
-  }
-}
-
-function scheduleWorker(delay: number): void {
-  if (workerStopped || workerTimer) return;
-  workerTimer = setTimeout(() => {
-    workerTimer = null;
-    const tick = runWorkerTick('audit-webhooks', workerTick);
-    activeWorkerTick = tick;
-    void tick.finally(() => {
-      if (activeWorkerTick === tick) activeWorkerTick = null;
-    });
-  }, delay);
-  workerTimer.unref?.();
-}
-
-export function startAuditWebhookWorker(): void {
-  if (!workerStopped) return;
-  workerStopped = false;
-  scheduleWorker(0);
-}
-
-export async function stopAuditWebhookWorker(): Promise<void> {
-  workerStopped = true;
-  if (workerTimer) clearTimeout(workerTimer);
-  workerTimer = null;
-  await activeWorkerTick;
+/** One delivery pass: claim due deliveries and send them. Returns how many were claimed. */
+export async function runAuditWebhookDeliveryPass(): Promise<number> {
+  const ids = await claimDeliveries();
+  await Promise.all(ids.map(processDelivery));
+  return ids.length;
 }
 
 export async function replayAuditWebhookDelivery(
@@ -267,7 +253,6 @@ export async function replayAuditWebhookDelivery(
       ),
     )
     .returning({ deliveryId: auditWebhookDeliveries.deliveryId });
-  if (rows.length > 0) scheduleWorker(0);
   return rows.length > 0;
 }
 

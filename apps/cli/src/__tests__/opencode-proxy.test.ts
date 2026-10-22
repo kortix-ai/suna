@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { type RunningOpenCodeProxy, startOpenCodeProxy } from '../api/sdk.ts';
+import { type RunningSandboxPortProxy, startSandboxPortProxy } from '../api/sdk.ts';
 
 type UpstreamCapture = {
   method: string;
@@ -16,12 +16,12 @@ afterEach(() => {
   while (cleanups.length > 0) cleanups.pop()?.();
 });
 
-function track(proxy: RunningOpenCodeProxy): RunningOpenCodeProxy {
+function track(proxy: RunningSandboxPortProxy): RunningSandboxPortProxy {
   cleanups.push(() => proxy.close());
   return proxy;
 }
 
-describe('startOpenCodeProxy HTTP', () => {
+describe('startSandboxPortProxy HTTP', () => {
   test('injects the bearer token and forwards method, path, query, and body', async () => {
     const captures: UpstreamCapture[] = [];
     const upstream = Bun.serve({
@@ -42,7 +42,7 @@ describe('startOpenCodeProxy HTTP', () => {
     cleanups.push(() => upstream.stop(true));
 
     const proxy = track(
-      startOpenCodeProxy({ runtimeUrl: `http://127.0.0.1:${upstream.port}`, token: 'tok-123' }),
+      startSandboxPortProxy({ runtimeUrl: `http://127.0.0.1:${upstream.port}`, token: 'tok-123' }),
     );
 
     const get = await fetch(`${proxy.url}/session/abc?limit=2`);
@@ -94,7 +94,7 @@ describe('startOpenCodeProxy HTTP', () => {
     cleanups.push(() => upstream.stop(true));
 
     const proxy = track(
-      startOpenCodeProxy({ runtimeUrl: `http://127.0.0.1:${upstream.port}`, token: 'tok-123' }),
+      startSandboxPortProxy({ runtimeUrl: `http://127.0.0.1:${upstream.port}`, token: 'tok-123' }),
     );
 
     const response = await fetch(`${proxy.url}/global/event`);
@@ -133,7 +133,7 @@ describe('startOpenCodeProxy HTTP', () => {
     cleanups.push(() => upstream.stop(true));
 
     const proxy = track(
-      startOpenCodeProxy({ runtimeUrl: `http://127.0.0.1:${upstream.port}`, token: 'tok-123' }),
+      startSandboxPortProxy({ runtimeUrl: `http://127.0.0.1:${upstream.port}`, token: 'tok-123' }),
     );
 
     const response = await fetch(`${proxy.url}/global/event`);
@@ -154,22 +154,51 @@ describe('startOpenCodeProxy HTTP', () => {
     const deadUrl = `http://127.0.0.1:${dead.port}`;
     dead.stop(true);
 
-    const proxy = track(startOpenCodeProxy({ runtimeUrl: deadUrl, token: 'tok-123' }));
+    const proxy = track(startSandboxPortProxy({ runtimeUrl: deadUrl, token: 'tok-123' }));
 
     const response = await fetch(`${proxy.url}/session/abc`);
     expect(response.status).toBe(502);
   });
 });
 
-describe('startOpenCodeProxy WebSocket', () => {
-  test('mirrors messages and appends the token as a query param upstream', async () => {
-    const seen: { token: string | null } = { token: null };
+describe('startSandboxPortProxy token source', () => {
+  test('getToken is read for every request, so a credential refreshed after start is used', async () => {
+    const seen: Array<string | null> = [];
+    const upstream = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: (req) => {
+        seen.push(req.headers.get('authorization'));
+        return Response.json({ ok: true });
+      },
+    });
+    cleanups.push(() => upstream.stop(true));
+    let current = 'tok-old';
+    const proxy = track(
+      startSandboxPortProxy({
+        runtimeUrl: `http://127.0.0.1:${upstream.port}`,
+        token: 'tok-start',
+        getToken: () => current,
+      }),
+    );
+    await fetch(`${proxy.url}/a`);
+    current = 'tok-new';
+    await fetch(`${proxy.url}/b`);
+    expect(seen).toEqual(['Bearer tok-old', 'Bearer tok-new']);
+  });
+});
+
+describe('startSandboxPortProxy WebSocket', () => {
+  test('mirrors messages, appends the token, and names the CLI upstream', async () => {
+    const seen: { token: string | null; userAgent: string | null } = { token: null, userAgent: null };
     const upstream = Bun.serve<{ token: string | null }>({
       hostname: '127.0.0.1',
       port: 0,
       fetch: (req, server) => {
         const url = new URL(req.url);
         seen.token = url.searchParams.get('token');
+        // Cloudflare refuses an upgrade without a User-Agent, and Bun sends none by default.
+        seen.userAgent = req.headers.get('user-agent');
         if (server.upgrade(req, { data: { token: seen.token } })) return undefined;
         return new Response('no upgrade', { status: 400 });
       },
@@ -182,7 +211,7 @@ describe('startOpenCodeProxy WebSocket', () => {
     cleanups.push(() => upstream.stop(true));
 
     const proxy = track(
-      startOpenCodeProxy({ runtimeUrl: `http://127.0.0.1:${upstream.port}`, token: 'tok-123' }),
+      startSandboxPortProxy({ runtimeUrl: `http://127.0.0.1:${upstream.port}`, token: 'tok-123' }),
     );
 
     const ws = new WebSocket(`${proxy.url.replace('http:', 'ws:')}/pty/main`);
@@ -202,10 +231,11 @@ describe('startOpenCodeProxy WebSocket', () => {
 
     expect(echoed).toBe('echo:ping');
     expect(seen.token).toBe('tok-123');
+    expect(seen.userAgent).toStartWith('kortix-cli/');
   });
 });
 
-describe('startOpenCodeProxy lifecycle', () => {
+describe('startSandboxPortProxy lifecycle', () => {
   test('close() tears the loopback listener down', async () => {
     const upstream = Bun.serve({
       hostname: '127.0.0.1',
@@ -214,7 +244,7 @@ describe('startOpenCodeProxy lifecycle', () => {
     });
     cleanups.push(() => upstream.stop(true));
 
-    const proxy = startOpenCodeProxy({
+    const proxy = startSandboxPortProxy({
       runtimeUrl: `http://127.0.0.1:${upstream.port}`,
       token: 'tok-123',
     });

@@ -7,8 +7,7 @@ results.
 
 > **Scope today: just `slack`.** The Connector — once the `connector` /
 > `connector-mcp` shims here — has been absorbed into the one `kortix` CLI as
-> `kortix connectors` (the agent-facing CLI) plus the optional
-> `kortix connectors mcp` compatibility server. Both use `@kortix/sdk` through
+> `kortix connectors` (the agent-facing CLI). It uses `@kortix/sdk` through
 > the compiled `kortix` binary. The old
 > `kchannel` (channel discovery) and `secrets` (link minting) shims were removed:
 > channel state is in the sandbox env already, and secrets are `kortix secrets …`.

@@ -55,6 +55,36 @@ export function resolveEmailFlowMode(check: unknown): EmailFlowMode {
   return 'unknown';
 }
 
+/**
+ * Human copy for a rate-limited auth request. GoTrue surfaces its own error
+ * strings ("Email rate limit exceeded") and the auth screen used to show one
+ * raw as the toast heading; this maps the rate-limit codes to guidance
+ * instead. Null when the error is not a rate limit — the caller keeps its
+ * existing handling for everything else.
+ *
+ * ponytail: the wait copy assumes GoTrue's default hourly email-send quota;
+ * reword if a deployment tunes RATE_LIMIT_EMAIL_SENT.
+ */
+export function authRateLimitCopy(
+  error: { code?: string | null; message?: string | null } | null | undefined,
+  tI18nComplete: UiTranslator,
+): string | null {
+  if (!error) return null;
+  const code = (error.code || '').toLowerCase();
+  const message = (error.message || '').toLowerCase();
+  if (code === 'over_email_send_rate_limit' || message.includes('email rate limit')) {
+    return tI18nComplete.raw('authEmailRateLimit');
+  }
+  if (
+    code === 'over_request_rate_limit' ||
+    code === 'over_sms_send_rate_limit' ||
+    message.includes('rate limit')
+  ) {
+    return tI18nComplete.raw('authRequestRateLimit');
+  }
+  return null;
+}
+
 export interface CredentialsCopy {
   title: string;
   description: string | null;

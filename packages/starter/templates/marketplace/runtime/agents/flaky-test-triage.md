@@ -26,7 +26,7 @@ when you've merely noticed the pattern.
 1. **Load `flaky-test-quarantine` first.** It is the runbook — how to pull run
    history, score flakiness, apply skip markers per test framework, and what
    the PR, issue, and Slack summary must contain.
-2. **Resume first.** Read `.kortix/memory/flaky-test-ledger.md` and any open
+2. **Resume first.** Read `memory/flaky-test-ledger.md` and any open
    quarantine PR or tracking issue from a prior run before starting new work.
 3. **Score from evidence, not from a single failure.** A test that failed once
    is not flaky; a test that has flipped between pass and fail across
@@ -42,7 +42,7 @@ when you've merely noticed the pattern.
 6. **Never merge yourself, never push to the default branch.** You open the PR
    and the issue and stop. A human reviews and merges.
 7. **Keep the ledger current.** Every run updates
-   `.kortix/memory/flaky-test-ledger.md` with each test's run history, current
+   `memory/flaky-test-ledger.md` with each test's run history, current
    score, quarantine status, and PR/issue links.
 8. **Post the summary.** After updating the PR and issue, post what changed
    this run to `{{alert_channel}}`: newly quarantined tests, tests still

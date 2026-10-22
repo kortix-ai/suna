@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { PREVIEW_HOST_RAM_MB } from '../src/core/preview-session-reaper';
 import {
   CI_DOCKER_COMPOSE_AMD64_SHA256,
   CI_DOCKER_COMPOSE_VERSION,
@@ -43,10 +44,20 @@ describe('Platinum CI worker plan', () => {
     expect(platinumWarmReadinessTimeoutMs(undefined)).toBe(120_000);
   });
 
+  // Platinum refuses to start a sandbox with less RAM than its template was
+  // captured with: `ram_mb=8192 is below the template minimum (16384)`. #7955
+  // cut preview hosts to 8 GB and left the templates at 16 GB, so every NEW
+  // preview host failed on 2026-09-28 (a running host is reused and hid it).
+  test('the templates never ask for more RAM than a preview host gets', () => {
+    expect(buildPlatinumTemplateSpec({ lockHash, repository: 'kortix-ai/suna', cacheSha: sha }).default_ram_mb)
+      .toBeLessThanOrEqual(PREVIEW_HOST_RAM_MB);
+    expect(buildPlatinumWarmTemplateRequest(lockHash).default_ram_mb).toBeLessThanOrEqual(PREVIEW_HOST_RAM_MB);
+  });
+
   test('uses one content-addressed template for one lockfile', () => {
-    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v14');
-    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v14-bbbbbbbbbbbbbbbb');
-    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v12-bbbbbbbbbbbbbbbb-base');
+    expect(PLATINUM_CI_TEMPLATE_VERSION).toBe('v15');
+    expect(platinumTemplateName(lockHash)).toBe('kortix-ci-v15-bbbbbbbbbbbbbbbb');
+    expect(platinumBaseTemplateName(lockHash)).toBe('kortix-ci-v13-bbbbbbbbbbbbbbbb-base');
     const spec = buildPlatinumTemplateSpec({
       lockHash,
       repository: 'kortix-ai/suna',
@@ -56,7 +67,7 @@ describe('Platinum CI worker plan', () => {
     expect(spec.name).toBe(platinumBaseTemplateName(lockHash));
     expect(spec.base_image).toBe(PLATINUM_CI_NODE_IMAGE);
     expect(spec.default_cpu).toBe(8);
-    expect(spec.default_ram_mb).toBe(16_384);
+    expect(spec.default_ram_mb).toBe(PREVIEW_HOST_RAM_MB);
     expect(spec.default_disk_gb).toBe(50);
     expect(spec.steps[0]).toEqual({ op: 'kernel_modules', profile: 'container' });
     expect(JSON.stringify(spec.steps)).toContain(`bun@${PLATINUM_CI_BUN_VERSION}`);
@@ -85,7 +96,7 @@ describe('Platinum CI worker plan', () => {
         timeoutSec: 2_700,
       },
       default_cpu: 8,
-      default_ram_mb: 16_384,
+      default_ram_mb: PREVIEW_HOST_RAM_MB,
       default_disk_gb: 50,
     });
     for (const step of spec.steps) {
@@ -162,14 +173,14 @@ describe('Platinum CI worker plan', () => {
     vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       requests.push(`${init?.method ?? 'GET'} ${url}`);
-      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&offset=0')) {
+      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&regions=local&offset=0')) {
         return Response.json({
           rows: [{ id: 'other', name: 'customer', metadata: {} }],
           total: 2,
           has_more: true,
         });
       }
-      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&offset=100')) {
+      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&regions=local&offset=100')) {
         return Response.json({
           rows: [
             {
@@ -197,10 +208,50 @@ describe('Platinum CI worker plan', () => {
       }),
     ).resolves.toBe(1);
     expect(requests).toEqual([
-      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&offset=0',
-      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&offset=100',
+      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&regions=local&offset=0',
+      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&regions=local&offset=100',
       'DELETE https://api.platinum.dev/v1/sandboxes/exact',
     ]);
+  });
+
+  test('post cleanup never requests a global offset above the 10000-row regional cap', async () => {
+    const total = 10_158;
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      requests.push(`${init?.method ?? 'GET'} ${url.pathname}${url.search}`);
+      if (url.pathname === '/v1/sandboxes' && !init?.method) {
+        const offset = Number(url.searchParams.get('offset'));
+        const limit = Number(url.searchParams.get('limit'));
+        // Platinum rejects a global offset above 10000 unless `regions` is set.
+        if (!url.searchParams.has('regions') && offset + limit > 10_000) {
+          return Response.json(
+            { error: 'regional listing offset exceeds 10000 rows', code: 'pagination_limit' },
+            { status: 400 },
+          );
+        }
+        const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) =>
+          offset + i === total - 1
+            ? { id: 'exact', name: 'kortix-ci-1-1', metadata: { owner: 'kortix-ci', run_id: '1' } }
+            : { id: `other-${offset + i}`, name: 'x', metadata: {} },
+        );
+        return Response.json({ rows, total, has_more: offset + rows.length < total });
+      }
+      if (url.pathname === '/v1/sandboxes/exact' && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ error: 'unexpected request' }, { status: 500 });
+    });
+
+    await expect(
+      cleanupPlatinumCiSandboxes({
+        apiUrl: 'https://api.platinum.dev',
+        apiKey: 'test',
+        runId: '1',
+        runAttempt: '1',
+      }),
+    ).resolves.toBe(1);
+    expect(requests).toContain('DELETE /v1/sandboxes/exact');
   });
 
   test('checks out the requested ref and rejects any SHA mismatch', () => {

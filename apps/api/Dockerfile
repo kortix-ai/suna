@@ -3,7 +3,11 @@
 # Shared Dockerfile for the Bun API
 # Build from repo root: docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile .
 
-ARG BUN_VERSION=1.2
+# The API runs on the same Bun as every test lane (`bun-version` in
+# .github/workflows/tests.yml). tests/unit/image-bun.test.ts fails when the
+# two differ: a Web API the image's Bun lacks passes every test and answers 500
+# on dev (CompressionStream on Bun 1.2, 2026-08-26 and 2026-10-13).
+ARG BUN_VERSION=1.4.3
 # Bun 1.2 silently accepts `Bun.spawn({ terminal: ... })` but closes the child
 # shell's stdin immediately in the compiled sandbox agent. The REST create then
 # returns a pid while the shell exits 0 before its WebSocket can attach, surfacing
@@ -52,6 +56,7 @@ COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-ser
 RUN bun install --frozen-lockfile
 
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 
@@ -62,6 +67,7 @@ RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 # and the runner copies it to the path the snapshot builder reads
 # (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH).
 FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS sandbox-cli
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 WORKDIR /cli
 
@@ -94,26 +100,6 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
     && BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} \
        KORTIX_CLI_VERSION="${KORTIX_VERSION}+$(printf '%s' "${KORTIX_COMMIT}" | cut -c1-8)" \
        bash apps/cli/scripts/build.sh
-
-# ---- Pi Worker Runtime Stage ----
-# The generic pi worker runtime bundle for the harness/worker split experiment.
-# The API's compiled-boot pipeline (src/git-proxy/compiled-pi-runtime.ts)
-# prepends per-(project, sha) agent config to this file and serves the result
-# at GET /v1/git/{project}.git/compiled-pi-runtime. Dev builds it lazily with
-# Bun.build; this stage is the production source
-# (src/git-proxy/pi-worker-bundle.ts reads dist/worker-runtime.mjs).
-# Standalone bun package with its own bun.lock — deliberately outside the pnpm
-# workspace (see pnpm-workspace.yaml).
-# Bun 1.3 (not the base's 1.2): apps/kortix-worker/bun.lock is 1.3-format
-# (`configVersion`), and --frozen-lockfile must read it byte-for-byte.
-FROM --platform=$BUILDPLATFORM oven/bun:${SANDBOX_AGENT_BUN_VERSION}-slim AS pi-worker
-
-WORKDIR /repo/apps/kortix-worker
-COPY apps/kortix-worker/package.json apps/kortix-worker/bun.lock ./
-RUN bun install --frozen-lockfile
-COPY apps/kortix-worker/ ./
-RUN bun build src/main.ts --target=node --format=esm --minify --outfile dist/worker-runtime.mjs \
-    && grep -q "kortix-worker starting" dist/worker-runtime.mjs
 
 # ---- Deps Stage ----
 # Install with pnpm (matches lockfile), run with bun
@@ -167,10 +153,16 @@ RUN corepack enable pnpm && \
 # Go CVEs into every scan of the runtime image (Trivy, 2026-09-16:
 # CVE-2026-56862/56860/56859/56858/56853/46600/39821/33818/56865/56864/17106/
 # 33748/33747/71556) for code this image never executes. Drop it.
+# The tsgo typechecker (@typescript/native-preview, a root devDependency) is the
+# same case: a vendored Go binary that only `pnpm typecheck` runs, never this
+# image. It carried 15 high Go CVEs (Trivy, 2026-10-22: golang.org/x/text and
+# Go stdlib, e.g. CVE-2026-56851/111943) and has no newer build.
 RUN rm -rf node_modules/supabase \
            node_modules/@supabase/cli-* \
            node_modules/.pnpm/supabase@* \
-           node_modules/.pnpm/@supabase+cli-*
+           node_modules/.pnpm/@supabase+cli-* \
+           node_modules/@typescript/native-preview* \
+           node_modules/.pnpm/@typescript+native-preview*
 
 # Sources, after the install layer. `.dockerignore` excludes `**/node_modules`,
 # so these COPYs merge over the installed tree without clobbering what pnpm
@@ -257,6 +249,9 @@ COPY --from=deps /app/packages/agent-tunnel/package.json ./packages/agent-tunnel
 COPY --from=deps /app/packages/starter/src ./packages/starter/src
 COPY --from=deps /app/packages/starter/package.json ./packages/starter/package.json
 COPY --from=deps /app/packages/starter/tsconfig.json ./packages/starter/tsconfig.json
+# starter and registry import @kortix/manifest-schema/layout. pnpm links it in
+# the package's own node_modules; the root node_modules hoists no @kortix package.
+COPY --from=deps /app/packages/starter/node_modules ./packages/starter/node_modules
 # Project-scaffold templates read at runtime: packages/starter/src/index.ts
 # resolves BASE_TEMPLATE_DIR = join(import.meta.dir,'..','templates','base').
 # Without this the "Create project" seed path throws
@@ -265,12 +260,15 @@ COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
 COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
 COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
 COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+# Its node_modules holds the @kortix/shared link (the release config validator).
+COPY --from=deps /app/packages/manifest-schema/node_modules ./packages/manifest-schema/node_modules
 COPY --from=deps /app/packages/api-contract/src ./packages/api-contract/src
 COPY --from=deps /app/packages/api-contract/package.json ./packages/api-contract/package.json
 COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contract/tsconfig.json
 COPY --from=deps /app/packages/registry/src ./packages/registry/src
 COPY --from=deps /app/packages/registry/package.json ./packages/registry/package.json
 COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconfig.json
+COPY --from=deps /app/packages/registry/node_modules ./packages/registry/node_modules
 
 # Migrations are NOT bundled into the image: deployed ensureSchema() is warn-only
 # (it never applies at boot), and migrations run in the deploy pipeline's
@@ -278,18 +276,20 @@ COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconf
 
 # Copy runtime artifacts used by the layered snapshot builder.
 COPY --from=sandbox-agent /repo/apps/kortix-sandbox-agent-server/dist/kortix-agent ./apps/kortix-sandbox-agent-server/dist/kortix-agent
-COPY --from=sandbox-agent /repo/apps/kortix-sandbox-agent-server/dist/server.mjs ./apps/kortix-sandbox-agent-server/dist/server.mjs
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix ./apps/cli/dist/kortix
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix.version ./apps/cli/dist/kortix.version
 COPY --from=sandbox-cli /cli/apps/cli/dist/kortix-connectors-runtime.attestation.json ./apps/cli/dist/kortix-connectors-runtime.attestation.json
-COPY --from=pi-worker /repo/apps/kortix-worker/dist/worker-runtime.mjs ./apps/kortix-worker/dist/worker-runtime.mjs
 COPY --from=app-runtime /out/kortix-appd ./apps/kortix-app-runtime/dist/kortix-appd-linux-amd64
 COPY --from=app-runtime /out/caddy ./apps/kortix-app-runtime/dist/caddy-linux-amd64
 COPY apps/sandbox/entrypoint.sh ./apps/sandbox/entrypoint.sh
 COPY apps/sandbox/opencode-warmup.sh ./apps/sandbox/opencode-warmup.sh
 COPY apps/sandbox/MACHINE.md ./apps/sandbox/MACHINE.md
 COPY apps/sandbox/slack-cli ./apps/sandbox/slack-cli
-COPY packages/sdk ./packages/sdk
+# From deps, not the build context: the SDK imports @kortix/llm-catalog at
+# runtime (composer-model.ts), and only the deps stage carries the SDK's own
+# node_modules symlink to it. The context copy has none (.dockerignore), and the
+# API crash-looped on "Cannot find module '@kortix/llm-catalog/lite'".
+COPY --from=deps /app/packages/sdk ./packages/sdk
 
 # Source the layered-snapshot builder fingerprints at RUNTIME. It hashes the
 # SOURCE (not the compiled binaries above, which `bun build --compile` produces
@@ -338,7 +338,7 @@ LABEL org.opencontainers.image.title="kortix-api" \
       org.opencontainers.image.vendor="Kortix"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD ["bun", "-e", "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 # Non-root user (bun image ships with 'bun' user)
 USER bun

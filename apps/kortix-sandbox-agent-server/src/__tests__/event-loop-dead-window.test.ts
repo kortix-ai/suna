@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { startOpencodeEventLoop } from '../harness/open-code/events'
-import type { Opencode } from '../harness/open-code/lifecycle'
+import { startOpencodeEventLoop } from '@/harness/open-code/events'
+import type { Opencode } from '@/harness/open-code/lifecycle'
 
 // OpenCode binds its port ~100 ms before its request handler exists. A request
 // accepted in that window is never answered — the client waits for its own

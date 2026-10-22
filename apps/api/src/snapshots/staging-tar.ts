@@ -18,7 +18,7 @@
  * `._kortix.md` as source, hits their NUL bytes, and every `session/prompt`
  * dies with `BuildMessage: Unexpected NUL` — memoized for the process
  * lifetime, so the sandbox never recovers. Proven on sandbox
- * sbx_01KYR3WB727W48MD6A9AR8VW7Q: deleting the sidecars and restarting the
+ * a prod <sandbox_id>: deleting the sidecars and restarting the
  * harness made every prompt succeed.
  *
  * So strip the metadata at the source. `--no-xattrs` is what removes the pax

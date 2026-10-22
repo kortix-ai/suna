@@ -9,7 +9,9 @@
  */
 
 import type { changeRequests, connectorCalls } from '@kortix/db';
+import { isPlainRecord } from '../connectors/args-preview';
 import type { serializeReviewItem } from './review-items';
+import type { ApprovalResolvers } from './lib/approval-authority';
 
 type ReviewItemDTO = ReturnType<typeof serializeReviewItem>;
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
@@ -39,12 +41,23 @@ const CALL_RISK: Record<'read' | 'write' | 'destructive', ReviewItemDTO['risk']>
 /**
  * A pending-approval connector tool call, presented as an `approval` review item.
  * (Only `pending_approval` executions are adapted; the rest are terminal audit.)
+ *
+ * `canResolve` is the caller's verdict from the resolve route's rule
+ * (`mayResolveApproval`). It decides three things for that caller: whether the
+ * arguments are shown, `can_resolve`, and the status. A caller who may resolve
+ * finds the call under Needs you; anyone else finds it under Waiting, because
+ * the decision is someone else's (KRTX-1724). Absent means false (fail closed).
+ * `resolvers` names who decides (`approvalResolvers`); null when unknown.
  */
 export function connectorCallToReviewItem(
-  ex: ConnectorCallRow,
-  options: { includeArgsPreview?: boolean } = {},
-): ReviewItemDTO {
-  const includeArgsPreview = options.includeArgsPreview === true;
+  ex: ConnectorCallRow & { connectorName?: string | null },
+  options: { canResolve?: boolean; resolvers?: ApprovalResolvers } = {},
+): ReviewItemDTO & {
+  can_resolve: boolean;
+  resolvers: ApprovalResolvers | null;
+  expires_at: string | null;
+} {
+  const includeArgsPreview = options.canResolve === true;
   const summary =
     ex.resultSummary && typeof ex.resultSummary === 'object' && !Array.isArray(ex.resultSummary)
       ? ex.resultSummary
@@ -61,7 +74,9 @@ export function connectorCallToReviewItem(
     project_id: ex.projectId,
     origin_session_id: ex.sessionId ?? null,
     kind: 'approval',
-    status: 'needs_you',
+    status: includeArgsPreview ? 'needs_you' : 'waiting',
+    can_resolve: includeArgsPreview,
+    resolvers: options.resolvers ?? null,
     risk: ex.risk ? CALL_RISK[ex.risk] : 'medium',
     source: 'agent',
     title: `Approve: ${ex.actionPath}`,
@@ -70,9 +85,23 @@ export function connectorCallToReviewItem(
       execution_id: ex.executionId,
       action_path: ex.actionPath,
       connector_id: ex.connectorId,
+      // The display name ("GitHub"); the slug in `action_path` is not a name.
+      ...(ex.connectorName ? { connector_name: ex.connectorName } : {}),
       request_digest: ex.requestDigest,
       risk: ex.risk,
       ...(includeArgsPreview ? { args_preview: argsPreview } : {}),
+      // Same gate as the args: the agent's description can quote the payload.
+      ...(includeArgsPreview && typeof summary.approval_context === 'string'
+        ? { approval_context: summary.approval_context }
+        : {}),
+      // Content Kortix read from the provider (approval-enrichers.ts): the
+      // same gate as the args, because it is the payload.
+      ...(includeArgsPreview && isPlainRecord(summary.resolved_preview)
+        ? { resolved_preview: summary.resolved_preview }
+        : {}),
+      ...(includeArgsPreview && typeof summary.resolved_error === 'string'
+        ? { resolved_error: summary.resolved_error }
+        : {}),
       args_preview_complete: includeArgsPreview && summary.args_preview_complete === true,
       args_preview_authorized: includeArgsPreview,
     },
@@ -84,19 +113,30 @@ export function connectorCallToReviewItem(
     metadata: { source: 'connector_call' },
     created_at: ex.createdAt.toISOString(),
     updated_at: ex.createdAt.toISOString(),
+    /** When the approval stops being decidable; null = never. */
+    expires_at: ex.expiresAt?.toISOString() ?? null,
   };
 }
+
+/**
+ * The inbox status each Change Request status shows as. An OPEN change is
+ * always reviewable (you can read the diff + ship or ask for more changes).
+ * Requested changes are shown as history — not a terminal state, so the item
+ * never gets stuck waiting. The paged inbox and the summary filter CRs in SQL
+ * by this table, so it is the one place the mapping lives.
+ */
+export const CR_REVIEW_STATUS: Record<ChangeRequestRow['status'], ReviewItemDTO['status']> = {
+  open: 'needs_you',
+  merged: 'approved',
+  closed: 'rejected',
+};
 
 /** A Change Request, presented as a `change` review item. */
 export function changeRequestToReviewItem(cr: ChangeRequestRow): ReviewItemDTO {
   const rc = (cr.metadata as Record<string, unknown> | null)?.requested_changes;
   const requested = (Array.isArray(rc) ? rc : []) as Array<{ text?: string }>;
   const lastFeedback = requested.length > 0 ? (requested[requested.length - 1].text ?? null) : null;
-  // An OPEN change is always reviewable (you can read the diff + ship or ask for
-  // more changes). Requested changes are shown as history — not a terminal state,
-  // so the item never gets stuck waiting.
-  const status: ReviewItemDTO['status'] =
-    cr.status === 'merged' ? 'approved' : cr.status === 'closed' ? 'rejected' : 'needs_you';
+  const status = CR_REVIEW_STATUS[cr.status] ?? 'needs_you';
   return {
     review_item_id: `${CR_ID_PREFIX}${cr.crId}`,
     account_id: cr.accountId,

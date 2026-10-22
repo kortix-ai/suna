@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountInvitations,
@@ -7,18 +7,21 @@ import {
   accounts,
   projects,
 } from '@kortix/db';
+import type { Context } from 'hono';
 import type { AppEnv } from '../types';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
-import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
-import { onMemberAdded } from '../billing/services/seat-management';
+import { createInviteAcceptRateLimitMiddleware } from '../middleware/rate-limit';
 import { getMembership } from './core/app';
 import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { normalizeProjectRole } from '../iam/roles';
 import { assignRole, convertPendingAssignments, SYSTEM_ACTOR } from '../iam/assignments';
 import { trustedEmailForUser } from '../iam/email-trust';
+import { getSsoProvider } from '../repositories/sso';
 import { isUuid } from '../shared/validate';
+import { logger } from '../lib/logger';
 
 export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
@@ -39,6 +42,13 @@ const InviteDescribeSchema = z
     inviter_email: z.string().nullable(),
     created_at: z.string().nullable(),
     expires_at: z.string().nullable(),
+    /** Projects the invite grants on accept, for the invited caller only;
+     *  empty for anyone else and for a plain workspace invite (KRTX-1731). */
+    projects: z.array(z.object({ project_id: z.string(), name: z.string(), role: z.string() })),
+    /** Why the invite is not addressed to the caller; absent when it is. Same codes as a refused accept. */
+    reason: z.enum(['email_unconfirmed', 'sso_email_domain_unverified', 'wrong_account']).optional(),
+    /** With `email_unconfirmed`: the Supabase SSO provider of the invite's account, to sign in through it. */
+    sso_provider_id: z.string().nullable().optional(),
   })
   .openapi('InviteDescribe');
 const InviteAcceptSchema = z
@@ -56,27 +66,69 @@ function normalizeEmail(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase();
 }
 
-/**
- * The caller's email for invite matching: the Auth row's email, and only when
- * it proves ownership (see iam/email-trust.ts). An SSO identity whose IdP has
- * not verified the email's domain matches no invite.
- */
-async function callerInviteEmail(c: any): Promise<string> {
-  return trustedEmailForUser(c.get('userId') as string | undefined);
+/** The caller's email for invite matching, and whether Auth proved it. */
+interface CallerInviteEmail {
+  email: string;
+  proven: boolean;
 }
 
-/** 403 for a caller whose token names the invite's email but cannot prove it. */
-function unverifiedSsoEmail(c: any, invite: { email: string }) {
-  const claimed = normalizeEmail(c.get('userEmail') as string | undefined);
-  if (!claimed || claimed !== invite.email.toLowerCase()) return null;
-  return c.json(
-    {
+/**
+ * The caller's email for invite matching: the Auth row's email, and only when
+ * it proves ownership (see iam/email-trust.ts). An SSO identity matches when
+ * its IdP verified the email's domain, or when the IdP belongs to the invite's
+ * own account (`accountId`): inside one account the IdP and the admin are the
+ * same authority. Any other SSO identity matches no invite.
+ *
+ * While Auth auto-confirms sign-ups, a password email is unproven: whoever
+ * signed up first holds the address (KRTX-1715). It still matches an invite a
+ * person sent or resent (`invited_by` set), which the invitee accepts in
+ * person; sign-in never claims it. It does not match an invite the account's
+ * IdP pushed through SCIM (`invited_by` null): nobody shares that invite, and
+ * the directory's groups ride on it. That person signs in through the
+ * account's IdP instead (`sso_provider_id` on the describe), or an admin
+ * resends the invite.
+ */
+async function callerInviteEmail(c: any, accountId?: string): Promise<CallerInviteEmail> {
+  const userId = c.get('userId') as string | undefined;
+  const email = await trustedEmailForUser(userId, { allowAutoconfirmed: true, accountId });
+  const proven =
+    !email || !config.ENABLE_EMAIL_AUTOCONFIRM || (await trustedEmailForUser(userId, { accountId })) === email;
+  return { email, proven };
+}
+
+function addressedToCaller(caller: CallerInviteEmail, invite: { email: string; invitedBy: string | null }): boolean {
+  return caller.email === invite.email.toLowerCase() && (caller.proven || invite.invitedBy !== null);
+}
+
+/** Why an invite is not addressed to the caller. The describe returns it as `reason`; accept and decline as `code`. */
+type InviteRefusal = {
+  code: 'email_unconfirmed' | 'sso_email_domain_unverified' | 'wrong_account';
+  error: string;
+};
+
+function inviteRefusal(c: any, caller: CallerInviteEmail, invite: { email: string }): InviteRefusal {
+  const address = invite.email.toLowerCase();
+  if (caller.email === address) {
+    return {
+      code: 'email_unconfirmed',
+      error:
+        "Your organization's directory manages this invite. Sign in with your organization's single sign-on to join, or ask an account admin to resend the invite.",
+    };
+  }
+  // The token names the invite's email, but the SSO identity cannot prove it.
+  if (normalizeEmail(c.get('userEmail') as string | undefined) === address) {
+    return {
+      code: 'sso_email_domain_unverified',
       error:
         "Your single sign-on provider has not verified this email's domain. Sign in with your email address to use this invite.",
-      code: 'sso_email_domain_unverified',
-    },
-    403,
-  );
+    };
+  }
+  return { code: 'wrong_account', error: 'This invite is addressed to a different account.' };
+}
+
+/** 403 for an accept or decline of an invite not addressed to the caller. */
+function refuseInvite(c: Context<AppEnv>, caller: CallerInviteEmail, invite: { email: string }) {
+  return c.json(inviteRefusal(c, caller, invite), 403);
 }
 
 function isExpired(invite: { expiresAt: Date; acceptedAt: Date | null }): boolean {
@@ -130,6 +182,40 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
     role,
     expires_at: expiresAt,
   };
+}
+
+/**
+ * The projects each invite grants on accept, named. A grant counts only when
+ * its project still exists in the invite's own account: a deleted project
+ * drops out instead of showing a blank row.
+ */
+async function invitedProjects(
+  invites: ReadonlyArray<{ inviteId: string; accountId: string; bootstrapGrants: unknown[] | null }>,
+): Promise<Map<string, Array<{ project_id: string; name: string; role: string }>>> {
+  const grantsByInvite = new Map(
+    invites.map((invite) => [
+      invite.inviteId,
+      (invite.bootstrapGrants ?? []).map(validateBootstrapGrant).filter((g): g is ValidatedGrant => g !== null),
+    ]),
+  );
+  const projectIds = [...new Set([...grantsByInvite.values()].flat().map((g) => g.project_id))];
+  const projectNames = new Map<string, string>();
+  if (projectIds.length > 0) {
+    const projectRows = await db
+      .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
+      .from(projects)
+      .where(inArray(projects.projectId, projectIds));
+    for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
+  }
+  return new Map(
+    invites.map((invite) => [
+      invite.inviteId,
+      (grantsByInvite.get(invite.inviteId) ?? []).flatMap((g) => {
+        const name = projectNames.get(`${invite.accountId}:${g.project_id}`);
+        return name ? [{ project_id: g.project_id, name, role: g.role }] : [];
+      }),
+    ]),
+  );
 }
 
 // A `{ group_id }` bootstrap entry: a SCIM Group membership pushed for this user
@@ -244,8 +330,8 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-    const callerEmail = await callerInviteEmail(c);
-    if (!callerEmail) return c.json({ invites: [] });
+    const caller = await callerInviteEmail(c);
+    if (!caller.email) return c.json({ invites: [] });
 
     const rows = await db
       .select({ invite: accountInvitations, accountName: accounts.name })
@@ -253,30 +339,15 @@ accountInvitesRouter.openapi(
       .leftJoin(accounts, eq(accounts.accountId, accountInvitations.accountId))
       .where(
         and(
-          sql`lower(${accountInvitations.email}) = ${callerEmail}`,
+          sql`lower(${accountInvitations.email}) = ${caller.email}`,
           isNull(accountInvitations.acceptedAt),
           gt(accountInvitations.expiresAt, new Date()),
+          caller.proven ? undefined : isNotNull(accountInvitations.invitedBy),
         ),
       )
       .orderBy(accountInvitations.createdAt);
 
-    const grantsByInvite = new Map(
-      rows.map(({ invite }) => [
-        invite.inviteId,
-        (invite.bootstrapGrants ?? [])
-          .map(validateBootstrapGrant)
-          .filter((g): g is ValidatedGrant => g !== null),
-      ]),
-    );
-    const projectIds = [...new Set([...grantsByInvite.values()].flat().map((g) => g.project_id))];
-    const projectNames = new Map<string, string>();
-    if (projectIds.length > 0) {
-      const projectRows = await db
-        .select({ projectId: projects.projectId, name: projects.name, accountId: projects.accountId })
-        .from(projects)
-        .where(inArray(projects.projectId, projectIds));
-      for (const row of projectRows) projectNames.set(`${row.accountId}:${row.projectId}`, row.name);
-    }
+    const projectsByInvite = await invitedProjects(rows.map(({ invite }) => invite));
 
     const inviters = new Map<string, string | null>();
     for (const { invite } of rows) {
@@ -294,12 +365,7 @@ accountInvitesRouter.openapi(
         inviter_email: invite.invitedBy ? (inviters.get(invite.invitedBy) ?? null) : null,
         created_at: invite.createdAt.toISOString(),
         expires_at: invite.expiresAt.toISOString(),
-        // A grant only counts when its project still exists in the invite's
-        // own account; a deleted project drops out instead of showing a blank row.
-        projects: (grantsByInvite.get(invite.inviteId) ?? []).flatMap((g) => {
-          const name = projectNames.get(`${invite.accountId}:${g.project_id}`);
-          return name ? [{ project_id: g.project_id, name, role: g.role }] : [];
-        }),
+        projects: projectsByInvite.get(invite.inviteId) ?? [],
       })),
     });
   },
@@ -322,8 +388,9 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
+  // Not a uuid: no invite has it, and Postgres would reject the cast (500).
+  if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
 
   const [invite] = await db
     .select()
@@ -332,12 +399,20 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
+  const caller = await callerInviteEmail(c, invite.accountId);
 
   const expired = isExpired(invite);
-  const emailMatchesCaller = callerEmail === invite.email.toLowerCase();
+  const emailMatchesCaller = addressedToCaller(caller, invite);
 
   if (!emailMatchesCaller) {
+    const reason = inviteRefusal(c, caller, invite).code;
+    // The account's own IdP vouches for this address (callerInviteEmail), so
+    // signing in through it is the way in. Its email domain may be any, so the
+    // sign-in page cannot find it from the address.
+    const ssoProvider = reason === 'email_unconfirmed' ? await getSsoProvider(invite.accountId) : null;
     return c.json({
+      reason,
+      sso_provider_id: ssoProvider?.supabaseSsoProviderId ?? null,
       invite_id: invite.inviteId,
       email_matches_caller: false,
       expired,
@@ -350,6 +425,7 @@ accountInvitesRouter.openapi(
       inviter_email: null,
       created_at: null,
       expires_at: null,
+      projects: [],
     });
   }
 
@@ -360,6 +436,7 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   const inviterEmail = await lookupAuthEmail(invite.invitedBy);
+  const projectsByInvite = await invitedProjects([invite]);
 
   return c.json({
     invite_id: invite.inviteId,
@@ -373,6 +450,7 @@ accountInvitesRouter.openapi(
     accepted_at: invite.acceptedAt?.toISOString() ?? null,
     email_matches_caller: true,
     expired,
+    projects: projectsByInvite.get(invite.inviteId) ?? [],
   });
   },
 );
@@ -397,8 +475,9 @@ accountInvitesRouter.openapi(
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
-  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
+  // Not a uuid: no invite has it, and Postgres would reject the cast (500).
+  if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
 
   const [invite] = await db
     .select()
@@ -407,11 +486,9 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
+  const caller = await callerInviteEmail(c, invite.accountId);
 
-  if (callerEmail !== invite.email.toLowerCase()) {
-    return unverifiedSsoEmail(c, invite)
-      ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
-  }
+  if (!addressedToCaller(caller, invite)) return refuseInvite(c, caller, invite);
 
   const alreadyAccepted = !!invite.acceptedAt;
   if (alreadyAccepted && invite.acceptedByUserId && invite.acceptedByUserId !== userId) {
@@ -425,48 +502,33 @@ accountInvitesRouter.openapi(
     return c.json({ error: 'This invite has expired. Ask the owner to send a new one.' }, 410);
   }
 
-  // Trial seat gate — authoritative check at the moment membership is actually
-  // written. Only blocks a NEW member: a re-entering existing member must
-  // still pass to heal grants below.
   const existingMembership = await getMembership(userId, invite.accountId);
-  if (!existingMembership) {
-    const { trialSeatLimitBlocksNewMember } = await import(
-      '../billing/services/seat-management'
-    );
-    const seatBlock = await trialSeatLimitBlocksNewMember(invite.accountId);
-    if (seatBlock) {
-      return c.json(
-        {
-          error: `This team's trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Ask the owner to contact the Kortix team.`,
-          code: 'trial_seat_limit_reached',
-          limit: seatBlock.limit,
-          members: seatBlock.members,
-        },
-        403,
-      );
-    }
+  // An accepted invite only heals grants for a CURRENT member. After removal or
+  // leave it must not re-create the membership: the owner sends a new invite.
+  if (alreadyAccepted && !existingMembership) {
+    return c.json({ error: 'This invite was already used. Ask the owner to send a new one.' }, 410);
   }
-
-  // Ensure account membership: IDENTITY first, then the ROLE.
   // `onConflictDoNothing` on the (user, account) primary key keeps the identity
-  // half idempotent whether this is a first accept or a re-entry; `assignRole`
-  // is idempotent on the assignment identity for the same reason.
-  //
-  // `SYSTEM_ACTOR`: the writer is the INVITEE, who by definition holds no
-  // permission in this account yet — the invitation is the authorization.
+  // insert idempotent on re-entry. Members are unlimited and free: there is no
+  // seat check. `SYSTEM_ACTOR` below: the writer is the INVITEE, who by
+  // definition holds no permission in this account yet — the invitation is the
+  // authorization.
   await db
     .insert(accountMemberships)
     .values({ userId, accountId: invite.accountId })
     .onConflictDoNothing({
       target: [accountMemberships.userId, accountMemberships.accountId],
     });
-  await assignRole(SYSTEM_ACTOR, invite.accountId, {
-    principal: { type: 'user', id: userId },
-    roleKey: invite.initialRole,
-    scope: { type: 'account' },
-    source: 'invite',
-    exclusive: true,
-  });
+  // Re-entry of a current member never rewrites their role (an admin demotion sticks).
+  if (!alreadyAccepted) {
+    await assignRole(SYSTEM_ACTOR, invite.accountId, {
+      principal: { type: 'user', id: userId },
+      roleKey: invite.initialRole,
+      scope: { type: 'account' },
+      source: 'invite',
+      exclusive: true,
+    });
+  }
 
   // Stamp accepted_at on first accept. The isNull guard makes concurrent
   // accepts collapse to a single write without us caring who won — both
@@ -482,11 +544,6 @@ accountInvitesRouter.openapi(
         ),
       );
   }
-
-  // Billing v2 — mint per-member YOLO + push +1 seat to Stripe. No-op for
-  // legacy accounts (guarded inside the service). Idempotent on re-accept.
-  // Fire-and-forget so Stripe hiccups don't block invite acceptance.
-  void onMemberAdded(invite.accountId, userId).catch(() => {});
 
   // Apply bootstrap grants on EVERY accept path — this is what makes acceptance
   // self-healing. Previously grants ran only on the first accept, AFTER
@@ -532,8 +589,9 @@ accountInvitesRouter.openapi(
     },
   }),
   async (c: any) => {
-  const callerEmail = await callerInviteEmail(c);
   const inviteId = c.req.param('inviteId');
+  // Not a uuid: no invite has it, and Postgres would reject the cast (500).
+  if (!isUuid(inviteId)) return c.json({ error: 'Invite not found' }, 404);
 
   const [invite] = await db
     .select()
@@ -542,15 +600,13 @@ accountInvitesRouter.openapi(
     .limit(1);
 
   if (!invite) return c.json({ error: 'Invite not found' }, 404);
+  const caller = await callerInviteEmail(c, invite.accountId);
 
   if (invite.acceptedAt) {
     return c.json({ error: 'Invite has already been accepted' }, 409);
   }
 
-  if (callerEmail !== invite.email.toLowerCase()) {
-    return unverifiedSsoEmail(c, invite)
-      ?? c.json({ error: 'This invite is addressed to a different account.' }, 403);
-  }
+  if (!addressedToCaller(caller, invite)) return refuseInvite(c, caller, invite);
 
   await db.delete(accountInvitations).where(eq(accountInvitations.inviteId, invite.inviteId));
 

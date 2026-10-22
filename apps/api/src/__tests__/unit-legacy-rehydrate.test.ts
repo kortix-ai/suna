@@ -8,10 +8,6 @@ import {
   legacyRehydrateSpec,
   rekeyOpencodeDb,
 } from '../projects/legacy-migration-rehydrate';
-import {
-  seedOpencodeSchema,
-  writeConversations,
-} from '../projects/suna-migration/opencode-db-writer';
 
 describe('legacyRehydrateSpec', () => {
   const PROJECT = '11111111-1111-4111-8111-111111111111';
@@ -70,29 +66,13 @@ describe('rekeyOpencodeDb', () => {
     const dir = mkdtempSync(join(tmpdir(), 'rekey-test-'));
     const dbPath = join(dir, 'opencode.db');
     try {
-      seedOpencodeSchema(dbPath);
-      writeConversations(dbPath, 'proj_original', [
-        {
-          title: 'One',
-          messages: [
-            {
-              role: 'user',
-              createdAt: new Date(0).toISOString(),
-              parts: [{ type: 'text', text: 'hi' }],
-            },
-          ],
-        },
-        {
-          title: 'Two',
-          messages: [
-            {
-              role: 'user',
-              createdAt: new Date(0).toISOString(),
-              parts: [{ type: 'text', text: 'yo' }],
-            },
-          ],
-        },
-      ] as any);
+      // The two tables rekeyOpencodeDb rewrites, as a migration archive carries them.
+      const seed = new Database(dbPath);
+      seed.exec('CREATE TABLE project (id TEXT PRIMARY KEY)');
+      seed.exec('CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT NOT NULL)');
+      seed.exec("INSERT INTO project VALUES ('proj_original')");
+      seed.exec("INSERT INTO session VALUES ('ses_one', 'proj_original'), ('ses_two', 'proj_original')");
+      seed.close();
 
       const { sessions } = rekeyOpencodeDb(dbPath, 'live-project-id');
       expect(sessions).toBe(2);

@@ -34,7 +34,7 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
       .select({
         projectId: chatChannelBindings.projectId,
         agentName: chatChannelBindings.agentName,
-        opencodeModel: chatChannelBindings.opencodeModel,
+        opencodeModel: chatChannelBindings.model,
         conversationPolicy: chatChannelBindings.conversationPolicy,
       })
       .from(chatChannelBindings)
@@ -132,7 +132,7 @@ export async function setChannelModel(ctx: ChannelCtx, opencodeModel: string | n
   try {
     const rows = await db
       .update(chatChannelBindings)
-      .set({ opencodeModel })
+      .set({ model: opencodeModel })
       .where(and(
         eq(chatChannelBindings.platform, ctx.platform ?? 'slack'),
         eq(chatChannelBindings.workspaceId, ctx.teamId),
@@ -184,7 +184,7 @@ export interface ProjectAgentGovernance {
   /**
    * True when the project has adopted `kortix.yaml`'s `agents:` block — the listed
    * names are ENFORCED (an undeclared name isn't a real launchable agent), not
-   * merely discovered from `.kortix/opencode/agents/*.md`. Mirrors
+   * merely discovered from agent `.md` files. Mirrors
    * `ProjectConfigSummary.agent_discovery === 'declarative'`. Callers that
    * validate a channel-binding's `agentName` against the catalog should only
    * reject unknown names when this is true — a legacy (undeclared) project
@@ -215,11 +215,17 @@ export async function loadProjectAgentGovernance(projectId: string): Promise<Pro
   }
   const config = await loadProjectConfig(gitProject, files);
   return {
-    agents: config.agents.map((a) => ({
-      name: a.name,
-      description: a.description ?? null,
-      mode: a.mode ?? null,
-    })),
+    // Launchable agents only: the config summary lists every registered agent
+    // (a disabled one with `enabled: false`, for the project's own management
+    // surfaces), but a channel picker must not offer — and the binding check
+    // must not accept — an agent no session can launch.
+    agents: config.agents
+      .filter((a) => a.enabled !== false)
+      .map((a) => ({
+        name: a.name,
+        description: a.description ?? null,
+        mode: a.mode ?? null,
+      })),
     declared: config.agent_discovery === 'declarative',
   };
 }
@@ -255,7 +261,7 @@ export async function listChannelBindingsForProject(projectId: string): Promise<
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      opencodeModel: chatChannelBindings.model,
       conversationPolicy: chatChannelBindings.conversationPolicy,
       installedAt: chatChannelBindings.installedAt,
     })
@@ -282,7 +288,7 @@ export async function getChannelBindingById(
       channelName: chatChannelBindings.channelName,
       channelType: chatChannelBindings.channelType,
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      opencodeModel: chatChannelBindings.model,
       conversationPolicy: chatChannelBindings.conversationPolicy,
       installedAt: chatChannelBindings.installedAt,
     })
@@ -291,14 +297,4 @@ export async function getChannelBindingById(
     .limit(1);
   if (!row?.projectId) return null;
   return row as ChannelBindingRow;
-}
-
-/**
- * A model id is shaped like a usable ref if it's a non-empty `provider/model`
- * pair (or `kortix/<id>`). Shape only — real servability is enforced separately
- * via `isModelServableForAccount` against the account's tier + connected keys.
- */
-export function isValidModelId(s: string): boolean {
-  const slash = s.indexOf('/');
-  return slash > 0 && slash < s.length - 1 && !/\s/.test(s);
 }

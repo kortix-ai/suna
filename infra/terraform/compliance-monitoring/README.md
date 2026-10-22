@@ -6,17 +6,27 @@ stack has its own state so it cannot accidentally adopt or mutate the legacy
 
 It manages:
 
-- WAF association for every current ALB in us-west-2, eu-west-2, and
-  us-east-2.
+- WAF association for every current ALB in eu-west-2 and us-east-2. us-west-2
+  runs no workload since 2026-10-12, so this stack keeps nothing there except a
+  rule that forwards the Terraform lock table's AWS Backup failures to
+  eu-west-2. GuardDuty and root-login alert routing lives in
+  `security-baseline` and also delivers in eu-west-2.
 - Target-response-time, ELB 5xx, and unhealthy-host CloudWatch alarms for every
   current ALB, with regional SNS actions (Drata DCF-86 / DCF-88 / test 294).
   The reconciler adds a zero-healthy-hosts alarm per target group.
   `TargetResponseTime` was retired on 2026-08-26 because its 2 s threshold
   flapped on streaming traffic; it is restored at Average > 30 s sustained for
   15 minutes, above the by-design streaming averages.
-- CPU-utilization CloudWatch alarms for every running EC2 instance in the dev
-  and production regions, discovered on every plan so replacement EKS workers
-  remain covered (Drata DCF-86).
+- CPU-utilization CloudWatch alarms for every running EC2 instance in
+  eu-west-2, discovered on every plan so replacement workers remain covered
+  (Drata DCF-86).
+- Message-age CloudWatch alarms for the manifest queue and DLQ in dev
+  (us-east-2), staging and prod (eu-west-2), with regional SNS actions
+  (Drata test 115 / DCF-86). Queue names are explicit because the AWS provider
+  has no SQS discovery data source. `scripts/test_sqs_message_age_alarms.py`
+  covers dev; `tests/sqs_message_age.tftest.hcl` checks the evaluated eu-west-2
+  alarm plan with mocked AWS reads. All six alarms belong to this global root;
+  applying the environment roots alone does not create them.
 - Regional Lambda reconcilers triggered by EC2 running-state events, plus a
   five-minute repair schedule, so replacement instances receive the same alarm
   without waiting for another Terraform apply.
@@ -29,8 +39,13 @@ It manages:
 - Least-privilege SNS topic policies for EventBridge and CloudWatch delivery.
 - AWS Backup and EBS snapshot failure EventBridge rules and SNS targets
   (Drata DCF-99).
-- A restricted us-east-2 network ACL, a locked default security group, and VPC
-  flow logs (Drata DCF-25 / DCF-97).
+- VPC flow logs for the dev (us-east-2) and staging (eu-west-2) VPCs, which had
+  none until 2026-10-12 (Drata DCF-406). The prod VPC carries a flow log created
+  by CLI. us-west-2 has no VPC since 2026-10-12.
+- Empty default security groups (no ingress, no egress) for the same two VPCs
+  (Drata test 233, CIS 5.4). No ENI, launch template, ECS service, or Lambda
+  used either group on 2026-10-13. The prod VPC's default group was emptied
+  by CLI and is not in this stack.
 - A versioned, KMS-encrypted S3 bucket and an EKS IRSA role for daily Velero
   backups. Velero retains backups for 30 days. S3 expires current and
   noncurrent object versions after 35 days.
@@ -59,9 +74,8 @@ Email SNS subscriptions remain a human confirmation step; Terraform must not
 pretend an unconfirmed subscription is a working alert channel. The us-east-2
 `kortix-compliance-alerts` subscription is declared in Terraform because Drata
 DCF-86 requires the alarm topic to hold a subscription, and it reads
-PendingConfirmation until the SNS confirmation email is clicked. The us-west-2
-and eu-west-2 topics carry confirmed email subscriptions managed outside
-Terraform.
+PendingConfirmation until the SNS confirmation email is clicked. The eu-west-2
+topic carries a confirmed email subscription managed outside Terraform.
 
 Because Drata fails `hasSubscription` while the only subscription is pending,
 the us-east-2 topic also carries a Lambda subscriber
@@ -72,17 +86,15 @@ CloudWatch Logs. The email subscription remains the human delivery channel.
 ## Verify EC2 CPU coverage
 
 The reconciler only writes an alarm when it is absent or its metric, threshold,
-period, instance dimension, or SNS action has drifted. Invoke both regional
-functions and compare every running instance ID with the alarm dimensions:
+period, instance dimension, or SNS action has drifted. Invoke the function and
+compare every running instance ID with the alarm dimensions:
 
 ```bash
-aws lambda invoke --region us-west-2 \
-  --function-name kortix-ec2-cpu-alarm-reconciler /tmp/usw2.json
 aws lambda invoke --region eu-west-2 \
   --function-name kortix-ec2-cpu-alarm-reconciler /tmp/euw2.json
 ```
 
-Both payloads must report `covered_instances == running_instances` and an empty
+The payload must report `covered_instances == running_instances` and an empty
 `updated_instances` list on the second invocation.
 
 ## Verify ALB alarm coverage
@@ -93,7 +105,7 @@ ALB + unhealthy-hosts and zero-healthy-hosts per target group`, an empty
 `updated_alarms` list, and an empty `deleted_alarms` list.
 
 ```bash
-for region in us-west-2 eu-west-2 us-east-2; do
+for region in eu-west-2 us-east-2; do
   aws lambda invoke --region "$region" \
     --function-name kortix-alb-alarm-reconciler \
     "/tmp/${region}-alb-reconciler.json"
@@ -101,9 +113,6 @@ done
 ```
 
 ## Verify us-east-2 controls
-
-The us-east-2 network ACL excludes inbound TCP ports `22` and `3389`. The
-default network ACL and default security group contain no allow rules.
 
 ```bash
 aws wafv2 list-resources-for-web-acl --region us-east-2 \
@@ -113,17 +122,73 @@ aws wafv2 list-resources-for-web-acl --region us-east-2 \
 
 aws cloudwatch describe-alarms --region us-east-2 \
   --alarm-name-prefix kortix-alb-
-
-aws ec2 describe-flow-logs --region us-east-2 \
-  --filter Name=resource-id,Values=vpc-03371e6a60dafbd25
 ```
 
-## Drata monitor exclusions
+## Drata test decisions
 
-Drata test `8025`, **Access Policies Restrict Broad Access**, is disabled as a
-false positive. Its only finding is the read-only policy in
-`../security-baseline/iam-gha-nacl-audit.tf`. The policy grants
-`ec2:DescribeRegions` and `ec2:DescribeNetworkAcls` on `Resource = "*"` because
-AWS does not support resource-level permissions for either action. The role's
-GitHub OIDC trust is scoped to the `kortix-ai/suna` repository. The policy
-grants no write action.
+A disabled Drata test needs a recorded reason. The public API disables a test
+with `PUT /public/v2/workspaces/{ws}/monitoring-tests/{testId}` and body
+`{"enabled": false}`, and records only "Disabled via Public API". This table
+is the record.
+
+| Test | Decision | Date | Rationale |
+| --- | --- | --- | --- |
+| `225` Hardware MFA for AWS Root Account | Disabled, risk accepted by the account owner | 2026-09-29 | SOC 2 does not require hardware MFA; the test comes from the CIS AWS Foundations Benchmark. Control `DCF-90` (root account monitored) is met by test `214` (root has MFA), test `124` (root unused), no root access keys, and a page on every successful root console sign-in (`../security-baseline/root-account-alerting.tf`: EventBridge rule `kortix-root-login-failures`, us-east-1 to eu-west-2 since 2026-10-12, SNS `kortix-compliance-alerts`, confirmed email subscriber). Re-evaluate at the annual policy review. |
+| `300` AWS Lambda Error Rate Monitored | Re-enabled | 2026-09-29 | Every Lambda in the account has an `Errors` alarm (`reconciler-health.tf`). |
+
+## Drata IaC scan: how it reads this tree
+
+The `drata-compliance.yml` scan uploads every `.tf` file and returns findings
+per resource. Four parser rules explain every finding it reports:
+
+1. It merges resources that share a type and name across roots. Two roots that
+   both declare `aws_s3_bucket.alb_logs` become one resource with mixed
+   attributes. Give every resource a name that is unique in `infra/terraform`.
+   `modules/capture-store` names its S3 resources `capture` for this reason:
+   as `this` they merged with `modules/project-snapshots-bucket` and the bucket
+   lost its public access block and versioning (tests `8011`, `8003`).
+2. It does not resolve `local.tags`, `var.tags`, `merge()` or `lookup()` on
+   KMS, S3, SNS, SQS, IAM role, EC2, subnet and DynamoDB resources (test
+   `8028`). Root-level resources repeat the tag map as a literal. Module
+   resources use the audit-archive/ecs-api convention: a literal-keyed map
+   whose values read caller context with `lookup(var.tags, …)` (KRTX-1649),
+   which the scanner reads — no exclusion needed.
+3. It does not resolve module variables, so `subnets = var.public_subnet_ids`
+   reads as empty (test `8004`).
+4. It caches results by branch and commit SHA. Re-running a scan for the same
+   SHA returns the first result.
+
+Reproduce a scan without a push: run `drata/compliance-as-code-action`'s
+`dist/index.js` with `GITHUB_WORKSPACE` set to a directory that holds
+`infra/`, a unique `GITHUB_REF_NAME` and `GITHUB_SHA`, and
+`DRATA_API_TOKEN` from `kortix-ci-env:DRATA_IAC_PIPELINE_KEY`. Read the result
+from `GET https://public-api.drata.com/public/workspaces/1/pipelines/results?runId=<id>&branchName=<ref>`.
+
+## Drata IaC exclusions
+
+Each row is a finding that is correct by design or that the parser cannot
+read. Each has a Drata exclusion on the `main` pipeline (Drata → Monitoring →
+Pipelines → `main` → Exclusions), created 2026-09-29 with the rationale below.
+Scan of `main` after the exclusions: 0 critical, 0 high, 0 moderate, 0 low.
+Exclusions are keyed by finding ID; re-create a row if Drata renames its ID
+scheme. A new finding fails the `drata-compliance.yml` gate at `CRITICAL`.
+
+| Sev | Test | Resource | Rationale |
+| --- | --- | --- | --- |
+| Critical | 8025 | `security-baseline` `aws_iam_role_policy.gha_nacl_audit` | Grants only `ec2:DescribeRegions` and `ec2:DescribeNetworkAcls`. AWS supports no resource-level permission for either action, so `Resource` must be `*`. The audit scans every enabled region, so a region condition would defeat it. Read-only. OIDC trust pinned to `main`. |
+| High | 8011 | `modules/ecs-api` `aws_lb.this` (`internal`) | The public `api.kortix.com` origin. It must accept internet traffic. The security group admits only `var.alb_ingress_cidrs` (Cloudflare); WAF, TLS 1.3 and access logs protect it. |
+| Moderate | 8004 | `modules/ecs-api` `aws_lb.this` (`subnets`, `subnet_mapping`) | Receives two subnets in two availability zones from `modules/network`; AWS rejects fewer. Parser rule 3. |
+| Moderate | 8007 | 6 `aws_lambda_function`: 5 compliance reconcilers and the alerts logger | They call public AWS control-plane APIs only. A VPC adds a NAT or endpoint dependency to the functions that repair and report controls. No data plane access. |
+| Moderate | 8010 | `modules/selfhost-ec2` `aws_security_group.this` egress | Self-host boxes reach registries, model providers and user-chosen hosts with no stable CIDR. Ingress is restricted separately. |
+| Moderate | 8028 | `modules/network` `aws_subnet.public`, `aws_subnet.private` | Tagged with `lookup(var.tags, …)` and an interpolated Kubernetes key. Parser rule 2. |
+| Moderate | 8028 | `modules/ecs-api` `aws_kms_key.logs`, `aws_s3_bucket.alb_logs`; `modules/selfhost-ec2` `aws_instance.this`, `aws_kms_key.alarm_topic`; `modules/project-snapshots-bucket` `aws_s3_bucket.this` | Module resources take the caller's `var.tags`; a literal map would drop per-environment tags. Parser rule 2. |
+
+### Exclusions to create
+
+These findings are correct by design but have no Drata exclusion yet. A person
+with Drata access creates each one (Drata → Monitoring → Pipelines →
+Exclusions) with the rationale below, then moves the row into the table above.
+
+| Sev | Test | Resource | Rationale |
+| --- | --- | --- | --- |
+| Critical | 8025 | `modules/capture-store` `aws_iam_role_policy.device` | The device role is the ceiling for every Capture device credential. The API assumes it with an inline session policy that narrows it to one `orgs/<account_id>/<device_id>/` folder (`apps/api/src/capture/credentials.ts`), and STS grants the intersection. The folder names exist only at issue time, so the role policy must name `orgs/*`. Only the API task role may assume it; sessions last at most 1 hour. |

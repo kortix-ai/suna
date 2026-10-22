@@ -3,7 +3,7 @@ import { flow } from '../core/flow';
 const REQ = { domain: 'kaab', timeoutMs: 120_000 };
 const CREATE = 'POST /v1/projects/:projectId/sessions';
 
-flow('KAAB-1', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, async (ctx) => {
+flow('KAAB-1', { ...REQ, requires: ['funded', 'sandbox'], routes: [CREATE] }, async (ctx) => {
   const project = await ctx.fixtures.sharedSeededProject();
   await ctx.step('backend PAT creates a session with runtime context', async () => {
     const response = await ctx.client
@@ -20,7 +20,7 @@ flow('KAAB-1', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   });
 });
 
-flow('KAAB-2', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, async (ctx) => {
+flow('KAAB-2', { ...REQ, requires: ['funded', 'sandbox'], routes: [CREATE] }, async (ctx) => {
   const project = await ctx.fixtures.sharedSeededProject();
   await ctx.step('human JWT cannot set a backend secret allowlist', async () => {
     const response = await ctx.client
@@ -35,7 +35,7 @@ flow('KAAB-2', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   });
 });
 
-flow('KAAB-3', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, async (ctx) => {
+flow('KAAB-3', { ...REQ, requires: ['funded', 'sandbox'], routes: [CREATE] }, async (ctx) => {
   const project = await ctx.fixtures.sharedSeededProject();
   await ctx.step('unknown secret identifier is rejected', async () => {
     const response = await ctx.client
@@ -63,7 +63,7 @@ flow('KAAB-3', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   });
 });
 
-flow('KAAB-4', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, async (ctx) => {
+flow('KAAB-4', { ...REQ, requires: ['funded', 'sandbox'], routes: [CREATE] }, async (ctx) => {
   const project = await ctx.fixtures.sharedSeededProject();
   await ctx.step('unavailable model fails during session creation', async () => {
     const response = await ctx.client
@@ -78,7 +78,7 @@ flow('KAAB-4', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   });
 });
 
-flow('KAAB-5', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, async (ctx) => {
+flow('KAAB-5', { ...REQ, requires: ['funded', 'sandbox'], routes: [CREATE] }, async (ctx) => {
   const project = await ctx.fixtures.sharedSeededProject();
   await ctx.step('credential-like runtime context key is rejected', async () => {
     const response = await ctx.client
@@ -106,7 +106,7 @@ flow('KAAB-5', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   });
 });
 
-flow('KAAB-6', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, async (ctx) => {
+flow('KAAB-6', { ...REQ, requires: ['funded', 'sandbox'], routes: [CREATE] }, async (ctx) => {
   const project = await ctx.fixtures.sharedSeededProject();
   const key = ctx.fixtures.name('kaab-idempotency');
   const body = { runtime_context: { ticket_id: 'ticket-123' } };
@@ -147,7 +147,7 @@ flow('KAAB-6', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
   });
 });
 
-flow('KAAB-7', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, async (ctx) => {
+flow('KAAB-7', { ...REQ, requires: ['funded', 'sandbox'], routes: [CREATE] }, async (ctx) => {
   const project = await ctx.fixtures.sharedSeededProject();
   const key = ctx.fixtures.name('kaab-context-idempotency');
 
@@ -200,5 +200,46 @@ flow('KAAB-7', { ...REQ, requires: ['funded', 'daytona'], routes: [CREATE] }, as
     );
     response.status(400);
     response.body().has('$.code', 'INVALID_IDEMPOTENCY_KEY');
+  });
+});
+
+// KAAB-8 — create validation a backend PAT hits before any sandbox work, so it
+// runs on the local profile too: runtime_context shape and an allowlist whose
+// identifiers would collide on one env key.
+flow('KAAB-8', {
+  ...REQ,
+  requires: ['database'],
+  routes: [CREATE, 'POST /v1/projects/:projectId/secrets', 'GET /v1/projects/:projectId/sessions'],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project();
+  const params = { projectId: project.id };
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const backend = ctx.client.as(ctx.P.PAT_ACCT);
+  for (const [label, runtimeContext] of [
+    ['an upper-case reserved key', { KORTIX_TOKEN: 'shadow' }],
+    ['a nested value', { workspace_id: { nested: true } }],
+    ['more than 16 KiB of UTF-8', { payload: 'é'.repeat(9_000) }],
+  ] as const) {
+    await ctx.step(`runtime_context with ${label} → 400 INVALID_SESSION_RUNTIME_CONTEXT`, async () => {
+      (await backend.post('/v1/projects/:projectId/sessions', { runtime_context: runtimeContext }, { params }))
+        .status(400)
+        .body()
+        .has('$.code', 'INVALID_SESSION_RUNTIME_CONTEXT');
+    });
+  }
+  await ctx.step('a backend allowlist naming two identifiers on one env key → 409 SECRET_IDENTIFIER_KEY_COLLISION', async () => {
+    for (const [identifier, value] of [['GMAPS_PRIMARY', 'primary-key'], ['GMAPS_BACKUP', 'backup-key']] as const) {
+      (await owner.post('/v1/projects/:projectId/secrets', { identifier, name: 'GOOGLE_MAPS_API_KEY', value }, { params })).status([200, 201]);
+    }
+    (await backend.post('/v1/projects/:projectId/sessions', { secrets: ['GMAPS_PRIMARY', 'GMAPS_BACKUP'] }, { params }))
+      .status(409)
+      .body()
+      .has('$.code', 'SECRET_IDENTIFIER_KEY_COLLISION');
+  });
+  await ctx.step('no refused create wrote a session', async () => {
+    const r = await owner.get('/v1/projects/:projectId/sessions', { params });
+    r.status(200);
+    const rows = r.json<unknown[]>();
+    if (rows.length !== 0) throw new Error(`refused creates wrote ${rows.length} session(s)`);
   });
 });

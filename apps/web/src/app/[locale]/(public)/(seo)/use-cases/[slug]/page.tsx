@@ -1,3 +1,4 @@
+import { metaDescription } from '@/lib/seo/metadata';
 import type { Metadata } from 'next';
 import { getTranslations } from '@/i18n/get-translations';
 import Link from '@/components/site-link';
@@ -5,8 +6,8 @@ import { notFound } from 'next/navigation';
 
 import { BlogProse } from '@/components/blog/blog-prose';
 import { PostByline } from '@/components/blog/post-byline';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   Callout,
   Fact,
@@ -24,7 +25,7 @@ import { UseCaseMdxImage } from '@/components/use-cases/use-case-mdx-image';
 import { UseCaseToc, type TocItem } from '@/components/use-cases/use-case-toc';
 import { resolveAuthor } from '@/lib/blog';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { siteMetadata } from '@/lib/site-metadata';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 import { useCasesSource } from '@/lib/use-cases-source';
 
@@ -74,15 +75,17 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
     : `${siteMetadata.url}/banner.png`;
   const author = resolveAuthor(data.author);
 
+  const description = metaDescription(data.description);
+
   return {
     title: data.title,
-    description: data.description,
+    description,
     keywords: data.tags?.length ? data.tags : undefined,
     authors: [{ name: author.name }],
     openGraph: {
       type: 'article',
       title: data.title,
-      description: data.description,
+      description,
       url,
       siteName: 'Kortix',
       publishedTime: data.date,
@@ -94,7 +97,7 @@ export async function generateMetadata(props: PageProps): Promise<Metadata> {
     twitter: {
       card: 'summary_large_image',
       title: data.title,
-      description: data.description,
+      description,
       images: [ogImage],
     },
     alternates: {

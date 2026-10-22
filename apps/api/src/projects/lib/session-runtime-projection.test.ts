@@ -27,6 +27,10 @@ function read(overrides: Partial<RuntimeProjectionRead> = {}): RuntimeProjection
       accountId: 'acct-1',
       externalId: 'box-1',
       identity: {
+        schema: 'kortix.runtime.v1',
+        harness: 'opencode',
+        runtime_session_id: 'ses_abc',
+        harness_version: '1.18.23',
         opencode_session_id: 'ses_abc',
         opencode_version: '1.18.23',
         daemon_build: 1756240000,
@@ -123,6 +127,10 @@ describe('projectionIdentity', () => {
         },
       }),
     ).toEqual({
+      schema: null,
+      harness: null,
+      runtime_session_id: 'ses_x',
+      harness_version: '1.18.23',
       opencode_session_id: 'ses_x',
       opencode_version: '1.18.23',
       daemon_build: 42,
@@ -131,8 +139,28 @@ describe('projectionIdentity', () => {
     });
   });
 
+  test('a kortix.runtime.v1 document names its schema and harness; pi sends no OpenCode-named fields', () => {
+    expect(
+      projectionIdentity({
+        schema: 'kortix.runtime.v1',
+        identity: { harness: 'pi', runtime_session_id: 'ses_pi', harness_version: 'pi-agent-core@0.85.1' },
+      }),
+    ).toMatchObject({
+      schema: 'kortix.runtime.v1',
+      harness: 'pi',
+      runtime_session_id: 'ses_pi',
+      harness_version: 'pi-agent-core@0.85.1',
+      opencode_session_id: 'ses_pi',
+      opencode_version: 'pi-agent-core@0.85.1',
+    });
+  });
+
   test('a document without an identity block yields nulls, not throws', () => {
     expect(projectionIdentity({})).toEqual({
+      schema: null,
+      harness: null,
+      runtime_session_id: null,
+      harness_version: null,
       opencode_session_id: null,
       opencode_version: null,
       daemon_build: null,

@@ -29,6 +29,17 @@ files:
   - assets/**/*
   - package.json
 
+# The computer agent (@kortix/agent-tunnel), outside the asar so the OS service
+# can run it with this app's binary (ELECTRON_RUN_AS_NODE=1). Build it first:
+# `pnpm --filter @kortix/agent-tunnel build` (scripts/ensure-runtime.js does).
+extraResources:
+  - from: ../../packages/agent-tunnel/dist/agent-cli.js
+    to: agent-tunnel/agent-cli.js
+  # Beside the bundle: the agent reads its version from it, and it marks the
+  # bundle as an ES module.
+  - from: ../../packages/agent-tunnel/package.json
+    to: agent-tunnel/package.json
+
 # Registers the kortix:// deep-link scheme (auth callbacks) in the OS bundle.
 protocols:
   - name: Kortix
@@ -57,7 +68,16 @@ mac:
         - universal
   # macOS ATS exceptions so HTTP localhost / *.localhost sandbox previews load
   # inside the in-app browser (same rationale as the Tauri Info.plist).
+  # Computer Use: the agent runs this driver embedded, so the macOS grants
+  # belong to Kortix (scripts/fetch-cua-driver.js). It is already a universal
+  # binary: x64ArchFiles lets the universal merge keep the one file.
+  extraResources:
+    - from: vendor/cua-driver/cua-driver
+      to: cua-driver/cua-driver
+  x64ArchFiles: Contents/Resources/cua-driver/cua-driver
   extendInfo:
+    NSAppleEventsUsageDescription: Kortix agents use this to work with the apps on this computer when you allow Computer Use.
+    NSScreenCaptureUsageDescription: Kortix agents see this computer's screen when you allow Computer Use.
     NSAppTransportSecurity:
       NSAllowsArbitraryLoads: true
       NSAllowsArbitraryLoadsInWebContent: true
@@ -68,14 +88,41 @@ mac:
 dmg:
   title: Kortix ${version}
   artifactName: ${productName}-${version}-${arch}.${ext}
+  # Drag-to-install window, laid out like sindresorhus/create-dmg 8.1.0: a
+  # 660x400 window, 160pt icons, app left, Applications right. The background
+  # (build/background.png, merged with background@2x.png for Retina by
+  # dmg-builder) is a #102B53 ordered dither: its chevron sits between the icons.
+  # Source: the "Desktop DMG · dither install window" page in the Kortix Paper file.
+  background: build/background.png
+  iconSize: 160
+  contents:
+    - x: 180
+      y: 170
+    - x: 480
+      y: 170
+      type: link
+      path: /Applications
 
 win:
+  # Computer Use: the agent runs this driver embedded (scripts/fetch-cua-driver.js).
+  extraResources:
+    - from: vendor/cua-driver
+      to: cua-driver
+      filter:
+        - "*.exe"
+  # The symbol on the light rounded tile, 16 to 256 px. Generated from
+  # apps/web/public/favicon.svg by scripts/build-win-icon.py; do not hand-edit.
   icon: build/icon.ico
   target:
     - nsis
   artifactName: ${productName}-Setup-${version}.${ext}
 
 nsis:
+  # The installer, the uninstaller and the assisted-installer header carry the
+  # same tile icon as the app (build/icon.ico, scripts/build-win-icon.py).
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true

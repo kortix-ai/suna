@@ -3,9 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   displayHtml,
-  hasRenderableMermaidStarter,
   MERMAID_CONFIG,
-  mermaidChartHash,
   mermaidDisplayHeight,
   mermaidErrorMessage,
   parseMermaidViewBox,
@@ -16,18 +14,21 @@ import {
 } from './mermaid-html';
 
 const WEB_RENDERER = readFileSync(
-  path.resolve(import.meta.dir, '../../../../web/src/components/ui/mermaid-renderer.tsx'),
+  path.resolve(import.meta.dir, '../../../../../packages/ui/src/primitives/mermaid-renderer.tsx'),
   'utf8',
 );
-// The web renderer initializes with `MERMAID_CONFIG` from mermaid-render.ts.
+// The web renderer renders through `renderMermaidSvg` in mermaid-render.ts,
+// which initializes Mermaid with `MERMAID_CONFIG`.
 const WEB_MERMAID_CONFIG = readFileSync(
-  path.resolve(import.meta.dir, '../../../../web/src/components/ui/mermaid-render.ts'),
+  path.resolve(import.meta.dir, '../../../../../packages/ui/src/primitives/mermaid-render.ts'),
   'utf8',
 );
 
 describe('parity with web mermaid-renderer.tsx', () => {
   test('initialize options are web options', () => {
-    expect(WEB_RENDERER).toMatch(/mermaid\.initialize\(\{\s*\.\.\.MERMAID_CONFIG\b/);
+    expect(WEB_RENDERER).toMatch(/import \{[^}]*\brenderMermaidSvg\b[^}]*\} from '\.\/mermaid-render'/);
+    expect(WEB_RENDERER).toMatch(/\brenderMermaidSvg\(/);
+    expect(WEB_MERMAID_CONFIG).toMatch(/mermaid\.initialize\(\{\s*\.\.\.MERMAID_CONFIG\b/);
     const block = /export const MERMAID_CONFIG = \{([\s\S]*?)\n\} as const;/.exec(WEB_MERMAID_CONFIG)?.[1] ?? '';
     expect(block).toContain(`securityLevel: '${MERMAID_CONFIG.securityLevel}'`);
     expect(block).toContain(`theme: '${MERMAID_CONFIG.theme}'`);
@@ -37,29 +38,6 @@ describe('parity with web mermaid-renderer.tsx', () => {
     expect(block).toContain('showBranches: true');
     expect(block).toContain('showCommitLabel: true');
     expect(block).toContain('rotateCommitLabel: true');
-  });
-
-  test('chart hash is web hash', () => {
-    // Web: (hash << 5) - hash + charCode, |0 per step, base 36, over the trimmed chart.
-    expect(mermaidChartHash('graph TD\n  A --> B')).toBe(mermaidChartHash('  graph TD\n  A --> B\n'));
-    let hash = 0;
-    for (const char of 'sequenceDiagram') hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
-    expect(mermaidChartHash('sequenceDiagram')).toBe(hash.toString(36));
-    expect(mermaidChartHash('a')).not.toBe(mermaidChartHash('b'));
-  });
-});
-
-describe('hasRenderableMermaidStarter', () => {
-  test('accepts web-listed diagram types, anywhere in the first line', () => {
-    expect(hasRenderableMermaidStarter('flowchart LR\nA-->B')).toBe(true);
-    expect(hasRenderableMermaidStarter('  sequenceDiagram')).toBe(true);
-    expect(hasRenderableMermaidStarter('stateDiagram-v2')).toBe(true);
-    expect(hasRenderableMermaidStarter('%% title\ngraph TD')).toBe(false);
-  });
-
-  test('rejects types web rejects before calling Mermaid', () => {
-    expect(hasRenderableMermaidStarter('xychart-beta')).toBe(false);
-    expect(hasRenderableMermaidStarter('')).toBe(false);
   });
 });
 

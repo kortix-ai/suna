@@ -121,8 +121,8 @@ describe('sandbox-health budget', () => {
  * Poll caching (perf, 2026-08-26).
  *
  * `buildSandboxHealth` is not a database read: `listSandboxTemplates` calls
- * `provider.getSnapshotState()` — a LIVE round trip to Daytona / E2B /
- * Platinum — once per template, plus a git read to hash the template
+ * `provider.getSnapshotState()` — a LIVE round trip to Platinum / Daytona
+ * — once per template, plus a git read to hash the template
  * directory. On the SampleCo corpus that made this "cheap polling endpoint"
  * the slowest non-proxy read on the box: 559 ms mean server-side over 169
  * calls, 1 488 ms median as the browser saw it.
@@ -195,6 +195,26 @@ describe('sandbox-health poll caching', () => {
     expect(await cached('p1')).toBe(1);
     cached.invalidate('p1');
     expect(await cached('p1')).toBe(2);
+  });
+
+  test('after the TTL the poll serves the last answer and refreshes behind it', async () => {
+    // KRTX-620: the idle client re-polls at 120s, far past the 10s TTL, so the
+    // provider probe used to run on every request and its multi-second tail
+    // became the route's p95. With `staleWhileRevalidate` the poll answers from
+    // cache and the provider round trip happens off the request path.
+    let calls = 0;
+    const cached = ttlMemo({
+      ttlMs: 10,
+      staleWhileRevalidate: true,
+      keyFn: (projectId: string) => projectId,
+      loader: async () => ++calls,
+      enableInTests: true,
+    });
+
+    expect(await cached('p1')).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 25)); // TTL expires
+    expect(await cached('p1')).toBe(1); // stale answer, not a blocking reload
+    expect(calls).toBe(2); // refresh already running behind the response
   });
 
   test('a failed provider call is never cached — the next poll retries', async () => {

@@ -1,18 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import type { Part } from '@kortix/sdk';
+import { toolCallBlock, type ToolCallBlock, type ToolPart } from '@kortix/sdk';
+import { blocksOf } from '@/lib/testing/session-log';
 
 import {
   DISCLOSURE_UNCAPPED_HEIGHT,
   SHIMMER,
   activityIconKey,
-  burstIsRunning,
   burstView,
   disclosureBodyMaxHeight,
-  fileChipRun,
-  fileCategory,
-  fileChipTypeLabel,
-  hideStepIcon,
-  isFileChipPart,
   isStalePending,
   isToolRunning,
   isScrollPinnedToEnd,
@@ -23,11 +18,8 @@ import {
   scrollFades,
   shimmerBandCenter,
   shimmerSpread,
-  thoughtBodyCapped,
-  thoughtLabel,
   toolDisplayName,
   toolDurationMs,
-  toolStreamingInput,
 } from './activity';
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
@@ -38,7 +30,7 @@ function tool(
   name: string,
   status: 'pending' | 'running' | 'completed' | 'error',
   state: Record<string, unknown> = {},
-): Part {
+): ToolPart {
   seq += 1;
   return {
     type: 'tool',
@@ -48,10 +40,15 @@ function tool(
     sessionID: 's',
     messageID: 'm',
     state: { status, input: {}, ...(status === 'error' ? { error: 'boom' } : {}), ...state },
-  } as unknown as Part;
+  } as unknown as ToolPart;
 }
 
-function reasoning(text: string, time: { start?: number; end?: number } = { start: 1 }): Part {
+/** One tool call as a block (`fromV1`, live). */
+function call(name: string, status: 'pending' | 'running' | 'completed' | 'error', state: Record<string, unknown> = {}): ToolCallBlock {
+  return toolCallBlock(tool(name, status, state));
+}
+
+function reasoning(text: string, time: { start?: number; end?: number } = { start: 1 }): unknown {
   seq += 1;
   return {
     type: 'reasoning',
@@ -60,36 +57,8 @@ function reasoning(text: string, time: { start?: number; end?: number } = { star
     messageID: 'm',
     text,
     time,
-  } as unknown as Part;
+  };
 }
-
-// ─── Thought label ───────────────────────────────────────────────────────────
-
-describe('thoughtLabel', () => {
-  test('under one second stays "Thinking" while running', () => {
-    expect(thoughtLabel(true, 0)).toBe('Thinking');
-    expect(thoughtLabel(true, 999)).toBe('Thinking');
-  });
-
-  test('counts up live while running', () => {
-    expect(thoughtLabel(true, 1000)).toBe('Thinking for 1s');
-    expect(thoughtLabel(true, 12_400)).toBe('Thinking for 12s');
-  });
-
-  test('settles on the run total when done', () => {
-    expect(thoughtLabel(false, 0, 12_000)).toBe('Thought for 12s');
-    expect(thoughtLabel(false, 0, 61_000)).toBe('Thought for 1m 1s');
-  });
-
-  test('a settled thought with no timing, or under one second, stays "Thinking"', () => {
-    expect(thoughtLabel(false, 0)).toBe('Thinking');
-    expect(thoughtLabel(false, 0, 400)).toBe('Thinking');
-  });
-
-  test('the live clock is ignored once the thought settles', () => {
-    expect(thoughtLabel(false, 30_000, 2_000)).toBe('Thought for 2s');
-  });
-});
 
 // ─── Disclosure rule ─────────────────────────────────────────────────────────
 
@@ -111,20 +80,18 @@ describe('resolveDisclosureOpen', () => {
 
 // ─── Burst running ───────────────────────────────────────────────────────────
 
-describe('burstIsRunning', () => {
+describe('burstView running (web burstIsRunning)', () => {
   test('an idle turn is never running', () => {
-    expect(burstIsRunning([tool('bash', 'running')], false, true)).toBe(false);
+    expect(burstView(blocksOf([tool('bash', 'running')]), false, true).running).toBe(false);
   });
 
   test('the trailing burst stays running for the whole working turn', () => {
-    expect(burstIsRunning([tool('bash', 'completed')], true, true)).toBe(true);
+    expect(burstView(blocksOf([tool('bash', 'completed')]), true, true).running).toBe(true);
   });
 
   test('an earlier burst runs only while it holds an unfinished part', () => {
-    expect(burstIsRunning([tool('bash', 'completed')], true, false)).toBe(false);
-    expect(burstIsRunning([tool('bash', 'pending')], true, false)).toBe(true);
-    expect(burstIsRunning([reasoning('hm', { start: 1 })], true, false)).toBe(true);
-    expect(burstIsRunning([reasoning('hm', { start: 1, end: 2 })], true, false)).toBe(false);
+    expect(burstView(blocksOf([tool('bash', 'completed')]), true, false).running).toBe(false);
+    expect(burstView(blocksOf([tool('bash', 'pending')]), true, false).running).toBe(true);
   });
 });
 
@@ -132,22 +99,23 @@ describe('burstIsRunning', () => {
 
 describe('burstView', () => {
   test('one call gets the summary line that opens the sheet', () => {
-    const view = burstView([tool('bash', 'completed')], false, false);
+    const view = burstView(blocksOf([tool('bash', 'completed')]), false, false);
     expect(view.hidden).toBe(false);
     expect(view.steps).toHaveLength(1);
     expect(view.title).toBe('Completed 1 step');
   });
 
-  test('a lone thought gets the summary line too', () => {
-    const view = burstView([reasoning('plan', { start: 1, end: 2 })], false, false);
-    expect(view.hidden).toBe(false);
-    expect(view.title).toBe('Completed 1 step');
-    expect(view.steps[0]?.kind).toBe('thought');
+  test('reasoning is not a step: a lone thought is hidden, and one beside a call is not counted', () => {
+    const lone = burstView(blocksOf([reasoning('plan', { start: 1, end: 2 })]), false, false);
+    expect(lone.hidden).toBe(true);
+    expect(lone.steps).toEqual([]);
+    const mixed = burstView(blocksOf([reasoning('plan', { start: 1, end: 2 }), tool('bash', 'completed')]), false, false);
+    expect(mixed.steps).toHaveLength(1);
+    expect(mixed.title).toBe('Completed 1 step');
   });
 
   test('a same-family group of 3 is ONE step row and summarises 3 calls', () => {
-    const view = burstView(
-      [tool('bash', 'completed'), tool('bash', 'completed'), tool('bash', 'completed')],
+    const view = burstView(blocksOf([tool('bash', 'completed'), tool('bash', 'completed'), tool('bash', 'completed')]),
       false,
       false,
     );
@@ -157,22 +125,22 @@ describe('burstView', () => {
   });
 
   test('running title counts steps without failures', () => {
-    const view = burstView([tool('bash', 'error'), tool('read', 'running')], true, true);
+    const view = burstView(blocksOf([tool('bash', 'error'), tool('read', 'running')]), true, true);
     expect(view.running).toBe(true);
     expect(view.title).toBe('Working · 2 steps');
   });
 
   test('settled titles carry the failure clause', () => {
-    expect(burstView([tool('bash', 'error'), tool('read', 'completed')], false, false).title).toBe(
+    expect(burstView(blocksOf([tool('bash', 'error'), tool('read', 'completed')]), false, false).title).toBe(
       'Completed 1 of 2 steps · 1 failed',
     );
-    expect(burstView([tool('bash', 'error'), tool('read', 'error')], false, false).title).toBe(
+    expect(burstView(blocksOf([tool('bash', 'error'), tool('read', 'error')]), false, false).title).toBe(
       '2 steps failed',
     );
   });
 
   test('a burst of only plumbing renders nothing', () => {
-    const view = burstView([tool('get_mem', 'completed')], false, false);
+    const view = burstView(blocksOf([tool('get_mem', 'completed')]), false, false);
     expect(view.steps).toHaveLength(0);
     expect(view.hidden).toBe(true);
   });
@@ -183,123 +151,29 @@ describe('burstView', () => {
         input: { questions: [{ question: 'Which?' }] },
         metadata: { answers: [['A']] },
       });
-    const view = burstView([answered(), answered()], false, false);
-    expect(view.steps.map((s) => s.kind)).toEqual(['part', 'part']);
-  });
-});
-
-// ─── Step icon ───────────────────────────────────────────────────────────────
-
-describe('hideStepIcon', () => {
-  test('a chained row always keeps its icon', () => {
-    expect(hideStepIcon(tool('bash', 'completed'), false)).toBe(false);
-  });
-
-  test('a bare successful row drops its icon', () => {
-    expect(hideStepIcon(tool('bash', 'completed'), true)).toBe(true);
-  });
-
-  test('a bare failed row keeps its outcome mark', () => {
-    expect(hideStepIcon(tool('bash', 'error'), true)).toBe(false);
-  });
-
-  test('a bare delegate row keeps its thread anchor', () => {
-    expect(hideStepIcon(tool('task', 'completed'), true)).toBe(false);
+    const view = burstView(blocksOf([answered(), answered()]), false, false);
+    expect(view.steps.map((s) => s.kind)).toEqual(['block', 'block']);
   });
 });
 
 describe('activityIconKey', () => {
   test('maps tool names to the web icon families', () => {
-    expect(activityIconKey(tool('read', 'completed'))).toBe('read');
-    expect(activityIconKey(tool('write', 'completed'))).toBe('edit');
-    expect(activityIconKey(tool('edit', 'completed'))).toBe('edit');
-    expect(activityIconKey(tool('apply_patch', 'completed'))).toBe('edit');
-    expect(activityIconKey(tool('bash', 'completed'))).toBe('shell');
-    expect(activityIconKey(tool('glob', 'completed'))).toBe('search');
-    expect(activityIconKey(tool('grep', 'completed'))).toBe('search');
-    expect(activityIconKey(tool('list', 'completed'))).toBe('list');
-    expect(activityIconKey(tool('web-search', 'completed'))).toBe('web');
-    expect(activityIconKey(tool('webfetch', 'completed'))).toBe('web');
-    expect(activityIconKey(tool('scrape-webpage', 'completed'))).toBe('web');
-    expect(activityIconKey(tool('task', 'completed'))).toBe('delegate');
-    expect(activityIconKey(tool('skill', 'completed'))).toBe('skill');
-    expect(activityIconKey(tool('oc-read', 'completed'))).toBe('read');
-    expect(activityIconKey(tool('linear/create_issue', 'completed'))).toBe('generic');
-    expect(activityIconKey(reasoning('x'))).toBe('generic');
-  });
-});
-
-// ─── File chips ──────────────────────────────────────────────────────────────
-
-describe('file chips', () => {
-  const read = (path: string, status: 'completed' | 'running' | 'error' = 'completed', output = '') =>
-    tool('read', status, { input: { filePath: path }, ...(status === 'completed' ? { output } : {}) });
-
-  test('only whole-file reads and writes are chip parts', () => {
-    expect(isFileChipPart(read('/a.ts'))).toBe(true);
-    expect(isFileChipPart(tool('write', 'completed'))).toBe(true);
-    expect(isFileChipPart(tool('edit', 'completed'))).toBe(false);
-  });
-
-  test('dedupes paths and labels the count of rows below', () => {
-    const run = fileChipRun([read('/w/a.ts'), read('/w/a.ts'), read('/w/b.ts')]);
-    expect(run?.paths).toEqual(['/w/a.ts', '/w/b.ts']);
-    expect(run?.status).toBe('done');
-    expect(run?.label).toBe('Read 2 files');
-  });
-
-  test('one clean chip names itself through toDisplayPath', () => {
-    const run = fileChipRun([read('/workspace/src/a.ts')], {
-      toDisplayPath: (p) => p.replace('/workspace/', ''),
-    });
-    expect(run?.label).toBe('Read src/a.ts');
-  });
-
-  test('failures fall back to rows and are counted in the label', () => {
-    const run = fileChipRun([read('/a.ts'), read('/b.ts', 'error')]);
-    expect(run?.paths).toEqual(['/a.ts']);
-    expect(run?.fallbacks).toHaveLength(1);
-    expect(run?.status).toBe('error');
-    expect(run?.label).toBe('Read 2 files · 1 failed');
-  });
-
-  test('running wins over error and uses the participle', () => {
-    const run = fileChipRun([read('/b.ts', 'error'), read('/a.ts', 'running')]);
-    expect(run?.status).toBe('running');
-    expect(run?.label).toBe('Reading 2 files');
-  });
-
-  test('a directory read is not a chip', () => {
-    const run = fileChipRun([read('/w/src', 'completed', '<path>/w/src</path>\n<entries>\na.ts\n</entries>')]);
-    expect(run?.paths).toEqual([]);
-    expect(run?.fallbacks).toHaveLength(1);
-    expect(fileChipRun([read('/w/src/')])?.paths).toEqual([]);
-  });
-
-  test('a bare run with no chips falls back to plain rows', () => {
-    expect(fileChipRun([read('/b.ts', 'error')], { bare: true })?.bareFallback).toBe(true);
-    expect(fileChipRun([read('/b.ts')], { bare: true })?.bareFallback).toBe(false);
-  });
-
-  test('a streaming call reads its path from partial raw JSON', () => {
-    const part = tool('read', 'running', { input: {}, raw: '{"filePath":"/w/c.ts' });
-    expect(toolStreamingInput(part)).toEqual({ filePath: '/w/c.ts' });
-  });
-
-  test('type label: extension for code and unknown, category otherwise', () => {
-    expect(fileChipTypeLabel('a.ts')).toBe('TS');
-    expect(fileChipTypeLabel('a.yml')).toBe('YML');
-    expect(fileChipTypeLabel('photo.png')).toBe('Image');
-    expect(fileChipTypeLabel('notes.md')).toBe('Markdown');
-    expect(fileChipTypeLabel('Makefile')).toBe('File');
-  });
-
-  test('file category drives the chip glyph', () => {
-    expect(fileCategory('a.tsx')).toBe('code');
-    expect(fileCategory('a.PNG')).toBe('image');
-    expect(fileCategory('a.csv')).toBe('csv');
-    expect(fileCategory('a.zip')).toBe('archive');
-    expect(fileCategory('Makefile')).toBe('other');
+    expect(activityIconKey(call('read', 'completed'))).toBe('read');
+    expect(activityIconKey(call('write', 'completed'))).toBe('edit');
+    expect(activityIconKey(call('edit', 'completed'))).toBe('edit');
+    expect(activityIconKey(call('apply_patch', 'completed'))).toBe('edit');
+    expect(activityIconKey(call('bash', 'completed'))).toBe('shell');
+    expect(activityIconKey(call('glob', 'completed'))).toBe('search');
+    expect(activityIconKey(call('grep', 'completed'))).toBe('search');
+    expect(activityIconKey(call('list', 'completed'))).toBe('list');
+    expect(activityIconKey(call('web-search', 'completed'))).toBe('web');
+    expect(activityIconKey(call('webfetch', 'completed'))).toBe('web');
+    expect(activityIconKey(call('scrape-webpage', 'completed'))).toBe('web');
+    expect(activityIconKey(call('task', 'completed'))).toBe('delegate');
+    expect(activityIconKey(call('skill', 'completed'))).toBe('skill');
+    expect(activityIconKey(call('oc-read', 'completed'))).toBe('read');
+    expect(activityIconKey(call('linear/create_issue', 'completed'))).toBe('generic');
+    expect(activityIconKey(blocksOf([reasoning('x')])[0]!)).toBe('generic');
   });
 });
 
@@ -307,7 +181,7 @@ describe('file chips', () => {
 
 describe('tool row state', () => {
   test('an input-less pending part is stale only when the turn is not live', () => {
-    const part = tool('write', 'pending');
+    const part = call('write', 'pending');
     expect(isStalePending(part, false)).toBe(true);
     expect(isStalePending(part, true)).toBe(false);
     expect(isToolRunning(part, false)).toBe(false);
@@ -315,20 +189,20 @@ describe('tool row state', () => {
   });
 
   test('a pending part with streamed raw input is not stale', () => {
-    const part = tool('write', 'pending', { raw: '{"filePath":"a' });
+    const part = call('write', 'pending', { raw: '{"filePath":"a' });
     expect(isStalePending(part, false)).toBe(false);
     expect(isToolRunning(part, false)).toBe(true);
   });
 
   test('completed and error parts are not running', () => {
-    expect(isToolRunning(tool('bash', 'completed'), true)).toBe(false);
-    expect(isToolRunning(tool('bash', 'error'), true)).toBe(false);
+    expect(isToolRunning(call('bash', 'completed'), true)).toBe(false);
+    expect(isToolRunning(call('bash', 'error'), true)).toBe(false);
   });
 
   test('duration only when both ends exist and end > start', () => {
-    expect(toolDurationMs(tool('bash', 'completed', { time: { start: 10, end: 2010 } }))).toBe(2000);
-    expect(toolDurationMs(tool('bash', 'completed', { time: { start: 10 } }))).toBeUndefined();
-    expect(toolDurationMs(tool('bash', 'completed', { time: { start: 10, end: 5 } }))).toBeUndefined();
+    expect(toolDurationMs(call('bash', 'completed', { time: { start: 10, end: 2010 } }))).toBe(2000);
+    expect(toolDurationMs(call('bash', 'completed', { time: { start: 10 } }))).toBeUndefined();
+    expect(toolDurationMs(call('bash', 'completed', { time: { start: 10, end: 5 } }))).toBeUndefined();
   });
 
   test('error display name splits the MCP server off the tool', () => {
@@ -449,14 +323,9 @@ describe('disclosure body max height', () => {
   });
 });
 
-// ─── Thought body ────────────────────────────────────────────────────────────
+// ─── Scroll fades ───────────────────────────────────────────────────────────
 
-describe('thought body', () => {
-  test('capped only while the thought is still streaming; a finished thought shows in full', () => {
-    expect(thoughtBodyCapped(true)).toBe(true);
-    expect(thoughtBodyCapped(false)).toBe(false);
-  });
-
+describe('scroll fades', () => {
   test('scroll fades: none when content fits, end only at the top, both mid-way, start only at the end', () => {
     expect(scrollFades(0, 100, 199)).toEqual({ start: false, end: false });
     expect(scrollFades(0, 400, 199)).toEqual({ start: false, end: true });

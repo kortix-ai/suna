@@ -1,6 +1,14 @@
+import {
+  classifySessionLogMessage,
+  sessionLogCallStatus,
+  sessionLogOfV1Rows,
+  type SessionLogMessage,
+} from '@kortix/sdk';
 import { formatRelative } from '@kortix/shared';
 
+import type { Auth } from '../api/auth.ts';
 import type { ApiClient } from '../api/client.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import type { ProjectSession } from '../api/types.ts';
 import {
   emitJson,
@@ -11,7 +19,9 @@ import {
   takeFlagValue,
   fail,
 } from '../command-helpers.ts';
+import { resolveSessionRuntime } from '../session-runtime.ts';
 import { C, help, pad } from '../style.ts';
+import { sessionLogOn, withLiveTurn } from './sessions-chat.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -25,7 +35,7 @@ and outputs are intentionally stripped so the digest stays readable.
 
   --since <when>       Window start (default 7d). Examples: 24h, 7d,
                        2026-06-20, 2026-06-20T03:00:00Z.
-  --messages, -n <N>   Recent OpenCode messages per session (default 40).
+  --messages, -n <N>   Recent messages per session (default 40).
   --chars <N>          Max text chars per message after whitespace compaction
                        (default 700).
   --all                Ignore --since and include every listable session.
@@ -43,6 +53,9 @@ Notes:
   saved copy does not reach the session's first message.
 - A session whose sandbox never wrote a saved copy reports its transcript as
   unavailable, with the reason.
+- With the project flag session_log on, the saved copy is the stored session
+  log (source "log"), plus a running session's open turn read live from its
+  sandbox. No v1 transcript is read.
 `;
 
 interface CompactToolCall {
@@ -74,18 +87,26 @@ interface SessionDigest {
     created_at: string;
     updated_at: string;
     error: string | null;
+    /** The session's root conversation in its runtime (OpenCode or pi). */
+    runtime_session_id: string | null;
+    /** Titles of the runtime's conversations. */
+    runtime_titles: string[];
+    /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
     opencode_session_id: string | null;
+    /** @deprecated The pre-W4 name of `runtime_titles`. Same value. */
     opencode_titles: string[];
   };
   transcript: {
     available: boolean;
     reason: string | null;
     /** Where the messages came from: the running sandbox, the durable
-     *  server-side mirror, or nowhere. */
-    source: 'live' | 'mirror' | 'none';
+     *  server-side mirror, the stored session log (`session_log` on), or nowhere. */
+    source: 'live' | 'mirror' | 'log' | 'none';
     /** The mirror proved it holds the session's first message AND returned
      *  every row it holds. Never a guess — see `mirrorIsComplete`. */
     complete: boolean;
+    runtime_session_id: string | null;
+    /** @deprecated The pre-W4 name of `runtime_session_id`. Same value. */
     opencode_session_id: string | null;
     message_count: number;
     messages: CompactMessage[];
@@ -148,11 +169,14 @@ export async function runSessionsDigest(argv: string[]): Promise<number> {
     .filter((s) => all || isInWindow(s, since!))
     .sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
 
+  const logOn = filtered.length > 0 && (await sessionLogOn(ctx.auth, ctx.projectId));
   const digests = new Map<string, SessionDigest>();
   await mapLimit(filtered, 6, async (s) => {
     digests.set(
       s.session_id,
-      await buildDigest(s, ctx.client, ctx.projectId, messageLimit, maxChars),
+      logOn
+        ? await buildLogDigest(s, ctx.auth, ctx.client, ctx.projectId, messageLimit, maxChars)
+        : await buildDigest(s, ctx.client, ctx.projectId, messageLimit, maxChars),
     );
   });
   const out = filtered.map((s) => digests.get(s.session_id)!).filter(Boolean);
@@ -202,7 +226,7 @@ async function buildDigest(
     const transcript = await client.get<unknown>(
       `/projects/${projectId}/sessions/${s.session_id}/transcript?limit=${messageLimit}&chars=${maxChars}`,
     );
-    base.transcript = sanitizeTranscript(transcript, s.opencode_session_id);
+    base.transcript = sanitizeTranscript(transcript, runtimeSessionIdOf(s));
     return base;
   } catch (err) {
     base.transcript.reason = `could not read session transcript: ${(err as Error).message}`;
@@ -210,7 +234,73 @@ async function buildDigest(
   }
 }
 
-export function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: string | null): SessionDigest['transcript'] {
+/**
+ * `session_log` on: the root thread's newest `limit` messages from the stored session log
+ * (`GET …/log`), and a running session's open turn from its sandbox (as `sessions log`).
+ * No v1 transcript route is read.
+ */
+async function buildLogDigest(
+  s: ProjectSession,
+  auth: Auth,
+  client: ApiClient,
+  projectId: string,
+  limit: number,
+  maxChars: number,
+): Promise<SessionDigest> {
+  const base = baseDigest(s);
+  try {
+    const page = await withKortixScope(auth, () => kortixFromAuth(auth).session(projectId, s.session_id).log({ limit }));
+    const head = page?.threads.find((thread) => thread.thread_id === page.thread_id);
+    let threads = page && head ? [{ ...head, messages: page.messages, has_more: page.has_more }] : [];
+    if (s.status === 'running') {
+      try {
+        const runtime = await resolveSessionRuntime({ auth, client, projectId, session: s });
+        const live = await withKortixScope(auth, () => runtime.handle.messages({ conversationId: runtime.runtimeSessionId, limit }));
+        const liveThread = sessionLogOfV1Rows(s.session_id, runtime.runtimeSessionId, live.messages).threads[0];
+        if (liveThread) threads = withLiveTurn(threads, liveThread, limit);
+      } catch {
+        // A box that does not answer: the stored log is the conversation up to its last turn.
+      }
+    }
+    const root = threads.find((thread) => thread.parent_thread_id === null) ?? threads[0];
+    if (!root) {
+      base.transcript.reason = 'no stored session log yet';
+      return base;
+    }
+    base.transcript = {
+      ...base.transcript,
+      available: true,
+      source: 'log',
+      complete: !root.has_more,
+      message_count: root.messages.length,
+      messages: root.messages.map((message) => compactLogMessage(message, maxChars)),
+    };
+  } catch (err) {
+    base.transcript.reason = `could not read the session log: ${(err as Error).message}`;
+  }
+  return base;
+}
+
+/** One session-log message as a digest row: text, tool names and statuses, files; no tool input or output. */
+export function compactLogMessage(message: SessionLogMessage, maxChars: number): CompactMessage {
+  const streaming = message.status === 'streaming';
+  const text = message.blocks
+    .flatMap((block) => (block.type === 'text' && !block.synthetic && block.text ? [block.text] : []))
+    .join('\n');
+  const compacted = text.replace(/\s+/g, ' ').trim();
+  return {
+    role: message.role,
+    created: message.created_at || null,
+    completed: message.completed_at,
+    text: compacted.length <= maxChars ? compacted : `${compacted.slice(0, maxChars - 1)}…`,
+    tools: message.blocks.flatMap((block) => (block.type === 'tool_call' ? [{ tool: block.name, status: sessionLogCallStatus(block, streaming) }] : [])),
+    files: message.blocks.flatMap((block) => (block.type === 'attachment' ? [{ filename: block.name ?? null, mime: block.mime ?? null }] : [])),
+    reasoning_omitted: message.blocks.some((block) => block.type === 'reasoning'),
+    error: classifySessionLogMessage(message).error ?? null,
+  };
+}
+
+export function sanitizeTranscript(raw: unknown, fallbackRuntimeSessionId: string | null): SessionDigest['transcript'] {
   const obj = typeof raw === 'object' && raw ? raw as Record<string, unknown> : {};
   const messages = Array.isArray(obj.messages)
     ? obj.messages.map(sanitizeCompactMessage)
@@ -218,6 +308,9 @@ export function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: stri
   const count = typeof obj.message_count === 'number' && Number.isFinite(obj.message_count)
     ? obj.message_count
     : messages.length;
+  // A W4 API names it `runtime_session_id`; an older one only `opencode_session_id`.
+  const served = [obj.runtime_session_id, obj.opencode_session_id].find((id) => typeof id === 'string');
+  const runtimeSessionId = typeof served === 'string' ? served : fallbackRuntimeSessionId;
   return {
     available: obj.available === true,
     reason: typeof obj.reason === 'string' ? obj.reason : null,
@@ -228,9 +321,8 @@ export function sanitizeTranscript(raw: unknown, fallbackOpencodeSessionId: stri
       ? obj.source
       : obj.available === true ? 'live' : 'none',
     complete: obj.complete === true,
-    opencode_session_id: typeof obj.opencode_session_id === 'string'
-      ? obj.opencode_session_id
-      : fallbackOpencodeSessionId,
+    runtime_session_id: runtimeSessionId,
+    opencode_session_id: runtimeSessionId,
     message_count: count,
     messages,
   };
@@ -285,15 +377,18 @@ function baseDigest(s: ProjectSession): SessionDigest {
       created_at: s.created_at,
       updated_at: s.updated_at,
       error: s.error,
-      opencode_session_id: s.opencode_session_id,
-      opencode_titles: opencodeTitles(s),
+      runtime_session_id: runtimeSessionIdOf(s),
+      runtime_titles: runtimeTitles(s),
+      opencode_session_id: runtimeSessionIdOf(s),
+      opencode_titles: runtimeTitles(s),
     },
     transcript: {
       available: false,
       reason: null,
       source: 'none',
       complete: false,
-      opencode_session_id: s.opencode_session_id,
+      runtime_session_id: runtimeSessionIdOf(s),
+      opencode_session_id: runtimeSessionIdOf(s),
       message_count: 0,
       messages: [],
     },
@@ -325,8 +420,8 @@ function printHumanDigest(
     process.stdout.write(`  ${C.dim}branch${C.reset} ${s.branch}  ${C.dim}base${C.reset} ${s.base_ref}  ${C.dim}provider${C.reset} ${s.provider}\n`);
     process.stdout.write(`  ${C.dim}created${C.reset} ${s.created_at}  ${C.dim}updated${C.reset} ${s.updated_at}\n`);
     if (s.error) process.stdout.write(`  ${C.red}error${C.reset} ${s.error}\n`);
-    if (s.opencode_titles.length > 0) {
-      process.stdout.write(`  ${C.dim}opencode titles${C.reset} ${s.opencode_titles.map((t) => truncate(t, 80)).join(' | ')}\n`);
+    if (s.runtime_titles.length > 0) {
+      process.stdout.write(`  ${C.dim}runtime titles${C.reset} ${s.runtime_titles.map((t) => truncate(t, 80)).join(' | ')}\n`);
     }
 
     if (!d.transcript.available) {
@@ -372,8 +467,13 @@ function summarizeTools(tools: CompactToolCall[]): string {
   return parts.length > 12 ? `${parts.slice(0, 12).join(', ')}, … +${parts.length - 12}` : parts.join(', ');
 }
 
-function opencodeTitles(s: ProjectSession): string[] {
-  const raw = s.metadata?.opencode_sessions;
+/** The runtime root id: a W4 API serves `runtime_session_id`, an older one `opencode_session_id`. */
+function runtimeSessionIdOf(s: ProjectSession): string | null {
+  return s.runtime_session_id ?? s.opencode_session_id ?? null;
+}
+
+function runtimeTitles(s: ProjectSession): string[] {
+  const raw = s.runtime_sessions ?? s.metadata?.opencode_sessions;
   if (!Array.isArray(raw)) return [];
   return raw
     .map((entry) => {

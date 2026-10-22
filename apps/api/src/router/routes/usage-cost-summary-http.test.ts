@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
+import * as realAuthorize from '../../iam/authorize';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
@@ -11,6 +12,7 @@ const SESSION_ID = 'session-cost-summary-test';
 
 let authType = 'supabase';
 let sandboxId: string | null = null;
+let tokenProjectId: string | null = null;
 let summaryInput: Record<string, unknown> | null = null;
 let projectAccessInput: { projectId: string; action: string } | null = null;
 let projectCapabilityInput: {
@@ -48,12 +50,25 @@ mock.module('../../middleware/auth', () => ({
     c.set('userId', USER_ID);
     c.set('authType', authType);
     if (sandboxId) c.set('sandboxId', sandboxId);
+    if (tokenProjectId) {
+      c.set('tokenProjectId', tokenProjectId);
+      c.set('accountId', ACCOUNT_ID);
+    }
     await next();
   },
 }));
 
-mock.module('../../shared/resolve-account', () => ({
+mock.module('../../middleware/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => c.req.query('account_id') || ACCOUNT_ID,
+}));
+
+// #9272: account-wide usage reads require `billing.read`. Record the check.
+const authorizedActions: string[] = [];
+mock.module('../../iam/authorize', () => ({
+  ...realAuthorize,
+  assertAuthorized: async (_actor: unknown, action: string) => {
+    authorizedActions.push(action);
+  },
 }));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
@@ -127,6 +142,7 @@ function createTestApp() {
 beforeEach(() => {
   authType = 'supabase';
   sandboxId = null;
+  tokenProjectId = null;
   summaryInput = null;
   projectAccessInput = null;
   projectCapabilityInput = null;
@@ -140,6 +156,8 @@ describe('GET /v1/usage/cost-summary', () => {
     );
 
     expect(response.status).toBe(200);
+    // An account-wide read needs billing.read (#9272).
+    expect(authorizedActions).toContain('billing.read');
     expect(summaryInput?.accountId).toBe(ACCOUNT_ID);
     expect(summaryInput?.projectId).toBeUndefined();
     expect(summaryInput?.sessionId).toBeUndefined();
@@ -227,5 +245,21 @@ describe('GET /v1/usage/cost-summary', () => {
 
     expect(response.status).toBe(403);
     expect(summaryInput).toBeNull();
+  });
+
+  test('project token needs the usage leaf and cannot expand to account or another project', async () => {
+    tokenProjectId = PROJECT_ID;
+    const app = createTestApp();
+    const own = await app.request(`/v1/usage/cost-summary?project_id=${PROJECT_ID}`);
+    expect(own.status).toBe(200);
+    expect(projectCapabilityInput?.action).toBe('project.usage.read');
+    expect(summaryInput?.projectId).toBe(PROJECT_ID);
+    for (const query of ['', `?project_id=${ACCOUNT_ID}`, `?project_id=${PROJECT_ID}&account_id=${ACCOUNT_ID}`, `?project_id=${PROJECT_ID}&session_id=${SESSION_ID}`]) {
+      summaryInput = null;
+      expect((await app.request(`/v1/usage/cost-summary${query}`)).status).toBe(403);
+      expect(summaryInput).toBeNull();
+    }
+    projectCapabilityDenied = true;
+    expect((await app.request(`/v1/usage/cost-summary?project_id=${PROJECT_ID}`)).status).toBe(403);
   });
 });

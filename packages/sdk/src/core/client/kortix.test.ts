@@ -2,10 +2,11 @@ import { beforeEach, expect, mock, test } from 'bun:test';
 import { listFiles as globalListFiles } from '../files/client';
 import { ApiError } from '../http/api/errors';
 import { isConfigured } from '../http/config';
+import type { ProjectSession } from '../rest/projects-client/sessions';
 import { SessionNotReadyError, createKortix } from './kortix';
 
 // Capture every outbound request the facade makes.
-let calls: { url: string; method: string; body?: unknown }[] = [];
+let calls: { url: string; method: string; body?: any }[] = [];
 beforeEach(() => {
   calls = [];
   globalThis.fetch = mock(async (url: unknown, opts: { method?: string; body?: unknown } = {}) => {
@@ -51,6 +52,18 @@ test('project(id) handle binds the id and hits the right endpoint', async () => 
   expect(last().method).toBe('GET');
 });
 
+test('project(id).apps binds the project id on every capability call', async () => {
+  const apps = kortix.project('PID123').apps;
+  await apps.token('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/apps/A1/token' });
+  await apps.remove('A1').catch(() => undefined);
+  expect(last()).toMatchObject({ method: 'DELETE', url: 'http://test.local/projects/PID123/apps/A1' });
+  for (const retired of ['snapshots', 'credentials', 'rotateCredentials', 'log', 'waitUntilReady']) {
+    expect(retired in apps).toBe(false);
+  }
+  expect('backends' in kortix.project('PID123')).toBe(false);
+});
+
 test('project(id).apps exposes the complete App lifecycle with the project id bound', async () => {
   const apps = kortix.project('PID123').apps;
 
@@ -78,6 +91,17 @@ test('project(id).apps exposes the complete App lifecycle with the project id bo
     method: 'POST',
     url: 'http://test.local/projects/PID123/apps/APP1/deployments',
     body: { artifact_id: 'ART1', source: { kind: 'static' } },
+  });
+});
+
+test('project(id).apps.deployments.remove deletes one deployment with the project id bound', async () => {
+  const apps = kortix.project('PID123').apps;
+
+  await apps.deployments.remove('APP1', 'DEP1');
+
+  expect(last()).toMatchObject({
+    method: 'DELETE',
+    url: 'http://test.local/projects/PID123/apps/APP1/deployments/DEP1',
   });
 });
 
@@ -131,6 +155,83 @@ test('project(id).secrets.broker binds the project and encoded identifier', asyn
 test('session(projectId, sessionId) binds both ids', async () => {
   await kortix.session('PID123', 'SID456').previews();
   expect(last().url).toContain('/projects/PID123/sessions/SID456/previews');
+  await kortix.session('PID123', 'SID456').participants();
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/participants');
+});
+
+test('session presence writes a tab-scoped lease through the authenticated backend', async () => {
+  const tabId = '00000000-0000-4000-8000-000000000001';
+  await kortix.session('PID123', 'SID456').presence({ tab_id: tabId, active: true });
+  expect(last()).toMatchObject({
+    url: 'http://test.local/projects/PID123/sessions/SID456/presence',
+    method: 'PUT',
+    body: { tab_id: tabId, active: true },
+  });
+});
+
+// KRTX-1742: `alerts` says this tab shows its own notifications, so the server
+// skips the phone push only for an alerting tab. Leaving is sent with
+// `keepalive`, so the lease ends even when the tab is closing.
+test('session presence carries alerts, and an absent report survives the page unloading', async () => {
+  const inits: RequestInit[] = [];
+  globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+    inits.push(init);
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const tabId = '00000000-0000-4000-8000-000000000002';
+  const handle = kortix.session('PID123', 'SID456');
+  await handle.presence({ tab_id: tabId, active: true, alerts: true });
+  await handle.presence({ tab_id: tabId, active: false, alerts: true });
+  await handle.presence({ tab_id: tabId, active: true });
+  expect(inits.map((init) => JSON.parse(String(init.body)))).toEqual([
+    { tab_id: tabId, active: true, alerts: true },
+    { tab_id: tabId, active: false, alerts: true },
+    { tab_id: tabId, active: true },
+  ]);
+  expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, false]);
+});
+
+// KRTX-1729: a present report reads back until when the computer stays on.
+test('session presence returns the awake window the server wrote', async () => {
+  globalThis.fetch = mock(async () =>
+    Response.json({
+      ok: true,
+      awake_until: '2026-10-12T10:15:00.000Z',
+      awake_cap_at: '2026-10-12T11:40:00.000Z',
+    }),
+  ) as unknown as typeof fetch;
+  const res = await kortix
+    .session('PID123', 'SID456')
+    .presence({ tab_id: '00000000-0000-4000-8000-000000000004', active: true });
+  const body: { ok: boolean; awake_until?: string | null; awake_cap_at?: string | null } | undefined =
+    res.data;
+  expect(body).toEqual({
+    ok: true,
+    awake_until: '2026-10-12T10:15:00.000Z',
+    awake_cap_at: '2026-10-12T11:40:00.000Z',
+  });
+  expect(res.data?.awake_cap_at).toBe('2026-10-12T11:40:00.000Z');
+});
+
+// `useSession` sends an absent report without `keepalive` while the project's
+// `notification_center` flag is off, as before KRTX-1742.
+test('session presence takes an explicit keepalive, and the body stays the report', async () => {
+  const inits: RequestInit[] = [];
+  globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+    inits.push(init);
+    return Response.json({ ok: true });
+  }) as unknown as typeof fetch;
+  const tabId = '00000000-0000-4000-8000-000000000003';
+  const handle = kortix.session('PID123', 'SID456');
+  await handle.presence({ tab_id: tabId, active: false }, { keepalive: false });
+  await handle.presence({ tab_id: tabId, active: false }, { keepalive: true });
+  await handle.presence({ tab_id: tabId, active: false }, {});
+  expect(inits.map((init) => init.keepalive === true)).toEqual([false, true, true]);
+  expect(inits.map((init) => JSON.parse(String(init.body)))).toEqual([
+    { tab_id: tabId, active: false },
+    { tab_id: tabId, active: false },
+    { tab_id: tabId, active: false },
+  ]);
 });
 
 test('session(projectId, sessionId).cost binds project scope without starting the runtime', async () => {
@@ -139,6 +240,11 @@ test('session(projectId, sessionId).cost binds project scope without starting th
   expect(calls).toHaveLength(1);
   expect(last().url).toBe('http://test.local/usage/session-costs/SID456?project_id=PID123');
   expect(last().method).toBe('GET');
+});
+
+test('session(...).restore takes the deleted session out of the trash', async () => {
+  await kortix.session('PID123', 'SID456').restore();
+  expect(last()).toMatchObject({ method: 'POST', url: 'http://test.local/projects/PID123/sessions/SID456/restore' });
 });
 
 test('project(id).session(sid) is the same session handle', async () => {
@@ -256,6 +362,9 @@ test('project(id).review hits the review-items endpoints', async () => {
   await kortix.project('PID123').review.submit({ kind: 'output', title: 'Result' });
   expect(last().url).toContain('/projects/PID123/review/items');
   expect(last().method).toBe('POST');
+
+  await kortix.project('PID123').review.summary();
+  expect(last().url).toContain('/projects/PID123/review/summary');
 });
 
 test('project(id).approvals hits the approvals inbox endpoints', async () => {
@@ -346,6 +455,25 @@ test('project(id).modelPicker loads the compact selector catalog', async () => {
   await kortix.project('PID123').modelPicker();
   expect(last().url).toContain('/projects/PID123/model-picker');
   expect(last().method).toBe('GET');
+});
+
+test('project(id) and projects reach the custom LLM provider routes', async () => {
+  const input = { name: 'My LLM', base_url: 'https://llm.example.test/v1', models: [{ id: 'm', name: 'M' }] };
+  await kortix.project('PID123').customLlmProviders();
+  expect(last().method).toBe('GET');
+  expect(last().url).toEndWith('/projects/PID123/custom-providers');
+  await kortix.project('PID123').setCustomLlmProvider('my-llm', input);
+  expect(last().method).toBe('PUT');
+  expect(last().url).toEndWith('/projects/PID123/custom-providers/my-llm');
+  await kortix.project('PID123').deleteCustomLlmProvider('my-llm');
+  expect(calls.slice(-2).map((call) => `${call.method} ${new URL(call.url).pathname}`)).toEqual([
+    'DELETE /projects/PID123/custom-providers/my-llm',
+    'DELETE /projects/PID123/secrets/CUSTOM_MY_LLM_API_KEY',
+  ]);
+  await kortix.projects.setCustomLlmProvider('PID123', 'my-llm', input);
+  expect(last().url).toEndWith('/projects/PID123/custom-providers/my-llm');
+  expect(kortix.projects.customLlmProviders).toBeFunction();
+  expect(kortix.projects.deleteCustomLlmProvider).toBeFunction();
 });
 
 test('project(id).sandbox hits the sandbox/snapshot/template admin endpoints', async () => {
@@ -448,7 +576,11 @@ test('project(id).access.resourceGrants covers list/create/remove', async () => 
   expect(last().method).toBe('DELETE');
 });
 
-test('project(id).secrets covers provider OAuth start, poll, and removal', async () => {
+test('project(id).secrets covers provider OAuth list, start, poll, and removal', async () => {
+  await kortix.project('PID123').secrets.listProviderOAuth();
+  expect(last().url.endsWith('/projects/PID123/oauth')).toBe(true);
+  expect(last().method).toBe('GET');
+
   await kortix.project('PID123').secrets.startProviderOAuth('chatgpt');
   expect(last().url).toContain('/projects/PID123/oauth/chatgpt/start');
   expect(last().method).toBe('POST');
@@ -533,11 +665,24 @@ test('project(id).connectors exposes the connection lifecycle', async () => {
   expect(last().url).toContain('/projects/PID123/connections/connection-1/label');
   expect(last().method).toBe('PUT');
   expect(last().body).toEqual({ label: 'Support inbox' });
+
+  await kortix
+    .project('PID123')
+    .connectors.connections.addComputer({ tunnelId: 'tunnel-1', share: 'me' });
+  expect(last().url).toContain('/projects/PID123/computers');
+  expect(last().method).toBe('POST');
+  expect(last().body).toEqual({ tunnel_id: 'tunnel-1', share: 'me' });
 });
 
 test('kortix.connectStatus hits the top-level connect-status endpoint (not project-scoped)', async () => {
   await kortix.connectStatus();
   expect(last().url).toContain('/connectors/connect-status');
+});
+
+test('kortix.mobileClientPolicy hits the public clients endpoint', async () => {
+  await kortix.mobileClientPolicy();
+  expect(last().url).toContain('/v1/clients/mobile');
+  expect(last().method).toBe('GET');
 });
 
 test('project(id) covers experimental-feature toggle, sandbox provider pin, and repo-collaborator invite', async () => {
@@ -619,10 +764,24 @@ test('kortix.billing covers the read surface (account-state, transactions, credi
   expect(last().url).toContain('/billing/tier-configurations');
 });
 
+test('session(...).log reads one page of the stored session log', async () => {
+  // The stub answers no page shape, so the read rejects after the request.
+  await expect(kortix.session('PID123', 'SID456').log({ thread: 'ses_c', limit: 5 })).rejects.toThrow('not a session log page');
+  expect(last().url).toContain('/projects/PID123/sessions/SID456/log?thread=ses_c&limit=5');
+});
+
 test('session(...).transcript hits the compact transcript endpoint with limit/chars', async () => {
   await kortix.session('PID123', 'SID456').transcript({ limit: 10, chars: 200 });
   expect(last().url).toContain('/projects/PID123/sessions/SID456/transcript?limit=10&chars=200');
   expect(last().method).toBe('GET');
+});
+
+// KRTX-2316: the list is one page; the facade passes the status and the cursor.
+test('project(id).changeRequests.list pages with status, limit and cursor', async () => {
+  await kortix.project('PID123').changeRequests.list();
+  expect(last().url).toMatch(/\/projects\/PID123\/change-requests$/);
+  await kortix.project('PID123').changeRequests.list('all', { limit: 100, cursor: '51' });
+  expect(last().url).toContain('/projects/PID123/change-requests?status=all&limit=100&cursor=51');
 });
 
 test('project(id).changeRequests.requestChanges hits the request-changes endpoint', async () => {
@@ -713,18 +872,21 @@ test('project(id).gateway.playground posts prompt + models', async () => {
   expect(last().method).toBe('POST');
 });
 
-test('kortix.billing.checkout covers create + confirm session', async () => {
-  await kortix.billing.checkout.createSession({
-    tierKey: 'pro',
-    successUrl: 'https://app.example.com/success',
-    cancelUrl: 'https://app.example.com/cancel',
-  });
-  expect(last().url).toContain('/billing/create-checkout-session');
-  expect(last().method).toBe('POST');
+test('kortix.billing.checkout rejects with ENDPOINT_RETIRED and sends no request', async () => {
+  const create = await kortix.billing.checkout
+    .createSession({
+      tierKey: 'pro',
+      successUrl: 'https://app.example.com/success',
+      cancelUrl: 'https://app.example.com/cancel',
+    })
+    .catch((e: unknown) => e);
+  expect(create).toBeInstanceOf(ApiError);
+  expect((create as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.checkout.confirmSession('cs_123');
-  expect(last().url).toContain('/billing/confirm-checkout-session');
-  expect(last().method).toBe('POST');
+  const confirm = await kortix.billing.checkout.confirmSession('cs_123').catch((e: unknown) => e);
+  expect(confirm).toBeInstanceOf(ApiError);
+  expect((confirm as ApiError).code).toBe('ENDPOINT_RETIRED');
+  expect(calls).toEqual([]);
 });
 
 test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/proration', async () => {
@@ -738,15 +900,33 @@ test('kortix.billing.subscription covers portal/cancel/reactivate/downgrade/pror
   await kortix.billing.subscription.reactivate();
   expect(last().url).toContain('/billing/reactivate-subscription');
 
-  await kortix.billing.subscription.scheduleDowngrade('starter');
-  expect(last().url).toContain('/billing/schedule-downgrade');
+  const downgrade = await kortix.billing.subscription.scheduleDowngrade('starter').catch((e: unknown) => e);
+  expect((downgrade as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.subscription.cancelScheduledChange();
-  expect(last().url).toContain('/billing/cancel-scheduled-change');
+  const cancelChange = await kortix.billing.subscription.cancelScheduledChange().catch((e: unknown) => e);
+  expect((cancelChange as ApiError).code).toBe('ENDPOINT_RETIRED');
 
-  await kortix.billing.subscription.prorationPreview('price_123');
-  expect(last().url).toContain('/billing/proration-preview?new_price_id=price_123');
-  expect(last().method).toBe('GET');
+  const proration = await kortix.billing.subscription.prorationPreview('price_123').catch((e: unknown) => e);
+  expect((proration as ApiError).code).toBe('ENDPOINT_RETIRED');
+});
+
+test('kortix.billing.setPlan posts the monthly amount to /billing/plan', async () => {
+  await kortix.billing.setPlan({
+    monthlyUsd: 100,
+    successUrl: 'https://app.example.com/ok',
+    cancelUrl: 'https://app.example.com/no',
+  });
+  expect(last().url).toContain('/billing/plan');
+  expect(last().method).toBe('POST');
+});
+
+test('kortix.billing.acceptEnterpriseOffer posts to /billing/enterprise-offer/checkout', async () => {
+  await kortix.billing.acceptEnterpriseOffer({
+    successUrl: 'https://app.example.com/ok',
+    cancelUrl: 'https://app.example.com/no',
+  });
+  expect(last().url).toContain('/billing/enterprise-offer/checkout');
+  expect(last().method).toBe('POST');
 });
 
 test('kortix.billing.credits covers purchase + auto-topup get/configure', async () => {
@@ -861,6 +1041,89 @@ function mockTwoSessionSandboxes() {
   }) as unknown as typeof fetch;
 }
 
+test('ensureReady names the runtime session from runtime_session_id first', async () => {
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/sessions/SESS-NEUTRAL/start')) {
+      return jsonResponse({
+        ...sessionStartPayload('sb-neutral', ''),
+        runtime_session_id: 'rs-neutral',
+        opencode_session_id: null,
+      });
+    }
+    return jsonResponse({ ok: true });
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k.session('PROJ', 'SESS-NEUTRAL').ensureReady();
+  expect(ready.runtimeSessionId).toBe('rs-neutral');
+  expect(ready.opencodeSessionId).toBe('rs-neutral');
+});
+
+function runningSessionRow(sessionId: string, overrides: Record<string, unknown> = {}) {
+  return {
+    session_id: sessionId,
+    project_id: 'PROJ',
+    account_id: 'ACCT',
+    agent_name: 'agent',
+    status: 'running',
+    sandbox_id: 'sbx-row',
+    sandbox_provider: 'platinum',
+    sandbox_url: 'http://test.local/v1/p/sbx-row/8000',
+    runtime_session_id: 'rs-row',
+    opencode_session_id: 'rs-row',
+    metadata: {},
+    created_at: '2026-10-13T00:00:00.000Z',
+    updated_at: '2026-10-13T00:00:00.000Z',
+    ...overrides,
+  } as unknown as ProjectSession;
+}
+
+test('ensureReady adopts a running session row without calling /start', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-RUNNING')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-RUNNING') });
+  expect(startCalls).toEqual([]);
+  expect(ready.runtimeSessionId).toBe('rs-row');
+  expect(ready.sandboxId).toBe('sbx-row');
+});
+
+test('ensureReady never adopts the row of another session', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-MINE')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-SOMEONE-ELSE') });
+  expect(startCalls).toHaveLength(1);
+  expect(ready.sandboxId).toBe('sb-start');
+});
+
+test('ensureReady still calls /start for a row that is not running', async () => {
+  const startCalls: string[] = [];
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = requestUrl(input);
+    if (url.includes('/start')) startCalls.push(url);
+    return jsonResponse(sessionStartPayload('sb-start', 'rs-start'));
+  }) as unknown as typeof fetch;
+  const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
+  const ready = await k
+    .session('PROJ', 'SESS-ROW-STOPPED')
+    .ensureReady({ session: runningSessionRow('SESS-ROW-STOPPED', { status: 'stopped' }) });
+  expect(startCalls).toHaveLength(1);
+  expect(ready.runtimeSessionId).toBe('rs-start');
+});
+
 test('two session handles resolve independent sandboxes: A.send never crosses to B (or back)', async () => {
   globalThis.fetch = mockTwoSessionSandboxes();
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
@@ -871,16 +1134,15 @@ test('two session handles resolve independent sandboxes: A.send never crosses to
   await a.ensureReady();
   await b.ensureReady(); // resolves AFTER a — guards against shared sandbox state
 
+  // A prompt is a durable row in the session's own inbox (W5 E4).
   await a.send('hello from A');
-  const aPromptCall = calls.find((c) => c.url.includes('/message'));
-  expect(aPromptCall?.url).toContain('/p/sb-A/8000');
-  expect(aPromptCall?.url).not.toContain('sb-B');
+  const aPromptCall = calls.find((c) => c.url.endsWith('/prompts'));
+  expect(aPromptCall?.url).toContain('/projects/PROJ/sessions/SESS-A/prompts');
 
   calls.length = 0;
   await b.send('hello from B');
-  const bPromptCall = calls.find((c) => c.url.includes('/message'));
-  expect(bPromptCall?.url).toContain('/p/sb-B/8000');
-  expect(bPromptCall?.url).not.toContain('sb-A');
+  const bPromptCall = calls.find((c) => c.url.endsWith('/prompts'));
+  expect(bPromptCall?.url).toContain('/projects/PROJ/sessions/SESS-B/prompts');
 
   calls.length = 0;
   await a.abort();
@@ -919,15 +1181,16 @@ test('send applies persisted session defaults when the OpenCode pin came from a 
   await k.session('PROJ', 'SESS-INHERITED').send('hello from inherited state');
 
   const promptCall = calls.find(
-    (call) =>
-      call.url.includes('/p/sb-inherited/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-INHERITED/prompts') && call.method === 'POST',
   );
   expect(promptCall?.body).toMatchObject({
-    agent: 'kortix',
-    model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
+    overrides: { agent: 'kortix', model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } },
     parts: [{ type: 'text', text: 'hello from inherited state' }],
+    // Minted here with no transcript to place it against: the server places it.
+    remint_on_delivery: true,
   });
+  expect(promptCall?.body.message_id).toMatch(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+  expect(typeof promptCall?.body.client_message_id).toBe('string');
 });
 
 test('changeModel invalidates the persisted default before the next send', async () => {
@@ -972,17 +1235,11 @@ test('changeModel invalidates the persisted default before the next send', async
   await handle.send('after change');
 
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-model-change/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-MODEL-CHANGE/prompts') && call.method === 'POST',
   );
-  expect(prompts.map((call) => call.body)).toEqual([
-    expect.objectContaining({
-      model: { providerID: 'kortix', modelID: 'glm-5.3-flash' },
-    }),
-    expect.objectContaining({
-      model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' },
-    }),
+  expect(prompts.map((call) => call.body.overrides)).toEqual([
+    expect.objectContaining({ model: { providerID: 'kortix', modelID: 'glm-5.3-flash' } }),
+    expect.objectContaining({ model: { providerID: 'kortix', modelID: 'gpt-5.6-mini' } }),
   ]);
 });
 
@@ -1046,23 +1303,12 @@ test('per-call and handle prompt choices override persisted session defaults', a
   });
 
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-overrides/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-OVERRIDES/prompts') && call.method === 'POST',
   );
-  expect(prompts.map((call) => call.body)).toEqual([
-    expect.objectContaining({
-      model: { providerID: 'persisted', modelID: 'model' },
-      agent: 'persisted-agent',
-    }),
-    expect.objectContaining({
-      model: { providerID: 'sticky', modelID: 'model' },
-      agent: 'sticky-agent',
-    }),
-    expect.objectContaining({
-      model: { providerID: 'per-call', modelID: 'model' },
-      agent: 'per-call-agent',
-    }),
+  expect(prompts.map((call) => call.body.overrides)).toEqual([
+    { model: { providerID: 'persisted', modelID: 'model' }, agent: 'persisted-agent' },
+    { model: { providerID: 'sticky', modelID: 'model' }, agent: 'sticky-agent' },
+    { model: { providerID: 'per-call', modelID: 'model' }, agent: 'per-call-agent' },
   ]);
   expect(
     calls.filter(
@@ -1108,14 +1354,11 @@ test('a failed persisted-default read is retried by the next send', async () => 
 
   expect(sessionReads).toBe(4);
   const prompts = calls.filter(
-    (call) =>
-      call.url.includes('/p/sb-default-retry/8000/session/shared-snapshot-pin/message') &&
-      call.method === 'POST',
+    (call) => call.url.endsWith('/projects/PROJ/sessions/SESS-DEFAULT-RETRY/prompts') && call.method === 'POST',
   );
   expect(prompts).toHaveLength(1);
   expect(prompts[0]?.body).toMatchObject({
-    model: { providerID: 'persisted', modelID: 'model' },
-    agent: 'persisted-agent',
+    overrides: { model: { providerID: 'persisted', modelID: 'model' }, agent: 'persisted-agent' },
     parts: [{ type: 'text', text: 'second' }],
   });
 });
@@ -1172,7 +1415,7 @@ test('sandboxPortUrl() throws SessionNotReadyError before ensureReady()', () => 
 
 // health() is a liveness POLL, not an action gated on the runtime being up —
 // pollers (e.g. a header dot ticking every 15s on a fresh inline
-// `kortix.session(...)` handle, see apps/whitelabel-demo/session-header.tsx)
+// `kortix.session(...)` handle, see apps/white-label/lumen/src/components/workbench/session-header.tsx)
 // must be able to call it before the session has ever resolved a runtime, so
 // it degrades to the graceful "no URL yet" shape instead of throwing.
 test('health() resolves gracefully (ok: false) before ensureReady() instead of throwing', async () => {
@@ -1196,9 +1439,9 @@ test("health() resolves against the handle's own runtime URL once ready", async 
   expect(calls.some((c) => c.url.includes('/p/sb-A/8000/kortix/health'))).toBe(true);
 });
 
-// ── shared session-runtime registry (regression: apps/whitelabel-demo's
+// ── shared session-runtime registry (regression: apps/white-label/lumen's
 // session-header.tsx polls health() on a FRESH `kortix.session(...)` handle
-// every 15s, and preview-panel.tsx calls previewUrl() in render on a handle
+// every 15s, and a preview panel calls previewUrl() in render on a handle
 // that never itself called ensureReady() — both used to throw
 // SessionNotReadyError forever because a handle's `_ready` cache never
 // survived past that one instance) ──────────────────────────────────────────
@@ -1250,8 +1493,8 @@ test('restart clears the registry entry so a subsequent send re-resolves the run
 
   calls.length = 0;
   await handle.send('hello again');
-  const promptCall = calls.find((c) => c.url.includes('/message'));
-  expect(promptCall?.url).toContain('/p/sb-reg2-new/8000');
+  expect(calls.some((c) => c.url.endsWith('/projects/PROJ/sessions/SESS-REG-2/prompts'))).toBe(true);
+  // `send` resolves the runtime first, so the restarted session re-resolves.
   expect(startCount).toBe(2);
 });
 
@@ -1486,6 +1729,7 @@ test('ensureReady() polls through provisioning/starting until the runtime report
   const k = createKortix({ backendUrl: 'http://test.local', getToken: async () => 'tok' });
   const ready = await k.session('PROJ', 'SESS-POLL').ensureReady({ readyTimeoutMs: 10_000 });
   expect(ready.opencodeSessionId).toBe('ocs-poll');
+  expect(ready.runtimeSessionId).toBe('ocs-poll');
   expect(ready.sandboxId).toBe('sb-poll');
   expect(polls).toBeGreaterThanOrEqual(3);
 });
@@ -1703,4 +1947,15 @@ test('the facade carries the connect owner through to both connect surfaces', as
   await kortix.project('PID123').setupLinks.requestConnector({ slug: 'slack-1', owner: 'me' });
   expect(last().url).toBe('http://test.local/projects/PID123/connect-requests');
   expect(last().body).toEqual({ slug: 'slack-1', owner: 'me' });
+});
+
+test('project-bound session retains both ids for transcript', async () => {
+  await kortix.project('BOUND_PROJECT').session('BOUND_SESSION').transcript();
+  expect(last().url).toContain('/projects/BOUND_PROJECT/sessions/BOUND_SESSION/transcript');
+});
+
+test('project agent identities retains its bound project id', async () => {
+  await kortix.project('BOUND_PROJECT').agentIdentities();
+  expect(last().url).toBe('http://test.local/projects/BOUND_PROJECT/agent-identities');
+  expect(last().method).toBe('GET');
 });

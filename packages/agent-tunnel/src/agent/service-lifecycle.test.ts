@@ -6,14 +6,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   MAX_SERVICE_LOG_BYTES,
-  TERMINAL_SERVICE_EXIT_CODE,
-  getServicePaths,
+    getServicePaths,
   renderLaunchdPlist,
   renderSystemdUnit,
   renderWindowsPowerShellScript,
   rotateServiceLogs,
 } from './service';
 import { collapseRepeatedLines } from './log-format';
+import { AGENT_VERSION } from './agent';
 import { probeCredentials } from './credential-probe';
 
 const CLI_PATH = resolve(import.meta.dir, 'cli.ts');
@@ -27,30 +27,30 @@ afterEach(async () => {
   temporaryHomes.clear();
 });
 
-describe('supervisor restart policy', () => {
-  test('launchd restarts only on a failure exit', () => {
+describe('supervisor restart policy (R3)', () => {
+  test('launchd restarts on every exit, throttled to 10 s', () => {
     const plist = renderLaunchdPlist('exec /bin/echo tunnel');
-    expect(plist).toContain('<key>SuccessfulExit</key>');
-    expect(plist).toContain('<false/>');
-    // The old unconditional form is what produced the endless respawn loop.
-    expect(plist).not.toContain('<key>KeepAlive</key>\n  <true/>');
+    expect(plist).toContain('<key>KeepAlive</key>\n  <true/>');
+    expect(plist).toContain('<key>ThrottleInterval</key>');
+    expect(plist).not.toContain('SuccessfulExit');
   });
 
-  test('systemd restarts only on a failure exit', () => {
+  test('systemd restarts on every exit', () => {
     const unit = renderSystemdUnit('exec /bin/echo tunnel');
-    expect(unit).toContain('Restart=on-failure');
-    expect(unit).not.toContain('Restart=always');
+    expect(unit).toContain('Restart=always');
+    expect(unit).not.toContain('Restart=on-failure');
   });
 
-  test('windows loop breaks on the terminal exit code', () => {
+  test('the windows loop never breaks', () => {
     const script = renderWindowsPowerShellScript({
       command: 'node',
       args: ['agent-tunnel.js', 'run', '--service'],
     });
-    expect(script).toContain(`if ($LASTEXITCODE -eq ${TERMINAL_SERVICE_EXIT_CODE}) { break }`);
+    expect(script).not.toContain('break');
+    expect(script).toContain('while ($true)');
   });
 
-  test('run --service exits terminally when no credential is saved', async () => {
+  test('run --service without a credential stays alive and waits for one (R2)', async () => {
     const home = await mkdtemp(join(tmpdir(), 'agent-tunnel-nocred-'));
     temporaryHomes.add(home);
 
@@ -59,10 +59,16 @@ describe('supervisor restart policy', () => {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     children.add(child);
-    const exitCode = await new Promise<number | null>((r) => child.once('exit', r));
+    let stdout = '';
+    child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+    const exited = await Promise.race([
+      new Promise<boolean>((r) => child.once('exit', () => r(true))),
+      Bun.sleep(2_500).then(() => false),
+    ]);
 
-    // A non-zero exit here would make the supervisor respawn it forever.
-    expect(exitCode).toBe(TERMINAL_SERVICE_EXIT_CODE);
+    // Exiting here would only make the always-restarting supervisor spin.
+    expect(exited).toBe(false);
+    expect(stdout).toContain('waiting for a credential');
   }, 30_000);
 });
 
@@ -99,6 +105,51 @@ describe('service log hygiene', () => {
 });
 
 describe('credential probe and the single-agent rule', () => {
+  test('every relay socket opens through openRelaySocket', () => {
+    const src = resolve(import.meta.dir, '..');
+    const raw: string[] = [];
+    for (const file of new Bun.Glob('**/*.ts').scanSync(src)) {
+      if (file.endsWith('.test.ts')) continue;
+      readFileSync(join(src, file), 'utf8').split('\n').forEach((line, i) => {
+        if (/\bnew WebSocket\(/.test(line) && !/^\s*(\/\/|\*)/.test(line)) raw.push(`${file}:${i + 1}`);
+      });
+    }
+    expect(raw).toEqual([]);
+  });
+
+  test('auth_ok is valid, though Bun fires close inside socket.close()', async () => {
+    let userAgent: string | null = null as string | null;
+    const server = Bun.serve({
+      port: 0,
+      fetch(request, server) {
+        // Cloudflare refuses an upgrade without a User-Agent, and Bun sends none by default.
+        userAgent = request.headers.get('user-agent');
+        return server.upgrade(request) ? undefined : new Response('no upgrade', { status: 400 });
+      },
+      websocket: {
+        message(ws) {
+          ws.send(JSON.stringify({ type: 'auth_ok' }));
+        },
+      },
+    });
+
+    try {
+      const result = await probeCredentials(
+        {
+          apiUrl: `http://127.0.0.1:${server.port}/v1/tunnel`,
+          tunnelId: '00000000-0000-4000-8000-000000000001',
+          token: 'kortix_tnl_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          wsPath: '/ws',
+        } as never,
+        { timeoutMs: 5_000 },
+      );
+      expect(result).toBe('valid');
+      expect(userAgent).toBe(`kortix-agent-tunnel/${AGENT_VERSION}`);
+    } finally {
+      server.stop(true);
+    }
+  }, 30_000);
+
   test('treats being replaced as proof the credential is valid', async () => {
     // The relay only replaces a socket it already registered, and registration
     // happens after a successful handshake.
@@ -241,8 +292,17 @@ describe('status output', () => {
     child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
     await new Promise((r) => child.once('exit', r));
 
-    const status = JSON.parse(stdout) as { paired: boolean; capabilities: string[] };
+    const status = JSON.parse(stdout) as {
+      paired: boolean;
+      capabilities: string[];
+      access: { mode: string };
+      service: { upToDate?: boolean; enabled?: boolean };
+    };
     expect(status.paired).toBe(true);
     expect(status.capabilities).toEqual(['filesystem', 'shell']);
+    // A machine paired before access control existed stays always-allowed.
+    expect(status.access.mode).toBe('always');
+    // Not installed, so it cannot match what an install would write now.
+    expect(status.service.upToDate).toBe(false);
   }, 30_000);
 });

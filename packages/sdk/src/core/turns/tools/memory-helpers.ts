@@ -9,9 +9,17 @@ export const MEMORY_VERBS: Record<string, string> = {
   rename: 'Rename',
 };
 
+/**
+ * A memory path relative to the memory root. The root is `memory/` in the
+ * root project layout and `.kortix/memory/` in projects created before 2026-09;
+ * only that exact folder is stripped (never `memory-notes/`).
+ */
 export function memoryRelPath(p?: string): string {
   if (!p) return '';
-  const rel = p.replace(/^\.kortix\/memory\/?/, '').replace(/\/$/, '');
+  const rel = p
+    .replace(/^\.\//, '')
+    .replace(/^(?:\.kortix\/)?memory(?:\/|$)/, '')
+    .replace(/\/$/, '');
   return rel || 'memory';
 }
 

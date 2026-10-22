@@ -1,84 +1,60 @@
 'use client';
 
+import { SettingsRail } from './settings-rail';
+
+import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
 import {
   Breadcrumb,
   BreadcrumbItem,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Button } from '@/components/ui/button';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { Modal, ModalClose, ModalContent, ModalTitle } from '@/components/ui/modal';
-import { SettingsSectionHeader } from '@/components/ui/settings-section-header';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { SETTINGS_SIDEBAR_WIDTH_PX } from '@/features/accounts/hub/account-settings-shell';
-import { Close } from '@/features/icon/icons/close';
-import { UpgradesView } from '@/features/workspace/customize/migrate-to-v2/upgrade-view';
+} from '@kortix/ui/breadcrumb';
+import { Button } from '@kortix/ui/button';
+import { Modal, ModalClose, ModalContent, ModalTitle } from '@kortix/ui/modal';
+import { SettingsSectionHeader } from '@kortix/ui/settings-section-header';
+import { Tabs, TabsContent } from '@kortix/ui/tabs';
+import { SETTINGS_SIDEBAR_WIDTH_PX } from '@kortix/ui/internal/account-hub/account-settings-shell';
+import { Close } from '@kortix/ui/icons';
+import { UpgradesView } from '@kortix/ui/customize/migrate-to-v2/upgrade-view';
 import {
   SettingsNavProvider,
   type SettingsNav,
-} from '@/features/workspace/shared/settings-nav-context';
-import { useIsMobile } from '@/hooks/utils';
+} from '@kortix/ui/internal/layout/settings-nav-context';
+import { useIsMobile, cn, hasOpenFloatingLayer, hasOpenNestedDialog } from '@kortix/ui';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import {
-  CUSTOMIZE_SECTION_GATE_ACTIONS,
-  isCustomizeSectionVisible,
-  type CustomizeSection,
-  type ProjectAction,
-} from '@/lib/project-actions';
-import { useProjectCans, type CanResult } from '@/lib/use-project-can';
-import { cn } from '@/lib/utils';
-import { hasOpenFloatingLayer, hasOpenNestedDialog } from '@/lib/z-stack';
-import { hubTarget } from '@/stores/account-panel-store';
-import { useSettingsPanelStore, type MembersTab } from '@/stores/settings-panel-store';
-import { getProjectDetail, type KortixProject } from '@kortix/sdk';
+import { useSettingsPanelStore, type MembersTab } from '@kortix/ui/internal/stores/settings-panel-store';
+import { getProjectDetail } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
-import { ArrowLeftIcon, ArrowUpRightIcon } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { useCallback, useEffect, useMemo } from 'react';
-import { isRailItemActive, railGroups } from './rail';
-import { SettingsRailCopyProvider, type SettingsRailChromeCopy } from './rail-copy-context';
-import { DEFAULT_SETTINGS_TAB, type SettingsTab } from './settings-tabs';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { isRailItemActive, railGroups } from '@kortix/ui/customize/settings/rail';
+import { SettingsRailCopyProvider, type SettingsRailChromeCopy } from '@kortix/ui/customize/settings/rail-copy-context';
+import { DEFAULT_SETTINGS_TAB, type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
 import {
-  accountRoleLabel,
   DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
   useAccountMemberships,
   type AccountMembership,
   type AccountMembershipsCopy,
 } from './tabs/account-memberships';
 import { AppearanceTab } from './tabs/appearance-tab';
+import { ComputerTab } from './tabs/computer-tab';
 import { ConnectedAccountsTab } from './tabs/connected-tab';
 import { CreditsTab } from './tabs/credits-tab';
-import { ExperimentalTab } from './tabs/experimental-tab';
-import { GeneralTab } from './tabs/general-tab';
+import { ExperimentalTab } from '@kortix/ui/customize/settings/tabs/experimental-tab';
+import { GeneralTab } from '@kortix/ui/customize/settings/tabs/general-tab';
+import { McpTab } from './tabs/mcp-tab';
 import { PlanTab } from './tabs/plan-tab';
 import { PreferencesTab } from './tabs/preferences-tab';
 import { ProfileTab } from './tabs/profile-tab';
-import { SandboxTab } from './tabs/sandbox-tab';
+import { SandboxTab } from '@kortix/ui/customize/settings/tabs/sandbox-tab';
 import { SecurityTab } from './tabs/security-tab';
 import { SessionsTab } from './tabs/sessions-tab';
-import { SnapshotsTab } from './tabs/snapshots-tab';
-import { TokensTab } from './tabs/tokens-tab';
-import type { RailGroup, RailItem } from './type';
+import { SnapshotsTab } from '@kortix/ui/customize/settings/tabs/snapshots-tab';
+import { TokensTab } from '@kortix/ui/customize/settings/tabs/tokens-tab';
+import type { RailGroup, RailItem } from '@kortix/ui/customize/settings/type';
 import { useSettingsAccountId } from './use-settings-account-id';
 
-/**
- * The tabs that still render with no project open.
- *
- * `ACCOUNT_TAB_PERMISSION` — the IAM leaf each account-scoped tab gated on
- * (`account.write`, `role.create`, `audit.read`) — is gone with the tabs it
- * gated. Organization, Billing, Usage, Groups, Roles, Identity, Audit log and
- * API keys left the overlay for `/accounts/[id]`, which runs those same probes
- * itself (`ACCOUNT_PERMISSION_PROBES` in that page). The batched probe this
- * panel used to fire on every open went with them: nothing left in the rail
- * reads an account-level permission.
- *
- * The three survivors are user-scoped, not account-scoped — a profile, a
- * preference, and a list of linked identities all belong to the signed-in
- * person, so none of them needs a project OR an account permission.
- */
 export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   'profile',
   'security',
@@ -99,6 +75,9 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // Tokens pane resolves it (`useSettingsAccountId`), so it renders with or
   // without a project too.
   'plan',
+  // The MCP URL is one per person and reaches every project they can open.
+  // `computer` is NOT here: pairing names the project it starts from.
+  'mcp',
   // `workspace`, `sandbox`, `feature-flags` and `upgrades` are deliberately ABSENT. They
   // are the project-scoped tabs in this overlay (`settings-tabs.ts` explains
   // why each came back), so leaving them out of this list is exactly what
@@ -107,72 +86,25 @@ export const ACCOUNT_SCOPED_SETTINGS_TABS: readonly SettingsTab[] = [
   // there is no project to name.
 ];
 
-/**
- * The three Workspace rows that gate on an IAM read leaf, keyed to the
- * `CustomizeSection` the retired config page gated the same pane on — the
- * section keys outlived that page and live in `lib/project-actions.ts`.
- * `workspace` (General) is not here: every
- * member may see the workspace's name and icon, and `GeneralTab` gates its own
- * controls on write.
- */
-const PROJECT_GATED_TABS: Partial<Record<SettingsTab, CustomizeSection>> = {
-  sandbox: 'sandbox',
-  'feature-flags': 'feature-flags',
-  upgrades: 'upgrade',
-};
-
 export interface SettingsTabAllowedParams {
   hasProject: boolean;
-  /**
-   * The caller's resolved project capabilities, `action -> allowed`. Read only
-   * for the tabs in `PROJECT_GATED_TABS`; an absent function hides those
-   * tabs. The container answers through `probeAdmits`, which is fail-open
-   * while a probe is in flight.
-   */
-  canProject?: (action: ProjectAction) => boolean;
-}
-
-/**
- * Whether one capability probe admits its row.
- *
- * Fail-open while the probe is in flight — the rule the retired config page
- * applied to the same rows: a row disappears only on a denial actually
- * received. It is not tidiness. The SDK reports an unresolved probe as
- * `allowed: false, isLoading: true`, and `SettingsPanel` bounces an open
- * dialog to `DEFAULT_SETTINGS_TAB` the moment its active tab is not in the
- * rail — so a deep link to `/settings/sandbox` read as `allowed === true`
- * landed on Profile every time, before the answer could arrive
- * (`12-sandbox-templates.spec.ts`, `19-feature-flags-ui.spec.ts` in CI).
- * Pinned by `settings-panel.test.tsx`.
- */
-export function probeAdmits(probe: Pick<CanResult, 'allowed' | 'isLoading'> | undefined): boolean {
-  if (!probe) return true;
-  return probe.isLoading || probe.allowed;
 }
 
 /**
  * Whether the overlay may show a tab at all.
  *
- * One rule left, and every surviving tab clears it: Profile, Preferences and
- * Connected accounts are user-scoped, so they render with or without a
- * project. The per-section IAM probe this used to run
- * (`GATED_TAB_SECTION` -> `isCustomizeSectionVisible`) went with the
- * project-configuration tabs it gated. Most of those are capability pages now
- * (`capabilities/`), which run their own probes; the four that came back to
- * this overlay are gated here again, by `PROJECT_GATED_TABS` above.
+ * One rule: Profile, Preferences and the other personal tabs render with or
+ * without a project; every other tab needs one. The per-tab IAM gate that
+ * used to sit here (`PROJECT_GATED_TABS`) went with Sandbox templates,
+ * Feature flags and Upgrades, which left the rail for the Customize Settings
+ * tab (`RETIRED_RAIL_ITEMS`), where the capability rule gates them.
  *
  * The function stays because the CONCEPT stays: a tab added here must declare
  * whether it needs a project, and the command palette mirrors this decision
  * (`isSettingsTabOfferable` in `settings-palette-items.ts`).
  */
 export function isSettingsTabAllowed(tab: SettingsTab, params: SettingsTabAllowedParams): boolean {
-  if (!params.hasProject && !ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab)) return false;
-  const gate = PROJECT_GATED_TABS[tab];
-  if (gate) {
-    if (!params.canProject) return false;
-    return isCustomizeSectionVisible(gate, params.canProject);
-  }
-  return true;
+  return params.hasProject || ACCOUNT_SCOPED_SETTINGS_TABS.includes(tab);
 }
 
 export function buildSettingsPanelSettingsNav(state: {
@@ -211,6 +143,7 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
   // useSettingsNav() consumer — when membersTab changes, e.g. a deep link
   // opening straight to Invite.
   const membersTab = useSettingsPanelStore((s) => s.membersTab);
+  const paneRequested = useSettingsPanelStore((s) => s.paneRequested);
   const settingsNav = useMemo(
     () => buildSettingsPanelSettingsNav({ open, tab, membersTab }),
     [open, tab, membersTab],
@@ -231,17 +164,9 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
   // account-scoped tabs — see `ACCOUNT_SCOPED_SETTINGS_TABS` above.
   const resolvedAccountId = useSettingsAccountId(project?.account_id);
 
-  // The same batched probe the config page runs (`CUSTOMIZE_SECTION_GATE_ACTIONS`
-  // is a stable module constant, so the two share one React Query entry) —
-  // disabled without a project, since the target is then `undefined`.
-  const projectCans = useProjectCans(projectId, CUSTOMIZE_SECTION_GATE_ACTIONS);
-  const canProject = useCallback(
-    (action: ProjectAction) => probeAdmits(projectCans[action]),
-    [projectCans],
-  );
   const isTabAllowed = useCallback(
-    (t: SettingsTab) => isSettingsTabAllowed(t, { hasProject: !!projectId, canProject }),
-    [projectId, canProject],
+    (t: SettingsTab) => isSettingsTabAllowed(t, { hasProject: !!projectId }),
+    [projectId],
   );
 
   const groups = useMemo(() => {
@@ -297,7 +222,6 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
         onTabChange={setTab}
         onOpenChange={(next) => (next ? undefined : close())}
         isMobile={isMobile}
-        project={project}
         projectId={projectId}
         accountId={resolvedAccountId}
         groups={groups}
@@ -305,9 +229,12 @@ export function SettingsPanelBody({ projectId }: { projectId?: string }) {
         organizations={memberships.accounts}
         organizationCopy={organizationCopy}
         chrome={chrome}
-        modalTitle={
-          project ? tSettingsRail('projectTitle', { projectName: project.name }) : chrome.settings
-        }
+        startOnPane={paneRequested}
+        // The dialog is the personal settings shell wherever it opens from —
+        // inside a project too, where only the `workspace` pane knows the
+        // project exists (KRTX-1975): the accessible title stays "Settings",
+        // never "Settings — <project>".
+        modalTitle={chrome.settings}
       />
     </SettingsNavProvider>
   );
@@ -319,7 +246,6 @@ export interface SettingsPanelViewProps {
   onTabChange: (tab: SettingsTab) => void;
   onOpenChange: (open: boolean) => void;
   isMobile: boolean;
-  project: KortixProject | undefined;
   /** Required by the `workspace` pane, and by nothing else — see
    *  `SettingsPanelShellProps`. `undefined` outside a project, which is the
    *  same condition that filters that pane out. */
@@ -327,21 +253,13 @@ export interface SettingsPanelViewProps {
   accountId: string | undefined;
   groups: readonly RailGroup[];
   allItems: readonly RailItem[];
-  /**
-   * The organizations the person belongs to, drawn under the Personal group
-   * as links to each one's own settings surface. Members,
-   * billing, roles and audit live THERE, not in this overlay (Marko,
-   * 2026-09-03) — the overlay is personal, and this list is the way over.
-   *
-   * Since 2026-09-08 "over" is a swap between two modals, not a page load —
-   * there is no `/accounts` route any more. `ModalClose` closes this one and
-   * `HubLink` opens the account hub over the same page, one frame later.
-   * Optional so the shell stays renderable without a query client.
-   */
+
   organizations?: readonly AccountMembership[];
   organizationCopy: AccountMembershipsCopy;
   chrome: SettingsRailChromeCopy;
   modalTitle: string;
+  /** Mobile: open on the current tab's pane, not on the section list. */
+  startOnPane?: boolean;
 }
 
 export function SettingsPanelView({
@@ -350,7 +268,6 @@ export function SettingsPanelView({
   onTabChange,
   onOpenChange,
   isMobile,
-  project,
   projectId,
   accountId,
   groups,
@@ -359,6 +276,7 @@ export function SettingsPanelView({
   organizationCopy,
   chrome,
   modalTitle,
+  startOnPane,
 }: SettingsPanelViewProps) {
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
@@ -400,38 +318,16 @@ export function SettingsPanelView({
           organizations={organizations}
           organizationCopy={organizationCopy}
           chrome={chrome}
+          startOnPane={startOnPane}
         />
       </ModalContent>
     </Modal>
   );
 }
 
-/**
- * The shell takes no `project`, but it does take `projectId` again.
- *
- * `SettingsPanelView` takes `project` because it names the project in the
- * dialog's accessible title. Nothing inside the frame needs the whole entity.
- * The rail carried a `RelatedProjectsSwitcher` while the overlay held thirteen
- * project-configuration tabs; switching project from a dialog that holds
- * Profile, Preferences, Connected accounts and one workspace pane changes
- * nothing you can see in it, and the project sidebar's own switcher
- * (`project-sidebar/workspace-switcher.tsx`) is where that job lives.
- *
- * `projectId` was dropped on 2026-08-17, when the last pane that consumed it —
- * the Connected tab's project-scoped ChatGPT row — was removed. It is back on
- * 2026-09-01 for exactly ONE pane again: `workspace`, which renders
- * `tabs/general-tab.tsx` and needs the id to read and write the project.
- *
- * That pane cannot render without one, and it does not have to guard: the same
- * `hasProject` condition that leaves `projectId` undefined also filters the
- * `workspace` row out of the rail (`ACCOUNT_SCOPED_SETTINGS_TABS` above), so
- * `SettingsTabPane` is never asked for it. Every OTHER pane is still user- or
- * account-scoped, which is what keeps the dialog openable from Cmd+, anywhere
- * in the app.
- */
 export type SettingsPanelShellProps = Omit<
   SettingsPanelViewProps,
-  'open' | 'onOpenChange' | 'project' | 'modalTitle' | 'organizationCopy'
+  'open' | 'onOpenChange' | 'modalTitle' | 'organizationCopy'
 > & {
   organizationCopy?: AccountMembershipsCopy;
 };
@@ -447,6 +343,7 @@ export function SettingsPanelShell({
   organizations = [],
   organizationCopy = DEFAULT_ACCOUNT_MEMBERSHIPS_COPY,
   chrome,
+  startOnPane = false,
 }: SettingsPanelShellProps) {
   // A heading over a lone group labels nothing — it is the only group, and the
   // dialog's own title already says Settings. It comes back the moment a
@@ -454,6 +351,22 @@ export function SettingsPanelShell({
   // under the same rail — which is the only case where the label does work.
   const showGroupLabels = groups.length > 1 || organizations.length > 0;
   const activeItem = allItems.find((item) => isRailItemActive(item, tab));
+  // Mobile only: the list screen, or the pane screen. A caller that opened
+  // settings on a named tab lands on that pane.
+  const [mobilePane, setMobilePane] = useState(startOnPane);
+  const railProps = { groups, showGroupLabels, organizations, organizationCopy, chrome };
+  const closeButton = (
+    <ModalClose asChild>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        className="kx-settings-mobile-close text-muted-foreground hit-area-2 shrink-0"
+        aria-label={chrome.close}
+      >
+        <Close className="text-foreground size-4 stroke-1" />
+      </Button>
+    </ModalClose>
+  );
 
   return (
     /* `activationMode="manual"`: Radix defaults to "automatic", which SELECTS
@@ -462,7 +375,7 @@ export function SettingsPanelShell({
        and fires that pane's queries — a cost only keyboard users pay, and one
        neither tsc nor the suite can see. WAI-ARIA's own guidance is manual
        activation whenever selecting a tab has a side effect. Arrow moves
-       focus; Enter/Space selects. Pinned by `settings-panel-a11y.test.ts`. */
+       focus; Enter/Space selects. */
     <SettingsRailCopyProvider groups={groups} chrome={chrome}>
       <Tabs
         value={tab}
@@ -474,156 +387,40 @@ export function SettingsPanelShell({
         // measure the same column.
         style={isMobile ? undefined : { gridTemplateColumns: `${SETTINGS_SIDEBAR_WIDTH_PX}px 1fr` }}
       >
-        {isMobile ? (
-          <nav
-            aria-label={chrome.settings}
-            className="kx-titlebar-row kx-titlebar-band-height kx-settings-mobile-titlebar border-border/60 flex h-auto shrink-0 items-center border-b bg-inherit"
-            data-sidebar-collapsed=""
-          >
-            <FadedScrollArea
-              orientation="horizontal"
-              fadeColor="from-background"
-              className="kx-settings-mobile-scroll min-w-0 flex flex-1 items-center py-2"
-            >
-              <TabsList orientation="horizontal" className="kx-settings-mobile-tabs w-fit gap-1 px-2">
-                {allItems.map((item) => (
-                  <TabsTrigger
-                    key={item.tab}
-                    value={item.tab}
-                    className="w-auto shrink-0 gap-2.5 px-3 whitespace-nowrap"
-                  >
-                    <RailTriggerBody item={item} horizontal />
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-              {organizations.length > 0
-                ? organizations.map((account) => (
-                    <ModalClose asChild key={account.account_id}>
-                      <HubLink
-                        to={hubTarget(account.account_id)}
-                        className="kx-settings-mobile-org-link text-muted-foreground hover:text-foreground flex h-8 w-auto shrink-0 items-center gap-1 px-3 text-sm whitespace-nowrap transition-colors"
-                      >
-                        {account.name?.trim() || organizationCopy.fallbackAccountName}
-                        <ArrowUpRightIcon aria-hidden className="size-3.5 shrink-0 opacity-60" />
-                      </HubLink>
-                    </ModalClose>
-                  ))
-                : null}
-            </FadedScrollArea>
-            <div className="flex shrink-0 items-center px-3">
-              <ModalClose asChild>
+        <SettingsRail
+          isMobile={isMobile}
+          mobilePane={mobilePane}
+          railProps={railProps}
+          closeButton={closeButton}
+          onPick={() => setMobilePane(true)}
+        />
+        <main
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-inherit',
+            isMobile && !mobilePane && 'hidden',
+          )}
+        >
+          {isMobile ? (
+            mobilePane && (
+              <header
+                className="kx-titlebar-row kx-titlebar-band-height kx-settings-mobile-titlebar flex h-11 shrink-0 items-center gap-1 border-b px-2"
+                data-sidebar-collapsed=""
+              >
                 <Button
                   variant="ghost"
-                  size="icon-sm"
-                  className="kx-settings-mobile-close text-muted-foreground hit-area-2 shrink-0"
-                  aria-label={chrome.close}
+                  size="xs"
+                  className={backPillClass()}
+                  onClick={() => setMobilePane(false)}
                 >
-                  <Close className="text-foreground size-4 stroke-1" />
+                  <BackPillBody label={chrome.settings} />
                 </Button>
-              </ModalClose>
-            </div>
-          </nav>
-        ) : (
-          /* The settings sidebar, as `/accounts/[id]` draws it
-           (`accounts/hub/account-settings-sidebar.tsx`): one column — the
-           `Back to app` row on top, then the rows. Same background as the
-           content — the hairline is the only seam. Rows take the `xs` button
-           footprint (28px, 13px type, `rounded-sm`), in that sidebar's
-           `ROW_CLASS` dialect keyed on the Radix `data-state` the trigger
-           carries instead of `data-active`. */
-          <aside className="flex min-h-0 flex-col border-r bg-inherit">
-            <div className="kx-titlebar-row kx-titlebar-band-height kx-overlay-sidebar-titlebar flex h-11 shrink-0 items-center justify-start px-2">
-              <ModalClose asChild>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground gap-1 text-xs"
-                >
-                  <ArrowLeftIcon className="size-4 shrink-0" />
-                  {chrome.backToApp}
-                </Button>
-              </ModalClose>
-            </div>
-
-            <nav
-              aria-label={chrome.settings}
-              className="flex min-h-0 flex-1 [scrollbar-width:none] flex-col gap-4 overflow-y-auto px-2 pb-2 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {groups.map((group) => (
-                <div key={group.label}>
-                  {showGroupLabels ? (
-                    <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
-                      {group.label}
-                    </div>
-                  ) : null}
-                  <TabsList orientation="vertical" className="w-full">
-                    {group.items.map((item) => (
-                      <TabsTrigger
-                        key={item.tab}
-                        value={item.tab}
-                        size="md"
-                        className={cn(
-                          'gap-2 px-2.5 py-1 font-normal transition-none has-[>svg]:px-2.5',
-                          'text-foreground data-[state=inactive]:text-foreground hover:bg-hover hover:text-foreground',
-                          'data-[state=active]:bg-active data-[state=active]:font-medium',
-                          '[&_svg]:text-muted-foreground data-[state=active]:[&_svg]:text-foreground',
-                        )}
-                      >
-                        <RailTriggerBody item={item} />
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </div>
-              ))}
-
-              {organizations.length > 0 ? (
-                /* The organizations the person belongs to. Each row LEAVES the
-                 overlay for that organization's own settings page — members,
-                 billing, roles, audit all live there — so it is a link that
-                 closes the dialog, not a tab. Same row footprint as the tabs
-                 above so the rail reads as one list with two kinds of row. */
-                <div>
-                  <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
-                    {organizationCopy.title}
-                  </div>
-                  <ul className="flex flex-col gap-0.5">
-                    {organizations.map((account) => (
-                      <li key={account.account_id}>
-                        <ModalClose asChild>
-                          <HubLink
-                            to={hubTarget(account.account_id)}
-                            className={cn(
-                              'group/org flex w-full items-center gap-2 rounded-sm px-2.5 py-1 text-sm',
-                              'text-foreground hover:bg-hover transition-colors',
-                            )}
-                          >
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate">
-                                {account.name?.trim() || organizationCopy.fallbackAccountName}
-                              </span>
-                              {accountRoleLabel(account.account_role, organizationCopy) ? (
-                                <span className="text-muted-foreground block truncate text-xs">
-                                  {accountRoleLabel(account.account_role, organizationCopy)}
-                                </span>
-                              ) : null}
-                            </span>
-                            <ArrowUpRightIcon
-                              aria-hidden
-                              className="text-muted-foreground/60 group-hover/org:text-foreground size-3.5 shrink-0 transition-colors"
-                            />
-                          </HubLink>
-                        </ModalClose>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </nav>
-          </aside>
-        )}
-
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-inherit">
-          {isMobile ? null : (
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                  {activeItem?.label}
+                </span>
+                {closeButton}
+              </header>
+            )
+          ) : (
             /* The 44px `Settings / <pane>` bar the account shell puts over its
              content (`account-settings-shell.tsx`). Neither crumb is a link:
              Settings is where you are, and the pane is picked in the rail. */
@@ -693,53 +490,36 @@ function SettingsTabPane({
   // rail whenever there is no project, so this branch is unreachable without
   // one. It is here so the pane degrades to its own label rather than
   // rendering `GeneralTab` with an empty id if that gate is ever loosened.
-  if (item.tab === 'workspace' && projectId) {
-    return <GeneralTab projectId={projectId} />;
-  }
-  // The two other Workspace rows: mounted exactly as
-  // `project-settings-page.tsx` mounts them — `sandbox` is BOTH components,
-  // stacked, because a snapshot is the build history of a sandbox template.
-  if (item.tab === 'sandbox' && projectId) {
-    return (
-      <div className="space-y-8">
-        <SandboxTab projectId={projectId} />
-        <SnapshotsTab projectId={projectId} />
-      </div>
-    );
-  }
-  if (item.tab === 'feature-flags' && projectId) {
-    return <ExperimentalTab projectId={projectId} />;
-  }
-  if (item.tab === 'upgrades' && projectId) {
-    return <UpgradesView projectId={projectId} />;
-  }
-  if (item.tab === 'profile') {
-    return <ProfileTab />;
-  }
-  if (item.tab === 'security') {
-    return <SecurityTab />;
-  }
-  if (item.tab === 'appearance') {
-    return <AppearanceTab />;
-  }
-  if (item.tab === 'sessions') {
-    return <SessionsTab />;
-  }
-  if (item.tab === 'preferences') {
-    return <PreferencesTab />;
-  }
-  if (item.tab === 'connected') {
-    return <ConnectedAccountsTab accountId={accountId} />;
-  }
-  if (item.tab === 'tokens') {
-    return <TokensTab accountId={accountId} />;
-  }
-  if (item.tab === 'credits') {
-    return <CreditsTab accountId={accountId} />;
-  }
-  if (item.tab === 'plan') {
-    return <PlanTab accountId={accountId} />;
-  }
+  const panes: Partial<Record<SettingsTab, () => React.ReactNode>> = {
+    workspace: () => (projectId ? <GeneralTab projectId={projectId} /> : null),
+    sandbox: () =>
+      projectId ? (
+        <div className="space-y-8">
+          <SandboxTab projectId={projectId} />
+          <SnapshotsTab projectId={projectId} />
+        </div>
+      ) : null,
+    'feature-flags': () => (projectId ? <ExperimentalTab projectId={projectId} /> : null),
+    upgrades: () => (projectId ? <UpgradesView projectId={projectId} /> : null),
+    profile: () => <ProfileTab />,
+    security: () => <SecurityTab />,
+    appearance: () => <AppearanceTab />,
+    sessions: () => <SessionsTab projectId={projectId} />,
+    preferences: () => <PreferencesTab />,
+    connected: () => <ConnectedAccountsTab accountId={accountId} />,
+    tokens: () => <TokensTab accountId={accountId} />,
+    credits: () => <CreditsTab accountId={accountId} />,
+    plan: () => <PlanTab accountId={accountId} />,
+    mcp: () => <McpTab />,
+    computer: () => (projectId ? <ComputerTab projectId={projectId} /> : null),
+  };
+  const pane = panes[item.tab];
+  if (
+    pane &&
+    (!['workspace', 'sandbox', 'feature-flags', 'upgrades', 'computer'].includes(item.tab) ||
+      projectId)
+  )
+    return pane();
 
   // Unreachable while every `SettingsTab` member has a branch above, and kept
   // for the next one: a tab added to the union with no branch renders its own
@@ -751,12 +531,7 @@ function SettingsTabPane({
   );
 }
 
-function RailTriggerBody({ item, horizontal = false }: { item: RailItem; horizontal?: boolean }) {
-  const Icon = item.icon;
-  return (
-    <>
-      {Icon && <Icon className="size-4 shrink-0" />}
-      <span className={cn(!horizontal && 'truncate')}>{item.label}</span>
-    </>
-  );
-}
+/**
+ * The rail's rows: the settings groups, then the organizations. The desktop
+ * sidebar and the mobile home screen draw the same list.
+ */

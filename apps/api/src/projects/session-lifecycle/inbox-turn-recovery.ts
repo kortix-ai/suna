@@ -1,8 +1,9 @@
 import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { getProvider } from '../../platform/providers';
+import { getProvider, isProviderName } from '../../platform/providers';
 import { db } from '../../shared/db';
-import { clearSandboxTurn, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { clearSandboxTurn } from '../sandbox-turn-lifecycle';
+import { storedSandboxTurns } from '../session-turn-ledger';
 import { observeSandboxTurn } from '../sandbox-turn-observation';
 
 type Box = Pick<typeof sessionSandboxes.$inferSelect, 'sessionId' | 'sandboxId' | 'externalId' | 'provider' | 'metadata'>;
@@ -11,11 +12,12 @@ export async function settleCompletedInboxTurns(
   box: Box,
   deps = { observe: observeSandboxTurn, clear: clearSandboxTurn, provider: getProvider },
 ): Promise<boolean> {
-  if (!box.externalId) return false;
+  // A legacy `e2b` row has no live provider; nothing to observe.
+  if (!box.externalId || !isProviderName(box.provider)) return false;
   let settled = false;
   for (const turn of storedSandboxTurns(box.metadata)) {
     // Never infer completion from a reservation or a missing/unanswered prompt.
-    if (turn.state !== 'active' || !turn.messageId || !turn.opencodeSessionId) continue;
+    if (turn.state !== 'active' || !turn.messageId || !turn.runtimeSessionId) continue;
     const reading = await deps.observe(deps.provider(box.provider), box.externalId, box.sandboxId, turn);
     if (reading.observation === 'terminal' &&
         (reading.endReason === 'completed' || reading.endReason === 'failed')) {

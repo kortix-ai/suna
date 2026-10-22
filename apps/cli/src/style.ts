@@ -2,6 +2,8 @@
  * Central styling primitives for the Kortix CLI.
  */
 
+import { formatUsdAsCredits } from '@kortix/shared';
+
 const ENABLED = process.stdout.isTTY === true && !process.env.NO_COLOR;
 
 function code(seq: string): string {
@@ -34,6 +36,32 @@ export function visibleWidth(s: string): number {
 export function pad(s: string, width: number): string {
   const extra = Math.max(0, width - visibleWidth(s));
   return s + ' '.repeat(extra);
+}
+
+/** Truncate to `max` visible characters with an ellipsis when longer. */
+export function trim(s: string, max: number): string {
+  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
+}
+
+/** Render a USD PRICE (plan, top-up amount); a non-finite value renders as an em dash. */
+export function money(value: unknown): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? `$${n.toFixed(2)}` : '—';
+}
+
+/**
+ * A USD amount the account holds or spent, as a credit count (1 credit = $0.01):
+ * whole from 10 up, two decimals below, `<0.01` for a tiny non-zero amount.
+ * A non-number renders as an em dash.
+ */
+export function creditAmount(value: unknown): string {
+  return typeof value === 'number' && Number.isFinite(value) ? formatUsdAsCredits(value) : '—';
+}
+
+/** `creditAmount` with the unit, for prose: `4,250 credits`. */
+export function credits(value: unknown): string {
+  const amount = creditAmount(value);
+  return amount === '—' ? amount : `${amount} credits`;
 }
 
 /** Status helpers. */

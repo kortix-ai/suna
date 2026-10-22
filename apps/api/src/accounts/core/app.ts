@@ -1,30 +1,40 @@
+import { AccountSummarySchema as ContractAccountSummarySchema } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
-import { accountInvitations, accountMembers, accountMemberships, iamRoles, roleAssignments, type accounts } from '@kortix/db';
-import { and, asc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { accountInvitations, accountMemberships, type accounts } from '@kortix/db';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
 import { makeOpenApiApp } from '../../openapi';
 import { db } from '../../shared/db';
 import {
   isImpersonatingAccount,
   isImpersonationBlockedAccount,
 } from '../../shared/impersonation';
+import { accountOwnersByJoinDate, userAccountMembershipRow } from '../../iam/membership-read';
 import { accountRoleFor, countAccountOwners } from '../../iam/read-models';
 import { assignRole, SYSTEM_ACTOR } from '../../iam/assignments';
 import { trustedEmailForUser } from '../../iam/email-trust';
 import { resolveAccountId } from '../../shared/resolve-account';
+import { isUuid } from '../../shared/validate';
+import { suggestAccountName } from './account-name';
 import { lookupEmailsByUserIds } from './owner-emails';
 import type { AppEnv } from '../../types';
 
 // ─── Public router (leaf module — no route imports here to avoid cycles) ─────
 export const accountsRouter = makeOpenApiApp<AppEnv>();
 
-export function defaultAccountName(email: string | null | undefined): string {
-  const normalized = email?.trim();
-  return normalized ? `${normalized}'s Account` : 'Account';
+/**
+ * The name for an account nobody named — never the raw email (KRTX-638). See
+ * `suggestAccountName` for the order it tries.
+ */
+export function defaultAccountName(
+  email: string | null | undefined,
+  fullName?: string | null,
+): string {
+  return suggestAccountName({ email, fullName });
 }
 
 // A stored name counts as "proper" only when it isn't one of the placeholder
 // values migrations left behind ('Personal', 'User'). Placeholder accounts
-// fall back to an email-derived name.
+// fall back to `defaultAccountName` — a suggested name, never the email.
 export function properAccountName(name: string | null | undefined): string | null {
   const normalized = name?.trim();
   if (!normalized || normalized === 'Personal' || normalized === 'User') return null;
@@ -56,18 +66,7 @@ export const EffectiveBrandingSchema = z
   .nullable()
   .optional();
 
-export const AccountSummarySchema = z
-  .object({
-    account_id: z.string(),
-    name: z.string(),
-    slug: z.string(),
-    created_at: z.string(),
-    updated_at: z.string(),
-    account_role: z.string().optional(),
-    is_primary_owner: z.boolean().optional(),
-    branding: EffectiveBrandingSchema,
-  })
-  .openapi('AccountSummary');
+export const AccountSummarySchema = ContractAccountSummarySchema.openapi('AccountSummary');
 
 export const AccountDetailSchema = z
   .object({
@@ -137,6 +136,7 @@ export const MeSchema = z
     token_context: z
       .object({
         auth_type: z.string().nullable(),
+        token_id: z.string().nullable(),
         project_id: z.string().nullable(),
         session_id: z.string().nullable(),
         agent: z.string().nullable(),
@@ -158,7 +158,12 @@ export const MeSchema = z
   })
   .openapi('AccountMe');
 
-export const AccountIdParam = z.object({ accountId: z.string() });
+// The path param is a uuid column's value: a malformed segment (a slug, a
+// truncated id, the literal `directory` a stray client aimed at a missing
+// route) reaches the `accounts.account_id` uuid cast, dies as SQLSTATE 22P02
+// and surfaces as an opaque 500 (Better Stack pattern 97669531, KRTX-211).
+// Let the OpenAPI validation answer 400 before any handler or DB read.
+export const AccountIdParam = z.object({ accountId: z.string().uuid() });
 
 // ─── Shared helpers ─────────────────────────────────────────────────────────
 
@@ -169,11 +174,7 @@ export async function resolveAccountForUser(
   override: string | undefined,
 ): Promise<string> {
   if (override) {
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, override)))
-      .limit(1);
+    const [membership] = await userAccountMembershipRow(userId, override);
     if (!membership) {
       throw new Error('not a member of the requested account');
     }
@@ -201,6 +202,12 @@ export function parseRole(value: unknown, allowed: AccountRole[]): AccountRole |
 }
 
 export async function getMembership(userId: string, accountId: string) {
+  // A malformed account id (a slug, a stray literal segment) is never a
+  // membership, and letting it reach the uuid-typed casts in the read model
+  // ends the request as SQLSTATE 22P02 → an opaque 500 (Better Stack pattern
+  // 97669531, KRTX-211). Answer the same "not a member" every caller already
+  // maps to 403/404, without a DB read.
+  if (!isUuid(accountId)) return null;
   // ACT-AS: an operator with a live grant on this account reads as its owner.
   // Only ever widens the OPERATOR's own id — `impersonatedAccountFor` compares
   // against the grant's admin_user_id, so the several call sites that pass a
@@ -225,7 +232,7 @@ export async function countOwners(accountId: string): Promise<number> {
 // Batched + cached owner-email lookup. Lives in ./owner-emails so it stays a
 // leaf module (db + sql only) and can be unit-tested without the account graph.
 // Re-exported here because it was part of this module's public surface.
-export { clearOwnerEmailCache, ownerEmailCacheSize } from './owner-emails';
+export { clearOwnerEmailCache } from './owner-emails';
 export { lookupEmailsByUserIds };
 
 // Display names for a batch of accounts, deriving the fallback for unnamed
@@ -251,33 +258,7 @@ export async function resolveAccountDisplayNames(
   // reads); `account_members.joined_at` is identity and stays where it is.
   const ownerByAccount = new Map<string, string>();
   try {
-    const owners = await db
-      .select({ accountId: accountMembers.accountId, userId: accountMembers.userId })
-      .from(accountMembers)
-      .innerJoin(
-        roleAssignments,
-        and(
-          eq(roleAssignments.accountId, accountMembers.accountId),
-          eq(roleAssignments.principalType, 'user'),
-          eq(roleAssignments.principalId, accountMembers.userId),
-          eq(roleAssignments.scopeType, 'account'),
-        ),
-      )
-      .innerJoin(
-        iamRoles,
-        and(
-          eq(iamRoles.roleId, roleAssignments.roleId),
-          isNull(iamRoles.accountId),
-          eq(iamRoles.key, 'owner'),
-        ),
-      )
-      .where(
-        and(
-          inArray(accountMembers.accountId, unnamed),
-          or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, sql`now()`)),
-        ),
-      )
-      .orderBy(asc(accountMembers.joinedAt));
+    const owners = await accountOwnersByJoinDate(unnamed);
     for (const o of owners) {
       if (!ownerByAccount.has(o.accountId)) ownerByAccount.set(o.accountId, o.userId);
     }
@@ -327,8 +308,10 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
  *
  * The address matched is the caller's TRUSTED email (iam/email-trust.ts), not
  * the token's claim: an SSO identity whose IdP account has not verified the
- * email's domain claims nothing. `email` is the address the caller expects;
- * a mismatch with the trusted one also claims nothing.
+ * email's domain claims nothing, and neither does a password identity while
+ * Auth auto-confirms sign-ups (the invitee accepts it explicitly instead).
+ * `email` is the address the caller expects; a mismatch with the trusted one
+ * also claims nothing.
  */
 export async function autoClaimPendingInvites(userId: string, email: string): Promise<number> {
   if (!email) return 0;

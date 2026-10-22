@@ -119,10 +119,66 @@ describe('only a copy the server vouches for is kept', () => {
     expect((instance.read('p1', 's1') as SessionTranscriptSyncEnvelope).message_count).toBe(2);
   });
 
-  test('a copy larger than the per-session bound is not kept', async () => {
+  test('a copy whose newest message alone exceeds the per-session bound is not kept', async () => {
     const { instance } = store(memoryStorage(), { maxEnvelopeBytes: 200 });
     await instance.write('p1', 's1', envelope());
     expect(instance.read('p1', 's1')).toBeNull();
+  });
+});
+
+describe('an oversized copy keeps its newest messages', () => {
+  // Saved copies carry every tool call 1:1, so a 40-message window of a
+  // tool-heavy thread outgrows the per-session bound. Refusing the whole copy
+  // gave exactly those sessions the cold open; the newest messages are the
+  // ones the first frame shows, and the rest is one cursor away.
+  const window = (count: number, chars: number) =>
+    envelope({
+      complete: true,
+      message_count: count,
+      total: count,
+      next_cursor: null,
+      messages: Array.from({ length: count }, (_, index) => ({
+        info: { id: `msg_${index + 1}`, role: 'assistant', sessionID: 'ses_root', time: { created: T0 + index, completed: T0 + index } },
+        parts: [{ id: `prt_${index + 1}`, type: 'text', text: 'x'.repeat(chars) }],
+      })),
+    } as unknown as Partial<SessionTranscriptSyncEnvelope>);
+
+  test('keeps the newest messages that fit, and points the cursor behind them', async () => {
+    const { instance } = store(memoryStorage(), { maxEnvelopeBytes: 2_600 });
+    await instance.write('p1', 's1', window(5, 1_000));
+
+    const read = instance.read('p1', 's1') as SessionTranscriptSyncEnvelope;
+    expect(read.messages.map((message) => message.info.id)).toEqual(['msg_4', 'msg_5']);
+    expect(read.message_count).toBe(2);
+    // The server serves the window strictly OLDER than the cursor, so paging
+    // continues exactly where the kept copy stops.
+    expect(read.next_cursor).toBe('msg_4');
+    expect(read.complete).toBe(false);
+    expect(read.total).toBe(5);
+    // Nothing else of the envelope changes: its root is what the paint checks.
+    expect(read.opencode_session_id).toBe('ses_root');
+    expect(read.captured_at).toBe('2026-09-26T11:59:00.000Z');
+  });
+
+  test('a copy within the bound is kept whole, cursor untouched', async () => {
+    const { instance } = store(memoryStorage(), { maxEnvelopeBytes: 20_000 });
+    await instance.write('p1', 's1', window(5, 1_000));
+
+    const read = instance.read('p1', 's1') as SessionTranscriptSyncEnvelope;
+    expect(read.messages).toHaveLength(5);
+    expect(read.next_cursor).toBeNull();
+    expect(read.complete).toBe(true);
+  });
+
+  test('what it keeps is what it counts against the total bound', async () => {
+    const storage = memoryStorage();
+    const { instance } = store(storage, { maxEnvelopeBytes: 2_600 });
+    await instance.write('p1', 's1', window(5, 1_000));
+
+    const stored = storage.data.get(instance.keyFor('p1', 's1'))!;
+    expect(stored.length).toBeLessThanOrEqual(2_600);
+    const index = JSON.parse(storage.data.get('kortix.saved-copy:user-a:index')!);
+    expect(index.entries[0].b).toBe(stored.length);
   });
 });
 

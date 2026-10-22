@@ -6,24 +6,31 @@ import {
 } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { config } from '../../config';
+import { logger } from '../../lib/logger';
 import {
   ensureEmailSessionBinding,
   loadEmailInstallConnectionId,
 } from '../../projects/lib/session-connector-bindings';
 import {
-  continueSession as continueLifecycleSession,
+  deliverThroughQueue,
   createSession as createLifecycleSession,
   resolveProjectAutomationActor as resolveLifecycleAutomationActor,
 } from '../../projects/session-lifecycle';
 import { db } from '../../shared/db';
+import { replyToAgentMailMessage, resolveAgentMailApiKey } from '../agentmail-api';
 import { dropChatThread, findChatThread, touchChatThread } from '../core/threads';
-import { type AgentMailSenderPolicy, loadAgentMailSenderPolicyForInbox } from '../install-store';
+import {
+  type AgentMailSenderPolicy,
+  loadAgentMailApiKeyForInbox,
+  loadAgentMailSenderPolicyForInbox,
+} from '../install-store';
 import { EMAIL_EVENT_DEDUPE_TTL_MS } from './app';
+import { recordClaim } from '../webhook-work';
 import { matchesEmailSenderRegex } from './sender-policy-regex';
 import type { AgentMailMessageReceivedEvent } from './types';
 
 const defaultEmailSessionLifecycle = {
-  continueSession: continueLifecycleSession,
+  deliverFollowUp: deliverThroughQueue,
   createSession: createLifecycleSession,
   resolveProjectAutomationActor: resolveLifecycleAutomationActor,
 };
@@ -107,13 +114,13 @@ async function spawnEmailAgentTurn(
       });
       return;
     }
-    const outcome = await emailSessionLifecycle.continueSession({
+    const outcome = await emailSessionLifecycle.deliverFollowUp({
       source: 'email',
+      idempotencyKey: emailFollowUpKey(event),
       sessionId: existing.sessionId,
       text: renderFollowUpPrompt(event),
-      opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
     });
-    if (outcome === 'delivered') {
+    if (outcome === 'delivered' || outcome === 'queued') {
       await touchChatThread(thread);
     } else if (outcome === 'no-session') {
       await dropChatThread(thread);
@@ -123,6 +130,11 @@ async function spawnEmailAgentTurn(
   }
 
   await createThreadSession(projectId, event, false);
+}
+
+/** One received email: a redelivered webhook dedupes on it. */
+function emailFollowUpKey(event: AgentMailMessageReceivedEvent): string {
+  return `email:${event.message.inbox_id}:${event.message.message_id}`;
 }
 
 async function createThreadSession(
@@ -145,7 +157,7 @@ async function createThreadSession(
   const [selection] = await db
     .select({
       agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
+      opencodeModel: chatChannelBindings.model,
     })
     .from(chatChannelBindings)
     .where(
@@ -175,11 +187,11 @@ async function createThreadSession(
         });
         return;
       }
-      await emailSessionLifecycle.continueSession({
+      await emailSessionLifecycle.deliverFollowUp({
         source: 'email',
+        idempotencyKey: emailFollowUpKey(event),
         sessionId,
         text: renderFollowUpPrompt(event),
-        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
       });
     }
     return;
@@ -210,7 +222,6 @@ async function createThreadSession(
       // this session has any user text — title from the subject.
       title_source: messageSubject(event) ?? messageSummary(event),
     },
-    enforceAccountCap: false,
     mayManageSystemConnections: true,
     queuePolicy: 'on_backpressure',
     // One key per message, never per thread: the lifecycle keeps a key
@@ -248,9 +259,6 @@ async function createThreadSession(
       },
     },
     extraEnvVars: {
-      // Email delivery cannot depend on a shell fallback. Enable the
-      // session-scoped MCP face so OpenCode exposes the bound inbox as tools.
-      KORTIX_CONNECTORS_MCP_ENABLED: '1',
       KORTIX_EMAIL_INBOX_ID: inboxId,
       KORTIX_EMAIL_THREAD_ID: threadId,
       KORTIX_EMAIL_MESSAGE_ID: event.message.message_id,
@@ -263,6 +271,42 @@ async function createThreadSession(
     console.error('[email-webhook] createProjectSession failed', {
       status: result.error.status,
       body: result.error.body,
+    });
+    if (result.error.body.code === 'project_archived') await replyNotAccepting(projectId, event);
+  }
+}
+
+// A deleted workspace keeps its inbox until the purge, so mail still arrives
+// and no session can start (KRTX-1714). Tell the sender, in words that fit a
+// sender outside the workspace. Once per thread for 30 days, so an
+// auto-responder cannot loop; fail closed (no claim, no reply). An
+// `.unauthenticated` message gets nothing: its From may be forged.
+const NOT_ACCEPTING_NOTICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const NOT_ACCEPTING_REPLY =
+  'This address is not accepting email right now. No one will answer this message.';
+
+async function replyNotAccepting(
+  projectId: string,
+  event: AgentMailMessageReceivedEvent,
+): Promise<void> {
+  const { inbox_id: inboxId, thread_id: threadId, message_id: messageId } = event.message;
+  if (event.event_type !== 'message.received' || !messageId) return;
+  try {
+    const claimed = await db
+      .insert(chatEventDedup)
+      .values({
+        eventId: `email:not-accepting:${inboxId}:${threadId}`,
+        expiresAt: new Date(Date.now() + NOT_ACCEPTING_NOTICE_TTL_MS),
+      })
+      .onConflictDoNothing({ target: chatEventDedup.eventId })
+      .returning({ eventId: chatEventDedup.eventId });
+    if (claimed.length === 0) return;
+    const apiKey = resolveAgentMailApiKey(await loadAgentMailApiKeyForInbox(projectId, inboxId));
+    if (!apiKey) return;
+    await replyToAgentMailMessage({ apiKey, inboxId, messageId, text: NOT_ACCEPTING_REPLY });
+  } catch (err) {
+    logger.warn('[email-webhook] not-accepting reply failed', {
+      error: err instanceof Error ? err.message : String(err),
     });
   }
 }
@@ -277,6 +321,7 @@ async function alreadyHandled(key: string): Promise<boolean> {
       })
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
+    if (inserted.length > 0) recordClaim(key);
     return inserted.length === 0;
   } catch (err) {
     console.warn('[email-webhook] event dedup check failed', err);
@@ -295,6 +340,7 @@ async function claimInboundMessage(event: AgentMailMessageReceivedEvent): Promis
       })
       .onConflictDoNothing({ target: chatEventDedup.eventId })
       .returning({ eventId: chatEventDedup.eventId });
+    if (inserted.length > 0) recordClaim(key);
     return inserted.length > 0;
   } catch (err) {
     console.error('[email-webhook] inbound message claim failed (fail-open)', err);
@@ -329,32 +375,29 @@ async function waitForThreadSession(inboxId: string, threadId: string): Promise<
   }
 }
 
+/**
+ * How the agent works the inbox: the `kortix connectors` CLI, which every
+ * harness's shell has. The MCP face exists only in OpenCode's config, so a
+ * prompt that named MCP tools left a pi session unable to read or answer.
+ */
 function emailTurnInstructions(event: AgentMailMessageReceivedEvent): string {
-  const readThreadCall = JSON.stringify({
-    connector: 'email',
-    action: 'get_thread',
-    args: {
-      inbox_id: event.message.inbox_id,
-      thread_id: event.message.thread_id,
-    },
+  const readThreadArgs = JSON.stringify({
+    inbox_id: event.message.inbox_id,
+    thread_id: event.message.thread_id,
   });
-  const replyCall = JSON.stringify({
-    connector: 'email',
-    action: 'reply_message',
-    args: {
-      inbox_id: event.message.inbox_id,
-      message_id: event.message.message_id,
-      text: '<reply>',
-    },
+  const replyArgs = JSON.stringify({
+    inbox_id: event.message.inbox_id,
+    message_id: event.message.message_id,
+    text: '<reply>',
   });
   return [
     'How to work:',
     '- You are operating an AgentMail inbox assigned to this Kortix project.',
-    '- Use the Connector MCP meta-tools `connectors`, `discover`, `describe`, and `call`. Connector actions are not direct tools.',
-    '- Start with `connectors`. Use `discover` to find an action and `describe` to confirm its input schema before the first call.',
-    `- Read the current thread with \`call\`: \`${readThreadCall}\`.`,
-    `- Reply in the same conversation with \`call\`: \`${replyCall}\`. Use \`html\` instead of \`text\` only when needed.`,
-    '- Start a new outbound email with `call`, connector `email`, action `send_message`, and args containing `inbox_id`, `to`, `subject`, and `text` or `html`.',
+    '- Use the `kortix connectors` CLI in the shell. Connector actions are not direct tools.',
+    `- Read the current thread: \`kortix connectors call email.get_thread '${readThreadArgs}'\`.`,
+    `- Reply in the same conversation: \`kortix connectors call email.reply_message '${replyArgs}'\`. Use \`html\` instead of \`text\` only when needed.`,
+    '- Start a new outbound email with `kortix connectors call email.send_message` and args containing `inbox_id`, `to`, `subject`, and `text` or `html`.',
+    '- Run `kortix connectors show email.<action>` to confirm an input schema before the first call. Pass long or quoted args as a file: `@args.json`.',
     '- The AgentMail API key is resolved server-side. Do not look for it in the sandbox.',
     '- If you need the user to clarify something, reply by email and end the turn. Their next reply will resume this same session.',
   ].join('\n');

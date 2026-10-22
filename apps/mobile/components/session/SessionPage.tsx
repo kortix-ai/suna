@@ -1,17 +1,18 @@
 /**
  * SessionPage — the full session chat view.
  *
- * Uses the sync store (hydrated by useSessionSync, kept live by SSE)
- * as the single source of truth for messages.
+ * The transcript, the runtime's status and the pending questions come from
+ * `@kortix/sdk`'s session store (`useSessionSync` reads it, the live stream
+ * keeps it current); this page only reads them and adds its optimistic sends.
  *
- * Sends messages via fire-and-forget promptAsync with agent/model/variant.
- * A send with files goes through the server prompt inbox
- * (`createSessionPrompt`) with the upload handles (COR-185).
+ * A send goes through the server prompt inbox (`createSessionPrompt`) with
+ * agent/model/variant and the upload handles of any files (COR-185): the inbox
+ * records the sender, which the shared-session avatars read. A sub-agent's
+ * thread sends to that sub-agent's own runtime session.
  */
 
-import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect, useLayoutEffect, useState } from 'react';
 import {
-  AppState,
   View,
   FlatList,
   ScrollView,
@@ -23,7 +24,14 @@ import {
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
-import { KeyboardAvoidingView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
+import {
+  KeyboardController,
+  KeyboardEvents,
+  KeyboardGestureArea,
+  useKeyboardHandler,
+  useReanimatedKeyboardAnimation,
+} from 'react-native-keyboard-controller';
+import { nextKeyboardInset } from '@/lib/session/keyboard-inset';
 import Reanimated, {
   Easing as ReanimatedEasing,
   useAnimatedStyle,
@@ -32,7 +40,6 @@ import Reanimated, {
   withTiming,
   interpolate,
 } from 'react-native-reanimated';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { Button } from '@/components/ui/button';
 import { useColorScheme } from 'nativewind';
@@ -48,26 +55,84 @@ import {
 } from '@/components/session/tool/shared/connector-handoff-context';
 import { ProjectHeaderActions } from '@/components/session/ProjectHeaderActions';
 import { SessionThreadTitle } from '@/components/session/SessionThreadTitle';
+import { SessionParticipantStack } from '@/components/session/SessionParticipantStack';
+import { SessionParticipantsSheet } from '@/components/session/SessionParticipantsSheet';
 import { SubAgentHeaderChip } from '@/components/session/SubAgentHeaderChip';
 import { SubAgentListSheet } from '@/components/session/SubAgentListSheet';
-import { useProjectModelCatalog } from '@/lib/projects/hooks';
-import { catalogPickerModels, offeredSessionModels, type PickerCatalogModel, type PickerModel } from '@/lib/session/model-picker';
+import { useComposerModels, useProjectDetail, useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
+import { messageAvatarPerson, messageSessionAuthor, type AvatarPerson } from '@/lib/session/participants';
+import { stopRefusalMessage, turnStoppedBy, viewerMayStop } from '@/lib/session/turn-stop';
+import { ParticipantAvatar } from '@/components/session/ParticipantAvatar';
+import { latestAssistantAgent, threadAgents } from '@/lib/session/composer-config';
 import { isModelUnavailable } from '@/lib/session/composer-model';
+import { offeredModelCount } from '@/lib/session/model-picker';
 import type { SubAgentRelation } from '@/lib/session/sub-agents';
+import { anchorChangeRequests, sessionChangeRequests } from '@/lib/session/session-change-requests';
+import { useReviewItems } from '@/lib/review/use-review';
 import type { ProjectSession } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 import { playSound } from '@/lib/sounds';
-import { SessionChangeRequests } from '@/components/session/SessionChangeRequests';
+import { ReviewDetailSheet } from '@/components/review/ReviewDetailSheet';
 import { requestPushPermissionOnce } from '@/lib/notifications/registration';
 import { Icon } from '@/components/ui/icon';
 import { MOTION, THEME, withAlpha } from '@/lib/utils/theme';
+import { ComposerBottomFade, composerSafeAreaPadding } from '@/components/session/composer-bottom-fade';
+import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
 
-import { clearOptimistic, useSyncStore } from '@/lib/opencode/sync-store';
-import { reconcileLiveSession, useSessionSync } from '@/lib/opencode/session-sync';
-import { compactionTurnInfo, createSessionPrompt, groupMessagesIntoTurns, resolveWorkingTurn } from '@kortix/sdk';
+import {
+  addOptimisticMessage,
+  markOptimisticAccepted,
+  removeOptimisticMessage,
+  removeSessionMessage,
+  sessionMessageIds,
+  sessionStatus as readSessionStatus,
+  setLocalSessionStatus,
+  usePendingPermissions,
+  usePendingQuestions,
+  useSessionStatus,
+} from '@/lib/session/session-store';
+import { useSessionRuntime } from '@/components/session/SessionRuntime';
+import {
+  abortRuntimeSession,
+  answerPermission,
+  answerQuestion,
+  executeRuntimeCommand,
+  extractSendErrorMessage,
+  promptRuntimeMessage,
+  rejectQuestion,
+  usePermissionSelfHeal,
+  useQuestionSelfHeal,
+  useSessionPrompts,
+  useSessionStreamConnected,
+  useRuntimeCommands,
+  useRuntimeConfig,
+  useRuntimeSession,
+  useRuntimeSessions,
+  useSessionLogOlder,
+  useSessionLogRecord,
+  useSessionLogThread,
+  useSessionMessages,
+  useSessionSync,
+  useSessionWorkingStore,
+} from '@kortix/sdk/react';
+import {
+  createSessionPrompt,
+  deleteSessionPrompt,
+  latestPromptModel,
+  listSessionPrompts,
+  retrySessionPrompt,
+  SESSION_LOG_MINOR,
+  SESSION_LOG_SCHEMA,
+  sessionLogTurns,
+  sessionPromptActions,
+  type SessionLogThread,
+  type SessionLogTurn,
+  type SessionPrompt,
+  type SessionPromptDelivery,
+} from '@kortix/sdk';
 import * as Crypto from 'expo-crypto';
 import { promptParts } from '@/lib/session/prompt-parts';
-import type { Turn, QuestionRequest, MessageWithParts, PermissionRequest } from '@/lib/opencode/types';
+import type { QuestionRequest, Session } from '@/lib/session/types';
 import {
   reuseStableTurns,
   shouldFollowNewTurn,
@@ -92,53 +157,36 @@ import {
   turnTopGap,
 } from '@/lib/session/auto-scroll';
 import { mintWireMessageId } from '@/lib/session/wire-message-id';
-import { sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
+import { recordTimeMs } from '@/lib/session/turn-meta';
+import { failedSendMessages, sendIdsFor, useFailedSendStore, useFailedSends, type SendIds } from '@/lib/session/failed-sends';
 import { optimisticUserParts } from '@/lib/session/optimistic-parts';
 import { draftKey } from '@/lib/session/composer-draft';
 import {
   buildSessionRefsBlock,
+  editResendAttachments,
   interruptedTurnIds,
   rewindHiddenMessageIds,
   webSpace,
+  type MessageAttachment,
 } from '@/lib/session/user-message';
 import {
-  hasCompactionTurn as findCompactionTurn,
   isSuppressedFailedCompaction,
   lastCompactionTurnIndex as findLastCompactionTurnIndex,
   suppressWorkingTurnBusy as findSuppressWorkingTurnBusy,
   transcriptBusyRowVisible,
-  type TurnBodyTurn,
 } from '@/lib/session/turn-body';
-import { revertSession } from '@/lib/opencode/session-rewind';
+import { unsupportedFeatureMessage, useRuntimeSupports } from '@/lib/session/runtime-capabilities';
 import { useToast } from '@/components/kortix/toast-provider';
-import {
-  hasRunningQuestionTool as findRunningQuestionTool,
-  nextQuestionPollDelay,
-  shouldPollQuestions as shouldPollQuestionsFor,
-} from '@/lib/session/question-poll';
 import { pinnedPermission } from '@/lib/session/permission-prompt';
-import { questionsToHydrate } from '@/lib/opencode/stream-policy';
-import { useSession, replyToQuestion, rejectQuestion, replyToPermission } from '@/lib/platform/hooks';
 import { useTabStore } from '@/stores/tab-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
-import { queueHeaderLabel } from '@/lib/session/queue-undo';
+import { queueHeaderLabel, queueRowCaption, queueRowText } from '@/lib/session/queue-undo';
 import { useSessionPromptRequestStore } from '@/stores/session-prompt-request-store';
-import type { QueuedMessage } from '@/stores/message-queue-store';
-import { useCompactionStore } from '@/stores/compaction-store';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import {
-  useOpenCodeAgents,
-  useOpenCodeProviders,
-  useOpenCodeConfig,
-  useOpenCodeCommands,
-  flattenModels,
-  filterToLatestModels,
-  type Agent,
-  type Command,
-  type FlatModel,
-} from '@/lib/opencode/hooks/use-opencode-data';
-import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
-import { getAuthToken } from '@/api/config';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { useTranslation } from 'react-i18next';
+import type { Command } from '@/lib/session/runtime-data';
+import { useResolvedConfig } from '@/lib/session/local-config';
 import { log } from '@/lib/logger';
 
 import {
@@ -157,14 +205,11 @@ import { SessionBusyIndicator } from './session-busy-indicator';
 import { CompactionMarker } from './turn/compaction-divider';
 import { QuestionPrompt } from './QuestionPrompt';
 import { PermissionPromptCard } from './PermissionPromptCard';
-import { useSessions } from '@/lib/platform/hooks';
-import { FileViewer } from '@/components/files/FileViewer';
 import { MarkdownActionsProvider } from '@/components/markdown/inline-code';
-import { ToolFilePreviewHost } from '@/components/session/tool/shared/navigation';
+import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
+import { SandboxPreviewSheet } from '@/components/session/SandboxPreviewSheet';
 import { ActivitySheetHost } from '@/components/session/turn/activity-sheet';
 import type { PermissionReply } from '@/components/session/tool/tool-part-renderer';
-import type { SandboxFile } from '@/api/types';
-import type { Session } from '@/lib/platform/types';
 import { ProjectHero } from '@/components/session/ProjectHero';
 
 interface SessionPageProps {
@@ -187,7 +232,7 @@ interface SessionPageProps {
   /**
    * The title to show in the header (COR-140): `sessionDisplayTitle` of the
    * project session, when the caller has resolved one. Falls back to the
-   * OpenCode session's own `title` — the only signal available for a
+   * runtime session's own `title` — the only signal available for a
    * sub-agent thread, which has no project-session row of its own.
    */
   sessionTitle?: string;
@@ -203,10 +248,11 @@ interface SessionPageProps {
   onOpenProjectSession?: (session: ProjectSession) => void;
   /** The model sheet's Agent tab `+`: starts a new session that creates an agent. */
   onCreateAgent?: () => void;
-  /** True when the left drawer is currently open — swaps the menu icon for an X */
-  isDrawerOpen?: boolean;
+  /** The agent the project session was created with (`agent_name`): the composer's agent until a pick. */
+  boundAgentName?: string | null;
+  /** The project session row. Its model pin is the model the composer opens on. */
+  projectSession?: { metadata?: Record<string, unknown> | null } | null;
   /** True when the right drawer is currently open — swaps the grid icon for an X */
-  isRightDrawerOpen?: boolean;
 }
 
 // Module-level empty values: a `?? []` default creates a new array on every
@@ -214,17 +260,24 @@ interface SessionPageProps {
 function frozenEmpty<T>(): T[] {
   return Object.freeze([]) as unknown as T[];
 }
-const EMPTY_MESSAGES = frozenEmpty<MessageWithParts>();
 const EMPTY_QUESTIONS = frozenEmpty<QuestionRequest>();
-const EMPTY_PERMISSIONS = frozenEmpty<PermissionRequest>();
-const EMPTY_TURNS = frozenEmpty<Turn>();
+const EMPTY_TURNS = frozenEmpty<SessionLogTurn>();
+const EMPTY_MESSAGES = frozenEmpty<SessionLogThread['messages'][number]>();
 const EMPTY_SESSIONS = frozenEmpty<Session>();
-const EMPTY_AGENTS = frozenEmpty<Agent>();
 const EMPTY_COMMANDS = frozenEmpty<Command>();
-const EMPTY_MODELS = frozenEmpty<FlatModel>();
-const EMPTY_DEFAULTS = Object.freeze({}) as Record<string, string>;
 const EMPTY_IDS = frozenEmpty<string>();
 const EMPTY_PROJECT_SESSIONS = frozenEmpty<ProjectSession>();
+const EMPTY_PROMPTS = frozenEmpty<SessionPrompt>();
+/** No runtime session: `useSessionMessages` reads nothing and never re-renders. */
+const DETACHED_ROWS = { projectId: '', sessionId: '', runtimeSessionId: null };
+
+/** A thread with no message yet: failed sends of a session whose transcript is empty still need one. */
+function emptyThread(threadId: string): SessionLogThread {
+  return {
+    schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, thread_id: threadId, parent_thread_id: null, spawned_by: null,
+    agent: null, title: null, created_at: '', messages: [],
+  };
+}
 
 /** Returns the previous array while its elements are reference-equal to `next`. */
 function useShallowStableArray<T>(next: T[]): T[] {
@@ -241,48 +294,134 @@ function useShallowStableArray<T>(next: T[]): T[] {
 // of the list (VirtualizedList keeps its initial region), so that count stays
 // low; opening a thread jumps to the end instead of rendering every turn.
 const INITIAL_TURNS_TO_RENDER = 4;
+/** One page of a session's change requests: the server's ceiling. */
+const SESSION_CHANGES_LIMIT = 200;
 
-/** Keeps the first visible turn in place while older turns prepend (COR-144). */
+/** The transcript re-renders at most once per this interval while a reply streams. */
+const TRANSCRIPT_RENDER_INTERVAL_MS = 64;
+
+/** A keyboard motion with no end event ends after this (a keyboard animation takes ~250 ms). */
+const KEYBOARD_MOTION_MAX_MS = 1000;
+
+/** How long a pull-to-refresh shows its spinner: the re-read is one bounded tail page. */
+const PULL_REFRESH_SPINNER_MS = 800;
+
+/**
+ * Keeps the first visible turn in place while older turns prepend (COR-144).
+ * Never always on: iOS anchors the first cell whose top is on screen, so a
+ * fold opened in a taller turn above it ("Worked for", a burst) moved the
+ * whole thread on every tap (2026-10-20).
+ */
 const MAINTAIN_FIRST_VISIBLE = { minIndexForVisible: 0 } as const;
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 1 } as const;
+/**
+ * Clear space between the last line of the thread and the composer's top edge.
+ * The composer is translucent (Liquid Glass on iOS): without it the last line
+ * rests flush on the card and reads as text under the input.
+ */
+const LIST_END_GAP = 12;
+/**
+ * iOS: the list draws past its bottom edge. The keyboard is Liquid Glass and
+ * shows what lies under it; the list ends at the keyboard, so without this
+ * only the flat page is under the keyboard and it reads as a solid panel.
+ * The later rows now draw under the keyboard, as in Messages. Layout and
+ * scroll geometry do not change.
+ */
+const LIST_DRAWS_UNDER_KEYBOARD = Platform.OS === 'ios' ? ({ overflow: 'visible' } as const) : undefined;
 
 function readSavedScrollOffset(sessionId: string): number {
   const saved = useTabStore.getState().tabStateById[sessionId] as { scrollOffset?: number } | undefined;
   return typeof saved?.scrollOffset === 'number' ? saved.scrollOffset : 0;
 }
 
-/** A catalog model the sandbox has not listed (yet), as the composer's `FlatModel`. */
-function flatModelFromCatalog(model: PickerModel, entry: PickerCatalogModel): FlatModel {
-  return {
-    ...model,
-    reasoning: entry.reasoning ?? false,
-    contextWindow: entry.limit?.context,
-    family: entry.family,
-    releaseDate: entry.release_date,
-  };
-}
-
-function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, isDrawerOpen, isRightDrawerOpen }: SessionPageProps) {
+function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpenDrawer, onOpenRightDrawer, onRenamePress, sessionTitle, subAgentRelation: subAgentRelationValue, subAgents, onOpenProjectSession, onCreateAgent, boundAgentName, projectSession }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const pageBackground = isDark ? THEME.dark.background : THEME.light.background;
   const insets = useSafeAreaInsets();
   // Top inset for the message list. The chrome is the floating menu button
   // only (the static header bar is gone, COR-140): the list would start under
   // the status bar and that button — inset it below them
   // (FLOATING_MENU_CLEARANCE, where the top fade ends).
   const listTopInset = insets.top + FLOATING_MENU_CLEARANCE;
-  // The bottom area rests above the home indicator (`insets.bottom`). While
-  // the keyboard is up the indicator is covered, so the inset collapses with
-  // the keyboard's progress: the composer then sits its own 12pt (`pb-3`) above
-  // the keyboard, the same gap as the project home composer (design.md §5).
-  const bottomInset = insets.bottom;
-  const { progress: keyboardProgress } = useReanimatedKeyboardAnimation();
+  // The composer card rests on the safe-area line: the bottom area pads the
+  // inset minus the composer's own 12pt (`pb-3`), so the gap is
+  // `max(insets.bottom, 12)`, not `insets.bottom + 12` (KRTX-2930). While the
+  // keyboard is up the indicator is covered, so this padding collapses with the
+  // keyboard's progress: the composer then sits its own 12pt above the
+  // keyboard, the same gap as the project home composer (design.md §5).
+  const bottomInset = composerSafeAreaPadding(insets.bottom);
+  const { progress: keyboardProgress, height: providerKeyboardHeight } = useReanimatedKeyboardAnimation();
   const bottomAreaStyle = useAnimatedStyle(() => ({
     paddingBottom: bottomInset * (1 - keyboardProgress.value),
   }));
+  // The page pads its bottom by the keyboard's live height, so the composer
+  // always sits on the keyboard (KRTX-1672, `lib/session/keyboard-inset.ts`).
+  // Seeded from the provider before the first paint, and again when a frozen
+  // screen shows: a keyboard that moved meanwhile sent this page no event.
+  const keyboardInset = useSharedValue(0);
+  useLayoutEffect(() => {
+    keyboardInset.value = -providerKeyboardHeight.value;
+  }, [keyboardInset, providerKeyboardHeight]);
+  useKeyboardHandler(
+    {
+      onStart: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'start', e.height);
+      },
+      onMove: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'move', e.height);
+      },
+      onInteractive: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'interactive', e.height);
+      },
+      onEnd: (e) => {
+        'worklet';
+        keyboardInset.value = nextKeyboardInset(keyboardInset.value, 'end', e.height);
+      },
+    },
+    [],
+  );
+  const pageStyle = useAnimatedStyle(() => ({ flex: 1, paddingBottom: keyboardInset.value }));
+  // Height of the composer (or the question card), without the inset above.
+  // It is the offset of the list's drag-to-dismiss: the keyboard starts to
+  // follow the finger at the top of the composer, as in Messages, not at the
+  // top of the keyboard. It changes on every line wrap of the draft, so it is
+  // not this page's state: only `ComposerGestureArea` renders again.
+  const bottomAreaHeightRef = useRef(0);
+  const setGestureOffsetRef = useRef<((height: number) => void) | null>(null);
+  // Per session: two threads can be mounted in the stack at once, and the
+  // offset is registered under this id.
+  const composerInputNativeID = `composer-input-${sessionId}`;
+  const handleBottomAreaLayout = useCallback((e: LayoutChangeEvent) => {
+    const height = Math.round(e.nativeEvent.layout.height);
+    bottomAreaHeightRef.current = height;
+    setGestureOffsetRef.current?.(height);
+  }, []);
+  // The composer floats over the list: the list runs to the bottom edge and
+  // scrolls behind it. The list's end padding is the height the composer
+  // covers: the composer area (pill, queue, chips, input) plus the inset
+  // under it, the same expression as `bottomAreaStyle`. It runs on the UI
+  // thread: a line wrap or a keyboard frame renders nothing.
+  const composerAreaHeight = useSharedValue(0);
+  const composerAreaHeightRef = useRef(0);
+  const bottomInsetRef = useRef(bottomInset);
+  bottomInsetRef.current = bottomInset;
+  const endPaddingStyle = useAnimatedStyle(() => ({
+    height: composerAreaHeight.value + bottomInset * (1 - keyboardProgress.value) + LIST_END_GAP,
+  }));
+  /** The end padding as the room reads it (the UI thread's last value). */
+  const endPaddingNow = useCallback(
+    () => composerAreaHeightRef.current + bottomInsetRef.current * (1 - keyboardProgress.value) + LIST_END_GAP,
+    [keyboardProgress],
+  );
   const { sandboxUrl } = useSandboxContext();
   // Declared early: `handleStop` (below) needs it for a failed-abort toast.
   const toast = useToast();
+  const { t } = useTranslation();
   const flatListRef = useRef<FlatList>(null);
   // Saved scroll offset: read once per session, not subscribed. Subscribing
   // re-rendered the whole thread on every persisted offset write.
@@ -294,13 +433,61 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
 
 
-  // Session metadata
-  const { data: session } = useSession(sandboxUrl, sessionId);
-  const { data: allSessions = EMPTY_SESSIONS } = useSessions(sandboxUrl);
+  // The bound session's runtime (`SessionRuntimeProvider`): the SDK confirmed
+  // it ready, points every runtime call at it and keeps its live stream open.
+  // Null for a frame after the sandbox switches in, and on the debug screens.
+  const runtime = useSessionRuntime();
+  // `useSession` returns a new object on every render. Event handlers read the
+  // latest one here, so they keep their identity and the memoized transcript
+  // and composer do not render again. Render output reads `runtime` itself.
+  const runtimeRef = useRef(runtime);
+  runtimeRef.current = runtime;
+  const runtimeReady = !!runtime?.switched;
+  // This thread shows a sub-agent of the session, in its own runtime session.
+  // Unknown root (still resolving) reads as the root thread.
+  const rootSessionId = runtime?.runtimeSessionId ?? null;
+  const isSubThread = rootSessionId !== null && rootSessionId !== sessionId;
+  // A sub-agent whose runtime refused a message (it takes prompts on the
+  // session's root only): the thread stays readable, its composer is off.
+  const [subThreadReadOnly, setSubThreadReadOnly] = useState(false);
+  useEffect(() => setSubThreadReadOnly(false), [sessionId]);
 
-  // Hydrate messages from REST on mount; SSE keeps store updated after.
-  // The newest page only: `loadOlder` pulls the next older page (COR-144).
-  const { hasOlder, isLoadingOlder, loadOlder } = useSessionSync(sandboxUrl, sessionId);
+  // Session metadata
+  const { data: session } = useRuntimeSession(runtimeReady ? sessionId : '');
+  const { data: allSessions = EMPTY_SESSIONS } = useRuntimeSessions(runtimeReady);
+
+  // The transcript, from the SDK: the saved copy first, one tail read once the
+  // runtime is bound, then the live stream. The newest page only: `loadOlder`
+  // pulls the next older page (COR-144). No `mirror`: the SDK reads the saved
+  // copy with the web's one saved-history read. After the connecting view
+  // (`readSavedSessionCopy`) it answers from the copy that view read, and the
+  // snapshot `useSession` starts asks for no window: one download per open.
+  // A sub-agent reads its own window.
+  // The session log first: no v1 copy is read while the session log answers (`useSession`
+  // reads its page; the SDK's saved-copy read asks `GET …/log` before any v1 window). A
+  // sub-agent's thread loads by `useSessionLogThread`, and older pages are the log's
+  // (`GET …/log?before_seq=`). Only a session whose log answers 404 (a server older than the
+  // log) reads the v1 copy.
+  const kortixSessionScope = projectId && projectSessionId ? `${projectId}/${projectSessionId}` : undefined;
+  const onLog = useSessionLogRecord({ sessionId: projectSessionId ?? '' }) !== null;
+  // The session stream (R5.3): while it is up, the SDK's tail and ask polls
+  // stand down — the box's ring replays what a reconnect missed.
+  const streamConnected = useSessionStreamConnected(projectId ?? '', projectSessionId ?? '');
+  const sync = useSessionSync(sessionId, {
+    kortixSessionScope,
+    streamConnected,
+    networkEnabled: runtimeReady,
+    savedChild: isSubThread,
+    // The rows are read below, paced: a streamed delta does not re-render this hook.
+    subscribeMessages: false,
+  });
+  const logOlder = useSessionLogOlder(
+    { projectId: projectId ?? '', sessionId: projectSessionId ?? '' },
+    isSubThread ? sessionId : undefined,
+    { enabled: onLog },
+  );
+  const { hasOlder, isLoadingOlder, loadOlder } = onLog ? logOlder : sync;
+  const { retryTranscript } = sync;
   const loadOlderRef = useRef(loadOlder);
   loadOlderRef.current = loadOlder;
 
@@ -309,192 +496,169 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const liveUpdates = useLiveUpdates();
 
   // Pull to refresh (Jay, 2026-09-23): re-reads this session's transcript
-  // through its sync controller (`reconcile('manual')`) — the chat refreshes,
-  // the page does not remount. Only a pull shows the spinner.
+  // (the SDK's tail reconcile) — the chat refreshes, the page does not
+  // remount. Only a pull shows the spinner.
   const [pulling, setPulling] = useState(false);
+  const pullTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handlePullRefresh = useCallback(() => {
     haptics.tap();
     setPulling(true);
-    void reconcileLiveSession(sessionId, 'manual').finally(() => setPulling(false));
-  }, [sessionId]);
+    retryTranscript();
+    if (pullTimerRef.current) clearTimeout(pullTimerRef.current);
+    pullTimerRef.current = setTimeout(() => setPulling(false), PULL_REFRESH_SPINNER_MS);
+  }, [retryTranscript]);
+  useEffect(
+    () => () => {
+      if (pullTimerRef.current) clearTimeout(pullTimerRef.current);
+    },
+    [],
+  );
 
-  // Read messages from sync store
-  const messages = useSyncStore((s) => s.messages[sessionId]);
-  const sessionStatus = useSyncStore((s) => s.sessionStatus[sessionId]);
-  const pendingQuestions = useSyncStore((s) => s.questions[sessionId]) ?? EMPTY_QUESTIONS;
-  const pendingPermissions = useSyncStore((s) => s.permissions[sessionId]) ?? EMPTY_PERMISSIONS;
-  const safeMessages = messages ?? EMPTY_MESSAGES;
-
-  const isBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
-  const isCompacting = useCompactionStore((s) => Boolean(s.compactingBySession[sessionId]));
-
-  // ── Self-heal: restore pending questions after reload ──────────────────
-  // Matches the frontend's pattern: detect running question tool parts in
-  // messages, and if the store has no pending questions, poll GET /question.
-  // Track recently-replied question IDs to avoid re-adding them before the
-  // server processes the reply.
-  const suppressedQuestionIds = useRef(new Set<string>());
-
-  // Scans only the newest assistant message: a running question tool always
-  // belongs to the newest turn.
-  const hasRunningQuestionTool = useMemo(() => findRunningQuestionTool(safeMessages), [safeMessages]);
-
-  // Poll GET /question only while a question tool part runs and the store has
-  // no pending question (the `question.asked` event was missed). The stream
-  // layer hydrates /question after reconnects, so a busy session alone is not
-  // a trigger.
-  const shouldPollQuestions = shouldPollQuestionsFor({
-    hasRunningQuestionTool,
-    pendingCount: pendingQuestions.length,
-    hasSandboxUrl: !!sandboxUrl,
+  // The thread, from the session log: the root thread, or a sub-agent's by
+  // its runtime id. While the store holds the session log it holds the API's
+  // v2 records, else the `fromV1` view of the v1 rows. At most once per 64 ms:
+  // applying every 16 ms stream batch saturated the JS thread and blocked tab
+  // switches and drawer opens while the assistant was streaming.
+  const threadSource = useMemo(
+    () => ({ projectId: projectId ?? '', sessionId: projectSessionId ?? '', runtimeSessionId: sessionId }),
+    [projectId, projectSessionId, sessionId],
+  );
+  const storeThread = useSessionLogThread(threadSource, isSubThread ? sessionId : undefined, {
+    throttleMs: TRANSCRIPT_RENDER_INTERVAL_MS,
   });
+  // A failed send is not in the transcript (the server never had it): it
+  // stays in the thread from its own store, with "Not sent · Try again".
+  const failedSends = useFailedSends(sessionId);
+  const thread = useMemo(() => {
+    const failed = failedSendMessages(storeThread?.thread_id ?? sessionId, failedSends);
+    if (failed.length === 0) return storeThread;
+    const base = storeThread ?? emptyThread(sessionId);
+    return { ...base, messages: [...base.messages, ...failed] };
+  }, [sessionId, storeThread, failedSends]);
+  // Handlers read the thread at call time (an edit's rewind).
+  const threadRef = useRef(thread);
+  threadRef.current = thread;
+  const sessionStatus = useSessionStatus(sessionId);
+  const pendingQuestions = usePendingQuestions(sessionId);
+  const pendingPermissions = usePendingPermissions(sessionId);
 
-  // A status change (idle → busy, busy → idle) restarts the poll with a fresh
-  // failure count, so a 401/403 stop or a long backoff is re-evaluated.
-  const sessionStatusType = sessionStatus?.type;
+  // Is the thread working? The session's own thread reads the SDK's projection
+  // over the server's turn (`useSession().isBusy`, the rule web uses): a status
+  // frame lost while the app was in the background cannot leave it working. A
+  // sub-agent thread has no turn of its own, so its stream status decides, as
+  // it does before the runtime is bound.
+  const streamBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const isBusy = runtime && !isSubThread ? runtime.isBusy : streamBusy;
+  // In a shared session only the member who prompted the running turn, the
+  // owner or a project manager may stop it (`useSession().canStop`). Anyone
+  // else gets no Stop; a send while the turn runs still queues.
+  const canStop = viewerMayStop(runtime);
+  // The SDK tracks compaction for the session's root (a compaction this device
+  // started, or one the runtime reports).
+  const isCompacting = !isSubThread && !!runtime?.isCompacting;
 
-  useEffect(() => {
-    if (!shouldPollQuestions || !sandboxUrl) return;
-    let cancelled = false;
-    let inFlight = false;
-    let consecutiveFailures = 0;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const clearTimer = () => {
-      if (timer) clearTimeout(timer);
-      timer = null;
-    };
-
-    // `null` stops the poll until the status changes or the app returns to
-    // the foreground.
-    const schedule = (delayMs: number | null) => {
-      clearTimer();
-      if (cancelled || delayMs === null) return;
-      timer = setTimeout(() => {
-        timer = null;
-        void hydrateQuestions();
-      }, delayMs);
-    };
-
-    const hydrateQuestions = async () => {
-      if (inFlight || cancelled) return;
-      inFlight = true;
-      let status: number | null = null;
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/question`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        status = res.status;
-        if (cancelled) return;
-        if (!res.ok) {
-          consecutiveFailures += 1;
-          return;
-        }
-        const questions = await res.json();
-        consecutiveFailures = 0;
-        if (!Array.isArray(questions) || cancelled) return;
-        const store = useSyncStore.getState();
-        const existingIds = new Set((store.questions[sessionId] || []).map((q) => q.id));
-        for (const q of questions) {
-          if (q.sessionID === sessionId && !existingIds.has(q.id) && !suppressedQuestionIds.current.has(q.id)) {
-            store.addQuestion(sessionId, q);
-            log.log('🔄 [SessionPage] Self-healed pending question:', q.id);
-          }
-        }
-      } catch {
-        consecutiveFailures += 1;
-      } finally {
-        inFlight = false;
-        schedule(nextQuestionPollDelay(status, consecutiveFailures));
-      }
-    };
-
-    // Back in the foreground: poll now instead of waiting out a backoff.
-    const appStateSubscription = AppState.addEventListener('change', (next) => {
-      if (next !== 'active' || cancelled) return;
-      consecutiveFailures = 0;
-      clearTimer();
-      void hydrateQuestions();
-    });
-
-    void hydrateQuestions();
-
-    return () => {
-      cancelled = true;
-      clearTimer();
-      appStateSubscription.remove();
-    };
-  }, [shouldPollQuestions, sandboxUrl, sessionId, sessionStatusType]);
-
-  // ── Self-heal: restore pending permissions on session open ─────────────
-  // GET /permission mirrors GET /question above: a `permission.asked` event
-  // sent before this page (or the SSE stream) was up is lost, and the agent
-  // then waits on a blocked tool call with nothing pinned above the composer.
-  // One read per session open covers that gap; the event stream's own
-  // `hydratePermissionsAfterGap` (`lib/opencode/event-stream.ts`) covers a
-  // later reconnect gap the same way.
-  useEffect(() => {
-    if (!sandboxUrl) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/permission`, {
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        if (!res.ok || cancelled) return;
-        const body: unknown = await res.json();
-        if (cancelled) return;
-        const store = useSyncStore.getState();
-        for (const permission of questionsToHydrate<PermissionRequest>(
-          body,
-          store.permissions,
-          (sid) => sid === sessionId,
-        )) {
-          store.addPermission(sessionId, permission);
-          log.log('🔄 [SessionPage] Self-healed pending permission:', permission.id);
-        }
-      } catch {
-        // Best effort: the SSE stream and its own reconnect-gap hydrate
-        // still cover this session going forward.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [sandboxUrl, sessionId]);
+  // ── Self-heal: restore pending requests after a reload or a missed event ──
+  // A `question.asked` or `permission.asked` frame sent while no stream was up
+  // is lost, and the agent then waits on a blocked tool call with nothing
+  // above the composer. The SDK re-reads the runtime's pending lists while a
+  // question tool (or a gated tool) runs with nothing pending in the store.
+  // The SDK's self-heal reads the runtime's rows; they are read only while the
+  // stream is down (the only time the self-heal runs), so they cost no render otherwise.
+  const healRows = useSessionMessages(streamConnected ? DETACHED_ROWS : threadSource, {
+    throttleMs: TRANSCRIPT_RENDER_INTERVAL_MS,
+  });
+  useQuestionSelfHeal(sessionId, healRows, { enabled: runtimeReady && !streamConnected });
+  usePermissionSelfHeal(sessionId, healRows, { enabled: runtimeReady && !streamConnected });
 
   // ── Message Queue ──────────────────────────────────────────────────────
-  const queueHydrated = useMessageQueueStore((s) => s.hydrated);
-  const allQueuedMessages = useMessageQueueStore((s) => s.messages);
-  const queuedMessages = useMemo(
-    () => allQueuedMessages.filter((m) => m.sessionId === sessionId),
-    [allQueuedMessages, sessionId],
-  );
-  const queueEnqueue = useMessageQueueStore((s) => s.enqueue);
-  const queueRemove = useMessageQueueStore((s) => s.remove);
-
-  // Hydrate queue store from AsyncStorage once
-  useEffect(() => {
-    if (!queueHydrated) {
-      useMessageQueueStore.getState().hydrate();
+  const [queuedMessages, setQueuedMessages] = useState<SessionPrompt[]>(EMPTY_PROMPTS);
+  // A read with the same rows keeps the previous array, so a poll that finds
+  // nothing new renders nothing.
+  const setQueueRows = useCallback((prompts: SessionPrompt[]) => {
+    setQueuedMessages((prev) => (JSON.stringify(prev) === JSON.stringify(prompts) ? prev : prompts));
+  }, []);
+  const refreshQueue = useCallback(async () => {
+    if (!projectId || !projectSessionId) { setQueueRows(EMPTY_PROMPTS); return; }
+    try {
+      const { prompts } = await listSessionPrompts(projectId, projectSessionId);
+      setQueueRows(prompts);
+    } catch (error) {
+      log.error('[SessionPage] Could not read prompt inbox:', error);
     }
-  }, [queueHydrated]);
+  }, [projectId, projectSessionId, setQueueRows]);
 
-  // Enqueue handler — called by SessionChatInput when agent is busy
-  const handleEnqueue = useCallback(
-    (text: string) => {
-      queueEnqueue(sessionId, text);
-    },
-    [sessionId, queueEnqueue],
-  );
+  // Move pre-upgrade local rows into the durable inbox before removing them.
+  useEffect(() => {
+    if (!projectId || !projectSessionId) return;
+    let cancelled = false;
+    void (async () => {
+      await useMessageQueueStore.getState().hydrate();
+      for (const row of useMessageQueueStore.getState().getSessionMessages(sessionId)) {
+        if (cancelled) break;
+        try {
+          const result = await createSessionPrompt(projectId, projectSessionId, {
+            clientMessageId: row.id, messageId: mintWireMessageId({ nowMs: row.timestamp, knownMessageIds: [] }),
+            parts: [{ type: 'text', text: row.text }], placement: 'composer',
+            clientSentAtMs: row.timestamp, remintOnDelivery: true,
+          });
+          if (result.state === 'failed') break;
+          useMessageQueueStore.getState().remove(row.id);
+          void refreshQueue();
+        } catch { break; } // Keep this and later rows for the next attempt, in order.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [projectId, projectSessionId, sessionId, refreshQueue]);
+
+  // The SDK's queue (R5.3): every inbox write arrives on the session stream
+  // as a `kortix.control.queue` frame, and it polls only while that stream is
+  // down. A send and a queue action still read the list at once.
+  const sdkQueue = useSessionPrompts(projectId, projectSessionId);
+  useEffect(() => {
+    setQueueRows(sdkQueue.prompts);
+  }, [sdkQueue.prompts, setQueueRows]);
+  // One read when the page opens, so the queue paints with the page.
+  useEffect(() => {
+    void refreshQueue();
+  }, [refreshQueue]);
+
+  // The composer calls this while a turn runs: the running turn reads the
+  // message at its next step (`steer`, D9.1). A prompt request from another
+  // screen waits for the turn (`queue`).
+  const handleEnqueue = useCallback(async (
+    text: string,
+    options: PromptOptions,
+    mentions?: TrackedMention[],
+    delivery: SessionPromptDelivery = 'steer',
+  ) => {
+    if (!projectId || !projectSessionId) {
+      toast.error('No project session to queue a prompt');
+      throw new Error('No project session to queue a prompt');
+    }
+    const nowMs = Date.now();
+    const clientMessageId = Crypto.randomUUID();
+    const messageId = mintWireMessageId({
+      nowMs,
+      knownMessageIds: sessionMessageIds(sessionId),
+    });
+    const sessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value);
+    const finalText = sessionMentions?.length
+      ? `${text}\n\n${buildSessionRefsBlock(sessionMentions.map((m) => ({ id: m.value ?? '', title: m.label })))}`
+      : text;
+    try {
+      const result = await createSessionPrompt(projectId, projectSessionId, {
+        clientMessageId, messageId, parts: [{ type: 'text', text: finalText }],
+        delivery, clientSentAtMs: nowMs,
+        overrides: { agent: options.agent ?? null, model: options.model ?? null, variant: options.variant ?? null },
+      });
+      if (result.state === 'failed') throw new Error('Prompt delivery was refused');
+      void refreshQueue();
+    } catch (error) {
+      log.error('[SessionPage] Could not queue prompt:', error);
+      toast.error('Could not queue the message. Try again.');
+      throw error;
+    }
+  }, [projectId, projectSessionId, sessionId, refreshQueue, toast]);
 
   // Queue expanded/collapsed state
   const [queueExpanded, setQueueExpanded] = useState(false);
@@ -504,6 +668,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // The first pending question for this session (if any)
   const activeQuestion: QuestionRequest | undefined = pendingQuestions[0];
   const hasQuestion = !!activeQuestion;
+
+  // The bottom area swaps the composer for the question card and back. The
+  // swap keeps the keyboard as it was: the new field takes the focus only when
+  // the keyboard was up at the swap. So a question never raises the keyboard
+  // on its own, and never drops it under a user who is typing. Read during
+  // render, before the old field unmounts. False at the first mount.
+  const bottomFieldId = activeQuestion?.id ?? null;
+  const [bottomSwap, setBottomSwap] = useState({ id: bottomFieldId, keepKeyboard: false });
+  if (bottomSwap.id !== bottomFieldId) {
+    setBottomSwap({ id: bottomFieldId, keepKeyboard: KeyboardController.isVisible() });
+  }
 
   // Save input text when question appears, clear after it's restored
   useEffect(() => {
@@ -517,16 +692,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     }
   }, [hasQuestion]);
 
-  // ── Queue Draining ─────────────────────────────────────────────────────
-  // Automatically send the next queued message when the agent becomes idle.
-  // Mirrors the frontend's drainNextWhenSettled pattern.
-
-  const drainScheduledRef = useRef(false);
-  // Set by a user send; the next new turn scrolls into view animated. Turns
-  // that appear from hydration jump without an animation.
+  // The server inbox owns admission and drain, including after an app restart.
   const userSentRef = useRef(false);
-  const queueInFlightRef = useRef<{ queueId: string; sentAt: number } | null>(null);
-
 
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 
@@ -539,9 +706,10 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       /** A retry's ids (`FailedSend`): the same prompt keeps the same ids. */
       retryIds?: Partial<SendIds>,
     ) => {
-      // No early return on a missing `sandboxUrl`: the composer has already
-      // cleared its draft and files, so a dropped send would lose them. The
-      // files path does not need the sandbox; the text path fails visibly.
+      // No early return when the runtime is not bound yet: the composer has
+      // already cleared its draft and files, so a dropped send would lose
+      // them. A root send goes to the prompt inbox, which holds it until the
+      // computer is ready; a sub-agent send fails visibly.
 
       // Clear the tracked input text so it isn't saved when a question appears
       inputTextRef.current = '';
@@ -566,41 +734,33 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       // `clientMessageId`, so a prompt that already landed does not run twice.
       const { clientMessageId, messageId } = sendIdsFor(retryIds, () => ({
         clientMessageId: Crypto.randomUUID(),
-        messageId: mintWireMessageId({
-          nowMs: Date.now(),
-          knownMessageIds: (useSyncStore.getState().messages[sessionId] ?? EMPTY_MESSAGES).map((m) => m.info.id),
-        }),
+        messageId: mintWireMessageId({ nowMs: Date.now(), knownMessageIds: sessionMessageIds(sessionId) }),
       }));
       // The text part (none for an image-only send), then one part per picked
       // file with its device URI: the bubble shows the local thumbnail until
       // the server echo replaces the message.
-      const optimisticParts = optimisticUserParts(finalText, attachments?.files ?? [], Date.now());
-
-      useSyncStore.getState().addOptimisticMessage(sessionId, {
-        info: {
-          id: messageId,
-          role: 'user',
-          sessionID: sessionId,
-          time: { created: Date.now() },
-        },
-        parts: optimisticParts,
+      const sentAtMs = Date.now();
+      addOptimisticMessage(sessionId, {
+        info: { id: messageId, role: 'user', sessionID: sessionId, time: { created: sentAtMs } },
+        parts: optimisticUserParts(finalText, attachments?.files ?? [], sentAtMs),
       });
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      setLocalSessionStatus(sessionId, { type: 'busy' });
+      // The receipt holds the session's thread on "working" from this instant
+      // until the server's turn answers for the send (`useSession().isBusy`).
+      const receiptSessionId = isSubThread ? null : (projectSessionId ?? null);
+      if (receiptSessionId) {
+        useSessionWorkingStore.getState().noteSendReceipt(receiptSessionId, { messageId, turnId: messageId, atMs: sentAtMs });
+      }
       void playSound('send');
 
-      // Build prompt payload
-      const payload: Record<string, any> = {
-        parts: [{ type: 'text', text: finalText }],
-      };
-      if (options.model) payload.model = options.model;
-      if (options.agent) payload.agent = options.agent;
-      if (options.variant) payload.variant = options.variant;
-
-      // The prompt never reached the runtime: the message stays in the thread,
-      // dimmed, with "Not sent · Try again" (COR-143). It stops being
-      // optimistic, so a refetch keeps it instead of swapping it out.
+      // The prompt never reached the runtime: the message leaves the
+      // transcript and stays in the thread from the failed-send store, dimmed,
+      // with "Not sent · Try again" (COR-143).
       const markFailed = () => {
-        clearOptimistic([messageId]);
+        userSentRef.current = false;
+        setLocalSessionStatus(sessionId, { type: 'idle' });
+        if (receiptSessionId) useSessionWorkingStore.getState().clearSendReceipt(receiptSessionId, messageId);
+        removeOptimisticMessage(sessionId, messageId);
         useFailedSendStore.getState().markFailed(sessionId, messageId, {
           text,
           options,
@@ -609,87 +769,82 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           localFiles: attachments?.files,
           clientMessageId,
           messageId,
+          failedAtMs: sentAtMs,
         });
       };
 
-      // With files: the server prompt inbox, carrying the upload handles. The
-      // optimistic message's id is the prompt's `messageId`, so the echo
-      // replaces the bubble.
-      if (attachments?.fileParts.length) {
+      // A sub-agent's thread: the prompt inbox delivers to the session's root
+      // only, so this prompt goes to the sub-agent's runtime session directly.
+      // A runtime that takes prompts on its root only (pi) refuses it: the
+      // thread then reads as view-only, with the runtime's own words.
+      if (isSubThread) {
         try {
-          if (!projectId || !projectSessionId) throw new Error('No project session to send files to');
-          await createSessionPrompt(projectId, projectSessionId, {
-            clientMessageId,
-            messageId,
-            parts: promptParts(finalText, attachments.fileParts),
-            overrides: {
-              agent: options.agent ?? null,
-              model: options.model ?? null,
-              variant: options.variant ?? null,
+          await promptRuntimeMessage({
+            sessionId,
+            parts: [{ type: 'text', text: finalText }],
+            options: {
+              ...(options.model ? { model: options.model } : {}),
+              ...(options.agent ? { agent: options.agent } : {}),
+              ...(options.variant ? { variant: options.variant } : {}),
             },
-            clientSentAtMs: Date.now(),
+            messageID: messageId,
+            clientMessageId,
           });
-          log.log('[SessionPage] Prompt with files accepted');
-          void requestPushPermissionOnce();
+          log.log('[SessionPage] Sub-agent prompt sent');
         } catch (err: any) {
-          log.error('[SessionPage] Prompt with files failed:', err?.message || err);
-          userSentRef.current = false;
-          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+          log.error('[SessionPage] Sub-agent prompt failed:', err?.message || err);
+          const status = typeof err?.status === 'number' ? err.status : undefined;
+          if (status === 501 || status === 409) {
+            // Not a retry-able failure: the runtime never takes it.
+            userSentRef.current = false;
+            setLocalSessionStatus(sessionId, { type: 'idle' });
+            removeOptimisticMessage(sessionId, messageId);
+            setSubThreadReadOnly(true);
+            toast.error(extractSendErrorMessage(err) || 'This sub-agent takes no messages.');
+            return;
+          }
           markFailed();
         }
         return;
       }
 
-      // The sandbox is still waking: keep the message as a failed send the
-      // user can try again, never drop it silently.
-      if (!sandboxUrl) {
-        log.error('[SessionPage] Prompt not sent: no sandbox URL yet');
-        userSentRef.current = false;
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        markFailed();
-        return;
-      }
-
+      // The server prompt inbox, carrying the upload handles of any files. The
+      // optimistic message's id is the prompt's `messageId`, so the echo
+      // replaces the bubble. The server delivers it once the runtime is ready.
       try {
-        const token = await getAuthToken();
-        const res = await fetch(`${sandboxUrl}/session/${sessionId}/prompt_async`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        if (!projectId || !projectSessionId) throw new Error('No project session to send to');
+        const result = await createSessionPrompt(projectId, projectSessionId, {
+          clientMessageId,
+          messageId,
+          parts: promptParts(finalText, attachments?.fileParts ?? []),
+          overrides: {
+            agent: options.agent ?? null,
+            model: options.model ?? null,
+            variant: options.variant ?? null,
           },
-          body: JSON.stringify(payload),
+          clientSentAtMs: sentAtMs,
         });
-
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => '');
-          log.error('[SessionPage] Prompt failed:', res.status, errorText);
-          userSentRef.current = false;
-          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-          markFailed();
-        } else {
-          log.log('[SessionPage] Prompt sent (async)');
-          // The first send asks for notification permission, once per install.
-          void requestPushPermissionOnce();
-        }
+        if (result.state === 'failed') throw new Error('Prompt delivery was refused');
+        // The inbox holds it: the bubble stays until the delivered echo.
+        markOptimisticAccepted(sessionId, messageId);
+        useSessionWorkingStore.getState().acceptSendReceipt(projectSessionId, messageId, Date.now());
+        log.log('[SessionPage] Prompt accepted');
+        // The first send asks for notification permission, once per install.
+        void requestPushPermissionOnce();
       } catch (err: any) {
-        log.error('[SessionPage] Prompt error:', err?.message || err);
-        userSentRef.current = false;
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        log.error('[SessionPage] Prompt failed:', err?.message || err);
         markFailed();
       }
     },
-    [sandboxUrl, sessionId, projectId, projectSessionId],
+    [sessionId, projectId, projectSessionId, isSubThread, toast],
   );
 
   // "Try again" on a failed send: the failed copy leaves the thread and the
   // same text, options and mentions go out again under the same ids.
-  const failedSends = useFailedSends(sessionId);
   const handleRetrySend = useCallback(
     (messageId: string) => {
       const failed = useFailedSendStore.getState().take(sessionId, messageId);
       if (!failed) return;
-      useSyncStore.getState().removeMessage(sessionId, messageId);
       const mentions = failed.mentions as TrackedMention[] | undefined;
       if (failed.fileParts?.length) {
         // Re-posts the same upload handles; nothing uploads again.
@@ -708,148 +863,78 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   const handleStop = useCallback(async () => {
-    if (!sandboxUrl) return;
+    if (!runtimeReady) return;
     // Optimistic idle, same as the success path always showed. On failure
-    // (network error or a non-2xx abort response) the session is still
-    // running on the server — roll the status back and say so, instead of
-    // leaving the UI idle for work that never stopped (COR-146).
-    const previousStatus = useSyncStore.getState().getStatus(sessionId);
-    useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+    // (network error or a refused abort) the session is still running on the
+    // server — roll the status back and say so, instead of leaving the UI
+    // idle for work that never stopped (COR-146).
+    const previousStatus = readSessionStatus(sessionId);
+    setLocalSessionStatus(sessionId, { type: 'idle' });
+    const failed = (reason: unknown) => {
+      log.error('[SessionPage] Abort failed:', reason instanceof Error ? reason.message : reason);
+      if (previousStatus) setLocalSessionStatus(sessionId, previousStatus);
+      // A refused stop (403 `not_turn_prompter`) says who may stop the run.
+      toast.error(stopRefusalMessage(reason, t('sessions.stopNotAllowed')) ?? "Couldn't stop. Kortix is still working.");
+    };
     try {
-      const token = await getAuthToken();
-      const res = await fetch(`${sandboxUrl}/session/${sessionId}/abort`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-      });
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => '');
-        log.error('[SessionPage] Abort failed:', res.status, errorText);
-        if (previousStatus) useSyncStore.getState().setStatus(sessionId, previousStatus);
-        toast.error("Couldn't stop. Kortix is still working.");
+      const current = runtimeRef.current;
+      if (isSubThread || !current) {
+        // A sub-agent's own run: abort that runtime session.
+        await abortRuntimeSession(sessionId);
+        return;
       }
-    } catch (err: any) {
-      log.error('[SessionPage] Abort error:', err?.message || err);
-      if (previousStatus) useSyncStore.getState().setStatus(sessionId, previousStatus);
-      toast.error("Couldn't stop. Kortix is still working.");
+      // The session's turn: the SDK holds the prompt inbox first, so a queued
+      // prompt does not start the next turn, then aborts the run.
+      const settlement = await current.cancel();
+      if (settlement.status === 'failed') failed(settlement.error);
+    } catch (err) {
+      failed(err);
     }
-  }, [sandboxUrl, sessionId, toast]);
+  }, [runtimeReady, isSubThread, sessionId, toast, t]);
 
-  // ── Queue drain logic ───────────────────────────────────────────────────
+  const handleQueueSendNow = useCallback(async (promptId: string) => {
+    if (!projectId || !projectSessionId) return;
+    try {
+      await retrySessionPrompt(projectId, projectSessionId, promptId);
+      await refreshQueue();
+    } catch (error) {
+      log.error('[SessionPage] Could not prioritize prompt:', error);
+      toast.error('Could not send this message now. Try again.');
+    }
+  }, [projectId, projectSessionId, refreshQueue, toast]);
 
-  const drainNextWhenSettled = useCallback(() => {
-    if (drainScheduledRef.current) return;
-    if (queueInFlightRef.current) return;
-    if (isBusy) return;
-    if (hasQuestion) return;
-
-    const sessionQueue = useMessageQueueStore
-      .getState()
-      .messages.filter((m) => m.sessionId === sessionId);
-    if (sessionQueue.length === 0) return;
-
-    drainScheduledRef.current = true;
-    setTimeout(() => {
-      drainScheduledRef.current = false;
-
-      // Re-check guards after delay
-      const status = useSyncStore.getState().sessionStatus[sessionId];
-      const stillBusy = status?.type === 'busy' || status?.type === 'retry';
-      const stillHasQuestion = (useSyncStore.getState().questions[sessionId] ?? []).length > 0;
-      if (stillBusy || stillHasQuestion || queueInFlightRef.current) return;
-
-      const next = useMessageQueueStore.getState().dequeue(sessionId);
-      if (next) {
-        queueInFlightRef.current = { queueId: next.id, sentAt: Date.now() };
-        // Send with default options (agent/model/variant come from resolved config)
-        handleSend(next.text, {}).catch(() => {
-          queueInFlightRef.current = null;
-        });
-      }
-    }, 500);
-  }, [isBusy, hasQuestion, sessionId, handleSend]);
-
-  // Release in-flight lock when agent finishes and drain next
-  useEffect(() => {
-    const inFlight = queueInFlightRef.current;
-    if (!inFlight) return;
-    if (isBusy || hasQuestion) return;
-
-    // Agent finished — release lock and drain next
-    queueInFlightRef.current = null;
-    setTimeout(() => drainNextWhenSettled(), 100);
-  }, [safeMessages, isBusy, hasQuestion, drainNextWhenSettled]);
-
-  // Fallback drain: triggers when isBusy changes to false and queue has items
-  useEffect(() => {
-    if (isBusy || drainScheduledRef.current) return;
-    const sessionQueue = useMessageQueueStore
-      .getState()
-      .messages.filter((m) => m.sessionId === sessionId);
-    if (sessionQueue.length === 0) return;
-    drainNextWhenSettled();
-  }, [isBusy, queuedMessages.length, sessionId, drainNextWhenSettled]);
-
-  // "Send now" — abort current processing and immediately send a queued message
-  const handleQueueSendNow = useCallback(
-    (messageId: string) => {
-      const msg = useMessageQueueStore
-        .getState()
-        .messages.find((m) => m.id === messageId);
-      if (!msg) return;
-      queueInFlightRef.current = null;
-      queueRemove(messageId);
-      // Send now interrupts: say so, so the stopped reply is not a surprise.
-      if (isBusy) toast.info('Stopped the current reply to send this now');
-      handleStop();
-      setTimeout(() => {
-        handleSend(msg.text, {});
-      }, 200);
-    },
-    [queueRemove, handleStop, handleSend, isBusy, toast],
+  // Agent/model/variant config — web's inputs, `@kortix/sdk`'s rules.
+  // Agents: the project's own, from the Kortix project config (`threadAgents`,
+  // the SDK's `selectableProjectAgents`, #8007) — never the sandbox's `/agent`
+  // list, which adds the runtime's built-ins. Ready before the sandbox is.
+  const projectDetailQuery = useProjectDetail(projectId ?? null);
+  const projectConfig = projectDetailQuery.data?.config;
+  const rawAgents = useMemo(
+    () => (projectConfig ? threadAgents(projectConfig) : undefined),
+    [projectConfig],
   );
-
-  // Agent/model/variant config
-  const agentsQuery = useOpenCodeAgents(sandboxUrl);
-  const agents = agentsQuery.data ?? EMPTY_AGENTS;
-  // No list yet (sandbox still starting, or its first fetch in flight).
-  const agentsLoading = !agentsQuery.data;
-  // Models are derived here from the providers query (the same query
-  // useOpenCodeModels reads) so the arrays keep their identity between
-  // renders and the memoized composer can skip stream renders.
-  const { data: providers } = useOpenCodeProviders(sandboxUrl);
-  const sandboxModels = useMemo(() => (providers ? flattenModels(providers) : EMPTY_MODELS), [providers]);
-  // The models this thread can run on: web's rule (`lib/session/model-picker.ts`).
-  // A gateway project lists its `/model-picker` catalog — the list project home
-  // and web show; any other project lists its sandbox's own providers.
-  const { catalog: modelCatalog, isLoading: catalogLoading, refetch: refetchModelCatalog } =
-    useProjectModelCatalog(projectId ?? null);
-  const allModels = useMemo(
-    () => offeredSessionModels(sandboxModels, modelCatalog, flatModelFromCatalog),
-    [sandboxModels, modelCatalog],
-  );
-  // The catalog is already curated by the server. A native provider list is
-  // not: it keeps the newest model per family.
-  const visibleModels = useMemo(
-    () => (modelCatalog ? allModels : filterToLatestModels(allModels)),
-    [modelCatalog, allModels],
-  );
-  const modelsLoading = catalogLoading || (!modelCatalog && !providers);
-  // A gateway project whose catalog offers no model: Send opens the connect
-  // sheet instead of posting (KRTX-251). No catalog (gateway off) never blocks.
+  // No roster yet (the project config or the sandbox still loading).
+  const agentsLoading = !rawAgents;
+  // Web defaults the picker to the agent of the latest assistant turn.
+  const latestAgent = useMemo(() => latestAssistantAgent(storeThread?.messages ?? EMPTY_MESSAGES), [storeThread]);
+  // The model the session last ran on. With the session's pin it keeps a
+  // session set from the CLI, the SDK or Slack on its model (`useResolvedConfig`).
+  const lastPromptModel = useMemo(() => latestPromptModel(storeThread?.messages), [storeThread]);
+  // Models: the project's list (`useComposerModels`), the same one project home
+  // and web show.
+  const {
+    providers,
+    models,
+    modelDefaults,
+    isLoading: modelsLoading,
+    refetchModelCount,
+  } = useComposerModels(projectId ?? null);
+  // A project that offers no model: Send opens the connect sheet instead of
+  // posting (KRTX-251).
   const modelUnavailable = isModelUnavailable({
-    hasCatalog: modelCatalog !== undefined,
-    loading: catalogLoading,
-    modelCount: visibleModels.length,
+    loading: modelsLoading,
+    modelCount: offeredModelCount(models),
   });
-  // `ConnectProviderSheet` refetches once the in-app browser closes, to toast
-  // "Provider connected" only once the catalog actually turns up a model.
-  const refetchModelCount = useCallback(async () => {
-    const result = await refetchModelCatalog();
-    return catalogPickerModels(result.data?.models).length;
-  }, [refetchModelCatalog]);
   const connectSheetRef = useRef<SheetRef>(null);
   const handleConnectModel = useCallback(() => {
     if (projectId) connectSheetRef.current?.open();
@@ -868,12 +953,35 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     () => ({ projectId: projectId ?? null, requestConnect: requestConnectorConnect }),
     [projectId, requestConnectorConnect],
   );
-  const defaults = providers?.default ?? EMPTY_DEFAULTS;
-  const { data: config } = useOpenCodeConfig(sandboxUrl);
-  const { data: commands = EMPTY_COMMANDS } = useOpenCodeCommands(sandboxUrl);
+  // Only a runtime with a config document (OpenCode) is asked for it; pi
+  // has none, and the project's model defaults cover the composer.
+  // (the SDK asks only a runtime that lists `session.config`).
+  const { data: config } = useRuntimeConfig();
+  // A runtime without slash commands (pi) gets no list: no "/" or "#"
+  // suggestions and no AutoContinue, so nothing dispatches to /command (E1).
+  const canRunCommands = useRuntimeSupports(sandboxUrl, 'session.commands');
+  const canRewind = useRuntimeSupports(sandboxUrl, 'session.rewind');
+  const { data: runtimeCommands = EMPTY_COMMANDS } = useRuntimeCommands();
+  const commands = canRunCommands ? runtimeCommands : EMPTY_COMMANDS;
 
-  // Resolution uses ALL models (fallback chain); selector shows only visible
-  const resolved = useResolvedConfig(agents, allModels, config, defaults);
+  const resolved = useResolvedConfig({
+    agents: rawAgents,
+    boundAgent: boundAgentName,
+    latestAgent,
+    defaultAgent: projectConfig?.default_agent ?? projectConfig?.open_code_default_agent,
+    models,
+    providers,
+    modelDefaults,
+    configModel: config?.model,
+    sessionKey: projectSessionId ?? sessionId,
+    session: projectSession,
+    lastPromptModel,
+  });
+
+  // The composer lists only the commands the selected agent may run. The
+  // transcript keeps the full list: a past turn may have run any of them.
+  const { data: agentRuntimeCommands = EMPTY_COMMANDS } = useRuntimeCommands({ agent: resolved.agent?.name });
+  const composerCommands = canRunCommands ? agentRuntimeCommands : EMPTY_COMMANDS;
 
   // useResolvedConfig returns new arrays, objects, and setters on every
   // render. Stabilize what the composer receives: arrays by content, setters
@@ -885,7 +993,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // request): sent as the composer sends it — at once when idle, with the
   // composer's agent/model/variant; into the queue while the agent works or a
   // question waits.
-  // Keyed by the OpenCode id (the actions sheet, on the open thread) or by the
+  // Keyed by the runtime session id (the actions sheet, on the open thread) or by the
   // project session id (Review's Resolve conflicts, sent before this thread
   // has connected, when only that id is known).
   const promptRequest = useSessionPromptRequestStore((s) =>
@@ -899,7 +1007,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     const request = store.take(sessionId) ?? (projectSessionId ? store.take(projectSessionId) : null);
     if (!request) return;
     if (isBusy || hasQuestion) {
-      queueEnqueue(sessionId, request.text);
+      void handleEnqueue(request.text, {}, undefined, 'queue').catch(() => {});
       return;
     }
     const { agent, modelKey, variant } = resolvedRef.current;
@@ -908,7 +1016,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     if (modelKey) options.model = modelKey;
     if (variant) options.variant = variant;
     void handleSend(request.text, options);
-  }, [promptRequest, sessionId, projectSessionId, isBusy, hasQuestion, queueEnqueue, handleSend]);
+  }, [promptRequest, sessionId, projectSessionId, isBusy, hasQuestion, handleEnqueue, handleSend]);
   const resolvedAgents = useShallowStableArray(resolved.agents);
   const resolvedVariants = useShallowStableArray(resolved.variants);
   const resolvedModel = resolved.model;
@@ -923,8 +1031,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
   const handleAgentChange = useCallback((name: string) => resolvedRef.current.setAgent(name), []);
   const handleModelChange = useCallback(
-    (providerID: string, modelID: string) =>
-      resolvedRef.current.setModel(providerID, modelID, { explicit: true }),
+    (providerID: string, modelID: string) => resolvedRef.current.setModel(providerID, modelID),
     [],
   );
   const handleVariantSet = useCallback((v: string | null) => resolvedRef.current.setVariant(v), []);
@@ -933,22 +1040,17 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, []);
 
   // Agent names for mention highlighting in user bubbles
-  const agentNames = useMemo(() => agents.map((a) => a.name), [agents]);
+  const agentNames = useMemo(() => resolvedAgents.map((a) => a.name), [resolvedAgents]);
 
   // Mention click handlers
   const handleSessionMention = useCallback((mentionedSessionId: string) => {
     useTabStore.getState().navigateToSession(mentionedSessionId);
   }, []);
 
-  // File mention viewer
-  const [mentionFileViewerVisible, setMentionFileViewerVisible] = useState(false);
-  const [mentionViewerFile, setMentionViewerFile] = useState<SandboxFile | null>(null);
-
+  // A file mention or attachment tile opens the transcript's file preview
+  // (`ToolFilePreviewHost`, the Recent files sheet), like a tool row's file.
   const handleFileMention = useCallback((path: string) => {
-    const name = path.split('/').pop() || path;
-    const fullPath = path.startsWith('/') ? path : `/workspace/${path}`;
-    setMentionViewerFile({ name, path: fullPath, type: 'file' });
-    setMentionFileViewerVisible(true);
+    useToolFilePreviewStore.getState().openPreview(path);
   }, []);
 
   // ── Edit a sent message ────────────────────────────────────────────────
@@ -970,26 +1072,26 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   }, []);
 
   const handleEditSend = useCallback(
-    async (messageId: string, text: string) => {
-      if (!sandboxUrl || editPendingRef.current) return;
+    async (messageId: string, text: string, kept: MessageAttachment[] = []) => {
+      const current = runtimeRef.current;
+      if (!current || !runtimeReady || editPendingRef.current) return;
       editPendingRef.current = true;
       setEditPending(true);
       try {
-        const token = await getAuthToken();
-        await revertSession({ sandboxUrl, sessionId, messageId, token });
+        await current.rewind(messageId);
       } catch (err: any) {
         // The editor stays open with the draft, so Send can be tried again.
         log.error('[SessionPage] Rewind failed:', err?.message || err);
-        toast.error("Couldn't edit the message. Try again.");
+        // A runtime without rewind answers in its own words.
+        toast.error(unsupportedFeatureMessage(err) ?? "Couldn't edit the message. Try again.");
         editPendingRef.current = false;
         setEditPending(false);
         return;
       }
       // Hide the abandoned messages now; the resend below commits the revert
       // server-side.
-      const store = useSyncStore.getState();
-      for (const id of rewindHiddenMessageIds(store.messages[sessionId] ?? EMPTY_MESSAGES, messageId)) {
-        store.removeMessage(sessionId, id);
+      for (const id of rewindHiddenMessageIds(threadRef.current?.messages ?? EMPTY_MESSAGES, messageId)) {
+        removeSessionMessage(sessionId, id);
       }
       editPendingRef.current = false;
       setEditPending(false);
@@ -999,38 +1101,163 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       if (agent?.name) options.agent = agent.name;
       if (modelKey) options.model = modelKey;
       if (variant) options.variant = variant;
-      await handleSend(text, options);
+      // The kept attachments go again: a saved copy as a URL part, a path-only upload as its ref.
+      const { fileParts, text: sendText } = editResendAttachments(kept, text);
+      await handleSend(sendText, options, undefined, { fileParts, files: [] });
     },
-    [sandboxUrl, sessionId, handleSend, toast],
+    [runtimeReady, sessionId, handleSend, toast],
   );
 
-  // Group messages into turns. Turns whose messages did not change keep their
-  // previous object, so memoized SessionTurn rows skip stream renders.
-  const prevTurnsRef = useRef<Turn[]>(EMPTY_TURNS);
+  // The thread's turns (`sessionLogTurns`): `live` marks the working turn
+  // (web `resolveWorkingTurn`), `queued` the prompts the agent has not reached.
+  // A turn whose messages did not change keeps its object, so memoized
+  // SessionTurn rows skip stream renders; an unchanged list keeps its array.
+  const prevTurnsRef = useRef<SessionLogTurn[]>(EMPTY_TURNS);
   const turns = useMemo(
-    () => reuseStableTurns(prevTurnsRef.current, groupMessagesIntoTurns(safeMessages)),
-    [safeMessages],
+    () => reuseStableTurns(prevTurnsRef.current, thread ? sessionLogTurns(thread, { busy: isBusy }) : EMPTY_TURNS),
+    [thread, isBusy],
   );
   useEffect(() => {
     prevTurnsRef.current = turns;
   }, [turns]);
+
+  // The change requests this session opened, each at the end of the turn that
+  // opened it (web `anchorOutcomes`; KRTX-1678). The server filters the Review
+  // list to this session's changes (KRTX-2316); the 8 s poll shows a change
+  // the agent opens mid-session.
+  const { data: reviewItems } = useReviewItems(projectId ?? null, {
+    query: { sessionId: projectSessionId, kind: 'change', limit: SESSION_CHANGES_LIMIT },
+    enabled: Boolean(projectSessionId),
+  });
+  const sessionChanges = useMemo(
+    () => sessionChangeRequests(reviewItems, projectSessionId),
+    [reviewItems, projectSessionId],
+  );
+  // Keyed by content: `turns` changes on every stream delta, the starts only
+  // when a turn is added, so each turn keeps one change request array.
+  const turnStartsKey = useMemo(
+    () => turns.map((turn) => `${turn.id}@${recordTimeMs(turn.user.created_at) ?? ''}`).join(' '),
+    [turns],
+  );
+  const changesByTurn = useMemo(() => {
+    const starts = turnStartsKey
+      ? turnStartsKey.split(' ').map((entry) => {
+          const at = entry.lastIndexOf('@');
+          const created = Number(entry.slice(at + 1));
+          // A message with no `time.created` reads 0: no start, skipped.
+          return { key: entry.slice(0, at), startedAt: created > 0 ? created : null };
+        })
+      : [];
+    return anchorChangeRequests(sessionChanges, starts);
+  }, [sessionChanges, turnStartsKey]);
+  const changeSheetRef = useRef<SheetRef>(null);
+  const [selectedChangeId, setSelectedChangeId] = useState<string | null>(null);
+  // Read from the live list, so a merge made elsewhere updates the open sheet.
+  const selectedChange = useMemo(
+    () => sessionChanges.find((item) => item.id === selectedChangeId) ?? null,
+    [sessionChanges, selectedChangeId],
+  );
+  const openChangeRequest = useCallback((id: string) => {
+    setSelectedChangeId(id);
+    changeSheetRef.current?.open();
+  }, []);
+  // Who can open this session, and who wrote each prompt. A new prompt with
+  // no recorded author yet makes the authors hook ask once more.
+  const participants = useSessionParticipants(projectId, projectSessionId).data;
+  // Every user message and queued prompt on screen wants an author.
+  const wantedAuthorIds = useMemo(
+    () => [
+      ...turns.map((turn) => turn.id),
+      ...queuedMessages.flatMap((prompt) => [prompt.message_id, ...(prompt.wire_message_id ? [prompt.wire_message_id] : [])]),
+    ],
+    [turns, queuedMessages],
+  );
+  // `isBusy`: a turn's end reads the authors again, for who stopped it.
+  const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId, wantedAuthorIds, isBusy).data;
+  const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
+  // The signed-in user: the participants list holds at most 20 people.
+  const signedInUserId = useAuthContext().user?.id;
+  // The sender of a message, built once per message while the authors and the
+  // participants stay the same: the same object each render keeps the memoized
+  // rows from rendering again.
+  const senderOf = useMemo(() => {
+    const cache = new Map<string, AvatarPerson | null>();
+    return (messageId: string) => {
+      if (!cache.has(messageId)) {
+        cache.set(messageId, messageAvatarPerson(messageAuthors, participants, viewerId, messageId));
+      }
+      return cache.get(messageId) ?? null;
+    };
+  }, [messageAuthors, participants, viewerId]);
+  // The Kortix session that sent a message (a coordinator, a spawn), same
+  // memo rule as `senderOf`.
+  // Keyed by the ids, not by `turns`: a stream delta makes a new `turns` array
+  // with the same ids, and a new array here would remake `renderItem` per delta.
+  const userMessageIdsKey = turns.map((turn) => turn.id).join('\n');
+  const userMessageIds = useMemo(
+    () => (userMessageIdsKey ? userMessageIdsKey.split('\n') : []),
+    [userMessageIdsKey],
+  );
+  const sessionAuthorOf = useMemo(() => {
+    const cache = new Map<string, ReturnType<typeof messageSessionAuthor>>();
+    return (messageId: string) => {
+      if (!cache.has(messageId)) cache.set(messageId, messageSessionAuthor(messageAuthors, userMessageIds, messageId));
+      return cache.get(messageId) ?? null;
+    };
+  }, [messageAuthors, userMessageIds]);
+  // The member who stopped a turn, when not the viewer: "Stopped by {name}".
+  const stoppedByOf = useCallback(
+    (messageId: string) => turnStoppedBy(messageAuthors, signedInUserId, messageId),
+    [messageAuthors, signedInUserId],
+  );
+  // A queued prompt is keyed by its own message id, or by the wire id it was
+  // re-minted under; either finds its author.
+  const queuedSender = useCallback(
+    (prompt: SessionPrompt) =>
+      senderOf(prompt.message_id) ?? (prompt.wire_message_id ? senderOf(prompt.wire_message_id) : null),
+    [senderOf],
+  );
+  // A queued prompt runs as its author: only they send it now, and they or a
+  // session manager remove it. The API answers 403 to anyone else. The
+  // participants list puts the session's owner first; a project manager who is
+  // not the owner keeps only their own rows here (the web offers them Remove).
+  const managesSession = participants?.participants[0]?.is_viewer === true;
+  const queuedActions = useCallback(
+    (prompt: SessionPrompt) => sessionPromptActions(prompt, { userId: viewerId, managesSession }),
+    [viewerId, managesSession],
+  );
   // The last turn as displayed. Turns are sorted for display, and store order
   // can differ, so the spacer and pending questions follow this id.
-  const lastTurnId = turns.length > 0 ? turns[turns.length - 1].userMessage.info.id : undefined;
+  const lastTurnId = turns.length > 0 ? turns[turns.length - 1].id : undefined;
   const isFreshSession = turns.length === 0;
   // User messages a Stop stranded before a step ran under them (web: `interruptedTurnIds`).
-  const interruptedIds = useMemo(() => interruptedTurnIds(turns, isBusy), [turns, isBusy]);
+  // Stable by content: `turns` changes on every stream delta, and a new Set
+  // would re-render every row.
+  const interruptedIdList = useShallowStableArray(
+    useMemo(() => [...interruptedTurnIds(turns, isBusy)], [turns, isBusy]),
+  );
+  const interruptedIds = useMemo(() => new Set(interruptedIdList), [interruptedIdList]);
   // Web refuses a rewind while the runtime is busy or prompts are still queued.
-  const rewindDisabled = isBusy || queuedMessages.length > 0 || editPending || !sandboxUrl;
+  // A runtime without rewind (pi) never offers Edit, and a sub-agent's thread
+  // does not either: a rewind belongs to the session's own conversation.
+  const rewindDisabled =
+    !canRewind || isSubThread || isBusy || queuedMessages.length > 0 || editPending || !runtimeReady;
   const showFreshHero = isFreshSession && !hasQuestion && queuedMessages.length === 0 && !isBusy;
   const heroOpacity = useRef(new Animated.Value(showFreshHero ? 1 : 0)).current;
+  // The hero stays mounted only while it shows or fades out: its logo shader
+  // and tilt sensor run while mounted, even at opacity 0.
+  const [heroMounted, setHeroMounted] = useState<boolean>(showFreshHero);
+  if (showFreshHero && !heroMounted) setHeroMounted(true);
 
   useEffect(() => {
     Animated.timing(heroOpacity, {
       toValue: showFreshHero ? 1 : 0,
       duration: 220,
       useNativeDriver: true,
-    }).start();
+    }).start(({ finished }) => {
+      // An interrupted fade-out (the hero shows again) keeps it mounted.
+      if (finished && !showFreshHero) setHeroMounted(false);
+    });
   }, [showFreshHero, heroOpacity]);
 
   // ── Transcript scroll physics ──────────────────────────────────────────
@@ -1039,8 +1266,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // applies the result to the FlatList.
   //
   // FACT 1 — the room: the footer spacer under the newest reached turn is
-  //   max(24, viewport − span(anchor turn → content end) − topOffset), so that
-  //   turn can sit `topOffset` below the top of the list.
+  //   max(24, viewport − end padding − span(anchor turn → content end) −
+  //   topOffset), so that turn can sit `topOffset` below the top of the list.
+  //   The end padding is the height the floating composer covers.
   // FACT 2 — the end: because of the room, `content − viewport` IS that turn
   //   at the top while the answer fits, and the answer's tail once it does not.
   // THE RULE — follow: while on, every layout change puts the list at the end.
@@ -1077,6 +1305,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const [room, setRoom] = useState(0);
   const roomRef = useRef(0);
   const renderedRoomRef = useRef(0);
+  // The last room handed to `setRoom`. While the keyboard moves, the list's
+  // height changes every frame (the page's `keyboardInset` padding), and a
+  // room per frame is a page render per frame. A room that shrinks is blank
+  // space the smaller list clips anyway, so it waits for the keyboard to stop.
+  // A room that grows is set at once: the list cannot scroll past its content.
+  const committedRoomRef = useRef(0);
+  const keyboardMovingRef = useRef(false);
   const lastAnchorRef = useRef<{ id: string; reached: boolean } | null>(null);
 
   const glideRef = useRef<{
@@ -1098,42 +1333,52 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   const reduceMotionRef = useRef(reduceMotion);
   reduceMotionRef.current = reduceMotion;
 
-  // The working turn and the prompts the agent has not reached yet (web
-  // `resolveWorkingTurn`). Only the working turn reads the session status.
-  const workingTurn = useMemo(
-    () => (isBusy ? resolveWorkingTurn({ turns, hintMessageId: null }) : null),
-    [isBusy, turns],
-  );
-  const workingTurnId = workingTurn?.workingTurnId ?? null;
+  // The working turn (`live`) and the prompts the agent has not reached yet
+  // (`queued`), while the session works. Only the working turn reads the
+  // session status.
+  const workingTurnId = turns.find((turn) => turn.live)?.id ?? null;
   // Stable by content, so rows do not re-render on every stream delta.
-  const pendingTurnIdList = useShallowStableArray(workingTurn?.pendingTurnIds ?? EMPTY_IDS);
+  const pendingTurnIdList = useShallowStableArray(
+    useMemo(() => (isBusy ? turns.filter((turn) => turn.queued).map((turn) => turn.id) : EMPTY_IDS), [isBusy, turns]),
+  );
   const pendingTurnIds = useMemo(() => new Set(pendingTurnIdList), [pendingTurnIdList]);
   // Web `suppressWorkingTurnBusy` / `someTurnDrawsBusyRow`: when no turn draws
   // the busy row, the transcript end draws it.
-  const suppressWorkingBusy = useMemo(
-    () => (workingTurn ? findSuppressWorkingTurnBusy(turns as unknown as TurnBodyTurn[], workingTurn) : false),
-    [turns, workingTurn],
-  );
+  const suppressWorkingBusy = useMemo(() => findSuppressWorkingTurnBusy(turns), [turns]);
   const showTranscriptBusyRow = transcriptBusyRowVisible({
     isBusy,
     workingTurnId,
     suppressWorkingTurnBusy: suppressWorkingBusy,
   });
+  // TEMP busy-trace (dev only): which signal holds the busy row back at session start.
+  useEffect(() => {
+    log.log('[busy-trace]', {
+      sessionId,
+      runtimeReady,
+      isBusy,
+      status: sessionStatus?.type ?? 'unknown',
+      turns: turns.length,
+      workingTurnId,
+      suppressWorkingBusy,
+      showTranscriptBusyRow,
+      queued: queuedMessages.length,
+    });
+  }, [sessionId, runtimeReady, isBusy, sessionStatus?.type, turns.length, workingTurnId, suppressWorkingBusy, showTranscriptBusyRow, queuedMessages.length]);
   // Web `hasCompactionTurn` / `lastCompactionTurnIndex`: a real compaction turn
   // replaces the optimistic marker; failed attempts before the last compaction
   // turn render nothing.
-  const hasCompactionTurn = useMemo(() => findCompactionTurn(turns as unknown as TurnBodyTurn[]), [turns]);
-  const lastCompactionTurnIndex = useMemo(() => findLastCompactionTurnIndex(turns as unknown as TurnBodyTurn[]), [turns]);
+  const lastCompactionTurnIndex = useMemo(() => findLastCompactionTurnIndex(turns), [turns]);
+  const hasCompactionTurn = lastCompactionTurnIndex >= 0;
 
   // Web `TurnViewport` spacing: mt-12 between turns, mt-3 between back-to-back
   // pending turns while the session works.
   const turnGapAt = useCallback(
-    (list: readonly Turn[], index: number) =>
+    (list: readonly SessionLogTurn[], index: number) =>
       turnTopGap({
         index,
         working: isBusy,
-        pending: pendingTurnIds.has(list[index].userMessage.info.id),
-        previousPending: index > 0 && pendingTurnIds.has(list[index - 1].userMessage.info.id),
+        pending: pendingTurnIds.has(list[index].id),
+        previousPending: index > 0 && pendingTurnIds.has(list[index - 1].id),
       }),
     [isBusy, pendingTurnIds],
   );
@@ -1164,7 +1409,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     if (list.length > 0) {
       // Web marks a queued or never-run prompt `data-turn-pending`; the anchor skips those.
       const isPending = (i: number) => {
-        const id = list[i].userMessage.info.id;
+        const id = list[i].id;
         return (busy && pending.has(id)) || interrupted.has(id);
       };
       const previous = lastAnchorRef.current;
@@ -1172,20 +1417,22 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         list.length,
         isPending,
         previous
-          ? { index: list.findIndex((t) => t.userMessage.info.id === previous.id), reached: previous.reached }
+          ? { index: list.findIndex((t) => t.id === previous.id), reached: previous.reached }
           : null,
       );
       const span = anchorSpan({
         anchorIndex: index,
         count: list.length,
-        heightAt: (i) => turnHeightsRef.current.get(list[i].userMessage.info.id),
+        heightAt: (i) => turnHeightsRef.current.get(list[i].id),
         gapAt: (i) => gapAt(list, i),
         footerHeight: footerContentHeightRef.current,
       });
       // A turn in the span has not laid out yet: keep the room until it has.
       if (span === null) return { measured: false, anchorChanged: false };
-      next = Math.round(roomUnderNewestTurn(viewportHeight, span, topOffset));
-      const anchorId = list[index].userMessage.info.id;
+      // The composer covers the end of the list: the room is sized in the
+      // part above it.
+      next = Math.round(roomUnderNewestTurn(viewportHeight - endPaddingNow(), span, topOffset));
+      const anchorId = list[index].id;
       anchorChanged = previous !== null && previous.id !== anchorId;
       lastAnchorRef.current = {
         id: anchorId,
@@ -1195,12 +1442,13 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     } else {
       lastAnchorRef.current = null;
     }
-    if (next !== roomRef.current) {
-      roomRef.current = next;
+    roomRef.current = next;
+    if (next !== committedRoomRef.current && (!keyboardMovingRef.current || next > committedRoomRef.current)) {
+      committedRoomRef.current = next;
       setRoom(next);
     }
     return { measured: true, anchorChanged };
-  }, []);
+  }, [endPaddingNow]);
 
   /** The end the list settles at once the latest room is laid out. */
   const settledEnd = useCallback(
@@ -1243,6 +1491,51 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       settleRef.current();
     });
   }, []);
+
+  // A taller or shorter composer moves the end padding: settle once, like any layout change.
+  const handleComposerAreaLayout = useCallback(
+    (e: LayoutChangeEvent) => {
+      const height = Math.round(e.nativeEvent.layout.height);
+      composerAreaHeightRef.current = height;
+      composerAreaHeight.value = height;
+      scheduleSettle();
+    },
+    [composerAreaHeight, scheduleSettle],
+  );
+
+  // The keyboard's start and end events bound its motion. The end sets the
+  // room the motion held back, then settles once. The fallback ends a motion
+  // whose end event does not come.
+  useEffect(() => {
+    let fallback: ReturnType<typeof setTimeout> | null = null;
+    const stop = () => {
+      if (fallback) clearTimeout(fallback);
+      fallback = null;
+      if (!keyboardMovingRef.current) return;
+      keyboardMovingRef.current = false;
+      if (committedRoomRef.current !== roomRef.current) {
+        committedRoomRef.current = roomRef.current;
+        setRoom(roomRef.current);
+      }
+      scheduleSettle();
+    };
+    const start = () => {
+      keyboardMovingRef.current = true;
+      if (fallback) clearTimeout(fallback);
+      fallback = setTimeout(stop, KEYBOARD_MOTION_MAX_MS);
+    };
+    const subscriptions = [
+      KeyboardEvents.addListener('keyboardWillShow', start),
+      KeyboardEvents.addListener('keyboardWillHide', start),
+      KeyboardEvents.addListener('keyboardDidShow', stop),
+      KeyboardEvents.addListener('keyboardDidHide', stop),
+    ];
+    return () => {
+      for (const subscription of subscriptions) subscription.remove();
+      if (fallback) clearTimeout(fallback);
+      keyboardMovingRef.current = false;
+    };
+  }, [scheduleSettle]);
 
   const cancelGlide = useCallback(() => {
     const glide = glideRef.current;
@@ -1568,7 +1861,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     [scheduleSettle],
   );
 
-  // The viewport shrinks when the keyboard opens or the composer grows.
+  // The viewport shrinks when the keyboard opens.
   const handleListLayout = useCallback(
     (e: LayoutChangeEvent) => {
       viewportHeightRef.current = e.nativeEvent.layout.height;
@@ -1606,38 +1899,27 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // Question reply/reject handlers
   const handleQuestionReply = useCallback(
     async (requestId: string, answers: string[][]) => {
-      if (!sandboxUrl) return;
-      // Suppress this ID so the self-heal polling doesn't re-add it
-      suppressedQuestionIds.current.add(requestId);
-      // Optimistically remove from store
-      useSyncStore.getState().removeQuestion(sessionId, requestId);
-      try {
-        await replyToQuestion(sandboxUrl, requestId, answers);
-      } catch (err: any) {
-        log.error('Failed to reply to question:', err?.message || err);
-      }
-      // Clear suppression after a delay (server should have processed by then)
-      setTimeout(() => suppressedQuestionIds.current.delete(requestId), 10000);
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await answerQuestion(requestId, answers);
     },
-    [sandboxUrl, sessionId],
+    [runtimeReady],
   );
 
   // Permission reply — the Deny / Allow always / Allow once prompt under a
   // tool row. Same as apps/web `handlePermissionReply`: no optimistic remove;
-  // the prompt leaves the store only once the runtime accepted the reply, so
-  // a failed reply stays visible.
+  // the prompt leaves the store only once the runtime accepted the reply
+  // (`answerPermission`), so a failed reply stays visible.
   const handlePermissionReply = useCallback(
     async (requestId: string, reply: PermissionReply) => {
-      if (!sandboxUrl) return;
+      if (!runtimeReady) return;
       try {
-        await replyToPermission(sandboxUrl, requestId, reply);
-        useSyncStore.getState().removePermission(sessionId, requestId);
+        await answerPermission(requestId, reply);
       } catch (err: any) {
         log.error('[SessionPage] Permission reply failed:', err?.message || err);
         toast.error("Couldn't send the permission reply. Try again.");
       }
     },
-    [sandboxUrl, sessionId, toast],
+    [runtimeReady, toast],
   );
 
   // Inline-code file paths in the transcript open the file viewer.
@@ -1645,77 +1927,83 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
   const handleQuestionReject = useCallback(
     async (requestId: string) => {
-      if (!sandboxUrl) return;
-      suppressedQuestionIds.current.add(requestId);
-      // Optimistically remove from store
-      useSyncStore.getState().removeQuestion(sessionId, requestId);
-      try {
-        await rejectQuestion(sandboxUrl, requestId);
-      } catch (err: any) {
-        log.error('Failed to reject question:', err?.message || err);
-      }
-      setTimeout(() => suppressedQuestionIds.current.delete(requestId), 10000);
-      // Also abort the session (matches frontend behavior)
-      handleStop();
+      if (!runtimeReady) throw new Error('Runtime not ready');
+      await rejectQuestion(requestId);
+      // A member who may not stop the run only dismisses the question.
+      if (canStop) handleStop();
     },
-    [sandboxUrl, sessionId, handleStop],
+    [runtimeReady, canStop, handleStop],
   );
 
   // Command handler — executes a slash command via the server
   const handleCommand = useCallback(
     async (cmd: Command, args?: string) => {
-      if (!sandboxUrl) return;
+      if (!runtimeReady) return;
       // A command creates its turn through the stream, not optimistically, so
       // it has no send scroll: show the result by sticking to the end.
       stickToEnd();
-      useSyncStore.getState().setStatus(sessionId, { type: 'busy' });
+      setLocalSessionStatus(sessionId, { type: 'busy' });
       try {
-        const token = await getAuthToken();
-        const payload: Record<string, any> = {
-          command: cmd.name,
-          arguments: args || '',
-        };
         const current = resolvedRef.current;
-        if (current.agent?.name) payload.agent = current.agent.name;
-        if (current.modelKey) payload.model = `${current.modelKey.providerID}/${current.modelKey.modelID}`;
-        if (current.variant) payload.variant = current.variant;
-
-        const res = await fetch(`${sandboxUrl}/session/${sessionId}/command`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify(payload),
+        await executeRuntimeCommand({
+          sessionId,
+          command: cmd.name,
+          args: args || '',
+          ...(current.agent?.name ? { agent: current.agent.name } : {}),
+          ...(current.modelKey ? { model: `${current.modelKey.providerID}/${current.modelKey.modelID}` } : {}),
+          ...(current.variant ? { variant: current.variant } : {}),
         });
-        if (!res.ok) {
-          const errorText = await res.text().catch(() => '');
-          log.error('[SessionPage] Command failed:', res.status, errorText);
-          useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
-        }
       } catch (err: any) {
-        log.error('[SessionPage] Command error:', err?.message || err);
-        useSyncStore.getState().setStatus(sessionId, { type: 'idle' });
+        log.error('[SessionPage] Command failed:', err?.message || err);
+        setLocalSessionStatus(sessionId, { type: 'idle' });
+        // A runtime without slash commands answers in its own words.
+        const unsupported = unsupportedFeatureMessage(err);
+        if (unsupported) toast.error(unsupported);
       }
     },
-    [sandboxUrl, sessionId, stickToEnd],
+    [runtimeReady, sessionId, stickToEnd, toast],
   );
 
-  // Only the working turn (web `resolveWorkingTurn`) receives status and busy;
+  // Only the working turn (`SessionLogTurn.live`) receives the status;
   // other turns get stable values, so their memoized rows skip stream renders.
   // The room follows the displayed order. Every turn gets `pendingQuestions`
   // (one stable store array) so a pending question tool part is hidden in
   // whichever turn holds it.
+  // Whether the working turn's row is inside the viewport: off screen, its
+  // shimmer and busy dot matrix stop looping (KRTX-1638). RN requires the
+  // callback to be one stable function, so it reads the id through a ref.
+  // ponytail: per turn, not per row. A tall working turn whose top is visible
+  // counts as on screen; go per row if that measurably costs frames.
+  const [workingTurnOnScreen, setWorkingTurnOnScreen] = useState(true);
+  const workingTurnIdRef = useRef(workingTurnId);
+  workingTurnIdRef.current = workingTurnId;
+  // The list re-checks viewability on a data change or the next scroll, but
+  // reports only when the viewable SET changes. This effect is the fallback
+  // for a working-turn change that leaves the set as it was (a turn appended
+  // below the viewport): recompute from the last reported set. Before the
+  // first report the set is unknown and the turn counts as on screen.
+  const viewableKeysRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    const keys = viewableKeysRef.current;
+    setWorkingTurnOnScreen(keys == null || workingTurnId == null || keys.has(workingTurnId));
+  }, [workingTurnId]);
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: { key: string }[] }) => {
+    const keys = new Set(viewableItems.map((v) => v.key));
+    viewableKeysRef.current = keys;
+    const id = workingTurnIdRef.current;
+    setWorkingTurnOnScreen(id == null || keys.has(id));
+  }).current;
+
   const renderTurn = useCallback(
-    ({ item, index }: { item: Turn; index: number }) => {
-      const id = item.userMessage.info.id;
-      const isWorkingTurn = id === workingTurnId;
+    ({ item, index }: { item: SessionLogTurn; index: number }) => {
+      const id = item.id;
+      const isWorkingTurn = item.live;
       // Web: a failed compaction attempt with a later compaction turn is
       // history — it keeps its row (stable keys, layout) but renders nothing.
       const suppressed =
         lastCompactionTurnIndex > index &&
         isSuppressedFailedCompaction({
-          info: compactionTurnInfo(item as never),
+          compaction: item.compaction,
           isTurnWorking: isWorkingTurn,
           turnIndex: index,
           lastCompactionTurnIndex,
@@ -1730,9 +2018,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           {suppressed ? null : (
           <SessionTurn
             turn={item}
-            isWorkingTurn={isWorkingTurn}
             sessionStatus={isWorkingTurn ? sessionStatus : undefined}
-            isBusy={isWorkingTurn ? isBusy : false}
             suppressBusyIndicator={isWorkingTurn && suppressWorkingBusy}
             sessionId={sessionId}
             permissions={pendingPermissions}
@@ -1750,38 +2036,47 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             rewindDisabled={rewindDisabled}
             queueState={interruptedIds.has(id) ? 'interrupted' : null}
             uploadStatus={failedSends[id] ? { state: 'failed', onRetry: () => handleRetrySend(id) } : undefined}
+            sender={senderOf(id)}
+            sessionAuthor={sessionAuthorOf(id)}
+            stoppedBy={stoppedByOf(id)}
+            onScreen={isWorkingTurn ? workingTurnOnScreen : true}
+            changeRequests={changesByTurn.get(id)}
+            onOpenChangeRequest={openChangeRequest}
           />
           )}
         </View>
       );
     },
-    [workingTurnId, lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, isBusy, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend],
+    [lastCompactionTurnIndex, suppressWorkingBusy, turnGapAt, handleTurnLayout, sessionStatus, sessionId, pendingPermissions, pendingQuestions, handlePermissionReply, agentNames, handleFileMention, handleSessionMention, commands, rewindTarget, editPending, handleEditStart, handleEditCancel, handleEditSend, rewindDisabled, interruptedIds, failedSends, handleRetrySend, senderOf, workingTurnOnScreen, changesByTurn, openChangeRequest, sessionAuthorOf, stoppedByOf],
   );
 
-  const keyExtractor = useCallback((item: Turn) => item.userMessage.info.id, []);
+  const keyExtractor = useCallback((item: SessionLogTurn) => item.id, []);
 
   const handleToggleQueue = useCallback(() => setQueueExpanded((v) => !v), []);
-  // Remove acts at once; the toast's Undo puts the message back.
-  const offerQueueUndo = useCallback(
-    (message: string, snapshot: QueuedMessage[], removedIds: string[]) => {
-      if (removedIds.length === 0) return;
-      toast.info(message, {
+  const handleRemoveQueued = useCallback(async (promptId: string) => {
+    if (!projectId || !projectSessionId) return;
+    try {
+      const removed = await deleteSessionPrompt(projectId, projectSessionId, promptId);
+      await refreshQueue();
+      toast.info('Removed from queue', {
         action: {
           label: 'Undo',
-          onPress: () => useMessageQueueStore.getState().restore(snapshot, removedIds),
+          kind: 'undo',
+          onPress: () => void createSessionPrompt(projectId, projectSessionId, {
+            clientMessageId: removed.client_message_id,
+            messageId: removed.message_id,
+            parts: removed.parts,
+            ...(removed.placement ? { placement: removed.placement } : {}),
+            ...(removed.overrides ? { overrides: removed.overrides } : {}),
+            remintOnDelivery: true,
+          }).then(refreshQueue).catch(() => toast.error('Could not restore message. Try again.')),
         },
       });
-    },
-    [toast],
-  );
-  const handleRemoveQueued = useCallback(
-    (messageId: string) => {
-      const snapshot = useMessageQueueStore.getState().messages;
-      queueRemove(messageId);
-      offerQueueUndo('Removed from queue', snapshot, [messageId]);
-    },
-    [queueRemove, offerQueueUndo],
-  );
+    } catch (error) {
+      log.error('[SessionPage] Could not remove prompt:', error);
+      toast.error('Could not remove message. Try again.');
+    }
+  }, [projectId, projectSessionId, refreshQueue, toast]);
   // The oldest pending permission, pinned above the composer (COR-137 Task 7)
   // — above the queue panel in the same top slot, so it is never missed
   // off-screen while a tool call waits on it.
@@ -1808,6 +2103,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
           onRemove={handleRemoveQueued}
           onSendNow={handleQueueSendNow}
           isDark={isDark}
+          senderOf={queuedSender}
+          actionsOf={queuedActions}
         />,
       );
     }
@@ -1822,6 +2119,8 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
     handleRemoveQueued,
     handleQueueSendNow,
     isDark,
+    queuedSender,
+    queuedActions,
   ]);
 
   // ── Older history (COR-144) ─────────────────────────────────────────────
@@ -1878,6 +2177,9 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   // project session rows. The parent and every sub-agent open through the
   // project-session open path (`onOpenProjectSession`), like a drawer row.
   const subAgentListSheetRef = useRef<SheetRef>(null);
+  // The header's avatar stack opens who can open this session.
+  const participantsSheetRef = useRef<SheetRef>(null);
+  const openParticipantsSheet = useCallback(() => participantsSheetRef.current?.open(), []);
   // No open path, nothing to open: the chip hides rather than dead-ends.
   const headerRelation = onOpenProjectSession ? (subAgentRelationValue ?? null) : null;
   const handleSubAgentRelationPress = useCallback(() => {
@@ -1894,11 +2196,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
   );
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior="padding"
-      className="bg-background"
-    >
+    <Reanimated.View style={pageStyle} className="bg-background">
       {/* Floating menu button — opens the project drawer (every project page
           shows it, Jay 2026-09-16). `fade`: turns scroll under the button and
           the status bar, so they fade out there instead of showing through.
@@ -1926,6 +2224,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             relation chip (or nothing) holds the edge there. */}
         {onOpenRightDrawer ? (
           <ProjectHeaderActions onOpenMore={onOpenRightDrawer}>
+            <SessionParticipantStack participants={participants} onPress={openParticipantsSheet} />
             <SubAgentHeaderChip relation={headerRelation} onPress={handleSubAgentRelationPress} />
           </ProjectHeaderActions>
         ) : (
@@ -1933,17 +2232,29 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
         )}
       </FloatingMenuButton>
       <SubAgentListSheet ref={subAgentListSheetRef} subAgents={subAgents ?? EMPTY_PROJECT_SESSIONS} onSelect={handleSubAgentSelect} />
+      <SessionParticipantsSheet ref={participantsSheetRef} participants={participants} />
+      {projectId ? <ReviewDetailSheet ref={changeSheetRef} projectId={projectId} item={selectedChange} /> : null}
 
       {/* Messages + Fresh Session Hero — flat continuation of the page
           surface (the rounded "sheet" card treatment was removed app-wide). */}
       <View style={{ flex: 1 }} className="bg-background">
+        {/* iOS: the list's drag-to-dismiss starts at the top of the composer.
+            Only the list sits inside: below Android 11 this renders its
+            children alone, so the absolute siblings keep the View above. */}
+        <ComposerGestureArea
+          heightRef={bottomAreaHeightRef}
+          setHeightRef={setGestureOffsetRef}
+          textInputNativeID={composerInputNativeID}>
         <ConnectorHandoffContext.Provider value={connectorHandoffApi}>
         <MarkdownActionsProvider value={markdownActions}>
         <FlatList
           ref={flatListRef}
+          style={LIST_DRAWS_UNDER_KEYBOARD}
           data={turns}
           renderItem={renderTurn}
           keyExtractor={keyExtractor}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={VIEWABILITY_CONFIG}
           initialNumToRender={INITIAL_TURNS_TO_RENDER}
           maxToRenderPerBatch={5}
           windowSize={11}
@@ -1978,15 +2289,6 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             <View>
               {/* Footer content above the spacer — part of the anchor span. */}
               <View onLayout={handleFooterContentLayout} className="px-4">
-                {/* Web: the change requests this session opened, as cards.
-                    A tap opens the Review page's sheet. */}
-                {projectId && projectSessionId ? (
-                  <SessionChangeRequests
-                    projectId={projectId}
-                    projectSessionId={projectSessionId}
-                    style={turns.length > 0 ? { marginTop: webSpace(6) } : undefined}
-                  />
-                ) : null}
                 {/* Web: the optimistic compaction marker, where the real
                     compaction turn will mount, until that turn exists. */}
                 {isCompacting && !hasCompactionTurn ? (
@@ -2004,36 +2306,37 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
               </View>
               {/* The room (FACT 1): lets the newest turn pin near the top. */}
               <View onLayout={handleSpacerLayout} style={{ height: room }} />
+              {/* The height the floating composer covers. */}
+              <Reanimated.View testID="session-list-end-padding" style={endPaddingStyle} />
             </View>
           }
           onScrollToIndexFailed={handleScrollToIndexFailed}
         />
         </MarkdownActionsProvider>
         </ConnectorHandoffContext.Provider>
+        </ComposerGestureArea>
+
+        {/* The composer floats over the list, at the bottom of this view: the
+            keyboard's `padding` above lifts the view, so the composer rides
+            on the keyboard. `box-none`: taps reach the list everywhere but
+            on the composer. */}
+        <View pointerEvents="box-none" style={COMPOSER_OVERLAY}>
+        <ComposerBottomFade testID="session-composer-fade" background={pageBackground} bottomInset={insets.bottom} />
+        <View pointerEvents="box-none" style={FILL}>
+        {heroMounted ? <FreshSessionHero opacity={heroOpacity} visible={showFreshHero} /> : null}
 
         <ScrollToBottomButton visible={showScrollButton} onPress={jumpToEnd} />
+        </View>
 
-        <FreshSessionHero
-          opacity={heroOpacity}
-          visible={showFreshHero}
-        />
-      </View>
-
-      {/* Fade gradient above input — only when textarea is shown */}
-      {!hasQuestion && (
-        <LinearGradient
-          colors={isDark ? [withAlpha(THEME.dark.background, 0), withAlpha(THEME.dark.background, 1)] : [withAlpha(THEME.light.background, 0), withAlpha(THEME.light.background, 1)]}
-          style={{ height: 24, marginTop: -24, zIndex: 1 }}
-          pointerEvents="none"
-        />
-      )}
-
+      {/* No fill of its own: the fade behind it is the project drawer's. */}
+      <Reanimated.View testID="session-composer-block" style={bottomAreaStyle}>
+      {/* The composer area, without the inset: the list's end padding. */}
+      <View testID="session-composer-area" onLayout={handleComposerAreaLayout}>
       {/* Sandbox health pill — full-width row immediately above the chat
           input. Self-hides (returns null) when the sandbox is reachable,
           so it takes no layout space the rest of the time. */}
       {!hasQuestion && (
         <SandboxHealthPill
-          onSwitch={() => router.push('/(settings)/instances')}
           whenReachable={
             liveUpdates.paused ? <LiveUpdatesPausedPill onReconnect={liveUpdates.reconnect} /> : null
           }
@@ -2041,18 +2344,21 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
       )}
 
       {/* Bottom area — question prompt OR chat input, above the safe area. */}
-      <Reanimated.View style={bottomAreaStyle}>
+        <View onLayout={handleBottomAreaLayout}>
         {hasQuestion && activeQuestion ? (
           <QuestionPrompt
             key={activeQuestion.id}
             request={activeQuestion}
             onReply={handleQuestionReply}
             onReject={handleQuestionReject}
+            autoFocus={bottomSwap.keepKeyboard}
           />
         ) : (
           <SessionChatInput
+            autoFocus={bottomSwap.keepKeyboard}
+            inputNativeID={composerInputNativeID}
             onSend={handleSend}
-            onStop={handleStop}
+            onStop={canStop ? handleStop : undefined}
             isBusy={isBusy}
             initialText={savedInputText}
             onTextChange={handleTextChange}
@@ -2062,7 +2368,7 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             onAgentChange={handleAgentChange}
             onCreateAgent={onCreateAgent}
             model={resolvedModel}
-            models={visibleModels}
+            models={models}
             modelsLoading={modelsLoading}
             agentsLoading={agentsLoading}
             modelUnavailable={modelUnavailable}
@@ -2076,14 +2382,22 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
             currentSessionId={sessionId}
             sandboxUrl={sandboxUrl}
             projectId={projectId}
-            canAttach={Boolean(projectId && projectSessionId)}
+            // Files go through the prompt inbox, which delivers to the
+            // session's root: a sub-agent's thread sends text only.
+            canAttach={Boolean(projectId && projectSessionId) && !isSubThread}
+            disabled={subThreadReadOnly}
+            placeholder={subThreadReadOnly ? 'This sub-agent takes no messages' : undefined}
             onEnqueue={handleEnqueue}
-            commands={commands}
+            commands={composerCommands}
             onCommand={handleCommand}
             inputSlot={inputSlot}
           />
         )}
+        </View>
+      </View>
       </Reanimated.View>
+        </View>
+      </View>
 
       <ConnectProviderSheet
         ref={connectSheetRef}
@@ -2093,26 +2407,18 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
 
       <ConnectorAuthSheet ref={connectorAuthSheetRef} request={connectorHandoffRequest} />
 
-      {/* File mention viewer */}
-      <FileViewer
-        visible={mentionFileViewerVisible}
-        onClose={() => {
-          setMentionFileViewerVisible(false);
-          setMentionViewerFile(null);
-        }}
-        file={mentionViewerFile}
-        sandboxId=""
-        sandboxUrl={sandboxUrl}
-      />
-
-      {/* File taps inside tool rows (ToolNavigation.openFile) */}
+      {/* File taps: tool rows (ToolNavigation.openFile), attachment tiles, file mentions */}
       <ToolFilePreviewHost />
+
+      {/* Show/preview taps (ToolNavigation.openPreview): in-session over the
+          thread, so a one-tap close returns to the same position (KRTX-602). */}
+      <SandboxPreviewSheet />
 
       {/* The activity summary rows' sheet (ActivityBurst) */}
       {/* Given the connector hand-off so a Connect inside it dismisses the
           activity sheet before the auth sheet opens (never two overlays). */}
       <ActivitySheetHost sessionId={sessionId} markdownActions={markdownActions} connectorHandoff={connectorHandoffApi} />
-    </KeyboardAvoidingView>
+    </Reanimated.View>
   );
 }
 
@@ -2121,6 +2427,41 @@ function SessionPageImpl({ sessionId, projectId, projectSessionId, onBack, onOpe
  * thread. Callers pass stable callbacks.
  */
 export const SessionPage = React.memo(SessionPageImpl);
+
+const FILL = { flex: 1 } as const;
+/** Fills its parent: the overlay over the message area. */
+const COMPOSER_OVERLAY = { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0 } as const;
+
+/**
+ * The list's `KeyboardGestureArea`, offset by the composer's height. The height
+ * is this component's own state, set through `setHeightRef` from the composer's
+ * layout: a new height renders only this component, and `children` (the list,
+ * built by the page) is the same element, so React skips it.
+ */
+function ComposerGestureArea({
+  heightRef,
+  setHeightRef,
+  textInputNativeID,
+  children,
+}: {
+  heightRef: React.RefObject<number>;
+  setHeightRef: React.RefObject<((height: number) => void) | null>;
+  textInputNativeID: string;
+  children: React.ReactNode;
+}) {
+  const [offset, setOffset] = useState(() => heightRef.current);
+  setHeightRef.current = setOffset;
+  return (
+    <KeyboardGestureArea
+      style={FILL}
+      offset={offset}
+      textInputNativeID={textInputNativeID}
+      // Android keeps `keyboardDismissMode="on-drag"` below.
+      enableSwipeToDismiss={false}>
+      {children}
+    </KeyboardGestureArea>
+  );
+}
 
 /** Web: `ease-[cubic-bezier(0.23,1,0.32,1)]` on the scroll-to-bottom button. */
 const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
@@ -2131,9 +2472,12 @@ const SCROLL_BUTTON_EASING = ReanimatedEasing.bezier(0.23, 1, 0.32, 1);
  * of content away from the end. Opacity + scale 0.97 → 1, `duration-normal`
  * in, `duration-fast` out. Tapping glides to the end and follows from there.
  *
- * The `secondary` round button with a 1pt `border-border` ring on every
- * platform (Jay, 2026-09-22), so it separates from the prose scrolling under
- * it. No native Liquid Glass: SwiftUI glass cannot carry the border.
+ * iOS 26+: a glass circle (`LiquidGlassCapsule`, 40pt) behind the ghost
+ * button and caret, the same recipe as every hamburger (`MenuButton`) and the
+ * composer card it sits above (Jay, 2026-10-20). Android, older iOS and a
+ * binary without `ExpoUI` keep the `secondary` round button with a 1pt
+ * `border-border` ring (Jay, 2026-09-22), so it separates from the prose
+ * scrolling under it.
  */
 function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress: () => void }) {
   const progress = useSharedValue(visible ? 1 : 0);
@@ -2156,18 +2500,19 @@ function ScrollToBottomButton({ visible, onPress }: { visible: boolean; onPress:
       accessibilityElementsHidden={!visible}
       importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
       // Bottom-right, directly above the composer: the 16pt project edge
-      // (`px-4`) on the right; 8pt above the 24pt fade that overlaps the
-      // bottom of the list — lower, and the fade would paint over it.
+      // (`px-4`) on the right; 10pt above the composer's top edge, over the
+      // list (`zIndex`).
       style={[{ position: 'absolute', right: 16, bottom: 10, zIndex: 20 }, style]}
     >
       <Button
-        variant="secondary"
+        variant={LIQUID_GLASS_AVAILABLE ? 'ghost' : 'secondary'}
         size="icon"
-        className="rounded-full border border-border"
+        className={LIQUID_GLASS_AVAILABLE ? 'rounded-full' : 'rounded-full border border-border'}
         accessibilityLabel="Scroll to bottom"
         onPress={onPress}
       >
-        <Icon as={CaretDownIcon} size={20} />
+        {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
+        <Icon as={CaretDownIcon} size={20} className="text-foreground" />
       </Button>
     </Reanimated.View>
   );
@@ -2235,8 +2580,14 @@ function QueuePanel({
   onRemove,
   onSendNow,
   isDark,
+  senderOf,
+  actionsOf,
 }: {
-  messages: QueuedMessage[];
+  messages: SessionPrompt[];
+  /** The prompt's sender avatar in a shared session, else null. */
+  senderOf?: (prompt: SessionPrompt) => AvatarPerson | null;
+  /** What the viewer may do to the prompt (`sessionPromptActions`). */
+  actionsOf?: (prompt: SessionPrompt) => { own: boolean; removable: boolean };
   expanded: boolean;
   /** The agent is working: Send now stops the current reply first. */
   busy: boolean;
@@ -2287,9 +2638,11 @@ function QueuePanel({
       {expanded && messages.length > 0 && (
         <View style={{ maxHeight: 176 }}>
           <ScrollView showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            {messages.map((qm) => (
+            {messages.map((qm) => {
+              const actions = actionsOf?.(qm) ?? { own: true, removable: true };
+              return (
               <View
-                key={qm.id}
+                key={qm.prompt_id}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -2301,31 +2654,48 @@ function QueuePanel({
                   borderTopColor: borderColor,
                 }}
               >
-                <Text variant="small" numberOfLines={1} className="flex-1 leading-5">
-                  {qm.text}
-                </Text>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className="rounded-full"
-                  onPress={() => onSendNow(qm.id)}
-                  accessibilityLabel="Send now"
-                  accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
-                >
-                  <Text>Send now</Text>
-                </Button>
+                {(() => {
+                  // Queued prompts show their sender too, like the transcript.
+                  const sender = senderOf?.(qm);
+                  return sender ? <ParticipantAvatar person={sender} /> : null;
+                })()}
+                <View className="flex-1">
+                  <Text variant="small" numberOfLines={1} className="leading-5">
+                    {queueRowText(qm.text)}
+                  </Text>
+                  {queueRowCaption(qm) ? (
+                    <Text variant="muted" numberOfLines={2}>
+                      {queueRowCaption(qm)}
+                    </Text>
+                  ) : null}
+                </View>
+                {actions.own && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    onPress={() => onSendNow(qm.prompt_id)}
+                    accessibilityLabel="Send now"
+                    accessibilityHint={busy ? 'Stops the current reply and sends this message' : undefined}
+                  >
+                    <Text>Send now</Text>
+                  </Button>
+                )}
                 {/* 40pt box + the Button's default 2pt hit slop = 44pt target. */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-full"
-                  onPress={() => onRemove(qm.id)}
-                  accessibilityLabel="Remove from queue"
-                >
-                  <XIcon size={16} color={mutedText} />
-                </Button>
+                {actions.removable && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="rounded-full"
+                    onPress={() => onRemove(qm.prompt_id)}
+                    accessibilityLabel="Remove from queue"
+                  >
+                    <XIcon size={16} color={mutedText} />
+                  </Button>
+                )}
               </View>
-            ))}
+              );
+            })}
           </ScrollView>
         </View>
       )}

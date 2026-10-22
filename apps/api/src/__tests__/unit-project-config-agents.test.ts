@@ -29,7 +29,7 @@ describe('project config agent discovery', () => {
     ]);
   });
 
-  test('agents: becomes the launchable server-side roster', () => {
+  test('agents: lists every registered agent, a disabled one with enabled: false', () => {
     const loaded: LoadedAgents = {
       errors: [],
       specs: [
@@ -95,6 +95,17 @@ describe('project config agent discovery', () => {
         sandbox: null,
         scope: { env: 'all', connectors: [], kortix_permissions: [], kortix_cli: [], apps: [] },
       },
+      {
+        name: 'disabled',
+        path: 'kortix.yaml#agents.disabled',
+        description: null,
+        mode: null,
+        model: null,
+        source: 'kortix.yaml',
+        enabled: false,
+        sandbox: null,
+        scope: { env: 'all', connectors: [], kortix_permissions: [], kortix_cli: [], apps: [] },
+      },
     ]);
   });
 
@@ -131,6 +142,32 @@ describe('project config agent discovery', () => {
   test('OpenCode-discovered agents carry no agents: scope', () => {
     const result = resolveConfigAgents(nativeAgents, { specs: [], errors: [] });
     expect(result.agents.every((a) => a.scope === undefined)).toBe(true);
+  });
+
+  test('root layout: a declared agent resolves to the .md that exists, wherever it is', () => {
+    const rootAgents = [
+      { name: 'kortix', path: 'agents/kortix.md', description: 'Root agent', mode: 'primary' },
+      { name: 'support', path: 'team/support.md', description: 'Explicit file', mode: 'subagent' },
+    ];
+    const spec = (name: string, file: string | null) => ({
+      name,
+      path: `kortix.yaml#agents.${name}`,
+      enabled: true,
+      connectors: [] as string[],
+      permissions: [] as string[],
+      env: 'all' as const,
+      file,
+      model: null,
+    });
+    const result = resolveConfigAgents(
+      rootAgents,
+      { errors: [], specs: [spec('kortix', null), spec('support', 'team/support.md')] },
+      (s) => (s.name === 'kortix' ? 'agents/kortix.md' : undefined),
+    );
+    expect(result.agents.map((a) => [a.name, a.path, a.description])).toEqual([
+      ['kortix', 'agents/kortix.md', 'Root agent'],
+      ['support', 'team/support.md', 'Explicit file'],
+    ]);
   });
 
   test('invalid agents: adoption disables legacy discovery instead of silently exposing all agents', () => {

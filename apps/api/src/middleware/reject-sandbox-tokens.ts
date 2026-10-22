@@ -8,7 +8,7 @@ import { HTTPException } from 'hono/http-exception';
  *
  * Why this exists: `combinedAuth` accepts sandbox `kortix_` tokens and sets
  * `authType: 'apiKey'` + `accountId` + `sandboxId`. Routes that scope only by
- * `accountId` (e.g. `/v1/usage`, `/v1/generation`) would otherwise let a
+ * `accountId` (e.g. `/v1/usage`) would otherwise let a
  * sandbox agent read the ENTIRE account's usage/cost rollup and per-call
  * gateway forensics across every project/session on that account — a
  * cross-project info leak on multi-user accounts. Found by Strix (MEDIUM)

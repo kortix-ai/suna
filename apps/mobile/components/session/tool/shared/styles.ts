@@ -8,9 +8,6 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export const monoFont = MONO_FONT_FAMILY;
 
-export function cardBorder(isDark: boolean) {
-  return withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);
-}
 export function cardBg(isDark: boolean) {
   // Light branch keeps a near-white card fill (not the transparent
   // light.foreground-alpha shape used elsewhere) — matches the original
@@ -58,7 +55,7 @@ export const TURN_TYPE = {
   /** `text-[10px] font-medium tracking-wider uppercase` — `ToolSection` label (0.05em). */
   label10: { fontSize: 10, lineHeight: 15, letterSpacing: 0.5 },
   /** Activity sheet timeline entry: app body size on the reference's 24pt line pitch. */
-  sheetEntry: { fontSize: 16, lineHeight: 24 },
+  sheetEntry: { fontSize: 15, lineHeight: 24 },
 } as const;
 
 export const FONT_MEDIUM = 'Roobert-Medium';
@@ -99,7 +96,7 @@ export const TURN_SPACE = {
   copyReserve: webSpace(11),
   /** `top-1 right-1` — floating copy button. */
   copyInset: webSpace(1),
-  /** `--tool-indent` default 1.375rem; 1.75rem inside a chain (`activity-step.tsx`). */
+  /** `--tool-indent` default 1.375rem; 1.75rem inside a chain (web `activity-step.tsx`). */
   toolIndent: 1.375 * 16,
   toolIndentChain: 1.75 * 16,
   /** File chip: `p-1.5 py-1 pr-3`, `size-9` well, `size-5` glyph. */

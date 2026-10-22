@@ -128,6 +128,16 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.scim.token.revoke': { title: 'Revoked SCIM token', kind: 'revoke' },
   'iam.service_account.create': { title: 'Created service account', kind: 'create' },
   'iam.service_account.disable': { title: 'Disabled service account', kind: 'update' },
+  // Computer tunnel routes retired with per-machine permissions (2026-09-29).
+  'tunnel.audit_log.list': { title: 'Viewed computer tunnel audit log', kind: 'read' },
+  'tunnel.connection.create': { title: 'Registered computer tunnel', kind: 'create' },
+  'tunnel.event.stream': { title: 'Streamed computer tunnel events', kind: 'read' },
+  'tunnel.permission.grant': { title: 'Granted computer tunnel permission', kind: 'grant' },
+  'tunnel.permission.list': { title: 'Listed computer tunnel permissions', kind: 'read' },
+  'tunnel.permission.revoke': { title: 'Revoked computer tunnel permission', kind: 'revoke' },
+  'tunnel.permission_request.approve': { title: 'Approved computer tunnel permission request', kind: 'grant' },
+  'tunnel.permission_request.deny': { title: 'Denied computer tunnel permission request', kind: 'revoke' },
+  'tunnel.permission_request.list': { title: 'Listed computer tunnel permission requests', kind: 'read' },
   'iam.service_account.delete': { title: 'Deleted service account', kind: 'delete' },
   'iam.audit.export': { title: 'Exported audit log', kind: 'export' },
   'iam.policy_template.apply': { title: 'Applied policy template', kind: 'grant' },
@@ -606,7 +616,16 @@ export function describeAuditAction(
       };
     }
     if (pattern) {
-      return { ...pattern, mapped: true, method, route: null, area: routeArea(path) };
+      // A pattern's own title can be an English literal: translate it like the
+      // catalog's (KRTX-2400). A title that is already translated passes through.
+      return {
+        ...pattern,
+        title: translateAuditTitle(pattern.title, tI18nComplete),
+        mapped: true,
+        method,
+        route: null,
+        area: routeArea(path),
+      };
     }
     return {
       title: compactHttpAction(method, path),
@@ -626,17 +645,6 @@ export function describeAuditAction(
     route: null,
     area: null,
   };
-}
-
-/**
- * Return the compact shape used by existing audit consumers.
- */
-export function humanizeAuditAction(
-  action: string,
-  tI18nComplete: UiTranslator,
-): HumanizedAuditAction {
-  const { title, detail, kind } = describeAuditAction(action, tI18nComplete);
-  return detail ? { title, detail, kind } : { title, kind };
 }
 
 /** The kind a label action's verb names; its route's method otherwise. */
@@ -714,21 +722,3 @@ export function formatResourcePill(
   const short = resourceId ? resourceId.slice(0, 8) : null;
   return short ? `${label} · ${short}` : label;
 }
-
-/**
- * Tailwind colour classes per action-kind. Used for the small leading
- * dot on each row. Kept in this module so the row component stays a
- * presentation shell.
- */
-export const KIND_DOT_CLASS: Record<HumanizedAuditAction['kind'], string> = {
-  create: 'bg-emerald-500/70',
-  update: 'bg-amber-500/70',
-  delete: 'bg-rose-500/70',
-  grant: 'bg-violet-500/70',
-  revoke: 'bg-rose-500/70',
-  attach: 'bg-sky-500/70',
-  detach: 'bg-zinc-400/70',
-  read: 'bg-zinc-300/60',
-  export: 'bg-sky-500/70',
-  other: 'bg-zinc-300/60',
-};

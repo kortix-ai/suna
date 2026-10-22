@@ -5,27 +5,35 @@
  * replaces the message. Shared by a thread send (`SessionPage` `handleSend`)
  * and a project-home send's seed (`first-prompt-seed.ts`).
  *
- * Ids use the `prt_` prefix: `addOptimisticMessage` registers each one and
- * `upsertPart` drops exactly those when the real parts land. Pure, so
- * `bun test` runs it.
+ * Ids use the `prt_` prefix. The SDK's session store drops these parts when
+ * the echo's real parts land. The device URI is kept by part id
+ * (`localUriOf`), so the bubble's attachment block finds its thumbnail.
  */
-import type { Part } from '../opencode/types';
 import type { AttachedFile } from './attachments';
+import type { OptimisticPart } from './session-store';
 
-/** `text` is used as given; the caller trims it if it wants to. */
-export function optimisticUserParts(text: string, files: readonly AttachedFile[], nowMs: number): Part[] {
+/** The picked file behind each optimistic attachment, by part id (= the block id the bubble reads). */
+// ponytail: never pruned; one short entry per picked file in this app run.
+const localUris = new Map<string, string>();
+
+/** The device URI of the picked file an optimistic attachment was made from, if any. */
+export function localUriOf(partId: string): string | undefined {
+  return localUris.get(partId);
+}
+
+/**
+ * `text` is used as given; the caller trims it if it wants to. The parts carry
+ * no `sessionID`/`messageID`: `addOptimisticMessage` (session-store.ts) stamps
+ * them with the message they join.
+ */
+export function optimisticUserParts(text: string, files: readonly AttachedFile[], nowMs: number): OptimisticPart[] {
   let n = 0;
   const partId = () => `prt_${nowMs}_${n++}_${Math.random().toString(36).slice(2, 8)}`;
-  const parts: Part[] = text.trim() ? [{ type: 'text', id: partId(), text }] : [];
+  const parts: OptimisticPart[] = text.trim() ? [{ type: 'text', id: partId(), text }] : [];
   for (const file of files) {
-    parts.push({
-      type: 'file',
-      id: partId(),
-      mime: file.mimeType,
-      filename: file.name,
-      url: undefined,
-      localUri: file.uri,
-    });
+    const id = partId();
+    localUris.set(id, file.uri);
+    parts.push({ type: 'file', id, mime: file.mimeType, filename: file.name, url: undefined, localUri: file.uri });
   }
   return parts;
 }

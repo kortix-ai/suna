@@ -8,7 +8,6 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  agentSpecToTomlEntry,
   extractAgents,
   grantFromLoadedAgents,
   resolveGovernedAgentGrant,
@@ -67,18 +66,6 @@ apps = "everything"
     expect(errors.map((e) => e.name)).toEqual(['reporter']);
   });
 
-  test('round-trip: agentSpecToTomlEntry emits apps only when declared', () => {
-    const { specs } = parseV1(`
-[[agents]]
-name = "reporter"
-apps = ["reports-dashboard"]
-
-[[agents]]
-name = "quiet"
-`);
-    expect(agentSpecToTomlEntry(specs.find((s) => s.name === 'reporter')!).apps).toEqual(['reports-dashboard']);
-    expect('apps' in agentSpecToTomlEntry(specs.find((s) => s.name === 'quiet')!)).toBe(false);
-  });
 });
 
 describe('AgentSpec → AgentGrant', () => {

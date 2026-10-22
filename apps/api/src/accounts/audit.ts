@@ -4,6 +4,7 @@
 // Reads (gated on audit.read):
 //   - GET    /:accountId/audit                  cursor-paginated list
 //   - GET    /:accountId/audit/export?format=   CSV or JSONL streaming export
+//   - GET    /:accountId/audit/activity         per-user activity by day
 //
 // Webhook management (gated on account.write):
 //   - GET    /:accountId/audit/webhooks
@@ -12,14 +13,20 @@
 //   - DELETE /:accountId/audit/webhooks/:id
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { auditEvents, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { auditEventsAll, auditWebhookDeliveries, auditWebhooks } from '@kortix/db';
+import { and, desc, eq } from 'drizzle-orm';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
 import { actorOf } from '../iam/actor';
 import { assertAllowedSourceAddress } from '../marketplace/catalog';
 import { ErrorSchema, auth, errors, json, makeOpenApiApp } from '../openapi';
-import { flushAuditEvents, recordAuditEvent } from '../shared/audit';
-import { requestClientIp } from '../shared/client-ip';
+import {
+  AUDIT_READ_FLUSH_BARRIER_MS,
+  flushAuditEvents,
+  recordAuditEvent,
+} from '../shared/audit';
+import { auditCredentialNames } from '../shared/audit-credential-names';
+import { readAuditActivity } from '../shared/audit-activity';
+import { requestClientIp } from '../middleware/client-ip';
 import {
   deliverTestEvent,
   generateWebhookSecret,
@@ -33,11 +40,14 @@ import {
   parseAuditLimit,
   serializeAuditEvent,
 } from '../shared/audit-query';
+import { wakeAuditWebhookWorker } from '../workers/audit-webhook-worker';
 import { AuditActorTypeSchema, AuditListSchema } from '../shared/audit-schema';
+import { readExportPage } from '../shared/audit-archive/export-page';
+import { auditArchiveStore } from '../shared/audit-archive/store';
 import { reconcileAuditEvents } from '../shared/audit-reconciliation';
 import type { AppEnv } from '../types';
-import { type AuditFilterInput, buildFilters } from './audit-filters';
-import { requireEntitlement } from './iam/helpers';
+import { buildFilters } from './audit-filters';
+import { requireEntitlement } from './iam/http-helpers';
 import { readJsonObject } from '../shared/http-body';
 
 export const auditRouter = makeOpenApiApp<AppEnv>();
@@ -86,18 +96,15 @@ const AuditWebhookPatchSchema = z
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
 
-// Re-exported from ./audit-filters (pure, unit-tested) so existing importers
-// keep working.
-export { buildFilters, type AuditFilterInput } from './audit-filters';
-
 // GET /v1/accounts/:accountId/audit
 //   ?action=connector.       — prefix match on action
 //   ?actor=<uuid>           — only events performed by this user
 //   ?actor_type=agent       — human, agent, service_account, system, or anonymous
 //   ?project_id=<uuid>      — one project
 //   ?session_id=<id>        — one session
-//   ?source=cli             — one client or execution source
-//   ?outcome=failure        — success, failure, denied, or pending
+//   ?source=api_key         — one trusted execution source (authoritative_source)
+//   ?credential_kind=oauth_app — one credential class the API authenticated
+//   ?outcome=failure        — success, failure, denied, pending, or expired
 //   ?request_id=<id>        — one API request
 //   ?correlation_id=<id>    — one cross-system operation
 //   ?resource_type=X        — prefix match on resource_type
@@ -123,8 +130,9 @@ auditRouter.openapi(
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
-        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending', 'expired']).optional(),
         request_id: z.string().optional(),
         correlation_id: z.string().optional(),
         resource_type: z.string().optional(),
@@ -141,7 +149,6 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
@@ -152,6 +159,7 @@ auditRouter.openapi(
     const projectId = c.req.query('project_id')?.trim() || null;
     const sessionId = c.req.query('session_id')?.trim() || null;
     const source = c.req.query('source')?.trim() || null;
+    const credentialKind = c.req.query('credential_kind')?.trim() || null;
     const phase = c.req.query('phase')?.trim() || null;
     const outcome = c.req.query('outcome')?.trim() || null;
     const requestId = c.req.query('request_id')?.trim() || null;
@@ -171,9 +179,11 @@ auditRouter.openapi(
       return c.json({ error: (error as Error).message }, 400);
     }
 
-    // Flush the snapshot emitted before this read. Traffic that arrives after
-    // this barrier stays asynchronous and cannot delay the request indefinitely.
-    await flushAuditEvents();
+    // Flush the snapshot emitted before this read — read-your-writes — but
+    // never past the barrier bound: the audit queue's per-session serialize
+    // waits without a timeout, and under a write convoy that barrier was the
+    // 25s deadline 503s on this route (prod, 2026-09-28, KRTX-631).
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
 
     const conditions = buildFilters(accountId, {
       actor,
@@ -181,6 +191,7 @@ auditRouter.openapi(
       projectId,
       sessionId,
       source,
+      credentialKind,
       phase,
       outcome,
       requestId,
@@ -200,20 +211,119 @@ auditRouter.openapi(
 
     const rows = await db
       .select()
-      .from(auditEvents)
+      .from(auditEventsAll)
       .where(and(...conditions))
-      .orderBy(desc(auditEvents.occurredAt), desc(auditEvents.eventId))
+      .orderBy(desc(auditEventsAll.occurredAt), desc(auditEventsAll.eventId))
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
     const last = page[page.length - 1];
     const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    const names = await auditCredentialNames(page);
 
     return c.json({
-      events: page.map(serializeAuditEvent),
+      events: page.map((row) => serializeAuditEvent(row, names)),
       next_cursor: nextCursor,
     });
+  },
+);
+
+// ─── Activity ─────────────────────────────────────────────────────────────
+//
+// GET /v1/accounts/:accountId/audit/activity — who was active, how often, per
+// UTC day, from kortix.audit_activity_daily (shared/audit-activity.ts).
+//   ?since=YYYY-MM-DD       — first day, inclusive (default: 27 days before until)
+//   ?until=YYYY-MM-DD       — last day, inclusive (default: today, UTC)
+//   ?project_id=<uuid>      — one project
+//   ?actor=<uuid>           — one user
+//   ?client=browser         — browser (a person in a web page) or program
+//   ?actor_type=human       — human, agent, service_account, system, anonymous
+//   ?credential_kind=browser_session
+const ACTIVITY_MAX_DAYS = 400;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const AuditActivitySchema = z
+  .object({
+    since: z.string(),
+    until: z.string(),
+    rolled_through: z.string().nullable(),
+    actors: z.array(
+      z.object({
+        actor_user_id: z.string(),
+        email: z.string().nullable(),
+        active_days: z.number(),
+        active_hours: z.number(),
+        events: z.number(),
+        first_at: z.string(),
+        last_at: z.string(),
+        days: z.array(z.object({ day: z.string(), events: z.number(), active_hours: z.number() })),
+      }),
+    ),
+  })
+  .openapi('AuditActivity');
+
+function parseActivityDay(value: string | null, name: string): string | null {
+  if (value === null) return null;
+  const day = DAY_RE.test(value) ? value : value.slice(0, 10);
+  if (!DAY_RE.test(day) || Number.isNaN(Date.parse(`${day}T00:00:00Z`))) {
+    throw new Error(`${name} must be a date (YYYY-MM-DD)`);
+  }
+  return day;
+}
+
+auditRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/audit/activity',
+    tags: ['accounts'],
+    summary: 'Per-user activity by day (who was active, how often)',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      query: z.object({
+        since: z.string().optional(),
+        until: z.string().optional(),
+        project_id: z.string().uuid().optional(),
+        actor: z.string().uuid().optional(),
+        client: z.enum(['browser', 'program']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
+        credential_kind: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: json(AuditActivitySchema, 'Activity per actor'),
+      ...errors(400, 401, 402, 403),
+    },
+  }),
+  async (c) => {
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
+    const denied = await requireEntitlement(c, accountId, 'auditAccess');
+    // requireEntitlement builds an untyped 402 Response; the route declares it.
+    if (denied) return denied as never;
+    let since: string;
+    let until: string;
+    try {
+      until = parseActivityDay(c.req.query('until')?.trim() || null, 'until') ?? new Date().toISOString().slice(0, 10);
+      since =
+        parseActivityDay(c.req.query('since')?.trim() || null, 'since') ??
+        new Date(Date.parse(`${until}T00:00:00Z`) - 27 * 86_400_000).toISOString().slice(0, 10);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    const span = (Date.parse(until) - Date.parse(since)) / 86_400_000 + 1;
+    if (span < 1) return c.json({ error: 'since must be on or before until' }, 400);
+    if (span > ACTIVITY_MAX_DAYS) return c.json({ error: `at most ${ACTIVITY_MAX_DAYS} days per request` }, 400);
+    const result = await readAuditActivity(accountId, {
+      since,
+      until,
+      projectId: c.req.query('project_id')?.trim() || null,
+      actor: c.req.query('actor')?.trim() || null,
+      client: (c.req.query('client')?.trim() || null) as 'browser' | 'program' | null,
+      actorType: c.req.query('actor_type')?.trim() || null,
+      credentialKind: c.req.query('credential_kind')?.trim() || null,
+    });
+    return c.json({ since, until, ...result });
   },
 );
 
@@ -259,6 +369,8 @@ const CSV_HEADERS = [
   'source',
   'authoritative_source',
   'client_reported_source',
+  'credential_kind',
+  'credential_id',
   'outcome',
   'action',
   'phase',
@@ -294,6 +406,8 @@ auditRouter.openapi(
     path: '/{accountId}/audit/export',
     tags: ['accounts'],
     summary: 'Export audit events as CSV or JSONL',
+    description:
+      'Oldest first, 10,000 events per page (follow X-Audit-Next-Cursor). Reaches back 365 days: events older than 90 days are read from the S3 archive. The list endpoint covers the last 90 days only.',
     ...auth,
     request: {
       params: AccountIdParam,
@@ -305,8 +419,9 @@ auditRouter.openapi(
         project_id: z.string().uuid().optional(),
         session_id: z.string().optional(),
         source: z.string().optional(),
+        credential_kind: z.string().optional(),
         phase: z.string().optional(),
-        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending', 'expired']).optional(),
         request_id: z.string().optional(),
         correlation_id: z.string().optional(),
         resource_type: z.string().optional(),
@@ -329,7 +444,6 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
     const denied = await requireEntitlement(c, accountId, 'auditAccess');
@@ -345,6 +459,7 @@ auditRouter.openapi(
     const projectId = c.req.query('project_id')?.trim() || null;
     const sessionId = c.req.query('session_id')?.trim() || null;
     const source = c.req.query('source')?.trim() || null;
+    const credentialKind = c.req.query('credential_kind')?.trim() || null;
     const phase = c.req.query('phase')?.trim() || null;
     const outcome = c.req.query('outcome')?.trim() || null;
     const requestId = c.req.query('request_id')?.trim() || null;
@@ -364,41 +479,38 @@ auditRouter.openapi(
       return c.json({ error: (error as Error).message }, 400);
     }
 
-    await flushAuditEvents();
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
 
-    const conditions = buildFilters(accountId, {
-      actor,
-      actorType,
-      projectId,
-      sessionId,
-      source,
-      phase,
-      outcome,
-      requestId,
-      correlationId,
-      actionPrefix,
-      resourceType,
-      sinceRaw,
-      untilRaw,
-      q,
-    });
-
-    if (parsedCursor) {
-      conditions.push(buildAuditCursorCondition(parsedCursor, accountId, 'ascending'));
-    }
-
-    const fetched = await db
-      .select()
-      .from(auditEvents)
-      .where(and(...conditions))
-      // Export is chronological (oldest → newest) — that's the order humans
-      // expect when grepping through a CSV; pagination uses reverse order.
-      .orderBy(asc(auditEvents.occurredAt), asc(auditEvents.eventId))
-      .limit(exportLimit + 1);
-    const hasMore = fetched.length > exportLimit;
-    const rows = hasMore ? fetched.slice(0, exportLimit) : fetched;
-    const last = rows.at(-1);
-    const nextCursor = hasMore && last ? `${last.occurredAt.toISOString()}|${last.eventId}` : null;
+    // Ascending, across the archive (weeks older than 90 days, S3) and PostgreSQL. A bucket that is
+    // not configured means PostgreSQL only.
+    const page = await readExportPage(
+      { db, store: auditArchiveStore().configured ? auditArchiveStore() : null },
+      {
+        accountId,
+        cursor: parsedCursor,
+        limit: exportLimit,
+        filters: {
+          actor,
+          actorType,
+          projectId,
+          sessionId,
+          source,
+          credentialKind,
+          phase,
+          outcome,
+          requestId,
+          correlationId,
+          actionPrefix,
+          resourceType,
+          sinceRaw,
+          untilRaw,
+          q,
+        },
+      },
+    );
+    const rows = page.rows;
+    const hasMore = page.nextCursor !== null;
+    const nextCursor = page.nextCursor;
 
     const filenameDate = new Date().toISOString().slice(0, 10);
     const filename = `audit-${filenameDate}.${format}`;
@@ -465,7 +577,7 @@ auditRouter.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
-    await flushAuditEvents();
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
     const result = await reconcileAuditEvents(accountId, limit);
     await recordAuditEvent({
       accountId,
@@ -517,7 +629,6 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
     // No entitlement gate on listing: a downgraded admin must be able to see
@@ -722,7 +833,6 @@ auditRouter.openapi(
     },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const webhookId = c.req.param('webhookId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -732,7 +842,7 @@ auditRouter.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message }, 400);
     }
-    await flushAuditEvents();
+    await flushAuditEvents({ waitMs: AUDIT_READ_FLUSH_BARRIER_MS });
     const [hook] = await db
       .select({ webhookId: auditWebhooks.webhookId })
       .from(auditWebhooks)
@@ -802,6 +912,7 @@ auditRouter.openapi(
     if (!hook) return c.json({ error: 'webhook not found' }, 404);
     const replayed = await replayAuditWebhookDelivery(deliveryId, webhookId);
     if (!replayed) return c.json({ error: 'delivery not found' }, 404);
+    wakeAuditWebhookWorker();
     await recordAuditEvent({
       accountId,
       actorUserId: userId,

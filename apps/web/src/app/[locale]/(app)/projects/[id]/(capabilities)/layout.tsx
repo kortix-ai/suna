@@ -2,7 +2,8 @@
 
 import { useParams } from 'next/navigation';
 
-import { CapabilityTabs } from '@/features/workspace/capabilities/shared/capability-tabs';
+import { CapabilityAccessGate } from '@kortix/ui/customize/shared/capability-access-gate';
+import { CapabilityTabs } from '@kortix/ui/customize/shared/capability-tabs';
 
 /**
  * Shared shell for /projects/[id]/{agent,connectors,skills,triggers,models,
@@ -43,6 +44,11 @@ import { CapabilityTabs } from '@/features/workspace/capabilities/shared/capabil
  * makes an element a scroll container, sticky resolves against the nearest
  * ancestor scroll container, and there are five of those between the bar and
  * the viewport — it would have pinned to a box that never scrolls.
+ *
+ * **One access rule for the bar and the body.** `CapabilityTabs` lists only
+ * the tabs `capabilityAccess()` allows; `CapabilityAccessGate` renders
+ * `{children}` only for such a tab and replaces any other URL with the first
+ * allowed tab or the project home.
  */
 export default function CapabilitiesLayout({ children }: { children: React.ReactNode }) {
   const { id: projectId } = useParams<{ id: string }>();
@@ -50,7 +56,7 @@ export default function CapabilitiesLayout({ children }: { children: React.React
   return (
     <div className="flex h-svh flex-col overflow-hidden">
       <CapabilityTabs projectId={projectId} />
-      {children}
+      <CapabilityAccessGate projectId={projectId}>{children}</CapabilityAccessGate>
     </div>
   );
 }

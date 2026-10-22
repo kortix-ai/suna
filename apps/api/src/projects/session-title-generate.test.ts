@@ -147,6 +147,56 @@ describe('titleSourceForCreate', () => {
   });
 });
 
+describe('paste markup in title sources', () => {
+  const paste = '<pasted_content id="ab12cd34" chars="11">\nhello world\n</pasted_content>';
+
+  it('titleSourceForCreate keeps only the typed question when paste blocks come first', () => {
+    expect(titleSourceForCreate({ initial_prompt: `${paste}\n\nWhy is the build red?` })).toBe(
+      'Why is the build red?',
+    );
+  });
+
+  it('titleSourceForCreate falls back to the pasted body for a pastes-only prompt', () => {
+    expect(titleSourceForCreate({ initial_prompt: paste })?.startsWith('hello world')).toBe(true);
+  });
+
+  it('titleSourceForCreate shows a typed (neutralized) tag as the user typed it', () => {
+    // Not a tile: splitPastedContent restores typed tags for display (restorePastedTags).
+    const typed = '&lt;pasted_content id="x" chars="1"> what is this tag?';
+    expect(titleSourceForCreate({ initial_prompt: typed })).toBe('<pasted_content id="x" chars="1"> what is this tag?');
+  });
+
+  it('the model sees the typed question, not the markup', async () => {
+    const seen: string[] = [];
+    const persisted: string[] = [];
+    await generateSessionTitleFromFirstPrompt(
+      {
+        sessionId: 's',
+        projectId: 'p',
+        accountId: 'a',
+        userId: 'u',
+        firstPromptText: `${paste}\n\nWhy is the build red?`,
+        modelHint: 'codex/gpt-5.6-sol',
+      },
+      {
+        loadRow: async () => row({}),
+        generate: async (_m, _a, promptText) => {
+          seen.push(promptText);
+          return 'Red Build';
+        },
+        mintKey: async () => ({ secret: 'sk', keyId: 'k' }),
+        revokeKey: async () => {},
+        persist: async (_r, title) => {
+          persisted.push(title);
+        },
+        fallbackModel: async () => null,
+      },
+    );
+    expect(seen).toEqual(['Why is the build red?']);
+    expect(persisted).toEqual(['Red Build']);
+  });
+});
+
 describe('generateSessionTitleFromFirstPrompt', () => {
   function harness(over: Partial<GenerateSessionTitleOptions> & { row?: ProjectSessionRow } = {}) {
     const persisted: string[] = [];
@@ -186,7 +236,6 @@ describe('generateSessionTitleFromFirstPrompt', () => {
       // This suite exercises the GATEWAY titling path; the per-project flag is
       // resolved from the DB in production. Native-mode (flag off) behavior is
       // covered by its own cases below.
-      resolveLlmGatewayEnabled: over.resolveLlmGatewayEnabled ?? (async () => true),
     };
     return { options, persisted, minted, revoked, models, generateCalls: () => generateCalls };
   }
@@ -411,21 +460,32 @@ describe('generateSessionTitleFromFirstPrompt', () => {
     expect(h.revoked).toEqual(['key-1']);
   });
 
+  // KRTX-2651: "Say a" carries no topic, so the model titled the message
+  // itself ("Incomplete Request To Say A"). A few-word prompt is its own title.
+  it('titles a few-word prompt with the prompt itself: no key, no model call', async () => {
+    const h = harness({
+      generate: async () => {
+        throw new Error('a few-word prompt must not reach the model');
+      },
+    });
+    await generateSessionTitleFromFirstPrompt({ ...input, firstPromptText: 'Say a' }, h.options);
+    expect(h.persisted).toEqual(['Say a']);
+    expect(h.minted).toEqual([]);
+  });
+
+  it.each([
+    { name: 'four words', text: 'Fix the login bug' },
+    { name: 'a long prompt with no spaces', text: '请帮我设置微软图形的连接器并测试它是否可以正常工作以及记录结果' },
+  ])('still titles $name with the model', async ({ text }) => {
+    const h = harness();
+    await generateSessionTitleFromFirstPrompt({ ...input, firstPromptText: text }, h.options);
+    expect(h.generateCalls()).toBe(1);
+    expect(h.persisted).toEqual(['Set Up MS Graph']);
+  });
+
   it('does not persist an empty prompt', async () => {
     const h = harness();
     await generateSessionTitleFromFirstPrompt({ ...input, firstPromptText: '   ' }, h.options);
     expect(h.persisted).toEqual([]);
-  });
-
-  // ── Native mode (project `llm_gateway` flag OFF) ─────────────────────────
-  it('native mode runs NO gateway pipeline — no mint, no generate — and titles from the prompt', async () => {
-    const h = harness({ resolveLlmGatewayEnabled: async () => false });
-    await generateSessionTitleFromFirstPrompt(
-      { ...input, modelHint: 'anthropic/claude-sonnet-4-6' },
-      h.options,
-    );
-    expect(h.minted).toEqual([]);
-    expect(h.generateCalls()).toBe(0);
-    expect(h.persisted).toEqual(['Please set up the MS Graph OAuth2 connector']);
   });
 });

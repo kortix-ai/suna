@@ -66,14 +66,23 @@ const baseCall: ConnectorCallRow = {
   approvedBy: null,
   createdAt: new Date('2026-06-30T09:00:00.000Z'),
   resolvedAt: null,
+  expiresAt: null,
 };
 
 describe('connectorCallToReviewItem', () => {
-  test('a pending connector call maps to a needs_you approval item', () => {
-    const item = connectorCallToReviewItem(baseCall);
+  test('names the connector by its display name when the row has one', () => {
+    const named = connectorCallToReviewItem({ ...baseCall, connectorName: 'GitHub' }, { canResolve: true });
+    expect((named.detail as Record<string, unknown>).connector_name).toBe('GitHub');
+    const unnamed = connectorCallToReviewItem(baseCall, { canResolve: true });
+    expect('connector_name' in (unnamed.detail as Record<string, unknown>)).toBe(false);
+  });
+
+  test('a pending connector call the caller may resolve maps to a needs_you approval item', () => {
+    const item = connectorCallToReviewItem(baseCall, { canResolve: true });
     expect(item.review_item_id).toBe(`${CALL_ID_PREFIX}ex-1`);
     expect(item.kind).toBe('approval');
     expect(item.status).toBe('needs_you');
+    expect(item.can_resolve).toBe(true);
     expect(item.title).toBe('Approve: gmail.messages.send');
     expect(item.detail).toMatchObject({
       execution_id: 'ex-1',
@@ -103,7 +112,7 @@ describe('connectorCallToReviewItem', () => {
           args_preview_complete: true,
         },
       },
-      { includeArgsPreview: true },
+      { canResolve: true },
     );
 
     expect(item.detail).toMatchObject({
@@ -127,6 +136,41 @@ describe('connectorCallToReviewItem', () => {
       args_preview_complete: false,
       args_preview_authorized: false,
     });
+  });
+
+  test('loaded provider content follows the args gate', () => {
+    const resultSummary = {
+      args_preview: { draft_id: 'r-1' },
+      resolved_preview: { to: ['buyer@example.test'], body: 'Hello' },
+      resolved_digest: 'd'.repeat(64),
+    };
+    const resolver = connectorCallToReviewItem({ ...baseCall, resultSummary }, { canResolve: true });
+    expect(resolver.detail).toMatchObject({ resolved_preview: resultSummary.resolved_preview });
+    expect(resolver.detail).not.toHaveProperty('resolved_digest');
+    const other = connectorCallToReviewItem({ ...baseCall, resultSummary });
+    expect(other.detail).not.toHaveProperty('resolved_preview');
+
+    const failed = connectorCallToReviewItem(
+      { ...baseCall, resultSummary: { args_preview: { draft_id: 'r-1' }, resolved_error: 'unavailable' } },
+      { canResolve: true },
+    );
+    expect(failed.detail).toMatchObject({ resolved_error: 'unavailable' });
+    expect(connectorCallToReviewItem({ ...baseCall, resultSummary: { resolved_error: 'unavailable' } }).detail).not.toHaveProperty(
+      'resolved_error',
+    );
+  });
+
+  test('a caller who may not resolve the call reads it as waiting, not needs_you (KRTX-1724)', () => {
+    const item = connectorCallToReviewItem(baseCall);
+    expect(item.status).toBe('waiting');
+    expect(item.can_resolve).toBe(false);
+    expect(item.resolvers).toBeNull();
+  });
+
+  test('the item names who decides the call', () => {
+    expect(
+      connectorCallToReviewItem(baseCall, { canResolve: false, resolvers: 'managers' }).resolvers,
+    ).toBe('managers');
   });
 });
 

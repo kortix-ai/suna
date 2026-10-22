@@ -1,5 +1,5 @@
 import { AGENT_AUTOMATION_TRANSLATION_KEYS } from '@/i18n/agent-automation-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import type { UiTranslator } from '@/i18n/translator';
 
 /**
@@ -9,13 +9,13 @@ import type { UiTranslator } from '@/i18n/translator';
  * can iterate before paying the 8-locale parity gate (`pnpm i18n:translations`).
  * Wire i18n keys only once the copy is locked.
  *
- * Voice rules: the `comms` skill.
+ * Voice rules: the `kortix-brand` skill.
  * ACCURACY GATE for this page specifically:
  *  - Say "agent computer" / "cloud computer" / "sandbox". NEVER "container".
  *  - "3,000+ apps" is the only sanctioned number. No benchmarks, no latency,
  *    no uptime, no customer names.
  *  - NEVER claim blanket "microVM isolation". Platinum is a Cloud Hypervisor
- *    microVM; Daytona, the default provider, is not. Write "its own isolated
+ *    microVM; Daytona, the legacy fallback provider, is not. Write "its own isolated
  *    machine" and name the provider where the distinction matters — the same
  *    rule `features/marketing/security-page/content.ts` follows.
  *  - NEVER write that a secret is "never shown to the model". A granted runtime
@@ -28,7 +28,7 @@ import type { UiTranslator } from '@/i18n/translator';
  */
 
 export const hero = {
-  eyebrow: 'Agent computer',
+  eyebrow: 'Agent Computer',
   title: 'Every session gets its own computer.',
   sub: 'Your project and tools are ready from the start, so the agent can work without using your laptop.',
   ctaPrimary: 'Start a session',
@@ -98,7 +98,7 @@ export const control = {
 
 export const parallel = {
   eyebrow: 'Parallelism',
-  title: 'Hundreds of thousands of computers. One main.',
+  title: 'Thousands of computers. One main.',
   sub: 'Run many agents at once without mixing up their work. You review every result before it joins your main project.',
   /** The mono equation under the headline. Keep it three terms. */
   equation: '1 session  =  1 computer  =  1 branch',
@@ -147,7 +147,7 @@ export const declared = {
     ],
   },
   shell: {
-    title: 'inside the agent computer',
+    title: 'inside the cloud computer',
     lines: [
       '# the repo is already here. nothing to set up.',
       '$ pwd',
@@ -185,9 +185,9 @@ export const files = {
       note: 'sandbox image, triggers, channels, connectors, secrets',
       depth: 1,
     },
-    { path: '.kortix/opencode/', note: 'the runtime your agents think in', depth: 1 },
-    { path: 'agents/', note: 'one OpenCode agent per file', depth: 2 },
-    { path: 'skills/', note: 'how this company does a specific job', depth: 2 },
+    { path: 'agents/', note: 'one OpenCode agent per file', depth: 1 },
+    { path: 'skills/', note: 'how this company does a specific job', depth: 1 },
+    { path: 'harnesses/opencode/', note: 'the runtime your agents think in', depth: 1 },
     { path: 'commands/', note: 'the shortcuts everyone shares', depth: 2 },
     { path: 'plugins/', note: 'the tools you wrote yourself', depth: 2 },
   ],
@@ -213,7 +213,7 @@ export const isolation = {
     {
       id: 'machine',
       k: 'One machine per session',
-      v: 'Sessions never share a filesystem, a process table, or a network namespace. On Kortix’s own Platinum compute the boundary is a Cloud Hypervisor microVM; Daytona and E2B are also supported, and we will tell you which one you are on.',
+      v: 'Sessions never share a filesystem, a process table, or a network namespace. On Platinum, Kortix’s own compute and the reference provider, the boundary is a Cloud Hypervisor microVM. Daytona remains a legacy fallback, and we will tell you which one you are on.',
     },
     {
       id: 'secrets',

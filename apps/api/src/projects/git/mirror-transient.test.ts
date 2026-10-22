@@ -1,8 +1,11 @@
 import { describe, expect, test } from 'bun:test';
+import { SecretGrantResolutionError } from '../lib/secret-grant';
+import { SessionGrantRemintError } from '../lib/session-token-grant';
 import {
   classifyGitError,
   cloneBareWithRetry,
   isTransientGitMirrorError,
+  transientGitMirrorCause,
 } from './mirror';
 
 // Regression for incident `incident-20260923T100537Z-hbcr` (Better Stack: Kortix
@@ -38,6 +41,18 @@ function incidentError() {
 }
 
 describe('isTransientGitMirrorError', () => {
+  test('finds a retryable git error behind grant-resolution wrappers', () => {
+    const git = incidentError();
+    const wrapped = new SessionGrantRemintError(
+      'synthetic-session',
+      new SecretGrantResolutionError('synthetic-agent', git),
+    );
+    expect(transientGitMirrorCause(wrapped)).toBe(git);
+    expect(
+      transientGitMirrorCause(new SessionGrantRemintError('synthetic-session', new Error('database unavailable'))),
+    ).toBeNull();
+    expect(transientGitMirrorCause(new Error('repository not found'))).toBeNull();
+  });
   test('classifies the exact incident clone failure as transient (retryable)', () => {
     const err = incidentError();
     // The raw classification is unchanged — it is still a real non-zero exit …

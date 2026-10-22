@@ -1,6 +1,6 @@
 import { createServer } from 'node:net';
 
-import type { Auth } from './api/auth.ts';
+import { type Auth, currentTokenFor } from './api/auth.ts';
 import { clientFromAuth } from './api/client.ts';
 import { type RunningSandboxPortProxy, startSandboxPortProxy, withKortixScope } from './api/sdk.ts';
 import type { ProjectSession } from './api/types.ts';
@@ -154,6 +154,7 @@ export async function startPortForward(
       const proxy = startProxy({
         runtimeUrl: sandboxUrl,
         token: runtime.auth.token,
+        getToken: () => currentTokenFor(runtime.auth),
         port: localPort,
       });
       const boundPort = Number(new URL(proxy.url).port);

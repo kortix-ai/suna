@@ -4,12 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SUPABASE_DIR="$ROOT_DIR/supabase"
 
-FRONTEND_PID=""
-API_PID=""
-GATEWAY_PID=""
 TUNNEL_PID=""
 TUNNEL_LOG=""
-STRIPE_PID=""
 
 # Standalone LLM gateway: a single fixed port (laptop dev is single-instance,
 # unlike worktrees which stride per-slot) and a fixed shared internal token the
@@ -67,8 +63,9 @@ load_local_env() {
   export ENV_MODE=local
   # Default only — the shared .env (decrypted above) or a personal .env.local
   # (below) decides the real provider order (e.g. "platinum,daytona").
-  export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona}"
-  # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
+  # Platinum is the reference provider; Daytona is a legacy opt-in fallback.
+  export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-platinum}"
+  # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Platinum)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
   # this machine's localhost — so they need a public tunnel URL. The dashboard
   # keeps talking to the API on localhost via NEXT_PUBLIC_BACKEND_URL, so only
@@ -86,7 +83,6 @@ load_local_env() {
   # standalone gateway owns /v1/chat/completions. Exported AFTER the .env
   # decrypt so they override whatever the committed apps/api/.env carries.
   if [[ "${KORTIX_DEV_GATEWAY:-auto}" != "0" ]]; then
-    export LLM_GATEWAY_ENABLED=true
     export LLM_GATEWAY_BASE_URL=""
     export LLM_GATEWAY_PROXY_PORT="$GATEWAY_PORT"
     export GATEWAY_INTERNAL_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN"
@@ -108,13 +104,19 @@ load_local_env() {
   export INTERNAL_SERVICE_KEY="local-flow-runner-internal-service-key"
 }
 
-# Front the local API with a public Cloudflare quick tunnel so cloud Daytona
+# Front the local API with a public Cloudflare quick tunnel so cloud
 # sandboxes can reach it as $KORTIX_URL. No-op when KORTIX_DEV_TUNNEL=0 or the
 # default provider isn't cloud-based.
 ensure_dev_tunnel() {
   local api_port="${PORT:-8008}"
   local api_origin="http://localhost:${api_port}"
   local default_provider="${ALLOWED_SANDBOX_PROVIDERS%%,*}"
+
+  # Callers below (the watchdog and the supervised API loop) read
+  # TUNNEL_URL_FILE on every dev run: every exit path leaves the current
+  # callback URL on disk — the quick-tunnel URL when we manage one, else the
+  # effective KORTIX_URL itself (a preset URL or the localhost skip path).
+  TUNNEL_URL_FILE="${TUNNEL_URL_FILE:-$(mktemp -t kortix-tunnel-url.XXXXXX)}"
 
   # Respect an explicit public KORTIX_URL (named tunnel, staging API, …) — but
   # only if it actually ANSWERS. FAA: a stale/bogus value (e.g. a dead quick-
@@ -126,6 +128,7 @@ ensure_dev_tunnel() {
   if [[ -n "${KORTIX_URL:-}" && "$KORTIX_URL" != http://localhost:* && "$KORTIX_URL" != http://127.0.0.1:* ]]; then
     if curl -fsS -m 6 "${KORTIX_URL%/}/health" >/dev/null 2>&1; then
       echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
+      printf '%s' "$KORTIX_URL" > "$TUNNEL_URL_FILE"
       return 0
     fi
     echo "[dev] ⚠️  KORTIX_URL=$KORTIX_URL is set but UNREACHABLE (sandboxes would get a dead callback URL → blank session UI) — ignoring it and starting a fresh tunnel."
@@ -136,9 +139,10 @@ ensure_dev_tunnel() {
   # Honor an explicit opt-out too.
   if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || ( "$default_provider" != "daytona" && "$default_provider" != "platinum" ) ]]; then
     export KORTIX_URL="$api_origin"
+    printf '%s' "$api_origin" > "$TUNNEL_URL_FILE"
     echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
-    if [[ "$default_provider" == "daytona" ]]; then
-      echo "[dev] ⚠️  Default sandbox provider is Daytona (cloud) but the tunnel is off —"
+    if [[ "$default_provider" == "platinum" || "$default_provider" == "daytona" ]]; then
+      echo "[dev] ⚠️  Default sandbox provider ($default_provider) is a cloud provider but the tunnel is off —"
       echo "[dev]     sessions will fail with 'OpenCode runtime is not ready' because the"
       echo "[dev]     sandbox cannot reach $api_origin. Unset KORTIX_DEV_TUNNEL to enable it."
     fi
@@ -146,7 +150,7 @@ ensure_dev_tunnel() {
   fi
 
   if ! command -v cloudflared >/dev/null 2>&1; then
-    echo "[dev] ERROR: cloudflared is required for cloud (Daytona) sandboxes but was not found."
+    echo "[dev] ERROR: cloudflared is required for cloud sandboxes but was not found."
     echo "[dev]        Cloud sandboxes can't reach localhost; they need a public KORTIX_URL."
     echo "[dev]        Install:  brew install cloudflared"
     echo "[dev]        Or:       KORTIX_DEV_TUNNEL=0 pnpm dev   (skips the tunnel — cloud sandboxes won't reach localhost)"
@@ -159,15 +163,19 @@ ensure_dev_tunnel() {
   TUNNEL_PID=$!
 
   local url=""
-  local i
-  for i in $(seq 1 30); do
-    url="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1 || true)"
-    [[ -n "$url" ]] && break
+  # Deadline, not a poll count: under heavy load (parallel test lanes, cold
+  # caches) a single poll can take seconds, and a 30-poll cap then gives up
+  # while cloudflared is healthy and about to print the URL. The budget is
+  # anchored to the loop's own start: SECONDS counts from shell start, so a
+  # wait that begins after long setup steps must add its allowance.
+  local tunnel_deadline=$((SECONDS + 30))
+  until url="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)" && [[ -n "$url" ]]; do
     if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then
       echo "[dev] ERROR: cloudflared exited early:"
       sed 's/^/[cloudflared] /' "$TUNNEL_LOG"
       exit 1
     fi
+    if (( SECONDS >= tunnel_deadline )); then break; fi
     sleep 1
   done
 
@@ -178,7 +186,6 @@ ensure_dev_tunnel() {
   fi
 
   export KORTIX_URL="$url"
-  TUNNEL_URL_FILE="${TUNNEL_URL_FILE:-$(mktemp -t kortix-tunnel-url.XXXXXX)}"
   printf '%s' "$url" > "$TUNNEL_URL_FILE"
   echo "[dev] ✅ Cloud sandbox callback ready: KORTIX_URL=$KORTIX_URL"
 }
@@ -217,9 +224,12 @@ start_tunnel_watchdog() {
       cloudflared tunnel --no-autoupdate --url "http://localhost:${PORT:-8008}" >"$TUNNEL_LOG" 2>&1 &
       TUNNEL_PID=$!
       newurl=""
-      for i in $(seq 1 30); do
-        newurl="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1 || true)"
-        [[ -n "$newurl" ]] && break
+      # Same deadline form as the initial tunnel wait: a slow poll under load
+      # must not exhaust a poll cap while the fresh cloudflared is starting,
+      # and the budget anchors to this rotation attempt's own start.
+      local rotation_deadline=$((SECONDS + 30))
+      until newurl="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1)" && [[ -n "$newurl" ]]; do
+        if (( SECONDS >= rotation_deadline )); then break; fi
         sleep 1
       done
       if [[ -z "$newurl" ]]; then
@@ -239,7 +249,6 @@ start_tunnel_watchdog() {
       pkill -f -- '--hot src/index.ts' 2>/dev/null || true
     done
   ) &
-  WATCHDOG_PID=$!
 }
 
 # Forward Stripe webhooks to the local API so billing flows (checkout →
@@ -273,7 +282,6 @@ ensure_stripe_listen() {
   stripe listen --api-key "$STRIPE_SECRET_KEY" \
     --forward-to "http://localhost:${api_port}/v1/billing/webhooks/stripe" 2>&1 \
     | sed 's/^/[stripe] /' &
-  STRIPE_PID=$!
 }
 
 # Start the standalone LLM gateway (apps/llm-gateway) so the API routes sandbox
@@ -292,7 +300,6 @@ ensure_dev_gateway() {
       GATEWAY_API_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN" \
       pnpm --filter @kortix/llm-gateway-server dev 2>&1 | sed 's/^/[gateway] /'
   ) &
-  GATEWAY_PID=$!
 }
 
 # Cross-compile the in-sandbox daemon (kortix-agent, Linux x64) so a fresh
@@ -306,12 +313,16 @@ ensure_agent_binary() {
 
   if [[ -f "$bin" ]]; then
     local newer
-    newer="$(find "$dir/src" "$dir/scripts" "$dir/package.json" -type f -newer "$bin" -print -quit 2>/dev/null || true)"
+    # The binary bundles the workspace packages it imports: a change to the generative UI prompt
+    # (packages/sdk/src/genui) or to the runtime contract must rebuild it too.
+    newer="$(find "$dir/src" "$dir/scripts" "$dir/package.json" \
+      "$ROOT_DIR/packages/sdk/src" "$ROOT_DIR/packages/api-contract/src" \
+      -type f -newer "$bin" -print -quit 2>/dev/null || true)"
     if [[ -z "$newer" ]]; then
       echo "[dev] kortix-agent up to date — skipping daemon build"
       return 0
     fi
-    echo "[dev] kortix-agent stale (changed: ${newer#"$dir"/}) — rebuilding…"
+    echo "[dev] kortix-agent stale (changed: ${newer#"$ROOT_DIR"/}) — rebuilding…"
   else
     echo "[dev] kortix-agent missing — building…"
   fi
@@ -325,7 +336,7 @@ ensure_agent_binary() {
 
 # Same idea for the `kortix` CLI binary the layered snapshot builder bakes into
 # every sandbox (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH). Without
-# it, Daytona snapshot builds fail the required-artifact check.
+# it, provider snapshot builds fail the required-artifact check.
 ensure_cli_binary() {
   local dir="$ROOT_DIR/apps/cli"
   local bin="$dir/dist/kortix"
@@ -370,6 +381,66 @@ ensure_deps() {
   if ! (cd "$ROOT_DIR" && pnpm install); then
     echo "[dev] ❌ pnpm install failed — fix the error above and re-run 'pnpm dev'." >&2
     exit 1
+  fi
+}
+
+# One session cookie for the route warmup, minted through the local Supabase
+# admin API: first user's email → magic-link hashed token → verify → the
+# compact base64url session blob the sb-kortix-auth-token cookie carries.
+# Every step is optional: an unset SUPABASE_SERVICE_ROLE_KEY or any failure
+# returns empty and warm_frontend_routes warms unauthed instead.
+mint_warm_cookie() {
+  [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]] || return 0
+  local email
+  email="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/users?per_page=1" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    | python3 -c 'import json,sys; us=json.load(sys.stdin).get("users",[]); print(us[0]["email"] if us else "")' 2>/dev/null || true)"
+  [[ -n "$email" ]] || return 0
+  local ht
+  ht="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/generate_link" \
+    -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+    -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"email\":\"$email\"}" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hashed_token",""))' 2>/dev/null || true)"
+  [[ -n "$ht" ]] || return 0
+  curl -s -m 5 "http://127.0.0.1:54321/auth/v1/verify" \
+    -H "apikey: ${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}" \
+    -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"token_hash\":\"$ht\"}" 2>/dev/null \
+    | python3 -c '
+import json, base64, sys
+d = json.load(sys.stdin)
+if "access_token" in d:
+    s = {"access_token": d["access_token"], "token_type": "bearer", "expires_in": d.get("expires_in", 3600),
+         "expires_at": d.get("expires_at", 9999999999), "refresh_token": d["refresh_token"], "user": d.get("user", {})}
+    print("base64-" + base64.urlsafe_b64encode(json.dumps(s, separators=(",", ":")).encode()).decode().rstrip("="))
+' 2>/dev/null || true
+}
+
+# Warm the heavy frontend routes in the background of `pnpm dev` so the FIRST
+# human navigation doesn't pay Turbopack's on-demand compile (measured:
+# /projects/[id] 16.1s, /projects/[id]/sessions/[sessionId] 5.2s — which read
+# as "creating a session takes 6+ seconds" when it was the ROUTE compiling,
+# not the sandbox). An UNAUTHED hit compiles the bundle but redirects before
+# the page's module graph ever evaluates — the first real (authed) navigation
+# then paid 4-6s of module eval anyway (measured: authed render #1 4.5s,
+# #2 0.28s) — so mint a real session and warm WITH it, falling back to
+# compile-only warming when no cookie can be minted. The header is a scalar
+# expanded with ${var:+…}, not an array: an empty array under set -u is fatal
+# on macOS bash 3.2 (the same class kill_dev_ports guards below), and it once
+# killed this warmup silently.
+warm_frontend_routes() {
+  local base="http://localhost:${WEB_PORT:-3000}"
+  until curl -sf -o /dev/null -m 2 "$base" 2>/dev/null; do sleep 2; done
+
+  local cookie="$(mint_warm_cookie)"
+  local auth_header=""
+  [[ -n "$cookie" ]] && auth_header="Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$cookie"
+  for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
+    curl -s -o /dev/null -m 120 ${auth_header:+-H "$auth_header"} "$base$p" || true
+  done
+  if [[ -n "$cookie" ]]; then
+    echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
+  else
+    echo "[dev] ✅ frontend routes pre-compiled (unauthed — first navigation still pays module eval)"
   fi
 }
 
@@ -423,35 +494,13 @@ kill_dev_ports() {
 cleanup() {
   local exit_code=$?
   trap - EXIT INT TERM
-
-  if [[ -n "${FRONTEND_PID:-}" ]] && kill -0 "$FRONTEND_PID" 2>/dev/null; then
-    kill "$FRONTEND_PID" 2>/dev/null || true
-    wait "$FRONTEND_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${API_PID:-}" ]] && kill -0 "$API_PID" 2>/dev/null; then
-    kill "$API_PID" 2>/dev/null || true
-    wait "$API_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${GATEWAY_PID:-}" ]] && kill -0 "$GATEWAY_PID" 2>/dev/null; then
-    kill "$GATEWAY_PID" 2>/dev/null || true
-    wait "$GATEWAY_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
-    kill "$TUNNEL_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${WATCHDOG_PID:-}" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
-    kill "$WATCHDOG_PID" 2>/dev/null || true
-  fi
-
-  if [[ -n "${STRIPE_PID:-}" ]] && kill -0 "$STRIPE_PID" 2>/dev/null; then
-    kill "$STRIPE_PID" 2>/dev/null || true
-  fi
-  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG"
-
+  # The worker and all its pipelines share this private group, including
+  # tunnels rotated by its watchdog. Never match another checkout by name.
+  kill -TERM -- "-$STACK_PID" 2>/dev/null || true
+  /bin/sleep 0.2
+  kill -KILL -- "-$STACK_PID" 2>/dev/null || true
+  wait "$STACK_PID" 2>/dev/null || true
+  [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG" || true
   exit "$exit_code"
 }
 
@@ -529,26 +578,24 @@ INTERNAL_KORTIX_ENV=dev
 PORT=8008
 KORTIX_URL=http://localhost:8008
 KORTIX_SKIP_ENSURE_SCHEMA=1
-ALLOWED_SANDBOX_PROVIDERS=daytona
+ALLOWED_SANDBOX_PROVIDERS=platinum
 DATABASE_URL=${SB_DB_URL}
 SUPABASE_URL=${SB_API_URL}
 SUPABASE_SERVICE_ROLE_KEY=${SB_SERVICE_ROLE_KEY}
 SUPABASE_JWT_SECRET=${SB_JWT_SECRET}
 INTERNAL_SERVICE_KEY=local-flow-runner-internal-service-key
 KORTIX_BILLING_INTERNAL_ENABLED=true
-DAYTONA_API_KEY=${DAYTONA_API_KEY:-}
-DAYTONA_SERVER_URL=${DAYTONA_SERVER_URL:-}
-DAYTONA_TARGET=${DAYTONA_TARGET:-us}
-DAYTONA_WARM_TARGET=${DAYTONA_WARM_TARGET:-}
+PLATINUM_API_KEY=${PLATINUM_API_KEY:-}
+PLATINUM_API_URL=${PLATINUM_API_URL:-}
 TUNNEL_SIGNING_SECRET=${TUNNEL_SIGNING_SECRET:-dev-local-tunnel-signing-secret-32chars}
 API_KEY_SECRET=${API_KEY_SECRET:-dev-local-api-key-secret-please-32chars}
-OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+PLATINUM_INFERENCE_API_KEY=${PLATINUM_INFERENCE_API_KEY:-}
 ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 SCHEDULER_ENABLED=false
 EOF
   # NEXT_PUBLIC_BACKEND_URL is RELATIVE (/v1) so the browser hits the SAME
-  # origin it's served from (whichever preview proxy — Daytona or Kortix
+  # origin it's served from (whichever preview proxy — the provider's or a Kortix
   # subdomain) and Next's built-in rewrite (next.config.ts: /v1/* ->
   # http://localhost:8008/v1/*) proxies it to the in-sandbox API. That makes a
   # single preview URL function as a full proxy (frontend + API), no CORS, no
@@ -616,7 +663,6 @@ EOF
     if pnpm --filter Kortix-Computer-Frontend build; then
       echo "[dev] Frontend built — serving (pnpm start) on :3000"
       pnpm --filter Kortix-Computer-Frontend start &
-      FRONTEND_PID=$!
     else
       echo "[dev] ⚠️  Frontend build failed — continuing with API only"
     fi
@@ -627,8 +673,7 @@ EOF
     # values); the sandbox `.env.local` is already exported above (relative
     # NEXT_PUBLIC_BACKEND_URL=/v1, in-sandbox Supabase).
     echo "[dev] Starting frontend (next dev, hot reload) on :${WEB_PORT:-3000}"
-    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --turbopack --port "${WEB_PORT:-3000}") &
-    FRONTEND_PID=$!
+    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --port "${WEB_PORT:-3000}") &
   fi
 
   echo "[dev] Starting API (dev) on :8008"
@@ -639,7 +684,8 @@ EOF
   KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev:envfile
 }
 
-trap cleanup EXIT INT TERM
+run_dev_local() {
+set +m
 
 if [[ -d /opt/kortix || -n "${KORTIX_SESSION_ID:-}" ]]; then
   run_sandbox_dev
@@ -732,11 +778,10 @@ ensure_dev_gateway
 if [[ "$BUILD_MODE" == "1" ]]; then
   # The API needs no build step, so boot it in the BACKGROUND now and let it
   # come up on :8008 while the (multi-minute) frontend build runs — overlapping
-  # the two instead of paying them back-to-back. cleanup() kills API_PID on exit.
+  # the two instead of paying them back-to-back. cleanup() stops the worker's
+  # process group on exit, so the background API needs no tracked pid.
   echo "[dev] Starting API (production runtime, no --hot) on :8008…"
   ( cd "$ROOT_DIR" && KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api start ) &
-  API_PID=$!
-
 
   # Production build of the web app on :3000. NEXT_PUBLIC_* values are inlined at
   # BUILD time, so the build must run with the env load_local_env() exported (it
@@ -766,62 +811,16 @@ if [[ "$BUILD_MODE" == "1" ]]; then
 else
   echo "[dev] Starting frontend..."
   pnpm --filter Kortix-Computer-Frontend dev &
-  FRONTEND_PID=$!
 
   # Pre-compile the heavy routes so the FIRST human navigation doesn't pay
-  # Turbopack's on-demand compile (measured: /projects/[id] 16.1s,
-  # /projects/[id]/sessions/[sessionId] 5.2s — which read as "creating a
-  # session takes 6+ seconds" when it was the ROUTE compiling, not the
-  # sandbox). Unauthenticated requests still compile the route bundle before
-  # the auth redirect, so dummy ids are fine.
-  (
-    until curl -sf -o /dev/null -m 2 "http://localhost:${WEB_PORT:-3000}" 2>/dev/null; do sleep 2; done
-    # An UNAUTHED hit compiles the bundle but redirects before the page's
-    # module graph ever evaluates — the first real (authed) navigation then
-    # paid 4-6s of module eval anyway (measured: authed render #1 4.5s,
-    # #2 0.28s). Mint a real session via the local supabase admin API and
-    # warm WITH it; falls back to unauthed compile-only warming.
-    WARM_COOKIE=""
-    if [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
-      _email="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/users?per_page=1" \
-        -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-        | python3 -c 'import json,sys; us=json.load(sys.stdin).get("users",[]); print(us[0]["email"] if us else "")' 2>/dev/null || true)"
-      if [[ -n "$_email" ]]; then
-        _ht="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/generate_link" \
-          -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
-          -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"email\":\"$_email\"}" \
-          | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hashed_token",""))' 2>/dev/null || true)"
-        if [[ -n "$_ht" ]]; then
-          _anon="${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}"
-          curl -s -m 5 "http://127.0.0.1:54321/auth/v1/verify" -H "apikey: $_anon" \
-            -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"token_hash\":\"$_ht\"}" > /tmp/kortix-warm-session.json 2>/dev/null || true
-          WARM_COOKIE="$(python3 - <<'PYC' 2>/dev/null || true
-import json, base64
-d = json.load(open('/tmp/kortix-warm-session.json'))
-if 'access_token' in d:
-    s = {"access_token": d["access_token"], "token_type": "bearer", "expires_in": d.get("expires_in", 3600),
-         "expires_at": d.get("expires_at", 9999999999), "refresh_token": d["refresh_token"], "user": d.get("user", {})}
-    raw = json.dumps(s, separators=(',', ':'))
-    print('base64-' + base64.urlsafe_b64encode(raw.encode()).decode().rstrip('='))
-PYC
-)"
-          rm -f /tmp/kortix-warm-session.json
-        fi
-      fi
-    fi
-    _hdr=()
-    [[ -n "$WARM_COOKIE" ]] && _hdr=(-H "Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$WARM_COOKIE")
-    for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
-      curl -s -o /dev/null -m 120 "${_hdr[@]}" "http://localhost:${WEB_PORT:-3000}$p" || true
-    done
-    if [[ -n "$WARM_COOKIE" ]]; then
-      echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
-    else
-      echo "[dev] ✅ frontend routes pre-compiled (unauthed — first navigation still pays module eval)"
-    fi
-  ) &
+  # Turbopack's on-demand compile. Unauthenticated requests still compile the
+  # route bundle before the auth redirect, so dummy ids are fine.
+  warm_frontend_routes &
 
-  start_tunnel_watchdog
+  # Only a quick tunnel this script started can rot and rotate — a preset
+  # KORTIX_URL or the localhost skip path never gets a watchdog (and never
+  # rotates, so the supervised loop below just runs the API once).
+  [[ -n "${TUNNEL_PID:-}" ]] && start_tunnel_watchdog
 
   echo "[dev] Starting API (supervised — auto-restarts on tunnel rotation)..."
   cd "$ROOT_DIR"
@@ -834,3 +833,20 @@ PYC
     echo "[dev] ♻️  API restarting with rotated KORTIX_URL=$(cat "$TUNNEL_URL_FILE")"
   done
 fi
+
+}
+
+# Job control assigns the single worker its own process group — the group
+# cleanup() kills. Turn it off inside the worker so nested pipelines inherit
+# that group (also on Bash 3.2). Wait for the worker with `wait`, never `fg`:
+# bash defers a trapped signal until `fg`'s foreground job ends, so a TERM
+# sent to this script while the stack runs would hang the script until the
+# worker exits on its own. `wait` is the one wait bash interrupts the moment
+# a trapped signal arrives, so the traps below run at signal time.
+set -m
+run_dev_local "$@" <&0 &
+STACK_PID=$!
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+wait "$STACK_PID"

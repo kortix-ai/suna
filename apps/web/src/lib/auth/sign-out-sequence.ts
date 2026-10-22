@@ -1,4 +1,4 @@
-import { type BudgetOutcome, withTimeBudget } from '@/lib/utils/time-budget';
+import { type BudgetOutcome, withTimeBudget } from '@kortix/ui/internal/lib/utils/time-budget';
 
 /**
  * The sign-out SEQUENCE: what happens, in what order, what a failure at each
@@ -97,6 +97,18 @@ export type SignOutSteps = {
   dropAuthCookie: () => void;
   /** React Query, the account store, per-user localStorage, the IDB cache. */
   resetClientState: () => Promise<void>;
+  /**
+   * Tell the user the server half did not complete.
+   *
+   * Called once, immediately before `leave`, whenever the session was not
+   * PROVEN revoked server-side — the same condition that drives the second
+   * `dropAuthCookie` below. Every other trace of those failures is
+   * `console.error`, which no user reads, and the sign-out ends on a document
+   * load: any toast raised in THIS document dies with it. The caller carries
+   * the notice to `/auth` instead of raising it here — see
+   * `sign-out-notice.ts` for the carry and `AuthContent` for the raise.
+   */
+  notifySignOutIncomplete: () => void;
   /** A DOCUMENT navigation. Never `router.push` — see `performSignOut`. */
   leave: (destination: string) => void;
 };
@@ -158,18 +170,19 @@ export function __resetSignOutLatchForTests(): void {
  *     which is exactly the case that already worked.
  *  3. **Leaving ALWAYS happens, on a WALL CLOCK.** Every step is bounded, not
  *     just guarded. A `try`/`catch` cannot rescue a promise that never settles,
- *     and one of these steps can genuinely hang forever: `resetClientState()`
- *     awaits `clearSessionIDBCache()`, whose `openDB()` has no `onblocked`
- *     handler, so a version upgrade blocked by a stale tab never resolves.
+ *     and one of these steps could hang forever: `resetClientState()` awaits
+ *     `clearSessionIDBCache()`, whose `openDB()` had no `onblocked` handler
+ *     before database version 4, so a version upgrade blocked by a stale tab
+ *     never resolved.
  *     Unbounded, the user could not sign out at all and saw no error.
  *
  *     Bounding is safe for a reason specific to this sequence: everything
  *     identity-critical in `resetClientState()` is SYNCHRONOUS and complete
  *     before its one awaited call — the React Query cache, the persisted
  *     account selection and the per-user localStorage are already gone. Only
- *     the IndexedDB purge can be outrun, and those entries are keyed
- *     `user:<id>` (`buildSessionCacheKey`), so the next account cannot read
- *     them.
+ *     the IndexedDB purge can be outrun, and each saved copy there names its
+ *     user (`saved-copy-store.ts` refuses another user's copy), so the next
+ *     account cannot read them.
  *  4. **Nothing is stranded, and a SECOND press still leaves.** `/new`'s button
  *     neither awaited nor navigated, so it signed the user out and left them on
  *     the create form. The re-entry branch below is the other half of that: it
@@ -246,6 +259,8 @@ export async function runSignOut(
   // against a 30s tick) and the fix is one line.
   if (!sessionRemoved) {
     steps.dropAuthCookie();
+    // AFTER the reset sweep, so the notice survives it — see the step's doc.
+    steps.notifySignOutIncomplete();
   }
 
   steps.leave(SIGN_OUT_DESTINATION);

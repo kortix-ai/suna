@@ -1,0 +1,269 @@
+import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const entry = join(import.meta.dir, '..', 'index.ts');
+
+describe('browser login target', () => {
+  for (const scenario of [
+    { api: 'https://dev-api.kortix.com', expected: 'https://dev.kortix.com' },
+    { api: 'https://staging-api.kortix.com/v1', expected: 'https://staging.kortix.com' },
+    { api: 'https://api.kortix.com', expected: 'https://kortix.com' },
+    { api: 'http://localhost:8008', expected: 'http://localhost:3000' },
+    {
+      api: 'http://localhost:13738',
+      dashboard: 'http://localhost:13737/',
+      expected: 'http://localhost:13737',
+    },
+    {
+      api: 'https://api.kortix.com',
+      dashboard: 'https://kortix.com',
+      override: 'https://dev-api.kortix.com',
+      expected: 'https://dev.kortix.com',
+    },
+    {
+      api: 'http://localhost:13738',
+      dashboard: 'http://localhost:13737',
+      override: 'http://localhost:13738/v1/',
+      expected: 'http://localhost:13737',
+    },
+  ]) {
+    test(`opens ${scenario.expected} despite unrelated frontend environment`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'login-target-'));
+      const config = join(dir, 'config.json');
+      writeFileSync(
+        config,
+        JSON.stringify({
+          active: 'target',
+          hosts: {
+            target: {
+              url: scenario.api,
+              token: '',
+              user_id: '',
+              user_email: '',
+              account_id: '',
+              logged_in_at: '',
+              dashboard_url: scenario.dashboard,
+            },
+          },
+        }),
+      );
+      const args = ['login', '--host', 'target', '--no-project'];
+      if (scenario.override) args.push('--api', scenario.override);
+      const proc = Bun.spawn([process.execPath, entry, ...args], {
+        env: {
+          PATH: process.env.PATH, HOME: tmpdir(),
+          CI: '1',
+          KORTIX_CONFIG_FILE: config,
+          KORTIX_API_URL: '',
+          KORTIX_TOKEN: '',
+          KORTIX_FRONTEND_URL: 'https://unrelated.example.test',
+          KORTIX_DASHBOARD_URL: 'https://legacy.example.test',
+          KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+          KORTIX_NO_UPDATE_CHECK: '1',
+        },
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const timer = setTimeout(() => proc.kill(), 10000);
+      try {
+        const reader = proc.stdout.getReader();
+        let output = '';
+        while (!output.includes('/cli/authorize?')) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          output += new TextDecoder().decode(chunk.value);
+        }
+        expect(output).toContain(`${scenario.expected}/cli/authorize?`);
+        expect(output).not.toContain('unrelated.example.test');
+        expect(output).not.toContain('legacy.example.test');
+      } finally {
+        clearTimeout(timer);
+        proc.kill();
+        await proc.exited;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+describe('token login target', () => {
+  test('service-account keys reach API verification instead of a PAT-only local rejection', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'login-service-key-'));
+    const seen: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        seen.push(req.headers.get('authorization') ?? '');
+        return Response.json({ user_id: 'synthetic_user', email: '', accounts: [] });
+      },
+    });
+    try {
+      const proc = Bun.spawn(
+        [process.execPath, entry, 'login', '--token', 'kortix_sa_synthetic', '--api', `http://127.0.0.1:${server.port}`, '--no-project'],
+        {
+          env: { PATH: process.env.PATH, HOME: tmpdir(), CI: '1', KORTIX_CONFIG_FILE: join(dir, 'config.json'), KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', KORTIX_NO_UPDATE_CHECK: '1' },
+          stdout: 'pipe', stderr: 'pipe',
+        },
+      );
+      const [code, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()]);
+      expect(stderr).not.toContain('Invalid API key format');
+      expect(code).toBe(0);
+      expect(seen).toEqual(['Bearer kortix_sa_synthetic']);
+    } finally {
+      server.stop(true);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  test('KORTIX_API_URL redirects the active built-in host, so the token never reaches the default API', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'login-env-target-'));
+    const seen: Array<{ path: string; auth: string | null }> = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch: (req) => {
+        seen.push({ path: new URL(req.url).pathname, auth: req.headers.get('authorization') });
+        return Response.json({ error: 'Unauthorized' }, { status: 401 });
+      },
+    });
+    try {
+      const proc = Bun.spawn(
+        [process.execPath, entry, 'login', '--token', 'kortix_pat_envtarget', '--no-project'],
+        {
+          env: {
+            PATH: process.env.PATH, HOME: tmpdir(),
+            CI: '1',
+            KORTIX_CONFIG_FILE: join(dir, 'config.json'),
+            KORTIX_API_URL: `http://127.0.0.1:${server.port}`,
+            KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+            KORTIX_NO_UPDATE_CHECK: '1',
+          },
+          stdout: 'pipe',
+          stderr: 'pipe',
+        },
+      );
+      await proc.exited;
+      expect(seen).toEqual([{ path: '/v1/accounts/me', auth: 'Bearer kortix_pat_envtarget' }]);
+    } finally {
+      server.stop(true);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('login selects stored identity under delegation env', () => {
+  for (const scenario of ['verified', 'already logged in', 'rejected'] as const) {
+    test(`${scenario} login preserves the correct identity for a later bare command`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'login-selection-'));
+      const seen: string[] = [];
+      const server = Bun.serve({
+        port: 0,
+        fetch: (req) => {
+          const auth = req.headers.get('authorization') ?? '';
+          seen.push(auth);
+          if (scenario === 'rejected' && auth === 'Bearer kortix_pat_new') {
+            return Response.json({ error: 'Unauthorized' }, { status: 401 });
+          }
+          return Response.json({
+            user_id: 'synthetic_user',
+            email: 'user@example.test',
+            accounts: [],
+          });
+        },
+      });
+      const api = `http://127.0.0.1:${server.port}`;
+      const config = join(dir, 'config.json');
+      const host = (token: string) => ({
+        url: api,
+        token,
+        user_id: 'synthetic_user',
+        user_email: 'user@example.test',
+        account_id: '',
+        logged_in_at: '',
+      });
+      writeFileSync(
+        config,
+        JSON.stringify({
+          active: 'old',
+          hosts: {
+            old: host('kortix_pat_old'),
+            ...(scenario === 'already logged in' ? { new: host('kortix_pat_new') } : {}),
+          },
+        }),
+      );
+      const env = {
+        PATH: process.env.PATH, HOME: tmpdir(),
+        CI: '1',
+        KORTIX_CONFIG_FILE: config,
+        KORTIX_TOKEN: 'kortix_pat_delegation',
+        KORTIX_API_URL: api,
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        KORTIX_NO_UPDATE_CHECK: '1',
+      };
+      const run = async (args: string[]) => {
+        const proc = Bun.spawn([process.execPath, entry, ...args], {
+          cwd: dir,
+          env,
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
+        const [stdout, stderr, code] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
+        return { stdout, stderr, code };
+      };
+      try {
+        const args = ['login', '--host', 'new', '--no-project'];
+        if (scenario !== 'already logged in') args.push('--api', api, '--token', 'kortix_pat_new');
+        const login = await run(args);
+        expect(login.code).toBe(scenario === 'rejected' ? 1 : 0);
+        if (scenario === 'already logged in') expect(login.stdout).toContain('Already logged in');
+        else if (scenario === 'verified') expect(login.stdout).toContain('Logged in to host');
+        else expect(login.stderr).toContain('Token rejected');
+        seen.length = 0;
+        const whoami = await run(['whoami', '--json']);
+        expect(whoami.code).toBe(0);
+        expect(seen).toEqual([
+          scenario === 'rejected' ? 'Bearer kortix_pat_delegation' : 'Bearer kortix_pat_new',
+        ]);
+      } finally {
+        server.stop(true);
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+describe('callback-free device login', () => {
+  test('polls the selected API, saves the approved key, and whoami uses it', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'login-device-'));
+    const seen: string[] = [];
+    const server = Bun.serve({ port: 0, fetch: async req => {
+      const path = new URL(req.url).pathname;
+      seen.push(path);
+      if (path.endsWith('/start')) return Response.json({ device_code: 'a'.repeat(64), user_code: '0123456789ABCDEF', expires_in: 60, interval: 5 });
+      if (path.endsWith('/poll')) {
+        expect(await req.json()).toEqual({ device_code: 'a'.repeat(64) });
+        return Response.json({ token: 'kortix_pat_device' });
+      }
+      expect(req.headers.get('authorization')).toBe('Bearer kortix_pat_device');
+      return Response.json({ user_id: 'synthetic_user', email: '', accounts: [] });
+    } });
+    try {
+      const proc = Bun.spawn([process.execPath, entry, 'login', '--device', '--api', `http://127.0.0.1:${server.port}`, '--no-project'], {
+        env: { PATH: process.env.PATH, HOME: tmpdir(), CI: '1', KORTIX_CONFIG_FILE: join(dir, 'config.json'), KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', KORTIX_NO_UPDATE_CHECK: '1' },
+        stdout: 'pipe', stderr: 'pipe',
+      });
+      const [code, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+      expect(stderr).not.toContain('Invalid');
+      if (code !== 0) throw new Error(stderr);
+      expect(code).toBe(0);
+      expect(stdout).toContain('Confirm code: 0123456789ABCDEF');
+      expect(stdout).not.toContain('callback=');
+      expect(stdout).not.toContain('a'.repeat(64));
+      expect(seen).toEqual(['/v1/cli/device/start', '/v1/cli/device/poll', '/v1/accounts/me']);
+    } finally { server.stop(true); rmSync(dir, { recursive: true, force: true }); }
+  }, 15000);
+});

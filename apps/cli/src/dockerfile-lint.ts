@@ -26,27 +26,6 @@ export interface LintDockerfileOpts {
   path: string;
 }
 
-/**
- * The complete set of names `stageBuildContext` (apps/api/src/snapshots/
- * build-context.ts) stages into the cloud build context. Nothing else exists
- * there — in particular, NOT the user's repo.
- *
- * This is the precision argument for the COPY check being an ERROR rather than
- * a hint: the context's contents are a CLOSED set, fixed by Kortix, and none of
- * it is anything a user Dockerfile would legitimately COPY. So every
- * context-reading COPY in a user Dockerfile is a build that cannot succeed —
- * there is no false positive to trade against.
- */
-export const STAGED_CONTEXT_ENTRIES = [
-  'kortix-agent.gz',
-  'kortix.gz',
-  'kortix-entrypoint',
-  'kortix-slack-cli/',
-  'kortix-opencode-config/',
-  'kortix-llm-catalog.json',
-  'scaffold.git',
-] as const;
-
 /** Bases whose package manager is not apt — the Kortix layer's floor needs it. */
 const NON_DEBIAN_BASES = [
   'alpine',
@@ -180,11 +159,13 @@ export function lintDockerfile(text: string, opts: LintDockerfileOpts): Manifest
   const instructions = parseInstructions(text);
 
   // ── 1. COPY/ADD from the build context ───────────────────────────────────
-  // `stageBuildContext` stages ONLY Kortix's own artifacts (see
-  // STAGED_CONTEXT_ENTRIES). The user's repo is NEVER in the build context —
-  // it is git-cloned to /workspace when a session boots, precisely so that a
-  // code change doesn't invalidate the image. So any COPY that reads from the
-  // context can only ever resolve to "Path does not exist" in the cloud. This
+  // `stageBuildContext` (apps/api/src/snapshots/build-context.ts) stages ONLY
+  // Kortix's own artifacts — the context is a CLOSED set and none of it is
+  // anything a user Dockerfile would legitimately COPY. The user's repo is
+  // NEVER in the build context — it is git-cloned to /workspace when a session
+  // boots, precisely so that a code change doesn't invalidate the image. So
+  // any COPY that reads from the context can only ever resolve to
+  // "Path does not exist" in the cloud. This
   // is decidable and exact: the only legal reads are `--from=<stage>` (a
   // multi-stage copy, which reads from an image, not the context) and a remote
   // `ADD <url>` (which Docker fetches over the network).

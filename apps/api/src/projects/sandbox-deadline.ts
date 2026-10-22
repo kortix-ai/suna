@@ -30,15 +30,13 @@
  * could lose.
  */
 
-import { sql } from 'drizzle-orm';
+import { type SQL, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
 import {
   NON_TURN_DEADLINE_CAP_MS,
   idleGraceMs,
-  isTerminalTurnEnd,
   isWarmPoolBox,
   turnGrantMs,
-  turnDeliveryGraceMs,
   turnUnconfirmedDripMs,
   warmPoolGrantMs,
 } from './sandbox-deadline-policy';
@@ -105,6 +103,61 @@ function cappedDeadline(grantMs: number) {
 }
 
 /**
+ * Presence's cap (KRTX-1729; KRTX-2451): the idle grace after the session's
+ * latest turn activity or the run's start, whichever is later, and never past
+ * the run's non-turn cap. An open page holds a box only to the window the
+ * idle autostop already grants (`KORTIX_SANDBOX_AUTOSTOP_MINUTES`): a chat
+ * left open with nothing happening stops on the ordinary idle stop, minutes
+ * after its latest turn, and the next prompt resumes the box in place. A
+ * shorter deadline (a failed turn's, say) is still held up to the window.
+ * Turns are sequential, so the latest-started turn holds the latest activity,
+ * and the (session_id, started_at DESC) index finds it.
+ */
+function presenceCap() {
+  return sql`LEAST(
+             s.active_since + make_interval(secs => ${secs(NON_TURN_DEADLINE_CAP_MS)}),
+             GREATEST(
+               s.active_since,
+               (SELECT COALESCE(t.ended_at, t.started_at)
+                  FROM kortix.session_turns t
+                 WHERE t.session_id = s.session_id
+                 ORDER BY t.started_at DESC
+                 LIMIT 1)
+             ) + make_interval(secs => ${secs(idleGraceMs())}))`;
+}
+
+/** Presence's horizon: the grant, but never past {@link presenceCap}. */
+function presenceCappedDeadline(grantMs: number) {
+  return sql`GREATEST(
+             s.deadline_at,
+             LEAST(${presenceCap()}, now() + make_interval(secs => ${secs(grantMs)})))`;
+}
+
+/**
+ * The extension a present person earns: the idle grace, capped by
+ * {@link presenceCappedDeadline}. Same monotone statement shape as
+ * {@link extendSandboxDeadline}. Returns the deadline it wrote and the cap,
+ * from the same statement, or null when no live box matched.
+ */
+export async function extendSandboxDeadlineForPresence(
+  target: DeadlineTarget,
+): Promise<{ deadlineAt: Date; capAt: Date } | null> {
+  const result = await db.execute(sql`
+    UPDATE kortix.session_sandboxes s
+       SET deadline_at = ${presenceCappedDeadline(idleGraceMs())},
+           updated_at = now()
+     WHERE ${targetPredicate(target)} AND s.status IN ('active', 'provisioning')
+    RETURNING (extract(epoch from s.deadline_at) * 1000)::float8 AS deadline_ms,
+              (extract(epoch from ${presenceCap()}) * 1000)::float8 AS cap_ms`);
+  const rows = Array.isArray(result)
+    ? result
+    : (result as { rows?: unknown[] } | null | undefined)?.rows;
+  const row = rows?.[0] as { deadline_ms: number | string; cap_ms: number | string } | undefined;
+  if (!row) return null;
+  return { deadlineAt: new Date(Number(row.deadline_ms)), capAt: new Date(Number(row.cap_ms)) };
+}
+
+/**
  * The non-turn extend statement. It is monotone and capped within one provider
  * run. Active-turn renewal uses a separate exact-token statement.
  */
@@ -131,6 +184,28 @@ function extendStatement(target: DeadlineTarget, grantMs: number) {
  * sandbox-deadline-call-sites.test.ts):
  *   if (!isSandboxAuthored(c.get('apiKeyType'), callerKortixSessionId(c))) …
  */
+/**
+ * Contract the deadline to the idle grace unless some turn is still live.
+ * `remaining` is the POST-write metadata: this end shortens the deadline only
+ * when it was the session's last live turn.
+ */
+export function contractIdleDeadline(remaining: SQL, graceMs: number): SQL {
+  return sql`CASE
+             WHEN EXISTS (
+               SELECT 1
+                 FROM jsonb_each(CASE
+                   WHEN jsonb_typeof(${remaining}->'activeTurns') = 'object'
+                     THEN ${remaining}->'activeTurns'
+                   ELSE '{}'::jsonb
+                 END) remaining
+                WHERE remaining.value->>'state' IN ('delivering', 'active'))
+             THEN s.deadline_at
+             ELSE LEAST(
+               s.deadline_at,
+               now() + make_interval(secs => ${secs(graceMs)}))
+           END`;
+}
+
 export async function extendSandboxDeadline(
   target: DeadlineTarget,
   grantMs: number = turnGrantMs(),
@@ -217,27 +292,6 @@ export async function shortenSandboxDeadline(
        SET deadline_at = LEAST(s.deadline_at, now() + make_interval(secs => ${secs(graceMs)})),
            updated_at = now()
      WHERE s.session_id = ${sessionId} AND s.status = 'active'`);
-}
-
-/**
- * The turn-end relay's whole deadline responsibility, in one call: shorten the
- * box IFF the turn genuinely ended.
- *
- * Exists as its own function rather than an `if` at the call site because the
- * decision is the entire bug. `session.error` also fires while opencode is
- * RETRYING — a 429 backoff, a transient upstream 5xx — and shortening there cut
- * the box to the 15-minute idle tail MID-TURN, so any backoff longer than that
- * killed live work. Keeping the classifier and the write bound together means a
- * future caller cannot wire up the write and forget the test.
- */
-export async function shortenSandboxDeadlineOnTurnEnd(
-  sessionId: string,
-  status: 'idle' | 'error',
-  error?: { isRetryable?: boolean } | null,
-  graceMs?: number,
-): Promise<void> {
-  if (!isTerminalTurnEnd(status, error)) return;
-  await shortenSandboxDeadline(sessionId, graceMs);
 }
 
 /**

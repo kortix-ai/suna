@@ -4,7 +4,7 @@
  * inline source reads, `diffLines` stat, and body branches).
  */
 
-import { filePhase, fileVerb, type FileAction } from '@kortix/sdk';
+import { filePhase, fileVerb, inputPath, type FileAction, type ToolFile } from '@kortix/sdk';
 
 /** apps/web `hardcodedUi.i18nComplete.text93168435f3ae`. */
 export const FILE_BODY_TEXT = {
@@ -114,30 +114,34 @@ export interface EditSources {
   filePath: string | undefined;
   before: string;
   after: string;
+  /** pi's unified patch, when the harness sent no before/after. */
+  patch: string;
+  /** The patch's line counts, as the SDK counted them. */
+  patchStat: DiffCounts | undefined;
   codeEdit: string;
   morphInstructions: string;
   hasDiff: boolean;
 }
 
-/** Web `EditTool` source reads: `metadata.filediff` → input → streaming input (`??`). */
+/**
+ * Web `EditTool` source reads: the SDK's `ToolView` file (OpenCode's
+ * before/after, or pi's unified patch) → input → streaming input (`??`).
+ */
 export function editSources(
   input: Record<string, unknown>,
   streamingInput: Record<string, unknown>,
-  metadata: Record<string, unknown>,
+  file: ToolFile | undefined,
 ): EditSources {
-  const filediff = metadata.filediff as Record<string, unknown> | undefined;
   const filePath =
-    (input.filePath as string) ||
-    (streamingInput.filePath as string) ||
-    (streamingInput.target_filepath as string) ||
-    undefined;
-  const before =
-    (filediff?.before as string) ?? (input.oldString as string) ?? (streamingInput.oldString as string) ?? '';
-  const after =
-    (filediff?.after as string) ?? (input.newString as string) ?? (streamingInput.newString as string) ?? '';
+    file?.path || inputPath(streamingInput) || (streamingInput.target_filepath as string) || undefined;
+  const before = file?.before ?? (input.oldString as string) ?? (streamingInput.oldString as string) ?? '';
+  const after = file?.after ?? (input.newString as string) ?? (streamingInput.newString as string) ?? '';
+  const patch = file?.patch ?? '';
+  const patchStat =
+    patch && file?.additions !== undefined ? { additions: file.additions, deletions: file.deletions ?? 0 } : undefined;
   const codeEdit = (input.code_edit as string) || (streamingInput.code_edit as string) || '';
   const morphInstructions = (input.instructions as string) || (streamingInput.instructions as string) || '';
-  return { filePath, before, after, codeEdit, morphInstructions, hasDiff: before !== '' || after !== '' };
+  return { filePath, before, after, patch, patchStat, codeEdit, morphInstructions, hasDiff: before !== '' || after !== '' };
 }
 
 /** Settled calls only: re-diffing a streaming file per chunk is per-frame work. */
@@ -146,29 +150,35 @@ export function editStat({
   hasDiff,
   before,
   after,
+  patchStat,
 }: {
   status: string;
   hasDiff: boolean;
   before: string;
   after: string;
+  patchStat?: DiffCounts;
 }): DiffCounts | undefined {
-  if (status !== 'completed' || !hasDiff) return undefined;
+  if (status !== 'completed') return undefined;
+  if (!hasDiff) return patchStat;
   return lineDiffCounts(before, after, 1000);
 }
 
 export function editBodyKind({
   isError,
   hasDiff,
+  patch = '',
   codeEdit,
   isStalePending,
 }: {
   isError: boolean;
   hasDiff: boolean;
+  patch?: string;
   codeEdit: string;
   isStalePending: boolean;
-}): 'error' | 'diff' | 'morph' | 'stale' | 'none' {
+}): 'error' | 'diff' | 'patch' | 'morph' | 'stale' | 'none' {
   if (isError) return 'error';
   if (hasDiff) return 'diff';
+  if (patch) return 'patch';
   if (codeEdit) return 'morph';
   if (isStalePending) return 'stale';
   return 'none';

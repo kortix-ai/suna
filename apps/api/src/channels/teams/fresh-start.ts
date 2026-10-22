@@ -2,6 +2,8 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { chatEventDedup, chatThreadParticipants, chatThreads, projectSessions } from '@kortix/db';
 import { config } from '../../config';
 import { db } from '../../shared/db';
+import { PROJECT_ACTIONS } from '../../iam/actions';
+import { chatUser, resolveProjectChatActor } from '../core/identity';
 import { normalizeConversationPolicy, policyFromMetadata } from './participants';
 import { closeAbandonedTurn, deleteTurn, loadTurn } from './turn';
 import { teamsMessageText, type TeamsConversationScope } from './util';
@@ -60,6 +62,7 @@ export async function startFreshTeamsConversation(input: {
   const [thread] = await db
     .select({
       sessionId: chatThreads.sessionId,
+      projectId: chatThreads.projectId,
       status: projectSessions.status,
       metadata: projectSessions.metadata,
     })
@@ -97,7 +100,7 @@ export async function startFreshTeamsConversation(input: {
     };
   }
 
-  if (!(await mayStartFresh(input, (thread.metadata as Record<string, unknown> | null) ?? null))) {
+  if (!(await mayStartFresh(input, { sessionId: thread.sessionId, projectId: thread.projectId, metadata: (thread.metadata as Record<string, unknown> | null) ?? null }))) {
     return {
       reset: false,
       notice: 'Only someone already working in this session can start a new one here.',
@@ -144,22 +147,31 @@ export async function startFreshTeamsConversation(input: {
 }
 
 /**
- * Who may start a new session in a chat. The same bar as continuing one:
- * detaching an owner-only session and becoming the owner of the next is
- * otherwise a way around the policy.
+ * Who may start a new session in a chat. The same bar as continuing one: a
+ * linked Kortix account that may run sessions in the project, and under
+ * `owner_only` / `owner_approval` someone approved on this session.
+ * Detaching an owner-only session and becoming the owner of the next is
+ * otherwise a way around the policy, and under `project_open` anyone in the
+ * group chat, linked or not, could detach the team's session.
  */
 async function mayStartFresh(
   input: { tenantId: string; conversationId: string; scope: TeamsConversationScope; teamsUserId: string; channelPolicy?: string | null },
-  metadata: Record<string, unknown> | null,
+  current: { sessionId: string; projectId: string; metadata: Record<string, unknown> | null },
 ): Promise<boolean> {
   // A personal chat has one person in it.
   if (input.scope === 'personal') return true;
   // Without linked identities no join policy is enforced anywhere.
   if (!config.TEAMS_REQUIRE_USER_IDENTITY) return true;
-  const policy = policyFromMetadata(metadata) ?? normalizeConversationPolicy(input.channelPolicy);
-  if (policy === 'project_open') return true;
   if (!input.teamsUserId) return false;
   try {
+    const actor = await resolveProjectChatActor(
+      chatUser('teams', input.tenantId, input.teamsUserId),
+      current.projectId,
+      PROJECT_ACTIONS.PROJECT_SESSION_START,
+    );
+    if (!('userId' in actor)) return false;
+    const policy = policyFromMetadata(current.metadata) ?? normalizeConversationPolicy(input.channelPolicy);
+    if (policy === 'project_open') return true;
     const [row] = await db
       .select({ status: chatThreadParticipants.status })
       .from(chatThreadParticipants)
@@ -168,6 +180,7 @@ async function mayStartFresh(
           eq(chatThreadParticipants.platform, PLATFORM),
           eq(chatThreadParticipants.workspaceId, input.tenantId),
           eq(chatThreadParticipants.threadId, input.conversationId),
+          eq(chatThreadParticipants.sessionId, current.sessionId),
           eq(chatThreadParticipants.platformUserId, input.teamsUserId),
         ),
       )
@@ -176,7 +189,7 @@ async function mayStartFresh(
     // (rememberTeamsThreadOwner), so this admits the owner too.
     return row?.status === 'approved';
   } catch (err) {
-    console.warn('[teams-webhook] /new participant lookup failed (refusing)', err);
+    console.warn('[teams-webhook] /new authorization failed (refusing)', err);
     return false;
   }
 }

@@ -3,11 +3,12 @@ import { S3Client } from '@aws-sdk/client-s3';
 import { ObjectStore } from '../object-store/s3';
 import {
   CONFIG_ARCHIVE_CONTENT_TYPE,
-  MemoryConfigArchiveStore,
   S3ConfigArchiveStore,
   configArchiveKey,
+  configReleaseDescriptorKey,
   configArchiveProjectPrefix,
 } from './store';
+import { MemoryConfigArchiveStore } from './__tests__/fakes';
 
 const PROJECT = '5f0c2f36-6a1b-4c1e-9d3a-8a1f3b2c4d5e';
 const TREE = 'a'.repeat(40);
@@ -137,9 +138,23 @@ describe('S3ConfigArchiveStore.pruneProject — bounded retention', () => {
   });
 
   test('nothing to delete sends no delete', async () => {
-    const { store, sent } = s3Store([listing(['a', 'b'])]);
+    const { store, sent } = s3Store([listing(['a', 'b']), { Contents: [], IsTruncated: false }]);
     expect(await store.pruneProject(PROJECT, 5)).toEqual([]);
-    expect(sent).toHaveLength(1);
+    expect(sent.map((c) => c.name)).toEqual(['ListObjectsV2Command', 'ListObjectsV2Command']);
+  });
+
+  test('published release descriptors are bounded the same way', async () => {
+    const descriptor = (n: string) => configReleaseDescriptorKey(PROJECT, n.repeat(40), new Date(Date.UTC(2026, 0, 1)));
+    const { store, sent } = s3Store([
+      { Contents: [], IsTruncated: false },
+      {
+        Contents: ['a', 'b', 'c'].map((n, i) => ({ Key: `config-releases/${descriptor(n)}`, Size: 10, LastModified: new Date(Date.UTC(2026, 0, i + 1)) })),
+        IsTruncated: false,
+      },
+      { Deleted: [{ Key: 'x' }] },
+    ]);
+    expect(await store.pruneProject(PROJECT, 2)).toEqual([descriptor('a')]);
+    expect(sent[1]!.input.Prefix).toBe(`config-releases/projects/${PROJECT}/releases/`);
   });
 
   test('a keep floor of zero is refused: the store must never empty a project', async () => {

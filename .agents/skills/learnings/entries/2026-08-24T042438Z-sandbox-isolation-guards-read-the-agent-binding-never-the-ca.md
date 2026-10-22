@@ -22,5 +22,5 @@ that question.
 pins a human with a login session id passing, a sibling sandbox credential
 still blocked, and the own-session credential still allowed.
 
-*Incident:* sampleco project `e7170bf8`, origin counts user 568 / backend 43.
+*Incident:* a SampleCo project, origin counts user 568 / backend 43.
 PR #6828.

@@ -1,7 +1,9 @@
 import { upstreamFetch } from '../upstream-fetch';
 import type {
+  AdmitResult,
   AuthedPrincipal,
   AuthorizeResult,
+  GatewayAttemptFailure,
   GatewayHooks,
   GatewayLogger,
   ModelRoutePlan,
@@ -9,24 +11,30 @@ import type {
   UpstreamDescriptor,
   UsageEvent,
 } from '../domain';
-import { GatewayResolutionError, UpstreamHttpError } from '../errors';
+import { GatewayResolutionError, type NoUpstreamReasonCode, UpstreamHttpError } from '../errors';
 import { type FetchImpl, callUpstream } from '../http';
 import {
   type ExtractedUsage,
   type SseErrorFrame,
+  chunkOutputChars,
   estimateOutputTokens,
+  estimateCachedPromptTokens,
   estimatePromptTokens,
   extractUsageFromJson,
 } from '../usage';
 import { calculateCost } from '../usage/pricing';
 import {
+  type DispatchOutcome,
   UPSTREAM_HEADERS_TIMEOUT_MS,
   dispatch,
+  fallbackCandidates,
+  fallbackModelsOf,
+  fallbackTakesOver,
   rawProviderError,
   upstreamHeadersTimeoutMs,
   withUpstreamHeadersTimeout,
 } from './dispatch';
-import { clampRetryAfterSeconds, gatewayErrorResponse } from './error-response';
+import { clampRetryAfterSeconds, gatewayErrorResponse, providerClientErrorBody } from './error-response';
 import { DEFAULT_IMAGE_WINDOW, type ImageWindowOptions, applyImageWindow } from './image-window';
 import {
   publicPayload,
@@ -36,6 +44,13 @@ import {
   shownModel,
   shownProvider,
 } from './public-identity';
+import {
+  DISPATCH_HOLD_SECONDS,
+  MAX_HOLD_SECONDS,
+  type RouteMemory,
+  SETUP_HOLD_SECONDS,
+  routeMemoryKey,
+} from './route-memory';
 import { relayStream, type StreamObservation } from './streaming';
 import { createTraceEmitter } from './trace';
 
@@ -67,6 +82,8 @@ export interface GatewayDeps {
 export interface HandlerRuntime {
   hooks: GatewayHooks;
   logger: GatewayLogger;
+  /** Routed models held per caller after they failed. See pipeline/route-memory.ts. */
+  routeMemory?: RouteMemory;
   fetchImpl?: FetchImpl;
   imageWindow?: ImageWindowOptions;
 }
@@ -83,6 +100,25 @@ function streamErrorTraceStatus(error: SseErrorFrame): number {
   }
   return 502;
 }
+
+/**
+ * Resolution failures a project's own fallback chain takes over, as the HTTP
+ * status the same failure has from a provider: every own key or ChatGPT account
+ * paused after a rate limit is a 429, a login that needs reconnection is a 401,
+ * and a model that is unavailable here — retired, not served by this
+ * deployment, or no longer recognized — is a 404, the status a provider answers
+ * for a model it will not serve. The chain's retry setting then decides exactly
+ * as for a failed attempt. Every other resolution failure (not connected,
+ * disabled, excluded by the agent's grant) is a setup or policy answer and
+ * stays the request's error.
+ */
+const CHAIN_TAKES_OVER: Partial<Record<NoUpstreamReasonCode, number>> = {
+  provider_pool_rate_limited: 429,
+  provider_reauth_required: 401,
+  model_not_found: 404,
+  model_retired: 404,
+  model_disabled_on_deployment: 404,
+};
 
 const EMPTY_USAGE: TokenCounts = {
   promptTokens: 0,
@@ -244,9 +280,48 @@ export async function handleChatCompletions(
   // release-gate flake read as a product bug for two releases. Same 503 the
   // caller already got; now it says which hop failed, and it says so in the
   // gateway's own error envelope with a `retry-after`.
-  let admission: AuthorizeResult;
+  // `body` is the ONLY reference to the parsed request graph from here on.
+  // It is nulled the moment dispatch has taken it (below), so a slow
+  // time-to-first-byte upstream does not pin one extra copy of a multi-MB
+  // multimodal request for the whole prefill. Parsed before admission so one
+  // `admit` call can carry the model; invalid JSON is answered after
+  // admission, so an unauthenticated caller still gets its 401 first.
+  let body: Record<string, unknown> | null = null;
+  // Rough (UTF-16 code units, not bytes — close enough for a size gate)
+  // request size, captured before `rawBody` is cleared below. Used only to
+  // decide whether a stream-cut transparent retry may afford ANOTHER
+  // `structuredClone` of the body — see `streamRedispatchBody` below.
+  const approxRequestSize = req.rawBody?.length ?? 0;
   try {
-    admission = await authorize(hooks, token);
+    body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
+  } catch {
+    // answered after admission
+  }
+  req.parsedBody = undefined;
+  req.rawBody = '';
+  if (body) {
+    const window = applyImageWindow(body, imageWindow);
+    if (window.dropped > 0) {
+      logger.info(
+        `[gateway] image window ${id}: kept ${window.total - window.dropped} of ${window.total} inline images`,
+      );
+    }
+  }
+  const requestedModel = typeof body?.model === 'string' ? body.model : '';
+  let routedModel = requestedModel;
+  // Reused below to decide whether a stream-cut transparent retry may afford
+  // ANOTHER `structuredClone` of the body — see `streamRedispatchBody`.
+  const requestHasImage = body ? hasImage(body) : false;
+  const routeInput = { requestedModel, requires: { imageInput: requestHasImage } };
+
+  let admission: AuthorizeResult;
+  // One control-plane round trip for authorize + route + primary resolve +
+  // billing, when the host offers it. Each missing answer runs its own hook.
+  let prefetched: AdmitResult | null = null;
+  try {
+    prefetched = body && hooks.admit ? await hooks.admit(token, routeInput) : null;
+    if (prefetched?.timing) emit.admitSteps(prefetched.timing);
+    admission = prefetched?.admission ?? await authorize(hooks, token);
   } catch (error) {
     // No principal exists yet, so there is nothing to refund and no account to
     // attribute a trace to — and `recordTrace` is another call to the control
@@ -265,6 +340,18 @@ export async function handleChatCompletions(
     });
   }
   if (!admission.ok) {
+    // A valid token a later gate refused is still a request: record it in usage
+    // and logs (KRTX-1749). A 401 without a principal has no account to
+    // attribute — the log store requires one, so nothing is recorded there.
+    if (admission.principal) {
+      emit({
+        ...identity(admission.principal),
+        status: admission.status,
+        ok: false,
+        errorCode: admission.errorCode,
+        errorMessage: admission.message,
+      });
+    }
     return gatewayErrorResponse(admission.status, {
       message: admission.message ?? 'Request denied',
       code: admission.errorCode,
@@ -276,25 +363,43 @@ export async function handleChatCompletions(
     });
   }
   let principal = admission.principal;
+  // The admit call already debited this hold in the API. Put it on the
+  // principal now, so every exit settles or refunds it, including a held
+  // route that serves an own-key fallback and never reaches admitCharge.
+  const prefetchedHold = prefetched?.billing instanceof Error ? undefined : prefetched?.billing?.holdUsd;
+  if (prefetchedHold) principal = { ...principal, billingHold: { amountUsd: prefetchedHold } };
   emit.mark('admitted');
 
-  // `body` is the ONLY reference to the parsed request graph from here on.
-  // It is nulled the moment dispatch has taken it (below), so a slow
-  // time-to-first-byte upstream does not pin one extra copy of a multi-MB
-  // multimodal request for the whole prefill.
-  let body: Record<string, unknown> | null;
-  // Rough (UTF-16 code units, not bytes — close enough for a size gate)
-  // request size, captured before `rawBody` is cleared below. Used only to
-  // decide whether a stream-cut transparent retry may afford ANOTHER
-  // `structuredClone` of the body — see `streamRedispatchBody` below.
-  const approxRequestSize = req.rawBody?.length ?? 0;
-  try {
-    body = req.parsedBody ?? (JSON.parse(req.rawBody) as Record<string, unknown>);
-    req.parsedBody = undefined;
-    req.rawBody = '';
-  } catch {
-    req.rawBody = '';
+  // One wallet admission per request: before dispatch when the routed model is
+  // Kortix-billed, or before the first Kortix-billed fallback of a failed own
+  // key or ChatGPT request. A hold it takes is settled or refunded as usual.
+  let chargeAdmission: Promise<{ ok: true } | { ok: false; error: unknown }> | null = null;
+  const admitCharge = () => {
+    chargeAdmission ??= (async () => {
+      if (principal.billingHold) return { ok: true as const };
+      const answered = prefetched?.billing;
+      if (answered instanceof Error) return { ok: false as const, error: answered };
+      try {
+        const billing = answered ?? await hooks.assertBillingActive(principal.accountId);
+        if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
+        return { ok: true as const };
+      } catch (error) {
+        return { ok: false as const, error };
+      }
+    })();
+    return chargeAdmission;
+  };
+  const chargeAdmitted = async () => (await admitCharge()).ok;
+
+  if (!body) {
     refundHold(hooks, principal, logger);
+    emit({
+      ...identity(principal),
+      status: 400,
+      ok: false,
+      errorCode: 'invalid_json',
+      errorMessage: 'Invalid JSON body',
+    });
     return gatewayErrorResponse(400, {
       message: 'Invalid JSON body',
       code: 'invalid_json',
@@ -306,25 +411,11 @@ export async function handleChatCompletions(
     });
   }
 
-  const window = applyImageWindow(body, imageWindow);
-  if (window.dropped > 0) {
-    logger.info(
-      `[gateway] image window ${id}: kept ${window.total - window.dropped} of ${window.total} inline images`,
-    );
-  }
-
-  const requestedModel = typeof body.model === 'string' ? body.model : '';
-  let routedModel = requestedModel;
-  // Reused below to decide whether a stream-cut transparent retry may afford
-  // ANOTHER `structuredClone` of the body — see `streamRedispatchBody`.
-  const requestHasImage = hasImage(body);
   let route: ModelRoutePlan | null;
   try {
-    route =
-      (await hooks.resolveRoute?.(principal, {
-        requestedModel,
-        requires: { imageInput: requestHasImage },
-      })) ?? null;
+    route = prefetched?.route !== undefined
+      ? prefetched.route
+      : (await hooks.resolveRoute?.(principal, routeInput)) ?? null;
     routedModel = route?.primaryModel || requestedModel;
     emit.mark('routed');
   } catch (error) {
@@ -349,28 +440,148 @@ export async function handleChatCompletions(
     });
   }
 
+  // The model the route named. A rescued request starts at one of its fallbacks.
+  const routeModel = routedModel;
+  // `project:*` routes come from the project's own Routing settings.
+  const fallbackChosenByProject = route?.policyId.startsWith('project:') ?? false;
+  const { routeMemory } = runtime;
+  const memoryKey = routeMemoryKey(principal, routeModel);
+  /**
+   * Starts the project's own chain when the routed model has no usable
+   * upstream: every own key or ChatGPT account is paused or needs reconnection
+   * (see CHAIN_TAKES_OVER). The routed model is an own key or ChatGPT plan, so
+   * a Kortix-billed fallback needs the wallet admission first.
+   */
+  const startChainWithout = async (resolution: GatewayResolutionError) => {
+    const status = CHAIN_TAKES_OVER[resolution.code];
+    if (!status || !route?.policyId.startsWith('project:')) return null;
+    if (!fallbackTakesOver(route.fallbackOn ?? 'transient', { status })) return null;
+    const models = fallbackModelsOf({ model: routeModel, fallbackModels: route.fallbackModels });
+    for (const [index, model] of models.entries()) {
+      const candidates = await fallbackCandidates(model, {
+        byok: true,
+        chosenByProject: true,
+        resolveCandidates: (next) => hooks.resolveUpstream(principal, next),
+        admitCharge: chargeAdmitted,
+        logger,
+        requestId: id,
+      });
+      if (!candidates.length) continue;
+      logger.warn(`[gateway] ${id}: ${routeModel} is unavailable (${resolution.code}); the project's chain starts at ${model}`);
+      const resting = resolution.code === 'provider_pool_rate_limited';
+      const holdSeconds = Math.min(resting ? (resolution.restSeconds ?? resolution.retryAfterSeconds ?? MAX_HOLD_SECONDS) : SETUP_HOLD_SECONDS, MAX_HOLD_SECONDS);
+      const failure: GatewayAttemptFailure = {
+        attempt: 1,
+        provider: routeModel.split('/')[0] || routeModel,
+        routeModel,
+        resolvedModel: routeModel,
+        stage: 'resolve',
+        status,
+        code: resolution.code,
+        message: resolution.message,
+        holdSeconds,
+      };
+      routeMemory?.hold(memoryKey, { fallbackModel: model, failure, byok: true }, holdSeconds);
+      return { model, candidates, remaining: models.slice(index + 1), unavailable: { model: routeModel, failure } };
+    }
+    return null;
+  };
+
+  /**
+   * Starts at the fallback that answered this caller's last request while the
+   * routed model is held. The routed model stays last in the chain, so a
+   * request whose fallbacks all fail still tries it.
+   */
+  const startHeldChain = async () => {
+    const held = routeMemory?.recall(memoryKey);
+    if (!held || !route) return null;
+    const models = fallbackModelsOf({ model: routeModel, fallbackModels: route.fallbackModels });
+    const index = models.indexOf(held.fallbackModel);
+    const candidates = index < 0 ? [] : await fallbackCandidates(held.fallbackModel, {
+      byok: held.byok,
+      chosenByProject: fallbackChosenByProject,
+      resolveCandidates: (next) => hooks.resolveUpstream(principal, next),
+      admitCharge: chargeAdmitted,
+      logger,
+      requestId: id,
+    });
+    if (!candidates.length) {
+      routeMemory?.release(memoryKey);
+      return null;
+    }
+    return {
+      model: held.fallbackModel,
+      candidates,
+      remaining: [...models.slice(index + 1), routeModel],
+      unavailable: { model: routeModel, failure: { ...held.failure, stage: 'held' as const } },
+    };
+  };
+
   let descriptor: UpstreamDescriptor | undefined;
   let resolvedCandidates: UpstreamDescriptor[] = [];
-  try {
-    resolvedCandidates = await hooks.resolveUpstream(principal, routedModel);
+  let chain = route?.fallbackModels;
+  let unavailable: { model: string; failure: GatewayAttemptFailure } | undefined;
+  const held = await startHeldChain();
+  if (held) {
+    resolvedCandidates = held.candidates;
+    descriptor = held.candidates[0];
+    routedModel = held.model;
+    chain = held.remaining;
+    unavailable = held.unavailable;
+    emit.mark('resolved');
+  } else try {
+    const answered = prefetched?.upstream;
+    if (answered instanceof Error) throw answered;
+    resolvedCandidates = answered ?? await hooks.resolveUpstream(principal, routedModel);
     descriptor = resolvedCandidates[0];
     emit.mark('resolved');
   } catch (error) {
-    refundHold(hooks, principal, logger);
     const resolution = error instanceof GatewayResolutionError ? error : null;
-    return gatewayErrorResponse(resolution?.code === 'provider_pool_rate_limited' ? 429 : 400, {
-      message: resolution?.message ?? `No provider is configured for model "${routedModel}"`,
-      code: resolution?.code ?? 'model_unavailable',
-      provider: '',
-      requestedModel,
-      resolvedModel: routedModel,
-      requestId: id,
-      suggestion: resolution?.suggestion ?? 'Connect the provider or choose another model.',
-      retryAfterSeconds: resolution?.retryAfterSeconds,
-    });
+    const started = resolution ? await startChainWithout(resolution) : null;
+    if (!started) {
+      refundHold(hooks, principal, logger);
+      const status = resolution?.code === 'provider_pool_rate_limited' ? 429 : 400;
+      // The refusal the client sees is also the request's log row: a plan,
+      // provider or model refusal is invisible in usage and logs without it
+      // (KRTX-1749).
+      emit({
+        ...identity(principal),
+        requestedModel,
+        resolvedModel: routedModel,
+        status,
+        ok: false,
+        errorCode: resolution?.code ?? 'model_unavailable',
+        errorMessage: resolution?.message ?? `No provider is configured for model "${routedModel}"`,
+      });
+      return gatewayErrorResponse(status, {
+        message: resolution?.message ?? `No provider is configured for model "${routedModel}"`,
+        code: resolution?.code ?? 'model_unavailable',
+        provider: '',
+        requestedModel,
+        resolvedModel: routedModel,
+        requestId: id,
+        suggestion: resolution?.suggestion ?? 'Connect the provider or choose another model.',
+        retryAfterSeconds: resolution?.retryAfterSeconds,
+      });
+    }
+    resolvedCandidates = started.candidates;
+    descriptor = started.candidates[0];
+    routedModel = started.model;
+    chain = started.remaining;
+    unavailable = started.unavailable;
+    emit.mark('resolved');
   }
   if (!descriptor) {
     refundHold(hooks, principal, logger);
+    emit({
+      ...identity(principal),
+      requestedModel,
+      resolvedModel: routedModel,
+      status: 400,
+      ok: false,
+      errorCode: 'model_unavailable',
+      errorMessage: `No provider is configured for model "${routedModel}"`,
+    });
     return gatewayErrorResponse(400, {
       message: `No provider is configured for model "${routedModel}"`,
       code: 'model_unavailable',
@@ -384,13 +595,21 @@ export async function handleChatCompletions(
 
   // Resolve the payee before touching the wallet. BYOK descriptors use the
   // customer's provider account and must never create a Kortix hold or debit.
-  if (descriptor.billingMode !== 'none' && !principal.billingHold) {
-    try {
-      const billing = await hooks.assertBillingActive(principal.accountId);
-      emit.mark('billed');
-      if (billing?.holdUsd) principal = { ...principal, billingHold: { amountUsd: billing.holdUsd } };
-    } catch (error) {
+  if (descriptor.billingMode !== 'none') {
+    const admitted = await admitCharge();
+    if (!admitted.ok) {
+      const { error } = admitted;
       const reason = (error as { reason?: unknown })?.reason;
+      emit({
+        ...identity(principal),
+        requestedModel,
+        resolvedModel: shownModel(descriptor, routedModel),
+        provider: shownProvider(descriptor),
+        status: 402,
+        ok: false,
+        errorCode: typeof reason === 'string' ? reason : 'subscription_required',
+        errorMessage: error instanceof Error ? error.message : 'Billing inactive',
+      });
       return gatewayErrorResponse(402, {
         message: error instanceof Error ? error.message : 'Billing inactive',
         code: typeof reason === 'string' ? reason : 'subscription_required',
@@ -401,14 +620,18 @@ export async function handleChatCompletions(
         suggestion: 'Check your subscription or add credits, then retry.',
       });
     }
+    emit.mark('billed');
   }
 
   const streaming = body.stream === true;
   if (streaming) body.stream_options = { include_usage: true };
+  // A BYOK request is billable too when the project's chain can move it to a
+  // Kortix-billed model.
+  const billable = descriptor.billingMode !== 'none' || (fallbackChosenByProject && Boolean(chain?.length));
   // Measured now, while the parsed body still exists: a billable stream that
   // ends before its usage frame is settled from this (see usage/estimate.ts).
-  const promptTokenEstimate =
-    streaming && descriptor.billingMode !== 'none' ? estimatePromptTokens(body) : 0;
+  const promptTokenEstimate = billable ? estimatePromptTokens(body) : 0;
+  const cachedTokenEstimate = estimateCachedPromptTokens(body, promptTokenEstimate);
   // Kept only so a STREAMING body that gets cut before a single byte reaches
   // the client can be transparently retried (see relayStream's `redispatch`
   // option / streaming.ts's `handleIncompleteTermination`). dispatch() owns
@@ -429,19 +652,38 @@ export async function handleChatCompletions(
     streaming && !requestHasImage && approxRequestSize <= STREAM_REDISPATCH_MAX_BODY_SIZE
       ? structuredClone(body)
       : null;
-  const primaryModel = routedModel;
+  /**
+   * Keeps this outcome for the caller's next request: a transient failure of
+   * the routed model that a fallback answered holds the route, and the routed
+   * model answering releases it.
+   */
+  const holdAfterDispatch = (outcome: DispatchOutcome) => {
+    if (outcome.model === routeModel) return routeMemory?.release(memoryKey);
+    // The plan started at a fallback: its hold was set when the routed model failed.
+    if (unavailable) return;
+    const failure = outcome.attemptFailures.filter((attempt) => attempt.routeModel === routeModel).at(-1);
+    const transient = failure && (failure.status === undefined || failure.status === 429 || failure.status >= 500);
+    if (!transient) return;
+    routeMemory?.hold(memoryKey, {
+      fallbackModel: outcome.model,
+      failure,
+      byok: resolvedCandidates[0]?.billingMode === 'none',
+    }, DISPATCH_HOLD_SECONDS);
+  };
   emit.mark('dispatch');
   const pending = dispatch(
     body,
     {
-      model: primaryModel,
+      model: routedModel,
       candidates: resolvedCandidates,
-      fallbackModels: route?.fallbackModels,
+      fallbackModels: chain,
       fallbackOn: route?.fallbackOn,
+      fallbackChosenByProject,
       // A fallback model gets its own clamped defaults, never the primary's.
       defaultsFor: (model) =>
         route?.generationDefaultsForModel?.(model) ??
-        (model === primaryModel ? route?.generationDefaults : undefined),
+        (model === routeModel ? route?.generationDefaults : undefined),
+      unavailable,
     },
     {
       requestId: id,
@@ -455,6 +697,10 @@ export async function handleChatCompletions(
       notePoolRateLimit: hooks.notePoolRateLimit
         ? (secretId, seconds) => hooks.notePoolRateLimit!(principal, secretId, seconds)
         : undefined,
+      refreshCredential: hooks.refreshCredential
+        ? (descriptor) => hooks.refreshCredential!(principal, descriptor)
+        : undefined,
+      admitCharge: chargeAdmitted,
     },
   );
   // Dispatch owns the parsed request now; this frame drops it before the
@@ -462,6 +708,7 @@ export async function handleChatCompletions(
   body = null;
   const outcome = await pending;
   emit.mark('upstream_response');
+  if (outcome.response?.ok) holdAfterDispatch(outcome);
   // Mutable: a stream-cut transparent retry (below) can move this to the
   // candidate that actually answered the retry, exactly like dispatch()'s own
   // pool/profile/fallback moves already do.
@@ -619,7 +866,7 @@ export async function handleChatCompletions(
       ? {
           promptTokens: promptTokenEstimate,
           completionTokens: estimateOutputTokens(observed!.outputChars),
-          cachedTokens: 0,
+          cachedTokens: cachedTokenEstimate,
           cacheWriteTokens: 0,
         }
       : reported;
@@ -719,6 +966,8 @@ export async function handleChatCompletions(
       attempts,
       candidatesTried,
       attemptFailures,
+      servedModel: routedModel,
+      ...(routedModel !== routeModel ? { fallbackFrom: routeModel } : {}),
       usage: counts,
       upstreamCost,
       finalCost,
@@ -743,6 +992,14 @@ export async function handleChatCompletions(
       suggestion: classified.suggestion,
       retryAfterSeconds: clampRetryAfterSeconds(upstream.headers.get('retry-after')),
     });
+  }
+
+  if (!upstream.ok && upstream.status < 500 && upstream.status !== 429) {
+    const upstreamText = await upstream.text().catch(() => '');
+    await settle(null);
+    const headers = passthroughHeaders(upstream.headers);
+    headers.set('content-type', 'application/json');
+    return new Response(providerClientErrorBody(upstream.status, upstreamText), { status: upstream.status, headers });
   }
 
   if (streaming && upstream.body) {
@@ -775,7 +1032,16 @@ export async function handleChatCompletions(
     );
   }
 
-  const responseText = await upstream.text();
+  let responseText: string;
+  try {
+    responseText = await upstream.text();
+  } catch (error) {
+    // The provider answered 200 and bills for the prompt. A connection reset
+    // while reading the body must not leave a request with no usage row and no
+    // refund: settle the prompt estimate, then fail the request as before.
+    if (upstream.ok) await settle(null, null, { outputChars: 0, clientStopped: true });
+    throw error;
+  }
   const data = (() => {
     try {
       return JSON.parse(responseText) as unknown;
@@ -783,7 +1049,18 @@ export async function handleChatCompletions(
       return null;
     }
   })();
-  await settle(extractUsageFromJson(data));
+  const reportedUsage = (data as { usage?: unknown } | null)?.usage;
+  if (upstream.ok && (reportedUsage == null || typeof reportedUsage !== 'object')) {
+    // A 200 with no usage object still generated output the provider bills.
+    // Settle the estimate, never zero.
+    const choices = (data as { choices?: Array<{ message?: unknown }> } | null)?.choices;
+    const outputChars = Array.isArray(choices)
+      ? chunkOutputChars({ choices: choices.map((choice) => ({ delta: choice?.message })) })
+      : 0;
+    await settle(null, null, { outputChars, clientStopped: false });
+  } else {
+    await settle(extractUsageFromJson(data));
+  }
   if (served.publicProvider) {
     const publicText =
       data && typeof data === 'object' && !Array.isArray(data)

@@ -23,7 +23,8 @@ export interface ConnectorAuth {
     | 'aws_sigv4'
     | 'mtls'
     | 'none';
-  in: 'header' | 'query' | 'cookie';
+  /** `path`: `prefix + secret` is the URL's first path segment (Telegram's `/bot<token>/…`). */
+  in: 'header' | 'query' | 'cookie' | 'path';
   name: string | null;
   prefix: string | null;
 }
@@ -42,6 +43,17 @@ export interface ExecResult {
   status: number;
   ok: boolean;
   data: unknown;
+  /** The upstream's `Retry-After`, in seconds, on a failed response that sent one. */
+  retryAfterSeconds?: number;
+}
+
+/** `Retry-After` as seconds: delta-seconds or an HTTP date. Undefined when absent or unreadable. */
+export function parseRetryAfter(value: string | null | undefined, now = Date.now()): number | undefined {
+  const raw = value?.trim();
+  if (!raw) return undefined;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  const at = Date.parse(raw);
+  return Number.isNaN(at) ? undefined : Math.max(0, Math.ceil((at - now) / 1000));
 }
 
 const NO_AUTH: ConnectorAuth = { type: 'none', in: 'header', name: null, prefix: null };
@@ -78,7 +90,8 @@ function applyAuth(
     headers['Authorization'] = `Basic ${Buffer.from(secret).toString('base64')}`;
     return;
   }
-  // custom / api_key
+  // custom / api_key; a path credential is placed by buildHttpRequest.
+  if (auth.in === 'path') return;
   const value = auth.prefix ? `${auth.prefix}${secret}` : secret;
   const name = auth.name ?? 'Authorization';
   if (auth.in === 'query') query.set(name, value);
@@ -461,6 +474,7 @@ function buildHttpRequest(opts: {
     applyAuth(headers, query, auth, opts.secret ?? null);
   }
 
+  if (auth.in === 'path' && opts.secret) path = joinUrl(`${auth.prefix ?? ''}${opts.secret}`, path);
   let url = joinUrl(opts.baseUrl, path);
   const qs = query.toString();
   if (qs) url += (url.includes('?') ? '&' : '?') + qs;
@@ -778,6 +792,10 @@ export type FetchImpl = (
     headers: Record<string, string>;
     body?: string;
     tls?: { cert: string; key: string; ca?: string };
+    /** Aborts the request at the gateway's call deadline. */
+    signal?: AbortSignal;
+    /** `text()` rejects with `upstream_response_too_large` past this many bytes. */
+    maxResponseBytes?: number;
   },
 ) => Promise<{
   status: number;
@@ -834,15 +852,28 @@ async function performRequestWithHeaders(
   now: () => Date,
 ): Promise<{ result: ExecResult; header: (name: string) => string | null }> {
   applyAdvancedAuth(req, auth, secret, now);
-  const res = await fetchImpl(req.url, {
-    method: req.method,
-    headers: req.headers,
-    body: req.body,
-    tls: req.tls,
-  });
+  let res: Awaited<ReturnType<FetchImpl>>;
+  try {
+    res = await fetchImpl(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: req.body,
+      tls: req.tls,
+    });
+  } catch (error) {
+    // A path credential is part of the URL; never let a fetch error echo it to the agent.
+    if (auth.in !== 'path' || !secret || !(error instanceof Error)) throw error;
+    throw new Error(error.message.split(secret).join('[redacted]'));
+  }
   const text = await res.text();
+  const retryAfterSeconds = res.ok ? undefined : parseRetryAfter(res.headers?.get('retry-after'));
   return {
-    result: { status: res.status, ok: res.ok, data: parseResponseBody(text) },
+    result: {
+      status: res.status,
+      ok: res.ok,
+      data: parseResponseBody(text),
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    },
     header: (name: string) => res.headers?.get(name) ?? null,
   };
 }
@@ -969,7 +1000,7 @@ function redactExactValue(value: string, secret: string | null | undefined): str
   return redacted;
 }
 
-function mcpJsonRpcError(data: unknown, secret?: string | null): string | null {
+export function mcpJsonRpcError(data: unknown, secret?: string | null): string | null {
   if (!data || typeof data !== 'object' || !('error' in data)) return null;
   const error = (data as { error?: unknown }).error;
   if (!error || typeof error !== 'object') return 'unknown error';

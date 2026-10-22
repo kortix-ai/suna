@@ -2,9 +2,10 @@
 
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import type { Command } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys, useOpenCodeRuntimeReady } from './keys';
-import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } from './shared';
+import type { Command } from '../../core/runtime/runtime-types';
+import { useRuntimeSupports } from '../use-runtime-supports';
+import { runtimeKeys, useRuntimeReady } from './keys';
+import { unwrap, asRuntimeList } from './shared';
 
 // ============================================================================
 // Command Hooks
@@ -17,30 +18,59 @@ import { unwrap, asRuntimeList, cachedRuntimeList, setLSCache, LS_COMMANDS } fro
  * or proxy that answers with an object body used to hand that value straight
  * to the render, where `for (const cmd of commands)` threw
  * `TypeError: t is not iterable` and killed the whole session view (dev,
- * 2026-08-23). `asRuntimeList` normalizes the response and `cachedRuntimeList`
- * treats a corrupt localStorage placeholder as a miss, so every consumer
+ * 2026-08-23). `asRuntimeList` normalizes the response, so every consumer
  * (`detectCommandFromText`, the slash menu, command attachments) can iterate
  * the result unconditionally.
+ *
+ * Slash commands are a runtime capability (`session.commands`): a runtime
+ * without them is never asked, and the list stays empty.
+ *
+ * Pass `agent` to list only the commands that agent may run: a kortix.yaml v3
+ * command carries `agents`, and a command without `agents` (v1/v2) is listed
+ * for every agent. Every agent reads the same cached list.
  */
-export function useOpenCodeCommands() {
-  const runtimeReady = useOpenCodeRuntimeReady();
+export function useRuntimeCommands(options: UseRuntimeCommandsOptions = {}) {
+  const { agent } = options;
+  const runtimeReady = useRuntimeReady();
+  const supported = useRuntimeSupports('session.commands');
   return useQuery<Command[]>({
-    queryKey: opencodeKeys.commands(),
+    queryKey: runtimeKeys.commands(),
     queryFn: async () => {
       const client = getClient();
       const result = await client.command.list();
-      const commands = asRuntimeList<Command>(unwrap(result));
-      setLSCache(LS_COMMANDS, commands);
-      return commands;
+      return asRuntimeList<Command>(unwrap(result));
     },
-    placeholderData: () => cachedRuntimeList<Command>(LS_COMMANDS),
-    enabled: runtimeReady,
+    select: agent
+      ? (commands) => commands.filter((command) => !command.agents || command.agents.includes(agent))
+      : undefined,
+    enabled: runtimeReady && supported,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
 }
 
-export interface ExecuteOpenCodeCommandInput {
+export interface UseRuntimeCommandsOptions {
+  /** The selected agent. Omitted: every command is listed. */
+  agent?: string;
+}
+
+/**
+ * The runtime refused a command the agent does not enable (kortix.yaml v3):
+ * `403 { error: "command_not_enabled", command, agent }`.
+ */
+export class CommandNotEnabledError extends Error {
+  readonly status = 403;
+  readonly code = 'command_not_enabled';
+  constructor(
+    readonly command: string,
+    readonly agent: string,
+  ) {
+    super(`The agent "${agent}" cannot run /${command}.`);
+    this.name = 'CommandNotEnabledError';
+  }
+}
+
+export interface ExecuteRuntimeCommandInput {
   sessionId: string;
   command: string;
   args?: string;
@@ -49,14 +79,14 @@ export interface ExecuteOpenCodeCommandInput {
   variant?: string;
 }
 
-export async function executeOpenCodeCommand({
+export async function executeRuntimeCommand({
   sessionId,
   command,
   args,
   agent,
   model,
   variant,
-}: ExecuteOpenCodeCommandInput): Promise<void> {
+}: ExecuteRuntimeCommandInput): Promise<void> {
   const client = getClient();
   const result = await client.session.command({
     sessionID: sessionId,
@@ -66,12 +96,16 @@ export async function executeOpenCodeCommand({
     ...(model ? { model } : {}),
     ...(variant ? { variant } : {}),
   });
+  const body = result.error as { error?: unknown; command?: unknown; agent?: unknown } | undefined;
+  if (result.response?.status === 403 && body?.error === 'command_not_enabled') {
+    throw new CommandNotEnabledError(String(body.command ?? command), String(body.agent ?? agent ?? ''));
+  }
   unwrap(result);
 }
 
-export function useExecuteOpenCodeCommand() {
+export function useExecuteRuntimeCommand() {
   return useMutation({
-    mutationFn: executeOpenCodeCommand,
+    mutationFn: executeRuntimeCommand,
     // CRITICAL: Disable retry for commands. The /command endpoint blocks until
     // the agent finishes, which can take minutes (e.g. onboarding). If a proxy
     // timeout or network error kills the connection, TanStack Query's default
@@ -81,3 +115,13 @@ export function useExecuteOpenCodeCommand() {
     retry: false,
   });
 }
+
+// Pre-W4 names, kept until the next major. The runtime is OpenCode or pi.
+/** @deprecated Renamed to `ExecuteRuntimeCommandInput`. Removed in the next major. */
+export type ExecuteOpenCodeCommandInput = ExecuteRuntimeCommandInput;
+/** @deprecated Renamed to `executeRuntimeCommand`. Removed in the next major. */
+export const executeOpenCodeCommand = executeRuntimeCommand;
+/** @deprecated Renamed to `useRuntimeCommands`. Removed in the next major. */
+export const useOpenCodeCommands = useRuntimeCommands;
+/** @deprecated Renamed to `useExecuteRuntimeCommand`. Removed in the next major. */
+export const useExecuteOpenCodeCommand = useExecuteRuntimeCommand;

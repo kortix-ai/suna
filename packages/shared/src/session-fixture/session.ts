@@ -27,6 +27,7 @@ import { FIXTURE_MARKDOWN_DOCUMENT } from './markdown';
 import { AGENTS_SESSIONS_TOOL_GROUP } from './tools/agents-sessions';
 import { CONNECTORS_PROJECTS_TOOL_GROUP } from './tools/connectors-projects';
 import { FILES_SHELL_TOOL_GROUP } from './tools/files-shell';
+import { PI_TOOL_GROUP } from './tools/pi';
 import { WEB_MEMORY_TOOL_GROUP } from './tools/web-memory';
 import type {
   FixtureAssistantMessage,
@@ -68,6 +69,7 @@ export const FIXTURE_TOOL_GROUPS: readonly FixtureToolGroup[] = [
   WEB_MEMORY_TOOL_GROUP,
   AGENTS_SESSIONS_TOOL_GROUP,
   CONNECTORS_PROJECTS_TOOL_GROUP,
+  PI_TOOL_GROUP,
 ];
 
 /** A 64×40 PNG in four sky-blue bands. Inline, so no network request loads it. */

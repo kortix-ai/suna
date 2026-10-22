@@ -299,6 +299,7 @@ export function createProjectsContractDbMock(
           };
           return {
             returning: update,
+            catch: (reject: (reason: unknown) => unknown) => update().catch(reject),
             then: (
               resolve: (value: unknown[]) => unknown,
               reject?: (reason: unknown) => unknown,

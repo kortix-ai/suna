@@ -1,4 +1,6 @@
 import { projectWorking } from '../../session/working';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogMessage } from '../../session-log/types';
+import { sessionLogTurns } from '../../session-log/turns';
 import { describe, expect, test } from 'bun:test';
 import {
   freshSendHint,
@@ -6,6 +8,7 @@ import {
   resolveWorkingTurn,
   shouldSuppressWorkingTurnBusy,
   turnIsConfirmedActive,
+  turnRendersQueued,
   workingTurnDrawsBusyRow,
 } from './working-turn';
 
@@ -218,7 +221,7 @@ describe('resolveWorkingTurn', () => {
     expect(r.pendingTurnIds).toEqual([]);
   });
   test('a prompt the SERVER still holds is never the working turn — it is queued', () => {
-    // MEASURED, local stack 2026-08-26 (session 65216cc6): two sends 700ms
+    // MEASURED, local stack 2026-08-26 (one local session): two sends 700ms
     // apart, the first not streaming yet, so the working projection decides
     // from the INBOX and its `turnId` hint is null. Without the inbox fact the
     // fallback made the second prompt the working turn — full opacity, no
@@ -388,7 +391,7 @@ describe('a busy session always draws exactly one Thinking row', () => {
   });
 
   test('a turn parked on a question draws no row, even during a retry', () => {
-    // 2026-09-22, local (session 8d807956): the agent asked a 2-option
+    // 2026-09-22, local (one local session): the agent asked a 2-option
     // question; the row stayed `active` for 12m22s and the transcript shimmered
     // "Working on it" above the card asking the reader to act.
     const base = { lastTurnWorking: true, workingTurnId: 'turn', suppressed: false, workingTurnHasError: false };
@@ -424,5 +427,125 @@ describe('only a confirmed active turn drops its pending presentation', () => {
       activeTurnId: 'sent',
       pendingDelivery: false,
     })).toBe(false);
+  });
+});
+
+describe('a bubble reads as queued only while the agent has not reached it', () => {
+  const queued = { state: 'queued' as const, reason: null };
+  const delivering = { state: 'delivering' as const, reason: null };
+  const working = (turnId: string, pendingTurnIds: string[] = []) => ({
+    turnId,
+    sessionWorking: true,
+    confirmedActive: false,
+    resolution: { workingTurnId: turnId, pendingTurnIds },
+  });
+
+  test('an idle send the inbox is still delivering reads as the active prompt', () => {
+    // Enter on an idle session painted the bubble muted with "Sending", then
+    // "Queued", until the server named the turn. The agent was already on it:
+    // the fresh-send hint made it the working turn, Thinking drew under it,
+    // and nothing ran ahead of it.
+    expect(turnRendersQueued({ ...working('sent'), inboxPrompt: queued })).toBe(false);
+    expect(turnRendersQueued({ ...working('sent'), inboxPrompt: delivering })).toBe(false);
+    expect(turnRendersQueued({ ...working('sent'), inboxPrompt: { state: 'delivering', reason: 'forwarded' } })).toBe(false);
+    expect(turnRendersQueued({ ...working('sent'), inboxPrompt: { state: 'queued', reason: 'runtime_unreachable' } })).toBe(false);
+  });
+
+  test("a new session's first prompt reads as the active prompt while it is delivered", () => {
+    // Local stack, a new session from the project home: the first prompt read
+    // "Sending" for 4.8s. No turn had an answer and the inbox held the row, so
+    // `resolveWorkingTurn` named no working turn and listed the prompt as
+    // pending, although nothing ran ahead of it.
+    const first = {
+      turnId: 'first',
+      sessionWorking: true,
+      confirmedActive: false,
+      resolution: { workingTurnId: null, pendingTurnIds: ['first'] },
+    };
+    expect(turnRendersQueued({ ...first, inboxPrompt: delivering })).toBe(false);
+    expect(turnRendersQueued({ ...first, inboxPrompt: queued })).toBe(false);
+    expect(turnRendersQueued({ ...first, inboxPrompt: { state: 'waiting', reason: 'held' } })).toBe(true);
+  });
+
+  test("a second prompt sent before the first is answered waits behind it", () => {
+    const second = {
+      turnId: 'second',
+      sessionWorking: true,
+      confirmedActive: false,
+      resolution: { workingTurnId: null, pendingTurnIds: ['first', 'second'] },
+    };
+    expect(turnRendersQueued({ ...second, inboxPrompt: queued })).toBe(true);
+    expect(turnRendersQueued({ ...second, inboxPrompt: null })).toBe(true);
+  });
+
+  test('the next turn keeps the queued look when the server says it waits or failed', () => {
+    expect(turnRendersQueued({ ...working('sent'), inboxPrompt: { state: 'waiting', reason: 'turn_active' } })).toBe(true);
+    expect(turnRendersQueued({ ...working('sent'), inboxPrompt: { state: 'waiting', reason: 'older_prompt_pending' } })).toBe(true);
+    expect(turnRendersQueued({ ...working('sent'), inboxPrompt: { state: 'waiting', reason: 'held' } })).toBe(true);
+    expect(turnRendersQueued({ ...working('sent'), inboxPrompt: { state: 'failed', reason: null } })).toBe(true);
+  });
+
+  test('a send behind the running turn reads as queued', () => {
+    const behind = { ...working('running', ['next']), turnId: 'next' };
+    expect(turnRendersQueued(behind)).toBe(true);
+    expect(turnRendersQueued({ ...behind, inboxPrompt: queued })).toBe(true);
+    expect(turnRendersQueued({ ...behind, inboxPrompt: delivering })).toBe(true);
+  });
+
+  test('the inbox holding a turn the agent is not on reads as queued', () => {
+    // A finished session with a prompt still in its inbox: nothing names it.
+    const idle = {
+      turnId: 'held',
+      sessionWorking: false,
+      confirmedActive: false,
+      resolution: { workingTurnId: null, pendingTurnIds: ['held'] },
+    };
+    expect(turnRendersQueued({ ...idle, inboxPrompt: queued })).toBe(true);
+    expect(turnRendersQueued({ ...working('answered'), turnId: 'older', inboxPrompt: queued })).toBe(true);
+  });
+
+  test('a turn with no inbox row and nothing ahead of it reads as sent', () => {
+    expect(turnRendersQueued(working('sent'))).toBe(false);
+    expect(turnRendersQueued({ ...working('answered'), turnId: 'older' })).toBe(false);
+  });
+
+  test('a server-confirmed active turn never reads as queued', () => {
+    expect(turnRendersQueued({
+      ...working('running', ['sent']),
+      turnId: 'sent',
+      confirmedActive: true,
+      inboxPrompt: { state: 'failed', reason: null },
+    })).toBe(false);
+  });
+});
+
+describe('freshSendHint and fallbackBusyRowAfterTurnId read block turns (sessionLogTurns) too', () => {
+  const V = { schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR } as const;
+  let seq = 0;
+  const msg = (id: string, role: 'user' | 'assistant', replyTo?: string): SessionLogMessage => ({
+    ...V, message_id: id, thread_id: 't', seq: ++seq, role, kind: 'turn', status: 'complete', in_context: true, model: null,
+    usage: null, finish: null, error: null, created_at: '', completed_at: null, producer: { harness: 'pi', harness_version: '1', adapter_version: '1' },
+    ...(replyTo && { reply_to: replyTo }), blocks: [{ type: 'text', id: `${id}-t`, text: id }],
+  });
+  const blockTurns = (...messages: SessionLogMessage[]) =>
+    sessionLogTurns({ ...V, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages });
+
+  test('the same answers as on v1 turns', () => {
+    const turns = blockTurns(msg('old', 'user'), msg('a1', 'assistant', 'old'), msg('new', 'user'));
+    expect(freshSendHint(turns, (id) => id === 'new')).toBe('new');
+    expect(freshSendHint(turns, (id) => id === 'old')).toBeNull();
+    const queue = blockTurns(msg('running', 'user'), msg('a2', 'assistant', 'running'), msg('queued-a', 'user'), msg('queued-b', 'user'));
+    expect(fallbackBusyRowAfterTurnId({
+      turns: queue,
+      pendingTurnIds: new Set(),
+      pendingPromptIds: new Set(['queued-a', 'queued-b']),
+      deliveringPromptIds: new Set(),
+    })).toBe('running');
+    expect(fallbackBusyRowAfterTurnId({
+      turns: queue,
+      pendingTurnIds: new Set(),
+      pendingPromptIds: new Set(['queued-a', 'queued-b']),
+      deliveringPromptIds: new Set(['queued-b']),
+    })).toBe('queued-b');
   });
 });

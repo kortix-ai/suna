@@ -106,6 +106,25 @@ disk = 20
     expect(issues.every((i) => i.severity !== 'error')).toBe(true);
   });
 
+  test('container_runtime accepts a boolean and rejects anything else', () => {
+    const ok = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "dev"
+dockerfile = ".kortix/Dockerfile.dev"
+container_runtime = true
+`);
+    expect(ok.valid).toBe(true);
+    const bad = summarize(`
+kortix_version = 1
+[[sandbox.templates]]
+slug = "dev"
+dockerfile = ".kortix/Dockerfile.dev"
+container_runtime = "yes"
+`);
+    expect(bad.errorPaths).toContain('sandbox.templates[0].container_runtime');
+  });
+
   test('rejects entries with both image AND dockerfile', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
@@ -724,6 +743,42 @@ apps:
     expect(v2.issues.filter((issue) => issue.severity === 'error')).toEqual([]);
   });
 
+  test('a v2 App names the Apps it uses, by slug', () => {
+    const errors = (yaml: string) =>
+      validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n${yaml}`, 'yaml')
+        .issues.filter((issue) => issue.severity === 'error');
+    expect(errors('  db:\n    path: db\n    resources: { cpu: 2 }\n  crm:\n    path: apps/crm\n    uses: [db, billing-db]')).toEqual([]);
+    expect(errors('  crm:\n    uses: [Main, ""]').map((issue) => issue.path)).toEqual(['apps.crm.uses[0]', 'apps.crm.uses[1]']);
+    expect(errors('  crm:\n    uses: db').map((issue) => issue.path)).toEqual(['apps.crm.uses']);
+    expect(errors('  crm:\n    uses: [crm]').map((issue) => issue.path)).toEqual(['apps.crm.uses[0]']);
+  });
+
+  test('the retired `kind` field warns and still validates: an App\'s shape comes from its config', () => {
+    for (const kind of ['convex', 'web', 'lambda']) {
+      const result = validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  db:\n    kind: ${kind}\n    type: static`, 'yaml');
+      expect(result.issues.filter((entry) => entry.severity === 'error').map((entry) => entry.path)).toEqual([]);
+      const issue = result.issues.find((entry) => entry.path === 'apps.db.kind');
+      expect(issue?.severity).toBe('warning');
+      expect(issue?.message).toContain('retired');
+      expect(issue?.message).toContain('kortix-apps skill templates');
+    }
+  });
+
+  test('the retired `backends` field names its replacement', () => {
+    const result = validateManifest('kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  crm:\n    backends: [main]', 'yaml');
+    const issue = result.issues.find((entry) => entry.path === 'apps.crm.backends');
+    expect(issue?.severity).toBe('error');
+    expect(issue?.message).toContain('uses');
+  });
+
+  test('the retired `monthly_budget_usd` field warns and still validates: Apps have no budget', () => {
+    const result = validateManifest('kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n  api:\n    always_on: false\n    monthly_budget_usd: 5', 'yaml');
+    expect(result.issues.filter((entry) => entry.severity === 'error')).toEqual([]);
+    const issue = result.issues.find((entry) => entry.path === 'apps.api.monthly_budget_usd');
+    expect(issue?.severity).toBe('warning');
+    expect(issue?.message).toContain('no budget');
+  });
+
   test('rejects invalid v2 App ports, commands, resources, and secret mappings', () => {
     const result = validateManifest(
       `kortix_version: 2
@@ -820,5 +875,102 @@ image = "ubuntu:22.04"
     const text = formatIssues(issues, { color: false });
     expect(text).toContain('error sandbox.templates[0].slug');
     expect(text).toContain('kortix_version');
+  });
+});
+
+describe('validateManifest — [[triggers]] type = "event"', () => {
+  const base = `kortix_version = 1\n[[triggers]]\nslug = "pr"\nprompt = "go"\n`;
+  const paths = (toml: string) => validateManifest(toml, 'toml').issues.map((i) => i.path);
+
+  test('connector + event (+ config table) passes', () => {
+    const toml = `${base}type = "event"\nconnector = "github"\nevent = "GITHUB_PULL_REQUEST_EVENT"\n[triggers.config]\nowner = "acme"\n`;
+    expect(validateManifest(toml, 'toml').valid).toBe(true);
+  });
+
+  test('missing connector and event are rejected', () => {
+    expect(paths(`${base}type = "event"\n`)).toEqual(
+      expect.arrayContaining(['triggers[0].connector', 'triggers[0].event']),
+    );
+  });
+
+  test('config must be an object', () => {
+    expect(paths(`${base}type = "event"\nconnector = "g"\nevent = "E"\nconfig = "x"\n`)).toContain(
+      'triggers[0].config',
+    );
+  });
+
+  test('cron/monitor wiring is rejected on an event trigger', () => {
+    const p = paths(`${base}type = "event"\nconnector = "g"\nevent = "E"\ncron = "0 9 * * *"\nmode = "poll"\n`);
+    expect(p).toEqual(expect.arrayContaining(['triggers[0].cron', 'triggers[0].mode']));
+  });
+
+  test('event keys are rejected on a cron trigger', () => {
+    const p = paths(`${base}type = "cron"\ncron = "0 9 * * *"\nconnector = "g"\nevent = "E"\n`);
+    expect(p).toEqual(expect.arrayContaining(['triggers[0].connector', 'triggers[0].event']));
+  });
+});
+
+describe('apps: release config (processes, services, mounts, vm, deploy, labels)', () => {
+  const issues = (yaml: string) =>
+    validateManifest(`kortix_version: 2\ndefault_agent: w\nagents:\n  w: {}\napps:\n${yaml}`, 'yaml')
+      .issues.filter((issue) => issue.severity === 'error').map((issue) => `${issue.path}: ${issue.message}`);
+
+  test('a backend block validates: image, a data volume, two public services, always on, labels', () => {
+    expect(issues(`  db:
+    type: oci_image
+    image: ghcr.io/example/backend:1
+    command: ["/start.sh"]
+    labels: [backend]
+    vm: { cpu: 1, memory_gb: 1 }
+    mounts:
+      - { source: data, destination: /data, initial_size_gb: 10 }
+    http_service: { internal_port: 3210, access: public, auto_stop_machines: "off", min_machines_running: 1 }
+    services:
+      - { name: site, internal_port: 3211, access: public }
+    deploy: { strategy: rolling }`)).toEqual([]);
+  });
+
+  test('the engine rules surface in kortix validate: bluegreen with a volume, a reserved port, a system mount path, a bad label', () => {
+    expect(issues(`  db:
+    type: oci_image
+    image: x
+    command: ["/x"]
+    labels: [Backend]
+    http_service: { internal_port: 8080 }
+    mounts:
+      - { source: data, destination: /etc/data }
+    deploy: { strategy: bluegreen }`)).toEqual([
+      'apps.db.labels: must be at most 10 labels of lowercase letters, digits and "-".',
+      'apps.db.http_service.internal_port: 8080 is reserved by the App supervisor.',
+      'apps.db.mounts[0].destination: cannot sit under a system directory.',
+      'apps.db.deploy.strategy: bluegreen needs two machines on one volume; an App with mounts deploys rolling or immediate.',
+    ]);
+  });
+
+  test('wrong shapes are named before any rule runs; a static App ignores the machine fields', () => {
+    expect(issues('  db:\n    mounts: { source: data }')).toEqual(['apps.db.mounts: must be a list of objects.']);
+    expect(issues('  site:\n    type: static\n    mounts: [{ source: data, destination: /etc }]')).toEqual([]);
+  });
+  test('display: where Kortix shows the App; a parent must be another App of the file', () => {
+    expect(issues(`  db:
+    type: static
+    display: { preview: none }
+  db-dashboard:
+    type: static
+    display: { parent: db }
+  worker:
+    type: static
+    display: { listed: false }`)).toEqual([]);
+    expect(issues(`  db:
+    type: static
+    display: { parent: db, preview: icon, hidden: true }
+  dash:
+    type: static
+    display: { parent: nope }`)).toEqual([
+      'apps.db.display.hidden: is not a display field (listed, preview, parent).',
+      'apps.db.display.preview: must be live or none.',
+      'apps.db.display.parent: an App cannot be its own parent.',
+      'apps.dash.display.parent: names no App in this file.',
+    ]);
   });
 });

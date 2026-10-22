@@ -251,8 +251,28 @@ mock.module('../lib/access', () => ({
   },
 }));
 
+// `can_stop` (`turn-stop-authority.ts`, whose reads are tested beside it): the
+// route hands it the turn read and the caller; this records both.
+let canStop = true;
+let canStopCalls: Array<{ newest: string | null; callerUserId: string | null; canManageLifecycle: boolean }> = [];
+const realStopAuthority = await import('../session-lifecycle/turn-stop-authority');
+mock.module('../session-lifecycle/turn-stop-authority', () => ({
+  ...realStopAuthority,
+  canStopTurns: async (
+    state: { turns: Array<{ message_id: string | null }> },
+    input: { callerUserId: string | null; canManageLifecycle: boolean },
+  ) => {
+    canStopCalls.push({
+      newest: state.turns[0]?.message_id ?? null,
+      callerUserId: input.callerUserId,
+      canManageLifecycle: !!input.canManageLifecycle,
+    });
+    return canStop;
+  },
+}));
+
 const { projectsApp } = await import('../lib/app');
-await import('./session-runtime');
+(await import('./session-runtime')).registerSessionRuntimeRoutes();
 
 /** `c.get('sessionId')` is OVERLOADED: a Kortix project-session id under a
  *  connector token, the SUPABASE AUTH session id under a browser JWT. The
@@ -294,6 +314,8 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     visibleSessionCallerIds = [];
     loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
     visibleSession = { row: { sessionId: SESSION_ID } };
+    canStop = true;
+    canStopCalls = [];
   });
 
   test('rejects a non-UUID session id with 400 before any DB read', async () => {
@@ -361,7 +383,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     const response = await getTurn();
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual({ turns: [] });
+    expect(body).toEqual({ turns: [], can_stop: true });
     // `last_ended` is OMITTED, not null: its absence is the only signal that
     // this session has never run a turn.
     expect(Object.hasOwn(body, 'last_ended')).toBe(false);
@@ -402,11 +424,13 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
           turn_token: 't-boot',
           state: 'delivering',
           message_id: 'msg_boot',
+          runtime_session_id: null,
           opencode_session_id: null,
           started_at: '2026-08-17T00:00:00.000Z',
           accepted_at: null,
         },
       ],
+      can_stop: true,
     });
   });
 
@@ -495,6 +519,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
         turn_token: 't-live',
         state: 'active',
         message_id: 'msg_1',
+        runtime_session_id: 'ses_root',
         opencode_session_id: 'ses_root',
         started_at: '2026-08-17T00:00:00.000Z',
         accepted_at: '2026-08-17T00:00:01.000Z',
@@ -523,70 +548,35 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     expect(queries[1].where).toContain('col:turn_token in');
   });
 
-  test('falls back to the ledger start when the authority record carries none', async () => {
-    // A legacy `activeTurn` record from a pre-`activeTurns` deploy has no
-    // `startedAtMs`. The ledger row is then the only place the start instant
-    // exists.
+  test('a retired single-record activeTurn is not turn authority', async () => {
+    // KRTX-255 cut the legacy `metadata.activeTurn` arm over. Only the
+    // token-keyed `activeTurns` map reports a live turn.
     sandboxTable = [
       {
         session_id: SESSION_ID,
         status: 'active',
-        metadata: {
-          activeTurn: { token: 't-legacy', state: 'active', opencodeSessionId: 'ses_root' },
-        },
+        metadata: { activeTurn: { token: 't-legacy', state: 'active', opencodeSessionId: 'ses_root' } },
       },
     ];
-    turnTable = [
-      ledgerRow({ turn_token: 't-legacy', started_at: new Date('2026-08-17T00:00:04.000Z') }),
-    ];
+    turnTable = [ledgerRow({ turn_token: 't-legacy' })];
     const body = await (await getTurn()).json();
-    expect(body.turns[0].started_at).toBe('2026-08-17T00:00:04.000Z');
+    expect(body.turns).toEqual([]);
   });
 
-  test('reports a live turn with a null started_at rather than hiding it', async () => {
-    // Neither source carries a start instant. The turn is still RUNNING, and
-    // dropping it because one field is unknown would reintroduce the phantom
-    // idle this endpoint exists to kill.
-    sandboxTable = [
-      {
-        session_id: SESSION_ID,
-        status: 'active',
-        metadata: { activeTurn: { token: 't-legacy', state: 'active' } },
-      },
-    ];
-    const body = await (await getTurn()).json();
-    expect(body.turns).toEqual([
-      {
-        turn_token: 't-legacy',
-        state: 'active',
-        message_id: null,
-        opencode_session_id: null,
-        started_at: null,
-        accepted_at: null,
-      },
-    ]);
-  });
-
-  test('does not run the terminal read while a turn is live', async () => {
-    // `last_ended` is omitted while a turn is running, so its read — the one
-    // ordered by `ended_at` — would buy nothing and must not run.
-    //
-    // CHANGED 2026-09-19 (session ad02e053): this used to pin exactly two reads,
-    // on the premise that every settled row is irrelevant while a turn runs. A
-    // memory-guard abort disproved it: the queued prompt started 5 s later, and
-    // the reason the previous turn failed was unreadable from then on. One
-    // BOUNDED read of named failures (newest 50 turns, by `started_at`) now runs
-    // in both states. The original guard — no `ended_at` scan while live — stands.
+  test('identifies a completed turn alongside an overlapping live turn', async () => {
     sandboxTable = [runningBox(authorityTurn({ token: 't-live' }))];
-    await getTurn();
-    expect(queries.map((q) => q.table)).toEqual(['sandboxes', 'turns', 'turns']);
-    expect(queries[1].where).toContain('col:turn_token in');
-    expect(queries.some((q) => q.orderBy.some((term) => term.includes('ended_at')))).toBe(false);
-    expect(queries[2].orderBy.some((term) => term.includes('started_at'))).toBe(true);
+    turnTable = [ledgerRow({
+      turn_token: 't-done', state: 'ended', end_reason: 'completed',
+      ended_at: new Date('2026-08-17T00:01:00.000Z'),
+    })];
+    const body = await (await getTurn()).json();
+    expect(body.turns).toHaveLength(1);
+    expect(body.last_ended.turn_token).toBe('t-done');
+    expect(queries.map((q) => q.table)).toEqual(['sandboxes', 'turns', 'turns', 'turns']);
   });
 
   test('lists the turns that died, names the cause when there is one, and never a stop somebody asked for', async () => {
-    // Session ad02e053: four sub-agent tasks read "failed" and the turn said
+    // The 2026-09-18 memory-guard incident: four sub-agent tasks read "failed" and the turn said
     // nothing. A failure the user cannot see is the bug.
     const at = (s: number) => new Date(`2026-08-17T00:00:0${s}.000Z`);
     const ended = (
@@ -628,7 +618,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     ]);
   });
 
-  test('a requested stop is never reported as the last turn\'s error', async () => {
+  test("a requested stop is never reported as the last turn's error", async () => {
     turnTable = [
       ledgerRow({
         turn_token: 't-stopped',
@@ -671,6 +661,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
         end_reason: 'runtime_gone',
         ended_at: '2026-08-17T00:00:09.000Z',
       },
+      can_stop: true,
     });
   });
 
@@ -756,6 +747,37 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     expect(body).toEqual({
       turns: [],
       last_ended: { turn_token: 't-unsettled', end_reason: null, ended_at: null },
+      can_stop: true,
+    });
+  });
+
+  // Whether THIS caller may stop the running turn: its prompter, the session
+  // owner or a project manager. Clients show Stop from it.
+  describe('can_stop', () => {
+    test("answers per caller from the newest live turn of the same read", async () => {
+      sandboxTable = [
+        runningBox(
+          authorityTurn({ token: 't-old', messageId: 'msg_old', startedAtMs: 1 }),
+          authorityTurn({ token: 't-new', messageId: 'msg_new', startedAtMs: 2 }),
+        ),
+      ];
+      canStop = false;
+      const body = await (await getTurn()).json();
+      expect(body.can_stop).toBe(false);
+      expect(canStopCalls).toEqual([{ newest: 'msg_new', callerUserId: USER_ID, canManageLifecycle: false }]);
+      // No second box read: the answer comes from the read the route already made.
+      expect(queries.filter((q) => q.table === 'sandboxes')).toHaveLength(1);
+    });
+
+    test("an owner's or manager's standing reaches the rule", async () => {
+      visibleSession = { row: { sessionId: SESSION_ID }, canManageLifecycle: true };
+      await getTurn();
+      expect(canStopCalls).toEqual([{ newest: null, callerUserId: USER_ID, canManageLifecycle: true }]);
+    });
+
+    test('an agent credential is never a prompter: it is asked as nobody', async () => {
+      await getTurn(SESSION_ID, { authType: 'pat', sessionId: SESSION_ID });
+      expect(canStopCalls).toEqual([{ newest: null, callerUserId: null, canManageLifecycle: false }]);
     });
   });
 });

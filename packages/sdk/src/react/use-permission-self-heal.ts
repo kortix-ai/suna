@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { useOpenCodePendingStore } from '../browser/stores/opencode-pending-store';
+import { useRuntimePendingStore } from '../browser/stores/opencode-pending-store';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { getClient } from '../core/runtime/client';
 import type { MessageWithPartsLike, ToolPartLike } from '../core/turns/types';
@@ -103,8 +103,8 @@ export function usePermissionSelfHeal(
   options: UsePermissionSelfHealOptions = {},
 ): void {
   const { enabled = true } = options;
-  const addPermission = useOpenCodePendingStore((s) => s.addPermission);
-  const pendingCount = useOpenCodePendingStore(
+  const addPermission = useRuntimePendingStore((s) => s.addPermission);
+  const pendingCount = useRuntimePendingStore(
     (s) => Object.values(s.permissions).filter((p) => p.sessionID === sessionId).length,
   );
   const active = useMemo(() => hasActiveNonQuestionTool(messages), [messages]);

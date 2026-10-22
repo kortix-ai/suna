@@ -1,14 +1,14 @@
 /**
  * Reconcile project_sessions stuck in an ACTIVE status that have no genuinely-
  * running box behind them. THE leak that wedged Slack ("I'm queued behind other
- * project work") and 429'd new sessions: a session counts against the account's
- * concurrent-session cap while its status is in ACTIVE_SESSION_STATUSES, but the
+ * project work") and 429'd new sessions while sessions were capped: a session
+ * reads as live while its status is in ACTIVE_SESSION_STATUSES, but the
  * provider reaper (box-reaper.ts) only ever visits sessions whose
  * `session_sandboxes` row is still `active`. A session left `running` /
  * `provisioning` / `queued` / `branching` after its box was stopped or removed
  * — a missed stop webhook, a getStatus throttled to 'unknown', a continueSession
  * that flipped stopped→running then failed to deliver, or a create that never
- * got a box — is STRUCTURALLY INVISIBLE to that pass and so eats a cap slot
+ * got a box — is STRUCTURALLY INVISIBLE to that pass and so stays "live"
  * forever. Such sessions accreted to 200+ on a single account and blocked it.
  *
  * This pass closes that gap from the session side. It is DB-ONLY (no provider
@@ -69,7 +69,7 @@ export async function reconcileStuckActiveSessions(
       ),
     )
     // Oldest-stuck first: an unordered LIMIT is how a row stays outside every
-    // batch forever while still counting against the account's session cap.
+    // batch forever while still reading as a live session.
     .orderBy(asc(projectSessions.updatedAt))
     .limit(STUCK_SESSION_BATCH);
 

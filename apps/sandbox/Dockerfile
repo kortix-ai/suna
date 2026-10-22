@@ -30,7 +30,7 @@
 
 # ─── Stage 1: build the agent binary ────────────────────────────────────
 
-FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f AS builder
+FROM oven/bun:1.4.3-debian@sha256:923bedb355f7746666659f71e724998159a5c8c54bd1cb1030e1975a0698415b AS builder
 
 ARG TARGETARCH
 
@@ -47,6 +47,7 @@ WORKDIR /repo/apps/kortix-sandbox-agent-server
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
         amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
@@ -64,7 +65,7 @@ RUN case "${TARGETARCH:-}" in \
 # same shape as kortix-agent. We assemble a throwaway workspace root so bun
 # can resolve the `@kortix/*` names to their source, then compile.
 
-FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f AS cli-builder
+FROM oven/bun:1.4.3-debian@sha256:923bedb355f7746666659f71e724998159a5c8c54bd1cb1030e1975a0698415b AS cli-builder
 
 ARG TARGETARCH
 
@@ -85,7 +86,7 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
     && bun install --no-save \
     && BUN_COMPILE_TARGET="$BUN_COMPILE_TARGET" bash apps/cli/scripts/build.sh \
     && cp apps/cli/dist/kortix /cli/kortix \
-    && (cd packages/starter && bun run scripts/write-managed-skills.ts /cli/managed-skills)
+    && bun run packages/starter/scripts/write-managed-skills.ts /cli/managed-skills
 
 # ─── Stage 3: runtime ───────────────────────────────────────────────────
 
@@ -115,6 +116,11 @@ ENV PNPM_HOME=/home/kortix/.local/share/pnpm \
 USER kortix
 
 COPY packages/shared/src/runtime-versions.json /tmp/kortix-runtime-versions.json
+# No `SHELL -o pipefail` in this stage (DL4006): every pipe below already ends
+# in its own check (`sha256sum -c`, `grep -q`, `test -n`), and pipefail would
+# fail the build on the SIGPIPE that `find | head -n1` and `doctor | grep -q`
+# raise when the reader exits first.
+# hadolint ignore=DL4006
 RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && PYTHON_VERSION="$(sed -n 's/.*"python": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
     && UV_SHA256_AMD64="$(sed -n 's/.*"uvSha256Amd64": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-versions.json)" \
@@ -146,11 +152,13 @@ RUN UV_VERSION="$(sed -n 's/.*"uv": "\([^"]*\)".*/\1/p' /tmp/kortix-runtime-vers
 # uv-managed interpreters and would resolve the distro python3 that
 # LibreOffice's apt deps drag in. Unquoted $(...) expansion is safe here: pins
 # contain no whitespace, and the `markitdown[pptx]` glob matches no file here.
+# hadolint ignore=SC2046
 RUN uv pip install --python /home/kortix/.local/bin/python3 --break-system-packages \
         $(python3 -c "import json; print(' '.join(f'{k}=={v}' for k, v in sorted(json.load(open('/tmp/kortix-runtime-versions.json'))['pythonPackages'].items())))") \
     && python3 -c "import importlib; [importlib.import_module(m) for m in ['PIL', 'docx', 'fitz', 'lxml', 'markitdown', 'openpyxl', 'pandas', 'pdf2docx', 'pdf2image', 'pdfplumber', 'playwright', 'pptx', 'pypdf', 'pypdfium2', 'pytesseract', 'reportlab']]; print('python package floor OK')"
 
 ENV SHELL=/bin/bash
+# hadolint ignore=DL4006
 RUN PNPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['pnpm'])")" \
     && NODE_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['node'])")" \
     && NPM_VERSION="$(python -c "import json; print(json.load(open('/tmp/kortix-runtime-versions.json'))['npm'])")" \
@@ -176,12 +184,15 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
+# The non-root sandbox user has passwordless sudo by design (sudoers above);
+# playwright --with-deps installs apt packages as root.
+# hadolint ignore=DL3004,DL4006
 RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').agentBrowser)")" \
     && PLAYWRIGHT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').playwright)")" \
     && pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}" \
     && agent-browser --version \
     && for pw_try in 1 2 3 4 5; do \
-        pnpm dlx playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium && break; \
+        pnpm dlx "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium && break; \
         echo "playwright chromium install attempt $pw_try failed, retrying..."; \
         sleep $((pw_try*10)); \
     done \
@@ -194,6 +205,8 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && chromium --version \
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
+# The opencode-kortix link lives in root-owned /usr/local/bin.
+# hadolint ignore=DL3004,DL4006
 RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
@@ -206,6 +219,7 @@ RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versio
     && sudo ln -sfn /opt/kortix/opencode.current /usr/local/bin/opencode-kortix \
     && test "$(/usr/local/bin/opencode-kortix --version)" = "$OPENCODE_VERSION"
 
+# hadolint ignore=DL4006
 RUN BUN_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bun)")" \
     && BUN_SHA256_AMD64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Amd64)")" \
     && BUN_SHA256_ARM64="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').bunSha256Arm64)")" \
@@ -231,11 +245,10 @@ RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions
     && test "$(anydoc --version)" = "$ANYDOC_VERSION"
 
 RUN mkdir -p /opt/kortix/opencode-config-deps \
-    && cd /opt/kortix/opencode-config-deps \
     && OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"%s","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' "${OPENCODE_VERSION}" > package.json \
-    && bun install \
-    && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"%s","@tavily/core":"^0.7.3","bun-pty":"0.4.11","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' "${OPENCODE_VERSION}" > /opt/kortix/opencode-config-deps/package.json \
+    && bun install --cwd /opt/kortix/opencode-config-deps \
+    && bun build /opt/kortix/opencode-config-deps/node_modules/axios/lib/utils.js /opt/kortix/opencode-config-deps/node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
     && rm -rf /tmp/opencode-deps-bundle-check
 
 # pi system packages (runtime-versions.json `piSystemPackages`), installed the

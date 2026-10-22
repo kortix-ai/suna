@@ -11,33 +11,33 @@
  * config convergence is in flight". What THAT test cannot see is whether
  * `startProxy` is the thing that wires it in for a real daemon boot. This
  * file drives `startProxy` itself with a fake `HarnessService` (the same
- * technique `harness-boundary.test.ts` uses to prove host code depends only
- * on the contract) and reads the decision back through the real,
+ * technique `harness-boundary.test.ts` uses to prove host controllers depend
+ * only on the contract) and reads the decision back through the real,
  * module-level `requestAgentSwapIfIdle` — so it is a behavior assertion, not
  * a source-text one.
  *
  * `harness.control.convergenceInFlight` — not a direct import of
- * `harness/open-code/config-release` — is deliberate: `proxy.ts` is host
- * production code, and importing a concrete adapter from there is exactly
- * what `harness-boundary.test.ts`'s "only the resolver can import a concrete
- * adapter" tripwire forbids.
+ * `harness/open-code/config-release` — is deliberate: `app/server.ts`
+ * is host production code, and importing a concrete adapter from there is
+ * exactly what the boundary lint (eslint.config.mjs, "only harness.ts imports
+ * an adapter") forbids.
  */
 import { afterEach, expect, test } from 'bun:test'
 import { createHash } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import type { OpenCodeConfig as Config } from '../harness/open-code/config'
-import type { HarnessService } from '../harness/harness'
-import type { HarnessQueryService } from '../harness/queries'
-import { requireOpenCodeConfig } from '../harness/open-code/config'
-import { startProxy } from '../proxy'
+import type { OpenCodeConfig as Config } from '@/harness/open-code/config'
+import type { HarnessService } from '@/harness/harness'
+import type { HarnessQueryService } from '@/harness/contract/queries'
+import { startProxy } from '@/app/server'
 import {
   requestAgentSwapIfIdle,
   resetAgentSwapBlockersForTests,
   type AgentSwapDecision,
-} from '../runtime-assets'
-import { ptyIsAbandoned, PTY_ABANDONED_AFTER_MS } from '../routes/pty'
+} from '@/services/runtime-assets/runtime-assets'
+import { ptyIsAbandoned, PTY_ABANDONED_AFTER_MS } from '@/routes/kortix/pty'
+import { kortixEventBus, resetKortixEventBusForTests, sessionLogEventBus } from '@/services/event-bus/kortix-event-bus'
 
 const TEST_TOKEN = 'test-kortix-token-32-chars-1234567890'
 
@@ -64,7 +64,6 @@ function baseConfig(over: Partial<Config> = {}): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
-    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -78,12 +77,7 @@ const unexpected = (): never => { throw new Error('unused operation must not run
 /** The minimal `HarnessService` `startProxy` needs, with a controllable convergence flag. */
 function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
   const queries: HarnessQueryService = {
-    readState: unexpected, readMessages: unexpected, readVcsDiff: unexpected,
-    readCurrentProject: unexpected, readConfiguration: unexpected,
-    readSession: unexpected, readTodo: unexpected, pinnedSessionId: unexpected,
-    replyPermission: unexpected, replyQuestion: unexpected, rejectQuestion: unexpected,
-    stopSession: unexpected, revertSession: unexpected, unrevertSession: unexpected,
-    observeTurn: unexpected,
+    readState: unexpected, readMessages: unexpected,
     events: { epoch: 'test', headSeq: 0, firstSeq: 0, subscribe: unexpected },
     attachments: { read: unexpected },
   }
@@ -103,11 +97,12 @@ function fakeHarness(convergenceInFlight: () => boolean): HarnessService {
         armAbortAfterTool: unexpected, disarmAbortAfterTool: unexpected,
       }),
     },
-    diagnostics: { health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
+    diagnostics: { capabilities: async () => [], health: unexpected, report: unexpected, logSources: () => [], readLog: unexpected },
     queries: { bind: () => queries },
+    turns: { prompt: unexpected, steer: unexpected, abort: unexpected, readMessage: unexpected, removeMessage: unexpected, retractMessage: unexpected, agents: unexpected },
     background: { start: () => ({ stop: () => {} }) as unknown as ReturnType<HarnessService['background']['start']> },
     assets: {
-      componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
+      harness: 'test', componentNames: [], resolveConfigDir: async () => '/tmp', injectSkills: async () => {},
       reconcile: async () => ({ components: {}, reasons: {}, state: {} }),
     },
   }
@@ -192,4 +187,32 @@ test('the pty blocker uses the abandoned-pty bound, not a bare status check', ()
   const live = { ...abandoned, id: 'b', idleMs: 0 }
   expect(ptyIsAbandoned(abandoned)).toBe(true)
   expect(ptyIsAbandoned(live)).toBe(false)
+})
+
+test('sse-subscriber (opt-in): a v2-only subscriber blocks the swap; the internal taps alone do not; no subscriber unblocks (P4.3b)', async () => {
+  const saved = process.env.KORTIX_AGENT_SWAP_REQUIRE_UNATTENDED
+  process.env.KORTIX_AGENT_SWAP_REQUIRE_UNATTENDED = '1'
+  resetKortixEventBusForTests()
+  try {
+    proxy = startProxy(baseConfig(), fakeHarness(() => false), Date.now())
+    const swap = async () => {
+      const exits: number[] = []
+      const decision = await requestAgentSwapIfIdle({ agentStateDir: await stagedAgentStateDir(), uptimeMs: 10 * 60_000, turnInFlight: async () => false, exit: (code) => exits.push(code) })
+      return { decision, exits }
+    }
+    // The v1 -> v2 copy and a journal are taps: daemon-internal, no client attached.
+    const offJournal = kortixEventBus().tap(() => {})
+    expect(kortixEventBus().subscriberCount + sessionLogEventBus().subscriberCount).toBe(0)
+    expect(await swap()).toEqual({ decision: 'exited', exits: [75] })
+    // A client on `?schema=v2` only.
+    const v2 = sessionLogEventBus().subscribe(() => {}, {})
+    expect(await swap()).toEqual({ decision: 'attached', exits: [] })
+    v2.unsubscribe()
+    offJournal()
+    expect(await swap()).toEqual({ decision: 'exited', exits: [75] })
+  } finally {
+    if (saved === undefined) delete process.env.KORTIX_AGENT_SWAP_REQUIRE_UNATTENDED
+    else process.env.KORTIX_AGENT_SWAP_REQUIRE_UNATTENDED = saved
+    resetKortixEventBusForTests()
+  }
 })

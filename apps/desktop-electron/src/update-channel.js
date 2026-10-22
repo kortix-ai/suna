@@ -8,6 +8,15 @@ function resolveChannel(pkg) {
 }
 
 /**
+ * A build published to the mutable `dev` feed (`desktop-dev-latest`). It keeps
+ * the developer Frontend-URL presets; every other channel is a production
+ * build and hides them (frontend-menu.js).
+ */
+function isDevChannel(channel) {
+  return channel === 'dev';
+}
+
+/**
  * Auto-update only makes sense for an installed app on the stable feed:
  *   • unpackaged `electron .` dev runs ship no app-update.yml — electron-updater
  *     refuses to check;
@@ -18,4 +27,4 @@ function isUpdaterSupported({ isPackaged, channel }) {
   return isPackaged === true && channel === 'stable';
 }
 
-module.exports = { resolveChannel, isUpdaterSupported };
+module.exports = { resolveChannel, isDevChannel, isUpdaterSupported };

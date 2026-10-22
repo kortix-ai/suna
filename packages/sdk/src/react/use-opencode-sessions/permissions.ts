@@ -1,19 +1,68 @@
-import type { PermissionRuleset } from '@opencode-ai/sdk/v2/client';
 import { getClient } from '../../core/runtime/client';
+import type { PermissionRuleset } from '../../core/runtime/runtime-types';
 import { unwrap } from './shared';
 
 // ============================================================================
 // Permission & Question Reply (direct SDK calls, not hooks)
 // ============================================================================
 
-export async function replyToPermission(
+/**
+ * One reply in flight per permission request id. Every reply affordance funnels
+ * into `replyToPermission` — the composer card, the tool-card inline prompt,
+ * the "Allow everything" flow and the client-side auto-approve backstop — and
+ * two of them can fire for the same request (prod 2026-10-12: a click and the
+ * backstop raced; the runtime answered the first POST and 404'd the second). A
+ * joiner shares the first send instead of racing it.
+ */
+const repliesInFlight = new Map<string, Promise<void>>();
+
+/**
+ * The runtime's answer for a request it no longer holds: another tab, the
+ * allow-everything flow or the auto-approve backstop replied first, so the
+ * request was resolved and dropped server-side. That is an expected state, not
+ * an error — resolving here lets the caller drop the local pending card instead
+ * of throwing into an unhandled rejection (the mechanism that paged Sentry as
+ * `Permission request not found: per_<id>`). Matches both runtimes' wording
+ * (opencode capitalizes the phrase; the pi harness answers lowercase) and only
+ * for the reply route's own 404, so an unrelated not-found still throws.
+ */
+function permissionAlreadyAnswered(result: { error?: unknown; response?: Response }): boolean {
+  if (result.response?.status !== 404) return false;
+  const err = result.error;
+  if (typeof err === 'string') {
+    return err.toLowerCase().includes('permission request not found');
+  }
+  if (!err || typeof err !== 'object') return false;
+  const rec = err as Record<string, unknown>;
+  const data =
+    rec.data && typeof rec.data === 'object' ? (rec.data as Record<string, unknown>) : undefined;
+  const message = data?.message ?? rec.message ?? rec.error ?? '';
+  return String(message).toLowerCase().includes('permission request not found');
+}
+
+async function sendPermissionReply(
   requestId: string,
   reply: 'once' | 'always' | 'reject',
   message?: string,
 ): Promise<void> {
   const client = getClient();
   const result = await client.permission.reply({ requestID: requestId, reply, message });
+  if (permissionAlreadyAnswered(result)) return;
   unwrap(result);
+}
+
+export async function replyToPermission(
+  requestId: string,
+  reply: 'once' | 'always' | 'reject',
+  message?: string,
+): Promise<void> {
+  const inFlight = repliesInFlight.get(requestId);
+  if (inFlight) return inFlight;
+  const send = sendPermissionReply(requestId, reply, message).finally(() => {
+    repliesInFlight.delete(requestId);
+  });
+  repliesInFlight.set(requestId, send);
+  return send;
 }
 
 /** The permission types opencode gates today (mirrors the web's

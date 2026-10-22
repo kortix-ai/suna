@@ -1,10 +1,16 @@
 import { sessionLifecycleCommands, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import type { RuntimeCapability } from '@kortix/api-contract/runtime-relay';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns } from '../sandbox-turn-lifecycle';
+import { sandboxOpencodeEndpoint } from '../opencode-mapping';
+import { RUNNING_SANDBOX_STATUSES, storedSandboxTurns, type StoredSandboxTurn } from '../session-turn-ledger';
+import { inboxFollowsRow, inboxPrecedesRow } from './inbox-order';
 import { reconcileInboxTurn } from './inbox-turn-recovery';
-import { inboxPrecedesRow } from './inbox-order';
+import { runtimeCapabilities } from './runtime-fetch';
 import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
+import { recordSteerFallback } from './command-transitions';
+import { notHeldSql } from './delivery-state';
+import { wireMessageIdMatches } from './wire-id-match';
 
 /**
  * The inbox's admission gate.
@@ -12,8 +18,17 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
  * ONE QUEUED MESSAGE RUNS AT A TIME, IN ORDER, AND EACH GETS ITS OWN ANSWER.
  * A prompt sits in `session_lifecycle_commands` until the session's turn is
  * over AND every older prompt has left the delivery path. The first Quick
- * Queue prompt may end that turn after its current tool call finishes. Queue
- * List prompts wait for natural turn completion.
+ * Queue prompt may end that turn after its current tool call finishes, when
+ * its sender may stop that turn (`rowMayEndTurn`). Queue List prompts wait for
+ * natural turn completion.
+ *
+ * ONE EXCEPTION (KRTX-683): prompts released from a Stop hold. The release
+ * stamps them with one `releasedBatchId`, and they share ONE answer. They are
+ * still admitted one at a time, in order, as separate user messages, but every
+ * row with a later row of its batch pending (`hasLaterReleasedSibling`) goes
+ * out `noReply` — OpenCode persists it and starts no loop, and the row closes
+ * `delivered` with `no_reply: true` — and the batch's last row starts the one
+ * turn that answers them all.
  *
  * The turn half is not belt-and-braces on the order half — it is the whole
  * feature. OpenCode picks up new user messages at STEP boundaries INSIDE a
@@ -45,14 +60,33 @@ import type { InboxAdmissionReason, SessionLifecycleCommandRow } from './store';
 export const INBOX_ORDER_BACKOFF_MS = 300;
 /**
  * The ceiling is LOW on purpose. A refused row is not polling for a whole cold
- * boot any more: accepted delivery calls `promoteNextInboxRow` and makes the
- * session's next queued row due NOW, then kicks a targeted drain. The terminal
- * relay and reaper repeat that wake for recovery. This backoff only covers the
+ * boot any more: a reply delivery opens a turn, and that turn's end calls
+ * `promoteNextInboxRow`, which makes the session's next queued row due NOW and
+ * drains it. A `noReply` delivery opens no turn, so it makes that call itself
+ * (`queued-continue.ts`). The reaper repeats the wake for recovery. This backoff only covers the
  * gap a lost kick would leave. 30s here was the entire "queue does not send
  * between turns" experience: three quick messages compounded to 27s / 45s /
  * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
+/**
+ * A row refused this many times (~2 min at the 2s cap) behind an older prompt
+ * on a box that is NOT running waits on a parked head: a failed or stopped
+ * session whose head sits out the runtime-unreachable ladder. It re-polls once
+ * a minute instead. Prod 2026-10-20: ~200 such rows, every one on a stopped
+ * box, were refused 28 times a second.
+ *
+ * The box gate is what makes this safe. `admission_refusals` counts every
+ * reason, `turn_active` included, so a row that waited out a long live turn
+ * crosses 64 while its head still moves; on a running box it keeps the 2s cap.
+ * The minute is a fallback, not the wake. These exits make the next row due at
+ * once (`promoteNextInboxRow`): turn end, the reaper, forwarded-strand
+ * reconcile, a `noReply` delivery, a dead-lettered head (`markCommandFailed`),
+ * a removed head (`deleteInboxPrompt`), and a head closed without a post
+ * (`executeQueuedContinue`: consumed in band, skipped).
+ */
+export const INBOX_STALE_ORDER_REFUSALS = 64;
+export const INBOX_STALE_ORDER_BACKOFF_MS = 60_000;
 const INBOX_BACKOFF_FREE_REFUSALS = 4;
 
 /** `base * 2^(refusals - free)`, capped. Pure, so the curve is testable. */
@@ -73,7 +107,8 @@ function admissionRefusals(result: unknown): number {
  *  written into `result.admission_reason` and served as `GET .../prompts`'
  *  `reason`, where a second value may well appear again. */
 export type InboxAdmission =
-  | { admit: true }
+  /** `steerInto`: post to `/steer`; the running turn of that message reads it. */
+  | { admit: true; steerInto?: string }
   | {
       admit: false;
       reason: InboxAdmissionReason;
@@ -127,21 +162,127 @@ export interface InboxAdmissionDeps {
    *  authority `sessionHoldsTurnAuthority` reads. */
   readSandbox: (
     sessionId: string,
-  ) => Promise<{ status: string; metadata: Record<string, unknown> | null } | null>;
-  hasOlderPendingPrompt: (
-    sessionId: string,
-    row: SessionLifecycleCommandRow,
-  ) => Promise<boolean>;
+  ) => Promise<{ status: string; metadata: Record<string, unknown> | null; externalId?: string | null } | null>;
+  hasOlderPendingPrompt: (sessionId: string, row: SessionLifecycleCommandRow) => Promise<boolean>;
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
+  /** The person who prompted the turn behind `messageId` (`turnPrompterOf`).
+   *  Read only for a head Quick Queue row while a turn runs. Absent: no row is
+   *  its prompter, so only a `mayStopAnyTurn` row arms the interrupt. */
+  turnPrompter?: (sessionId: string, messageId: string) => Promise<string | null>;
+  /** The reads a `steer` row needs. Absent: a steer row is admitted as a queue row. */
+  steer?: SteerAdmissionDeps;
 }
 
-const liveDeps: InboxAdmissionDeps = {
+/**
+ * How long a queued head row may wait behind ONE live turn for the daemon's
+ * boundary interrupt to end it, before the control plane ends that turn
+ * itself and lets the relay promote the row.
+ *
+ * The interrupt is the fast path — a turn normally ends at its next tool
+ * boundary, seconds after the arm. This window only bounds the interrupt's
+ * silent failure modes (an entry the relay never closed, an arm the daemon
+ * answers and never fires, a skipped arm): a healthy interrupt or a natural
+ * turn end reaches the boundary long before it. Prod 2026-10-06: three
+ * queued messages waited out a ~30-minute run with no interrupt and no
+ * refusal log — the only dispatch left was "after the whole run", which is
+ * the regression this bound closes.
+ *
+ * ponytail: fixed ceiling, not a knob; promote to config.KORTIX_* only when
+ * support needs to tune it per environment.
+ */
+export const QUEUE_BOUNDARY_FALLBACK_MS = 10 * 60_000;
+
+/** The turn an interrupt may end, as the admission refusal carried it. */
+export interface BoundaryTurnIdentity {
+  opencodeSessionId: string;
+  messageId: string;
+}
+
+/** The row's own record of how long it has waited behind this turn. */
+export interface BoundaryWait extends BoundaryTurnIdentity {
+  sinceMs: number;
+}
+
+/**
+ * Decide the boundary-wait step for one `turn_active` refusal.
+ *
+ * Pure over the row's result, the live turn's identity and the clock, so the
+ * window is testable without a database. A first refusal starts the window;
+ * the same turn still live past `QUEUE_BOUNDARY_FALLBACK_MS` aborts ONCE and
+ * restarts the window (a lost terminal relay gets a bounded retry, a healthy
+ * interrupt never reaches this); a DIFFERENT live turn means the boundary
+ * already moved and the window restarts from now.
+ */
+export function boundaryWaitDecision(
+  result: unknown,
+  turn: BoundaryTurnIdentity,
+  nowMs: number,
+): { wait: BoundaryWait; abort: boolean } {
+  const stored = (result as { boundary_wait?: unknown } | null | undefined)?.boundary_wait as
+    | BoundaryWait
+    | undefined;
+  const sinceMs =
+    stored && typeof stored.sinceMs === 'number' && Number.isFinite(stored.sinceMs)
+      ? stored.sinceMs
+      : null;
+  const sameTurn =
+    !!stored &&
+    sinceMs !== null &&
+    stored.opencodeSessionId === turn.opencodeSessionId &&
+    stored.messageId === turn.messageId;
+  if (!sameTurn) {
+    return { wait: { ...turn, sinceMs: nowMs }, abort: false };
+  }
+  const waited = nowMs - sinceMs;
+  return {
+    wait: { ...turn, sinceMs: waited >= QUEUE_BOUNDARY_FALLBACK_MS ? nowMs : sinceMs },
+    abort: waited >= QUEUE_BOUNDARY_FALLBACK_MS,
+  };
+}
+
+/**
+ * The live turn a boundary interrupt may end: the NEWEST stored turn.
+ *
+ * This used to be `turns.length === 1 ? turns[0] : null`, so one entry that
+ * outlived its end relay silently DISARMED the interrupt for the whole run —
+ * every queued message then waited out the turn in full, which is exactly the
+ * "it waits for everything to finish" report. The newest entry is the turn
+ * that is running; an older entry is a ledger leftover the reaper owns.
+ */
+export function newestStoredTurn(turns: StoredSandboxTurn[]): StoredSandboxTurn | null {
+  let newest: StoredSandboxTurn | null = null;
+  for (const turn of turns) {
+    if (!newest || (turn.startedAtMs ?? -1) > (newest.startedAtMs ?? -1)) newest = turn;
+  }
+  return newest;
+}
+
+export interface SteerAdmissionDeps {
+  /** `/kortix/health` `capabilities` of the box; null when the read failed. */
+  capabilities: (externalId: string | null | undefined, actorUserId: string | null) => Promise<string[] | null>;
+  /** The actor of the inbox row the running turn's message id names; null when no row does. */
+  turnPrompter: (sessionId: string, messageId: string) => Promise<string | null>;
+  /** An OLDER steer row of the session is queued or claimed (not held). */
+  hasOlderSteerPrompt: (sessionId: string, row: SessionLifecycleCommandRow) => Promise<boolean>;
+  recordFallback: (row: SessionLifecycleCommandRow, reason: 'unsupported' | 'not_prompter') => Promise<void>;
+}
+
+const STEER_CAPABILITY: RuntimeCapability = 'session.steer';
+
+export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
+  // Dynamic: `turn-stop-authority.ts` imports this module.
+  turnPrompter: async (sessionId, messageId) =>
+    (await import('./turn-stop-authority')).turnPrompterOf(sessionId, messageId),
   async readSandbox(sessionId) {
     const [box] = await db
-      .select({ status: sessionSandboxes.status, metadata: sessionSandboxes.metadata })
+      .select({
+        status: sessionSandboxes.status,
+        metadata: sessionSandboxes.metadata,
+        externalId: sessionSandboxes.externalId,
+      })
       .from(sessionSandboxes)
       .where(eq(sessionSandboxes.sessionId, sessionId))
       .limit(1);
@@ -159,7 +300,7 @@ const liveDeps: InboxAdmissionDeps = {
           // A HELD row is deliberately out of the line — the user stopped it.
           // Counting it would wedge every prompt they send afterwards behind a
           // row that is, by construction, never due.
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+          notHeldSql,
           inboxPrecedesRow(row),
           // Explicitly not itself. The tuple predicate already excludes this
           // row, but a row that blocks on itself waits for ever if a concurrent
@@ -185,11 +326,119 @@ const liveDeps: InboxAdmissionDeps = {
       .limit(1);
     return !!running;
   },
+  steer: {
+    capabilities: (externalId, actorUserId) =>
+      runtimeCapabilities(externalId ?? undefined, () =>
+        sandboxOpencodeEndpoint(externalId!, actorUserId ?? undefined)),
+    async turnPrompter(sessionId, messageId) {
+      const [prompt] = await db
+        .select({ actorUserId: sessionLifecycleCommands.actorUserId })
+        .from(sessionLifecycleCommands)
+        .where(
+          and(
+            eq(sessionLifecycleCommands.sessionId, sessionId),
+            eq(sessionLifecycleCommands.commandType, 'continue_session'),
+            wireMessageIdMatches(messageId),
+          ),
+        )
+        .orderBy(desc(sessionLifecycleCommands.createdAt))
+        .limit(1);
+      return prompt?.actorUserId ?? null;
+    },
+    async hasOlderSteerPrompt(sessionId, row) {
+      const [older] = await db
+        .select({ commandId: sessionLifecycleCommands.commandId })
+        .from(sessionLifecycleCommands)
+        .where(
+          and(
+            eq(sessionLifecycleCommands.sessionId, sessionId),
+            eq(sessionLifecycleCommands.commandType, 'continue_session'),
+            inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+            notHeldSql,
+            sql`${sessionLifecycleCommands.payload}->>'delivery' = 'steer'`,
+            inboxPrecedesRow(row),
+            ne(sessionLifecycleCommands.commandId, row.commandId),
+          ),
+        )
+        .limit(1);
+      return !!older;
+    },
+    recordFallback: (row, reason) => recordSteerFallback(row, reason),
+  },
 };
+
+/**
+ * A `steer` row and a running turn (R10). Admitted as a steer when the turn
+ * is one active turn with a message id, the runtime lists `session.steer`,
+ * the row's actor is the turn's prompter (D9.3), and no OLDER steer row is
+ * pending or in flight. Older Queue List rows do not block a steer.
+ *
+ * - A failed capability or prompter check falls back to `queue` for good
+ *   (`recordFallback`) and returns `fallback`: the caller continues with the
+ *   queue gate.
+ * - A turn still being delivered, an unreadable capability list, or an older
+ *   steer row: the row waits and stays `steer`.
+ */
+async function admitSteer(
+  row: SessionLifecycleCommandRow,
+  sandbox: { metadata: Record<string, unknown> | null; externalId?: string | null } | null,
+  steer: SteerAdmissionDeps,
+  retryAfterMs: number,
+): Promise<InboxAdmission | 'fallback'> {
+  const turns = storedSandboxTurns(sandbox?.metadata);
+  // Same fragile pattern the queue interrupt had: one entry that outlived its
+  // end relay would make exactly-one fail and silently park the steer behind
+  // the whole run. The newest entry is the turn that is running.
+  const active = newestStoredTurn(turns);
+  if (active?.state !== 'active' || !active.messageId) {
+    return { admit: false, reason: 'turn_active', retryAfterMs };
+  }
+  const sessionId = row.sessionId!;
+  const [capabilities, prompter, olderSteer] = await Promise.all([
+    steer.capabilities(sandbox?.externalId, row.actorUserId),
+    steer.turnPrompter(sessionId, active.messageId),
+    steer.hasOlderSteerPrompt(sessionId, row),
+  ]);
+  if (capabilities === null) return { admit: false, reason: 'turn_active', retryAfterMs };
+  const fallback = !capabilities.includes(STEER_CAPABILITY)
+    ? 'unsupported'
+    : !row.actorUserId || prompter !== row.actorUserId
+      ? 'not_prompter'
+      : null;
+  if (fallback) {
+    await steer.recordFallback(row, fallback);
+    return 'fallback';
+  }
+  if (olderSteer) return { admit: false, reason: 'older_prompt_pending', retryAfterMs };
+  return { admit: true, steerInto: active.messageId };
+}
+
+/**
+ * May this Quick Queue row end the running turn behind `messageId`? Only when
+ * its sender may stop that turn (`turn-stop-authority.ts`): they prompted it,
+ * or they were the session owner or a project manager when they sent the row
+ * (`mayStopAnyTurn`). An agent session's row is never the prompter. Any other
+ * row waits for the turn to end, like a Queue List row.
+ */
+async function rowMayEndTurn(
+  row: SessionLifecycleCommandRow,
+  messageId: string,
+  deps: InboxAdmissionDeps,
+): Promise<boolean> {
+  const payload = (row.payload ?? {}) as {
+    mayStopAnyTurn?: unknown;
+    bindTurnIdentity?: unknown;
+    authorSessionId?: unknown;
+  };
+  if (payload.mayStopAnyTurn === true) return true;
+  const sentByPerson = payload.bindTurnIdentity === true && payload.authorSessionId == null;
+  if (!row.actorUserId || !sentByPerson || !deps.turnPrompter) return false;
+  return (await deps.turnPrompter(row.sessionId!, messageId)) === row.actorUserId;
+}
 
 export async function admitInboxPrompt(
   row: SessionLifecycleCommandRow,
-  deps: InboxAdmissionDeps = liveDeps,
+  deps: InboxAdmissionDeps = liveInboxAdmissionDeps,
 ): Promise<InboxAdmission> {
   // A row with no session cannot be ordered or gated. Admit it so the drain
   // reaches its own honest failure instead of requeueing it for ever.
@@ -201,7 +450,6 @@ export async function admitInboxPrompt(
     INBOX_ORDER_MAX_BACKOFF_MS,
     refusals,
   );
-
   // THE THREE READS THIS GATE ASKS FOR ARE INDEPENDENT, so they go out
   // together. Awaiting them one at a time cost three sequential round trips on
   // every delivery, and the API does not share a region with its database
@@ -224,10 +472,21 @@ export async function admitInboxPrompt(
   // an interrupt at the next tool boundary, but it is still never forwarded
   // into that turn: the terminal relay admits it as its own turn afterward.
   let sandbox = await sandboxRead;
+  const payload = row.payload as { delivery?: unknown; wireMessageId?: unknown } | null;
+  if (
+    deps.steer &&
+    payload?.delivery === 'steer' &&
+    typeof payload.wireMessageId === 'string' &&
+    sessionHoldsTurnAuthority(sandbox)
+  ) {
+    const steered = await admitSteer(row, sandbox, deps.steer, orderBackoffMs);
+    if (steered !== 'fallback') return steered;
+  }
   if (sessionHoldsTurnAuthority(sandbox)) {
     // Only the head may reconcile or arm an interrupt. Quick Queue sorts ahead
     // of every Queue List row (`inbox-order.ts`), so its head arms the
-    // interrupt even while older Queue List entries wait.
+    // interrupt even while older Queue List entries wait. A released Stop
+    // batch row sorts in the Queue List lane whatever its placement.
     const isHead = !(await inFlightRead) && !(await olderRead);
     if (deps.reconcileTurn && isHead) {
       await deps.reconcileTurn(row.sessionId);
@@ -235,13 +494,16 @@ export async function admitInboxPrompt(
     }
     if (sessionHoldsTurnAuthority(sandbox)) {
       const turns = storedSandboxTurns(sandbox?.metadata);
-      const active = turns.length === 1 ? turns[0] : null;
+      const active = newestStoredTurn(turns);
+      // The sender check reads the database, so it runs last: only for the
+      // head Quick Queue row while a turn is active.
       const interruptAtBoundary =
         isHead &&
         (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
         active?.state === 'active' &&
-        active.messageId
-          ? { opencodeSessionId: active.opencodeSessionId, messageId: active.messageId }
+        active.messageId &&
+        (await rowMayEndTurn(row, active.messageId, deps))
+          ? { opencodeSessionId: active.runtimeSessionId, messageId: active.messageId }
           : undefined;
       return {
         admit: false,
@@ -252,6 +514,10 @@ export async function admitInboxPrompt(
     }
   }
 
+  const parked = !(sandbox && RUNNING_SANDBOX_STATUSES.has(sandbox.status));
+  const waitBackoffMs =
+    parked && refusals >= INBOX_STALE_ORDER_REFUSALS ? INBOX_STALE_ORDER_BACKOFF_MS : orderBackoffMs;
+
   // ONE PROMPT OF A SESSION ON THE WIRE AT A TIME, and this check binds even a
   // promoted row. A claimed row spends up to READY_DEADLINE_MS (5 min) inside
   // `continueSession` waiting for a cold box, with no message written for any
@@ -259,7 +525,7 @@ export async function admitInboxPrompt(
   // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
   if (await inFlightRead) {
-    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
+    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
   }
 
   // "Send now"/retry stamps `promoted`: the user pointed at ONE row and asked
@@ -268,8 +534,46 @@ export async function admitInboxPrompt(
   // about which message goes first.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   if (!promoted && (await olderRead)) {
-    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
+    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
   }
 
   return { admit: true };
+}
+
+/**
+ * Is a LATER prompt of this row's released Stop batch still waiting to go out?
+ * Then this row goes out `noReply` (KRTX-683): OpenCode persists it as its own
+ * user message and starts no turn, and the batch's last prompt starts the one
+ * turn that answers them all.
+ *
+ * Read from the database at delivery time, never from what one drain happened
+ * to claim. Concurrent drains (the targeted wake, the 1 s tick, another API
+ * instance) can split one batch across lanes, and a lane that saw no later row
+ * sent its head as a turn of its own — a second answer for one release. A later
+ * row counts while `queued` or `running` (claimed by another drain, not yet
+ * sent); a HELD row does not, since a new Stop took it out of the line.
+ *
+ * The decision and the POST are not atomic: a row deleted, or held by a new
+ * Stop, during a cold-box wait leaves the earlier noReply rows unanswered until
+ * the next send.
+ */
+export async function hasLaterReleasedSibling(row: SessionLifecycleCommandRow): Promise<boolean> {
+  const batchId = (row.payload as { releasedBatchId?: unknown } | null)?.releasedBatchId;
+  if (!row.sessionId || typeof batchId !== 'string' || batchId.length === 0) return false;
+  const [later] = await db
+    .select({ commandId: sessionLifecycleCommands.commandId })
+    .from(sessionLifecycleCommands)
+    .where(
+      and(
+        eq(sessionLifecycleCommands.sessionId, row.sessionId),
+        eq(sessionLifecycleCommands.commandType, 'continue_session'),
+        inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+        notHeldSql,
+        sql`${sessionLifecycleCommands.payload}->>'releasedBatchId' = ${batchId}`,
+        inboxFollowsRow(row),
+        ne(sessionLifecycleCommands.commandId, row.commandId),
+      ),
+    )
+    .limit(1);
+  return !!later;
 }

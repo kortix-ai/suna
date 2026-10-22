@@ -1,9 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { execFile } from 'node:child_process';
-import { access, chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { planSkillRemoval } from '../lib/skill-removal';
+import { manifestWrites } from '../manifest-io';
+import { listRepoFiles } from './files';
 import { commitManifest } from '../lib/triggers';
 import { readManifest } from '../triggers';
 import { GitFileRevisionConflictError, commitMultipleFilesToBranch } from './branches';
@@ -62,6 +65,43 @@ afterEach(async () => {
 });
 
 describe('manifest file compare-and-swap', () => {
+  test('removes edited skill files and registration in one commit while preserving shared assets', async () => {
+    await mkdir(join(seedPath, 'skills/pdf/custom'), { recursive: true });
+    await mkdir(join(seedPath, 'tools'), { recursive: true });
+    await writeFile(join(seedPath, 'skills/pdf/SKILL.md'), 'user edited skill');
+    await writeFile(join(seedPath, 'skills/pdf/custom/script.py'), 'custom script');
+    await writeFile(join(seedPath, 'tools/shared.ts'), 'shared tool');
+    await writeFile(join(seedPath, 'kortix.yaml'), 'kortix_version: 3\nskills:\n  pdf: skills/pdf\nagents:\n  helper:\n    skills: [pdf]\n');
+    await git(['add', '.'], seedPath);
+    await git(['commit', '-m', 'install synthetic skill'], seedPath);
+    await git(['push', 'origin', 'main'], seedPath);
+    const manifest = await readManifest(project, { forceRefresh: true });
+    if (!manifest?.commit || !manifest.revision) throw new Error('Expected committed manifest');
+    const plan = planSkillRemoval(manifest.raw, (await listRepoFiles(project, manifest.commit)).map((file) => file.path), 'skills/pdf');
+    manifest.raw = plan.raw;
+    const writes = manifestWrites(manifest);
+    const before = await git(['--git-dir', remotePath, 'rev-list', '--count', 'main']);
+    await commitMultipleFilesToBranch(project, { files: writes.files, deletes: plan.deletes, message: 'remove selected skill', expectedCommit: manifest.commit, expectedFileRevision: { path: 'kortix.yaml', sha: manifest.revision } });
+    expect(Number(await git(['--git-dir', remotePath, 'rev-list', '--count', 'main']))).toBe(Number(before) + 1);
+    expect(await git(['--git-dir', remotePath, 'ls-tree', '-r', '--name-only', 'main'])).toBe('kortix.yaml\ntools/shared.ts');
+    expect(await git(['--git-dir', remotePath, 'show', 'main:tools/shared.ts'])).toBe('shared tool');
+    const current = await readManifest(project);
+    expect(current?.raw.skills).toEqual({});
+    expect(current?.raw.agents).toEqual({ helper: { skills: [] } });
+  });
+
+  test('pins destructive deletion to the inspected commit, including newly added files', async () => {
+    const expectedCommit = await git(['rev-parse', 'HEAD'], seedPath);
+    await writeFile(join(seedPath, 'added.md'), 'concurrent addition');
+    await git(['add', '.'], seedPath);
+    await git(['commit', '-m', 'concurrent addition'], seedPath);
+    await git(['push', 'origin', 'main'], seedPath);
+    await expect(commitMultipleFilesToBranch(project, {
+      deletes: ['kortix.yaml'], message: 'remove stale selection', expectedCommit,
+    })).rejects.toBeInstanceOf(GitFileRevisionConflictError);
+    expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.yaml'])).toContain('kortix_version');
+  });
+
   test('allows credential-free absolute repositories only in local development', async () => {
     const previous = process.env.KORTIX_LOCAL_DEV;
     const localProject = { ...project, gitAuthToken: null };
@@ -279,7 +319,8 @@ describe('manifest file compare-and-swap', () => {
     }
 
     expect(visibleDuringPush?.raw.connectors).toEqual([]);
-    expect(await commit).toMatchObject({ status: 502 });
+    // A declining pre-receive hook is a remote push policy (#7819): 409.
+    expect(await commit).toMatchObject({ status: 409 });
     expect(await git(['--git-dir', remotePath, 'show', 'main:kortix.yaml'])).not.toContain(
       'never-landed',
     );

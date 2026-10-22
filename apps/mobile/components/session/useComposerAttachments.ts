@@ -4,9 +4,11 @@
  * prompt-attachments.ts`). Used by `SessionChatInput` (a thread) and
  * `ProjectHome` (a new session's composer, COR-185).
  *
- * Owns one controller per `projectId`, read through `useSyncExternalStore` so
- * every render sees the controller's own snapshot — no local copy to drift
- * from it. `add` reads each picked file off the device
+ * Owns one controller per `projectId`, read through `useSyncExternalStore`.
+ * The composer subscribes only to each upload's phase (`uploadPhaseKey`):
+ * uploading, ready or failed. Progress ticks (up to 10 per second per file)
+ * reach only the tile that draws them, through the `live` source each upload
+ * entry carries (`ComposerAttachmentTiles`). `add` reads each picked file off the device
  * (`lib/session/attachment-file.ts`) and starts its upload; a read failure
  * drops that file and toasts (`lib/session/composer-uploads.ts`). `takeForSend`
  * waits for every staged upload, pairs the results with the picked files
@@ -14,7 +16,11 @@
  * files stay in the composer for another try.
  */
 import * as React from 'react';
-import { createPromptAttachmentController, type SessionPromptPart } from '@kortix/sdk';
+import {
+  createPromptAttachmentController,
+  type PromptAttachmentSnapshot,
+  type SessionPromptPart,
+} from '@kortix/sdk';
 
 import { useToast } from '@/components/kortix/toast-provider';
 import { log } from '@/lib/logger';
@@ -46,7 +52,8 @@ export function useComposerAttachments(
   const toast = useToast();
   const controller = React.useMemo(() => createPromptAttachmentController(projectId), [projectId]);
   React.useEffect(() => () => controller.dispose(), [controller]);
-  React.useSyncExternalStore(controller.subscribe, controller.getSnapshot);
+  const getPhaseKey = React.useCallback(() => uploadPhaseKey(controller.getSnapshot()), [controller]);
+  const phaseKey = React.useSyncExternalStore(controller.subscribe, getPhaseKey);
 
   const [files, setFiles] = React.useState<AttachedFile[]>([]);
   // Files removed while still being read off the device. Their read resolves
@@ -100,21 +107,35 @@ export function useComposerAttachments(
     [controller],
   );
 
-  const snapshot = controller.getSnapshot();
+  // Rebuilt only when the file list or a phase changes, so each entry (and its
+  // `onRetry`) keeps one identity across progress ticks and keystrokes.
   const uploads = React.useMemo(() => {
+    const snapshot = controller.getSnapshot();
     const result: Record<number, ComposerAttachmentUpload> = {};
     files.forEach((file, index) => {
-      const item = file.uploadId
-        ? snapshot.attachments.find((entry) => entry.id === file.uploadId)
-        : undefined;
+      const id = file.uploadId;
+      const item = id ? snapshot.attachments.find((entry) => entry.id === id) : undefined;
       const state = composerUploadState(item);
       if (!state) return;
-      result[index] = state.failed
-        ? { ...state, onRetry: () => file.uploadId && controller.retry(file.uploadId) }
-        : state;
+      if (state.failed) {
+        result[index] = { ...state, onRetry: () => id && controller.retry(id) };
+      } else if (id) {
+        result[index] = {
+          ...state,
+          live: {
+            subscribe: controller.subscribe,
+            getProgress: () =>
+              composerUploadState(controller.getSnapshot().attachments.find((entry) => entry.id === id))?.progress,
+          },
+        };
+      } else {
+        result[index] = state;
+      }
     });
     return result;
-  }, [files, snapshot, controller]);
+    // `phaseKey` is the trigger: it changes when an upload starts, ends or fails.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files, phaseKey, controller]);
 
   const takeForSend = React.useCallback(async () => {
     const ids = files.map((f) => f.uploadId);
@@ -148,4 +169,18 @@ export function useComposerAttachments(
   );
 
   return { files, add, remove, uploads, takeForSend, clearAfterSend, reclaim };
+}
+
+/**
+ * What the composer draws from a snapshot, without progress: each listed
+ * upload's id and phase. A string, so an unchanged phase compares equal and a
+ * progress tick does not re-render the composer.
+ */
+export function uploadPhaseKey(snapshot: PromptAttachmentSnapshot): string {
+  return snapshot.attachments
+    .map((item) => {
+      const state = composerUploadState(item);
+      return `${item.id}:${!state ? 'done' : state.failed ? 'failed' : 'running'}`;
+    })
+    .join('|');
 }

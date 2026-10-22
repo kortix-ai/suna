@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
-import { readRepoInfo } from '../git'
+import { readRepoInfo } from '@/lib/git/git'
 
 function git(cwd: string, ...args: string[]): void {
   const res = spawnSync('git', args, { cwd, encoding: 'utf8' })

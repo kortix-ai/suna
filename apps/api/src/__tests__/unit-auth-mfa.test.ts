@@ -19,7 +19,7 @@ import { Hono } from 'hono';
 mock.module('../config', () => ({
   config: { SUPABASE_URL: 'http://supabase.internal:8000', SUPABASE_SERVICE_ROLE_KEY: 'service-role-jwt', FRONTEND_URL: 'https://app.example' },
 }));
-mock.module('../shared/auth-audit', () => ({
+mock.module('../middleware/auth-audit', () => ({
   auditLoginFail: () => {}, auditLoginSuccess: () => {}, auditLogout: () => {}, auditSessionFirstSight: () => {},
 }));
 mock.module('../middleware/auth', () => ({ supabaseAuth: async (_c: unknown, next: () => Promise<void>) => next() }));
@@ -59,6 +59,16 @@ function req(path: string, init: RequestInit = {}, token = 'sb_at', authType = '
 beforeEach(() => { seen = []; respond = () => Response.json({ id: 'f1' }); });
 
 describe('/v1/auth/mfa', () => {
+  test('logout revokes at GoTrue with the caller bearer', async () => {
+    const response = await req('/logout', { method: 'POST' });
+    expect(response.status).toBe(200);
+    expect(seen).toContainEqual(expect.objectContaining({
+      method: 'POST',
+      url: 'http://supabase.internal:8000/auth/v1/logout?scope=local',
+      headers: expect.objectContaining({ authorization: 'Bearer sb_at' }),
+    }));
+  });
+
   test('enroll posts to GoTrue /factors as the caller', async () => {
     const response = await req('/mfa/factors', { method: 'POST', body: JSON.stringify({ factor_type: 'totp', friendly_name: 'Phone' }) });
     expect(response.status).toBe(200);

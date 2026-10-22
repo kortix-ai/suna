@@ -15,6 +15,7 @@
  *     project-scoped one only for a sandbox of that project
  *     (`enforceTokenProjectScope`'s rule)
  *   - Service-account tokens       (kortix_sa_…)  → the service-account id
+ *   - OAuth access tokens (kortix_oat_…, `kortix` scope) → the granting user's id
  *   - Kortix API/sandbox tokens    (kortix_…)     → the owning account id
  *   - Supabase JWTs                               → the user's id
  * and enforces sandbox ownership via `canAccessPreviewSandbox`.
@@ -28,6 +29,7 @@ import { isKortixToken, isAccountToken, isServiceAccountToken } from '../shared/
 import { validateSecretKey } from '../repositories/api-keys';
 import { validateAccountToken } from '../repositories/account-tokens';
 import { validateServiceAccountToken } from '../repositories/service-accounts';
+import { isOAuthAccessToken, OAUTH_SCOPE_KORTIX, validateOAuthAccessToken } from '../oauth/access-token';
 import { verifySupabaseJwt } from '../shared/jwt-verify';
 import { isInconclusiveVerifyFailure } from '../shared/jwt-verify-outcome';
 import { getSupabase } from '../shared/supabase';
@@ -35,6 +37,7 @@ import { canAccessPreviewSandbox, resolveSandboxProjectId } from '../shared/prev
 import { bindAuditPrincipal } from '../shared/audit-scope';
 import { previewActorFields } from './preview-audit';
 import type { PreviewPrincipalKind } from './preview-session';
+import { bearerToken } from '../shared/bearer-token';
 
 async function sandboxBelongsToProject(sandboxId: string, projectId: string): Promise<boolean> {
   const sandboxProjectId = await resolveSandboxProjectId(sandboxId);
@@ -112,6 +115,22 @@ export async function authenticatePreviewPrincipalDetailed(
         : null;
     }
 
+    // OAuth access token (kortix_oat_…) — an App acting as its viewer, or a
+    // "Sign in with Kortix" client. Same rule as combinedAuth: only the
+    // `kortix` scope makes it a credential. Before this branch it fell into the
+    // API-key lookup below and every WebSocket or preview-subdomain request
+    // answered 401 while `/v1/p/...` over HTTP accepted the same token.
+    if (isOAuthAccessToken(token)) {
+      const r = await validateOAuthAccessToken(token);
+      if (!r.isValid || !r.userId || !r.scopes?.includes(OAUTH_SCOPE_KORTIX)) return null;
+      bindAuditPrincipal(
+        previewActorFields({ kind: 'user', principalId: r.userId, sandboxAuthored: false, method: 'oauth' }),
+      );
+      return (await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId: r.userId }))
+        ? { userId: r.userId, sessionId: null, principalKind: 'user' }
+        : null;
+    }
+
     // Kortix API / sandbox token — ownership is checked against the account.
     if (isKortixToken(token)) {
       const r = await validateSecretKey(token);
@@ -168,14 +187,20 @@ export async function authenticatePreviewPrincipalDetailed(
  */
 export function extractPreviewToken(req: Request, url: URL): string | null {
   const authHeader = req.headers.get('Authorization');
-  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
+  const bearer = bearerToken(authHeader);
+  if (bearer !== null) return bearer;
   const ktHeader = req.headers.get('X-Kortix-Token');
   if (ktHeader) return ktHeader;
   const qp = url.searchParams.get('token');
   if (qp) return qp;
   const cookieHeader = req.headers.get('Cookie') || '';
   const m = cookieHeader.match(/(?:^|;\s*)__preview_session=([^;]+)/);
-  if (m) return decodeURIComponent(m[1]);
+  if (m) {
+    try {
+      return decodeURIComponent(m[1]);
+    } catch (err) {
+      if (!(err instanceof URIError)) throw err;
+    }
+  }
   return null;
 }
-

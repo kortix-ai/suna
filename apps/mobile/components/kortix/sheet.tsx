@@ -1,7 +1,8 @@
 // apps/mobile/components/kortix/sheet.tsx
 import * as React from 'react';
-import { View, useWindowDimensions, type ViewStyle } from 'react-native';
+import { Keyboard, Platform, View, useWindowDimensions, type ViewStyle } from 'react-native';
 import {
+  ANIMATION_STATUS,
   BottomSheetModal,
   BottomSheetView,
   BottomSheetBackdrop,
@@ -9,7 +10,8 @@ import {
   useBottomSheetInternal,
   type BottomSheetModalProps,
 } from '@gorhom/bottom-sheet';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { State as GestureState } from 'react-native-gesture-handler';
+import Animated, { Easing, useAnimatedStyle, useDerivedValue, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { getSheetBg } from '@/lib/theme-colors';
@@ -24,6 +26,9 @@ import { cn } from '@/lib/utils/utils';
 import { detentsKey, withFullDetent } from '@/lib/ui/sheet-detents';
 import { sheetScrimColor } from '@/lib/ui/sheet-scrim';
 import { SurfaceContext } from '@/components/kortix/surface-context';
+import { PinnedBarShiftContext } from '@/components/kortix/pinned-bar';
+import { SheetSettledContext } from '@/components/kortix/sheet-settled';
+import { LIQUID_GLASS_AVAILABLE, LiquidGlassCapsule } from '@/components/kortix/liquid-glass-capsule';
 
 /**
  * Shared bottom-sheet backdrop. Every gorhom sheet creator in the app
@@ -118,17 +123,110 @@ export function useSheetBackground(): string {
  * `hideClose` drops the button and keeps the title centred. `titleTrailing`
  * puts one icon button at the far right of that row.
  */
-export const SHEET_DEFAULTS = {
+const SHEET_DEFAULTS = {
   /** Top corner radius. */
   radius: 32,
   /** Side padding of the title row: the project edge. */
   titlePaddingX: 16,
-  /** Space between the grab handle and the title row, and under the title row. */
-  titlePaddingTop: 4,
-  titlePaddingBottom: 8,
+  /** Space between the grab handle and the title row, and under the title row.
+   *  iOS gets 6pt more on each side (Jay, 2026-10-20: the header felt cramped). */
+  titlePaddingTop: Platform.OS === 'ios' ? 10 : 4,
+  titlePaddingBottom: Platform.OS === 'ios' ? 14 : 8,
   /** Space above the grab handle. */
   handlePaddingTop: 5,
 } as const;
+
+/**
+ * The one sheet motion (KRTX-2929). Every sheet moves on the UI thread with
+ * these values; no call site passes `animationConfigs`.
+ *
+ * `open` — the present, every snap after a drag, a pan-down close and a
+ * backdrop tap. A critically damped spring (ratio 1: no overshoot, `stiffness`
+ * 256 with `mass` 1 is ω0 = 16 rad/s): 95% of the way in ~300 ms, 99% in
+ * ~415 ms. A spring, not a timing curve, because gorhom hands it the finger's
+ * release velocity: a flick carries straight into the snap with no seam.
+ * `energyThreshold` 5e-6 ends it once less than ~0.2% of the distance is left
+ * (~520 ms), so `onChange` (and `SheetSettledContext`) fire close to the
+ * visible end. Reanimated 4 ignores gorhom's old `restDisplacementThreshold`;
+ * at the default threshold the sheet reported "moving" for ~750 ms.
+ * Replaces gorhom's defaults, which differed per platform: a
+ * damping-500/stiffness-1000/mass-3 spring on iOS, 250 ms ease-out-expo on Android.
+ *
+ * `close` — `dismiss()` from code (the X, a row pick). 250 ms on the iOS
+ * sheet curve (`cubic-bezier(0.32, 0.72, 0, 1)`, the curve Vaul and Ionic use):
+ * faster than the open, as an exit should be, with a fixed end so the next
+ * sheet chained on `onDismiss` (`useCloseThen`) appears without waiting on a
+ * spring's tail.
+ */
+export const SHEET_MOTION = {
+  open: { stiffness: 256, damping: 32, mass: 1, overshootClamping: true, energyThreshold: 5e-6 },
+  close: { duration: 250, easing: Easing.bezier(0.32, 0.72, 0, 1) },
+} as const;
+
+type TitleSlots = {
+  title?: string;
+  hideClose: boolean;
+  leading?: React.ReactNode;
+  trailing?: React.ReactNode;
+  trailingGlass: boolean;
+  center?: React.ReactNode;
+  onClose: () => void;
+};
+
+/**
+ * The title row's props as a tiny store, read by one stable handle component.
+ *
+ * gorhom renders `handleComponent` as `<HandleComponent />`. A new function on
+ * each render is a new component type: React unmounts and remounts the whole
+ * title row (close button, title, trailing button) and gorhom rebuilds its
+ * layout-readiness worklet, on every parent render — each search keystroke,
+ * each tab switch, each list refresh during the open. Call sites pass
+ * `titleTrailing` as inline JSX, so a `useCallback` over the slots changed on
+ * every render. The handle now stays one component, and only re-renders.
+ */
+function useTitleSlotStore(slots: TitleSlots) {
+  const [store] = React.useState(() => {
+    let current = slots;
+    const listeners = new Set<() => void>();
+    return {
+      get: () => current,
+      set: (next: TitleSlots) => {
+        current = next;
+        listeners.forEach((listener) => listener());
+      },
+      subscribe: (listener: () => void) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+  });
+  React.useLayoutEffect(() => store.set(slots));
+  return store;
+}
+
+function TitledHandle({
+  store,
+  indicatorStyle,
+}: {
+  store: ReturnType<typeof useTitleSlotStore>;
+  indicatorStyle: ViewStyle;
+}) {
+  const slots = React.useSyncExternalStore(store.subscribe, store.get);
+  return (
+    <View style={{ paddingTop: SHEET_DEFAULTS.handlePaddingTop }}>
+      <View style={[{ alignSelf: 'center' }, indicatorStyle]} />
+      <SheetTitleRow
+        title={slots.title}
+        hideClose={slots.hideClose}
+        leading={slots.leading}
+        trailing={slots.trailing}
+        trailingGlass={slots.trailingGlass}
+        center={slots.center}
+        onClose={slots.onClose}
+      />
+    </View>
+  );
+}
 
 /**
  * SheetTitleRow — the one title row of every sheet: a close button at the far
@@ -141,6 +239,14 @@ export const SHEET_DEFAULTS = {
  * Back chevron inside a multi-step sheet). `trailing` fills the far right, the
  * slot that is empty otherwise, with one 40pt icon `Button` (the file preview's
  * Copy). The slot mirrors the leading one, so the title stays centred.
+ *
+ * iOS 26+ (Jay, 2026-10-20): the close button, `leading` and `trailing` each
+ * sit on a Liquid Glass capsule (`GlassSlot`): a circle behind a 40pt icon
+ * button, a pill behind a wider one. The visible glass then sits on the 16pt
+ * edge, so the `-ml-2.5` / `-mr-2.5` pulls go and the balance spacer is the
+ * full 40pt. `trailingGlass={false}` keeps a trailing slot that is not a
+ * button (the participants count) off the glass. Android and older iOS keep
+ * the plain ghost buttons and the pulls.
  */
 export function SheetTitleRow({
   title,
@@ -148,6 +254,7 @@ export function SheetTitleRow({
   hideClose = false,
   leading,
   trailing,
+  trailingGlass = true,
   center,
 }: {
   title?: string;
@@ -155,31 +262,39 @@ export function SheetTitleRow({
   hideClose?: boolean;
   leading?: React.ReactNode;
   trailing?: React.ReactNode;
+  /** `false` when `trailing` is not a button: no glass behind it. */
+  trailingGlass?: boolean;
   /** Replaces the centred title text (e.g. a tab list). */
   center?: React.ReactNode;
 }) {
+  const glass = LIQUID_GLASS_AVAILABLE;
   return (
+    // `gap-3`: 12pt between the close button, the title (or `center`) and the
+    // trailing slot, so a long title or a centred control never touches a
+    // glass button (Jay, 2026-10-20). Equal on both sides: the centre holds.
     <View
-      className="flex-row items-center"
+      className="flex-row items-center gap-3"
       style={{
         paddingHorizontal: SHEET_DEFAULTS.titlePaddingX,
         paddingTop: SHEET_DEFAULTS.titlePaddingTop,
         paddingBottom: SHEET_DEFAULTS.titlePaddingBottom,
       }}>
       {leading ? (
-        <View className="-ml-2.5">{leading}</View>
+        <GlassSlot className={glass ? undefined : '-ml-2.5'}>{leading}</GlassSlot>
       ) : hideClose ? (
         <View className="size-10" />
       ) : (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="-ml-2.5 rounded-full"
-          onPress={onClose}
-          accessibilityLabel="Close"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Icon as={XIcon} size={20} className="text-foreground" />
-        </Button>
+        <GlassSlot className={glass ? undefined : '-ml-2.5'}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onPress={onClose}
+            accessibilityLabel="Close"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Icon as={XIcon} size={20} className="text-foreground" />
+          </Button>
+        </GlassSlot>
       )}
       {center ? (
         <View className="flex-1 items-center">{center}</View>
@@ -193,16 +308,35 @@ export function SheetTitleRow({
         </Text>
       )}
       {trailing ? (
-        <View className="-mr-2.5">{trailing}</View>
+        trailingGlass ? (
+          <GlassSlot className={glass ? undefined : '-mr-2.5'}>{trailing}</GlassSlot>
+        ) : (
+          <View className="-mr-2.5">{trailing}</View>
+        )
       ) : (
-        // Balances the leading slot: 40pt, less its 10pt pull to the edge.
-        <View style={{ width: hideClose && !leading ? 40 : 30 }} />
+        // Balances the leading slot: 40pt, less its 10pt pull to the edge
+        // (no pull on glass).
+        <View style={{ width: glass || (hideClose && !leading) ? 40 : 30 }} />
       )}
     </View>
   );
 }
 
-export interface KortixBottomSheetModalProps extends BottomSheetModalProps {
+/**
+ * A title-row control on iOS 26+ Liquid Glass: the capsule fills the slot
+ * behind the child (a circle for a 40pt icon button). Elsewhere a plain
+ * wrapper. `className` carries the non-glass edge pull.
+ */
+function GlassSlot({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <View className={cn(LIQUID_GLASS_AVAILABLE && 'rounded-full', className)}>
+      {LIQUID_GLASS_AVAILABLE ? <LiquidGlassCapsule /> : null}
+      {children}
+    </View>
+  );
+}
+
+interface KortixBottomSheetModalProps extends BottomSheetModalProps {
   /** Centred title in the handle area, with a close button at the far left. */
   title?: string;
   /** A titled sheet without the close button. */
@@ -214,6 +348,8 @@ export interface KortixBottomSheetModalProps extends BottomSheetModalProps {
   titleLeading?: React.ReactNode;
   /** One 40pt icon `Button` at the far right of the title row. Needs `title`. */
   titleTrailing?: React.ReactNode;
+  /** `false` when `titleTrailing` is not a button (a count): no Liquid Glass behind it. */
+  titleTrailingGlass?: boolean;
   /** Replaces the centred title text with a control (a tab list). Needs `title` (used as the accessible name). */
   titleCenter?: React.ReactNode;
 }
@@ -222,7 +358,7 @@ export const KortixBottomSheetModal = React.forwardRef<
   BottomSheetModal,
   KortixBottomSheetModalProps
 >(({ title, hideClose = false, backgroundStyle, handleComponent, snapPoints, topInset, children, ...rest }, ref) => {
-  const { titleLeading, titleTrailing, titleCenter, ...props } = rest;
+  const { titleLeading, titleTrailing, titleTrailingGlass = true, titleCenter, onChange, onDismiss, ...props } = rest;
   // gorhom sizes the content box to the HIGHEST detent, which is now always
   // 100%. A fixed-detent sheet shown at 92% would lay its content out
   // full-screen tall and push a bottom Save row off-screen, so its body is
@@ -237,27 +373,60 @@ export const KortixBottomSheetModal = React.forwardRef<
   // expands any sheet. Keyed by value: most call sites pass an inline array.
   const key = detentsKey(snapPoints);
   const detents = React.useMemo(() => withFullDetent(snapPoints), [key]);
-  React.useImperativeHandle(ref, () => innerRef.current as BottomSheetModal, []);
+  // Opening a sheet closes the keyboard. A sheet is a new context: a keyboard
+  // left up from the screen behind covers the sheet's lower half, and its field
+  // keeps the focus. Set HERE so no call site has to remember it. A sheet's own
+  // auto-focused field mounts after this and raises the keyboard again.
+  //
+  // `dismiss()` / `close()` from code run `SHEET_MOTION.close` unless the
+  // caller passes its own config.
+  React.useImperativeHandle(
+    ref,
+    () => ({
+      ...(innerRef.current as BottomSheetModal),
+      present: (...args: Parameters<BottomSheetModal['present']>) => {
+        Keyboard.dismiss();
+        innerRef.current?.present(...args);
+      },
+      dismiss: (config?: Parameters<BottomSheetModal['dismiss']>[0]) =>
+        innerRef.current?.dismiss(config ?? SHEET_MOTION.close),
+      close: (config?: Parameters<BottomSheetModal['close']>[0]) =>
+        innerRef.current?.close(config ?? SHEET_MOTION.close),
+    }),
+    []
+  );
+  // False from mount (gorhom mounts the body on present) until the open
+  // animation first comes to rest; reset once the body is gone. Never reset
+  // on the way down: that would re-render a long list during the close.
+  const [settled, setSettled] = React.useState(false);
+  const handleChange = React.useCallback<NonNullable<BottomSheetModalProps['onChange']>>(
+    (index, position, type) => {
+      if (index >= 0) setSettled(true);
+      onChange?.(index, position, type);
+    },
+    [onChange]
+  );
+  const handleDismiss = React.useCallback(() => {
+    setSettled(false);
+    onDismiss?.();
+  }, [onDismiss]);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const background = getSheetBg(isDark);
   const indicatorStyle = React.useMemo(() => sheetHandleIndicatorStyle(isDark), [isDark]);
 
+  const titleStore = useTitleSlotStore({
+    title,
+    hideClose,
+    leading: titleLeading,
+    trailing: titleTrailing,
+    trailingGlass: titleTrailingGlass,
+    center: titleCenter,
+    onClose: () => innerRef.current?.dismiss(SHEET_MOTION.close),
+  });
   const titledHandle = React.useCallback(
-    () => (
-      <View style={{ paddingTop: SHEET_DEFAULTS.handlePaddingTop }}>
-        <View style={[{ alignSelf: 'center' }, indicatorStyle]} />
-        <SheetTitleRow
-          title={title}
-          hideClose={hideClose}
-          leading={titleLeading}
-          trailing={titleTrailing}
-          center={titleCenter}
-          onClose={() => innerRef.current?.dismiss()}
-        />
-      </View>
-    ),
-    [indicatorStyle, hideClose, title, titleLeading, titleTrailing, titleCenter]
+    () => <TitledHandle store={titleStore} indicatorStyle={indicatorStyle} />,
+    [titleStore, indicatorStyle]
   );
 
   return (
@@ -268,7 +437,10 @@ export const KortixBottomSheetModal = React.forwardRef<
       handleComponent={handleComponent ?? (title ? titledHandle : undefined)}
       snapPoints={detents as BottomSheetModalProps['snapPoints']}
       topInset={topInset ?? insets.top}
+      animationConfigs={SHEET_MOTION.open}
       {...props}
+      onChange={handleChange}
+      onDismiss={handleDismiss}
       // Android keyboard: ONE mode app-wide. The window is `adjustResize`
       // (app.json `softwareKeyboardLayoutMode: "resize"`), but the root
       // KeyboardProvider draws edge-to-edge, so the window never actually
@@ -290,9 +462,12 @@ export const KortixBottomSheetModal = React.forwardRef<
       {typeof children === 'function' ? (
         children
       ) : (
-        // Rows inside know they sit on the sheet colour (`SettingsGroup`).
+        // Rows inside know they sit on the sheet colour (`SettingsGroup`),
+        // and whether the sheet is still opening (`useSheetRowLimit`).
         <SurfaceContext.Provider value="sheet">
-          {fixedDetents ? <SheetFill>{children}</SheetFill> : children}
+          <SheetSettledContext.Provider value={settled}>
+            {fixedDetents ? <SheetFill>{children}</SheetFill> : children}
+          </SheetSettledContext.Provider>
         </SurfaceContext.Provider>
       )}
     </BottomSheetModal>
@@ -301,8 +476,8 @@ export const KortixBottomSheetModal = React.forwardRef<
 KortixBottomSheetModal.displayName = 'KortixBottomSheetModal';
 
 /**
- * SheetFill — a box exactly as tall as the sheet's visible content area
- * (container − sheet position − handle), tracking drags on the UI thread.
+ * SheetFill — a box as tall as the sheet's visible content area
+ * (container − sheet position − handle) whenever the sheet is at rest.
  *
  * gorhom sizes its content box to the sheet's HIGHEST detent
  * (`animatedSheetHeight = containerHeight − highestDetentPosition`), and every
@@ -316,20 +491,124 @@ KortixBottomSheetModal.displayName = 'KortixBottomSheetModal';
  * content-sized sheet has no height of its own to fill. Never give it
  * `flex: 1`: React Native's `flex: 1` sets `flexBasis: 0`, which discards the
  * height (measured: 787pt again).
+ *
+ * A height change re-lays out the whole body, lists included. So while the
+ * sheet moves, the body keeps one height (`sheetFillHeight`) and a `PinnedBar`
+ * inside follows the visible edge by a transform (`PinnedBarShiftContext`).
  */
 export function SheetFill({ children, style }: { children: React.ReactNode; style?: Omit<ViewStyle, 'flex' | 'height'> }) {
-  const { animatedLayoutState, animatedPosition } = useBottomSheetInternal();
+  const {
+    animatedLayoutState,
+    animatedPosition,
+    animatedAnimationState,
+    animatedContentGestureState,
+    animatedHandleGestureState,
+  } = useBottomSheetInternal();
+  // The last laid-out height: the memory `sheetFillHeight` keeps across frames.
+  const laidOut = useSharedValue<number | null>(null);
+  // Derived values, not a reaction: `useDerivedValue` registers its mapper
+  // with the value as an output, so Reanimated runs it before every mapper
+  // that reads it (`mappers.ts` `updateMappersOrder`). The height, the shift
+  // and both styles then update in the same frame, whatever order React
+  // registered them in. A reaction has no outputs: a child `PinnedBar`'s style
+  // registered first would read the new shift one frame late.
+  const height = useDerivedValue(() => {
+    const dragging =
+      isGestureLive(animatedContentGestureState.get()) || isGestureLive(animatedHandleGestureState.get());
+    const next = sheetFillHeight(
+      animatedLayoutState.get(),
+      animatedPosition.get(),
+      animatedAnimationState.get(),
+      dragging,
+      laidOut.get()
+    );
+    if (next !== laidOut.get()) laidOut.set(next);
+    return next;
+  }, [animatedLayoutState, animatedPosition, animatedAnimationState, animatedContentGestureState, animatedHandleGestureState, laidOut]);
+  const shift = useDerivedValue(
+    () => sheetFillShift(animatedLayoutState.get(), animatedPosition.get(), height.get()),
+    [animatedLayoutState, animatedPosition, height]
+  );
   const fill = useAnimatedStyle(() => {
-    const { containerHeight, handleHeight } = animatedLayoutState.get();
-    if (containerHeight <= 0) return {};
-    const height = containerHeight - animatedPosition.get() - Math.max(0, handleHeight);
-    return { height: Math.max(0, height) };
-  }, [animatedLayoutState, animatedPosition]);
-  return <Animated.View style={[style, fill]}>{children}</Animated.View>;
+    const h = height.get();
+    return h === null ? {} : { height: h };
+  }, [height]);
+  return (
+    <Animated.View style={[style, fill]}>
+      <PinnedBarShiftContext.Provider value={shift}>{children}</PinnedBarShiftContext.Provider>
+    </Animated.View>
+  );
+}
+
+// Plain numbers: a worklet captures them by value.
+const ANIMATION_RUNNING = ANIMATION_STATUS.RUNNING;
+const GESTURE_BEGAN = GestureState.BEGAN;
+const GESTURE_ACTIVE = GestureState.ACTIVE;
+
+function isGestureLive(state: number): boolean {
+  'worklet';
+  return state === GESTURE_BEGAN || state === GESTURE_ACTIVE;
+}
+
+/** The sheet below the handle, in points. */
+function visibleFill(layout: { containerHeight: number; handleHeight: number }, position: number): number {
+  'worklet';
+  return Math.max(0, layout.containerHeight - position - Math.max(0, layout.handleHeight));
+}
+
+/**
+ * `SheetFill`'s laid-out height for one frame. `null` until the container is
+ * measured.
+ * - At rest (no animation, no drag): `visible`. This is the one layout a move
+ *   down costs.
+ * - An animation lays out once at `max(visible, its target)` when that is
+ *   taller than `previous` (the open, a snap up, the keyboard lift), and keeps
+ *   `previous` otherwise (the close, a snap down, the keyboard drop).
+ * - A drag keeps `previous` going down, and grows with the drag past it going
+ *   up, so no empty band shows between the content's end and the bar.
+ */
+export function sheetFillHeight(
+  layout: { containerHeight: number; handleHeight: number },
+  position: number,
+  animation: { status: number; nextPosition?: number },
+  dragging: boolean,
+  previous: number | null
+): number | null {
+  'worklet';
+  if (layout.containerHeight <= 0) return null;
+  const visible = visibleFill(layout, position);
+  const running = animation.status === ANIMATION_RUNNING;
+  if (!running && !dragging) return visible;
+  let wanted = visible;
+  if (running && animation.nextPosition !== undefined) {
+    wanted = Math.max(visible, visibleFill(layout, animation.nextPosition));
+  }
+  return previous === null || wanted > previous ? wanted : previous;
+}
+
+/**
+ * How far a `PinnedBar` moves to sit on the visible edge: `visible − height`,
+ * 0 or less (`sheetFillHeight` never returns less than `visible`). The bar's
+ * bottom is then at `height + shift === visible`, where it was before.
+ */
+export function sheetFillShift(
+  layout: { containerHeight: number; handleHeight: number },
+  position: number,
+  height: number | null
+): number {
+  'worklet';
+  if (height === null || layout.containerHeight <= 0) return 0;
+  return visibleFill(layout, position) - height;
 }
 
 /** Copies `text`; the glyph is a check for 1.5 s after. For `titleTrailing`. */
-export function CopyContentButton({ text }: { text: string }) {
+export function CopyContentButton({
+  text,
+  label = 'Copy file content',
+}: {
+  text: string;
+  label?: string;
+}) {
   const [copied, setCopied] = React.useState(false);
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   React.useEffect(() => () => void (timer.current && clearTimeout(timer.current)), []);
@@ -339,7 +618,7 @@ export function CopyContentButton({ text }: { text: string }) {
       size="icon"
       className="rounded-full"
       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-      accessibilityLabel={copied ? 'Copied' : 'Copy file content'}
+      accessibilityLabel={copied ? 'Copied' : label}
       onPress={async () => {
         await Clipboard.setStringAsync(text);
         haptics.success();
@@ -356,6 +635,9 @@ export interface SheetRef {
   open: () => void;
   close: () => void;
 }
+
+export { useCloseThen } from './use-close-then';
+export { useSheetOpenMove } from './use-sheet-open-move';
 interface SheetProps {
   snapPoints?: (string | number)[];
   /** Present at full screen height (100%) with a safe-area top inset. */
@@ -423,8 +705,6 @@ function Header({
   onClose?: () => void;
   hideClose?: boolean;
   leading?: React.ReactNode;
-  /** @deprecated The row owns its padding (`SHEET_DEFAULTS`). Ignored. */
-  className?: string;
 }) {
   const { dismiss } = useBottomSheetModal();
   return (
@@ -439,10 +719,4 @@ function Header({
 function Body({ children, className }: { children: React.ReactNode; className?: string }) {
   return <View className={cn('px-5 pb-6', className)}>{children}</View>;
 }
-function Footer({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <View className={cn('flex-row gap-3 px-5 pb-8 pt-2', className)}>{children}</View>;
-}
-(Sheet as any).Header = Header;
-(Sheet as any).Body = Body;
-(Sheet as any).Footer = Footer;
-export { Header as SheetHeader, Body as SheetBody, Footer as SheetFooter };
+export { Header as SheetHeader, Body as SheetBody };

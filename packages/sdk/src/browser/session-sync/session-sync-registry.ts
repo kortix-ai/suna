@@ -1,6 +1,6 @@
-import type { Message, Part, SessionStatus } from '@opencode-ai/sdk/v2/client';
+import type { Message, Part, SessionStatus } from '../../core/runtime/runtime-types';
 import { getClient, getClientForUrl, RuntimeNotReadyError } from '../../core/runtime/client';
-import { SandboxNotReadyError, isSandboxNotReadyError } from '../../core/http/opencode-errors';
+import { SandboxNotReadyError, isSandboxNotReadyError } from '../../core/http/runtime-errors';
 import { ApiError } from '../../core/http/api/errors';
 import {
   SessionSyncController,
@@ -11,6 +11,11 @@ import {
 } from '../../core/session-sync/session-sync-controller';
 import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from '../../core/session/current-runtime';
 import { useSyncStore } from '../stores/sync-store';
+import { getSessionLogPage } from '../../core/rest/projects-client/sessions';
+import { EMPTY_SESSION_LOG_STATE, applySessionLogPage, type SessionLogState } from '../../core/session-log/store';
+import { loadSessionLogPage, readSessionLogAnswer } from '../../core/session-log/source';
+import { sessionLogRowsFor, sessionLogThreadIdOf } from '../../core/session-log/v1-view';
+import { loadSavedSessionTranscriptMessages, parseKortixSessionScope } from './server-transcript-mirror';
 
 interface MessagesResponse {
   data?: Array<{ info: Message; parts: Part[] }>;
@@ -54,6 +59,14 @@ interface RegistryEntry {
 }
 
 const MAX_CONTROLLERS = 20;
+/**
+ * How long an unretained controller is safe from eviction after its last use. A hook holds
+ * its controller from render until its effect retains it, and between an effect's cleanup and
+ * its next run (StrictMode runs every effect twice). Evicting there destroyed the controller
+ * the hook then read with: a list that mounts more than `MAX_CONTROLLERS` hooks in one commit
+ * (the sub-agent rows' "Load all") lost the initial read of most rows.
+ */
+const IDLE_BEFORE_EVICT_MS = 30_000;
 const controllers = new Map<string, RegistryEntry>();
 
 function runtimeScopeKey(runtimeScope?: string): string {
@@ -199,7 +212,13 @@ export async function readSessionMessagePage(
   };
 }
 
-function reportTelemetry(sessionId: string, event: SessionSyncTelemetryEvent): void {
+/** Silent unless a developer sets `localStorage['kortix:debug']`. */
+export function reportTelemetry(sessionId: string, event: SessionSyncTelemetryEvent): void {
+  try {
+    if (!globalThis.localStorage?.getItem('kortix:debug')) return;
+  } catch {
+    return;
+  }
   console.debug('[session-sync]', { sessionId, ...event });
 }
 
@@ -241,14 +260,41 @@ function createController(sessionId: string, key: string): SessionSyncController
 
 function evictInactiveControllers(protectedKey?: string): void {
   if (controllers.size <= MAX_CONTROLLERS) return;
+  const now = Date.now();
   const inactive = [...controllers.entries()]
-    .filter(([key, entry]) => entry.consumers === 0 && key !== protectedKey)
+    .filter(
+      ([key, entry]) =>
+        entry.consumers === 0 &&
+        key !== protectedKey &&
+        now - entry.lastUsedAt > IDLE_BEFORE_EVICT_MS,
+    )
     .sort((a, b) => a[1].lastUsedAt - b[1].lastUsedAt);
   for (const [key, entry] of inactive) {
     entry.controller.destroy();
     controllers.delete(key);
     if (controllers.size <= MAX_CONTROLLERS) return;
   }
+}
+
+let evictionTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * One pending pass that evicts what has been idle past the hold, when nothing else calls the
+ * registry. A pass that leaves overflow still inside the hold re-arms for when the oldest of it
+ * leaves the hold.
+ */
+function scheduleEviction(delayMs = IDLE_BEFORE_EVICT_MS + 1): void {
+  if (evictionTimer !== undefined) return;
+  evictionTimer = setTimeout(() => {
+    evictionTimer = undefined;
+    evictInactiveControllers();
+    if (controllers.size <= MAX_CONTROLLERS) return;
+    const idleSince = Math.min(
+      ...[...controllers.values()].filter((entry) => entry.consumers === 0).map((entry) => entry.lastUsedAt),
+    );
+    if (Number.isFinite(idleSince)) scheduleEviction(Math.max(1, idleSince + IDLE_BEFORE_EVICT_MS + 1 - Date.now()));
+  }, delayMs);
+  (evictionTimer as { unref?: () => void }).unref?.();
 }
 
 function getOrCreateRegistryEntry(
@@ -337,7 +383,10 @@ export function retainSessionSyncController(sessionId: string, runtimeScope?: st
     if (!current || current.controller !== controller) return;
     current.consumers = Math.max(0, current.consumers - 1);
     current.lastUsedAt = Date.now();
-    if (current.consumers === 0) controller.setBusy(false);
+    if (current.consumers === 0) {
+      controller.setBusy(false);
+      scheduleEviction();
+    }
     evictInactiveControllers();
   };
 }
@@ -379,12 +428,77 @@ export async function loadSessionRuntimeStatus(
   return result.data[sessionId] ?? ({ type: 'idle' } as SessionStatus);
 }
 
+/** @deprecated Reads the runtime's v1 messages. Use `loadSessionExportMessages` (the session log first) or `getSessionLogPage`. Removed in the next major. */
 export function loadSessionTranscriptMessages(
   sessionId: string,
 ): Promise<SessionSyncPage['messages']> {
   return loadCompleteSessionHistory((request) =>
     readSessionMessagePage(getClient(), sessionId, request),
   );
+}
+
+/** The largest page the log route serves. */
+const SESSION_LOG_EXPORT_PAGE_LIMIT = 500;
+
+/**
+ * Every message of runtime session `runtimeSessionId`'s thread of a v2 session, oldest first,
+ * as v1 rows (`toV1`): the messages `state` holds (a page, the streamed turn), then every older
+ * page of `GET …/log?thread=&before_seq=`. Read into a copy: the store's window is not widened.
+ * Throws when the log names no such thread or a page fails.
+ */
+async function loadSessionLogExportRows(
+  projectId: string,
+  sessionId: string,
+  runtimeSessionId: string,
+  state: SessionLogState,
+): Promise<SessionSyncPage['messages']> {
+  const thread = sessionLogThreadIdOf(state, runtimeSessionId);
+  if (!thread) throw new Error(`The session log has no thread ${runtimeSessionId}`);
+  while (state.older[thread] !== false) {
+    const first = state.messages[thread]?.[0]?.seq;
+    const page = await getSessionLogPage(projectId, sessionId, { thread, before_seq: first, limit: SESSION_LOG_EXPORT_PAGE_LIMIT });
+    if (page?.thread_id !== thread) throw new Error(`The session log has no page of thread ${thread}`);
+    state = applySessionLogPage(state, page, first);
+    // A page that reaches no further back ends the walk.
+    const reached = state.messages[thread]?.[0]?.seq;
+    if (reached === undefined || (first !== undefined && reached >= first)) break;
+  }
+  return sessionLogRowsFor({ [sessionId]: state }, runtimeSessionId, []);
+}
+
+/**
+ * Every message of a session for an export, oldest first. The session log first: the log the
+ * store holds for `kortixSessionScope` (v2), else the log's newest page read from the API. The
+ * export is then the log's thread of `sessionId`, every page of it, and nothing else is read.
+ * A 404 coded `session_log_missing` (a new session) leaves the runtime alone: its history, or
+ * nothing. Only when the log answers a 404 without that code or an invalid page (a server older
+ * than the log) does it read v1: while the computer runs, the runtime's whole history;
+ * when the runtime cannot answer (asleep, stopped, failed) or answers empty, the v1 saved copy
+ * (deprecated), every window of it. `kortixSessionScope` (`projectId/sessionId`) names the
+ * session; without it only the runtime is read, and a runtime failure throws.
+ */
+export async function loadSessionExportMessages(
+  sessionId: string,
+  kortixSessionScope?: string,
+): Promise<SessionSyncPage['messages']> {
+  const saved = parseKortixSessionScope(kortixSessionScope);
+  let log = saved ? useSyncStore.getState().sessionLogs[saved.sessionId] : undefined;
+  // The API serves the log and the session has none yet: only the runtime can hold messages.
+  let missing = false;
+  if (saved && !log && loadSessionLogPage) {
+    const page = await readSessionLogAnswer(loadSessionLogPage, saved.projectId, saved.sessionId, { limit: SESSION_LOG_EXPORT_PAGE_LIMIT });
+    if (page === 'missing') missing = true;
+    else if (page) log = applySessionLogPage(EMPTY_SESSION_LOG_STATE, page);
+  }
+  if (saved && log) return loadSessionLogExportRows(saved.projectId, saved.sessionId, sessionId, log);
+  let live: SessionSyncPage['messages'] = [];
+  try {
+    live = await loadSessionTranscriptMessages(sessionId);
+  } catch (error) {
+    if (!saved) throw error;
+  }
+  if (live.length > 0 || !saved || missing) return live;
+  return loadSavedSessionTranscriptMessages(saved);
 }
 
 /**
@@ -430,6 +544,8 @@ export function noteSessionSyncEvent(event: {
 export function resetSessionSyncControllers(): void {
   for (const entry of controllers.values()) entry.controller.destroy();
   controllers.clear();
+  clearTimeout(evictionTimer);
+  evictionTimer = undefined;
 }
 
 /** Retire controllers for one wire id after a different sandbox claims it. */

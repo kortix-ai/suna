@@ -4,6 +4,7 @@ import {
   __resetAuthTokenCacheForTests,
   __setFetchTokenForTests,
   getSupabaseAccessToken,
+  kortixGetToken,
   setBootstrapAuthToken,
   setCachedAuthToken,
 } from './auth-token';
@@ -191,5 +192,46 @@ describe('getSupabaseAccessToken: stale in-flight fetch vs. a later invalidation
     await expect(first).resolves.toBe('shared-token');
     await expect(second).resolves.toBe('shared-token');
     expect(fetchCount).toBe(1);
+  });
+});
+
+describe('401 recovery: the SDK getter forces a fresh token', () => {
+  test('invalidate(rejected) makes the next read a forced refresh, not the cached token', async () => {
+    const forced: boolean[] = [];
+    let n = 0;
+    __setFetchTokenForTests(async (force) => {
+      forced.push(force);
+      return `tok${++n}`;
+    });
+    expect(await kortixGetToken()).toBe('tok1');
+    kortixGetToken.invalidate('tok1');
+    expect(await kortixGetToken()).toBe('tok2');
+    expect(forced).toEqual([false, true]);
+  });
+
+  test('parallel 401s on one token cause one forced refresh (single flight)', async () => {
+    const forced: boolean[] = [];
+    let n = 0;
+    __setFetchTokenForTests(async (force) => {
+      forced.push(force);
+      await new Promise((r) => setTimeout(r, 5));
+      return `tok${++n}`;
+    });
+    await kortixGetToken();
+    kortixGetToken.invalidate('tok1');
+    const first = kortixGetToken();
+    kortixGetToken.invalidate('tok1');
+    const second = kortixGetToken();
+    expect(await Promise.all([first, second])).toEqual(['tok2', 'tok2']);
+    expect(forced).toEqual([false, true]);
+  });
+
+  test('a token already replaced is not invalidated again', async () => {
+    let n = 0;
+    __setFetchTokenForTests(async () => `tok${++n}`);
+    await kortixGetToken();
+    kortixGetToken.invalidate('stale-older-token');
+    expect(await kortixGetToken()).toBe('tok1');
+    expect(n).toBe(1);
   });
 });

@@ -4,7 +4,8 @@
  * `getAccountGitHubInstallation(accountId, null)` returns the first row of the
  * list, so an unordered select makes "this account's GitHub connection" a
  * property of the heap: the same request can resolve to a different connection
- * between two calls, and a repo create can land under the wrong one.
+ * between two calls, and a repo create can land under the wrong one. The order
+ * is newest-first so a retired connection can never be the default.
  *
  * The cross-account query must also stay a COUNT. Naming the other accounts
  * that hold an installation would leak one tenant's name into another
@@ -20,10 +21,14 @@ import {
 describe('accountGitHubInstallationsQuery', () => {
   const rendered = accountGitHubInstallationsQuery('account-1').toSQL().sql;
 
-  test('orders by created_at, then installation_id', () => {
+  // NEWEST first. A reconnect mints a new installation id for the same owner
+  // and the retired one answers 404 on `/access_tokens`; oldest-first made that
+  // dead row the default connection on `/new`, so a user who had just
+  // reconnected was told to reconnect (verified on prod 2026-09-25).
+  test('orders by created_at, then installation_id, newest first', () => {
     expect(rendered).toContain(
-      'order by "kortix"."account_github_installations"."created_at" asc, ' +
-        '"kortix"."account_github_installations"."installation_id" asc',
+      'order by "kortix"."account_github_installations"."created_at" desc, ' +
+        '"kortix"."account_github_installations"."installation_id" desc',
     );
   });
 

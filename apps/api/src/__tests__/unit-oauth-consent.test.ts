@@ -73,7 +73,11 @@ mock.module('../config', () => ({
   config: { FRONTEND_URL: 'https://app.example', KORTIX_URL: 'https://api.example', API_KEY_SECRET: 'test-secret' },
 }));
 
-mock.module('../shared/db', () => ({ db: fake.db }));
+// Spread the real module: a wholesale stub drops every export another importer
+// in the graph needs (#8006 added one), and bun reports it as an unhandled
+// `Export named ... not found` between tests.
+const realDb = await import('../shared/db');
+mock.module('../shared/db', () => ({ ...realDb, db: fake.db }));
 
 const { oauthApp } = await import('../oauth');
 
@@ -223,10 +227,53 @@ describe('OAuth authorization request persistence + consent', () => {
     expect((await metadata.json()).remembered).toBe(false);
   });
 
-  test('a scope the client was not registered for is invalid_scope', async () => {
+  test('a known scope the client was not registered for redirects back with error=invalid_scope and the state (RFC 6749 4.1.2.1)', async () => {
+    const res = await createApp().request(authRequestUrl('profile email'));
+    expect(res.status).toBe(302);
+    const back = new URL(res.headers.get('location')!);
+    expect(back.origin + back.pathname).toBe('https://client.example/callback');
+    expect(back.searchParams.get('error')).toBe('invalid_scope');
+    expect(back.searchParams.get('error_description')).toBeTruthy();
+    expect(back.searchParams.get('state')).toBe('state_abc');
+    expect(pendingRequests).toHaveLength(0);
+  });
+
+  test('unknown scopes (openid, offline_access, mcp:tools) are ignored, not refused', async () => {
+    const res = await createApp().request(authRequestUrl('openid offline_access kortix mcp:tools'));
+    expect(res.status).toBe(302);
+    expect(pendingRequests[0].scopes).toEqual(['kortix']);
+  });
+
+  test('only unknown scopes, or no scope and no resource: the client registered scopes apply', async () => {
     const app = createApp();
-    const res = await app.request(authRequestUrl('profile email'));
+    expect((await app.request(authRequestUrl('offline_access'))).status).toBe(302);
+    expect(pendingRequests[0].scopes).toEqual(['profile', 'kortix']);
+    expect((await app.request(authRequestUrl(''))).status).toBe(302);
+    expect(pendingRequests[1].scopes).toEqual(['profile', 'kortix']);
+  });
+
+  test('a foreign resource is invalid_target; the MCP URL and the API origin are accepted', async () => {
+    const app = createApp();
+    const withResource = (resource: string) => `${authRequestUrl()}&resource=${encodeURIComponent(resource)}`;
+    const evil = await app.request(withResource('https://evil.example/mcp'));
+    expect(evil.status).toBe(302);
+    expect(new URL(evil.headers.get('location')!).searchParams.get('error')).toBe('invalid_target');
+    expect(pendingRequests).toHaveLength(0);
+    for (const ok of ['https://api.example/v1/mcp', 'https://api.example', 'https://api.example/']) {
+      const res = await app.request(withResource(ok));
+      expect(new URL(res.headers.get('location')!).pathname).toBe('/oauth/authorize');
+    }
+  });
+
+  test('a bad code_challenge_method with a valid redirect_uri redirects with error=invalid_request', async () => {
+    const res = await createApp().request(authRequestUrl().replace('code_challenge_method=S256', 'code_challenge_method=plain'));
+    expect(res.status).toBe(302);
+    expect(new URL(res.headers.get('location')!).searchParams.get('error')).toBe('invalid_request');
+  });
+
+  test('an unregistered redirect_uri is never redirected to: 400 JSON', async () => {
+    const res = await createApp().request(authRequestUrl().replace('client.example', 'evil.example'));
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe('invalid_scope');
+    expect((await res.json()).error).toBe('invalid_request');
   });
 });

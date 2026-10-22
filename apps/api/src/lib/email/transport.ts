@@ -28,10 +28,21 @@ import type {
   ResolvedEmailMessage,
 } from './types';
 
-export type { EmailAddress, EmailMessage, EmailProvider, EmailSendResult } from './types';
-export { closeSmtpTransports } from './providers/smtp';
+export type { EmailSendResult } from './types';
 
 const FALLBACK_FROM: EmailAddress = { email: 'noreply@kortix.com', name: 'Kortix' };
+
+// RFC 2606 / RFC 6761 names have no mailbox. Test suites sign up and invite
+// such addresses on deployed stacks, and relaying them through a real provider
+// only produced SES bounces (~45 a day from staging in 2026-09). Local
+// catchers (mailpit, smtp) still receive them: local flows read those inboxes.
+const RESERVED_DOMAIN = /(^|\.)(test|example|invalid|localhost|example\.(com|net|org))$/i;
+const RELAYS = new Set<EmailProvider>(['ses', 'resend', 'mailtrap']);
+
+function isReservedRecipient(address: string): boolean {
+  const domain = address.slice(address.lastIndexOf('@') + 1).replace(/>$/, '').trim();
+  return RESERVED_DOMAIN.test(domain);
+}
 
 let loggedUrlErrors = '';
 
@@ -165,18 +176,8 @@ function hasAwsWorkloadIdentity(): boolean {
   );
 }
 
-/** Providers that will be attempted, in order. Empty = no email delivery. */
-export function configuredEmailProviders(): EmailProvider[] {
-  return resolveEmailChain().targets.map((target) => target.kind);
-}
-
 export function isEmailConfigured(): boolean {
   return resolveEmailChain().targets.length > 0;
-}
-
-/** The address every email is sent from, after EMAIL_FROM / legacy fallback. */
-export function emailSender(): EmailAddress {
-  return resolveEmailChain().from;
 }
 
 /** Operator-facing description of the chain, safe to log (no credentials). */
@@ -226,9 +227,14 @@ export async function sendEmail(msg: EmailMessage): Promise<EmailSendResult> {
 
   const variants = applyLegacyResendSenderOverride(resolve(msg, from), targets);
 
-  let lastFailure: EmailSendResult | null = null;
+  let lastFailure: EmailSendResult = { ok: false, skipped: true, reason: 'reserved_recipient' };
   for (const target of targets) {
-    const resolved = target.kind === 'resend' ? variants.resend : variants.default;
+    let resolved = target.kind === 'resend' ? variants.resend : variants.default;
+    if (RELAYS.has(target.kind)) {
+      const to = resolved.to.filter((address) => !isReservedRecipient(address));
+      if (to.length === 0) continue;
+      resolved = { ...resolved, to };
+    }
     let result: EmailSendResult;
     try {
       result = await dispatch(resolved, target);
@@ -241,7 +247,7 @@ export async function sendEmail(msg: EmailMessage): Promise<EmailSendResult> {
     );
     lastFailure = result;
   }
-  return lastFailure as EmailSendResult;
+  return lastFailure;
 }
 
 /**

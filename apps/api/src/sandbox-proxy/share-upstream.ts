@@ -1,9 +1,7 @@
-/**
- * The body the sandbox daemon returns for a `/kortix/*` path it does not serve
- * (kortix-sandbox-agent-server `proxy.ts`). Current daemons ship no share
- * routes, so `/kortix/share` answers this.
- */
-export const UNKNOWN_DAEMON_ROUTE_ERROR = 'unknown kortix route';
+import { UNKNOWN_DAEMON_ROUTE_ERROR } from '@kortix/api-contract/runtime-relay';
+
+// Current daemons ship no share routes, so `/kortix/share` answers this.
+export { UNKNOWN_DAEMON_ROUTE_ERROR };
 
 /**
  * Map a daemon share answer to the `/v1/p/share` answer. A daemon without share

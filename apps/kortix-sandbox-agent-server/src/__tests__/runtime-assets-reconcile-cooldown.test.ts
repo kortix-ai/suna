@@ -6,14 +6,21 @@
 // fixes the respawn frequency itself; `recentlyFullyConverged` is the
 // defense-in-depth half here: a converged pass is trusted for
 // `RECONCILE_COOLDOWN_MS` so a burst of triggers costs at most one real pass.
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import {
   __resetReconcileCooldownForTests,
   __setConvergenceTimestampForTests,
   noteRuntimeConvergence,
   recentlyFullyConverged,
   type RuntimeAssetsResult,
-} from '../runtime-assets'
+  registerHarnessAssets,
+  resetHarnessAssetsForTests,
+} from '@/services/runtime-assets/runtime-assets'
+import { resolveHarness } from '@/harness/harness'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 function converged(overrides: Partial<RuntimeAssetsResult> = {}): RuntimeAssetsResult {
   return { cli: 'current', skills: 'current', build: 1, ...overrides }

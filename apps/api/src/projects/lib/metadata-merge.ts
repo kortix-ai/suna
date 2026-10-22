@@ -2,7 +2,7 @@
  * SQL-side ATOMIC merge helpers for `projects.metadata` (FIX-J).
  *
  * The provider-routing pin lives in `projects.metadata` (`default_sandbox_provider`
- * + `active_sandbox_external_template_id`, see provider-transition-store.ts). The
+ * + `active_sandbox_external_template_id`, see provider-transition-routing.ts). The
  * pin's OWN writers are fenced (FOR UPDATE + generation/lease-epoch CAS), but
  * EVERY other `projects.metadata` writer used to read the whole jsonb object into
  * JS, mutate it, and `UPDATE ... SET metadata = <whole object>`. With no lock a
@@ -23,7 +23,7 @@
  * re-read + merge the CURRENT nested value in-SQL so nested writes are atomic too.
  * The top-level namespaces of every writer are DISJOINT (audited: default_agent,
  * triggers_paused, onboarding_completed_at, experimental, meet, default_sandbox_slug,
- * icon, icon_glyph vs. the pin's default_sandbox_provider / active_sandbox_external_template_id /
+ * icon, icon_glyph, default_reasoning_effort vs. the pin's default_sandbox_provider / active_sandbox_external_template_id /
  * active_sandbox_snapshot_name / sandbox_provider_transition), so a shallow merge
  * already protects the pin; the nested helpers protect each nested key against
  * self-concurrency.

@@ -1,3 +1,5 @@
+import { __setManagedLineupForTest } from '../models/managed-models';
+import { TEST_MANAGED_LINEUP } from '../../__tests__/fixtures/managed-lineup';
 import { describe, expect, test } from 'bun:test';
 import {
   chooseEffectiveAgent,
@@ -58,6 +60,12 @@ describe('chooseEffectiveModel', () => {
       chooseEffectiveModel({ projectDefault: 'anthropic/claude-sonnet-4.6', freeModelsOnly: true }),
     ).toEqual({ model: 'anthropic/claude-sonnet-4.6', source: 'project' });
   });
+
+  test('free tier: the platform default managed model is dropped too', () => {
+    const platform = 'deepseek-v4.1-flash';
+    expect(chooseEffectiveModel({ accountDefault: platform, freeModelsOnly: true })).toEqual({ model: null, source: 'platform' });
+    expect(chooseEffectiveModel({ projectDefault: `kortix/${platform}`, freeModelsOnly: true })).toEqual({ model: null, source: 'platform' });
+  });
 });
 
 describe('toWireModel / toOpencodeModelRef', () => {
@@ -67,17 +75,19 @@ describe('toWireModel / toOpencodeModelRef', () => {
     expect(toWireModel('glm-5.3-flash')).toBe('glm-5.3-flash');
   });
 
-  test('maps stored Morph-prefixed managed ids to the new Kortix ids', () => {
-    expect(toWireModel('morph-dsv41flash')).toBe('deepseek-v4.1-flash');
-    expect(toWireModel('kortix/morph-kimik3')).toBe('kimi-k3');
-    expect(toOpencodeModelRef('kortix/morph-kimik3-fast')).toBe('kortix/kimi-k3-fast');
-    expect(toWireModel('morph-dsv4flash')).toBe('deepseek-v4-flash-0731');
-    expect(toWireModel('deepseek-v4-flash')).toBe('deepseek-v4-flash-0731');
+  // A retired stored id becomes the first model Platinum lists (here the
+  // fixture lineup's first), whatever its old name was.
+  test('maps retired managed ids to the first model in the live lineup', () => {
+    __setManagedLineupForTest(TEST_MANAGED_LINEUP);
+    const first = TEST_MANAGED_LINEUP[0]!.id;
+    expect(toWireModel('morph-dsv41flash')).toBe(first);
+    expect(toWireModel('kortix/morph-kimik3')).toBe(first);
+    expect(toOpencodeModelRef('kortix/morph-kimik3-fast')).toBe(`kortix/${first}`);
+    expect(toWireModel('deepseek-v4-flash')).toBe(first);
   });
 
   test('puts every gateway model under the kortix OpenCode provider', () => {
     expect(toOpencodeModelRef('glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
-    expect(toOpencodeModelRef('deepseek-v4-flash')).toBe('kortix/deepseek-v4-flash-0731');
     expect(toOpencodeModelRef('claude-opus-4.8')).toBe('kortix/claude-opus-4.8');
     expect(toOpencodeModelRef('kortix/glm-5.3-flash')).toBe('kortix/glm-5.3-flash');
     expect(toOpencodeModelRef('anthropic/claude-sonnet-4.6')).toBe(

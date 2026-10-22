@@ -3,7 +3,9 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as tar from 'tar';
-import { archiveAppDirectory, loadManifestAppDefaults, readAppArchive } from './apps';
+import type { AppDeployment } from '@kortix/sdk';
+import { archiveAppDirectory, loadManifestAppDefaults, readAppArchive } from './apps-deploy';
+import { resolveDeploymentTarget } from './apps';
 
 const temporaryRoots: string[] = [];
 
@@ -88,5 +90,23 @@ describe('Kortix Apps archive packaging', () => {
         secrets: { DATABASE_URL: 'database-primary' },
       },
     });
+  });
+});
+
+describe('kortix apps delete --deployment target', () => {
+  const deployments = [
+    { deployment_id: '22222222-2222-4222-8222-222222222222', version: 3 },
+    { deployment_id: '11111111-1111-4111-8111-111111111111', version: 2 },
+  ] as AppDeployment[];
+
+  test('accepts the full id, `v3`, and `3` — the forms `kortix apps show` prints', () => {
+    expect(resolveDeploymentTarget(deployments, '11111111-1111-4111-8111-111111111111').version).toBe(2);
+    expect(resolveDeploymentTarget(deployments, 'v3').deployment_id).toBe('22222222-2222-4222-8222-222222222222');
+    expect(resolveDeploymentTarget(deployments, '2').deployment_id).toBe('11111111-1111-4111-8111-111111111111');
+  });
+
+  test('an unknown target names the deployments that do exist', () => {
+    expect(() => resolveDeploymentTarget(deployments, 'v9')).toThrow('Deployment v9 not found (deployments: v3, v2)');
+    expect(() => resolveDeploymentTarget([], 'v1')).toThrow(/^Deployment v1 not found$/);
   });
 });

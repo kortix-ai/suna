@@ -18,11 +18,18 @@ const projectMembers = { __table: 'projectMembers', projectId: 'projectId', user
 
 const state = {
   membership: null as { accountId: string } | null,
+  // When set, the account_members read throws the Postgres 22P02 error a
+  // uuid-typed column raises on a malformed literal — mirroring what prod did
+  // before the resolver guard (KRTX-211: a non-uuid `?account_id=` surfaced as
+  // an opaque 500). The guard must answer 403 before any read happens.
+  membershipThrows: false,
   creditAccount: null as { tier?: string | null; stripeSubscriptionId?: string | null } | null,
   legacyCustomer: null as { id?: string | null; email?: string | null } | null,
   customerSearchResults: [] as Array<{ id: string }>,
   subscriptionResults: {} as Record<string, any[]>,
 };
+
+let membershipReads = 0;
 
 const insertCalls: Array<{ table: string; data: Record<string, unknown> }> = [];
 const upsertCustomerCalls: Array<Record<string, unknown>> = [];
@@ -33,6 +40,12 @@ const stripeListCalls: string[] = [];
 function rowsForTable(table: { __table: string }) {
   switch (table.__table) {
     case 'accountMembers':
+      membershipReads += 1;
+      if (state.membershipThrows) {
+        throw Object.assign(new Error('invalid input syntax for type uuid: "directory"'), {
+          code: '22P02',
+        });
+      }
       return state.membership ? [state.membership] : [];
     case 'creditAccounts':
       return state.creditAccount ? [state.creditAccount] : [];
@@ -103,8 +116,7 @@ mock.module('@kortix/db', () => ({
   accountTokens: {},
   objectPolicies: {},
   permissions: {},
-  // iam/agent-principal.ts (imported by iam/actor.ts) reads the project's
-  // `agent_principal` flag from this table.
+  // Read by modules on the auth import graph.
   projects: {},
   // projects/lib/on-behalf-of.ts (reached through the auth graph) reads the
   // session row to resolve the human an agent session acts for.
@@ -145,25 +157,6 @@ mock.module('../billing/wallet', () => ({
   },
 }));
 
-mock.module('../billing/services/tiers', () => ({
-  MACHINE_CREDIT_BONUS: 5,
-  MINIMUM_CREDIT_FOR_RUN: 0.01,
-  getTier: (tierName: string) => ({
-    name: tierName,
-    monthlyCredits: tierName === 'tier_2_20' ? 20 : tierName === 'tier_6_50' ? 50 : 0,
-  }),
-  getTierByPriceId: (priceId: string) => {
-    if (priceId === 'price_paid_yearly') return { name: 'tier_2_20' };
-    if (priceId === 'price_paid_monthly') return { name: 'tier_6_50' };
-    if (priceId === 'price_free') return { name: 'free' };
-    return null;
-  },
-  getBillingPeriodByPriceId: (priceId: string) => {
-    if (priceId === 'price_paid_yearly') return 'yearly';
-    return 'monthly';
-  },
-}));
-
 mock.module('../shared/stripe', () => ({
   getStripe: () => ({
     customers: {
@@ -180,12 +173,15 @@ mock.module('../shared/stripe', () => ({
   }),
 }));
 
-const { resolveAccountId, resolveScopedAccountId } = await import('../shared/resolve-account');
+const { resolveAccountId } = await import('../shared/resolve-account');
+const { resolveScopedAccountId } = await import('../middleware/resolve-account');
 const { runWithContext } = await import('../lib/request-context');
 const { setImpersonationContext } = await import('../shared/impersonation');
 
 beforeEach(() => {
   state.membership = null;
+  state.membershipThrows = false;
+  membershipReads = 0;
   state.creditAccount = null;
   state.legacyCustomer = null;
   state.customerSearchResults = [];
@@ -210,7 +206,7 @@ describe('resolveAccountId legacy billing sync', () => {
             data: [
               {
                 price: {
-                  id: 'price_paid_yearly',
+                  id: 'price_1ReHB5G6l1KZGqIrD70I1xqM', // a legacy $20 price, billed yearly
                   recurring: { interval: 'year' },
                 },
               },
@@ -231,7 +227,8 @@ describe('resolveAccountId legacy billing sync', () => {
         billingCycleAnchor: undefined,
         commitmentEndDate: null,
         commitmentType: null,
-        tier: 'tier_2_20',
+        tier: 'credits',
+        planMonthlyUsd: '20',
         provider: 'stripe',
         stripeSubscriptionId: 'sub_paid_123',
         stripeSubscriptionStatus: 'active',
@@ -248,7 +245,7 @@ describe('resolveAccountId legacy billing sync', () => {
     expect(walletResets).toContainEqual({
       accountId: 'acct_paid_123',
       amount: 20,
-      description: 'Recovered legacy Stripe subscription: 20 credits',
+      description: 'Recovered legacy Stripe subscription: 2000 credits',
       key: { event: 'legacy_sync:sub_paid_123' },
     });
   });
@@ -319,6 +316,35 @@ describe('resolveAccountId under impersonation', () => {
     state.membership = { accountId: 'acct_someone_else' };
     const accountId = await actingAs(() => resolveAccountId('some-other-user'));
     expect(accountId).toBe('acct_someone_else');
+  });
+});
+
+describe('resolveScopedAccountId with a malformed account_id (KRTX-211)', () => {
+  test('answers the membership miss without touching the database', async () => {
+    // `?account_id=directory` — the observed prod shape (a literal segment a
+    // client aimed at a missing route). Postgres 22P02 must never happen.
+    state.membershipThrows = true;
+    let status: number | undefined;
+    let message: string | undefined;
+    try {
+      await resolveScopedAccountId(fakeRequest('directory'), 'query');
+    } catch (error) {
+      status = (error as { status?: number }).status;
+      message = (error as Error).message;
+    }
+    expect(status).toBe(403);
+    expect(message).toBe('Not a member of the requested account');
+    expect(membershipReads).toBe(0);
+  });
+
+  test('a valid uuid still reaches the membership read', async () => {
+    state.membership = { accountId: '00000000-0000-4000-a000-000000000101' };
+    const accountId = await resolveScopedAccountId(
+      fakeRequest('00000000-0000-4000-a000-000000000101'),
+      'query',
+    );
+    expect(accountId).toBe('00000000-0000-4000-a000-000000000101');
+    expect(membershipReads).toBe(1);
   });
 });
 

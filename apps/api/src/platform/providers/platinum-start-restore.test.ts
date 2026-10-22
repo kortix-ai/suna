@@ -7,7 +7,7 @@
 // with start_timeout. Worse, the client's 20 s default timeout abandoned the
 // /start before even that 202 arrived. Each case below scripts a fake Platinum
 // and asserts the exact conversation start() holds with it.
-import { afterEach, beforeEach, expect, mock, setSystemTime, test } from 'bun:test';
+import { afterEach, beforeEach, expect, mock, setSystemTime, spyOn, test } from 'bun:test';
 import { RUNTIME_RESTART_LEASE_MS } from '../../projects/session-lifecycle/runtime-restart-fence';
 import {
   RUNTIME_WAKE_HARD_MS,
@@ -30,14 +30,18 @@ mock.module('../sandbox-frontend-url', () => ({
   sandboxFrontendBaseUrl: () => 'https://app.example.test',
 }));
 
-type Reply = { status: number; state: string } | 'timeout';
+type Reply = { status: number; state: string; code?: string } | 'timeout';
 let starts: Reply[] = [];
 let gets: Reply[] = [];
 let events: string[] = [];
 /** Fake time each GET costs, for the budget case. */
 let getAdvancesMs = 0;
+let sleep: ReturnType<typeof spyOn>;
 
 beforeEach(() => {
+  // The poll and backoff sleeps (250 ms to 2 s) cost no wall time here: only the
+  // scripted GETs move the clock (getAdvancesMs), so every deadline still holds.
+  sleep = spyOn(Bun, 'sleep').mockImplementation(async () => {});
   events = [];
   getAdvancesMs = 0;
   let startCalls = 0;
@@ -57,13 +61,16 @@ beforeEach(() => {
       throw error;
     }
     events.push(post ? `POST ${reply.status}` : `GET ${reply.state}`);
-    return new Response(JSON.stringify({ id: 'sbx_1', state: reply.state }), {
+    return new Response(JSON.stringify({ id: 'sbx_1', state: reply.state, code: reply.code }), {
       status: reply.status,
       headers: { 'Content-Type': 'application/json' },
     });
   }) as unknown as typeof fetch;
 });
-afterEach(() => setSystemTime());
+afterEach(() => {
+  sleep.mockRestore();
+  setSystemTime();
+});
 
 const provider = async () => new (await import('./platinum')).PlatinumProvider();
 const ok = (state: string) => ({ status: 200, state });
@@ -167,9 +174,17 @@ test("a long restore renews the caller's lease as it goes, and a failed renewal 
   ]);
 }, 15_000);
 
+test('a slow archived restore still starts when it reaches disk after nine minutes', async () => {
+  getAdvancesMs = 110_000;
+  starts = [restoring, ok('starting')];
+  gets = [...Array(5).fill(ok('unarchiving')), ok('stopped')];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 202', ...Array(5).fill('GET unarchiving'), 'GET stopped', 'POST 200']);
+}, 15_000);
+
 test('a restore that outlasts the budget fails the start outright', async () => {
-  // Each poll costs 200 fake seconds, so the 8 min budget runs out on the third.
-  getAdvancesMs = 200_000;
+  // Each poll costs 210 fake seconds, so the budget runs out on the third.
+  getAdvancesMs = 210_000;
   starts = [restoring];
   gets = [ok('unarchiving')];
   const error = await (await provider()).start('sbx_1').then(
@@ -181,6 +196,59 @@ test('a restore that outlasts the budget fails the start outright', async () => 
   // Not "ambiguous": the wake fails now instead of polling a box that cannot
   // boot on this call, and the next wake finds it restored.
   expect(isAmbiguousRuntimeStartError(error)).toBe(false);
+}, 15_000);
+
+// Prod 2026-10-13: a box that had to move hosts sat in `starting` past the
+// 30 s stop grace, and the second caller's start failed with the 409.
+test('a start another caller is running past the stop grace is joined, not failed', async () => {
+  getAdvancesMs = 20_000;
+  starts = [conflict];
+  gets = [...Array(4).fill(ok('starting')), ok('running')];
+  let renewals = 0;
+  await (await provider()).start('sbx_1', { onProgress: async () => void (renewals += 1) });
+  expect(events).toEqual(['POST 409', ...Array(4).fill('GET starting'), 'GET running']);
+  // The waiting caller keeps its lease: on the first read (t = 20 s), then
+  // per 30 s (t = 60 s).
+  expect(renewals).toBe(2);
+}, 15_000);
+
+test('a 202 for a start in flight (or a relocation in progress) is waited on inside start()', async () => {
+  starts = [{ status: 202, state: 'starting', code: 'relocating' }];
+  gets = [ok('starting'), ok('starting'), ok('running')];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 202', 'GET starting', 'GET starting', 'GET running']);
+}, 15_000);
+
+test('a relocation Platinum asks to retry is retried until the box starts', async () => {
+  starts = [
+    { status: 503, state: 'stopped', code: 'relocation_fetch_timeout' },
+    { status: 503, state: 'stopped', code: 'relocation_failed' },
+    ok('starting'),
+  ];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 503', 'POST 503', 'POST 200']);
+}, 15_000);
+
+// The box's own host is full. Capacity frees as other boxes stop, so the wake
+// waits for it instead of parking the session stopped on the first refusal.
+test('a host-saturated 503 is retried until the host has room', async () => {
+  starts = [
+    { status: 503, state: 'stopped', code: 'capacity' },
+    { status: 503, state: 'stopped', code: 'capacity' },
+    ok('starting'),
+  ];
+  await (await provider()).start('sbx_1');
+  expect(events).toEqual(['POST 503', 'POST 503', 'POST 200']);
+}, 15_000);
+
+test('a 503 that is not a retry-later relocation fails the start at once', async () => {
+  starts = [{ status: 503, state: 'stopped', code: 'relocation_snapshot_unavailable' }];
+  const error = await (await provider()).start('sbx_1').then(
+    () => null,
+    (e: unknown) => e,
+  );
+  expect(String(error)).toContain('503');
+  expect(events).toEqual(['POST 503']);
 }, 15_000);
 
 test('the restore budget fits the wake, and renewals outpace every lease they keep', async () => {

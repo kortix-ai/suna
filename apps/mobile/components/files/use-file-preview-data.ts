@@ -12,11 +12,15 @@
 import { useEffect, useState } from 'react';
 
 import type { SandboxFile } from '@/api/types';
-import { blobToDataURL, useOpenCodeFileBlob, useOpenCodeFileContent } from '@/lib/files/hooks';
+import { blobToDataURL, useSandboxFileBlob, useSandboxFileContent } from '@/lib/files/hooks';
 import { previewDecision } from '@/lib/files/preview-limits';
-import { FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
+import {
+  FilePreviewType,
+  getFilePreviewType,
+  previewFetchKind,
+} from '@/lib/files/preview-type';
 
-export interface FilePreviewDataOptions {
+interface FilePreviewDataOptions {
   /**
    * `false`: nothing is fetched. The session's file preview sheet passes it for
    * a file it does not render (a PDF, an Office file, an archive, media).
@@ -32,19 +36,13 @@ export function useFilePreviewData(
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
 
   const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
-  // Binary file types that should be fetched as blob, not text
-  const isBinaryFile =
-    previewType === FilePreviewType.IMAGE ||
-    previewType === FilePreviewType.PDF ||
-    previewType === FilePreviewType.XLSX ||
-    previewType === FilePreviewType.DOCX ||
-    previewType === FilePreviewType.BINARY;
+  // Blobs render from a data URL, text renders as text, and the rest (spread-
+  // sheets, archives) download instead of loading.
+  const kind = previewFetchKind(previewType);
+  const isBinaryFile = kind !== 'text';
   // Size from the directory listing, when it reports one.
   const listingDecision = file ? previewDecision({ size: file.size, previewType }) : 'preview';
-  const rendersBlob =
-    previewType === FilePreviewType.IMAGE ||
-    previewType === FilePreviewType.PDF ||
-    previewType === FilePreviewType.DOCX;
+  const rendersBlob = kind === 'blob';
   const shouldFetchText = enabled && !!file && !isBinaryFile && listingDecision !== 'too-large';
   const shouldFetchBlob = enabled && !!file && rendersBlob && listingDecision !== 'too-large';
 
@@ -53,7 +51,7 @@ export function useFilePreviewData(
     isLoading: isLoadingText,
     error: textError,
     refetch: refetchText,
-  } = useOpenCodeFileContent(
+  } = useSandboxFileContent(
     shouldFetchText ? sandboxUrl : undefined,
     shouldFetchText ? file?.path : undefined
   );
@@ -63,7 +61,7 @@ export function useFilePreviewData(
     isLoading: isLoadingBlob,
     error: blobError,
     refetch: refetchBlob,
-  } = useOpenCodeFileBlob(
+  } = useSandboxFileBlob(
     shouldFetchBlob ? sandboxUrl : undefined,
     shouldFetchBlob ? file?.path : undefined
   );

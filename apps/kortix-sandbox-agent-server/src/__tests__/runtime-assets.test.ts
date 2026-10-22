@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from 'bun:test'
 import { createHash } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, open, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -9,7 +9,22 @@ import {
   reconcileRuntimeAssets,
   resetRuntimeConvergenceForTests,
   runningRuntimeAssets,
-} from '../runtime-assets'
+  __resetVerifiedDigestsForTests,
+  registerHarnessAssets,
+  resetHarnessAssetsForTests,
+} from '@/services/runtime-assets/runtime-assets'
+import {
+  SESSION_TOKEN_DEAD_PROBE_MS,
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  noteControlPlaneResponse,
+  resetSessionTokenHealthForTests,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health'
+import { resolveHarness } from '@/harness/harness'
+
+// Production registers this lookup in main.ts before anything runs.
+beforeAll(() => registerHarnessAssets((cfg) => resolveHarness(cfg).assets))
+afterAll(() => resetHarnessAssetsForTests())
 
 const API_URL = 'https://api.test.invalid'
 const TOKEN = 'kortix_pat_test'
@@ -30,7 +45,12 @@ async function workspace() {
 
 afterEach(async () => {
   resetRuntimeConvergenceForTests()
+  resetSessionTokenHealthForTests()
   while (dirs.length > 0) await rm(dirs.pop() as string, { recursive: true, force: true })
+})
+
+beforeEach(() => {
+  resetSessionTokenHealthForTests()
 })
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex')
@@ -96,6 +116,12 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Own the box: the chunk index hashes whatever these resolve to, and the
+    // defaults reach this host's real agent binary (/usr/local/bin/kortix-agent,
+    // ~100 MB hashed 8 bytes at a time by the stub's chunk size). A CI runner
+    // has neither, so pointing both into the fixture restores that shape.
+    agentStateDir: join(ws.root, 'agent-state'),
+    agentBakedPath: join(ws.root, 'absent-agent'),
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about
@@ -129,6 +155,34 @@ describe('reconcileRuntimeAssets', () => {
     expect(stub.calls).toEqual([])
   })
 
+  test('a successful manifest fetch clears the shared dead-token breaker', async () => {
+    // KRTX-613: the breaker only ever saw failures, so it tripped and never
+    // cleared — a pause gated on it would be permanent. The manifest fetch is
+    // the control-plane call that runs every runtime-truth tick. KRTX-636 skips
+    // it while the breaker is tripped, so it goes out once per probe window,
+    // and its 2xx is the signal that the credential works again.
+    const ws = await workspace()
+    const stub = stubFetch()
+    setSystemTime(new Date('2026-09-28T00:00:00Z'))
+    try {
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, 'Session token is not active')
+      }
+      expect(sessionTokenPresumedDead()).toBe(true)
+
+      await run(ws, stub) // inside the probe window: skipped
+      expect(stub.calls).toEqual([])
+
+      setSystemTime(new Date(Date.now() + SESSION_TOKEN_DEAD_PROBE_MS))
+      await run(ws, stub)
+    } finally {
+      setSystemTime()
+    }
+
+    expect(sessionTokenPresumedDead()).toBe(false)
+    expect(stub.calls.some((url) => url.endsWith('/runtime-assets/manifest'))).toBe(true)
+  })
+
   test('digest mismatch → binary replaced, mode 0755, overlay written', async () => {
     const ws = await workspace()
     await writeFile(ws.cliPath.replace(/\/kortix$/, '/.keep'), '').catch(() => {})
@@ -138,7 +192,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stub)
 
     expect(result).toEqual({ cli: 'updated', skills: 'updated' })
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect((await stat(ws.cliPath)).mode & 0o777).toBe(0o755)
     expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toContain('body v2')
     expect(await readFile(join(ws.skillsDir, 'kortix-cli/SKILL.md'), 'utf8')).toBe('cli skill v2\n')
@@ -335,7 +389,11 @@ describe('reconcileRuntimeAssets', () => {
   test('the digest cache is keyed on size and mtime: a stale mtime forces a real hash and a download', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
-    const stats = await stat(ws.cliPath)
+    // Stat through a handle, not the path: the code under test replaces this
+    // file before the read below, which a path stat-then-read reads as a race.
+    const handle = await open(ws.cliPath)
+    const stats = await handle.stat()
+    await handle.close()
     // The cache claims the on-disk binary IS the manifest build, but for an
     // mtime the file no longer has.
     await Bun.write(
@@ -350,7 +408,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stubFetch())
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
   })
 })
 
@@ -386,7 +444,7 @@ describe('bakeRuntimeAssetsState', () => {
       agentPath: join(ws.root, 'bin', 'kortix-agent'),
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
-      opencodeVersion: '1.18.23',
+      harnessVersion: '1.18.23',
     })
 
     const onDisk = JSON.parse(await readFile(ws.statePath, 'utf8'))
@@ -396,7 +454,8 @@ describe('bakeRuntimeAssetsState', () => {
     expect(state.agent_sha256).toBe(sha('AGENT-BYTES'))
     expect(state.agent_path).toBe(join(ws.root, 'bin', 'kortix-agent'))
     expect(state.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
-    expect(state.opencode_version).toBe('1.18.23')
+    expect(state.harness).toBe('opencode')
+    expect(state.harness_version).toBe('1.18.23')
     // `build` is the epoch of a manifest this box READ. An image build reads
     // none, so claiming one would let the epoch guard refuse a legitimate API.
     expect(state.build).toBeUndefined()
@@ -409,7 +468,7 @@ describe('bakeRuntimeAssetsState', () => {
       agentPath: join(ws.root, 'bin', 'kortix-agent'),
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
-      opencodeVersion: '1.18.23',
+      harnessVersion: '1.18.23',
     })
 
     const stub = stubFetch({
@@ -430,7 +489,7 @@ describe('bakeRuntimeAssetsState', () => {
       agentPath: join(ws.root, 'bin', 'kortix-agent'),
       managedSkillsDir: ws.skillsDir,
       statePath: ws.statePath,
-      opencodeVersion: '1.18.23',
+      harnessVersion: '1.18.23',
     })
 
     const running = await runningRuntimeAssets(ws.statePath)
@@ -438,7 +497,51 @@ describe('bakeRuntimeAssetsState', () => {
     expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
     expect(running.agent_sha256).toBe(sha('AGENT-BYTES'))
     expect(running.managed_skills_hash).toBe(BAKED_SKILLS_HASH)
-    expect(running.opencode_version).toBe('1.18.23')
+    expect(running.harness).toBe('opencode')
+    expect(running.harness_version).toBe('1.18.23')
+  })
+
+  test('a binary replaced after the bake reports the bytes now on disk, not the baked digest', async () => {
+    // The Platinum agent-swap fast path patches the agent binary into the
+    // predecessor's rootfs and keeps its state file. Before this, a fresh box
+    // reported the predecessor's agent digest until its first reconcile, and
+    // session open relaunched a daemon that already ran the right bytes.
+    const ws = await bakedImage()
+    const agentPath = join(ws.root, 'bin', 'kortix-agent')
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath,
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+    __resetVerifiedDigestsForTests()
+
+    await Bun.write(agentPath, 'SWAPPED-IN-AGENT-BYTES')
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.agent_sha256).toBe(sha('SWAPPED-IN-AGENT-BYTES'))
+    expect(running.agent_path).toBe(agentPath)
+    // The CLI was not touched: the baked digest is still the truth.
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+  })
+
+  test('a baked digest whose file is gone cannot prove anything', async () => {
+    const ws = await bakedImage()
+    const agentPath = join(ws.root, 'bin', 'kortix-agent')
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath,
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+    await rm(agentPath)
+
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.agent_sha256).toBeNull()
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
   })
 
   test('a missing baked asset fails the image build instead of shipping a lie', async () => {
@@ -514,7 +617,12 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, oldCli)
     const stub = chunkAwareStub(oldCli, newCli)
 
-    const result = await run(ws, stub as ReturnType<typeof stubFetch>)
+    // The store is the box's previous CLI — not whatever real binaries this
+    // test box happens to run, which a Kortix sandbox image carries and the
+    // 8-byte fixture chunking would hash for minutes.
+    const result = await run(ws, stub as ReturnType<typeof stubFetch>, {
+      localChunkSources: [ws.cliPath],
+    })
 
     expect(result.cli).toBe('updated')
     expect(Buffer.compare(Buffer.from(await readFile(ws.cliPath)), newCli)).toBe(0)
@@ -530,10 +638,10 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
     const stub = stubFetch()
 
-    const result = await run(ws, stub)
+    const result = await run(ws, stub, { localChunkSources: [ws.cliPath] })
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect(stub.calls).toContain(`${API_URL}/v1/runtime-assets/cli`)
   })
 })

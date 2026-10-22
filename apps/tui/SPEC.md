@@ -17,7 +17,7 @@ Status: **experimental**. Not in the release CLI bundle. Run from the repo.
    with raw `fetch`, never imports `@opencode-ai/sdk`, never hand-rolls
    transport. Missing capability → add it to the SDK (load the `sdk` skill:
    TDD, three synchronized edits per new export, no version bump).
-2. One client per host: `createKortix({ backendUrl, getToken, clientSource: 'tui' })`
+2. One client per host: `createKortix({ backendUrl, getToken })`
    created once at boot. Auth is `getToken` only.
 3. A whole session is one hook: `useSession(projectId, sessionId)` from
    `@kortix/sdk/react`. No separate `/start` driver, no separate SSE provider,
@@ -54,7 +54,7 @@ Scripts: `dev` (`bun run src/index.tsx`), `typecheck`, `keymap`, `test`
 `@tsconfig/bun`.
 
 **`@kortix/cli` deep-import allowlist.** `@kortix/cli` publishes no barrel for
-these, so the TUI reaches into its source. That is allowed for exactly five
+these, so the TUI reaches into its source. That is allowed for exactly seven
 modules and nothing else — anything not on this list is either SDK work or a
 new entry here, decided deliberately:
 
@@ -368,15 +368,15 @@ never patch around it in the TUI.
 
 ## 9. Delivery
 
-- Branch `tui`, worktree `../suna-tui`. Draft PR against `main` with the
-  `preview` label on the first commit. Self-merge when verified (AGENTS.md
-  "Default delivery", rule 5).
+- Branch `tui`, worktree `../suna-tui`. PR against `main` once verified in
+  the local box. Self-merge when verified (AGENTS.md "Default delivery",
+  rule 5).
 - Docs: `apps/tui/README.md` and a docs page under
   `apps/web/content/docs/` (follow the timestamp-manifest rule from memory
   `new-docs-page-needs-timestamp-manifest`).
 - Experimental surface: the CLI gets `kortix tui`
-  (`apps/cli/src/commands/tui.ts`). `kortix --help` lists it with the same
-  `Experimental:` blurb prefix `apps` uses; `kortix tui --help` prints the
+  (`apps/cli/src/commands/tui.ts`). `kortix --help` lists it with an
+  `Experimental:` blurb prefix; `kortix tui --help` prints the
   usage, the key summary, the docs URL, the separate install and
   `KORTIX_TUI_BIN`; and one stderr line names it experimental before the
   renderer takes the screen, so it survives in scrollback after the alternate

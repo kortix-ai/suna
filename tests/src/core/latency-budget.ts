@@ -77,7 +77,7 @@ export const WARM_TURN_BUDGET: StageBudget = {
 /**
  * A much looser sanity bound for a target whose API and database are in
  * DIFFERENT AWS regions (dev: API us-west-2, database us-east-2, per
- * `/health`'s `region`/`database_region` fields). Measured server-side via
+ * deployment topology). Measured server-side via
  * `Server-Timing` on dev: the SAME `/accounts/me` query that costs 24ms
  * colocated in prod costs 2084ms split in dev — 45-85x, purely from ~7-11
  * cross-continent round trips at ~100-250ms each, none of it the code path.

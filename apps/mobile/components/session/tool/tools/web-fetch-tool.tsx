@@ -18,6 +18,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { looksLikeHtml, wsDomain } from '@kortix/sdk';
+import { extractReadableHtml, safeHttpUrl } from '@kortix/shared';
 import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { DisclosureContent } from '@/components/session/chain-of-thought';
 import { Text } from '@/components/ui/text';
@@ -26,8 +27,6 @@ import { disclosureKey } from '@/lib/session/disclosure-store';
 import {
   WEB_FETCH_RAW_HTML_CHARS,
   WEB_FETCH_READABLE_CHARS,
-  extractReadableHtml,
-  safeHttpUrl,
   webFetchErrorSummary,
   webFetchTrigger,
 } from '@/lib/session/tools/web-fetch';
@@ -101,12 +100,12 @@ function FetchSourceRow({ url, title, domain }: { url: string; title: string; do
   );
 }
 
-export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function WebFetchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
   const { openExternal } = useToolNavigation();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const url = typeof input.url === 'string' ? input.url : '';
   const format = typeof input.format === 'string' ? input.format : '';
   const domain = useMemo(() => (url ? wsDomain(url) : ''), [url]);
@@ -125,7 +124,7 @@ export function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={<FaviconAvatar value={safeUrl ?? url} />}
       trigger={trigger}
       onSubtitleClick={safeUrl ? openUrl : undefined}

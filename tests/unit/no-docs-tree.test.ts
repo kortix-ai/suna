@@ -1,4 +1,5 @@
-import { execFileSync } from 'node:child_process';
+import { gitOrEmpty } from '../src/fixtures/git-or-empty';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -18,26 +19,31 @@ const CITATION = [
   `(\\.\\./)+${TREE}/`,
 ].join('|');
 
-function git(args: string[]): string[] {
-  try {
-    return execFileSync('git', args, { cwd: REPO_ROOT, encoding: 'utf8' })
-      .split('\n')
-      .filter(Boolean);
-  } catch (error) {
-    // `git grep` exits 1 when nothing matches.
-    if ((error as { status?: number }).status === 1) return [];
-    throw error;
-  }
-}
+const citation = new RegExp(CITATION, 'm');
 
 describe('the top-level documentation tree', () => {
+  it('rejects root and relative citations while allowing nested trees and URLs', () => {
+    for (const text of [
+      `See ${TREE}/runbooks/example.md`,
+      `See ../${TREE}/example.md`,
+      `See ${TREE}/POLICY.md`,
+      `prefix\0${TREE}/plans/example.md`,
+      `prefix\n${TREE}/incidents/example.md`,
+    ])
+      expect(citation.test(text)).toBe(true);
+    for (const text of [
+      `See apps/web/content/${TREE}/example.mdx`,
+      `See https://example.test/${TREE}/runbooks/example.md`,
+    ])
+      expect(citation.test(text)).toBe(false);
+  });
+
   it('tracks no file', () => {
-    expect(git(['ls-files', '--', `${TREE}/`])).toEqual([]);
+    expect(gitOrEmpty(['ls-files', '--', `${TREE}/`])).toEqual([]);
   });
 
   it('is cited by no tracked file', () => {
-    const offenders = git([
-      'grep', '-l', '-E', CITATION, '--',
+    const scope = [
       // Migrations are immutable once applied, so their old comments stay.
       ':!packages/db/migrations/',
       // Rendered into EC2 user_data, which is not in ignore_changes: any edit
@@ -45,7 +51,16 @@ describe('the top-level documentation tree', () => {
       ':!infra/terraform/modules/selfhost-ec2/templates/user-data.sh.tftpl',
       // Its fixture path sits inside a skill's own directory, not the repo root.
       ':!packages/sdk/src/core/turns/tools/skill-helpers.test.ts',
-    ]);
+    ];
+    // V8 checks the candidates without the slow second Git regex scan or unbounded grep output.
+    const candidates = gitOrEmpty(['grep', '-l', '-F', `${TREE}/`, '--', ...scope]);
+    const offenders = candidates.filter((path) =>
+      citation.test(readFileSync(join(REPO_ROOT, path), 'utf8')),
+    );
     expect(offenders).toEqual([]);
-  });
+    // The runner runs this lane concurrently with the DB lane's 192 throwaway
+    // Postgres containers (CI gives each lane its own runner), and the
+    // whole-tree `git grep` then needs more than the 5 s default on a loaded
+    // box. The assertion is unchanged; only the budget is load-tolerant.
+  }, 30_000);
 });

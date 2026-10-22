@@ -196,34 +196,6 @@ describe('kortix marketplace', () => {
     expect(stderr).toBe('');
   });
 
-  test('starts an agent-driven install session for a marketplace item', async () => {
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      expect(url).toBe('https://api.test/v1/projects/project-1/marketplace/install-session');
-      expect(init?.method).toBe('POST');
-      expect(JSON.parse(String(init?.body))).toEqual({ id: 'kortix-starter:pdf' });
-      return new Response(
-        JSON.stringify({ session_id: 'session-install-1', project_id: 'project-1' }),
-        { status: 201, headers: JSON_HEADERS },
-      );
-    }) as typeof fetch;
-
-    const code = await runMarketplace([
-      'install',
-      'kortix-starter:pdf',
-      '--project',
-      'project-1',
-      '--json',
-    ]);
-
-    expect(code).toBe(0);
-    expect(JSON.parse(stdout)).toMatchObject({
-      session_id: 'session-install-1',
-      project_id: 'project-1',
-    });
-    expect(stderr).toBe('');
-  });
-
   test('rejects removed deterministic lifecycle subcommands', async () => {
     for (const sub of ['add', 'status', 'installed', 'updates', 'outdated', 'update', 'remove', 'rm']) {
       const code = await runMarketplace([sub, 'pdf']);
@@ -231,4 +203,21 @@ describe('kortix marketplace', () => {
       expect(stderr).toContain(`unknown subcommand "${sub}"`);
     }
   });
+  test('uninstall refuses to mutate without explicit whole-folder confirmation', async () => {
+    expect(await runMarketplace(['uninstall', 'skills/pdf', '--project', 'project-test'])).toBe(2);
+    expect(stderr).toContain('--yes');
+    expect(requests).toEqual([]);
+  });
+  test('uninstall sends the selected folder, never catalog dependencies', async () => {
+    let body: unknown;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe('https://api.test/v1/projects/project-test/skills/remove');
+      body = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ ok: true, commitSha: 'abc', removed: ['skills/pdf/SKILL.md'] }), { headers: JSON_HEADERS });
+    }) as typeof fetch;
+    expect(await runMarketplace(['uninstall', 'skills/pdf', '--project', 'project-test', '--yes', '--json'])).toBe(0);
+    expect(body).toEqual({ folder: 'skills/pdf', confirm: true });
+    expect(stdout).toContain('skills/pdf/SKILL.md');
+  });
+
 });

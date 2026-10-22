@@ -1,5 +1,5 @@
 output "alb_dns_name" {
-  description = "ALB DNS name behind dev-api-use2-shadow.kortix.com."
+  description = "ALB DNS name behind dev-api-use2.kortix.com."
   value       = module.api.alb_dns_name
 }
 
@@ -31,4 +31,9 @@ output "project_snapshot_bucket" {
 output "database_region" {
   description = "Declared region of this environment's DATABASE_URL secret (see variables.tf). Exists so infra/terraform/scripts/test_region_colocation.py's source variable is a real, tflint-visible usage, and so `terraform output` surfaces it for a human too."
   value       = var.database_region
+}
+
+output "audit_archive_bucket" {
+  description = "Value for AUDIT_ARCHIVE_BUCKET in this environment's non-secret task env overrides."
+  value       = module.audit_archive.bucket_name
 }

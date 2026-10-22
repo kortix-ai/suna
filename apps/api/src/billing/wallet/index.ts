@@ -57,7 +57,7 @@
  */
 import { creditAccounts, creditLedger } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { InsufficientCreditsError } from '../../errors';
+import { InsufficientCreditsError, WalletUnavailableError } from '../../errors';
 import { db } from '../../shared/db';
 import { isDuplicateCreditGrantError } from './duplicate-error';
 import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
@@ -94,6 +94,7 @@ export interface SettleInput extends DebitInput {
 }
 
 export interface ResetInput extends WalletWrite {
+  expiresAt?: string | null;
   key: { readonly event: string };
 }
 
@@ -148,12 +149,6 @@ function requestId(key: WalletKey | null): string | null {
   return key && 'request' in key ? key.request : null;
 }
 
-/** Fire-and-forget: a debit or settlement may have crossed the auto-topup threshold. */
-async function triggerAutoTopup(accountId: string): Promise<void> {
-  const { checkAndTriggerAutoTopup } = await import('../services/auto-topup');
-  void checkAndTriggerAutoTopup(accountId);
-}
-
 async function grant(input: GrantInput): Promise<GrantResult> {
   const event = eventId(input.key);
   const request = requestId(input.key);
@@ -198,8 +193,11 @@ async function debit(input: DebitInput): Promise<DebitResult> {
       p_idempotency_key => ${requestId(input.key)}::text
     )`);
   } catch (error) {
+    // A transport or SQL fault is not a refusal. Do not read the balance back
+    // through the pool that just failed, and do not tell a funded account it
+    // has no credit.
     console.error('[Wallet] debit failed:', error);
-    throw new InsufficientCreditsError(await currentBalance(input.accountId), input.amount, 'Deduction error');
+    throw new WalletUnavailableError();
   }
 
   if (!result.success) {
@@ -210,7 +208,6 @@ async function debit(input: DebitInput): Promise<DebitResult> {
     );
   }
 
-  await triggerAutoTopup(input.accountId);
   return {
     amount: result.amount_deducted ?? input.amount,
     balance: result.new_total ?? 0,
@@ -245,11 +242,17 @@ async function settle(input: SettleInput): Promise<SettleResult> {
   }
 
   if (result.overdraft) {
-    // Alertable: the account consumed more than it held. Bounded by the
-    // admission floor, but the population is worth watching.
-    console.warn(
-      `[Wallet] settlement overdraft account=${input.accountId} amount=${input.amount} balance=${result.new_total}`,
-    );
+    // Alertable once per drain episode: the settlement that FIRST takes the
+    // balance below zero. A box that keeps running on a drained wallet settles
+    // again every few minutes; a warn per repeat turned into 37 lines in one
+    // hour (2026-09-26), and the repeats are the same state, not news. The
+    // typed `overdraft` outcome and the ledger row carry them onward.
+    const balanceBefore = (result.new_total ?? 0) + (result.amount_deducted ?? input.amount);
+    if (balanceBefore >= 0) {
+      console.warn(
+        `[Wallet] settlement overdraft account=${input.accountId} amount=${input.amount} balance=${result.new_total}`,
+      );
+    }
   }
 
   if (input.audit && result.transaction_id) {
@@ -264,7 +267,6 @@ async function settle(input: SettleInput): Promise<SettleResult> {
       });
   }
 
-  await triggerAutoTopup(input.accountId);
   return {
     amount: result.amount_deducted ?? input.amount,
     balance: result.new_total ?? 0,
@@ -282,7 +284,8 @@ async function reset(input: ResetInput): Promise<void> {
       p_account_id => ${input.accountId}::uuid,
       p_new_credits => ${input.amount}::numeric,
       p_description => ${input.description}::text,
-      p_stripe_event_id => ${input.key.event}::text
+      p_stripe_event_id => ${input.key.event}::text,
+      p_expires_at => ${input.expiresAt ?? null}::timestamptz
     )`);
   } catch (error) {
     // The same reset arriving twice is the key doing its job. Not a fault: no

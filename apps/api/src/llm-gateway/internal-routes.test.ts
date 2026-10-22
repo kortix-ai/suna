@@ -4,18 +4,24 @@ import { GatewayResolutionError } from '@kortix/llm-gateway';
 // The internal routes the standalone gateway pod calls, through the real Hono
 // app and the real model catalog. Mocked: resolveCandidates, the servable
 // project catalog (it reads the database), and the hooks' persistence.
+const loggerWarn = mock(() => {});
+// Swapped per-test so a test can hold the trace write open and prove the route
+// does not wait for it.
+const persistGatewayTraceMock = mock<(trace: unknown) => Promise<void>>(async () => {});
 mock.module('../lib/logger', () => ({
   logger: {
-    warn: mock(() => {}),
+    warn: loggerWarn,
     info: mock(() => {}),
     error: mock(() => {}),
     debug: mock(() => {}),
   },
 }));
+let billingAnswer: () => Promise<{ holdUsd?: number } | undefined> = async () => undefined;
+let authorizeAnswer: unknown = { ok: true };
 const actualBillingGate = await import('../billing/services/billing-gate');
 mock.module('../billing/services/billing-gate', () => ({
   ...actualBillingGate,
-  assertBillingActive: async () => undefined,
+  assertBillingActive: async () => billingAnswer(),
 }));
 mock.module('./budgets', () => ({
   checkBudget: async () => ({ exceeded: false }),
@@ -26,8 +32,8 @@ const actualHooks = await import('./hooks');
 mock.module('./hooks', () => ({
   ...actualHooks,
   authenticatePrincipal: async () => null,
-  authorizeRequest: async () => ({ ok: true }),
-  persistGatewayTrace: async () => {},
+  authorizeRequest: async () => authorizeAnswer,
+  persistGatewayTrace: persistGatewayTraceMock,
   recordGatewayUsage: async (event: unknown) => {
     usageEvents.push(event);
   },
@@ -64,8 +70,39 @@ mock.module('./resolution/resolve-candidates', () => ({
   resolveCandidates: resolveCandidatesMock,
 }));
 
+const refreshCalls: unknown[] = [];
+let refreshResult: { access: string; accountId?: string } | null = null;
+const actualCodex = await import('./credentials/codex');
+mock.module('./credentials/codex', () => ({
+  ...actualCodex,
+  refreshRefusedCodexAccountLogin: async (input: unknown) => {
+    refreshCalls.push(input);
+    return refreshResult;
+  },
+}));
+
+let opencodeResult: { access: string } | null = null;
+const actualOpencode = await import('./credentials/opencode-console');
+mock.module('./credentials/opencode-console', () => ({
+  ...actualOpencode,
+  refreshRefusedOpencodeLogin: async () => opencodeResult,
+}));
+
+const cooledDown: Array<[string, string, number]> = [];
+const realAccountResource = await import('../secrets/account-resource');
+mock.module('../secrets/account-resource', () => ({
+  ...realAccountResource,
+  coolDownAccountSecret: async (secretId: string, accountId: string, seconds: number) => {
+    cooledDown.push([secretId, accountId, seconds]);
+  },
+}));
+
 const { createInternalGatewayRoutes } = await import('./internal-routes');
 const { gatewayModelCatalog } = await import('./models/catalog-models');
+// The lineup Platinum Inference would list.
+(await import('./models/managed-models')).__setManagedLineupForTest(
+  (await import('../__tests__/fixtures/managed-lineup')).TEST_MANAGED_LINEUP,
+);
 
 const TOKEN = 'test-internal-token-aaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -210,13 +247,61 @@ describe('POST /models managedOnly', () => {
     expect(Object.keys(full).length).toBeGreaterThan(Object.keys(gatewayModelCatalog(undefined)).length);
   });
 
-  test('a free-tier account gets an empty managed set', async () => {
+  test('a free-tier account gets no managed model, the platform default included', async () => {
     const managed = await models({
       principal: { userId: 'u', accountId: 'a', projectId: 'p', keyId: 'k', freeModelsOnly: true },
       managedOnly: true,
     });
 
-    expect(managed).toEqual({});
+    expect(Object.keys(managed)).toEqual([]);
+  });
+});
+
+describe('POST /trace — best-effort persistence never blocks the response', () => {
+  // Prod, 2026-09-28: the handler awaited the gateway_request_logs write on the
+  // isolated audit pool. Under the per-session sequence-lock convoy that write
+  // waited tens of seconds for one of the pool's 2 backends, so this route's
+  // p95 tracked the pool's queue depth (44 s at the peak). The gateway already
+  // posts the trace fire-and-forget, so the route must answer at once.
+  test('answers 200 while the audit-pool write is still pending', async () => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    persistGatewayTraceMock.mockImplementationOnce(async () => {
+      await held;
+    });
+
+    const res = await Promise.race([
+      app().request('/trace', authedRequest({ trace: { requestId: 'req_held' } })),
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 1_000)),
+    ]);
+    release();
+
+    expect(res).not.toBe('timeout');
+    expect((res as Response).status).toBe(200);
+    expect(await (res as Response).json()).toEqual({ ok: true });
+  });
+
+  test('a failed background write is logged and still answers 200', async () => {
+    loggerWarn.mockClear();
+    persistGatewayTraceMock.mockImplementationOnce(async () => {
+      throw new Error('55P03 canceling statement due to lock timeout');
+    });
+
+    const res = await app().request('/trace', authedRequest({ trace: { requestId: 'req_fail' } }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    // Let the detached rejection handler run before asserting on it.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(loggerWarn).toHaveBeenCalledTimes(1);
+  });
+
+  test('a trace without a request id is still refused', async () => {
+    const res = await app().request('/trace', authedRequest({ trace: { accountId: 'a1' } }));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false });
   });
 });
 
@@ -239,4 +324,199 @@ describe('POST /usage', () => {
     expect(settled.status).toBe(200);
     expect(usageEvents).toHaveLength(1);
   });
+});
+
+describe('POST /refresh-credential', () => {
+  const ACCOUNT = '22222222-2222-4222-8222-222222222222';
+  const PROJECT = '11111111-1111-4111-8111-111111111111';
+  const USER = '33333333-3333-4333-8333-333333333333';
+  const SECRET = '44444444-4444-4444-8444-444444444444';
+  const body = {
+    principal: { accountId: ACCOUNT, projectId: PROJECT, userId: USER, sessionId: 'session-1' },
+    secretId: SECRET,
+    failedKeySha256: 'a'.repeat(64),
+  };
+  const post = (payload: unknown, authorization = `Bearer ${TOKEN}`) =>
+    app().request('http://test/refresh-credential', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization },
+      body: JSON.stringify(payload),
+    });
+
+  test('returns only the new token and its ChatGPT headers', async () => {
+    refreshCalls.length = 0;
+    refreshResult = { access: 'fresh-access', accountId: 'chatgpt-acct' };
+    const res = await post(body);
+    expect(res.status).toBe(200);
+    const { descriptor } = (await res.json()) as { descriptor: Record<string, unknown> };
+    expect(Object.keys(descriptor).sort()).toEqual(['apiKey', 'headers']);
+    expect(descriptor).toMatchObject({ apiKey: 'fresh-access', headers: { 'ChatGPT-Account-ID': 'chatgpt-acct', session_id: expect.any(String) } });
+    expect(refreshCalls).toEqual([{
+      projectId: PROJECT, accountId: ACCOUNT, userId: USER, sessionId: 'session-1', secretId: SECRET, failedKeySha256: 'a'.repeat(64),
+    }]);
+  });
+
+  test('an OpenCode Console login returns only its new token', async () => {
+    refreshCalls.length = 0;
+    opencodeResult = { access: 'fresh-console-token' };
+    const res = await post(body);
+    opencodeResult = null;
+    expect(await res.json()).toEqual({ descriptor: { apiKey: 'fresh-console-token' } });
+    expect(refreshCalls).toEqual([]);
+  });
+
+  test('a login that cannot be refreshed answers null', async () => {
+    refreshResult = null;
+    const res = await post(body);
+    expect(await res.json()).toEqual({ descriptor: null });
+  });
+
+  test('refuses a malformed request and a caller without the internal token', async () => {
+    refreshCalls.length = 0;
+    expect((await post({ ...body, failedKeySha256: 'not-a-digest' })).status).toBe(400);
+    expect((await post({ ...body, principal: { accountId: ACCOUNT, userId: USER } })).status).toBe(400);
+    expect((await post(body, 'Bearer wrong')).status).toBe(401);
+    expect(refreshCalls).toEqual([]);
+  });
+});
+
+describe('POST /pool-rate-limit', () => {
+  const ACCOUNT = '22222222-2222-4222-8222-222222222222';
+  const SECRET = '44444444-4444-4444-8444-444444444444';
+  const SESSION_PRINCIPAL = { accountId: ACCOUNT, sessionId: '55555555-5555-4555-8555-555555555555' };
+  const post = (seconds: number, principal: object = SESSION_PRINCIPAL) =>
+    app().request('http://test/pool-rate-limit', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+      body: JSON.stringify({ principal, secretId: SECRET, seconds }),
+    });
+
+  // The gateway rests a ChatGPT account until its plan limit resets (days).
+  // A 60 s cap here answered 400, and no rest was recorded at all.
+  test('records a rest of days for a usage limit, and refuses one past a week and a day', async () => {
+    cooledDown.length = 0;
+    expect((await post(414_374)).status).toBe(200);
+    expect(cooledDown).toEqual([[SECRET, ACCOUNT, 414_374]]);
+    expect((await post(8 * 24 * 60 * 60 + 1)).status).toBe(400);
+    expect((await post(0)).status).toBe(400);
+    expect(cooledDown).toHaveLength(1);
+  });
+
+  // KRTX-2417: a gateway API key has no session. The route required one, so it
+  // answered 400, recorded no rest, and every next request tried the
+  // exhausted account first again.
+  test('records a rest for a gateway API key, which has no session', async () => {
+    cooledDown.length = 0;
+    const apiKeyPrincipal = {
+      accountId: ACCOUNT, userId: '66666666-6666-4666-8666-666666666666',
+      projectId: '77777777-7777-4777-8777-777777777777', keyId: '88888888-8888-4888-8888-888888888888',
+    };
+    expect((await post(414_374, apiKeyPrincipal)).status).toBe(200);
+    expect(cooledDown).toEqual([[SECRET, ACCOUNT, 414_374]]);
+    expect((await post(30, { ...apiKeyPrincipal, accountId: 'not-a-uuid' })).status).toBe(400);
+    expect((await post(30, { sessionId: SESSION_PRINCIPAL.sessionId })).status).toBe(400);
+    expect(cooledDown).toHaveLength(1);
+  });
+});
+
+describe('the /internal edge key, enforced at the origin', () => {
+  const EDGE = 'edge-key-'.padEnd(64, 'e');
+  const call = (headers: Record<string, string>, path = '/budget-check') => {
+    process.env.KORTIX_INTERNAL_EDGE_KEY = EDGE;
+    try {
+      return createInternalGatewayRoutes().request(`http://test${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, ...headers },
+        body: JSON.stringify({ principal: {} }),
+      });
+    } finally {
+      delete process.env.KORTIX_INTERNAL_EDGE_KEY;
+    }
+  };
+
+  // Pentest H-1/M-1: the backend origins skip the api-router Worker, and a
+  // percent-encoded path skipped its raw prefix check. The bearer alone is not enough.
+  test('a caller with the bearer token but no edge key gets 404', async () => {
+    expect((await call({})).status).toBe(404);
+    expect((await call({ 'x-kortix-internal-edge-key': 'nope' })).status).toBe(404);
+  });
+
+  test('the gateway, which sends both, is served', async () => {
+    expect((await call({ 'x-kortix-internal-edge-key': EDGE })).status).not.toBe(404);
+  });
+});
+
+describe('POST /admit — authorize, route, resolve and billing in one call', () => {
+  const principal = { userId: 'u', accountId: 'a', projectId: 'p' };
+  const admit = (body: unknown) => app().request(new Request('http://test/admit', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+    body: JSON.stringify(body),
+  }));
+  const input = { requestedModel: 'auto', requires: { imageInput: false } };
+
+  test('answers the route, the routed model\'s candidates and the wallet hold of a Kortix-billed model', async () => {
+    authorizeAnswer = { ok: true, principal };
+    billingAnswer = async () => ({ holdUsd: 0.01 });
+    const models: string[] = [];
+    resolveCandidatesMock.mockImplementationOnce(async (_p, model) => { models.push(model); return [{ provider: 'kortix', billingMode: 'credits' }]; });
+    const json = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(models).toEqual(['codex/gpt-5.6-sol']);
+    expect(json.admission).toEqual({ ok: true, principal });
+    expect((json.route as { primaryModel: string }).primaryModel).toBe('codex/gpt-5.6-sol');
+    expect(json.candidates).toEqual([{ provider: 'kortix', billingMode: 'credits' }]);
+    expect(json.billing).toEqual({ active: true, holdUsd: 0.01 });
+    expect(Object.keys(json.timing as object).sort()).toEqual(['authorize', 'billing', 'resolve', 'route', 'total']);
+  });
+
+  test('takes no wallet hold for an own-key model, and returns a resolution error in the body', async () => {
+    authorizeAnswer = { ok: true, principal };
+    let held = 0;
+    billingAnswer = async () => { held += 1; return { holdUsd: 0.01 }; };
+    resolveCandidatesMock.mockResolvedValueOnce([{ provider: 'openai', billingMode: 'none' }]);
+    const own = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(own.billing).toBeUndefined();
+    resolveCandidatesMock.mockRejectedValueOnce(new GatewayResolutionError('provider_not_connected', 'Connect it', 'Connect the provider'));
+    const unresolved = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(unresolved.resolutionError).toEqual({ code: 'provider_not_connected', message: 'Connect it', suggestion: 'Connect the provider' });
+    expect(held).toBe(0);
+  });
+
+  test('a denial answers only the admission, and an unexpected resolve failure leaves resolution to the gateway', async () => {
+    authorizeAnswer = { ok: false, status: 402, errorCode: 'budget_exceeded', principal };
+    const { timing, ...denied } = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(denied).toEqual({ admission: authorizeAnswer });
+    // Per-step milliseconds for the gateway's internal latency split.
+    expect(timing).toMatchObject({ authorize: expect.any(Number), total: expect.any(Number) });
+    authorizeAnswer = { ok: true, principal };
+    resolveCandidatesMock.mockRejectedValueOnce(new Error('db down'));
+    const res = await admit({ token: 't', input });
+    expect(res.status).toBe(200);
+    const json = await res.json() as Record<string, unknown>;
+    expect(json.route).toBeDefined();
+    expect('candidates' in json).toBe(false);
+    authorizeAnswer = { ok: true };
+    billingAnswer = async () => undefined;
+  });
+});
+
+test('full discovery labels managed plan access separately from external credentials', async () => {
+  const res = await app().request('/models', authedRequest({
+    principal: { userId: 'u', accountId: 'a', projectId: 'p', freeModelsOnly: true },
+  }));
+  expect(res.status).toBe(200);
+  const { models } = await res.json();
+  expect(models['glm-5.3-flash']).toMatchObject({ availability: 'plan' });
+  expect(models['anthropic/claude-opus-4-8']).toMatchObject({ availability: 'provider' });
+  expect(models['codex/gpt-5.6-sol']).toMatchObject({ availability: 'login' });
+});
+
+test('paid full discovery marks managed access available without claiming external credentials', async () => {
+  const res = await app().request('/models', authedRequest({
+    principal: { userId: 'u', accountId: 'a', projectId: 'p', freeModelsOnly: false },
+  }));
+  const { models } = await res.json();
+  expect(res.status).toBe(200);
+  expect(models['glm-5.3-flash']).toMatchObject({ availability: 'available' });
+  expect(models['anthropic/claude-opus-4-8']).toMatchObject({ availability: 'provider' });
 });

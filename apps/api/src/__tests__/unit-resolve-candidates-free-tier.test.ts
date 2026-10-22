@@ -1,9 +1,12 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // Existing fixtures have no project inference restrictions.
-mock.module('../repositories/project-model-access', () => ({ getProjectModelAccess: async () => ({ disabledProviders: [], disabledModels: [] }) }));
+mock.module('../repositories/project-model-access', () => ({
+  getProjectModelAccess: async () => ({ disabledProviders: [], disabledModels: [] }),
+  getProjectGatewayResolution: async () => ({ access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: false }),
+}));
 mock.module('../feature-flags/for-project', () => ({ projectFeatureFlagEnabled: async () => false }));
-import { accountIsFreeTierForModels as realAccountIsFreeTierForModels } from '../billing/services/tiers';
+import { tierGrantsAllModels } from '../billing/services/tiers';
 
 let billingEnabled = true;
 let accountTier = 'free';
@@ -17,7 +20,6 @@ let managedProviderEnabled = true;
 
 mock.module('../config', () => ({
   SANDBOX_VERSION: 'test',
-  KORTIX_MARKUP: 1.2,
   PLATFORM_FEE_MARKUP: 0.1,
   config: new Proxy(
     {},
@@ -26,8 +28,6 @@ mock.module('../config', () => ({
         if (Object.hasOwn(target, key)) return target[key];
         if (key === 'KORTIX_BILLING_INTERNAL_ENABLED') return billingEnabled;
         if (key === 'KORTIX_MANAGED_PROVIDER_ENABLED') return managedProviderEnabled;
-        if (key === 'LLM_GATEWAY_ENABLED') return true;
-        if (key === 'LLM_GATEWAY_DEFAULT_ENABLED') return false;
         if (key === 'TUNNEL_ENABLED') return false;
         if (key === 'LLM_GATEWAY_BYOK_FALLBACK_MODEL') return 'glm-5.3-flash';
         if (key === 'LLM_GATEWAY_DEFAULT_MODEL') return 'codex/gpt-5.6-sol';
@@ -69,7 +69,7 @@ mock.module('../billing/services/entitlements', () => ({
   // accountTierCalls: in production it reads the same cached tier snapshot as
   // getCachedAccountTier — it is not a second tier resolution.
   accountMayUseManagedModels: async () =>
-    billingEnabled ? !realAccountIsFreeTierForModels(accountTier) : true,
+    billingEnabled ? tierGrantsAllModels(accountTier) : true,
 }));
 
 mock.module('../projects/secrets', () => ({
@@ -109,15 +109,15 @@ mock.module('../llm-gateway/credentials/codex', () => ({
 // below are derived from the same stub — `managedTransportAvailable` is
 // `managedCandidates(...).length > 0` in the real module and the mock must not
 // be able to contradict itself.
-const mockManagedCandidates = (managed: { id: string; upstreamModelId?: string }) => [
+const mockManagedCandidates = (managed: { id: string }) => [
   {
-    provider: 'openrouter',
-    kind: 'openai-chat',
-    baseUrl: 'https://openrouter.ai/api/v1',
+    provider: 'platinum',
+    kind: 'openai-compat',
+    baseUrl: 'https://platinum.example/v1/inference',
     apiKey: 'managed-key',
     billingMode: 'credits',
     markup: 1.2,
-    resolvedModel: managed.upstreamModelId ?? managed.id,
+    resolvedModel: managed.id,
   },
 ];
 
@@ -133,11 +133,11 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
   }),
   livePricing: () => undefined,
   managedCandidates: mockManagedCandidates,
-  // `served-managed-models.ts` imports this to build SERVED_MANAGED_MODELS, and
+  // `served-managed-models.ts` imports this to build the served lineup, and
   // `catalog-models.ts` (which resolve-candidates.ts imports) imports that — so
   // omitting it makes the whole file fail to link with
   // `SyntaxError: Export named 'managedTransportAvailable' not found`.
-  managedTransportAvailable: (managed: { id: string; upstreamModelId?: string }) =>
+  managedTransportAvailable: (managed: { id: string }) =>
     mockManagedCandidates(managed).length > 0,
   // resolve-candidates.ts's Bedrock BYOK branch imports this unconditionally
   // (only CALLS it for kind:'bedrock' candidates, which this file never
@@ -150,6 +150,9 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
 }));
 
 const { resolveCandidates } = await import('../llm-gateway/resolution/resolve-candidates');
+const { TEST_MANAGED_LINEUP: LINEUP } = await import('./fixtures/managed-lineup');
+// The lineup Platinum Inference would list.
+(await import('../llm-gateway/models/managed-models')).__setManagedLineupForTest(LINEUP);
 
 function principal(accountId: string) {
   return {
@@ -171,10 +174,20 @@ describe('resolveCandidates free-tier premium gate', () => {
     managedProviderEnabled = true;
   });
 
-  test('blocks managed premium candidates for free accounts', async () => {
+  test('blocks every managed model for free accounts, the platform default included', async () => {
     accountTier = 'free';
+    for (const model of ['glm-5.3-flash', 'deepseek-v4.1-flash', 'kortix/deepseek-v4.1-flash']) {
+      await expect(resolveCandidates(principal('free-managed'), model)).rejects.toMatchObject({
+        name: 'GatewayResolutionError',
+        code: 'plan_upgrade_required',
+      });
+    }
+  });
+
+  test('blocks managed premium candidates for accounts with no plan', async () => {
+    accountTier = 'none';
     await expect(
-      resolveCandidates(principal('free-managed'), 'glm-5.3-flash'),
+      resolveCandidates(principal('none-managed'), 'glm-5.3-flash'),
     ).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'plan_upgrade_required',
@@ -183,7 +196,7 @@ describe('resolveCandidates free-tier premium gate', () => {
   });
 
   test('allows managed premium candidates for Team accounts', async () => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     const candidates = await resolveCandidates(principal('team-managed'), 'glm-5.3-flash');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('credits');
@@ -194,7 +207,7 @@ describe('resolveCandidates free-tier premium gate', () => {
   });
 
   test('rejects stale raw auto for paid accounts', async () => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     await expect(resolveCandidates(principal('team-auto'), 'auto')).rejects.toMatchObject({
       name: 'GatewayResolutionError',
       code: 'model_not_found',
@@ -224,7 +237,7 @@ describe('resolveCandidates free-tier premium gate', () => {
   });
 
   test('does not charge BYOK or add a managed fallback for Team accounts', async () => {
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     const candidates = await resolveCandidates(principal('team-byok'), 'openai/gpt-4.1');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('none');
@@ -251,7 +264,7 @@ describe('resolveCandidates free-tier premium gate', () => {
 
   test('CLOUD-ONLY gate: blocks an explicitly-named managed model when KORTIX_MANAGED_PROVIDER_ENABLED is off, even for a paid tier', async () => {
     managedProviderEnabled = false;
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     await expect(
       resolveCandidates(principal('self-host-flag-off'), 'glm-5.3-flash'),
     ).rejects.toMatchObject({
@@ -262,7 +275,7 @@ describe('resolveCandidates free-tier premium gate', () => {
 
   test('CLOUD-ONLY gate: a self-host BYOK request gets no managed fallback candidate appended when the flag is off', async () => {
     managedProviderEnabled = false;
-    accountTier = 'per_seat';
+    accountTier = 'credits';
     const candidates = await resolveCandidates(
       principal('self-host-byok-flag-off'),
       'openai/gpt-4.1',
@@ -270,5 +283,48 @@ describe('resolveCandidates free-tier premium gate', () => {
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.billingMode).toBe('none');
     expect(candidates[0]?.markup).toBe(0);
+  });
+});
+
+// Every managed id the catalog serves and retired ids sessions still carry,
+// bare and with the opencode `kortix/` prefix: a new managed model or a
+// retired id cannot open a path for Free (2026-10-19, see the learnings ledger).
+const RETIRED_SAMPLE = ['kimi-k3', 'morph-dsv41flash', 'deepseek-v4-flash-0731'];
+
+describe('no managed id or alias reaches a Free account', () => {
+  const ids = [...LINEUP.map((m) => m.id), ...RETIRED_SAMPLE];
+  const refs = ids.flatMap((id) => [id, `kortix/${id}`]);
+
+  beforeEach(() => {
+    billingEnabled = true;
+    managedProviderEnabled = true;
+  });
+
+  test.each(['free', 'none'])('the %s plan is refused every managed id and alias', async (tier) => {
+    accountTier = tier;
+    expect(refs.length).toBeGreaterThan(2);
+    for (const ref of refs) {
+      const outcome = await resolveCandidates(principal(`sweep-${tier}`), ref).then(
+        () => 'served',
+        (err: { code?: string }) => err.code,
+      );
+      // `model_not_found` is fine (an alias this deployment does not serve);
+      // `served` is the bug.
+      expect({ ref, outcome }).not.toEqual({ ref, outcome: 'served' });
+    }
+  });
+
+  test('a principal flagged freeModelsOnly is refused every managed id and alias', async () => {
+    accountTier = 'credits';
+    for (const ref of refs) {
+      await expect(resolveCandidates({ ...principal('sweep-flag'), freeModelsOnly: true }, ref)).rejects.toBeDefined();
+    }
+  });
+
+  test('control: a paid plan is served the current lineup', async () => {
+    accountTier = 'credits';
+    for (const { id } of LINEUP) {
+      expect((await resolveCandidates(principal('sweep-paid'), id)).length).toBeGreaterThan(0);
+    }
   });
 });

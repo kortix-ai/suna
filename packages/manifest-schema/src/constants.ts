@@ -89,7 +89,13 @@ export function reservedEnvNameReason(name: string): string | null {
   return null;
 }
 
-export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor'] as const;
+export const TRIGGER_TYPES = ['cron', 'webhook', 'monitor', 'event'] as const;
+
+/** Cron/webhook/monitor-only keys: hard-rejected on a `type: event` trigger. */
+export const EVENT_FORBIDDEN_KEYS = [
+  'cron', 'schedule', 'run_at', 'runAt', 'timezone', 'secret_env', 'secretEnv',
+  'run', 'mode', 'interval', 'expect_event_within',
+] as const;
 
 /**
  * A `type: monitor` trigger's shape. `poll` runs `run` every `interval` and
@@ -102,6 +108,14 @@ export const MONITOR_MODES = ['poll', 'stream'] as const;
 export const MONITOR_MIN_INTERVAL_SECONDS = 30;
 /** Floor for `expect_event_within` (the silence watchdog) — the platform bound. */
 export const MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS = 300;
+/** Floor for a cron trigger's `max_lateness` (the misfire bound, KRTX-1743). */
+export const TRIGGER_MIN_MAX_LATENESS_SECONDS = 60;
+/**
+ * A trigger starts at most this many runs in any 60 minutes when its
+ * `max_runs_per_hour` is unset (KRTX-1721). Twice the busiest production
+ * trigger's hour in October 2026; the 60 s cron floor allows exactly this.
+ */
+export const DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR = 60;
 /** Longest `run` command accepted. Bounds a hostile manifest out of the box config. */
 export const MONITOR_RUN_MAX_LENGTH = 1024;
 
@@ -172,7 +186,7 @@ export const CONNECTOR_AUTH_TYPES = [
 /** The exclusive owner model for connections under one connector. */
 export const CONNECTOR_AUTHORIZATION_STRATEGIES = ['project', 'user'] as const;
 /** Platforms a `channel` connector can target — mirrors connectors.ts CHANNEL_PLATFORMS. */
-export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email'] as const;
+export const CHANNEL_PLATFORMS = ['slack', 'teams', 'email', 'telegram'] as const;
 /**
  * Platform-owned slugs and the only provider allowed to use each — mirrors
  * connectors.ts RESERVED_SLUG_PROVIDERS so a user app can't shadow the built-in
@@ -237,6 +251,7 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.trigger.fire',
   'project.gateway.logs.read',
   'project.gateway.spend.read',
+  'project.usage.read',
   'project.gateway.budget.set',
   'project.gateway.keys.manage',
   // IAM v1 per-capability leaves.
@@ -248,8 +263,10 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.command.write',
   'project.file.read',
   'project.file.write',
-  'project.customize.read',
-  'project.customize.write',
+  'project.settings.write',
+  'project.sandbox.write',
+  'project.model.read',
+  'project.model.write',
   'project.gitops.read',
   'project.gitops.push',
   'project.gitops.merge',
@@ -263,9 +280,13 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
   'project.app.read',
   'project.app.write',
   'project.app.deploy',
+  'project.app.admin',
   'project.review.read',
   'project.review.submit',
   'project.review.act',
+  // Rooms: read = list rooms and read messages; write = post, join, leave.
+  'project.room.read',
+  'project.room.write',
   // Minting a project credential. Grantable so a manifest CAN hand it to an
   // agent explicitly, but note the two credential routes refuse an
   // agent-session token outright (projects/routes/secret-delivery.ts) — an agent that could
@@ -285,19 +306,28 @@ export const GRANTABLE_KORTIX_PERMISSIONS: readonly string[] = [
  * deprecation warning by `validateGrantList`.
  */
 /**
- * `kortix_permissions` entries that are still ACCEPTED but are the pre-cutover name
- * for another leaf. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
- * because they were the same capability named twice; a manifest that still
- * lists one keeps validating and is rewritten to the value here when the grant
- * is resolved.
+ * `kortix_permissions` entries that are still ACCEPTED but are the old name for
+ * one or more leaves. Spec §2.4 collapsed `project.cr.*` into the gitops leaves
+ * because they were the same capability named twice; `project.customize.*` was
+ * one leaf for five unrelated topics and split into one leaf per topic. A
+ * manifest that still lists one keeps validating and is rewritten to the leaves
+ * here when the grant is resolved.
  *
  * This is the single source: apps/api's grant canonicalizer imports it rather
  * than keeping a second copy, and the CLI's `validate --scopes` annotates from
  * it. Two hand-written copies of a key table is how they drift.
  */
-export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, string>> = {
-  'project.cr.open': 'project.gitops.push',
-  'project.cr.merge': 'project.gitops.merge',
+export const DEPRECATED_KORTIX_PERMISSION_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  'project.cr.open': ['project.gitops.push'],
+  'project.cr.merge': ['project.gitops.merge'],
+  'project.customize.read': ['project.model.read'],
+  'project.customize.write': [
+    'project.settings.write',
+    'project.sandbox.write',
+    'project.model.read',
+    'project.model.write',
+    'project.agent.write',
+  ],
 };
 
 export const LEGACY_TOLERATED_KORTIX_PERMISSIONS: readonly string[] = [
@@ -362,3 +392,107 @@ export const PI_PACKAGE_NPM_RE = /^npm:(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9
 export const PI_PACKAGE_PATH_RE = /^\.\/(?!.*(^|\/)\.\.(\/|$))[^\s:]+$/;
 /** An npm package name without a version (`pi-web-access`, `@scope/name`): what an agent's `exclude` lists. */
 export const PI_PACKAGE_NAME_RE = /^(@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
+
+// ─── Tools ──────────────────────────────────────────────────────────────────
+
+/** A tool name: what the model calls. Snake case, as every model API accepts. */
+export const TOOL_NAME_RE = /^[a-z][a-z0-9_]{0,63}$/;
+/**
+ * Tools the harnesses implement themselves (OpenCode's and pi's native tool
+ * ids). A project tool cannot take one of these names, nor a `pty_` name
+ * (the shell plugin's). An agent's `tools` access may name them.
+ */
+export const HARNESS_TOOL_NAMES = [
+  'bash',
+  'read',
+  'write',
+  'edit',
+  'apply_patch',
+  'glob',
+  'grep',
+  'list',
+  'task',
+  'question',
+  'todowrite',
+  'webfetch',
+  'websearch',
+  'skill',
+  'lsp',
+  // OpenCode internals: the unknown-tool fallback, code mode, plan mode.
+  'invalid',
+  'execute',
+  'plan_exit',
+] as const;
+/**
+ * The Kortix tools (apps/kortix-sandbox-agent-server `src/services/tools/kortix/`).
+ * A project lists one in `tools:` as `<name>: kortix:<name>`, or replaces it
+ * with its own module under the same name.
+ *
+ * Connector access is the `kortix connectors` CLI, never a built-in tool. The
+ * MCP-era `kortix-connectors_call` / `kortix-connectors_describe` meta-tools
+ * were re-added once (#9902) and removed again; a test pins them out.
+ */
+export const KORTIX_TOOL_NAMES = ['web_search', 'image_search', 'scrape_webpage', 'memory', 'show'] as const;
+/**
+ * Kortix tools that no longer exist. Manifests written while #9902 was live
+ * still name them (the v2 starter, v3 agent excludes). Naming one is
+ * a warning, not an error: no session can load it, so the name has no effect.
+ */
+export const RETIRED_KORTIX_TOOLS: readonly string[] = ['kortix-connectors_call', 'kortix-connectors_describe'];
+/** A `tools:` value that keeps a Kortix tool: `kortix:<name>`. */
+export const KORTIX_TOOL_PREFIX = 'kortix:';
+
+/** The name a `kortix:<name>` value refers to, or null for any other value. */
+export function kortixToolRef(value: unknown): string | null {
+  return typeof value === 'string' && value.startsWith(KORTIX_TOOL_PREFIX) ? value.slice(KORTIX_TOOL_PREFIX.length) : null;
+}
+
+/**
+ * The Kortix tools a project's sessions get. With no `tools` key (`undefined`):
+ * all of them, so a project that never lists them keeps them. With a `tools`
+ * key, even an empty one: only the ones it lists, as `kortix:<name>` or as a
+ * module that replaces the tool.
+ */
+export function selectedKortixTools(tools: unknown): string[] {
+  if (tools === undefined) return [...KORTIX_TOOL_NAMES];
+  const listed = tools && typeof tools === 'object' && !Array.isArray(tools) ? tools : {};
+  return KORTIX_TOOL_NAMES.filter((name) => Object.hasOwn(listed, name));
+}
+
+// ─── kortix_version 3 registries ────────────────────────────────────────────
+
+/** A skill, command or extension name (the Agent Skills name rule). */
+export const REGISTRY_NAME_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+export const REGISTRY_NAME_MAX = 64;
+/**
+ * The Kortix skills (`KORTIX_MANAGED_SKILL_NAMES` in @kortix/starter: the
+ * `kortix-cli` front door plus templates/managed/skills). Every v3 project has
+ * them without a `skills` entry; an agent grants them by name.
+ */
+export const KORTIX_SKILL_NAMES = [
+  'kortix-cli',
+  'kortix-apps',
+  'kortix-computer',
+  'kortix-connectors',
+  'kortix-drives',
+  'kortix-genui',
+  'kortix-goals',
+  'kortix-harness-refinement',
+  'kortix-marketplace',
+  'kortix-memory',
+  'kortix-onboarding',
+  'kortix-rooms',
+  'kortix-slack',
+  'kortix-system',
+  'kortix-teams',
+  'kortix-ui',
+  'kortix-user-memory',
+] as const;
+/** The prefix only Kortix skills use. */
+export const KORTIX_SKILL_PREFIX = 'kortix-';
+/** `agents.<name>.codemode`: pi's codemode tool. `on` (default) keeps every tool declared; `only` declares codemode alone. */
+export const CODEMODE_VALUES = ['on', 'only', 'off'] as const;
+/** The harnesses an extension can implement. */
+export const EXTENSION_HARNESSES = ['opencode', 'pi'] as const;
+/** OpenCode's built-in agents that v3 disables unless the manifest declares the name. */
+export const OPENCODE_BUILTIN_AGENTS_V3 = ['build', 'plan', 'general', 'explore'] as const;

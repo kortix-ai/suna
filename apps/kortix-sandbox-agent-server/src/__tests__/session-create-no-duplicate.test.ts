@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { waitForInitialSessionCreate } from '../harness/open-code/boot'
+import { waitForInitialSessionCreate } from '@/harness/open-code/boot'
+import { setSessionCreateAttemptTimeoutMsForTests } from '@/harness/open-code/initial-prompt'
+
+// 10 s in the product. 3 s still outlasts the 1.6 s slow create below, so a resend there would still fail the test.
+setSessionCreateAttemptTimeoutMsForTests(3_000)
 
 const servers: Array<{ stop(closeActive?: boolean): void }> = []
 

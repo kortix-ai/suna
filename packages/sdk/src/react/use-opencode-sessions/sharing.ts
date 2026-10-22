@@ -2,14 +2,15 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
-import type { Session } from '@opencode-ai/sdk/v2/client';
-import { opencodeKeys } from './keys';
+import type { Session } from '../../core/runtime/runtime-types';
+import { runtimeKeys } from './keys';
 import { unwrap } from './shared';
 
 // ============================================================================
 // Share / Unshare Hooks
 // ============================================================================
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useShareSession() {
   const queryClient = useQueryClient();
 
@@ -21,8 +22,8 @@ export function useShareSession() {
     },
     onSuccess: (updatedSession) => {
       // Surgically update cache with share info
-      queryClient.setQueryData(opencodeKeys.runtimeSession(updatedSession.id), updatedSession);
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+      queryClient.setQueryData(runtimeKeys.runtimeSession(updatedSession.id), updatedSession);
+      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
         if (!old) return old;
         const idx = old.findIndex((s) => s.id === updatedSession.id);
         if (idx < 0) return old;
@@ -34,6 +35,7 @@ export function useShareSession() {
   });
 }
 
+/** @deprecated Wraps an OpenCode-only runtime route. Removed in the next major. */
 export function useUnshareSession() {
   const queryClient = useQueryClient();
 
@@ -45,8 +47,8 @@ export function useUnshareSession() {
     },
     onSuccess: (updatedSession) => {
       // Surgically update cache with unshare info
-      queryClient.setQueryData(opencodeKeys.runtimeSession(updatedSession.id), updatedSession);
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
+      queryClient.setQueryData(runtimeKeys.runtimeSession(updatedSession.id), updatedSession);
+      queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
         if (!old) return old;
         const idx = old.findIndex((s) => s.id === updatedSession.id);
         if (idx < 0) return old;

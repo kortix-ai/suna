@@ -8,8 +8,9 @@
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 
-import { dispatch, type PermissionRequest } from '../harness/open-code/events'
-import { relayPermissionToApi } from '../harness/open-code/permission-relay'
+import type { RuntimePermissionRequest as PermissionRequest } from '@kortix/api-contract/transcript'
+import { dispatch } from '@/harness/open-code/events'
+import { relayPermission } from '@/harness/shared/turn-relay'
 
 type Recorded = { method: string; path: string; auth: string | null; body: any }
 
@@ -68,9 +69,9 @@ const REQUEST: PermissionRequest = {
   tool: { messageID: 'msg_1', callID: 'call_1' },
 }
 
-describe('relayPermissionToApi', () => {
+describe('relayPermission', () => {
   test('posts the permission to turn-permission with the sandbox token and never replies', async () => {
-    await relayPermissionToApi(REQUEST)
+    await relayPermission(REQUEST)
 
     expect(requests).toHaveLength(1)
     expect(requests[0]!.method).toBe('POST')
@@ -79,7 +80,7 @@ describe('relayPermissionToApi', () => {
     expect(requests[0]!.body).toEqual({
       session_id: 'sess-1',
       request_id: 'per_1',
-      opencode_session_id: 'ses_root',
+      runtime_session_id: 'ses_root',
       permission: 'bash',
       patterns: ['git push *'],
     })
@@ -88,19 +89,19 @@ describe('relayPermissionToApi', () => {
 
   test('a non-2xx response is swallowed', async () => {
     status = 500
-    await expect(relayPermissionToApi(REQUEST)).resolves.toBeUndefined()
+    await expect(relayPermission(REQUEST)).resolves.toBeUndefined()
     expect(requests).toHaveLength(1)
   })
 
   test('an unreachable API is swallowed', async () => {
     process.env.KORTIX_API_URL = 'http://127.0.0.1:1'
-    await expect(relayPermissionToApi(REQUEST)).resolves.toBeUndefined()
+    await expect(relayPermission(REQUEST)).resolves.toBeUndefined()
     expect(requests).toHaveLength(0)
   })
 
   test('without a control plane nothing is sent', async () => {
     delete process.env.KORTIX_API_URL
-    await relayPermissionToApi(REQUEST)
+    await relayPermission(REQUEST)
     expect(requests).toHaveLength(0)
   })
 })

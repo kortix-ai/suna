@@ -19,6 +19,8 @@
  * — and revive exactly ONCE per park, so a genuinely dead box costs one connect
  * attempt per interval instead of a retry storm.
  */
+import { onHostSignal } from '../../core/session/host-signals';
+
 export interface StreamRevivalOptions {
   /** Self-heal delay when no external signal arrives. Default 30s. */
   reviveAfterMs?: number;
@@ -38,7 +40,12 @@ export interface StreamRevival {
 const DEFAULT_REVIVE_AFTER_MS = 30_000;
 
 function defaultListen(event: string, handler: () => void): () => void {
-  if (typeof globalThis.addEventListener !== 'function') return () => {};
+  // A host without DOM events (React Native) reports the same two facts itself.
+  const hostSignal = event === 'visibilitychange' ? 'visible' : event;
+  const stopHost = onHostSignal((signal) => {
+    if (signal === hostSignal) handler();
+  });
+  if (typeof globalThis.addEventListener !== 'function') return stopHost;
   const target = event === 'visibilitychange' && typeof document !== 'undefined' ? document : globalThis;
   const wrapped = () => {
     // A hidden tab is not evidence of anything; only the return is.
@@ -48,7 +55,10 @@ function defaultListen(event: string, handler: () => void): () => void {
     handler();
   };
   target.addEventListener(event, wrapped);
-  return () => target.removeEventListener(event, wrapped);
+  return () => {
+    stopHost();
+    target.removeEventListener(event, wrapped);
+  };
 }
 
 export function createStreamRevival(

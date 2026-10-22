@@ -21,6 +21,14 @@ describe('personal-email classification', () => {
     }
   });
 
+  test('normalizes malformed and padded addresses at the API import', () => {
+    for (const email of ['  X@GMAIL.COM  ', 'x@mailinator.com', 'x@', 'missing-at']) {
+      expect(classifyEmailKind(email)).toBe('personal');
+    }
+    expect(classifyEmailKind('  X@CORP.COM  ')).toBe('business');
+    expect(emailDomain('  X@CORP.COM  ')).toBe('corp.com');
+  });
+
   test('company domains are business', () => {
     for (const email of ['jane@acme.com', 'cto@startup.io', 'ops@kortix.ai']) {
       expect(classifyEmailKind(email)).toBe('business');

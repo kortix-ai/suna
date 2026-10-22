@@ -2,14 +2,21 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as realAccess from '../../projects/lib/access';
+import * as realAuthorize from '../../iam/authorize';
 
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000002';
 
 let authType = 'supabase';
 let sandboxId: string | null = null;
+let tokenProjectId: string | null = null;
 let listInput: Record<string, unknown> | null = null;
 let resolveAccountDenied = false;
+let usageCapabilityDenied = false;
+// The project an account-wide caller's `project_id` loads to; null = not found.
+let loadedProject: { userId: string; row: { accountId: string } } | null = null;
+const capabilityActions: string[] = [];
+let accessibleProjects: realAuthorize.Accessible = { mode: 'all' };
 
 interface TestContext {
   set(key: string, value: unknown): void;
@@ -38,11 +45,15 @@ mock.module('../../middleware/auth', () => ({
     c.set('userId', '00000000-0000-4000-a000-000000000004');
     c.set('authType', authType);
     if (sandboxId) c.set('sandboxId', sandboxId);
+    if (tokenProjectId) {
+      c.set('tokenProjectId', tokenProjectId);
+      c.set('accountId', ACCOUNT_ID);
+    }
     await next();
   },
 }));
 
-mock.module('../../shared/resolve-account', () => ({
+mock.module('../../middleware/resolve-account', () => ({
   resolveScopedAccountId: async (c: TestContext) => {
     if (resolveAccountDenied) {
       throw new HTTPException(403, { message: 'Forbidden' });
@@ -51,21 +62,31 @@ mock.module('../../shared/resolve-account', () => ({
   },
 }));
 
-// projects/lib/access.ts is a real module usage.ts also imports (for the
-// sibling /session-costs routes' project-scoped fallback). /cost-by-project
-// never calls into it, but the static import still has to resolve — the real
-// module pulls in resolveAccountId from the mocked resolve-account above,
-// which does not export it.
+// projects/lib/access.ts: a `project_id` on /cost-by-project loads the
+// project and asserts a project capability, exactly like /session-costs.
+// #9272: account-wide usage reads require `billing.read`. Record the check.
+const authorizedActions: string[] = [];
+mock.module('../../iam/authorize', () => ({
+  ...realAuthorize,
+  assertAuthorized: async (_actor: unknown, action: string) => {
+    authorizedActions.push(action);
+  },
+  listAccessible: async () => accessibleProjects,
+}));
+
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand deletes every export it omits — the failure surfaces in
 // whatever unrelated file imports the missing name next, attributed to no test.
 mock.module('../../projects/lib/access', () => ({
   ...realAccess,
-  loadProjectForUser: async () => {
-    throw new Error('loadProjectForUser should not be called from cost-by-project tests');
+  loadProjectForUser: async (_c: TestContext, projectId: string) => {
+    expect(projectId).toBe(PROJECT_ID);
+    return loadedProject;
   },
-  assertProjectCapability: async () => {
-    throw new Error('assertProjectCapability should not be called from cost-by-project tests');
+  assertProjectCapability: async (_c: TestContext, _userId: string, _accountId: string, projectId: string, action: string) => {
+    expect(projectId).toBe(PROJECT_ID);
+    capabilityActions.push(action);
+    if (usageCapabilityDenied) throw new HTTPException(403, { message: 'Forbidden' });
   },
 }));
 
@@ -118,9 +139,14 @@ function createTestApp() {
 beforeEach(() => {
   authType = 'supabase';
   sandboxId = null;
+  tokenProjectId = null;
   listInput = null;
   resolveAccountDenied = false;
+  usageCapabilityDenied = false;
+  loadedProject = null;
+  capabilityActions.length = 0;
   projectsToReturn = [project];
+  accessibleProjects = { mode: 'all' };
 });
 
 describe('GET /v1/usage/cost-by-project', () => {
@@ -204,6 +230,57 @@ describe('GET /v1/usage/cost-by-project', () => {
     expect(listInput).toBeNull();
   });
 
+  test('project token filters both JSON and CSV to its bound project', async () => {
+    tokenProjectId = PROJECT_ID;
+    const app = createTestApp();
+    for (const format of ['', '&format=csv']) {
+      const response = await app.request(`/v1/usage/cost-by-project?project_id=${PROJECT_ID}${format}`);
+      expect(response.status).toBe(200);
+      expect(listInput?.projectId).toBe(PROJECT_ID);
+    }
+    for (const query of ['', `?project_id=${ACCOUNT_ID}`, `?project_id=${PROJECT_ID}&account_id=${ACCOUNT_ID}`]) {
+      listInput = null;
+      expect((await app.request(`/v1/usage/cost-by-project${query}`)).status).toBe(403);
+      expect(listInput).toBeNull();
+    }
+    usageCapabilityDenied = true;
+    expect((await app.request(`/v1/usage/cost-by-project?project_id=${PROJECT_ID}`)).status).toBe(403);
+    expect(new Set(capabilityActions)).toEqual(new Set(['project.usage.read']));
+  });
+
+  // KRTX-2801: the route declares `project_id`; an account-wide caller (JWT,
+  // PAT, OAuth) who names one project gets that project's row, not the whole
+  // account's rollup. Same contract as /session-costs.
+  test('an account-wide caller filters JSON and CSV to the project_id it names', async () => {
+    loadedProject = { userId: 'user', row: { accountId: ACCOUNT_ID } };
+    const app = createTestApp();
+    for (const format of ['', '&format=csv']) {
+      listInput = null;
+      const response = await app.request(`/v1/usage/cost-by-project?project_id=${PROJECT_ID}${format}`);
+      expect(response.status).toBe(200);
+      expect(listInput).toMatchObject({ accountId: ACCOUNT_ID, projectId: PROJECT_ID });
+    }
+    expect(capabilityActions).toEqual(['project.gateway.spend.read', 'project.gateway.spend.read']);
+  });
+
+  test('an account-wide caller cannot read a project it cannot see: 404 or 403, never the account rollup', async () => {
+    const app = createTestApp();
+    const read = async (query: string) => {
+      listInput = null;
+      const response = await app.request(`/v1/usage/cost-by-project?${query}`);
+      expect(listInput).toBeNull();
+      return response.status;
+    };
+    expect(await read(`project_id=${PROJECT_ID}`)).toBe(404);
+    loadedProject = { userId: 'user', row: { accountId: '00000000-0000-4000-a000-000000000009' } };
+    expect(await read(`project_id=${PROJECT_ID}&account_id=${ACCOUNT_ID}`)).toBe(404);
+    loadedProject = { userId: 'user', row: { accountId: ACCOUNT_ID } };
+    usageCapabilityDenied = true;
+    expect(await read(`project_id=${PROJECT_ID}`)).toBe(403);
+    // Authorization still runs before input validation.
+    expect(await read(`project_id=${PROJECT_ID}&from=2026-08-01T00:00:00.000Z&to=2026-07-01T00:00:00.000Z`)).toBe(403);
+  });
+
   // accountId resolves before window/sort/pagination are parsed (in that
   // order, inside one try block) — same order the route used before
   // format=csv existed. A request that is both unauthorized AND carries a
@@ -219,6 +296,26 @@ describe('GET /v1/usage/cost-by-project', () => {
 
     expect(response.status).toBe(403);
     expect(listInput).toBeNull();
+  });
+
+  test('a caller who reads every project gets no project filter', async () => {
+    const response = await createTestApp().request(`/v1/usage/cost-by-project?account_id=${ACCOUNT_ID}`);
+    expect(response.status).toBe(200);
+    expect(listInput?.visibleProjectIds).toBeUndefined();
+  });
+
+  test('a caller limited to some projects gets only those rows', async () => {
+    accessibleProjects = { mode: 'allow_only', allowed: new Set([PROJECT_ID]) };
+    const response = await createTestApp().request(`/v1/usage/cost-by-project?account_id=${ACCOUNT_ID}`);
+    expect(response.status).toBe(200);
+    expect([...(listInput?.visibleProjectIds as Set<string>)]).toEqual([PROJECT_ID]);
+  });
+
+  test('a caller who reads no project gets an empty filter, not every project', async () => {
+    accessibleProjects = { mode: 'none' };
+    const response = await createTestApp().request(`/v1/usage/cost-by-project?account_id=${ACCOUNT_ID}`);
+    expect(response.status).toBe(200);
+    expect((listInput?.visibleProjectIds as Set<string>).size).toBe(0);
   });
 });
 

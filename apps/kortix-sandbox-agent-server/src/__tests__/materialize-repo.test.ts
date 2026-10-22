@@ -13,13 +13,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 
-import {
-  __setScaffoldRepoPathForTests,
-  checkoutSessionBranch,
-  isShallowRepo,
-  materializeRepo,
-  scheduleHistoryBackfill,
-} from '../git'
+import { checkoutSessionBranch, isShallowRepo } from '@/services/workspace-provider/checkout'
+import { __setScaffoldRepoPathForTests, materializeRepo, scheduleHistoryBackfill } from '@/services/workspace-provider/git'
 import { testOpenCodeConfig as baseConfig } from './helpers/open-code-harness'
 
 function git(args: string[], cwd?: string) {
@@ -76,14 +71,19 @@ function createDetachedWarmCheckout(prefix: string): {
 
 const tempDirs: string[] = []
 
+// The image bakes /opt/kortix/scaffold.git; a Kortix box would answer the
+// scaffold fast path for every rig. Point the reset at an absent path so this
+// file reads only the scaffolds a test sets itself.
+const ABSENT_SCAFFOLD = join(tmpdir(), 'kortix-absent-scaffold.git')
+
 beforeEach(() => {
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(ABSENT_SCAFFOLD)
 })
 
 afterEach(() => {
   // Module-level state: clear it on the way OUT too, or the next file in this
   // bun process inherits it (see test-state-reset-tripwire.test.ts).
-  __setScaffoldRepoPathForTests()
+  __setScaffoldRepoPathForTests(ABSENT_SCAFFOLD)
   for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
@@ -247,7 +247,7 @@ describe('materializeRepo', () => {
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(baseSha)
       expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-fresh')
     } finally {
-      __setScaffoldRepoPathForTests()
+      __setScaffoldRepoPathForTests(ABSENT_SCAFFOLD)
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -643,7 +643,7 @@ describe('materializeRepo', () => {
       expect(readFileSync(join(target, 'README.md'), 'utf8')).toBe('imported repository\n')
       expect(gitOutput(['-C', target, 'rev-parse', 'HEAD'])).toBe(importedSha)
     } finally {
-      __setScaffoldRepoPathForTests()
+      __setScaffoldRepoPathForTests(ABSENT_SCAFFOLD)
       rmSync(root, { recursive: true, force: true })
     }
   })
@@ -696,6 +696,15 @@ function threeCommitOrigin(): string {
 }
 
 describe('clone depth', () => {
+  // These tests are about the plain clone's depth semantics. A host that
+  // bakes the image scaffold (every Kortix sandbox) would take the scaffold
+  // delta-fetch fast path instead — always --depth 1 — so hide it.
+  beforeEach(() => {
+    __setScaffoldRepoPathForTests(join(tmpdir(), 'kortix-absent-scaffold.git'))
+  })
+  afterEach(() => {
+    __setScaffoldRepoPathForTests()
+  })
   // Boot latency: a depth-1 clone is the default; history is restored off the
   // critical path by scheduleHistoryBackfill.
   it.each([

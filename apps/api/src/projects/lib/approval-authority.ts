@@ -1,3 +1,5 @@
+import type { Credential } from '../../iam/actor';
+
 /**
  * Who may resolve (approve / deny) a gated tool call.
  *
@@ -21,8 +23,15 @@
  * point of a human-in-the-loop gate, so it is refused outright rather than
  * narrowed to "its own session".
  *
- * Only a Supabase-authenticated Kortix user can resolve an approval. PATs,
- * API keys, service accounts, and session credentials are automated principals.
+ * A human is a Supabase session — or the person's OWN CLI Personal Access
+ * Token (`callerCredentialKind: 'pat'`). That token row carries a real user,
+ * binds to no session and stands behind no service account: the same person
+ * their browser session is, so the same manager-or-launcher rule governs
+ * `kortix sessions approvals … approve` (KRTX-1921). What stays refused:
+ * session-bound credentials (an agent connector token — self-approval),
+ * service-account bearers, sandbox API keys and OAuth clients — every
+ * credential that is not one person's own identity. A PAT whose token row
+ * names a service account classifies as `agent_session` and is refused here.
  */
 export type ApprovalRefusal =
   | 'non_human_caller'
@@ -40,11 +49,15 @@ export function mayResolveApproval(input: {
   callerUserId: string;
   /** Authentication mechanism for the current request. */
   callerAuthType: string | null;
+  /** The caller's resolved IAM credential kind (Actor.credential.kind) —
+   *  'pat' when the request carried a personal token with no service account
+   *  behind it. Null when no actor was resolved. */
+  callerCredentialKind: Credential['kind'] | null;
   /** The caller's OWN session when its credential is bound to one (a sandbox
    *  token). Non-null means an automated caller. */
   callerSessionId: string | null;
 }): { allowed: true } | { allowed: false; reason: ApprovalRefusal } {
-  if (input.callerAuthType !== 'supabase') {
+  if (input.callerAuthType !== 'supabase' && input.callerCredentialKind !== 'pat') {
     return { allowed: false, reason: 'non_human_caller' };
   }
   // ORDER MATTERS. The session-bound check runs FIRST, before the manager
@@ -58,19 +71,72 @@ export function mayResolveApproval(input: {
     return { allowed: false, reason: 'session_bound_caller' };
   }
 
+  return humanMayResolveApproval(input);
+}
+
+/** The caller half of `mayResolveApproval`'s input. Every surface that shows or
+ *  takes a decision reads it from the request through `approvalCallerOf`
+ *  (`http-approval-caller.ts`), so `can_resolve`, the resolve route's 403 and
+ *  the approval page's 403 come from the same facts. */
+export type ApprovalCaller = Omit<
+  Parameters<typeof mayResolveApproval>[0],
+  'targetSessionOrigin' | 'targetSessionCreatedBy'
+>;
+
+/**
+ * The rule for a caller already known to be a human (a Supabase session, a
+ * personal CLI PAT, or a chat identity a person linked by signing in): a
+ * project manager, or the person who launched the session.
+ */
+export function humanMayResolveApproval(input: {
+  isManager: boolean;
+  targetSessionOrigin: string | null;
+  targetSessionCreatedBy: string | null;
+  callerUserId: string;
+}): { allowed: true } | { allowed: false; reason: 'not_launcher_or_manager' } {
   // A manager is a human with project authority; that stands.
   if (input.isManager) return { allowed: true };
 
-  // `created_by` only means "the launcher" for a session a single person
-  // actually started. For a wrapper-created session it is the wrapper, shared
-  // by every end-user, so it cannot confer launcher status.
-  const createdByIsMeaningful = input.targetSessionOrigin !== 'backend';
   const isLauncher =
-    createdByIsMeaningful &&
-    input.targetSessionCreatedBy !== null &&
+    approvalResolvers(input) === 'managers_and_launcher' &&
     input.targetSessionCreatedBy === input.callerUserId;
 
   return isLauncher ? { allowed: true } : { allowed: false, reason: 'not_launcher_or_manager' };
+}
+
+/** Who may decide a call on this session, as a class. Clients name it to a
+ *  viewer who may not decide (`resolvers`, KRTX-1724). */
+export type ApprovalResolvers = 'managers' | 'managers_and_launcher';
+
+/**
+ * The launcher half of the rule applies only to a session one person started.
+ * `created_by` of a backend-created session (`origin: 'backend'`: a CLI PAT, a
+ * service account, a user API key) is the wrapper, shared by every end-user,
+ * so it cannot confer launcher status: only managers decide there.
+ */
+export function approvalResolvers(target: {
+  targetSessionOrigin: string | null;
+  targetSessionCreatedBy: string | null;
+}): ApprovalResolvers {
+  return target.targetSessionOrigin !== 'backend' && target.targetSessionCreatedBy !== null
+    ? 'managers_and_launcher'
+    : 'managers';
+}
+
+export interface ApprovalTarget {
+  createdBy: string | null;
+  origin: string | null;
+}
+
+/** `created_by` + origin of the session a gated call belongs to — the inputs
+ *  of the launcher half of the authority rule. A call with no session belongs
+ *  to the user it ran as. `session` is the call's session row, if it exists. */
+export function approvalTargetOf(
+  row: { sessionId: string | null; actingUserId: string | null },
+  session: { createdBy: string | null; origin: string | null } | undefined,
+): ApprovalTarget {
+  if (!row.sessionId) return { createdBy: row.actingUserId, origin: 'user' };
+  return { createdBy: session?.createdBy ?? null, origin: session?.origin ?? null };
 }
 
 /**

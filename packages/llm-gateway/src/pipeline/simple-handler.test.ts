@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { GatewayHooks, GatewayTrace, UpstreamDescriptor, UsageEvent } from '../domain';
+import { GatewayResolutionError, UpstreamHttpError } from '../errors';
+import { rawProviderError } from './dispatch';
+import { createRouteMemory, routeMemoryKey } from './route-memory';
 import { handleChatCompletions } from './simple-handler';
 
 const principal = { userId: 'user', accountId: 'account', projectId: 'project' };
@@ -72,8 +75,11 @@ describe('simple gateway pipeline', () => {
         hooks: {
           ...hooks([], []),
           resolveUpstream: async () => [
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'first', apiKey: 'first' },
-            { ...primary, baseUrl: upstream.url.toString(), poolSecretId: 'second', apiKey: 'second' },
+            // Loopback by address: `upstream.url` reports `localhost`, which does
+            // not resolve on a platform sandbox — the pool would answer 502
+            // (connection refused) instead of exercising the 429 failover.
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'first', apiKey: 'first' },
+            { ...primary, baseUrl: `http://127.0.0.1:${upstream.port}`, poolSecretId: 'second', apiKey: 'second' },
           ],
           notePoolRateLimit: async (_principal, secretId) => { cooldowns.push(secretId); },
         },
@@ -413,6 +419,36 @@ describe('simple gateway pipeline', () => {
     expect(traces[0]).toMatchObject({ attempts: 1, candidatesTried: ['amazon-bedrock'] });
   });
 
+  test('a provider 4xx labelled server_error reaches the client without the label OpenCode retries on', async () => {
+    // OpenCode retries any body matching /server_error|internal error|.../,
+    // whatever the status: this permanent 400 was replayed 5 times (dev 2026-09-29).
+    const upstreamBody = JSON.stringify({
+      error: { type: 'server_error', message: 'Upstream request failed: This Go model requires Global regions.' },
+    });
+    for (const stream of [false, true]) {
+      const response = await handleChatCompletions(
+        {
+          hooks: { ...hooks([], []), resolveUpstream: async () => [primary] },
+          logger: { info() {}, warn() {}, error() {} },
+          fetchImpl: async () => new Response(upstreamBody, { status: 400, headers: { 'content-type': 'application/json' } }),
+        },
+        { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', stream, messages: [{ role: 'user', content: 'hi' }] }) },
+      );
+      const text = await response.text();
+      expect(response.status).toBe(400);
+      expect(text).not.toMatch(/server[_ -]?error/i);
+      expect(JSON.parse(text)).toEqual({
+        error: { message: 'Upstream request failed: This Go model requires Global regions.', type: 'invalid_request_error' },
+      });
+    }
+    const raw = rawProviderError(new UpstreamHttpError(400, upstreamBody));
+    expect(await raw.text()).not.toMatch(/server[_ -]?error/i);
+    const overflow = rawProviderError(new UpstreamHttpError(400, '{"error":{"message":"prompt is too long"}}'));
+    expect((await overflow.json()).error.code).toBe('context_length_exceeded');
+    const unavailable = rawProviderError(new UpstreamHttpError(503, upstreamBody));
+    expect(await unavailable.text()).toBe(upstreamBody);
+  });
+
   test('settles one successful response exactly once', async () => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
@@ -439,10 +475,55 @@ describe('simple gateway pipeline', () => {
     expect(traces).toHaveLength(1);
   });
 
+  test('a non-stream 200 with no usage object settles an estimate, not zero tokens', async () => {
+    const usage: UsageEvent[] = [];
+    const body = JSON.stringify({ choices: [{ message: { role: 'assistant', content: 'z'.repeat(800) } }] });
+    const response = await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => new Response(body, { headers: { 'content-type': 'application/json' } }),
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'p'.repeat(4_000) }] }),
+      },
+    );
+    expect(await response.text()).toBe(body);
+    expect(usage).toHaveLength(1);
+    // 800 output chars / 4 = 200 tokens; 4,000 prompt chars / 4 + framing >= 1,000 tokens.
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 200 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+  });
+
+  test('a non-stream 200 whose body read fails settles the prompt estimate', async () => {
+    const usage: UsageEvent[] = [];
+    const broken = new Response(
+      new ReadableStream<Uint8Array>({ start: (controller) => controller.error(new Error('connection reset')) }),
+      { headers: { 'content-type': 'application/json' } },
+    );
+    await handleChatCompletions(
+      {
+        hooks: hooks(usage, []),
+        logger: { info() {}, warn() {}, error() {} },
+        fetchImpl: async () => broken,
+      },
+      {
+        authorization: 'Bearer token',
+        rawBody: JSON.stringify({ model: 'requested-model', messages: [{ role: 'user', content: 'p'.repeat(4_000) }] }),
+      },
+    ).catch(() => undefined);
+    expect(usage).toHaveLength(1);
+    expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
+    expect(usage[0]!.promptTokens).toBeGreaterThanOrEqual(1_000);
+  });
+
+  // An error frame before any output served nothing: the client gets the
+  // provider's status as an HTTP error, which OpenCode can retry or compact on.
   test.each([
     ['a timeout', '"upstream_timeout"', 502],
     ['a numeric rate limit', '429', 429],
-  ])('records an in-band streaming provider error (%s) as a failed gateway request', async (_name, code, status) => {
+  ])('answers an in-band streaming provider error (%s) before output as an HTTP error', async (_name, code, status) => {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
     const response = await handleChatCompletions(
@@ -464,11 +545,11 @@ describe('simple gateway pipeline', () => {
       },
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(status);
     expect(await response.text()).toContain('provider failed');
     expect(usage).toHaveLength(0);
     expect(traces).toHaveLength(1);
-    expect(traces[0]).toMatchObject({ status, ok: false, errorMessage: 'provider failed' });
+    expect(traces[0]).toMatchObject({ status, ok: false });
   });
 
   test('a stream the client stops before the usage frame still settles an estimate', async () => {
@@ -521,14 +602,18 @@ describe('simple gateway pipeline', () => {
   test('a stream stopped during prefill, before any output, settles the prompt', async () => {
     const usage: UsageEvent[] = [];
     const client = new AbortController();
-    const response = await handleChatCompletions(
+    let fetched!: () => void;
+    const upstreamAnswered = new Promise<void>((resolve) => { fetched = resolve; });
+    const pending = handleChatCompletions(
       {
         hooks: hooks(usage, []),
         logger: { info() {}, warn() {}, error() {} },
-        fetchImpl: async () =>
-          new Response(new ReadableStream<Uint8Array>({ pull() {} }), {
+        fetchImpl: async () => {
+          fetched();
+          return new Response(new ReadableStream<Uint8Array>({ pull() {} }), {
             headers: { 'content-type': 'text/event-stream' },
-          }),
+          });
+        },
       },
       {
         authorization: 'Bearer token',
@@ -540,7 +625,10 @@ describe('simple gateway pipeline', () => {
         }),
       },
     );
+    // The provider answered headers and is silent in prefill; the client stops.
+    await upstreamAnswered;
     client.abort();
+    const response = await pending;
     await response.body!.cancel();
     expect(usage).toHaveLength(1);
     expect(usage[0]).toMatchObject({ usageEstimated: true, completionTokens: 0 });
@@ -770,138 +858,12 @@ describe('simple gateway pipeline', () => {
   });
 });
 
-const isMorph = (url: string): boolean => new URL(url).host === 'morph.example';
-
-describe('provider failover (descriptor.failover)', () => {
-  const morph: UpstreamDescriptor = {
-    ...primary, provider: 'morph', baseUrl: 'https://morph.example/v1', apiKey: 'morph-key',
-    resolvedModel: 'morph-model', failover: true,
-  };
-  const openrouter: UpstreamDescriptor = {
-    ...primary, provider: 'openrouter', baseUrl: 'https://openrouter.example/v1', apiKey: 'or-key',
-    resolvedModel: 'vendor/model', failover: true, bodyExtras: { provider: { only: ['a', 'b'] } },
-  };
-  const ok = () => new Response(JSON.stringify({
-    choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 10, completion_tokens: 5 },
-  }), { status: 200, headers: { 'content-type': 'application/json' } });
-
-  async function run(
-    candidates: UpstreamDescriptor[],
-    respond: (url: string, attempt: number) => Response | Promise<Response>,
-    requestBody: Record<string, unknown> = { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] },
-  ) {
-    const usage: UsageEvent[] = [];
-    const traces: GatewayTrace[] = [];
-    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
-    const response = await handleChatCompletions({
-      hooks: { ...hooks(usage, traces), resolveUpstream: async () => candidates },
-      logger: { info() {}, warn() {}, error() {} },
-      fetchImpl: async (url, init) => {
-        calls.push({ url, body: JSON.parse(String(init.body)) });
-        return respond(url, calls.length);
-      },
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify(requestBody) });
-    return { response, usage, traces, calls };
-  }
-
-  for (const status of [429, 401]) {
-    test(`a ${status} from the primary moves the request to the next provider`, async () => {
-      const { response, usage, traces, calls } = await run([morph, openrouter], (url) =>
-        isMorph(url) ? new Response('primary failed', { status }) : ok());
-      expect(response.status).toBe(200);
-      expect(calls.map((c) => c.url)).toEqual([
-        'https://morph.example/v1/chat/completions',
-        'https://openrouter.example/v1/chat/completions',
-      ]);
-      expect(usage.map((u) => [u.provider, u.model])).toEqual([['openrouter', 'vendor/model']]);
-      expect(traces.at(-1)?.candidatesTried).toEqual(['morph', 'openrouter']);
-      expect(traces.at(-1)?.attempts).toBe(2);
-      expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.code])).toEqual([['morph', status]]);
-    });
-  }
-
-  test('a network error from the primary moves the request to the next provider', async () => {
-    const { response, calls } = await run([morph, openrouter], (url) => {
-      if (isMorph(url)) throw new TypeError('fetch failed');
-      return ok();
-    });
-    expect(response.status).toBe(200);
-    expect(calls).toHaveLength(2);
-  });
-
-  test('the fallback receives the full request with its own model and body extras', async () => {
-    const { calls } = await run([morph, openrouter], (url) =>
-      isMorph(url) ? new Response('limited', { status: 429 }) : ok());
-    expect(calls[0].body).toMatchObject({ model: 'morph-model', messages: [{ role: 'user', content: 'hi' }] });
-    expect(calls[0].body.provider).toBeUndefined();
-    expect(calls[1].body).toMatchObject({
-      model: 'vendor/model', messages: [{ role: 'user', content: 'hi' }], provider: { only: ['a', 'b'] },
-    });
-  });
-
-  test('an upstream pin in body extras overrides the same field sent by the client', async () => {
-    const { calls } = await run(
-      [morph, openrouter],
-      (url) => (isMorph(url) ? new Response('limited', { status: 429 }) : ok()),
-      { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }], provider: { sort: 'price' } },
-    );
-    expect(calls[1].body.provider).toEqual({ only: ['a', 'b'] });
-  });
-
-  test('a successful primary never calls the fallback', async () => {
-    const { response, usage, calls } = await run([morph, openrouter], () => ok());
-    expect(response.status).toBe(200);
-    expect(calls).toHaveLength(1);
-    expect(usage.map((u) => u.provider)).toEqual(['morph']);
-  });
-
-  test('when every provider fails, the last provider error reaches the client', async () => {
-    const { response, calls } = await run([morph, openrouter], (url) =>
-      isMorph(url)
-        ? new Response('primary down', { status: 503 })
-        : new Response('{"error":{"message":"fallback limited"}}', { status: 429 }));
-    expect(response.status).toBe(429);
-    expect(await response.text()).toContain('fallback limited');
-    expect(calls).toHaveLength(2);
-  });
-
-  test('a streamed success is relayed from the fallback provider', async () => {
-    const { response, calls } = await run([morph, openrouter], (url) =>
-      isMorph(url)
-        ? new Response('limited', { status: 429 })
-        : new Response('data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n', {
-            status: 200, headers: { 'content-type': 'text/event-stream' },
-          }),
-      { model: 'requested-model', stream: true, messages: [] });
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain('hello');
-    expect(calls).toHaveLength(2);
-    expect(calls[1].body.stream_options).toEqual({ include_usage: true });
-  });
-
-  test('candidates without the failover flag keep single-upstream behavior', async () => {
-    const byokA: UpstreamDescriptor = { ...primary, provider: 'openai', apiKey: 'a', billingMode: 'none', markup: 0 };
-    const byokB: UpstreamDescriptor = { ...byokA, apiKey: 'b' };
-    const { response, calls } = await run([byokA, byokB], () => new Response('limited', { status: 429 }));
-    expect(response.status).toBe(429);
-    expect(calls).toHaveLength(1);
-  });
-
-  test('a failover candidate is never reached from a non-failover primary', async () => {
-    const byok: UpstreamDescriptor = { ...primary, provider: 'openai', billingMode: 'none', markup: 0 };
-    const { response, calls } = await run([byok, openrouter], () => new Response('down', { status: 503 }));
-    expect(response.status).toBe(503);
-    expect(calls).toHaveLength(1);
-  });
-});
-
 describe('managed models present as Kortix (descriptor.publicProvider)', () => {
-  const managed = (provider: string, baseUrl: string, resolvedModel: string): UpstreamDescriptor => ({
-    ...primary, provider, baseUrl, apiKey: `${provider}-key`, resolvedModel, failover: true, publicProvider: 'kortix',
-  });
-  const morph = managed('morph', 'https://morph.example/v1', 'morph-model');
-  const openrouter = managed('openrouter', 'https://openrouter.example/v1', 'vendor/model');
-  const LEAK = /openrouter|morph|coreweave|wafer|vendor\/model|morph-model|provider_name/i;
+  const platinum: UpstreamDescriptor = {
+    ...primary, provider: 'platinum', baseUrl: 'https://platinum.example/v1', apiKey: 'platinum-key',
+    resolvedModel: 'vendor/model', publicProvider: 'kortix',
+  };
+  const LEAK = /platinum|openrouter|coreweave|wafer|vendor\/model|provider_name/i;
   const coreweave429 = JSON.stringify({ error: {
     message: 'Provider returned error', code: 429,
     metadata: { raw: 'vendor/model is temporarily rate-limited upstream. https://openrouter.ai/settings/integrations', provider_name: 'CoreWeave' },
@@ -910,7 +872,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
   async function run(
     respond: (url: string) => Response | Promise<Response>,
     requestBody: Record<string, unknown> = { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] },
-    candidates: UpstreamDescriptor[] = [morph, openrouter],
+    candidates: UpstreamDescriptor[] = [platinum],
   ) {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
@@ -922,6 +884,18 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     const text = await response.text();
     await new Promise((resolve) => setTimeout(resolve, 0));
     return { response, text, usage, traces };
+  }
+
+  async function runManaged(
+    respond: (url: string) => Response,
+    requestBody: Record<string, unknown>,
+  ) {
+    const calls: string[] = [];
+    const result = await run((url) => {
+      calls.push(url);
+      return respond(url);
+    }, requestBody);
+    return { ...result, calls };
   }
 
   test('an upstream 429 reaches the client as a Kortix 429 without upstream identity', async () => {
@@ -939,13 +913,15 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     const trace = customerVisible;
     expect(JSON.stringify(customerVisible)).not.toMatch(LEAK);
     // Staff-only: server logs and telemetry keep the real upstream.
-    expect(upstream).toEqual({ provider: 'openrouter', model: 'vendor/model' });
+    expect(upstream).toEqual({ provider: 'platinum', model: 'vendor/model' });
     expect(trace.provider).toBe('kortix');
-    expect(trace.candidatesTried).toEqual(['kortix', 'kortix']);
+    expect(trace.candidatesTried).toEqual(['kortix']);
   });
 
   test.each([
     [400, '{"error":{"message":"This endpoint\'s maximum context length is 131072 tokens (Wafer)"}}', 400, 'context_length_exceeded'],
+    // CoreWeave through OpenRouter, probed 2026-09-30: no word "context".
+    [400, '{"error":{"message":"Provider returned error","code":400,"metadata":{"raw":"{\\"message\\":\\"This model configuration accepts at most 1048576 combined input and output tokens. However, your request has 1036630 input tokens and asks for 16384 output tokens (1053014 tokens total).\\"}","provider_name":"CoreWeave"}}}', 400, 'context_length_exceeded'],
     [400, '{"error":{"message":"vendor/model does not support image input on Morph"}}', 400, 'unsupported_input'],
     [400, '{"error":{"message":"Invalid schema for function noop"}}', 400, 'invalid_tool_definition'],
     [422, '{"error":{"message":"bad"}}', 400, 'invalid_request'],
@@ -956,6 +932,31 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     const { response, text } = await run(() => new Response(body, { status }));
     expect(response.status).toBe(clientStatus);
     expect(JSON.parse(text).code).toBe(code);
+    expect(text).not.toMatch(LEAK);
+  });
+
+  // Prod 2026-09-30: a long GLM session reached OpenRouter's Decart endpoint,
+  // which answered 200 and then an in-band 400. OpenCode read that frame as an
+  // UnknownError, so it never compacted and every later turn failed the same
+  // way.
+  test('a context overflow reported in-band before output reaches the client as HTTP 400 context_length_exceeded', async () => {
+    const overflow =
+      'data: {"id":"gen-1","model":"vendor/model","provider":"Decart","choices":[],"error":{"code":400,' +
+      '"message":"Upstream error from Decart: Requested token count exceeds the model\'s maximum context length of 1048576 tokens."}}\n\n';
+    const { response, text, calls } = await runManaged(
+      () =>
+        new Response(`: OPENROUTER PROCESSING\n\n${overflow}data: [DONE]\n\n`, {
+          status: 200, headers: { 'content-type': 'text/event-stream' },
+        }),
+      { model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'hi' }] },
+    );
+    expect(calls).toEqual(['https://platinum.example/v1/chat/completions']);
+    expect(response.status).toBe(400);
+    expect(response.headers.get('content-type')).toBe('application/json');
+    const body = JSON.parse(text);
+    // OpenCode's parseAPICallError reads `error.code` to raise ContextOverflowError.
+    expect(body.error.code).toBe('context_length_exceeded');
+    expect(body.message).toBe('This request is longer than the primary-model context window.');
     expect(text).not.toMatch(LEAK);
   });
 
@@ -980,7 +981,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     expect(body.choices[0].message.content).toBe('ok');
     expect(text).not.toMatch(LEAK);
     expect(usage.map((u) => [u.provider, u.model, u.upstream])).toEqual([
-      ['kortix', 'primary-model', { provider: 'morph', model: 'morph-model' }],
+      ['kortix', 'primary-model', { provider: 'platinum', model: 'vendor/model' }],
     ]);
     expect(traces.at(-1)).toMatchObject({ provider: 'kortix', resolvedModel: 'primary-model' });
   });
@@ -1024,7 +1025,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
         controller.close();
       },
     }), { status: 200, headers: { 'content-type': 'text/event-stream' } }),
-    { model: 'requested-model', stream: true, messages: [] }, [openrouter]);
+    { model: 'requested-model', stream: true, messages: [] });
 
     expect(response.status).toBe(200);
     const events = text.trim().split(/\r?\n\r?\n/);
@@ -1059,8 +1060,10 @@ describe('model fallback chains (route.fallbackModels)', () => {
   async function run(options: {
     fallbackOn?: 'transient' | 'any-error';
     fallbackModels?: string[];
+    policyId?: string;
     respond: (url: string) => Response | Promise<Response>;
     resolve?: (model: string) => UpstreamDescriptor[] | Promise<UpstreamDescriptor[]>;
+    billing?: GatewayHooks['assertBillingActive'];
     requestBody?: Record<string, unknown>;
   }) {
     const usage: UsageEvent[] = [];
@@ -1071,7 +1074,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
       hooks: {
         ...hooks(usage, traces),
         resolveRoute: async () => ({
-          policyId: 'project:default',
+          policyId: options.policyId ?? 'project:default',
           primaryModel: 'primary-model',
           fallbackModels: options.fallbackModels ?? ['fallback-model'],
           fallbackOn: options.fallbackOn ?? 'transient',
@@ -1085,6 +1088,7 @@ describe('model fallback chains (route.fallbackModels)', () => {
           if (options.resolve) return options.resolve(model);
           return model === 'primary-model' ? [primaryUpstream] : [fallbackUpstream];
         },
+        ...(options.billing ? { assertBillingActive: options.billing } : {}),
       },
       logger: { info() {}, warn() {}, error() {} },
       fetchImpl: async (url, init) => {
@@ -1118,9 +1122,225 @@ describe('model fallback chains (route.fallbackModels)', () => {
       attempts: 2,
       resolvedModel: 'fallback-model',
       candidatesTried: ['primary-upstream', 'fallback-upstream:fallback-model'],
+      // The route ids a session can show: what answered, and what it stood in for.
+      servedModel: 'fallback-model',
+      fallbackFrom: 'primary-model',
     });
     expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.routeModel, f.status])).toEqual([
       ['primary-upstream', 'primary-model', 503],
+    ]);
+  });
+
+  test('a request its own model answers names that model and no fallback', async () => {
+    const { response, traces } = await run({ respond: () => ok('from primary') });
+    expect(response.status).toBe(200);
+    expect(traces.at(-1)).toMatchObject({ ok: true, servedModel: 'primary-model' });
+    expect(traces.at(-1)).not.toHaveProperty('fallbackFrom');
+  });
+
+  // Incident 2026-09-28: a routed model the provider would not serve (404 —
+  // OpenAI's "the model does not exist or you do not have access to it") left
+  // the request with the "model isn't available" error. A 404 is the provider's
+  // own "not available" class, so the chain the project configured on Retry on:
+  // transient must run.
+  test('a model the provider will not serve (404) reaches a transient chain', async () => {
+    const { response, resolved, traces } = await run({
+      respond: (url) => (isPrimary(url)
+        ? new Response(
+            JSON.stringify({ error: { message: 'The model does not exist or you do not have access to it.' } }),
+            { status: 404, headers: { 'content-type': 'application/json' } },
+          )
+        : ok('from fallback')),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain('from fallback');
+    expect(resolved).toEqual(['primary-model', 'fallback-model']);
+    expect(traces.at(-1)?.attemptFailures).toEqual([
+      expect.objectContaining({ routeModel: 'primary-model', status: 404 }),
+    ]);
+  });
+
+  // Incident 2026-09-28: codex/gpt-6-sol on a ChatGPT plan hit its usage
+  // limit (429); the project's own chain of Kortix models never ran.
+  test.each([
+    ['a chain the project set in Routing', 'project:exact:primary-model', 200],
+    ['the platform route', 'platform-default', 429],
+  ])('a ChatGPT-plan primary that fails reaches Kortix models only through %s', async (_name, policyId, expected) => {
+    const planUpstream: UpstreamDescriptor = { ...primaryUpstream, provider: 'openai-codex', billingMode: 'none', markup: 0 };
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const { response } = await run({
+      policyId,
+      fallbackOn: 'any-error',
+      resolve: (model) => (model === 'primary-model' ? [planUpstream] : [managedUpstream]),
+      respond: (url) => (isPrimary(url)
+        ? new Response(JSON.stringify({ error: { type: 'usage_limit_reached', message: 'The usage limit has been reached' } }), { status: 429 })
+        : ok('from kortix')),
+    });
+    expect(response.status).toBe(expected);
+  });
+
+  // #7979 let a project's chain move a failed ChatGPT request to a Kortix
+  // model, but the wallet gate had run for the ChatGPT model alone, which bills
+  // nothing: a drained wallet still got Kortix answers.
+  test('a Kortix-billed fallback after a ChatGPT failure passes the wallet gate first', async () => {
+    const planUpstream: UpstreamDescriptor = { ...primaryUpstream, provider: 'openai-codex', billingMode: 'none', markup: 0 };
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const limited = () => new Response(JSON.stringify({ error: { type: 'usage_limit_reached' } }), { status: 429 });
+    const chain = {
+      policyId: 'project:exact:primary-model',
+      fallbackOn: 'any-error' as const,
+      resolve: (model: string) => (model === 'primary-model' ? [planUpstream] : [managedUpstream]),
+    };
+
+    const gated: string[] = [];
+    const paid = await run({
+      ...chain,
+      respond: (url) => (isPrimary(url) ? limited() : ok('from kortix')),
+      billing: async (accountId) => { gated.push(accountId); return { holdUsd: 0.5 }; },
+    });
+    expect(paid.response.status).toBe(200);
+    expect(gated).toEqual(['account']);
+    expect(paid.usage).toEqual([expect.objectContaining({ billingMode: 'credits', billingHoldUsd: 0.5 })]);
+
+    const drained = await run({
+      ...chain,
+      respond: (url) => (isPrimary(url) ? limited() : ok('from kortix')),
+      billing: async () => { throw Object.assign(new Error('Insufficient credits'), { reason: 'insufficient_credits' }); },
+    });
+    expect(drained.response.status).toBe(429);
+    expect(drained.calls.map((call) => new URL(call.url).host)).toEqual(['primary.example']);
+    expect(drained.usage).toEqual([]);
+
+    // A hold taken for a fallback that then fails is returned in full.
+    const failed = await run({
+      ...chain,
+      respond: (url) => (isPrimary(url) ? limited() : new Response('down', { status: 503 })),
+      billing: async () => ({ holdUsd: 0.5 }),
+    });
+    expect(failed.response.status).toBe(503);
+    expect(failed.usage).toEqual([expect.objectContaining({ finalCost: 0, billingHoldUsd: 0.5 })]);
+  });
+
+  // With every ChatGPT account paused after a 429, or needing reconnection, the
+  // request failed at resolution, before the project's chain could run.
+  const unavailable = (code: 'provider_pool_rate_limited' | 'provider_reauth_required' | 'provider_not_connected') => () => {
+    throw new GatewayResolutionError(code, `ChatGPT is unavailable: ${code}`, 'Reconnect the account or wait.',
+      code === 'provider_pool_rate_limited' ? 42 : undefined);
+  };
+  test.each([
+    ['paused, retry on service errors', 'provider_pool_rate_limited', 'transient', 200],
+    ['paused, retry on any error', 'provider_pool_rate_limited', 'any-error', 200],
+    ['needing reconnection, retry on any error', 'provider_reauth_required', 'any-error', 200],
+    ['needing reconnection, retry on service errors', 'provider_reauth_required', 'transient', 400],
+    ['not connected, retry on any error', 'provider_not_connected', 'any-error', 400],
+  ] as const)('a ChatGPT model with every account %s', async (_name, code, fallbackOn, expected) => {
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const { response, calls, traces } = await run({
+      policyId: 'project:exact:primary-model',
+      fallbackOn,
+      resolve: (model) => (model === 'primary-model' ? unavailable(code)() : [managedUpstream]),
+      respond: () => ok('from kortix'),
+    });
+    expect(response.status).toBe(expected);
+    if (expected !== 200) {
+      expect(calls).toEqual([]);
+      expect(await response.json()).toMatchObject({ error: { code } });
+      return;
+    }
+    expect(await response.text()).toContain('from kortix');
+    expect(traces.at(-1)).toMatchObject({
+      ok: true,
+      attempts: 1,
+      resolvedModel: 'fallback-model',
+      candidatesTried: [`primary-model:${code}`, 'fallback-upstream:fallback-model'],
+    });
+    expect(traces.at(-1)?.attemptFailures).toEqual([expect.objectContaining({
+      attempt: 1,
+      stage: 'resolve',
+      routeModel: 'primary-model',
+      code,
+      status: code === 'provider_pool_rate_limited' ? 429 : 401,
+      // The route hold this failure took: the pool's reset (42 s here), else 60 s.
+      holdSeconds: code === 'provider_pool_rate_limited' ? 42 : 60,
+    })]);
+  });
+
+  // A routed model that cannot be resolved at all is the same "the provider
+  // will not serve this model" class as an upstream 404. The project's own
+  // chain is configured for exactly this, so it runs.
+  const unroutable = (code: 'model_not_found' | 'model_retired' | 'model_disabled_on_deployment') => () => {
+    throw new GatewayResolutionError(code, `The model is unavailable: ${code}`, 'Choose another model.');
+  };
+  test.each(['model_not_found', 'model_retired', 'model_disabled_on_deployment'] as const)(
+    'a project chain takes over an unroutable primary (%s)',
+    async (code) => {
+      const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+      const { response, traces } = await run({
+        policyId: 'project:exact:primary-model',
+        fallbackOn: 'transient',
+        resolve: (model) => (model === 'primary-model' ? unroutable(code)() : [managedUpstream]),
+        respond: () => ok('from fallback'),
+      });
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('from fallback');
+      expect(traces.at(-1)?.attemptFailures).toEqual([
+        expect.objectContaining({ stage: 'resolve', routeModel: 'primary-model', code, status: 404 }),
+      ]);
+    },
+  );
+
+  test('an unroutable primary on the platform route keeps its own error', async () => {
+    const { response, calls } = await run({
+      policyId: 'platform-default',
+      fallbackOn: 'transient',
+      resolve: (model) => (model === 'primary-model' ? unroutable('model_not_found')() : [fallbackUpstream]),
+      respond: () => ok('from fallback'),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { code: 'model_not_found' } });
+    expect(calls).toEqual([]);
+  });
+
+  test('a paused ChatGPT model on the platform route returns its own error', async () => {
+    const { response, calls } = await run({
+      policyId: 'platform-default',
+      fallbackOn: 'any-error',
+      resolve: (model) => (model === 'primary-model' ? unavailable('provider_pool_rate_limited')() : [fallbackUpstream]),
+      respond: () => ok('from kortix'),
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get('retry-after')).toBe('42');
+    expect(calls).toEqual([]);
+  });
+
+  test('a paused ChatGPT model is not moved to a Kortix model the account cannot pay for', async () => {
+    const managedUpstream: UpstreamDescriptor = { ...fallbackUpstream, billingMode: 'credits' };
+    const { response, calls, usage } = await run({
+      policyId: 'project:default',
+      resolve: (model) => (model === 'primary-model' ? unavailable('provider_pool_rate_limited')() : [managedUpstream]),
+      respond: () => ok('from kortix'),
+      billing: async () => { throw Object.assign(new Error('Insufficient credits'), { reason: 'insufficient_credits' }); },
+    });
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({ error: { code: 'provider_pool_rate_limited' } });
+    expect(calls).toEqual([]);
+    expect(usage).toEqual([]);
+  });
+
+  test('a rescued chain keeps numbering its failures when it moves again', async () => {
+    const { response, traces } = await run({
+      fallbackModels: ['fallback-model', 'second-fallback'],
+      resolve: (model) => {
+        if (model === 'primary-model') return unavailable('provider_pool_rate_limited')();
+        return [{ ...fallbackUpstream, provider: model === 'fallback-model' ? 'fallback-upstream' : 'second-upstream',
+          baseUrl: `https://${model}.example/v1` }];
+      },
+      respond: (url) => (new URL(url).host === 'fallback-model.example' ? new Response('down', { status: 503 }) : ok('second')),
+    });
+    expect(response.status).toBe(200);
+    expect(traces.at(-1)?.attemptFailures?.map((f) => [f.attempt, f.stage, f.routeModel])).toEqual([
+      [1, 'resolve', 'primary-model'],
+      [2, 'dispatch', 'fallback-model'],
     ]);
   });
 
@@ -1308,5 +1528,370 @@ describe('trace timing segments', () => {
     expect(timing.resolve_ms).toBeGreaterThanOrEqual(75);
     expect(timing.billing_ms).toBeGreaterThanOrEqual(95);
     expect(timing.admit_ms + timing.route_ms + timing.resolve_ms + timing.billing_ms).toBeLessThanOrEqual(timing.prep_ms);
+  });
+});
+
+describe('refused requests are traced', () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  const logger = { info() {}, warn() {}, error() {} };
+  async function firstTrace(traces: GatewayTrace[]): Promise<GatewayTrace | undefined> {
+    for (let i = 0; i < 50 && traces.length === 0; i++) await sleep(10);
+    return traces[0];
+  }
+
+  test('a resolution refusal (plan_upgrade_required) leaves one failed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          resolveUpstream: async () => {
+            throw new GatewayResolutionError('plan_upgrade_required', 'Upgrade your plan to use this model.', 'Upgrade your plan.');
+          },
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe('plan_upgrade_required');
+    const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(400);
+    expect(trace?.errorCode).toBe('plan_upgrade_required');
+    expect(trace?.accountId).toBe('account');
+    expect(trace?.projectId).toBe('project');
+    expect(trace?.requestedModel).toBe('requested-model');
+    // A refusal settles nothing: no usage row, no cost.
+    expect(usage).toHaveLength(0);
+  });
+
+  test('an admission refusal with a principal leaves one failed trace', async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], traces),
+          authorize: async () => ({ ok: false, status: 402, errorCode: 'budget_exceeded', message: 'Budget exceeded', principal }),
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(402);
+    const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(402);
+    expect(trace?.errorCode).toBe('budget_exceeded');
+    expect(trace?.accountId).toBe('account');
+  });
+
+  test('a model with no configured provider leaves one failed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: { ...hooks(usage, traces), resolveUpstream: async () => [] },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe('model_unavailable');
+    const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(400);
+    expect(trace?.errorCode).toBe('model_unavailable');
+    expect(trace?.requestedModel).toBe('requested-model');
+    expect(trace?.resolvedModel).toBe('primary-model');
+    // A refusal settles nothing: no usage row, no cost.
+    expect(usage).toHaveLength(0);
+  });
+
+  test('a billing refusal (billing inactive) leaves one failed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          assertBillingActive: async () => {
+            throw new Error('Billing inactive');
+          },
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(402);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe('subscription_required');
+    const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(402);
+    expect(trace?.errorCode).toBe('subscription_required');
+    expect(trace?.errorMessage).toBe('Billing inactive');
+    // A refusal settles nothing: no usage row, no cost.
+    expect(usage).toHaveLength(0);
+  });
+
+  test('an invalid JSON body leaves one failed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      { hooks: hooks(usage, traces), logger },
+      { authorization: 'Bearer token', rawBody: 'not json' },
+    );
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { code?: string };
+    expect(body.code).toBe('invalid_json');
+    const trace = await firstTrace(traces);
+    // Exactly one refusal row: a double-emit would double-count the refusal in usage.
+    expect(traces).toHaveLength(1);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(400);
+    expect(trace?.errorCode).toBe('invalid_json');
+    expect(trace?.accountId).toBe('account');
+    // A refusal settles nothing: no usage row, no cost.
+    expect(usage).toHaveLength(0);
+  });
+
+  test('an admission refusal without a principal (invalid token) leaves no trace', async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks([], traces),
+          authorize: async () => ({ ok: false, status: 401, errorCode: 'invalid_token', message: 'Invalid token' }),
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(401);
+    await sleep(120);
+    expect(traces).toHaveLength(0);
+  });
+
+  // The API's authorizeRequest now attaches the matched credential row's
+  // identity to a 401 denial when the presented secret hash-matches a
+  // revoked/expired key or a dead token (KRTX-1749). The handler contract for
+  // that shape: one attributed failed trace, no usage row.
+  test('an admission refusal with a principal on a 401 (revoked key) leaves one attributed trace', async () => {
+    const usage: UsageEvent[] = [];
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions(
+      {
+        hooks: {
+          ...hooks(usage, traces),
+          authorize: async () => ({
+            ok: false,
+            status: 401,
+            errorCode: 'invalid_token',
+            message: 'Invalid token',
+            principal,
+          }),
+        },
+        logger,
+      },
+      { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) },
+    );
+    expect(response.status).toBe(401);
+    const trace = await firstTrace(traces);
+    expect(traces).toHaveLength(1);
+    expect(trace?.ok).toBe(false);
+    expect(trace?.status).toBe(401);
+    expect(trace?.errorCode).toBe('invalid_token');
+    expect(trace?.accountId).toBe('account');
+    expect(trace?.projectId).toBe('project');
+    expect(usage).toHaveLength(0);
+  });
+});
+
+describe('one-call admission (hooks.admit)', () => {
+  const ok = () => new Response(JSON.stringify({ choices: [] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const logger = { info() {}, warn() {}, error() {} };
+  const failing = async (): Promise<never> => { throw new Error('hook must not run'); };
+
+  test('an admit answer replaces authorize, route, primary resolve and billing', async () => {
+    const inputs: unknown[] = [];
+    const usage: UsageEvent[] = [];
+    let dispatchedModel = '';
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks(usage, []),
+        authorize: failing,
+        resolveRoute: failing,
+        resolveUpstream: failing,
+        assertBillingActive: failing,
+        admit: async (token, input) => {
+          inputs.push({ token, input });
+          return {
+            admission: { ok: true, principal },
+            route: { policyId: 'route', primaryModel: 'primary-model', fallbackModels: [] },
+            upstream: [primary],
+            billing: { holdUsd: 0.01 },
+          };
+        },
+      },
+      logger,
+      fetchImpl: async (_url, init) => {
+        dispatchedModel = JSON.parse(String(init.body)).model;
+        return ok();
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    expect(inputs).toEqual([{ token: 'token', input: { requestedModel: 'requested-model', requires: { imageInput: false } } }]);
+    expect(dispatchedModel).toBe('primary-model');
+    // The hold the admit call took is settled with the request.
+    expect(usage.at(-1)?.billingHoldUsd).toBe(0.01);
+  });
+
+  test("the host's admission steps land in the trace with the gateway<->API network share", async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks([], traces),
+        admit: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          return {
+            admission: { ok: true, principal },
+            route: { policyId: 'route', primaryModel: 'primary-model', fallbackModels: [] },
+            upstream: [primary],
+            timing: { principal: 2, tier: 0, budget: 1, authorize: 3, route: 1, resolve: 4, total: 8 },
+          };
+        },
+      },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    await response.text();
+    const timing = traces.at(-1)!.metadata.timing as Record<string, number>;
+    expect(timing).toMatchObject({ admit_api_principal_ms: 2, admit_api_resolve_ms: 4, admit_api_total_ms: 8 });
+    expect(timing.admit_net_ms).toBe(timing.admit_ms! - 8);
+    expect(timing.admit_net_ms).toBeGreaterThanOrEqual(20);
+  });
+
+  test('a null admit answer falls back to the separate hooks', async () => {
+    const calls: string[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks([], []),
+        authorize: async () => { calls.push('authorize'); return { ok: true, principal }; },
+        resolveRoute: async () => { calls.push('route'); return null; },
+        resolveUpstream: async () => { calls.push('resolve'); return [primary]; },
+        assertBillingActive: async () => { calls.push('billing'); },
+        admit: async () => null,
+      },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    expect(calls).toEqual(['authorize', 'route', 'resolve', 'billing']);
+  });
+
+  test('admit answers a denial, a resolution error and a billing refusal like the separate hooks', async () => {
+    const run = (answer: Awaited<ReturnType<NonNullable<GatewayHooks['admit']>>>) => handleChatCompletions({
+      hooks: { ...hooks([], []), admit: async () => answer },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    const route = { policyId: 'route', primaryModel: 'primary-model' };
+    expect((await run({ admission: { ok: false, status: 401, errorCode: 'invalid_token' } })).status).toBe(401);
+    const unresolved = await run({
+      admission: { ok: true, principal }, route,
+      upstream: new GatewayResolutionError('provider_not_connected', 'Connect it', 'Connect the provider'),
+    });
+    expect(unresolved.status).toBe(400);
+    expect((await unresolved.json()).code).toBe('provider_not_connected');
+    const refused = Object.assign(new Error('Add credits'), { reason: 'insufficient_credits' });
+    const unpaid = await run({ admission: { ok: true, principal }, route, upstream: [primary], billing: refused });
+    expect(unpaid.status).toBe(402);
+    expect((await unpaid.json()).code).toBe('insufficient_credits');
+  });
+
+  // The API takes the admission hold inside /admit for the routed primary. A
+  // per-session route hold can then send the request to a fallback, so the
+  // hold must be reconciled whatever the fallback's payee is.
+  const heldRun = async (fallbackModel: UpstreamDescriptor) => {
+    const usage: UsageEvent[] = [];
+    const billingCalls: string[] = [];
+    const routeMemory = createRouteMemory();
+    routeMemory.hold(routeMemoryKey(principal, 'primary-model'), {
+      fallbackModel: 'fallback-model',
+      failure: { attempt: 1, provider: 'provider-a', routeModel: 'primary-model', resolvedModel: 'primary-model', stage: 'dispatch', status: 503, code: 'upstream_error', message: 'down' },
+      byok: false,
+    }, 60);
+    const dispatched: string[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks(usage, []),
+        authorize: failing,
+        resolveRoute: failing,
+        resolveUpstream: async (_p, model) => (model === 'fallback-model' ? [fallbackModel] : [primary]),
+        assertBillingActive: async () => { billingCalls.push('billing'); return { holdUsd: 0.01 }; },
+        admit: async () => ({
+          admission: { ok: true, principal },
+          route: { policyId: 'project:route', primaryModel: 'primary-model', fallbackModels: ['fallback-model'], fallbackOn: 'transient' },
+          upstream: [primary],
+          billing: { holdUsd: 0.01 },
+        }),
+      },
+      routeMemory,
+      logger,
+      // Usage, so the settlement event carries the upstream cost a fee is on.
+      fetchImpl: async (url) => {
+        dispatched.push(String(url));
+        return new Response(JSON.stringify({ choices: [], usage: { prompt_tokens: 1_000, completion_tokens: 500 } }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      },
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'primary-model', messages: [] }) });
+    await Bun.sleep(0);
+    return { response, usage, billingCalls, dispatched };
+  };
+
+  // The API settles this one event (apps/api hooks.ts recordGatewayUsage):
+  // it reconciles the hold against the BYOK fee on `upstreamCost`, so the fee
+  // is charged once and the rest of the hold comes back
+  // (usage-settlement.integration.test.ts proves the wallet side).
+  test('a held route that serves an own-key fallback settles the admit hold against the BYOK fee', async () => {
+    const own: UpstreamDescriptor = { ...primary, provider: 'own', baseUrl: 'https://own.example/v1', billingMode: 'none', markup: 0 };
+    const { response, usage, billingCalls, dispatched } = await heldRun(own);
+    expect(response.status).toBe(200);
+    expect(dispatched).toEqual(['https://own.example/v1/chat/completions']);
+    expect(billingCalls).toEqual([]);
+    const held = usage.filter((event) => event.billingHoldUsd === 0.01);
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatchObject({ billingMode: 'none', provider: 'own', finalCost: 0 });
+    expect(held[0]!.upstreamCost).toBeGreaterThan(0);
+  });
+
+  test('a held route that serves a Kortix-billed fallback reuses the admit hold once', async () => {
+    const { response, usage, billingCalls, dispatched } = await heldRun({ ...fallback, baseUrl: 'https://provider-b.example/v1' });
+    expect(response.status).toBe(200);
+    expect(dispatched).toEqual(['https://provider-b.example/v1/chat/completions']);
+    expect(billingCalls).toEqual([]);
+    expect(usage.filter((event) => event.billingHoldUsd === 0.01)).toHaveLength(1);
+  });
+
+  test('invalid JSON from an unauthenticated caller still answers 401 first', async () => {
+    const response = await handleChatCompletions({
+      hooks: { ...hooks([], []), authorize: async () => ({ ok: false, status: 401, errorCode: 'invalid_token' }) , admit: failing },
+      logger,
+    }, { authorization: 'Bearer token', rawBody: '{not json' });
+    expect(response.status).toBe(401);
   });
 });

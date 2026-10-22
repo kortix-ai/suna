@@ -15,16 +15,16 @@ import { createHmac } from 'node:crypto';
  */
 
 const PROJECT_ID = '40c2e222-c4c2-47f6-ba40-05e8f40098b3';
-const TENANT_ID = '36009a52-46d2-44bc-ba56-57a87e485e0a';
+const TENANT_ID = '5a1e0c09-0000-4000-8000-000000000009';
 const BASE_URL = 'https://dev-api.kortix.com';
 const CHANNELS_URL = `https://dev.kortix.com/projects/${PROJECT_ID}/customize/connectors?scope=channels`;
 
-let flagOn = true;
 let tokenExchangeOk = true;
 const saved: Array<Record<string, unknown>> = [];
 const states: Array<{ state: string; error?: string | null }> = [];
 const orgInstalled: boolean[] = [];
 const catalogIds: string[] = [];
+const appVersions: string[] = [];
 let publishImpl: () => Promise<Record<string, unknown>> = async () => ({ ok: true, published: true, teamsAppId: 'cat-1' });
 
 mock.module('../config', () => ({
@@ -36,10 +36,6 @@ mock.module('../config', () => ({
     FRONTEND_URL: 'https://dev.kortix.com',
     TEAMS_APP_NAME: 'Kortix Dev',
   },
-}));
-
-mock.module('../feature-flags/for-project', () => ({
-  projectFeatureFlagEnabled: async () => flagOn,
 }));
 
 const realInstallStore = await import('../channels/install-store');
@@ -58,6 +54,9 @@ mock.module('../channels/install-store', () => ({
   setTeamsCatalogAppId: async (_projectId: string, id: string) => {
     catalogIds.push(id);
   },
+  setTeamsAppVersion: async (_projectId: string, version: string) => {
+    appVersions.push(version);
+  },
 }));
 
 mock.module('../channels/teams/catalog', () => ({
@@ -68,8 +67,17 @@ mock.module('../channels/teams/catalog', () => ({
 // runs under --isolate, so a hand-listed stub cannot leak into a sibling suite,
 // and NOT loading the real module keeps the Composio client (an optional dep
 // that a fresh worktree may not have installed) out of this test's graph.
+//
+// The reconcile is holdable: the completion step must WAIT for it (the redirect
+// races the dashboard's first connectors fetch), so a test can keep it pending
+// and prove the completion has not resolved under it.
+let holdReconcile: ((release: () => void) => void) | null = null;
+let reconcileCalls = 0;
 mock.module('../connectors/sync', () => ({
-  reconcileChannelConnectors: async () => undefined,
+  reconcileChannelConnectors: async () => {
+    reconcileCalls += 1;
+    if (holdReconcile) await new Promise<void>((resolve) => holdReconcile!(resolve));
+  },
 }));
 
 const realFetch = globalThis.fetch;
@@ -80,12 +88,14 @@ function graphJwt(tid: string): string {
 }
 
 beforeEach(() => {
-  flagOn = true;
   tokenExchangeOk = true;
   saved.length = 0;
   states.length = 0;
   orgInstalled.length = 0;
   catalogIds.length = 0;
+  appVersions.length = 0;
+  holdReconcile = null;
+  reconcileCalls = 0;
   publishImpl = async () => ({ ok: true, published: true, teamsAppId: 'cat-1' });
   globalThis.fetch = (async (url: any) => {
     // Only the token endpoint may be called from the callback; the catalog
@@ -117,7 +127,7 @@ const OTHER_USER_ID = '1e2d3c4b-5a69-4788-9a0b-1c2d3e4f5a6b';
 const OTHER_PROJECT_ID = '7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2910';
 
 function state(userId = USER_ID): string {
-  const url = teamsOrgConsentUrl({ projectId: PROJECT_ID, userId, baseUrl: BASE_URL, enabled: true });
+  const url = teamsOrgConsentUrl({ projectId: PROJECT_ID, userId, baseUrl: BASE_URL });
   const s = url && new URL(url).searchParams.get('state');
   if (!s) throw new Error('missing state');
   return s;
@@ -145,7 +155,8 @@ const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe('Teams one-click install callback', () => {
   test('consent URL asks for the delegated catalog scope and carries the callback', () => {
-    const url = new URL(teamsOrgConsentUrl({ projectId: PROJECT_ID, userId: USER_ID, baseUrl: BASE_URL, enabled: true })!);
+    // Every project can install Teams: no per-project switch is consulted.
+    const url = new URL(teamsOrgConsentUrl({ projectId: PROJECT_ID, userId: USER_ID, baseUrl: BASE_URL })!);
     expect(url.searchParams.get('scope')).toContain('AppCatalog.ReadWrite.All');
     expect(url.searchParams.get('redirect_uri')).toBe(`${BASE_URL}/v1/webhooks/teams/oauth/callback`);
     expect(url.searchParams.get('client_id')).toBe('62b4470a-e8e6-4e13-a73f-363de2209dfc');
@@ -165,13 +176,6 @@ describe('Teams one-click install callback', () => {
     expect(states).toHaveLength(0);
   });
 
-  test('flag off for the project → ?teams=disabled, nothing saved', async () => {
-    flagOn = false;
-    const res = await teamsOauthApp.request(`/callback?code=c6&state=${state()}`);
-    expect(location(res)).toBe(`${CHANNELS_URL}&teams=disabled`);
-    expect(saved).toHaveLength(0);
-  });
-
   test('user declined at Microsoft → ?teams=declined', async () => {
     const res = await teamsOauthApp.request(`/callback?error=access_denied&state=${state()}`);
     expect(location(res)).toBe(`${CHANNELS_URL}&teams=declined`);
@@ -185,6 +189,30 @@ describe('Teams one-click install callback', () => {
 });
 
 describe('Teams one-click install completion', () => {
+  // KRTX-2353: same race as the Slack OAuth completion — the redirect fires
+  // into the dashboard, which immediately loads the connectors list. The
+  // completion must wait for the channel connector to exist.
+  test('the completion waits for the channel connector reconcile before redirecting', async () => {
+    let release: () => void = () => {};
+    holdReconcile = (r) => {
+      release = r;
+    };
+    let settled = false;
+    const completion = complete().then((result: unknown) => {
+      settled = true;
+      return result;
+    });
+    // Poll until it settles (the bug does within a few ticks) or the poll
+    // window closes: a fixed tick count could false-pass before the buggy
+    // completion even resolved.
+    for (let i = 0; i < 50 && !settled; i++) await new Promise((r) => setTimeout(r, 1));
+    expect(settled).toBe(false);
+    release();
+    const result = (await completion) as { ok: boolean };
+    expect(result).toMatchObject({ ok: true });
+    expect(reconcileCalls).toBe(1);
+  });
+
   test('admin publish completes within the wait → ?teams=connected on the Channels page, outcome persisted', async () => {
     expect(await complete()).toEqual(landed('connected'));
     expect(saved).toEqual([{ projectId: PROJECT_ID, tenantId: TENANT_ID }]);
@@ -213,6 +241,18 @@ describe('Teams one-click install completion', () => {
     expect(saved).toHaveLength(0);
   });
 
+  test('the app version the catalog serves is recorded on the install', async () => {
+    publishImpl = async () => ({ ok: true, published: true, teamsAppId: 'cat-1', updated: true, version: '1.6.0' });
+
+    expect(await complete()).toEqual(landed('connected'));
+    expect(appVersions).toEqual(['1.6.0']);
+  });
+
+  test('a publish that cannot say which version the catalog serves records none', async () => {
+    expect(await complete()).toEqual(landed('connected'));
+    expect(appVersions).toEqual([]);
+  });
+
   test('non-admin submit → ?teams=review, state "review"', async () => {
     publishImpl = async () => ({ ok: true, published: false, pendingReview: true, teamsAppId: 'sub-9' });
 
@@ -220,6 +260,7 @@ describe('Teams one-click install completion', () => {
     expect(states).toEqual([{ state: 'publishing' }, { state: 'review' }]);
     expect(orgInstalled).toEqual([]);
     expect(catalogIds).toEqual(['sub-9']);
+    expect(appVersions).toEqual([]);
   });
 
   test('Graph rejects the package → ?teams=failed, the reason is persisted on the install', async () => {
@@ -262,12 +303,6 @@ describe('Teams one-click install completion', () => {
     expect(states).toEqual([{ state: 'publishing' }, { state: 'published' }]);
     expect(catalogIds).toEqual(['cat-late']);
     setTeamsPublishRedirectWaitForTest(null);
-  });
-
-  test('flag off for the project → ?teams=disabled, nothing saved', async () => {
-    flagOn = false;
-    expect(await complete()).toEqual(landed('disabled'));
-    expect(saved).toHaveLength(0);
   });
 
   test('token exchange fails → ?teams=failed, nothing saved', async () => {

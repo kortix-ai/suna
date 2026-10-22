@@ -1,7 +1,7 @@
 /**
  * What the sandbox PRESENTED, judged against what this session may spend.
  *
- * Substitution itself is byte work and lives in `http-broker.ts`. This module
+ * Substitution itself is byte work and lives in `broker/substitution.ts`. This module
  * answers the different question the audit record needs: a handle turned up in
  * a relayed request and was NOT honored — why not? The three answers are three
  * different incidents:

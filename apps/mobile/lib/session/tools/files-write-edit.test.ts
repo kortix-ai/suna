@@ -138,24 +138,41 @@ describe('EditTool speaks the tense the row is actually in', () => {
 });
 
 describe('editSources — where the diff comes from', () => {
-  test('metadata.filediff wins over the input strings', () => {
+  test('the SDK ToolView file wins over the input strings', () => {
     const s = editSources(
       { filePath: '/w/a.ts', oldString: 'in-old', newString: 'in-new' },
       {},
-      { filediff: { before: 'fd-old', after: 'fd-new' } },
+      { path: '/w/a.ts', before: 'fd-old', after: 'fd-new' },
     );
     expect(s).toMatchObject({ filePath: '/w/a.ts', before: 'fd-old', after: 'fd-new', hasDiff: true });
   });
 
   test('input, then streaming input; `target_filepath` names a morph edit file', () => {
-    const s = editSources({}, { target_filepath: '/w/m.ts', code_edit: 'x', instructions: 'do it' }, {});
+    const s = editSources({}, { target_filepath: '/w/m.ts', code_edit: 'x', instructions: 'do it' }, undefined);
     expect(s).toMatchObject({ filePath: '/w/m.ts', codeEdit: 'x', morphInstructions: 'do it', hasDiff: false });
   });
 
   test('`??` semantics: an empty oldString is kept, not skipped', () => {
-    const s = editSources({ oldString: '', newString: 'b' }, { oldString: 'stream-old' }, {});
+    const s = editSources({ oldString: '', newString: 'b' }, { oldString: 'stream-old' }, undefined);
     expect(s.before).toBe('');
     expect(s.after).toBe('b');
+  });
+
+  test('pi: the file from input.path and a unified patch with its counts', () => {
+    const s = editSources(
+      { path: 'src/a.ts', edits: [{ oldText: 'a', newText: 'b' }] },
+      {},
+      { path: 'src/a.ts', patch: '@@ -1 +1 @@\n-a\n+b', additions: 1, deletions: 1 },
+    );
+    expect(s).toMatchObject({ filePath: 'src/a.ts', patch: '@@ -1 +1 @@\n-a\n+b', hasDiff: false });
+    expect(s.patchStat).toEqual({ additions: 1, deletions: 1 });
+    expect(editStat({ status: 'completed', hasDiff: false, before: '', after: '', patchStat: s.patchStat })).toEqual({
+      additions: 1,
+      deletions: 1,
+    });
+    expect(editBodyKind({ isError: false, hasDiff: false, patch: s.patch, codeEdit: '', isStalePending: false })).toBe(
+      'patch',
+    );
   });
 });
 

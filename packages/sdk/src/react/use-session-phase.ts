@@ -7,7 +7,7 @@ import type { SessionPhase } from './use-session';
  * while the runtime queries fire against a row that still says `stopped`. The
  * proxy answers those with `503 sandbox not ready`, correctly — a GET on a
  * session-data port is deliberately not wake-capable. Mapping that 503 straight
- * to a phase of 'error' is what renders "OpenCode failed to load" over a
+ * to a phase of 'error' is what renders "The session runtime failed to load" over a
  * perfectly healthy wake.
  *
  * So a runtime error only becomes terminal once `/start` has SETTLED. While it

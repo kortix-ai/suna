@@ -71,10 +71,9 @@ export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STR
  *
  *  - `kortix_slack` → channel only (the Slack channel materializes under it; see
  *    connector/channels.ts SLACK_CHANNEL_CONNECTOR_SLUG).
- *  - `computer`     → computer only (default Computers profile slug).
- * Additional Computers profile slugs are created through the connector API.
- * They never pass through manifest parsing because machine ids are account
- * control-plane identities, not repository configuration.
+ *  - `computer`     → computer only (the project's computer connector).
+ * Computer connectors are created by pairing a machine, never by manifest
+ * parsing: a paired machine is an account, not repository configuration.
  * See KORTIX-206. The pairs themselves are
  * canonically defined in `@kortix/manifest-schema` (imported above) — this
  * `export` just preserves this module's existing public surface, since
@@ -83,7 +82,6 @@ export type ConnectorAuthorizationStrategy = (typeof CONNECTOR_AUTHORIZATION_STR
 export { RESERVED_SLUG_PROVIDERS };
 /** The reserved slug the built-in Slack channel materializes under. */
 export const SLACK_RESERVED_SLUG = 'kortix_slack';
-export const EMAIL_RESERVED_SLUG = 'kortix_email';
 export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
   'slack',
   'email',
@@ -91,7 +89,7 @@ export const RESERVED_CONNECTOR_SLUGS = new Set<string>([
 ]);
 
 /** Chat platforms a `channel` connector can target. */
-export type ChannelPlatform = 'slack' | 'teams' | 'email';
+export type ChannelPlatform = 'slack' | 'teams' | 'email' | 'telegram';
 
 type ConnectorAuthType =
   | 'bearer'
@@ -181,12 +179,6 @@ export interface ConnectorSpec {
   baseUrl: string | null;
   /** channel: chat platform (slack | …) — selects the fixed action catalog + API base. */
   platform: ChannelPlatform | null;
-  /** computer: legacy single-machine binding. */
-  tunnelId?: string | null;
-  /** computer: profile-scoped machine allowlist. */
-  tunnelIds?: string[] | null;
-  /** computer: verified owner accounts for the selected machine allowlist. */
-  tunnelAccountIds?: string[] | null;
   /** openapi/postman/graphql/http: a URL or repo-relative file path. Optional for graphql. */
   spec: string | null;
   // ── shared ──
@@ -288,75 +280,6 @@ export function extractConnectors(manifest: ParsedManifest): LoadedConnectors {
 }
 
 /**
- * Convert a ConnectorSpec back to the raw object that lives in
- * `manifest.raw.connectors` (serialized as YAML for `kortix.yaml`, or TOML
- * for a legacy v1 `kortix.toml`). Inverse of `parseConnectorEntry`. Used by
- * the CRUD path to round-trip a dashboard edit before committing.
- */
-export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, unknown> {
-  const entry: Record<string, unknown> = {
-    slug: spec.slug,
-    name: spec.name,
-    provider: spec.provider,
-    enabled: spec.enabled,
-    authorization_strategy: spec.authorizationStrategy,
-  };
-  // `shared` is the only mode and the implicit default for every provider —
-  // never emit `credential` (mirrors how `sensitive: false` is omitted).
-  // Provider-specific keys — only emit what carries information.
-  if (spec.provider === 'pipedream' || spec.provider === 'composio') {
-    if (spec.app) entry.app = spec.app;
-    if (spec.account) entry.account = spec.account;
-  } else if (spec.provider === 'mcp') {
-    if (spec.url) entry.url = spec.url;
-    if (spec.transport) entry.transport = spec.transport;
-  } else if (spec.provider === 'graphql') {
-    if (spec.endpoint) entry.endpoint = spec.endpoint;
-    if (spec.spec) entry.spec = spec.spec;
-  } else if (spec.provider === 'http') {
-    if (spec.baseUrl) entry.base_url = spec.baseUrl;
-    if (spec.spec) entry.spec = spec.spec;
-  } else if (spec.provider === 'channel') {
-    if (spec.platform) entry.platform = spec.platform;
-  } else if (spec.provider === 'openapi' || spec.provider === 'postman') {
-    if (spec.spec) entry.spec = spec.spec;
-  }
-
-  if (spec.authAuto === false || spec.auth.type !== 'none') {
-    const auth: Record<string, unknown> = { type: spec.auth.type };
-    if (spec.auth.type === 'custom' || spec.auth.type === 'api_key' || spec.auth.type === 'hmac') {
-      if (spec.auth.in !== 'header') auth.in = spec.auth.in;
-      if (spec.auth.name) auth.name = spec.auth.name;
-    }
-    if (spec.auth.prefix) auth.prefix = spec.auth.prefix;
-    if (spec.auth.secret) auth.secret = spec.auth.secret;
-    entry.auth = auth;
-  }
-
-  // Only emit a `headers` table when there is one — an empty map carries no
-  // information and would just churn the manifest (same rule as `policies`).
-  if (Object.keys(spec.headers).length > 0) {
-    entry.headers = { ...spec.headers };
-  }
-
-  if (spec.policies.length > 0) {
-    entry.policies = spec.policies.map((p) => {
-      const row: Record<string, unknown> = { match: p.match, action: p.action };
-      if (p.conditions && p.conditions.length > 0) {
-        row.conditions = p.conditions.map((c) => ({
-          arg: c.arg,
-          match: c.match,
-          ...(c.negate ? { negate: true } : {}),
-        }));
-      }
-      return row;
-    });
-  }
-
-  return entry;
-}
-
-/**
  * Stable hash over everything that should trigger a catalog re-sync when it
  * changes (so the materializer can skip unchanged connectors). `slug`/`name`
  * are excluded — renaming doesn't change what the connector resolves to.
@@ -374,7 +297,9 @@ export function manifestHashForConnector(spec: ConnectorSpec): string {
     endpoint: spec.endpoint,
     baseUrl: spec.baseUrl,
     platform: spec.platform,
-    tunnelIds: spec.tunnelIds ?? (spec.tunnelId ? [spec.tunnelId] : null),
+    // Retired field, kept as null so every stored hash stays valid and no
+    // connector re-fetches its catalog because of this change.
+    tunnelIds: null,
     spec: spec.spec,
     auth: spec.auth,
     authAuto: spec.authAuto ?? false,
@@ -590,11 +515,11 @@ function parseProviderFields(
   }
 
   if (provider === 'computer') {
-    // API-only: profiles select account-owned machines through the connector
-    // API. Tunnel ids must not enter repository configuration.
+    // Pairing creates the computer connector; each paired machine is an
+    // account on it. Machines must not enter repository configuration.
     return err(
       slug,
-      'provider="computer" is managed through the connector API (Computers) — it cannot be declared in kortix.yaml',
+      'provider="computer" is created by pairing a computer — it cannot be declared in kortix.yaml',
       filename,
     );
   }
@@ -656,7 +581,8 @@ function parseAuth(
   ) {
     return err(
       slug,
-      '[connectors.auth] type="oauth1" is only supported for openapi/http connectors',
+      '[connectors.auth] type="oauth1" is only supported for openapi/postman/http connectors',
+      filename,
     );
   }
 

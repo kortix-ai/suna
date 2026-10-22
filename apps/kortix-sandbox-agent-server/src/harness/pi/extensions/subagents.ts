@@ -12,16 +12,23 @@
  *
  * Subagent types: `general` (every workspace tool), `explore` (read-only
  * search), and every compiled agent whose `mode` is `subagent` or `all`. A
- * compiled agent with a built-in's name replaces it. Children get no `task`
- * (no nesting) and no `question` (nobody answers a child).
+ * compiled agent with a built-in's name replaces it. kortix.yaml v3 has no
+ * built-in: only declared agents. The calling agent's `permission.task` rule
+ * filters the list: a denied type is not offered, and a call to it is refused.
+ * Children get no `task` (no nesting) and no `question` (nobody answers a child).
  */
 import type { ExtensionAPI, InlineExtension } from '@earendil-works/pi-coding-agent'
+import type { CompiledAgent } from '@kortix/api-contract/runtime-relay'
 import { Type } from 'typebox'
 
 /** What the subagents extension needs from the runtime that hosts it. */
 export interface KortixHost {
   /** The compiled agent config's `agent` map (`KORTIX_COMPILED_AGENT_CONFIG`). */
-  compiledAgents(): Record<string, { description?: string; mode?: string; model?: string; variant?: string; prompt?: string; disable?: boolean; permission?: unknown }>
+  compiledAgents(): Record<string, CompiledAgent>
+  /** False for kortix.yaml v3: no built-in `general`/`explore`. */
+  builtInSubagents(): boolean
+  /** The calling agent's `permission.task` rule for this subagent name is not `deny`. */
+  subagentAllowed(name: string): boolean
   /** Run one prompt in a child session of this session and return its final answer. */
   spawnSession(input: SpawnSessionInput): Promise<SpawnSessionResult>
 }
@@ -82,7 +89,7 @@ const BUILT_IN: Record<string, SubagentType> = {
 }
 
 export function subagentTypes(host: KortixHost): Map<string, SubagentType> {
-  const types = new Map(Object.entries(BUILT_IN))
+  const types = new Map(host.builtInSubagents() ? Object.entries(BUILT_IN) : [])
   for (const [name, agent] of Object.entries(host.compiledAgents())) {
     if (agent.disable === true || (agent.mode !== 'subagent' && agent.mode !== 'all')) continue
     types.set(name, {
@@ -93,6 +100,7 @@ export function subagentTypes(host: KortixHost): Map<string, SubagentType> {
       ...(agent.permission !== undefined ? { permission: agent.permission } : {}),
     })
   }
+  for (const name of types.keys()) if (!host.subagentAllowed(name)) types.delete(name)
   return types
 }
 

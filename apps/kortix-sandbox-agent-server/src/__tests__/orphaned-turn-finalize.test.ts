@@ -17,15 +17,18 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { finalizeOrphanedTurn } from '../harness/open-code/boot'
+import { finalizeOrphanedTurn, setOrphanSettleMsForTests } from '@/harness/open-code/boot'
 import { TURN_PROBE_WINDOW, inspectOpencodeRoot,
   observeOpencodeDelivery,
   opencodeDeliveryInFlight,
   opencodeTurnInFlight,
-} from '../harness/open-code/opencode-turn-state';
-import { writeOpenCodeSessionPin } from '../harness/open-code/runtime-state';
-import { createHealthRouter } from '../routes/health';
-import { createOpenCodeDiagnosticsService, observeRequestedTurn } from '../harness/open-code/diagnostics';
+} from '@/harness/open-code/opencode-turn-state';
+import { writeOpenCodeSessionPin } from '@/harness/open-code/runtime-state';
+import { createHealthRouter } from '@/routes/kortix/health';
+import { createOpenCodeDiagnosticsService, observeRequestedTurn } from '@/harness/open-code/diagnostics';
+
+// The settle window is 2 s in the product; these fakes change on a read count, not on time.
+setOrphanSettleMsForTests(10)
 
 const BASE = 'http://127.0.0.1:4096';
 const WORKSPACE = '/workspace';

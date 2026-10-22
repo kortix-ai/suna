@@ -8,11 +8,11 @@ import { provisionSessionSandbox } from '../../platform/services/session-sandbox
 import { db } from '../../shared/db';
 import type { GitBackedProject } from '../git';
 import { RuntimeIdentityConflictError } from '../runtime-identity-error';
-import type { PreparedInitialSandboxTurn } from '../sandbox-turn-lifecycle';
+import { transitionSession } from '../session-lifecycle/status-transitions';
+import type { PreparedInitialSandboxTurn } from '../session-turn-ledger';
 import type { ProjectRow } from './serializers';
 import { projectSessionMetadataMerge } from './session-metadata-merge';
 import { mergeSessionSandboxEnv } from './session-runtime-context';
-import { transitionSession } from '../session-lifecycle/status-transitions';
 
 type RuntimeProject = Pick<ProjectRow, 'repoUrl' | 'defaultBranch' | 'manifestPath' | 'metadata'>;
 
@@ -59,7 +59,17 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       return envVars;
     });
 
-    const extraEnvVars = mergeSessionSandboxEnv(await envPromise, input.extraEnvVars);
+    // Not awaited here: provisioning reads it only when it builds the provider
+    // input, so the env build overlaps the image check and the token mint.
+    const extraEnvVars = envPromise.then((env) => mergeSessionSandboxEnv(env, input.extraEnvVars));
+    // KRTX-2064: extraEnvVars is the end of the env-build chain; if anything
+    // throws before provisionSessionSandbox attaches its own catch, a later
+    // env-build failure (fail-closed secret grant on a git auth error) would
+    // surface as an unhandled rejection, which on Bun is process-fatal. The
+    // real error is still owned by the provisioner's catch and the catch
+    // below; this only detaches the no-consumer case (same guard the create
+    // path carries and the provisioner itself has).
+    extraEnvVars.catch(() => undefined);
 
     await provisionSessionSandbox({
       sandboxId: input.sessionId,

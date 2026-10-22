@@ -1,5 +1,7 @@
 node_modules
 dist
+# Downloaded at build time by scripts/fetch-cua-driver.js.
+vendor
 
 # The repo-root .gitignore ignores `build/`, but this app's electron-builder
 # resources (icons + entitlements) live in build/ and MUST be committed.

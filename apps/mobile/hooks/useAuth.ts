@@ -4,15 +4,27 @@ import { supabase, SUPABASE_AUTH_STORAGE_KEY } from '@/api/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
-import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { shouldUseRevenueCat } from '@/lib/billing/provider';
-import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
+import {
+  clearWebRegistrationHandoff,
+  consumeAuthCallbackState,
+  createAuthCallbackRedirect,
+  grantWebRegistrationHandoff,
+} from '@/lib/auth/callback-state';
+import { readCallbackTokens } from '@/lib/auth/callback-tokens';
+import { mfaChallengeRequired, verifiedTotpFactor } from '@/lib/auth/mfa';
 import { admitMobileOAuthSession } from '@/lib/auth/mobile-admission';
 import { parsePersistedSession, sessionForNullAuthResult } from '@/lib/auth/persisted-session';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
+import { signOutThisDevice } from '@/lib/auth/sign-out';
 import { keysToClear } from '@/lib/auth/sign-out-keys';
+import {
+  buildMobileRegistrationUrl,
+  isMobileRegistrationHandoffUrl,
+} from '@/lib/auth/web-registration-handoff';
+import { KORTIX_WEB_URL } from '@/lib/kortix-web';
 import { applyProfileLocale } from '@/lib/utils/i18n';
 import { withDeadline } from '@/lib/utils/with-deadline';
 import { unregisterPushOnSignOut } from '@/lib/notifications/registration';
@@ -24,6 +36,7 @@ import { useSelectedProjectStore } from '@/stores/selected-project-store';
 import { useTabScreenshotStore } from '@/stores/tab-screenshot-store';
 import { useComposerDraftStore } from '@/stores/composer-draft-store';
 import { useSessionFilterStore } from '@/stores/session-filter-store';
+import { useSessionTreeStore } from '@/stores/session-tree-store';
 
 let useTracking: any = null;
 try {
@@ -63,6 +76,7 @@ function resetUserStores() {
   useComposerDraftStore.getState().reset();
   // A session search is the user's text too.
   useSessionFilterStore.getState().reset();
+  useSessionTreeStore.getState().reset();
   // Also deletes the screenshot files.
   useTabScreenshotStore.getState().clear();
   // A warm session belongs to the signed-in user.
@@ -146,54 +160,18 @@ function extractAuthCallbackState(url: string): string | null {
 }
 
 /**
- * Extract tokens from OAuth callback URL
- * Handles both hash fragment (#) and query params (?)
- */
-function extractTokensFromUrl(url: string): {
-  access_token: string | null;
-  refresh_token: string | null;
-} {
-  try {
-    // Try hash fragment first (Supabase implicit flow)
-    const hashIndex = url.indexOf('#');
-    if (hashIndex !== -1) {
-      const hashFragment = url.substring(hashIndex + 1);
-      const params = new URLSearchParams(hashFragment);
-      const access_token = params.get('access_token');
-      const refresh_token = params.get('refresh_token');
-      if (access_token && refresh_token) {
-        return { access_token, refresh_token };
-      }
-    }
-
-    // Try query params (PKCE flow or custom redirect)
-    const { params } = QueryParams.getQueryParams(url);
-    return {
-      access_token: params.access_token || null,
-      refresh_token: params.refresh_token || null,
-    };
-  } catch (e) {
-    log.error('Failed to extract tokens from URL:', e);
-    return { access_token: null, refresh_token: null };
-  }
-}
-
-/**
  * Create session from OAuth callback URL
  */
 async function createSessionFromUrl(url: string) {
-  const { access_token, refresh_token } = extractTokensFromUrl(url);
+  const tokens = readCallbackTokens(url);
 
-  if (!access_token || !refresh_token) {
+  if (!tokens) {
     log.log('⚠️ No tokens found in URL');
     return null;
   }
 
   log.log('✅ Tokens extracted, setting session...');
-  const { data, error } = await supabase.auth.setSession({
-    access_token,
-    refresh_token,
-  });
+  const { data, error } = await supabase.auth.setSession(tokens);
 
   if (error) {
     log.error('❌ Failed to set session:', error);
@@ -203,15 +181,44 @@ async function createSessionFromUrl(url: string) {
   return data.session;
 }
 
+/**
+ * What the auth context shows. No `session`: a token refresh replaces it about
+ * once an hour, and code that needs the token reads it at call time
+ * (`getAuthToken`, `api/config.ts`). `mfaRequired`: the session owes a TOTP
+ * code before it reaches the app (lib/auth/mfa).
+ */
+export type UserState = Omit<AuthState, 'session'> & { mfaRequired: boolean };
+
+/**
+ * The state for a session from the restore or an auth event. The same user
+ * with the same data keeps the previous object, so a token refresh does not
+ * re-render every consumer of the auth context. Another user, changed user
+ * data, a change of signed-in state, or a change of `mfaRequired` (a TOTP
+ * verify) replaces it.
+ */
+function nextAuthState(prev: UserState, session: Session | null): UserState {
+  const user = session?.user ?? null;
+  const mfaRequired = mfaChallengeRequired(session);
+  if (
+    !prev.isLoading &&
+    prev.isAuthenticated === !!session &&
+    prev.mfaRequired === mfaRequired &&
+    JSON.stringify(prev.user) === JSON.stringify(user)
+  ) {
+    return prev;
+  }
+  return { user, isLoading: false, isAuthenticated: !!session, mfaRequired };
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
   const trackingState = useTracking ? useTracking() : { canTrack: false, isLoading: false };
   const { canTrack, isLoading: trackingLoading } = trackingState;
-  const [authState, setAuthState] = useState<AuthState>({
+  const [authState, setAuthState] = useState<UserState>({
     user: null,
-    session: null,
     isLoading: true,
     isAuthenticated: false,
+    mfaRequired: false,
   });
 
   const [error, setError] = useState<AuthError | null>(null);
@@ -243,12 +250,7 @@ export function useAuth() {
       // Update logger with user ID
       setLoggerUserId(session?.user?.id || null);
 
-      setAuthState({
-        user: session?.user ?? null,
-        session,
-        isLoading: false,
-        isAuthenticated: !!session,
-      });
+      setAuthState((prev) => nextAuthState(prev, session));
       void applyProfileLocale(session?.user);
 
       if (session?.user && shouldUseRevenueCat()) {
@@ -275,12 +277,7 @@ export function useAuth() {
       const session = parsePersistedSession(await readStoredSessionRaw());
       if (!mounted || authResolvedRef.current) return;
       setLoggerUserId(session?.user?.id || null);
-      setAuthState({
-        user: session?.user ?? null,
-        session,
-        isLoading: false,
-        isAuthenticated: !!session,
-      });
+      setAuthState((prev) => nextAuthState(prev, session));
       void applyProfileLocale(session?.user);
     };
 
@@ -332,7 +329,8 @@ export function useAuth() {
             );
             setOauthRejection('No account found. Create an account on the web first.');
             sessionExpiry.disarm();
-            await supabase.auth.signOut().catch(() => {});
+            await unregisterPushOnSignOut();
+            await signOutThisDevice(supabase.auth);
             return;
           }
         }
@@ -348,12 +346,7 @@ export function useAuth() {
         setLoggerUserId(session?.user?.id || null);
 
         authResolvedRef.current = true;
-        setAuthState({
-          user: session?.user ?? null,
-          session,
-          isLoading: false,
-          isAuthenticated: !!session,
-        });
+        setAuthState((prev) => nextAuthState(prev, session));
         void applyProfileLocale(session?.user);
 
         if (session?.user && shouldUseRevenueCat() && _event === 'SIGNED_IN') {
@@ -521,8 +514,10 @@ export function useAuth() {
    * - Android Google: Linking.openURL (external browser) + deep link callback
    * - Android Other: Linking.openURL (external browser) + deep link callback
    * - Apple: Native Apple Authentication on iOS
+   * - 'sso': enterprise SSO for `ssoEmail`, completed by the web auth page
+   *   (registration handoff), then the same browser + callback path as Google
    */
-  const signInWithOAuth = useCallback(async (provider: OAuthProvider) => {
+  const signInWithOAuth = useCallback(async (provider: OAuthProvider | 'sso', ssoEmail?: string) => {
     try {
       log.log('🎯 OAuth sign in attempt:', provider);
       setError(null);
@@ -591,14 +586,21 @@ export function useAuth() {
 
       log.log('📊 Redirect URL:', redirectTo, 'Platform:', Platform.OS);
 
-      // Get OAuth URL from Supabase
-      const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
-        provider,
-        options: {
-          redirectTo,
-          skipBrowserRedirect: true,
-        },
-      });
+      // Get OAuth URL from Supabase. GoTrue answers 404 for a domain with no
+      // SSO provider; that error surfaces like any other.
+      const { data, error: oauthError } =
+        provider === 'sso'
+          ? await supabase.auth.signInWithSSO({
+              domain: ssoEmail?.split('@')[1] ?? '',
+              options: { redirectTo, skipBrowserRedirect: true },
+            })
+          : await supabase.auth.signInWithOAuth({
+              provider,
+              options: {
+                redirectTo,
+                skipBrowserRedirect: true,
+              },
+            });
 
       if (oauthError) {
         log.error('❌ OAuth error:', oauthError.message);
@@ -615,7 +617,23 @@ export function useAuth() {
         return { success: false, error };
       }
 
-      log.log('🌐 Opening OAuth URL:', data.url);
+      // SSO: the signInWithSSO call above is only a probe, so a domain with no
+      // SSO provider surfaces its error in-app. GoTrue drops a `redirectTo`
+      // missing from its allow-list and falls back to SITE_URL, so the IdP
+      // would land on web and the app would stay signed out (KRTX-2052). The
+      // web origin is always allowed: web auth runs SSO and hands the session
+      // back through `kortix://auth/callback`. Reuse the state already in
+      // `redirectTo`; a second state would overwrite the persisted one.
+      const authUrl =
+        provider === 'sso'
+          ? buildMobileRegistrationUrl(
+              KORTIX_WEB_URL,
+              new URL(redirectTo).searchParams.get('state') ?? '',
+              ssoEmail,
+            )
+          : data.url;
+
+      log.log('🌐 Opening OAuth URL:', authUrl);
 
       // Prevent multiple simultaneous OAuth sessions
       if (oauthSessionActiveRef.current) {
@@ -640,7 +658,7 @@ export function useAuth() {
           log.log('🤖 Android: Opening OAuth in external browser');
 
           // Open OAuth URL in external browser
-          await Linking.openURL(data.url);
+          await Linking.openURL(authUrl);
 
           // Wait for the app to return from browser and check for session
           // The deep link handler in _layout.tsx will process the callback
@@ -743,7 +761,7 @@ export function useAuth() {
         await WebBrowser.maybeCompleteAuthSession();
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo, {
+        const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectTo, {
           preferEphemeralSession: true,
           showInRecents: true,
         });
@@ -769,41 +787,39 @@ export function useAuth() {
             return { success: false, error: stateError };
           }
 
-          // Check for access_token in URL fragment (implicit flow)
-          if (url.includes('access_token=')) {
+          // Tokens in the hash (implicit flow) or the query (web handoff)
+          const tokens = readCallbackTokens(url);
+          if (tokens) {
             log.log('✅ Access token found in URL, setting session');
 
-            // Extract tokens from URL fragment
-            const hashParams = new URLSearchParams(url.split('#')[1] || '');
-            const accessToken = hashParams.get('access_token');
-            const refreshToken = hashParams.get('refresh_token');
+            // A verified web handoff may admit a newly created account
+            // (mirrors the deep-link handler in app/_layout.tsx).
+            if (isMobileRegistrationHandoffUrl(url)) {
+              await grantWebRegistrationHandoff();
+            }
 
-            if (accessToken && refreshToken) {
-              // Set the session with the tokens
-              const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
+            const { data: sessionData, error: sessionError } =
+              await supabase.auth.setSession(tokens);
 
-              if (sessionError) {
-                log.error('❌ Session error:', sessionError.message);
-                setError({ message: sessionError.message });
-                setAuthState((prev) => ({ ...prev, isLoading: false }));
-                oauthSessionActiveRef.current = false;
-                mobileOAuthAdmissionPendingRef.current = false;
-                return { success: false, error: sessionError };
-              }
-
-              log.log('✅ OAuth sign in successful');
-
-              // Immediately invalidate React Query cache to fetch fresh account state
-              log.log('🔄 Invalidating cache to fetch fresh account state');
-              queryClient.invalidateQueries({ queryKey: ['account-state'] });
-
+            if (sessionError) {
+              await clearWebRegistrationHandoff();
+              log.error('❌ Session error:', sessionError.message);
+              setError({ message: sessionError.message });
               setAuthState((prev) => ({ ...prev, isLoading: false }));
               oauthSessionActiveRef.current = false;
-              return { success: true, data: sessionData };
+              mobileOAuthAdmissionPendingRef.current = false;
+              return { success: false, error: sessionError };
             }
+
+            log.log('✅ OAuth sign in successful');
+
+            // Immediately invalidate React Query cache to fetch fresh account state
+            log.log('🔄 Invalidating cache to fetch fresh account state');
+            queryClient.invalidateQueries({ queryKey: ['account-state'] });
+
+            setAuthState((prev) => ({ ...prev, isLoading: false }));
+            oauthSessionActiveRef.current = false;
+            return { success: true, data: sessionData };
           }
 
           // Check for code in query params (PKCE flow)
@@ -994,12 +1010,12 @@ export function useAuth() {
   /**
    * Sign out - Best practice implementation
    *
-   * 1. Attempts global sign out (server + local)
-   * 2. Falls back to local-only if global fails
-   * 3. Clears every AsyncStorage key except device preferences (theme,
+   * 1. Signs out this device only (scope local): web and other installs
+   *    stay signed in.
+   * 2. Clears every AsyncStorage key except device preferences (theme,
    *    language, onboarding cache — see lib/auth/sign-out-keys), including the
    *    Supabase session keys as a failsafe
-   * 4. Forces React state update
+   * 3. Forces React state update
    *
    * Note: Onboarding status is stored in user_metadata (backend), so it persists
    * across devices and logins. AsyncStorage cache is kept for faster checks.
@@ -1035,9 +1051,9 @@ export function useAuth() {
       setLoggerUserId(null); // Clear logger user ID
       setAuthState({
         user: null,
-        session: null,
         isLoading: false,
         isAuthenticated: false,
+        mfaRequired: false,
       });
       setError(null);
     };
@@ -1066,17 +1082,8 @@ export function useAuth() {
       // Bounded (3 s) and never throws: sign-out does not wait on it failing.
       await unregisterPushOnSignOut();
 
-      const { error: globalError } = await supabase.auth.signOut({ scope: 'global' });
-
-      if (globalError) {
-        log.warn('⚠️  Global sign out failed:', globalError.message);
-
-        const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
-
-        if (localError) {
-          log.warn('⚠️  Local sign out also failed:', localError.message);
-        }
-      }
+      const signOutError = await signOutThisDevice(supabase.auth);
+      if (signOutError) log.warn('⚠️  Sign out returned an error:', signOutError);
 
       await clearUserStorage();
 
@@ -1102,7 +1109,42 @@ export function useAuth() {
     }
   }, [queryClient, isSigningOut]);
 
+  /** Enterprise SSO for the email's domain (self-hosted instances; see app/auth/email.tsx). */
+  const signInWithSSO = useCallback(
+    (email: string) => signInWithOAuth('sso', email.trim().toLowerCase()),
+    [signInWithOAuth]
+  );
+
   const clearOauthRejection = useCallback(() => setOauthRejection(null), []);
+
+  /**
+   * Completes the TOTP step-up with the verified TOTP factor. On success
+   * auth-js stores the aal2 session and emits MFA_CHALLENGE_VERIFIED, which
+   * clears `mfaRequired`. Returns the error's `code` only (a wrong code is
+   * `mfa_verification_failed`; the screen localizes by it), or null. Never throws.
+   */
+  const verifyTotp = useCallback(
+    async (code: string): Promise<{ code?: string } | null> => {
+      try {
+        // An expired token refreshes here; offline that returns the error, not a session.
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession();
+        if (sessionError) return { code: sessionError.code };
+        const factor = session ? verifiedTotpFactor(session.user) : undefined;
+        if (!factor) return {};
+        const { error: verifyError } = await supabase.auth.mfa.challengeAndVerify({
+          factorId: factor.id,
+          code,
+        });
+        return verifyError ? { code: verifyError.code } : null;
+      } catch {
+        return {};
+      }
+    },
+    []
+  );
 
   // Stable identity: AuthProvider passes this object as the context value, and
   // a fresh object every render re-renders every consumer.
@@ -1116,10 +1158,12 @@ export function useAuth() {
       signIn,
       signUp,
       signInWithOAuth,
+      signInWithSSO,
       signInWithMagicLink,
       resetPassword,
       updatePassword,
       signOut,
+      verifyTotp,
     }),
     [
       authState,
@@ -1130,10 +1174,12 @@ export function useAuth() {
       signIn,
       signUp,
       signInWithOAuth,
+      signInWithSSO,
       signInWithMagicLink,
       resetPassword,
       updatePassword,
       signOut,
+      verifyTotp,
     ]
   );
 }

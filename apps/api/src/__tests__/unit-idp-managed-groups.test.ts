@@ -12,6 +12,7 @@ import { Hono } from 'hono';
 
 mock.module('../iam', () => ({
   ACCOUNT_ACTIONS: {
+    ACCOUNT_READ: 'account.read',
     GROUP_READ: 'group.read',
     GROUP_CREATE: 'group.create',
     GROUP_UPDATE: 'group.update',
@@ -57,6 +58,12 @@ mock.module('../iam/actor', () => ({
   }),
 }));
 
+// The read routes ask which groups the caller may see; this suite is about
+// writes, so the caller sees every group.
+mock.module('../iam/directory-visibility', () => ({
+  visibleDirectory: async () => ({ userIds: null, groupIds: null, projectIds: null }),
+}));
+
 const base = {
   accountId: 'acct-1',
   description: null as string | null,
@@ -88,7 +95,7 @@ mock.module('../repositories/iam', () => ({
 }));
 
 const { iamRouter } = await import('../accounts/iam/app');
-await import('../accounts/iam/groups');
+(await import('../accounts/iam/groups')).registerIamGroupsRoutes();
 
 function buildApp() {
   const app = new Hono();

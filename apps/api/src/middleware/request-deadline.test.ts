@@ -22,6 +22,13 @@ describe('requestDeadline exemptions', () => {
     expect(isExempt(ctx(path))).toBe(true);
   });
 
+  // The MCP server bounds itself at 55 s (mcp/index.ts REQUEST_BUDGET_MS):
+  // read_session waits and run_command runs up to 45 s. A client that sends
+  // only `Accept: application/json` gets no event-stream exemption.
+  test('exempts the MCP endpoint, whatever the client accepts', () => {
+    expect(isExempt(ctx('/v1/mcp'))).toBe(true);
+  });
+
   test.each([
     '/v1/marketplace/items',
     '/v1/projects/00000000-0000-4000-a000-000000000001/registry',
@@ -68,7 +75,7 @@ describe('requestDeadline exempts the streaming secret relay', () => {
     // too generic silently un-bounds half the API.
     for (const path of [
       `${project}/secrets`,
-      `${project}/sessions`,
+      `${project}/sessions/session-1`,
       '/v1/accounts/relayed-billing',
     ]) {
       expect(isExempt(ctx(path))).toBe(false);
@@ -111,5 +118,13 @@ describe('attachment completion has its own request deadline', () => {
 
   test('an exempt route has no deadline', () => {
     expect(requestDeadlineMs(ctx(`${project}/provision`))).toBeNull();
+  });
+
+  test('P2.13: the session-log attachment upload (PUT …/log/blobs/<sha256>) gets 95 s; its lookup keeps the general deadline', () => {
+    const blob = `${project}/sessions/00000000-0000-4000-a000-000000000002/log/blobs/${'a'.repeat(64)}`;
+    expect(requestDeadlineMs(ctx(blob, 'PUT'))).toBe(95_000);
+    const general = requestDeadlineMs(ctx('/v1/marketplace/items', 'GET'));
+    expect(requestDeadlineMs(ctx(blob, 'GET'))).toBe(general);
+    expect(requestDeadlineMs(ctx(`${blob}/extra`, 'PUT'))).toBe(general);
   });
 });

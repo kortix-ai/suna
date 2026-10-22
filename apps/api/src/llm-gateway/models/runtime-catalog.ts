@@ -1,10 +1,11 @@
-import { CATALOG, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
+import { CATALOG, PLATINUM_PROVIDER, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
+import { CODEX_MODELS_URL, CODEX_SEED_MODEL_IDS, parseCodexModelIds } from './codex-models';
 
 const DEFAULT_SOURCE_URL = 'https://models.dev/api.json';
 // Was 24h — a full day for a new model launch (or a provider's own metadata
 // fix) to reach every deployment is a bad user experience once the web
 // connect modal reads this SAME live catalog instead of a baked snapshot
-// (see apps/web/src/lib/llm-providers.ts). 1h is a large freshness win (24x)
+// (see packages/ui/src/internal/lib/llm-providers.ts). 1h is a large freshness win (24x)
 // while staying trivially light on models.dev — one small JSON GET/hour per
 // deployment, no auth, no burst — and the existing atomic last-known-good
 // swap (see `refresh` below) makes ANY interval safe: a failed/slow fetch
@@ -38,6 +39,7 @@ const PASSTHROUGH_MODEL_FIELDS = [
   'modalities',
   'cost',
   'status',
+  'provider',
 ] as const;
 
 interface ModelsDevProvider {
@@ -64,6 +66,8 @@ export interface RuntimeCatalogStatus {
 
 export interface RuntimeModelCatalog {
   snapshot(): Catalog;
+  /** The ChatGPT-plan (`codex/<id>`) lineup, refreshed with the catalog. */
+  codexModelIds(): readonly string[];
   status(): RuntimeCatalogStatus;
   refresh(): Promise<boolean>;
   start(): Promise<void>;
@@ -73,6 +77,8 @@ export interface RuntimeModelCatalog {
 export interface RuntimeModelCatalogOptions {
   seed: Catalog;
   sourceUrl?: string;
+  codexSeed?: readonly string[];
+  codexSourceUrl?: string;
   fetchImpl?: FetchLike;
   refreshIntervalMs?: number;
   timeoutMs?: number;
@@ -118,6 +124,8 @@ function normalizeCatalog(data: ModelsDevResponse, sourceUrl: string, fetchedAt:
   if (providers.length === 0 || modelCount === 0) {
     throw new Error('catalog API returned no providers or models');
   }
+  // Platinum is not on models.dev; keep it a provider across every refresh.
+  if (!providers.some((p) => p.id === PLATINUM_PROVIDER.id)) providers.push(PLATINUM_PROVIDER);
 
   return {
     source: sourceUrl,
@@ -137,7 +145,10 @@ export function createRuntimeModelCatalog(
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const logger = options.logger ?? console;
 
+  const codexSourceUrl = options.codexSourceUrl ?? CODEX_MODELS_URL;
+
   let current = options.seed;
+  let codexIds = options.codexSeed ?? CODEX_SEED_MODEL_IDS;
   let source: RuntimeCatalogStatus['source'] = 'seed';
   let revision = 0;
   let lastError: string | undefined;
@@ -153,19 +164,37 @@ export function createRuntimeModelCatalog(
     ...(lastError ? { lastError } : {}),
   });
 
-  const refresh = async (): Promise<boolean> => {
+  const getJson = async (url: string): Promise<unknown> => {
+    const response = await fetchImpl(url, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  };
+
+  // Independent of models.dev: either source failing keeps its own last good
+  // value. `revision` moves when the lineup changes so every cache keyed on it
+  // (catalog-models.ts, the providers ETag) rebuilds.
+  const refreshCodex = async (): Promise<void> => {
     try {
-      const response = await fetchImpl(sourceUrl, {
-        headers: { accept: 'application/json' },
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const fetchedAt = new Date().toISOString();
-      const next = normalizeCatalog(
-        (await response.json()) as ModelsDevResponse,
-        sourceUrl,
-        fetchedAt,
+      const next = parseCodexModelIds(await getJson(codexSourceUrl));
+      if (next.join() !== codexIds.join()) {
+        codexIds = next;
+        revision += 1;
+      }
+      logger.info(`[llm-gateway] loaded codex lineup from ${codexSourceUrl}: ${next.join(', ')}`);
+    } catch (err) {
+      logger.warn(
+        `[llm-gateway] codex lineup refresh failed; keeping last known lineup: ${err instanceof Error ? err.message : String(err)}`,
       );
+    }
+  };
+
+  const refreshModelsDev = async (): Promise<boolean> => {
+    try {
+      const body = (await getJson(sourceUrl)) as ModelsDevResponse;
+      const next = normalizeCatalog(body, sourceUrl, new Date().toISOString());
 
       // Atomic reference swap: request readers see either the complete old
       // catalog or the complete new one, never a partially refreshed registry.
@@ -186,8 +215,12 @@ export function createRuntimeModelCatalog(
     }
   };
 
+  const refresh = async (): Promise<boolean> =>
+    (await Promise.all([refreshModelsDev(), refreshCodex()]))[0];
+
   return {
     snapshot: () => current,
+    codexModelIds: () => codexIds,
     status,
     refresh,
     async start(): Promise<void> {

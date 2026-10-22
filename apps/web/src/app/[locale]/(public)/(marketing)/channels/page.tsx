@@ -1,6 +1,6 @@
 import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
-import { Separator } from '@/components/ui/separator';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedChannelsContent } from '@/features/marketing/channels/content';
 import { ChannelsHeroVisual } from '@/features/marketing/channels/hero-visual';
@@ -8,18 +8,11 @@ import { SurfaceTable } from '@/features/marketing/channels/surface-table';
 import { ThreadMock } from '@/features/marketing/channels/thread-mock';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { getTranslations } from '@/i18n/get-translations';
 import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
 
 /**
  * `/channels` — reaching the product from the thread people already sit in.

@@ -13,7 +13,7 @@ function drizzleError(driver: { message: string; code?: string }): Error {
     new Error(
       'Failed query: insert into "kortix"."audit_events" ("event_id", "account_id", ' +
         '"project_id", "session_id") values (default, $1, $2, $3) on conflict do nothing\n' +
-        'params: e7960685,69db1886,13e9a17a,51.158.248.124,Bun/1.3.11',
+        'params: 5a1e0c06,5a1e0c07,5a1e0c08,198.51.100.24,Bun/1.3.11',
     ),
     { cause },
   );
@@ -33,7 +33,7 @@ describe('describeAuditWriteFailure', () => {
       drizzleError({ message: 'deadlock detected', code: '40P01' }),
     );
     // The bound values are audit payloads: IPs, user agents, account ids.
-    expect(line).not.toContain('51.158.248.124');
+    expect(line).not.toContain('198.51.100.24');
     expect(line).not.toContain('Bun/1.3.11');
     expect(line).not.toContain('insert into');
     expect(line).not.toContain('params:');

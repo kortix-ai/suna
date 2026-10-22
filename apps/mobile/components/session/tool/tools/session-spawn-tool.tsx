@@ -11,22 +11,21 @@
  *   (`ToolDetailContext` `body`), the steps and banner alone.
  *
  * Web's press target opens `SubSessionModal` and "Open session" navigates to
- * `/projects/:id/sessions/:sid?oc=<child>` (`session-spawn-urls.ts`). Mobile
+ * `/projects/:id/sessions/:sid?rs=<child>` (`session-spawn-urls.ts`). Mobile
  * has neither a sub-session modal nor URL routes inside a project, so both
  * open the child session in the app (`useToolNavigation().openSession`).
  * Web's running mark is a pulsing dot; mobile's loading rule allows only
- * `KortixLoader`, so the mark is `KortixLoader` at `size-3`.
+ * `KortixLoader`, so the mark is `KortixLoader` at `size-3` (`RunningLoader`: an empty box in a finished turn).
  */
 
 import { useCallback, useContext, useMemo } from 'react';
 import { Pressable, View } from 'react-native';
 import { getChildSessionId } from '@kortix/sdk';
-import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Text } from '@/components/ui/text';
 import { ArrowSquareOutIcon, CpuIcon } from '@/lib/icons';
 import { sessionSpawnModel } from '@/lib/session/tools/agents-spawn';
 import { webSpace } from '@/lib/session/user-message';
-import { partInput, partStatus, useToolNavigation } from '../shared/infrastructure';
+import { RunningLoader, partInput, partStatus, useToolNavigation } from '../shared/infrastructure';
 import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import { ToolDetailContext } from '../shared/surface';
@@ -35,18 +34,18 @@ import { SubAgentActivity, SubAgentStatusBanner, useChildSession } from './sub-a
 
 const HIT_SLOP = { top: webSpace(2), bottom: webSpace(2) };
 
-export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
+export function SessionSpawnTool({ call, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const status = partStatus(part);
-  const childSessionId = useMemo(() => getChildSessionId(part), [part]);
-  const { childMessages, childToolParts } = useChildSession(childSessionId);
+  const input = partInput(call);
+  const status = partStatus(call);
+  const childSessionId = useMemo(() => getChildSessionId(call), [call]);
+  const { childThread, childCalls } = useChildSession(childSessionId);
   const { enabled: navigationEnabled, openSession } = useToolNavigation();
   const detail = useContext(ToolDetailContext);
 
   const model = useMemo(
-    () => sessionSpawnModel({ status, input, childToolParts }),
-    [status, input, childToolParts],
+    () => sessionSpawnModel({ status, input, childCalls }),
+    [status, input, childCalls],
   );
 
   const canOpen = Boolean(childSessionId) && navigationEnabled;
@@ -58,8 +57,8 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   if (detail === 'body') {
     return (
       <ToolDetailContext.Provider value="nested">
-        <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
-        <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+        <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
+        <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
       </ToolDetailContext.Provider>
     );
   }
@@ -100,7 +99,7 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           ) : null}
           {model.isRunning ? (
             <View style={{ marginLeft: 'auto', flexShrink: 0 }}>
-              <KortixLoader customSize={TURN_SPACE.statusIcon} />
+              <RunningLoader size={TURN_SPACE.statusIcon} />
             </View>
           ) : null}
           {model.stepsLabel ? (
@@ -134,18 +133,12 @@ export function SessionSpawnTool({ part, forceOpen }: ToolProps) {
           </Pressable>
         ) : null}
       </View>
-      {forceOpen && childToolParts.length > 0 ? (
-        <SubAgentActivity childSessionId={childSessionId} parts={childToolParts} />
+      {forceOpen && childCalls.length > 0 ? (
+        <SubAgentActivity childSessionId={childSessionId} calls={childCalls} />
       ) : null}
-      <SubAgentStatusBanner childSessionId={childSessionId} childMessages={childMessages} />
+      <SubAgentStatusBanner childSessionId={childSessionId} childThread={childThread} />
     </>
   );
 }
-ToolRegistry.register('session_spawn', SessionSpawnTool);
 ToolRegistry.register('session-spawn', SessionSpawnTool);
-ToolRegistry.register('oc-session_spawn', SessionSpawnTool);
-ToolRegistry.register('oc-session-spawn', SessionSpawnTool);
-ToolRegistry.register('session_start_background', SessionSpawnTool);
 ToolRegistry.register('session-start-background', SessionSpawnTool);
-ToolRegistry.register('oc-session_start_background', SessionSpawnTool);
-ToolRegistry.register('oc-session-start-background', SessionSpawnTool);

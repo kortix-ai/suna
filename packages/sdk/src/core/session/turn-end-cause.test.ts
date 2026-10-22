@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { turnEndCause, turnEndNotice } from './turn-end-cause';
 import { TURN_END_SETTLE_MS } from './turn-end-settle';
 
-// Session ad02e053 (2026-09-18): the sandbox memory guard aborted a turn at 97 %
+// One session (2026-09-18): the sandbox memory guard aborted a turn at 97 %
 // box memory. The transcript only says `MessageAbortedError: Aborted`; the
 // control plane's `last_ended.error` names the cause. A renderer shows the cause
 // on the turn it belongs to, and on no other.
@@ -43,9 +43,9 @@ describe('turnEndCause', () => {
     expect(turnEndCause({ last_ended: ended({ end_reason: 'completed' }) }, 'msg_u2')).toBeNull();
   });
 
-  // `last_ended` is one row and is omitted while a turn runs. A queued prompt
-  // starts the next turn seconds after a guard abort, so the cause has to be
-  // found by message id in `recent_failures`, whatever `last_ended` says.
+  // `last_ended` is one row even when another turn runs. A queued prompt
+  // can start after a guard abort, so an older cause must remain findable
+  // by message id in `recent_failures`, whatever `last_ended` says.
   test('finds the cause of an OLDER turn in recent_failures while the next turn runs', () => {
     const observation = { recent_failures: [{ message_id: 'msg_u2', ended_at: null, error: GUARD }] };
     expect(turnEndCause(observation, 'msg_u2')).toEqual(GUARD);
@@ -101,7 +101,7 @@ describe('turnEndNotice', () => {
   });
 
   test('an unexplained failure waits out the settle window: the cause is often one frame behind the abort', () => {
-    // Session ad02e053: the guard's frame landed 476 ms after OpenCode's abort.
+    // That session: the guard's frame landed 476 ms after OpenCode's abort.
     // A read taken in that gap must not claim "no reason" and then change its mind.
     expect(turnEndNotice(outcome(endedMs + 400), 'msg_unnamed', SILENT)).toBeNull();
     expect(turnEndNotice(outcome(settled - 1), 'msg_unnamed', SILENT)).toBeNull();

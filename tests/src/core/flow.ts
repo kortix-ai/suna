@@ -2,7 +2,7 @@
  * Flow registration. Each test declares its stable spec ID up front — this is
  * the 1:1 mapping that makes end-to-end.md enforceable as the source of truth.
  */
-import type { FlowFn, FlowMeta } from "./types";
+import type { FlowContext, FlowFn, FlowMeta, Harness } from "./types";
 
 export interface RegisteredFlow {
   id: string;
@@ -207,6 +207,26 @@ export function flow(id: string, meta: FlowMeta, fn: FlowFn): void {
     throw new Error(`Duplicate flow id "${id}" — every flow maps 1:1 to a spec ID.`);
   }
   registry.set(id, { id, meta, fn });
+}
+
+/**
+ * Register one flow per session harness. `<id>` runs on OpenCode (today's
+ * default) and `<id>-pi` runs the same body on pi, so a harness difference
+ * fails one named flow instead of hiding behind the default. Both implement
+ * spec `<id>`; the pi variant carries the `harness-pi` tag
+ * (`ke2e run --tag harness-pi`).
+ */
+export function harnessFlow(
+  id: string,
+  meta: FlowMeta,
+  fn: (ctx: FlowContext, harness: Harness) => Promise<void>,
+): void {
+  flow(id, meta, (ctx) => fn(ctx, "opencode"));
+  flow(
+    `${id}-pi`,
+    { ...meta, specId: id, tags: [...(meta.tags ?? []), "harness-pi"] },
+    (ctx) => fn(ctx, "pi"),
+  );
 }
 
 export function allFlows(): RegisteredFlow[] {

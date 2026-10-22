@@ -31,7 +31,7 @@ export type NavLink =
   | { id: number; name: string; href: NavSubLink[] }
   | { id: number; name: string; menu: NavMenu };
 
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 export const productMenu: NavMenu = {
   columns: [
@@ -204,7 +204,7 @@ export const siteConfig = {
     ] as NavLink[],
   },
   hero: {
-    description: 'Kortix – the open AI command center for your company.',
+    description: 'Kortix – the open-source AI Operating System.',
   },
   footerLinks: [
     {
@@ -228,7 +228,7 @@ export const siteConfig = {
       links: [
         { id: 10, title: 'Privacy Policy', url: '/legal?tab=privacy' },
         { id: 11, title: 'Terms of Service', url: '/legal/terms' },
-        { id: 12, title: 'License', url: 'https://github.com/kortix-ai/suna/blob/main/LICENSE' },
+        { id: 12, title: 'License', url: 'https://github.com/kortix-ai/suna/blob/dev/LICENSE' },
       ],
     },
   ],

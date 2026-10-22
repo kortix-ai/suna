@@ -3,8 +3,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { shredAgentEnvFile, writeAgentEnvFile } from '../agent-env-file'
-import { createProjectEnvStore } from '../project-env'
+import { shredAgentEnvFile, writeAgentEnvFile } from '@/harness/shared/agent-env-file'
+import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 
 let dir: string
 
@@ -32,6 +32,26 @@ describe('writeAgentEnvFile', () => {
     const body = readFileSync(sh, 'utf8')
     expect(body).toContain("export API_KEY='secret'")
     expect(statSync(sh).mode & 0o777).toBe(0o600)
+  })
+
+  test('disables core dumps in every shell that sources it', () => {
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
+      API_KEY: 'secret',
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+
+    writeAgentEnvFile(store, { sh })
+
+    // Daytona starts sandboxes with an unlimited core size; raise the soft limit
+    // first so the sourced guard has to clamp it back down. A hardened container
+    // refuses the raise (hard limit 0, soft already pinned at 0) — ignore that
+    // refusal and always run the shell: the guard must end it at 0 either way.
+    const result = Bun.spawnSync(
+      ['bash', '-c', 'ulimit -c unlimited 2>/dev/null; BASH_ENV="$1" bash -c "ulimit -c"', '_', sh],
+      { env: { PATH: process.env.PATH ?? '/usr/bin:/bin' } },
+    )
+    expect(result.stdout.toString().trim()).toBe('0')
   })
 
   test('injection-safe — values are single-quote escaped', () => {

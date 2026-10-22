@@ -80,6 +80,11 @@ function deadDaemonDeps(
     providerRunning: async () => true,
     expectedRunningAssets: async () => MANIFEST,
     exec: async (cmd) => {
+      // A dead daemon is dead on the box's own loopback too: curl is refused
+      // (exit 7). That probe is not the relaunch, so it is not counted in execs.
+      if (cmd.join(' ').includes('127.0.0.1:8000/kortix/health')) {
+        return { exitCode: 7, stdout: '', stderr: 'Failed to connect to 127.0.0.1 port 8000' };
+      }
       calls.execs.push(cmd);
       return {
         exitCode: 0,
@@ -89,6 +94,10 @@ function deadDaemonDeps(
     },
     patchMetadata: async (patch) => {
       calls.patches.push(patch);
+    },
+    claimRun: async (patch) => {
+      calls.patches.push(patch);
+      return true;
     },
     audit: async () => {},
     log: () => {},
@@ -227,6 +236,8 @@ describe('a running box whose daemon is gone', () => {
       [LEGACY_CHECK_METADATA_KEY]: {
         at: new Date(1_000_000 - 60_000).toISOString(),
         klass: 'current',
+        manifestBuild: 1788044234,
+        externalId: 'sbx_1',
       },
     };
     const result = await bootstrapLegacyRuntime(input(metadata), deadDaemonDeps({}, calls));

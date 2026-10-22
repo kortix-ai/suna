@@ -16,7 +16,39 @@ export interface ConnectorAction {
   description: string;
   risk: 'read' | 'write' | 'destructive';
   inputSchema: Record<string, unknown> | null;
+  /**
+   * JSON Schema of the call's `output`. Present only when the catalog was read
+   * with `includeOutputSchemas`; `null` when the connector publishes none
+   * (managed Composio and Pipedream connectors).
+   */
+  outputSchema?: Record<string, unknown> | null;
 }
+
+/**
+ * The typed connector actions of a project, keyed by connector slug, then
+ * action path. Empty in the SDK: `kortix connectors types --out <file>`
+ * generates a declaration file that fills it by module augmentation.
+ * {@link ConnectorArgs} and {@link ConnectorResult} read it.
+ */
+export interface ConnectorActionRegistry {}
+
+/** The args of `<S>.<A>` from {@link ConnectorActionRegistry}, else any object. */
+export type ConnectorArgs<S extends string, A extends string> = S extends keyof ConnectorActionRegistry
+  ? A extends keyof ConnectorActionRegistry[S]
+    ? ConnectorActionRegistry[S][A] extends { args: infer T }
+      ? T
+      : Record<string, unknown>
+    : Record<string, unknown>
+  : Record<string, unknown>;
+
+/** The call `output` of `<S>.<A>` from {@link ConnectorActionRegistry}, else `unknown`. */
+export type ConnectorResult<S extends string, A extends string> = S extends keyof ConnectorActionRegistry
+  ? A extends keyof ConnectorActionRegistry[S]
+    ? ConnectorActionRegistry[S][A] extends { result: infer T }
+      ? T
+      : unknown
+    : unknown
+  : unknown;
 
 /** One connector as exposed by the callable project catalog. */
 export interface ConnectorCatalogEntry {
@@ -46,11 +78,31 @@ export interface ConnectorTool {
   risk: ConnectorAction['risk'];
   description: string;
   inputSchema: ConnectorAction['inputSchema'];
+  /** See {@link ConnectorAction.outputSchema}. Set by {@link describeConnectorTool}. */
+  outputSchema?: ConnectorAction['outputSchema'];
 }
 
-export interface ConnectorCallResult<T = unknown> {
+/**
+ * `T` types `data`, the raw upstream answer. `O` types `output`, the payload
+ * without the binding's envelope; {@link ConnectorResult} supplies it for a
+ * generated action.
+ */
+export interface ConnectorCallResult<T = unknown, O = unknown> {
   ok: boolean;
   data?: T;
+  /**
+   * The payload without the binding's envelope: Composio `data.result`, MCP
+   * `structuredContent ?? content`, GraphQL `data.data`, otherwise `data`.
+   * The API sends it only when it differs from `data`; `callConnector` fills
+   * it in. Absent from servers that predate it (no `binding`).
+   */
+  output?: O;
+  /** The action's binding: `openapi`, `http`, `mcp`, `graphql`, `composio`, … */
+  binding?: string;
+  /** The upstream HTTP status, or `null` when the upstream gave none. */
+  upstream_status?: number | null;
+  /** A failure the upstream reported inside a 2xx (MCP `isError`, GraphQL `errors`). */
+  upstream_error?: string;
   risk?: ConnectorAction['risk'];
   status?: string;
   reason?: string;
@@ -116,6 +168,11 @@ export interface GetConnectorCatalogOptions {
    * `slug` instead.
    */
   includeSchemas?: boolean;
+  /**
+   * Add each action's `outputSchema`. Omitted by default: no bulk reader
+   * needs it. `kortix connectors types` and `describeConnectorTool` set it.
+   */
+  includeOutputSchemas?: boolean;
 }
 
 export async function getConnectorCatalog(
@@ -127,6 +184,7 @@ export async function getConnectorCatalog(
   if (options?.includeSchemas !== undefined) {
     params.set('include_schemas', String(options.includeSchemas));
   }
+  if (options?.includeOutputSchemas) params.set('include_output_schemas', 'true');
   const query = params.toString() ? `?${params.toString()}` : '';
   const result = unwrap(
     await backendApi.get<{ connectors?: ConnectorCatalogEntry[] }>(
@@ -140,8 +198,10 @@ export async function listConnectorTools(projectId?: string): Promise<ConnectorT
   const tools: ConnectorTool[] = [];
   // Neither this nor any caller of it (search, discover) reads `inputSchema` —
   // only `describeConnectorTool` below does, and it fetches its own schema
-  // directly instead of going through this bulk listing.
-  for (const connector of await getConnectorCatalog(projectId)) {
+  // directly instead of going through this bulk listing. The API includes each
+  // action's JSON Schema by default (439KB on prod), so opt out or this summary
+  // pays the whole payload for nothing.
+  for (const connector of await getConnectorCatalog(projectId, { includeSchemas: false })) {
     for (const action of connector.actions) {
       tools.push({
         tool: `${connector.slug}.${action.path}`,
@@ -187,7 +247,11 @@ export async function describeConnectorTool(
   // Match by slug, never take the first entry: an API that predates the
   // `slug` filter answers the whole catalog, and the CLI ships separately.
   const connector = (
-    await getConnectorCatalog(projectId, { slug: connectorSlug, includeSchemas: true })
+    await getConnectorCatalog(projectId, {
+      slug: connectorSlug,
+      includeSchemas: true,
+      includeOutputSchemas: true,
+    })
   ).find((entry) => entry.slug === connectorSlug);
   if (!connector) return null;
   for (const action of connector.actions) {
@@ -200,6 +264,7 @@ export async function describeConnectorTool(
         risk: action.risk,
         description: action.description || action.name,
         inputSchema: action.inputSchema,
+        outputSchema: action.outputSchema ?? null,
       };
     }
   }
@@ -226,6 +291,11 @@ export interface ConnectorAccount {
   is_default: boolean;
   /** Who the account was authorized as. `null` (or absent, on older servers) when unknown. */
   connected_as?: string | null;
+  /** When the upstream first answered 401 to this account's stored credential:
+   *  it expired or was revoked, and a person must replace it. `null` (or
+   *  absent, on older servers) when not rejected. An ok call or a new
+   *  credential clears it. */
+  credential_rejected_at?: string | null;
 }
 
 export interface ConnectorCallOptions {
@@ -242,7 +312,24 @@ export interface ConnectorCallOptions {
    * and the denial lists the names that were available.
    */
   account?: string | null;
+  /**
+   * What this call does, in the caller's words — shown to the human when a
+   * policy holds the call for approval. Use it when the arguments alone don't
+   * show the effect (`send_draft` takes only a draft id: say who it goes to and
+   * what it says). Displayed as unverified; never sent to the provider.
+   */
+  approvalContext?: string | null;
+  /**
+   * Client deadline in ms. Default 90 000: above the gateway's 60 s upstream
+   * deadline, so the gateway answers `upstream_timeout` before the client
+   * gives up. After a client-side timeout the call may still have run.
+   */
+  timeoutMs?: number;
+  /** Aborts the request. The call may still have run upstream. */
+  signal?: AbortSignal;
 }
+
+const CONNECTOR_CALL_TIMEOUT_MS = 90_000;
 
 export async function callConnector<T = unknown>(
   projectId: string | undefined,
@@ -252,14 +339,26 @@ export async function callConnector<T = unknown>(
 ): Promise<ConnectorCallResult<T>> {
   const { connector, action } = parseConnectorTool(tool);
   const account = options.account?.trim();
-  return unwrap(
+  const approvalContext = options.approvalContext?.trim();
+  const result = unwrap(
     await backendApi.post<ConnectorCallResult<T>>(
       connectorGatewayPath(projectId, 'call'),
       // The key is omitted rather than sent as null: the gateway reads its
       // presence, and an explicit null would read as "an account was named".
-      { connector, action, args, ...(account ? { account } : {}) },
+      {
+        connector,
+        action,
+        args,
+        ...(account ? { account } : {}),
+        ...(approvalContext ? { approval_context: approvalContext } : {}),
+      },
+      { timeout: options.timeoutMs ?? CONNECTOR_CALL_TIMEOUT_MS, signal: options.signal },
     ),
   );
+  // A server that names the binding omits `output` when it equals `data`, so
+  // the body carries the payload once. A server without `binding` predates `output`.
+  if (result.ok && result.binding !== undefined && !('output' in result)) result.output = result.data;
+  return result;
 }
 
 /**
@@ -394,6 +493,11 @@ export interface AdminConnector {
   /** Where the connector currently obtains its server-side credential. */
   credentialSource?: 'none' | 'stored' | 'project_secret' | 'platform';
   secretSet: boolean;
+  /**
+   * Why the last attempt to load this connector's tools failed. Set when
+   * `status` is `error`. Absent on older servers.
+   */
+  lastError?: string | null;
 }
 
 export interface ConnectorsResponse {
@@ -498,6 +602,40 @@ interface ConnectionFields {
    * a session. Absent on older servers, which means usable.
    */
   usable?: boolean;
+  /**
+   * `true` = the account is signed in: it holds a credential, or a connected
+   * provider account. `false` = it still needs a sign-in (an abandoned OAuth
+   * flow, say), so a client offers Connect. Absent on older servers.
+   */
+  authorized?: boolean;
+  /**
+   * The paired machine this account points at. Set only on accounts of a
+   * `computer` connector; `null` once the machine was unpaired (the account is
+   * then `revoked`). Absent on every other connector, and on older servers.
+   */
+  tunnel_id?: string | null;
+  /**
+   * Live status of the machine behind a `computer` account, for an online dot.
+   * `null` when the machine is gone. Absent on every other connector, and on
+   * older servers.
+   */
+  machine?: {
+    online: boolean;
+    last_heartbeat_at: string | null;
+    hostname?: string;
+    platform?: string;
+    /**
+     * Who may use the machine, decided by its owner on the machine itself:
+     * `ask` = the owner approves each new agent session on the computer
+     * (`granted_until` is the end of the current approval, `null` when none),
+     * `always` = no prompt, `off` = every call is refused. `null` (or
+     * absent) when the machine's agent never reported it, e.g. npm 0.1.x.
+     */
+    access?: {
+      mode: 'ask' | 'always' | 'off';
+      granted_until: string | null;
+    } | null;
+  } | null;
 }
 
 /** One grant naming who may use a shared account. Grant or revoke through
@@ -505,10 +643,11 @@ interface ConnectionFields {
 export interface ConnectionShare {
   /** The assignment id; `revokeAssignment` takes it. */
   grant_id: string;
-  /** `project` = everyone with access to the project. */
-  principal_type: 'member' | 'group' | 'project';
+  /** `project` = everyone with access to the project. `agent`: `principal_id`
+   *  is the agent's service account; every session of that agent may use it. */
+  principal_type: 'member' | 'group' | 'project' | 'agent';
   principal_id: string;
-  /** A member's email, a group's name, or the project's name. */
+  /** A member's email, a group's name, an agent's name, or the project's name. */
   label: string;
   expires_at: string | null;
 }
@@ -632,6 +771,9 @@ export interface OAuth2ResourceDiscovery {
   authorization_server?: string;
   metadata?: Partial<Omit<OAuth2ApplicationView, 'has_client_secret' | 'has_private_key'>>;
   registration_endpoint?: string;
+  /** Kortix signs in with its own OAuth client: a catalogue app whose server
+   *  has no dynamic registration. Register without `registration_endpoint`. */
+  kortix_client?: boolean;
   token_endpoint_auth_methods_supported?: string[];
   code_challenge_methods_supported?: string[];
   scopes: string[];
@@ -644,7 +786,9 @@ export interface OAuth2ResourceDiscoveryInput {
 }
 
 export interface OAuth2ClientRegistrationInput {
-  registration_endpoint: string;
+  /** RFC 7591 endpoint. Absent: the API uses Kortix's own OAuth client, which
+   *  only a catalogue app with `kortix_client` discovery has. */
+  registration_endpoint?: string;
   /** Authorization server issuer, recorded for RFC 9207 `iss` validation. */
   issuer?: string;
   client_name?: string;
@@ -950,6 +1094,27 @@ export async function renameConnection(projectId: string, connectionId: string, 
   );
 }
 
+/**
+ * Share a machine the caller paired with this project, as a shared account of
+ * the project's `computer` connector (`share: 'project'`, needs the
+ * connector-manage capability). The caller's own private account needs no
+ * call: it follows them into every project they belong to. `share: 'me'` (the
+ * server default) stays accepted. Idempotent: the same machine for the same
+ * owner returns the existing account. `409` when the machine cannot join this
+ * project's account.
+ */
+export async function addComputerToProject(
+  projectId: string,
+  input: { tunnelId: string; share?: ConnectorConnectOwner },
+) {
+  return unwrap(
+    await backendApi.post<Connection>(`/projects/${projectId}/computers`, {
+      tunnel_id: input.tunnelId,
+      ...(input.share ? { share: input.share } : {}),
+    }),
+  );
+}
+
 /** Who may use a shared account: a person, a group, or everyone in the project. */
 export interface ConnectionSharePrincipal {
   principal_type: 'user' | 'group' | 'project';
@@ -1209,7 +1374,11 @@ export interface ConnectorConfig {
   endpoint: string | null;
   baseUrl: string | null;
   spec: string | null;
-  /** Machine ids assigned to a Computers connector profile. */
+  /**
+   * @deprecated Computers are accounts of the `computer` connector now: read
+   * `Connection.tunnel_id` from `listConnections`. Servers no longer send it.
+   * Removed in the next major.
+   */
   tunnelIds?: string[];
   auth: {
     type: ConnectorRequestAuthType;
@@ -1254,6 +1423,10 @@ export type ConnectorConnectOwner = 'project' | 'me';
 export interface ConnectorConnectOptions {
   /** Owner for the account this authorization creates. Defaults to `me`. */
   owner?: ConnectorConnectOwner;
+  /** Where the hosted flow sends the browser after success (a native app's deep link). */
+  successRedirectUri?: string;
+  /** Where the hosted flow sends the browser after a failure. */
+  errorRedirectUri?: string;
 }
 
 /**
@@ -1273,7 +1446,11 @@ export async function connectorConnect(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/connect`,
       // Omitted rather than null when unset: the API reads the key's presence
       // to apply its own default, and an old client sends no key at all.
-      options.owner ? { owner: options.owner } : {},
+      {
+        ...(options.owner ? { owner: options.owner } : {}),
+        ...(options.successRedirectUri ? { success_redirect_uri: options.successRedirectUri } : {}),
+        ...(options.errorRedirectUri ? { error_redirect_uri: options.errorRedirectUri } : {}),
+      },
     ),
   );
 }
@@ -1323,7 +1500,11 @@ export interface ConnectorDraftInput {
   endpoint?: string;
   baseUrl?: string;
   spec?: string;
-  /** Account-owned machine ids assigned to a Computers connector profile. */
+  /**
+   * @deprecated Computers are accounts of the `computer` connector now: add one
+   * with `addComputerToProject`. The server ignores this field. Removed in the
+   * next major.
+   */
   tunnel_ids?: string[];
   /** Credential storage mode. `shared` is the only mode (`per_user` was
    *  removed 2026-07-05). */
@@ -1362,6 +1543,71 @@ export async function discoverConnectorAuth(projectId: string, draft: ConnectorD
   );
 }
 
+/** Whether an MCP server needs a sign-in, and whether Kortix can run it with
+ *  nothing but the user's consent (OAuth metadata plus client registration). */
+export interface McpServerSignInCheck {
+  requires_sign_in: boolean;
+  one_click: boolean;
+}
+
+export async function checkMcpServerSignIn(projectId: string, url: string) {
+  return unwrap(
+    await backendApi.post<McpServerSignInCheck>(
+      `/connectors/projects/${projectId}/connectors/mcp-sign-in-check`,
+      { url },
+    ),
+  );
+}
+
+/** A Pipedream or Composio connector, and the Kortix app it moves to (`connectors_v2`). */
+export interface ConnectorMove {
+  slug: string;
+  name: string;
+  /** The retired provider the connector runs on. */
+  provider: 'pipedream' | 'composio';
+  /** The connector's app on that provider. */
+  app: string | null;
+  /** The Kortix app it moves to. `null`: no Kortix connection for this app on this deployment yet. */
+  to: { slug: string; name: string; icon: string | null } | null;
+  /** The account a started move signs in on. */
+  connection_id: string | null;
+  /** The move signed in; only the switch to `mcp` is left. */
+  signed_in: boolean;
+  /** Accounts on the connector. All but the moved one sign in again after the move. */
+  accounts: number;
+}
+
+/** `sign_in`: sign in on `connection_id` (the OAuth2 routes); the connector switches
+ *  to `provider: mcp` when the sign-in completes. `moved`: it switched. */
+export interface ConnectorMoveResult {
+  status: 'sign_in' | 'moved';
+  connection_id?: string;
+  to?: { slug: string; name: string; url: string };
+}
+
+/** The project's Pipedream and Composio connectors and the Kortix app each moves to. */
+export async function listConnectorMoves(projectId: string): Promise<ConnectorMove[]> {
+  return unwrap(await backendApi.get<{ moves: ConnectorMove[] }>(`/projects/${projectId}/connector-moves`)).moves;
+}
+
+/**
+ * Move a Pipedream or Composio connector to its Kortix app. The connector keeps its slug.
+ * The first call marks an account and answers `sign_in`; after the sign-in the
+ * connector switches by itself, and a second call finishes a switch that failed.
+ */
+export async function moveConnector(
+  projectId: string,
+  slug: string,
+  options: { connectionId?: string } = {},
+): Promise<ConnectorMoveResult> {
+  return unwrap(
+    await backendApi.post<ConnectorMoveResult>(
+      `/projects/${projectId}/connectors/${encodeURIComponent(slug)}/move`,
+      options.connectionId ? { connection_id: options.connectionId } : {},
+    ),
+  );
+}
+
 export async function deleteConnector(projectId: string, slug: string) {
   return unwrap(
     await backendApi.delete<{ ok: boolean }>(
@@ -1392,6 +1638,10 @@ export interface PipedreamApp {
   hasTriggers: boolean;
   /** Pipedream's promotion weight. The catalogue's resting sort key. */
   featuredWeight: number;
+  /** The same app's API/MCP catalogue id (`ConnectToolkit.directId`). */
+  directId?: string | null;
+  /** The app's hosted MCP server (`ConnectToolkit.directMcpUrl`). */
+  directMcpUrl?: string | null;
 }
 
 /** A category facet: the key to filter by, and its true size in the catalogue. */
@@ -1509,6 +1759,12 @@ export interface ConnectToolkit {
   categories?: string[];
   isNoAuth: boolean;
   connected: boolean;
+  /** The same app's API/MCP catalogue id, when the project has that catalogue
+   *  on and it lists the app. The app page offers both ways to connect. */
+  directId?: string | null;
+  /** The app's hosted MCP server. Install offers it before the managed app
+   *  when `checkMcpServerSignIn` says the sign-in is one click. */
+  directMcpUrl?: string | null;
 }
 
 export interface ConnectToolkitsPage {
@@ -1782,6 +2038,12 @@ export async function getConnectStatus() {
   );
 }
 
+/**
+ * Store a connector's shared credential. For an MCP connector the server then
+ * re-reads the tools: `sync` is that run, and a per-slug error in it means the
+ * credential is stored but the tools still fail to load. Absent for other
+ * providers and on older servers.
+ */
 export async function setConnectorCredential(
   projectId: string,
   slug: string,
@@ -1789,9 +2051,18 @@ export async function setConnectorCredential(
 ) {
   const input = typeof credential === 'string' ? { value: credential } : credential;
   return unwrap(
-    await backendApi.put<{ ok: boolean }>(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
       `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
       input,
+    ),
+  );
+}
+
+/** Disconnect a connector: remove its stored credential. */
+export async function deleteConnectorCredential(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.delete<{ ok: boolean }>(
+      `/connectors/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential`,
     ),
   );
 }

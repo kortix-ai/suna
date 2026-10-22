@@ -9,7 +9,7 @@
 # token it tried (KORTIX_TOKEN) was the sandbox service key (rejected by the
 # project routes), and `git push` had no credential. See
 # apps/sandbox/Dockerfile, apps/cli/src/api/{config,client}.ts, and
-# apps/kortix-sandbox-agent-server/src/git.ts.
+# apps/kortix-sandbox-agent-server/src/lib/git/git.ts.
 #
 # What it checks:
 #   1. The CLI compiles into the image and runs (`kortix --version`).

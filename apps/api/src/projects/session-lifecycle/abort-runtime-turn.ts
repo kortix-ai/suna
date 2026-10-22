@@ -1,7 +1,6 @@
 import { resolveSessionOpencodeEndpoint } from './runtime-client';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
-
-const WORKSPACE = '/workspace';
+import { runtimeServesTurnVerbs, runtimeVerbPaths, sessionRuntimeFetch, turnVerbMissing } from './runtime-fetch';
+import { legacyRuntimePaths } from './legacy-runtime-rest';
 
 /**
  * Abort whatever turn the runtime still thinks is running for this session.
@@ -27,11 +26,13 @@ const WORKSPACE = '/workspace';
  * hold settle re-aborts the box). This call does not pass
  * the sandbox proxy that stamps `UserStop` on web and CLI stops, so it stamps
  * the open turn itself. Without the stamp the abort reads as a failure nobody
- * explained. A stamp that fails never blocks the stop.
+ * explained. A stamp that fails never blocks the stop. `stoppedBy` is the
+ * person who pressed Stop, recorded on the stamp ("Stopped by <name>"); the
+ * caller has already decided they may (`turn-stop-authority.ts`).
  */
 export async function abortRuntimeTurn(
   sessionId: string,
-  opts: { requestedStop?: boolean } = {},
+  opts: { requestedStop?: boolean; stoppedBy?: string | null } = {},
 ): Promise<boolean> {
   if (!sessionId) return false;
   try {
@@ -39,10 +40,13 @@ export async function abortRuntimeTurn(
     if (!resolved) return false;
     if (opts.requestedStop) {
       try {
-        const { markTurnStopRequested } = await import('../sandbox-turn-lifecycle');
-        await markTurnStopRequested(sessionId, 'UserStop', {
-          opencodeSessionId: resolved.opencodeSessionId,
-        });
+        const { markTurnStopRequested } = await import('../session-turn-ledger');
+        await markTurnStopRequested(
+          sessionId,
+          'UserStop',
+          { opencodeSessionId: resolved.opencodeSessionId },
+          opts.stoppedBy ?? null,
+        );
       } catch (err) {
         console.warn('[abort-runtime-turn] could not stamp the requested stop', {
           sessionId,
@@ -50,12 +54,11 @@ export async function abortRuntimeTurn(
         });
       }
     }
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/abort?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
+    if (await runtimeServesTurnVerbs(resolved.externalId, async () => resolved.endpoint)) {
+      const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', runtimeVerbPaths.abort(resolved.opencodeSessionId));
+      if (!turnVerbMissing(resolved.externalId, res)) return res.ok;
+    }
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'POST', legacyRuntimePaths.abort(resolved.opencodeSessionId));
     return res.ok;
   } catch {
     return false;

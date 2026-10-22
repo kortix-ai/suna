@@ -1,0 +1,83 @@
+import { createRoute, z } from '@hono/zod-openapi';
+import { auth, errors, json } from '../../openapi';
+import { PROJECT_ACTIONS } from '../../iam';
+import { callerKortixSessionId } from '../../middleware/caller-session';
+import { notificationsEnabled } from '../../notifications/enabled';
+import { markSessionNotificationsRead } from '../../notifications/inbox-read';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, projectCapabilityAllowed, sessionIsTombstoned } from '../lib/access';
+import { projectsApp } from '../lib/app';
+import { deleteSessionPresence, upsertSessionPresence } from '../lib/session-presence';
+import { extendSandboxDeadlineForPresence } from '../sandbox-deadline';
+
+const PresenceBody = z.object({
+  tab_id: z.string().uuid(),
+  active: z.boolean(),
+  alerts: z.boolean().optional().openapi({
+    description: 'This tab raises its own OS notification for the session, so the phone and Web Push hold back. Default false.',
+  }),
+});
+
+const PresenceResponse = z.object({
+  ok: z.boolean(),
+  awake_until: z.string().datetime().nullable().openapi({
+    description: 'When the session\'s computer stops after this renewal. Null unless active=true, the caller may start the session, and the computer is running or starting.',
+  }),
+  awake_cap_at: z.string().datetime().nullable().openapi({
+    description: 'Presence never keeps the computer on past this time: the idle autostop window (KORTIX_SANDBOX_AUTOSTOP_MINUTES, 15 minutes by default) after the session\'s latest turn activity, or after the computer started if that is later, and at most 24 h into the computer\'s run. A new turn moves it. Null when awake_until is null.',
+  }),
+});
+
+export function registerSessionPresenceRoutes(): void {
+  projectsApp.openapi(createRoute({
+    method: 'put', path: '/{projectId}/sessions/{sessionId}/presence', tags: ['sessions'],
+    summary: 'Renew a browser tab presence lease', ...auth,
+    description: 'active=true holds a 90 s lease for this tab and, with the project\'s notification_center flag on, marks the caller\'s notifications of this session read; active=false drops the lease. For a caller who may start the session, active=true also keeps its computer on by the idle grace, and the response says until when.',
+    request: { params: z.object({ projectId: z.string().uuid(), sessionId: z.string() }), body: { required: true, content: { 'application/json': { schema: PresenceBody } } } },
+    responses: { 200: json(PresenceResponse, 'Presence updated'), ...errors(400, 403, 404) },
+  }), async (c) => {
+    const { projectId, sessionId } = c.req.valid('param');
+    const { tab_id: tabId, active, alerts } = c.req.valid('json');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (loaded.actor?.credential.kind !== 'jwt' || callerKortixSessionId(c)) return c.json({ error: 'Human login required' }, 403);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
+    const visible = await loadVisibleSession(loaded, sessionId, null, null);
+    if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
+    let awake: { deadlineAt: Date; capAt: Date } | null = null;
+    if (active) {
+      // KRTX-2727 (measured 2026-10-20): the lease upsert, the notification
+      // read-mark and the START-capability verdict touch disjoint tables and
+      // none of them reads another's result — serialized, every heartbeat drew
+      // three sequential turns on a 6-connection per-task pool, and the route's
+      // p95 tail was pool-wait, not query time. Start them together; the
+      // extension alone waits, because it alone needs the verdict.
+      const mayStart = projectCapabilityAllowed(
+        c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_START,
+      );
+      // When the upsert below rejects first, this verdict is never awaited —
+      // mark the orphan handled so the 500 the route already returns is not
+      // doubled by an unhandled-rejection report.
+      mayStart.catch(() => undefined);
+      await Promise.all([
+        upsertSessionPresence(loaded.userId, sessionId, tabId, alerts === true),
+        // KRTX-1742: a person looking at the session has seen what it notified.
+        // Only with the `notification_center` flag on.
+        notificationsEnabled(loaded.row.metadata)
+          ? markSessionNotificationsRead(loaded.userId, sessionId)
+          : Promise.resolve(),
+      ]);
+      // KRTX-1729: a person who may start the session keeps its computer awake,
+      // by the idle grace. A read-only viewer's lease only routes pushes.
+      if (await mayStart) {
+        awake = await extendSandboxDeadlineForPresence({ sessionId });
+      }
+    } else {
+      await deleteSessionPresence(loaded.userId, sessionId, tabId);
+    }
+    return c.json({
+      ok: true,
+      awake_until: awake?.deadlineAt.toISOString() ?? null,
+      awake_cap_at: awake?.capAt.toISOString() ?? null,
+    }, 200);
+  });
+}

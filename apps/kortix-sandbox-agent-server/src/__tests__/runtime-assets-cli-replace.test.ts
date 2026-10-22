@@ -26,7 +26,7 @@ import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { replaceCli } from '../runtime-assets'
+import { replaceCli } from '@/services/runtime-assets/runtime-assets'
 
 const sha = (s: string | Buffer) => createHash('sha256').update(s).digest('hex')
 

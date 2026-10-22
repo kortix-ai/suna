@@ -1,6 +1,6 @@
 /**
  * `NoCompactionModelError` — the EXPECTED, user-facing configuration state
- * surfaced by the compaction (`useSummarizeOpenCodeSession`) mutation when
+ * surfaced by the compaction (`useSummarizeRuntimeSession`) mutation when
  * every model-resolution fallback tier fails (no config default, no assistant
  * message in the thread, no connected provider/model).
  *
@@ -15,7 +15,7 @@
  * Promoted to a named, sentinel-marked class (mirroring
  * `RuntimeNotReadyError` in `../../core/runtime/client`) so:
  *   - hosts / the global react-query mutation `onError` can `instanceof` it,
- *   - the Sentry telemetry gate (`apps/web/src/lib/browser-error-noise.ts`)
+ *   - the Sentry telemetry gate (`packages/ui/src/internal/lib/browser-error-noise.ts`)
  *     can match it precisely and drop it across every capture path
  *     (`onunhandledrejection`, `window.onerror`, `ClientErrorBoundary`,
  *     route/system-fault boundaries), and

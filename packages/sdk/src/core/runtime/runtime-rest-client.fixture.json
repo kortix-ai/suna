@@ -1,0 +1,880 @@
+{
+  "session.list": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "scope": "v scope&=",
+      "path": "v path&=",
+      "roots": true,
+      "start": 7,
+      "search": "v search&=",
+      "limit": 7
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/session?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D&scope=v%20scope%26%3D&path=v%20path%26%3D&roots=true&start=7&search=v%20search%26%3D&limit=7",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.get": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.create": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "parentID": {
+        "sample": "parentID"
+      },
+      "title": {
+        "sample": "title"
+      },
+      "agent": {
+        "sample": "agent"
+      },
+      "model": {
+        "sample": "model"
+      },
+      "metadata": {
+        "sample": "metadata"
+      },
+      "permission": {
+        "sample": "permission"
+      },
+      "workspaceID": {
+        "sample": "workspaceID"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"parentID\":{\"sample\":\"parentID\"},\"title\":{\"sample\":\"title\"},\"agent\":{\"sample\":\"agent\"},\"model\":{\"sample\":\"model\"},\"metadata\":{\"sample\":\"metadata\"},\"permission\":{\"sample\":\"permission\"},\"workspaceID\":{\"sample\":\"workspaceID\"}}"
+    }
+  },
+  "session.delete": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "DELETE",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.update": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "title": {
+        "sample": "title"
+      },
+      "metadata": {
+        "sample": "metadata"
+      },
+      "permission": {
+        "sample": "permission"
+      },
+      "time": {
+        "sample": "time"
+      }
+    },
+    "request": {
+      "method": "PATCH",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"title\":{\"sample\":\"title\"},\"metadata\":{\"sample\":\"metadata\"},\"permission\":{\"sample\":\"permission\"},\"time\":{\"sample\":\"time\"}}"
+    }
+  },
+  "session.status": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/session/status?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.messages": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "limit": 7,
+      "before": "v before&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/message?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D&limit=7&before=v%20before%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.prompt": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "messageID": {
+        "sample": "messageID"
+      },
+      "model": {
+        "sample": "model"
+      },
+      "agent": {
+        "sample": "agent"
+      },
+      "noReply": {
+        "sample": "noReply"
+      },
+      "tools": {
+        "sample": "tools"
+      },
+      "format": {
+        "sample": "format"
+      },
+      "system": {
+        "sample": "system"
+      },
+      "variant": {
+        "sample": "variant"
+      },
+      "parts": {
+        "sample": "parts"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/message?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"messageID\":{\"sample\":\"messageID\"},\"model\":{\"sample\":\"model\"},\"agent\":{\"sample\":\"agent\"},\"noReply\":{\"sample\":\"noReply\"},\"tools\":{\"sample\":\"tools\"},\"format\":{\"sample\":\"format\"},\"system\":{\"sample\":\"system\"},\"variant\":{\"sample\":\"variant\"},\"parts\":{\"sample\":\"parts\"}}"
+    }
+  },
+  "session.promptAsync": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "messageID": {
+        "sample": "messageID"
+      },
+      "model": {
+        "sample": "model"
+      },
+      "agent": {
+        "sample": "agent"
+      },
+      "noReply": {
+        "sample": "noReply"
+      },
+      "tools": {
+        "sample": "tools"
+      },
+      "format": {
+        "sample": "format"
+      },
+      "system": {
+        "sample": "system"
+      },
+      "variant": {
+        "sample": "variant"
+      },
+      "parts": {
+        "sample": "parts"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/prompt_async?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"messageID\":{\"sample\":\"messageID\"},\"model\":{\"sample\":\"model\"},\"agent\":{\"sample\":\"agent\"},\"noReply\":{\"sample\":\"noReply\"},\"tools\":{\"sample\":\"tools\"},\"format\":{\"sample\":\"format\"},\"system\":{\"sample\":\"system\"},\"variant\":{\"sample\":\"variant\"},\"parts\":{\"sample\":\"parts\"}}"
+    }
+  },
+  "session.abort": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/abort?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.revert": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "messageID": {
+        "sample": "messageID"
+      },
+      "partID": {
+        "sample": "partID"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/revert?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"messageID\":{\"sample\":\"messageID\"},\"partID\":{\"sample\":\"partID\"}}"
+    }
+  },
+  "session.unrevert": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/unrevert?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.summarize": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "providerID": {
+        "sample": "providerID"
+      },
+      "modelID": {
+        "sample": "modelID"
+      },
+      "auto": {
+        "sample": "auto"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/summarize?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"providerID\":{\"sample\":\"providerID\"},\"modelID\":{\"sample\":\"modelID\"},\"auto\":{\"sample\":\"auto\"}}"
+    }
+  },
+  "session.command": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "messageID": {
+        "sample": "messageID"
+      },
+      "agent": {
+        "sample": "agent"
+      },
+      "model": {
+        "sample": "model"
+      },
+      "arguments": {
+        "sample": "arguments"
+      },
+      "command": {
+        "sample": "command"
+      },
+      "variant": {
+        "sample": "variant"
+      },
+      "parts": {
+        "sample": "parts"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/command?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"messageID\":{\"sample\":\"messageID\"},\"agent\":{\"sample\":\"agent\"},\"model\":{\"sample\":\"model\"},\"arguments\":{\"sample\":\"arguments\"},\"command\":{\"sample\":\"command\"},\"variant\":{\"sample\":\"variant\"},\"parts\":{\"sample\":\"parts\"}}"
+    }
+  },
+  "session.share": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/share?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.fork": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "messageID": {
+        "sample": "messageID"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/fork?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"messageID\":{\"sample\":\"messageID\"}}"
+    }
+  },
+  "session.unshare": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "DELETE",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/share?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.diff": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "messageID": "v messageID&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/diff?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D&messageID=v%20messageID%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "session.todo": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/todo?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "permission.list": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/permission?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "permission.reply": {
+    "params": {
+      "requestID": "id requestID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "reply": {
+        "sample": "reply"
+      },
+      "message": {
+        "sample": "message"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/permission/id%20requestID%2Fx/reply?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"reply\":{\"sample\":\"reply\"},\"message\":{\"sample\":\"message\"}}"
+    }
+  },
+  "question.list": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/question?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "question.reply": {
+    "params": {
+      "requestID": "id requestID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "answers": {
+        "sample": "answers"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/question/id%20requestID%2Fx/reply?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"answers\":{\"sample\":\"answers\"}}"
+    }
+  },
+  "question.reject": {
+    "params": {
+      "requestID": "id requestID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/question/id%20requestID%2Fx/reject?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "part.update": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "messageID": "id messageID/x",
+      "partID": "id partID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "part": {
+        "id": "p",
+        "type": "text"
+      }
+    },
+    "request": {
+      "method": "PATCH",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/message/id%20messageID%2Fx/part/id%20partID%2Fx?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"id\":\"p\",\"type\":\"text\"}"
+    }
+  },
+  "part.delete": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "messageID": "id messageID/x",
+      "partID": "id partID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "DELETE",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/message/id%20messageID%2Fx/part/id%20partID%2Fx?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "file.list": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "path": "v path&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/file?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D&path=v%20path%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "file.read": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "path": "v path&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/file/content?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D&path=v%20path%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "find.files": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "query": "v query&=",
+      "dirs": "v dirs&=",
+      "type": "v type&=",
+      "limit": 7
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/find/file?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D&query=v%20query%26%3D&dirs=v%20dirs%26%3D&type=v%20type%26%3D&limit=7",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "vcs.diff": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "mode": "v mode&=",
+      "context": 7
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/vcs/diff?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D&mode=v%20mode%26%3D&context=7",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "global.health": {
+    "params": null,
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/global/health",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "global.dispose": {
+    "params": null,
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/global/dispose",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "global.config.get": {
+    "params": null,
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/global/config",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "global.config.update": {
+    "params": {
+      "config": {
+        "model": "m"
+      }
+    },
+    "request": {
+      "method": "PATCH",
+      "url": "http://runtime.test/p/sbx%201/8000/global/config",
+      "contentType": "application/json",
+      "body": "{\"model\":\"m\"}"
+    }
+  },
+  "provider.list": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/provider?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "provider.auth": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/provider/auth?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "provider.oauth.authorize": {
+    "params": {
+      "providerID": "id providerID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "method": {
+        "sample": "method"
+      },
+      "inputs": {
+        "sample": "inputs"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/provider/id%20providerID%2Fx/oauth/authorize?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"method\":{\"sample\":\"method\"},\"inputs\":{\"sample\":\"inputs\"}}"
+    }
+  },
+  "provider.oauth.callback": {
+    "params": {
+      "providerID": "id providerID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "method": {
+        "sample": "method"
+      },
+      "code": {
+        "sample": "code"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/provider/id%20providerID%2Fx/oauth/callback?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"method\":{\"sample\":\"method\"},\"code\":{\"sample\":\"code\"}}"
+    }
+  },
+  "auth.set": {
+    "params": {
+      "providerID": "id providerID/x",
+      "auth": {
+        "type": "api",
+        "key": "k"
+      }
+    },
+    "request": {
+      "method": "PUT",
+      "url": "http://runtime.test/p/sbx%201/8000/auth/id%20providerID%2Fx",
+      "contentType": "application/json",
+      "body": "{\"type\":\"api\",\"key\":\"k\"}"
+    }
+  },
+  "app.agents": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/agent?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "app.skills": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/skill?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "app.log": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "service": {
+        "sample": "service"
+      },
+      "level": {
+        "sample": "level"
+      },
+      "message": {
+        "sample": "message"
+      },
+      "extra": {
+        "sample": "extra"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/log?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"service\":{\"sample\":\"service\"},\"level\":{\"sample\":\"level\"},\"message\":{\"sample\":\"message\"},\"extra\":{\"sample\":\"extra\"}}"
+    }
+  },
+  "command.list": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/command?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "tool.ids": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/experimental/tool/ids?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "tool.list": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "provider": "v provider&=",
+      "model": "v model&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/experimental/tool?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D&provider=v%20provider%26%3D&model=v%20model%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "mcp.status": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/mcp?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "mcp.add": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "name": {
+        "sample": "name"
+      },
+      "config": {
+        "sample": "config"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/mcp?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"name\":{\"sample\":\"name\"},\"config\":{\"sample\":\"config\"}}"
+    }
+  },
+  "mcp.connect": {
+    "params": {
+      "name": "id name/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/mcp/id%20name%2Fx/connect?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "mcp.disconnect": {
+    "params": {
+      "name": "id name/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/mcp/id%20name%2Fx/disconnect?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "mcp.auth.start": {
+    "params": {
+      "name": "id name/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/mcp/id%20name%2Fx/auth?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "mcp.auth.callback": {
+    "params": {
+      "name": "id name/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "code": {
+        "sample": "code"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/mcp/id%20name%2Fx/auth/callback?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"code\":{\"sample\":\"code\"}}"
+    }
+  },
+  "mcp.auth.remove": {
+    "params": {
+      "name": "id name/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "DELETE",
+      "url": "http://runtime.test/p/sbx%201/8000/mcp/id%20name%2Fx/auth?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "project.list": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/project?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "project.current": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/project/current?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  },
+  "path.get": {
+    "params": {
+      "directory": "v directory&=",
+      "workspace": "v workspace&="
+    },
+    "request": {
+      "method": "GET",
+      "url": "http://runtime.test/p/sbx%201/8000/path?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": null,
+      "body": null
+    }
+  }
+}

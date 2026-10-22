@@ -17,13 +17,13 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function TaskDoneTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function TaskDoneTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
+  const input = partInput(call);
   const result = (input.result as string) || '';
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={
         <View
           style={{
@@ -57,5 +57,4 @@ export function TaskDoneTool({ part, defaultOpen, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('task_done', TaskDoneTool);
 ToolRegistry.register('task-done', TaskDoneTool);

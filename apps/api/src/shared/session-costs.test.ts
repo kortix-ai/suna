@@ -55,6 +55,7 @@ describe('assembleSessionCostSummary', () => {
       owner: {
         type: 'service_account',
         name: 'automation-agent',
+        avatarUrl: null,
         email: null,
       },
       llm: {

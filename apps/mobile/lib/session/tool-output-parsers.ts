@@ -14,7 +14,7 @@
  * - `@kortix/sdk` browser `diagnostics-store.ts` →
  *   `parseDiagnosticsFromToolOutput` (the store is zustand + browser-only, so
  *   it is not on the SDK root), and web `getToolDiagnostics`' body as
- *   `getToolDiagnosticsFrom(output, metadata, filePath)`.
+ *   `getToolDiagnosticsFrom(output, diagnostics, filePath)`.
  */
 
 import { getDiagnostics, type Diagnostic } from '@kortix/sdk';
@@ -277,13 +277,13 @@ export {
 } from '@kortix/shared/tool-output';
 
 /**
- * Web `getToolDiagnostics(part, filePath)` over already-read output and
- * metadata: LSP diagnostics from the output (errors + warnings, max 5) when
- * present, else the metadata's per-file diagnostics (errors, max 3).
+ * Web `getToolDiagnostics(part, filePath)` over already-read output and the
+ * SDK `ToolView.diagnostics`: LSP diagnostics from the output (errors +
+ * warnings, max 5) when present, else the per-file diagnostics (errors, max 3).
  */
 export function getToolDiagnosticsFrom(
   output: string,
-  metadata: Record<string, unknown>,
+  diagnostics: Record<string, unknown[]> | undefined,
   filePath: string | undefined,
 ): Diagnostic[] {
   if (!filePath) return [];
@@ -313,5 +313,5 @@ export function getToolDiagnosticsFrom(
     }
   }
 
-  return getDiagnostics(metadata.diagnostics as Record<string, Diagnostic[]> | undefined, filePath);
+  return getDiagnostics(diagnostics as Record<string, Diagnostic[]> | undefined, filePath);
 }

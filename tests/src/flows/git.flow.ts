@@ -17,7 +17,9 @@
  *  - upstream credentials remain inside the Git proxy.
  */
 import { flow } from "../core/flow";
+import { withTransientGitRetry } from "../fixtures/git-transient";
 import { serveFixtureRepoLocally } from "../fixtures/local-git";
+import { withDb } from "../fixtures/chat";
 
 const UNKNOWN = "00000000-0000-4000-a000-000000000000";
 
@@ -30,9 +32,6 @@ flow(
     domain: "git",
     routes: [
       "GET /v1/git/:project/info/refs",
-      "GET /v1/git/:project/compiled-checkout",
-      "GET /v1/git/:project/compiled-runtime",
-      "GET /v1/git/:project/compiled-pi-runtime",
       "GET /v1/git/:project/project-snapshot",
       "POST /v1/git/:project/git-upload-pack",
       "POST /v1/git/:project/git-receive-pack",
@@ -79,36 +78,6 @@ flow(
         .as(ctx.P.ANON)
         .post("/v1/git/:project/git-upload-pack", {}, { params: { project: p.id } });
       r.status([401, 403, 502]);
-    });
-    await ctx.step("compiled checkout without git auth → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/git/:project/compiled-checkout", {
-          params: { project: p.id },
-          query: { ref: "main", sha: "a".repeat(40) },
-        });
-      r.status([401, 403]);
-    });
-    await ctx.step("compiled runtime without git auth → 401", async () => {
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/git/:project/compiled-runtime", {
-          params: { project: p.id },
-          query: { ref: "main", sha: "a".repeat(40) },
-        });
-      r.status([401, 403]);
-    });
-    await ctx.step("compiled pi runtime without git auth → 401", async () => {
-      // Same auth boundary as compiled-runtime; the pi_worker feature-flag
-      // gate sits BEHIND auth, so an anonymous caller never learns whether
-      // the flag is on.
-      const r = await ctx.client
-        .as(ctx.P.ANON)
-        .get("/v1/git/:project/compiled-pi-runtime", {
-          params: { project: p.id },
-          query: { ref: "main", sha: "a".repeat(40) },
-        });
-      r.status([401, 403]);
     });
     await ctx.step("git-receive-pack (push) without git auth → 401", async () => {
       const r = await ctx.client
@@ -319,6 +288,38 @@ flow(
   },
 );
 
+// The success path stores a real GitHub user access token, verified against
+// GitHub. The local profile has no GitHub, so this flow pins the refusals.
+flow(
+  "GH-20",
+  { domain: "git", routes: ["POST /v1/projects/github/user-token"] },
+  async (ctx) => {
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/github/user-token", { github_user_token: "ghu_x" });
+      r.status(401);
+    });
+    await ctx.step("NONMEMBER cannot store a token on the OWNER account → 403/404", async () => {
+      const r = await ctx.client.as(ctx.P.NONMEMBER).post("/v1/projects/github/user-token", {
+        account_id: ctx.P.OWNER.accountId,
+        github_user_token: "ghu_x",
+      });
+      r.status([403, 404]);
+    });
+    await ctx.step("OWNER without github_user_token → 400, and no token is echoed", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/github/user-token", { account_id: ctx.P.OWNER.accountId });
+      r.status(400);
+      const body = r.json<any>();
+      if (body.error !== "github_user_token is required") {
+        throw new Error(`expected the missing-token error, got: ${JSON.stringify(body)}`);
+      }
+    });
+  },
+);
+
 flow(
   "GH-3",
   {
@@ -357,6 +358,13 @@ flow(
     await ctx.step("OWNER lists repos (no install locally → 409 with install_url)", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/repositories");
       r.status([200, 400, 409, 502, 503]);
+    });
+    await ctx.step("the retired `pat` selector is an unknown installation → 409 not connected to this account", async () => {
+      const team = await ctx.fixtures.team();
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/github/repositories", {
+        query: { account_id: team.id, installation_id: "pat" },
+      });
+      r.status(409).body().has("$.error", "Selected GitHub installation is not connected to this account");
     });
   },
 );
@@ -512,9 +520,9 @@ flow(
       let code = 0;
       let output = '';
       try {
-        const result = await exec('git', args, { cwd: root, timeout: 60_000,
+        const result = await withTransientGitRetry(args, () => exec('git', args, { cwd: root, timeout: 60_000,
           env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
-            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } });
+            GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}` } }));
         output = result.stdout + result.stderr;
       } catch (error: any) {
         code = typeof error.code === 'number' ? error.code : -1;
@@ -696,6 +704,13 @@ flow(
         for (const key of ["token", "pat", "private_key", "privateKey", "installation_id", "installationId"]) {
           if (key in body) throw new Error(`GET /git/backend leaks ${key}`);
         }
+        // The operator flag is the client's gate for the operator-only
+        // repositories listing (KRTX-1892): the web may only fire
+        // GET /git/backend/repositories when this says true. It must be a
+        // boolean — never absent, which would make every client guess.
+        if (typeof body.operator !== "boolean") {
+          throw new Error(`expected boolean operator, got: ${JSON.stringify(body)}`);
+        }
       },
     );
 
@@ -715,6 +730,19 @@ flow(
         // repositories (200) or, with no backend configured, 409.
         const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend/repositories");
         r.status([403, 200, 409]);
+
+        // The flag and the gate must agree (KRTX-1892): the same caller reads
+        // GET /git/backend → `operator` and this listing. `operator: false`
+        // with anything but a 403 here would mean the client-side gate and
+        // the server-side gate disagree — a silent 403 on one side or an
+        // operator who can read but not import on the other.
+        const flag = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/git/backend");
+        flag.status(200);
+        if (flag.json<any>().operator === false && r.statusCode !== 403) {
+          throw new Error(
+            `operator=false but repositories answered ${r.statusCode} — the flag and the gate disagree`,
+          );
+        }
         const body = r.json<any>();
         if (r.statusCode === 403 && typeof body.error !== "string") {
           throw new Error(`403 must carry an error string, got: ${JSON.stringify(body)}`);
@@ -750,6 +778,174 @@ flow(
   },
 );
 
+// GH-1b — the account connection surface with real rows. The local profile has
+// no GitHub, so the rows a successful POST /github/installation writes are
+// inserted directly; every read and the disconnect go through the real routes.
+// Both GET paths share one handler: same payload (minus the per-call
+// install_url nonce), same PROJECT_CREATE gate.
+flow(
+  "GH-1b",
+  {
+    domain: "git",
+    requires: ["database"],
+    routes: [
+      "GET /v1/projects/github/installation",
+      "GET /v1/projects/github/installations",
+      "DELETE /v1/projects/github/installation",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember("member");
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const query = { account_id: team.id };
+    const withoutInstallUrl = (body: Record<string, unknown>) => {
+      const { install_url: _nonce, ...rest } = body;
+      return rest;
+    };
+    try {
+      await ctx.step("a fresh team: installed false, installations []", async () => {
+        const r = await owner.get("/v1/projects/github/installations", { query });
+        r.status(200).body().has("$.account_id", team.id).has("$.installed", false).has("$.installations", []).has("$.installation_id", null);
+      });
+      await withDb(ctx, (db) =>
+        db.query(
+          `INSERT INTO kortix.account_github_installations
+             (account_id, installation_id, owner_login, owner_type, repository_selection, permissions, metadata)
+           VALUES ($1, '910000001', 'ke2e-org-a', 'Organization', 'all', '{"contents":"write"}', '{}'),
+                  ($1, '910000002', 'ke2e-org-b', 'Organization', 'selected', '{"contents":"write"}',
+                   '{"html_url":"https://github.com/organizations/ke2e-org-b/settings/installations/910000002"}')`,
+          [team.id],
+        ),
+      );
+      await ctx.step("OWNER: both GET paths list both connections with one identical payload", async () => {
+        const singular = await owner.get("/v1/projects/github/installation", { query });
+        const plural = await owner.get("/v1/projects/github/installations", { query });
+        singular.status(200);
+        plural.status(200).body().has("$.account_id", team.id).has("$.installed", true).has("$.requires_installation", false);
+        const body = plural.json<any>();
+        const byId = new Map<string, any>(body.installations.map((i: any) => [i.installation_id, i]));
+        const a = byId.get("910000001");
+        const b = byId.get("910000002");
+        if (byId.size !== 2 || !a || !b) throw new Error(`expected exactly the two seeded installations, got ${JSON.stringify(body.installations)}`);
+        if (a.owner_login !== "ke2e-org-a" || a.owner_type !== "Organization" || a.repository_selection !== "all") {
+          throw new Error(`installation a: ${JSON.stringify(a)}`);
+        }
+        if (
+          b.owner_login !== "ke2e-org-b" ||
+          b.repository_selection !== "selected" ||
+          b.installation_url !== "https://github.com/organizations/ke2e-org-b/settings/installations/910000002"
+        ) {
+          throw new Error(`installation b: ${JSON.stringify(b)}`);
+        }
+        if (JSON.stringify(withoutInstallUrl(singular.json())) !== JSON.stringify(withoutInstallUrl(body))) {
+          throw new Error(`the two GET paths disagree:\n${singular.text()}\n${plural.text()}`);
+        }
+      });
+      await ctx.step("MEMBER (no project.create): both GET paths → the same 403", async () => {
+        const singular = await ctx.client.as(member).get("/v1/projects/github/installation", { query });
+        const plural = await ctx.client.as(member).get("/v1/projects/github/installations", { query });
+        singular.status(403).body().has("$.action", "project.create");
+        plural.status(403);
+        if (singular.text() !== plural.text()) throw new Error(`403 bodies differ:\n${singular.text()}\n${plural.text()}`);
+      });
+      await ctx.step("OWNER disconnects → {ok: true}; the account reads not connected and the rows are gone", async () => {
+        (await owner.del("/v1/projects/github/installation", { query })).status(200).body().has("$.ok", true);
+        const r = await owner.get("/v1/projects/github/installation", { query });
+        r.status(200).body().has("$.installed", false).has("$.installations", []).has("$.installation_id", null);
+        const left = await withDb(ctx, (db) =>
+          db.query("SELECT count(*)::int AS n FROM kortix.account_github_installations WHERE account_id = $1", [team.id]),
+        );
+        if (left.rows[0].n !== 0) throw new Error(`${left.rows[0].n} installation rows survived the disconnect`);
+      });
+    } finally {
+      await withDb(ctx, (db) => db.query("DELETE FROM kortix.account_github_installations WHERE account_id = $1", [team.id])).catch(() => {});
+    }
+  },
+);
+
+// GH-18b — the 2026-08-29 fix. A cloud platform admin is NOT a self-host
+// operator: the backend owner (`managed-kortix` on cloud) holds every
+// customer's repository. The run-scoped platform admin is synthetic, so no
+// operator allowlist (KORTIX_PLATFORM_ADMIN_EMAILS) names it.
+flow(
+  "GH-18b",
+  {
+    domain: "git",
+    requires: ["admin"],
+    routes: ["GET /v1/projects/git/backend/repositories", "POST /v1/projects/link-repository"],
+  },
+  async (ctx) => {
+    const admin = ctx.client.withBearer(ctx.env.adminToken!, "ADMIN_TOKEN");
+    await ctx.step("platform admin lists the instance backend → 403, no repository listing", async () => {
+      const r = await admin.get("/v1/projects/git/backend/repositories");
+      r.status(403).body().has("$.error", "The instance git backend is only browsable by a self-host operator");
+    });
+    await ctx.step("platform admin imports a backend repository by name → 403", async () => {
+      const r = await admin.post("/v1/projects/link-repository", {
+        source: "managed",
+        repo_full_name: "managed-kortix/someone-elses-project",
+      });
+      r.status(403).body().has("$.error", "Managed GitHub repository import is only available to a self-host operator");
+    });
+  },
+);
+
+// GH-21 — a BYO host token is a platform git credential, never a runtime
+// project secret: it is stored encrypted in project_git_credentials and the
+// secrets surface neither lists nor deletes it.
+flow(
+  "GH-21",
+  {
+    domain: "git",
+    requires: ["database"],
+    routes: [
+      "PUT /v1/projects/:projectId/git-credential",
+      "GET /v1/projects/:projectId/secrets",
+      "DELETE /v1/projects/:projectId/secrets/:name",
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project({ metadata: { git: { provider: "gitlab", auth: { method: "none" } } } });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { projectId: project.id };
+    const token = `glpat-ke2e-${crypto.randomUUID()}`;
+    await ctx.step("a BYO GitLab token is stored as a platform git credential → 200, never echoed", async () => {
+      const r = await owner.put("/v1/projects/:projectId/git-credential", { token }, { params });
+      r.status(200)
+        .body()
+        .has("$.configured", true)
+        .has("$.provider", "gitlab")
+        .has("$.git_connection.provider", "gitlab")
+        .has("$.git_connection.auth_method", "project_credential")
+        .has("$.git_connection.status", "connected");
+      if (r.text().includes(token)) throw new Error("the git credential response echoed the token");
+    });
+    await ctx.step("the credential is not a runtime project secret: not listed, KORTIX_GIT_AUTH_TOKEN not deletable", async () => {
+      const listed = await owner.get("/v1/projects/:projectId/secrets", { params });
+      listed.status(200);
+      const items = listed.json<{ items: Array<{ name?: string; identifier?: string }> }>().items;
+      if (items.some((i) => i.name === "KORTIX_GIT_AUTH_TOKEN" || i.identifier === "KORTIX_GIT_AUTH_TOKEN")) {
+        throw new Error("the git credential is listed as a project secret");
+      }
+      if (listed.text().includes(token)) throw new Error("the secrets list leaked the token");
+      (await owner.del("/v1/projects/:projectId/secrets/:name", { params: { ...params, name: "KORTIX_GIT_AUTH_TOKEN" } })).status(403);
+    });
+    await ctx.step("storage: one encrypted gitlab credential row, zero project secret rows", async () => {
+      const creds = await withDb(ctx, async (db) =>
+        (await db.query<{ provider: string; value_enc: string }>("SELECT provider, value_enc FROM kortix.project_git_credentials WHERE project_id = $1::uuid", [project.id])).rows,
+      );
+      if (creds.length !== 1 || creds[0]!.provider !== "gitlab" || creds[0]!.value_enc.includes(token)) {
+        throw new Error(`git credential rows: ${JSON.stringify(creds.map((c) => c.provider))}`);
+      }
+      const secrets = await withDb(ctx, async (db) =>
+        (await db.query<{ n: number }>("SELECT count(*)::int AS n FROM kortix.project_secrets WHERE project_id = $1::uuid", [project.id])).rows[0]?.n,
+      );
+      if (secrets !== 0) throw new Error(`expected no project secret rows, found ${secrets}`);
+    });
+  },
+);
+
 // Account membership is not project access. A personal token minted in the
 // project's own account used to skip the project role in the Git proxy, so an
 // account member with no role on a project could clone it and push `main`.
@@ -757,6 +953,7 @@ flow(
   'GH-19',
   {
     domain: 'git',
+    tags: ['deployed'],
     requires: ['database'],
     routes: [
       'POST /v1/accounts/tokens',
@@ -835,8 +1032,12 @@ flow(
         if ((await mainSha()) !== before) throw new Error('an account member without a project role changed main');
       });
 
-      await ctx.step('project member PAT may read but not push main; main is unchanged', async () => {
-        await git(memberSecret, ['ls-remote', remote, 'refs/heads/main'], 'ok');
+      // A clone advertises every session branch, private sessions included, so
+      // a personal token reads the repository only with project.gitops.push.
+      // A member's own sessions read through their session credentials.
+      await ctx.step('project member PAT can neither read nor push main; main is unchanged', async () => {
+        const read = await git(memberSecret, ['ls-remote', remote, 'refs/heads/main'], 'rejected');
+        if (!/403|not authorized/i.test(read)) throw new Error(`expected a 403 refusal, got: ${read}`);
         await git(memberSecret, ['push', remote, 'HEAD:refs/heads/main'], 'rejected');
         if ((await mainSha()) !== before) throw new Error('a project member without gitops.push changed main');
       });

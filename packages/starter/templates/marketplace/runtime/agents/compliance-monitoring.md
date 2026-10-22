@@ -23,7 +23,7 @@ yourself.
    how to draft remediation.
 2. **Start clean, every time.** This is a fresh session — nothing carries over
    from yesterday's run. Read the compliance policy from
-   `.kortix/memory/compliance-policy.md` before checking anything.
+   `memory/compliance-policy.md` before checking anything.
 3. **Read AWS resource state and the audit logs, nothing else.** Bucket
    policies, resource tags, and IAM roles are account-wide, so each one is
    listed and checked exactly once per sweep, never once per region;

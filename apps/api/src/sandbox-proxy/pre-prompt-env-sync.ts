@@ -4,7 +4,7 @@
  *
  * That split is load-bearing, not cosmetic. `routes/preview.ts` binds its
  * collaborators (`../projects/lib/sandbox-env-sync`, `session-token-grant`,
- * `opencode-session-snapshot`, `../../config`, `../backend`, `../../iam`, …) at
+ * `../../config`, `../backend`, `../../iam`, …) at
  * module-evaluation time, and every sibling proxy suite replaces exactly those
  * modules with `mock.module` before importing the route. Bun's module registry
  * is PROCESS-wide and a module evaluates once: any test file that imports
@@ -18,7 +18,8 @@
  * So this module holds the pure predicates and the injectable turn-start block,
  * and imports NOTHING that a proxy suite mocks as a value:
  *  - the four collaborators are `import type` only (erased at runtime) and are
- *    passed in as `PrePromptEnvSyncDeps` — the real set lives in the route;
+ *    passed in as `PrePromptEnvSyncDeps` — the real set lives in
+ *    `forward/turn-start.ts`;
  *  - `secret-grant`, `session-token-grant` (the error classes) and
  *    `session-title-generate` (`extractPromptInfo`) are imported for real, and
  *    no proxy suite mocks any of them.
@@ -26,18 +27,17 @@
  * `routes/preview.ts` re-exports the public names, so every existing import
  * path keeps working.
  */
-import {
-  isTurnStartRequest,
-  stripInBoxProxyPrefix,
-} from '../projects/turn-start-request';
+import { isTurnStartRequest } from '../projects/turn-start-request';
+import { classifyRuntimeRequest } from './runtime-request';
+import { previewCorsHeaders } from './preview-hosts';
 import type { ProviderName } from '../platform/providers';
+import type { bindSessionTurnIdentity } from '../projects/lib/on-behalf-of';
 import type { syncSandboxEnvForPrompt } from '../projects/lib/sandbox-env-sync';
 import { SecretGrantResolutionError } from '../projects/lib/secret-grant';
 import {
   SessionGrantRemintError,
   type remintGrantForAgentSwitch,
 } from '../projects/lib/session-token-grant';
-import type { scheduleOpencodeSnapshotSync } from '../projects/opencode-session-snapshot';
 import {
   extractPromptInfo,
   type generateSessionTitleFromFirstPrompt,
@@ -51,11 +51,12 @@ export function jsonProxyError(
   status: number,
   origin?: string,
 ): Response {
-  const headers = new Headers({ 'Content-Type': 'application/json' });
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-  }
+  // The preview allowlist, as every proxy response: the preview cookie is
+  // ambient on cross-site requests, so an arbitrary origin gets nothing.
+  const headers = new Headers({
+    'Content-Type': 'application/json',
+    ...previewCorsHeaders(origin ?? ''),
+  });
   return new Response(JSON.stringify(body), {
     status,
     headers,
@@ -75,16 +76,23 @@ export function errorMessage(error: unknown, fallback: string): string {
 // can never use it to escalate into another agent's connector / Kortix-CLI grant.
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
-const RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE =
-  /\b(operation timed out|timeout|aborterror|unable to connect|connection refused|econnrefused|econnreset|socket hang up)\b/i;
+// A fetch that timed out or never connected (Bun and Node spellings).
+const RETRYABLE_ENV_SYNC_ERROR_NAMES = new Set(['TimeoutError', 'AbortError']);
+const RETRYABLE_ENV_SYNC_ERROR_CODES = new Set([
+  'ConnectionRefused',
+  'ConnectionClosed',
+  'FailedToOpenSocket',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+]);
 
-function isRetryableEnvSyncFailure(message: string): boolean {
-  if (/\benv sync failed: (502|503|504)\b/i.test(message)) return true;
-  // Fetch rejections are bare network errors. HTTP failures include the daemon
-  // response body, so don't classify a non-retryable status as transient just
-  // because its JSON/body happens to mention a connection failure.
-  if (/^env sync failed:/i.test(message)) return false;
-  return RETRYABLE_ENV_SYNC_NETWORK_ERROR_RE.test(message);
+export function isRetryableEnvSyncFailure(err: unknown): boolean {
+  const e = err as { name?: unknown; code?: unknown; status?: unknown } | null | undefined;
+  // `EnvSyncHttpError` (projects/lib/sandbox-env-push.ts), matched by name so
+  // this module does not import the push module's DB graph.
+  if (e?.name === 'EnvSyncHttpError') return e.status === 502 || e.status === 503 || e.status === 504;
+  return RETRYABLE_ENV_SYNC_ERROR_NAMES.has(String(e?.name)) || RETRYABLE_ENV_SYNC_ERROR_CODES.has(String(e?.code));
 }
 
 /**
@@ -140,7 +148,8 @@ function isRetryableEnvSyncFailure(message: string): boolean {
  */
 export function isTurnStartEnvSync(port: number, method: string, path: string): boolean {
   if (!isTurnStartRequest(port, method, path)) return false;
-  return !/^\/session\/[^/]+\/summarize(?:$|[/?#])/.test(stripInBoxProxyPrefix(path));
+  const request = classifyRuntimeRequest(method, path);
+  return request.kind === 'turn-start' && request.verb !== 'summarize';
 }
 
 /** The body's `agent` field, or null. Pure + exported so it is unit-tested
@@ -173,10 +182,13 @@ function stripKortixPrefix(id: string): string {
  * against `@opencode-ai/sdk`'s generated `types.gen.d.ts`, the real client
  * this proxy's traffic is generated by):
  *
+ *  - `POST /kortix/runtime/sessions/:id/prompt` — a flat STRING ref
+ *    (`"kortix/<id>"`). Every server-relayed delivery arrives as this
+ *    (`session-lifecycle/runtime-client.ts`'s `postPrompt`), so it is the
+ *    turn-start body the overwhelming majority of prompts have.
  *  - `POST /session/:id/message` and `/prompt_async` (`SessionPromptData`) —
- *    a NESTED `model: {providerID, modelID}`. This is the turn-start body the
- *    overwhelming majority of prompts arrive as, including every server-relayed
- *    delivery (`session-lifecycle/runtime-client.ts`'s `prompt_async` POST).
+ *    a NESTED `model: {providerID, modelID}`. A daemon without
+ *    `runtime.turns.v1` gets the relay in this shape.
  *  - `POST /session/:id/summarize` (`SessionSummarizeData`) — FLAT top-level
  *    `{providerID, modelID}`, no `model` wrapper. `prompt-dedupe.ts` documents
  *    the identical shape for its own reasons.
@@ -211,7 +223,8 @@ export function requestedPromptManagedModelId(
       const modelID = typeof nested.modelID === 'string' ? nested.modelID.trim() : '';
       return modelID ? stripKortixPrefix(modelID) : null;
     }
-    // `/command`: model is a flat "provider/model" (or "kortix/<id>") string.
+    // The Kortix prompt route and `/command`: a flat "kortix/<id>" (or native
+    // "provider/model") string.
     if (typeof parsed.model === 'string') {
       const ref = parsed.model.trim();
       return ref.startsWith('kortix/') ? stripKortixPrefix(ref) : null;
@@ -299,15 +312,14 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
  * DI rather than `mock.module`, deliberately: bun's `mock.module` is PROCESS-wide
  * and does not unwind at file boundaries, so a proxy test that stubbed `../backend`
  * silently blanked the real module for every sibling suite that ran after it in
- * the same process (4 unrelated `backend.test.ts` / `wake-deadline-guard.test.ts`
+ * the same process (4 unrelated proxy test
  * cases went red with `Received: 0` — their spies never fired). Passing the
- * collaborators in keeps the seam local to one call. Same pattern as
- * `scheduleOpencodeSnapshotSync`'s `options.loadRow ?? loadRow`.
+ * collaborators in keeps the seam local to one call.
  *
  * There is deliberately NO default value: a default would have to name the four
  * real modules here, and evaluating this file would then cache them before a
  * sibling suite's `mock.module` could replace them — the very contamination the
- * split exists to prevent. The REAL set is built in `routes/preview.ts`, which
+ * split exists to prevent. The REAL set is built in `forward/turn-start.ts`, which
  * every sibling re-evaluates under its own mocks.
  *
  * `extractPromptInfo` is deliberately NOT here. Whether a body yields prompt text
@@ -317,7 +329,7 @@ export function secretGrantErrorResponse(err: unknown, origin?: string): Respons
 export interface PrePromptEnvSyncDeps {
   syncEnv: typeof syncSandboxEnvForPrompt;
   remintGrant: typeof remintGrantForAgentSwitch;
-  scheduleSnapshot: typeof scheduleOpencodeSnapshotSync;
+  bindTurnIdentity: typeof bindSessionTurnIdentity;
   generateTitle: typeof generateSessionTitleFromFirstPrompt;
 }
 
@@ -352,6 +364,10 @@ export async function runPrePromptEnvSync(
     serviceKey: string | null;
     /** The body's `agent`, read BEFORE the sentinel rewrite. */
     requestedAgent: string | null;
+    /** `userId` is the person who started this turn directly through the proxy
+     *  (not the queue, which binds in `continueSession`, and not the sandbox's
+     *  own token): the session token acts as them from this turn on. */
+    bindTurnIdentity: boolean;
     body: ArrayBuffer | undefined;
     incomingHeaders: Headers;
   },
@@ -384,15 +400,6 @@ export async function runPrePromptEnvSync(
       modelHint: prompt.model ?? undefined,
     });
   }
-  // `userId` is load-bearing, not decorative: without it the snapshot's daemon
-  // call carries no X-Kortix-User-Context header and the daemon answers 401,
-  // so the refresh silently never lands. See scheduleOpencodeSnapshotSync.
-  deps.scheduleSnapshot({
-    sessionId: record.sessionId,
-    projectId: record.projectId,
-    externalId: record.externalId,
-    userId,
-  });
   try {
     // NOT R2 material, on purpose — `command-env-sync.test.ts` ("Refused
     // BEFORE the grant re-mint — one switch never half-applies") pins this:
@@ -405,6 +412,20 @@ export async function runPrePromptEnvSync(
     // latency win; the invariant test caught it (`remintGrant` fired even
     // though `syncEnv` threw) and it was reverted. Sequential is correct
     // here, not merely unoptimized.
+    // The turn-identity bind lands BEFORE the env push: the push reads the
+    // person the session token acts for, and a change of person must never
+    // ride its trusted fast path with the previous person's personal secrets
+    // (sandbox-env-push.ts). A failed bind refuses the turn like a failed grant
+    // re-mint: no turn runs as the previous prompter.
+    if (input.bindTurnIdentity && userId) {
+      await deps
+        .bindTurnIdentity({ accountId: record.accountId, sessionId: record.sessionId, prompterUserId: userId })
+        .catch((err) => {
+          // The cause stays in the log; the client gets no SQL text.
+          console.warn(`[PREVIEW] Turn identity bind failed for ${sandboxId}: ${errorMessage(err, 'bind failed')}`);
+          throw new Error('could not bind the session to the person starting this turn');
+        });
+    }
     await deps.syncEnv({
       projectId: record.projectId,
       sessionId: record.sessionId,
@@ -441,7 +462,7 @@ export async function runPrePromptEnvSync(
       return grantResponse;
     }
     const message = errorMessage(err, 'project env sync failed');
-    if (isRetryableEnvSyncFailure(message)) {
+    if (isRetryableEnvSyncFailure(err)) {
       // Treat daemon/preview-transient env-sync failures like any other
       // sandbox-port reachability miss: retry/wake in the outer loop, then
       // return the friendly port-unreachable response if the sandbox never

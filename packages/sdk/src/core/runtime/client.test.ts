@@ -2,14 +2,14 @@ import { test, expect, beforeEach, mock } from 'bun:test';
 import { configureKortix } from '../http/config';
 import { setCurrentRuntime } from '../session/current-runtime';
 
-// This file used to fake `getActiveOpenCodeUrl` entirely via
+// This file used to fake `getActiveRuntimeUrl` entirely via
 // `mock.module('../session/server-store/active', ...)`. That's a process-wide,
 // permanent-for-the-sweep override (see the hermetic-pattern comment below) —
 // and since it replaced the WHOLE module with only one export, any other file
 // that imports `state/server-store/active` for real (e.g. a direct test of
 // that module) would see every other export silently gutted to `undefined`.
 // Driving the same "active runtime url" control through the REAL state seam
-// instead (`setCurrentRuntime` — the same primitive `getActiveOpenCodeUrl`
+// instead (`setCurrentRuntime` — the same primitive `getActiveRuntimeUrl`
 // itself reads — plus `configureKortix({ billingEnabled: true })` so "no
 // active session" resolves to '', matching the old default) gives this file
 // identical control with no mock at all — nothing left to collide with.
@@ -51,6 +51,7 @@ const {
   getPublicClientForUrl,
   resetClient,
   resetPublicClient,
+  RuntimeNotReadyError,
   systemReload,
 } = await import('./client');
 
@@ -59,7 +60,7 @@ beforeEach(() => {
   resetPublicClient();
   setCurrentRuntime(null);
   authToken = 'test-token';
-  // billingEnabled: true so `getActiveOpenCodeUrl()` resolves to '' with no
+  // billingEnabled: true so `getActiveRuntimeUrl()` resolves to '' with no
   // active session (matching this file's old `activeUrl = ''` default),
   // instead of the self-hosted local-dev fallback sandbox url.
   configureKortix({ backendUrl: 'http://backend.local/v1', getToken: async () => authToken ?? null, billingEnabled: true });
@@ -96,6 +97,42 @@ test('getClientForUrl injects the bearer token for a same-origin backend-proxied
   expect(calls[0].auth).toBe('Bearer test-token');
 });
 
+test('configureKortix({ eventStreamTransport }) carries the live stream with the platform headers; fetch is not called', async () => {
+  const calls = captureRequests();
+  const connects: Array<{ url: string; auth: string | null }> = [];
+  const rejected: string[] = [];
+  const getToken = Object.assign(async () => authToken ?? null, {
+    invalidate: (token: string) => {
+      rejected.push(token);
+      authToken = 'fresh-token';
+    },
+  });
+  configureKortix({
+    backendUrl: 'http://backend.local/v1',
+    getToken,
+    billingEnabled: true,
+    eventStreamTransport: async function* (request) {
+      connects.push({ url: request.url, auth: request.headers.get('authorization') });
+      if (connects.length === 1) throw Object.assign(new Error('unauthorized'), { status: 401 });
+      yield { data: '{"type":"server.connected","properties":{}}' };
+    },
+  });
+  const client = getClientForUrl('http://backend.local/v1/p/sb-1/8000');
+  const { stream } = await client.global.event({ sseMaxRetryAttempts: 2, sseDefaultRetryDelay: 1 });
+  const events: unknown[] = [];
+  for await (const event of stream) events.push(event);
+
+  expect(events).toEqual([{ type: 'server.connected', properties: {} }]);
+  const url = 'http://backend.local/v1/p/sb-1/8000/global/event';
+  // A 401 from the transport invalidates the rejected token; the reconnect sends the fresh one.
+  expect(connects).toEqual([
+    { url, auth: 'Bearer test-token' },
+    { url, auth: 'Bearer fresh-token' },
+  ]);
+  expect(rejected).toEqual(['test-token']);
+  expect(calls).toEqual([]);
+});
+
 test('getClientForUrl throws on an empty url', () => {
   expect(() => getClientForUrl('')).toThrow();
 });
@@ -128,7 +165,7 @@ test('getPublicClientForUrl never sends an Authorization header, even with a tok
 
 test('getPublicClientForUrl works without configureKortix ever having been called (no token-provider requirement)', async () => {
   // A real anonymous visitor's tab may never call configureKortix() with a
-  // getToken — getClientForUrl would throw '[opencode-sdk] No auth token
+  // getToken — getClientForUrl would throw '[kortix-runtime] No auth token
   // provider configured' here; the public client must not.
   const calls = captureRequests();
   const client = getPublicClientForUrl('http://backend.local/v1/p/public-share/tok123/3000');
@@ -254,6 +291,21 @@ test('a JSON body that does not confirm reports failure instead of success', asy
 test('systemReload throws when the active runtime url is not ready', async () => {
   setCurrentRuntime(null);
   await expect(systemReload('full')).rejects.toThrow('Server URL not ready');
+});
+
+// The web no longer ships @opencode-ai/sdk. An "opencode-sdk" label on our
+// own runtime errors sent a bug report to the wrong package.
+test('runtime errors carry the kortix-runtime label, never opencode-sdk', async () => {
+  setCurrentRuntime(null);
+  const messages = [
+    new RuntimeNotReadyError().message,
+    await systemReload('full').catch((e: Error) => e.message),
+    (() => { try { getClientForUrl(''); } catch (e) { return (e as Error).message; } })(),
+    (() => { try { getPublicClientForUrl(''); } catch (e) { return (e as Error).message; } })(),
+  ];
+  for (const message of messages) {
+    expect(message).toStartWith('[kortix-runtime] ');
+  }
 });
 
 test('systemReload throws with the daemon error message on a non-ok response', async () => {

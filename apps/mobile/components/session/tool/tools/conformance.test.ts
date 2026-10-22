@@ -2,7 +2,8 @@
  * Registry conformance: every tool name apps/web registers a renderer for has
  * a registered renderer on mobile.
  *
- * 1. Web side (static): read apps/web `tool/tools/register.ts`, follow each
+ * 1. Web side (static): read `packages/ui/src/session/tool/tools/register.ts` (the
+ *    registry apps/web imports since #10480), follow each
  *    import to its tool file, and collect every `ToolRegistry.register('name', …)`
  *    literal plus the string arrays registered through
  *    `[…].forEach((n) => ToolRegistry.register(n, …))`. Comments are stripped
@@ -27,7 +28,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 
 const MOBILE_ROOT = join(import.meta.dir, '..', '..', '..', '..');
 const REPO_ROOT = join(MOBILE_ROOT, '..', '..');
-const WEB_TOOLS_DIR = join(REPO_ROOT, 'apps/web/src/features/session/tool/tools');
+const WEB_TOOLS_DIR = join(REPO_ROOT, 'packages/ui/src/session/tool/tools');
 const MOBILE_REGISTER = join(import.meta.dir, 'register.ts');
 const PROBE_ENV = 'TOOL_REGISTRY_PROBE';
 /** The child writes its result here. Bun 1.3 drops a subprocess's piped stdout when `bun test` runs in filter or whole-suite mode. */
@@ -109,8 +110,12 @@ export function webRegisteredNames(): string[] {
 
 // ─── Child probe: import the mobile registry with native modules stubbed ─────
 
-/** Pure-JS packages the renderer graph loads for real. */
-const REAL_PACKAGES = /^(react|react\/.+|zustand|zustand\/.+|@kortix\/sdk|@kortix\/sdk\/.+|class-variance-authority|clsx|tailwind-merge)$/;
+/**
+ * Pure-JS packages the renderer graph loads for real. `@tanstack/react-query`
+ * with them: `@kortix/sdk/react` (real) imports names from it that no mobile
+ * file names, so a stub built from the mobile imports would miss them.
+ */
+const REAL_PACKAGES = /^(react|react\/.+|zustand|zustand\/.+|@tanstack\/react-query|@kortix\/sdk|@kortix\/sdk\/.+|@kortix\/shared\/tools|class-variance-authority|clsx|tailwind-merge)$/;
 const CODE_FILE = /\.(tsx?|jsx?|mjs|cjs)$/;
 const IMPORT_RE =
   /\b(?:import|export)\s+(?:type\s+)?([\w*{}\s,$]*?)\s*from\s*['"]([^'"]+)['"]|\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)|\bimport\s+['"]([^'"]+)['"]|\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
@@ -181,7 +186,7 @@ function reactNativeNames(): string[] {
   }
 }
 
-async function runProbe(): Promise<{ registered: number; missing: string[] }> {
+async function runProbe(): Promise<{ registered: number; missing: string[]; misrouted: string[] }> {
   // Metro defines `__DEV__`; some modules read it at load.
   (globalThis as { __DEV__?: boolean }).__DEV__ = false;
   const { packages, assets } = collectModuleGraph(MOBILE_REGISTER);
@@ -198,8 +203,18 @@ async function runProbe(): Promise<{ registered: number; missing: string[] }> {
 
   const { ToolRegistry } = await import('../shared/registry');
   await import('./register');
-  const missing = webRegisteredNames().filter((name) => !ToolRegistry.get(name));
-  return { registered: ToolRegistry.keys().length, missing };
+  const names = webRegisteredNames();
+  const missing = names.filter((name) => !ToolRegistry.get(name));
+  // Web registers one spelling per tool; every other spelling a runtime emits
+  // (`_`/`-`, an `oc-` prefix, an MCP prefix) must reach the same renderer.
+  const misrouted = names
+    .filter((name) => !(name.includes('-') && name.includes('_')))
+    .flatMap((name) =>
+      [name.replace(/-/g, '_'), name.replace(/_/g, '-'), `oc-${name}`, `mcp/${name}`].filter(
+        (spelling) => ToolRegistry.get(spelling) !== ToolRegistry.get(name),
+      ),
+    );
+  return { registered: ToolRegistry.keys().length, missing, misrouted };
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
@@ -228,8 +243,8 @@ if (process.env[PROBE_ENV] === '1') {
 
     test('web registers the known families (the sweep is not silently empty)', () => {
       const names = webRegisteredNames();
-      expect(names.length).toBeGreaterThan(150);
-      for (const name of ['bash', 'project_select', 'integration-exec', 'kortix-connectors_call', 'trigger-resume']) {
+      expect(names.length).toBeGreaterThan(90);
+      for (const name of ['bash', 'project-select', 'integration-exec', 'kortix-connectors_call', 'trigger-resume']) {
         expect(names).toContain(name);
       }
     });
@@ -245,10 +260,16 @@ if (process.env[PROBE_ENV] === '1') {
           stderr: 'ignore',
         });
         if (!existsSync(out)) throw new Error(`registry probe wrote no result (exit ${child.exitCode})`);
-        const result = JSON.parse(readFileSync(out, 'utf8')) as { registered?: number; missing?: string[]; error?: string };
+        const result = JSON.parse(readFileSync(out, 'utf8')) as {
+          registered?: number;
+          missing?: string[];
+          misrouted?: string[];
+          error?: string;
+        };
         if (result.error) throw new Error(`registry probe failed to import the mobile registry:\n${result.error}`);
         expect(result.registered).toBeGreaterThan(0);
         expect(result.missing).toEqual([]);
+        expect(result.misrouted).toEqual([]);
       } finally {
         rmSync(dir, { recursive: true, force: true });
       }

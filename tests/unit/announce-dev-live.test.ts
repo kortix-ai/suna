@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
 const script = resolve(root, 'scripts/ci/announce-dev-live.sh');
@@ -66,6 +66,7 @@ interface Fixture {
 
 function run(fixture: Fixture) {
   const dir = mkdtempSync(join(tmpdir(), 'announce-dev-live-'));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const fixtures = join(dir, 'gh');
   writeFileSync(join(dir, 'gh.log'), '');
   writeFileSync(join(dir, 'writes.log'), '');
@@ -84,7 +85,7 @@ function run(fixture: Fixture) {
     const number = fixture.pulls?.[sha];
     put(
       `repos/kortix-ai/suna/commits/${sha}/pulls`,
-      number ? [{ number, merged_at: '2026-09-26T17:00:00Z', base: { ref: 'main' } }] : [],
+      number ? [{ number, merged_at: '2026-09-26T17:00:00Z', base: { ref: 'dev' } }] : [],
     );
     if (number) {
       put(`repos/kortix-ai/suna/pulls/${number}`, { number, merged_at: '2026-09-26T17:00:00Z' });
@@ -175,7 +176,7 @@ describe('announce-dev-live.sh', () => {
     const body = r.body('repos/kortix-ai/suna/issues/7751/comments');
     expect(body).toContain('### Not live on dev yet');
     expect(body).toContain('| Web · dev.kortix.com | deploy failure |');
-    expect(body).toContain('The next deploy from `main` retries');
+    expect(body).toContain('The next deploy from `dev` retries');
   });
 
   it('never claims live when /health reports another commit', () => {

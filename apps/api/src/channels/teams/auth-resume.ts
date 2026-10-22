@@ -1,4 +1,4 @@
-import { and, eq, gt, lt } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { chatPendingAuthMessages } from '@kortix/db';
 import { db } from '../../shared/db';
 import type { TeamsActivity } from './types';
@@ -53,12 +53,47 @@ export async function peekPendingTeamsAuthSenderName(input: {
           eq(chatPendingAuthMessages.workspaceId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
+          isNotNull(chatPendingAuthMessages.projectId),
         ),
       )
       .limit(1);
     const name = (row?.event as unknown as TeamsActivity | undefined)?.from?.name;
     return typeof name === 'string' && name.trim() ? name.trim() : null;
   } catch {
+    return null;
+  }
+}
+
+/**
+ * The newest message this Teams user parked while unlinked, if one still waits.
+ *
+ * In a channel or group chat the sign-in link is not shown (login-card.ts), so
+ * the user connects through `/login` in a one-to-one chat. That link carries
+ * this id, so connecting there still runs what they sent in the channel.
+ */
+export async function latestPendingTeamsAuthMessageId(input: {
+  tenantId: string;
+  teamsUserId: string;
+}): Promise<string | null> {
+  if (!input.tenantId || !input.teamsUserId) return null;
+  try {
+    const [row] = await db
+      .select({ pendingId: chatPendingAuthMessages.pendingId })
+      .from(chatPendingAuthMessages)
+      .where(
+        and(
+          eq(chatPendingAuthMessages.platform, 'teams'),
+          eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
+          gt(chatPendingAuthMessages.expiresAt, new Date()),
+          isNotNull(chatPendingAuthMessages.projectId),
+        ),
+      )
+      .orderBy(desc(chatPendingAuthMessages.expiresAt))
+      .limit(1);
+    return row?.pendingId ?? null;
+  } catch (err) {
+    console.warn('[teams-auth] failed to look up a parked Teams message', err);
     return null;
   }
 }
@@ -82,10 +117,11 @@ export async function consumePendingTeamsAuthMessage(input: {
           eq(chatPendingAuthMessages.workspaceId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
+          isNotNull(chatPendingAuthMessages.projectId),
         ),
       )
       .limit(1);
-    if (!row) return null;
+    if (!row?.projectId) return null;
     await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.pendingId, input.pendingId));
     return { projectId: row.projectId, activity: row.event as unknown as TeamsActivity };
   } catch (err) {
@@ -110,7 +146,7 @@ export async function createPendingTeamsPickerMessage(input: {
     const rows = await db
       .insert(chatPendingAuthMessages)
       .values({
-        projectId: '',
+        projectId: null,
         platform: 'teams',
         workspaceId: input.tenantId,
         platformUserId: input.teamsUserId || '',
@@ -126,27 +162,32 @@ export async function createPendingTeamsPickerMessage(input: {
   }
 }
 
-/** Consume a parked picker message by id + tenant (anyone in the conversation may pick). */
+/**
+ * Consume a parked picker message by id + tenant. Anyone in the conversation
+ * may pick, but only there: a pick from another conversation would replay
+ * this sender's message where they never sent it.
+ */
 export async function consumePendingTeamsPickerMessage(input: {
   pendingId: string | undefined;
   tenantId: string;
+  conversationId: string;
 }): Promise<TeamsActivity | null> {
   if (!input.pendingId || !input.tenantId) return null;
   try {
+    // One statement: two replicas racing on the same click cannot both replay.
     const [row] = await db
-      .select({ event: chatPendingAuthMessages.event })
-      .from(chatPendingAuthMessages)
+      .delete(chatPendingAuthMessages)
       .where(
         and(
           eq(chatPendingAuthMessages.pendingId, input.pendingId),
           eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          isNull(chatPendingAuthMessages.projectId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
+          sql`${chatPendingAuthMessages.event}->'conversation'->>'id' = ${input.conversationId}`,
         ),
       )
-      .limit(1);
-    if (!row) return null;
-    await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.pendingId, input.pendingId));
-    return row.event as unknown as TeamsActivity;
+      .returning({ event: chatPendingAuthMessages.event });
+    return (row?.event as unknown as TeamsActivity | undefined) ?? null;
   } catch (err) {
     console.warn('[teams-webhook] failed to consume pending picker message', err);
     return null;

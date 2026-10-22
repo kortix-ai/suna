@@ -1,11 +1,9 @@
 import type { CoverLogo } from '@/components/blog/blog-cover';
-import { BLOG_POSTS, type BlogPostEntry } from '@/lib/blog-posts';
 
 /**
- * Blog data layer. The blog is React-rendered from a typed registry
- * (`blog-posts.ts`), not MDX. This module turns those entries into the shape
- * the UI renders — sorted, draft-filtered, with a resolved author. Routes and
- * components import only from here.
+ * Post shapes and the author registry shared by the use-case pages. The blog
+ * itself moved to its own codebase (kortix-ai/marketing) and is served at
+ * /blog through a next.config.ts rewrite, so no blog post lives here.
  */
 
 export interface Author {
@@ -64,41 +62,6 @@ export interface Post {
   data: PostFrontmatter;
   author: Author;
   readingTime: number;
-}
-
-function toPost(entry: BlogPostEntry): Post {
-  return {
-    slug: entry.slug,
-    url: `/blog/${entry.slug}`,
-    data: {
-      title: entry.title,
-      description: entry.description,
-      date: entry.date,
-      author: entry.author,
-      tags: entry.tags,
-      cover: entry.cover,
-      coverLogos: entry.coverLogos,
-      coverKortix: entry.coverKortix,
-      draft: entry.draft ?? false,
-    },
-    author: resolveAuthor(entry.author),
-    readingTime: entry.readingTime,
-  };
-}
-
-/** All published posts, newest first. Drafts are excluded in production. */
-export function getAllPosts(): Post[] {
-  const includeDrafts = process.env.NODE_ENV !== 'production';
-  const posts: Post[] = [];
-  for (const entry of BLOG_POSTS) {
-    if (includeDrafts || !entry.draft) posts.push(toPost(entry));
-  }
-  return posts.sort((a, b) => b.data.date.localeCompare(a.data.date));
-}
-
-/** The full registry entry (including the renderable blocks) for one post. */
-export function getPostEntry(slug: string): BlogPostEntry | undefined {
-  return BLOG_POSTS.find((entry) => entry.slug === slug);
 }
 
 export function formatPostDate(date: string): string {

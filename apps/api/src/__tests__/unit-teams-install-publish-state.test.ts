@@ -36,13 +36,18 @@ mock.module('../projects/secrets', () => ({
   },
   getProjectSecretValueForConsumer: async (input: { name: string; consumer: string }) =>
     input.consumer === 'connector' ? (secretsByName[input.name] ?? null) : null,
+  getProjectSecretValuesForConsumer: async (input: { names: string[]; consumer: string }) =>
+    input.consumer === 'connector'
+      ? Object.fromEntries(input.names.filter((n) => secretsByName[n] != null).map((n) => [n, secretsByName[n]]))
+      : {},
 }));
 
-const { loadTeamsInstall, setTeamsPublishState } = await import('../channels/install-store');
+const { loadTeamsInstall, setTeamsAppVersion, setTeamsPublishState } = await import('../channels/install-store');
+const { TEAMS_MANIFEST_VERSION } = await import('../channels/teams-manifest');
 
 beforeEach(() => {
   encrypted.length = 0;
-  secretsByName = { MS_TEAMS_TENANT_ID: '36009a52-46d2-44bc-ba56-57a87e485e0a' };
+  secretsByName = { MS_TEAMS_TENANT_ID: '00000000-0000-4000-8000-00000000a11c' };
 });
 
 afterAll(() => {
@@ -83,10 +88,82 @@ describe('loadTeamsInstall — publish outcome', () => {
   test('a published app reports "published" with the catalog id', async () => {
     secretsByName.MS_TEAMS_PUBLISH_STATE = 'published';
     secretsByName.MS_TEAMS_ORG_INSTALLED = '1';
-    secretsByName.MS_TEAMS_CATALOG_APP_ID = 'd06de996-5d5d-4b68-95f9-eda268580a4e';
+    secretsByName.MS_TEAMS_CATALOG_APP_ID = '5a1e0c10-0000-4000-8000-000000000010';
     const install = await loadTeamsInstall('proj-1');
     expect(install?.publishState).toBe('published');
     expect(install?.orgInstalled).toBe(true);
-    expect(install?.catalogAppId).toBe('d06de996-5d5d-4b68-95f9-eda268580a4e');
+    expect(install?.catalogAppId).toBe('5a1e0c10-0000-4000-8000-000000000010');
+  });
+});
+
+/**
+ * The Channels page and `kortix channels status` offer an app update from
+ * `appUpdateAvailable`. On dev (2026-10-01) the three Teams installs were
+ * all one-click installs on 1.0.0 or 1.1.0, and two of them predate the
+ * recorded publish state, so the flag keys on `orgInstalled`, not only on
+ * `publishState === 'published'`.
+ */
+describe('loadTeamsInstall — the app version the catalog serves', () => {
+  const inCatalog = (extra: Record<string, string> = {}) => {
+    secretsByName = {
+      ...secretsByName,
+      MS_TEAMS_ORG_INSTALLED: '1',
+      MS_TEAMS_CATALOG_APP_ID: '5a1e0c10-0000-4000-8000-000000000010',
+      MS_TEAMS_PUBLISH_STATE: 'published',
+      ...extra,
+    };
+  };
+
+  test('a catalog on an older version offers the update and names both versions', async () => {
+    inCatalog({ MS_TEAMS_APP_VERSION: '1.2.0' });
+    const install = await loadTeamsInstall('proj-1');
+    expect(install).toMatchObject({
+      appVersion: '1.2.0',
+      latestAppVersion: TEAMS_MANIFEST_VERSION,
+      appUpdateAvailable: true,
+    });
+  });
+
+  test('a catalog on the latest version offers nothing', async () => {
+    inCatalog({ MS_TEAMS_APP_VERSION: TEAMS_MANIFEST_VERSION });
+    expect((await loadTeamsInstall('proj-1'))?.appUpdateAvailable).toBe(false);
+  });
+
+  test('versions compare as numbers, so 1.10.0 is newer than 1.6.1', async () => {
+    inCatalog({ MS_TEAMS_APP_VERSION: '1.10.0' });
+    expect((await loadTeamsInstall('proj-1'))?.appUpdateAvailable).toBe(false);
+  });
+
+  test('a catalog published before Kortix recorded versions offers the update', async () => {
+    inCatalog();
+    const install = await loadTeamsInstall('proj-1');
+    expect(install?.appVersion).toBeNull();
+    expect(install?.appUpdateAvailable).toBe(true);
+  });
+
+  test('a catalog published before Kortix recorded the publish state offers the update', async () => {
+    inCatalog();
+    delete secretsByName.MS_TEAMS_PUBLISH_STATE;
+    const install = await loadTeamsInstall('proj-1');
+    expect(install?.publishState).toBeNull();
+    expect(install?.appUpdateAvailable).toBe(true);
+  });
+
+  test('a publish in flight, waiting for review, or failed offers nothing: its own state says what to do', async () => {
+    for (const state of ['publishing', 'review', 'failed']) {
+      inCatalog({ MS_TEAMS_PUBLISH_STATE: state });
+      expect((await loadTeamsInstall('proj-1'))?.appUpdateAvailable).toBe(false);
+    }
+  });
+
+  test('an app that is not in the org catalog, or a bring-your-own bot, offers nothing', async () => {
+    expect((await loadTeamsInstall('proj-1'))?.appUpdateAvailable).toBe(false);
+    inCatalog({ MS_TEAMS_APP_ID: 'byo-app-1' });
+    expect((await loadTeamsInstall('proj-1'))?.appUpdateAvailable).toBe(false);
+  });
+
+  test('setTeamsAppVersion stores the version', async () => {
+    await setTeamsAppVersion('proj-1', '1.6.1');
+    expect(encrypted.map((e) => e.value)).toEqual(['1.6.1']);
   });
 });

@@ -2,8 +2,9 @@
 
 import { Suspense } from 'react';
 
-import { AuthPendingScreen } from '@/features/auth/auth-consent';
+import { AuthPendingScreen } from '@kortix/ui/internal/auth/auth-consent';
 import { ChannelInstallComplete } from '@/features/auth/channel-install-complete';
+import { MicrosoftTeams } from '@kortix/ui/internal/icons/microsoft-teams';
 import { completeTeamsInstall } from '@kortix/sdk';
 
 /**
@@ -14,7 +15,12 @@ import { completeTeamsInstall } from '@kortix/sdk';
 export default function TeamsInstallPage() {
   return (
     <Suspense fallback={<AuthPendingScreen />}>
-      <ChannelInstallComplete service="Teams" path="/teams/install" complete={completeTeamsInstall} />
+      <ChannelInstallComplete
+        service="Teams"
+        icon={MicrosoftTeams}
+        path="/teams/install"
+        complete={completeTeamsInstall}
+      />
     </Suspense>
   );
 }

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { MessageWithParts, Part } from '@/lib/opencode/types';
+import { serializePromptWithPastes } from '@kortix/shared';
+import type { SessionLogMessage } from '@kortix/sdk';
+import { threadOf } from '@/lib/testing/session-log';
 
 import {
   TRANSCRIPT_INCOMPLETE_LINE,
@@ -9,13 +11,13 @@ import {
   buildTranscriptText,
 } from './transcript-text';
 
+type Part = Record<string, unknown>;
 let seq = 0;
-function msg(role: 'user' | 'assistant', parts: Part[], extra: Partial<MessageWithParts['info']> = {}): MessageWithParts {
+/** A v1 row as the session-log message the transcript reads (the `fromV1` view). */
+function msg(role: 'user' | 'assistant', parts: Part[], extra: Partial<SessionLogMessage> = {}): SessionLogMessage {
   seq += 1;
-  return {
-    info: { id: `msg_${seq}`, role, sessionID: 'ses_1', time: { created: seq }, ...extra },
-    parts,
-  };
+  const row = { info: { id: `msg_${seq}`, role, sessionID: 'ses_1', time: { created: seq } }, parts };
+  return { ...threadOf([row]).messages[0]!, ...extra };
 }
 const text = (value: string, flags: { synthetic?: boolean; ignored?: boolean } = {}): Part =>
   ({ type: 'text', id: `prt_${++seq}`, text: value, ...flags }) as Part;
@@ -60,6 +62,12 @@ describe('buildTranscriptText', () => {
     expect(out).not.toContain('FILE BODY');
   });
 
+  test('a paste in a user message is its text, not its XML', () => {
+    const prompt = serializePromptWithPastes('Explain this', [{ id: '0a1b2c3d', text: 'synthetic log line' }]);
+    const out = buildTranscriptText('', [msg('user', [text(prompt)])]);
+    expect(out).toBe('You:\nsynthetic log line\n\nExplain this');
+  });
+
   test('consecutive messages of one role share one label', () => {
     const out = buildTranscriptText('T', [
       msg('assistant', [text('One')]),
@@ -69,9 +77,10 @@ describe('buildTranscriptText', () => {
     expect(out).toBe('T\n\nKortix:\nOne\nTool: read\n\nYou:\nTwo');
   });
 
-  test('system messages and messages with nothing to show are skipped', () => {
+  test('system and context messages and messages with nothing to show are skipped', () => {
     const out = buildTranscriptText('T', [
-      msg('user', [text('injected')], { system: true }),
+      msg('user', [text('injected')], { role: 'system' }),
+      msg('user', [text('kept context')], { kind: 'context' }),
       msg('assistant', [reasoning('only thinking')]),
       msg('user', [text('Hello')]),
     ]);

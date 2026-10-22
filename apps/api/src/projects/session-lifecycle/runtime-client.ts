@@ -8,6 +8,7 @@
 
 import { sessionAttachmentStore } from '../lib/session-attachments';
 import { stableSessionAttachmentId } from '../lib/session-attachment-identity';
+import { HTTPException } from 'hono/http-exception';
 import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
@@ -21,18 +22,31 @@ import {
   resolveDeliverableAgent,
   runtimeAgentRoster,
 } from './agent-availability';
-import { forwardToSandbox } from '../../sandbox-proxy/routes/preview';
+import type { SandboxRecord } from '../../sandbox-proxy/backend';
+import { forwardToSandbox } from '../../sandbox-proxy/forward';
 import { sandboxOpencodeEndpoint } from '../opencode-mapping';
-import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
+import { isRuntimeUnavailableError } from '../lib/runtime-read-failure';
+import { MESSAGE_READ_CODE, STEER_NO_ACTIVE_TURN_CODE } from '@kortix/api-contract/runtime-relay';
+import { KORTIX_SERVICE_CALL_HEADER } from '../../shared/kortix-user-context';
+import {
+  WORKSPACE,
+  forgetRuntimeCapabilities,
+  runtimeServesRetract,
+  runtimeServesTurnVerbs,
+  turnVerbMissing,
+  runtimeVerbPaths,
+  sessionRuntimeFetch,
+  type ResolvedSessionRuntime,
+} from './runtime-fetch';
+import { legacyRuntimePaths } from './legacy-runtime-rest';
 import { sendQuickQueueControl } from './quick-queue-control';
-import { clearTurnStopRequest, markTurnStopRequested } from '../sandbox-turn-lifecycle';
+import { clearTurnStopRequest, markTurnStopRequested } from '../session-turn-ledger';
 import { db } from '../../shared/db';
 import type { SessionLifecycleCommandRow, PromptOverridesWire, PromptPartWire } from './store';
 import { type PlacementTipMessage, parsePlacementTip } from './forwarded-placement';
 import { newestWireIdTime } from '../wire-message-id';
 import type { LegacyRuntimeMessage } from './legacy-inline-attachment-repair';
 
-const WORKSPACE = '/workspace';
 export const DAEMON_PORT = 8000;
 
 /**
@@ -44,14 +58,11 @@ export const DAEMON_PORT = 8000;
 export async function resolveSessionOpencodeEndpoint(
   sessionId: string | null | undefined,
   actorUserId?: string | null,
-): Promise<{
-  endpoint: { url: string; headers: Record<string, string> };
-  opencodeSessionId: string;
-} | null> {
+): Promise<ResolvedSessionRuntime & { externalId: string } | null> {
   if (!sessionId) return null;
   const [session] = await db
     .select({
-      opencodeSessionId: projectSessions.opencodeSessionId,
+      opencodeSessionId: projectSessions.runtimeSessionId,
       sandboxUrl: projectSessions.sandboxUrl,
       accountId: projectSessions.accountId,
       projectId: projectSessions.projectId,
@@ -89,7 +100,51 @@ export async function resolveSessionOpencodeEndpoint(
     actorUserId ?? session.createdBy ?? undefined,
   );
   if (!endpoint) return null;
-  return { endpoint, opencodeSessionId: session.opencodeSessionId };
+  return { endpoint, opencodeSessionId: session.opencodeSessionId, externalId };
+}
+
+/** The resolved session's daemon serves the Kortix turn routes. */
+function servesTurnVerbs(session: ResolvedSessionRuntime): Promise<boolean> {
+  return runtimeServesTurnVerbs(session.externalId, async () => session.endpoint);
+}
+
+/** One Kortix transcript page is at most this long (`MAX_MESSAGE_PAGE` in kortixd). */
+const KORTIX_MESSAGE_PAGE_MAX = 200;
+/** A full read stops after this many pages (10,000 messages). */
+const KORTIX_FULL_READ_MAX_PAGES = 50;
+
+/**
+ * The newest `limit` messages from the Kortix transcript route, or the whole
+ * transcript paged backwards on `before` when `limit` is absent. Oldest first,
+ * like the legacy list. `null` on a refused read.
+ */
+async function readKortixTranscript(
+  session: ResolvedSessionRuntime,
+  opts: { limit?: number; timeoutMs?: number },
+): Promise<unknown[] | null> {
+  const pages: unknown[][] = [];
+  let before: string | null = null;
+  for (let page = 0; page < KORTIX_FULL_READ_MAX_PAGES; page++) {
+    const limit = Math.min(opts.limit ?? KORTIX_MESSAGE_PAGE_MAX, KORTIX_MESSAGE_PAGE_MAX);
+    const res = await sessionRuntimeFetch(
+      session.endpoint,
+      'GET',
+      runtimeVerbPaths.messages(session.opencodeSessionId, { limit, before }),
+      {},
+      opts.timeoutMs,
+    );
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as {
+      messages?: unknown;
+      has_more?: unknown;
+      first_message_id?: unknown;
+    } | null;
+    if (!Array.isArray(body?.messages)) return null;
+    pages.unshift(body.messages);
+    if (opts.limit !== undefined || body.has_more !== true || typeof body.first_message_id !== 'string') break;
+    before = body.first_message_id;
+  }
+  return pages.flat();
 }
 
 /** `sandboxUrl` on the session row looks like `.../p/<external_id>/8000/...`. */
@@ -123,32 +178,41 @@ export async function disarmAllQuickQueueInterrupt(
   await clearTurnStopRequest(sessionId, 'QueueInterrupt');
 }
 
+/**
+ * Arm the daemon's abort-after-tool for this prompt's turn. `false` ONLY when
+ * the runtime was asked and did not serve the interrupt (status, shape,
+ * timeout, transport) — the caller then requeues the row on the
+ * runtime-unreachable ladder instead of the 2 s order backoff. A skipped arm
+ * (no endpoint, session mismatch) arms nothing and is not a failure: `true`.
+ */
 export async function armQuickQueueInterrupt(
   row: SessionLifecycleCommandRow,
   identity: { opencodeSessionId: string; messageId: string },
-): Promise<void> {
+): Promise<boolean> {
   const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId).catch(() => null);
-  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return;
-  const armed = await sendQuickQueueControl(resolved.endpoint, {
+  if (!resolved || resolved.opencodeSessionId !== identity.opencodeSessionId) return true;
+  const outcome = await sendQuickQueueControl(resolved.endpoint, {
     kind: 'arm',
     promptId: row.commandId,
     opencodeSessionId: identity.opencodeSessionId,
     messageId: identity.messageId,
   });
-  if (!armed) {
+  if (!outcome.ok) {
     logger.warn('[session-lifecycle] Quick Queue boundary interrupt unavailable', {
       sessionId: row.sessionId,
       commandId: row.commandId,
+      reason: outcome.reason,
     });
-    return;
+    return false;
   }
   // The daemon now aborts this turn at its next tool boundary because the user
   // sent a prompt into it. That abort is asked for, not a failure.
-  if (!row.sessionId) return;
+  if (!row.sessionId) return true;
   await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
     opencodeSessionId: identity.opencodeSessionId,
     messageId: identity.messageId,
   });
+  return true;
 }
 
 /** What one read of the root transcript tells the drain about this prompt. */
@@ -173,6 +237,117 @@ const INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS = 15_000;
 const INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS = 5_000;
 
 /**
+ * Newest-`limit` read of a session's root transcript, parsed into the tip the
+ * placement logic consumes. `null` on a refused read; a transport failure
+ * throws, so a caller that wants a distinct warning keeps its own try/catch.
+ */
+export async function readSessionMessageTip(
+  session: ResolvedSessionRuntime,
+  opts: { limit?: number; timeoutMs?: number } = {},
+): Promise<PlacementTipMessage[] | null> {
+  if (await servesTurnVerbs(session)) {
+    const messages = await readKortixTranscript(session, opts);
+    return messages ? parsePlacementTip(messages) : null;
+  }
+  const res = await sessionRuntimeFetch(
+    session.endpoint,
+    'GET',
+    legacyRuntimePaths.messages(session.opencodeSessionId, opts.limit),
+    {},
+    opts.timeoutMs,
+  );
+  if (!res.ok) return null;
+  return parsePlacementTip(await res.json().catch(() => null));
+}
+
+/** `DELETE` one message: 2xx removed, 404 already gone, 409 the loop is running. */
+async function deleteRuntimeMessage(session: ResolvedSessionRuntime, messageId: string): Promise<Response> {
+  if (await servesTurnVerbs(session)) {
+    const res = await sessionRuntimeFetch(session.endpoint, 'DELETE', runtimeVerbPaths.message(session.opencodeSessionId, messageId));
+    if (!turnVerbMissing(session.externalId, res)) return res;
+  }
+  return sessionRuntimeFetch(session.endpoint, 'DELETE', legacyRuntimePaths.message(session.opencodeSessionId, messageId));
+}
+
+/** What a retract did to one user message of the root transcript. */
+export type RetractOutcome =
+  /** Taken back now: no model call read it. */
+  | { outcome: 'retracted' }
+  /** Not on record: already taken back, or never there. */
+  | { outcome: 'gone' }
+  /** A model call read it (its turn runs or ran), so it stays. */
+  | { outcome: 'read' }
+  /** The runtime refused for any other reason. */
+  | { outcome: 'refused'; status: number; detail: string };
+
+async function refusal(res: Response): Promise<RetractOutcome> {
+  return { outcome: 'refused', status: res.status, detail: (await res.text().catch(() => '')).slice(0, 200) };
+}
+
+/**
+ * Take back one user message no model call has read. A daemon with
+ * `runtime.retract.v1` decides on every harness (pi from its own queue,
+ * OpenCode by removing or emptying the message). An older daemon gets the
+ * delete spelling: the whole message, then `partIds` one by one when the
+ * whole delete is refused, because an OpenCode loop skips a user message with
+ * no parts. Its `409` (the loop runs) reads as `read`, as it always has. A
+ * transport failure throws; the caller's catch keeps its own log.
+ */
+export async function retractRuntimeMessage(
+  session: ResolvedSessionRuntime,
+  messageId: string,
+  partIds: readonly string[] = [],
+): Promise<RetractOutcome> {
+  if (await runtimeServesRetract(session.externalId, async () => session.endpoint)) {
+    const res = await sessionRuntimeFetch(session.endpoint, 'POST', runtimeVerbPaths.retract(session.opencodeSessionId, messageId));
+    if (!turnVerbMissing(session.externalId, res)) {
+      if (res.ok) return { outcome: 'retracted' };
+      if (res.status === 404) return { outcome: 'gone' };
+      if (res.status === 409) {
+        const body = (await res.clone().json().catch(() => null)) as { code?: unknown } | null;
+        if (body?.code === MESSAGE_READ_CODE) return { outcome: 'read' };
+      }
+      return refusal(res);
+    }
+  }
+  const whole = await deleteRuntimeMessage(session, messageId);
+  if (whole.ok) return { outcome: 'retracted' };
+  if (whole.status === 404) return { outcome: 'gone' };
+  if (partIds.length === 0) return whole.status === 409 ? { outcome: 'read' } : refusal(whole);
+  for (const partId of partIds) {
+    const res = await sessionRuntimeFetch(
+      session.endpoint,
+      'DELETE',
+      legacyRuntimePaths.part(session.opencodeSessionId, messageId, partId),
+    );
+    if (!res.ok && res.status !== 404) return refusal(res);
+  }
+  return { outcome: 'retracted' };
+}
+
+/**
+ * Retract one message of a session's root transcript, as the session's
+ * creator. `true` when it is gone (retracted now or not on record). A message
+ * a model call read answers false; any other refusal is logged under
+ * `caller`. A transport failure throws.
+ */
+export async function retractSessionMessage(sessionId: string, messageId: string, caller: string): Promise<boolean> {
+  const resolved = await resolveSessionOpencodeEndpoint(sessionId);
+  if (!resolved) return false;
+  const retracted = await retractRuntimeMessage(resolved, messageId);
+  if (retracted.outcome === 'retracted' || retracted.outcome === 'gone') return true;
+  if (retracted.outcome === 'refused') {
+    logger.warn(`[${caller}] message retract refused`, {
+      session_id: sessionId,
+      message_id: messageId,
+      upstream_status: retracted.status,
+      detail: retracted.detail,
+    });
+  }
+  return false;
+}
+
+/**
  * Read the root once, for the two things a delivery needs to know.
  *
  * Uses the SAME signed-proxy resolution `queuedContinueHasStagedRevert` uses —
@@ -193,17 +368,10 @@ export async function readInboxTranscriptState(
     // may sit anywhere in the transcript. The ordinary case — a first delivery
     // placing its id above a live turn — needs the tip only, and the full read
     // of a long session was ~1s of dead air on every queued message.
-    const limit = opts.full ? '' : `&limit=${INBOX_TRANSCRIPT_TIP_LIMIT}`;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message?directory=${encodeURIComponent(WORKSPACE)}${limit}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(
-        opts.full ? INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS : INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS,
-      ),
+    const tip = await readSessionMessageTip(resolved, {
+      limit: opts.full ? undefined : INBOX_TRANSCRIPT_TIP_LIMIT,
+      timeoutMs: opts.full ? INBOX_TRANSCRIPT_FULL_READ_TIMEOUT_MS : INBOX_TRANSCRIPT_TIP_READ_TIMEOUT_MS,
     });
-    if (!res.ok) return empty;
-    const tip = parsePlacementTip(await res.json().catch(() => null));
     if (!tip) return empty;
 
     const newest = newestWireIdTime(
@@ -220,46 +388,47 @@ export async function readInboxTranscriptState(
     );
     return { newest, answered, read: true, tip };
   } catch (err) {
-    console.warn('[session-lifecycle] inbox transcript read failed — proceeding without it', {
-      sessionId: row.sessionId,
-      commandId: row.commandId,
-      error: err instanceof Error ? err.message : String(err),
-    });
+    const error = err instanceof Error ? err.message : String(err);
+    const context = { sessionId: row.sessionId, commandId: row.commandId, error };
+    if (isRuntimeUnavailableError(err)) {
+      // A stopped, gone, or cold sandbox is the EXPECTED state of an idle
+      // session (Platinum auto-stops idle boxes by design). The read is
+      // optional and fails open — see above — so that degrade is info, not
+      // a warning. Only an unexpected failure warns.
+      logger.info('[session-lifecycle] inbox transcript read deferred — proceeding without it', context);
+    } else {
+      console.warn('[session-lifecycle] inbox transcript read failed — proceeding without it', context);
+    }
     return empty;
   }
 }
 
 /**
- * Delete a stranded user message from the root transcript, so the re-placed
- * copy is the only one OpenCode — and the model — holds. `true` only on a
- * confirmed 2xx (or a 404: already gone).
+ * Retract a stranded user message from the root transcript, so the re-placed
+ * copy is the only one the runtime — and the model — holds. `true` when it is
+ * gone. A message a model call read stays and answers false: turn-end
+ * reconciliation decides about it. Any other refusal is logged.
  */
-export async function removeStrandedOpencodeMessage(
+export async function retractStrandedMessage(
   row: SessionLifecycleCommandRow,
   wireMessageId: string,
 ): Promise<boolean> {
   try {
     const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId);
     if (!resolved) return false;
-    const url = `${resolved.endpoint.url}/session/${encodeURIComponent(resolved.opencodeSessionId)}/message/${encodeURIComponent(wireMessageId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (res.ok || res.status === 404) return true;
-    // 409 = the loop is running (`assertNotBusy`); expected mid-turn.
-    if (res.status !== 409) {
-      console.warn('[session-lifecycle] stranded message delete refused', {
+    const retracted = await retractRuntimeMessage(resolved, wireMessageId);
+    if (retracted.outcome === 'retracted' || retracted.outcome === 'gone') return true;
+    if (retracted.outcome === 'refused') {
+      console.warn('[session-lifecycle] stranded message retract refused', {
         sessionId: row.sessionId,
         commandId: row.commandId,
-        status: res.status,
-        body: (await res.text().catch(() => '')).slice(0, 200),
+        status: retracted.status,
+        body: retracted.detail,
       });
     }
     return false;
   } catch (err) {
-    console.warn('[session-lifecycle] stranded message delete threw', {
+    console.warn('[session-lifecycle] stranded message retract threw', {
       sessionId: row.sessionId,
       commandId: row.commandId,
       error: err instanceof Error ? err.message : String(err),
@@ -294,14 +463,20 @@ export async function queuedContinueHasStagedRevert(row: SessionLifecycleCommand
   try {
     const resolved = await resolveSessionOpencodeEndpoint(row.sessionId, row.actorUserId);
     if (!resolved) return false;
-    const { endpoint, opencodeSessionId } = resolved;
 
-    const url = `${endpoint.url}/session/${encodeURIComponent(opencodeSessionId)}?directory=${encodeURIComponent(WORKSPACE)}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: sandboxRuntimeRequestHeaders(endpoint.headers),
-      signal: AbortSignal.timeout(5_000),
-    });
+    if (await servesTurnVerbs(resolved)) {
+      // The runtime projection lists every conversation with its staged `revert`.
+      const res = await sessionRuntimeFetch(resolved.endpoint, 'GET', runtimeVerbPaths.state);
+      if (!res.ok) return false;
+      const doc = (await res.json().catch(() => null)) as {
+        sessions?: { known?: unknown; value?: Array<{ id?: unknown; revert?: unknown }> };
+      } | null;
+      const root = doc?.sessions?.known === true && Array.isArray(doc.sessions.value)
+        ? doc.sessions.value.find((session) => session.id === resolved.opencodeSessionId)
+        : undefined;
+      return Boolean(root?.revert);
+    }
+    const res = await sessionRuntimeFetch(resolved.endpoint, 'GET', legacyRuntimePaths.session(resolved.opencodeSessionId));
     if (!res.ok) return false;
     const info = (await res.json().catch(() => null)) as { revert?: unknown } | null;
     return Boolean(info?.revert);
@@ -346,14 +521,12 @@ async function sessionRuntimeAgentRoster(
   return runtimeAgentRoster(runtimeAgentRosterCacheKey(externalId, directory), async () => {
     const resolved = await resolveSessionOpencodeEndpoint(callerSessionId, actorUserId);
     if (!resolved) return null;
-    const res = await fetch(
-      `${resolved.endpoint.url}/agent?directory=${encodeURIComponent(directory)}`,
-      {
-        method: 'GET',
-        headers: sandboxRuntimeRequestHeaders(resolved.endpoint.headers),
-        signal: AbortSignal.timeout(5_000),
-      },
-    );
+    let res = (await servesTurnVerbs(resolved))
+      ? await sessionRuntimeFetch(resolved.endpoint, 'GET', runtimeVerbPaths.agents(directory))
+      : null;
+    if (!res || turnVerbMissing(resolved.externalId, res)) {
+      res = await sessionRuntimeFetch(resolved.endpoint, 'GET', legacyRuntimePaths.agents(directory));
+    }
     if (!res.ok) return null;
     return parseRuntimeAgentNames(await res.json().catch(() => null));
   });
@@ -388,6 +561,19 @@ export class PromptNeverLandedError extends Error {
   }
 }
 
+/**
+ * Thrown out of a `steer` POST that no running turn took. `turn_ended`: the
+ * daemon answered `409 no_active_turn` (it stored nothing). `unsupported`: the
+ * daemon cannot steer (`501`, or no Kortix turn routes). The caller sends the
+ * row as a Queue List prompt. Not a failed attempt.
+ */
+export class SteerNotTaken extends Error {
+  constructor(readonly reason: 'turn_ended' | 'unsupported') {
+    super(`steer not taken: ${reason}`);
+    this.name = 'SteerNotTaken';
+  }
+}
+
 export async function readLegacyRuntimeMessage(
   input: LegacyRuntimePartTarget & { messageId: string },
 ): Promise<LegacyRuntimeMessage | null> {
@@ -409,9 +595,10 @@ export async function readLegacyRuntimeMessage(
   return (await response.json()) as LegacyRuntimeMessage;
 }
 
+/** `unsupported` when the runtime edits no parts: `501` (pi). Any other refusal throws. */
 export async function updateLegacyRuntimePart(
   input: LegacyRuntimePartTarget & { messageId: string; partId: string; text: string },
-): Promise<void> {
+): Promise<'updated' | 'unsupported'> {
   const body = new TextEncoder().encode(
     JSON.stringify({
       id: input.partId,
@@ -432,9 +619,11 @@ export async function updateLegacyRuntimePart(
     body.buffer as ArrayBuffer,
     config.KORTIX_URL ?? '',
   );
+  if (response.status === 501) return 'unsupported';
   if (!response.ok) {
     throw new Error(`legacy attachment part update failed (${response.status})`);
   }
+  return 'updated';
 }
 
 /**
@@ -485,9 +674,17 @@ export async function postPrompt(
     overrides?: PromptOverridesWire;
     wireMessageId?: string;
     materializationKey?: string;
-    attachmentProjectId?: string;
+    noReply?: boolean;
     accountId?: string;
     projectId?: string;
+    /** Told the size of each body that goes on the wire (attachments
+     *  materialized), so the caller can decide whether to prove landing. */
+    onBodyBytes?: (bytes: number) => void;
+    /** The target's sandbox row, when the delivery already read it. */
+    sandboxRecord?: SandboxRecord;
+    /** Hand the message to the RUNNING turn (`POST .../steer`) instead of
+     *  starting one. Kortix route only; throws {@link SteerNotTaken}. */
+    steer?: boolean;
   },
 ): Promise<'accepted' | 'deduplicated' | 'failed' | 'unreachable'> {
   const parts: PromptPartWire[] =
@@ -503,10 +700,10 @@ export async function postPrompt(
         materializationKey: prompt.materializationKey,
         writeFile: writeRuntimePromptFile,
         readAttachment: (scope) => sessionAttachmentStore().read(scope),
-        saveAttachment: prompt.attachmentProjectId ? async (file) => {
+        saveAttachment: prompt.projectId ? async (file) => {
           const saved = await sessionAttachmentStore().put({
             ...file,
-            projectId: prompt.attachmentProjectId!,
+            projectId: prompt.projectId!,
             sessionId: callerSessionId,
             attachmentId: stableSessionAttachmentId(`${callerSessionId}:${prompt.materializationKey}:${file.index}`),
           });
@@ -529,8 +726,8 @@ export async function postPrompt(
           externalId,
           callerSessionId,
           userId,
-          // Same directory expression the forward uses at the bottom of this
-          // function, so the roster read and the prompt forward always agree.
+          // Same directory the forward below sends, so the roster read and the
+          // prompt forward always agree.
           overrides?.directory || WORKSPACE,
         )
       : { names: null },
@@ -541,17 +738,47 @@ export async function postPrompt(
       requested_agent: overrides?.agent,
     });
   }
-  const body = new TextEncoder().encode(
-    JSON.stringify({
-      ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
-      parts: deliverableParts,
-      ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
-      ...(overrides?.model ? { model: overrides.model } : {}),
-      ...(overrides?.variant ? { variant: overrides.variant } : {}),
-    }),
-  );
-  try {
-    const res = await forwardToSandbox(
+  const directory = overrides?.directory || WORKSPACE;
+  // A daemon that serves the Kortix turn routes gets the Kortix prompt; an
+  // older one gets OpenCode's `prompt_async` (legacy-runtime-rest.ts).
+  const kortixRoute = await runtimeServesTurnVerbs(externalId, () => sandboxOpencodeEndpoint(externalId, userId));
+  // OpenCode's own REST has no steer verb.
+  if (prompt?.steer && !kortixRoute) throw new SteerNotTaken('unsupported');
+  const send = (kortix: boolean) => {
+    const target = kortix
+      ? {
+          path: prompt?.steer ? runtimeVerbPaths.steer(opencodeSessionId) : runtimeVerbPaths.prompt(opencodeSessionId),
+          query: '',
+        }
+      : legacyRuntimePaths.prompt(opencodeSessionId, directory);
+    const body = new TextEncoder().encode(
+      JSON.stringify(
+        kortix
+          ? {
+              ...(prompt?.wireMessageId ? { message_id: prompt.wireMessageId } : {}),
+              parts: deliverableParts,
+              ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
+              ...(overrides?.model ? { model: `${overrides.model.providerID}/${overrides.model.modelID}` } : {}),
+              ...(overrides?.variant ? { variant: overrides.variant } : {}),
+              directory,
+              ...(prompt?.noReply ? { no_reply: true } : {}),
+            }
+          : {
+              ...(prompt?.wireMessageId ? { messageID: prompt.wireMessageId } : {}),
+              parts: deliverableParts,
+              ...(deliverableAgent.agent ? { agent: deliverableAgent.agent } : {}),
+              ...(overrides?.model ? { model: overrides.model } : {}),
+              ...(overrides?.variant ? { variant: overrides.variant } : {}),
+              ...(prompt?.noReply ? { noReply: true } : {}),
+            },
+      ),
+    );
+    prompt?.onBodyBytes?.(body.byteLength);
+    // A steer goes to the box DIRECTLY with the service-call mark: kortixd
+    // refuses `/steer` without it, and the user-facing proxy strips it, so no
+    // member can steer around admission's prompter check (D9.3).
+    if (prompt?.steer) return postSteerDirect(externalId, userId, target.path, new TextDecoder().decode(body));
+    return forwardToSandbox(
       externalId,
       DAEMON_PORT,
       {
@@ -570,13 +797,16 @@ export async function postPrompt(
         sandboxAuthored: false,
       },
       'POST',
-      `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
       // The producer's own directory when it named one, so a project-scoped
       // agent resolves the same way it does on a direct browser send.
-      `?directory=${encodeURIComponent(overrides?.directory || WORKSPACE)}`,
+      target.path,
+      target.query,
       new Headers({
         'Content-Type': 'application/json',
-        'Idempotency-Key': idempotencyKey,
+        // One key per route: the proxy's dedupe claim on a Kortix-route
+        // attempt a rolled-back daemon answered 404 (never delivered) must not
+        // swallow the legacy resend, or any later legacy retry, as a duplicate.
+        'Idempotency-Key': kortix ? `${idempotencyKey}:kortix` : idempotencyKey,
         // The inbox placed this wire id against the transcript itself (see
         // `remintWireMessageId`), so the proxy's own placement read
         // (`prompt-wire-id-repair.ts`) has nothing to add — one fewer sandbox
@@ -585,7 +815,18 @@ export async function postPrompt(
       }),
       body.buffer as ArrayBuffer,
       config.KORTIX_URL ?? '',
+      undefined,
+      undefined,
+      { record: prompt?.sandboxRecord },
     );
+  };
+  try {
+    let res = await send(kortixRoute);
+    if (kortixRoute && turnVerbMissing(externalId, res)) {
+      if (prompt?.steer) throw new SteerNotTaken('unsupported');
+      res = await send(false);
+    }
+    if (prompt?.steer) await throwIfSteerNotTaken(externalId, res);
     if (res.ok || res.status === 204) {
       if (res.status === 200) {
         const result = (await res.json().catch(() => null)) as {
@@ -597,7 +838,7 @@ export async function postPrompt(
     }
     await throwIfPromptRefused(res);
     if (res.status !== 404)
-      console.warn('[session-lifecycle] prompt_async non-ok', { status: res.status });
+      console.warn('[session-lifecycle] prompt non-ok', { status: res.status, route: kortixRoute ? 'kortix' : 'legacy' });
     // 502/503/504 is the PROXY saying it could not reach the box (a dead
     // ingress, a control plane refusing the forward, an attempt that timed
     // out) — not the daemon refusing the prompt. Say so, so a spent deadline
@@ -606,13 +847,37 @@ export async function postPrompt(
     if (res.status === 502 || res.status === 503 || res.status === 504) return 'unreachable';
     return 'failed';
   } catch (err) {
-    if (err instanceof PromptDeliveryRefused) throw err;
+    if (err instanceof PromptDeliveryRefused || err instanceof SteerNotTaken) throw err;
+    // The proxy's access gates THROW their 403 instead of returning it. It is
+    // the same refusal as a returned 403, not a down box: classify it alike.
+    if (err instanceof HTTPException && err.status < 500) {
+      await throwIfPromptRefused(new Response(JSON.stringify({ message: err.message }), { status: err.status }));
+      return 'failed';
+    }
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.
-    console.warn('[session-lifecycle] prompt_async threw (will retry)', { error: String(err) });
+    console.warn('[session-lifecycle] prompt threw (will retry)', { error: String(err) });
     // Connection refused/reset/timed out: the box is not reachable. Same
     // reasoning as the 502/503/504 branch above.
     return 'unreachable';
   }
+}
+
+/** The two steer answers that mean "send it as a prompt instead". */
+async function throwIfSteerNotTaken(externalId: string, res: Response): Promise<void> {
+  if (res.status === 501) {
+    forgetRuntimeCapabilities(externalId);
+    throw new SteerNotTaken('unsupported');
+  }
+  if (res.status !== 409) return;
+  const body = (await res.clone().json().catch(() => null)) as { code?: unknown } | null;
+  if (body?.code === STEER_NO_ACTIVE_TURN_CODE) throw new SteerNotTaken('turn_ended');
+}
+
+/** `POST .../steer` straight to the box, as the platform (see `postPrompt`). No endpoint: 503. */
+async function postSteerDirect(externalId: string, userId: string, path: string, body: string): Promise<Response> {
+  const endpoint = await sandboxOpencodeEndpoint(externalId, userId);
+  if (!endpoint) return new Response(null, { status: 503 });
+  return sessionRuntimeFetch(endpoint, 'POST', path, { headers: { [KORTIX_SERVICE_CALL_HEADER]: '1' }, body }, 30_000);
 }

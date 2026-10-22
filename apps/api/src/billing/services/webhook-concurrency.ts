@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { stripeWebhookEventsProcessed } from '@kortix/db';
 import { db } from '../../shared/db';
+import { createHolderSlots } from '../../shared/holder-slots';
 
 /**
  * Insert-or-skip dedupe marker. Returns `false` when the id was already
@@ -72,41 +73,6 @@ export interface AccountLockOptions {
   lockTimeoutMs: number;
 }
 
-/** A counting semaphore whose waiters give up after a deadline. */
-function createHolderSlots(max: number) {
-  let held = 0;
-  const waiters: Array<() => void> = [];
-  return {
-    get held() {
-      return held;
-    },
-    async acquire(timeoutMs: number): Promise<void> {
-      if (held < max) {
-        held += 1;
-        return;
-      }
-      await new Promise<void>((resolve, reject) => {
-        const grant = () => {
-          clearTimeout(timer);
-          held += 1;
-          resolve();
-        };
-        const timer = setTimeout(() => {
-          const index = waiters.indexOf(grant);
-          if (index >= 0) waiters.splice(index, 1);
-          reject(new AccountLockTimeoutError(`account lock: no holder slot free within ${timeoutMs}ms`));
-        }, timeoutMs);
-        waiters.push(grant);
-      });
-    },
-    release(): void {
-      held -= 1;
-      const next = waiters.shift();
-      if (next) next();
-    },
-  };
-}
-
 /**
  * Build a per-account mutual-exclusion helper backed by a transaction-scoped
  * PostgreSQL advisory lock (`pg_advisory_xact_lock`), so it also excludes
@@ -117,7 +83,10 @@ export function createAccountLock(options: AccountLockOptions) {
   if (!Number.isInteger(maxHolders) || maxHolders < 1) {
     throw new Error(`createAccountLock: maxHolders must be a positive integer, got ${maxHolders}`);
   }
-  const slots = createHolderSlots(maxHolders);
+  const slots = createHolderSlots(
+    maxHolders,
+    (timeoutMs) => new AccountLockTimeoutError(`account lock: no holder slot free within ${timeoutMs}ms`),
+  );
   const lockTimeout = sql.raw(`'${Math.max(1, Math.floor(lockTimeoutMs))}ms'`);
 
   async function withAccountLock<T>(accountId: string, fn: () => Promise<T>): Promise<T> {

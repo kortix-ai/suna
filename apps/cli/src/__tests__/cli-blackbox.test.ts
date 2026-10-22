@@ -162,7 +162,8 @@ function startSystemSkillsServer() {
   return `http://127.0.0.1:${server.port}`;
 }
 
-/** The API's one feature-flag gate body — 403 `{ error, code, feature }` from
+/** The one feature-flag gate body an OLD server (before Apps went generally
+ *  available) answers `/apps` with — 403 `{ error, code, feature }` from
  *  `featureDisabledBody('apps')` in apps/api/src/feature-flags/gate.ts. Copied
  *  verbatim so the test asserts the real wire shape, not a paraphrase. */
 const APPS_FEATURE_DISABLED_BODY = {
@@ -171,9 +172,9 @@ const APPS_FEATURE_DISABLED_BODY = {
   feature: 'apps',
 };
 
-/** `serverGate: true` keeps the project row reporting the flag ON while every
- *  `/apps` route rejects with the server's gate — the case a client-side
- *  pre-check cannot catch (flag turned off between the two calls). */
+/** `serverGate: true` keeps every `/apps` route rejecting with the old
+ *  server's gate — the pre-GA surface a CLI deployed against an older API can
+ *  still meet. */
 function startAppsServer(appsEnabled = true, serverGate = false) {
   let appAccessMode = 'private';
   let appAccessRevision = 1;
@@ -190,7 +191,6 @@ function startAppsServer(appsEnabled = true, serverGate = false) {
     active_deployment_id: null,
     machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
     idle_timeout_seconds: 300,
-    monthly_budget_usd: 5,
     last_request_at: null,
     created_at: '2026-08-07T00:00:00.000Z',
     updated_at: '2026-08-07T00:00:00.000Z',
@@ -372,7 +372,7 @@ function startCliE2eServer() {
       }
       if (url.pathname === '/v1/projects/proj_e2e' && req.method === 'DELETE') {
         archived = true;
-        return Response.json({ ok: true, archived: true, repo_deleted: url.searchParams.get('purge') === 'true' });
+        return Response.json({ ok: true, archived: true, repo_deleted: true });
       }
       if (url.pathname === '/v1/projects/proj_e2e/sessions/sess_connect' && req.method === 'GET') {
         return Response.json({
@@ -491,7 +491,9 @@ describe('kortix CLI black-box behavior', () => {
       name: 'pdf',
       marketplaceLabel: 'Kortix',
     });
-    expect(result.stderr).toContain('host test');
+    // Machine mode (--json) keeps stderr silent: no human host notice, so a
+    // piped or merged capture parses (see whoami-json.blackbox.test.ts).
+    expect(result.stderr).toBe('');
     expect(requests).toEqual([{
       method: 'GET',
       path: '/v1/marketplace/items?query=pdf&source=kortix',
@@ -562,6 +564,17 @@ describe('kortix CLI black-box behavior', () => {
   });
 
 
+  test.each(['root', 'hosts', 'accounts'])(
+    'help documents sandbox credential precedence: %j',
+    async (command) => {
+      const result = await runCli(command === 'root' ? ['--help'] : [command, '--help']);
+      expect(result.code).toBe(0);
+      expect(result.stdout).toContain('delegated session identity');
+      expect(result.stdout).toContain('KORTIX_DISABLE_SANDBOX_ENV_FILE=1');
+      expect(result.stdout).toContain('exported KORTIX_TOKEN');
+    },
+  );
+
   test('top-level help is grouped into tiers and labeled sections', async () => {
     const result = await runCli(['--help']);
 
@@ -612,7 +625,7 @@ describe('kortix CLI black-box behavior', () => {
   test('Apps commands are discoverable and deploy an OCI image through the SDK', async () => {
     const unscopedHelp = await runCli(['--help']);
     expect(unscopedHelp.stdout).toContain('apps <subcommand>');
-    expect(unscopedHelp.stdout).toContain('Experimental: deploy serverless Apps');
+    expect(unscopedHelp.stdout).toContain('Deploy Apps (sites and servers)');
 
     const apiBase = startAppsServer();
     const configFile = writeConfig(apiBase, true);
@@ -638,7 +651,7 @@ describe('kortix CLI black-box behavior', () => {
       '--port',
       '3000',
       '--provider',
-      'daytona',
+      'platinum',
       '--access',
       'password',
       '--password',
@@ -655,6 +668,8 @@ describe('kortix CLI black-box behavior', () => {
       deployment: { deployment_id: 'deployment_1', status: 'queued' },
     });
     expect(requests.map((request) => [request.method, request.path])).toEqual([
+      // `--help` reads the linked project's feature flags: flagged commands are listed only while on.
+      ['GET', '/v1/projects/proj_e2e'],
       ['GET', '/v1/projects/proj_e2e'],
       ['GET', '/v1/projects/proj_e2e/apps'],
       ['GET', '/v1/projects/proj_e2e'],
@@ -664,9 +679,9 @@ describe('kortix CLI black-box behavior', () => {
       ['POST', '/v1/projects/proj_e2e/apps/artifacts'],
       ['POST', '/v1/projects/proj_e2e/apps/app_1/deployments'],
     ]);
-    expect(requests[4]?.body).toEqual({ mode: 'password', password: 'test-password-123' });
-    expect(requests[6]?.body).toEqual({ kind: 'oci_image', image: 'ghcr.io/kortix/demo:1' });
-    expect(requests[7]?.body).toEqual({
+    expect(requests[5]?.body).toEqual({ mode: 'password', password: 'test-password-123' });
+    expect(requests[7]?.body).toEqual({ kind: 'oci_image', image: 'ghcr.io/kortix/demo:1' });
+    expect(requests[8]?.body).toEqual({
       artifact_id: 'artifact_1',
       source: {
         kind: 'oci_image',
@@ -674,29 +689,31 @@ describe('kortix CLI black-box behavior', () => {
         command: ['node', 'server.js'],
         port: 3000,
       },
-      provider: 'daytona',
+      provider: 'platinum',
     });
 
-    const retiredProviderId = ['local', 'docker'].join('-');
-    const retiredProvider = await runCli([
-      'apps',
-      'deploy',
-      '--app',
-      'demo',
-      '--image',
-      'ghcr.io/kortix/demo:1',
-      '--command',
-      '["node","server.js"]',
-      '--port',
-      '3000',
-      '--provider',
-      retiredProviderId,
-      '--no-wait',
-      '--project',
-      'proj_e2e',
-    ], tmp, { KORTIX_CONFIG_FILE: configFile });
-    expect(retiredProvider.code).toBe(1);
-    expect(retiredProvider.stderr).toContain('--provider must be daytona, platinum, or e2b');
+    // Retired providers (E2B support is discontinued) are rejected before any request.
+    for (const retiredProviderId of [['local', 'docker'].join('-'), 'e2b']) {
+      const retiredProvider = await runCli([
+        'apps',
+        'deploy',
+        '--app',
+        'demo',
+        '--image',
+        'ghcr.io/kortix/demo:1',
+        '--command',
+        '["node","server.js"]',
+        '--port',
+        '3000',
+        '--provider',
+        retiredProviderId,
+        '--no-wait',
+        '--project',
+        'proj_e2e',
+      ], tmp, { KORTIX_CONFIG_FILE: configFile });
+      expect(retiredProvider.code).toBe(1);
+      expect(retiredProvider.stderr).toContain('--provider must be platinum or daytona (legacy fallback)');
+    }
 
     const access = await runCli([
       'apps',
@@ -763,7 +780,10 @@ describe('kortix CLI black-box behavior', () => {
     });
   }, 20_000);
 
-  test('Apps help stays discoverable but operations reject a project with Apps disabled', async () => {
+  test('the CLI does not consult the flag: a project whose stored flag is off still lists Apps', async () => {
+    // Apps went GA (2026-10-14): there is no `apps` flag to check, and a
+    // stored `experimental.apps: false` override is inert. The CLI lists Apps
+    // without any client-side gate in between.
     const apiBase = startAppsServer(false);
     const configFile = writeConfig(apiBase, true);
     const env = { KORTIX_CONFIG_FILE: configFile };
@@ -771,7 +791,7 @@ describe('kortix CLI black-box behavior', () => {
     const landing = await runCli(['--help'], tmp, env);
     expect(landing.code).toBe(0);
     expect(landing.stdout).toContain('apps <subcommand>');
-    expect(landing.stdout).toContain('Experimental: deploy serverless Apps');
+    expect(landing.stdout).toContain('Deploy Apps (sites and servers)');
 
     const help = await runCli(['apps', '--help', '--project', 'proj_e2e'], tmp, env);
     expect(help.code).toBe(0);
@@ -779,20 +799,18 @@ describe('kortix CLI black-box behavior', () => {
     expect(help.stdout).toContain('private (default), project, restricted, public, or password');
 
     const listed = await runCli(['apps', 'list', '--project', 'proj_e2e'], tmp, env);
-    expect(listed.code).toBe(1);
-    expect(listed.stdout).not.toContain('No Apps deployed');
-    // The pre-check says exactly what the server's gate says, so the user reads
-    // one sentence whichever side rejects.
-    expect(listed.stderr).toContain(
-      'Apps is not enabled for this project. Enable it in Settings → Feature flags.',
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).toContain('demo');
+    expect(listed.stderr).not.toContain('not enabled');
+    expect(requests.some((r) => r.method === 'GET' && r.path === '/v1/projects/proj_e2e/apps')).toBe(
+      true,
     );
-    expect(listed.stderr).not.toContain('Experimental');
-    expect(requests.every((request) => request.path === '/v1/projects/proj_e2e')).toBe(true);
   }, 20_000);
 
-  test("a raw 403 feature_disabled from the API surfaces the server's message verbatim", async () => {
-    // The project row still reports the flag ON — only the server gate rejects,
-    // so this exercises `surfaceApiError`, not the client-side pre-check.
+  test("an old server's raw 403 feature_disabled surfaces the server's message verbatim", async () => {
+    // An API predating Apps GA still gates `/apps` routes on the flag. The CLI
+    // carries no gate of its own any more, so this exercises `surfaceApiError`
+    // end to end.
     const apiBase = startAppsServer(true, true);
     const configFile = writeConfig(apiBase, true);
     const env = { KORTIX_CONFIG_FILE: configFile };
@@ -900,18 +918,16 @@ describe('kortix CLI black-box behavior', () => {
     expect(existsSync(join(root, '.claude', 'CLAUDE.md'))).toBe(false);
     expect(existsSync(join(root, '.codex', 'AGENTS.md'))).toBe(false);
     expect(existsSync(join(root, '.pi', 'README.md'))).toBe(false);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
     // Managed / served-live skills still aren't committed into the repo.
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, 'skills', 'kortix-computer', 'SKILL.md'))).toBe(false);
     // `agent-browser` IS scaffolded now — driving a browser is a floor capability.
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'memory.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'scrape_webpage.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'image_search.ts'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
+    // The Kortix tools are hosted by the runtime on every harness: no copies in the project.
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools'))).toBe(false);
     // The full kit is the default now, so domain skills like pdf ARE present.
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('init help exposes one starter and hides compatibility template choices', async () => {
@@ -937,8 +953,8 @@ describe('kortix CLI black-box behavior', () => {
 
     expect(result.code).toBe(0);
     const root = join(tmp, 'gkw-project');
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'pdf', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'pdf', 'SKILL.md'))).toBe(true);
   });
 
   test('E2E: CLI project setup plus marketplace discovery, then unlink/relink/archive', async () => {
@@ -949,11 +965,10 @@ describe('kortix CLI black-box behavior', () => {
     expect(init.code).toBe(0);
     const root = join(tmp, 'full-e2e');
     expect(existsSync(join(root, 'kortix.yaml'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'show.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
-    expect(existsSync(join(root, '.kortix', 'opencode', 'tools', 'web_search.ts'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'kortix-cli', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'skills', 'agent-browser', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'plugins', 'pty.ts'))).toBe(true);
+    expect(existsSync(join(root, 'harnesses', 'opencode', 'tools'))).toBe(false);
 
     const listBeforeLink = await runCli(['projects', 'ls', '--json'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(listBeforeLink.code).toBe(0);
@@ -992,9 +1007,12 @@ describe('kortix CLI black-box behavior', () => {
     expect(relink.code).toBe(0);
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(true);
 
-    const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--purge', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
+    const removeProject = await runCli(['projects', 'rm', 'proj_e2e', '--yes'], root, { KORTIX_CONFIG_FILE: configFile });
     expect(removeProject.code).toBe(0);
-    expect(removeProject.stdout).toContain('Archived');
+    // Deleting the project deletes its managed git repo: the result line says
+    // Deleted, never Archived, and the repo line follows.
+    expect(removeProject.stdout).toContain('Deleted');
+    expect(removeProject.stdout).not.toContain('Archived');
     expect(removeProject.stdout).toContain('managed git repo deleted');
     expect(existsSync(join(root, '.kortix', 'link.json'))).toBe(false);
 
@@ -1003,11 +1021,12 @@ describe('kortix CLI black-box behavior', () => {
       ['GET', '/v1/projects?account_id=account_1', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
+      ['GET', '/v1/projects/proj_e2e/git/connection', null],
       ['GET', '/v1/marketplace/items?query=agent-browser&source=kortix', null],
       ['GET', '/v1/marketplace/items/agent-browser', null],
       ['GET', '/v1/projects/proj_e2e', null],
       ['GET', '/v1/projects/proj_e2e', null],
-      ['DELETE', '/v1/projects/proj_e2e?purge=true', null],
+      ['DELETE', '/v1/projects/proj_e2e', null],
     ]);
     expect(requests.every((r) => r.authorization === 'Bearer tok_blackbox')).toBe(true);
   }, 30_000);

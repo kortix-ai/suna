@@ -8,11 +8,11 @@ import {
 } from '../browser/session-sync/session-sync-registry';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
 import { getClientForUrl } from '../core/runtime/client';
-import { canQueryOpenCodeSession, type Session } from './use-opencode-sessions';
+import { canQueryRuntimeSession, type Session } from './use-opencode-sessions';
 
 /** Load a bounded session tail before navigation or through a known runtime URL. */
 export async function prefetchSession(sessionId: string, runtimeUrl?: string): Promise<void> {
-  if (!canQueryOpenCodeSession(sessionId)) return;
+  if (!canQueryRuntimeSession(sessionId)) return;
   if (!runtimeUrl && useSandboxConnectionStore.getState().healthy !== true) return;
   await prefetchSessionSyncOnce(
     sessionId,

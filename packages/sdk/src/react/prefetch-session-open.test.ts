@@ -3,7 +3,7 @@ import { QueryClient } from '@tanstack/react-query';
 
 import { configureKortix } from '../core/http/config';
 import { claimOpenBundle, resetSessionOpenBundles } from '../core/session/open-bundle';
-import { prefetchSessionOpen, resetSessionOpenPrefetches } from './prefetch-session-open';
+import { prefetchSessionOpen, prefetchedSessionCount, resetSessionOpenPrefetches } from './prefetch-session-open';
 import { qk } from './query-keys';
 
 /**
@@ -31,7 +31,7 @@ const BUNDLE = {
   turn: { known: true, turns: [] },
   queue: { known: true, prompts: [], held: false },
   transcript: { known: true, requested: false },
-  config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
+  config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: true },
   models: { known: false, reason: 'x' },
 };
 
@@ -53,6 +53,16 @@ describe('prefetchSessionOpen', () => {
     // The row came from the snapshot's `session` leg — no second request.
     expect(urls.filter((u) => u.endsWith('/sessions/S1'))).toHaveLength(0);
     expect(client.getQueryData<unknown>(qk.project.session('P1', 'S1'))).toEqual(ROW);
+    client.clear();
+  });
+
+  test('asks the snapshot for no v1 transcript window: the open reads the session log first', async () => {
+    const urls = mockFetch();
+    const client = new QueryClient();
+    await prefetchSessionOpen(client, 'P1', 'S1');
+    const snapshots = urls.filter((u) => u.includes('/sessions/S1/snapshot'));
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]).toContain('transcript=0');
     client.clear();
   });
 
@@ -93,4 +103,21 @@ describe('prefetchSessionOpen', () => {
     await expect(prefetchSessionOpen(client, 'P1', 'S1')).resolves.toBeUndefined();
     client.clear();
   });
+});
+
+test('the prefetch ledger drops entries whose suppression window has passed (04#11)', async () => {
+  mockFetch();
+  const realNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+  try {
+    const queryClient = new QueryClient();
+    for (let i = 0; i < 300; i++) await prefetchSessionOpen(queryClient, 'P1', `S${i}`);
+    expect(prefetchedSessionCount()).toBe(300);
+    now += 60_000; // every entry is now past the 30 s window
+    await prefetchSessionOpen(queryClient, 'P1', 'S-new');
+    expect(prefetchedSessionCount()).toBeLessThan(10);
+  } finally {
+    Date.now = realNow;
+  }
 });

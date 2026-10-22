@@ -17,16 +17,16 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function SessionMessageTool({ part, forceOpen }: ToolProps) {
-  const input = partInput(part);
-  const status = partStatus(part);
+export function SessionMessageTool({ call, forceOpen }: ToolProps) {
+  const input = partInput(call);
+  const status = partStatus(call);
   const sessionId = (input.session_id as string) || '';
   const message = (input.message as string) || '';
   const args = useMemo(() => sessionMessageArgs(status), [status]);
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={ChatCircleIcon}
       trigger={{ title: 'Messaged a session', subtitle: shortSessionId(sessionId), args }}
       defaultOpen={false}
@@ -42,7 +42,4 @@ export function SessionMessageTool({ part, forceOpen }: ToolProps) {
     </BasicTool>
   );
 }
-ToolRegistry.register('session_message', SessionMessageTool);
 ToolRegistry.register('session-message', SessionMessageTool);
-ToolRegistry.register('oc-session_message', SessionMessageTool);
-ToolRegistry.register('oc-session-message', SessionMessageTool);

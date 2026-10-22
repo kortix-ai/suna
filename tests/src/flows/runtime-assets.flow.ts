@@ -289,7 +289,7 @@ flow(
 // ── RTA-4 — entrypoint: served, never converged ─────────────────────────────
 //
 // The manifest advertised `components.entrypoint` and NO box has ever consumed
-// it: `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/runtime-assets.ts
+// it: `git grep -n entrypoint -- apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts
 // apps/kortix-sandbox-agent-server/src/harness` returns doc comments only. An
 // advertised-but-unconsumed component reads as a fifth convergeable asset, which
 // is how a "current" box can be quietly wrong. This pins the decision that was
@@ -391,7 +391,7 @@ flow(
 // NEITHER RUNS AGAINST A LOCAL STACK, and not because of the capability flag: a
 // local-target project is a database project whose `repo_url` is unreachable
 // from a cloud box, so the box boots to
-// `opencodeBootPhase=…|repo_materialization_failed` and is stopped with
+// `runtimeBootPhase=…|repo_materialization_failed` and is stopped with
 // `stopReason=runtime_boot_failed` (observed 2026-09-26). That is what
 // `EXTERNAL_CAPABILITIES` excludes from the local profile, and it is why these
 // are deployed-target flows.
@@ -421,7 +421,28 @@ interface RunningAssets {
   managed_skills_hash: string | null;
   agent_sha256: string | null;
   staged_agent_sha256: string | null;
-  opencode_version: string | null;
+  /** The harness `harness_version` belongs to (W3 E17). */
+  harness: string | null;
+  harness_version: string | null;
+}
+
+/**
+ * The WHICH-BYTES identity a "reading must not change it" check may compare.
+ * The raw `runtime.running` payload also carries `build`/`at` (the daemon's
+ * last reconciliation PASS) and other operational fields (managed model ids,
+ * catalog fallback reason, agent path) that legitimately advance between two
+ * health reads a few seconds apart — this file's own comment on `bootBox`
+ * says so: "`build`/`at` describe the last PASS and may legitimately be null
+ * on a box whose daemon restarted; `running` may not." Comparing the full raw
+ * object caught that legitimate advance as a false "the lane applied
+ * something" (gate run 36497729410: `build` went `null` → `1790636576`
+ * between two reads 8s apart on a real Platinum box; every earlier gate ran
+ * against a stub that always reported `null`, so this never fired). Compare
+ * only the typed identity fields.
+ */
+function identityOf(running: RunningAssets): RunningAssets {
+  const { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, harness, harness_version } = running;
+  return { cli_sha256, managed_skills_hash, agent_sha256, staged_agent_sha256, harness, harness_version };
 }
 
 interface BootedBox {
@@ -480,6 +501,27 @@ async function bootBox(ctx: FlowContext, project: CreatedProject): Promise<Boote
   };
 }
 
+/**
+ * Read the box until it is current. A new box reports its snapshot's CLI until
+ * the first convergence pass (~20 s after start) swaps it; the API allows 300 s
+ * for that (FIRST_CONVERGENCE_GRACE_S). Release gates 37933459772 (RTA-6) and
+ * 37943505676 (RTA-5) read at 19 s.
+ */
+async function waitUntilCurrent(ctx: FlowContext, booted: BootedBox): Promise<RunningAssets> {
+  const deadline = Date.now() + 300_000;
+  for (;;) {
+    const runtime = await booted.runtimeBlock();
+    if (!runtime.running) throw new Error('the health report carries no `runtime.running` block');
+    try {
+      await assertBoxIsCurrent(ctx, runtime.running);
+      return runtime.running;
+    } catch (err) {
+      if (Date.now() > deadline) throw err;
+      await new Promise((resolve) => setTimeout(resolve, 5_000));
+    }
+  }
+}
+
 /** Every component both sides state must agree, sha-to-sha where a sha exists. */
 async function assertBoxIsCurrent(ctx: FlowContext, running: RunningAssets): Promise<void> {
   const manifest = await ctx.client.as(ctx.P.OWNER).get('/v1/runtime-assets/manifest');
@@ -499,7 +541,8 @@ async function assertBoxIsCurrent(ctx: FlowContext, running: RunningAssets): Pro
     ['managed-skills', m.components['managed-skills'].hash, running.managed_skills_hash],
     ['cli', m.components.cli?.sha256, running.cli_sha256],
     ['agent', m.components.agent?.sha256, running.agent_sha256],
-    ['opencode', m.components.opencode.version, running.opencode_version],
+    // The manifest's OpenCode release applies to an OpenCode box only.
+    ['opencode', m.components.opencode.version, running.harness === 'opencode' ? running.harness_version : null],
   ];
   for (const [name, want, have] of pairs) {
     if (!want || !have) continue; // this deploy or this box states nothing to compare
@@ -515,7 +558,7 @@ flow(
     domain: 'runtime-assets',
     // NOT `funded`. Nothing here runs a model turn, so this half is the one that
     // can run in every preview — which is the only place a real box exists.
-    requires: ['database', 'daytona'],
+    requires: ['database', 'sandbox'],
     timeoutMs: 900_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -552,14 +595,17 @@ flow(
     });
 
     await ctx.step('a freshly booted box IS current — every digest equals the deploy`s', async () => {
-      await assertBoxIsCurrent(ctx, running);
+      running = await waitUntilCurrent(ctx, booted);
     });
 
     await ctx.step('and the lane APPLIED nothing while it was being read', async () => {
       const after = (await booted.runtimeBlock()).running;
-      if (JSON.stringify(after) !== JSON.stringify(running)) {
+      if (!after) throw new Error('`runtime.running` is missing on the second read');
+      const before = identityOf(running);
+      const afterIdentity = identityOf(after);
+      if (JSON.stringify(afterIdentity) !== JSON.stringify(before)) {
         throw new Error(
-          `reading a current box must not change it: ${JSON.stringify(running)} → ${JSON.stringify(after)}`,
+          `reading a current box must not change it: ${JSON.stringify(before)} → ${JSON.stringify(afterIdentity)}`,
         );
       }
     });
@@ -571,7 +617,7 @@ flow(
   {
     domain: 'runtime-assets',
     // `funded`: every step below runs a real model turn. Operator-run.
-    requires: ['database', 'funded', 'daytona'],
+    requires: ['database', 'funded', 'sandbox'],
     timeoutMs: 1_200_000,
     routes: ['GET /v1/runtime-assets/manifest', 'POST /v1/projects/:projectId/sessions/:sessionId/start'],
   },
@@ -595,10 +641,7 @@ flow(
       );
       created!.status(200);
       conversationId = String(created!.json<{ id: string }>().id);
-      const runtime = await booted.runtimeBlock();
-      if (!runtime.running) throw new Error('the health report carries no `runtime.running` block');
-      before = runtime.running;
-      await assertBoxIsCurrent(ctx, before);
+      before = await waitUntilCurrent(ctx, booted);
     });
 
     await ctx.step('the lane costs the send nothing: a second prompt is no slower', async () => {
@@ -633,7 +676,7 @@ flow(
     // THE SECRETS-GATE PARITY HALF, on a real box.
     //
     // `/p/<ext>/4096/...` is the same turn as `/p/<ext>/8000/...`: Platinum
-    // rewrites 4096 → 8000 upstream and Daytona passes it through. Before this
+    // rewrites 4096 → 8000 upstream and the legacy Daytona provider passes it through. Before this
     // lane the two call sites in `sandbox-proxy/routes/preview.ts` read
     // DIFFERENT port variables for that one request, so the prompt got the
     // config convergence and the undeclared-agent drop but no secret refresh and
@@ -664,9 +707,12 @@ flow(
 
     await ctx.step('and it APPLIED nothing: the box runs the same bytes it started with', async () => {
       const after = (await booted.runtimeBlock()).running;
-      if (JSON.stringify(after) !== JSON.stringify(before)) {
+      if (!after) throw new Error('`runtime.running` is missing on the second read');
+      const beforeIdentity = identityOf(before);
+      const afterIdentity = identityOf(after);
+      if (JSON.stringify(afterIdentity) !== JSON.stringify(beforeIdentity)) {
         throw new Error(
-          `a current box must not be changed by sending prompts: ${JSON.stringify(before)} → ${JSON.stringify(after)}`,
+          `a current box must not be changed by sending prompts: ${JSON.stringify(beforeIdentity)} → ${JSON.stringify(afterIdentity)}`,
         );
       }
     });
@@ -769,7 +815,7 @@ flow(
     // reasoning that ~90 MB of each is the same embedded Bun runtime. That is
     // true of two binaries compiled by the SAME Bun and false of what we ship:
     // `apps/api/Dockerfile` builds the daemon on `SANDBOX_AGENT_BUN_VERSION`
-    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.2), so they
+    // (1.3.11, a deliberate pin) and the CLI on `BUN_VERSION` (1.4.3), so they
     // embed different runtimes. Measured on a deployed preview: 0 of 111 chunks
     // shared, first MiB already different. Requiring overlap would have pinned a
     // build coincidence rather than a contract — and would go red on a green

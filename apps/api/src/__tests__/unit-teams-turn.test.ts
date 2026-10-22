@@ -46,7 +46,7 @@ let dbWrites: Array<{ op: string; payload?: unknown }> = [];
 
 function makeChain(op: string): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) chain[m] = () => chain;
+  for (const m of ['from', 'where', 'orderBy', 'limit', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) chain[m] = () => chain;
   chain.values = (payload: unknown) => {
     dbWrites.push({ op: `${op}.values`, payload });
     return chain;
@@ -86,7 +86,7 @@ mock.module('../projects/session-lifecycle/abort-runtime-turn', () => ({
   },
 }));
 
-const { relayTurnAnswer, relayTurnEnd, relayTurnStep, sweepStaleTeamsTurns } = await import('../channels/teams/turn');
+const { relayTeamsProvisioningFailure, relayTurnAnswer, relayTurnEnd, relayTurnStep, sweepStaleTeamsTurns } = await import('../channels/teams/turn');
 
 function streamRow(over: Record<string, unknown> = {}) {
   return {
@@ -422,6 +422,17 @@ describe('relayTurnAnswer', () => {
     expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
   });
 
+  // Every reply opened with a "Task complete" header. The answer is the news;
+  // the header was noise on every message.
+  test('the answer card has no "Task complete" title: it opens with the answer', async () => {
+    dbResults = [[streamRow({ messageTs: 'act-1' })], [{ sessionId: 'sess-1' }], []];
+    expect(await relayTurnAnswer('sess-1', 'Doing well, thanks!')).toBe(true);
+    const card = cardOf(apiCalls.find((c) => c.fn === 'updateCard'));
+    expect(JSON.stringify(card)).not.toContain('Task complete');
+    expect((card.body as Array<{ text?: string; spacing?: string }>)[0]).toMatchObject({ text: 'Doing well, thanks!' });
+    expect((card.body as Array<{ spacing?: string }>)[0]!.spacing).toBeUndefined();
+  });
+
   test('loses the finalize race → no render', async () => {
     dbResults = [[streamRow({ messageTs: 'act-1' })], []];
     expect(await relayTurnAnswer('sess-1', 'x')).toBe(false);
@@ -452,5 +463,60 @@ describe('relayTurnEnd', () => {
     const ok = await relayTurnEnd('sess-1', 'idle');
     expect(ok).toBe(true);
     expect(apiCalls.map((c) => c.fn)).toEqual(['updateCard']);
+    // No title: the card opens with its ticked step.
+    const card = cardOf(apiCalls[0]);
+    expect(JSON.stringify(card)).not.toContain('Task complete');
+    expect((card.body as Array<{ text?: string }>)[0]!.text).toBe('✓ A');
+  });
+
+  // A stopped run read "Task complete" with its last step ticked: the aborted
+  // path finalized with no title. Slack says "Run stopped".
+  test('a stopped run reads "Run stopped", and its unfinished step is not ticked', async () => {
+    dbResults = [
+      [streamRow({ messageTs: 'act-1', steps: [{ type: 'task_update', id: 'step-0', title: 'Reading logs', status: 'in_progress' }] })],
+      [{ sessionId: 'sess-1' }],
+      [],
+    ];
+    expect(await relayTurnEnd('sess-1', 'error', { name: 'MessageAbortedError', message: 'The operation was aborted.' })).toBe(true);
+    const card = JSON.stringify(apiCalls.find((c) => c.fn === 'updateCard')?.args[2]);
+    expect(card).toContain('Run stopped');
+    expect(card).not.toContain('Task complete');
+    expect(card).not.toContain('✓ Reading logs');
+  });
+});
+
+// A session this conversation waited on can die during async provisioning.
+// Teams had no relay for it: the card spun until the 30-minute sweep, and in a
+// project with Slack installed the Slack relay deleted the Teams turn row.
+describe('relayTeamsProvisioningFailure', () => {
+  const liveRow = () =>
+    streamRow({ messageTs: 'act-1', steps: [{ type: 'task_update', id: 'step-0', title: 'Starting', status: 'in_progress' }] });
+
+  test('closes the card with the platform reason as-is and a "Couldn\'t start" title, then deletes the row', async () => {
+    dbResults = [[liveRow()], [{ sessionId: 'sess-1' }]];
+
+    expect(await relayTeamsProvisioningFailure('sess-1', 'The sandbox provider is at capacity right now.')).toBe(true);
+
+    const update = apiCalls.find((c) => c.fn === 'updateCard');
+    const card = JSON.stringify(update?.args[2]);
+    expect(card).toContain("Couldn't start");
+    expect(card).toContain('at capacity right now');
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(true);
+  });
+
+  test('a Slack turn row (no channel_ref) is not a Teams turn: nothing touched', async () => {
+    dbResults = [[streamRow({ channelRef: null })]];
+    expect(await relayTeamsProvisioningFailure('sess-1', 'x')).toBe(false);
+    expect(apiCalls).toHaveLength(0);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
+  });
+
+  test('a finalized turn, or a claim another path won, is left alone', async () => {
+    dbResults = [[streamRow({ messageTs: 'act-1', finalized: true })]];
+    expect(await relayTeamsProvisioningFailure('sess-1', 'x')).toBe(false);
+    dbResults = [[liveRow()], []];
+    expect(await relayTeamsProvisioningFailure('sess-1', 'x')).toBe(false);
+    expect(apiCalls).toHaveLength(0);
+    expect(dbWrites.some((w) => w.op === 'delete')).toBe(false);
   });
 });

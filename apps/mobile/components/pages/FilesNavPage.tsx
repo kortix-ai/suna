@@ -1,20 +1,27 @@
 /**
  * FilesNavPage — the project's repo files (web parity: features/project-files).
- * A READ-ONLY git-repo browser: the `/files` endpoint returns a FLAT recursive
- * file list, so folders are derived client-side from the paths. Browse by
- * version (branch), open a file, see its history, and download a file or a
- * folder as a zip. No write, rename or delete: project files come from git.
+ * Opens from the drawer's Files pill (the `files` route: the hamburger) and,
+ * as a sub-page over the thread, from the session ··· sheet's Files row
+ * (`page:files-nav`, KRTX-1636: Go back in the hamburger's place, which
+ * returns to that thread).
+ * A READ-ONLY git-repo browser: each folder is one `GET /files?depth=1` read
+ * (KRTX-1723: the recursive list stopped at 1,000 files and hid every folder
+ * after them). Browse by version (branch), open a file, see its history, and
+ * download a file or a folder as a zip. No write, rename or delete: project
+ * files come from git.
  *
  * Layout (Jay, 2026-09-22):
  * - `PageHeader` with the large title and the `···`; no controls beside it.
  * - Search, then the breadcrumb (chips, never clipped). Inside a folder the
- *   hamburger stays (Jay, 2026-09-22: no Go back in its place, on any page);
- *   a crumb, or Android back, goes up one folder, never to home.
+ *   hamburger (or, as a sub-page, Go back) stays: a crumb, or Android back,
+ *   goes up one folder, never to home. Go back on the sub-page leaves the
+ *   page from any folder.
  * - List: sections titled "Folders" and "Files", rows of `SettingsRow` in
  *   `SettingsGroupItem`s. Grid: 2-up tiles. Both are one virtualised
  *   `FlatList` (`buildFilesListItems`, COR-155).
- * - Search covers the whole tree, not the open folder (`searchFileTree`,
- *   COR-155); each result shows its folder under its name.
+ * - Search covers the whole repository, not the open folder: the server
+ *   matches filenames, and `searchFileTree` ranks them and adds the folders
+ *   their paths name (COR-155). Each result shows its folder under its name.
  * - The pinned bar (`PinnedBar`, the project drawer's bottom bar): version ·
  *   sort · list/grid `Tabs` · download, floating over a fade of the page.
  *   Refresh is a pull on the list; there is no button.
@@ -30,16 +37,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { BackHandler, Platform, Pressable, RefreshControl, ScrollView, View, type ListRenderItem } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getAuthToken } from '@/api/config';
 import type { SandboxFile } from '@/api/types';
 import { PatchDiffView } from '@/components/diff/PatchDiffView';
-import { FilePreview, FilePreviewBottomInsetContext, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
+import { FilePreview } from '@/components/files/FilePreviewRenderers';
+import { FilePreviewBottomInsetContext } from '@/components/files/file-preview-webview';
+import { getFilePreviewType } from '@/lib/files/preview-type';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PageContent } from '@/components/kortix/page-content';
 import { PageHeader } from '@/components/kortix/page-header';
@@ -57,8 +64,9 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Text } from '@/components/ui/text';
 import { FileGlyph } from '@/components/files/file-icons';
 import { downloadFailureMessage } from '@/lib/files/download-status';
+import { saveFileToDevice, type SaveToDeviceResult } from '@/lib/files/save-to-device';
 import { buildFilesListItems, type FilesListItem } from '@/lib/files/files-list-items';
-import { searchFileTree, searchResultLocation } from '@/lib/files/tree-search';
+import { directoryChildren, isCutDirectory, searchFileTree, searchResultLocation, type TreeSearchEntry } from '@/lib/files/tree-search';
 import { folderTone } from '@/lib/files/folder-tone';
 import { haptics } from '@/lib/haptics';
 import {
@@ -77,24 +85,23 @@ import {
   useProjectCommitDiff,
   useProjectFileContent,
   useProjectFileHistory,
-  useProjectFiles,
+  useProjectDirectory,
+  useProjectFileSearch,
 } from '@/lib/projects/hooks';
-import { projectArchiveUrl } from '@/lib/projects/projects-client';
-import type { ProjectBranch, ProjectCommit, ProjectFileEntry } from '@/lib/projects/projects-client';
+import { orderVersions, versionLabel } from '@/lib/projects/version-label';
+import { projectArchiveRequest } from '@/lib/projects/projects-client';
+import type { ProjectBranch, ProjectCommit } from '@/lib/projects/projects-client';
 import { relativeTime } from '@/lib/projects/triggers-format';
 import { THEME } from '@/lib/utils/theme';
 
 interface FilesNavPageProps {
   page: { id: string; label: string };
   projectId: string;
+  /** As a sub-page: Go back in place of the hamburger. */
+  onBack?: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const shortRef = (ref: string) => (UUID_RE.test(ref) ? ref.slice(0, 8) : ref);
 const basename = (p: string) => p.split('/').filter(Boolean).pop() ?? p;
 const ext = (name: string) => {
   const i = name.lastIndexOf('.');
@@ -119,37 +126,27 @@ const EMPTY_ITEMS: FilesListItem<FileRow>[] = [];
 const BAR_CONTROL_HEIGHT = 40;
 const SHEET_SNAP_POINTS = ['100%'];
 
-/** Immediate children of `dir` derived from the flat file list. */
-function childrenOf(entries: ProjectFileEntry[], dir: string): { dirs: string[]; files: ProjectFileEntry[] } {
-  const prefix = dir ? `${dir}/` : '';
-  const dirSet = new Set<string>();
-  const files: ProjectFileEntry[] = [];
-  for (const e of entries) {
-    if (dir && !e.path.startsWith(prefix)) continue;
-    const rest = e.path.slice(prefix.length);
-    if (!rest) continue;
-    const slash = rest.indexOf('/');
-    if (slash === -1) files.push(e);
-    else dirSet.add(rest.slice(0, slash));
-  }
-  return { dirs: [...dirSet], files };
-}
+/** Stable while a query loads: a new `[]` each render re-runs every memo below. */
+const NO_ENTRIES: TreeSearchEntry[] = [];
+const NO_CHILDREN: { dirs: string[]; files: TreeSearchEntry[] } = { dirs: [], files: [] };
+/** A keystroke waits this long before it becomes a server search. */
+const SEARCH_DEBOUNCE_MS = 200;
 
 /**
  * `downloadAsync` writes the body whatever the status: a 401 or 404 body used
- * to be shared as `name.zip` (COR-155). A non-2xx status deletes the temp
- * file and throws the message; the caller toasts it.
+ * to be saved as `name.zip` (COR-155). A non-2xx status deletes the temp
+ * file and throws the message; the caller toasts it. A good body is saved on
+ * the device (`saveFileToDevice`), never shared. `request` is the SDK's
+ * `{ url, headers }` for the download.
  */
-async function downloadAndShare(url: string, filename: string, withAuth: boolean) {
+async function downloadAndSave(
+  request: { url: string; headers: Record<string, string> },
+  filename: string,
+): Promise<SaveToDeviceResult> {
   const target = `${FileSystem.cacheDirectory}${filename}`;
   let status: number | undefined;
   try {
-    const headers: Record<string, string> = {};
-    if (withAuth) {
-      const token = await getAuthToken();
-      if (token) headers.Authorization = `Bearer ${token}`;
-    }
-    status = (await FileSystem.downloadAsync(url, target, { headers })).status;
+    status = (await FileSystem.downloadAsync(request.url, target, { headers: request.headers })).status;
   } catch (error) {
     await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
     throw error;
@@ -159,13 +156,13 @@ async function downloadAndShare(url: string, filename: string, withAuth: boolean
     await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => {});
     throw new Error(failure);
   }
-  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
+  return saveFileToDevice(target, filename);
 }
 
-async function saveTextAndShare(content: string, filename: string) {
+async function saveTextToDevice(content: string, filename: string): Promise<SaveToDeviceResult> {
   const target = `${FileSystem.cacheDirectory}${filename}`;
   await FileSystem.writeAsStringAsync(target, content);
-  if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(target);
+  return saveFileToDevice(target, filename);
 }
 
 /**
@@ -203,15 +200,7 @@ function VersionSheet({
   onSelect: (ref: string) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const sorted = useMemo(
-    () =>
-      [...branches].sort((a, b) => {
-        if (a.name === defaultBranch) return -1;
-        if (b.name === defaultBranch) return 1;
-        return (b.committed_at ?? '').localeCompare(a.committed_at ?? '');
-      }),
-    [branches, defaultBranch],
-  );
+  const sorted = useMemo(() => orderVersions(branches, defaultBranch), [branches, defaultBranch]);
   return (
     <BottomSheetScrollView
       showsVerticalScrollIndicator={false}
@@ -231,7 +220,7 @@ function VersionSheet({
             <SettingsRow
               key={b.name}
               icon={GitBranchIcon}
-              label={shortRef(b.name)}
+              label={versionLabel(b.name, branches)}
               value={b.name === defaultBranch ? 'Default' : b.committed_at ? relativeTime(b.committed_at) : undefined}
               checked={b.name === value}
               right={null}
@@ -290,7 +279,11 @@ function FileSheetBody({
     haptics.tap();
     setDownloading(true);
     try {
-      await saveTextAndShare(content.data?.content ?? '', basename(file.name));
+      const result = await saveTextToDevice(content.data?.content ?? '', basename(file.name));
+      if (result.status === 'saved') {
+        haptics.success();
+        toast.success(`Saved to ${result.folder}`);
+      }
     } catch (e: any) {
       haptics.warning();
       toast.error(e?.message || 'Unable to download the file. Try again.');
@@ -368,7 +361,7 @@ function FileSheetBody({
       <FilePreviewBottomInsetContext.Provider value={contentInset}>
         {content.isLoading ? (
           <View className="flex-1 items-center justify-center" style={{ paddingBottom: contentInset }}>
-            <KortixLoader size="large" />
+            <KortixLoader size="small" />
           </View>
         ) : content.isError ? (
           <View className="flex-1 items-center justify-center gap-3 px-8" style={{ paddingBottom: contentInset }}>
@@ -383,7 +376,12 @@ function FileSheetBody({
 
       {/* The project drawer's pinned bar: Download · History, over a fade. */}
       <PinnedBar controlHeight={BAR_CONTROL_HEIGHT} background={pageBackground} className="gap-2 px-4">
-        <Button variant="secondary" className="flex-1 rounded-full" onPress={download} disabled={downloading || content.isLoading}>
+        {/* Download saves the file on the device, as it is (no PDF on mobile). */}
+        <Button
+          variant="secondary"
+          className="flex-1 rounded-full"
+          onPress={() => void download()}
+          disabled={downloading || content.isLoading}>
           <Icon as={DownloadSimpleIcon} size={18} className="text-foreground" />
           <Text>{downloading ? 'Downloading…' : 'Download'}</Text>
         </Button>
@@ -456,10 +454,8 @@ function FileTile({
 export function FilesNavPage({
   page,
   projectId,
+  onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: FilesNavPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -487,11 +483,19 @@ export function FilesNavPage({
     if (!ref_ && defaultBranch) setRef(defaultBranch);
   }, [defaultBranch, ref_]);
 
-  const filesQuery = useProjectFiles(projectId, ref_);
-  const entries = filesQuery.data ?? [];
+  const dirQuery = useProjectDirectory(projectId, ref_, path);
+  const children = useMemo(
+    () => (dirQuery.data ? directoryChildren(dirQuery.data.pages) : NO_CHILDREN),
+    [dirQuery.data],
+  );
+  // An API older than paging cut the folder and sent no cursor.
+  const dirCut = isCutDirectory(dirQuery.data?.pages ?? []);
+  // A partial folder keeps the server's name order and the sort button is
+  // off: a sorted subset would put the next page's rows above the ones shown.
+  const dirPartial = dirQuery.hasNextPage || dirCut;
 
   const rows = useMemo<SandboxFile[]>(() => {
-    const { dirs, files } = childrenOf(entries, path);
+    const { dirs, files } = children;
     const cmp = (a: string, b: string) => {
       if (sortBy === 'type') {
         const t = ext(a).localeCompare(ext(b));
@@ -501,8 +505,12 @@ export function FilesNavPage({
       return sortOrder === 'asc' ? n : -n;
     };
     const elevated = dirs.filter((d) => ELEVATED.has(d)).sort();
-    const otherDirs = dirs.filter((d) => !ELEVATED.has(d)).sort(cmp);
-    const fileNodes = [...files].sort((a, b) => cmp(basename(a.path), basename(b.path)));
+    const otherDirs = dirs.filter((d) => !ELEVATED.has(d));
+    const fileNodes = [...files];
+    if (!dirPartial) {
+      otherDirs.sort(cmp);
+      fileNodes.sort((a, b) => cmp(basename(a.path), basename(b.path)));
+    }
     const mk = (name: string, full: string, type: 'directory' | 'file', size?: number | null): SandboxFile => ({
       name,
       path: full,
@@ -514,27 +522,44 @@ export function FilesNavPage({
       ...otherDirs.map((d) => mk(d, path ? `${path}/${d}` : d, 'directory')),
       ...fileNodes.map((f) => mk(basename(f.path), f.path, 'file', f.size)),
     ];
-  }, [entries, path, sortBy, sortOrder]);
+  }, [children, path, sortBy, sortOrder, dirPartial]);
 
-  // Search covers the whole tree, not only this folder (COR-155): the files
-  // query already holds every path. A result shows its folder.
-  const searching = search.trim().length > 0;
+  // Search covers the whole repository, not only this folder (COR-155): the
+  // server matches filenames. A result shows its folder.
+  // A keystroke updates the field first and searches after a short pause.
+  // Cleared text applies at once: a folder tap and Go up clear the search,
+  // and must not show the old results for a render.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [search]);
+  const query = search ? debouncedSearch : '';
+  const searching = query.trim().length > 0;
+  const searchQuery = useProjectFileSearch(projectId, ref_, query);
+  const matches = searchQuery.data ?? NO_ENTRIES;
   const visible = useMemo<FileRow[]>(() => {
     if (!searching) return rows;
-    return searchFileTree(entries, search).map((r) => ({
+    return searchFileTree(matches, query).map((r) => ({
       name: r.name,
       path: r.path,
       type: r.type,
       size: r.size,
       parent: r.parent,
     }));
-  }, [entries, rows, search, searching]);
+  }, [matches, rows, query, searching]);
   const folders = useMemo(() => visible.filter((r) => r.type === 'directory'), [visible]);
   const files = useMemo(() => visible.filter((r) => r.type === 'file'), [visible]);
   const listItems = useMemo(() => buildFilesListItems(folders, files, viewMode), [folders, files, viewMode]);
   const segments = path ? path.split('/').filter(Boolean) : [];
 
-  const listLoading = filesQuery.isLoading || (!ref_ && branchesQuery.isLoading);
+  // The list on screen: a folder level, or the search results.
+  const listQuery = searching ? searchQuery : dirQuery;
+  const listLoading = listQuery.isLoading || (!ref_ && branchesQuery.isLoading);
+  // A folder over one page (500 entries) loads the rest on "Load more items".
+  const moreEntries = !searching && dirQuery.hasNextPage;
+  // A failed "Load more" keeps the rows on screen; the footer reports it.
+  const nextPageFailed = !searching && dirQuery.isFetchNextPageError;
 
   // Back inside a folder goes up one folder, not to project home (Jay,
   // 2026-09-22). Registered after ProjectScreen's handler, so it runs first.
@@ -630,7 +655,12 @@ export function FilesNavPage({
     setDownloadingDir(true);
     try {
       const name = (path ? basename(path) : 'workspace') || 'workspace';
-      await downloadAndShare(projectArchiveUrl(projectId, ref_, path || undefined), `${name}.zip`, true);
+      const request = await projectArchiveRequest(projectId, ref_, path || undefined);
+      const result = await downloadAndSave(request, `${name}.zip`);
+      if (result.status === 'saved') {
+        haptics.success();
+        toast.success(`Saved to ${result.folder}`);
+      }
     } catch (e: any) {
       haptics.warning();
       toast.error(e?.message || 'Unable to download the folder. Try again.');
@@ -642,15 +672,15 @@ export function FilesNavPage({
   const [pulling, setPulling] = useState(false);
   const refresh = () => {
     setPulling(true);
-    void Promise.all([filesQuery.refetch(), branchesQuery.refetch()]).finally(() => setPulling(false));
+    void Promise.all([listQuery.refetch(), branchesQuery.refetch()]).finally(() => setPulling(false));
   };
 
   const emptyLabel = listLoading
     ? null
-    : filesQuery.isError
-      ? ((filesQuery.error as Error)?.message ?? 'Unable to load the files')
-      : visible.length === 0
-        ? search
+    : listQuery.isError && !nextPageFailed
+      ? ((listQuery.error as Error)?.message ?? 'Unable to load the files')
+      : visible.length === 0 && !moreEntries
+        ? query
           ? 'No matching files'
           : path
             ? 'This folder is empty'
@@ -659,14 +689,11 @@ export function FilesNavPage({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Inside a folder, Go back takes the hamburger's place and goes up one
-          folder; the title is the folder's name. */}
+      {/* Inside a folder the title is the folder's name. */}
       <PageHeader
         title={path ? basename(path) : page.label}
-        onOpenDrawer={onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
+        onBack={onBack}
+        onOpenDrawer={onBack ? undefined : onOpenDrawer}
       />
 
       <PageContent>
@@ -743,11 +770,42 @@ export function FilesNavPage({
                   <Text variant="muted" className="text-center">
                     {emptyLabel}
                   </Text>
-                  {filesQuery.isError ? (
+                  {listQuery.isError && !nextPageFailed ? (
                     <Button variant="secondary" size="lg" className="rounded-full" onPress={refresh}>
                       <Text>Try again</Text>
                     </Button>
                   ) : null}
+                </View>
+              ) : null
+            }
+            ListFooterComponent={
+              moreEntries && !listLoading && !emptyLabel ? (
+                <View className="items-center gap-2 pt-4">
+                  {nextPageFailed && !dirQuery.isFetchingNextPage ? (
+                    <Text variant="small" className="text-center leading-5" accessibilityRole="alert">
+                      Could not load more items. Try again.
+                    </Text>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="rounded-full"
+                    disabled={dirQuery.isFetchingNextPage}
+                    onPress={() => {
+                      haptics.tap();
+                      void dirQuery.fetchNextPage();
+                    }}>
+                    <Text>{dirQuery.isFetchingNextPage ? 'Loading…' : 'Load more items'}</Text>
+                  </Button>
+                  <Text variant="muted" className="text-center">
+                    {`Showing ${visible.length} items. Sorting applies once every item is loaded.`}
+                  </Text>
+                </View>
+              ) : !searching && dirCut && !listLoading && !emptyLabel ? (
+                <View className="items-center pt-4">
+                  <Text variant="muted" className="text-center">
+                    {`Showing the first ${visible.length} items`}
+                  </Text>
                 </View>
               ) : null
             }
@@ -764,12 +822,18 @@ export function FilesNavPage({
                 haptics.tap();
                 versionSheetRef.current?.present();
               }}
-              accessibilityLabel={`Version, ${ref_ ? shortRef(ref_) : 'none'}`}>
+              accessibilityLabel={`Version, ${ref_ ? versionLabel(ref_, branchesQuery.data?.branches) : 'none'}`}>
               <Icon as={GitBranchIcon} size={16} className="text-foreground" />
-              <Text numberOfLines={1}>{ref_ ? shortRef(ref_) : '…'}</Text>
+              <Text numberOfLines={1}>{ref_ ? versionLabel(ref_, branchesQuery.data?.branches) : '…'}</Text>
             </Button>
             <View className="flex-1" />
-            <Button variant="secondary" size="icon" className="rounded-full" onPress={cycleSort} accessibilityLabel={sortLabel}>
+            <Button
+              variant="secondary"
+              size="icon"
+              className="rounded-full"
+              disabled={dirPartial && !searching}
+              onPress={cycleSort}
+              accessibilityLabel={sortLabel}>
               <Icon as={ArrowsDownUpIcon} size={18} className="text-foreground" />
             </Button>
             {/* The list / grid toggle: the app's Tabs, as a 40pt pill. */}

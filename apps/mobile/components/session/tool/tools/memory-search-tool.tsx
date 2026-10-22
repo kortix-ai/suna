@@ -6,15 +6,11 @@
  * type, `#id`, the first line of its content, confidence) and folds its body
  * (markdown content + file chips) behind it. The request (source, query) is a
  * folded "Request" section.
- *
- * `LtmSearchExpandedContent` is the previous mobile body, still imported by
- * `tool-part-renderer.tsx`'s legacy path; it goes when that path is removed.
  */
 
 import { useContext, useMemo } from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
-import type { ToolPart } from '@/lib/opencode/types';
 import { MagnifyingGlassIcon } from '@/lib/icons';
 import { disclosureKey } from '@/lib/session/disclosure-store';
 import { isToolStreaming } from '@/lib/session/tools/projects-connectors';
@@ -42,11 +38,11 @@ import { ToolResultCard } from '../shared/result-card';
 import { TURN_SPACE, TURN_TYPE, monoFont, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+export function MemorySearchTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const input = partInput(call);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const running = useContext(ToolRunningContext);
   const parsed = useMemo(() => parseMemorySearchOutput(output), [output]);
   const query = ((input.query as string) || parsed.query || '').trim();
@@ -55,7 +51,7 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={MagnifyingGlassIcon}
       trigger={{
         title: memorySearchTitle(parsed.label),
@@ -141,27 +137,6 @@ export function MemorySearchTool({ part, defaultOpen, forceOpen, locked }: ToolP
     </BasicTool>
   );
 }
-ToolRegistry.register('ltm_search', MemorySearchTool);
 ToolRegistry.register('ltm-search', MemorySearchTool);
-ToolRegistry.register('mem_search', MemorySearchTool);
 ToolRegistry.register('mem-search', MemorySearchTool);
-ToolRegistry.register('memory_search', MemorySearchTool);
 ToolRegistry.register('memory-search', MemorySearchTool);
-ToolRegistry.register('oc-mem_search', MemorySearchTool);
-ToolRegistry.register('oc-mem-search', MemorySearchTool);
-
-// ─── Legacy body (tool-part-renderer.tsx generic path) ───────────────────────
-
-/** @deprecated Previous mobile body; `MemorySearchTool` replaces it. Raw output only. */
-export function LtmSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean }) {
-  const output =
-    tool.state.status === 'completed' && 'output' in tool.state && tool.state.output ? tool.state.output.trim() : '';
-  if (!output) return null;
-  return (
-    <View style={{ paddingHorizontal: 12, paddingVertical: 10, maxHeight: 250 }}>
-      <MonoBlock isDark={isDark} maxLines={30}>
-        {output.slice(0, 3000)}
-      </MonoBlock>
-    </View>
-  );
-}

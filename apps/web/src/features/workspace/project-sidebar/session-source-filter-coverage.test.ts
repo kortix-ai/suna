@@ -1,3 +1,4 @@
+import { resolveSectionLabels } from '@kortix/ui/workspace/sidebar/session-section-labels';
 /**
  * Every session source the filter menu OFFERS must have an icon and a label.
  *
@@ -21,9 +22,11 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { SESSION_SOURCE_FILTERS } from '@/components/projects/session-label';
+import { SESSION_SOURCE_FILTERS } from '@kortix/ui/session/actions/session-label';
+import { SOURCE_ICONS } from '@kortix/ui/workspace/sidebar/session-source-icons';
+import { uiSourcePath } from '@/test-utils/read-source';
 
-const menuSource = readFileSync(resolve(import.meta.dir, 'session-filter-menu.tsx'), 'utf8');
+const menuSource = readFileSync(uiSourcePath('workspace/sidebar/session-filter-menu.tsx'), 'utf8');
 
 /** The keys of the object literal assigned to `name`, by brace matching so the
  *  scan stops at THIS literal's close and not a later one. */
@@ -59,10 +62,15 @@ describe('the filter menu can render every source it offers', () => {
   });
 
   test('every offered source has an icon', () => {
-    expect(mapKeys('SOURCE_FILTER_ICONS').sort()).toEqual(offered);
+    // `...SOURCE_ICONS` is spread into the menu's map, so its keys count too.
+    expect([...mapKeys('SOURCE_FILTER_ICONS'), ...Object.keys(SOURCE_ICONS)].sort()).toEqual(
+      offered,
+    );
   });
 
   test('every offered source has a label', () => {
-    expect(mapKeys('const sourceLabels').sort()).toEqual(offered);
+    const t = (key: string) => key;
+    const labels: Record<string, string> = { ...resolveSectionLabels(t), shared: 'shared' };
+    expect(offered.filter((key) => typeof labels[key] === 'string').sort()).toEqual(offered);
   });
 });

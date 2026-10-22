@@ -1,12 +1,14 @@
 /**
- * Ordering contracts inside `harness/open-code/boot.ts` (and the one boot path it
- * hands the clone to, `boot-config-path.ts`) that no behavioral test reaches yet.
+ * Ordering contracts inside `harness/open-code/boot.ts`, `initial-session.ts`
+ * (where KRTX-930 moved the initial session out of boot.ts), the one boot
+ * path boot hands the clone to, `boot-config-path.ts`, and `harness/pi/boot.ts`,
+ * that no behavioral test reaches yet.
  *
- * `startSessionRuntime` and `maybeCreateInitialOpencodeSession` are private and
- * run only inside a full boot. Until a boot keeper drives them over a fake
- * OpenCode and a fake API, these source guards are the cheapest independent
- * proof of each ordering below; every one of them names the incident it
- * prevents. They are the ONLY source-text assertions allowed on boot.ts.
+ * `startSessionRuntime` and `maybeCreateInitialOpencodeSession` run only inside
+ * a full boot. Until a boot keeper drives them over a fake OpenCode and a fake
+ * API, these source guards are the cheapest independent proof of each ordering
+ * below; every one of them names the incident it prevents. They are the ONLY
+ * source-text assertions allowed on these files.
  *
  * Rules for this file:
  * - Read sources through `stripComments()` first. A guard that
@@ -58,13 +60,17 @@ const BOOT = stripComments(readFileSync(join(import.meta.dir, '..', 'harness', '
 const BOOT_PATH = stripComments(
   readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'boot-config-path.ts'), 'utf8'),
 )
+const PI_BOOT = stripComments(readFileSync(join(import.meta.dir, '..', 'harness', 'pi', 'boot.ts'), 'utf8'))
+const INITIAL_SESSION = stripComments(
+  readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'initial-session.ts'), 'utf8'),
+)
 
-/** The text of one top-level function, from its declaration to the next one. */
-function fn(signature: string): string {
-  const start = BOOT.indexOf(signature)
+/** The text of one top-level function in `src`, from its declaration to the next one. */
+function fn(signature: string, src = BOOT): string {
+  const start = src.indexOf(signature)
   expect(start).toBeGreaterThan(-1)
-  const next = BOOT.slice(start + signature.length).search(/\n(export )?(async )?function |\nexport \{/)
-  return next < 0 ? BOOT.slice(start) : BOOT.slice(start, start + signature.length + next)
+  const next = src.slice(start + signature.length).search(/\n(export )?(async )?function |\nexport \{/)
+  return next < 0 ? src.slice(start) : src.slice(start, start + signature.length + next)
 }
 
 /** Every index of `needle` must be > -1 and strictly increasing. */
@@ -119,6 +125,17 @@ describe('startSessionRuntime', () => {
     expect(runtime.slice(subscribeAt, attemptAt)).not.toContain('await harness.events.subscribe')
   })
 
+  test('starts the session-log journal before the event loop and the first prompt', () => {
+    // P2.6: the first turn's end flushes the journal only if it already runs.
+    // P6.4: a restore runs before the root is resolved and retires the seed marker.
+    expectOrder(runtime, ['await bootOpenCodeSessionLog(', 'clearSeedBakedMarker()', 'harness.events.subscribe(cfg, eventHandlers)', 'await attemptInitialSession()'])
+  })
+
+  test('a failed session-log reconcile fails the boot: no event loop, no root, no prompt', () => {
+    const failure = runtime.slice(runtime.indexOf('await bootOpenCodeSessionLog('), runtime.indexOf('harness.events.subscribe(cfg, eventHandlers)'))
+    expectOrder(failure, ['catch (err)', 'bootState.initialRuntimeSessionError =', 'return'])
+  })
+
   test('both runtime-ready exits run the one ready tail: boot projection push and config convergence', () => {
     expect(runtime.split('runtimeReadyTail(opencode, cfg, bootState, bootMark)').length - 1).toBe(2)
     const tail = fn('function runtimeReadyTail(')
@@ -128,7 +145,7 @@ describe('startSessionRuntime', () => {
 })
 
 describe('maybeCreateInitialOpencodeSession', () => {
-  const initial = fn('async function maybeCreateInitialOpencodeSession(')
+  const initial = fn('export async function maybeCreateInitialOpencodeSession(', INITIAL_SESSION)
 
   test('resolves the live URL after the listening gate, before the root lookup', () => {
     // A verified reload during the wait moves the port; a URL read before the
@@ -174,5 +191,35 @@ describe('maybeCreateInitialOpencodeSession', () => {
     // The marker is the receipt of delivery; written earlier, a crash between
     // the two leaves a session that never gets its first prompt.
     expectOrder(initial, ['await publishInitialOpenCodeSessionAfterPrompt(', 'markInitialPromptDelivered()'])
+  })
+})
+
+describe('runPi: the config and the workspace are independent', () => {
+  test('pi starts on the config release alone; only the turns wait for the workspace', () => {
+    // pi-ready used to wait for the checkout and then for a copy of it. The
+    // config provider downloads its own release, so the runtime starts as
+    // soon as that release is proven.
+    expect(PI_BOOT).toContain('harness.releases.boot(bootMark)')
+    expect(PI_BOOT).not.toMatch(/releases\.boot\([^)]*,/)
+    expectOrder(PI_BOOT, [
+      'const configReady = harness.releases.boot(bootMark)',
+      'provideWorkspace(cfg, {',
+      'await configReady',
+      'await harness.lifecycle.start()',
+      'await workspace\n',
+      'runSandboxOnBoot(cfg)',
+      'runtime.admit(',
+    ])
+    // The one wait before the start: releases off, where the working tree IS the config.
+    expect(PI_BOOT.slice(PI_BOOT.indexOf('await configReady'), PI_BOOT.indexOf('await harness.lifecycle.start()'))).toContain(
+      'if (harness.releases.projectRoot() === undefined) await workspace',
+    )
+  })
+
+  test('the workspace writes nothing into the boot timeline', () => {
+    for (const src of [PI_BOOT, BOOT]) {
+      expect(src).not.toContain("'repo-materialized'")
+      expect(src).not.toMatch(/provideWorkspace\([^)]*bootMark/)
+    }
   })
 })

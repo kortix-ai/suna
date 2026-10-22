@@ -15,8 +15,9 @@
  */
 
 import { create } from 'zustand';
-import type { SessionPromptPart } from '@kortix/sdk';
+import { SESSION_LOG_MINOR, SESSION_LOG_SCHEMA, type SessionLogMessage, type SessionPromptPart } from '@kortix/sdk';
 import type { AttachedFile } from './attachments';
+import { optimisticUserParts } from './optimistic-parts';
 
 export interface FailedSend<TOptions = unknown, TMentions = unknown> {
   /** The text `handleSend` was called with (attachment refs included). */
@@ -34,6 +35,8 @@ export interface FailedSend<TOptions = unknown, TMentions = unknown> {
    */
   clientMessageId?: string;
   messageId?: string;
+  /** When the send failed: where the bubble sorts in the thread. */
+  failedAtMs?: number;
 }
 
 export interface SendIds {
@@ -95,4 +98,31 @@ const EMPTY: Record<string, FailedSend> = {};
 /** The failed sends of one session, by message id. Stable when empty. */
 export function useFailedSends(sessionId: string): Record<string, FailedSend> {
   return useFailedSendStore((state) => state.bySession[sessionId] ?? EMPTY);
+}
+
+/**
+ * The failed sends of a session as user messages of its thread
+ * (`SessionLogMessage`), oldest first. A failed send is not in the transcript
+ * (the server never had it), so the thread appends these to the messages it
+ * read: the message stays where the user sent it, dimmed, with "Not sent ·
+ * Try again". Each picked file is an attachment block with its device URI
+ * (`localUriOf`).
+ */
+export function failedSendMessages(threadId: string, failed: Record<string, FailedSend>): SessionLogMessage[] {
+  return Object.entries(failed)
+    .sort(([, a], [, b]) => (a.failedAtMs ?? 0) - (b.failedAtMs ?? 0))
+    .map(([messageId, send]): SessionLogMessage => {
+      const createdAt = send.failedAtMs ?? 0;
+      return {
+        schema: SESSION_LOG_SCHEMA, v: SESSION_LOG_MINOR, message_id: messageId, thread_id: threadId,
+        seq: Number.MAX_SAFE_INTEGER, role: 'user', kind: 'turn', status: 'complete', in_context: true, origin: 'prompt',
+        model: null, usage: null, finish: null, error: null, created_at: new Date(createdAt).toISOString(), completed_at: null,
+        producer: { harness: 'kortix-mobile', harness_version: '', adapter_version: '1' },
+        blocks: optimisticUserParts(send.text, send.localFiles ?? [], createdAt).map((part) =>
+          part.type === 'text'
+            ? { type: 'text', id: part.id, text: part.text }
+            : { type: 'attachment', id: part.id, mime: part.mime, name: part.filename },
+        ),
+      };
+    });
 }

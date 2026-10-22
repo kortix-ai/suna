@@ -1,0 +1,132 @@
+'use client';
+
+import { CaretDownIcon, GearSixIcon, SignOutIcon } from '@phosphor-icons/react';
+import dynamic from 'next/dynamic';
+import Link from 'next/link';
+import type { ReactNode } from 'react';
+
+import { Button } from '@kortix/ui/button';
+import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@kortix/ui/dropdown-menu';
+import Loading from '@kortix/ui/loading';
+import { useTranslations } from '@/i18n/use-translations';
+
+// Client only: the inbox is per signed-in person and polls, so the server
+// renders no bell and these pages' static tests need no query client. The
+// bell itself renders only while a cached project has the
+// `notification_center` flag on (these pages have no project of their own).
+const NotificationBell = dynamic(
+  () => import('@kortix/ui/internal/notifications/notification-bell').then((mod) => mod.NotificationBell),
+  { ssr: false },
+);
+
+/**
+ * The top row of the account-level pages that sit outside a project —
+ * `/projects` and `/new`.
+ *
+ * Left: an optional way back. Right: the notification bell (KRTX-1742, behind
+ * the `notification_center` flag), then who you are, as a button. Log out lives
+ * in its menu rather than as a bare button in the corner — it is the rarest
+ * action on these pages, and the identity above it is what a user checks
+ * first ("am I in the right account?").
+ *
+ * Presentational on purpose: the page owns sign-out (`performSignOut` replaces
+ * the document, so `signingOut` is never cleared) and passes the state in.
+ *
+ * `kx-desktop-band-row` keeps the row under the desktop title-bar band, clear
+ * of the macOS traffic lights and the Win/Linux window controls.
+ */
+export function AccountTopBar({
+  email,
+  name,
+  signingOut,
+  onLogOut,
+  back,
+  trailing,
+}: {
+  email: string | null;
+  name?: string | null;
+  signingOut: boolean;
+  onLogOut: () => void;
+  /** Rendered as a ghost link on the left. Omit on a page with nowhere to go back to. */
+  back?: { href: string; label: string };
+  /** Extra controls after the account button (the desktop close button). */
+  trailing?: ReactNode;
+}) {
+  const t = useTranslations('newWorkspace');
+  const identity = name?.trim() || email;
+
+  return (
+    <div className="kx-desktop-band-row absolute inset-x-0 top-3 z-10 flex items-center justify-between gap-3 px-4 sm:top-4 sm:px-6">
+      {back ? (
+        // The web needs an in-page exit; Electron supplies Back in its band.
+        <Button
+          asChild
+          variant="ghost"
+          size="xs"
+          className={backPillClass('kx-web-only-back')}
+        >
+          <Link href={back.href}>
+            <BackPillBody label={back.label} />
+          </Link>
+        </Button>
+      ) : (
+        <span aria-hidden />
+      )}
+
+      <div className="flex min-w-0 items-center gap-2">
+        <NotificationBell />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={signingOut}
+              aria-label={identity ? `${t('account.loggedInAs')} ${identity}` : t('account.label')}
+              className="hover:bg-hover data-[state=open]:bg-hover focus-visible:ring-ring flex min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left transition-colors duration-(--duration-normal) ease-out focus-visible:ring-2 focus-visible:outline-none"
+            >
+              <span className="flex min-w-0 flex-col">
+                <span className="text-muted-foreground text-xs">{t('account.loggedInAs')}</span>
+                <span className="text-foreground max-w-56 truncate text-sm">
+                  {identity ?? t('account.label')}
+                </span>
+              </span>
+              {signingOut ? (
+                <Loading className="size-4 shrink-0" />
+              ) : (
+                <CaretDownIcon className="text-muted-foreground size-3.5 shrink-0" />
+              )}
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            {/* Settings must be reachable from every account-level page,
+                regardless of project count: with no projects this menu was
+                Log out only, and /settings/profile had no link at all
+                (KRTX-1327). A real anchor, so the menu closes on navigate. */}
+            <DropdownMenuItem asChild>
+              <Link href="/settings/profile" prefetch>
+                <GearSixIcon />
+                {t('actions.settings')}
+              </Link>
+            </DropdownMenuItem>
+
+            {/* Log out is the only row that ends something, so it gets its own
+                group — the last item in a menu is the one a slipped pointer
+                lands on. */}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={signingOut} onSelect={onLogOut}>
+              <SignOutIcon />
+              {signingOut ? t('actions.signingOut') : t('actions.logOut')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {trailing}
+      </div>
+    </div>
+  );
+}

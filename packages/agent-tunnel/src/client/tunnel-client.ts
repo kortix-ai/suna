@@ -91,6 +91,10 @@ export class TunnelClient {
     return data.result;
   }
 
+  /**
+   * Kept for published 0.1.x callers. The current API never returns a
+   * `requestId` (permission requests were removed), so this equals `rpc`.
+   */
   async rpcWithPermissionFlow(method: string, params: Record<string, unknown> = {}): Promise<unknown> {
     try {
       return await this.rpc(method, params);
@@ -147,9 +151,8 @@ export class TunnelClient {
     this.cachedTunnelId = null;
     throw new TunnelClientError(
       -1,
-      'No tunnel connection found. The user needs to set up Agent Tunnel first:\n' +
-      '1. Create a tunnel connection\n' +
-      '2. Connect the local machine from the Kortix desktop app or run the tunnel connect command',
+      'No tunnel connection found. Connect this computer from the Kortix desktop app, ' +
+      'or run `npx @kortix/agent-tunnel connect`.',
     );
   }
 }

@@ -1,3 +1,5 @@
+import type { Session } from '../../core/runtime/runtime-types';
+import { qk } from '../query-keys';
 import { describe, expect, test, beforeEach, mock } from 'bun:test';
 // Imported BEFORE `mock.module` below runs, so this binds to the REAL store
 // (module resolution for a static import happens before the rest of this
@@ -14,7 +16,7 @@ import { useOpenCodeCompactionStore as realCompactionStore } from '../../browser
 function makeFakeQueryClient() {
   const cache = new Map<string, unknown>();
   const cacheKey = (k: readonly unknown[]) => JSON.stringify(k);
-  const refetchCalls: unknown[] = [];
+  const refetchCalls: Array<{ queryKey?: readonly unknown[]; predicate?: (query: { queryKey: readonly unknown[] }) => boolean }> = [];
   return {
     setQueryData: (k: readonly unknown[], updater: unknown) => {
       const existing = cache.get(cacheKey(k));
@@ -24,7 +26,7 @@ function makeFakeQueryClient() {
       return value;
     },
     getQueryData: (k: readonly unknown[]) => cache.get(cacheKey(k)),
-    refetchQueries: (opts: unknown) => {
+    refetchQueries: (opts: { queryKey?: readonly unknown[]; predicate?: (query: { queryKey: readonly unknown[] }) => boolean }) => {
       refetchCalls.push(opts);
     },
     refetchCalls,
@@ -33,9 +35,14 @@ function makeFakeQueryClient() {
 
 let fakeQueryClient = makeFakeQueryClient();
 
+let mutationSuccess: ((session: Session) => unknown) | undefined;
+
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
-  useMutation: (config: Record<string, unknown>) => config,
+  useMutation: (config: { onSuccess?: (session: Session) => unknown }) => {
+    mutationSuccess = config.onSuccess;
+    return config;
+  },
   useQueryClient: () => fakeQueryClient,
 }));
 
@@ -64,8 +71,8 @@ mock.module('../../browser/stores/opencode-compaction-store', () => ({
   ),
 }));
 
-const { useSummarizeOpenCodeSession, useInitSession } = await import('./sessions');
-const { opencodeKeys } = await import('./keys');
+const { useSummarizeRuntimeSession, useInitSession, useForkSession } = await import('./sessions');
+const { runtimeKeys } = await import('./keys');
 const { NoCompactionModelError } = await import('./no-compaction-model-error');
 
 beforeEach(() => {
@@ -74,11 +81,11 @@ beforeEach(() => {
 });
 
 // ============================================================================
-// useSummarizeOpenCodeSession — the 3-tier model-resolution fallback chain
+// useSummarizeRuntimeSession — the 3-tier model-resolution fallback chain
 // (config default → last assistant message → first connected provider/model)
 // ============================================================================
 
-describe('useSummarizeOpenCodeSession — model resolution fallback chain', () => {
+describe('useSummarizeRuntimeSession — model resolution fallback chain', () => {
   test('tier 1: uses the config default model when neither providerID nor modelID is given', async () => {
     let summarizeArgs: unknown;
     clientImpl = {
@@ -94,7 +101,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     const result = await mutationFn({ sessionId: 'ses_1' });
@@ -122,7 +129,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
@@ -156,7 +163,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
@@ -184,7 +191,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         }),
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
@@ -214,7 +221,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: {
         sessionId: string;
         providerID?: string;
@@ -241,7 +248,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
       session: { messages: async () => ({ data: [] }) },
       provider: { list: async () => ({ data: {} }) },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     // The expected "no model configured" state throws the sentinel-marked
@@ -282,7 +289,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
         },
       },
     };
-    const { mutationFn } = useSummarizeOpenCodeSession() as unknown as {
+    const { mutationFn } = useSummarizeRuntimeSession() as unknown as {
       mutationFn: (args: { sessionId: string }) => Promise<string>;
     };
     await mutationFn({ sessionId: 'ses_1' });
@@ -299,7 +306,7 @@ describe('useSummarizeOpenCodeSession — model resolution fallback chain', () =
       session: { messages: async () => ({ data: [] }) },
       provider: { list: async () => ({ data: {} }) },
     };
-    const hook = useSummarizeOpenCodeSession() as unknown as {
+    const hook = useSummarizeRuntimeSession() as unknown as {
       onMutate: (args: { sessionId: string }) => void;
       onError: (err: unknown, args: { sessionId: string }) => void;
     };
@@ -332,7 +339,7 @@ describe('useInitSession', () => {
 
     hook.onSuccess('ses_1');
     expect(fakeQueryClient.refetchCalls).toEqual([
-      { queryKey: opencodeKeys.runtimeMessages('ses_1') },
+      { queryKey: runtimeKeys.runtimeMessages('ses_1') },
     ]);
   });
 
@@ -363,5 +370,96 @@ describe('useInitSession', () => {
     await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow(
       'Failed to initialize project',
     );
+  });
+});
+
+// ============================================================================
+// useForkSession — the runtime's own fork (`POST /session/{id}/fork`).
+// ============================================================================
+
+describe('useForkSession', () => {
+  test('a successful fork refreshes persistent project inventories', async () => {
+    const forked: Session = {
+      id: 'ses_fork', slug: 'fork', projectID: 'project', directory: '/workspace',
+      title: 'Fork', version: '1', time: { created: 1, updated: 1 },
+    };
+    useForkSession();
+    if (!mutationSuccess) throw new Error('Missing mutation onSuccess');
+    await mutationSuccess(forked);
+    const call = fakeQueryClient.refetchCalls[0];
+    if (!call?.predicate) throw new Error('Missing inventory refetch predicate');
+    expect(call.predicate({ queryKey: [...qk.project.sessions('p')] })).toBe(true);
+    expect(call.predicate({ queryKey: ['runtime', 'sessions'] })).toBe(false);
+  });
+
+  test('forks the conversation and returns the forked session', async () => {
+    const forked = { id: 'ses_fork', title: 'Old (fork #1)', time: { updated: 5 } };
+    let forkArgs: unknown;
+    clientImpl = {
+      session: {
+        fork: async (args: unknown) => {
+          forkArgs = args;
+          return { data: forked };
+        },
+      },
+    };
+    const { mutationFn } = useForkSession() as unknown as {
+      mutationFn: (args: { sessionId: string; messageID?: string }) => Promise<typeof forked>;
+    };
+    const result = await mutationFn({ sessionId: 'ses_1' });
+    expect(result).toEqual(forked);
+    expect(forkArgs).toEqual({ sessionID: 'ses_1' });
+  });
+
+  test('passes the fork-at message through', async () => {
+    let forkArgs: unknown;
+    clientImpl = {
+      session: {
+        fork: async (args: unknown) => {
+          forkArgs = args;
+          return { data: { id: 'ses_fork', time: { updated: 5 } } };
+        },
+      },
+    };
+    const { mutationFn } = useForkSession() as unknown as {
+      mutationFn: (args: { sessionId: string; messageID?: string }) => Promise<unknown>;
+    };
+    await mutationFn({ sessionId: 'ses_1', messageID: 'msg_9' });
+    expect(forkArgs).toEqual({ sessionID: 'ses_1', messageID: 'msg_9' });
+  });
+
+  test('propagates a runtime error', async () => {
+    clientImpl = {
+      session: { fork: async () => ({ error: { name: 'NotFoundError', data: { message: 'no such session' } } }) },
+    };
+    const { mutationFn } = useForkSession() as unknown as {
+      mutationFn: (args: { sessionId: string }) => Promise<unknown>;
+    };
+    await expect(mutationFn({ sessionId: 'ses_1' })).rejects.toThrow('no such session');
+  });
+
+  test('onSuccess inserts the fork into the sessions cache and caches it by id', () => {
+    const forked = { id: 'ses_fork', title: 'Old (fork #1)', time: { updated: 5 } };
+    // The `./keys` module is globally mocked by sibling test files (providers,
+    // vcs), so the real factories are not importable in a full-suite run. Read
+    // the writes back by shape instead: the hook makes exactly two writes, the
+    // sessions LIST (an array) and the fork cached under its own id.
+    const writes: Array<{ value: unknown }> = [];
+    const original = fakeQueryClient.setQueryData;
+    fakeQueryClient.setQueryData = (key: readonly unknown[], updater: unknown) => {
+      const value = original(key, updater);
+      writes.push({ value });
+      return value;
+    };
+    const { onSuccess } = useForkSession() as unknown as {
+      onSuccess: (session: typeof forked) => void;
+    };
+    onSuccess(forked as never);
+    fakeQueryClient.setQueryData = original;
+    expect(writes).toHaveLength(2);
+    const lists = writes.map((w) => w.value).filter((v): v is Array<{ id: string }> => Array.isArray(v));
+    expect(lists).toHaveLength(1);
+    expect(lists[0]!.map((s) => s.id)).toEqual(['ses_fork']);
+    expect(writes.map((w) => w.value)).toContainEqual(forked);
   });
 });

@@ -12,6 +12,7 @@ import {
   listGitHubRepositoryBranches,
   listLinkableGitHubInstallations,
   saveGitHubInstallation,
+  storeGitHubUserToken,
 } from './github';
 
 test('replaces one project repository with a credential and an expected old URL', async () => {
@@ -306,4 +307,56 @@ test('imports through the instance git backend with source: managed, never a fak
     repo_full_name: 'managed-kortix/customer-portal',
     source: 'managed',
   });
+});
+
+// GitHub refuses `POST /user/repos` for an App installation token, so creating a
+// repository in a PERSONAL account needs the user's own GitHub authorization.
+// The popup already hands the browser that token; this call is how it reaches
+// the server, which verifies it, encrypts it, and never gives it back.
+test('stores a GitHub user token for one account, and returns only the login', async () => {
+  let url = '';
+  let method = '';
+  let body: unknown;
+  let showedErrors: unknown;
+  globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+    url = String(input instanceof Request ? input.url : input);
+    method = init?.method ?? '';
+    body = JSON.parse(String(init?.body));
+    return Response.json({ ok: true, github_login: 'octo-person' });
+  }) as unknown as typeof fetch;
+
+  const result = await storeGitHubUserToken({
+    account_id: 'acc-1',
+    github_user_token: 'ghu_live',
+    expires_in: 28800,
+  });
+
+  expect(url).toEndWith('/projects/github/user-token');
+  expect(method).toBe('POST');
+  expect(body).toEqual({
+    account_id: 'acc-1',
+    github_user_token: 'ghu_live',
+    expires_in: 28800,
+  });
+  expect(result).toEqual({ ok: true, github_login: 'octo-person' });
+  void showedErrors;
+});
+
+// A failed authorization is handled where it is caught — the create retries or
+// explains itself. A global toast on top of that says the same thing twice.
+test('a failed store does not raise the global error toast', async () => {
+  const seen: Array<boolean | undefined> = [];
+  globalThis.fetch = mock(async () => Response.json({ error: 'nope' }, { status: 502 })) as unknown as typeof fetch;
+  configureKortix({
+    backendUrl: 'https://api.example.test/v1',
+    getToken: async () => 'token',
+    onError: () => {
+      seen.push(true);
+    },
+  });
+
+  await expect(
+    storeGitHubUserToken({ account_id: 'acc-1', github_user_token: 'ghu_live' }),
+  ).rejects.toThrow();
+  expect(seen).toEqual([]);
 });

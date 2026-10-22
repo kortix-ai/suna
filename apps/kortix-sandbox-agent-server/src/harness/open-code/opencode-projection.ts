@@ -34,7 +34,8 @@
  *    several reads died on the browser's 30 s deadline; the same read served
  *    in-VM took 276 ms. The cost was entirely the bytes leaving.
  */
-import { stripInlineAttachmentBytes } from '../../inline-attachments'
+import type { CompiledCommand } from '@kortix/api-contract/runtime-relay'
+import { stripInlineAttachmentBytes } from '../shared/inline-attachments'
 
 // ---------------------------------------------------------------------------
 // State projection — the seven reads `/kortix/opencode/state` replaces
@@ -68,6 +69,11 @@ export interface CommandProjection {
    * user-initiated call. 39 commands = 575 KB of templates on the live box.
    */
   template_bytes: number
+  /**
+   * kortix.yaml v3: the agents that may run the command. Absent (v1/v2): every
+   * agent may.
+   */
+  agents?: string[]
 }
 
 export interface ConfigProjection {
@@ -85,7 +91,8 @@ export interface SessionProjection {
   title: string
   parent_id: string | null
   directory: string | null
-  time: { created: number; updated: number; compacting: number | null }
+  /** `archived`: when the conversation was archived; clients hide an archived child. */
+  time: { created: number; updated: number; compacting: number | null; archived: number | null }
   /** Present only when the session has a staged revert. */
   revert: unknown | null
 }
@@ -152,13 +159,19 @@ export function projectAgents(payload: unknown): AgentProjection[] {
   return out
 }
 
-export function projectCommands(payload: unknown): CommandProjection[] {
+/**
+ * `compiled` is a kortix.yaml v3 set's `commands`. Then only those commands
+ * are listed, each with its `agents`: OpenCode's own (`init`, `review`), MCP
+ * prompts and skills are no command of a v3 project.
+ */
+export function projectCommands(payload: unknown, compiled?: Record<string, CompiledCommand>): CommandProjection[] {
   const out: CommandProjection[] = []
   for (const raw of asList(payload)) {
     if (!raw || typeof raw !== 'object') continue
     const command = raw as Record<string, unknown>
     const name = str(command.name)
     if (!name) continue
+    if (compiled && !Object.hasOwn(compiled, name)) continue
     out.push({
       name,
       description: str(command.description),
@@ -168,6 +181,7 @@ export function projectCommands(payload: unknown): CommandProjection[] {
       subtask: bool(command.subtask),
       hints: strArray(command.hints),
       template_bytes: typeof command.template === 'string' ? command.template.length : 0,
+      ...(compiled ? { agents: compiled[name]!.agents } : {}),
     })
   }
   return out
@@ -213,6 +227,7 @@ export function projectSessions(payload: unknown): SessionProjection[] {
         created: typeof time.created === 'number' ? time.created : 0,
         updated: typeof time.updated === 'number' ? time.updated : 0,
         compacting: typeof time.compacting === 'number' ? time.compacting : null,
+        archived: typeof time.archived === 'number' ? time.archived : null,
       },
       revert: session.revert ?? null,
     })
@@ -234,6 +249,7 @@ export function projectSessionRows(
     time_created: number
     time_updated: number
     time_compacting: number | null
+    time_archived?: number | null
     revert: string | null
   }>,
 ): SessionProjection[] {
@@ -246,6 +262,7 @@ export function projectSessionRows(
       created: row.time_created,
       updated: row.time_updated,
       compacting: row.time_compacting ?? null,
+      archived: row.time_archived ?? null,
     },
     revert: row.revert ? safeJson(row.revert) : null,
   }))

@@ -10,6 +10,7 @@
  *
  * This module holds the pure parts so both paths agree on what a legal change is.
  */
+import { toWireModel } from '../../llm-gateway/resolution/effective';
 
 /** Terminal states — there is no live agent to re-point, and a cold boot would
  *  re-read the row anyway, so a change here is meaningless rather than harmful. */
@@ -42,32 +43,6 @@ export function validateModelChangeShape(requested: string): ModelChangeRejectio
 }
 
 /**
- * Native-mode (project `llm_gateway` flag OFF) shape rule for a model ref.
- *
- * Off-gateway, OpenCode owns the catalog: a pin must be its native
- * `provider/model` form. Two shapes are dead pins and fail fast instead of
- * being stored:
- *  • `kortix/…` — names the synthetic gateway provider, which does not exist
- *    in a native box;
- *  • a slash-less bare id — the daemon's resolveOpencodeModel drops it
- *    silently and the session runs on the default model while the row claims
- *    a pin.
- * Servability is deliberately NOT checked: the gateway resolver has no say in
- * native mode, and OpenCode reports an unknown model itself at prompt time.
- */
-export function validateNativeOpencodeModelRef(requested: string): ModelChangeRejection | null {
-  const trimmed = requested.trim();
-  const slash = trimmed.indexOf('/');
-  if (trimmed.startsWith('kortix/') || slash <= 0 || slash === trimmed.length - 1) {
-    return {
-      code: 'INVALID_SESSION_MODEL',
-      message: `Model "${trimmed}" is not a native OpenCode ref — the LLM gateway is off for this project, so use "provider/model" (e.g. "anthropic/claude-sonnet-4-6")`,
-    };
-  }
-  return null;
-}
-
-/**
  * May this session's model change right now?
  *
  * A queued/provisioning session is allowed: the row is what a cold boot reads,
@@ -95,12 +70,15 @@ export function modelChangeNeedsLivePush(input: {
   next: string;
   status: string;
 }): boolean {
-  if (input.current === input.next) return false;
+  // `kortix/<id>` and `<id>` name one gateway model; a restart would only cost the turn.
+  if (input.current !== null && toWireModel(input.current) === toWireModel(input.next)) return false;
   return input.status === 'running';
 }
 
 /** The 200 body of `PUT /projects/:p/sessions/:s/model`. */
 export interface ModelChangeResult {
+  model: string;
+  /** @deprecated The pre-W4 name of `model`. Same value. */
   opencode_model: string;
   /** True only when a live sandbox took the new model NOW. */
   applied_live: boolean;
@@ -138,6 +116,7 @@ export function modelChangeResult(input: {
 }): ModelChangeResult {
   if (!input.needsPush) {
     return {
+      model: input.model,
       opencode_model: input.model,
       applied_live: false,
       detail:
@@ -147,9 +126,10 @@ export function modelChangeResult(input: {
     };
   }
   if (input.push?.applied) {
-    return { opencode_model: input.model, applied_live: true };
+    return { model: input.model, opencode_model: input.model, applied_live: true };
   }
   return {
+    model: input.model,
     opencode_model: input.model,
     applied_live: false,
     push_failed: true,

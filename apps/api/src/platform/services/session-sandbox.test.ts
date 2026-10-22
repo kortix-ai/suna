@@ -33,13 +33,13 @@
 // file-scoped — batching many files into one `bun test a b c...` invocation
 // can leak mocks/cached module instances across files. See the same caveat
 // documented in ../../projects/sandbox-reaper.test.ts.
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import * as realComputeMetering from '../../billing/services/compute-metering';
 import * as realAgents from '../../projects/agents';
 import { PROVISIONING_SESSION_STATUSES } from '../../projects/lib/session-status';
-import * as realProviderTransitionStore from '../../projects/provider-transition/provider-transition-store';
+import * as realProviderTransitionRouting from '../../projects/provider-transition/provider-transition-routing';
 import * as realProviders from '../providers';
 
 const dialect = new PgDialect();
@@ -101,9 +101,8 @@ let activeRouting: {
   activeSnapshotName: string | null;
 } | null = null;
 let agentGrantError: Error | null = null;
-let gatewayFlag = false;
 const testConfig = {
-  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+  ALLOWED_SANDBOX_PROVIDERS: ['platinum', 'daytona'],
   KORTIX_URL: 'http://localhost:8008',
   LLM_GATEWAY_PROXY_PORT: undefined,
   LLM_GATEWAY_PROXY_TARGET: undefined,
@@ -275,8 +274,8 @@ mock.module('../providers', () => ({
   SandboxTemplateNotFoundError: class SandboxTemplateNotFoundError extends Error {},
 }));
 
-mock.module('../../projects/provider-transition/provider-transition-store', () => ({
-  ...realProviderTransitionStore,
+mock.module('../../projects/provider-transition/provider-transition-routing', () => ({
+  ...realProviderTransitionRouting,
   readActiveRouting: async () => activeRouting,
 }));
 
@@ -285,12 +284,11 @@ mock.module('./runtime-settings', () => ({
 }));
 
 mock.module('./provider-balancer', () => ({
-  selectProvider: async () => 'e2b',
+  selectProvider: async () => 'platinum',
 }));
 
 mock.module('../../snapshots/builder', () => ({
   DEFAULT_SANDBOX_SLUG: 'default',
-  ensurePiWorkerImage: async () => undefined,
   ensureSandboxImage: async (_gitProject: unknown, opts: Record<string, unknown>) => {
     imageRequests.push(opts);
     const queued = imageResolutionQueue.shift();
@@ -318,10 +316,10 @@ mock.module('../../snapshots/builder', () => ({
   deleteSandboxImage: async (_project: unknown, opts: { slug?: string; provider?: string }) => {
     standardImageDeleteCalls.push(opts);
   },
-  // The real resolver throws TemplateNotFoundError for `meta` / `pi-worker`:
-  // neither is a project template.
+  // The real resolver throws TemplateNotFoundError for `meta`: it is not a
+  // project template.
   resolveTemplate: async (_project: unknown, slug: unknown) => {
-    if (slug === 'meta' || slug === 'pi-worker') throw new Error(`template ${String(slug)} not found`);
+    if (slug === 'meta') throw new Error(`template ${String(slug)} not found`);
     return {};
   },
 }));
@@ -383,15 +381,12 @@ mock.module('../../projects/agents', () => ({
   },
 }));
 
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: (_metadata: unknown) => gatewayFlag,
-}));
-
 mock.module('../../shared/session-failure-notifier', () => ({
   notifySessionProvisioningFailed: async () => {},
 }));
 
 const { provisionSessionSandbox } = await import('./session-sandbox');
+const { SecretGrantResolutionError } = await import('../../projects/lib/secret-grant');
 
 function waitFor(setResolver: (resolve: () => void) => void, timeoutMs = 2000): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -436,7 +431,6 @@ beforeEach(() => {
   providerSyncCalls = [];
   activeRouting = null;
   agentGrantError = null;
-  gatewayFlag = false;
 });
 
 function baseOpts() {
@@ -549,12 +543,50 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(finishCall?.updates.config).toMatchObject({ serviceKey: 'exec-tok-1' });
   });
 
-  test('a gateway project boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
-    // The pi harness has no native-provider path: a box booted without
-    // KORTIX_LLM_BASE_URL never starts pi, so its first prompt is never
-    // delivered. A free account still gets the gateway; the gateway limits it
-    // to free/BYOK models per request (principal.freeModelsOnly).
-    gatewayFlag = true;
+  // Session create passes the env build as a promise. The image check, the
+  // row insert and the token mint do not read it, so they run while it builds.
+  test('an env build still in flight does not hold the token mint; its values reach the provider', async () => {
+    const opened = waitFor((resolve) => {
+      onComputeOpened = resolve;
+    });
+    let finishEnvBuild!: (env: Record<string, string>) => void;
+    const envBuild = new Promise<Record<string, string>>((resolve) => {
+      finishEnvBuild = resolve;
+    });
+
+    const provisioning = provisionSessionSandbox({ ...baseOpts(), extraEnvVars: envBuild });
+    await waitFor((resolve) => {
+      const poll = () => (accountTokenCreateCalls.length > 0 ? resolve() : setTimeout(poll, 5));
+      poll();
+    });
+    // The token is minted and no provider call has been made: the env is pending.
+    expect(providerCreateOpts).toHaveLength(0);
+
+    finishEnvBuild({ KORTIX_PROJECT_BRANCH: 'main' });
+    await provisioning;
+    await opened;
+
+    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
+    expect(envVars.KORTIX_PROJECT_BRANCH).toBe('main');
+    expect(envVars.KORTIX_TOKEN).toBe('exec-tok-1');
+  });
+
+  test('an env build that fails closes the sandbox row and fails the provision', async () => {
+    await expect(
+      provisionSessionSandbox({ ...baseOpts(), extraEnvVars: Promise.reject(new Error('env build failed')) }),
+    ).rejects.toThrow('env build failed');
+
+    expect(providerCreateOpts).toHaveLength(0);
+    expect(
+      updateCalls.some((call) => call.table === sessionSandboxes && call.updates.status === 'error'),
+    ).toBe(true);
+  });
+
+  test('every session boots with the gateway env on any plan (the gateway enforces the plan per request)', async () => {
+    // The gateway is the only model path: a box booted without
+    // KORTIX_LLM_BASE_URL has no model. A free account still gets the gateway;
+    // the gateway limits it to free/BYOK models per request
+    // (principal.freeModelsOnly).
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -564,28 +596,6 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
     const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
     expect(envVars.KORTIX_LLM_BASE_URL).toBe('http://localhost:8008/v1/llm');
-    const finishCall = updateCalls.find(
-      (call) =>
-        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
-    );
-    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(true);
-  });
-
-  test('a native project boots without the gateway env', async () => {
-    const opened = waitFor((resolve) => {
-      onComputeOpened = resolve;
-    });
-
-    await provisionSessionSandbox(baseOpts());
-    await opened;
-
-    const envVars = providerCreateOpts[0]?.envVars as Record<string, string>;
-    expect(envVars).not.toHaveProperty('KORTIX_LLM_BASE_URL');
-    const finishCall = updateCalls.find(
-      (call) =>
-        call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
-    );
-    expect((finishCall?.updates.config as Record<string, unknown>).llmGatewayEnabled).toBe(false);
   });
 
   test('stamps metadata.instanceId from KORTIX_INSTANCE_ID on the row it creates, and the finish write keeps it', async () => {
@@ -612,6 +622,19 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
       expect(mergedMetadata(finishCall?.updates)).not.toHaveProperty('instanceId');
     } finally {
       delete (testConfig as Record<string, unknown>).KORTIX_INSTANCE_ID;
+    }
+  });
+
+  test('a warm (speculative) box asks the provider to keep its region; any other box may fall back', async () => {
+    for (const [metadata, required] of [[{ warm: true }, true], [undefined, false]] as const) {
+      providerCreateOpts = [];
+      const opened = waitFor((resolve) => {
+        onComputeOpened = resolve;
+      });
+      await provisionSessionSandbox({ ...baseOpts(), ...(metadata ? { metadata } : {}) });
+      await opened;
+      expect(providerCreateOpts).toHaveLength(1);
+      expect(providerCreateOpts[0]?.locationRequired).toBe(required);
     }
   });
 
@@ -819,12 +842,12 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(providerCreateCalls).toBe(1);
   });
 
-  test('E2B success records only provider-neutral lifecycle metadata and E2B billing attribution', async () => {
+  test('Platinum success records only provider-neutral lifecycle metadata and Platinum billing attribution', async () => {
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
 
-    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
     await opened;
 
     const finishCall = updateCalls.find(
@@ -832,24 +855,24 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
         call.table === sessionSandboxes && 'externalId' in call.updates && 'config' in call.updates,
     );
     expect(mergedMetadata(finishCall?.updates)).toMatchObject({
-      providerExternalId: 'ext-e2b-1',
-      runtimeArtifact: { provider: 'e2b', artifactType: 'e2b_template' },
+      providerExternalId: 'ext-platinum-1',
+      runtimeArtifact: { provider: 'platinum', artifactType: 'platinum_template' },
     });
     expect(mergedMetadata(finishCall?.updates)).not.toHaveProperty('daytonaSandboxId');
-    expect(computeSessionsOpened[0]).toMatchObject({ provider: 'e2b' });
+    expect(computeSessionsOpened[0]).toMatchObject({ provider: 'platinum' });
   });
 
-  test('an explicitly selected E2B provider never fails over to another provider', async () => {
+  test('an explicitly selected Platinum provider never fails over to another provider', async () => {
     providerFallbackEnabled = true;
-    providerCreateErrors.e2b = 'E2B unavailable';
+    providerCreateErrors.platinum = 'Platinum unavailable';
     const failed = waitFor((resolve) => {
       onProviderEvent = resolve;
     });
 
-    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
     await failed;
 
-    expect(providerNamesRequested).toEqual(['e2b']);
+    expect(providerNamesRequested).toEqual(['platinum']);
     expect(providerCreateCalls).toBe(3);
     expect(
       updateCalls.some(
@@ -858,16 +881,20 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     ).toBe(false);
   });
 
-  test('capacity failure records one attempt and provider-neutral failure metadata', async () => {
-    providerCreateErrors.e2b = '500: Failed to place sandbox';
+  test('an unused project auto-session surfaces terminal provisioning failure', async () => {
+    scenario.projectSessionMetadataAtCheck = { source: 'ui', warm: true };
+    providerCreateErrors.platinum = '500: Failed to place sandbox';
     const failed = waitFor((resolve) => {
       onProviderEvent = resolve;
     });
 
-    await provisionSessionSandbox({ ...baseOpts(), provider: 'e2b' });
+    await provisionSessionSandbox({ ...baseOpts(), provider: 'platinum' });
     await failed;
 
     expect(providerCreateCalls).toBe(1);
+    expect(updateCalls.find((call) =>
+      call.table === projectSessions && call.updates.status === 'failed',
+    )?.updates.error).toBe('The sandbox provider is at capacity right now. Try again in a minute.');
     const terminal = updateCalls.find(
       (call) =>
         call.table === sessionSandboxes &&
@@ -884,7 +911,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
 
   test('automatic selection may use the admin-enabled one-shot provider fallback', async () => {
     providerFallbackEnabled = true;
-    providerCreateErrors.e2b = 'E2B unavailable';
+    providerCreateErrors.platinum = 'Platinum unavailable';
     const opened = waitFor((resolve) => {
       onComputeOpened = resolve;
     });
@@ -893,7 +920,7 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     await provisionSessionSandbox(automaticOpts);
     await opened;
 
-    expect(providerNamesRequested).toEqual(['e2b', 'daytona']);
+    expect(providerNamesRequested).toEqual(['platinum', 'daytona']);
     expect(providerCreateCalls).toBe(4);
     expect(
       updateCalls.some(
@@ -913,6 +940,35 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     expect(removedIds).toEqual([]);
     expect(computeSessionsOpened).toEqual([]);
     expect(recordedEvents).toEqual([]);
+  });
+
+  // KRTX-2064: the provisioner takes the env promise in and only awaits it
+  // after the row insert, the token mint and the provider select. Any throw
+  // in between (the authoritative row conflict here) used to leave the env
+  // rejection with no consumer — an unhandled rejection, which on Bun is
+  // process-fatal (the 2026-10-09 API crash: fail-closed secret grant on a
+  // git auth error while the session boot raced a row conflict). The guard
+  // attaches a no-op catch at promise creation; the real error is still
+  // owned by the awaiting catch below and fails the session there.
+  test('an env build that rejects after the row-conflict throw stays handled, not unhandled', async () => {
+    identityConflict = true;
+    const envFailure = new SecretGrantResolutionError(
+      'kortix',
+      new Error("fatal: Authentication failed for 'https://github.com/example/example.git/'"),
+    );
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await expect(
+        provisionSessionSandbox({ ...baseOpts(), extraEnvVars: Promise.reject(envFailure) }),
+      ).rejects.toMatchObject({ name: 'RuntimeIdentityConflictError' });
+      // Drain microtasks and timers so Bun's unhandled-rejection bookkeeping runs.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onUnhandled);
+    }
   });
 
   test('provider-loss placeholder is reclaimed without inserting a second logical row', async () => {
@@ -1031,60 +1087,5 @@ describe('provisionSessionSandbox — mid-provision delete race', () => {
     );
     expect(preserved?.updates.externalId).toBe(EXTERNAL_ID);
     expect(mergedMetadata(preserved?.updates)).toMatchObject({ stoppedDuringProvisioning: true });
-  });
-});
-
-describe('pi worker pool claim (P1.8)', () => {
-  test('a pi boot tries the parked pool before provider create, gated to daytona', async () => {
-    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
-    const claim = source.indexOf('const pooledClaim =');
-    const create = source.indexOf('retrySandboxProvisionCreate(provider, providerCreateInput', claim);
-    const refill = source.indexOf('void maintainPiWorkerPool()', claim);
-    const externalId = source.indexOf('bgExternalId = result.externalId', claim);
-    expect(claim).toBeGreaterThan(-1);
-    // Claim sits BEFORE the provider create and only for pi worker boots on
-    // daytona; the refill kick fires after either path, before activation.
-    const gate = source.slice(claim, create);
-    expect(gate).toContain("opts.metadata?.pi_worker_boot === true && providerName === 'daytona'");
-    expect(gate).toContain('claimParkedPiWorkerBox(providerCreateInput.envVars ?? {})');
-    expect(create).toBeGreaterThan(claim);
-    expect(refill).toBeGreaterThan(create);
-    expect(externalId).toBeGreaterThan(refill);
-    // A claim failure must NEVER fail the session — it degrades to cold create.
-    expect(gate).toContain('return null');
-  });
-
-  test('a claimed box records the pool path in its provision timeline', async () => {
-    const source = await Bun.file(new URL('./session-sandbox.ts', import.meta.url)).text();
-    const claim = source.indexOf('if (pooledClaim) {');
-    const mark = source.indexOf("tl.mark('pool-claim')", claim);
-    const elseBranch = source.indexOf('} else {', claim);
-    expect(claim).toBeGreaterThan(-1);
-    expect(mark).toBeGreaterThan(claim);
-    expect(mark).toBeLessThan(elseBranch);
-  });
-});
-
-describe('pi worker pool — stale-label hazard', () => {
-  test('reap and claim both re-verify the park label on the direct object', async () => {
-    const source = await Bun.file(new URL('./pi-worker-pool.ts', import.meta.url)).text();
-    // Maintain: every listed box passes verifyStillParked BEFORE the
-    // dead/stale/over-age triage that feeds the reap list.
-    const verify = source.indexOf('async function verifyStillParked');
-    const maintain = source.indexOf('export function maintainPiWorkerPool');
-    const verifyCall = source.indexOf('await verifyStillParked(box.externalId)', maintain);
-    const triage = source.indexOf("state === 'stopped'", maintain);
-    expect(verify).toBeGreaterThan(-1);
-    expect(verifyCall).toBeGreaterThan(maintain);
-    expect(verifyCall).toBeLessThan(triage);
-    // An unknowable box is never reapable.
-    const verifyBody = source.slice(verify, source.indexOf('}', source.indexOf('catch', verify)));
-    expect(verifyBody).toContain('return false');
-    // Claim: the direct object's labels gate the dial.
-    const claim = source.indexOf('export async function claimParkedPiWorkerBox');
-    const gate = source.indexOf("liveLabels[PARK_LABEL] !== '1'", claim);
-    const dial = source.indexOf('/kortix/claim', claim);
-    expect(gate).toBeGreaterThan(claim);
-    expect(gate).toBeLessThan(dial);
   });
 });

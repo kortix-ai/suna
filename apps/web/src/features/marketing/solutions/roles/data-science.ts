@@ -5,7 +5,7 @@ export const dataScience: RoleContent = {
   slug: 'data-science',
   name: 'Data Science',
   navDescription: 'A real machine, a real query, an analysis you can re-run',
-  seoTitle: 'Kortix for data science teams',
+  seoTitle: 'AI agents for data science teams',
   seoDescription:
     'Every Kortix session is a real Linux machine, so an analysis agent can install a package, run the query, and commit the notebook. The analysis lands in the repo as a change request, so it can be re-run.',
 

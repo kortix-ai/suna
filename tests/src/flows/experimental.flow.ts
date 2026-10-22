@@ -2,7 +2,7 @@
  * Feature flags — the unified per-project flag surface. Maps to spec §EXP-*.
  *
  * `PATCH /v1/projects/:projectId/features {feature, enabled}` is the canonical
- * write path for opting a project into a flag (agent_tunnel, apps, …);
+ * write path for opting a project into a flag (connectors_api_discover, apps, …);
  * `PATCH /v1/projects/:projectId/experimental` is the deprecated alias published
  * SDKs still call, registered on the SAME handler. State is DB-only
  * (projects.metadata.experimental — a stable storage detail). The response is
@@ -28,12 +28,12 @@ flow(
   async (ctx) => {
     const p = await ctx.fixtures.project();
 
-    await ctx.step('OWNER enables agent_tunnel via /features → 200 + catalog in body', async () => {
+    await ctx.step('OWNER enables connectors_api_discover via /features → 200 + catalog in body', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'agent_tunnel', enabled: true },
+          { feature: 'connectors_api_discover', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status(200).body().exists('$.experimental_features').exists('$.experimental');
@@ -44,7 +44,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'agent_tunnel', enabled: false },
+          { feature: 'connectors_api_discover', enabled: false },
           { params: { projectId: p.id } },
         );
       r.status(200).body().exists('$.experimental_features').exists('$.experimental');
@@ -55,10 +55,51 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/features',
-          { feature: 'agent_tunnel', enabled: null },
+          { feature: 'connectors_api_discover', enabled: null },
           { params: { projectId: p.id } },
         );
       r.status(200);
+    });
+
+    await ctx.step('agent_tunnel graduated (computers need no flag) → 400 unknown feature', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'agent_tunnel', enabled: true },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+
+    await ctx.step('pi_worker withdrawn (pi runs only in the sandbox) → 400, absent from the catalog', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'pi_worker', enabled: true },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+      const project = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/features',
+          { feature: 'pi_harness', enabled: null },
+          { params: { projectId: p.id } },
+        );
+      project.status(200);
+      const body = project.json<{
+        experimental: Record<string, boolean>;
+        experimental_features: Array<{ key: string }>;
+      }>();
+      if ('pi_worker' in body.experimental) throw new Error('experimental still carries pi_worker');
+      if (body.experimental_features.some((f) => f.key === 'pi_worker')) {
+        throw new Error('the catalog still lists pi_worker');
+      }
+      if (!body.experimental_features.some((f) => f.key === 'pi_harness')) {
+        throw new Error('the catalog lost pi_harness');
+      }
     });
 
     await ctx.step('unknown feature → 400', async () => {
@@ -77,7 +118,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'apps', enabled: 'yes' },
+          { feature: 'monitors', enabled: 'yes' },
           { params: { projectId: p.id } },
         );
       r.status(400);
@@ -88,7 +129,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'apps', enabled: true },
+          { feature: 'monitors', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
@@ -99,7 +140,7 @@ flow(
         .as(ctx.P.ANON)
         .patch(
           '/v1/projects/:projectId/experimental',
-          { feature: 'apps', enabled: true },
+          { feature: 'monitors', enabled: true },
           { params: { projectId: p.id } },
         );
       r.status(401);

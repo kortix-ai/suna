@@ -45,9 +45,9 @@ test('the older window is requested with the cursor the previous window left', a
 	expect(result?.next_cursor).toBe('msg_older');
 });
 
-test('it does not send history=true, which would 403 a pre-flag mirror', async () => {
-	// `history=true` gates on `session_transcript_history`. Sessions captured
-	// before the flag existed still have rows; paging them must not require it.
+test('it does not send history=true; the root guard runs client-side', async () => {
+	// `history=true` only adds the server's current-root check, which
+	// `shouldHydrateFromMirror` already applies to every window.
 	next = { status: 200, body: envelope() };
 	await loadOlderSessionTranscriptMirror({ kortixSessionScope: 'p1/s1', before: 'msg_tail' });
 	expect(calls[0]).not.toContain('history=');

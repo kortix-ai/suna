@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 
-import { buildInitialPromptBody, resolveOpencodeModel } from '../harness/open-code/boot'
+import { buildInitialPromptBody, resolveOpencodeModel } from '@/harness/open-code/boot'
 
 const ORIGINAL_MODEL = process.env.KORTIX_OPENCODE_MODEL
 const ORIGINAL_LLM_BASE_URL = process.env.KORTIX_LLM_BASE_URL
@@ -22,37 +22,15 @@ afterEach(() => {
 })
 
 describe('resolveOpencodeModel', () => {
-  // Native mode: no gateway env at all. Ambient KORTIX_LLM_* in the shell or a
-  // prior test would silently switch these rows to gateway mode.
-  test.each([
-    ['a prefixed OpenCode Zen model', 'opencode/deepseek-v4-flash-free', { providerID: 'opencode', modelID: 'deepseek-v4-flash-free' }],
-    ['a bare OpenCode Zen id', 'deepseek-v4-flash-free', { providerID: 'opencode', modelID: 'deepseek-v4-flash-free' }],
-    ['a provider/model override', 'anthropic/claude-sonnet-4-6', { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' }],
-    // A pin stored while the gateway was ON can survive a live toggle to
-    // native mode: a nested ref unwraps to the provider it wraps.
-    ['a stale kortix/<provider>/<model> pin', 'kortix/anthropic/claude-sonnet-4-6', { providerID: 'anthropic', modelID: 'claude-sonnet-4-6' }],
-  ])('native mode resolves %s', (_name, model, expected) => {
-    delete process.env.KORTIX_LLM_BASE_URL
-    delete process.env.KORTIX_LLM_PROXY_URL
-    process.env.KORTIX_OPENCODE_MODEL = model
-
-    expect(resolveOpencodeModel()).toEqual(expected)
-  })
-
-  test('native mode drops a stale bare kortix/<managed-id> pin', () => {
-    // A bare managed id has no native provider; OpenCode's own default applies
-    // instead of a prompt against the nonexistent `kortix` provider.
-    delete process.env.KORTIX_LLM_BASE_URL
-    delete process.env.KORTIX_LLM_PROXY_URL
-    process.env.KORTIX_OPENCODE_MODEL = 'kortix/glm-5.3-flash'
-
+  test('no session model resolves to none', () => {
+    delete process.env.KORTIX_OPENCODE_MODEL
     expect(resolveOpencodeModel()).toBeUndefined()
   })
 
-  // Gateway mode keeps the whole wire ref as the Kortix model id: `codex` read
-  // as an OpenCode provider answers ModelNotFound.
-  test.each(['codex/gpt-5.6-sol', 'anthropic/claude-sonnet-4-6'])(
-    'gateway mode routes the wire model %j through the Kortix provider',
+  // The whole wire ref is the Kortix model id: `codex` read as an OpenCode
+  // provider answers ModelNotFound.
+  test.each(['codex/gpt-5.6-sol', 'anthropic/claude-sonnet-4-6', 'deepseek-v4-flash-free'])(
+    'routes the wire model %j through the Kortix provider',
     (model) => {
       delete process.env.KORTIX_LLM_PROXY_URL
       process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
@@ -74,7 +52,7 @@ describe('resolveOpencodeModel', () => {
     })
   })
 
-  test('accepts an explicit Kortix OpenCode model reference in gateway mode', () => {
+  test('accepts an explicit Kortix OpenCode model reference', () => {
     process.env.KORTIX_LLM_PROXY_URL = 'http://127.0.0.1:4319'
     process.env.KORTIX_OPENCODE_MODEL = 'kortix/codex/gpt-5.6-sol'
 
@@ -93,6 +71,21 @@ describe('buildInitialPromptBody', () => {
       messageID: 'msg_initial_turn',
       parts: [{ type: 'text', text: 'Run for 90 seconds.' }],
     })
+  })
+
+  test('delivers the session contract as a synthetic part beside the user prompt', () => {
+    delete process.env.KORTIX_OPENCODE_MODEL
+    process.env.KORTIX_AGENT_NAME = 'default'
+    const body = buildInitialPromptBody(
+      'Reply with the single word pong.',
+      'msg_initial_turn',
+      '--- session contract ---',
+    )
+    expect(body.messageID).toBe('msg_initial_turn')
+    expect(body.parts).toEqual([
+      { type: 'text', text: 'Reply with the single word pong.' },
+      { type: 'text', text: '--- session contract ---', synthetic: true },
+    ])
   })
 
   test('applies the session model and concrete selected agent to an automated first turn', () => {

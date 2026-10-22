@@ -21,6 +21,7 @@ function reapResult(overrides: Partial<ReapResult> = {}): ReapResult {
     husksFinalized: 0,
     turnsSettled: 0,
     errors: 0,
+    transient: 0,
     ...overrides,
   };
 }

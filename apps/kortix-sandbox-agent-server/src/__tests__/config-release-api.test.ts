@@ -3,7 +3,7 @@
  * validation, and the archive download (one redirect, no bearer to storage,
  * size cap). Real archives from a real repository; a fake API over HTTP.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -13,8 +13,13 @@ import {
   downloadConfigArchive,
   fetchConfigReleaseDescriptor,
     type ConfigReleaseApi,
-} from '../config-release/api-client'
-import { parseConfigReleaseDescriptor } from '../config-release/descriptor'
+} from '@/services/config-provider/api-client'
+import { MAX_CONFIG_ARCHIVE_BYTES, parseConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
+import {
+  SESSION_TOKEN_DEAD_TRIP_THRESHOLD,
+  resetSessionTokenHealthForTests,
+  sessionTokenPresumedDead,
+} from '@/lib/kortix-api/session-token-health'
 import {
   buildRelease,
   commitAll,
@@ -48,17 +53,25 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true })
 })
 
+beforeEach(() => {
+  resetSessionTokenHealthForTests()
+})
+
+afterEach(() => {
+  resetSessionTokenHealthForTests()
+})
+
 describe('fetchConfigReleaseDescriptor', () => {
-  test('posts an empty request with the sandbox bearer and returns the validated descriptor', async () => {
-    // The request has no inputs: the desired release is always the base
-    // branch's current one, and nothing the box sends can change it.
+  test('asks for v3 with the sandbox bearer and returns the validated descriptor', async () => {
+    // The request has no inputs that pick the release: the desired release is
+    // always the base branch's current one. The body only asks for v3.
     serveRelease(api, release)
     const descriptor = await fetchConfigReleaseDescriptor(client)
     expect(descriptor).toEqual(release.descriptor)
     const last = api.descriptorRequests.at(-1)!
     expect(last.path).toBe('/v1/projects/proj-1/sessions/ses-1/config-release')
     expect(last.authorization).toBe('Bearer tok')
-    expect(last.body).toEqual({})
+    expect(last.body).toEqual({ accept: ['config-release-v3'], capabilities: ['agent-config.env-gz.v1'] })
   })
 
   test('accepts an API URL without the /v1 suffix', async () => {
@@ -83,6 +96,22 @@ describe('fetchConfigReleaseDescriptor', () => {
   test('a malformed descriptor is refused before any field is used', async () => {
     api.respond({ status: 200, json: { ...release.descriptor, release_id: 'not-hex' } })
     await expect(fetchConfigReleaseDescriptor(client)).rejects.toThrow(/release_id/)
+  })
+
+  test('a dead-session-token 401 reports to the shared breaker, and a 2xx clears it', async () => {
+    // KRTX-613: this client is the daemon's config-release path. It must feed
+    // the one signal built for `401 Session token is not active`, so the
+    // runtime-truth tick can stop re-issuing a request the API can never accept.
+    for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+      api.respond({ status: 401, json: { error: true, message: 'Session token is not active', status: 401 } })
+      await fetchConfigReleaseDescriptor(client).catch(() => {})
+    }
+    expect(sessionTokenPresumedDead()).toBe(true)
+
+    // A rotated credential answers again; the same response type clears it.
+    serveRelease(api, release)
+    await fetchConfigReleaseDescriptor(client)
+    expect(sessionTokenPresumedDead()).toBe(false)
   })
 })
 
@@ -112,9 +141,9 @@ describe('parseConfigReleaseDescriptor', () => {
     }
   })
 
-  test('refuses an archive larger than 4 MiB and a non-literal config dir', () => {
+  test('refuses an archive larger than the cap and a non-literal config dir', () => {
     const big = valid()
-    big.archive!.bytes = 4 * 1024 * 1024 + 1
+    big.archive!.bytes = MAX_CONFIG_ARCHIVE_BYTES + 1
     expect(() => parseConfigReleaseDescriptor(big)).toThrow()
     const magic = valid()
     magic.config_dir = ':(top)*'
@@ -134,6 +163,26 @@ describe('parseConfigReleaseDescriptor', () => {
 
   test('governance and its etag are both set or both null', () => {
     expect(() => parseConfigReleaseDescriptor({ ...valid(), compiled_governance_etag: null })).toThrow(/both/)
+  })
+
+  // v3: a tree over the API's archive cap keeps its release and has no
+  // archive. A v2 daemon read `archive: null` as governance only, so v2 keeps
+  // refusing that shape.
+  test('a v3 tree release may have no archive; a v2 one may not', () => {
+    const snapshot = { url: 'https://bucket.example/o/r.tree.tar.gz?X-Amz-Signature=s', sha256: 'a'.repeat(64), bytes: 40 << 20, entries: 9, expires_at: '2026-10-08T12:00:00Z' }
+    const v3 = parseConfigReleaseDescriptor({ ...valid(), format: 'config-release-v3', archive: null, snapshot })
+    expect(v3.files).toEqual(release.descriptor.files)
+    expect(v3.snapshot).toEqual(snapshot)
+    expect(parseConfigReleaseDescriptor({ ...valid(), format: 'config-release-v3', archive: null }).snapshot).toBeNull()
+    expect(() => parseConfigReleaseDescriptor({ ...valid(), archive: null })).toThrow(/v2 tree release needs its archive/)
+  })
+
+  test('refuses a snapshot without files, files without a release, and a snapshot URL that is not http(s)', () => {
+    const snapshot = { url: 'https://bucket.example/x', sha256: 'a'.repeat(64), bytes: 1, entries: 1, expires_at: 'x' }
+    const v3 = { ...valid(), format: 'config-release-v3' }
+    expect(() => parseConfigReleaseDescriptor({ ...v3, archive: null, files: null, snapshot })).toThrow(/snapshot needs its files/)
+    expect(() => parseConfigReleaseDescriptor({ ...v3, archive: null, release_id: null })).toThrow(/files need a release_id/)
+    expect(() => parseConfigReleaseDescriptor({ ...v3, snapshot: { ...snapshot, url: 'file:///etc/passwd' } })).toThrow(/snapshot.url/)
   })
 })
 

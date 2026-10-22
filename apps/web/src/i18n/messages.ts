@@ -30,7 +30,23 @@ const LOADERS: Record<Locale, () => Promise<{ default: unknown }>> = {
 
 const pending = new Map<Locale, Promise<Messages>>();
 
+/**
+ * `next dev` re-imports on every call. The bundler hot-reloads the JSON
+ * module when a catalog is saved, but this process-wide cache would keep
+ * serving the copy from the first request — a key added mid-session rendered
+ * as its raw path until the server restarted. Production caches as before.
+ */
+const LIVE_CATALOGS = process.env.NODE_ENV === 'development';
+
 export function loadMessages(locale: Locale): Promise<Messages> {
+  if (LIVE_CATALOGS) {
+    return LOADERS[locale]().then((module) => {
+      const messages = module.default as Messages;
+      // Still published: the client provider seeds its SSR render from here.
+      serverMessagesRegistry()[locale] = messages;
+      return messages;
+    });
+  }
   const cached = serverMessagesRegistry()[locale];
   if (cached) return Promise.resolve(cached);
   let promise = pending.get(locale);

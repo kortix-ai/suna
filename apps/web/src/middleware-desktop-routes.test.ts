@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { NextRequest } from 'next/server';
+
+import { middleware } from './middleware';
 
 const source = readFileSync(join(import.meta.dir, 'middleware.ts'), 'utf8');
 // apps/web/src -> apps/desktop-electron/src/nav-rules.js, the Electron shell's
@@ -58,5 +61,36 @@ describe('desktop route allowlist', () => {
       source.indexOf('const DESKTOP_ALLOWED_ROUTES'),
     );
     expect(publicList).not.toContain("'/new'");
+  });
+});
+
+describe('desktop site root', () => {
+  const desktopRequest = (path: string) =>
+    new NextRequest(
+      new Request(`https://dev.kortix.com${path}`, {
+        headers: { 'user-agent': 'Mozilla/5.0 KortixDesktop/0.1.0' },
+      }),
+    );
+
+  // The shell launches at `/`. It must reach the identity-aware `/` redirect
+  // (the remembered project for a signed-in user, as on web), not the
+  // identity-blind gate bounce. Signed out, both end at the landing door.
+  test('a signed-out desktop `/` lands on the door, never the list or marketing', async () => {
+    const response = await middleware(desktopRequest('/'));
+    expect(response.status).toBe(307);
+    expect(response.headers.get('location')).toBe('https://dev.kortix.com/projects/start');
+  });
+
+  test('desktop `/` passes the gate to the remembered-project redirect', () => {
+    const gate = source.slice(source.indexOf("includes('KortixDesktop')) {"));
+    expect(gate.slice(0, gate.indexOf('if (!isAllowed)'))).toContain("pathname === '/' ||");
+    expect(source).toContain(
+      "if (pathname === '/' && user) {\n    return finalizeEnvironmentAccess(\n      redirectPreservingSession(new URL(defaultLandingPath",
+    );
+  });
+
+  test('other marketing paths still bounce to the door', async () => {
+    const response = await middleware(desktopRequest('/pricing'));
+    expect(response.headers.get('location')).toBe('https://dev.kortix.com/projects/start');
   });
 });

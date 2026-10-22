@@ -1,21 +1,24 @@
 ---
 name: kortix-social
-description: Writes platform-native social content — LinkedIn posts, Twitter/X threads, carousels, Instagram/TikTok/Reels/Shorts video scripts, content calendars — and repurposes one long-form piece into many. Use when the user asks for a "LinkedIn post," "Twitter thread," "carousel," "social calendar," "what should I post," "repurpose this," "video hook," "reel," "short-form video," or to grow/strategize a social presence.
+description: "Recipe: write platform-native social content for Kortix (LinkedIn posts, X threads, carousels, Instagram, TikTok, Reels and Shorts video scripts, content calendars) and repurpose one long-form piece into many. Load kortix-brand first for voice, positioning and claims. This skill covers platform mechanics: limits, hooks, cadence, repurposing. Use when the user asks for a LinkedIn post, Twitter or X thread, carousel, social calendar, \"what should I post\", \"repurpose this\", a video hook, a reel or short-form video."
 ---
 
 # Social Content
 
-Turn product context into scroll-stopping, platform-native content — and turn one piece of content into many. This skill writes the words and the scripts; it hands visual production to `kortix-image`.
+Turn product context into platform-native content, and turn one piece of content into many. This skill writes the posts and the scripts. It hands visual production to `kortix-image`.
+
+**Load [`kortix-brand`](../kortix-brand/SKILL.md) first.** It owns voice, positioning, claims and the words not to say. This file owns platform mechanics only.
 
 ## Before writing
 
-Read the shared context first, then write — don't interrogate.
+Read the kit, then write. Do not interrogate.
 
-1. **Product context** — read `/product-marketing.md`. Reuse audience, personas, customer language, proof points, and goals from it. If it's missing, you can still work, but suggest setting it up via the `product-marketing` skill so every post stays on-product.
-2. **Voice & messaging** — read [`../comms/SKILL.md`](../comms/SKILL.md) for tone, positioning, and canonical terminology before writing any copy. It governs *what* you say.
-3. **Visuals** — for carousels, quote graphics, thumbnails, or video covers, don't describe pixels here — hand the brief to [`../kortix-image/SKILL.md`](../kortix-image/SKILL.md) (which honors `brand-guidelines`).
+1. **Voice and vocabulary.** [`voice-and-tone.md`](../kortix-brand/references/verbal/voice-and-tone.md), section 5.9 (Social), and the don't-say list.
+2. **Positioning and audience.** [`positioning.md`](../kortix-brand/references/verbal/positioning.md): the approved lines and the pitch for the audience.
+3. **Claims.** [`claims.md`](../kortix-brand/references/verbal/claims.md). A post makes only a sanctioned claim. Never name a customer.
+4. **Visuals.** For carousels, quote graphics, thumbnails or video covers, hand the brief to [`kortix-image`](../kortix-image/SKILL.md). Do not describe pixels here.
 
-Only ask for what the context doesn't cover: the **goal** (awareness / leads / traffic / community), **platform(s)**, the **action** you want readers to take, and whether it's **personal or company** brand. Default sensibly from the context rather than asking.
+Ask only for what the kit does not cover: the **goal** (awareness, leads, traffic, community), the **platform**, the **action** you want from readers, and whether the voice is personal or company. Default from the kit.
 
 ## Routing
 
@@ -42,7 +45,7 @@ Two distribution rules that apply almost everywhere: **first-hour engagement dec
 
 Every post is **one hook + one idea + one action**. The first line earns the second.
 
-- **Hook first.** Pick a hook type to the goal — curiosity, story, value, or contrarian. Library in [`references/post-templates.md`](references/post-templates.md). If reach is flat, the hook is almost always the cause; test new hooks before anything else.
+- **Hook first.** Pick a hook type to the goal: curiosity, story, value or contrarian. A hook states a mechanism or a fact. It does not use a banned hype word, and "contrarian" never means an attack on a named product. Library in [`references/post-templates.md`](references/post-templates.md). If reach is flat, the hook is almost always the cause; test new hooks before anything else.
 - **One idea per post.** Don't pack a thread's worth of value into a single post — split it.
 - **Standalone.** The reader has no prior context. A repurposed clip's caption must work even if they never saw the source.
 - **One clear action.** A question, a save, a "link in comments" — never two.
@@ -94,8 +97,7 @@ When stuck, generate from the pillars, not from a blank page: repurpose a past h
 - [`references/short-form-video.md`](references/short-form-video.md) — video hook library, scripting template, structures
 - [`references/platform-limits.md`](references/platform-limits.md) — character counts, hashtag limits, "see more" thresholds
 
-## Related skills
+## Related
 
-- **product-marketing** — owns the shared `/product-marketing.md` context this skill reads first
-- **comms** — voice, positioning, and approved terminology for all copy
-- **kortix-image** — produces the carousels, graphics, thumbnails, and video covers
+- **[`kortix-brand`](../kortix-brand/SKILL.md)** owns voice, positioning, claims and terminology for all copy.
+- **[`kortix-image`](../kortix-image/SKILL.md)** produces the carousels, graphics, thumbnails and video covers.

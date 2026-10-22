@@ -1,77 +1,462 @@
 ---
-title: Agents
-description: An agent is a markdown file that OpenCode runs; the manifest only governs its access.
+title: "Agents & permissions"
+description: "Define an agent's behavior, skills and harness, give it access to connectors, secrets and Apps, and understand exactly what it is allowed to do."
 ---
 
-An agent is a markdown file that defines how OpenCode acts in a
-[session](/docs/work/sessions). This page covers agent files, skills, and
-how a session picks an agent.
+An agent is a system prompt, a model and tool rules that a [session](/docs/work/sessions) runs, plus grants that decide which connectors, secrets, skills, Apps and Kortix permissions it may use.
 
-## OpenCode runs every session
+## What an agent is
 
-OpenCode, the open-source coding-agent runtime, runs every session. The
-`kortix-agent` daemon starts it as `opencode serve`, with its config
-directory pointed at the project's `.kortix/opencode/` folder.
+An agent has two halves:
 
-## An agent is two files
+- **Behavior.** The prompt, the model, the mode, and the `permission` rules for its tools.
+- **Governance.** The grants: connectors, secrets, skills, Apps, Kortix permissions and tools. Governance always lives in `kortix.yaml`.
 
-Each agent has two parts:
+Where behavior lives depends on the manifest's `kortix_version`:
 
-- **Behavior** — a markdown file at `.kortix/opencode/agents/<name>.md`. Its
-  frontmatter sets the model, mode, and tools. Its body is the system prompt.
-- **Governance** — an entry in `kortix.yaml`'s `agents` map, keyed by the same
-  name. It sets what the agent may access on Kortix: connectors, secrets,
-  skills, Apps, and Kortix permissions.
-  The map can live in a file the manifest lists under
-  [`imports:`](/docs/project/manifest#imports); `default_agent` stays in `kortix.yaml`.
+| `kortix_version` | Behavior | Governance |
+| --- | --- | --- |
+| `2` (new projects) | `agents/<name>.md`: frontmatter plus a body that is the system prompt | the `agents.<name>` block in `kortix.yaml` |
+| `3` | inline in the same `agents.<name>` block | the `agents.<name>` block in `kortix.yaml` |
 
-The manifest never sets a prompt, mode, or tool. The `.md` file never sets
-platform access. See [the manifest reference](/docs/project/manifest) for
-every governance field.
+To add an agent from the dashboard, open **Customize → Agents → New**. **Create in chat** starts a session that writes the agent with you. **Set up manually** opens the project files. You can also commit the files with any [git client](/docs/git).
 
-## Governance is deny-by-default
+<Tabs>
+<Tab title="v2: file + block">
 
-An agent with no `connectors`, `secrets`, `skills`, `apps`, or `kortix_permissions` key gets
-none of that access. `apps` lists the [Kortix Apps](/docs/feature-flags/apps#agents-and-apps)
-the agent may open when an App is restricted or private. This grant is the second of the two bindings: the agent
-also holds a role as a `service_account` principal — its ceiling — and a
-session can only do what both allow. See
-[Agent permissions](/docs/project/permissions) and
-[One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). Set a field to `all` to grant full access, or list
-specific names. `default_agent` in `kortix.yaml` names the agent a session
-starts when you request no agent.
+`agents/support.md`:
 
-Set each grant from the dashboard — Customize → Agents → the agent, one page
-per grant set on the Access rail: Skills, Connectors, Secrets, Apps, Kortix
-permissions — or from the CLI with `kortix agents scope <agent>`
-(`--secrets`, `--connectors`, `--apps`). The Apps page appears only when the
-project has the [Apps](/docs/feature-flags/apps) feature flag on. Every path
-writes the same `agents.<name>` block in `kortix.yaml`.
+```markdown
+---
+description: Answers support tickets from the help desk.
+mode: primary
+permission:
+  bash: ask
+---
 
-Legacy `kortix.toml` (v1) projects list agents in an array, not a map, and
-grant full access by default. Set specific grants to restrict access. See
-[the manifest reference](/docs/project/manifest).
+You answer support tickets. Read the ticket, check the order history,
+draft a reply, and submit it for review. Never close a ticket yourself.
+```
 
-## Skills give an agent know-how
+`kortix.yaml`:
 
-A skill is a markdown file at `.kortix/opencode/skills/<name>/SKILL.md`.
-OpenCode loads a skill on demand when the agent calls it — Kortix does not
-inject skills into every prompt. An agent's `skills` grant in `kortix.yaml`
-controls which skills it may load.
+```yaml
+kortix_version: 2
+default_agent: support
+agents:
+  support:
+    file: agents/support.md
+    connectors: [helpdesk]
+    secrets: [HELPDESK_API_KEY]
+    skills: [kortix-cli, triage]
+    kortix_permissions: [project.session.read, project.review.submit]
+```
 
-## How a session picks its agent
+</Tab>
+<Tab title="v3: one block">
 
-Creating a session accepts an `agent_name`. Kortix starts that agent for the
-session. If you omit `agent_name`, Kortix uses the project's `default_agent`.
-Set the default agent from the dashboard, the API, or the SDK. Each writes
-`default_agent` to `kortix.yaml` and commits the change to the project's
-default branch.
+```yaml
+kortix_version: 3
+default_agent: support
+agents:
+  support:
+    description: Answers support tickets from the help desk.
+    mode: primary
+    prompt_file: prompts/support.md
+    permission:
+      bash: ask
+    connectors: [helpdesk]
+    secrets: [HELPDESK_API_KEY]
+    skills: [kortix-cli, triage]
+    kortix_permissions: [project.session.read, project.review.submit]
+```
 
-An agent acts as itself: its Kortix permissions within its ceiling role,
-whoever runs it. Starting a session does not lend the agent your own role.
-See [Agent permissions](/docs/project/permissions).
+Set the prompt with `prompt` (inline text) or `prompt_file` (a repo-relative `.md` file), not both. A v3 manifest rejects `file`, `disable`, and the top-level `opencode:` key. The dashboard agent editor and `kortix agents scope`, `config` and `default` work only on a v2 manifest. Edit a v3 agent in `kortix.yaml`.
 
-New or changed agents and skills reach future sessions only after a
-[change request](/docs/work/change-requests) merges them into the default
-branch. Connect external tools before an agent can use them; see
-[Connectors](/docs/connect/connectors).
+</Tab>
+</Tabs>
+
+Rules for both versions:
+
+- An agent name is 1 to 128 characters: lowercase letters, digits, `-` and `_`, starting with a letter or digit.
+- The manifest declares at least one agent and sets `default_agent`.
+- In v2, a behavior key (`model`, `mode`, `prompt`, `permission`, …) in the `kortix.yaml` block is an error. Put it in the agent file.
+- In v2, `file` names the agent file. Without it, Kortix reads `agents/<name>.md`. The API does not change `file`: to move an agent, move the file and update `file` in the same commit. The full path rules are in [the `kortix.yaml` reference](/docs/project/manifest#agents).
+
+<Callout type="info">
+Grants are deny-by-default. An agent with no `connectors`, `secrets`, `apps` or `kortix_permissions` key gets none of them. Two keys differ: an omitted `tools` grants every tool, and an omitted `skills` leaves skill access to the agent's own `permission` rules.
+</Callout>
+
+An agent change takes effect when it lands on the project's default branch. New sessions start with it, and running sessions reload it. See [How a change takes effect](/docs/project#how-a-change-takes-effect).
+
+## The agent file
+
+The agent file holds a v2 agent's behavior: YAML frontmatter, then a body that is the system prompt. Every field is optional, so a stock OpenCode agent file is valid as is. A v3 block takes the same fields, except `disable`.
+
+| Field | Value | Effect |
+| --- | --- | --- |
+| `description` | string | What the agent does. Agent lists show it, and a parent agent reads it to pick a subagent. |
+| `model` | model id | The model the agent runs on. See [Models](/docs/project/models). |
+| `mode` | `primary`, `subagent`, `all` | `primary`: a session runs it. `subagent`: another agent starts it with the `task` tool. `all`: both. |
+| `variant` | string | The model's thinking-effort variant. See [Thinking effort](/docs/project/models#thinking-effort). |
+| `temperature` | number | Sampling temperature. |
+| `top_p` | number | Nucleus sampling. |
+| `steps` | positive integer | The most model steps one turn may take. |
+| `hidden` | boolean | `true` hides the agent from agent menus. |
+| `disable` | boolean | `true` turns the agent off. `enabled: false` in `kortix.yaml` turns it off whatever this field says. |
+| `options` | object | Provider options for the model request. pi ignores it. |
+| `color` | `#RRGGBB`, or `primary`, `secondary`, `accent`, `success`, `warning`, `error`, `info` | The agent's color in OpenCode's terminal client. pi ignores it. |
+| `permission` | action or object | Which tools run, ask or are refused. See [Ask, allow or deny](#ask-allow-or-deny). |
+
+Two names are errors, with a pointer to the replacement:
+
+- `tools`: use `permission`, or the `tools` grant in `kortix.yaml` (see [Tools](/docs/project/tools#give-each-agent-its-tools)).
+- `maxSteps`: use `steps`.
+
+Both harnesses also add the repository's root `AGENTS.md` to every agent's instructions. When the root has no `AGENTS.md`, they read `CLAUDE.md`.
+
+Edit behavior in **Customize → Agents →** the agent → **Basics** and **Model**, or from the CLI. `behavior.<field>` writes the agent file's frontmatter, and `behavior.prompt` writes its body:
+
+```bash
+kortix agents config support --set behavior.mode=primary
+kortix agents config support --set behavior.temperature=0.2
+```
+
+## Ask, allow or deny
+
+`permission` decides what the agent does without a person. Each rule resolves to one action:
+
+| Action | Result |
+| --- | --- |
+| `allow` | The tool runs. |
+| `ask` | The turn waits until a person approves or rejects the call. See [Questions, permissions and approvals](/docs/work/sessions#questions-permissions-and-approvals). |
+| `deny` | The call is refused. A tool whose rule denies every call is removed from the agent's tool list. |
+
+`permission` is a bare action for every tool, or an object keyed by tool:
+
+- `read`, `edit`, `glob`, `grep`, `list`, `bash`, `task`, `external_directory`, `lsp` and `skill` take an action or a map of pattern to action.
+- `todowrite`, `question`, `webfetch`, `websearch` and `doom_loop` take a bare action only.
+- Any other key is a tool name and passes through to the harness.
+- A tool with no rule is allowed.
+
+A pattern is matched against the command line for `bash`, the skill name for `skill`, the subagent name for `task`, and the file path for the file tools. `*` matches any text and `?` matches one character. A pattern that ends in ` *` also matches the bare command: `git diff *` matches `git diff`.
+
+**The most specific rule wins, on OpenCode and on pi, whatever order the keys are written in.**
+
+- The longest matching pattern wins, so `"*"` is the fallback wherever it sits. Two patterns of equal length: the later one in code-unit order wins.
+- The same rule picks between keys: `bash: ask` outranks `"*": allow`. A tool whose pattern map matches nothing falls back to the `"*"` key.
+- An agent's own `permission` outranks the project-wide one in `opencode.jsonc`.
+
+This agent asks before any shell command, runs read-only git commands freely, and never deletes recursively:
+
+```yaml
+permission:
+  edit: allow
+  bash:
+    "*": ask
+    "git status": allow
+    "git diff *": allow
+    "git log *": allow
+    "rm -rf *": deny
+  webfetch: ask
+```
+
+- The starter agents use `permission: allow`. Each session runs in its own sandbox on its own branch.
+- `bash: deny` also denies the terminal tools (`pty_*`), and `edit: deny` also denies `memory`, unless the agent sets a rule for those tools.
+- On OpenCode, `harnesses/opencode/opencode.jsonc` can set a project-wide `permission`. The starter sets `"permission": "allow"`.
+
+## Skills
+
+A skill is a folder of instructions an agent loads when a task needs it. Kortix does not put skill bodies in every prompt.
+
+```markdown
+---
+name: triage
+description: Classify a support ticket by product area and urgency. Use for every new ticket.
+---
+
+# Triage
+
+1. Read the ticket and the customer's last three tickets.
+2. ...
+```
+
+- The file is `skills/<name>/SKILL.md`. Reference files can sit beside it.
+- `description` is what the agent reads to decide when to load the skill. Write when to use it, not only what it is.
+- On OpenCode the agent loads a skill with the `skill` tool. On pi the system prompt lists each granted skill's name and description, and the agent reads the file.
+- Create one in **Customize → Skills → New**: **Create in chat**, or **Create with a form**, which commits a `SKILL.md` to the default branch.
+
+**Which skills an agent may load.** The agent's `skills` grant compiles onto its `permission.skill` rule:
+
+| `skills` | `permission.skill` |
+| --- | --- |
+| `all` | `allow` |
+| `none` or `[]` | `deny` |
+| a list | each listed skill `allow`, every other skill `deny` |
+| omitted | unchanged: the agent file's own rule decides, and no rule allows every skill |
+
+When `skills` is set, it replaces any `permission.skill` rule in the agent file.
+
+**Where skills come from.** A session looks in these directories, in order. The first skill of a name wins.
+
+1. The managed `kortix-*` skills.
+2. `skills/`.
+3. `.kortix/opencode/skills/` (older projects).
+
+pi also reads `harnesses/pi/skills/` after these.
+
+**Managed skills.** Kortix copies 12 skills into every session when it boots: `kortix-cli`, `kortix-apps`, `kortix-computer`, `kortix-connectors`, `kortix-drives`, `kortix-harness-refinement`, `kortix-marketplace`, `kortix-memory`, `kortix-onboarding`, `kortix-slack`, `kortix-system` and `kortix-teams`. They overwrite a project copy of the same name, so a project cannot override them. A new project commits only `skills/kortix-cli`. Git ignores the others in the session. A `skills` list must name each `kortix-*` skill the agent needs.
+
+Read the managed skills from any terminal. The signed-in host serves them, so they match that host's version:
+
+```bash
+kortix system-skills                          # list them
+kortix system-skills get kortix-system --full # one skill with every reference file
+kortix system-skills file kortix-system <path>   # one reference file
+kortix system-skills path kortix-cli          # the skill's folder on disk
+```
+
+`kortix skills` is an alias. Optional skills come from the marketplace (`kortix marketplace list --type skill`). See [Install from the marketplace](/docs/project#install-from-the-marketplace).
+
+Sessions read only the directories in the list above, not `.claude/` or `.agents/`. In a local checkout, `kortix init` links the coding tools you pick to the project's folders: `.agents/skills`, `.opencode`, `.claude/skills`, `.claude/agents`, `.claude/commands` and `.pi/skills`. For Codex, pi and Cursor it also writes a root `AGENTS.md` pointer. Git ignores all of them.
+
+## Give an agent access
+
+Each grant in `agents.<name>` unlocks one kind of resource:
+
+| Grant | Lists | Omitted | Unlocks |
+| --- | --- | --- | --- |
+| `connectors` | connector slugs | none | Calls to those [connectors](/docs/connect/connectors#share-accounts-and-give-agents-access). |
+| `secrets` | secret identifiers | none | Those [secrets](/docs/project/secrets#which-agents-receive-it) in the sandbox and through the secrets API. |
+| `skills` | skill names | the agent file decides | Loading those skills. See [Skills](#skills). |
+| `apps` | App slugs | none | Opening those [Apps](/docs/apps#agents-and-apps) when their access is restricted or private. The agent also needs `project.app.read`. |
+| `kortix_permissions` | `project.*` permissions | none | Kortix CLI, API and git actions. See [What an agent may do](#what-an-agent-may-do). |
+| `tools` | tool names, or `exclude: [...]` | every tool | The harness, Kortix and project [tools](/docs/project/tools#give-each-agent-its-tools) the agent may call. |
+
+The first five take the same values:
+
+- `all` or `"*"`, or a list that contains `"*"`: everything.
+- `none`, `""` or `[]`: nothing.
+- A list: only those entries.
+
+Set grants in one of three ways. Each one commits `kortix.yaml` on the default branch and needs `project.agent.write`. The dashboard and CLI paths need a `kortix_version: 2` manifest. On v3, use a change request.
+
+<Tabs>
+
+<Tab title="Dashboard">
+Open **Customize → Agents →** the agent. The **Access** pages are **Skills**, **Connectors**, **Secrets**, **Apps** and **Kortix permissions**. The **Runtime** pages are **Model**, **Tools** and **Workspace**.
+</Tab>
+
+<Tab title="CLI">
+`kortix agents scope` sets secrets, connectors and Apps. Each flag replaces the whole list. `kortix agents config` changes any key of the block: `--set` merges single dotted keys (a value is parsed as JSON when it parses), and `--file` replaces the whole block with a JSON file (`-` reads stdin).
+
+```bash
+kortix agents scope support --secrets HELPDESK_API_KEY --connectors helpdesk
+kortix agents scope support --apps none
+kortix agents config support --set 'kortix_permissions=["project.session.read","project.review.submit"]'
+kortix agents config support --set 'skills=["kortix-cli","triage"]'
+kortix agents config support --json
+```
+</Tab>
+
+<Tab title="Change request">
+Edit `agents.<name>` in `kortix.yaml` on a branch and merge a [change request](/docs/git#change-requests). The merge is governed: see [Changes to agents are governed](#changes-to-agents-are-governed).
+</Tab>
+
+</Tabs>
+
+A change to an agent's secrets reaches its running sessions at once, or at the latest on each session's next prompt.
+
+## Which agent runs
+
+A session runs one agent. The request picks it, else the project's `default_agent` runs:
+
+| Where | How to pick |
+| --- | --- |
+| Web composer | The agent menu. |
+| CLI | `kortix sessions new --agent <name>` |
+| API and SDK | `agent_name` on the create-session request. |
+| Trigger | The trigger's `agent` field. See [Triggers](/docs/connect/triggers). |
+| Slack, Teams, email | The channel binding's agent. See [Manage bindings](/docs/connect/channels#manage-bindings). |
+| Subagent | A running agent starts any agent with `mode: subagent` or `all` through the `task` tool. See [Child sessions](/docs/work/sessions#child-sessions). |
+
+**Default agent.** `default_agent` must name a declared agent that is enabled. Set it in the dashboard, with `kortix agents default <agent>`, or with `PUT /v1/projects/{projectId}/default-agent`. Each one commits `kortix.yaml` and needs a `kortix_version: 2` manifest. On v3, set `default_agent` in `kortix.yaml`. `kortix agents default --show` prints it.
+
+**Per-agent switches** in `agents.<name>`:
+
+| Key | Default | Effect |
+| --- | --- | --- |
+| `enabled` | `true` | `false`: no session can start the agent, and it cannot be `default_agent`. |
+| `workspace.project_repository` | v2 `true`, v3 `false` | `true`: new sessions of this agent check out the project repository. `false`: they start without one. Set it in **Workspace → Project repository access**. A running session keeps the setting it started with. See [`workspace`](/docs/project/manifest#agent-workspace). |
+| `sandbox` | the project default | The sandbox template for this agent's sessions. See [Sandboxes & previews](/docs/work/runtime#the-image-and-templates). |
+| `harnesses` | none | Per-agent pi packages and OpenCode plugins. See [`kortix.yaml`](/docs/project/manifest#harnesses-opencode-and-pi). |
+
+**Model.** Set `model` in the agent file, or pin one without a commit:
+
+```bash
+kortix agents model support <model-id>   # needs project.model.write; applies to new sessions
+kortix agents model support --clear      # follow the defaults again
+kortix agents ls                         # each agent, its file and its model
+```
+
+[How the default is chosen](/docs/project/models#how-the-default-is-chosen) gives the full order between a session's model, the agent pin, and the project and account defaults.
+
+## What an agent may do
+
+**An agent acts as itself, not as the person who started it.** Kortix creates one service account per agent per project. A governed session authorizes as that service account. The role of the person who starts the session does not apply, so an agent does the same thing whoever runs it.
+
+An agent's effective permissions are:
+
+> `kortix_permissions` (in `kortix.yaml`) ∩ its ceiling role (in IAM) − human-only permissions
+
+- **`kortix_permissions`** comes from `kortix.yaml` on the default branch. It is deny-by-default. `all` means every project permission, including `project.members.manage` and `project.delete`.
+- **The ceiling** is a project role an admin binds to the agent. Open **Account settings → Projects**, pick the project, and select **Grant access**. Pick the agent under **Agents**, then pick the **Role**. See [Project access](/docs/accounts#project-access). With no role bound, the **Default agent ceiling** applies: every project permission except `project.credentials.issue`. A ceiling never adds a permission.
+- **Human-only:** `project.credentials.issue` (mint a project token or a project-scoped personal access token). No agent holds it.
+- `project.read` of its own project is always held. `project.write` needs only the ceiling.
+- Account actions are never granted. An agent session's token is scoped to one project.
+
+Open **Customize → Agents →** the agent → **Kortix permissions** to edit the list. Its **What this agent can do** panel shows the declared permissions, the ceiling role, the human-only permission and the effective set.
+
+### Kortix permissions
+
+| Area | Permissions |
+| --- | --- |
+| Project | `project.read`, `project.write`, `project.delete` |
+| Sessions | `project.session.read`, `project.session.start`, `project.session.stop`, `project.session.bindings.write` |
+| Members | `project.members.read`, `project.members.manage` |
+| Triggers | `project.trigger.read`, `project.trigger.create`, `project.trigger.update`, `project.trigger.delete`, `project.trigger.fire` |
+| Agents, skills, commands | `project.agent.read`, `project.agent.write`, `project.skill.read`, `project.skill.write`, `project.command.read`, `project.command.write` |
+| Files | `project.file.read`, `project.file.write` |
+| Settings | `project.settings.write` (name, description, icon, sandbox provider, feature flags, connected repository), `project.sandbox.write` (sandbox templates and rebuilds) |
+| Models and gateway | `project.model.read`, `project.model.write`, `project.gateway.logs.read`, `project.gateway.spend.read`, `project.gateway.budget.set`, `project.gateway.keys.manage`, `project.usage.read` |
+| Git | `project.gitops.read`, `project.gitops.push`, `project.gitops.merge`, `project.gitops.ref.any` (push outside the session's own branch), `project.gitops.ref.delete` |
+| Secrets | `project.secret.read`, `project.secret.write` |
+| Connectors | `project.connector.read`, `project.connector.write`, `project.connector.connections.manage` |
+| Apps | `project.app.read`, `project.app.write`, `project.app.deploy`, `project.app.admin` |
+| Review | `project.review.read`, `project.review.submit`, `project.review.act` |
+| Credentials | `project.credentials.issue` (human-only) |
+
+What each permission allows is in [Permissions](/docs/accounts#permissions). `kortix validate --scopes` prints the live list. An entry that is not on the list fails `kortix validate` and a change request merge. At runtime Kortix ignores it and applies the rest.
+
+Deprecated names still validate and resolve to their replacements:
+
+| Deprecated | Resolves to |
+| --- | --- |
+| `project.cr.open` | `project.gitops.push` |
+| `project.cr.merge` | `project.gitops.merge` |
+| `project.customize.read` | `project.model.read` |
+| `project.customize.write` | `project.settings.write`, `project.sandbox.write`, `project.model.read`, `project.model.write`, `project.agent.write` |
+| `kortix_cli` (the key) | `kortix_permissions`. Both keys with different values is an error. |
+
+### Who may run an agent
+
+The person who runs an agent lends it no authority, so the right to run it is the delegation. Kortix checks it when a person creates, starts or prompts a session, switches a session's agent, or fires a trigger by hand.
+
+| Person | May run |
+| --- | --- |
+| Account owner or admin | Every agent. |
+| Project manager | Agents assigned to nobody, and agents assigned to them or their groups. |
+| Project member | Only agents assigned to them, one of their groups, or the whole project. |
+
+Assign an agent on its **People** page in Customize, or in **Account settings → Projects** → the project → **Grant access**. A child session follows the same rule: the person behind the parent session must be able to run the child's agent. With no person behind it, an agent starts only another session of itself.
+
+### Personal resources stay personal
+
+Personal connector accounts, personal secrets, personal provider keys and a person's own [computer](/docs/connect/computers) reach a session only when both are true:
+
+1. The session runs on behalf of that person.
+2. The session is private.
+
+A shared session, a trigger, an email session, a Slack or Teams session with no linked person, and an unattended run reach none of them. A DM with the bot from a linked person is a private session on that person's behalf. When another person prompts a private session, the session stops acting on behalf of its creator for good.
+
+### Changes to agents are governed
+
+`kortix.yaml` shapes what agents may do, so the same permissions govern a change to it:
+
+1. Merging a change request needs `project.gitops.merge`.
+2. A merge that changes `agents` or `default_agent` also needs `project.agent.write`. A merge that adds, changes or removes a trigger needs `project.trigger.create`, `project.trigger.update` or `project.trigger.delete`.
+3. An agent grants only what it holds. When an agent session writes any agent's grant (the agent editor, the scope routes, or a change request it merges), every permission, connector, secret and App it adds must be in its own effective grant. Narrowing a grant is always allowed.
+4. A session pushes only its own branch unless its agent holds `project.gitops.ref.any`. A push straight to the default branch also needs `project.agent.write` and the three trigger permissions. See [Who can clone and push](/docs/git#who-can-clone-and-push).
+
+A project on the legacy v1 manifest with no agents declared runs ungoverned: its sessions act as the person who started them.
+
+## Read a denial
+
+A refused request answers `403` with a `code` and the `action` it checked:
+
+```json
+{ "error": true, "message": "This agent's role does not allow \"project.gitops.merge\". Ask an account admin to raise the role bound to this agent.", "status": 403, "code": "agent_ceiling_insufficient", "action": "project.gitops.merge" }
+```
+
+| `code` | Meaning | Fix |
+| --- | --- | --- |
+| `agent_scope_insufficient` | `action` is not in the agent's `kortix_permissions`. | Add it to `agents.<name>.kortix_permissions` and merge the change. |
+| `agent_ceiling_insufficient` | `action` is outside the agent's ceiling role. | An account admin raises the role bound to the agent. Editing `kortix.yaml` does not help. |
+| `agent_human_only_action` | `action` is `project.credentials.issue`. | A person does it. |
+| `agent_not_accessible` | The person may not run this agent, or an agent tried to start an agent its person may not run. `accessible_agents` lists the agents the person may run. | Pick one of those agents, or assign the agent to the person. |
+| `no_agent_access` | The person may run no agent in this project. | A manager assigns them an agent. |
+| `agent_grant_escalation` | An agent's write gives an agent something the writing agent does not hold. | Grant only what the writer holds, or have a person make the change. |
+| `project_role_insufficient` | The person's own project role does not allow `action`. | Change their project role. See [Accounts & access](/docs/accounts#project-access). |
+| `token_out_of_scope` | A project-scoped token called an account action or another project. | Use a credential for that scope. |
+
+When an agent session merges and Kortix cannot read the manifest, the merge answers `503` with `code: "CR_GOVERNANCE_UNVERIFIED"` and `Retry-After: 5`. Retry the merge.
+
+## Harnesses: OpenCode and pi
+
+A harness is the agent runtime inside a session's sandbox. It runs the model loop, calls tools and writes the transcript. Kortix has two: **pi**, the default, and **OpenCode**. Both read the same `agents/`, `skills/`, root `AGENTS.md` and `kortix.yaml`, and every client reads both through the same session API.
+
+Kortix picks the harness when a session is created. A restart keeps the session's sandbox, so a session keeps its harness and its history. A flag change applies to new sessions.
+
+| Rule, in order | Harness |
+| --- | --- |
+| The project's `pi_harness` feature flag is on | pi |
+| `kortix.yaml` sets `runtime: pi` (`kortix_version` 2 or 3) | pi |
+| Anything else | OpenCode |
+
+- `pi_harness` is on by default. Turn it off to start new sessions on OpenCode. See [Feature flags](/docs/project#feature-flags).
+- The session daemon's `GET /kortix/health` reports `harness.id` (`opencode` or `pi`) and the `capabilities` the session serves. From the SDK, call `kortix.session(projectId, sessionId).health()`. A client hides a control whose capability is missing: `runtimeSupports` in the SDK, `useRuntimeSupports` in React.
+
+### What each harness supports
+
+Both harnesses serve:
+
+- chat turns, streaming and stop;
+- the agent file fields (pi ignores `options` and `color`);
+- per-agent tool access, `permission` rules and permission requests;
+- questions and skills;
+- Kortix and project [tools](/docs/project/tools);
+- the terminal, [secrets](/docs/project/secrets) and the `kortix` CLI.
+
+The optional features are capabilities:
+
+| Capability | Feature | OpenCode | pi |
+| --- | --- | --- | --- |
+| `session.subagents` | Subagents through the `task` tool | Yes | Yes |
+| `session.compact` | Summarize the conversation, on demand and near the context window | Yes | Yes |
+| `session.commands` | Project slash commands | Yes, from `commands/` (v1, v2) or `kortix.yaml` `commands` (v3) | Yes, from `prompts/` and pi packages (v1, v2) or `kortix.yaml` `commands` (v3) |
+| `session.steer` | A message sent during a turn is read at the turn's next step | OpenCode 1.18.15 or later | Yes |
+| `session.log.v2` | The event stream serves the session log as `log.*` frames (`?schema=v2`) | Yes | Yes |
+| `session.rewind` | Rewind to a message; edit and resend | Yes | No |
+| `session.fork` | Fork a session at a message | Yes | No |
+| `session.mcp` | MCP servers the harness connects itself | Yes | No |
+| `session.todo` | The todo list and the plan card | Yes | No |
+| `session.shell` | A shell command run as a turn | Yes | No |
+| `session.attach` | Attach the harness's own terminal client (`kortix connect`, TUI `Alt+o`) | Yes | No |
+| `session.config` | The runtime config document (`/global/config`) | Yes | No |
+
+A pi session answers a request for a feature it does not serve with `501` and `code: "feature_not_supported"`, and `/global/config` with `404`. pi also refuses message part edits with `501`. [Connectors](/docs/connect/connectors) work on both harnesses through the `kortix connectors` CLI. pi subagents are `general`, `explore` (read-only) and every agent with `mode: subagent` or `all`. A pi subagent cannot start another subagent.
+
+pi has one tool OpenCode does not: `codemode`. The model writes a script that calls the other tools, and only the script's output returns to it, so one step can run several calls and filter their output. It is on by default; [`harnesses.pi.codemode`](/docs/project/manifest#harnesses-opencode-and-pi) turns it off or makes it the only tool. The session view shows a script as its calls, its code and its output. A subagent does not get `codemode`.
+
+### Harness-only files
+
+Each harness reads one directory that the other ignores. A tool that both need is a [project tool](/docs/project/tools) in `kortix.yaml`, not a file here. A `kortix_version: 3` project reads neither directory: declare its slash commands in [`kortix.yaml`](/docs/project/manifest#commands-v3) and its plugins under `extensions`.
+
+| | OpenCode | pi |
+| --- | --- | --- |
+| Directory | `harnesses/opencode/`, or `opencode.config_dir` | `harnesses/pi/`, or `pi.config_dir` |
+| Older projects | `.kortix/opencode/` | `.kortix/pi/` |
+| Contents | `opencode.jsonc` (plugins, MCP servers, providers, `permission`, `subagent_depth`), `plugins/`, `commands/` | `settings.json`, `extensions/`, `skills/`, `prompts/` |
+| Extensions | Plugins in `plugins/`; `harnesses.opencode.plugins` selects them | Packages from [pi.dev/packages](https://pi.dev/packages) in `harnesses.pi.packages` (at most 20), and `.pi/extensions/*.ts` |
+
+The keys are in [the `kortix.yaml` reference](/docs/project/manifest#harnesses-opencode-and-pi). Kortix loads a pi package as published. It does not test third-party packages.

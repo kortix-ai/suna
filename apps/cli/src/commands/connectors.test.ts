@@ -1,6 +1,45 @@
 import { describe, expect, test } from 'bun:test';
 
-import { connectorSecretBindingInput, oauth2AuthorizeSteps } from './connectors.ts';
+import {
+  connectorRulesLines,
+  connectorSecretBindingInput,
+  oauth2AuthorizeSteps,
+  parsePolicyConditions,
+} from './connectors.ts';
+
+describe('connectorRulesLines', () => {
+  test('policy ls lists a rule set seconds earlier (KRTX-2527)', () => {
+    expect(connectorRulesLines([{ slug: 'dogfood-mcp', count: 1 }])).toHaveLength(2);
+    const lines = connectorRulesLines([{ slug: 'dogfood-mcp', count: 1 }]);
+    expect(lines[1]).toContain('dogfood-mcp');
+    expect(lines[1]).toContain('1 rule');
+    expect(lines[1]).toContain('policy dogfood-mcp ls');
+  });
+
+  test('no connector rules render nothing — the project-rules branch keeps its own empty state', () => {
+    expect(connectorRulesLines([])).toEqual([]);
+  });
+});
+
+describe('parsePolicyConditions', () => {
+  test('preserves operators inside equality and negated matcher values', () => {
+    expect(parsePolicyConditions(['to=a!=b', 'to!=a', 'to!=a!=b', ' to = a=b!=c '])).toEqual({
+      conditions: [
+        { arg: 'to', match: 'a!=b' },
+        { arg: 'to', match: 'a', negate: true },
+        { arg: 'to', match: 'a!=b', negate: true },
+        { arg: 'to', match: 'a=b!=c' },
+      ],
+    });
+  });
+
+  test('accepts no conditions and rejects missing paths, separators and values', () => {
+    expect(parsePolicyConditions([])).toEqual({ conditions: [] });
+    for (const entry of ['to', '=value', '!=value', ' =value', 'to=', 'to!=']) {
+      expect(parsePolicyConditions([entry])).toHaveProperty('error');
+    }
+  });
+});
 
 describe('connectorSecretBindingInput', () => {
   test('binds an identifier to a connector slug', () => {
@@ -107,6 +146,35 @@ describe('oauth2AuthorizeSteps', () => {
     expect(oauth2AuthorizeSteps(noDcr, {})).toEqual({
       error:
         'https://authn.read.ai/ does not support dynamic client registration — pass --client-id (and --client-secret).',
+    });
+  });
+
+  test('a catalogue app on a Kortix OAuth client registers with no endpoint', () => {
+    const steps = oauth2AuthorizeSteps(
+      {
+        resource_url: 'https://mcp.example.test/mcp',
+        requires_authorization: true,
+        resource: 'https://mcp.example.test/mcp',
+        authorization_server: 'https://accounts.example.test',
+        metadata: {
+          authorization_url: 'https://accounts.example.test/authorize',
+          token_url: 'https://accounts.example.test/token',
+        },
+        kortix_client: true,
+        scopes: ['mail.read'],
+        warnings: [],
+      },
+      {},
+    );
+    expect(steps).toEqual({
+      register: {
+        issuer: 'https://accounts.example.test',
+        authorization_url: 'https://accounts.example.test/authorize',
+        token_url: 'https://accounts.example.test/token',
+        scopes: ['mail.read'],
+        resource: 'https://mcp.example.test/mcp',
+      },
+      scopes: ['mail.read'],
     });
   });
 

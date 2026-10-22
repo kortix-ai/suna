@@ -5,6 +5,7 @@
  */
 export type * from './types';
 export * from './classify';
+export * from './display-order';
 export * from './errors';
 export * from './grouping';
 export * from './open-turn';
@@ -12,6 +13,7 @@ export * from './parts';
 export * from './segments';
 export * from './shell';
 export * from './state';
+export * from './tool-kind';
 export * from './tool-registry';
 export * from './tools';
 export * from './view-model';

@@ -95,8 +95,17 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     // 20260819015727000 when the cli-token / project-PAT routes stopped gating on
     // the coarse `manage` alias (routes.md §5.2), + `project.gitops.ref.any` /
     // `.ref.delete` (20260901124321557), + `token.personal.create` /
-    // `.revoke` (20260921121500000 — a member may mint their own PAT).
-    expect(seeded).toHaveLength(74);
+    // `.revoke` (20260921121500000 — a member may mint their own PAT),
+    // `project.usage.read` (project-scoped costs), and the four topic leaves that
+    // split `project.customize.*` (20261003235127508: settings.write,
+    // sandbox.write, model.read, model.write); the two retired customize rows
+    // left with the contract migration 20261017134834494. Then
+    // `project.app.admin` (20261009115640000, which also removed the two
+    // `project.backend.*` leaves #9264 had added). Then Kortix Capture's
+    // `capture.read_all` and `capture.manage` (20261015003000001). Then rooms'
+    // `project.room.read` and `project.room.write` (20261020130102200).
+    expect(seeded).toHaveLength(82);
+    expect(seeded.filter((a) => a.startsWith('project.customize.'))).toEqual([]);
     // The decisions, stated positively so a regression is unambiguous.
     expect(seeded).not.toContain('project.cr.open');
     expect(seeded).not.toContain('project.cr.merge');
@@ -128,15 +137,21 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
     const owner = await systemRoleActions('owner', 'account');
     const admin = await systemRoleActions('admin', 'account');
     const member = await systemRoleActions('member', 'account');
-    expect([owner.length, admin.length, member.length]).toEqual([29, 26, 7]);
+    // +2 owner and admin: Kortix Capture's capture.read_all and capture.manage (20261015003000001).
+    // +1 admin: billing.write (20261015003246450).
+    expect([owner.length, admin.length, member.length]).toEqual([31, 29, 5]);
+    // A plain member does not read the whole directory (20261013172952181):
+    // they see the people and groups they share access with.
+    expect(member).not.toContain('member.read');
+    expect(member).not.toContain('group.read');
     expect(member.filter((a) => !admin.includes(a))).toEqual([]);
     expect(admin.filter((a) => !owner.includes(a))).toEqual([]);
-    // The four owner-only powers, named.
+    // The owner-only powers, named. Admins manage billing (20261015003246450).
     expect(owner.filter((a) => !admin.includes(a)).sort()).toEqual([
       'account.delete',
-      'billing.write',
       'member.super_admin.grant',
     ]);
+    expect(admin).toContain('billing.write');
     // A plain account member has NO write surface over the account. Its only
     // non-read leaves act on the member's OWN personal tokens, which carry no
     // more than the member's own roles.
@@ -149,7 +164,11 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
   test('the project roles are a strict chain: member ⊂ manager', async () => {
     const manager = await systemRoleActions('manager', 'project');
     const member = await systemRoleActions('member', 'project');
-    expect([manager.length, member.length]).toEqual([45, 15]);
+    // Manager: +4 topic leaves from the customize split (agent.write it held),
+    // +1 project.app.admin (mirrors project.app.write), -2 retired
+    // project.customize.* (20261017134834494). Both: +2 project.room.*
+    // (20261020130102200).
+    expect([manager.length, member.length]).toEqual([51, 17]);
     expect(member.filter((a) => !manager.includes(a))).toEqual([]);
     // The floor role is read + RUN: it starts sessions and fires triggers, and
     // holds project.agent.read (a grant cannot ADD a permission, so without this
@@ -194,11 +213,14 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       PROJECT_ACTIONS.PROJECT_SKILL_WRITE,
       PROJECT_ACTIONS.PROJECT_COMMAND_WRITE,
       PROJECT_ACTIONS.PROJECT_FILE_WRITE,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE,
+      PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
+      PROJECT_ACTIONS.PROJECT_SANDBOX_WRITE,
+      PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
       PROJECT_ACTIONS.PROJECT_GITOPS_PUSH,
       PROJECT_ACTIONS.PROJECT_GITOPS_MERGE,
       PROJECT_ACTIONS.PROJECT_SECRET_WRITE,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_WRITE,
+      PROJECT_ACTIONS.PROJECT_APP_ADMIN,
     ];
     // Reads the floor member role keeps. project.agent.read is one of them:
     // "member = read + run" is only true if the role can reach an agent at all,
@@ -209,16 +231,17 @@ describe.if(hasDatabase)('canonical RBAC seed == the code it replaces', () => {
       PROJECT_ACTIONS.PROJECT_COMMAND_READ,
       PROJECT_ACTIONS.PROJECT_GITOPS_READ,
       PROJECT_ACTIONS.PROJECT_AGENT_READ,
+      PROJECT_ACTIONS.PROJECT_APP_READ,
     ];
-    // Sensitive / Customize reads that are manager-tier: files, secrets, and the
-    // Connectors/Skills/Customize surface. Those object types stay
+    // Sensitive reads that are manager-tier: files, secrets, the
+    // Connectors/Skills surface, and model routing. Those object types stay
     // unscoped-is-OPEN, so holding the leaf would grant the whole surface.
     const managerReadLeaves = [
       PROJECT_ACTIONS.PROJECT_FILE_READ,
       PROJECT_ACTIONS.PROJECT_SECRET_READ,
       PROJECT_ACTIONS.PROJECT_CONNECTOR_READ,
       PROJECT_ACTIONS.PROJECT_SKILL_READ,
-      PROJECT_ACTIONS.PROJECT_CUSTOMIZE_READ,
+      PROJECT_ACTIONS.PROJECT_MODEL_READ,
     ];
 
     for (const a of writeLeaves) {

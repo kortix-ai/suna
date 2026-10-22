@@ -41,6 +41,20 @@ describe('resolveSandboxRuntimeStatus', () => {
     expect(status.ready_providers).toEqual(['daytona', 'platinum']);
   });
 
+  test.each(['not_built', 'building', 'unknown', 'failed', 'unavailable'] as const)(
+    'Automatic is ready with a launch-ready provider alongside %s', (otherStatus) => {
+      const status = resolveSandboxRuntimeStatus({
+        snapshotName: CURRENT,
+        coverage: [coverage('daytona', otherStatus), coverage('platinum', 'ready')],
+        selectedProvider: null,
+        builds: [],
+      });
+      expect(status.state).toBe('ready');
+      expect(status.ready_providers).toEqual(['platinum']);
+      expect(status.current_failure).toBeNull();
+    },
+  );
+
   // The reported bug: a failed build from 11 days ago rendered as "the most
   // recent build is failing" while the image it names was live on Platinum.
   test('never reports a failure the provider has since proven wrong', () => {
@@ -53,10 +67,10 @@ describe('resolveSandboxRuntimeStatus', () => {
       builds: [failure, build({ snapshotName: PREVIOUS })],
     });
 
-    expect(status.state).toBe('building');
+    expect(status.state).toBe('ready');
     expect(status.current_failure).toBeNull();
     expect(status.stale_failure).toBe(failure);
-    expect(status.stale_reason).toBe('retrying');
+    expect(status.stale_reason).toBe('recovered');
   });
 
   test('treats a failure against a previous definition as superseded history', () => {
@@ -105,7 +119,7 @@ describe('resolveSandboxRuntimeStatus', () => {
     expect(status.failed_providers).toEqual(['daytona']);
   });
 
-  test('degrades rather than blocks when one provider failed and another is ready', () => {
+  test('keeps a sibling failure as history when Automatic has a ready provider', () => {
     const failure = build({ status: 'failed', snapshotName: CURRENT });
 
     const status = resolveSandboxRuntimeStatus({
@@ -115,8 +129,10 @@ describe('resolveSandboxRuntimeStatus', () => {
       builds: [failure],
     });
 
-    expect(status.state).toBe('degraded');
-    expect(status.current_failure).toBe(failure);
+    expect(status.state).toBe('ready');
+    expect(status.current_failure).toBeNull();
+    expect(status.stale_failure).toBe(failure);
+    expect(status.failed_providers).toEqual(['daytona']);
   });
 
   test('a pinned project follows only its pin', () => {
@@ -185,7 +201,7 @@ describe('resolveSandboxRuntimeStatus', () => {
   test('ignores providers the platform has not enabled', () => {
     const status = resolveSandboxRuntimeStatus({
       snapshotName: CURRENT,
-      coverage: [coverage('daytona', 'ready'), coverage('e2b', 'unavailable')],
+      coverage: [coverage('platinum', 'ready'), coverage('daytona', 'unavailable')],
       selectedProvider: null,
       builds: [build()],
     });
