@@ -1069,10 +1069,6 @@
           "name": "Pooled Provider Secrets",
           "description": "Members connect their own ChatGPT subscriptions and provider keys, share them when needed, and choose which ones each session uses."
         },
-        "pi_harness": {
-          "name": "Pi Harness (in-sandbox)",
-          "description": "Run sessions on the pi harness inside the session sandbox instead of OpenCode. Off, `runtime: pi` in the manifest still selects pi."
-        },
         "genui": {
           "name": "Generative UI",
           "description": "The agent may answer with cards, comparisons, charts, maps, and tabs instead of long text."

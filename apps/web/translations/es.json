@@ -1247,10 +1247,6 @@
           "name": "Secretos de proveedor compartidos",
           "description": "Los miembros conectan sus propias suscripciones de ChatGPT y claves de proveedor, las comparten cuando hace falta y eligen cuáles usa cada sesión."
         },
-        "pi_harness": {
-          "name": "Harness Pi (en el sandbox)",
-          "description": "Ejecuta las sesiones con el harness Pi dentro del sandbox de la sesión en lugar de OpenCode. Desactivado, `runtime: pi` en el manifiesto sigue seleccionando Pi."
-        },
         "genui": {
           "name": "UI generativa",
           "description": "El agente puede responder con tarjetas, comparaciones, gráficos, mapas y pestañas en lugar de textos largos."

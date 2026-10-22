@@ -77,6 +77,7 @@ interface DescriptorAnswer {
   reason: string | null
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface BootConfigPathInput {
   cfg: OpenCodeConfig
   opencode: Pick<Opencode, 'getInternalUrl' | 'markWorkspaceReady'>
@@ -115,6 +116,7 @@ export interface BootConfigPathInput {
   descriptorTimeoutMs?: number
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface BootConfigPathResult {
   dir: string
   source: ConfigSource
@@ -315,6 +317,7 @@ function defaultPrepare(input: BootConfigPathInput): (dir: string, platformOwned
       : prepareConfigDir(dir, input.managedSkillsDir, {}, input.cfg.projectTarget)
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function bootOpenCodeConfig(input: BootConfigPathInput): Promise<BootConfigPathResult> {
   const { cfg, opencode } = input
   const root = input.root ?? bootConfigRoot()

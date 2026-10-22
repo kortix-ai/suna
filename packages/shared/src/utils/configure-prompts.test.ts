@@ -11,6 +11,13 @@ describe("newConfigPrompt", () => {
     expect(prompt).toContain("open a change request");
   });
 
+  test("the command prompt puts the command where pi reads it, never in OpenCode's folder", () => {
+    const prompt = newConfigPrompt("command");
+    expect(prompt).toContain("`commands:` in `kortix.yaml`");
+    expect(prompt).toContain("`harnesses/pi/prompts/<name>.md`");
+    expect(prompt).not.toContain("opencode");
+  });
+
   test("every kind has its own non-empty prompt", () => {
     const prompts = CONFIGURE_KINDS.map((kind) => newConfigPrompt(kind));
     for (const prompt of prompts) expect(prompt.length).toBeGreaterThan(0);

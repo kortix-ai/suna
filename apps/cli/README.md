@@ -89,9 +89,9 @@ receive native discovery links to the canonical sources. Claude Code uses
 `.agents/skills`. Pi uses `.pi/skills`. Codex, Pi, and Cursor also get a root
 `AGENTS.md` pointer. Sessions in the cloud never read these links.
 
-A cloud session runs one of two harnesses: OpenCode (the default) or pi
-(`runtime: pi` in `kortix.yaml`, or the `pi_harness` project flag; pi needs the
-LLM gateway). The CLI talks to the same Kortix routes on both.
+A cloud session runs pi. OpenCode is deprecated: only a session that started
+on it before 2026-10-23 still runs it. The CLI talks to the same Kortix routes
+on both.
 
 Create a project with:
 

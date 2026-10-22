@@ -28,6 +28,7 @@ import { shouldShowToolPart, toolKind, type SessionLogTurn } from '@kortix/sdk';
  * A tool call that writes the plan. The runtime emits more than one spelling
  * (`todowrite`, `todo_write`); `toolKind` owns them. The todo READ shares the
  * kind and never renders (`shouldShowToolPart`), so it is not a plan write.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function isPlanWriteTool(tool: string): boolean {
   return toolKind(tool) === 'todowrite' && shouldShowToolPart({ tool });
@@ -88,6 +89,7 @@ export interface PlanSurfaceState {
   isMobile: boolean;
 }
 
+/** @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode. */
 export function planBelongsToChat(state: PlanSurfaceState): boolean {
   return state.isMobile;
 }
@@ -99,6 +101,7 @@ export function planBelongsToChat(state: PlanSurfaceState): boolean {
  * The gate wraps the lookup rather than sitting beside it: returning `null` (which matches no message id) means every `ownsPlan`
  * downstream, including the user bubble's own column cap, falls out of ONE
  * decision instead of two that can disagree.
+ * @deprecated Renders an OpenCode-only tool or todo list in an OpenCode session (pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
  */
 export function chatPlanAnchorId(
   turns: ReadonlyArray<Pick<SessionLogTurn, 'id' | 'plan'>> | null | undefined,

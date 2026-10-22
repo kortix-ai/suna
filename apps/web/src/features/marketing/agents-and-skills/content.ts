@@ -31,9 +31,9 @@ import type { UiTranslator } from '@/i18n/translator';
  *    `secrets`, `skills`, `kortix_permissions`, `workspace`, `enabled`. Channels fall
  *    under `connectors` because a connected channel IS a connector with
  *    `provider: 'channel'` (`apps/api/src/projects/connectors.ts:61`).
- *  - Depth is not a harness menu. OpenCode is the default harness. pi is an
- *    experimental, opt-in harness (`pi_harness` flag or `runtime: pi`) and is
- *    not named here: brand decision D9 is open.
+ *  - Depth is not a harness menu. Every new session runs pi since 2026-10-23
+ *    and OpenCode is deprecated, but this copy still says OpenCode: pi is not
+ *    named here until brand decision D9 settles it. Update the copy with D9.
  *  - The scoping field is `permission`. It is NOT called `tools` —
  *    `packages/manifest-schema/src/index.v2.ts` raises a hard error on `tools`:
  *    "`tools` is not an agent setting — use `permission` instead."

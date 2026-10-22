@@ -19,6 +19,7 @@ import { isSupervised, SUPERVISED_NOTICE } from './supervised.ts';
  * keeps per-version managed binaries under ~/.kortix/opencode/<version>/ and
  * downloads the missing one from the npm registry on first use (the same
  * platform packages the official installer uses).
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 
 export interface OpencodeBinResolution {
@@ -29,6 +30,7 @@ export interface OpencodeBinResolution {
   version: string | null;
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export interface EnsureOpencodeBinOpts {
   /** Exact server version to match; defaults to the runtime-versions pin. */
   version?: string;
@@ -42,6 +44,7 @@ function managedRoot(): string {
   return process.env.KORTIX_OPENCODE_DIR || join(homedir(), '.kortix', 'opencode');
 }
 
+/** @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`. */
 export function managedOpencodePath(version: string): string {
   return join(managedRoot(), version, 'opencode');
 }
@@ -53,12 +56,16 @@ export function managedOpencodePath(version: string): string {
  * managed cache path, where anything beyond `X.Y.Z(-tag)` (a `/`, `..`, a
  * newline) would redirect the download or escape the cache dir. Reject
  * everything that is not exactly a version.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 export function isValidOpencodeVersion(version: string): boolean {
   return /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/.test(version);
 }
 
-/** Pull an X.Y.Z(-tag) out of whatever `opencode --version` prints. */
+/**
+ * Pull an X.Y.Z(-tag) out of whatever `opencode --version` prints.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
+ */
 export function parseOpencodeVersion(output: string): string | null {
   const match = output.match(/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)\b/);
   return match ? match[1] : null;
@@ -67,6 +74,7 @@ export function parseOpencodeVersion(output: string): string | null {
 /**
  * npm platform package holding the prebuilt binary, e.g. `opencode-darwin-arm64`.
  * Throws on platforms OpenCode does not publish for.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 export function opencodePlatformPackage(
   platform: string = process.platform,
@@ -112,6 +120,7 @@ function probeOpencodeOnPath(): string | null {
  * second, unmanaged copy with no prompt and no TTY check whatsoever. Steps 1-3
  * all still apply: an operator override, the managed cache and an exact PATH
  * match are all binaries somebody already vouched for.
+ * @deprecated Attaches OpenCode's own TUI (session.attach; pi cannot attach). OpenCode is sunset (2026-10-23): no new code. Use `kortix sessions chat` or `kortix sessions shell`.
  */
 export async function ensureOpencodeBin(
   opts: EnsureOpencodeBinOpts = {},

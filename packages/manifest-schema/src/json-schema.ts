@@ -1112,7 +1112,7 @@ export function buildManifestV2Schema(): JsonSchemaFragment {
       // Cross-field: must resolve to a declared, enabled agent — dynamic,
       // left to the imperative validator.
       default_agent: NON_BLANK_STRING,
-      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES], deprecated: true, description: 'Selects nothing: every new session runs pi.' },
       // Per-harness native settings. `pi.packages`: pi packages
       // (https://pi.dev/packages) in pi's own settings format, for every agent.
       harnesses: harnessesSchema('project'),
@@ -1238,7 +1238,7 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       kortix_version: { const: 3 },
       imports: { type: 'array', items: { type: 'string', pattern: IMPORT_PATH_PATTERN } },
       default_agent: NON_BLANK_STRING,
-      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES] },
+      runtime: { type: 'string', enum: [...V2_RUNTIME_VALUES], deprecated: true, description: 'Selects nothing: every new session runs pi.' },
       ...shared,
       skills: {
         type: ['object', 'null'],

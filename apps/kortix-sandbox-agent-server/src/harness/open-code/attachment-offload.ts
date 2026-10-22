@@ -46,11 +46,17 @@ import { logger } from '@/lib/log/logger'
 
 import { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder } from '../shared/inline-attachments'
 export { OFFLOAD_PLACEHOLDER_URL, isOffloadPlaceholder }
-/** Attachments at or below this size stay inline — the row is not worth a file. */
+/**
+ * Attachments at or below this size stay inline — the row is not worth a file.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export const OFFLOAD_MIN_BYTES = 32 * 1024
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const DEFAULT_KEEP_NEWEST = 12
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export const DEFAULT_MAX_PARTS_PER_PASS = 200
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OffloadedMarker {
   offloaded: true
   sidecar: string
@@ -59,6 +65,7 @@ export interface OffloadedMarker {
   at: string
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface AttachmentLike {
   id?: string
   type?: string
@@ -68,6 +75,7 @@ export interface AttachmentLike {
   [k: string]: unknown
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OffloadOptions {
   dbPath: string
   sidecarDir: string
@@ -79,6 +87,7 @@ export interface OffloadOptions {
   beforeUpdate?: (partId: string) => void
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export interface OffloadResult {
   scanned: number
   offloaded: number
@@ -91,7 +100,10 @@ export interface OffloadResult {
 
 const DATA_URL_RE = /^data:([^;,]+)?(;base64)?,(.*)$/s
 
-/** Every inline attachment inside one part's JSON: tool `state.attachments[]` and file parts. */
+/**
+ * Every inline attachment inside one part's JSON: tool `state.attachments[]` and file parts.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function inlineAttachmentsOf(part: Record<string, unknown>): AttachmentLike[] {
   const out: AttachmentLike[] = []
   if (part.type === 'file' && typeof part.url === 'string') out.push(part as AttachmentLike)
@@ -127,6 +139,7 @@ function decodeDataUrl(url: string): { mime: string | null; bytes: Buffer } | nu
 // `isOffloadPlaceholder` (the 1×1 placeholder test) is host-level now — see
 // src/harness/shared/inline-attachments.ts — and re-exported above for existing importers.
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function sidecarPathFor(sidecarDir: string, attachmentId: string): string {
   // Attachment ids are OpenCode-minted (`prt_…`); refuse anything that could
   // walk out of the directory.
@@ -200,6 +213,7 @@ function selectCandidates(
   return chosen
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export async function runAttachmentOffloadPass(opts: OffloadOptions): Promise<OffloadResult> {
   const t0 = Date.now()
   const keepNewest = opts.keepNewest ?? DEFAULT_KEEP_NEWEST
@@ -344,11 +358,15 @@ export async function runAttachmentOffloadPass(opts: OffloadOptions): Promise<Of
   }
 }
 
-/** Where OpenCode 1.18 keeps the transcript for this HOME. */
+/**
+ * Where OpenCode 1.18 keeps the transcript for this HOME.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function opencodeDbPath(home: string): string {
   return join(home, '.local', 'share', 'opencode', 'opencode.db')
 }
 
+/** @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset". */
 export function defaultSidecarDir(home: string): string {
   return join(home, '.local', 'share', 'kortix', 'attachments')
 }

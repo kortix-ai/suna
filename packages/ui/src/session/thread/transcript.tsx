@@ -1369,7 +1369,10 @@ const segments = useMemo(() => {
 //   - When done: it's HIDDEN from steps (hideResponsePart=true) and shown below as Response
 // ============================================================================
 
-/** Shell mode — a live shell tool replaces the whole turn scaffold. */
+/**
+ * Shell mode — a live shell tool replaces the whole turn scaffold.
+ * @deprecated Renders an OpenCode shell turn (session.shell; pi has none). OpenCode is sunset (2026-10-23): no new code; delete with OpenCode.
+ */
 function TurnShellMode(
   props: Pick<SessionTurnProps, 'sessionId' | 'disableToolNavigation' | 'onPermissionReply' | 'providers' | 'permissions'> & {
     call: ToolCallBlock;

@@ -68,7 +68,7 @@
  * a time. `unit-feature-flag-drift.test.ts` compares contract <-> SDK <->
  * registry and catches 1/3/5 only. List every holder before you start:
  *
- *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "pi_harness"
+ *   rg -l "meta_agent" --glob '!node_modules' . | xargs rg -l "genui"
  *
  * The UI renders straight from {@link buildFeatureFlagCatalog}, so a new entry
  * lights up in Settings automatically. `unit-feature-flags.test.ts` pins the
@@ -300,22 +300,10 @@ const FLAGS: readonly FeatureFlagDef[] = [
     enforcement: 'behavioral',
     enforcementNote: 'Session selection and provider credential resolution reject or ignore resource secrets while disabled.',
   },
-  {
-    key: 'pi_harness',
-    name: 'Pi Harness (in-sandbox)',
-    description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On by default. On ⇒ every new session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. An existing session keeps its sandbox and so its harness.',
-    stability: 'experimental',
-    available: () => true,
-    // On by default (2026-10-20). PI_HARNESS_DEFAULT_ENABLED=false turns the default off for a deployment.
-    platformDefault: () => config.PI_HARNESS_DEFAULT_ENABLED,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
-      'selectSessionHarness). An established session keeps its sandbox (runtime-identity.ts), and a ' +
-      'restart reuses that sandbox and its env, so it keeps its harness. Only a lost or restored session ' +
-      'gets a new sandbox, and that one restores its history from the session log in either harness.',
-  },
+  // `pi_harness` graduated (2026-10-23): every new session runs pi; OpenCode is
+  // sunset and serves only sessions that already run on it. No flag, no
+  // operator lever, no manifest `runtime:` choice. A stored
+  // `experimental.pi_harness` override is inert.
   {
     key: 'genui',
     name: 'Generative UI',

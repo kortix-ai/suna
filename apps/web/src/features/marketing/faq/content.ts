@@ -77,9 +77,9 @@
  *    true for the Platinum provider (Cloud Hypervisor), not for legacy Daytona.
  *    Never "container" in external copy. Never claim egress is controlled at the
  *    network; nothing implements it.
- *  - HARNESS. OpenCode only. pi is an experimental, opt-in harness
- *    (`pi_harness` flag or `runtime: pi`); brand decision D9 is open, so do
- *    not name it. No Claude Code or Codex harness exists. Never name them.
+ *  - HARNESS. Every new session runs pi since 2026-10-23 and OpenCode is
+ *    deprecated. Brand decision D9 (naming pi in copy) is open, so do not name
+ *    pi yet, and do not promise OpenCode. No Claude Code or Codex harness exists. Never name them.
  *  - LICENCE. Say "open source" and stop. Never name one.
  *  - NO CUSTOMER NAMES. NO INVENTED METRICS. The live GitHub star count is the
  *    only sanctioned figure on the site and it belongs to the open-source

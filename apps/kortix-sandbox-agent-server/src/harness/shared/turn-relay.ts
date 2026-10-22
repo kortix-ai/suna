@@ -46,7 +46,10 @@ let claimedInitialTurn: InitialTurnClaim | null = null
 let claimedRootPin: string | null = null
 let claimInFlight: Promise<InitialTurnClaim | null> | null = null
 
-/** The first turn this process claimed, once `claimInitialTurn` resolved one. */
+/**
+ * The first turn this process claimed, once `claimInitialTurn` resolved one.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export function initialTurnClaim(): InitialTurnClaim | null {
   return claimedInitialTurn
 }
@@ -55,6 +58,7 @@ export function initialTurnClaim(): InitialTurnClaim | null {
  * The runtime root the control plane has pinned for this session, as the
  * initial-turn claim reported it. Null before the claim, when no root is
  * pinned, or from an API that predates the field.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export function claimedRuntimeSessionPin(): string | null {
   return claimedRootPin
@@ -137,7 +141,10 @@ export async function relayTurnAccepted(runtimeSessionId: string, messageId: str
   return ((await response.json().catch(() => ({}))) as { ok?: boolean }).ok === true
 }
 
-/** Remove only a pre-created initial-turn record the runtime never accepted. */
+/**
+ * Remove only a pre-created initial-turn record the runtime never accepted.
+ * @deprecated OpenCode only. OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
+ */
 export async function relayTurnAbandoned(turnToken: string): Promise<boolean> {
   const response = await postTurnStream({ kind: 'turn_abandoned', turn_token: turnToken })
   if (!response) throw new Error('initial turn abandonment relay context is unavailable')

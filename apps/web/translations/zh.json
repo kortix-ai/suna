@@ -1247,10 +1247,6 @@
           "name": "共享提供商密钥",
           "description": "成员连接自己的 ChatGPT 订阅和提供商密钥，按需共享，并为每个会话选择要使用的连接。"
         },
-        "pi_harness": {
-          "name": "Pi 运行框架（沙箱内）",
-          "description": "在会话沙箱内使用 Pi 运行框架而不是 OpenCode 来运行会话。关闭时，清单中的 `runtime: pi` 仍会选择 Pi。"
-        },
         "genui": {
           "name": "生成式 UI",
           "description": "智能体可以用卡片、对比、图表、地图和标签页来回答，而不是输出长篇文字。"

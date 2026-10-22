@@ -18,6 +18,7 @@ import type { Opencode } from './lifecycle'
  * there is the "every question is auto-answered even outside Slack" bug: seen
  * on dev 2026-08-05, a web session's agent was told "Posted to the Slack thread"
  * (it was not) and stopped using the `question` tool.
+ * @deprecated OpenCode is sunset: no new code. See harness/README.md "OpenCode sunset".
  */
 export async function relayQuestionToApi(
   req: RuntimeQuestionRequest,

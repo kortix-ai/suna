@@ -92,13 +92,13 @@ kortix sessions new --prompt "Add a skill that drafts the weekly status report"
 
 In the web app, type the prompt on the project page.
 
-The session runs the project's default agent. `--agent <name>` and `--model <id>` override them. On an interactive terminal, the CLI asks whether to attach the OpenCode TUI. `--connect` attaches without asking.
+The session runs the project's default agent. `--agent <name>` and `--model <id>` override them. On an interactive terminal, the CLI then prints the `kortix sessions chat` command for the new session.
 
 | Task | Command |
 | --- | --- |
 | Talk to the agent | `kortix chat` (picks your most recent running session) |
 | Send one prompt | `kortix chat <session_id> --prompt "…"` |
-| Attach the OpenCode TUI (OpenCode sessions) | `kortix connect <session_id>` |
+| Open a shell in the session's sandbox | `kortix sessions shell <session_id>` |
 | Open the Kortix terminal app | `kortix tui` |
 | List sessions | `kortix sessions ls` |
 

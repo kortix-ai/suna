@@ -32,8 +32,8 @@ describe('resolveConnectAfterCreate', () => {
     expect(resolveConnectAfterCreate({ connect: true, json: true, tty: false })).toBe('connect');
   });
 
-  test('interactive terminal without flags asks', () => {
-    expect(resolveConnectAfterCreate({ connect: false, json: false, tty: true })).toBe('ask');
+  test('interactive terminal without flags does not ask: every new session runs pi, which cannot attach', () => {
+    expect(resolveConnectAfterCreate({ connect: false, json: false, tty: true })).toBe('no');
   });
 
   test('scripts never get prompted: --json or non-TTY means no', () => {

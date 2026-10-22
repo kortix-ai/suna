@@ -15,7 +15,7 @@ A session is one unit of agent work. It runs in its own sandbox, on its own git 
     Kortix boots a sandbox from the session's sandbox template, or from the platform default image when the project has none. See [Sandboxes & previews](/docs/work/runtime#the-image-and-templates).
   </Step>
   <Step title="The agent starts">
-    The sandbox clones the repo to `/workspace` and starts the harness, OpenCode or pi. The session status becomes `running`.
+    The sandbox clones the repo to `/workspace` and starts the harness, pi. The session status becomes `running`.
   </Step>
   <Step title="The agent works and pushes">
     The agent commits and pushes to its session branch. By default a session may push only its own branch.
@@ -65,7 +65,7 @@ kortix sessions new -p "Fix the failing test in src/billing and open a change re
 | `--agent <name>` | Run this agent. Default: the project's default agent. |
 | `--model <id>` | Run this model. See [Models](/docs/project/models). |
 | `--wait` | Return when the sandbox is ready, after at most about 5 minutes. |
-| `--connect` | Attach the OpenCode TUI when the session is ready. Implies `--wait`. |
+| `--connect` | Deprecated with OpenCode. Attach the OpenCode TUI when the session is ready; a new session runs pi, so it exits `1`. Implies `--wait`. |
 | `--with-file <path>` | Upload a local file to `/workspace/incoming/<name>` before the prompt runs. Repeatable. Implies `--wait`. |
 | `--label <label>` | Add a label. Repeatable. |
 | `--meta <key>=<value>` | Set a metadata key. Repeatable. |
