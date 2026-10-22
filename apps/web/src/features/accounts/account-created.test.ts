@@ -86,7 +86,9 @@ describe('account creation handoff', () => {
         expect(useCurrentAccountStore.getState().selectedAccountId).toBe('created');
         expect(useAccountPanelStore.getState().pushedEntry).toBe(host === 'sidebar');
       };
+      const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
       mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
+        ...realProjectCan,
         useProjectCan: () => ({ allowed: false }),
       }));
       mock.module('next/navigation', () => ({

@@ -75,7 +75,7 @@ import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-par
 import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
 import { PROJECT_ACTIONS } from '@kortix/sdk';
 import { useProjectCan } from '@kortix/ui/internal/lib/use-project-can';
-import { projectSettingsSectionHref } from '@kortix/ui/customize/project-settings/project-settings-sections';
+import { capabilityTabHref } from '@kortix/ui/workspace';
 import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
 import { type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
@@ -313,7 +313,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
               {canRename === true && (
                 <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                  <Link href={projectSettingsSectionHref(projectId, 'general')} prefetch>
+                  <Link href={capabilityTabHref(projectId, 'config')} prefetch>
                     <PencilSimpleIcon />
                     {tUi('text3064d79a295c')}
                   </Link>

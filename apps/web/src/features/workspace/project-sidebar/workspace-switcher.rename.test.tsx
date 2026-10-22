@@ -6,7 +6,9 @@ import { Window } from 'happy-dom';
 import { createElement, type ReactNode } from 'react';
 import { act, create } from 'react-test-renderer';
 let allowed: boolean | undefined = true;
+const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
 mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
+  ...realProjectCan,
   useProjectCan: (_id: string, action: string) => ({
     allowed: action === PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE ? allowed : false,
   }),
