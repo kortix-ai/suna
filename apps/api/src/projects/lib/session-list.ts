@@ -48,6 +48,7 @@ import { and, desc, eq, getTableColumns, inArray, isNull, lt, or, sql, type SQL 
 import { alias } from 'drizzle-orm/pg-core';
 import type { SessionStartedByFilter } from './session-initiator';
 import { resolveSessionOwnerIdentities, viewerManagerStanding } from './access';
+import { SESSION_DELETE_ROWS_DAYS } from '../session-log-purge';
 import {
   SESSION_PAGE_DEFAULT_LIMIT,
   SESSION_PAGE_MAX_LIMIT,
@@ -94,12 +95,22 @@ export interface SessionListFilter {
   /** Only the person's pinned or archived sessions. Absent: every session the
    *  person has not archived. */
   view?: SessionListView | null;
+  /** Recently deleted (KRTX-2853): only the deleted sessions this viewer may
+   *  restore, still inside their restore window. Archived ones included. */
+  deleted?: boolean;
 }
 
 type SessionTable = typeof projectSessions;
 
 function likePattern(q: string): string {
   return `%${q.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
+/** An agent slug or display name with every run of spaces, hyphens and
+ *  underscores as one space: "Store Builder", `store-builder` and
+ *  `store_builder` are the same key (KRTX-3017). */
+function agentSearchKey(value: string): string {
+  return value.toLowerCase().replace(/[\s_-]+/g, ' ').trim();
 }
 
 /** Title, trigger slug / channel (initiator_id), agent, source, the owner's
@@ -109,11 +120,18 @@ function likePattern(q: string): string {
  *  already on every row the viewer may see (`owner_email`/`owner_name`). */
 function searchMatchSql(t: SessionTable, q: string): SQL {
   const pattern = likePattern(q);
+  const agentKey = agentSearchKey(q);
+  // The column holds the slug; a display name is the slug with spaces. A query
+  // of separators only has no key and must not match every row.
+  const agentByName = agentKey
+    ? sql`or regexp_replace(lower(${t.agentName}), '[-_[:space:]]+', ' ', 'g') like ${likePattern(agentKey)}`
+    : sql``;
   return sql`(
     ${t.metadata}->>'custom_name' ilike ${pattern}
     or ${t.metadata}->>'name' ilike ${pattern}
     or ${t.initiatorId} ilike ${pattern}
     or ${t.agentName} ilike ${pattern}
+    ${agentByName}
     or ${t.metadata}->>'source' ilike ${pattern}
     or exists (
       select 1 from auth.users as owner_users
@@ -180,7 +198,8 @@ function sessionListFilterSql(filter: SessionListFilter, viewerId: string): SQL 
         : searchMatchSql(t, filter.q),
     );
   }
-  conditions.push(sessionUserStateSql(filter.view ?? null, filter.personId ?? null));
+  // A deleted session is listed whether or not the person archived it.
+  if (!filter.deleted) conditions.push(sessionUserStateSql(filter.view ?? null, filter.personId ?? null));
   return conditions.length ? and(...conditions) : undefined;
 }
 
@@ -209,6 +228,17 @@ export interface SessionListViewer {
   canManageProject: boolean;
   /** `hasAccountSessionOversight`. Applied to the `project` scope only. */
   accountSessionOversight: boolean;
+  /** Recently deleted: `SessionListFilter.deleted`. */
+  deleted?: boolean;
+}
+
+/**
+ * The oldest `deletedAt` still restorable: the stamp plus the restore window
+ * (`sessionRestoreUntil`) is after now. Compared as text, the ISO instant
+ * `deleteSession` writes: a stamp that is not one never fails the query.
+ */
+export function restorableSinceIso(now = Date.now()): string {
+  return new Date(now - SESSION_DELETE_ROWS_DAYS * 86_400_000).toISOString();
 }
 
 /**
@@ -222,8 +252,13 @@ export interface SessionListViewer {
 export function sessionListViewerSql(viewer: SessionListViewer): SQL {
   const t = projectSessions;
   const bound = viewer.boundCredentialSessionId;
-  const tombstone =
-    viewer.scope === 'visible'
+  const tombstone = viewer.deleted
+    ? // Recently deleted: what the restore route would still take back, and
+      // only for its owner or a manager (`canManageLifecycle`).
+      sql`(${t.metadata} ? 'deletedAt') is true and (${warmSessionSql}) is not true
+        and ${t.metadata} ->> 'deletedAt' > ${restorableSinceIso()}
+        ${viewer.canManageProject ? sql`` : sql`and ${t.createdBy} = ${viewer.viewerId}`}`
+    : viewer.scope === 'visible'
       ? sql`${liveSessionSql} and (${warmSessionSql}) is not true`
       : // A soft-deleted warm draft holds nothing to audit.
         sql`not ((${t.metadata} ? 'deletedAt') is true and (${warmSessionSql}) is true)`;
@@ -261,6 +296,16 @@ export function sessionListViewerSql(viewer: SessionListViewer): SQL {
   const access = viewer.agentPrincipal
     ? (or(own, and(eq(t.visibility, 'project'), canAccess)) as SQL)
     : canAccess;
+  // A non-manager's project scope (`projectReadView`) reads every session of
+  // the project. The tombstone detoasts `metadata` (~6 KB a row) and the
+  // planner evaluates it first, so a 16k-session project spent ~600 ms there
+  // for the 11% of rows the viewer may open. The CASE checks the plain-column
+  // access rules first: the same rows, 670 -> 161 ms on prod. The manager
+  // inventory and the `visible` scope keep the AND, which the partial index
+  // `idx_project_sessions_project_live` and the keyset pages need.
+  if (access && viewer.scope === 'project' && !viewer.deleted && !viewer.canManageProject) {
+    return sql`(case when ${access} then ${tombstone} else false end)`;
+  }
   return and(tombstone, access) as SQL;
 }
 
@@ -271,6 +316,8 @@ export function sessionRowMatchesSearch(row: ProjectSessionRow, q: string, owner
   const hit = (value: unknown) => typeof value === 'string' && value.toLowerCase().includes(needle);
   const meta = (row.metadata ?? {}) as Record<string, unknown>;
   if (hit(meta.custom_name) || hit(meta.name) || hit(row.initiatorId) || hit(row.agentName) || hit(meta.source)) return true;
+  const agentKey = agentSearchKey(q);
+  if (agentKey && typeof row.agentName === 'string' && agentSearchKey(row.agentName).includes(agentKey)) return true;
   if (ownerText.some(hit)) return true;
   if (row.sessionId.toLowerCase().startsWith(needle)) return true;
   if ((row.labels ?? []).some(hit)) return true;
@@ -314,13 +361,14 @@ function sessionCursorScope(input: SessionInventoryInput, filter: SessionListFil
     ordering: input.orderByActivity ? 'activity' : undefined,
     // A cursor is a scan position inside ONE filtered list.
     filter:
-      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view
+      filter.parent || filter.startedBy || filter.q || filter.labels?.length || filter.view || filter.deleted
         ? JSON.stringify([
             filter.parent ?? null,
             filter.startedBy ?? null,
             filter.q ?? null,
             ...(filter.labels?.length ? [[...filter.labels].sort()] : []),
             ...(filter.view ? [{ view: filter.view }] : []),
+            ...(filter.deleted ? [{ deleted: true }] : []),
           ])
         : undefined,
   };
@@ -393,6 +441,7 @@ async function foldSessionRows(
     boundCredentialSessionId: input.boundCredentialSessionId,
     accountSessionOversight,
     agentPrincipal: input.agentPrincipal === true,
+    deleted: input.filter?.deleted === true,
   });
 }
 
@@ -417,8 +466,8 @@ async function appendMissingAncestors(input: {
   // append, and children are read under the parent the client expanded. A
   // label filter promises only rows carrying every label, so it gets no
   // unlabeled ancestors either.
-  // A pinned or archived view promises only those rows.
-  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.view;
+  // A pinned, archived or deleted view promises only those rows.
+  const appendAncestors = !filter.parent && !filter.labels?.length && !filter.view && !filter.deleted;
   for (let depth = 0; appendAncestors && depth < MAX_ANCESTOR_DEPTH; depth += 1) {
     const missing = [
       ...new Set(
@@ -601,6 +650,7 @@ export async function loadProjectSessionInventory(input: {
       agentPrincipal: input.agentPrincipal === true,
       canManageProject,
       accountSessionOversight,
+      deleted: filter.deleted === true,
     });
   // The page WHERE needs the manager standing and the oversight verdict, so
   // the first chunk starts once both are in. It does not wait for the share

@@ -1,5 +1,5 @@
-import { useAccountPanelStore } from '@/stores/account-panel-store';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useAccountPanelStore } from '@kortix/ui/internal/stores/account-panel-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import type { KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query';
@@ -86,20 +86,25 @@ describe('account creation handoff', () => {
         expect(useCurrentAccountStore.getState().selectedAccountId).toBe('created');
         expect(useAccountPanelStore.getState().pushedEntry).toBe(host === 'sidebar');
       };
+      const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
+      mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
+        ...realProjectCan,
+        useProjectCan: () => ({ allowed: false }),
+      }));
       mock.module('next/navigation', () => ({
         useRouter: () => ({
           push: navigate('push'),
           replace: navigate('replace'),
         }),
       }));
-      mock.module('@/hooks/account/use-accounts-list', () => ({
+      mock.module('@kortix/ui/internal/hooks/account/use-accounts-list', () => ({
         useAccountsQueryKey: () => key,
         useAccountsList: () => ({ data: [], isLoading: false, isError: false }),
       }));
       mock.module('@/hooks/account/use-ensure-selected-account', () => ({
         useEnsureSelectedAccount() {},
       }));
-      mock.module('@/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
+      mock.module('@kortix/ui/internal/hooks/admin/use-admin-role', () => ({ useAdminRole: () => ({ data: null }) }));
       mock.module('@/features/providers/auth-provider', () => ({
         useAuth: () => ({ user: { id: 'synthetic-reader' }, isLoading: false }),
       }));
@@ -110,13 +115,20 @@ describe('account creation handoff', () => {
       }));
       const children = ({ children }: { children?: ReactNode }) =>
         createElement('div', null, children);
-      mock.module('@/components/ui/dropdown-menu', () =>
-        Object.fromEntries(
+      const realDropdownMenu = await import('@kortix/ui/dropdown-menu');
+      const uiDropdownMenuMock = () => ({
+        ...realDropdownMenu,
+        ...Object.fromEntries(
           [
             'DropdownMenu',
+            'DropdownMenuCheckboxItem',
             'DropdownMenuContent',
+            'DropdownMenuGroup',
             'DropdownMenuItem',
+            'DropdownMenuLabel',
             'DropdownMenuPortal',
+            'DropdownMenuRadioGroup',
+            'DropdownMenuRadioItem',
             'DropdownMenuSeparator',
             'DropdownMenuShortcut',
             'DropdownMenuSub',
@@ -125,40 +137,48 @@ describe('account creation handoff', () => {
             'DropdownMenuTrigger',
           ].map((name) => [name, children]),
         ),
-      );
+      });
+      mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
+      mock.module('@kortix/ui/dropdown-menu', uiDropdownMenuMock);
       const { createContext } = await import('react');
-      mock.module('@/components/ui/sidebar', () => ({
+      const uiSidebarMock = () => ({
         SidebarContext: createContext(null),
         SidebarMenu: children,
         SidebarMenuButton: children,
         SidebarMenuItem: children,
-      }));
+      });
+      mock.module('@kortix/ui/sidebar', uiSidebarMock);
+      mock.module('@kortix/ui/sidebar', uiSidebarMock);
       mock.module('@/features/layout/user-menu-shared', () => ({
         HelpSubmenu: () => null,
         ThemeSubmenu: () => null,
         useLogoutFlow: () => ({ openConfirm() {}, dialog: null }),
       }));
-      mock.module('@/features/tunnel/computer-connect', () => ({
+      mock.module('@kortix/ui/internal/tunnel/computer-connect', () => ({
         COMPUTER_SETUP_EVENT: 'synthetic-setup',
       }));
       mock.module('@/features/tunnel/local-computer-modal', () => ({
         LocalComputerModal: () => null,
       }));
-      mock.module('@/features/workspace/project-sidebar/workspace-menu-section', () => ({
+      mock.module('@kortix/ui/workspace/sidebar/workspace-menu-section', () => ({
         WorkspaceMenuSection: () => null,
       }));
       mock.module('./hub/account-pane', () => ({ AccountPane: children }));
-      mock.module('./hub/account-hub-location', () => ({ HubLink: children }));
+      mock.module('@kortix/ui/internal/account-hub/account-hub-location', () => ({ HubLink: children }));
       // The child is an external creation boundary. Execute the real host's callback.
       function CreationBoundary(_props: { onCreated: (value: KortixAccount) => void }) {
         return null;
       }
       mock.module('./create-account-modal', () => ({ CreateAccountModal: CreationBoundary }));
       const originalWindow = globalThis.window;
+      const originalDocument = globalThis.document;
       // The sidebar host registers a window event listener in an effect. A
       // real happy-dom window replaces the global — the same cast-free
-      // fixture apps-feature-gate.test.ts installs.
-      Object.assign(globalThis, { window: new Window() });
+      // fixture apps-feature-gate.test.ts installs. Its document goes with it:
+      // `next/image` (imported by the host's tree) reads
+      // `document.documentElement` at module load whenever `window` exists.
+      const happyWindow = new Window();
+      Object.assign(globalThis, { window: happyWindow, document: happyWindow.document });
       let renderer: ReactTestRenderer | undefined;
       try {
         const Host =
@@ -187,7 +207,7 @@ describe('account creation handoff', () => {
         );
       } finally {
         if (renderer) await act(async () => renderer!.unmount());
-        Object.assign(globalThis, { window: originalWindow });
+        Object.assign(globalThis, { window: originalWindow, document: originalDocument });
         stopSelection();
         stopPanel();
         client.clear();

@@ -8,10 +8,10 @@ import {
   NavigationMenuLink,
   NavigationMenuList,
   NavigationMenuTrigger,
-} from '@/components/ui/navigation-menu';
-import { Slack } from '@/features/icon/icons/slack';
+} from '@kortix/ui/navigation-menu';
+import { Slack } from '@kortix/ui/internal/icons/slack';
 import type { NavMenu } from '@/lib/site-config';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { Icon } from '@phosphor-icons/react';
 import {
   ArrowUpRightIcon,

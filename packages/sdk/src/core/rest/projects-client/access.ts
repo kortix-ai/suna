@@ -421,6 +421,8 @@ export interface PendingApproval {
   requested_by_email: string | null;
   requested_at: string;
   detail: Record<string, unknown> | null;
+  /** When the approval stops being decidable. Null: never. Absent on older servers. */
+  expires_at?: string | null;
 }
 
 export interface PendingApprovalsResponse {

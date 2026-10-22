@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { PRICING_PLANS } from '@/features/billing/pricing-plans';
 import { ROLES } from '@/features/marketing/solutions/registry';
-import { CANONICAL_ORIGIN, siteMetadata } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN, siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 
 // The blog is not listed here: it is its own app (kortix-ai/marketing), served
 // at /blog through a next.config.ts rewrite, with its own sitemap, llms.txt and
@@ -73,6 +73,7 @@ export const STATIC_PUBLIC_ROUTES = [
   '/solutions',
   '/support',
   '/use-cases',
+  '/white-label',
 ] as const;
 
 const MARKETING_RECORDS: PublicContentRecord[] = [
@@ -261,6 +262,15 @@ const MARKETING_RECORDS: PublicContentRecord[] = [
       'Run the same Kortix on your own box. One Docker Compose stack, the same images the managed cloud runs, your database and your files on disk you control. kortix self-host start, then kortix hosts use selfhost.',
     htmlPath: '/self-hosted',
     markdownPath: '/markdown/self-hosted.md',
+  },
+  {
+    kind: 'marketing',
+    slug: 'white-label',
+    title: 'White-label: your AI product on Platinum.dev compute',
+    description:
+      'Fork Kortix, put your brand on it, and sell it as your own product. The license is free. The one requirement is that your compute runs on Platinum.dev.',
+    htmlPath: '/white-label',
+    markdownPath: '/markdown/white-label.md',
   },
   // The Solutions section: one hub plus one page per role. The role records are
   // derived from the role registry so the page copy and the SEO record cannot

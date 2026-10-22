@@ -306,16 +306,22 @@ describe('KORTIX_MANAGED_SKILL_NAMES', () => {
       'kortix-connectors',
       'kortix-drives',
       'kortix-genui',
+      'kortix-goals',
       'kortix-harness-refinement',
       'kortix-marketplace',
       'kortix-memory',
       'kortix-onboarding',
+      'kortix-rooms',
       'kortix-slack',
       'kortix-system',
       'kortix-teams',
+      'kortix-ui',
+      'kortix-user-memory',
     ]);
 
     expect(isKortixManagedSkillName('kortix-system')).toBe(true);
+    // @kortix/ui's skill (packages/ui/skills/kortix-ui mirrored here): every session loads it.
+    expect(isKortixManagedSkillName('kortix-ui')).toBe(true);
     expect(isKortixManagedSkillName('agent-browser')).toBe(false);
     expect(isKortixManagedSkillName('kortix')).toBe(false);
     expect(isKortixManagedSkillName('harness-reflector')).toBe(false);

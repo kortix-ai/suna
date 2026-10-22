@@ -63,6 +63,7 @@ deleted, and only the branch remains. Public links stay revoked.
 
 Pass the full session id: a deleted session is not in \`sessions ls\`, so a
 short id cannot be expanded, and no other project is searched for it.
+\`sessions ls --deleted\` lists the ones you can restore with their full id;
 \`sessions rm\` prints the exact command, with --project (and --host).
 
 Options:
@@ -159,7 +160,7 @@ Summarize the conversation so far and continue from the summary — what the
 dashboard's "Compact" does. Use it when a long session starts losing the
 thread or hits its context ceiling. The model is the session's own; the
 runtime's configured default is the fallback. A session whose runtime cannot
-compact on demand exits 1 and nothing changes.
+compact on demand exits 1 and nothing changes. A stopped session is started first.
 
 Options:
   --project <id>   Operate on this project id (default: linked).
@@ -235,7 +236,7 @@ export async function runSessionsRestore(argv: string[]): Promise<number> {
   }
   if (!SESSION_UUID_RE.test(sessionId)) {
     process.stderr.write(
-      `${status.err('Pass the full session id. `kortix sessions rm` printed it when it deleted the session.')}\n`,
+      `${status.err('Pass the full session id: `kortix sessions ls --deleted` lists it, and `kortix sessions rm` printed it.')}\n`,
     );
     return 2;
   }
@@ -495,7 +496,12 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
     process.stderr.write(`${status.err('Pass a session id.')}\n\n${COMPACT_HELP}`);
     return 2;
   }
-  const resolved = await loadSessionForChat(sessionId, opts, 'sessions compact');
+  const resolved = await loadSessionForChat(sessionId, opts, 'sessions compact', {
+    onNotRunning: 'start',
+    onStarting: (session) => {
+      process.stderr.write(`Waking ${session.session_id}…\n`);
+    },
+  });
   if (!resolved) return 1;
   if (!runtimeSupports(await readRuntimeCapabilities(resolved), 'session.compact')) {
     process.stderr.write(
@@ -508,6 +514,7 @@ export async function runSessionsCompact(argv: string[]): Promise<number> {
   // same split the prompt path uses. Without one, the runtime's configured
   // default applies; with neither, `compact` refuses instead of guessing.
   let model: { providerID: string; modelID: string };
+  process.stderr.write('Checking session and compacting conversation…\n');
   try {
     model = await withKortixScope(resolved.auth, () =>
       resolved.handle.compact(sessionPromptDefaults(resolved.session).model),

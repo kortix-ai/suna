@@ -92,6 +92,16 @@ export async function deleteSessionReminder(projectId: string, sessionId: string
   );
 }
 
+/** Fire the reminder once now — a Retry. The schedule does not move. Answers the reminder. */
+export async function runSessionReminder(projectId: string, sessionId: string, reminderId: string) {
+  return unwrap(
+    await backendApi.post<SessionReminder>(
+      `/projects/${projectId}/sessions/${sessionId}/reminders/${reminderId}/run`,
+      {},
+    ),
+  );
+}
+
 /** One reminder, addressed by the session it belongs to. */
 export interface SessionReminderRef {
   sessionId: string;

@@ -25,7 +25,7 @@ import { isUuid } from './validate';
 
 /** `anonymous`: nothing authenticated the request (a 401, a public route). */
 export type AuditActorType = 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
-export type AuditOutcome = 'success' | 'failure' | 'denied' | 'pending';
+export type AuditOutcome = 'success' | 'failure' | 'denied' | 'pending' | 'expired';
 
 export interface AuditEventInput {
   accountId?: string | null;

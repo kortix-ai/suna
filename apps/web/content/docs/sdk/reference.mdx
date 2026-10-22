@@ -138,6 +138,7 @@ Methods: `signUp`, `signInWithPassword`, `sendMagicLink`, `verifyOtp`, `signInWi
 | `secretResources.list` · `.create` · `.rotate` · `.retry` · `.remove` · `.grant` · `.revoke` · `.setAccess` | Account-level provider secrets and which projects may use them. |
 | `branding.get(accountId)` · `.update(accountId, { app_name })` · `.uploadAsset(accountId, kind, file)` · `.removeAsset(accountId, kind)` · `.reset(accountId)` | Organization branding. `kind`: `logo`, `icon`, `favicon`, or `logo_dark`, `icon_dark`, `favicon_dark`. |
 | `audit.log(accountId, filters?)` · `audit.export(accountId, { format: 'csv' \| 'jsonl', …filters })` | The audit log, filtered by project, session, actor, source, outcome, request, resource, action or time · the same events as a file. |
+| `audit.activity(accountId, { since?, until?, projectId?, actor?, client?, actorType?, credentialKind? })` | Who was active and how often, per UTC day: per user, the active days, distinct active hours and events. `client: 'browser'` keeps only a person in a web page. |
 | `audit.webhooks.list` · `.create` · `.update` · `.remove` | Signed webhooks that stream audit events to a SIEM. |
 
 Account features are explained in [Accounts & access](/docs/accounts), keys in [API keys and tokens](/docs/accounts/identity#api-keys-and-tokens).
@@ -194,7 +195,7 @@ Every method needs a person's credential. A service account gets `403`.
 | `markRead({ ids })` · `markRead({ all: true })` · `markRead({ sessionId })` | Mark 1 to 100 rows, all rows, or one session's rows read. Returns `{ updated, unread_count }`. |
 | `preferences()` · `updatePreferences({ kinds })` | Push and email per kind: `{ kinds, email_available }`. A patch changes only the kinds it names. |
 | `webPushPublicKey()` · `registerWebPushSubscription({ endpoint, keys })` · `unregisterWebPushSubscription(endpoint)` | Web Push for this browser. Registration needs a browser sign-in: a personal access key gets `403`. |
-| `registerDeviceToken(input)` · `unregisterDeviceToken(token)` | A native app's push token. |
+| `registerDeviceToken(input)` · `unregisterDeviceToken(token)` · `releaseDeviceToken(token, { backendUrl? })` | A native app's push token. `releaseDeviceToken` needs no credential: a signed-out app removes its token. |
 
 Kinds (`INBOX_NOTIFICATION_KINDS`): `turn_done`, `turn_error`, `question`, `permission`, `shared`, `automation_failed`, `automation_recovered`. Defaults are in `DEFAULT_NOTIFICATION_PREFERENCES`. The inbox writes rows only for projects with the `notification_center` feature flag on. The flag is off by default. While it is off, `s.watch()` and `s.setWatch()` return `403 feature_disabled`. The session handle adds `watch()`, `setWatch(watching)` and `presence(…)`. See [Notifications](/docs/work/sessions#notifications).
 
@@ -306,7 +307,7 @@ Policies and approvals are explained in [Policies and approvals](/docs/connect/c
 | `secrets.setGitCredential(input)` | The credential for a bring-your-own git repository. |
 | `secrets.listProviderOAuth()` · `.startProviderOAuth(…)` · `.pollProviderOAuth(…)` · `.removeProviderOAuth(provider)` | Subscription logins for model providers, through a device-code flow. |
 | `tokens.list()` · `tokens.create(input?)` · `tokens.revoke(tokenId)` | Project API keys. Kortix also mints one per session as `KORTIX_TOKEN`. |
-| `setupLinks.requestSecret(input)` · `setupLinks.requestConnector(input)` | A link a person opens to enter a secret or connect an app, without full project access. |
+| `setupLinks.requestSecret(input)` · `setupLinks.requestConnector(input)` | A link a person opens to enter a secret or connect an app, without full project access. A connector link works on `composio` and `pipedream` connectors, and on `mcp` connectors with one-click sign-in. |
 
 Exposure policies and flags are explained in [Secrets](/docs/project/secrets).
 
@@ -322,7 +323,8 @@ Exposure policies and flags are explained in [Secrets](/docs/project/secrets).
 | `connectors.setName` · `.setSensitive` · `.setCredentialMode` · `.setCredential` · `.deleteCredential` | Connector settings and its stored credential. |
 | `connectors.policies.get(slug)` · `connectors.policies.set(slug, policies)` | One connector's tool policies. |
 | `connectors.connections.list()` · `.listAll()` · `.reconcile(…)` · `.reconcileMember(…)` · `.updateCredential(…)` · `.revoke(…)` · `.activate(…)` · `.setDefault(…)` · `.rename(…)` · `.share(…)` · `.addComputer(…)` | Connected accounts: shared or private, defaults, labels, sharing and paired computers. |
-| `connectors.pipedream.listApps` · `.listSections` · `.connect` · `.finalize` | Managed OAuth connect for OAuth apps. |
+| `connectors.pipedream.listApps` · `.listSections` · `.connect` · `.finalize` | Legacy Pipedream connect for OAuth apps. |
+| `connectors.listMoves()` · `connectors.move(slug, { connectionId? })` | Move a Pipedream or Composio connector to its Kortix MCP app. It keeps its slug. `listMoves` returns `ConnectorMove[]`. `move` returns `ConnectorMoveResult`: `status: 'sign_in'` with the `connection_id` to sign in on, or `status: 'moved'`. The root exports the same calls as `listConnectorMoves(projectId)` and `moveConnector(projectId, slug, { connectionId? })`. Needs the `connectors_v2` feature flag. See [Move a Pipedream or Composio connector to Kortix](/docs/connect/connectors#move-a-pipedream-or-composio-connector-to-kortix). |
 | `connectors.discover.list` · `.sections` · `.detail` | The direct connector catalog. Needs the `connectors_api_discover` feature flag. |
 | `policies.list()` · `policies.set(policies)` | Project policies. |
 | `agentIdentities()` · `setAgentScope(agentName, scope)` | The project's agents as principals · bind secrets and connectors to one agent. |
@@ -426,7 +428,7 @@ See [Sandboxes & previews](/docs/work/runtime).
 | Prompts | `send(text, { model?, agent? })`, `abort()`, `prompts.create` · `.list` · `.remove` · `.retry` · `.edit` · `.interrupt` · `.hold` |
 | Live events | `stream({ onEvent, onGapRehydrate?, signal? })` returns a handle with `close()` |
 | Conversation | `messages({ conversationId?, limit?, before? })`, `pending()`, `answerPermission(requestId, 'once' \| 'always' \| 'reject', message?)`, `answerQuestion(requestId, answers \| null)`, `compact(model?)`, `rewind(messageId)`, `restoreRewind()` |
-| Server-side reads | `turn()`, `transcript(options?)`, `transcriptSync(options?)` (answers while the sandbox is stopped), `log(query?)` (one page of the stored session log, `null` when the session has none), `messageAuthors()`, `modelUsage()`, `cost()`, `audit(limit?)` |
+| Server-side reads | `turn()`, `log(query?)` (one page of the stored session log, `null` when the session has none; answers while the sandbox is stopped), `transcript(options?)` and `transcriptSync(options?)` (deprecated: the v1 transcript; read `log`), `messageAuthors()`, `modelUsage()`, `cost()`, `audit(limit?)` |
 | Files and previews | `files.list` · `.read` · `.readBlob` · `.status` · `.findFiles` · `.findText` · `.upload` · `.write` · `.create` · `.copy` · `.remove` · `.mkdir` · `.rename`, `previews()`, `previewUrl(port, path?)`, `proxyUrl(url)`, `sandboxPortUrl(port)`, `attachments.upload` · `.read` |
 | Model, agent and scope | `setModel(model)`, `setAgent(agent)` (every later `send` on this handle uses it, until you change it; `send(text, { model, agent })` overrides it for one prompt), `changeModel('provider/model')` (persisted, restarts the runtime), `scope()`, `rescope(scope)`, `providerSecretPool.list` · `.get` · `.set` |
 | Config | `configState()`, `reloadConfig(input?)`, `reloadConfigStream(…)` |

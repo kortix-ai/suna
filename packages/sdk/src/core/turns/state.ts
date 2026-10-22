@@ -254,44 +254,57 @@ export function computeStatusFromPart(part: PartLike | undefined): string | unde
  * When the last part is a running `task` tool, drills into the child session
  * to derive the real status.
  */
+/** The orchestration tools whose live status comes from the child session. */
+const DELEGATING_TOOLS = new Set([
+  'task',
+  'agent_task',
+  'agent-task',
+  'task_create',
+  'task-create',
+  'task_start',
+  'task-start',
+]);
+
+/** The last meaningful status among a child session's assistant messages,
+ *  scanned in reverse; null when the child has nothing to say yet. */
+function childSessionStatus(childMessages?: readonly MessageWithPartsLike[]): string | undefined {
+  if (!childMessages || childMessages.length === 0) return undefined;
+  for (let mi = childMessages.length - 1; mi >= 0; mi--) {
+    const childMsg = childMessages[mi];
+    if (childMsg.info.role !== 'assistant') continue;
+    for (let pi = childMsg.parts.length - 1; pi >= 0; pi--) {
+      const childStatus = computeStatusFromPart(childMsg.parts[pi]);
+      if (childStatus) return childStatus;
+    }
+  }
+  return undefined;
+}
+
+/** One part's status: a running orchestration tool reports its child
+ *  session's status (or the hand-off line), any other part reports its own. */
+function turnStatusFromPart(
+  p: PartLike,
+  childMessages?: readonly MessageWithPartsLike[],
+): string | undefined {
+  const tp = isToolPart(p) ? (p as PartLike as ToolPartLike) : undefined;
+  if (tp && DELEGATING_TOOLS.has(tp.tool) && tp.state.status === 'running') {
+    const childStatus = childSessionStatus(childMessages);
+    if (childStatus) return childStatus;
+    // Fall through to parent status
+    if (childMessages?.length) return 'Handing off to an agent...';
+    return undefined;
+  }
+  return computeStatusFromPart(p);
+}
+
 export function getTurnStatus(
   parts: ReadonlyArray<{ part: PartLike }>,
   childMessages?: readonly MessageWithPartsLike[],
 ): string {
   // Scan parts in reverse for the last meaningful status
   for (let i = parts.length - 1; i >= 0; i--) {
-    const p = parts[i].part;
-
-    // If it's a running task orchestration tool, try to get status from child session
-    const tp = isToolPart(p) ? (p as PartLike as ToolPartLike) : undefined;
-    if (
-      tp &&
-      (tp.tool === 'task' ||
-        tp.tool === 'agent_task' ||
-        tp.tool === 'agent-task' ||
-        tp.tool === 'task_create' ||
-        tp.tool === 'task-create' ||
-        tp.tool === 'task_start' ||
-        tp.tool === 'task-start') &&
-      tp.state.status === 'running' &&
-      childMessages &&
-      childMessages.length > 0
-    ) {
-      // Walk child session messages in reverse to find status
-      for (let mi = childMessages.length - 1; mi >= 0; mi--) {
-        const childMsg = childMessages[mi];
-        if (childMsg.info.role !== 'assistant') continue;
-        for (let pi = childMsg.parts.length - 1; pi >= 0; pi--) {
-          const childStatus = computeStatusFromPart(childMsg.parts[pi]);
-          if (childStatus) return childStatus;
-        }
-      }
-      // Fall through to parent status
-      return 'Handing off to an agent...';
-    }
-
-    const s = computeStatusFromPart(p);
-    if (s) return s;
+    const status = turnStatusFromPart(parts[i].part, childMessages);
+    if (status) return status;
   }
   return 'Figuring out what’s next...';
 }

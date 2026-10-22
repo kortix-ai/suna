@@ -1,20 +1,20 @@
 'use client';
 
-import { HoverPrefetchLink } from '@/components/common/hover-prefetch-link';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import Hint from '@/components/ui/hint';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import Loading from '@/components/ui/loading';
-import { Skeleton } from '@/components/ui/skeleton';
-import { TableCell, TableRow } from '@/components/ui/table';
+import { HoverPrefetchLink } from '@kortix/ui/internal/components/hover-prefetch-link';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import Hint from '@kortix/ui/hint';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import Loading from '@kortix/ui/loading';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { TableCell, TableRow } from '@kortix/ui/table';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import type { ProjectReminder } from '@kortix/sdk';
-import { AlarmIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
+import { AlarmIcon, ArrowClockwiseIcon, PauseIcon, PlayIcon, TrashIcon } from '@phosphor-icons/react';
 import { useRouter } from 'next/navigation';
 import { memo, useState, type ReactNode } from 'react';
-import { formatFireTime, reminderTitle, scheduleLabel } from './reminder-format';
+import { formatFireTime, reminderTitle, scheduleLabel } from '@kortix/ui/workspace';
 
 /** Status tile per the tinted-icon pattern: yellow = pending, green = done, red = stopped by an error. */
 export function tone(reminder: ProjectReminder) {
@@ -26,7 +26,7 @@ export function tone(reminder: ProjectReminder) {
 }
 
 /** Which of the row's own actions is in flight, if any; `bulk` is a selection batch it is part of. */
-export type RowPending = 'toggle' | 'remove' | 'bulk' | null;
+export type RowPending = 'toggle' | 'remove' | 'retry' | 'bulk' | null;
 
 /**
  * While a mutation runs, actions are locked with `aria-disabled`, not
@@ -74,6 +74,7 @@ export const ReminderRow = memo(function ReminderRow({
   selected,
   onSelect,
   onToggle,
+  onRetry,
   onRemove,
 }: {
   reminder: ProjectReminder;
@@ -85,6 +86,8 @@ export const ReminderRow = memo(function ReminderRow({
   /** The row's checkbox: `range` is a shift-press, selecting from the last pressed row. */
   onSelect: (reminder: ProjectReminder, range: boolean) => void;
   onToggle: (reminder: ProjectReminder) => void;
+  /** Fire a failed reminder once now. */
+  onRetry: (reminder: ProjectReminder) => void;
   onRemove: (reminder: ProjectReminder) => void;
 }) {
   const t = useTranslations('reminders');
@@ -177,6 +180,24 @@ export const ReminderRow = memo(function ReminderRow({
       </TableCell>
       <TableCell className="align-middle" onClick={(e) => e.stopPropagation()}>
         <div className={ACTIONS}>
+          {reminder.last_status === 'failed' ? (
+            <RowHint armed={armed} label={t('retry')}>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label={t('retry')}
+                aria-disabled={disabled || undefined}
+                className={pending ? undefined : LOCKED}
+                onClick={disabled ? undefined : () => onRetry(reminder)}
+              >
+                {pending === 'retry' ? (
+                  <Loading className="size-4" />
+                ) : (
+                  <ArrowClockwiseIcon className="size-4 shrink-0" />
+                )}
+              </Button>
+            </RowHint>
+          ) : null}
           {reminder.state !== 'done' ? (
             <RowHint armed={armed} label={toggleLabel}>
               <Button

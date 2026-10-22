@@ -6,7 +6,7 @@ import { AutomationsHeroVisual } from '@/features/marketing/automations/hero-vis
 import { ScheduleTable } from '@/features/marketing/automations/schedule-table';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { getTranslations } from '@/i18n/get-translations';
 import type { ReactNode } from 'react';
 

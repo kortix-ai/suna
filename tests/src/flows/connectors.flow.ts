@@ -723,6 +723,135 @@ flow(
   },
 );
 
+// connectors_v2 retires Pipedream: a Pipedream connector moves in place to the
+// Kortix app for the same service. The sign-in itself needs the vendor's OAuth
+// server, so this flow covers the listing, the start (the marked account), the
+// refusals and the flag gate; the switch after a sign-in was proven on a local
+// stack and `apps/api/src/connectors/connector-move.test.ts` pins the target URL rule.
+flow(
+  'CONN-37',
+  {
+    domain: 'connectors',
+    routes: [
+      'GET /v1/projects/:projectId/connector-moves',
+      'POST /v1/projects/:projectId/connectors/:slug/move',
+      'POST /v1/connectors/projects/:projectId/connectors',
+      'POST /v1/projects/:projectId/connections/me',
+      'POST /v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+      'PUT /v1/connectors/projects/:projectId/connectors/:slug/policies',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const on = await ctx.fixtures.project({ managedGit: true, metadata: { experimental: { connectors_v2: true } } });
+    const off = await ctx.fixtures.project();
+    type Move = { slug: string; app: string | null; to: { slug: string } | null; connection_id: string | null; signed_in: boolean; accounts: number };
+    const moves = async () =>
+      (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(200).json<{ moves: Move[] }>().moves;
+    let forgedConnectionId = '';
+    const create = async (body: Record<string, unknown>) =>
+      (await owner.post('/v1/connectors/projects/:projectId/connectors', { ...body, create_only: true }, { params: { projectId: on.id }, timeoutMs: 60_000 })).status([200, 409]);
+
+    await ctx.step('setup: a Pipedream Linear connector, a Pipedream app with no Kortix app, and an MCP server', async () => {
+      await create({ slug: 'issues', name: 'Issues', provider: 'pipedream', app: 'linear_app', allow_legacy_pipedream: true });
+      await create({ slug: 'crm', name: 'CRM', provider: 'pipedream', app: 'pipedrive', allow_legacy_pipedream: true });
+      await create({ slug: 'desk', provider: 'mcp', url: 'https://ke2e.kortix.test/mcp', auth: { type: 'none' } });
+    });
+
+    await ctx.step('the listing names each Pipedream connector and the Kortix app it moves to; an MCP server is not listed', async () => {
+      const list = await moves();
+      const issues = list.find((m) => m.slug === 'issues');
+      const crm = list.find((m) => m.slug === 'crm');
+      if (issues?.app !== 'linear_app' || issues.to?.slug !== 'linear' || issues.connection_id !== null || issues.signed_in) {
+        throw new Error(`issues entry is wrong: ${JSON.stringify(issues)}`);
+      }
+      if (crm?.to !== null) throw new Error(`a Pipedream app with no Kortix app must list to: null: ${JSON.stringify(crm)}`);
+      if (list.some((m) => m.slug === 'desk')) throw new Error('an mcp connector is not a move');
+    });
+
+    await ctx.step('a move_to an account owner writes is not a mark: the listing ignores it, and the account has no sign-in target', async () => {
+      const forged = await owner.post(
+        '/v1/projects/:projectId/connections/me',
+        { connector_alias: 'issues', label: 'Forged', metadata: { move_to: 'linear' } },
+        { params: { projectId: on.id } },
+      );
+      forged.status([200, 201]);
+      const connectionId = forged.json<{ connection_id: string }>().connection_id;
+      forgedConnectionId = connectionId;
+      const issues = (await moves()).find((m) => m.slug === 'issues');
+      if (issues?.connection_id !== null) throw new Error(`a forged mark started a move: ${JSON.stringify(issues)}`);
+      const discover = await owner.post(
+        '/v1/projects/:projectId/connections/:connectionId/oauth2/discover-resource',
+        {},
+        { params: { projectId: on.id, connectionId } },
+      );
+      if (discover.statusCode !== 400 || !discover.text().includes('no server URL')) {
+        throw new Error(`unexpected discovery answer: ${discover.statusCode} ${discover.text()}`);
+      }
+    });
+
+    await ctx.step('a connector with Pipedream tool rules does not move; a * rule does not block it', async () => {
+      await create({ slug: 'board', name: 'Board', provider: 'pipedream', app: 'clickup', allow_legacy_pipedream: true });
+      const policies = (list: Array<{ match: string; action: string }>) =>
+        owner.put('/v1/connectors/projects/:projectId/connectors/:slug/policies', { policies: list }, { params: { projectId: on.id, slug: 'board' }, timeoutMs: 60_000 });
+      (await policies([{ match: 'clickup-create-task', action: 'block' }])).status(200);
+      const refused = await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'board' } });
+      refused.status(409);
+      if (!refused.text().includes('clickup-create-task')) throw new Error(`the refusal does not name the rule: ${refused.text()}`);
+      (await policies([{ match: '*', action: 'require_approval' }])).status(200);
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'board' } }))
+        .status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'clickup');
+    });
+
+    await ctx.step('a Composio connector lists with its provider and moves too; Composio Slack does not move', async () => {
+      await create({ slug: 'tasks', name: 'Tasks', provider: 'composio', app: 'clickup' });
+      await create({ slug: 'chat-legacy', name: 'Chat', provider: 'composio', app: 'slack' });
+      const list = await moves();
+      const tasks = list.find((m) => m.slug === 'tasks') as (Move & { provider?: string }) | undefined;
+      if (tasks?.provider !== 'composio' || tasks.to?.slug !== 'clickup') throw new Error(`tasks entry is wrong: ${JSON.stringify(tasks)}`);
+      const chat = list.find((m) => m.slug === 'chat-legacy');
+      if (chat && chat.to !== null) throw new Error(`Slack must not move: ${JSON.stringify(chat)}`);
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'tasks' } }))
+        .status(200).body().has('$.status', 'sign_in').has('$.to.url', 'https://mcp.clickup.com/mcp');
+      (await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/config', { params: { projectId: on.id, slug: 'tasks' } }))
+        .status(200).body().has('$.provider', 'composio');
+    });
+
+    await ctx.step('a move starts: it marks an account and names the catalogue MCP server to sign in to', async () => {
+      const r = await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: on.id, slug: 'issues' } });
+      r.status(200).body().has('$.status', 'sign_in').has('$.to.slug', 'linear').has('$.to.url', 'https://mcp.linear.app/mcp');
+      const connectionId = r.json<{ connection_id: string }>().connection_id;
+      const issues = (await moves()).find((m) => m.slug === 'issues');
+      if (issues?.connection_id !== connectionId || issues.signed_in) throw new Error(`the started move is not listed: ${JSON.stringify(issues)}`);
+      // Pipedream still serves the connector until the sign-in completes.
+      (await owner.get('/v1/connectors/projects/:projectId/connectors/:slug/config', { params: { projectId: on.id, slug: 'issues' } }))
+        .status(200).body().has('$.provider', 'pipedream');
+    });
+
+    await ctx.step('refusals: no Kortix app → 409, not a Pipedream connector → 409, another connector\'s account → 400, an unknown account or connector → 404', async () => {
+      const move = (slug: string, body: Record<string, unknown> = {}) =>
+        owner.post('/v1/projects/:projectId/connectors/:slug/move', body, { params: { projectId: on.id, slug } });
+      const noApp = await move('crm');
+      noApp.status(409);
+      if (!noApp.text().includes('keeps working through Pipedream')) throw new Error(`unexpected refusal: ${noApp.text()}`);
+      const notPipedream = await move('desk');
+      notPipedream.status(409);
+      if (!notPipedream.text().includes('Only a Pipedream or Composio connector moves')) throw new Error(`unexpected refusal: ${notPipedream.text()}`);
+      (await move('board', { connection_id: forgedConnectionId })).status(400);
+      (await move('issues', { connection_id: '00000000-0000-4000-8000-000000000000' })).status(404);
+      (await move('no-such-connector')).status(404);
+    });
+
+    await ctx.step('without connectors_v2 both routes answer 403 feature_disabled; a non-member gets 403', async () => {
+      (await owner.get('/v1/projects/:projectId/connector-moves', { params: { projectId: off.id } }))
+        .status(403).body().has('$.code', 'feature_disabled').has('$.feature', 'connectors_v2');
+      (await owner.post('/v1/projects/:projectId/connectors/:slug/move', {}, { params: { projectId: off.id, slug: 'issues' } }))
+        .status(403).body().has('$.code', 'feature_disabled');
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/projects/:projectId/connector-moves', { params: { projectId: on.id } })).status(403);
+    });
+  },
+);
+
 // Pairs with CONN-7 (PUT .../credential) — disconnect (delete) a connector's
 // stored credential. Unknown connector → 404 (deleteConnectorCredential looks
 // the connector up before touching the credential store).
@@ -918,8 +1047,11 @@ flow(
     });
 
     await ctx.step(
-      'connection OAuth routes reject a non-Pipedream connector → 404/501',
+      'MCP connection sign-in on an unreachable server → 400 naming the server; finalize → not connected',
       async () => {
+        // #10266 gave MCP connections a sign-in on this route. The server URL
+        // does not resolve, so discovery fails: a 400 about the configured
+        // server, never a 500.
         const connect = await ctx.client
           .as(ctx.P.OWNER)
           .post(
@@ -927,7 +1059,10 @@ flow(
             {},
             { params: { projectId: p.id, connectionId: memberConnectionId } },
           );
-        connect.status([404, 501]);
+        connect
+          .status(400)
+          .body()
+          .matches('$.message', /Could not discover sign-in for this MCP server: .*ke2e\.kortix\.test/);
 
         const finalize = await ctx.client
           .as(ctx.P.OWNER)
@@ -936,7 +1071,7 @@ flow(
             {},
             { params: { projectId: p.id, connectionId: memberConnectionId } },
           );
-        finalize.status([404, 501]);
+        finalize.status(200).body().has('$.connected', false);
       },
     );
 
@@ -1964,14 +2099,21 @@ flow(
     ],
   },
   async (ctx) => {
+    let providers: string[] = [];
+    await ctx.step('read the connect providers this deployment offers', async () => {
+      const status = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/connect-status');
+      status.status(200);
+      const statusBody = status.json<{ provider: string | null; providers?: string[] }>();
+      providers = statusBody.providers ?? (statusBody.provider ? [statusBody.provider] : []);
+    });
+    // A bare return recorded a pass with zero steps, so a Gmail OAuth
+    // regression went unnoticed on every non-Composio run (KRTX-2852).
+    if (!providers.includes('composio')) {
+      await ctx.step('this deployment offers no Composio connect: skipped', async () => {});
+      return;
+    }
     const p = await ctx.fixtures.project({ managedGit: true });
     const slug = `ke2e-gmail-oauth-${Date.now().toString(36)}`;
-
-    const status = await ctx.client.as(ctx.P.OWNER).get('/v1/connectors/connect-status');
-    status.status(200);
-    const statusBody = status.json<{ provider: string | null; providers?: string[] }>();
-    const providers = statusBody.providers ?? (statusBody.provider ? [statusBody.provider] : []);
-    if (!providers.includes('composio')) return;
 
     await ctx.step('declare Gmail as a Composio-managed OAuth connector', async () => {
       const created = await ctx.client.as(ctx.P.OWNER).post(

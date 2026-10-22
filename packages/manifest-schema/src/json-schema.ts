@@ -160,7 +160,7 @@ function grantSetSchema(itemSchema: JsonSchemaFragment = NON_BLANK_STRING): Json
     description: 'An allowlist of names, or the "all" / "none" sentinel. "*" (alone or in the list) means "all".',
     oneOf: [
       { type: 'array', items: itemSchema },
-      { type: 'string', enum: ['all', '*', 'none'] },
+      normalizedEnumSchema(['all', '*', 'none', '']),
     ],
   };
 }
@@ -280,11 +280,41 @@ const SLUG_SCHEMA: JsonSchemaFragment = { type: 'string', pattern: SLUG_RE.sourc
  *  `..`, and no `/` or end immediately after it). */
 const PATH_TRAVERSAL_OR_ABSOLUTE_PATTERN = String.raw`^/|(^|/)\.\.($|/)`;
 
+/** Non-ASCII code points whose `toLowerCase()` folds to an ASCII letter. A
+ *  scan of every code point U+0000..U+10FFFF finds exactly one: U+212A KELVIN
+ *  SIGN → "k" (U+017F is already lowercase; İ and fullwidth Ｋ fold to
+ *  non-ASCII or multi-char results). The validator matches with
+ *  `trim().toLowerCase()` (`./index.ts`), so a literal containing `k` must
+ *  also accept the KELVIN SIGN. Pinned by the Unicode conformance fixtures
+ *  in `./__tests__/json-schema.conformance.test.ts`. */
+const UNICODE_ASCII_FOLDS: Record<string, string> = { k: '\u212A' };
+
 /** Every case-variant of one of `isEnabledValue`'s (`./index.ts`) accepted
  *  sentinel words, turned into a case-insensitive regex alternative (JSON
- *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`. */
+ *  Schema `pattern` has no `/i` flag) — e.g. `true` → `[Tt][Rr][Uu][Ee]`,
+ *  plus the Unicode folds the validator's `toLowerCase()` performs
+ *  (`keyed` → `[Kk\u212A][Ee]…`). */
 function caseInsensitiveLiteral(word: string): string {
-  return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}]`);
+  return word.replace(/[a-z]/gi, (ch) => `[${ch.toLowerCase()}${ch.toUpperCase()}${UNICODE_ASCII_FOLDS[ch.toLowerCase()] ?? ''}]`);
+}
+
+/** Preserve editor suggestions while matching the validator's trim/lowercase.
+ *  An empty-string member gets its OWN `^\s*$` arm instead of becoming an
+ *  empty pattern alternative: `(?:…|)` sitting between the leading `^\s*`
+ *  and the trailing `\s*` is quadratic on whitespace-only input followed by
+ *  any non-matching character (16 s for 100 KB, measured — G9 item [B]),
+ *  while the dedicated blank arm is linear. Acceptance is unchanged: the
+ *  validator's `trim().toLowerCase()` sends both `""` and `"   "` to `""`. */
+function normalizedEnumSchema(values: readonly string[]): JsonSchemaFragment {
+  const words = values.filter((value) => value !== '');
+  const anyOf: JsonSchemaFragment[] = [{ enum: [...values] }];
+  if (words.length > 0) {
+    anyOf.push({ pattern: `^\\s*(?:${words.map((value) => value === '*' ? '\\*' : caseInsensitiveLiteral(value)).join('|')})\\s*$(?![\\s\\S])` });
+  }
+  if (words.length !== values.length) {
+    anyOf.push({ pattern: '^\\s*$(?![\\s\\S])' });
+  }
+  return { type: 'string', anyOf };
 }
 
 const ENABLED_SENTINEL_WORDS = ['true', 'false', '1', '0', 'yes', 'no', 'on', 'off'] as const;
@@ -403,6 +433,39 @@ function sandboxSchema(): JsonSchemaFragment {
 }
 
 /** One `[[triggers]]` entry — cron, webhook, monitor, or event (`validateTriggers`). */
+/**
+ * A trigger `filter` (KRTX-1721): payload path → a value (equals) or an object
+ * with exactly one operator. Mirrors `parseTriggerFilter` in `./trigger-filter`.
+ */
+function triggerFilterSchema(): JsonSchemaFragment {
+  const scalar: JsonSchemaFragment = { type: ['string', 'number', 'boolean'] };
+  const list = (item: JsonSchemaFragment): JsonSchemaFragment => ({
+    oneOf: [item, { type: 'array', minItems: 1, items: item }],
+  });
+  const prefix: JsonSchemaFragment = { type: ['string', 'number', 'boolean'], minLength: 1 };
+  return {
+    type: 'object',
+    additionalProperties: {
+      oneOf: [
+        scalar,
+        {
+          type: 'object',
+          minProperties: 1,
+          maxProperties: 1,
+          additionalProperties: false,
+          properties: {
+            not: list(scalar),
+            in: list(scalar),
+            exists: { type: 'boolean' },
+            prefix: list(prefix),
+            not_prefix: list(prefix),
+          },
+        },
+      ],
+    },
+  };
+}
+
 function triggerSchema(version: 1 | 2): JsonSchemaFragment {
   const durationSchema: JsonSchemaFragment = { type: 'string', pattern: DURATION_RE.source };
   return {
@@ -417,11 +480,11 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       agent: version === 2 ? NON_BLANK_STRING : { type: 'string' },
       agent_name: { type: 'string' },
       enabled: enabledValueSchema(),
-      session_mode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
+      session_mode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_key: { type: 'string' },
       sessionKey: { type: 'string' },
-      filter: { type: 'object', additionalProperties: { type: 'string' } },
-      sessionMode: { type: 'string', enum: ['fresh', 'reuse', 'pinned', 'keyed'] },
+      filter: triggerFilterSchema(),
+      sessionMode: normalizedEnumSchema(['fresh', 'reuse', 'pinned', 'keyed']),
       session_id: { type: 'string' },
       sessionId: { type: 'string' },
       prompt: { type: 'string' },
@@ -434,6 +497,12 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       // `type: cron` only — the misfire bound. Its 60s floor is the imperative
       // validator's, like the monitor duration floors below.
       max_lateness: durationSchema,
+      // Any trigger type: runs started in any 60 minutes (60 when unset) and
+      // in a UTC day (KRTX-1721).
+      max_runs_per_hour: { type: 'integer', minimum: 1 },
+      max_runs_per_day: { type: 'integer', minimum: 1 },
+      // Fresh session mode only: skip holds a fire while the previous run is active (KRTX-1721).
+      overlap: { type: 'string', enum: ['skip', 'allow'] },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,
@@ -460,8 +529,8 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       {
         if: {
           anyOf: [
-            { required: ['session_mode'], properties: { session_mode: { const: 'pinned' } } },
-            { not: { required: ['session_mode'] }, required: ['sessionMode'], properties: { sessionMode: { const: 'pinned' } } },
+            { required: ['session_mode'], properties: { session_mode: normalizedEnumSchema(['pinned']) } },
+            { not: { required: ['session_mode'] }, required: ['sessionMode'], properties: { sessionMode: normalizedEnumSchema(['pinned']) } },
           ],
         },
         then: {
@@ -558,7 +627,7 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
 const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED_SLUG_PROVIDERS).map(
   ([slug, provider]) => ({
     if: { properties: { slug: { const: slug } } },
-    then: { properties: { provider: { const: provider } } },
+    then: { properties: { provider: normalizedEnumSchema([provider]) } },
   }),
 );
 
@@ -576,7 +645,7 @@ const RESERVED_SLUG_CONST_CHECKS: JsonSchemaFragment[] = Object.entries(RESERVED
  *    here); v2 forbids it outright (`false` schema — matches the `auth.secret`
  *    forbidden-key pattern below) — see `validateConnectors`. */
 function connectorSchema(version: 1 | 2): JsonSchemaFragment {
-  const credentialSchema: JsonSchemaFragment = version === 2 ? { const: 'shared' } : {};
+  const credentialSchema: JsonSchemaFragment = version === 2 ? normalizedEnumSchema(['shared']) : {};
   const agentScopeSchema: JsonSchemaFragment | boolean = version === 2 ? false : {};
   return {
     type: 'object',
@@ -585,19 +654,18 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
       slug: SLUG_SCHEMA,
       name: NON_BLANK_STRING,
       // `computer` is deliberately excluded — synth-only, never hand-authored.
-      provider: { type: 'string', enum: [...CONNECTOR_PROVIDERS] },
+      provider: normalizedEnumSchema(CONNECTOR_PROVIDERS),
       app: { type: 'string' },
       url: { type: 'string' },
       endpoint: { type: 'string' },
       base_url: { type: 'string' },
       baseUrl: { type: 'string' },
-      transport: { type: 'string', enum: ['http', 'sse'] },
+      transport: normalizedEnumSchema(['http', 'sse']),
       spec: { type: 'string' },
-      platform: { type: 'string', enum: [...CHANNEL_PLATFORMS] },
+      platform: normalizedEnumSchema(CHANNEL_PLATFORMS),
       credential: credentialSchema,
       authorization_strategy: {
-        type: 'string',
-        enum: [...CONNECTOR_AUTHORIZATION_STRATEGIES],
+        ...normalizedEnumSchema(CONNECTOR_AUTHORIZATION_STRATEGIES),
         default: 'project',
       },
       agent_scope: agentScopeSchema,
@@ -605,7 +673,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
         type: 'object',
         required: ['type'],
         properties: {
-          type: { type: 'string', enum: [...CONNECTOR_AUTH_TYPES] },
+          type: normalizedEnumSchema(CONNECTOR_AUTH_TYPES),
           secret: false,
         },
         additionalProperties: true,
@@ -636,7 +704,7 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
           required: ['match', 'action'],
           properties: {
             match: NON_BLANK_STRING,
-            action: { type: 'string', enum: [...CONNECTOR_POLICY_ACTIONS] },
+            action: normalizedEnumSchema(CONNECTOR_POLICY_ACTIONS),
           },
         },
       },
@@ -644,21 +712,21 @@ function connectorSchema(version: 1 | 2): JsonSchemaFragment {
     additionalProperties: true,
     allOf: [
       ...RESERVED_SLUG_CONST_CHECKS,
-      { if: { properties: { provider: { const: 'pipedream' } } }, then: { required: ['app'] } },
-      { if: { properties: { provider: { const: 'mcp' } } }, then: { required: ['url'] } },
-      { if: { properties: { provider: { const: 'graphql' } } }, then: { required: ['endpoint'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['pipedream']) } }, then: { required: ['app'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['mcp']) } }, then: { required: ['url'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['graphql']) } }, then: { required: ['endpoint'] } },
       {
-        if: { properties: { provider: { const: 'http' } } },
+        if: { properties: { provider: normalizedEnumSchema(['http']) } },
         then: { anyOf: [{ required: ['base_url'] }, { required: ['baseUrl'] }] },
       },
-      { if: { properties: { provider: { const: 'channel' } } }, then: { required: ['platform'] } },
+      { if: { properties: { provider: normalizedEnumSchema(['channel']) } }, then: { required: ['platform'] } },
       // channel connectors authenticate via the platform install token.
       {
         if: {
-          properties: { provider: { const: 'channel' } },
+          properties: { provider: normalizedEnumSchema(['channel']) },
           required: ['auth'],
         },
-        then: { properties: { auth: { properties: { type: { const: 'none' } } } } },
+        then: { properties: { auth: { properties: { type: normalizedEnumSchema(['none']) } } } },
       },
     ],
   };
@@ -1215,6 +1283,17 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       },
       policy: { type: 'object' },
       policies: { type: 'array' },
+      approvals: {
+        type: 'object',
+        properties: {
+          ttl: {
+            type: 'string',
+            pattern: '^[0-9]+[mhd]$',
+            description: 'How long a held connector call waits for a decision: `30m`, `4h`, `7d`. Clamped to 5m..30d. Default 24h.',
+          },
+        },
+        additionalProperties: false,
+      },
       agents: {
         type: 'object',
         minProperties: 1,

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "done",
+  "type": "object",
+  "required": ["status", "outputs"],
+  "additionalProperties": false,
+  "properties": {
+    "status": { "enum": ["succeeded", "failed"] },
+    "error": { "type": "string", "maxLength": 1000 },
+    "outputs": { "type": "array", "items": { "type": "string" } }
+  }
+}

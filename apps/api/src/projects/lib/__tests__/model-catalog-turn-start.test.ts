@@ -21,11 +21,11 @@ import {
 } from '../model-catalog-turn-start';
 
 const CURRENT_MANAGED_IDS = new Set(['deepseek-v4.1-flash', 'glm-5.3-flash', 'kimi-k3']);
-const isManagedModelId = (id: string) => CURRENT_MANAGED_IDS.has(id);
+const isLineupModelId = (id: string) => CURRENT_MANAGED_IDS.has(id);
 
 function deps(over: Partial<ModelCatalogTurnStartDeps> = {}): ModelCatalogTurnStartDeps {
   return {
-    isManagedModelId,
+    isLineupModelId,
     lastKnown: () => undefined,
     probe: async () => undefined,
     convergeCatalog: async () => null,

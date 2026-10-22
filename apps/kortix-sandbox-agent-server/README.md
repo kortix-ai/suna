@@ -250,6 +250,42 @@ curl -s http://localhost:9999/kortix/health
 The daemon should boot and report `opencode: "starting"` (or `"down"` if the
 binary is genuinely missing) without crashing.
 
+## Run it on your machine (`scripts/local.ts`)
+
+`scripts/local.ts` runs a whole session on your computer and gives you a chat
+REPL in the terminal. It needs no Kortix API and no sandbox provider. The model
+is your ChatGPT Plus/Pro subscription.
+
+```
+bun apps/kortix-sandbox-agent-server/scripts/local.ts login      # once: ChatGPT sign-in in the browser
+cd ~/some/project
+bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts                      # pi
+bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts --harness opencode   # OpenCode
+```
+
+Options: `--model codex/<id>` (default `codex/gpt-5.5`; `/models` in the REPL
+lists them), `--workspace <dir>` (default: the current directory), `--fresh`
+(drop the previous conversation of this workspace). In the REPL, `/model <id>`
+switches the model, Ctrl-C aborts the turn, and Ctrl-D quits.
+
+What it starts:
+
+1. A local LLM gateway on `127.0.0.1`: `packages/llm-gateway` with local hooks.
+   It sends every request to ChatGPT's Codex backend with the token `login`
+   stored in `~/.kortix/local/codex-auth.json`, and refreshes that token.
+2. kortixd from source, pointed at that gateway (`KORTIX_LLM_BASE_URL`), with
+   `HOME=~/.kortix/local/home` so it never writes your own git or OpenCode
+   config. State, `daemon.log` and `gateway.log` live in
+   `~/.kortix/local/workspaces/<harness>-<hash>/`, so the next run in the same
+   directory continues the same conversation.
+3. A REPL over the Runtime API: `POST /kortix/runtime/sessions/:id/prompt` and
+   the `GET /kortix/runtime/events` stream. It shows text, reasoning (dim), tool
+   calls, questions and permission requests.
+
+The agent's tools run as your user in the workspace directory. This is not a
+sandbox. Tools that call the Kortix API (`web_search`, `scrape_webpage`, …) fail
+without one.
+
 ## Management CLI
 
 `kortixd` is a normal installable app. Its subcommands (`src/app/cli.ts`) manage the

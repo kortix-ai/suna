@@ -18,7 +18,7 @@ import {
 import { resetAiIndexRateLimitsForTests } from '@/lib/seo/rate-limit';
 import { markdownResponse } from '@/lib/seo/response';
 import { renderRobotsTxt } from '@/lib/seo/robots';
-import { CANONICAL_ORIGIN } from '@/lib/site-metadata';
+import { CANONICAL_ORIGIN } from '@kortix/ui/internal/lib/site-metadata';
 
 const originalUseCases = process.env.NEXT_PUBLIC_USE_CASES_ENABLED;
 const UNRESOLVED_MDX_COMPONENT =

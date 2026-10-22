@@ -356,6 +356,27 @@ flow(
     );
 
     await ctx.step(
+      "a deployment that names the deprecated daytona provider → 400 sandbox_provider_deprecated",
+      async () => {
+        const response = await owner.post(
+          "/v1/projects/:projectId/apps/:appId/deployments",
+          {
+            artifact_id: artifactId,
+            provider: "daytona",
+            source: {
+              kind: "oci_image",
+              image: "docker.io/library/caddy:alpine",
+              command: ["caddy", "file-server"],
+              port: 80,
+            },
+          },
+          { params: appParams },
+        );
+        response.status(400).body().has("$.code", "sandbox_provider_deprecated");
+      },
+    );
+
+    await ctx.step(
       "deployment reads expose empty state and unknown boundaries",
       async () => {
         const list = await owner.get(
@@ -541,6 +562,7 @@ flow(
       "PUT /v1/admin/api/projects/:id/features",
       "GET /v1/projects/:projectId/apps",
       "POST /v1/projects/:projectId/apps",
+      "POST /v1/projects/:projectId/apps/:appId/access-session",
       "GET /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId",
       "PATCH /v1/projects/:projectId/apps/:appId/access",
@@ -629,6 +651,14 @@ flow(
       if (!visible.includes(appId)) {
         throw new Error(`project-wide App ${appId} was hidden from a teammate`);
       }
+
+      // A listed App is one the teammate can open: the card mints this session.
+      const session = await teammate.post(
+        "/v1/projects/:projectId/apps/:appId/access-session",
+        {},
+        { params: { ...projectParams, appId } },
+      );
+      session.status(200).body().exists("$.url").exists("$.expires_at");
     });
 
     await ctx.step(

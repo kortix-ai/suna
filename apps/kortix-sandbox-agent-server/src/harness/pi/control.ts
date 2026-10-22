@@ -1,7 +1,7 @@
 /**
  * Control operations for a pi session: live environment apply, repository
  * refresh, abort. The host-level steps (project env store, agent env file,
- * egress shim, LLM gateway mode) are the same ones the OpenCode adapter runs;
+ * egress shim, LLM gateway target) are the same ones the OpenCode adapter runs;
  * the harness-specific part is trivially cheaper — pi re-reads its settings in
  * place, there is no process to restart and no turn to interrupt.
  */
@@ -76,7 +76,11 @@ function applyRuntimeEnv(input: unknown, releaseOwned: boolean): { changed: bool
 function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
-  if (!enabled) return setRuntimeEnv({ KORTIX_LLM_BASE_URL: null, KORTIX_LLM_PROXY_URL: null })
+  // The gateway is the only model path; an older API can still send `false`.
+  if (!enabled) {
+    logger.info('[env] llmGatewayEnabled=false ignored; the LLM gateway is the only model path')
+    return { changed: false, names: [] }
+  }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
   const token = process.env.KORTIX_TOKEN
   if (!token) throw new Error('KORTIX_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')

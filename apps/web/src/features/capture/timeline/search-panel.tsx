@@ -5,14 +5,14 @@ import { useCaptureSearch } from '@kortix/sdk/react';
 import { MagnifyingGlassIcon } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/input-group';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
 import { clockTime, shortDate } from '../capture-time';

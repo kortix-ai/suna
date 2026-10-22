@@ -10,7 +10,7 @@ A model is the LLM that a session's agent runs on. A project can use Kortix-mana
     Start a [session](/docs/work/sessions). On Kortix Cloud it runs on the platform default, `deepseek-v4.1-flash`. You set up nothing.
   </Step>
   <Step title="Pick another model">
-    Choose a model in the composer's model picker, or run `kortix sessions new --model kimi-k3`. To switch a running session, run `kortix sessions model <session-id> <model-id>`. A live sandbox restarts and the turn in flight ends. A stopped session uses the new model at its next start.
+    Choose a model in the composer's model picker, or run `kortix sessions new --model glm-5.3-flash`. To switch a running session, run `kortix sessions model <session-id> <model-id>`. A live sandbox restarts and the turn in flight ends. A stopped session uses the new model at its next start.
   </Step>
   <Step title="Connect your own provider">
     Open **Customize → Models → Providers** and paste a key, or run `kortix providers set anthropic` and paste the key on stdin.
@@ -26,29 +26,28 @@ Every model request goes through the LLM gateway. The gateway finds the credenti
 
 | Shape | Example | Who supplies the credentials | Who bills |
 | --- | --- | --- | --- |
-| Bare managed id | `kimi-k3` | Kortix | Kortix credits |
+| Bare managed id | `glm-5.3-flash` | Kortix | Kortix credits |
 | `provider/model` | `anthropic/<model-id>` | Your provider API key | Your provider; past $1,000 a month, a 5% Kortix fee in credits |
 | `codex/<id>` | `codex/gpt-5.6-sol` | Your ChatGPT Plus or Pro subscription | OpenAI, through your plan |
+| `<custom-id>/<model>` | `my-vllm/qwen-3` | Your [custom endpoint](#connect-your-own-provider)'s key, when it needs one | Your endpoint; no Kortix credits |
 
-Inside the sandbox, OpenCode shows every gateway model under the `kortix` provider, for example `kortix/kimi-k3`. The gateway removes the `kortix/` prefix. Use the bare id everywhere else.
+Inside the sandbox, OpenCode shows every gateway model under the `kortix` provider, for example `kortix/glm-5.3-flash`. The gateway removes the `kortix/` prefix. Use the bare id everywhere else.
 
 The catalog comes from [models.dev](https://models.dev) and the Codex model list. The API refreshes it every hour, so a new provider model appears without a Kortix release.
 
-The `llm_gateway` project flag selects this path. It is on by default. With the flag off, the project runs native OpenCode model management: see [Without the gateway](#without-the-gateway).
-
 ## Kortix-managed models
 
-Kortix Cloud serves three managed models. You need no key.
+Kortix managed models are the models Platinum Inference offers. You need no key. The picker shows the current list, with each model's context window, image support and price. On 2026-10-21 the list was:
 
-| Model | Id | Tier | Context | Max output | Images |
-| --- | --- | --- | --- | --- | --- |
-| Kimi K3 2.8T | `kimi-k3` | flagship | 1,000,000 | 65,536 | Yes |
-| DeepSeek V4.1 Flash | `deepseek-v4.1-flash` | balanced, platform default | 1,000,000 | 65,536 | Yes |
-| GLM 5.3 Flash | `glm-5.3-flash` | fast | 1,000,000 | 65,536 | Yes |
+| Model | Id | Context | Max output | Images |
+| --- | --- | --- | --- | --- |
+| DeepSeek V4.1 Flash | `deepseek-v4.1-flash` | 1,000,000 | 65,536 | Yes |
+| GLM 5.3 Flash | `glm-5.3-flash` | 1,000,000 | 65,536 | Yes |
 
-- The picker lists them under **Kortix**.
-- Every plan, Free included, can run the platform default. Another managed model needs a plan that includes it. Otherwise the request returns `plan_upgrade_required`.
-- Kortix sends each managed model only to a fixed pool of US inference endpoints with zero data retention.
+- The picker lists them under **Kortix**. The platform default is the first model Platinum Inference lists, unless the operator sets one.
+- A session or default that names a retired model (for example `kimi-k3`) runs on its successor.
+- Managed models need the Credits plan or Enterprise. On Free, every managed model, the platform default included, returns `plan_upgrade_required`.
+- Platinum Inference serves every managed model, only through inference providers with zero data retention.
 - Managed requests use credits. See [Plans & credits](/docs/credits).
 - The managed lineup has no OpenAI or Anthropic models. Use your own key or a ChatGPT subscription for them.
 - A self-hosted instance has no managed models. Connect your own providers.
@@ -93,7 +92,22 @@ kortix providers login opencode-go   # OpenCode Go
 
 In the web app, use **Connect ChatGPT** and **Connect OpenCode Go**. The OpenCode Zen login runs only from the CLI. Zen and Go each need their own login. An OpenCode login lasts 30 days, and Kortix renews it one day before it expires. When a renewal is refused, requests return `provider_reauth_required`: sign in again.
 
-**A custom endpoint.** For a self-hosted or unlisted OpenAI-compatible endpoint, open the **Custom** tab. Enter a provider id, a name, the base URL, a model id and a model name. The key is optional. Kortix saves the key as `CUSTOM_<ID>_API_KEY` and shows an OpenCode provider snippet. Commit the snippet to `opencode.jsonc` in the project's OpenCode config directory (`harnesses/opencode/` by default). A custom provider calls its endpoint directly, not through the gateway. Budgets, logs and routing do not apply to it, and only the OpenCode harness reads it.
+**A custom endpoint.** For a self-hosted or unlisted OpenAI-compatible endpoint, open the **Custom** tab. Enter a provider id, a name, the base URL and one or more models (an id and a name each). Kortix stores the endpoint in the project. The gateway calls `<base_url>/chat/completions` with the OpenAI chat-completions format. The key is optional: Kortix saves it as the project secret `CUSTOM_<ID>_API_KEY` and sends it as a Bearer token. Budgets, logs, access rules and routing apply as for any other model. Kortix charges no credits for a custom endpoint. Both harnesses, OpenCode and pi, can use its models. A model id is `<id>/<model>`, for example `my-vllm/qwen-3`.
+
+From the CLI:
+
+```bash
+printf %s "$KEY" | kortix providers custom set my-vllm \
+  --base-url https://llm.example.com/v1 --model "qwen-3=Qwen 3" --key-stdin
+kortix providers custom ls
+kortix providers custom rm my-vllm
+```
+
+`set` creates or replaces the endpoint. `--model <id>[=<name>]` repeats and replaces the model list. `--name <name>` defaults to the id. `--key-stdin` reads the key from stdin. `rm` removes the endpoint and its key.
+
+- The provider id cannot be a catalog provider id such as `openai`: that returns `reserved_provider_id`.
+- The gateway refuses a base URL on a private, loopback or link-local address. On a self-hosted deployment, list the host in the API environment variable `KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS` (comma-separated) to allow it.
+- A key saved by the earlier snippet flow, with no endpoint stored, shows as **Add endpoint** in the **Custom** tab. Add the base URL and models to use it.
 
 Your provider bills a request that runs on your own key or subscription. Kortix charges nothing for the first $1,000 of key usage a month at list price, then 5% of each request's list price, from credits ([Credits](/docs/credits)). A ChatGPT subscription and OpenCode Go are never charged. The one other charge is a Kortix model that you put in your own fallback chain: see [Routing and fallback](#routing-and-fallback).
 
@@ -117,7 +131,7 @@ A stale default never fails a session. A less specific default is not tried when
 
 - An explicit pin that the project cannot run falls through to the defaults.
 - A default that cannot run, for example after its key was removed, falls back to a model of another connected provider, then to the platform default.
-- On the Free plan, a default that names another managed model falls back to the platform default.
+- On the Free plan, a default that names a managed model falls back to your connected ChatGPT subscription, then a connected provider key. With neither, the session has no model until you connect one.
 
 `kortix models default` prints the chain and what it resolves to. `kortix models default --clear [--account]` removes a default. Writes need the `project.model.write` permission.
 
@@ -151,11 +165,11 @@ Open **Customize → Models → Routing**, or use the CLI:
 ```bash
 kortix gateway routing                      # effective policy and its sources
 kortix gateway routing set \
-  --default-model kimi-k3 \
+  --default-model glm-5.3-flash \
   --fallback anthropic/<model-id>,glm-5.3-flash \
   --fallback-on transient \
-  --vision-model kimi-k3
-kortix gateway routing preview kimi-k3 --image
+  --vision-model glm-5.3-flash
+kortix gateway routing preview glm-5.3-flash --image
 kortix gateway routing reset
 ```
 
@@ -163,7 +177,9 @@ kortix gateway routing reset
 - `--fallback` is the chain the gateway tries in order when the model fails. It takes up to 8 models.
 - `--fallback-on transient` moves on after a network error, a timeout, any 5xx, or a `402`, `403`, `404` or `429`. `any-error` moves on after every failure.
 - The project's chain also runs when every key or ChatGPT account that the request may use is paused after a rate limit. With `--fallback-on any-error`, it also runs when the login needs reconnection.
+- The chain covers every model in the project: the project default, an agent's default, and a model that a session or trigger pins. A per-model override (`rules` in `set --file`, or **Per-model overrides** in Customize → Models → Routing) replaces the chain for one exact model.
 - `--vision-model` takes a request that carries images when the default model accepts only text.
+- `set` changes only the flags you pass. The rest of the policy, the generation defaults included, stays as stored. `set --file policy.json` replaces the whole policy; a file without `modelGenerationConfig` keeps the stored generation defaults.
 
 **Billing in a fallback.** A request on your own key moves to a Kortix-billed model only when your project's chain names that model and the account can pay for it. Kortix's own platform chain never moves your request onto credits. On Kortix Cloud, the platform chain moves `deepseek-v4.1-flash` to `glm-5.3-flash` on transient errors.
 
@@ -173,7 +189,7 @@ When a fallback model answers, the composer shows **Running on** and the model n
 
 By default, a provider key belongs to the whole project. A personal override of a provider key returns `llm_credentials_project_wide`.
 
-Turn on the `pooled_provider_secrets` [feature flag](/docs/project#feature-flags) (off by default, needs `llm_gateway`) to let each member bring their own keys and ChatGPT accounts.
+Turn on the `pooled_provider_secrets` [feature flag](/docs/project#feature-flags) (off by default) to let each member bring their own keys and ChatGPT accounts.
 
 **Add a key.** In **Providers**, choose **Add key** beside a provider. Give it a label. The value is write-only. A new key is **Only you** by default. Any member can add a key for their own use. Sharing with **Everyone in this project** or **Specific members** needs permission to manage project secrets. Change it in **⋯ → Manage access**. Rotating a key keeps its access and session selections. Deleting it removes it for everyone.
 
@@ -220,7 +236,7 @@ kortix gateway usage --days 7      # requests, errors and cost by model
 kortix gateway sources --hours 24  # spend by trigger, member, channel and API
 kortix gateway logs --failed       # recent failed requests
 kortix gateway logs <log-id>       # one request in full
-kortix gateway test kimi-k3 glm-5.3-flash --prompt "Say hi"
+kortix gateway test deepseek-v4.1-flash glm-5.3-flash --prompt "Say hi"
 ```
 
 The **Costs** and **Logs** tabs show the same data. For account-wide usage, see [Plans & credits](/docs/credits).
@@ -247,7 +263,7 @@ The gateway reads the key from `Authorization: Bearer`, and on `/v1/messages` al
 curl https://gateway.kortix.com/v1/chat/completions \
   -H "Authorization: Bearer kortix_gw_..." \
   -H "Content-Type: application/json" \
-  -d '{"model": "kimi-k3", "messages": [{"role": "user", "content": "Hello"}]}'
+  -d '{"model": "glm-5.3-flash", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 **Claude Code:**
@@ -255,13 +271,13 @@ curl https://gateway.kortix.com/v1/chat/completions \
 ```bash
 ANTHROPIC_BASE_URL=https://gateway.kortix.com \
 ANTHROPIC_AUTH_TOKEN=kortix_gw_... \
-claude --model kimi-k3
+claude --model glm-5.3-flash
 ```
 
 **Codex CLI** speaks only the Responses protocol. Add a provider to `~/.codex/config.toml`:
 
 ```toml
-model = "kimi-k3"
+model = "glm-5.3-flash"
 model_provider = "kortix"
 
 [model_providers.kortix]
@@ -299,13 +315,3 @@ Limits:
 | `context_length_exceeded` | The conversation is longer than the model's context window. | Compact the session, or switch to a model with a larger window. |
 
 Slack and Microsoft Teams show the same failures in their own words. See [Models and keys in a channel](/docs/connect/channels#models-and-keys-in-a-channel).
-
-## Without the gateway
-
-With the `llm_gateway` flag off, the project uses native OpenCode model management. Toggle the flag in [Feature flags](/docs/project#feature-flags). The change refreshes active sandboxes.
-
-- Provider keys enter the sandbox as ordinary environment variables. Add them in **Providers** or as [secrets](/docs/project/secrets).
-- Model ids are native OpenCode `provider/model` refs. Bare managed ids and `kortix/` refs do not exist.
-- OpenCode chooses the default model inside the sandbox. The default chain on this page does not apply.
-- There are no managed models, access rules, routing, budgets, logs or gateway keys.
-- Every session runs the OpenCode harness. The pi harness calls models only through the gateway. See [Harnesses: OpenCode and pi](/docs/project/agents#harnesses-opencode-and-pi).

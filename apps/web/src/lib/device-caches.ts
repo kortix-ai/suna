@@ -1,5 +1,5 @@
-import { getSharedQueryClient } from '@/lib/query-client-singleton';
-import { registerDisposableFamily } from '@/lib/storage/managed-storage';
+import { onEachQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
+import { registerDisposableFamily } from '@kortix/ui/internal/lib/storage/managed-storage';
 import {
   browserKeyValueStorage,
   createPersistedQueryCache,
@@ -45,7 +45,7 @@ import { indexedDBKeyValueStorage } from '@kortix/sdk/internal/idb-sync-cache'; 
 if (typeof window !== 'undefined') void indexedDBKeyValueStorage()?.getItem('kortix.saved-copy:open');
 
 /**
- * `base`, except that one prefetched key answers its first read from memory.
+ * `base`, except that each prefetched key answers its first read from memory.
  *
  * A reload opens on the session its URL names, and IndexedDB answers only
  * asynchronously, so that session painted skeleton rows before its saved copy
@@ -55,31 +55,28 @@ if (typeof window !== 'undefined') void indexedDBKeyValueStorage()?.getItem('kor
  * write or a removal of the key drops the copy in memory.
  */
 function withFirstReadFromMemory(base: KeyValueStorage) {
-  let key: string | null = null;
-  let value: string | null | undefined;
-  const drop = (k: string) => {
-    if (k === key) key = null;
-  };
+  // The prefetched reads of this page load; `undefined` while a read is in flight.
+  const prefetched = new Map<string, string | null | undefined>();
   return {
     getItem(k: string) {
-      if (k !== key) return base.getItem(k);
-      key = null;
+      if (!prefetched.has(k)) return base.getItem(k);
+      const value = prefetched.get(k);
+      prefetched.delete(k);
       return value === undefined ? base.getItem(k) : value;
     },
     setItem(k: string, v: string) {
-      drop(k);
+      prefetched.delete(k);
       return base.setItem(k, v);
     },
     removeItem(k: string) {
-      drop(k);
+      prefetched.delete(k);
       return base.removeItem(k);
     },
     prefetch(k: string) {
-      key = k;
-      value = undefined;
+      prefetched.set(k, undefined);
       void Promise.resolve(base.getItem(k)).then(
         (read) => {
-          if (key === k) value = read;
+          if (prefetched.has(k)) prefetched.set(k, read);
         },
         () => undefined,
       );
@@ -93,9 +90,6 @@ function sessionInUrl(): { projectId: string; sessionId: string } | null {
   return match ? { projectId: match[1], sessionId: match[2] } : null;
 }
 
-/** The project gate's key (`project-access-boundary.tsx`): a reload opens the project it last admitted. */
-const GATE_QUERY_KEY = 'project-access-boundary';
-
 /**
  * The query cache's bound, in UTF-16 code units. It is read and parsed
  * synchronously at sign-in, so it stays small: a full 50-row session page
@@ -105,10 +99,6 @@ const GATE_QUERY_KEY = 'project-access-boundary';
 export const WEB_QUERY_CACHE_MAX_BYTES = 200_000;
 
 const QUERY_CACHE_NAMESPACE = 'kortix.query-cache';
-
-function shouldPersistQuery(queryKey: readonly unknown[]): boolean {
-  return isPersistableQueryKey(queryKey) || queryKey[0] === GATE_QUERY_KEY;
-}
 
 let adopted: {
   userId: string;
@@ -124,23 +114,42 @@ export function adoptDeviceCaches(userId: string): void {
   // queries under its own key.
   if (adopted) void clearDeviceCaches();
   const storage = browserKeyValueStorage();
-  const client = getSharedQueryClient();
-  if (!storage || !client) return;
+  if (!storage) return;
   try {
+    // The saved copy store does NOT need the query client, and it is what
+    // paints the opened session's conversation in the first frame. Register it
+    // and prefetch BEFORE anything else, so a client that is not registered
+    // yet (#10344 mounts the app shell one auth round trip sooner) can never
+    // delay it. Dropping this on an early return left the kept copy to paint
+    // ~1.4 s late, and the skeleton showed in the meantime (journey 34).
+    //
+    // No IndexedDB (a blocked or partitioned context): sessions open from the
+    // server's copy, as before the device kept one.
+    const indexed = indexedDBKeyValueStorage();
+    const copyStorage = indexed ? withFirstReadFromMemory(indexed) : null;
+    const copies = copyStorage ? createSavedCopyStore({ storage: copyStorage, userId }) : null;
+    const opensOn = sessionInUrl();
+    if (copyStorage && copies && opensOn) {
+      const v1Key = copies.keyFor(opensOn.projectId, opensOn.sessionId);
+      copyStorage.prefetch(v1Key);
+      // A project with the `session_log` flag on keeps the session-log page instead, under
+      // `<namespace>.log:` (the SDK's `createSavedCopyStore`, #10305).
+      copyStorage.prefetch(v1Key.replace(/^([^:]+):/, '$1.log:'));
+    }
+    setSavedCopyStore(copies);
+
     // A draft or a preference that does not fit evicts this cache first: it
     // refetches, the draft would be lost.
     registerDisposableFamily(QUERY_CACHE_NAMESPACE);
     const queries = createPersistedQueryCache({
       storage,
       userId,
-      shouldPersist: shouldPersistQuery,
+      // The project gate reads `qk.project.summary`, which this keeps: a
+      // reload opens the project it last admitted.
+      shouldPersist: isPersistableQueryKey,
       maxBytes: WEB_QUERY_CACHE_MAX_BYTES,
       namespace: QUERY_CACHE_NAMESPACE,
     });
-    // The SDK marks each restored entry invalidated: it refetches the first
-    // time something reads it, even when younger than its staleTime.
-    queries.restore(client);
-    const stopPersisting = queries.persist(client);
     // Writes are coalesced over a second; a reload inside it would lose the
     // last change.
     const flush = () => void queries.flush();
@@ -149,26 +158,35 @@ export function adoptDeviceCaches(userId: string): void {
     };
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', flushWhenHidden);
-    // No IndexedDB (a blocked or partitioned context): sessions open from the
-    // server's copy, as before the device kept one.
-    const indexed = indexedDBKeyValueStorage();
-    const copyStorage = indexed ? withFirstReadFromMemory(indexed) : null;
-    const copies = copyStorage ? createSavedCopyStore({ storage: copyStorage, userId }) : null;
-    const opensOn = sessionInUrl();
-    if (copyStorage && copies && opensOn) {
-      copyStorage.prefetch(copies.keyFor(opensOn.projectId, opensOn.sessionId));
-    }
-    setSavedCopyStore(copies);
-    adopted = {
+    let stopPersisting = () => {};
+    let stopFollowing = () => {};
+    const record = {
       userId,
       queries,
       copies,
       detach: () => {
+        stopFollowing();
         stopPersisting();
         window.removeEventListener('pagehide', flush);
         document.removeEventListener('visibilitychange', flushWhenHidden);
       },
     };
+    adopted = record;
+    // Restoring and persisting the query cache is the only part that needs the
+    // shared client. It runs when the client registers, and again for every
+    // client that replaces it: React can discard the render that registered
+    // the first one, and the app then reads a second, empty client (journey 34:
+    // a reload with every read held stayed on "Opening your project").
+    stopFollowing = onEachQueryClient((client) => {
+      // A sign-out or a user switch before the client registered supersedes
+      // this record; the newer adopt owns the client then.
+      if (adopted !== record) return;
+      stopPersisting();
+      // The SDK marks each restored entry invalidated: it refetches the first
+      // time something reads it, even when younger than its staleTime.
+      queries.restore(client);
+      stopPersisting = queries.persist(client);
+    });
   } catch (error) {
     // An accelerator only: without it the app loads as before. A throw here
     // would fail the sign-in.

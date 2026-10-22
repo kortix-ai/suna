@@ -151,7 +151,7 @@ export function machineAppSpec(
   };
 }
 
-/** The size of a machine of `group`. Daytona and E2B size from the template, which carries the App's size. */
+/** The size of a machine of `group`. Daytona sizes from the template, which carries the App's size. */
 export function machineSize(app: AppRow, config: AppReleaseConfig, group: string, provider: string): AppMachineSpec {
   if (provider !== 'platinum') return { cpuCores: app.cpuCores, memoryGb: app.memoryGb, diskGb: app.diskGb };
   const vm = appVmFor(config, group);
@@ -229,22 +229,18 @@ export async function createInstance(input: {
     if (volume) await releaseVolume(volume.volumeId, runtimeId);
     throw error;
   });
-  const effective = hosting.effectiveMachine(provider, machine);
   await startComputeSession({
     sandboxId: runtimeId,
     accountId: app.accountId,
     actorUserId: deployment.createdBy,
     provider,
-    spec: { ...effective, gpuCount: 0 },
+    spec: { ...machine, gpuCount: 0 },
     workloadType: 'app',
     appRuntimeId: runtimeId,
     metadata: { deploymentId: deployment.deploymentId, appId: app.appId, machineId, processGroup: group },
   });
   await event(deployment.deploymentId, 'runtime_created', `Machine ${machineId.slice(0, 8)} (${group}) created`, {
     provider, externalId: handle.externalId, machineId, processGroup: group, volumeId: volume?.volumeId ?? null,
-    ...(effective.diskGb !== machine.diskGb || effective.memoryGb !== machine.memoryGb || effective.cpuCores !== machine.cpuCores
-      ? { requested: machine, effective }
-      : {}),
   }, runtimeId);
   return row!;
 }
@@ -574,7 +570,7 @@ export async function runReleaseCommand(input: {
   try {
     await startComputeSession({
       sandboxId: runtimeId, accountId: app.accountId, actorUserId: deployment.createdBy, provider,
-      spec: { ...hosting.effectiveMachine(provider, machine), gpuCount: 0 },
+      spec: { ...machine, gpuCount: 0 },
       workloadType: 'app', appRuntimeId: runtimeId,
       metadata: { deploymentId: deployment.deploymentId, appId: app.appId, role: 'release_command' },
     });

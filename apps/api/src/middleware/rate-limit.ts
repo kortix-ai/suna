@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import type { Context, Next } from 'hono';
 import { config } from '../config';
 import { requestClientIp, requestClientKey } from './client-ip';
-import { shareIdFromPublicRef } from '../shared/public-share-ref';
 import { recordAuditEvent } from '../shared/audit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { TokenBucketRateLimiter, type RateLimitPolicy, type RateLimitResult } from '../shared/rate-limit';
@@ -87,7 +86,6 @@ export async function enforceRateLimit(
 // limit × API replicas. They stop runaways and floods; none meters a quota.
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
-const publicSessionShareLimiter = new TokenBucketRateLimiter('public_session_share');
 const demoRequestLimiter = new TokenBucketRateLimiter('demo_request');
 const checkEmailLimiter = new TokenBucketRateLimiter('check_email');
 const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
@@ -98,6 +96,7 @@ const projectWebhookRejectedRunLimiter = new TokenBucketRateLimiter('project_web
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
 const feedbackLimiter = new TokenBucketRateLimiter('feedback');
+const deviceTokenReleaseLimiter = new TokenBucketRateLimiter('device_token_release');
 
 /**
  * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
@@ -186,43 +185,6 @@ export function createSandboxProxyRateLimitMiddleware() {
         resourceType: 'sandbox_proxy',
         resourceId: sandboxId,
         metadata: { limiter: 'sandbox_proxy' },
-      },
-    };
-  });
-}
-
-/**
- * Guards the anonymous `/v1/public/session-shares/:shareId*` family — same
- * shape as `createInviteAcceptRateLimitMiddleware` (no authenticated identity
- * to key on), but keyed on the share id path param rather than client IP:
- * every visitor to one shared link is legitimately behind the same bucket,
- * while a single caller trying many share ids from behind a shared NAT/VPN
- * doesn't starve everyone else's shares. Every call also fetches from the
- * sandbox daemon (list sessions + read messages), so this is deliberately
- * tighter than the plain metadata-only invite-accept limiter.
- */
-export function createPublicSessionShareRateLimitMiddleware() {
-  return createAuditedRateLimitMiddleware(publicSessionShareLimiter, (c) => {
-    // Key on the share id when the ref names one (every visitor to one
-    // shared link shares that bucket); otherwise fall back to client IP. This
-    // MUST run before the raw param can key the bucket Map — an attacker
-    // looping unique garbage ids would otherwise allocate an unbounded number
-    // of buckets (the id is never a real share, so it never reaches the
-    // handler's own validation) and OOM the process.
-    // A `kps_` token and its share id name the same share, so both key the
-    // same bucket.
-    const shareId = shareIdFromPublicRef(c.req.param('shareId') ?? '') ?? `ip:${requestClientKey(c)}`;
-    return {
-      key: shareId,
-      policy: {
-        limit: positiveInt((config as any).KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN, 60),
-        windowMs: 60_000,
-      },
-      auditContext: {
-        action: RATE_LIMIT_EXCEEDED_ACTION,
-        resourceType: 'public_session_share',
-        resourceId: shareId,
-        metadata: { limiter: 'public_session_share' },
       },
     };
   });
@@ -333,6 +295,29 @@ export function createProjectWebhookRateLimitMiddleware() {
 }
 
 /**
+ * Guards the public `POST /v1/notifications/device-token/release`. Keyed on
+ * client IP; a signed-out app calls it once per sign-out. The rejection path
+ * writes no audit row, so a flood cannot become a database-write flood.
+ */
+export function createDeviceTokenReleaseRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const result = deviceTokenReleaseLimiter.check(requestClientKey(c), { limit: 30, windowMs: 60_000 });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json(
+        {
+          error: 'rate_limit_exceeded',
+          message: 'Rate limit exceeded. Please retry shortly.',
+          retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+        },
+        429,
+      );
+    }
+    await next();
+  };
+}
+
+/**
  * Bound forced Git mirror refreshes by project, independent of source IP.
  * Each API replica owns a local mirror, so each replica needs its own budget.
  */
@@ -403,7 +388,6 @@ export function createLlmGatewayRateLimitMiddleware() {
 export function resetRateLimiters() {
   inviteAcceptLimiter.reset();
   sandboxProxyLimiter.reset();
-  publicSessionShareLimiter.reset();
   demoRequestLimiter.reset();
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
@@ -412,4 +396,5 @@ export function resetRateLimiters() {
   projectSecretWriteLimiter.reset();
   llmGatewayLimiter.reset();
   feedbackLimiter.reset();
+  deviceTokenReleaseLimiter.reset();
 }

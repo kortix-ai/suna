@@ -697,7 +697,7 @@ describe('narrateStep - show/show_user never leak a raw path or URL', () => {
       part('show', {
         title: 'Q3 report',
         path: '/workspace/reports/q3.html',
-        url: 'https://8080-abc123.e2b.app/preview',
+        url: 'https://8080-abc123.preview.example.com/preview',
       }),
     ]);
     expect(line).toBe('Showed you Q3 report');
@@ -718,11 +718,11 @@ describe('narrateStep - show/show_user never leak a raw path or URL', () => {
 
   it('never renders a raw URL — falls back to a domain', () => {
     const line = narrateStep('create', [
-      part('show', { type: 'url', url: 'https://8080-abc123.e2b.app/preview' }),
+      part('show', { type: 'url', url: 'https://8080-abc123.preview.example.com/preview' }),
     ]);
     expect(line).not.toContain('https://');
     expect(line).not.toContain('/preview');
-    expect(line).toBe('Showed you 8080-abc123.e2b.app');
+    expect(line).toBe('Showed you 8080-abc123.preview.example.com');
   });
 
   it('never renders an unparseable url — falls back to the generic "a link" label', () => {

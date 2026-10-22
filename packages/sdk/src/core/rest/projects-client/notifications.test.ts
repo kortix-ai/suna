@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as shared from '../../../../../shared/src/notification-kinds';
+import { ApiError } from '../../http/api/errors';
 import { configureKortix } from '../../http/config';
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -10,6 +11,7 @@ import {
   markNotificationsRead,
   registerDeviceToken,
   registerWebPushSubscription,
+  releaseDeviceToken,
   unregisterDeviceToken,
   unregisterWebPushSubscription,
   updateNotificationPreferences,
@@ -81,6 +83,73 @@ test('registerDeviceToken throws on a 403 (a service account cannot bind a devic
   await expect(
     registerDeviceToken({ device_token: 't', device_type: 'android', provider: 'expo' }),
   ).rejects.toBeTruthy();
+});
+
+describe('releaseDeviceToken (signed out, KRTX-2242)', () => {
+  let seen: { url: string; method?: string; headers: Headers; body: unknown }[] = [];
+  const getToken = mock(async () => 'tok');
+
+  beforeEach(() => {
+    seen = [];
+    getToken.mockClear();
+    configureKortix({ backendUrl: 'http://test.local/v1', getToken });
+  });
+
+  function respond(status: number, body: unknown = { ok: true }) {
+    globalThis.fetch = mock(async (url: unknown, init: RequestInit = {}) => {
+      seen.push({
+        url: String(url),
+        method: init.method,
+        headers: new Headers(init.headers),
+        body: init.body ? JSON.parse(String(init.body)) : undefined,
+      });
+      return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+  }
+
+  test('POSTs the token to the configured backend with no credential', async () => {
+    respond(200);
+    const result = await releaseDeviceToken('ExponentPushToken[abc]');
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.url).toBe('http://test.local/v1/notifications/device-token/release');
+    expect(seen[0]?.method).toBe('POST');
+    expect(seen[0]?.body).toEqual({ device_token: 'ExponentPushToken[abc]' });
+    expect(seen[0]?.headers.get('content-type')).toBe('application/json');
+    expect(seen[0]?.headers.has('authorization')).toBe(false);
+    expect(getToken).not.toHaveBeenCalled();
+    expect(result).toEqual({ ok: true });
+  });
+
+  test('uses the backendUrl override, not the configured backend', async () => {
+    respond(200);
+    await releaseDeviceToken('t', { backendUrl: 'https://old.example.test/v1' });
+    expect(seen[0]?.url).toBe('https://old.example.test/v1/notifications/device-token/release');
+  });
+
+  test('a non-2xx answer throws an ApiError that carries the status', async () => {
+    respond(404, { error: true, message: 'Not Found' });
+    const error = await releaseDeviceToken('t').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(404);
+  });
+
+  test('a network failure rejects with no status', async () => {
+    globalThis.fetch = mock(async () => {
+      throw new TypeError('Network request failed');
+    }) as unknown as typeof fetch;
+    const error = await releaseDeviceToken('t').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TypeError);
+  });
+
+  test('honours the caller abort signal', async () => {
+    const controller = new AbortController();
+    globalThis.fetch = mock(async (_url: unknown, init: RequestInit = {}) => {
+      init.signal?.throwIfAborted();
+      return new Response('{}');
+    }) as unknown as typeof fetch;
+    controller.abort();
+    await expect(releaseDeviceToken('t', { signal: controller.signal })).rejects.toBeTruthy();
+  });
 });
 
 // ── Inbox, preferences and Web Push (KRTX-1742) ─────────────────────────────

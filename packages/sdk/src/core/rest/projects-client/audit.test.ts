@@ -1,7 +1,7 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../../http/config';
 import { auditFilterQuery } from './audit-filter';
-import { exportAccountAudit, listAccountAudit, listProjectAudit } from './audit';
+import { exportAccountAudit, getAccountAuditActivity, listAccountAudit, listProjectAudit } from './audit';
 import { listAuditEvents } from './iam';
 
 let calls: Array<{ url: string; method: string }> = [];
@@ -188,4 +188,29 @@ test('an anonymous audit row is typed and filterable on every audit surface', as
     'anonymous',
     'anonymous',
   ]);
+});
+
+test('getAccountAuditActivity reads per-user activity with snake_case filters', async () => {
+  await getAccountAuditActivity('account-1');
+  await getAccountAuditActivity('account-1', {
+    since: '2026-09-09',
+    until: '2026-10-21',
+    projectId: 'project-1',
+    actor: 'user-1',
+    client: 'browser',
+    actorType: 'human',
+    credentialKind: 'browser_session',
+  });
+  expect(new URL(calls[0]!.url).pathname).toBe('/accounts/account-1/audit/activity');
+  expect(new URL(calls[0]!.url).search).toBe('');
+  expect(new URL(calls[1]!.url).search.slice(1)).toBe(
+    'since=2026-09-09&until=2026-10-21&project_id=project-1&actor=user-1&client=browser&actor_type=human&credential_kind=browser_session',
+  );
+  const actor: import('./audit').AuditActivityActor = {
+    actor_user_id: 'user-1', email: null, active_days: 1, active_hours: 2, events: 3,
+    first_at: '2026-10-20T10:00:00.000Z', last_at: '2026-10-20T11:00:00.000Z',
+    days: [{ day: '2026-10-20', events: 3, active_hours: 2 }],
+  };
+  const page: import('./audit').AuditActivity = { since: 'a', until: 'b', rolled_through: null, actors: [actor] };
+  expect(page.actors[0]!.days[0]!.active_hours).toBe(2);
 });

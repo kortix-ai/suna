@@ -151,6 +151,7 @@ interface RoutingPolicyDoc {
     visionModel: string | null;
     defaultFallback: { models: string[]; fallbackOn: string } | null;
     rules: { model: string; fallbackModels: string[]; fallbackOn: string }[];
+    modelGenerationConfig?: Record<string, Record<string, unknown>>;
   };
   effective: {
     defaultModel: string;
@@ -222,6 +223,7 @@ async function gatewayRouting(rest: string[], opts: CtxOpts, json: boolean): Pro
           visionModel: current.project.visionModel,
           defaultFallback: current.project.defaultFallback,
           rules: current.project.rules,
+          modelGenerationConfig: current.project.modelGenerationConfig ?? {},
         };
         if (defaultModel !== undefined) body.defaultModel = defaultModel || null;
         if (visionModel !== undefined) body.visionModel = visionModel || null;
@@ -568,8 +570,9 @@ async function gatewayTest(rest: string[], opts: CtxOpts, json: boolean): Promis
       prompt: prompt ?? 'Reply with exactly: pong',
       models,
     });
-    if (json) return outJson(data);
-    process.stdout.write('\n');
+    const gw = gatewayUrl(ctx.auth, data.gateway_url);
+    if (json) return outJson({ ...data, gateway_url: gw });
+    process.stdout.write(`\n  ${C.dim}Gateway URL: ${gw}${C.reset}\n\n`);
     for (const r of data.results ?? []) {
       if (r.ok) {
         process.stdout.write(

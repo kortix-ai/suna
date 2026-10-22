@@ -101,7 +101,7 @@ exec /bin/sleep 120
     PNPM_LOG: pnpmLog,
     PORT: API_PORT,
     WEB_PORT: '3000',
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
+    ALLOWED_SANDBOX_PROVIDERS: 'platinum',
     KORTIX_DEV_GATEWAY: '0',
     KORTIX_STRIPE_LISTEN: '0',
     SUPABASE_URL: 'https://supabase.example.test',

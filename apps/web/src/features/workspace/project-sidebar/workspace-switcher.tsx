@@ -10,8 +10,10 @@ import { useTranslations as useI18nTranslations } from '@/i18n/use-translations'
  * The trigger shows the workspace, not you: its icon (an emoji if one is set,
  * otherwise the initials `EntityAvatar` derives from the name) and its name, the
  * same treatment the rows inside the switcher use, so the thing you are in looks
- * like the things you can move to. No account name, no email, no avatar — you
- * already know who you are; what a sidebar has to tell you is where you are.
+ * like the things you can move to. You are one menu open away, though: the menu
+ * opens on the signed-in identity (KRTX-1810) — the shell's only
+ * "who am I" surface since the old footer user menu was folded into this
+ * control — and keeps the account rows below it.
  *
  * User settings opens the same settings surface the header `UserMenu` opens,
  * on the same `profile` tab — but by a different mechanism, and the difference
@@ -44,6 +46,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuPortal,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
@@ -51,33 +54,38 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+} from '@kortix/ui/dropdown-menu';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
 import {
   SidebarContext,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from '@/components/ui/sidebar';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@kortix/ui/sidebar';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { accountCreated } from '@/features/accounts/account-created';
 import { CreateAccountModal } from '@/features/accounts/create-account-modal';
-import { Download } from '@/features/icon/icons/download';
+import { DownloadModal } from '@/features/marketing/download/download-modal';
+import { Download } from '@kortix/ui/internal/icons/download';
+import { useAuth } from '@/features/providers/auth-provider';
 import { HelpSubmenu, ThemeSubmenu, useLogoutFlow } from '@/features/layout/user-menu-shared';
-import { COMPUTER_SETUP_EVENT } from '@/features/tunnel/computer-connect';
+import { COMPUTER_SETUP_EVENT } from '@kortix/ui/internal/tunnel/computer-connect';
 import { LocalComputerModal } from '@/features/tunnel/local-computer-modal';
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
-import { useCreatableAccounts } from '@/features/workspace/new/use-creatable-accounts';
-import { WorkspaceMenuSection } from '@/features/workspace/project-sidebar/workspace-menu-section';
+import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
+import { useCreatableAccounts } from '@kortix/ui/workspace/new/use-creatable-accounts';
+import { PROJECT_ACTIONS } from '@kortix/sdk';
+import { useProjectCan } from '@kortix/ui/internal/lib/use-project-can';
+import { capabilityTabHref } from '@kortix/ui/workspace';
+import { WorkspaceMenuSection } from '@kortix/ui/workspace/sidebar/workspace-menu-section';
 import { settingsShortcutLabel } from '@/features/workspace/settings/settings-shortcut';
-import { type SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import { useAccountsList, useAccountsQueryKey } from '@/hooks/account/use-accounts-list';
+import { type SettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
+import { useAccountsList, useAccountsQueryKey } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { useEnsureSelectedAccount } from '@/hooks/account/use-ensure-selected-account';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAdminRole } from '@kortix/ui/internal/hooks/admin/use-admin-role';
 import { isAccountCreationRestricted } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { cn } from '@kortix/ui';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { getProject, type KortixAccount } from '@kortix/sdk';
 import { contract, qk } from '@kortix/sdk/react';
 import {
@@ -85,6 +93,7 @@ import {
   CaretUpDownIcon,
   GearSixIcon as CogOne,
   SignOutIcon as LogOut,
+  PencilSimpleIcon,
   PlusIcon,
 } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -95,8 +104,16 @@ import { useEffect, useState } from 'react';
 
 export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const t = useI18nTranslations('sidebar');
+  const tUi = useI18nTranslations('hardcodedUi.i18nComplete');
+  const canRename = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE).allowed;
+  const tNewWorkspace = useI18nTranslations('newWorkspace');
   const sidebar = React.useContext(SidebarContext);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { user } = useAuth();
+  // The identity line the account top bar shows on /projects and /new — same
+  // precedence, same fallback — so the shell's menu says who is signed in the
+  // same way those pages do (KRTX-1810).
+  const identity = user?.user_metadata?.name?.trim() || user?.email || null;
 
   // Seeds `selectedAccountId` for a brand-new sign-in. Pre-merge this ran here
   // by way of a `UserMenu` in the project sidebar's FOOTER. That footer menu no
@@ -115,6 +132,7 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
   const { setSelectedAccountId } = useCurrentAccountStore();
   // The exact key the account list reads, for the create-account seed below.
   const accountsQueryKey = useAccountsQueryKey();
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const [createAccountOpen, setCreateAccountOpen] = useState(false);
   const [computerSetupOpen, setComputerSetupOpen] = useState(false);
   // Right after this desktop pairs, setup opens on the spot (see COMPUTER_SETUP_EVENT).
@@ -227,6 +245,20 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               sideOffset={6}
               className="border-foreground/10 w-[15rem] space-y-0.5 overflow-hidden shadow-lg"
             >
+              {/* The identity header: the same "Logged in as" treatment as the
+                  account top bar (`account-top-bar.tsx`), two lines — the copy
+                  above the name or email. A label, not a row: it is not focusable
+                  and does nothing, it just tells you which session the rows below
+                  (Settings, Log out) would act on. */}
+              <DropdownMenuLabel className="flex min-w-0 flex-col gap-0.5 font-normal">
+                <span className="text-muted-foreground text-xs">
+                  {tNewWorkspace('account.loggedInAs')}
+                </span>
+                <span className="text-foreground max-w-56 truncate text-sm">
+                  {identity ?? tNewWorkspace('account.label')}
+                </span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
                   <ArrowsLeftRightIcon weight="fill" />
@@ -279,6 +311,15 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
               </DropdownMenuSub>
               <DropdownMenuSeparator />
 
+              {canRename === true && (
+                <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
+                  <Link href={capabilityTabHref(projectId, 'config')} prefetch>
+                    <PencilSimpleIcon />
+                    {tUi('text3064d79a295c')}
+                  </Link>
+                </DropdownMenuItem>
+              )}
+
               {/* `profile`, NOT `general`. In the merged settings vocabulary
                   (`settings/settings-tabs.ts`) `general` is Workspace →
                   General, a PROJECT-scoped tab — a row labelled "User
@@ -309,14 +350,16 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
                 <DropdownMenuShortcut>{settingsShortcutLabel()}</DropdownMenuShortcut>
               </DropdownMenuItem>
 
-              {/* `prefetch` explicitly: `(marketing)/download/page.tsx` awaits
-                  `headers()`, so the default `auto` intent would cache nothing
-                  for a dynamic route. */}
-              <DropdownMenuItem asChild onSelect={() => setMenuOpen(false)} size="sm">
-                <Link href="/download" prefetch data-desktop-hidden>
-                  <Download />
-                  {t('workspace.downloadApp')}
-                </Link>
+              {/* A modal, not a route: the user stays in the workspace. It
+                  renders the same `DownloadOptions` as the public /download
+                  page, so the two surfaces never drift apart. */}
+              <DropdownMenuItem
+                onSelect={() => deferAfterClose(() => setDownloadOpen(true))}
+                size="sm"
+                data-desktop-hidden
+              >
+                <Download />
+                {t('workspace.downloadApp')}
               </DropdownMenuItem>
 
               <ThemeSubmenu />
@@ -339,6 +382,8 @@ export function WorkspaceSwitcher({ projectId }: { projectId: string }) {
 
       {/* Sibling of the dropdown, never a child — see `useLogoutFlow`. */}
       {logoutDialog}
+
+      <DownloadModal open={downloadOpen} onOpenChange={setDownloadOpen} />
 
       <LocalComputerModal
         projectId={projectId}

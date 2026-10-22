@@ -2,10 +2,11 @@
 
 import { Reveal } from '@/components/home/reveal';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import { getLocalizedConnectorsContent } from './content';
-import { Eyebrow, ProductShot, Section } from './shared';
+import { Eyebrow, Section } from '../component/section-primitives';
+import { ProductShot } from './shared';
 
 /**
  * The three ways a tool becomes a connector, then the real catalogue screen.

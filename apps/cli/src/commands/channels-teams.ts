@@ -1,7 +1,7 @@
 import { emitJson, resolveProjectContext, surfaceApiError } from '../command-helpers.ts';
 import { C, status } from '../style.ts';
 
-interface TeamsInstallation {
+export interface TeamsInstallation {
   tenantId: string | null;
   catalogAppId: string | null;
   orgInstalled: boolean;
@@ -150,29 +150,16 @@ export async function teamsManifest(ctxOpts: {
 }): Promise<number> {
   const ctx = await resolveProjectContext(ctxOpts);
   if (!ctx) return 1;
-  // The Teams app manifest is BUILT by the API (apps/api/src/channels/teams-manifest.ts)
-  // from the project's own app id and base URL. The checked-in
-  // teams-app-manifest.json is a stale hand file and is not read at runtime.
-  // Print it so an operator can review/submit it manually if the one-click flow
-  // isn't available. The server's /mode endpoint carries the consent URL; the
-  // manifest is static (doesn't depend on the project).
-  const baseUrl = ctx.client.apiBase.replace(/\/$/, '');
-  const manifestUrl = `${baseUrl}/v1/projects/${ctx.projectId}/channels/teams/mode`;
+  // The Teams app manifest is BUILT by the API from the project's bot app id
+  // (bring-your-own or the server's) and its public base URL:
+  // GET /projects/:id/channels/teams/manifest. A host with no bot credentials
+  // answers 409. Printed verbatim so an operator can review or upload it when
+  // the one-click flow is not available.
   try {
-    const mode = await ctx.client.get<TeamsMode>(manifestUrl);
-    process.stdout.write(
-      JSON.stringify(
-        {
-          platform: 'teams',
-          orgConsentUrl: mode.orgConsentUrl,
-          orgInstalled: mode.orgInstalled,
-          deepLinkUrl: mode.deepLinkUrl,
-          note: 'The Teams app manifest is generated server-side by apps/api/src/channels/teams-manifest.ts. Use the orgConsentUrl above for one-click install; manual app-package upload uses buildTeamsAppPackage() in apps/api/src/channels/teams/app-package.ts.',
-        },
-        null,
-        2,
-      ) + '\n',
+    const manifest = await ctx.client.get<Record<string, unknown>>(
+      `/projects/${ctx.projectId}/channels/teams/manifest`,
     );
+    process.stdout.write(`${JSON.stringify(manifest, null, 2)}\n`);
     return 0;
   } catch (err) {
     return surfaceApiError(err);

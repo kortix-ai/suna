@@ -57,9 +57,10 @@ mock.module('@/lib/supabase/client', () => ({
 mock.module('@/lib/env-config', () => ({
   getEnv: () => ({ AUTH_METHODS: 'password', AUTH_PROVIDERS: '' }),
 }));
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   errorToast: (message: string) => toasts.push(message),
-}));
+});
+mock.module('@kortix/ui/toast', uiToastMock);
 
 /** The exact client-visible shape of Next 16's missing-server-action failure. */
 const staleBundleError = () =>
@@ -135,7 +136,8 @@ test('a stale-bundle failure that outlives the reload shows the visible error in
   try {
     await typeAndSubmit(root, 'stale@example.test');
     expect(reloads).toBe(0);
-    expect(toasts).toEqual([UNEXPECTED]);
+    // The error renders inline under the Email input, with no duplicate toast (#10540).
+    expect(toasts).toEqual([]);
     expect(JSON.stringify(root.toJSON())).toContain(UNEXPECTED);
     expect(JSON.stringify(root.toJSON())).not.toContain('failed-to-find-server-action');
   } finally {
@@ -151,7 +153,8 @@ test('a plain failure keeps surfacing the error and never reloads', async () => 
   try {
     await typeAndSubmit(root, 'plain@example.test');
     expect(reloads).toBe(0);
-    expect(toasts).toEqual([UNEXPECTED]);
+    // The error renders inline under the Email input, with no duplicate toast (#10540).
+    expect(toasts).toEqual([]);
     expect(JSON.stringify(root.toJSON())).toContain(UNEXPECTED);
   } finally {
     await act(async () => root.unmount());

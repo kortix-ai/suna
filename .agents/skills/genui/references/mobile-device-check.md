@@ -58,15 +58,20 @@ stream does OpenUI source text appear in the transcript.
   text `root = ` never shows. When the stream ends, both cards show the price
   and the project limit.
 
-### 2. Bar chart, legend, source, Show data
+### 2. Bar chart: source title, legend, y axis, Show data
 
-- Prompt: `Show me revenue by quarter: Q1 120, Q2 150, Q3 170.`
-- Expected: a bar chart with three bars (Q1, Q2, Q3), a one-entry legend
-  above the plot with the series name (for example `Revenue`), and a
-  `Source: ...` line under it. A chart with 2 or more series has one legend
-  entry per series. Tap **Show data**: a table with the same three
-  values appears and the button reads **Hide data**. Tap again: the table
-  closes.
+- Prompt: `Show me revenue by quarter: Q1 1200, Q2 1500, Q3 1700.`
+- Expected: a chart card. The header row shows the source as the title on
+  the left (no `Source:` prefix) and **Show data** on the right. Under it, a
+  legend with one entry, the series name (for example `Revenue`). A chart
+  with 2 or more series has one legend entry per series.
+- The plot has three bars (Q1, Q2, Q3) and a y axis on the left with round
+  ticks in compact form: `0`, `500`, `1K`, `1.5K`, `2K`, with one grid line
+  per tick. There is no separate max label. A tick that reads `1,000`,
+  `1000`, or `1,500` is a fail: Hermes then lacks compact number format.
+- Tap **Show data**: a bottom sheet titled **Show data** opens. It shows the
+  source line and a table with the same three values (`1,200`, `1,500`,
+  `1,700`). Swipe the sheet down: it closes.
 
 ### 3. Tables scroll sideways, the drawer stays
 
@@ -87,42 +92,44 @@ stream does OpenUI source text appear in the transcript.
   Motion (Android: Settings → Accessibility → Remove animations). Tap a row
   again: the caret snaps to its end position with no turn.
 
-### 5. Map rows, Open map, with and without a style URL
+### 5. Map off, then the inline map
 
 Prompt for both runs:
 `Show the delivery route on a map. Stops in order: Depot 51.5074, -0.1278; Stop A 51.5155, -0.0922; Stop B 51.5033, -0.1196; Stop C 51.4975, -0.1357.`
 
-a. `EXPO_PUBLIC_GENUI_MAP_STYLE_URL` empty (the default in `.env.example`):
-   - Expected: one row per stop with a pin icon, then a `Source: ...` line.
-     A stop the model gave a description shows it as a second, muted line
-     under the name (one line, truncated). There is no **Open map** row.
-     Tap a stop: the browser opens openstreetmap.org at that point. No map
-     draws in the transcript.
+`EXPO_PUBLIC_GENUI_MAP_STYLE_URL` selects the basemap (`apps/mobile/lib/genui/map-style.ts`):
+`off` draws no map, empty or unset uses OpenFreeMap, and any other value is the style URL.
 
-b. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/liberty"`
-   in `apps/mobile/.env`, restart Metro with `pnpm dev`, and send the prompt in
-   a new session:
-   - Expected: the first row is **Open map**, then the stop rows. Tap
-     **Open map**: a full-screen dialog shows a loader, then the map with four
-     markers and the route line (when the model includes a route). The
+a. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="off"` in `apps/mobile/.env`, restart
+   Metro with `pnpm dev`, and send the prompt in a new session:
+   - Expected: no map. One row per stop. Each row shows the name, the
+     description as a muted line under it when the model gave one, and a row
+     of buttons: **Directions**, then **Website** and **Call** when the stop
+     has a website or a phone. A row has no pin icon, and a tap on the row
+     itself does nothing.
+   - Tap **Directions**: Google Maps opens directions to that stop.
+
+b. Remove the line from `.env` (the OpenFreeMap default), or set an explicit
+   style such as
+   `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/liberty"`.
+   Restart Metro with `pnpm dev` and send the prompt in a new session:
+   - Expected: while the fence streams, the block holds the loading block.
+     Then an inline map, 320 pt tall, shows in the transcript with four pins
+     and the route line (when the model includes a route). The inline map is
+     still: it has no zoom buttons and no popups.
+   - Scroll the transcript up and down over the map: the transcript
+     scrolls. The map does not move.
+   - Tap the map: a full-screen dialog opens with the interactive map. The
      attribution control is the compact one: an `i` button that expands to
-     the attribution text. Pan and pinch move only the map. Tap a marker: its
-     popup shows the name, and the description when there is one. Expand the
-     attribution if it is collapsed, then tap its `OpenStreetMap` link: the
-     browser opens the link and the app stays on the dialog. Close the
-     dialog.
-   - Scroll the transcript up and down over the map block: the transcript
-     scrolls. No map moves, because no map renders in the transcript.
-   - Turn on airplane mode, then tap **Open map** again. Verify on device:
-     the dialog opens and no tiles draw, because the style cannot load. The
-     page (`map-html.ts`) builds the zoom buttons, the attribution control
-     and one marker pin per stop without waiting for the style, so the pins
-     and the controls can still show on the empty surface; the route line
-     cannot, because it is added only after the style loads. The app does
-     not crash. The MapLibre files are read once per app run, so this open
-     does not need the network for them. `Map unavailable` shows only when
-     that read fails (for example, the first open of an app run with Metro
-     unreachable).
+     the attribution text. Pan and pinch move only the map.
+   - Tap a pin: its popup is the place card: the photo when there is one,
+     the name, `value · kind` when the place has them, the description, then
+     **Directions**, **Website**, and **Call** (the last two only when the
+     place has them).
+   - Expand the attribution if it is collapsed, then tap its
+     `OpenStreetMap` link: the browser opens the link and the app stays on
+     the dialog. Close the dialog.
+   - A style that cannot load is step 17.
 
 ### 6. Rich answers switch
 
@@ -159,7 +166,10 @@ b. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/li
 
 ### 9. Light, dark, Android, iOS
 
-- Repeat steps 1, 2, and 5 in light and in dark theme.
+- Repeat steps 1, 2, and 5 in light and in dark theme. In step 5b, the
+  default basemap follows the theme: OpenFreeMap `positron` in light,
+  `dark` in dark. An explicit style URL is the same in both themes. The pins,
+  the popup card, and the place rows take the theme's surface and ink.
 - Repeat on Android and iOS if both devices are available. Android mirrors
   iOS: the same rows, the same tints, the same gestures.
 
@@ -179,6 +189,98 @@ b. Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://tiles.openfreemap.org/styles/li
   run's. Record both values and the device model. Prefer a low-end Android
   device.
 - Optional second data point: the `genui` bundle with Rich answers off.
+
+### Web parity steps (branch `feat/genui/mobile-parity`)
+
+Steps 11 to 18 cover branch `feat/genui/mobile-parity`. Run them on a bundle
+from that branch's worktree. The mobile OTA with this branch must ship
+before a `kortix-genui` skill revision relies on these behaviors (genui
+`SKILL.md` rule 12). Compare each block with the same block on web when you
+can: web is the reference.
+
+### 11. Single card: rating, reviews, price
+
+- Prompt: `Show one hotel as a card: Harbor View Hotel, a quiet hotel by the old port, rating 4.6 from 1240 reviews, from 150 EUR a night, with a photo.`
+- Expected: one card. Under the title, one line reads star, rating, review
+  count in parentheses, a `·` separator, then the price (for example
+  `★ 4.6 (1,240) · From 150 EUR a night`). The star and the rating are ink.
+  The review count is muted. The photo covers its box with no outline.
+
+### 12. Card list: badges top right, gold star on the pick
+
+- Prompt: `Compare three hotels as a list of cards: Hotel North 4.5 stars, 120 EUR, badge "Best value" (good); Hotel South 4.2 stars, 95 EUR, badge "2 rooms left" (warn); Hotel East 4.8 stars, 180 EUR, badge "Sea view".`
+- Expected: three rows, each with a photo or no photo on the left. Each
+  row's badges sit on the title row, at the top right. Every badge is the
+  same neutral grey pill, whatever its tone: the secondary surface at 80%
+  with secondary-foreground text. Only the `good` badge (`Best value`) leads
+  with a gold star. The other badges have no star and no tone color. A
+  thumbnail that fails to load leaves no empty box.
+
+### 13. Bar chart with a negative value
+
+- Prompt: `Show monthly profit as a bar chart: Jan 40, Feb -25, Mar 10, Apr -5.`
+- Expected: Jan and Mar rise above the zero line. Feb and Apr hang below
+  it. The y axis shows the ticks `-40`, `-20`, `0`, `20`, `40`, with one
+  grid line per tick. No bar clips at the top or the bottom of the plot.
+- Compact labels: step 2 checks a value of 1,000 or more (`1K`, `1.5K`).
+
+### 14. Legend tap focus
+
+- Prompt: `Show a line chart of weekly signups for two products: Product A 10, 14, 18, 22; Product B 8, 9, 15, 12. Weeks W1 to W4.`
+- Expected: a legend with two entries. Tap `Product A`: Product B's line dims
+  to about 15% opacity, Product A stays full. Tap `Product A` again: both
+  lines are full. Repeat on a bar chart (step 13 or step 2 with two series)
+  and on a pie (step 15): a tap on a legend entry dims the other slices.
+
+### 15. Empty pie shows the loading block, then fills
+
+- Prompt: `Show my budget split as a pie chart: Rent 1200, Food 400, Transport 150, Savings 300.`
+- Expected: while the reply streams and the pie has no slices yet, the block
+  shows the loading block (spinner only) at the pie's settled height. When
+  the slices arrive, the pie draws in the same space. The transcript under
+  the block does not jump.
+
+### 16. Map pin popup: Directions, Website, Call
+
+- `EXPO_PUBLIC_GENUI_MAP_STYLE_URL` unset or a working style (the default is
+  OpenFreeMap).
+- Prompt: `Show two cafes on a map with their phone and website: Cafe Alpha at 48.8566, 2.3522, phone +33 1 00 00 00 01, website https://example.com/alpha; Cafe Beta at 48.8606, 2.3376, phone +33 1 00 00 00 02, website https://example.com/beta.`
+- Expected: while the fence streams, the block holds the loading block. Then
+  a still map shows with both pins. Scroll the transcript over it: the
+  transcript scrolls. Tap the map: the full-screen map opens. Tap a pin: its
+  popup is a place card with **Directions**, **Website**, and **Call**.
+  **Directions** opens Google Maps directions to that place. **Website** opens the
+  place's `https` link. **Call** opens the phone dialer with that number. A
+  place with no phone has no **Call**. A website that is not `http(s)` has
+  no **Website**.
+
+### 17. Broken map style falls back to the place list
+
+- Set `EXPO_PUBLIC_GENUI_MAP_STYLE_URL="https://example.invalid/style.json"`
+  in `apps/mobile/.env` and restart Metro with `pnpm dev`.
+- Send the step 16 prompt in a new session.
+- Expected: within 10 s after the block settles, the map area turns into the
+  place list: one row per cafe with **Directions**, **Website**, and
+  **Call**. The block does not stay blank and the app does not crash.
+- Set the value to `off`, restart Metro, and send the prompt again: the
+  place list shows at once, with no map.
+- Remove the line from `.env` and restart Metro after the check.
+
+### 18. A block that fails does not blank the message
+
+- A real prompt cannot force a component to throw. This step is covered by
+  tests only: `apps/mobile/components/genui/genui-message-block.test.tsx`
+  (the block's own error boundary). The GenUI debug screen
+  (`GenuiDebugScreen`, `kortix://genui-debug`) does not cover it: it renders
+  `GenuiBlock` directly, without the message block's boundary.
+- On device, check the related path: open the debug screen (project home →
+  **Debug GenUI** in a dev build) and scroll to `Invalid block (BROKEN_TABS)`.
+  Expected: the invalid block shows its issues count and the other samples
+  on the screen still render.
+- Expected (tests): a component that throws inside the SDK falls back to
+  its markdown. A throw the SDK cannot contain shows *This content could not
+  be displayed.* in place of that block only. The sibling block and the
+  message text still render.
 
 ## Publishing the OTA
 

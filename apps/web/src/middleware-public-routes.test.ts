@@ -20,9 +20,13 @@ test('/review is not public — the Review Center ships flag-gated inside Custom
 });
 
 test('token-gated entry points stay public', () => {
+  // `/embed` was removed with the public transcript share (KRTX-2358); the
+  // session embed is the authenticated session page behind its own CSP rule,
+  // never a public route.
   for (const route of ["'/secret-intake'", "'/connect'", "'/share'"]) {
     expect(publicRoutes).toContain(route);
   }
+  expect(publicRoutes).not.toContain("'/embed'");
 });
 
 test('middleware imports locale constants without bundling translation loaders', () => {
@@ -57,6 +61,7 @@ test('every supported public surface accepts an explicit locale prefix', async (
     '/solutions',
     '/support',
     '/use-cases',
+    '/white-label',
   ];
 
   for (const route of routes) {

@@ -1,10 +1,10 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import { Button } from '@kortix/ui/button';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 /**
  * The full-viewport frame shown while a project is being opened.
@@ -34,7 +34,7 @@ import { cn } from '@/lib/utils';
  * renders, and `AuthPendingScreen`'s spinner on a blank field. The mark says
  * the same thing without guessing at a layout, and it is the same mark the
  * account gets on a branded workspace — `variant="icon"` reads `useBranding()`
- * (see `@/components/ui/kortix-logo`).
+ * (see `@kortix/ui/kortix-logo`).
  *
  * `AuthPendingScreen` still owns the consent sub-flows (OAuth, CLI, tunnel,
  * GitHub setup, preview). There the spinner sits inside a frame that carries a

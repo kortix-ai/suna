@@ -30,8 +30,8 @@ export function isKortixMode(modelId: string): boolean {
   const id = modelId.startsWith('kortix/') ? modelId.slice('kortix/'.length) : modelId;
   return (
     id === 'auto' ||
-    // 2026-08-10 managed slim-down: claude-opus-4.8 / claude-sonnet-4.6 /
-    // kimi-k3 are deactivated in @kortix/llm-catalog MANAGED_MODELS.
+    // Legacy Kortix mode ids. The managed lineup itself comes from Platinum
+    // Inference through the API, not from this list.
     id === 'glm-5.3-flash' ||
     id === 'qwen3.7-max' ||
     id === 'deepseek-v4-pro' ||

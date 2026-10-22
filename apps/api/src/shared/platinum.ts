@@ -359,6 +359,14 @@ export class PlatinumHttpError extends Error {
   }
 }
 
+/** A timed-out exec may already have run. Never replay it automatically. */
+export class PlatinumExecOutcomeUnknownError extends PlatinumHttpError {
+  constructor() {
+    super('The sandbox provider timed out. The command may have run; inspect its effects before running it again.', 504);
+    this.name = 'PlatinumExecOutcomeUnknownError';
+  }
+}
+
 /**
  * Expected, transient: Platinum auto-stops idle microVMs natively (see
  * PlatinumProvider) and resumes them CoW on reopen. While a box is in that
@@ -422,6 +430,9 @@ export async function platinumJsonResponse<T>(
         `platinum ${init.method ?? 'GET'} ${path} -> ${res.status} ${text.slice(0, 300)}`,
         text,
       );
+    }
+    if (res.status === 504 && method === 'POST' && /^\/v1\/sandboxes\/[^/]+\/exec$/.test(path)) {
+      throw new PlatinumExecOutcomeUnknownError();
     }
     // Surface Retry-After (seconds) on a 429 so poll-error classification can
     // honor it (PHASE 2 rate-limit handling). Harmless suffix for other callers.

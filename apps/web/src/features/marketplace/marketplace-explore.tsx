@@ -2,22 +2,22 @@
 
 import { useTranslations } from '@/i18n/use-translations';
 import { PlusIcon as Plus, MagnifyingGlassIcon as Search } from '@phosphor-icons/react';
-import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
+} from '@kortix/ui/input-group';
 import { MarketplaceAvatar } from '@/features/marketplace/marketplace-avatar';
 import { displayCompanyLabel } from '@/features/marketplace/marketplace-company-filter';
 import { MarketplacePagedGrid } from '@/features/marketplace/marketplace-paged-grid';
 import { MarketplaceProjectsGrid } from '@/features/marketplace/marketplace-projects-grid';
 import { type MarketplaceItem, type MarketplaceSummary } from '@/lib/marketplace-client';
 import { companyIdFromSlug, marketplaceSourceHref } from '@/lib/marketplace-slug';
-import { cn } from '@/lib/utils';
+import { cn, useDebounce } from '@kortix/ui';
 import { AddMarketplaceModal } from './add-marketplace-modal';
 import {
   MARKETPLACE_GRID_COLUMNS,
@@ -25,6 +25,7 @@ import {
   sumMarketplaceTypeCounts,
 } from './marketplace-grid';
 import { typeMeta } from './marketplace-meta';
+import { rememberMarketplaceListHref } from './marketplace-return';
 import { MarketplaceShell, type MarketplaceCrumb } from './marketplace-shell';
 
 // Only skills are browseable alongside Projects today (agents/commands/
@@ -196,31 +197,54 @@ export function MarketplaceExplore({
   // picked up after hydration; embedded (Customize) keeps it purely local.
   const [source, setSource] = useState<string>(ALL_SOURCES);
 
+  const [query, setQuery] = useState('');
+  const debounced = useDebounce(query, 250).debouncedValue.trim();
+
+  /** Write the list URL (`?source=`, `?q=`) and remember it for an item's Back. */
+  const writeListUrl = useCallback((href: string) => {
+    window.history.replaceState(null, '', href);
+    rememberMarketplaceListHref(href);
+  }, []);
+
   useEffect(() => {
     if (!syncUrl) return;
-    const slug = new URLSearchParams(window.location.search).get('source');
+    const params = new URLSearchParams(window.location.search);
+    const slug = params.get('source');
     if (slug) setSource(companyIdFromSlug(slug));
+    const q = params.get('q');
+    if (q) setQuery(q);
+    rememberMarketplaceListHref(window.location.pathname + window.location.search);
   }, [syncUrl]);
+
+  // Mirror the search to `?q=`. The first run is skipped: `debounced` is still
+  // '' there, and writing it would drop the `?q=` the effect above just read.
+  const searchUrlReady = useRef(false);
+  useEffect(() => {
+    if (!syncUrl) return;
+    if (!searchUrlReady.current) {
+      searchUrlReady.current = true;
+      return;
+    }
+    const url = new URL(window.location.href);
+    if (debounced) url.searchParams.set('q', debounced);
+    else url.searchParams.delete('q');
+    writeListUrl(url.pathname + url.search);
+  }, [syncUrl, debounced, writeListUrl]);
 
   const selectSource = useCallback(
     (id: string) => {
       setSource(id);
       if (syncUrl) {
-        window.history.replaceState(null, '', marketplaceSourceHref(id));
+        const url = new URL(marketplaceSourceHref(id), window.location.origin);
+        if (debounced) url.searchParams.set('q', debounced);
+        writeListUrl(url.pathname + url.search);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         scrollContainerRef?.current?.scrollTo({ top: 0, behavior: 'smooth' });
       }
     },
-    [syncUrl, scrollContainerRef],
+    [syncUrl, scrollContainerRef, debounced, writeListUrl],
   );
-
-  const [query, setQuery] = useState('');
-  const [debounced, setDebounced] = useState('');
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(query.trim()), 250);
-    return () => clearTimeout(t);
-  }, [query]);
 
   // Adding/activating sources is an authenticated action — the public marketing
   // page stays browse-only. The featured list + custom git URL live in the

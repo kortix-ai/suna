@@ -5,6 +5,7 @@ import { accountRolesForUser } from '../../iam/read-models';
 import { resolveAccountId } from '../../shared/resolve-account';
 import {
   PatPolicyError,
+  checkTokenMintExpiry,
   createAccountToken,
   listAccountTokens,
   listPersonalAccountTokens,
@@ -131,6 +132,10 @@ accountsRouter.openapi(
     email: userEmail,
     token_context: {
       auth_type: authType,
+      // The account token this request authenticated with (null for a web
+      // session), so a client can tell its own credential from the rest:
+      // `kortix tokens rm` refuses to revoke it by accident (KRTX-1842).
+      token_id: (c.get('iamTokenBinding') as { tokenId?: string } | undefined)?.tokenId ?? null,
       project_id: (c.get('tokenProjectId') as string | undefined) ?? null,
       session_id: (c.get('sessionId') as string | undefined) ?? null,
       agent: (c.get('agentGrant') as { agent?: string } | null | undefined)?.agent ?? null,
@@ -283,6 +288,13 @@ accountsRouter.openapi(
   const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
   if (expiresAt && Number.isNaN(expiresAt.getTime())) {
     return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+  }
+  const expiryRefusal = await checkTokenMintExpiry(
+    expiresAt,
+    c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined,
+  );
+  if (expiryRefusal) {
+    return c.json({ error: expiryRefusal.error, code: expiryRefusal.code }, expiryRefusal.status);
   }
 
   // Optional project scope. A project-scoped key only ever works on that one

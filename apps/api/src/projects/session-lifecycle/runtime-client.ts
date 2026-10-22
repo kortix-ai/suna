@@ -8,6 +8,7 @@
 
 import { sessionAttachmentStore } from '../lib/session-attachments';
 import { stableSessionAttachmentId } from '../lib/session-attachment-identity';
+import { HTTPException } from 'hono/http-exception';
 import { PromptDeliveryRefused, throwIfPromptRefused } from './prompt-delivery-refusal';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
@@ -847,6 +848,12 @@ export async function postPrompt(
     return 'failed';
   } catch (err) {
     if (err instanceof PromptDeliveryRefused || err instanceof SteerNotTaken) throw err;
+    // The proxy's access gates THROW their 403 instead of returning it. It is
+    // the same refusal as a returned 403, not a down box: classify it alike.
+    if (err instanceof HTTPException && err.status < 500) {
+      await throwIfPromptRefused(new Response(JSON.stringify({ message: err.message }), { status: err.status }));
+      return 'failed';
+    }
     // A connection refused/reset while the sandbox finishes resuming — treat as a
     // retryable miss (the deliver loop will heal + retry) instead of letting it
     // bubble up and silently drop the turn.

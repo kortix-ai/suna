@@ -37,7 +37,8 @@ import { FLOATING_BAR_HEIGHT } from '@/components/navigation/tab-bar-layout';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
-import { pickerSections, showsPickerSearch, type PickerOption } from '@/lib/session/composer-config';
+import { pickerSections, showsPickerSearch, type PickerOption, type PickerSection } from '@/lib/session/composer-config';
+import { useSheetRowLimit } from '@/components/kortix/sheet-settled';
 
 /**
  * Two stops, like the Customize sheet (Jay, 2026-09-22): the sheet opens at its
@@ -152,33 +153,15 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
 
           {children}
 
-          {sections.map((section) => (
-            // `bg-secondary`: in dark mode `card` equals the sheet's `popover`.
-            <View key={section.title ?? ''}>
-              {/* The group title sits 8pt in (Jay, 2026-09-21), on the sheet
-                  title's line — not `SettingsGroup`'s 16pt title inset. */}
-              {section.title ? (
-                <Text variant="muted" className="mb-2 px-2">
-                  {section.title}
-                </Text>
-              ) : null}
-              <SettingsGroup>
-                {section.options.map((option) => (
-                  <SettingsRow
-                    key={option.key}
-                    label={option.label}
-                    checked={option.key === activeKey}
-                    right={null}
-                    onPress={() => {
-                      haptics.selection();
-                      onSelect(option.key);
-                      if (closeOnSelect) modalRef.current?.dismiss();
-                    }}
-                  />
-                ))}
-              </SettingsGroup>
-            </View>
-          ))}
+          <PickerSections
+            sections={sections}
+            activeKey={activeKey}
+            onPick={(key) => {
+              haptics.selection();
+              onSelect(key);
+              if (closeOnSelect) modalRef.current?.dismiss();
+            }}
+          />
 
           {options.length === 0 && empty ? (
             <View className="items-center gap-6 py-6">
@@ -205,6 +188,7 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
         {tabs ? (
           <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={sheetBackground} className="justify-center px-4">
             <FloatingTabCapsule
+              glass
               items={tabs.items}
               activeIndex={tabs.activeIndex}
               onSelect={(index) => {
@@ -220,3 +204,50 @@ export const PickerSheet = React.forwardRef<SheetRef, PickerSheetProps>(
   },
 );
 PickerSheet.displayName = 'PickerSheet';
+
+/**
+ * The picker rows. A child of the sheet, so it reads `SheetSettledContext`:
+ * while the sheet opens only the first rows mount (`useSheetRowLimit`), the
+ * rest once it is at rest (KRTX-2929: a provider's whole model list mounted
+ * during the open dropped frames). Only a fixed-detent sheet (search or tabs)
+ * holds more rows than the limit, so a content-sized sheet never grows late.
+ */
+function PickerSections({
+  sections,
+  activeKey,
+  onPick,
+}: {
+  sections: PickerSection[];
+  activeKey: string | null;
+  onPick: (key: string) => void;
+}) {
+  let budget = useSheetRowLimit(sections.reduce((n, section) => n + section.options.length, 0));
+  return sections.map((section) => {
+    if (budget <= 0) return null;
+    const options = section.options.slice(0, budget);
+    budget -= options.length;
+    return (
+      // `bg-secondary`: in dark mode `card` equals the sheet's `popover`.
+      <View key={section.title ?? ''}>
+        {/* The group title sits 8pt in (Jay, 2026-09-21), on the sheet
+            title's line — not `SettingsGroup`'s 16pt title inset. */}
+        {section.title ? (
+          <Text variant="muted" className="mb-2 px-2">
+            {section.title}
+          </Text>
+        ) : null}
+        <SettingsGroup>
+          {options.map((option) => (
+            <SettingsRow
+              key={option.key}
+              label={option.label}
+              checked={option.key === activeKey}
+              right={null}
+              onPress={() => onPick(option.key)}
+            />
+          ))}
+        </SettingsGroup>
+      </View>
+    );
+  });
+}

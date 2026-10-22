@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+/* @kortix/ui tokens, component layer and plugins. Default Kortix theme: this is
+   your own team's tool, so it keeps the Kortix look and loads Roobert. */
+@import '@kortix/ui/tailwind.css';
+@import '@kortix/ui/fonts.css';
+
+@layer base {
+  body {
+    @apply font-sans antialiased;
+  }
+}

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   CSP_REPORT_PATH,
+  embedContentSecurityPolicy,
   enforcedContentSecurityPolicy,
   reportOnlyContentSecurityPolicy,
 } from './content-security-policy';
@@ -24,6 +25,16 @@ describe('content security policy', () => {
     expect(policy.get('object-src')).toEqual(["'none'"]);
     expect(policy.get('base-uri')).toEqual(["'self'"]);
     // script-src is report-only until the reports are clean; see the module comment.
+    expect(policy.has('script-src')).toBe(false);
+  });
+
+  test('the embed policy opens framing for host pages and keeps the other enforced directives', () => {
+    const policy = directives(embedContentSecurityPolicy());
+
+    expect(policy.get('frame-ancestors')).toEqual(["'self'", 'https://kortix.com', 'https://*.kortix.com']);
+    expect(policy.get('object-src')).toEqual(["'none'"]);
+    expect(policy.get('base-uri')).toEqual(["'self'"]);
+    // The embed carries the same report-only script policy as every page.
     expect(policy.has('script-src')).toBe(false);
   });
 

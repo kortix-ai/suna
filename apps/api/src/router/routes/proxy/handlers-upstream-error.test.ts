@@ -145,14 +145,16 @@ describe('proxy upstream error diagnostics (KRTX-2073)', () => {
     expect(warnLines[0].message.length).toBeLessThan(1_000);
   });
 
-  test('an upstream 4xx stays silent and still passes through', async () => {
+  test("an upstream 4xx about the caller's request stays silent and still passes through", async () => {
+    // A refusal of Kortix's own key (401/402/429/432/433) is not passed through:
+    // see handlers-platform-refusal.test.ts.
     globalThis.fetch = (async () =>
-      upstreamError(429, '{"error":"Rate limit exceeded"}')) as unknown as typeof fetch;
+      upstreamError(400, '{"error":"Invalid url"}')) as unknown as typeof fetch;
 
     const response = await call();
 
-    expect(response.status).toBe(429);
-    expect(await response.text()).toBe('{"error":"Rate limit exceeded"}');
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe('{"error":"Invalid url"}');
     expect(refunds).toEqual(['Tool reservation refund after upstream error: firecrawl']);
     expect(warnLines).toHaveLength(0);
   });

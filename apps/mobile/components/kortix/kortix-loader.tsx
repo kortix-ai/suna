@@ -14,11 +14,6 @@ interface KortixLoaderProps {
    */
   size?: 'small' | 'medium' | 'large';
   /**
-   * Animation speed multiplier
-   * @default 1.2
-   */
-  speed?: number;
-  /**
    * Custom size in pixels (overrides size preset)
    */
   customSize?: number;
@@ -30,20 +25,6 @@ interface KortixLoaderProps {
    * Additional style for the container
    */
   style?: ViewStyle;
-  /**
-   * Whether the animation should autoPlay
-   * @default true
-   */
-  autoPlay?: boolean;
-  /**
-   * Whether the animation should loop
-   * @default true
-   */
-  loop?: boolean;
-  /**
-   * Ref to control the Lottie animation
-   */
-  lottieRef?: React.RefObject<LottieView>;
   /**
    * Force a specific color (overrides theme)
    * Use 'light' or 'dark' to force a specific theme color
@@ -102,21 +83,13 @@ const BLACK_SOURCE = recolorLottie(WHITE_SOURCE, [0, 0, 0]);
  *
  * // Force dark theme (white loader)
  * <KortixLoader forceTheme="dark" />
- * 
- * // With ref for manual control
- * const lottieRef = useRef<LottieView>(null);
- * <KortixLoader lottieRef={lottieRef} autoPlay={false} />
  * ```
  */
 export function KortixLoader({
   size = 'small',
-  speed = 1.2,
   customSize,
   className,
   style,
-  autoPlay = true,
-  loop = true,
-  lottieRef,
   forceTheme,
 }: KortixLoaderProps) {
   const { colorScheme } = useColorScheme();
@@ -132,12 +105,11 @@ export function KortixLoader({
         // Remount when the theme flips — LottieView doesn't reliably reload
         // a changed `source` in place.
         key={effectiveTheme}
-        ref={lottieRef}
         source={source}
         style={{ width: loaderSize, height: loaderSize }}
-        autoPlay={autoPlay}
-        loop={loop}
-        speed={speed}
+        autoPlay
+        loop
+        speed={1.2}
       />
     </View>
   );

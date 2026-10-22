@@ -1,6 +1,6 @@
 /**
  * InboxPage — the caller's notifications across every project (KRTX-1742),
- * at `/projects/[id]/inbox`: the drawer's Notifications pill. Layout rules:
+ * at `/projects/[id]/inbox`: the bell at the top right of project home. Layout rules:
  * apps/mobile/design.md → Notifications page.
  *
  *   header  `SettingsHeader` with the hamburger, "Notifications", and

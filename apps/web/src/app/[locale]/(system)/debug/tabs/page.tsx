@@ -1,8 +1,8 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Modal, ModalContent, ModalHeader, ModalTitle } from '@/components/ui/modal';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@kortix/ui/button';
+import { Modal, ModalContent, ModalHeader, ModalTitle } from '@kortix/ui/modal';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { useTranslations } from '@/i18n/use-translations';
 import { useState } from 'react';
 

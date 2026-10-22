@@ -1,0 +1,220 @@
+# AGENTS.md — Lumen, the customer-facing reference
+
+Lumen is the reference for a product that wraps Kortix for its own customers.
+Lumen owns identity, organizations and data (Convex + Better Auth, `convex/`).
+Kortix owns agents, sandboxes and sessions. The SDK is the only way to Kortix,
+`@kortix/ui` is the UI, and the brand is a set of token overrides. README.md
+has the authority split, the id mapping and the credential flow.
+
+## Required architecture
+
+1. `src/lib/kortix.ts` owns the only browser SDK client.
+2. `useSession(projectId, sessionId)` owns the complete workbench session.
+3. Client code imports Kortix only through `@kortix/sdk`, `@kortix/sdk/react`,
+   `@kortix/sdk/genui*` and `@kortix/ui`. Every other `@kortix/sdk/<subpath>`
+   is deprecated or internal, and the boundary refuses it.
+4. Client code does not implement runtime transport logic.
+5. Server Kortix calls use `@kortix/sdk/server`.
+6. The `/api/kortix` route delegates upstream forwarding to `forwardKortixRequest()`.
+
+Do not add:
+
+- `@opencode-ai/sdk` imports.
+- Provider REST paths.
+- Runtime proxy URL construction.
+- Browser calls to `session.previewUrl()` or `session.proxyUrl()`.
+- Legacy runtime stores.
+- A second SDK client.
+- A second session event provider.
+- A client-side transport selector.
+- A raw Kortix `fetch()` in client or server code.
+
+`scripts/sdk-boundary.mjs` enforces the client, server, and application-test
+rules. Update its tests when a new same-origin application route is intentional.
+
+Browser code never imports `@kortix/sdk/server` and never opens its own
+transport (`EventSource`, `XMLHttpRequest`, `WebSocket`, `navigator.sendBeacon`,
+an aliased `fetch` such as `const f = fetch` or `fetch.call(...)`). No source
+file, Convex included, imports a raw HTTP client (`node:http(s)`, `undici`,
+`axios`, `ky`, `got`, `node-fetch`, `cross-fetch`). The boundary is a source
+scan: it catches these forms, not every way to write them.
+
+## Server boundary
+
+`src/app/api/**` and `src/server/**` are server-only.
+
+- Use `createScopedKortix()` for request-scoped server SDK calls.
+- Authenticate before parsing or forwarding privileged requests.
+- Get the Kortix credential from `resolveMember` / `resolveMemberFor`
+  (`src/server/member.ts`). Never take a project id from the client as the
+  key to a credential.
+- The operator credential lives only in Convex env (`KORTIX_OPERATOR_TOKEN`).
+  Next.js never reads it. The firm credential (its service-account secret)
+  never reaches a response body.
+- The proxy allowlists reads and writes. A new proxied route is an explicit
+  entry in `src/server/proxy-policy.ts` with a test in
+  `tests/unit/proxy-policy.test.ts`. Never allow an account route, a credential
+  route or a member list. A session create always runs on the member's firm
+  agent and a prompt carries no agent (`memberSessionCreateBody`,
+  `memberPromptBody`): Kortix lets a service account start any agent. A route
+  with a session id checks `sessionInMatter`, a runtime route
+  `sandboxInMatter`. The matter's agent is the firm's, or a restricted
+  matter's own (`memberToken` returns it with the matter's `matterDir`).
+- There are no prompt attachments: a chat file goes to Documents
+  (`takeFiles`). A runtime file read inside the matter folder is answered from
+  Drive by Lumen (`ingest.matterFile`), never by the sandbox. Responses lose
+  platform plumbing (`scrubSession`, `scrubHealth`, `scrubInbox`,
+  `dropRuntimeAliases`); a new browser-visible route gets a leak test.
+- Never return a Kortix token to the browser, a preview URL included. A
+  preview is a public preview share (`/api/preview-url`).
+
+## Convex boundary
+
+- One Kortix project serves every firm (README "One project, many firms").
+  A firm is a folder `/Lumen/Firms/<firmId>`, an agent `lumen-f-<firmId>`
+  (grants: that folder `write`, `/Lumen/Kit` `read`; no repository, no
+  Kortix permissions) and a service account `lumen-firm-<firmId>` (project
+  role `member`). Never give a Kortix project, folder grant or agent to more
+  than one firm, and never add a grant that reaches every session (the
+  `/Company` project grant is removed on purpose).
+- A restricted matter lives in `/Lumen/Walled/<matterId>`, granted only to
+  its own agent `lumen-m-<matterId>` (`kortix.placeMatter`). Never put a
+  restricted matter's files, runs or outputs under the firm folder, and never
+  start its session on the firm agent: `sessionAgent` (convex/lumenAgent.ts)
+  picks the agent from where the folder is, and returns null while it moves.
+- Every Kortix call is a `"use node"` action: `convex/kortix.ts` (the shared
+  project and kit, firm onboarding, threads, the proxy's credential lookup),
+  `convex/ingest.ts` (Drive copies of documents) and `convex/engine.ts` (run
+  sessions). They share `convex/operator.ts` (the operator credential,
+  `asFirm` for a firm's service account, `withRetry`). Other Convex files
+  never import `@kortix/sdk`.
+- The operator credential sets up the project and writes Drive files. It
+  never creates or drives a session: every session is created and driven
+  with the firm's service account (`asFirm`), on the matter's agent (the
+  firm's agent, or a restricted matter's own `lumen-m-<matterId>`).
+- The agent kit lives in `agent-kit/`. After any edit there, run
+  `bun scripts/kit-bundle.ts` (it rewrites `convex/kit/bundle.generated.ts` and
+  the hash in `kit.json`) and bump `kit.json` `version`; `tests/unit/kit-bundle.test.ts`
+  fails on a stale bundle. The next thread or run uploads it once to
+  `/Lumen/Kit/<version>/` for every firm. Write kit paths as `{{KIT}}/…`.
+- Run state changes go through `convex/runs.ts` mutations and write a
+  `runEvents` row; Convex re-checks every citation (`convex/lib/cite.ts`)
+  before a value reaches the UI. `convex/lib/segment.ts` is the only segmenter.
+- Public queries return null or `[]` for a non-member; mutations and actions
+  throw `"403: …"`. The status prefix is what the proxy maps to HTTP.
+- Store each Kortix id next to the Lumen id that owns it. Tag sessions with
+  `lumenSessionTags`, and a client-built session body with `tagSessionCreate`
+  (`convex/tags.ts`); never add a Lumen concept to a Kortix API.
+- Raw errors stay in `auditEvents`. A field a member reads holds generic text.
+- `convex/_generated/` and `convex/betterAuth/generatedSchema.ts` are
+  generated. Regenerate with `npx convex dev` and the Better Auth CLI command
+  in that file's header.
+- Return provider-neutral response fields.
+- Validate identifiers before interpolating them into SDK calls.
+
+`POST /api/preview-url` owns session readiness and preview URL resolution. The
+client receives one final URL: a Kortix public preview share that expires
+after 15 minutes. Do not return a token, an upstream base URL, or runtime
+coordinates.
+
+The `/api/kortix` route calls `forwardKortixRequest()` from
+`@kortix/sdk/server`. The SDK owns upstream authentication, request buffering,
+streaming, and response-header sanitization.
+
+## UI boundary: compose @kortix/ui, theme through tokens
+
+The app has no UI kit of its own. `src/components/ui/` does not exist and must
+not come back.
+
+- Import every primitive from `@kortix/ui/<name>` (`button`, `input`,
+  `textarea`, `select`, `switch`, `modal`, `confirm-dialog`, `card`, `badge`,
+  `tabs`, …). Never `@kortix/ui/dialog`: it is the primitive `modal` builds on.
+- The session chat is `<SessionThread>` from `@kortix/ui/session`, the same
+  thread apps/web renders, inside Lumen's `CitationLayer`. Never
+  re-implement the transcript, composer or prompts.
+- Toasts: `successToast` / `errorToast` / `infoToast` / `warningToast` from
+  `@kortix/ui/toast`. `providers.tsx` mounts its `<Toaster />` once.
+- `cn` comes from `@kortix/ui` (the root entry). Never import a deep
+  `@kortix/ui/<module>/<path>`.
+- Icons: `@phosphor-icons/react` (`<Name>Icon`), the set @kortix/ui renders.
+- Use `Loading` (`@kortix/ui/loading`) for pending actions and `Skeleton` for
+  page-level loading.
+- Add accessible names to icon-only controls. Preserve keyboard actions.
+- `providers.tsx` mounts `<UiProvider>` once. Do not mount another.
+
+Theming happens through one typed theme, `src/config/theme.ts`
+(`KortixTheme` from `@kortix/ui/theme`). `src/app/layout.tsx` compiles it with
+`themeToCss` into one `<style>` in `<head>`, so the first paint is on brand.
+It sets the colors per mode, the radius (`0.375rem`: 4 px rectangles; pills by class), the spacing step
+(`0.25rem`), the shadows, the durations and easing, and the fonts. Lumen's
+brand is `--brand`; `blue` (switches, checkboxes, radios, the brand Button and
+Badge variants, info alerts), `action` and `actionForeground` (the default
+Button fill), `ring`, `primary`, `sidebarPrimary` and `selection` point at it.
+`src/app/globals.css` imports `tailwindcss` and `@kortix/ui/tailwind.css`,
+maps Lumen's variables to utilities (`bg-brand`, `bg-navy` for the fixed brand
+surface, `bg-paper`, `text-lamp`, `text-verified`, `text-risk`,
+`border-hairline`, `font-display`) and defines the serif scale
+(`display-xl` … `display-xs`), `eyebrow` and the laid-paper weave
+(`pattern-laid`, `pattern-laid-paper`). Never fork or wrap a component to change a color, radius or
+font. Never import `@kortix/ui/fonts.css`: Lumen's fonts are its own
+(Geist, Newsreader for titles, Geist Mono), loaded with `next/font` in
+`src/app/layout.tsx`. The wordmark is outlines (`src/config/wordmark.ts`), never
+live text. The public site keeps every word in
+`src/components/marketing/content.ts`: fictional firms only, numbers only from
+the evaluation runs, no certification Lumen does not hold.
+
+`src/app/providers.tsx` mounts `UiProvider` once with Lumen's mark
+(`useBrand` → `LUMEN_UI_BRAND`), the host config (no CLI bar, no public share
+links, no terminal; `accountApiEnabled` stays on so the proxy's local "denied"
+probe answers hide the configuration controls; `takeFiles` + `attachAccept`
+send a chat file to Documents), `resolvePreviewUrl` (sandbox
+previews resolve through `POST /api/preview-url`) and `setUiRoutes` (every
+page Lumen does not serve is `null`, so its links are hidden).
+
+A missing primitive or chat slot is added to `packages/ui`, not to this app.
+
+`scripts/sdk-boundary.mjs` rejects: any file under `src/components/ui`,
+imports of a local UI primitive, `lucide-react`, `radix-ui`, `@radix-ui/*`,
+`class-variance-authority`, `next-themes` or `react-markdown`, a direct sonner
+`toast` import, `@kortix/ui/dialog` (use `modal` or `confirm-dialog`), native
+feature controls (`<button>`, `<input>`, …) and feature-level spinners.
+
+## Structure
+
+- `src/lib/kortix.ts`: One browser SDK client.
+- `src/app/globals.css`: `@kortix/ui` tokens + theme, and the white-label overrides.
+- `src/components/chat/citation-layer.tsx`: checks each citation link in a thread and opens the Source panel.
+- `src/components/thread-workbench.tsx`: one Assistant thread: header, approvals, boot screen, `SessionThread`.
+- `src/components/workbench/`: the thread's header, approvals strip, boot screen and runtime recovery.
+- `src/app/**`: Route components.
+- `src/app/api/**`: Same-origin server endpoints.
+- `src/server/**`: Better Auth helpers, firm credential resolution, and the proxy policy.
+- `convex/**`: Lumen's backend (schema, auth, firms, matters, threads, billing, audit, Kortix actions).
+- `tests/unit/**`: unit tests under bun (proxy policy, tagging, member cache, boundary, UI helpers).
+- `tests/convex/**`: Convex backend tests under vitest + `convex-test`.
+
+## Required checks
+
+Run these commands before each commit:
+
+```bash
+pnpm --filter @kortix/white-label-lumen typecheck
+pnpm --filter @kortix/white-label-lumen build
+cd apps/white-label/lumen && bun test tests/unit/<the files you touched> && pnpm test:convex
+```
+
+All three commands must exit `0`. The SDK boundary must report `0 violations`.
+
+## Customer data
+
+Never write customer names, people's names, emails, or real prod IDs into code,
+commits, PRs, docs, or comments. The full rule and the commit guard are in the
+root `AGENTS.md` → "NEVER write customer data or PII".
+
+## Design references
+
+This app's UI is the Kortix design system (`@kortix/ui`, source in
+`packages/ui`) re-themed by token overrides. Component rules are in
+`.agents/skills/kortix-design-system/SKILL.md`; token values in
+`.agents/skills/kortix-brand/SKILL.md`. Brand voice and the Roobert font do
+not apply: this is a white-label surface.

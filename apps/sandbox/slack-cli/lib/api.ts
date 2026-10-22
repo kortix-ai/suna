@@ -59,15 +59,6 @@ export async function kortixPost<T>(path: string, body?: unknown): Promise<T> {
   return parseResponse<T>(res);
 }
 
-export async function kortixDelete<T = unknown>(path: string): Promise<T> {
-  const res = await fetch(buildUrl(path), {
-    method: 'DELETE',
-    headers: authHeaders(),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  return parseResponse<T>(res);
-}
-
 /**
  * GET a binary body (a file proxied by apps/api, so provider tokens stay on the
  * server). A failed response throws the same readable `API_ERROR` as the JSON

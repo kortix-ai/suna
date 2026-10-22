@@ -187,8 +187,9 @@ export function useTurnBusyStatus({
   hasAssistantContent: boolean;
 }): { statusText: string | undefined; elapsedLabel: string | undefined } {
   const rawStatus = useMemo(
-    () => (hasAssistantContent ? busyStatusText(blocks) : ''),
-    [blocks, hasAssistantContent],
+    // Only a working turn shows the line: a settled turn skips the whole-turn scan.
+    () => (working && hasAssistantContent ? busyStatusText(blocks) : ''),
+    [blocks, working, hasAssistantContent],
   );
   const [mountedAt] = useState(() => Date.now());
   const lastChangeRef = useRef(mountedAt);

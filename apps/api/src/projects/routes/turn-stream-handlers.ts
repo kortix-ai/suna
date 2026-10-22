@@ -24,7 +24,7 @@ import { turnEndNotificationContext } from '../lib/notification-recipients';
 import { clearOpenQuestions } from '../lib/pending-questions';
 import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
 import { notifyTurnEnded } from '../lib/config-convergence-triggers';
-import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
+import { captureJournallessSessionLog } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import {
@@ -38,10 +38,12 @@ import { confirmInboxPromptConsumed, steerTargetAtTurnEnd } from '../session-lif
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import { revertSessionModelFallback } from '../lib/session-model-fallback-revert';
 import {
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
+import { fireIdleWatches } from '../rooms/service';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
@@ -338,22 +340,20 @@ async function promoteAfterTurnEnd(
       ),
     );
   }
-  // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL — mirror it.
+  // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL. A box without a journal
+  // gets its messages into the session log now (a box with a journal keeps
+  // its own log, and the capture returns at once). The box is definitionally
+  // reachable — it just relayed. Fire-and-forget beside the reconcile above:
+  // `captureJournallessSessionLog` never throws and must never fail a
+  // turn-end report.
   //
-  // This is the one instant the deleted client-side mirror could not
-  // observe (its freshness test read the transcript's SHAPE, and a STOP
-  // moves none of that), which is why the SERVER writes the copy here
-  // rather than the browser writing it on a timer. The box is definitionally
-  // reachable — it just relayed — and both halves of the turn are settled.
-  // Fire-and-forget beside the reconcile above: a mirror write must never be
-  // able to fail a turn-end report, and `captureSessionTranscriptMirror`
-  // never throws.
-  //
-  // EVERY session, a coordinator-spawned one included: it runs in its own
-  // sandbox with its own OpenCode root, and nobody may ever open it, so this
-  // turn end is the only moment its history is saved. Skipping it served
-  // `available: false` and a loading bar to the first person who looked.
-  void captureSessionTranscriptMirror(sessionId);
+  // EVERY session, a coordinator-spawned one included: nobody may ever open
+  // it, so this turn end is the only moment its history is saved.
+  void captureJournallessSessionLog(sessionId);
+  // The session is idle: a session a fallback took over moves back to its own
+  // model when that model can serve again (never throws). Child sessions too:
+  // the switch writes them, and their prompts then send the fallback pin.
+  if (turnCompletion.outcome === 'closed') void revertSessionModelFallback(sessionId);
   // THE TURN ENDED — the session's next queued prompt is admissible NOW.
   // Await the durable promotion before acknowledging the terminal relay.
   // The targeted drain remains asynchronous and re-runs admission itself;
@@ -538,6 +538,11 @@ export async function settleTurnEnd(
         err: err instanceof Error ? err.message : String(err),
       }),
     );
+  }
+  // THE TURN ENDED, SO "TELL ME WHEN IT IS IDLE" IS DUE (flag agent_rooms).
+  // Fire-and-forget: a notice never holds the daemon's relay, and it never throws.
+  if (settled.turnCompletion.outcome === 'closed' && !ctx.childSession) {
+    void fireIdleWatches(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null);
   }
   // Started beside the promotion, awaited before the acknowledgement.
   const sessionList = refreshSessionListAtTurnEnd(ctx);

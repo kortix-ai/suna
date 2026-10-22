@@ -4,6 +4,7 @@
 // Reads (gated on audit.read):
 //   - GET    /:accountId/audit                  cursor-paginated list
 //   - GET    /:accountId/audit/export?format=   CSV or JSONL streaming export
+//   - GET    /:accountId/audit/activity         per-user activity by day
 //
 // Webhook management (gated on account.write):
 //   - GET    /:accountId/audit/webhooks
@@ -24,6 +25,7 @@ import {
   recordAuditEvent,
 } from '../shared/audit';
 import { auditCredentialNames } from '../shared/audit-credential-names';
+import { readAuditActivity } from '../shared/audit-activity';
 import { requestClientIp } from '../middleware/client-ip';
 import {
   deliverTestEvent,
@@ -102,7 +104,7 @@ const DEFAULT_LIMIT = 50;
 //   ?session_id=<id>        — one session
 //   ?source=api_key         — one trusted execution source (authoritative_source)
 //   ?credential_kind=oauth_app — one credential class the API authenticated
-//   ?outcome=failure        — success, failure, denied, or pending
+//   ?outcome=failure        — success, failure, denied, pending, or expired
 //   ?request_id=<id>        — one API request
 //   ?correlation_id=<id>    — one cross-system operation
 //   ?resource_type=X        — prefix match on resource_type
@@ -130,7 +132,7 @@ auditRouter.openapi(
         source: z.string().optional(),
         credential_kind: z.string().optional(),
         phase: z.string().optional(),
-        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending', 'expired']).optional(),
         request_id: z.string().optional(),
         correlation_id: z.string().optional(),
         resource_type: z.string().optional(),
@@ -224,6 +226,104 @@ auditRouter.openapi(
       events: page.map((row) => serializeAuditEvent(row, names)),
       next_cursor: nextCursor,
     });
+  },
+);
+
+// ─── Activity ─────────────────────────────────────────────────────────────
+//
+// GET /v1/accounts/:accountId/audit/activity — who was active, how often, per
+// UTC day, from kortix.audit_activity_daily (shared/audit-activity.ts).
+//   ?since=YYYY-MM-DD       — first day, inclusive (default: 27 days before until)
+//   ?until=YYYY-MM-DD       — last day, inclusive (default: today, UTC)
+//   ?project_id=<uuid>      — one project
+//   ?actor=<uuid>           — one user
+//   ?client=browser         — browser (a person in a web page) or program
+//   ?actor_type=human       — human, agent, service_account, system, anonymous
+//   ?credential_kind=browser_session
+const ACTIVITY_MAX_DAYS = 400;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const AuditActivitySchema = z
+  .object({
+    since: z.string(),
+    until: z.string(),
+    rolled_through: z.string().nullable(),
+    actors: z.array(
+      z.object({
+        actor_user_id: z.string(),
+        email: z.string().nullable(),
+        active_days: z.number(),
+        active_hours: z.number(),
+        events: z.number(),
+        first_at: z.string(),
+        last_at: z.string(),
+        days: z.array(z.object({ day: z.string(), events: z.number(), active_hours: z.number() })),
+      }),
+    ),
+  })
+  .openapi('AuditActivity');
+
+function parseActivityDay(value: string | null, name: string): string | null {
+  if (value === null) return null;
+  const day = DAY_RE.test(value) ? value : value.slice(0, 10);
+  if (!DAY_RE.test(day) || Number.isNaN(Date.parse(`${day}T00:00:00Z`))) {
+    throw new Error(`${name} must be a date (YYYY-MM-DD)`);
+  }
+  return day;
+}
+
+auditRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/audit/activity',
+    tags: ['accounts'],
+    summary: 'Per-user activity by day (who was active, how often)',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      query: z.object({
+        since: z.string().optional(),
+        until: z.string().optional(),
+        project_id: z.string().uuid().optional(),
+        actor: z.string().uuid().optional(),
+        client: z.enum(['browser', 'program']).optional(),
+        actor_type: AuditActorTypeSchema.optional(),
+        credential_kind: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: json(AuditActivitySchema, 'Activity per actor'),
+      ...errors(400, 401, 402, 403),
+    },
+  }),
+  async (c) => {
+    const accountId = c.req.param('accountId');
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.AUDIT_READ);
+    const denied = await requireEntitlement(c, accountId, 'auditAccess');
+    // requireEntitlement builds an untyped 402 Response; the route declares it.
+    if (denied) return denied as never;
+    let since: string;
+    let until: string;
+    try {
+      until = parseActivityDay(c.req.query('until')?.trim() || null, 'until') ?? new Date().toISOString().slice(0, 10);
+      since =
+        parseActivityDay(c.req.query('since')?.trim() || null, 'since') ??
+        new Date(Date.parse(`${until}T00:00:00Z`) - 27 * 86_400_000).toISOString().slice(0, 10);
+    } catch (error) {
+      return c.json({ error: (error as Error).message }, 400);
+    }
+    const span = (Date.parse(until) - Date.parse(since)) / 86_400_000 + 1;
+    if (span < 1) return c.json({ error: 'since must be on or before until' }, 400);
+    if (span > ACTIVITY_MAX_DAYS) return c.json({ error: `at most ${ACTIVITY_MAX_DAYS} days per request` }, 400);
+    const result = await readAuditActivity(accountId, {
+      since,
+      until,
+      projectId: c.req.query('project_id')?.trim() || null,
+      actor: c.req.query('actor')?.trim() || null,
+      client: (c.req.query('client')?.trim() || null) as 'browser' | 'program' | null,
+      actorType: c.req.query('actor_type')?.trim() || null,
+      credentialKind: c.req.query('credential_kind')?.trim() || null,
+    });
+    return c.json({ since, until, ...result });
   },
 );
 
@@ -321,7 +421,7 @@ auditRouter.openapi(
         source: z.string().optional(),
         credential_kind: z.string().optional(),
         phase: z.string().optional(),
-        outcome: z.enum(['success', 'failure', 'denied', 'pending']).optional(),
+        outcome: z.enum(['success', 'failure', 'denied', 'pending', 'expired']).optional(),
         request_id: z.string().optional(),
         correlation_id: z.string().optional(),
         resource_type: z.string().optional(),

@@ -153,9 +153,9 @@ describe('manifest refresh', () => {
       invalidateProjectMirror(project.projectId);
       // Called directly: the refresh starts in this tick, before the move.
       const inFlight = refreshMirror(project, 'tip-proof', { freshRef: 'main' });
+      await pushRequiredManifest();
       invalidateProjectMirror(project.projectId);
       await inFlight;
-      await pushRequiredManifest();
 
       expect(await required(tipProof)).toEqual(['required-check']);
     });

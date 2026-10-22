@@ -1,21 +1,20 @@
 'use client';
 
-import { BackPillBody, backPillClass } from '@/components/ui/back-pill';
-import { Button } from '@/components/ui/button';
-import { ModalClose } from '@/components/ui/modal';
-import { TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { workspaceAccountLabel } from '@/features/workspace/project-sidebar/workspace-grouping';
-import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
-import { cn } from '@/lib/utils';
-import { hubTarget } from '@/stores/account-panel-store';
-import type { SettingsRailChromeCopy } from './rail-copy-context';
+import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
+import { Button } from '@kortix/ui/button';
+import { ModalClose } from '@kortix/ui/modal';
+import { TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
+import { cn } from '@kortix/ui';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import type { SettingsRailChromeCopy } from '@kortix/ui/customize/settings/rail-copy-context';
 import {
   accountRoleLabel,
   type AccountMembership,
   type AccountMembershipsCopy,
 } from './tabs/account-memberships';
-import type { RailGroup, RailItem } from './type';
+import type { RailGroup, RailItem } from '@kortix/ui/customize/settings/type';
 export function RailNav({
   groups,
   showGroupLabels,
@@ -41,7 +40,7 @@ export function RailNav({
         className,
       )}
     >
-      {groups.filter((group) => !group.footer).map((group) => (
+      {groups.map((group) => (
         <div key={group.label}>
           {showGroupLabels ? (
             <div className="text-muted-foreground flex h-7 items-center px-2.5 text-xs font-medium">
@@ -116,48 +115,7 @@ export function RailNav({
         </div>
       ) : null}
 
-      {groups
-        .filter((group) => group.footer)
-        .map((group) => (
-          <RailFooterGroup key={group.label} group={group} onPick={onPick} />
-        ))}
     </nav>
-  );
-}
-
-/**
- * The Connect group at the foot of the rail (KRTX-1997): the same two rows the
- * project sidebar footer shows — one block, 1px seam, inner corners
- * `rounded-sm`, a "New" badge — but each is a tab here, so it opens its page
- * in this dialog, and none can be dismissed. `aria-label` names the list for
- * screen readers, which hear no group heading.
- */
-function RailFooterGroup({ group, onPick }: { group: RailGroup; onPick?: () => void }) {
-  const tSidebar = useI18nTranslations('sidebar');
-  return (
-    <TabsList
-      orientation="vertical"
-      aria-label={group.label}
-      className="mt-auto w-full gap-px [&>button:not(:first-child)]:rounded-t-sm [&>button:not(:last-child)]:rounded-b-sm"
-    >
-      {group.items.map((item) => (
-        <TabsTrigger
-          key={item.tab}
-          value={item.tab}
-          size="md"
-          onClick={onPick}
-          className={cn(
-            'bg-hover text-sidebar-foreground gap-2 px-2.5 py-1 font-medium transition-none has-[>svg]:px-2.5',
-            'hover:bg-active data-[state=active]:bg-active data-[state=active]:text-sidebar-foreground',
-          )}
-        >
-          <RailTriggerBody item={item} />
-          <span className="bg-kortix-blue/15 text-kortix-blue ms-auto flex h-5 shrink-0 items-center rounded-sm px-1.5 text-xs font-medium">
-            {tSidebar('new')}
-          </span>
-        </TabsTrigger>
-      ))}
-    </TabsList>
   );
 }
 

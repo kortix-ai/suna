@@ -690,10 +690,10 @@ describe('the boot reconcile on pi (P6.4)', () => {
   }, 60_000)
 
   test('the note sorts in place for display: after the restored history, before the next turn (a pi session with wire ids)', async () => {
-    // The SDK's display order (packages/sdk core/turns/grouping.ts). A computed specifier keeps the
+    // The SDK's display order (packages/sdk core/turns/display-order.ts). A computed specifier keeps the
     // daemon's typecheck off the SDK's DOM-typed modules; bun resolves it at run time.
-    const grouping: string = join(import.meta.dir, '../../../../packages/sdk/src/core/turns/grouping.ts')
-    const { compareMessagesForDisplay } = (await import(grouping)) as { compareMessagesForDisplay: (a: { info: { id: string } }, b: { info: { id: string } }) => number }
+    const displayOrder: string = join(import.meta.dir, '../../../../packages/sdk/src/core/turns/display-order.ts')
+    const { compareMessagesForDisplay } = (await import(displayOrder)) as { compareMessagesForDisplay: (a: { info: { id: string } }, b: { info: { id: string } }) => number }
     const sessionId = 'sess-pi-restore-order'
     const recorded = freshBox(sessionId)
     const rtA = await recorded.start()

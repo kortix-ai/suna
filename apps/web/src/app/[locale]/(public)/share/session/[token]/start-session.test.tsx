@@ -17,7 +17,9 @@ let calls = 0;
 let failRefresh = false;
 let reads = 0;
 let emptyMessage = false;
+const sdk = await import('@kortix/sdk');
 mock.module('@kortix/sdk', () => ({
+  ...sdk,
   SANDBOX_PORTS: {},
   getPublicSessionShare: async () => ({ session: { title: 'Synthetic preview' } }),
   getPublicShareByToken: async () => {
@@ -43,14 +45,18 @@ mock.module('@/i18n/use-translations', () => ({
 }));
 const host = ({ children, ...props }: { children?: ReactNode; [key: string]: unknown }) =>
   createElement('button', props, children);
-mock.module('@/components/ui/button', () => ({ Button: host }));
+const uiButtonMock = () => ({ Button: host });
+const realButton = await import('@kortix/ui/button');
+mock.module('@kortix/ui/button', () => ({ ...realButton, ...uiButtonMock() }));
 const presentation = ({ children }: { children?: ReactNode }) => createElement('div', null, children);
-mock.module('@/features/auth/auth-card-shell', () => ({ AuthFrame: presentation }));
-mock.module('@/features/auth/auth-consent', () => ({ OutcomeTitle: presentation }));
-mock.module('@/features/auth/auth-primitives', () => ({ Rise: presentation, StepHeader: presentation }));
-mock.module('@/components/ui/hint', () => ({
+mock.module('@kortix/ui/internal/auth/auth-card-shell', () => ({ AuthFrame: presentation }));
+mock.module('@kortix/ui/internal/auth/auth-consent', () => ({ OutcomeTitle: presentation }));
+mock.module('@kortix/ui/internal/auth/auth-primitives', () => ({ Rise: presentation, StepHeader: presentation }));
+const uiHintMock = () => ({
   default: ({ children }: { children?: ReactNode }) => children,
-}));
+});
+const realHint = await import('@kortix/ui/hint');
+mock.module('@kortix/ui/hint', () => ({ ...realHint, ...uiHintMock() }));
 mock.module('@/components/sidebar/kortix-logo', () => ({ KortixLogo: () => null }));
 mock.module('./public-file-share-view', () => ({ PublicFileShareView: () => null }));
 mock.module('./public-transcript-share-view', () => ({ PublicTranscriptShareView: () => null }));

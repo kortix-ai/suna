@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  foldForTest,
   jsonTail,
   hasPhrasePair,
   labelledValue,
@@ -296,12 +295,13 @@ describe('urlError', () => {
   });
 });
 
-describe('fold', () => {
-  test('folds a character to an ASCII letter only when a non-unicode /i regex does', () => {
+describe('fold (pinned through hasPhrasePair, the public path)', () => {
+  test('case-folds a character to an ASCII letter only when a non-unicode /i regex does', () => {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
     for (let code = 0; code < 0x10000; code++) {
       const ch = String.fromCharCode(code);
-      const folded = foldForTest(ch);
-      expect(folded.length === 1 && /[A-Z]/.test(folded)).toBe(/^[a-z]$/i.test(ch));
+      const matched = [...letters].some((l) => hasPhrasePair(ch, l, ''));
+      expect(matched).toBe(/^[a-z]$/i.test(ch));
     }
   });
 });

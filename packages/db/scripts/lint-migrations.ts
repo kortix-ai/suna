@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { loadFileSet } from './load-file-set';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -416,34 +417,8 @@ export function lintMigration(filename: string, raw: string, options: LintOption
   return { errors, warnings };
 }
 
-function loadGrandfatherSet(): Set<string> {
-  try {
-    const data = JSON.parse(readFileSync(GRANDFATHER_FILE, 'utf8')) as { files: string[] };
-    return new Set(data.files);
-  } catch {
-    return new Set();
-  }
-}
 
-function loadBackfillGrandfatherSet(): Set<string> {
-  try {
-    const data = JSON.parse(readFileSync(BACKFILL_GRANDFATHER_FILE, 'utf8')) as { files: string[] };
-    return new Set(data.files);
-  } catch {
-    return new Set();
-  }
-}
 
-function loadConcurrentLockTimeoutGrandfatherSet(): Set<string> {
-  try {
-    const data = JSON.parse(readFileSync(CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE, 'utf8')) as {
-      files: string[];
-    };
-    return new Set(data.files);
-  } catch {
-    return new Set();
-  }
-}
 
 /**
  * A migration this checkout adds must sort after every migration already on
@@ -491,9 +466,9 @@ export function mergedMigrationFiles(opts: { repoRoot?: string } = {}): string[]
 function main(): void {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const grandfathered = loadGrandfatherSet();
-  const backfillGrandfathered = loadBackfillGrandfatherSet();
-  const lockTimeoutGrandfathered = loadConcurrentLockTimeoutGrandfatherSet();
+  const grandfathered = loadFileSet(GRANDFATHER_FILE);
+  const backfillGrandfathered = loadFileSet(BACKFILL_GRANDFATHER_FILE);
+  const lockTimeoutGrandfathered = loadFileSet(CONCURRENT_LOCK_TIMEOUT_GRANDFATHER_FILE);
   const files = readdirSync(DIR)
     .filter((f) => f.endsWith('.sql') || f.endsWith('.concurrent.ts'))
     .sort();

@@ -399,7 +399,7 @@ jobs:
         with:
           bun-version: 1.4.3
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -469,12 +469,14 @@ jobs:
           if-no-files-found: error
 
   # ── Publish the public npm packages ─────────────────────────────────────────
-  # Three packages ship to npm on every version release, in lockstep with the
+  # Four packages ship to npm on every version release, in lockstep with the
   # platform version:
   #   @kortix/llm-catalog   — the model catalog (models + managed-model defaults)
   #                           the frontend SDK consumes
   #   @kortix/sdk           — the frontend data-layer SDK; depends on
   #                           @kortix/llm-catalog@<version>, pinned in lockstep
+  #   @kortix/ui            — the React component library and session UI; peers
+  #                           on @kortix/sdk@<version>
   #   @kortix/agent-tunnel  — the local-machine tunnel CLI and library
   #
   # @kortix/executor-sdk had one final deprecated publication at 0.12.5; its
@@ -514,7 +516,7 @@ jobs:
         with:
           bun-version: 1.4.3
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -551,7 +553,7 @@ jobs:
         with:
           bun-version: 1.4.3
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -565,6 +567,45 @@ jobs:
 
       - name: Build + publish (Trusted Publishing via OIDC)
         working-directory: packages/sdk
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          REQUIRE_NPM_AUTH: '1'
+        run: bash ../../scripts/publish-npm-package.sh
+
+  # @kortix/ui peers on @kortix/sdk at the same lockstep version, so it publishes
+  # after the SDK is on the registry. @kortix/shared is inlined by its build.
+  publish-ui:
+    name: Publish @kortix/ui to npm
+    needs: [version, publish-sdk]
+    # npm rejects sigstore provenance built on a non-GitHub-hosted runner
+    # (E422 'Unsupported GitHub Actions runner environment', v0.13.25,
+    # run 35589361726). Trusted Publishing needs a GitHub-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.3
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install workspace deps (pnpm)
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+        env:
+          npm_config_engine_strict: "false"
+
+      - name: Build + publish (Trusted Publishing via OIDC)
+        working-directory: packages/ui
         env:
           VERSION: ${{ needs.version.outputs.version }}
           REQUIRE_NPM_AUTH: '1'
@@ -588,7 +629,7 @@ jobs:
         with:
           bun-version: 1.4.3
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
@@ -651,7 +692,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
@@ -669,14 +710,11 @@ jobs:
         env:
           npm_config_engine_strict: "false"
 
-      # Signing material lives in kortix-ci-env. Every key is optional: a build
-      # never hard-fails on missing certs. The read is skipped on Windows,
-      # where no signing material has ever been stored (WINDOWS_CERTIFICATE*
-      # stays empty, so Windows installers build UNSIGNED, as before). Only
-      # the Apple-ID notarization keys are stored today; the APPLE_API_* keys
-      # are read in case they are added later.
+      # Signing material lives in kortix-ci-env, read on every OS. Every key is
+      # optional: a build never hard-fails on missing certs. Windows signs through
+      # Microsoft Artifact Signing (the AZURE_SIGNING_* keys, same as Kortix
+      # Capture); see the kortix-capture skill, release-runbook "Windows signing setup".
       - name: Check out the aws-env action
-        if: runner.os != 'Windows'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
@@ -684,7 +722,6 @@ jobs:
           sparse-checkout: .github/actions
           persist-credentials: false
       - name: Read signing credentials from AWS Secrets Manager
-        if: runner.os != 'Windows'
         continue-on-error: true
         uses: ./.aws-env/.github/actions/aws-env
         with:
@@ -697,6 +734,12 @@ jobs:
             APPLE_API_KEY_P8?
             APPLE_API_KEY_ID=kortix-ci-env:APPLE_API_KEY?
             APPLE_API_ISSUER?
+            AZURE_SIGNING_TENANT_ID?
+            AZURE_SIGNING_CLIENT_ID?
+            AZURE_SIGNING_CLIENT_SECRET?
+            AZURE_SIGNING_ENDPOINT?
+            AZURE_SIGNING_ACCOUNT?
+            AZURE_SIGNING_PROFILE?
             KORTIX_DESKTOP_SENTRY_DSN?
 
       # Never hard-fail on missing certs — a release should always ship an
@@ -710,11 +753,13 @@ jobs:
           APPLE_CERTIFICATE_PASSWORD: ${{ env.APPLE_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD }}
           WINDOWS_CERTIFICATE: ${{ env.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ env.WINDOWS_CERTIFICATE_PASSWORD }}
+          AZURE_SIGNING_CLIENT_SECRET: ${{ env.AZURE_SIGNING_CLIENT_SECRET }}
+          AZURE_SIGNING_PROFILE: ${{ env.AZURE_SIGNING_PROFILE }}
         run: |
           enabled=false
           case "${{ runner.os }}" in
             macOS)   [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ] && enabled=true ;;
-            Windows) [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ] && enabled=true ;;
+            Windows) { [ -n "$AZURE_SIGNING_CLIENT_SECRET" ] && [ -n "$AZURE_SIGNING_PROFILE" ]; } || { [ -n "$WINDOWS_CERTIFICATE" ] && [ -n "$WINDOWS_CERTIFICATE_PASSWORD" ]; } && enabled=true ;;
             *)       enabled=true ;;
           esac
           echo "enabled=$enabled" >> "$GITHUB_OUTPUT"
@@ -741,7 +786,16 @@ jobs:
       - name: Build desktop installer (Electron)
         shell: bash
         run: |
+          # Windows: Authenticode through Microsoft Artifact Signing when kortix-ci-env has it.
+          # scripts/sign-windows-azure.js signs each file with the ArtifactSigning module (the one
+          # azure/trusted-signing-action uses): electron-builder 25's azureSignOptions uses the
+          # retired TrustedSigning module, whose NuGet v2 downloads fail. The script signs SHA-256 only.
+          azure=()
+          if [ "${{ runner.os }}" = Windows ] && [ "${{ steps.sign.outputs.enabled }}" = true ] && [ -n "${AZURE_CLIENT_SECRET:-}" ]; then
+            azure=(--config.win.signtoolOptions.sign="$(cd apps/desktop-electron && pwd -W)/scripts/sign-windows-azure.js")
+          fi
           pnpm --filter @kortix/desktop-electron exec electron-builder ${{ matrix.eb_flag }} \
+          "${azure[@]}" \
             --publish never \
             --config.extraMetadata.version="${{ needs.version.outputs.version }}" \
             --config.extraMetadata.kortixDefaultUrl="$DESKTOP_URL" \
@@ -760,9 +814,22 @@ jobs:
           APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && (env.APPLE_TEAM_ID || secrets.APPLE_TEAM_ID) || '' }}
           WIN_CSC_LINK: ${{ steps.sign.outputs.enabled == 'true' && env.WINDOWS_CERTIFICATE || '' }}
           WIN_CSC_KEY_PASSWORD: ${{ steps.sign.outputs.enabled == 'true' && env.WINDOWS_CERTIFICATE_PASSWORD || '' }}
+          # Windows Artifact Signing (electron-builder `win.azureSignOptions` reads these).
+          AZURE_TENANT_ID: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ steps.sign.outputs.enabled == 'true' && env.AZURE_SIGNING_CLIENT_SECRET || '' }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ steps.sign.outputs.enabled }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: The Windows installer is signed by Kortix AI Corp
+        if: runner.os == 'Windows' && steps.sign.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem apps/desktop-electron/dist/*.exe) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            "$($f.Name): $($sig.Status) $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { throw "$($f.Name) is not validly signed: $($sig.Status)" }
+          }
       - name: Upload installer artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -823,7 +890,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download CLI artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: cli-binaries
           path: artifacts/
@@ -935,7 +1002,7 @@ jobs:
       contents: write
     steps:
       - name: Download desktop artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
           path: desktop-artifacts/
@@ -968,7 +1035,7 @@ jobs:
       contents: write
     steps:
       - name: Download the Capture installers
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         continue-on-error: true
         with:
           name: capture-installers
@@ -1149,7 +1216,7 @@ jobs:
         with:
           keys: |
             CLOUDFLARE_API_TOKEN
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Deploy api-kortix-router from wrangler.toml [env.prod]
@@ -1428,7 +1495,7 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Configure AWS credentials (OIDC)
@@ -1558,7 +1625,7 @@ jobs:
             VERCEL_ORG_ID=kortix-ci-env:VERCEL_TEAM_ID
             VERCEL_PROJECT_ID
             VERCEL_TOKEN
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - name: Link and verify the Vercel project
