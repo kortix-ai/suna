@@ -220,6 +220,8 @@ describe('served catalog field passthrough', () => {
     const limit = gatewayCodexModels(catalog, [codexId], { [codexId]: 272_000 })[`codex/${codexId}`]!.limit;
     expect(limit!.context).toBe(272_000);
     expect(limit!.output).toBeLessThanOrEqual(272_000);
+    // The public API's `input` (a larger prompt budget) does not apply to the ChatGPT backend.
+    expect(limit!.input).toBeUndefined();
   });
 
   test('a ChatGPT subscription record carries the openai record fields verbatim', () => {

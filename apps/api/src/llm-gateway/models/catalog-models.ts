@@ -273,7 +273,7 @@ export function gatewayCodexModels(
       ...(typeof model?.last_updated === 'string' ? { last_updated: model.last_updated } : {}),
       // The ChatGPT backend's window (Codex models.json), not the public API's.
       ...servedLimit(codexWindows[id]
-        ? { ...model?.limit, context: codexWindows[id], output: Math.min(model?.limit?.output ?? codexWindows[id]!, codexWindows[id]!) }
+        ? { context: codexWindows[id], output: Math.min(model?.limit?.output ?? codexWindows[id]!, codexWindows[id]!) }
         : model?.limit),
     };
   }
