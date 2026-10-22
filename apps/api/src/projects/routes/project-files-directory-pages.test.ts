@@ -218,7 +218,7 @@ describe('GET /:projectId/files — the query it took before paging', () => {
 
 describe('single-file root paths (KRTX-3174)', () => {
   for (const endpoint of ['content', 'raw']) {
-    for (const path of ['.', './', './/']) {
+    for (const path of ['.', './', './/', './.', '././', './/.', '././z/last.txt']) {
       test(endpoint + ': root ' + path + ' returns 404', async () => {
         const response = await projectsApp.request('/' + PROJECT_ID + '/files/' + endpoint + '?' + new URLSearchParams({ path }));
         expect(response.status).toBe(404);

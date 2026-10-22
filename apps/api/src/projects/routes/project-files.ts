@@ -396,7 +396,8 @@ export function registerProjectFilesRoutes(): void {
     // Absolute and traversal paths can never resolve inside the repo tree —
     // e.g. the platform meta agent's /workspace/AGENTS.md lives in the sandbox
     // image, not the project repo. Answer like any other missing file.
-    if (path.startsWith('/') || path.includes('..') || !normalizeTreePath(path)) {
+    const treePath = path.startsWith('/') || path.includes('..') ? null : normalizeTreePath(path);
+    if (!treePath || treePath === '.' || treePath.startsWith('./')) {
       return c.json({ error: 'File not found' }, 404);
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -466,7 +467,8 @@ export function registerProjectFilesRoutes(): void {
     if (!path) return c.json({ error: 'path query param is required' }, 400);
     // Absolute and traversal paths can never resolve inside the repo tree —
     // same answer as files/content.
-    if (path.startsWith('/') || path.includes('..') || !normalizeTreePath(path)) {
+    const treePath = path.startsWith('/') || path.includes('..') ? null : normalizeTreePath(path);
+    if (!treePath || treePath === '.' || treePath.startsWith('./')) {
       return c.json({ error: 'File not found' }, 404);
     }
     const loaded = await loadProjectForUser(c, projectId, 'read');
