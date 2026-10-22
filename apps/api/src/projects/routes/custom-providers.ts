@@ -4,7 +4,7 @@ import {
   type CustomLlmProviderDefinition,
   CustomLlmProviderInputSchema,
   customProviderIdError,
-  probeCustomModelLimits,
+  probeCustomModels,
   customProviderIdFromSecret,
   customProviderSecretName,
 } from '../../llm-gateway/custom-providers';
@@ -28,6 +28,10 @@ const CustomLlmProviderSchema = z.object({
     context: z.number().optional(),
     /** Max output tokens; absent: the context window, else 16k. */
     output: z.number().optional(),
+    /** Reads images; absent: false. */
+    attachment: z.boolean().optional(),
+    /** Reasons and takes `reasoning_effort`; absent: false. */
+    reasoning: z.boolean().optional(),
   })),
   secret_name: z.string(),
   has_key: z.boolean(),
@@ -107,7 +111,7 @@ export function registerCustomProvidersRoutes(): void {
       projectId, accountId: loaded.row.accountId, actorUserId: loaded.userId,
       name: customProviderSecretName(providerId), consumer: 'llm_gateway',
     });
-    const detected = await probeCustomModelLimits(input.base_url, key?.value ?? null);
+    const detected = await probeCustomModels(input.base_url, key?.value ?? null);
     const next = await writeProjectCustomProvider(projectId, providerId, input, detected);
     const { secretNames } = await listProjectCustomProviders(projectId);
     // Running sessions re-read the served model list.

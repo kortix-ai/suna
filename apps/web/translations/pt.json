@@ -20613,7 +20613,12 @@
     "deleteTitle": "Eliminar este fornecedor?",
     "deleteBody": "{name} e a respetiva chave de API saem deste projeto para todos os membros, e as sessões deixam de oferecer os seus modelos. Esta ação não pode ser anulada.",
     "deleted": "Fornecedor eliminado",
-    "deleteFailed": "Não foi possível eliminar o fornecedor"
+    "deleteFailed": "Não foi possível eliminar o fornecedor",
+    "readsImages": "Lê imagens",
+    "reasoning": "Raciocínio",
+    "traitsHint": "A Kortix lê isto do endpoint quando ele informa. Ative quando ele não informar.",
+    "contextWindow": "{tokens} de contexto",
+    "contextDefault": "128K de contexto (o endpoint não informa)"
   },
   "providerSheet": {
     "inUse": "Em uso",
