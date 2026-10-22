@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import type { TriggerSessionAccess } from '@kortix/api-contract';
 
-import { PROJECT_TRIGGER_SESSION_ACCESS, decideTriggerSpacePatch, triggerRunSpace } from './trigger-space';
+import { PRIVATE_TRIGGER_SESSION_ACCESS } from '../trigger-session-access-policy';
+import {
+  PROJECT_TRIGGER_SESSION_ACCESS,
+  decideTriggerSpacePatch,
+  defaultTriggerCreateAccess,
+  triggerRunSpace,
+} from './trigger-space';
 
 type Space = Parameters<typeof triggerRunSpace>[0] & {};
 const channel = { spaceId: 'sp-ops', kind: 'channel', dmAgentName: null, dmUserId: null } as unknown as Space;
@@ -48,5 +54,23 @@ describe('decideTriggerSpacePatch: a PATCH that names a space', () => {
 
   test('no space named and no sharing save: nothing changes', () => {
     expect(decideTriggerSpacePatch(channel, undefined, null)).toEqual({ nextSpace: undefined, space: channel, access: null, propagate: false });
+  });
+});
+
+describe('defaultTriggerCreateAccess: a create\'s sharing', () => {
+  test('a DM trigger is shared with the DM member only, whatever the body asks', () => {
+    const dmOnly: TriggerSessionAccess = { mode: 'members', memberIds: ['u1'], groupIds: [] };
+    expect(defaultTriggerCreateAccess(dm, undefined)).toEqual(dmOnly);
+    expect(defaultTriggerCreateAccess(dm, { mode: 'project' })).toEqual(dmOnly);
+  });
+
+  test('with no sharing in the body: project-visible in a channel, private without a space', () => {
+    expect(defaultTriggerCreateAccess(channel, undefined)).toEqual(PROJECT_TRIGGER_SESSION_ACCESS);
+    expect(defaultTriggerCreateAccess(null, undefined)).toEqual(PRIVATE_TRIGGER_SESSION_ACCESS);
+  });
+
+  test('a sharing in the body decides outside a DM', () => {
+    expect(defaultTriggerCreateAccess(channel, members)).toBeUndefined();
+    expect(defaultTriggerCreateAccess(null, members)).toBeUndefined();
   });
 });

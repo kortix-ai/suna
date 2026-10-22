@@ -10,14 +10,23 @@ import { projectSpaces, projectTriggerRuntime } from '@kortix/db';
 import { and, count, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import {
+  PRIVATE_TRIGGER_SESSION_ACCESS,
+  parseTriggerSessionAccess,
+  validateTriggerSessionAccessPrincipals,
+} from '../trigger-session-access';
 import { SPACE_NOT_FOUND } from './project-spaces';
 
 type SpaceRow = typeof projectSpaces.$inferSelect;
 
 export type TriggerSpaceError = {
   status: 400 | 403 | 404;
-  body: { error: string; code: string };
+  body: { error: string; code?: string };
 };
+
+/** The caller of a trigger write: `loadProjectForUser`'s result. */
+type TriggerCaller = { userId: string; row: { accountId: string; metadata: unknown } };
 
 /** A channel trigger with no explicit policy: its threads are project-visible, like any channel thread. */
 export const PROJECT_TRIGGER_SESSION_ACCESS: TriggerSessionAccess = { mode: 'project', memberIds: [], groupIds: [] };
@@ -93,22 +102,85 @@ export function decideTriggerSpacePatch(
 }
 
 /**
- * `decideTriggerSpacePatch` for a PATCH body. `channels` off: `space_id` is
- * ignored. The stored space is read whatever the flag, so a flag-off sharing
- * write on a DM trigger stays DM-only. Another member's DM trigger: anyone else
- * may only move it out or switch it on or off (403).
+ * A DM is one member with one agent: a trigger that posts to it runs that
+ * agent, as a DM thread does (`project-sessions.ts` forces `agent_name`).
  */
-export async function resolveTriggerSpacePatch(input: {
-  projectId: string;
-  slug: string;
-  userId: string;
-  channels: boolean;
-  body: Record<string, unknown>;
-  access: TriggerSessionAccess | null;
-}): Promise<ReturnType<typeof decideTriggerSpacePatch> | { error: TriggerSpaceError }> {
-  const { projectId, slug, userId, body } = input;
+export function dmAgentMismatch(
+  space: { kind: 'channel' | 'dm'; dmAgentName: string | null } | null,
+  agent: string,
+): { error: string; code: 'agent_mismatch' } | null {
+  if (space?.kind !== 'dm' || !space.dmAgentName || agent === space.dmAgentName) return null;
+  return {
+    error: `A trigger that posts to a DM runs the DM's agent. Set agent to "${space.dmAgentName}".`,
+    code: 'agent_mismatch',
+  };
+}
+
+/** Check a sharing's members and groups belong to the account (400 when not). */
+async function checkPrincipals(accountId: string, access: TriggerSessionAccess): Promise<{ error: TriggerSpaceError } | null> {
+  const invalid = await validateTriggerSessionAccessPrincipals(accountId, access);
+  return invalid ? { error: { status: 400, body: { error: invalid } } } : null;
+}
+
+/**
+ * A create's sharing when the body names none: a DM's member only (always, see
+ * `dmTriggerSessionAccess`), project-visible in a channel, private without a space.
+ * Undefined: the body's own `session_access` decides.
+ */
+export function defaultTriggerCreateAccess(space: SpaceRow | null, sessionAccess: unknown): TriggerSessionAccess | undefined {
+  if (space?.kind === 'dm') return dmTriggerSessionAccess(space);
+  if (sessionAccess !== undefined) return undefined;
+  return space ? PROJECT_TRIGGER_SESSION_ACCESS : PRIVATE_TRIGGER_SESSION_ACCESS;
+}
+
+/**
+ * A create body's space and sharing. `project_channels` off: `space_id` is
+ * ignored, never stored. A DM trigger must run the DM's agent (400).
+ */
+export async function resolveTriggerSpaceCreate(
+  projectId: string,
+  caller: TriggerCaller,
+  body: Record<string, unknown>,
+  agent: string,
+): Promise<{ space: SpaceRow | null; access: TriggerSessionAccess } | { error: TriggerSpaceError }> {
+  let space: SpaceRow | null = null;
+  if (resolveFeatureFlag(caller.row.metadata, 'project_channels') && body.space_id != null) {
+    const found = await resolveTriggerSpace(projectId, body.space_id, caller.userId);
+    if ('error' in found) return found;
+    space = found.space;
+  }
+  const mismatch = dmAgentMismatch(space, agent);
+  if (mismatch) return { error: { status: 400, body: mismatch } };
+  let access = defaultTriggerCreateAccess(space, body.session_access);
+  if (!access) {
+    const parsed = parseTriggerSessionAccess(body.session_access);
+    if (!parsed.ok) return { error: { status: 400, body: { error: parsed.error } } };
+    access = parsed.access;
+  }
+  return (await checkPrincipals(caller.row.accountId, access)) ?? { space, access };
+}
+
+/**
+ * `decideTriggerSpacePatch` for a PATCH body, with its `session_access` parsed
+ * and checked. `project_channels` off: `space_id` is ignored. The stored space
+ * is read whatever the flag, so a flag-off sharing write on a DM trigger stays
+ * DM-only. Another member's DM trigger: anyone else may only move it out or
+ * switch it on or off (403). `agentSpace` is the space whose DM agent the PATCH
+ * must run: set only when it sets the agent or moves the trigger, so a manifest
+ * edit that changed the agent never blocks switching the trigger off (its runs
+ * go to the default channel).
+ */
+export async function resolveTriggerSpacePatch(
+  projectId: string,
+  slug: string,
+  caller: TriggerCaller,
+  body: Record<string, unknown>,
+): Promise<(ReturnType<typeof decideTriggerSpacePatch> & { agentSpace: SpaceRow | null }) | { error: TriggerSpaceError }> {
+  const { userId } = caller;
+  const parsed = body.session_access === undefined ? null : parseTriggerSessionAccess(body.session_access);
+  if (parsed && !parsed.ok) return { error: { status: 400, body: { error: parsed.error } } };
   let requested: SpaceRow | null | undefined;
-  if (input.channels && 'space_id' in body) {
+  if (resolveFeatureFlag(caller.row.metadata, 'project_channels') && 'space_id' in body) {
     if (body.space_id === null) requested = null;
     else {
       const found = await resolveTriggerSpace(projectId, body.space_id, userId);
@@ -122,7 +194,11 @@ export async function resolveTriggerSpacePatch(input: {
       error: { status: 403, body: { error: 'Only the member a DM belongs to can edit a trigger that posts to it.', code: 'space_forbidden' } },
     };
   }
-  return decideTriggerSpacePatch(stored, requested, input.access);
+  const decision = decideTriggerSpacePatch(stored, requested, parsed?.ok ? parsed.access : null);
+  const invalid = decision.access ? await checkPrincipals(caller.row.accountId, decision.access) : null;
+  if (invalid) return invalid;
+  const checksAgent = decision.nextSpace !== undefined || 'agent' in body;
+  return { ...decision, agentSpace: checksAgent ? decision.space : null };
 }
 
 /**

@@ -71,17 +71,10 @@ import { connectorInfo, eventPayload, eventPromptPreamble } from '../trigger-eve
 import { unknownSourceMessage } from '../trigger-events/registry';
 import { listAppEventTypes, listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
 import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
+import { setTriggerSessionAccess } from '../trigger-session-access';
 import {
-  PRIVATE_TRIGGER_SESSION_ACCESS,
-  parseTriggerSessionAccess,
-  setTriggerSessionAccess,
-  validateTriggerSessionAccessPrincipals,
-} from '../trigger-session-access';
-import {
-  PROJECT_TRIGGER_SESSION_ACCESS,
-  dmTriggerSessionAccess,
-  loadTriggerSpace,
-  resolveTriggerSpace,
+  dmAgentMismatch,
+  resolveTriggerSpaceCreate,
   resolveTriggerSpacePatch,
   setTriggerSpace,
 } from '../lib/trigger-space';
@@ -114,21 +107,6 @@ async function followTrigger(
   // Best-effort: the manifest is already committed, so a failed write must not fail the route.
   await upsertTriggerWatcher({ accountId: project.accountId, projectId, slug, userId }).catch((err) =>
     logger.warn('[trigger-watchers] follow failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
-}
-
-/**
- * A DM is one member with one agent: a trigger that posts to it runs that
- * agent, as a DM thread does (`project-sessions.ts` forces `agent_name`).
- */
-function dmAgentMismatch(
-  space: { kind: 'channel' | 'dm'; dmAgentName: string | null } | null,
-  agent: string,
-): { error: string; code: 'agent_mismatch' } | null {
-  if (space?.kind !== 'dm' || !space.dmAgentName || agent === space.dmAgentName) return null;
-  return {
-    error: `A trigger that posts to a DM runs the DM's agent. Set agent to "${space.dmAgentName}".`,
-    code: 'agent_mismatch',
-  };
 }
 
 /** Body keys that change which event a trigger subscribes to. */
@@ -463,27 +441,10 @@ export function registerTriggersRoutes(): void {
         });
         if (configurationError) return c.json(configurationError, 409);
       }
-      // The channel or DM its runs post to. Flag off: ignored, never stored.
-      let space: Awaited<ReturnType<typeof loadTriggerSpace>> = null;
-      if (resolveFeatureFlag(loaded.row.metadata, 'project_channels') && body.space_id != null) {
-        const found = await resolveTriggerSpace(projectId, body.space_id, loaded.userId);
-        if ('error' in found) return c.json(found.error.body, found.error.status);
-        space = found.space;
-      }
-      const mismatch = dmAgentMismatch(space, draft.agent);
-      if (mismatch) return c.json(mismatch, 400);
-      const parsedAccess =
-        space?.kind === 'dm'
-          ? { ok: true as const, access: dmTriggerSessionAccess(space) }
-          : body.session_access === undefined
-            ? { ok: true as const, access: space ? PROJECT_TRIGGER_SESSION_ACCESS : PRIVATE_TRIGGER_SESSION_ACCESS }
-            : parseTriggerSessionAccess(body.session_access);
-      if (!parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
-      const accessValidationError = await validateTriggerSessionAccessPrincipals(
-        loaded.row.accountId,
-        parsedAccess.access,
-      );
-      if (accessValidationError) return c.json({ error: accessValidationError }, 400);
+      // The channel or DM its runs post to, and who sees its threads.
+      const placed = await resolveTriggerSpaceCreate(projectId, loaded, body, draft.agent);
+      if ('error' in placed) return c.json(placed.error.body, placed.error.status);
+      const { space, access } = placed;
 
       // A `pinned` trigger may only target a session of THIS project that the
       // author may see — never a nonexistent, another project's, or another
@@ -528,7 +489,7 @@ export function registerTriggersRoutes(): void {
         projectId,
         accountId: loaded.row.accountId,
         slug: draft.slug,
-        access: parsedAccess.access,
+        access,
         pinnedSessionId: draft.pinnedSessionId,
       });
       await followTrigger(c, loaded.row, projectId, draft.slug);
@@ -663,24 +624,10 @@ export function registerTriggersRoutes(): void {
       // Only commit the repo manifest when a manifest field actually changed; a
       // PATCH that touches none is a no-op that skips git entirely.
       const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
-      const parsedAccess =
-        body.session_access === undefined ? null : parseTriggerSessionAccess(body.session_access);
-      if (parsedAccess && !parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
       // `space_id`: undefined leaves the space, null clears it. Flag off: ignored.
-      const spacePatch = await resolveTriggerSpacePatch({
-        projectId,
-        slug,
-        userId: loaded.userId,
-        channels: resolveFeatureFlag(loaded.row.metadata, 'project_channels'),
-        body,
-        access: parsedAccess?.ok ? parsedAccess.access : null,
-      });
+      const spacePatch = await resolveTriggerSpacePatch(projectId, slug, loaded, body);
       if ('error' in spacePatch) return c.json(spacePatch.error.body, spacePatch.error.status);
-      const { nextSpace, space, access, propagate } = spacePatch;
-      if (access) {
-        const accessValidationError = await validateTriggerSessionAccessPrincipals(loaded.row.accountId, access);
-        if (accessValidationError) return c.json({ error: accessValidationError }, 400);
-      }
+      const { nextSpace, access, propagate, agentSpace } = spacePatch;
       let committedManifest: ParsedManifest | undefined;
       let effectivePinnedSessionId: string | null = null;
       const result = await mutateManifestWithRetry(
@@ -689,12 +636,8 @@ export function registerTriggersRoutes(): void {
         async (manifest) => {
           const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
           if (!current) return { ok: false, error: 'Not found', status: 404 };
-          // A DM trigger runs the DM's agent. Checked only when the PATCH sets the
-          // agent or the space: a manifest edit that changed the agent must not
-          // block switching the trigger off (its runs go to the default channel).
-          const checksAgent = nextSpace !== undefined || 'agent' in body;
           if (!touchesManifest) {
-            const mismatch = checksAgent ? dmAgentMismatch(space, current.agent) : null;
+            const mismatch = dmAgentMismatch(agentSpace, current.agent);
             if (mismatch) return { ok: false, status: 400, ...mismatch };
             effectivePinnedSessionId = current.pinnedSessionId;
             return { ok: true, commitMessage: null };
@@ -720,7 +663,7 @@ export function registerTriggersRoutes(): void {
           if ('connector' in body && !('event_source' in body)) delete base.event_source;
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
-          const mismatch = checksAgent ? dmAgentMismatch(space, draft.agent) : null;
+          const mismatch = dmAgentMismatch(agentSpace, draft.agent);
           if (mismatch) return { ok: false, status: 400, ...mismatch };
           if (draft.type === 'event' && !resolveFeatureFlag(loaded.row.metadata, 'event_triggers')) {
             return { ok: false, error: featureDisabledBody('event_triggers').error, status: 403, code: 'feature_disabled' };
