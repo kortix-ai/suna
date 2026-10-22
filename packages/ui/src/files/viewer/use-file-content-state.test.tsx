@@ -100,16 +100,17 @@ test('a dirty draft keeps its original revision through a content refetch', asyn
 
 test('a newer draft remains dirty when an earlier save finishes', async () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-  const content = { type: 'text' as const, content: 'original', revision: 'a'.repeat(40) };
+  let content = { type: 'text' as const, content: 'original', revision: 'a'.repeat(40) };
   const pending = Promise.withResolvers<void>();
   const saved: string[] = [];
+  const revisions: Array<string | undefined> = [];
   const source: FileSource = {
     id: 'pending-save',
-    useFileContent: () => ({ data: content, isLoading: false, error: null, refetch: async () => undefined }),
+    useFileContent: () => ({ data: content, isLoading: false, error: null, refetch: async () => ({ data: content }) }),
     useBinaryBlob: () => ({ blobUrl: null, blob: null, isLoading: false, error: null }),
     download: async () => undefined,
     upload: async () => undefined,
-    save: async (_path, file) => { saved.push(await file.text()); await pending.promise; },
+    save: async (_path, file, revision) => { saved.push(await file.text()); revisions.push(revision); await pending.promise; content = { ...content, content: saved.at(-1) ?? '', revision: 'b'.repeat(40) }; },
   };
   let state: ReturnType<typeof useFileContentState> | undefined;
   function Probe() {
@@ -128,6 +129,9 @@ test('a newer draft remains dirty when an earlier save finishes', async () => {
     expect(state?.hasUnsavedChanges).toBe(true);
     expect(state?.latestContentRef.current).toBe('second');
     expect(state?.isSaving).toBe(false);
+    await act(async () => { await state?.handleSave('second'); });
+    expect(revisions).toEqual(['a'.repeat(40), 'b'.repeat(40)]);
+    expect(saved).toEqual(['first', 'second']);
   } finally {
     pending.resolve();
     try { await act(async () => root?.unmount()); } finally {

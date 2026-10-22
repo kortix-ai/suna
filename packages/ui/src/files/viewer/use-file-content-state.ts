@@ -258,7 +258,13 @@ export function useFileContentState({
         // Refetch so fileContent.content (= originalContent for CodeEditor) updates.
         // CodeEditor's originalContent effect will then sync savedContent.current
         // to match localContent, clearing its internal hasChanges flag.
-        await refetch();
+        const refreshed = await refetch();
+        if (refreshed && typeof refreshed === 'object' && 'data' in refreshed) {
+          const data = refreshed.data;
+          if (data && typeof data === 'object' && 'revision' in data && typeof data.revision === 'string') {
+            draftRevisionRef.current = data.revision;
+          }
+        }
         if (draftGeneration.current !== generation) return;
         setHasUnsavedChanges(false);
         setSaveFlash(true);
