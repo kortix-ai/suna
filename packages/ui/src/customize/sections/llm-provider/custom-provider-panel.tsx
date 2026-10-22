@@ -277,13 +277,22 @@ function CustomProviderDetail({
   const [value, setValue] = useState('');
 
   const replace = useMutation({
-    mutationFn: () =>
-      upsertProjectSecret(projectId, {
+    mutationFn: async () => {
+      await upsertProjectSecret(projectId, {
         name: provider.secret_name,
         value: value.trim(),
         strategy: 'broker',
         consumer: 'llm_gateway',
-      }),
+      });
+      // Re-save the endpoint: it reads the model limits from `GET /models` with the new key.
+      if (provider.configured && provider.base_url) {
+        await custom.save(provider.id, {
+          name: provider.name,
+          base_url: provider.base_url,
+          models: provider.models.map(({ id, name }) => ({ id, name })),
+        });
+      }
+    },
     onSuccess: () => {
       successToast(t('keyReplaced'));
       setValue('');

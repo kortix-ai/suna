@@ -22,7 +22,6 @@ import {
   type MutableModels,
 } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
-import { DEFAULT_COMPACTION_SETTINGS } from '@earendil-works/pi-coding-agent'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
@@ -122,20 +121,6 @@ function gatewayModel(id: string, entry: CatalogModel | undefined, target: Gatew
       reasoningVariants(entry).filter((level) => level === 'xhigh' || level === 'max').map((level) => [level, level]),
     ),
   }
-}
-
-/**
- * pi compacts at `window - reserveTokens`, so a 1M window fills to ~1M before it does, and every
- * request re-sends all of it. A per-model reserve of `window - compactAt` moves the cut to
- * `compactAt` for every model larger than that; smaller models keep pi's default.
- */
-export function compactionSettings(catalog: Record<string, CatalogModel>, compactAt: number) {
-  const modelOverrides: Record<string, { reserveTokens: number }> = {}
-  for (const [id, entry] of Object.entries(catalog)) {
-    const reserveTokens = (entry?.limit?.context ?? 128_000) - compactAt
-    if (reserveTokens > DEFAULT_COMPACTION_SETTINGS.reserveTokens) modelOverrides[`${KORTIX_PROVIDER_ID}/${id}`] = { reserveTokens }
-  }
-  return { modelOverrides }
 }
 
 export async function createPiModels(input: {
