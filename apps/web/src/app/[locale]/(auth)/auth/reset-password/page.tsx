@@ -4,7 +4,7 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { CheckCircleIcon as CheckCircle2 } from '@phosphor-icons/react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, useState } from 'react';
 
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
@@ -16,6 +16,7 @@ import { resetPassword } from '../actions';
 
 function ResetPasswordContent() {
   const t = useTranslations('auth.passwordReset');
+  const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get('code');
 
@@ -30,6 +31,9 @@ function ResetPasswordContent() {
     try {
       const result = await resetPassword(null, new FormData(e.currentTarget));
       if (result && typeof result === 'object' && 'success' in result && result.success) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('code');
+        router.replace(url.pathname + url.search + url.hash);
         setSuccess(true);
         return;
       }
@@ -45,7 +49,7 @@ function ResetPasswordContent() {
 
   // Link missing / expired — guide the user to request a fresh one instead of
   // dead-ending on an error.
-  if (!code) {
+  if (!code && !success) {
     return (
       <AuthCardShell
         title={t('expired.title')}
