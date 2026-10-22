@@ -221,15 +221,17 @@ describe('/web-proxy stays off the box control plane', () => {
 
   test('an external host on a blocked port number is unaffected', async () => {
     // The guard keys on loopback + port, not the port alone — example.com:8000
-    // is somebody else's server, not our control plane. The DNS resolution of
-    // example.invalid runs under this test's own 15 s budget: bun's 5 s
-    // default tripped when the attested packages lane ran this suite beside
-    // every other workspace.
+    // is somebody else's server, not our control plane. The client has already
+    // gone, so the proxy answers 499 after the guard and before any DNS or
+    // connect: the CI runner's resolver once took over 15 s here.
+    const gone = new AbortController()
+    gone.abort()
     const res = await guarded().request('/web-proxy/https/example.invalid:8000/', {
       method: 'GET',
+      signal: gone.signal,
     })
-    expect(res.status).not.toBe(403)
-  }, 15_000)
+    expect(res.status).toBe(499)
+  })
 })
 
 /**
