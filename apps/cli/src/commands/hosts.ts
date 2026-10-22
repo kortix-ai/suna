@@ -290,17 +290,19 @@ async function hostsLogin(args: string[]): Promise<number> {
   let api: string | undefined;
   let account: string | undefined;
   let noProject = false;
+  let device = false;
   try {
     token = takeFlagValue(rest, ['--token']);
     api = takeFlagValue(rest, ['--api', '--url']);
     account = takeFlagValue(rest, ['--account']);
     noProject = takeFlagBool(rest, ['--no-project']);
+    device = takeFlagBool(rest, ['--device']);
   } catch (err) {
     return fail((err as Error).message);
   }
   const positional = rest.find((a) => !a.startsWith('-'));
   const hostName = positional ?? activeHostName() ?? DEFAULT_HOST_NAME;
-  return performLogin({ hostName, token, api, account, noProject });
+  return performLogin({ hostName, token, api, account, noProject, device });
 }
 
 async function hostsLogout(args: string[]): Promise<number> {

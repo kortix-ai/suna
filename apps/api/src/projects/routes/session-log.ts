@@ -380,8 +380,10 @@ export function registerSessionLogRoutes(): void {
         c.header('Retry-After', '60');
         return c.json({ error: err.message, code: err.code }, 503);
       }
-      // The code tells a client this API serves the log and the session has none yet (a new
-      // session): it stays on the log. An API without this route answers a bare 404.
+      // The code tells a client this API serves the log and the session has nothing saved (a new
+      // session): it stays on the log. An API without this route answers a bare 404, and so does
+      // a session whose v1 mirror another read is converting: the client reads v1, which converts it.
+      if (page === 'mirror_unconverted') return c.json({ error: 'No session log for this session' }, 404);
       if (!page) return c.json({ error: 'No session log for this session', code: 'session_log_missing' }, 404);
       if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);

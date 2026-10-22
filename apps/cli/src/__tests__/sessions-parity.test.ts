@@ -139,6 +139,7 @@ let auditActions: Record<string, unknown>[] = [];
 /** The body the fake `GET /v1/p/config` route serves; tests vary the template. */
 let previewConfig: Record<string, unknown> = { preview_url_template: null };
 let apiBase = '';
+let compactResponse: (() => Promise<Response>) | undefined;
 
 function queuedPrompt() {
   return {
@@ -464,7 +465,7 @@ function startServer(): string {
         return Response.json({ ses_oc: { type: compactBusy ? 'busy' : 'idle' } });
       }
       if (method === 'POST' && path === `${daemon}/session/ses_oc/summarize`) {
-        return Response.json({});
+        return compactResponse ? compactResponse() : Response.json({});
       }
       if (method === 'GET' && path === `${daemon}/kortix/pty`) {
         return Response.json([
@@ -567,6 +568,7 @@ beforeEach(() => {
   compactBusy = false;
   sessionReadStatus = 200;
   ambiguousSessions = false;
+  compactResponse = undefined;
   auditActions = [
     auditRow({ approval_url: 'https://kortix.example.test/approve/ksl_pending' }),
     auditRow({
@@ -977,6 +979,47 @@ describe('kortix sessions model', () => {
 });
 
 describe('kortix sessions compact', () => {
+  test('reports progress before a pending summary resolves and hides raced timeout internals', async () => {
+    const { promise, resolve } = Promise.withResolvers<Response>();
+    const admitted = Promise.withResolvers<void>();
+    compactResponse = () => { admitted.resolve(); return promise; };
+    const env = { ...process.env };
+    for (const key of ['KORTIX_API_URL', 'KORTIX_CLI_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID', 'KORTIX_TOKEN', 'BASH_ENV']) delete env[key];
+    const proc = Bun.spawn({
+      cmd: [process.execPath, CLI_ENTRY, 'sessions', 'compact', SESSION, '--json', ...P],
+      cwd: tmp,
+      env: { ...env, KORTIX_CONFIG_FILE: config, KORTIX_NO_UPDATE_CHECK: '1',
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1', NO_COLOR: '1' },
+      stdout: 'pipe', stderr: 'pipe',
+    });
+    const reader = proc.stderr.getReader();
+    let stderr = '';
+    try {
+      await admitted.promise;
+      while (!stderr.includes('Checking session and compacting conversation')) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        stderr += new TextDecoder().decode(chunk.value);
+      }
+      expect(stderr).toContain('Checking session and compacting conversation');
+      resolve(Response.json({ code: 'LONG_TURN_PROXY_TIMEOUT', error: 'ALB prompt_async SSE' }, { status: 504 }));
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        stderr += new TextDecoder().decode(chunk.value);
+      }
+      expect(await proc.exited).toBe(1);
+      expect(await new Response(proc.stdout).text()).toBe('');
+      expect(stderr).toContain('Compaction has not finished. Check the session status before trying again.');
+      expect(stderr).not.toMatch(/ALB|prompt_async|SSE/);
+      expect(calls('POST', `/v1/p/${EXTERNAL}/8000/session/ses_oc/summarize`)).toHaveLength(1);
+    } finally {
+      resolve(Response.json({}));
+      proc.kill();
+      reader.releaseLock();
+    }
+  });
+
   test('wakes a stopped session before compacting with its persisted model', async () => {
     compactStatus = 'stopped';
     const r = await runCli(['sessions', 'compact', SESSION, '--json', ...P], config);

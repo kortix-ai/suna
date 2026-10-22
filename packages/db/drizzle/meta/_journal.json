@@ -1254,6 +1254,13 @@
       "when": 1792688971178,
       "tag": "20261022170931_audit_activity_daily",
       "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1792689731259,
+      "tag": "20261022172211_cli_device_grants",
+      "breakpoints": true
     }
   ]
 }

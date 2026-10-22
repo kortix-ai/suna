@@ -12,8 +12,12 @@
  * Those two sizes are the whole scale; nothing in the editor is smaller.
  */
 
+import type * as React from 'react';
 import { createContext, useContext, type ReactNode } from 'react';
 
+import { SettingsRowGroup } from '../../../primitives/settings-row';
+import { SettingsSectionHeader } from '../../../primitives/settings-section-header';
+import { SettingsSubsectionHeader } from '../../../primitives/settings-subsection-header';
 import { cn } from '../../../internal/lib/utils';
 
 /**
@@ -44,47 +48,82 @@ export function EditorSectionStyleProvider({
 }
 
 /**
- * One titled group of settings. Rows inside are separated by hairlines rather
- * than boxed individually. See `EditorSectionStyle` for the two dialects.
+ * One titled group of settings, in the Settings page's dialect
+ * (`settings/tabs/general-tab.tsx`): the heading sits on the page, never
+ * inside a box, and only the rows below it share one bordered group.
+ *
+ * `lead` marks the first section of a pane. It takes the pane title
+ * (`SettingsSectionHeader`, `text-base lg:text-xl`). Every later section
+ * takes the quieter `SettingsSubsectionHeader`. Neither shows `description`
+ * on the agent page; it renders only in the legacy `flat` style.
+ *
+ * `bare` hands the body to the caller unwrapped: a list (`GrantList`), a
+ * markdown preview, or a textarea draws its own surface.
  */
 export function EditorSection({
   title,
   description,
   trailing,
+  lead = false,
+  bare = false,
   children,
 }: {
   title: string;
   description?: ReactNode;
-  /** A summary at the header's right edge — a `Badge` saying "All" or
-   *  "3 picked" — so a card answers its question before it is opened. */
+  /** The section's action at the header's right edge: one `secondary`
+   *  button (New, Manage) or a small control such as the Edit / Preview tabs. */
   trailing?: ReactNode;
+  lead?: boolean;
+  bare?: boolean;
   children: ReactNode;
 }) {
   const style = useContext(EditorSectionStyleContext);
-  const heading = (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 space-y-1">
-        <h3 className="text-foreground text-sm font-medium">{title}</h3>
-        {description ? (
-          <p className="text-muted-foreground text-xs leading-relaxed text-pretty">{description}</p>
-        ) : null}
-      </div>
-      {trailing ? <div className="shrink-0">{trailing}</div> : null}
-    </div>
-  );
   if (style === 'panel') {
     return (
-      <section className="bg-popover rounded-md border">
-        <div className="border-border/60 border-b px-4 pt-4 pb-3">{heading}</div>
-        <div className={cn('divide-border/60 divide-y px-4')}>{children}</div>
+      <section className={lead ? 'space-y-6' : 'space-y-3'}>
+        {lead ? (
+          // Headings stand alone (Jay, 2026-10-20): a sentence under every
+          // title made the page read as prose.
+          <SettingsSectionHeader title={title} action={trailing} className="pb-1" />
+        ) : (
+          <SettingsSubsectionHeader title={title} action={trailing} />
+        )}
+        {bare ? children : <SettingsRowGroup>{children}</SettingsRowGroup>}
       </section>
     );
   }
   return (
     <section className="space-y-2">
-      {heading}
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-foreground text-sm font-medium">{title}</h3>
+          {description ? (
+            <p className="text-muted-foreground text-xs leading-relaxed text-pretty">
+              {description}
+            </p>
+          ) : null}
+        </div>
+        {trailing ? <div className="shrink-0">{trailing}</div> : null}
+      </div>
       <div className="divide-border/60 divide-y">{children}</div>
     </section>
+  );
+}
+
+/**
+ * The bordered list a section hands its rows to: one `bg-popover` group,
+ * hairlines between rows, no per-row box. A stack of individually bordered
+ * cards read as ten announcements; one group reads as one list.
+ */
+export function EditorList({ className, ...props }: React.ComponentProps<'ul'>) {
+  return (
+    <ul
+      className={cn(
+        'bg-popover divide-border divide-y overflow-hidden rounded-md border',
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
@@ -105,8 +144,14 @@ export function SettingRow({
   help?: ReactNode;
   children: ReactNode;
 }) {
+  const style = useContext(EditorSectionStyleContext);
   return (
-    <div className="flex flex-col gap-2 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+    <div
+      className={cn(
+        'flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6',
+        style === 'panel' ? 'px-4 py-3' : 'py-3.5',
+      )}
+    >
       <SettingLabel label={label} help={help} />
       <div className="w-full shrink-0 sm:w-52">{children}</div>
     </div>
@@ -126,8 +171,9 @@ export function SettingBlock({
   help?: ReactNode;
   children: ReactNode;
 }) {
+  const style = useContext(EditorSectionStyleContext);
   return (
-    <div className="space-y-2.5 py-3.5">
+    <div className={cn('space-y-2.5', style === 'panel' ? 'px-4 py-3' : 'py-3.5')}>
       <SettingLabel label={label} help={help} />
       {children}
     </div>

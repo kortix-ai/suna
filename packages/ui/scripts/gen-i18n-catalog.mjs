@@ -160,7 +160,7 @@ export function buildCatalog() {
     // name → namespaces. One file can bind `t` in several components.
     const bound = new Map();
     const bind = (name, ns) => bound.set(name, (bound.get(name) ?? new Set()).add(ns));
-    for (const m of code.matchAll(/\b(\w+)\s*=\s*useTranslations\(\s*(?:(['"])([^'"]*)\2)?\s*\)/g)) {
+    for (const m of code.matchAll(/\b(\w+)\s*=\s*use(?:I18n)?Translations\(\s*(?:(['"])([^'"]*)\2)?\s*\)/g)) {
       bind(m[1], m[3] ?? '');
     }
     for (const m of code.matchAll(/\b(\w+)\??\s*:\s*UiTranslator\b/g)) bind(m[1], UI_TRANSLATOR_NS);

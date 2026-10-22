@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 879,
+  "count": 885,
   "routes": [
     {
       "method": "GET",
@@ -1199,6 +1199,18 @@
       "path": "/v1/channels/teams/identity/preview"
     },
     {
+      "method": "POST",
+      "path": "/v1/cli/device/decide"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/cli/device/start"
+    },
+    {
       "method": "GET",
       "path": "/v1/clients/mobile"
     },
@@ -2303,6 +2315,10 @@
       "path": "/v1/projects/:projectId/default-agent"
     },
     {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/default-reasoning-effort"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/detail"
     },
@@ -2324,6 +2340,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/files/content"
+    },
+    {
+      "method": "PUT",
       "path": "/v1/projects/:projectId/files/content"
     },
     {
@@ -3045,6 +3065,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/snapshots/rebuild"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/transfer"
     },
     {
       "method": "GET",

@@ -906,6 +906,9 @@
       "iconDescription": "Приказује се поред назива пројекта.",
       "name": "Назив пројекта",
       "nameDescription": "Приказује се у бирачу и свуда где је овај пројекат наведен.",
+      "defaultEffort": "Подразумевани напор закључивања",
+      "defaultEffortDescription": "Примењује се на нове захтеве без експлицитног избора напора, када модел сесије то подржава.",
+      "defaultEffortAutomatic": "Аутоматски",
       "saving": "Чување…",
       "archived": "Пројекат је архивиран",
       "archiveFailed": "Пројекат није могао да се архивира",
@@ -925,7 +928,19 @@
         "access": "Приступ за цео тим — нико више не може да приступи овом пројекту"
       },
       "reassurance": "Git складишта која сте сами повезали се не бришу. Сав већ послат код остаје на свом месту.",
-      "keepWorkspace": "Задржи пројекат"
+      "keepWorkspace": "Задржи пројекат",
+      "transferWorkspace": "Пренеси пројекат",
+      "transferDescription": "Премести овај пројекат — сесије, датотеке, подешавања и приступ чланова — у другу организацију.",
+      "transferTitle": "Пренеси пројекат",
+      "transferDialog": "Сесије, датотеке, подешавања и системске улоге прате пројекат. Групе, позивнице на чекању и прилагођене улоге морају поново да се доделе у циљној организацији. Забележена потрошња остаје на старом рачуну.",
+      "transferTargetLabel": "Циљна организација",
+      "transferTargetPlaceholder": "Изабери организацију",
+      "transferLoadingTargets": "Учитавање организација…",
+      "transferNoTargets": "Нисте члан ниједне друге организације.",
+      "transferMove": "Премести пројекат",
+      "transferMoveTo": "Премести у {name}",
+      "transferSuccess": "Пројекат је пренесен",
+      "transferFailed": "Пренос није успео"
     },
     "sandbox": {
       "states": {
@@ -1486,6 +1501,7 @@
   },
   "sidebar": {
     "rooms": "Sobe",
+    "goals": "Ciljevi",
     "referAndEarn": "Препоручи и заради",
     "referralShareTitle": "Препоручите пријатеље",
     "referralShareSubtitle": "Освојите 400 кредита",
@@ -10640,7 +10656,7 @@
       "text1458e20a1642": "Опционо. Kortix такође брише локални токен приликом прекида везе.",
       "text1459df2e344c": "Linux рачунар се покреће из sandbox слике коју ваш пројекат наводи. То је засебан изоловани рачунар: сопствени систем датотека, сопствена табела процеса и сопствена мрежа. Ништа се не дели са другом сесијом.",
       "text14683b379324": "Опозови токен",
-      "text146b38e7fa80": "Када подразумевано не успе",
+      "text146b38e7fa80": "Када модел не успе",
       "text146cd06d5026": "Окружење:",
       "text146fd497badf": "Имејл је прескочен — копирајте линк позива да бисте га поделили ручно",
       "text147251df4759": "Ово обично траје неколико секунди",
@@ -16010,7 +16026,7 @@
       "textafb32719ca9e": "Тајна клијента bot-а",
       "textafb5023c3c05": "Промене су примењене",
       "textafb837ec251a": "Okta шаље промене чим се догоде (доделе, ажурирања профила, слање група) — период без активности само значи да се ништа није променило.",
-      "textafb9890f7c72": "Куда иде захтев када подразумевани пројектни модел не може да га обради.",
+      "textafb9890f7c72": "Куда иде захтев када његов модел не може да га обради.",
       "textafc19f1734c1": "Субјект",
       "textafc8e3a5d5db": "Групише захтеве према ономе што људи заиста желе, а не према употребљеним речима, броји колико их је различитих налога поднело и прилаже цитате. Када неко пита „ко је ово тражио“, одговор је у документу.",
       "textafdc7d79dccb": "Аутоматско provisioning из OneLogin-а",
@@ -16723,7 +16739,7 @@
       "textc3d2e79ebdd0": "Конектори",
       "textc3e3a6edeaa5": "Услови коришћења",
       "textc3e58a73609d": "Деструктивно",
-      "textc3ecd3cd791b": "Испробавају се редом након подразумеваног модела пројекта.",
+      "textc3ecd3cd791b": "Испробавају се редом након затраженог модела.",
       "textc3f282c05f3f": "политике одобрење блокирај require_approval правила алати конектор guardrails",
       "textc3f348ffaf7a": "Повежи са пројектом",
       "textc3f7bdf537c4": "захт.",
@@ -20056,6 +20072,7 @@
       "texta37dd5ef6ef2": "Prilagodi bočnu traku",
       "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar",
       "text2313fe21ea84": "Измени {name}",
+      "text2b2c3ec032a6": "Пројекат је пренесен на други налог",
       "text44f9fff8bdae": "Промењен је план кредита",
       "text3fa17bba73e1": "Ваш налог још нема план. Изаберите месечни износ кредита да бисте покретали сесије. Сви чланови деле један фонд.",
       "text6821e42be2c1": "Ваш новчаник је празан, па сесије не могу да раде. Допуните га да би рачунарска снага и најновији AI модели наставили да раде — ваш план није погођен.",
@@ -20313,7 +20330,12 @@
       "text57f57edb6f16": "Zahtev za izmenu #{number} je spreman za pregled.",
       "texta8597db6f24b": "Уклони вештину",
       "text5f6ba69d66d1": "Вештина је уклоњена",
-      "textcb8d6b0c94c9": " и све датотеке у њој, укључујући измене, и уклања вештину из сваког агента који је користи. Један commit на подразумеваној грани."
+      "textcb8d6b0c94c9": " и све датотеке у њој, укључујући измене, и уклања вештину из сваког агента који је користи. Један commit на подразумеваној грани.",
+      "cliDeviceTitle": "Ovlasti Kortix CLI",
+      "cliDeviceWarning": "Odobrite samo prijavu koju ste sami pokrenuli. Unesite kod koji prikazuje vaš terminal.",
+      "cliDeviceCode": "Kod za prijavu",
+      "cliDeviceApproved": "Prijava je odobrena. Vratite se u terminal.",
+      "cliDeviceAction": "Ovlasti CLI"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -22293,5 +22315,95 @@
     "join": "Pridruži se",
     "openRoom": "Otvori",
     "gateDescription": "Uključite Sobe da bi sesije agenata i ljudi ovog projekta razgovarali u imenovanim sobama za ćaskanje."
+  },
+  "goals": {
+    "title": "Ciljevi",
+    "gateDescription": "Agenti preuzimaju cilj dok ne bude proverljivo ostvaren: cilj živi u Fajlovima, dnevni otkucaj ga budi, agent traži od ljudi ono što mu treba, a nezavisna provera ga zatvara.",
+    "empty": "Još nema ciljeva",
+    "emptyHint": "Pokreni jedan u sesiji: opiši ishod, na primer \"pobrini se da naš stari bankovni račun bude zatvoren\". Agent pravi cilj i on se pojavljuje ovde.",
+    "loadError": "Ciljevi nisu mogli da se učitaju. Pokušaj ponovo.",
+    "retry": "Pokušaj ponovo",
+    "needsYou": "Čeka tebe",
+    "open": "Otvoreni",
+    "closed": "Zatvoreni",
+    "waitingFor": "Čeka: {title}",
+    "criteria": "{met}/{total} kriterijuma",
+    "nextWake": "Sledeće buđenje {time}",
+    "noWake": "Nema zakazanog buđenja",
+    "heartbeat": "Otkucaj",
+    "heartbeatPaused": "Pauzirano",
+    "lastWakeLabel": "Poslednje buđenje",
+    "progress": "Napredak",
+    "scope": {
+      "company": "Kompanija",
+      "personal": "Samo ti"
+    },
+    "status": {
+      "draft": "Nacrt",
+      "active": "Aktivan",
+      "waiting_on_user": "Čeka tebe",
+      "waiting_external": "Čeka",
+      "verifying": "Provera",
+      "done": "Završen",
+      "abandoned": "Napušten"
+    },
+    "health": {
+      "healthy": "Radi",
+      "attention": "Zahteva pažnju",
+      "closed": "Zatvoren"
+    },
+    "issue": {
+      "no_heartbeat": "Ništa neće probuditi ovaj cilj: nedostaje podsetnik za otkucaj.",
+      "heartbeat_paused": "Podsetnik za otkucaj je pauziran.",
+      "heartbeat_failed": "Poslednje buđenje nije uspelo: {error}",
+      "missed_wake": "Poslednje buđenje kasni.",
+      "ask_overdue": "Zahtevu je istekao rok.",
+      "verification_stalled": "Provera je počela pre više od 24 sata.",
+      "unreadable": "goal.json nedostaje ili nije ispravan JSON."
+    },
+    "sessionChip": "Cilj",
+    "sessionRole": {
+      "coordinator": "Ova sesija vodi ovaj cilj.",
+      "worker": "Ova sesija radi na ovom cilju.",
+      "verifier": "Ova sesija proverava ovaj cilj."
+    },
+    "openGoal": "Otvori cilj",
+    "openSession": "Otvori glavnu sesiju",
+    "openFolder": "Otvori folder",
+    "back": "Svi ciljevi",
+    "healthTitle": "Stanje",
+    "successCriteria": "Kriterijumi uspeha",
+    "met": "Ispunjen",
+    "notMet": "Nije ispunjen",
+    "items": "Stavke",
+    "noItems": "Još nema stavki.",
+    "noCriteria": "Još nema kriterijuma: agent ih piše pre nego što cilj postane aktivan.",
+    "kind": {
+      "task": "Zadatak",
+      "ask": "Zahtev",
+      "wait": "Čekanje"
+    },
+    "itemStatus": {
+      "open": "otvoreno",
+      "doing": "u toku",
+      "done": "gotovo",
+      "dropped": "odbačeno"
+    },
+    "due": "Rok {time}",
+    "sessions": "Sesije",
+    "role": {
+      "coordinator": "Glavna sesija",
+      "worker": "Izvršilac",
+      "verifier": "Proveravač"
+    },
+    "timeline": "Vremenska linija",
+    "verification": "Provera",
+    "notes": "Beleške",
+    "log": "Dnevnik",
+    "notFound": "Ovaj cilj više ne postoji."
+  },
+  "agentEditor": {
+    "manage": "Upravljaj",
+    "overviewTitle": "Pregled"
   }
 }

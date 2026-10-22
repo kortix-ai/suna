@@ -360,6 +360,25 @@ describe('GET .../log', () => {
     expect(await statuses(session, ownerToken)).toEqual([200, 200]);
   });
 
+  test('a mirror-only session whose conversion another read holds answers 404 with no code: the client reads v1, which converts it', async () => {
+    // The open's snapshot and its GET …/log both convert a mirror-only session; the second one
+    // finds the session's advisory lock taken, writes nothing, and must not claim "no log".
+    const busy = await seedSession(project, OWNER);
+    await storeMirrorOnly(busy, 2);
+    let held = false;
+    let res: Response | null = null;
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${busy}`}))`);
+      held = true;
+      res = await get(`${base(busy)}/log`);
+    });
+    expect(held).toBe(true);
+    expect(res!.status).toBe(404);
+    expect(((await res!.json()) as { code?: string }).code).toBeUndefined();
+    // With the lock free the next read converts it.
+    expect((await get(`${base(busy)}/log`)).status).toBe(200);
+  });
+
   test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
     expect((await get(`${base()}/log?before_seq=1.5`)).status).toBe(400);
     expect((await get(`${base()}/log?limit=501`)).status).toBe(400);

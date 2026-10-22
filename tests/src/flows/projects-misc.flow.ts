@@ -1342,3 +1342,71 @@ flow(
     });
   },
 );
+
+// PROJ-45 — set the project default reasoning effort (Settings → General).
+// `null`/`''` clear it (automatic); a value must be an effort label the model
+// catalog publishes. The route returns the serialized project with the field
+// re-validated on read, so the success steps double as the read-back proof.
+flow(
+  'PROJ-45',
+  {
+    domain: 'projects',
+    routes: [
+      'PUT /v1/projects/:projectId/default-reasoning-effort',
+      'GET /v1/projects/:projectId',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ seed: true });
+    await ctx.step("set the default effort to 'high' → 200, echoed top-level", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/default-reasoning-effort',
+          { effort: 'high' },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has('$.default_reasoning_effort', 'high');
+    });
+    await ctx.step('an effort no catalog model publishes → 400 unknown_effort', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/default-reasoning-effort',
+          { effort: 'ultra' },
+          { params: { projectId: p.id } },
+        );
+      r.status(400).body().has('$.code', 'unknown_effort');
+    });
+    await ctx.step("a value survives on the project's own read", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+      r.status(200).body().has('$.default_reasoning_effort', 'high');
+    });
+    await ctx.step("'' clears → 200 automatic (null), persisted", async () => {
+      const put = await ctx.client
+        .as(ctx.P.OWNER)
+        .put(
+          '/v1/projects/:projectId/default-reasoning-effort',
+          { effort: '' },
+          { params: { projectId: p.id } },
+        );
+      put.status(200).body().has('$.default_reasoning_effort', null);
+      const get = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/projects/:projectId', { params: { projectId: p.id } });
+      get.status(200).body().has('$.default_reasoning_effort', null);
+    });
+    await ctx.step('NONMEMBER → 403/404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .put(
+          '/v1/projects/:projectId/default-reasoning-effort',
+          { effort: 'high' },
+          { params: { projectId: p.id } },
+        );
+      r.status([403, 404]);
+    });
+  },
+);

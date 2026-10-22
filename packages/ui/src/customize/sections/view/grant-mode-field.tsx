@@ -9,10 +9,10 @@ import { useTranslations as useI18nTranslations } from '../../../i18n';
  * them twice.
  */
 
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '../../../primitives/tabs';
-import { cn } from '../../../internal/lib/utils';
+import { Tabs, TabsList, TabsTrigger } from '../../../primitives/tabs';
+import { Badge } from '../../../primitives/badge';
+import { Checkbox } from '../../../primitives/checkbox';
 import type { AgentGrantSetV2 } from '@kortix/sdk';
-import { CheckIcon } from '@phosphor-icons/react';
 import { type ReactNode, useState } from 'react';
 import { KORTIX_PERMISSIONS_CATALOG } from './agent-editor-catalog';
 import { useUiParams } from '../../../providers/ui-provider';
@@ -49,15 +49,11 @@ const GRANT_MODES: { value: GrantMode; label: string }[] = [
 export function GrantModeField({
   value,
   onChange,
-  allLabel,
-  noneLabel,
   alwaysRender = false,
   children,
 }: {
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
-  allLabel: string;
-  noneLabel: string;
   /** Render `children` in every mode, not only Pick — for a catalog that
    *  stays on screen and shows each card as included / excluded. */
   alwaysRender?: boolean;
@@ -93,24 +89,18 @@ export function GrantModeField({
   };
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <Tabs value={effectiveMode} onValueChange={(m) => pick(m as GrantMode)} className="w-fit">
-          <TabsListCompact type="default" aria-label={tI18nComplete.raw('text74009e6664f5')}>
-            {GRANT_MODES.map((m) => (
-              <TabsTriggerCompact key={m.value} value={m.value}>
-                {m.label}
-              </TabsTriggerCompact>
-            ))}
-          </TabsListCompact>
-        </Tabs>
-        {effectiveMode === 'all' && (
-          <span className="text-muted-foreground text-xs">{allLabel}</span>
-        )}
-        {effectiveMode === 'none' && (
-          <span className="text-muted-foreground text-xs">{noneLabel}</span>
-        )}
-      </div>
+    <div className="space-y-3">
+      {/* The segmented control alone (Jay, 2026-10-20): the list below shows
+          what each mode means, so no label or help line sits beside it. */}
+      <Tabs value={effectiveMode} onValueChange={(m) => pick(m as GrantMode)}>
+        <TabsList aria-label={tI18nComplete.raw('text74009e6664f5')}>
+          {GRANT_MODES.map((m) => (
+            <TabsTrigger key={m.value} value={m.value}>
+              {m.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
       {effectiveMode === 'pick' || alwaysRender
         ? children({ selected, toggle, mode: effectiveMode })
         : null}
@@ -137,14 +127,12 @@ export function GrantSetField({
   onChange,
   options,
   emptyLabel,
-  allLabel,
   rowAccessory,
 }: {
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
   options: GrantOption[];
   emptyLabel: string;
-  allLabel: string;
   /** Optional control rendered BESIDE each granted row (e.g. the connectors
    *  field's "personal" toggle). The row itself is a `<button>`, so an
    *  interactive accessory cannot be nested inside it — when this returns a
@@ -157,8 +145,6 @@ export function GrantSetField({
     <GrantModeField
       value={value}
       onChange={onChange}
-      allLabel={allLabel}
-      noneLabel={tI18nComplete.raw('text765b240c2900')}
     >
       {({ selected, toggle }) => {
         const optionIds = new Set(options.map((o) => o.id));
@@ -170,60 +156,40 @@ export function GrantSetField({
         return rows.length === 0 ? (
           <p className="text-muted-foreground text-xs">{emptyLabel}</p>
         ) : (
-          <div className="border-border/60 max-h-80 overflow-y-auto rounded-md border p-1">
+          <ul className="bg-popover divide-border max-h-96 divide-y overflow-y-auto rounded-md border">
             {rows.map((o) => {
               const isSel = selected.has(o.id);
               const isOrphan = !optionIds.has(o.id);
               const accessory = rowAccessory?.(o.id, isSel);
-              const row = (
-                <button
-                  key={o.id}
-                  type="button"
-                  aria-pressed={isSel}
-                  onClick={() => toggle(o.id)}
-                  className={cn(
-                    'flex items-center gap-2.5 rounded px-2 text-left text-xs transition-[color,background-color,transform] active:scale-[0.98]',
-                    o.description ? 'py-2' : 'py-1.5',
-                    accessory ? 'min-w-0 flex-1' : 'w-full',
-                    isSel ? 'bg-secondary' : 'hover:bg-muted/50',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex size-4 shrink-0 items-center justify-center rounded-[4px] border',
-                      isSel
-                        ? 'border-foreground bg-foreground text-background'
-                        : 'border-border/70',
-                    )}
-                  >
-                    {isSel ? <CheckIcon className="size-2.5" /> : null}
-                  </span>
+              return (
+                <li key={o.id} className="flex items-center gap-3 px-4 py-2.5">
+                  <Checkbox
+                    variant="black"
+                    checked={isSel}
+                    onCheckedChange={() => toggle(o.id)}
+                    aria-label={o.label}
+                  />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate font-mono">{o.label}</span>
+                    <span className="text-foreground block truncate font-mono text-sm">
+                      {o.label}
+                    </span>
                     {o.description ? (
-                      <span className="text-muted-foreground block truncate text-xs leading-4">
+                      <span className="text-muted-foreground block truncate text-xs">
                         {o.description}
                       </span>
                     ) : null}
                   </span>
-                  {o.trailing ? <span className="shrink-0">{o.trailing}</span> : null}
-                  {isOrphan && (
-                    <span className="text-kortix-orange shrink-0">
+                  {isOrphan ? (
+                    <Badge variant="warning" size="xs">
                       {tI18nComplete.raw('textffa63583dfa6')}
-                    </span>
-                  )}
-                </button>
-              );
-              return accessory ? (
-                <div key={o.id} className="flex items-center gap-1">
-                  {row}
+                    </Badge>
+                  ) : null}
+                  {o.trailing}
                   {accessory}
-                </div>
-              ) : (
-                row
+                </li>
               );
             })}
-          </div>
+          </ul>
         );
       }}
     </GrantModeField>
@@ -246,34 +212,26 @@ export function KortixPermissionsField({
     <GrantModeField
       value={value}
       onChange={onChange}
-      allLabel={tI18nComplete.raw('text75a5e3a6d5d3')}
-      noneLabel={tI18nComplete.raw('text765b240c2900')}
     >
       {({ selected, toggle }) => (
-        <div className="border-border/60 max-h-64 space-y-3 overflow-y-auto rounded-md border p-2.5">
+        <div className="bg-popover divide-border divide-y rounded-md border">
           {groups.map((grp) => (
-            <div key={grp.group} className="space-y-1.5">
+            <div key={grp.group} className="space-y-2.5 px-4 py-3">
               <p className="text-muted-foreground text-xs font-medium">{grp.group}</p>
-              <div className="flex flex-wrap gap-1">
-                {grp.actions.map((action) => {
-                  const isSel = selected.has(action);
-                  return (
-                    <button
-                      key={action}
-                      type="button"
-                      aria-pressed={isSel}
-                      onClick={() => toggle(action)}
-                      className={cn(
-                        'rounded px-1.5 py-1 font-mono text-xs transition-[color,background-color,transform] active:scale-[0.96]',
-                        isSel
-                          ? 'bg-foreground text-background'
-                          : 'bg-muted/40 text-muted-foreground hover:bg-muted',
-                      )}
-                    >
-                      {action.replace(/^project\./, '')}
-                    </button>
-                  );
-                })}
+              <div className="-mx-3 grid gap-x-2 gap-y-0.5 sm:grid-cols-2">
+                {grp.actions.map((action) => (
+                  <Checkbox
+                    key={action}
+                    variant="black"
+                    checked={selected.has(action)}
+                    onCheckedChange={() => toggle(action)}
+                    label={
+                      <span className="font-mono text-xs">
+                        {action.replace(/^project\./, '')}
+                      </span>
+                    }
+                  />
+                ))}
               </div>
             </div>
           ))}

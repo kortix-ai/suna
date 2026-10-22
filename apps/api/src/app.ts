@@ -89,6 +89,8 @@ registerCaptureStoreProxy(app);
 // Capture routes live under /v1/accounts/:accountId/capture.
 import { createCaptureRouter } from './capture/device-routes';
 app.route('/v1/capture', createCaptureRouter());
+import { createCliDeviceRouter } from './cli/device-routes';
+app.route('/v1/cli/device', createCliDeviceRouter());
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);

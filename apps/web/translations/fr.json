@@ -906,6 +906,9 @@
       "iconDescription": "Affichée à côté du nom de le projet.",
       "name": "Nom de le projet",
       "nameDescription": "Affiché dans le sélecteur et partout où cet projet est répertorié.",
+      "defaultEffort": "Effort de raisonnement par défaut",
+      "defaultEffortDescription": "Appliqué aux nouvelles requêtes sans choix explicite d'effort, lorsque le modèle de la session le prend en charge.",
+      "defaultEffortAutomatic": "Automatique",
       "saving": "Enregistrement…",
       "archived": "Projet archivé",
       "archiveFailed": "Impossible d'archiver le projet",
@@ -925,7 +928,19 @@
         "access": "L'accès de toute l'équipe — personne ne pourra plus accéder à cet projet"
       },
       "reassurance": "Les dépôts Git que vous avez connectés vous-même ne sont pas supprimés. Le code déjà envoyé reste en place.",
-      "keepWorkspace": "Conserver le projet"
+      "keepWorkspace": "Conserver le projet",
+      "transferWorkspace": "Transférer le projet",
+      "transferDescription": "Déplacer ce projet — ses sessions, fichiers, réglages et accès membres — vers une autre organisation.",
+      "transferTitle": "Transférer le projet",
+      "transferDialog": "Les sessions, fichiers et réglages suivent le projet. Les rôles système sont conservés ; les groupes, invitations en attente et rôles personnalisés doivent être accordés à nouveau dans l’organisation cible. La consommation enregistrée reste sur la facture initiale.",
+      "transferTargetLabel": "Organisation cible",
+      "transferTargetPlaceholder": "Choisir une organisation",
+      "transferLoadingTargets": "Chargement des organisations…",
+      "transferNoTargets": "Vous n’êtes membre d’aucune autre organisation.",
+      "transferMove": "Déplacer le projet",
+      "transferMoveTo": "Déplacer vers {name}",
+      "transferSuccess": "Projet transféré",
+      "transferFailed": "Échec du transfert"
     },
     "sandbox": {
       "states": {
@@ -1486,6 +1501,7 @@
   },
   "sidebar": {
     "rooms": "Salons",
+    "goals": "Objectifs",
     "referAndEarn": "Parrainer et Gagner",
     "referralShareTitle": "Parrainer des Amis",
     "referralShareSubtitle": "Gagnez 400 crédits",
@@ -10640,7 +10656,7 @@
       "text1458e20a1642": "Facultatif. Kortix supprime également le jeton local lors de la déconnexion.",
       "text1459df2e344c": "Une machine Linux démarre depuis l’image sandbox déclarée par votre projet. C’est une machine isolée : son propre système de fichiers, sa propre table des processus et son propre réseau. Rien n’est partagé avec une autre session.",
       "text14683b379324": "Révoquer le jeton",
-      "text146b38e7fa80": "En cas d’échec de la valeur par défaut",
+      "text146b38e7fa80": "Lorsqu’un modèle échoue",
       "text146cd06d5026": "Env. :",
       "text146fd497badf": "E-mail ignoré — copiez le lien d’invitation pour le partager manuellement",
       "text147251df4759": "Cela prend généralement quelques secondes",
@@ -16010,7 +16026,7 @@
       "textafb32719ca9e": "Secret client du bot",
       "textafb5023c3c05": "Modifications appliquées",
       "textafb837ec251a": "Okta envoie les changements au fur et à mesure (affectations, mises à jour de profil, envois de groupes) : une période calme signifie simplement qu’aucun changement n’a eu lieu.",
-      "textafb9890f7c72": "Destination d’une requête lorsque la valeur par défaut du projet ne peut pas la traiter.",
+      "textafb9890f7c72": "Destination d’une requête lorsque son modèle ne peut pas la traiter.",
       "textafc19f1734c1": "Principal",
       "textafc8e3a5d5db": "Il regroupe les demandes selon ce que les gens veulent réellement, pas selon leurs mots, compte le nombre de comptes distincts à l’origine de chacune et joint les citations. Quand quelqu’un demande « qui a demandé ça ? », la réponse est dans le document.",
       "textafdc7d79dccb": "Provisioning automatique depuis OneLogin",
@@ -16723,7 +16739,7 @@
       "textc3d2e79ebdd0": "Connecteurs",
       "textc3e3a6edeaa5": "Conditions générales",
       "textc3e58a73609d": "Destructif",
-      "textc3ecd3cd791b": "Essayés dans l’ordre après la valeur par défaut du projet.",
+      "textc3ecd3cd791b": "Essayés dans l’ordre après le modèle demandé.",
       "textc3f282c05f3f": "stratégies approbation bloquer require_approval règles outils connecteur garde-fous",
       "textc3f348ffaf7a": "Associer au projet",
       "textc3f7bdf537c4": "req",
@@ -20056,6 +20072,7 @@
       "texta37dd5ef6ef2": "Personnaliser la barre latérale",
       "text8c712bd7c1ec": "barre latérale personnaliser réorganiser masquer afficher navigation sidebar",
       "text2313fe21ea84": "Modifier {name}",
+      "text2b2c3ec032a6": "Projet transféré vers un autre compte",
       "text44f9fff8bdae": "Plan de crédits modifié",
       "text3fa17bba73e1": "Votre compte n'a pas encore de forfait. Choisissez un montant mensuel de crédits pour lancer des sessions. Tous les membres partagent un seul pool.",
       "text6821e42be2c1": "Votre portefeuille est vide, les sessions ne peuvent donc pas s'exécuter. Rechargez pour maintenir le calcul et les derniers modèles d'IA — votre forfait n'est pas affecté.",
@@ -20313,7 +20330,12 @@
       "text57f57edb6f16": "La demande de modification #{number} est prête à être examinée.",
       "texta8597db6f24b": "Supprimer la compétence",
       "text5f6ba69d66d1": "Compétence supprimée",
-      "textcb8d6b0c94c9": " et tous ses fichiers, modifications comprises, et retire la compétence de chaque agent qui l'utilise. Un commit sur la branche par défaut."
+      "textcb8d6b0c94c9": " et tous ses fichiers, modifications comprises, et retire la compétence de chaque agent qui l'utilise. Un commit sur la branche par défaut.",
+      "cliDeviceTitle": "Autoriser Kortix CLI",
+      "cliDeviceWarning": "Approuvez uniquement une connexion que vous avez lancée. Saisissez le code affiché dans votre terminal.",
+      "cliDeviceCode": "Code de connexion",
+      "cliDeviceApproved": "Connexion approuvée. Retournez dans votre terminal.",
+      "cliDeviceAction": "Autoriser CLI"
     },
     "publicShareConfirm": {
       "title": "Créer un lien public ?",
@@ -22293,5 +22315,95 @@
     "join": "Rejoindre",
     "openRoom": "Ouvrir",
     "gateDescription": "Activez les Salons pour que les sessions d’agents et les personnes de ce projet échangent dans des salons nommés."
+  },
+  "goals": {
+    "title": "Objectifs",
+    "gateDescription": "Les agents prennent en charge un objectif jusqu'à ce qu'il soit atteint de façon vérifiable : l'objectif vit dans Fichiers, un battement quotidien le réveille, l'agent relance les personnes pour ce qu'il lui faut, et une vérification indépendante le clôt.",
+    "empty": "Aucun objectif pour l'instant",
+    "emptyHint": "Lancez-en un dans une session : décrivez le résultat, par exemple « assure-toi que notre ancien compte bancaire est fermé ». L'agent crée l'objectif et il apparaît ici.",
+    "loadError": "Impossible de charger les objectifs. Réessayez.",
+    "retry": "Réessayer",
+    "needsYou": "Vous attend",
+    "open": "En cours",
+    "closed": "Terminés",
+    "waitingFor": "En attente : {title}",
+    "criteria": "{met}/{total} critères",
+    "nextWake": "Prochain réveil {time}",
+    "noWake": "Aucun réveil prévu",
+    "heartbeat": "Battement",
+    "heartbeatPaused": "En pause",
+    "lastWakeLabel": "Dernier réveil",
+    "progress": "Progression",
+    "scope": {
+      "company": "Entreprise",
+      "personal": "Vous seul"
+    },
+    "status": {
+      "draft": "Brouillon",
+      "active": "Actif",
+      "waiting_on_user": "Vous attend",
+      "waiting_external": "En attente",
+      "verifying": "Vérification",
+      "done": "Terminé",
+      "abandoned": "Abandonné"
+    },
+    "health": {
+      "healthy": "En marche",
+      "attention": "À vérifier",
+      "closed": "Terminé"
+    },
+    "issue": {
+      "no_heartbeat": "Rien ne réveillera cet objectif : son rappel de battement est absent.",
+      "heartbeat_paused": "Le rappel de battement est en pause.",
+      "heartbeat_failed": "Le dernier réveil a échoué : {error}",
+      "missed_wake": "Le dernier réveil est en retard.",
+      "ask_overdue": "Une demande a dépassé son échéance.",
+      "verification_stalled": "La vérification a commencé il y a plus de 24 heures.",
+      "unreadable": "goal.json est absent ou n'est pas un JSON valide."
+    },
+    "sessionChip": "Objectif",
+    "sessionRole": {
+      "coordinator": "Cette session pilote cet objectif.",
+      "worker": "Cette session travaille sur cet objectif.",
+      "verifier": "Cette session vérifie cet objectif."
+    },
+    "openGoal": "Ouvrir l'objectif",
+    "openSession": "Ouvrir la session principale",
+    "openFolder": "Ouvrir le dossier",
+    "back": "Tous les objectifs",
+    "healthTitle": "État",
+    "successCriteria": "Critères de réussite",
+    "met": "Atteint",
+    "notMet": "Non atteint",
+    "items": "Éléments",
+    "noItems": "Aucun élément pour l'instant.",
+    "noCriteria": "Aucun critère pour l'instant : l'agent les rédige avant que l'objectif devienne actif.",
+    "kind": {
+      "task": "Tâche",
+      "ask": "Demande",
+      "wait": "Attente"
+    },
+    "itemStatus": {
+      "open": "ouvert",
+      "doing": "en cours",
+      "done": "fait",
+      "dropped": "abandonné"
+    },
+    "due": "Échéance {time}",
+    "sessions": "Sessions",
+    "role": {
+      "coordinator": "Session principale",
+      "worker": "Exécutant",
+      "verifier": "Vérificateur"
+    },
+    "timeline": "Chronologie",
+    "verification": "Vérification",
+    "notes": "Notes",
+    "log": "Journal",
+    "notFound": "Cet objectif n'existe plus."
+  },
+  "agentEditor": {
+    "manage": "Gérer",
+    "overviewTitle": "Vue d'ensemble"
   }
 }
