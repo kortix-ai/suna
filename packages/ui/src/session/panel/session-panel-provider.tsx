@@ -31,6 +31,7 @@ import { SessionAuditPanel } from './session-audit-panel';
 import { SessionRemindersPanel } from './session-reminders-panel';
 import { SessionFilesExplorer } from './session-files-explorer';
 import { useSandboxProxy } from '../../internal/hooks/use-sandbox-proxy';
+import { OutputPathsContext } from '../../markdown/code/output-paths-context';
 import { useIsMobile } from '../../hooks/use-mobile';
 import { track } from '../../lib/telemetry';
 import { parseLocalhostUrl } from '@kortix/sdk';
@@ -680,6 +681,11 @@ export function SessionPanelProvider({
     memoryKey,
   ]);
 
+  // Inline code that names an output by its bare filename opens it (KRTX-3023).
+  // Keyed by content, so a re-derivation with the same paths re-renders no text.
+  const outputPathsKey = files.flatMap((f) => (f.path ? [f.path] : [])).join('\n');
+  const outputPaths = useMemo(() => (outputPathsKey ? outputPathsKey.split('\n') : []), [outputPathsKey]);
+
   const value = useMemo<SessionPanelValue>(
     () => ({
       sessionId,
@@ -725,5 +731,9 @@ export function SessionPanelProvider({
     ],
   );
 
-  return <SessionPanelContext.Provider value={value}>{children}</SessionPanelContext.Provider>;
+  return (
+    <SessionPanelContext.Provider value={value}>
+      <OutputPathsContext.Provider value={outputPaths}>{children}</OutputPathsContext.Provider>
+    </SessionPanelContext.Provider>
+  );
 }
