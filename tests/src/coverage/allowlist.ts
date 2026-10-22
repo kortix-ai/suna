@@ -44,6 +44,26 @@ const allowFor = (routes: Array<[string, string]>, reason: string): AllowEntry[]
 
 export const uncoveredAllow: AllowEntry[] = [
     ...allowFor(DRIVE_SYNC_ROUTES, DRIVE_SYNC_REASON),
+  // The CLI device-login (RFC 8628-style) routes. Covered by the CLI's own
+  // device flow rather than by a browser journey: start → poll → decide is a
+  // terminal handshake, and the CLI is not in the flow-runner matrix. They
+  // arrived with the CLI device-grant merge and, like the routes below, were
+  // absent from the committed manifest, so the gate never saw them.
+  {
+    method: "POST",
+    path: "/v1/cli/device/start",
+    reason: "CLI device login, step 1: exercised by `kortix login` (terminal handshake, no browser flow)",
+  },
+  {
+    method: "POST",
+    path: "/v1/cli/device/poll",
+    reason: "CLI device login, step 2: polled by `kortix login` until approved",
+  },
+  {
+    method: "POST",
+    path: "/v1/cli/device/decide",
+    reason: "CLI device login, step 3: approved in the CLI approval page; the CLI is not in the flow-runner matrix",
+  },
   {
     method: "GET",
     path: "/v1/runtime-assets/entrypoint",

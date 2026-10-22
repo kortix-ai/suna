@@ -12,7 +12,14 @@ export function createPublicEdgeRateLimitMiddleware(): MiddlewareHandler {
     )) {
       return next();
     }
-    const result = limiter.check(requestClientKey(c), { limit: 30, windowMs: 60_000 });
+    const clientKey = requestClientKey(c);
+    // No address means no bucket to spend. `clientKey` comes from the edge's
+    // forwarding headers, and a caller that has none (a direct in-cluster call,
+    // the end-to-end suite talking to localhost) is not "one address" — putting
+    // every such caller in a single 30/minute bucket throttled the whole flow
+    // suite. Production is always behind the edge and always carries one.
+    if (clientKey === 'unknown') return next();
+    const result = limiter.check(clientKey, { limit: 30, windowMs: 60_000 });
     c.header('X-RateLimit-Limit', String(result.limit));
     c.header('X-RateLimit-Remaining', String(result.remaining));
     c.header('X-RateLimit-Reset', String(Math.ceil(result.resetMs / 1000)));

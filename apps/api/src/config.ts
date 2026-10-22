@@ -125,7 +125,9 @@ const envSchema = z.object({
   // SUPABASE_URL is already public and no rewrite is needed.
   SUPABASE_PUBLIC_URL: z
     .string()
-    .refine((v) => v === '' || /^https?:\/\//.test(v), { message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL' })
+    .refine((v) => v === '' || /^https?:\/\//.test(v), {
+      message: 'SUPABASE_PUBLIC_URL must be a valid HTTP(S) URL',
+    })
     .optional(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1, 'SUPABASE_SERVICE_ROLE_KEY is required'),
   // The Supabase anon key. PUBLIC by design (every browser gets it from the
@@ -254,6 +256,10 @@ const envSchema = z.object({
   // 0 = unlimited, for self-host operators who want no ceiling at all.
   KORTIX_RELAY_MAX_REQUEST_BYTES: optInt(1_073_741_824),
   KORTIX_RELAY_MAX_RESPONSE_BYTES: optInt(1_073_741_824),
+  // Global ceiling on a request body, enforced from `Content-Length` before any
+  // route reads it (http-middleware.ts). Bun's own default is 128 MiB, which an
+  // anonymous caller could spend on a single JSON request. 0 = unlimited.
+  KORTIX_MAX_REQUEST_BODY_BYTES: optInt(64 * 1024 * 1024),
   // Time to the upstream's RESPONSE HEADERS, not to completion. The legacy
   // broker's flat 30 s `REQUEST_TIMEOUT_MS` cannot become a total-duration
   // timeout here or every SSE stream would die at 30 s.
@@ -326,9 +332,12 @@ const envSchema = z.object({
   // required" screen. Unset: no gate. The store URLs are the update button's
   // targets; unset: the screen has no button.
   // A malformed value would make every device fail open, so it is a boot error.
-  MOBILE_MIN_VERSION: optStr.refine((v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()), {
-    message: 'Must be major.minor.patch',
-  }),
+  MOBILE_MIN_VERSION: optStr.refine(
+    (v) => v.trim() === '' || /^v?\d+(\.\d+){0,2}$/.test(v.trim()),
+    {
+      message: 'Must be major.minor.patch',
+    },
+  ),
   MOBILE_STORE_URL_IOS: optUrl(''),
   MOBILE_STORE_URL_ANDROID: optUrl(''),
   // Self-host enterprise license: when the operator has purchased/holds a
@@ -640,7 +649,9 @@ const envSchema = z.object({
   KORTIX_CONFIG_ARCHIVE_S3_ACCESS_KEY_ID: optStr,
   KORTIX_CONFIG_ARCHIVE_S3_SECRET_ACCESS_KEY: optStr,
   /** Key prefix inside the bucket. Keeps config archives apart from snapshots. */
-  KORTIX_CONFIG_ARCHIVE_S3_PREFIX: optStr.transform((v) => (v.trim() ? v.trim() : 'config-releases')),
+  KORTIX_CONFIG_ARCHIVE_S3_PREFIX: optStr.transform((v) =>
+    v.trim() ? v.trim() : 'config-releases',
+  ),
   /** Archives kept per project. Older ones are deleted after a publish. */
   KORTIX_CONFIG_ARCHIVE_RETAIN_PER_PROJECT: optInt(20),
   // The endpoint the SANDBOX reaches the store through, when it differs from
@@ -687,7 +698,9 @@ const envSchema = z.object({
   /** Minutes a device must be not recording (awake time) before the account's managers are told. */
   KORTIX_CAPTURE_ALERT_AFTER_MINUTES: optInt(30),
   /** The update manifest that names the newest published Capture version. Empty: no version check. */
-  KORTIX_CAPTURE_UPDATE_MANIFEST_URL: optUrl('https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json'),
+  KORTIX_CAPTURE_UPDATE_MANIFEST_URL: optUrl(
+    'https://github.com/kortix-ai/suna/releases/latest/download/capture-update.json',
+  ),
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -1151,7 +1164,8 @@ function validateEnv(): z.infer<typeof envSchema> {
   if (raw.KORTIX_MANAGED_PROVIDER_ENABLED === 'true' && !raw.PLATINUM_INFERENCE_API_KEY) {
     issues.push({
       var: 'PLATINUM_INFERENCE_API_KEY',
-      message: 'Managed models are on but PLATINUM_INFERENCE_API_KEY is unset — Kortix managed models are unavailable',
+      message:
+        'Managed models are on but PLATINUM_INFERENCE_API_KEY is unset — Kortix managed models are unavailable',
       level: 'warn',
     });
   }
@@ -1238,12 +1252,10 @@ export const config = {
   KORTIX_WORKERS_ENABLED: env.KORTIX_WORKERS_ENABLED,
   ACCOUNT_DELETION_SWEEP_PAUSED: env.ACCOUNT_DELETION_SWEEP_PAUSED,
   KORTIX_SANDBOX_EGRESS_PIN_ENFORCED: env.KORTIX_SANDBOX_EGRESS_PIN_ENFORCED,
-  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS
-    .split(',')
+  KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: env.KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS.split(',')
     .map((host) => host.trim())
     .filter(Boolean),
-  KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS: env.KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS
-    .split(',')
+  KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS: env.KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS.split(',')
     .map((host) => host.trim())
     .filter(Boolean),
   KORTIX_SECRET_RELAY_STREAM_ENABLED: env.KORTIX_SECRET_RELAY_STREAM_ENABLED,
@@ -1433,8 +1445,10 @@ export const config = {
   KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
   KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES,
 
-  PLATINUM_API_KEY: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_KEY_LOCAL : env.PLATINUM_API_KEY,
-  PLATINUM_API_URL: env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_URL_LOCAL : env.PLATINUM_API_URL,
+  PLATINUM_API_KEY:
+    env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_KEY_LOCAL : env.PLATINUM_API_KEY,
+  PLATINUM_API_URL:
+    env.PLATINUM_TARGET === 'local' ? env.PLATINUM_API_URL_LOCAL : env.PLATINUM_API_URL,
   PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
   PLATINUM_WEBHOOK_SECRET: env.PLATINUM_WEBHOOK_SECRET,
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
@@ -1553,7 +1567,8 @@ export const config = {
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
   DEMO_LEAD_NOTIFY_EMAIL:
-    env.DEMO_LEAD_NOTIFY_EMAIL ?? (env.INTERNAL_KORTIX_ENV === 'prod' ? 'marko@kortix.ai,hey@kortix.ai' : ''),
+    env.DEMO_LEAD_NOTIFY_EMAIL ??
+    (env.INTERNAL_KORTIX_ENV === 'prod' ? 'marko@kortix.ai,hey@kortix.ai' : ''),
   DEMO_LEAD_FROM_EMAIL: env.DEMO_LEAD_FROM_EMAIL,
 
   // ─── Mailtrap contact sync (signup → automation lists) ────────────────────
@@ -1567,6 +1582,7 @@ export const config = {
 
   // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
+  KORTIX_MAX_REQUEST_BODY_BYTES: env.KORTIX_MAX_REQUEST_BODY_BYTES,
 
   // ─── Helper Methods ────────────────────────────────────────────────────────
 

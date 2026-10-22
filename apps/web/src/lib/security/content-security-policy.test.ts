@@ -24,8 +24,11 @@ describe('content security policy', () => {
     expect(policy.get('frame-ancestors')).toEqual(["'self'"]);
     expect(policy.get('object-src')).toEqual(["'none'"]);
     expect(policy.get('base-uri')).toEqual(["'self'"]);
-    // script-src is report-only until the reports are clean; see the module comment.
-    expect(policy.has('script-src')).toBe(false);
+    // script-src is enforced (it was report-only for one release cycle), and it
+    // is the same allowlist the report-only header carries.
+    expect(policy.get('script-src')).toEqual(
+      directives(reportOnlyContentSecurityPolicy()).get('script-src'),
+    );
   });
 
   test('the embed policy opens framing for host pages and keeps the other enforced directives', () => {
