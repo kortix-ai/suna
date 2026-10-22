@@ -1,6 +1,7 @@
 /**
  * Bakes assets/maplibre/maplibre-gl.webjs and maplibre-gl-css.webjs from the pinned maplibre-gl.
  * Run after a version change: `bun scripts/bake-maplibre.ts` (or `pnpm bake:maplibre`).
+ * Bake with the Bun version CI pins (1.4.3): another Bun minifies to other names, and the byte check fails.
  *
  * MapLibre 6 ships ES modules and a separate worker module. The map page is an HTML string in a
  * WebView (map-html.ts), with no origin to load modules from, so it inlines one classic script:
