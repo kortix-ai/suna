@@ -207,16 +207,21 @@ const idOf = (row: V1Row) => String((row.info as { id?: unknown } | null)?.id ??
  *
  * - Merge, never trim, as the mirror did: `fromV1` runs over the stored log (`before`, from
  *   `readCapturedSessionLog`) with each message the box answered replacing its stored copy, so seqs
- *   and threads stay those of the whole history. Only a message the box answered is put; nothing is
- *   tombstoned (a short read cannot tell a rewind from a box that lost its state, and the log keeps
- *   no rewind marker: on such a box a rewound message stays visible).
- * - Size cap: a session without a log whose read is over `SESSION_LOG_RESTORE_MAX_BYTES` of JSON
- *   (the mirror cap, `mirrorStoredCap`, in JSON) gets no log (`too_large`).
+ *   and threads stay those of the whole history. Only a message the box answered is put.
+ * - Rewind: an OpenCode rewind removes messages from the box and keeps the root. A `complete` read
+ *   of the root that lacks a stored message of that root AND lists a newer one is that shape: the
+ *   lacking message is tombstoned and leaves the merge, so the seqs after it close up. Nothing else
+ *   is tombstoned: an empty, partial or tail read, a read that lacks only the newest messages, a
+ *   sub-agent's rows, and a pi box (pi has no rewind) keep every stored row.
+ * - Root guard: a read of a root the session no longer runs (re-pinned since the read began)
+ *   writes nothing (`current`); merged under the new root it would re-sequence the old root's rows.
+ * - No size cap. `fromV1`, `SessionLogSchema` and `toV1` of 100 MB of rows take ~170 ms together
+ *   (local, 2026-10-23); a cap on the first write only left an over-cap session with no history.
  * - Stale: another capture that wrote since `before` was read skips this write (`current`).
  */
 export async function writeSessionLogFromRead(
   sessionId: string,
-  input: { root: string; rows: V1Row[]; before: { rows: V1Row[]; stored: StoredMessage[] } },
+  input: { root: string; rows: V1Row[]; complete: boolean; before: { rows: V1Row[]; stored: StoredMessage[] } },
 ): Promise<MirrorLogWrite> {
   try {
     if (!config.SESSION_LOG_INGEST_ENABLED) return SKIPPED;
@@ -225,7 +230,6 @@ export async function writeSessionLogFromRead(
         projectId: projectSessions.projectId,
         accountId: projectSessions.accountId,
         journalSeenAt: sessionLogs.journalSeenAt,
-        hasLog: sessionLogs.sessionId,
         harness: sessionRuntimeProjections.harness,
       })
       .from(projectSessions)
@@ -234,17 +238,18 @@ export async function writeSessionLogFromRead(
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     if (!s || s.journalSeenAt) return SKIPPED;
-    if (!s.hasLog) {
-      let chars = 0;
-      for (const row of input.rows) chars += JSON.stringify(row).length;
-      if (chars > config.SESSION_LOG_RESTORE_MAX_BYTES) return TOO_LARGE;
-    }
     const read = new Set(input.rows.map(idOf));
-    const rows = [...input.before.rows.filter((row) => !read.has(idOf(row))), ...input.rows];
+    const rewound = rewoundIds(input, s.harness === 'pi' || input.root.startsWith('ses_pi'));
+    const rows = [...input.before.rows.filter((row) => !read.has(idOf(row)) && !rewound.has(idOf(row))), ...input.rows];
     const rev = maxCaptureRev(input.before.stored);
     return await writeConverted(sessionId, { ...s, root: input.root }, rows, input.before.stored, {
       puts: read,
-      current: async (tx) => maxCaptureRev(await storedMessages(tx, sessionId)) === rev,
+      tombstones: rewound,
+      current: async (tx) => {
+        const [pin] = await tx.select({ root: projectSessions.runtimeSessionId }).from(projectSessions).where(eq(projectSessions.sessionId, sessionId));
+        if (pin?.root && pin.root !== input.root) return false;
+        return maxCaptureRev(await storedMessages(tx, sessionId)) === rev;
+      },
     });
   } catch (err) {
     logger.warn('[session-log] capture write failed', { sessionId, error: err instanceof Error ? err.message : String(err) });
@@ -252,10 +257,26 @@ export async function writeSessionLogFromRead(
   }
 }
 
+const createdOf = (row: V1Row) => {
+  const at = (row.info as { time?: { created?: unknown } } | null)?.time?.created;
+  return typeof at === 'number' && Number.isFinite(at) ? at : -Infinity;
+};
+
+/** The stored root messages an OpenCode rewind removed: see `writeSessionLogFromRead`. */
+function rewoundIds(input: { root: string; rows: V1Row[]; complete: boolean; before: { rows: V1Row[] } }, pi: boolean): Set<string> {
+  if (!input.complete || pi) return new Set();
+  const read = new Set(input.rows.map(idOf));
+  const newest = Math.max(...input.rows.filter((row) => row.runtime_session_id === input.root).map(createdOf));
+  return new Set(
+    input.before.rows.filter((row) => row.runtime_session_id === input.root && !read.has(idOf(row)) && createdOf(row) < newest).map(idOf),
+  );
+}
+
 /**
  * `fromV1` of `rows` written through the journal's apply path. Only a message whose `content_hash`
- * changed is put, at the next capture rev. `puts` limits the puts to those message ids and turns
- * tombstones off; without it, a stored message `fromV1` no longer gives gets a tombstone.
+ * changed is put, at the next capture rev. `puts` limits the puts to those message ids and the
+ * tombstones to the stored ids in `tombstones`; without it, a stored message `fromV1` no longer
+ * gives gets a tombstone.
  *
  * The rows convert as the v1 read serves them: a call the old mirror stripped (before 2026-09-28)
  * gets back the input its `title` and `metadata` prove (`restoreStrippedToolParts`), so the log, its
@@ -266,7 +287,7 @@ async function writeConverted(
   s: { projectId: string; accountId: string; harness: string | null; root: string | null },
   rows: V1Row[],
   stored: StoredMessage[],
-  options: { dry?: boolean; puts?: ReadonlySet<string>; current: (tx: Tx) => Promise<boolean> },
+  options: { dry?: boolean; puts?: ReadonlySet<string>; tombstones?: ReadonlySet<string>; current: (tx: Tx) => Promise<boolean> },
 ): Promise<MirrorLogWrite> {
   const harnessFrom = s.harness === 'pi' || s.harness === 'opencode' ? 'projection' : s.root?.startsWith('ses_pi') ? 'root' : 'default';
   const harness = harnessFrom === 'projection' ? (s.harness as 'pi' | 'opencode') : harnessFrom === 'root' ? 'pi' : 'opencode';
@@ -292,7 +313,9 @@ async function writeConverted(
     if (prior && !prior.deletedAt && prior.hash === sessionLogContentHash(m)) continue;
     batch.puts.push({ rev: ++rev, message: m });
   }
-  if (!options.puts) for (const r of stored) if (!live.has(r.id) && !r.deletedAt) batch.tombstones.push({ message_id: r.id, rev: ++rev });
+  for (const r of stored) {
+    if (!r.deletedAt && (options.puts ? options.tombstones?.has(r.id) : !live.has(r.id))) batch.tombstones.push({ message_id: r.id, rev: ++rev });
+  }
   await breathe();
   if (batch.puts.length === 0 && batch.tombstones.length === 0) return SKIPPED;
   if (rev >= SESSION_LOG_CAPTURE_REV_LIMIT) {
