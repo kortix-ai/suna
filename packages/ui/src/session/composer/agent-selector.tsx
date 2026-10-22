@@ -85,7 +85,11 @@ export function AgentSelector({
   const { offeredAgents, agentLabels } = useUiHostConfig();
   // A host that lists its agents (`offeredAgents`) offers only those; it names them with `agentLabels`.
   const offered = useMemo(
-    () => (offeredAgents ? agents.filter((a) => offeredAgents.includes(a.name)) : agents),
+    () => {
+      if (!offeredAgents) return agents;
+      const offeredNames = new Set(offeredAgents);
+      return agents.filter((a) => offeredNames.has(a.name));
+    },
     [agents, offeredAgents],
   );
   const primaryAgents = useMemo(() => composerSelectableAgents(offered), [offered]);

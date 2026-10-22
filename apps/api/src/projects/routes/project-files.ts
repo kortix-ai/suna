@@ -33,6 +33,7 @@ import { CommitSchema, projectsApp } from '../lib/app';
 import { isGitRefNotFoundError } from '../git/mirror';
 import { withProjectGitAuth } from '../lib/git';
 import { projectReadView } from '../lib/project-read-view';
+import { withSessionLabels } from '../lib/session-branch-labels';
 import { normalizeString } from '../lib/serializers';
 
 function isMissingGitPathError(error: unknown): boolean {
@@ -560,7 +561,11 @@ export function registerProjectFilesRoutes(): void {
       });
       return c.json({
         default_branch: loaded.row.defaultBranch,
-        branches,
+        // A session branch is named by its session id: say which session it is.
+        branches: await withSessionLabels(projectId, branches, {
+          userId: loaded.userId,
+          openableSessionIds: view.openableSessionIds,
+        }),
       });
     } catch (error) {
       console.warn('[projects] branch listing unavailable', {

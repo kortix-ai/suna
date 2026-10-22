@@ -174,8 +174,9 @@ function steps<K extends string>(
   allowed: readonly K[],
   values: Partial<Record<K, string>> | undefined,
 ): [K, string][] {
+  const allowedSet = new Set<string>(allowed);
   return Object.entries(values ?? {}).flatMap(([k, v]) => {
-    if (!allowed.includes(k as K)) throw new Error(`@kortix/ui theme: unknown ${field} step "${k}"`);
+    if (!allowedSet.has(k)) throw new Error(`@kortix/ui theme: unknown ${field} step "${k}"`);
     return v === undefined ? [] : [[k as K, v as string]];
   });
 }

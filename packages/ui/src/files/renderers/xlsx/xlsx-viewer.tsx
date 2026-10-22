@@ -1016,23 +1016,20 @@ const WorkbookSheetTabsInner = React.memo(function WorkbookSheetTabsInner({
   }, [clearCloseTimeout, clearOpenTimeout, workbookIdentity]);
 
   React.useEffect(() => {
-    thumbnails.forEach((thumbnail) => {
-      setThumbnailUrls((current) => {
-        if (current[thumbnail.sheetIndex]) return current;
+    const painted: Record<number, string> = {};
+    for (const thumbnail of thumbnails) {
+      if (thumbnailUrls[thumbnail.sheetIndex]) continue;
 
-        const canvas = document.createElement('canvas');
-        canvas.width = thumbnail.width;
-        canvas.height = thumbnail.height;
+      const canvas = document.createElement('canvas');
+      canvas.width = thumbnail.width;
+      canvas.height = thumbnail.height;
 
-        if (!thumbnail.paint(canvas)) return current;
-
-        return {
-          ...current,
-          [thumbnail.sheetIndex]: canvas.toDataURL('image/png'),
-        };
-      });
-    });
-  }, [thumbnails]);
+      if (thumbnail.paint(canvas)) painted[thumbnail.sheetIndex] = canvas.toDataURL('image/png');
+    }
+    if (Object.keys(painted).length === 0) return;
+    // Existing entries win, as before: a sheet is painted once per workbook.
+    setThumbnailUrls((current) => ({ ...painted, ...current }));
+  }, [thumbnails, thumbnailUrls]);
 
   React.useEffect(() => {
     if (visiblePreviewIndex === null) return;

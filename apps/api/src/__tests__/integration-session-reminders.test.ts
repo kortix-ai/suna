@@ -177,6 +177,36 @@ describe('session reminders on the trigger tables', () => {
     expect((command?.payload as Record<string, unknown>).bindTurnIdentity).toBeUndefined();
   });
 
+  // The owner fallback was refused at the proxy on a member's private session,
+  // so every fire dead-lettered as "the session's machine could not be reached".
+  test("an agent's reminder on a member's session is delivered as the session's creator, not the owner", async () => {
+    const now = new Date();
+    const member = crypto.randomUUID();
+    await insertIntoView(db, accountMembers, { accountId: ACCOUNT, userId: member, accountRole: 'admin' });
+    const sessionId = await seedSession();
+    await db.update(projectSessions).set({ createdBy: member }).where(eq(projectSessions.sessionId, sessionId));
+    const { spec } = await seedReminder(sessionId, { prompt: 'Check the worker', every: '1h' }, now);
+
+    const result = await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
+
+    expect(result).toMatchObject({ status: 'queued', sessionId });
+    const [command] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
+    expect(command?.actorUserId).toBe(member);
+    expect((command?.payload as Record<string, unknown>).bindTurnIdentity).toBeUndefined();
+  });
+
+  test("an agent's reminder whose session creator left falls back to the owner", async () => {
+    const now = new Date();
+    const sessionId = await seedSession();
+    await db.update(projectSessions).set({ createdBy: crypto.randomUUID() }).where(eq(projectSessions.sessionId, sessionId));
+    const { spec } = await seedReminder(sessionId, { prompt: 'Check the worker', every: '1h' }, now);
+
+    await fireGitTrigger({ spec, project: await projectRow(), payload: {}, renderedPrompt: '', source: 'cron' });
+
+    const [command] = await db.select().from(sessionLifecycleCommands).where(eq(sessionLifecycleCommands.sessionId, sessionId));
+    expect(command?.actorUserId).toBe(OWNER);
+  });
+
   test("a person's reminder fires as that person's deferred prompt: queued as them, bound at delivery", async () => {
     const now = new Date();
     const sessionId = await seedSession();

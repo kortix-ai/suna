@@ -22,7 +22,7 @@ overrides:
   '@opentelemetry/exporter-prometheus@>=0.0.0 <0.217.0': 0.217.0
   fast-uri@>=3.0.0 <3.1.8: 3.1.8
   sharp@>=0.0.0 <0.35.5: 0.35.5
-  '@modelcontextprotocol/sdk@<1.31.0': 1.31.0
+  '@modelcontextprotocol/sdk@<1.32.0': 1.32.0
   hono@>=4.0.0 <4.13.5: 4.13.5
   next-intl@>=4.0.0 <4.13.4: 4.13.4
   icu-minify@>=4.0.0 <4.9.2: 4.9.2
@@ -32,9 +32,12 @@ overrides:
   fast-xml-parser@>=5.0.0 <5.7.0: 5.7.2
   '@xmldom/xmldom@>=0.0.0 <0.8.15': 0.8.15
   dompurify@>=3.0.0 <3.4.16: 3.4.16
-  follow-redirects@>=1.0.0 <1.16.0: 1.16.0
+  follow-redirects@>=1.0.0 <1.16.1: 1.16.1
   '@hono/node-server@>=1.0.0 <2.0.10': 2.0.10
   esbuild@>=0.0.0 <0.28.1: 0.28.1
+  tinypool@<2.1.2: 2.1.2
+  vitest>vite: 7.3.7
+  vite-node>vite: 7.3.7
   html2pdf.js@>=0.0.0 <0.14.0: 0.14.0
   flatted@>=3.0.0 <3.4.2: 3.4.2
   socket.io-parser@>=4.0.0 <4.2.6: 4.2.6
@@ -60,7 +63,7 @@ overrides:
   minimatch@>=3.0.0 <3.1.4: 3.1.4
   minimatch@>=9.0.0 <9.0.7: 9.0.7
   ajv@>=8.0.0 <8.18.0: 8.18.0
-  markdown-it@>=0.0.0 <14.3.1: 14.3.1
+  markdown-it@>=0.0.0 <14.3.3: 14.3.3
   seroval@<1.6.3: 1.6.3
   source-map-js@<1.2.2: 1.2.2
   '@codemirror/state': 6.7.6
@@ -6987,7 +6990,7 @@ packages:
     engines: {node: '>=20.0.0'}
     requiresBuild: true
     peerDependencies:
-      '@modelcontextprotocol/sdk': 1.31.0
+      '@modelcontextprotocol/sdk': 1.32.0
     peerDependenciesMeta:
       '@modelcontextprotocol/sdk':
         optional: true
@@ -7895,8 +7898,8 @@ packages:
       zod: 4.6.5
     dev: true
 
-  /@modelcontextprotocol/sdk@1.31.0(zod@4.6.5):
-    resolution: {integrity: sha512-UvTMgnNlnIBO/22ob2RcVGDlcvOslQs8T59+FTGdA0L27a39fdGF/EDETNtDVK4DZGpwomlsYpRdA8UXcVL/pw==}
+  /@modelcontextprotocol/sdk@1.32.0(zod@4.6.5):
+    resolution: {integrity: sha512-8BviX/hK4Gd2eL1KdTwm0gfl4d3wdoErW0Jd00h6nomUAtk6IJk5vwQJc6kfWtJTzN5OEV/lgIiJKI8fiDGAlA==}
     engines: {node: '>=18'}
     peerDependencies:
       '@cfworker/json-schema': ^4.1.1
@@ -8746,7 +8749,7 @@ packages:
     resolution: {integrity: sha512-lya0jEt6MXYDJT14ZBxysRSg8AWxvcJLyMmqgl/IJ3Ci+D8rdRXPHGeHD5XxJmxqgdX+P1UxhLp9cQ+ml8diYw==}
     requiresBuild: true
     peerDependencies:
-      '@modelcontextprotocol/sdk': 1.31.0
+      '@modelcontextprotocol/sdk': 1.32.0
       zod: ^3.25.0 || ^4.0.0
     peerDependenciesMeta:
       '@modelcontextprotocol/sdk':
@@ -15966,7 +15969,7 @@ packages:
       tinyrainbow: 3.2.0
     dev: true
 
-  /@vitest/mocker@3.2.7(vite@7.3.6):
+  /@vitest/mocker@3.2.7(vite@7.3.7):
     resolution: {integrity: sha512-Trr0hYO9CM3Wj6ksWHRhK9IZpIY6wTMO5u/MqXurMxT57sWBaOPEtP3Oq60ihZuh5JsiagKfz95OcxdEP6dBrA==}
     peerDependencies:
       msw: ^2.4.9
@@ -15980,7 +15983,7 @@ packages:
       '@vitest/spy': 3.2.7
       estree-walker: 3.0.3
       magic-string: 0.30.21
-      vite: 7.3.6(@types/node@20.19.43)
+      vite: 7.3.7(@types/node@20.19.43)
 
   /@vitest/pretty-format@3.2.7:
     resolution: {integrity: sha512-KUHlwqVu0sRlhCdyPdQ/wBoTfRahjUky1MubOmYw9fWfIZy1gNoHpuaaQBPAaMaVYdQYHJLurzj8ECCj5OwTqA==}
@@ -17179,7 +17182,7 @@ packages:
   /axios@1.20.0:
     resolution: {integrity: sha512-r8aOh8j9cGKpgQAqpzrUHnSIc6a59Y3Xf/cv8sy1DrHCkZHzQGEuoq1tARk6qSyDdtQGSDgpb9kFlruzPvrgwg==}
     dependencies:
-      follow-redirects: 1.16.0
+      follow-redirects: 1.16.1
       form-data: 4.0.6
       https-proxy-agent: 5.0.1
       proxy-from-env: 2.1.0
@@ -17607,7 +17610,7 @@ packages:
       '@iconify-json/lucide': 1.2.132
       '@iconify/types': 2.0.0
       '@iconify/utils': 3.1.7
-      '@modelcontextprotocol/sdk': 1.31.0(zod@4.6.5)
+      '@modelcontextprotocol/sdk': 1.32.0(zod@4.6.5)
       '@orama/orama': 3.1.18
       '@pierre/diffs': 1.4.2(react-dom@19.3.0)(react@19.3.0)
       '@scalar/astro': 0.4.19(astro@7.3.2)
@@ -21761,8 +21764,8 @@ packages:
     dependencies:
       flow-estree: 0.331.0
 
-  /follow-redirects@1.16.0:
-    resolution: {integrity: sha512-y5rN/uOsadFT/JfYwhxRS5R7Qce+g3zG97+JrtFZlC9klX/W5hD7iiLzScI4nZqUS7DNUdhPgw4xI8W2LuXlUw==}
+  /follow-redirects@1.16.1:
+    resolution: {integrity: sha512-FNvFGzoMLWmE6Yj9spb/zjd7yiNCHiAW9/Tg9CXrQ8wuu32HtlJOwWO11OJafl5FfY3DxTdQ0vj42zU1kvv5jg==}
     engines: {node: '>=4.0'}
     peerDependencies:
       debug: '*'
@@ -24574,8 +24577,8 @@ packages:
     engines: {node: '>=16'}
     dev: false
 
-  /markdown-it@14.3.1:
-    resolution: {integrity: sha512-4Ej49aYTDFIQ+uBkfX8GBvJGccoARxxPep+7aWTs55ozbjQJpW9M26Fe53vnGgvLeVzva/amzjQQaQu9w0vMhA==}
+  /markdown-it@14.3.3:
+    resolution: {integrity: sha512-L//tDAkjTjJCU6pBUSBTgs3Kg4InVaZuUZog/b6V12UKhcDQ7S78877ibbCanRExwPuYP1CZD7Gd2dxSy1GXRg==}
     hasBin: true
     dependencies:
       argparse: 2.0.1
@@ -28463,7 +28466,7 @@ packages:
       react-native: '>=0.50.4'
     dependencies:
       css-to-react-native: 3.2.0
-      markdown-it: 14.3.1
+      markdown-it: 14.3.3
       prop-types: 15.8.1
       react: 19.2.3
       react-native: 0.86.3(@babel/core@7.29.7)(@react-native/metro-config@0.87.1)(@types/react@19.2.18)(react@19.2.3)
@@ -31095,9 +31098,9 @@ packages:
       fdir: 6.5.0(picomatch@4.0.7)
       picomatch: 4.0.7
 
-  /tinypool@1.1.1:
-    resolution: {integrity: sha512-Zba82s87IFq9A9XmjiX5uZA/ARWDrB03OHlq+Vw1fSdt0I+4/Kutwy8BP4Y/y/aORMo61FQ0vIb5j44vSo5Pkg==}
-    engines: {node: ^18.0.0 || >=20.0.0}
+  /tinypool@2.1.2:
+    resolution: {integrity: sha512-9YodfrxS9g9IbFr/KOjE5bAeJ0p61n3bW6mqvy0jtoeKd1kTW1Cxm0oulm6KX2lyM9Gl6WIe8nEbY7LWv5ZJww==}
+    engines: {node: ^20.0.0 || >=22.0.0}
 
   /tinyqueue@3.0.0:
     resolution: {integrity: sha512-gRa9gwYU3ECmQYv3lslts5hxuIa90veaEcxDYuu3QGOIAEM2mOZkVHp48ANJuu1CURtRdHKUBY5Lm1tHV+sD4g==}
@@ -32026,7 +32029,7 @@ packages:
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
-      vite: 7.3.6(@types/node@20.19.43)
+      vite: 7.3.7(@types/node@20.19.43)
     transitivePeerDependencies:
       - '@types/node'
       - jiti
@@ -32041,8 +32044,8 @@ packages:
       - tsx
       - yaml
 
-  /vite@7.3.6(@types/node@20.19.43):
-    resolution: {integrity: sha512-4XP60spRGjSZFf1qYH+dJIkK2znL3zQfl9KkOV9MkkRR/3Dls0dxaBsQPTloEc5BLXWPL9vsOxopxyKoMmDueg==}
+  /vite@7.3.7(@types/node@20.19.43):
+    resolution: {integrity: sha512-AHEzTORMbi7/7aXp7w7KZ5+DCUdSeLsJz0grY8xHpc9DHdYb0vQu6DqJfm2tOw3gDExNgPgnJTXxM6syYFHaCA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -32187,7 +32190,7 @@ packages:
       '@types/chai': 5.2.3
       '@types/node': 20.19.43
       '@vitest/expect': 3.2.7
-      '@vitest/mocker': 3.2.7(vite@7.3.6)
+      '@vitest/mocker': 3.2.7(vite@7.3.7)
       '@vitest/pretty-format': 3.2.7
       '@vitest/runner': 3.2.7
       '@vitest/snapshot': 3.2.7
@@ -32204,9 +32207,9 @@ packages:
       tinybench: 2.9.0
       tinyexec: 0.3.2
       tinyglobby: 0.2.17
-      tinypool: 1.1.1
+      tinypool: 2.1.2
       tinyrainbow: 2.0.0
-      vite: 7.3.6(@types/node@20.19.43)
+      vite: 7.3.7(@types/node@20.19.43)
       vite-node: 3.2.4(@types/node@20.19.43)
       why-is-node-running: 2.3.0
     transitivePeerDependencies:

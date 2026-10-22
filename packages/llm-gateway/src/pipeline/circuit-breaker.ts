@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { UpstreamDescriptor } from '../domain';
 
 /**
@@ -63,9 +62,26 @@ export function tripsBreaker(status: number | undefined): boolean {
   return status >= 500 || status === 408 || status === 409 || status === 425 || status === 429;
 }
 
+// A credential with no stored reference (a deployment key, a custom endpoint's
+// key) is told apart by a per-process number, never by anything derived from
+// the secret. replica-local: bounded; a reset only restarts breaker history.
+const MAX_CREDENTIAL_IDS = 10_000;
+const credentialIds = new Map<string, number>();
+let nextCredentialId = 0;
+
+function credentialId(apiKey: string): string {
+  let id = credentialIds.get(apiKey);
+  if (id === undefined) {
+    if (credentialIds.size >= MAX_CREDENTIAL_IDS) credentialIds.clear();
+    id = ++nextCredentialId;
+    credentialIds.set(apiKey, id);
+  }
+  return `k${id}`;
+}
+
 export function breakerKey(descriptor: UpstreamDescriptor, model: string): string {
   const credential = descriptor.poolSecretId ?? descriptor.credentialRef
-    ?? (descriptor.apiKey ? createHash('sha256').update(descriptor.apiKey).digest('hex').slice(0, 16) : '');
+    ?? (descriptor.apiKey ? credentialId(descriptor.apiKey) : '');
   return [descriptor.provider, descriptor.baseUrl ?? '', descriptor.resolvedModel ?? model, credential].join('|');
 }
 

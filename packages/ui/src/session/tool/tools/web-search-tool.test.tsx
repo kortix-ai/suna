@@ -90,4 +90,91 @@ describe('WebSearchTool', () => {
     expect(html).toContain('2 results');
     expect(sourceListBody(html)).not.toContain('results');
   });
+
+  // KRTX-3016: a batch whose every query failed (a provider quota) rendered
+  // "N searches" over an empty card. Each failed query now shows its error.
+  test('a failed batch shows each query and its error, never an empty card', () => {
+    const part = {
+      id: 'p2',
+      callID: 'c2',
+      tool: 'web_search',
+      type: 'tool',
+      state: {
+        status: 'completed',
+        input: { query: ['desk cable tray', 'monitor riser'] },
+        output: JSON.stringify({
+          batch_mode: true,
+          total_queries: 2,
+          results: [
+            { query: 'desk cable tray', success: false, error: 'Error: 432 Error: {"message":"Search is over its plan quota"}' },
+            { query: 'monitor riser', success: false, error: 'Error: 432 Error: {"message":"Search is over its plan quota"}' },
+          ],
+        }),
+      },
+    } as unknown as ToolPart;
+    const html = render(<WebSearchTool call={toolCallBlock(part)} defaultOpen />);
+    expect(html).toContain('2 searches');
+    expect(html).toContain('desk cable tray');
+    expect(html).toContain('monitor riser');
+    expect(html).toContain('over its plan quota');
+    // KRTX-3022: the same failure is said once, then the searches it stopped.
+    expect(html.split('over its plan quota').length - 1).toBe(1);
+  });
+
+  // KRTX-3022: Kortix's own answer for a provider limit reads as one plain
+  // sentence, with the status in the chip and no raw JSON.
+  test("a provider limit on Kortix's key reads as Kortix's sentence, not the provider's JSON", () => {
+    const error =
+      'Error: 503 Error: {"error":"tool_unavailable","service":"tavily","upstream_status":432,"message":"Web search is unavailable right now: Kortix\'s account with the provider is over its usage limit. This is not a limit on your account, and there is nothing to change on your side."}';
+    const part = {
+      id: 'p3',
+      callID: 'c3',
+      tool: 'web_search',
+      type: 'tool',
+      state: {
+        status: 'completed',
+        input: { query: ['desk cable tray', 'monitor riser'] },
+        output: JSON.stringify({
+          batch_mode: true,
+          total_queries: 2,
+          results: [
+            { query: 'desk cable tray', success: false, error },
+            { query: 'monitor riser', success: false, error },
+          ],
+        }),
+      },
+    } as unknown as ToolPart;
+    const html = render(<WebSearchTool call={toolCallBlock(part)} defaultOpen />);
+    expect(html).toContain('Web search is unavailable right now');
+    expect(html).toContain('not a limit on your account');
+    expect(html).toContain('>503<');
+    expect(html).not.toContain('tool_unavailable');
+    expect(html).not.toContain('{');
+    expect(html).toContain('desk cable tray');
+    expect(html).toContain('monitor riser');
+  });
+
+  test('different failures in one batch each keep their own line', () => {
+    const part = {
+      id: 'p4',
+      callID: 'c4',
+      tool: 'web_search',
+      type: 'tool',
+      state: {
+        status: 'completed',
+        input: { query: ['a query', 'b query'] },
+        output: JSON.stringify({
+          batch_mode: true,
+          total_queries: 2,
+          results: [
+            { query: 'a query', success: false, error: 'Error: 400 Error: {"message":"Query is too long"}' },
+            { query: 'b query', success: false, error: 'Error: 429 Error: {"message":"Slow down"}' },
+          ],
+        }),
+      },
+    } as unknown as ToolPart;
+    const html = render(<WebSearchTool call={toolCallBlock(part)} defaultOpen />);
+    expect(html).toContain('Query is too long');
+    expect(html).toContain('Slow down');
+  });
 });

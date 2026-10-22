@@ -101,15 +101,10 @@ export function ImageRenderer({
   const [rotation, setRotation] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [startPanPosition, setStartPanPosition] = useState({ x: 0, y: 0 });
+  const startPanPositionRef = useRef({ x: 0, y: 0 });
   const [backdrop, setBackdrop] = useState<ImageBackdrop>('transparent');
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
-  const [imgInfo, setImgInfo] = useState<{
-    width: number;
-    height: number;
-    type: string;
-  } | null>(null);
 
   // ── Retry state ──────────────────────────────────────────────────────
   const [retryCount, setRetryCount] = useState(0);
@@ -125,17 +120,6 @@ export function ImageRenderer({
     fileName?.toLowerCase().endsWith('.svg') ||
     url?.toLowerCase().endsWith('.svg') ||
     url?.includes('image/svg');
-
-  // Derive the display file type for the info panel
-  const displayFileType = (() => {
-    if (isSvg) return 'SVG';
-    if (fileName) {
-      const ext = fileName.split('.').pop()?.toUpperCase();
-      if (ext) return ext;
-    }
-    const ext = url.split('.').pop()?.toUpperCase();
-    return ext || 'Image';
-  })();
 
   // When the parent passes a new URL, reset everything. The reset runs during
   // render, not in an effect: an effect also ran on mount, after a cached
@@ -181,17 +165,12 @@ export function ImageRenderer({
     setRetryCount(0); // reset on success
 
     if (imageRef.current) {
-      setImgInfo({
-        width: imageRef.current.naturalWidth,
-        height: imageRef.current.naturalHeight,
-        type: displayFileType,
-      });
       previewFit?.report({
         width: imageRef.current.naturalWidth,
         height: imageRef.current.naturalHeight,
       });
     }
-  }, [displayFileType, previewFit]);
+  }, [previewFit]);
 
   // Retries exhausted: these bytes are never going to decode, so there will be
   // no `report` for this image. Say "never" rather than staying silent — a
@@ -279,18 +258,18 @@ export function ImageRenderer({
   const handleMouseDown = (e: React.MouseEvent) => {
     if (canPan) {
       setIsPanning(true);
-      setStartPanPosition({
+      startPanPositionRef.current = {
         x: e.clientX - position.x,
         y: e.clientY - position.y,
-      });
+      };
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning && canPan) {
       setPosition({
-        x: e.clientX - startPanPosition.x,
-        y: e.clientY - startPanPosition.y,
+        x: e.clientX - startPanPositionRef.current.x,
+        y: e.clientY - startPanPositionRef.current.y,
       });
     }
   };

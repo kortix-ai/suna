@@ -82,6 +82,7 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
   const personalChatGpt = providerId === 'codex' && personalKeys;
   const available = new Set(keys.map((secret) => secret.secret_id));
   const unavailable = selected.filter((secretId) => !available.has(secretId));
+  const selectedIds = new Set(selected);
   return <>
     <Field className="gap-1.5">
       <FieldLabel htmlFor={id}>{t('provider')}</FieldLabel>
@@ -101,7 +102,7 @@ function PoolChoices({ projectId, providers, providerId, onProviderChange, keys,
     </div>}
     <div className="max-h-44 space-y-1 overflow-y-auto">
       {keys.map((secret) => <label key={secret.secret_id} className="hover:bg-hover has-[:focus-visible]:ring-ring flex min-h-10 items-center gap-2 rounded-md px-2 py-2 text-sm has-[:focus-visible]:ring-2 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
-        <Checkbox checked={selected.includes(secret.secret_id)} disabled={disabled || readOnly || (!selected.includes(secret.secret_id) && selected.length >= 10)}
+        <Checkbox checked={selectedIds.has(secret.secret_id)} disabled={disabled || readOnly || (!selectedIds.has(secret.secret_id) && selected.length >= 10)}
           onCheckedChange={(checked) => onChange(checked === true ? [...selected, secret.secret_id] : selected.filter((value) => value !== secret.secret_id))} />
         <span className="text-foreground min-w-0 break-words">{secret.label}</span>
         {providerId === 'codex' && needsReconnection(secret) && (

@@ -135,36 +135,34 @@ function CompactCommitRow({ commit, filePath }: { commit: GitCommit; filePath: s
   return (
     <li className={cn('relative rounded-md', expanded && 'bg-muted')}>
       <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={expanded}
-        onClick={toggle}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggle();
-          }
-        }}
         className={cn(
-          'group/row focus-visible:ring-ring flex w-full cursor-pointer items-start gap-3 rounded-md px-2 py-2 text-left outline-none focus-visible:ring-1',
+          'group/row has-[button[aria-expanded]:focus-visible]:ring-ring flex w-full items-start gap-3 rounded-md has-[button[aria-expanded]:focus-visible]:ring-1',
           !expanded && 'hover:bg-muted',
         )}
       >
-        {/* Timeline dot; the rail behind it is drawn by the list. */}
-        <span className="border-muted-foreground bg-background relative z-10 mt-[5px] size-2.5 shrink-0 rounded-full border" />
-        <div className="min-w-0 flex-1">
-          <p className="text-foreground truncate text-sm font-medium">{commit.subject}</p>
-          <InlineMeta className="mt-0.5">
-            {commit.author}
-            <time title={formatFullDate(commit.timestamp)}>
-              {formatRelativeDate(commit.timestamp)}
-            </time>
-          </InlineMeta>
-        </div>
+        {/* The row toggles the diff; the hash beside it copies, so it is not nested inside. */}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={toggle}
+          className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 py-2 pl-2 text-left outline-none"
+        >
+          {/* Timeline dot; the rail behind it is drawn by the list. */}
+          <span className="border-muted-foreground bg-background relative z-10 mt-[5px] size-2.5 shrink-0 rounded-full border" />
+          <div className="min-w-0 flex-1">
+            <p className="text-foreground truncate text-sm font-medium">{commit.subject}</p>
+            <InlineMeta className="mt-0.5">
+              {commit.author}
+              <time title={formatFullDate(commit.timestamp)}>
+                {formatRelativeDate(commit.timestamp)}
+              </time>
+            </InlineMeta>
+          </div>
+        </button>
         <button
           type="button"
           onClick={handleCopyHash}
-          className="text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1 rounded-sm px-1 font-mono text-xs leading-5"
+          className="text-muted-foreground hover:text-foreground my-2 mr-2 flex shrink-0 items-center gap-1 rounded-sm px-1 font-mono text-xs leading-5"
           title={tHardcodedUi.raw(
             'featuresProjectFilesComponentsFileHistoryPopover.line160JsxAttrTitleCopyCheckpointId',
           )}

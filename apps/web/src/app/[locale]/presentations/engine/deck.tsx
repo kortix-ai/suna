@@ -27,7 +27,7 @@ import {
 } from '@phosphor-icons/react';
 import { AnimatePresence, m } from 'motion/react';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react';
 
 /**
  * A slide can be a single picture or a **build**: `steps: 3` means → is pressed
@@ -127,64 +127,65 @@ export function Deck({
   }, [index, mounted]);
 
   /* Keyboard navigation. */
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    switch (e.key) {
+      case 'ArrowRight':
+      case ' ':
+      case 'PageDown':
+      case 'j':
+      case 'l':
+        e.preventDefault();
+        if (overview) setOverview(false);
+        else next();
+        break;
+      case 'ArrowLeft':
+      case 'PageUp':
+      case 'k':
+      case 'h':
+        e.preventDefault();
+        prev();
+        break;
+      case 'Home':
+        e.preventDefault();
+        go(0, -1);
+        break;
+      case 'End':
+        e.preventDefault();
+        go(total - 1, 1);
+        break;
+      case 'g':
+      case 'G':
+        e.preventDefault();
+        setOverview((o) => !o);
+        break;
+      case 'n':
+      case 'N':
+        e.preventDefault();
+        setNotesOpen((o) => !o);
+        break;
+      case 'Escape':
+        // The drawer is the innermost layer, so it closes first.
+        if (notesOpen) setNotesOpen(false);
+        else setOverview((o) => !o);
+        break;
+      case 'f':
+      case 'F':
+        e.preventDefault();
+        if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+        else document.exitFullscreen?.();
+        break;
+      default:
+        if (/^[1-9]$/.test(e.key)) {
+          const n = parseInt(e.key, 10) - 1;
+          if (n < total) go(n);
+        }
+    }
+  });
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      switch (e.key) {
-        case 'ArrowRight':
-        case ' ':
-        case 'PageDown':
-        case 'j':
-        case 'l':
-          e.preventDefault();
-          if (overview) setOverview(false);
-          else next();
-          break;
-        case 'ArrowLeft':
-        case 'PageUp':
-        case 'k':
-        case 'h':
-          e.preventDefault();
-          prev();
-          break;
-        case 'Home':
-          e.preventDefault();
-          go(0, -1);
-          break;
-        case 'End':
-          e.preventDefault();
-          go(total - 1, 1);
-          break;
-        case 'g':
-        case 'G':
-          e.preventDefault();
-          setOverview((o) => !o);
-          break;
-        case 'n':
-        case 'N':
-          e.preventDefault();
-          setNotesOpen((o) => !o);
-          break;
-        case 'Escape':
-          // The drawer is the innermost layer, so it closes first.
-          if (notesOpen) setNotesOpen(false);
-          else setOverview((o) => !o);
-          break;
-        case 'f':
-        case 'F':
-          e.preventDefault();
-          if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
-          else document.exitFullscreen?.();
-          break;
-        default:
-          if (/^[1-9]$/.test(e.key)) {
-            const n = parseInt(e.key, 10) - 1;
-            if (n < total) go(n);
-          }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [next, prev, go, total, overview, notesOpen, step]);
+    const handler = (e: KeyboardEvent) => onKey(e);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const slide = slides[index];
   const slideSteps = stepsOf(index);

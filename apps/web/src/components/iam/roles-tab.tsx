@@ -34,7 +34,7 @@ import {
   TrashIcon as Trash2,
 } from '@phosphor-icons/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { errorToast, successToast } from '@kortix/ui/toast';
 
@@ -491,7 +491,7 @@ function RoleDialog(props: RoleDialogProps) {
 
   const [name, setName] = useState(role?.name ?? prefill?.name ?? '');
   const [keyValue, setKeyValue] = useState(role?.key ?? (prefill ? slugifyKey(prefill.name) : ''));
-  const [keyTouched, setKeyTouched] = useState(isEdit);
+  const keyTouched = useRef(isEdit);
   const [description, setDescription] = useState(role?.description ?? '');
   const [resourceType, setResourceType] = useState<ResourceType>(
     role?.resource_type ?? prefill?.resourceType ?? 'project',
@@ -533,7 +533,7 @@ function RoleDialog(props: RoleDialogProps) {
 
   function handleNameChange(value: string) {
     setName(value);
-    if (!isEdit && !keyTouched) {
+    if (!isEdit && !keyTouched.current) {
       setKeyValue(slugifyKey(value));
     }
   }
@@ -635,7 +635,7 @@ function RoleDialog(props: RoleDialogProps) {
                 id="role-key"
                 value={keyValue}
                 onChange={(e) => {
-                  setKeyTouched(true);
+                  keyTouched.current = true;
                   setKeyValue(e.target.value);
                 }}
                 placeholder={tI18nComplete.raw('textb96d63115850')}

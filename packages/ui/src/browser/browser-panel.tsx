@@ -45,7 +45,7 @@ import type { CreateSessionPublicShareInput } from '@kortix/sdk';import {
   ArrowClockwiseIcon as RefreshCw,
   GearSixIcon as Settings2,
 } from '@phosphor-icons/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { BrowserLanding } from './browser-landing';
 import { PreviewLoadingOverlay, SandboxAddressBar } from './sandbox-browser-chrome';
 
@@ -61,6 +61,8 @@ function normalizePreviewLabel(value: unknown, fallback: string): string {
   if (!trimmed || /^localhost:\d+$/i.test(trimmed)) return fallback;
   return trimmed;
 }
+
+const subscribeNoop = () => () => {};
 
 /**
  * Preview tab content — renders a proxied sandbox URL in an iframe
@@ -84,8 +86,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Recents come from a persisted store — render them only after mount so the
   // server and first client render agree.
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false);
 
   // Extract metadata from tab
   const rawPreviewUrl = (tab?.metadata?.url as string) || '';
@@ -264,7 +265,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
       pushHistory(newProxyUrl);
       handleRefresh();
     },
-    [subdomainOpts, rewritePortPath, tabId, updateTabMetadata, pushHistory, handleRefresh],
+    [subdomainOpts, rewritePortPath, tabId, appPreviewTitle, updateTabMetadata, pushHistory, handleRefresh],
   );
 
   const canGoBack = historyIndex > 0;
@@ -318,7 +319,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         }
       }
     },
-    [canGoBack, canGoForward, historyIndex, history, tabId, updateTabMetadata, handleRefresh],
+    [canGoBack, canGoForward, historyIndex, history, tabId, appPreviewTitle, updateTabMetadata, handleRefresh],
   );
 
   /** Home: the landing (Apps + recents). An empty url is what renders it. */
@@ -364,7 +365,7 @@ export function BrowserPanel({ tabId, projectId, projectSessionId }: PreviewTabC
         path,
       },
     };
-  }, [fullUrl, isExternalBrowsing, originalUrl, port, tab?.metadata?.path, tab?.title]);
+  }, [fullUrl, isExternalBrowsing, originalUrl, port, tab?.metadata?.path, tab?.title, appPreviewTitle]);
 
   const hasPreview = !!previewUrl || hostPreview.failed;
   const emptyState = (
