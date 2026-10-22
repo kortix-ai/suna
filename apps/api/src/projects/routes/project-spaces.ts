@@ -197,9 +197,10 @@ export function registerProjectSpacesRoutes(): void {
       const result = await updateChannel(loaded.row.projectId, loaded.userId, spaceId, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
       // The channel's folder follows a rename, best effort (it logs a failure).
-      // Waited for: no client sees the new slug before the move settled, so
-      // the Files tab can never make an empty folder there first and block it.
-      if (result.renamedFrom) await moveChannelFolder(loaded.row.projectId, result.renamedFrom, result.space.slug!);
+      // Waited for, so the renaming client never sees the new slug before the
+      // move settled. Another member who opens the Files tab during the move
+      // can still make the new folder first; the move then fails with 409.
+      if (result.renamedFrom) await moveChannelFolder(loaded.row.projectId, spaceId, result.renamedFrom, result.space.slug!);
       return c.json(serializeSpace(result.space), 200);
     },
   );

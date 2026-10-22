@@ -1,6 +1,6 @@
 ---
 name: kortix-user-memory
-description: "Per-user memory in the user's own Drive folder: `/drives/me/Memory`. Who this user is, how they like to work, what they corrected, what they are working on — kept across every session they start, private to them. Load at the start of a task for a person, when the user says remember / forget / you should know, when they correct how you work, or when you learn a durable fact about them."
+description: "Per-user memory in the user's own Drive folder: `/drives/me/Memory`, and a channel's or DM's shared memory. Who this user is, how they like to work, what they corrected, what they are working on — kept across every session they start, private to them. Load at the start of a task for a person, when the user says remember / forget / you should know, when they correct how you work, or when you learn a durable fact about them."
 ---
 
 <skill name="kortix-user-memory">
@@ -49,8 +49,11 @@ something.
 <channels>
 A thread in a channel or a DM has one more memory: the space's own. Its
 path is in the "This thread's channel" (or DM) section of
-`/drives/README.md`, and `KORTIX_SPACE_KIND` / `KORTIX_SPACE_SLUG` say which
-space it is (`KORTIX_SPACE_SLUG` is the agent's name in a DM).
+`/drives/README.md`. That path is the one to use. `KORTIX_SPACE_KIND` /
+`KORTIX_SPACE_SLUG` say which space the thread started in
+(`KORTIX_SPACE_SLUG` is the agent's name in a DM). They do not change when
+a channel is renamed, so never build a path from them. A thread can also
+have the README section without these variables.
 
 - **Channel**: `/drives/company/Channels/<slug>/Memory/`. Shared with
   everyone in the project. Keep what the next thread in this channel should
@@ -61,8 +64,9 @@ space it is (`KORTIX_SPACE_SLUG` is the agent's name in a DM).
 Read the space memory's `MEMORY.md` at the start of the thread, next to the
 user's own. Write durable facts there in the same turn: a `MEMORY.md`
 index and topic files, in the style below. The user's own facts still go in
-`/drives/me/Memory/`. When the README has no such section, the thread has
-no space memory: do not invent a path.
+`/drives/me/Memory/`. Create a missing memory folder only at the path the
+README names. When the README has no such section, the thread has no space
+memory: do not invent a path.
 </channels>
 
 <layout>

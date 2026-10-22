@@ -2,10 +2,13 @@
 // the channel is made, moved when it is renamed. Best effort: a failure is
 // logged and never fails the channel request.
 
+import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { spaceDriveFolders } from '@kortix/shared';
+import { and, eq } from 'drizzle-orm';
 import { logger } from '../lib/logger';
+import { db } from '../shared/db';
 import { noteDriveWrite } from './conflicts';
-import { ensureProjectDrive, findProjectDrive, moveDriveFolder, writeDriveVolume } from './service';
+import { ensureProjectDrive, findProjectDrive, moveDriveFolder, refreshDriveNotes, sessionDrivesEnabled, writeDriveVolume } from './service';
 import { projectFeatureFlagEnabled } from '../feature-flags/for-project';
 import { DriveStorageError, driveStorageAvailable, writeVolumeFile } from './volumes';
 
@@ -34,18 +37,40 @@ export async function makeChannelFolders(accountId: string, projectId: string, s
  * route's own path (sharing and session mounts follow). Not gated on the
  * `drives` flag: a rename while Drive is off still moves the folder, so Drive
  * turned back on finds it. A channel that never had a folder moves nothing.
+ * Then the channel's running threads get notes that name the new path, off
+ * the response path: their mounts did not change, so nothing else rewrites them.
  */
-export async function moveChannelFolder(projectId: string, fromSlug: string, toSlug: string): Promise<void> {
+export async function moveChannelFolder(projectId: string, spaceId: string, fromSlug: string, toSlug: string): Promise<void> {
   try {
     const drive = driveStorageAvailable() ? await findProjectDrive(projectId) : null;
-    if (!drive) return;
-    const from = spaceDriveFolders('channel', fromSlug, null)!.files;
-    const to = spaceDriveFolders('channel', toSlug, null)!.files;
-    await moveDriveFolder(drive, from, to, () => undefined);
-    noteDriveWrite(drive.driveId);
+    if (drive) {
+      const from = spaceDriveFolders('channel', fromSlug, null)!.files;
+      const to = spaceDriveFolders('channel', toSlug, null)!.files;
+      await moveDriveFolder(drive, from, to, () => undefined);
+      noteDriveWrite(drive.driveId);
+    }
   } catch (err) {
-    if (err instanceof DriveStorageError && err.status === 404) return;
-    logger.warn(`[drives] the folder of channel #${fromSlug} in project ${projectId} did not move to #${toSlug}`, {
+    if (!(err instanceof DriveStorageError && err.status === 404)) {
+      logger.warn(`[drives] the folder of channel #${fromSlug} in project ${projectId} did not move to #${toSlug}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  void refreshChannelThreadNotes(projectId, spaceId);
+}
+
+/** Rewrite /drives/README.md in every thread of the channel that has a running box; best effort. */
+async function refreshChannelThreadNotes(projectId: string, spaceId: string): Promise<void> {
+  try {
+    if (!(await sessionDrivesEnabled(projectId))) return;
+    const rows = await db
+      .select({ sessionId: projectSessions.sessionId })
+      .from(projectSessions)
+      .innerJoin(sessionSandboxes, eq(sessionSandboxes.sessionId, projectSessions.sessionId))
+      .where(and(eq(projectSessions.spaceId, spaceId), eq(sessionSandboxes.status, 'active')));
+    for (const { sessionId } of rows) void refreshDriveNotes(sessionId);
+  } catch (err) {
+    logger.warn(`[drives] the notes of channel ${spaceId}'s threads were not refreshed`, {
       error: err instanceof Error ? err.message : String(err),
     });
   }

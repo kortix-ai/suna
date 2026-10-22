@@ -303,9 +303,11 @@ export function spaceNotesLines(
   const folders = spaceDriveFolders(space.kind, space.name, me?.subdir ?? null);
   const files = folders && mountedAt(folders.files, mounts);
   const memory = folders && mountedAt(folders.memory, mounts);
-  const place = space.kind === 'channel' ? `#${space.name}` : `your DM with ${space.name}`;
+  // A DM's agent name is member text: one line, so it cannot start a heading.
+  const name = oneLine(space.name);
+  const place = space.kind === 'channel' ? `#${name}` : `your DM with ${name}`;
   const lines = [
-    space.kind === 'channel' ? `## This thread’s channel: #${space.name}` : `## This thread’s DM with ${space.name}`,
+    space.kind === 'channel' ? `## This thread’s channel: #${name}` : `## This thread’s DM with ${name}`,
     '',
   ];
   if (!files || !memory) {
@@ -316,7 +318,10 @@ export function spaceNotesLines(
     `- Files of ${place}: ${files}/ (shown in the Files tab)`,
     `- Memory of ${place}: ${memory}/ (shown in the Memory tab)`,
     '',
-    `Read ${memory}/ at the start of the thread (\`MEMORY.md\` first when it exists). When you learn something the next thread in ${place} should know, write durable facts there in the same turn (\`mkdir -p\` it if missing). Keep one fact per bullet; no secrets.`,
+    `Read ${memory}/ at the start of the thread (\`MEMORY.md\` first when it exists). When you learn something the next thread in ${place} should know, write durable facts there in the same turn. Keep one fact per bullet; no secrets.`,
+    '',
+    // A rename moves the folder and rewrites this file, but not the thread's env.
+    'These paths are current. They win over `KORTIX_SPACE_SLUG`, which keeps the name the thread started with. Create a missing folder only at a path named here.',
     '',
   );
   return [...lines, ...linkLines(place, space.links)];

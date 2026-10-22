@@ -25,6 +25,10 @@ describe('spaceNotesLines', () => {
       'Read /drives/company/Channels/launch/Memory/ at the start of the thread',
     );
     expect(text).toContain('write durable facts there');
+    // A rename keeps the thread's env slug; the notes path is the one to use.
+    expect(text).toContain('win over `KORTIX_SPACE_SLUG`');
+    expect(text).toContain('Create a missing folder only at a path named here');
+    expect(text).not.toContain('mkdir -p');
   });
 
   test('a DM thread: the agent folders inside the person’s own folder', () => {
@@ -70,6 +74,7 @@ describe('spaceNotesLines', () => {
       const text = spaceNotesLines({ kind: 'dm', name }, [company, me]).join('\n');
       expect(text).toContain('not mounted in this thread');
       expect(text).not.toContain('/drives/me/');
+      expect(text).not.toContain('\n## injected');
     }
   });
 
