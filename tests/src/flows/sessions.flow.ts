@@ -2785,6 +2785,14 @@ flow(
       expectIds(await rows(asMember, { parent: 'root', started_by: 'me' }), [memberChat], 'member mine');
     });
 
+    await ctx.step('NUL in a search query is rejected before PostgreSQL, including root search', async () => {
+      for (const q of ['\u0000', 'rent\u0000', '\u0000rent', 're\u0000nt']) {
+        for (const parent of [undefined, 'root']) {
+          (await owner.get(route, { params, query: { q, ...(parent ? { parent } : {}) } })).status(400);
+        }
+      }
+    });
+
     await ctx.step('an unknown started_by, or a q over 200 characters → 400', async () => {
       (await owner.get(route, { params, query: { started_by: 'robots' } })).status(400);
       (await owner.get(route, { params, query: { q: 'x'.repeat(201) } })).status(400);
