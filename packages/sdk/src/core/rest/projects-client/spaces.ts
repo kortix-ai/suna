@@ -57,7 +57,8 @@ export async function listProjectSpaces(projectId: string): Promise<ProjectSpace
 /**
  * Create a channel. A name whose slug is taken rejects with an `ApiError`:
  * `status` 409, `code` `'slug_taken'`, and `data.space_id` / `data.archived`
- * name the existing channel, so the caller can offer to unarchive it. A name
+ * name the existing channel; `data.can_edit` says whether the caller may
+ * unarchive it, so the caller offers that only when it may. A name
  * with no slug characters rejects with 400 `invalid_name`. The caller shows
  * both, so neither reaches the host error handler.
  */

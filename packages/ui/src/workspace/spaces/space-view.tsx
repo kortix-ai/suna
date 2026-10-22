@@ -1,6 +1,6 @@
 'use client';
 
-import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
+import { ApiError, type ProjectSession, type ProjectSpace } from '@kortix/sdk';
 import {
   useOpenProjectDm,
   useProjectSpaces,
@@ -79,6 +79,8 @@ const THREAD_PARAM = 'thread';
 const TAB_PARAM = 'tab';
 /** Set by the archive action and by the create dialog's "already exists" link: the archived channel's id. */
 const ARCHIVED_PARAM = 'archived';
+/** `1` when the viewer may not unarchive that channel (the create dialog's 409 said `can_edit: false`). */
+const ARCHIVED_LOCKED_PARAM = 'locked';
 
 /**
  * The space's tabs, less Apps and Triggers for a caller known to lack their
@@ -215,7 +217,12 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
       const archivedId = searchParams.get(ARCHIVED_PARAM);
       const fallback = spaces.data.find((candidate) => candidate.is_default);
       body = archivedId ? (
-        <ArchivedChannel projectId={projectId} slug={target.slug} spaceId={archivedId} />
+        <ArchivedChannel
+          projectId={projectId}
+          slug={target.slug}
+          spaceId={archivedId}
+          canEdit={searchParams.get(ARCHIVED_LOCKED_PARAM) !== '1'}
+        />
       ) : (
         <EmptyState
           size="sm"
@@ -531,8 +538,21 @@ function RosterPill({
   );
 }
 
-/** `/c/<slug>` of an archived channel whose id the link carried: offer to bring it back. */
-function ArchivedChannel({ projectId, slug, spaceId }: { projectId: string; slug: string; spaceId: string }) {
+/**
+ * `/c/<slug>` of an archived channel whose id the link carried. Its creator or a
+ * project manager (`canEdit`) may bring it back; anyone else reads who can.
+ */
+function ArchivedChannel({
+  projectId,
+  slug,
+  spaceId,
+  canEdit,
+}: {
+  projectId: string;
+  slug: string;
+  spaceId: string;
+  canEdit: boolean;
+}) {
   const t = useTranslations('spaces.view');
   const router = useUiRouter();
   const update = useUpdateProjectSpace(projectId);
@@ -544,9 +564,12 @@ function ArchivedChannel({ projectId, slug, spaceId }: { projectId: string; slug
           successToast(t('unarchived'));
           router.replace(uiRoutes().channel(projectId, space.slug ?? slug));
         },
-        onError: () => errorToast(t('unarchiveFailed')),
+        onError: (err) => errorToast(t(err instanceof ApiError && err.status === 403 ? 'archivedLocked' : 'unarchiveFailed')),
       },
     );
+  if (!canEdit) {
+    return <EmptyState size="sm" title={t('archivedTitle', { name: slug })} description={t('archivedLocked')} />;
+  }
   return (
     <EmptyState
       size="sm"

@@ -199,9 +199,9 @@ flow('SPACE-3', meta([ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE]
       if (listed.some((s) => s.space_id === launchId)) throw new Error('an archived channel is still listed');
     });
 
-    await ctx.step('create "Growth" while it is archived → 409 slug_taken with archived: true and its space_id', async () => {
+    await ctx.step('create "Growth" while it is archived → 409 slug_taken with archived: true, its space_id, and can_edit true for a manager', async () => {
       (await world.owner.post(SPACES, { name: 'Growth' }, { params }))
-        .status(409).body().has('$.code', 'slug_taken').has('$.space_id', launchId).has('$.archived', true);
+        .status(409).body().has('$.code', 'slug_taken').has('$.space_id', launchId).has('$.archived', true).has('$.can_edit', true);
     });
 
     await ctx.step('unarchive (archived: false) → archived_at null and listed again', async () => {
@@ -217,7 +217,7 @@ flow('SPACE-3', meta([ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE]
       (await world.owner.patch(SPACE, { name: 'x' }, { params: { ...params, spaceId: 'not-a-uuid' } })).status(404);
     });
 
-    await ctx.step('a channel is edited by its creator or a project manager: a plain member gets can_edit false and 403 forbidden on another member’s channel, and edits their own', async () => {
+    await ctx.step('a channel is edited by its creator or a project manager: a plain member gets can_edit false and 403 forbidden on another member’s channel, and edits their own; a taken archived slug’s 409 says can_edit false', async () => {
       const ownerList = (await world.owner.get(SPACES, { params })).status(200).json<{ spaces: Space[] }>().spaces;
       if (!ownerList.every((s) => s.can_edit === true)) throw new Error('a project manager cannot edit every channel');
       const member = await team.addMember('member');
@@ -234,6 +234,9 @@ flow('SPACE-3', meta([ROUTES.list, ROUTES.create, ROUTES.update, FEATURES_ROUTE]
       own.body().has('$.can_edit', true);
       (await client.patch(SPACE, { description: 'Edited by its creator' }, { params: { ...params, spaceId: own.json<Space>().space_id } }))
         .status(200).body().has('$.can_edit', true).has('$.description', 'Edited by its creator');
+      (await world.owner.patch(SPACE, { archived: true }, { params: { ...params, spaceId: launchId } })).status(200);
+      (await client.post(SPACES, { name: 'Growth' }, { params }))
+        .status(409).body().has('$.code', 'slug_taken').has('$.archived', true).has('$.can_edit', false);
     });
   } finally {
     await world.close();

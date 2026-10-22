@@ -128,13 +128,14 @@ export function registerProjectSpacesRoutes(): void {
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
       if (gate) return gate;
-      const { row, userId } = loaded;
-      const result = await createChannel(row.projectId, row.accountId, userId, c.req.valid('json'));
+      const { row } = loaded;
+      // The viewer: a taken slug's 409 says whether the caller may unarchive its channel.
+      const viewer = await spaceViewer(c, loaded);
+      const result = await createChannel(row.projectId, row.accountId, viewer, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
       // Its Files folder and Memory folder, best effort and off the response path.
       void makeChannelFolders(row.accountId, row.projectId, result.space.slug!);
-      // The caller created it, so it may edit it whatever its role.
-      return c.json(serializeSpace(result.space, { userId, manager: false }), 201);
+      return c.json(serializeSpace(result.space, viewer), 201);
     },
   );
 

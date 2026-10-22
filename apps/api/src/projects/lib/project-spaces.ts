@@ -6,7 +6,8 @@
  *
  * Only `ensureDefaultSpace` ever sets `is_default`. Channel slugs are unique per
  * project INCLUDING archived channels, so a clash with an archived channel
- * answers 409 with `archived: true` and the client offers to unarchive it.
+ * answers 409 with `archived: true`, and with `can_edit` the client offers to
+ * unarchive it.
  */
 import type { Space, SpaceCreateInput, SpaceUpdateInput } from '@kortix/api-contract';
 import { projectSessions, projectSpaces } from '@kortix/db';
@@ -21,7 +22,7 @@ type SpaceRow = typeof projectSpaces.$inferSelect;
 
 export type SpaceError = {
   status: 400 | 403 | 404 | 409;
-  body: { error: string; code: string; space_id?: string; archived?: boolean };
+  body: { error: string; code: string; space_id?: string; archived?: boolean; can_edit?: boolean };
 };
 /** `renamedFrom`: the slug a rename replaced. */
 export type SpaceResult = { space: SpaceRow; renamedFrom?: string } | { error: SpaceError };
@@ -138,10 +139,10 @@ function invalidName(): { error: SpaceError } {
   };
 }
 
-/** 409 naming the channel that holds `slug`, and whether it is archived. */
-async function slugTaken(projectId: string, slug: string): Promise<{ error: SpaceError }> {
+/** 409 naming the channel that holds `slug`, whether it is archived, and whether the viewer may edit it. */
+async function slugTaken(projectId: string, slug: string, viewer: SpaceViewer): Promise<{ error: SpaceError }> {
   const [holder] = await db
-    .select({ spaceId: projectSpaces.spaceId, archivedAt: projectSpaces.archivedAt })
+    .select()
     .from(projectSpaces)
     .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.kind, 'channel'), eq(projectSpaces.slug, slug)))
     .limit(1);
@@ -152,7 +153,7 @@ async function slugTaken(projectId: string, slug: string): Promise<{ error: Spac
       body: {
         error: archived ? `An archived channel is already named #${slug}.` : `A channel is already named #${slug}.`,
         code: 'slug_taken',
-        ...(holder ? { space_id: holder.spaceId } : {}),
+        ...(holder ? { space_id: holder.spaceId, can_edit: canEditSpace(holder, viewer) } : {}),
         archived,
       },
     },
@@ -162,7 +163,7 @@ async function slugTaken(projectId: string, slug: string): Promise<{ error: Spac
 export async function createChannel(
   projectId: string,
   accountId: string,
-  userId: string,
+  viewer: SpaceViewer,
   input: SpaceCreateInput,
 ): Promise<SpaceResult> {
   const slug = spaceSlug(input.name);
@@ -179,13 +180,13 @@ export async function createChannel(
         slug,
         name: input.name,
         description: input.description || null,
-        createdBy: userId,
+        createdBy: viewer.userId,
       })
       .returning();
     return { space: row! };
   } catch (error) {
     if (uniqueViolationConstraint(error) !== SLUG_INDEX) throw error;
-    return slugTaken(projectId, slug);
+    return slugTaken(projectId, slug, viewer);
   }
 }
 
@@ -310,7 +311,7 @@ export async function updateChannel(
     return row.slug && space.slug !== row.slug ? { space, renamedFrom: row.slug } : { space };
   } catch (error) {
     if (uniqueViolationConstraint(error) !== SLUG_INDEX) throw error;
-    return slugTaken(projectId, patch.slug!);
+    return slugTaken(projectId, patch.slug!, viewer);
   }
 }
 

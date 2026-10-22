@@ -30,12 +30,13 @@ const DESCRIPTION_MAX = 160;
 
 /**
  * Which inline error the name field shows. `taken` carries the slug the server
- * refused and, for an archived channel, its id (the link offers to unarchive).
+ * refused and, for an archived channel, its id and whether the caller may edit
+ * it (the link offers to unarchive, or says who may).
  */
 type NameError =
   | { kind: 'empty' }
   | { kind: 'invalid' }
-  | { kind: 'taken'; slug: string; archivedId: string | null }
+  | { kind: 'taken'; slug: string; archivedId: string | null; canEdit: boolean }
   | { kind: 'failed' };
 
 /**
@@ -94,7 +95,7 @@ export function CreateChannelDialog({
   const onError = (err: Error) => {
     if (err instanceof ApiError && err.status === 409 && err.code === 'slug_taken') {
       const archivedId = err.data?.archived === true && typeof err.data.space_id === 'string' ? err.data.space_id : null;
-      setError({ kind: 'taken', slug, archivedId });
+      setError({ kind: 'taken', slug, archivedId, canEdit: err.data?.can_edit !== false });
     } else if (err instanceof ApiError && err.status === 400 && err.code === 'invalid_name') {
       setError({ kind: 'invalid' });
     } else {
@@ -140,14 +141,16 @@ export function CreateChannelDialog({
   else if (error?.kind === 'invalid') errorText = t('invalidName');
   else if (error?.kind === 'failed') errorText = t(space ? 'renameFailed' : 'failed');
   else if (error?.kind === 'taken') {
-    const { slug: takenSlug, archivedId } = error;
-    // An archived channel's page offers Unarchive when it knows the channel's id.
+    const { slug: takenSlug, archivedId, canEdit } = error;
+    // An archived channel's page offers Unarchive when it knows the channel's id
+    // and the caller may edit the channel; otherwise it says who may.
     const takenHref = uiRoutes().channel(projectId, takenSlug);
+    const archivedQuery = archivedId ? `?archived=${encodeURIComponent(archivedId)}${canEdit ? '' : '&locked=1'}` : '';
     errorText = t.rich('slugTaken', {
       slug: takenSlug,
       link: (chunks) => (
         <Link
-          href={archivedId ? `${takenHref}?archived=${encodeURIComponent(archivedId)}` : takenHref}
+          href={`${takenHref}${archivedQuery}`}
           onClick={close}
           className="text-foreground underline underline-offset-4"
         >
