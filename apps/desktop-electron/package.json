@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "electron": "^42.11.3",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.18.0"
   },
   "dependencies": {
     "@sentry/electron": "^7.3.0",

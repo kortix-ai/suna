@@ -1486,6 +1486,7 @@
   },
   "sidebar": {
     "rooms": "聊天室",
+    "goals": "目标",
     "referAndEarn": "推荐赚取",
     "referralShareTitle": "推荐好友",
     "referralShareSubtitle": "获得 400 积分",
@@ -22299,5 +22300,91 @@
     "join": "加入",
     "openRoom": "打开",
     "gateDescription": "开启聊天室，让此项目的智能体会话和成员在命名的聊天室中交流。"
+  },
+  "goals": {
+    "title": "目标",
+    "gateDescription": "智能体负责一个目标，直到它被可验证地完成：目标保存在文件中，每日心跳唤醒它，智能体向相关人员催要所需内容，并由独立检查来关闭它。",
+    "empty": "还没有目标",
+    "emptyHint": "在会话中开始一个目标：描述结果，例如“确保我们的旧银行账户已关闭”。智能体会创建目标，它会显示在这里。",
+    "loadError": "无法加载目标。请重试。",
+    "retry": "重试",
+    "needsYou": "需要你处理",
+    "open": "进行中",
+    "closed": "已关闭",
+    "waitingFor": "等待：{title}",
+    "criteria": "{met}/{total} 项标准",
+    "nextWake": "下次唤醒 {time}",
+    "noWake": "未安排唤醒",
+    "heartbeat": "心跳",
+    "heartbeatPaused": "已暂停",
+    "lastWakeLabel": "上次唤醒",
+    "progress": "进度",
+    "scope": {
+      "company": "公司",
+      "personal": "仅你可见"
+    },
+    "status": {
+      "draft": "草稿",
+      "active": "进行中",
+      "waiting_on_user": "等待你",
+      "waiting_external": "等待中",
+      "verifying": "验证中",
+      "done": "已完成",
+      "abandoned": "已放弃"
+    },
+    "health": {
+      "healthy": "运行中",
+      "attention": "需要关注",
+      "closed": "已关闭"
+    },
+    "issue": {
+      "no_heartbeat": "没有任何东西会唤醒此目标：缺少心跳提醒。",
+      "heartbeat_paused": "心跳提醒已暂停。",
+      "heartbeat_failed": "上次唤醒失败：{error}",
+      "missed_wake": "上次唤醒已逾期。",
+      "ask_overdue": "有一项请求已过期。",
+      "verification_stalled": "验证已开始超过 24 小时。",
+      "unreadable": "goal.json 缺失或不是有效的 JSON。"
+    },
+    "sessionChip": "目标",
+    "sessionRole": {
+      "coordinator": "此会话负责此目标。",
+      "worker": "此会话正在处理此目标。",
+      "verifier": "此会话负责验证此目标。"
+    },
+    "openGoal": "打开目标",
+    "openSession": "打开主会话",
+    "openFolder": "打开文件夹",
+    "back": "全部目标",
+    "healthTitle": "状态",
+    "successCriteria": "成功标准",
+    "met": "已满足",
+    "notMet": "未满足",
+    "items": "事项",
+    "noItems": "还没有事项。",
+    "noCriteria": "还没有标准：智能体会在目标进入进行中之前写好。",
+    "kind": {
+      "task": "任务",
+      "ask": "请求",
+      "wait": "等待"
+    },
+    "itemStatus": {
+      "open": "未开始",
+      "doing": "进行中",
+      "done": "已完成",
+      "dropped": "已放弃"
+    },
+    "due": "截止 {time}",
+    "sessions": "会话",
+    "role": {
+      "coordinator": "主会话",
+      "worker": "执行者",
+      "verifier": "验证者"
+    },
+    "timeline": "时间线",
+    "verification": "验证",
+    "notes": "笔记",
+    "log": "日志",
+    "notFound": "此目标已不存在。"
   }
 }

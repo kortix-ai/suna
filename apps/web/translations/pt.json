@@ -1486,6 +1486,7 @@
   },
   "sidebar": {
     "rooms": "Salas",
+    "goals": "Objetivos",
     "referAndEarn": "Indicar e Ganhar",
     "referralShareTitle": "Indicar Amigos",
     "referralShareSubtitle": "Ganhe 400 créditos",
@@ -22299,5 +22300,91 @@
     "join": "Entrar",
     "openRoom": "Abrir",
     "gateDescription": "Ative as Salas para que as sessões de agentes e as pessoas deste projeto conversem em salas de chat com nome."
+  },
+  "goals": {
+    "title": "Objetivos",
+    "gateDescription": "Os agentes assumem um objetivo até que ele seja concluído de forma verificável: o objetivo fica em Arquivos, um batimento diário o acorda, o agente cobra das pessoas o que precisa e uma verificação independente o encerra.",
+    "empty": "Ainda não há objetivos",
+    "emptyHint": "Comece um numa sessão: descreva o resultado, por exemplo \"garanta que nossa antiga conta bancária esteja encerrada\". O agente cria o objetivo e ele aparece aqui.",
+    "loadError": "Não foi possível carregar os objetivos. Tente novamente.",
+    "retry": "Tentar novamente",
+    "needsYou": "Precisa de você",
+    "open": "Abertos",
+    "closed": "Encerrados",
+    "waitingFor": "Aguardando: {title}",
+    "criteria": "{met}/{total} critérios",
+    "nextWake": "Próximo despertar {time}",
+    "noWake": "Nenhum despertar agendado",
+    "heartbeat": "Batimento",
+    "heartbeatPaused": "Pausado",
+    "lastWakeLabel": "Último despertar",
+    "progress": "Progresso",
+    "scope": {
+      "company": "Empresa",
+      "personal": "Só você"
+    },
+    "status": {
+      "draft": "Rascunho",
+      "active": "Ativo",
+      "waiting_on_user": "Aguardando você",
+      "waiting_external": "Aguardando",
+      "verifying": "Verificando",
+      "done": "Concluído",
+      "abandoned": "Abandonado"
+    },
+    "health": {
+      "healthy": "Em execução",
+      "attention": "Precisa de atenção",
+      "closed": "Encerrado"
+    },
+    "issue": {
+      "no_heartbeat": "Nada vai acordar este objetivo: falta o lembrete de batimento.",
+      "heartbeat_paused": "O lembrete de batimento está pausado.",
+      "heartbeat_failed": "O último despertar falhou: {error}",
+      "missed_wake": "O último despertar está atrasado.",
+      "ask_overdue": "Um pedido passou do prazo.",
+      "verification_stalled": "A verificação começou há mais de 24 horas.",
+      "unreadable": "goal.json está ausente ou não é um JSON válido."
+    },
+    "sessionChip": "Objetivo",
+    "sessionRole": {
+      "coordinator": "Esta sessão conduz este objetivo.",
+      "worker": "Esta sessão trabalha neste objetivo.",
+      "verifier": "Esta sessão verifica este objetivo."
+    },
+    "openGoal": "Abrir objetivo",
+    "openSession": "Abrir sessão principal",
+    "openFolder": "Abrir pasta",
+    "back": "Todos os objetivos",
+    "healthTitle": "Estado",
+    "successCriteria": "Critérios de sucesso",
+    "met": "Atendido",
+    "notMet": "Não atendido",
+    "items": "Itens",
+    "noItems": "Ainda não há itens.",
+    "noCriteria": "Ainda não há critérios: o agente os escreve antes de o objetivo ficar ativo.",
+    "kind": {
+      "task": "Tarefa",
+      "ask": "Pedido",
+      "wait": "Espera"
+    },
+    "itemStatus": {
+      "open": "aberto",
+      "doing": "em andamento",
+      "done": "feito",
+      "dropped": "descartado"
+    },
+    "due": "Prazo {time}",
+    "sessions": "Sessões",
+    "role": {
+      "coordinator": "Sessão principal",
+      "worker": "Executor",
+      "verifier": "Verificador"
+    },
+    "timeline": "Linha do tempo",
+    "verification": "Verificação",
+    "notes": "Notas",
+    "log": "Registro",
+    "notFound": "Este objetivo não existe mais."
   }
 }

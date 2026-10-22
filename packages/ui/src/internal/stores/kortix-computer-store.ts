@@ -474,6 +474,22 @@ export const useKortixComputerStore = create<KortixComputerState>()(
         sessionId: string | null,
         continuity?: { projectSessionId: string | null; transient: boolean },
       ) => {
+        const nextProjectSessionId = continuity?.projectSessionId ?? null;
+        const nextIsTransient = continuity?.transient ?? false;
+        // The boot shell of the session whose real chat already owns the right
+        // side. The two layers mount in either order, and the chat holds the
+        // panel's content: a shell that took over kept the right side after it
+        // faded out, so ⌘I reopened the cards instead of the detail it had
+        // just hidden (KRTX-2944). Not a session change, so nothing moves.
+        if (
+          nextIsTransient &&
+          nextProjectSessionId !== null &&
+          get()._activeSessionId !== null &&
+          !get()._activeIsTransient &&
+          get()._activeProjectSessionId === nextProjectSessionId
+        ) {
+          return;
+        }
         // A quick-view is an intent about the session it was made in — it must
         // not replay when some other session mounts later. Cleared even on the
         // no-op re-activation path below, or a request planted for another
@@ -483,8 +499,6 @@ export const useKortixComputerStore = create<KortixComputerState>()(
           set({ pendingQuickView: null });
         }
         const prev = get()._activeSessionId;
-        const nextProjectSessionId = continuity?.projectSessionId ?? null;
-        const nextIsTransient = continuity?.transient ?? false;
         if (prev === sessionId) {
           // Same layout re-activating (e.g. the shell flipping transient→ready
           // state, or a tab refocus): keep the continuity bookkeeping fresh so
