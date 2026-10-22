@@ -6,6 +6,7 @@ import { SpaceAppsView } from '@/features/apps/space-apps-view';
 import { SpaceFolderView } from '@/features/drives/space-folder-view';
 import { useProjectSendGate } from '@/hooks/projects/use-project-send-gate';
 import { useFeatureFlag } from '@kortix/sdk/react';
+import { decodeSpaceSegment } from '@kortix/ui';
 import { SpaceView } from '@kortix/ui/workspace';
 
 /**
@@ -21,7 +22,7 @@ export default function ProjectChannelPage() {
   if (!channels.isLoading && !channels.enabled) notFound();
   if (!channels.enabled) return null;
   // A malformed escape in a hand-typed URL names no channel.
-  const decoded = decodeSegment(slug);
+  const decoded = decodeSpaceSegment(slug);
   if (decoded === null) notFound();
   return (
     <SpaceView
@@ -32,12 +33,4 @@ export default function ProjectChannelPage() {
       renderApps={(space) => <SpaceAppsView projectId={id} spaceId={space.space_id} place={`#${space.slug}`} />}
     />
   );
-}
-
-function decodeSegment(segment: string): string | null {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return null;
-  }
 }

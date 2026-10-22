@@ -10,6 +10,7 @@ import { projectSpaces, projectTriggerRuntime } from '@kortix/db';
 import { and, count, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { isUuid } from '../../shared/validate';
+import { SPACE_NOT_FOUND } from './project-spaces';
 
 type SpaceRow = typeof projectSpaces.$inferSelect;
 
@@ -50,7 +51,7 @@ export async function resolveTriggerSpace(
         .where(and(eq(projectSpaces.projectId, projectId), eq(projectSpaces.spaceId, spaceId), isNull(projectSpaces.archivedAt)))
         .limit(1)
     : [];
-  if (!row) return { error: { status: 404, body: { error: 'Channel not found', code: 'space_not_found' } } };
+  if (!row) return { error: { status: 404, body: SPACE_NOT_FOUND } };
   if (row.kind === 'dm' && row.dmUserId !== userId) {
     return {
       error: { status: 403, body: { error: 'Only the member a DM belongs to can post a trigger to it.', code: 'space_forbidden' } },

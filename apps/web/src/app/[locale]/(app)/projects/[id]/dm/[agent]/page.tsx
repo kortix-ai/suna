@@ -5,6 +5,7 @@ import { notFound, useParams } from 'next/navigation';
 import { SpaceFolderView } from '@/features/drives/space-folder-view';
 import { useProjectSendGate } from '@/hooks/projects/use-project-send-gate';
 import { useFeatureFlag } from '@kortix/sdk/react';
+import { decodeSpaceSegment } from '@kortix/ui';
 import { SpaceView } from '@kortix/ui/workspace';
 
 /**
@@ -20,7 +21,7 @@ export default function ProjectDmPage() {
   if (!channels.isLoading && !channels.enabled) notFound();
   if (!channels.enabled) return null;
   // A malformed escape in a hand-typed URL names no agent.
-  const decoded = decodeSegment(agent);
+  const decoded = decodeSpaceSegment(agent);
   if (decoded === null) notFound();
   return (
     <SpaceView
@@ -30,12 +31,4 @@ export default function ProjectDmPage() {
       renderFolder={(folder) => <SpaceFolderView projectId={id} {...folder} />}
     />
   );
-}
-
-function decodeSegment(segment: string): string | null {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return null;
-  }
 }

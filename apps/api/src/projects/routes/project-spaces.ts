@@ -40,6 +40,7 @@ import {
 } from '../lib/project-space-links';
 import { countSpaceTriggers } from '../lib/trigger-space';
 import {
+  SPACE_NOT_FOUND,
   createChannel,
   findLiveChannel,
   findSessionSpace,
@@ -51,7 +52,6 @@ import {
 
 const projectParams = z.object({ projectId: z.string() });
 const spaceParams = projectParams.extend({ spaceId: z.string() });
-const CHANNEL_NOT_FOUND = { error: 'Channel not found', code: 'space_not_found' } as const;
 
 /**
  * The project (`session` access), the `project_channels` flag, then a live
@@ -65,7 +65,7 @@ async function loadChannel(c: Context<AppEnv>) {
   if (gate) return gate;
   const spaceId = c.req.param('spaceId')!;
   const space = isUuid(spaceId) ? await findLiveChannel(loaded.row.projectId, spaceId) : null;
-  if (!space) return c.json(CHANNEL_NOT_FOUND, 404);
+  if (!space) return c.json(SPACE_NOT_FOUND, 404);
   return { loaded, space };
 }
 
@@ -193,7 +193,7 @@ export function registerProjectSpacesRoutes(): void {
       const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
       if (gate) return gate;
       const spaceId = c.req.param('spaceId');
-      if (!isUuid(spaceId)) return c.json({ error: 'Channel not found', code: 'space_not_found' }, 404);
+      if (!isUuid(spaceId)) return c.json(SPACE_NOT_FOUND, 404);
       const result = await updateChannel(loaded.row.projectId, loaded.userId, spaceId, c.req.valid('json'));
       if ('error' in result) return c.json(result.error.body, result.error.status);
       // The channel's folder follows a rename, best effort (it logs a failure).
@@ -329,7 +329,7 @@ export function registerProjectSpacesRoutes(): void {
       const spaceId = c.req.param('spaceId');
       // A live channel or the caller's own DM; another member's DM reads as not found.
       const space = isUuid(spaceId) ? await findSessionSpace(row.projectId, spaceId, userId) : null;
-      if (!space) return c.json(CHANNEL_NOT_FOUND, 404);
+      if (!space) return c.json(SPACE_NOT_FOUND, 404);
       const allowed = (action: string) => projectCapabilityAllowed(c, userId, row.accountId, row.projectId, action);
       const channel = space.kind === 'channel';
       const [appsAllowed, appAdmin, triggersAllowed, links] = await Promise.all([

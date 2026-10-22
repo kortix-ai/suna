@@ -155,8 +155,11 @@ export async function createChannel(
   }
 }
 
+/** The 404 body for a space the caller cannot use: unknown, archived, or another member's DM. */
+export const SPACE_NOT_FOUND = { error: 'Channel not found', code: 'space_not_found' };
+
 function spaceNotFound(): { error: SpaceError } {
-  return { error: { status: 404, body: { error: 'Channel not found', code: 'space_not_found' } } };
+  return { error: { status: 404, body: SPACE_NOT_FOUND } };
 }
 
 /**

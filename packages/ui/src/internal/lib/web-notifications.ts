@@ -51,6 +51,7 @@ import {
   SessionStackCard,
   type SessionStackItem,
 } from '../notifications/session-toast-cards';
+import { decodeSpaceSegment } from '../../lib/routes';
 import { logger } from './logger';
 import { softNavigate } from './navigation/router-bridge';
 import { projectSessionHref } from './navigation/session-href';
@@ -72,10 +73,9 @@ import {
   type ChangeRequest,
   type InboxNotificationKind,
   type NotificationPreferences,
-  type ProjectSessionPage,
   type ProjectSpace,
 } from '@kortix/sdk';
-import { qk } from '@kortix/sdk/react';
+import { findCachedProjectSession, qk } from '@kortix/sdk/react';
 import type { QueryClient } from '@tanstack/react-query';
 
 // ============================================================================
@@ -288,25 +288,6 @@ export function isTabHidden(): boolean {
 }
 
 /**
- * Check if the user is currently viewing a specific session.
- * Checks the tab store (dashboard session tabs) and the current URL
- * (covers the /onboarding page which doesn't use the tab system).
- *
- * Shared with TurnAttentionBadge, which clears the favicon badge for
- * whatever session the user is looking at.
- */
-/** What `spacesThreadHref` reads from the query cache. */
-type SpaceThreadCache = Pick<QueryClient, 'getQueryData' | 'getQueriesData'>;
-
-function decodeSegment(segment: string): string | null {
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return null;
-  }
-}
-
-/**
  * A finished turn opens in the thread panel of the channel or DM page on
  * screen (`?thread=<id>`) only when it is one of that space's threads: the
  * path's project is the session's, and the cached thread list of the space
@@ -316,7 +297,7 @@ function decodeSegment(segment: string): string | null {
 export function spacesThreadHref(
   location: { pathname: string; search: string },
   session: { sessionId: string; projectId: string | null | undefined },
-  cache: SpaceThreadCache,
+  cache: QueryClient,
 ): string | null {
   // An optional two-letter locale segment leads (`/de/projects/…`).
   const match = /^(?:\/[a-z]{2})?\/projects\/([^/]+)\/(c|dm)\/([^/]+)\/?$/.exec(
@@ -324,24 +305,30 @@ export function spacesThreadHref(
   );
   if (!match || match[1] !== session.projectId) return null;
   const [, projectId, kind, segment] = match;
-  const name = decodeSegment(segment);
+  const name = decodeSpaceSegment(segment);
   const space = cache
     .getQueryData<ProjectSpace[]>(qk.project.spaces(projectId))
     ?.find((candidate) => (kind === 'c' ? candidate.slug === name : candidate.dm_agent_name === name));
   if (!space) return null;
-  const isThread = cache
-    .getQueriesData<{ pages?: ProjectSessionPage[] }>({ queryKey: qk.project.sessionsScope(projectId) })
-    .some(([, data]) =>
-      data?.pages?.some((page) =>
-        page.items.some((item) => item.session_id === session.sessionId && item.space_id === space.space_id),
-      ),
-    );
-  if (!isThread) return null;
+  const thread = findCachedProjectSession(
+    cache,
+    projectId,
+    (row) => row.session_id === session.sessionId && row.space_id === space.space_id,
+  );
+  if (!thread) return null;
   const params = new URLSearchParams(location.search);
   params.set('thread', session.sessionId);
   return `${location.pathname}?${params.toString()}`;
 }
 
+/**
+ * Check if the user is currently viewing a specific session.
+ * Checks the tab store (dashboard session tabs) and the current URL
+ * (covers the /onboarding page which doesn't use the tab system).
+ *
+ * Shared with TurnAttentionBadge, which clears the favicon badge for
+ * whatever session the user is looking at.
+ */
 export function isViewingSession(sessionId: string): boolean {
   // Dashboard: the active tab ID is the session ID for session tabs. The
   // persisted tab ID can outlive navigation (the store never clears it when

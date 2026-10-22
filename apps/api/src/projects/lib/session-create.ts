@@ -89,7 +89,7 @@ import { transitionSession } from '../session-lifecycle/status-transitions';
 import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-runtime-context';
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
-import { FIRST_PROMPT_MAX_CHARS, ensureDefaultSpace, findForkSourceSpace, findSessionSpace, spaceSessionVisibility } from './project-spaces';
+import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, findSessionSpace, spaceSessionVisibility } from './project-spaces';
 import { liveTriggerSpace } from './trigger-space';
 
 import {
@@ -294,7 +294,7 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
   const space = typeof body.space_id === 'string' && isUuid(body.space_id)
     ? await findSessionSpace(project.projectId, body.space_id, userId)
     : null;
-  if (!space) return { error: { status: 404, body: { error: 'Channel not found', code: 'space_not_found' } } };
+  if (!space) return { error: { status: 404, body: SPACE_NOT_FOUND } };
   return { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) };
 }
 

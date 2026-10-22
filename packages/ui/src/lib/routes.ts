@@ -67,6 +67,15 @@ export function uiRoutes(): UiRoutes {
   return routes;
 }
 
+/** A channel slug or DM agent name from its URL segment; null when a hand-typed escape is malformed. */
+export function decodeSpaceSegment(segment: string): string | null {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * A capability page's URL for the customize pages themselves: they are mounted
  * only by a host that serves them, so a null `customize` route falls back to
