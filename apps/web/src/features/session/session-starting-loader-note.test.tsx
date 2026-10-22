@@ -1,8 +1,8 @@
 import {
   SessionConnectingBanner,
   SessionStartingLoader,
-  sessionWakeStatusNote,
-} from '@/features/session/session-starting-loader';
+} from '@kortix/ui/session';
+import { sessionWakeStatusNote } from '@kortix/ui/session/status/session-starting-loader';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, test } from 'bun:test';
 import { NextIntlClientProvider } from 'next-intl';
@@ -36,8 +36,6 @@ describe('escalation note reaches the pixels', () => {
   test('the loader shows a waiting state and the next automatic attempt', () => {
     const html = render(
       <SessionStartingLoader
-        stage="starting"
-        delayMs={0}
         note={NOTE}
         reason="runtime_wake_cooldown"
         failure={cooldown}
@@ -53,7 +51,6 @@ describe('escalation note reaches the pixels', () => {
   test('the conversation banner shows the same waiting state', () => {
     const html = render(
       <SessionConnectingBanner
-        stage="starting"
         note={NOTE}
         reason="runtime_wake_cooldown"
         failure={cooldown}
@@ -65,28 +62,22 @@ describe('escalation note reaches the pixels', () => {
   });
 
   test('the connecting banner shows the ladder note instead of the phase label', () => {
-    const html = render(<SessionConnectingBanner stage="starting" note={NOTE} />);
+    const html = render(<SessionConnectingBanner note={NOTE} />);
     expect(html).toContain(NOTE);
     expect(html).not.toContain('Waking the agent');
   });
 
-  test('without a note the banner keeps the ordinary phase label', () => {
-    const html = render(<SessionConnectingBanner stage="starting" />);
-    expect(html).toContain('Loading your workspace');
-    expect(html).not.toContain('Still waking');
+  // A routine wake is silent: the conversation stays readable and a send goes
+  // out once the computer is up. The banner speaks only when the wake needs
+  // attention.
+  test('without a note the banner renders nothing', () => {
+    expect(render(<SessionConnectingBanner />)).toBe('');
   });
 
-  test('the loader shows the ladder note instead of the phase label', () => {
-    const html = render(<SessionStartingLoader stage="starting" delayMs={0} note={NOTE} />);
+  test('the loader shows the ladder note', () => {
+    const html = render(<SessionStartingLoader note={NOTE} />);
     expect(html).toContain(NOTE);
-  });
-
-  test('the legacy variant input renders the same ladder note', () => {
-    const html = render(
-      <SessionStartingLoader stage="starting" delayMs={0} variant="stepper" note={NOTE} />,
-    );
-    expect(html).toContain(NOTE);
-    expect(html).not.toContain('This usually takes a few seconds.');
+    expect(html).toContain('aria-live="polite"');
   });
 });
 
@@ -156,14 +147,8 @@ describe('session starting loader treatment', () => {
     ).toBe('Still starting your computer. Trying again in 10m\u00a00s (attempt 2).');
   });
 
-  test('renders quiet progress without prototype or legacy motion', () => {
-    const html = render(<SessionStartingLoader stage="starting" delayMs={0} variant="stepper" />);
-
-    expect(html).toContain('Starting your session');
-    expect(html).toContain('role="progressbar"');
-    expect(html).toContain('aria-valuetext="Step 2 of 4: Loading your workspace"');
-    expect(html).not.toContain('data-uidotsh-pick');
-    expect(html).not.toContain('animate-pulse');
-    expect(html).not.toContain('This usually takes a few seconds.');
+  // A routine wake is silent: no heading, no step label, no progress rail.
+  test('a routine wake renders nothing', () => {
+    expect(render(<SessionStartingLoader />)).toBe('');
   });
 });

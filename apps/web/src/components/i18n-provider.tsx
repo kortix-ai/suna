@@ -2,23 +2,19 @@
 
 import { KortixUiProvider } from '@/components/kortix-ui-provider';
 import { useAuth } from '@/features/providers/auth-provider';
-import { catalogHref } from '@/i18n/catalog-href';
 import { loadClientCatalog, type MessageTree } from '@/i18n/client-catalog';
 import { defaultLocale, locales, type Locale } from '@/i18n/config';
 import { getUserLocale, LOCALE_CHANGE_EVENT } from '@/i18n/locale';
 import { serverMessagesRegistry } from '@/i18n/server-registry';
 import { NextIntlClientProvider, type AbstractIntlMessages } from 'next-intl';
 import { ReactNode, Suspense, use, useCallback, useEffect, useRef, useState } from 'react';
-import { preload } from 'react-dom';
 
 /**
  * Message delivery. No string ever renders from a partial catalog.
  *
  * - SSR renders against the full catalog that the RSC layer loaded
  *   (`i18n/messages.ts`). The HTML carries no messages.
- * - The page head preloads `/i18n/<locale>.<hash>.json`, so the catalog
- *   downloads in parallel with the app JavaScript and is cached across pages,
- *   visits, and deploys that do not change it.
+ * - Browser catalogs ship as bundler chunks, cached with the app's assets.
  * - On the client, the tree below this provider hydrates only once that catalog
  *   has resolved. Until then React keeps the server HTML (a dehydrated Suspense
  *   boundary), which already shows every string of the first paint. Content
@@ -58,8 +54,6 @@ export function I18nProvider({
   children: ReactNode;
   initialLocale?: Locale;
 }) {
-  // Emitted into <head> during SSR, ahead of the app scripts.
-  preload(catalogHref(initialLocale), { as: 'fetch', crossOrigin: 'anonymous' });
   return (
     <Suspense fallback={null}>
       <CatalogProvider initialLocale={initialLocale}>{children}</CatalogProvider>

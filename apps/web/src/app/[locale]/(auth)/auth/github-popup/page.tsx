@@ -4,11 +4,11 @@ import { useTranslations } from '@/i18n/use-translations';
 
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import Loading from '@/components/ui/loading';
-import { ErrorStrip } from '@/features/auth/auth-primitives';
-import { useAppHome } from '@/lib/onboarding/use-app-home';
+import { Button } from '@kortix/ui/button';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import Loading from '@kortix/ui/loading';
+import { ErrorStrip } from '@kortix/ui/internal/auth/auth-primitives';
+import { useAppHome } from '@kortix/ui/internal/lib/onboarding/use-app-home';
 import { createClient } from '@/lib/supabase/client';
 
 interface AuthMessage {

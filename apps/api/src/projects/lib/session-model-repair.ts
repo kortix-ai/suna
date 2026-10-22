@@ -32,7 +32,6 @@
  * most once per session — once re-pointed, the pin is live and
  * `isRetiredManagedModelId` is false forever after.
  */
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { isRetiredManagedModelId } from '../../llm-gateway/models/managed-models';
 import { repointRetiredSessionModel } from '../../llm-gateway/resolution/session-model-repoint';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
@@ -88,10 +87,6 @@ export async function repairRetiredSessionModelOnOpen(
   if (!pinNeedsRepair(input.metadata)) return NO_REPAIR;
   const pin = input.metadata?.opencode_model as string;
   try {
-    // Native mode has no gateway and no managed catalog, so "retired managed
-    // id" is not a concept there and the pin means something else entirely.
-    if (!(await projectLlmGatewayEnabledById(input.projectId))) return NO_REPAIR;
-
     const next = await repointRetiredSessionModel(pin, {
       projectId: input.projectId,
       accountId: input.accountId,

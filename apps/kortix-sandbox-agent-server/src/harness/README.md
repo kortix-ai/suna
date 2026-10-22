@@ -17,8 +17,7 @@ await runtime.lifecycle.start()
 `KORTIX_HARNESS` (`opencode` | `pi`; unset means `opencode`) is set by apps/api
 at provisioning (`buildSessionSandboxEnvVars` → `selectSessionHarness`): pi when
 the project's `pi_harness` feature flag is on, or when the manifest says
-`runtime: pi`, and the `llm_gateway` flag is on (pi has no model path without
-the gateway); OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
+`runtime: pi`; OpenCode otherwise. `loadConfig` reads it BEFORE the adapter
 loads its own environment, so only the selected adapter's variables are parsed.
 There is no per-request switching: one box, one harness, for the life of the
 box. A new box of the session re-reads the selection, so a change of the flag or
@@ -27,11 +26,28 @@ of `runtime:` switches an existing session's harness at its next new box. With
 records the switch in `harness.history` ("Harness history, a switch" below).
 `POST /v1/projects/:p/sessions/:s/log/switch-preflight` (apps/api) answers
 before that happens: whether the switch can happen (`available`, `reason`:
-`same_harness`, or `llm_gateway_off` for pi), whether the new box restores the
+`same_harness`), whether the new box restores the
 log (`restores`; off, `losses` starts with `history`), what the session uses
 that the target handles worse (`losses`) and everything the target lacks, used
 or not (`unsupported`). The contract is `switchPreflight` in
 `@kortix/api-contract/session-log` (`capabilities.ts`).
+
+## Models: the LLM gateway only
+
+Both harnesses send every model request to the Kortix LLM gateway, under one
+provider id, `kortix`. There is no native provider mode. OpenCode's composed
+config always registers the `kortix` provider and sets
+`enabled_providers: ['kortix']` (`buildOpencodeConfigContent`,
+`open-code/lifecycle.ts`), and every model ref becomes `kortix/<wire id>`.
+
+- A box without the gateway env (`KORTIX_LLM_BASE_URL` + `KORTIX_TOKEN`, or
+  `KORTIX_LLM_PROXY_URL`) logs an error at each config compose. OpenCode keeps
+  the `kortix`-only config with no upstream, so turns fail; it never falls back
+  to provider keys in the process env. pi throws at model setup
+  (`createPiModels`, `pi/model.ts`).
+- `POST /kortix/env` with `llmGatewayEnabled: true` sets `KORTIX_LLM_BASE_URL`
+  and re-points a running LLM proxy. `llmGatewayEnabled: false` (an API from
+  before the graduation) is logged and ignored: it never clears the gateway env.
 
 ## Ownership
 
@@ -51,9 +67,10 @@ or not (`unsupported`). The contract is `switchPreflight` in
 | `open-code/background.ts`, `open-code/resource-diagnostics.ts`, `open-code/quick-queue-interrupt.ts` | Native offload, turn guard, tool-boundary queue interrupt and diagnostic projection |
 | Other `open-code/` modules | Native database, projections, pins, attachments, audit and recovery |
 | `pi/service.ts` | Composition; loads pi lazily so an OpenCode boot never pays for it |
-| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, turns, transcript, durability |
+| `pi/runtime.ts` | The in-process pi `Agent`: model, tools, skills, the root `AGENTS.md`, today's date (each turn, OpenCode's `Today's date` line), turns, transcript, durability |
 | `pi/boot.ts` | Session boot: the same host steps as OpenCode, then `pi-ready` |
 | `pi/surface.ts` | The raw OpenCode-compatible routes, answered in-process |
+| `pi/vcs.ts` | The Changes tab on pi: `vcs: 'git'` on `/project/current` and `GET /vcs/diff` (`mode=branch` against the merge base with `KORTIX_DEFAULT_BRANCH`, `mode=git` against HEAD), OpenCode's `VcsFileDiff` shape |
 | `pi/turn-events.ts`, `pi/transcript.ts` | pi events → Kortix session events (`@kortix/api-contract/transcript`); the transcript store |
 | `pi/interactions.ts`, `pi/tools.ts`, `pi/model.ts`, `pi/sampling.ts` | Permissions/questions, workspace tools, gateway model, the agent's `temperature`/`top_p`/`steps` on each model request |
 | `../routes/` | Controllers, authentication, request parsing, HTTP status/headers, gzip and SSE delivery |
@@ -733,12 +750,17 @@ What the product sees is unchanged: pi's events are reshaped into the OpenCode
 wire (`message.updated`, `message.part.updated`, `message.part.delta`,
 `session.status`, `session.idle`, `permission.*`, `question.*`), served over the
 same `/kortix/runtime/*` namespace and the same raw routes
-(`/session`, `/session/:id/prompt_async`, `/session/:id/message`, `/config`,
-`/agent`, `/provider`, `/permission/:id/reply`, …). One pi session is one Kortix
+(`/session`, `/session/:id/prompt_async`, `/session/:id/message`,
+`/permission/:id/reply`, …). pi does not serve OpenCode's `/config`, `/agent` or
+`/provider` (they answer `404`), so `opencode attach` cannot drive a pi
+session. One pi session is one Kortix
 session: the root id is `ses_pi<sha256(sessionId)[:24]>`, deterministic (or the
 root thread id a session-log restore wrote into the dump), so a restart
 resolves the same root and restores the transcript from
-`$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`.
+`$KORTIX_RUNTIME_STATE_DIR/pi/<session>.json`. The root's title stays
+`New session`, also after a restore: the session title is Kortix's
+(`metadata.name`, generated from the first prompt), and the API drops the
+placeholder (`isPlaceholderOpencodeTitle`).
 
 Config it reads (all set by apps/api for every session, harness-neutral values):
 `KORTIX_MODEL` (the resolved session model), `KORTIX_COMPILED_AGENT_CONFIG`
@@ -783,6 +805,11 @@ describes.
   the rest, `$ARGUMENTS` takes the raw text, and a template with neither gets
   the arguments appended. OpenCode's `` !`cmd` `` shell expansion is not
   supported.
+- **Skills in the command list.** On v2 and v3, `GET /command` ends with the
+  agent's granted skills as `source: 'skill'` rows, as OpenCode lists them:
+  the session composer's `/` menu reads only this list. A command shadows a
+  skill of the same name. `POST /session/:id/command` with a skill name sends
+  the `SKILL.md` body in pi's `<skill>` block, then the arguments.
 - **Extensions.** The API sends the session agent's pi packages as
   `KORTIX_PI_PACKAGES`; a repo entry is `./<path>` and resolves against the
   config root. Extensions load once per runtime start, so an agent switch

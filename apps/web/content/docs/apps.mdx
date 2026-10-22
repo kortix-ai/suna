@@ -791,7 +791,7 @@ volume; the dashboard sleeps when idle.
 `start.js` runs Convex's dashboard on port 6792. On the App's port 6791 it
 serves `/` as a page that frames the dashboard and answers its sign-in request
 (Convex's embedding protocol) with the admin key; every other path goes to the
-dashboard. Only project admins reach the App, so the page may carry the key.
+dashboard. Only project managers reach the App, so the page may carry the key.
 
 Both backend services are `public` because Convex checks sign-in in each
 function. Keep the backend at 1 machine: a second machine gets its own empty
@@ -847,7 +847,7 @@ export const me = query({
 In React, read the member with `useQuery(api.members.me)`. Do not call
 `useConvexAuth()`: it throws under a plain `ConvexProvider`.
 
-- **Dashboard.** Open **Apps** → `backend` → **Dashboard** (project admins). It opens
+- **Dashboard.** Open **Apps** → `backend` → **Dashboard** (project managers). It opens
   signed in. `kortix apps access-link backend-dashboard` prints a 5-minute link to
   the same page.
 - **A backend launched before the Dashboard tab** shows its dashboard as its
@@ -929,20 +929,16 @@ kortix apps access crm --mode project
 Never use `public` for internal data. A `public` App has no signed-in member, so
 every function that requires one refuses the call.
 
-[Kortix UI](/docs/sdk/ui) (`@kortix/ui`) is the component library for App UIs,
-but it is not on npm yet: today it installs only inside the
-[kortix-ai/suna](https://github.com/kortix-ai/suna) repository
-(`"@kortix/ui": "workspace:*"`). An App in a project repository cannot install
-it until the first npm release. Until then, style the App with plain CSS that
-reads the same variable names (`--background`, `--foreground`, `--border`,
-`--radius`), and never copy component source into the App.
+[Kortix UI](/docs/sdk/ui) (`@kortix/ui`) is the component library for App UIs.
+Install it from npm with `npm i @kortix/ui @kortix/sdk`, the same version of
+each. Never copy component source into the App.
 
-Inside kortix-ai/suna, a Vite App without Tailwind imports
+A Vite App without Tailwind imports
 `@kortix/ui/styles.css` once in `src/main.tsx`. A Tailwind v4 App imports
 `@import 'tailwindcss'; @import '@kortix/ui/tailwind.css';` in its main CSS.
 Compose `Card`, `Table`, `Modal`, `Badge` and `InfoBanner` before you write a
 component, and re-theme by CSS variables, never by a copied component. A chat
-view of a session is `SessionThread` from `@kortix/ui/chat`.
+view of a session is `SessionThread` from `@kortix/ui/session`.
 
 | What broke | Undo |
 |---|---|

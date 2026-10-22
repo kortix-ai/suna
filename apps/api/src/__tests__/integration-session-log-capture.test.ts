@@ -1,18 +1,20 @@
 /**
- * Integration test (real PostgreSQL, fresh migrated database, real routes): the
- * capture dual-write for a box without a journal (P2.7).
+ * Integration test (real PostgreSQL, fresh migrated database, real routes): the two writers of
+ * the session log for what no journal wrote (`session-log-capture.ts`).
  *
- * The transcript capture writes the v1 mirror and then `fromV1` of the whole
- * mirror as v2 rows (`session-log-capture.ts`), through the journal's apply
- * path. Every session here is synthetic. The Storage bucket is
- * `helpers/fake-session-storage.ts`.
+ * - The conversion of an old session's v1 mirror (`writeSessionLogFromMirror`): `fromV1` of the
+ *   stored mirror rows, through the journal's apply path. The mirror rows are seeded
+ *   (`helpers/seed-v1-mirror.ts`): nothing writes them since P8.2.
+ * - The capture of a box without a journal (`captureJournallessSessionLog`): the box read goes
+ *   straight into the log, and no v1 row is read or written.
+ *
+ * Every session here is synthetic. The Storage bucket is `helpers/fake-session-storage.ts`.
  */
 import { afterAll, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test';
 import { fromV1, modelView, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import {
   accountMembers,
   projectSessions,
-  projects,
   sessionLogMessages,
   sessionLogs,
   sessionLogThreads,
@@ -29,6 +31,7 @@ import { db } from '../shared/db';
 import { insertIntoView } from './helpers/compat-views';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
+import { seedV1Mirror } from './helpers/seed-v1-mirror';
 import { syntheticOpencodeSession } from './helpers/synthetic-opencode-session';
 
 const bucket = fakeSessionStorage();
@@ -37,9 +40,8 @@ mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => (
 
 const { app } = await import('../index');
 const { createAccountToken } = await import('../repositories/account-tokens');
-const { backfillSessionTranscriptMirrorOnWake, captureSessionTranscriptMirror, resetTranscriptBackfillMemoForTests, transcriptCapturesSettledForTests } = await import('../projects/lib/session-transcript-capture');
+const { captureJournallessSessionLogOnWake, captureJournallessSessionLog, resetTranscriptBackfillMemoForTests, transcriptCapturesSettledForTests } = await import('../projects/lib/session-transcript-capture');
 const { claimSessionLog } = await import('../projects/session-log-restore');
-const { setTranscriptRewindMarker } = await import('../projects/lib/session-transcript-mirror');
 const { ingestSessionLogJournal, sessionLogContentHash, SESSION_LOG_CAPTURE_REV_LIMIT } = await import('../projects/session-log-ingest');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 
@@ -56,20 +58,20 @@ const scope = (sessionId: string) => ({ sessionId, projectId: project.project_id
 
 type Msg = { info: Record<string, unknown>; parts: Array<Record<string, unknown>> };
 
-/** One capture of `payload` (the box's root messages, newest last) plus complete children. */
+const mirrorScope = (sessionId: string) => ({ sessionId, projectId: project.project_id, accountId: project.account_id });
+
+/** An old session's mirror of `payload` (root messages, newest last) plus children, converted into the log. */
 async function capture(sessionId: string, payload: Msg[], children: Array<{ id: string; payload: Msg[] }> = []) {
   await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, sessionId));
-  const result = await captureSessionTranscriptMirror(sessionId, {
-    readMessages: async () => ({
-      opencodeSessionId: ROOT,
-      payload,
-      headComplete: true,
-      complete: true,
-      children: children.map((c) => ({ opencodeSessionId: c.id, payload: c.payload, complete: true })),
-    }),
-  });
-  expect(result).not.toBeNull();
+  await seedV1Mirror(mirrorScope(sessionId), ROOT, payload, children);
+  expect((await writeSessionLogFromMirror(sessionId)).outcome).toBe('written');
 }
+
+/** One capture of a box without a journal that answers `payload`. */
+const boxCapture = (sessionId: string, payload: Msg[]) =>
+  captureJournallessSessionLog(sessionId, {
+    readMessages: async () => ({ opencodeSessionId: ROOT, payload, headComplete: true, complete: true, children: [] }),
+  });
 
 /** `fromV1` of the stored mirror rows: what the capture's v2 rows must equal. */
 async function fromMirror(sessionId: string, harness: 'opencode' | 'pi' = 'opencode'): Promise<SessionLog> {
@@ -145,14 +147,10 @@ function journalOf(log: SessionLog, rev = REV): SessionLogJournalRequest {
   };
 }
 
-const setFlag = (on: boolean) =>
-  db.update(projects).set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{experimental}', ${JSON.stringify({ session_log: on })}::jsonb)` }).where(eq(projects.projectId, project.project_id));
-
 beforeAll(async () => {
   project = await seedProject('session-log-capture');
   await insertIntoView(db, accountMembers, { userId: OWNER, accountId: project.account_id, accountRole: 'owner' });
   ownerToken = (await createAccountToken({ accountId: project.account_id, userId: OWNER, name: 'session-log-capture-owner' })).secretKey;
-  await setFlag(false);
 });
 
 afterAll(async () => {
@@ -161,7 +159,7 @@ afterAll(async () => {
   await removeSeeded([project]);
 });
 
-describe('a box without a journal: the capture writes fromV1 of the mirror', () => {
+describe('an old mirror converts into the log: fromV1 of the stored v1 rows', () => {
   test('v2 rows equal fromV1 of the stored v1 rows: seq, ids, block ids = part ids, residuals, ext; log_durable_at stays null', async () => {
     const session = await seedSession(project, OWNER);
     const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 6 });
@@ -188,30 +186,6 @@ describe('a box without a journal: the capture writes fromV1 of the mirror', () 
     expect((await logRow(session))?.harnessCurrent).toBe('opencode');
   });
 
-  test('an unchanged capture writes nothing; a new turn writes only its messages, at the next revs', async () => {
-    const session = await seedSession(project, OWNER);
-    await capture(session, range(0, 4));
-    const before = await logRows(session);
-    await capture(session, range(0, 4));
-    expect(await logRows(session)).toEqual(before);
-
-    await capture(session, range(0, 6));
-    const after = await logRows(session);
-    expect(after.slice(0, 4)).toEqual(before);
-    expect(after.slice(4).map((r) => [r.id, r.seq, r.rev])).toEqual([['msg_000004', 5, 5], ['msg_000005', 6, 6]]);
-    await expectLogEqualsFromV1(session);
-  });
-
-  test('a changed v1 row (an edit) becomes a new revision of the same message', async () => {
-    const session = await seedSession(project, OWNER);
-    await capture(session, range(0, 2));
-    await capture(session, [plain(0), plain(1, 'reply 1, edited')]);
-    const row = (await logRows(session)).find((r) => r.id === 'msg_000001')!;
-    expect(row.rev).toBe(3);
-    expect(JSON.stringify(row.record)).toContain('reply 1, edited');
-    await expectLogEqualsFromV1(session);
-  });
-
   test('the harness the daemon reported keys the log: pi', async () => {
     const session = await seedSession(project, OWNER);
     await db.insert(sessionRuntimeProjections).values({
@@ -221,32 +195,6 @@ describe('a box without a journal: the capture writes fromV1 of the mirror', () 
     await capture(session, range(0, 2));
     expect((await logRow(session))?.harnessCurrent).toBe('pi');
     await expectLogEqualsFromV1(session, 'pi');
-  });
-
-  test('a recorded rewind tombstones exactly the reverted ids; their seqs go to the messages after it', async () => {
-    const session = await seedSession(project, OWNER);
-    await capture(session, range(0, 8));
-    await setTranscriptRewindMarker(session, ROOT, 'msg_000004');
-    // The next prompt commits the rewind: the box lists 0..3 and the replacement turn 8, 9.
-    await capture(session, [...range(0, 4), plain(8), plain(9)]);
-
-    const rows = await logRows(session);
-    const dead = rows.filter((r) => r.deletedAt !== null);
-    expect(dead.map((r) => r.id).sort()).toEqual(['msg_000004', 'msg_000005', 'msg_000006', 'msg_000007']);
-    // A capture tombstone is a revision (rev 9..12: after the 8 first puts) at seq -rev.
-    for (const r of dead) {
-      expect(r.rev).toBeGreaterThan(8);
-      expect(r.seq).toBe(-r.rev);
-    }
-    // The replacement turn takes the seqs fromV1 gives it, 5 and 6.
-    expect((await liveRows(session)).map((r) => [r.id, r.seq])).toEqual([
-      ['msg_000000', 1], ['msg_000001', 2], ['msg_000002', 3], ['msg_000003', 4], ['msg_000008', 5], ['msg_000009', 6],
-    ]);
-    await expectLogEqualsFromV1(session);
-    // A shorter read afterwards (a box that lost its state) writes nothing.
-    const settled = await logRows(session);
-    await capture(session, range(0, 2));
-    expect(await logRows(session)).toEqual(settled);
   });
 
   test('a 300 kB v1 text is offloaded like a journal text; content_hash stays the hash of the record as converted', async () => {
@@ -277,39 +225,6 @@ describe('a box without a journal: the capture writes fromV1 of the mirror', () 
     expect(body.messages).toEqual((await logRows(session)).map((r) => ({ message_id: r.id, content_hash: r.hash, rev: r.rev, deleted: false })));
   });
 
-  test('with the flag on, the v1 window over a capture-written log equals the mirror', async () => {
-    const session = await seedSession(project, OWNER);
-    const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 50 });
-    await capture(session, root, [{ id: CHILD, payload: child }]);
-    const read = async (query: string) => {
-      const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/transcript?${query}`, { headers: { Authorization: `Bearer ${ownerToken}` } });
-      expect(res.status).toBe(200);
-      const { captured_at: capturedAt, ...body } = (await res.json()) as Record<string, unknown>;
-      return { body, capturedAt };
-    };
-    const pages = async () => {
-      const out: Array<{ body: Record<string, unknown>; capturedAt: unknown }> = [];
-      let cursor: string | null = null;
-      do {
-        const page = await read(`shape=sync&limit=40${cursor ? `&before=${cursor}` : ''}`);
-        out.push(page);
-        cursor = page.body.next_cursor as string | null;
-      } while (cursor);
-      return [...out, await read(`shape=sync&child=${CHILD}`)];
-    };
-    const off = await pages();
-    await setFlag(true);
-    try {
-      const on = await pages();
-      expect(off.length).toBeGreaterThan(2);
-      expect(on.map((p) => p.body)).toEqual(off.map((p) => p.body));
-      // The log answered (its captured_at is the log's last write), not a mirror fallback.
-      const [mirror] = await db.select({ at: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, session));
-      expect(on[0]!.capturedAt).not.toBe(new Date(mirror!.at).toISOString());
-    } finally {
-      await setFlag(false);
-    }
-  });
 });
 
 describe('a box with a journal: journal rows always win', () => {
@@ -324,7 +239,7 @@ describe('a box with a journal: journal rows always win', () => {
     expect(journaled.every((r) => r.rev >= REV && (r.record.producer as { harness: string }).harness === 'opencode')).toBe(true);
 
     // A new turn on a box with a journal: the capture writes nothing.
-    await capture(session, range(0, 6));
+    expect(await boxCapture(session, range(0, 6))).toBeNull();
     expect(await logRows(session)).toEqual(journaled);
     const [{ n }] = (await db.select({ n: sql<number>`count(*)::int` }).from(sessionLogMessages).where(and(eq(sessionLogMessages.sessionId, session), lt(sessionLogMessages.rev, LIMIT)))) as [{ n: number }];
     expect(n).toBe(0);
@@ -340,12 +255,14 @@ describe('a box with a journal: journal rows always win', () => {
     expect((await ingestSessionLogJournal(scope(session), journal)).status).toBe(200);
     const journaled = await logRows(session);
 
-    await capture(session, [...range(0, 4).map((m) => ({ ...m, parts: [{ ...m.parts[0]!, text: 'capture edit' }] }))]);
+    await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, session));
+    expect(await boxCapture(session, range(0, 4).map((m) => ({ ...m, parts: [{ ...m.parts[0]!, text: 'capture edit' }] })))).toBeNull();
+    expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
     expect(await logRows(session)).toEqual(journaled);
 
     // Without the journal_seen_at gate, the (generation, rev) rule still keeps every journal row.
     await db.update(sessionLogs).set({ journalSeenAt: null }).where(eq(sessionLogs.sessionId, session));
-    await capture(session, [...range(0, 4).map((m) => ({ ...m, parts: [{ ...m.parts[0]!, text: 'capture edit 2' }] }))]);
+    await boxCapture(session, range(0, 4).map((m) => ({ ...m, parts: [{ ...m.parts[0]!, text: 'capture edit 2' }] })));
     const after = await logRows(session);
     for (const j of journaled) expect(after.find((r) => r.id === j.id)).toEqual(j);
   });
@@ -399,63 +316,14 @@ describe('a journal batch with no message does not claim the log', () => {
   });
 });
 
-describe('the v1 window over a stale log', () => {
-  const read = async (session: string, query = 'shape=sync&limit=40') => {
-    const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/transcript?${query}`, { headers: { Authorization: `Bearer ${ownerToken}` } });
-    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
-  };
-  /** The mirror's content time: the newest row `captured_at`, which moves only when a row's info or parts change. */
-  const mirrorAt = (session: string, at: Date) => db.update(sessionTranscriptMessages).set({ capturedAt: at }).where(eq(sessionTranscriptMessages.sessionId, session));
-  const staleWarnings = (warn: { mock: { calls: unknown[][] } }, session: string) =>
-    warn.mock.calls.filter((c) => String(c[0]).includes('log is behind the mirror') && (c[1] as { sessionId?: string })?.sessionId === session);
-
-  test('a stop-style tail capture that changes no row, long after the last log write, leaves the log answering', async () => {
-    const session = await seedSession(project, OWNER);
-    await capture(session, range(0, 6));
-    // The last turn ended 5 minutes ago: the log's writes and the mirror's rows are that old.
-    const old = new Date(Date.now() - 300_000);
-    await db.update(sessionLogMessages).set({ updatedAt: old }).where(eq(sessionLogMessages.sessionId, session));
-    await db.update(sessionLogs).set({ updatedAt: old }).where(eq(sessionLogs.sessionId, session));
-    await mirrorAt(session, old);
-    // The tail capture at stop: same history, so no row changes, but the mirror's capture time moves to now.
-    await capture(session, range(0, 6));
-    const [mirror] = await db.select({ at: sessionTranscriptMirrors.capturedAt }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.sessionId, session));
-    expect(new Date(mirror!.at).getTime()).toBeGreaterThan(Date.now() - 60_000);
-    await setFlag(true);
-    const warn = spyOn(logger, 'warn');
-    try {
-      const res = await read(session);
-      expect(res.status).toBe(200);
-      expect(res.body.captured_at).not.toBe(new Date(mirror!.at).toISOString());
-      expect((res.body.messages as unknown[]).length).toBe(6);
-      expect(staleWarnings(warn, session)).toHaveLength(0);
-    } finally {
-      warn.mockRestore();
-      await setFlag(false);
-    }
-  });
-
-});
-
 describe('a cursor on a tombstoned message', () => {
-  test('the v1 window over the log answers like the mirror: the unknown-cursor error, not an empty page', async () => {
+  test('the v1 window over the log answers the unknown-cursor error, not an empty page', async () => {
     const session = await seedSession(project, OWNER);
     await capture(session, range(0, 8));
-    await setTranscriptRewindMarker(session, ROOT, 'msg_000004');
-    await capture(session, [...range(0, 4), plain(8), plain(9)]);
-    expect((await logRows(session)).filter((r) => r.deletedAt !== null).map((r) => r.id)).toContain('msg_000005');
-    const read = async () => {
-      const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/transcript?shape=sync&limit=40&before=msg_000005`, { headers: { Authorization: `Bearer ${ownerToken}` } });
-      return { status: res.status, body: await res.json() };
-    };
-    const mirror = await read();
-    expect(mirror.status).not.toBe(200);
-    await setFlag(true);
-    try {
-      expect(await read()).toEqual(mirror);
-    } finally {
-      await setFlag(false);
-    }
+    expect((await ingestSessionLogJournal(scope(session), { generation: 0, threads: [], puts: [], tombstones: [{ message_id: 'msg_000005', rev: REV }] })).status).toBe(200);
+    expect((await logRows(session)).filter((r) => r.deletedAt !== null).map((r) => r.id)).toEqual(['msg_000005']);
+    const res = await app.request(`/v1/projects/${project.project_id}/sessions/${session}/transcript?shape=sync&limit=40&before=msg_000005`, { headers: { Authorization: `Bearer ${ownerToken}` } });
+    expect(res.status).toBe(400);
   });
 });
 
@@ -473,10 +341,14 @@ describe('a converted log on a box that wakes with a journal (P3.3)', () => {
     });
     return [plain(0), call, plain(2), plain(3)];
   };
-  /** A converted, `partial` log: the mirror row of the call in the old mirror's stripped shape (a settled call without `input`), then the converter. */
+  /**
+   * A converted, `partial` log: the mirror row of the call in the old mirror's stripped shape (a settled call without
+   * `input`), without the `title` that would prove its command (`restoreStrippedToolParts`), then the converter.
+   */
   const convertStripped = async (session: string, extra: Msg[] = []) => {
-    await capture(session, [...history(), ...extra]);
-    await db.execute(sql`UPDATE kortix.session_transcript_messages SET parts = parts #- '{1,state,input}' WHERE session_id = ${session} AND message_id = 'msg_000001'`);
+    await db.update(projectSessions).set({ runtimeSessionId: ROOT }).where(eq(projectSessions.sessionId, session));
+    await seedV1Mirror(mirrorScope(session), ROOT, [...history(), ...extra]);
+    await db.execute(sql`UPDATE kortix.session_transcript_messages SET parts = parts #- '{1,state,input}' #- '{1,state,title}' WHERE session_id = ${session} AND message_id = 'msg_000001'`);
     expect((await writeSessionLogFromMirror(session)).outcome).toBe('written');
     const log = await logRow(session);
     expect({ grade: log?.restoreGrade, counts: log?.gradeCounts }).toEqual({ grade: 'partial', counts: { tool_input: 1, cut_point: 0, attachment: 0 } });
@@ -641,7 +513,7 @@ describe('a converted log on a box that wakes with a journal (P3.3)', () => {
     const session = await seedSession(project, OWNER);
     await convertStripped(session);
     resetTranscriptBackfillMemoForTests();
-    await backfillSessionTranscriptMirrorOnWake(session, {
+    await captureJournallessSessionLogOnWake(session, {
       readMessages: async () => ({ opencodeSessionId: ROOT, payload: history(), headComplete: true, complete: true, children: [] }),
     });
     expect(toolInput(await liveRows(session))).toEqual({ command: 'ls', description: 'List files' });
@@ -650,10 +522,7 @@ describe('a converted log on a box that wakes with a journal (P3.3)', () => {
   });
 });
 
-describe('the flag on (P8): the capture writes the log from the box and no v1 row', () => {
-  beforeAll(() => setFlag(true));
-  afterAll(() => setFlag(false));
-
+describe('a box without a journal: the capture writes the log from the box and no v1 row', () => {
   const mirrorCount = async (sessionId: string) => {
     const [r] = await db.execute<{ mirrors: number; messages: number }>(sql`
       SELECT (SELECT count(*) FROM kortix.session_transcript_mirrors WHERE session_id = ${sessionId})::int AS mirrors,
@@ -687,13 +556,11 @@ describe('the flag on (P8): the capture writes the log from the box and no v1 ro
 
   test('a box without a journal: the log is the conversion the mirror path writes, and no mirror row exists', async () => {
     const { root, child } = syntheticOpencodeSession({ root: ROOT, child: CHILD, turns: 12 });
-    // The same box through the v1 path (flag off) and through the log path (flag on).
-    await setFlag(false);
+    // The same history through an old mirror's conversion and through the box capture.
     const viaMirror = await pinned();
     await capture(viaMirror, root, [{ id: CHILD, payload: child }]);
-    await setFlag(true);
     const viaLog = await pinned();
-    expect(await captureSessionTranscriptMirror(viaLog, box(() => root, [{ id: CHILD, payload: child }]).deps)).toEqual({ captured: root.length, head_complete: true });
+    expect(await captureJournallessSessionLog(viaLog, box(() => root, [{ id: CHILD, payload: child }]).deps)).toEqual({ captured: root.length, head_complete: true });
 
     expect(await mirrorCount(viaLog)).toEqual({ mirrors: 0, messages: 0 });
     // `content_hash` is of the record as converted, key order included: a box read keeps the daemon's
@@ -709,18 +576,18 @@ describe('the flag on (P8): the capture writes the log from the box and no v1 ro
 
   test('a new turn puts only its messages; a tail read merges into the stored history and tombstones nothing', async () => {
     const session = await pinned();
-    await captureSessionTranscriptMirror(session, box(() => range(0, 6)).deps);
+    await captureJournallessSessionLog(session, box(() => range(0, 6)).deps);
     const first = await liveRows(session);
     expect(first.map((r) => [r.id, r.seq])).toEqual(range(0, 6).map((m, i) => [m.info.id as string, i + 1]));
 
-    await captureSessionTranscriptMirror(session, box(() => range(0, 10)).deps);
+    await captureJournallessSessionLog(session, box(() => range(0, 10)).deps);
     const second = await liveRows(session);
     // The first six rows are untouched; the four new ones take the next capture revs.
     expect(second.slice(0, 6)).toEqual(first);
     expect(second.slice(6).map((r) => r.rev)).toEqual([7, 8, 9, 10]);
 
     // A stop's tail: one page, the newest messages only. Older stored messages stay, seqs continue.
-    expect(await captureSessionTranscriptMirror(session, box(() => range(8, 12), [], false).deps, { scope: 'tail' })).not.toBeNull();
+    expect(await captureJournallessSessionLog(session, box(() => range(8, 12), [], false).deps, { scope: 'tail' })).not.toBeNull();
     const third = await logRows(session);
     expect(third.every((r) => r.deletedAt === null)).toBe(true);
     expect(third.map((r) => [r.id, r.seq])).toEqual(range(0, 12).map((m, i) => [m.info.id as string, i + 1]));
@@ -733,10 +600,10 @@ describe('the flag on (P8): the capture writes the log from the box and no v1 ro
     expect((await ingestSessionLogJournal(scope(session), journalOf(log))).status).toBe(200);
     const before = await logRows(session);
     const fake = box(() => range(0, 6));
-    expect(await captureSessionTranscriptMirror(session, fake.deps)).toBeNull();
+    expect(await captureJournallessSessionLog(session, fake.deps)).toBeNull();
     resetTranscriptBackfillMemoForTests();
-    await backfillSessionTranscriptMirrorOnWake(session, fake.deps);
-    await backfillSessionTranscriptMirrorOnWake(session, fake.deps);
+    await captureJournallessSessionLogOnWake(session, fake.deps);
+    await captureJournallessSessionLogOnWake(session, fake.deps);
     expect(fake.reads.n).toBe(0);
     expect(await logRows(session)).toEqual(before);
   });
@@ -745,9 +612,9 @@ describe('the flag on (P8): the capture writes the log from the box and no v1 ro
     const session = await pinned();
     const fake = box(() => range(0, 4));
     resetTranscriptBackfillMemoForTests();
-    await backfillSessionTranscriptMirrorOnWake(session, fake.deps);
+    await captureJournallessSessionLogOnWake(session, fake.deps);
     await transcriptCapturesSettledForTests(session);
-    await backfillSessionTranscriptMirrorOnWake(session, fake.deps);
+    await captureJournallessSessionLogOnWake(session, fake.deps);
     expect(fake.reads.n).toBe(1);
     expect((await liveRows(session)).map((r) => r.id)).toEqual(range(0, 4).map((m) => m.info.id as string));
     expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
@@ -758,54 +625,46 @@ describe('the flag on (P8): the capture writes the log from the box and no v1 ro
     const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
     config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
     try {
-      await captureSessionTranscriptMirror(session, box(() => range(0, 12)).deps);
+      await captureJournallessSessionLog(session, box(() => range(0, 12)).deps);
       expect(await logRow(session)).toBeUndefined();
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
-      await captureSessionTranscriptMirror(session, box(() => range(0, 2)).deps);
+      await captureJournallessSessionLog(session, box(() => range(0, 2)).deps);
       config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
-      await captureSessionTranscriptMirror(session, box(() => range(0, 12)).deps);
+      await captureJournallessSessionLog(session, box(() => range(0, 12)).deps);
       expect((await liveRows(session)).length).toBe(12);
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
     }
   });
 
-  test('a mirror from before the flag converts into an empty log only: it never overwrites the log the box wrote', async () => {
-    await setFlag(false);
+  test('an old mirror converts into an empty log only: it never overwrites the log the box wrote', async () => {
     const session = await pinned();
-    await capture(session, range(0, 4));
-    await setFlag(true);
-    await captureSessionTranscriptMirror(session, box(() => range(0, 8)).deps);
+    await seedV1Mirror(mirrorScope(session), ROOT, range(0, 4));
+    await captureJournallessSessionLog(session, box(() => range(0, 8)).deps);
     expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
     const rows = await logRows(session);
     expect(rows.map((r) => [r.id, r.deletedAt])).toEqual(range(0, 8).map((m) => [m.info.id as string, null]));
-    // The mirror stays as the flag found it.
+    // The mirror stays as it was.
     expect(await mirrorCount(session)).toEqual({ mirrors: 1, messages: 4 });
 
-    // A mirror-only session (no log yet) still converts: the backfill, a restore, a lost-session recovery.
-    await setFlag(false);
+    // A mirror-only session (no log yet) still converts: the backfill, a read, a restore, a lost-session recovery.
     const old = await pinned();
-    await captureSessionTranscriptMirror(old, { readMessages: async () => ({ opencodeSessionId: ROOT, payload: range(0, 2), headComplete: true, complete: true }) });
-    await db.delete(sessionLogMessages).where(eq(sessionLogMessages.sessionId, old));
-    await db.delete(sessionLogThreads).where(eq(sessionLogThreads.sessionId, old));
-    await db.delete(sessionLogs).where(eq(sessionLogs.sessionId, old));
-    await setFlag(true);
+    await seedV1Mirror(mirrorScope(old), ROOT, range(0, 2));
     expect((await writeSessionLogFromMirror(old)).outcome).toBe('written');
   });
 
-  test('the v1 tables renamed away: turn end, stop, wake, a rewind and the restore conversion of a flag-on session touch neither', async () => {
+  test('the v1 tables renamed away: turn end, stop, wake and the restore conversion of a session with a log touch neither', async () => {
     const session = await pinned();
     const warn = spyOn(logger, 'warn');
     const consoleWarn = spyOn(console, 'warn');
     await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors RENAME TO session_transcript_mirrors_hidden`);
     await db.execute(sql`ALTER TABLE kortix.session_transcript_messages RENAME TO session_transcript_messages_hidden`);
     try {
-      expect(await captureSessionTranscriptMirror(session, box(() => range(0, 4)).deps)).not.toBeNull();
-      expect(await captureSessionTranscriptMirror(session, box(() => range(2, 6), [], false).deps, { scope: 'tail' })).not.toBeNull();
+      expect(await captureJournallessSessionLog(session, box(() => range(0, 4)).deps)).not.toBeNull();
+      expect(await captureJournallessSessionLog(session, box(() => range(2, 6), [], false).deps, { scope: 'tail' })).not.toBeNull();
       resetTranscriptBackfillMemoForTests();
-      await backfillSessionTranscriptMirrorOnWake(session, box(() => range(0, 8)).deps);
+      await captureJournallessSessionLogOnWake(session, box(() => range(0, 8)).deps);
       await transcriptCapturesSettledForTests(session);
-      await setTranscriptRewindMarker(session, ROOT, 'msg_000002');
       expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
       expect((await liveRows(session)).map((r) => r.id)).toEqual(range(0, 8).map((m) => m.info.id as string));
       const lines = [...warn.mock.calls, ...consoleWarn.mock.calls].map((c) => JSON.stringify(c));
@@ -823,7 +682,7 @@ describe('the flag on (P8): the capture writes the log from the box and no v1 ro
     const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
     config.SESSION_LOG_RESTORE_MAX_BYTES = 200;
     try {
-      expect(await captureSessionTranscriptMirror(session, box(() => range(0, 6)).deps, { scope: 'tail' })).toBeNull();
+      expect(await captureJournallessSessionLog(session, box(() => range(0, 6)).deps, { scope: 'tail' })).toBeNull();
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
     }
@@ -831,14 +690,17 @@ describe('the flag on (P8): the capture writes the log from the box and no v1 ro
     expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
   });
 
-  test('with session-log ingest off, the flag-on capture keeps the history in the mirror as before', async () => {
+  test('with session-log ingest off, the capture reads no box and writes nothing anywhere', async () => {
     const session = await pinned();
+    const fake = box(() => range(0, 6));
     config.SESSION_LOG_INGEST_ENABLED = false;
     try {
-      expect(await captureSessionTranscriptMirror(session, box(() => range(0, 6)).deps)).not.toBeNull();
+      expect(await captureJournallessSessionLog(session, fake.deps)).toBeNull();
     } finally {
       config.SESSION_LOG_INGEST_ENABLED = true;
     }
-    expect(await mirrorCount(session)).toEqual({ mirrors: 1, messages: 6 });
+    expect(fake.reads.n).toBe(0);
+    expect(await logRow(session)).toBeUndefined();
+    expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
   });
 });

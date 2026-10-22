@@ -13,10 +13,11 @@
  * what.
  */
 
-import { type SQL, and, desc, eq, lt, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import type { ChangeRequest } from '@kortix/api-contract';
 import { changeRequests } from '@kortix/db';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 
 type ChangeRequestStatus = 'open' | 'merged' | 'closed';
 
@@ -27,7 +28,16 @@ export const CHANGE_REQUEST_LIST_MAX_LIMIT = 500;
 
 type ChangeRequestRow = typeof changeRequests.$inferSelect;
 
-export function serializeChangeRequest(row: ChangeRequestRow): ChangeRequest {
+/** A change request by its two names: the id and the number people read. */
+export interface ChangeRequestRef {
+  cr_id: string;
+  number: number;
+}
+
+export function serializeChangeRequest(
+  row: ChangeRequestRow,
+  supersededBy: ChangeRequestRef | null = null,
+): ChangeRequest {
   return {
     cr_id: row.crId,
     account_id: row.accountId,
@@ -47,6 +57,7 @@ export function serializeChangeRequest(row: ChangeRequestRow): ChangeRequest {
     merge_commit_sha: row.mergeCommitSha,
     closed_at: row.closedAt?.toISOString() ?? null,
     closed_by: row.closedBy,
+    superseded_by: supersededBy,
     metadata: row.metadata ?? {},
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
@@ -109,10 +120,46 @@ export async function listChangeRequestsForProject(
     .orderBy(desc(changeRequests.number))
     .limit(limit + 1);
   const page = rows.slice(0, limit);
+  const replaced = await supersededByFor(projectId, page, options.visibleTo);
   return {
-    change_requests: page.map(serializeChangeRequest),
+    change_requests: page.map((row) => serializeChangeRequest(row, replaced.get(row.crId) ?? null)),
     next_cursor: rows.length > limit ? String(page[page.length - 1].number) : null,
   };
+}
+
+/**
+ * The request that replaced each closed one: the next request opened for the
+ * same branch. An agent revises its work by closing #2 and opening #3 on the
+ * same session branch, and #2 read only "Closed" (KRTX-3031). Derived, not
+ * stored, so requests replaced before this shipped name theirs too. A merged
+ * request is never superseded, and a replacement outside `visibleTo` (the
+ * caller's read filter) is never named.
+ */
+export async function supersededByFor(
+  projectId: string,
+  rows: readonly ChangeRequestRow[],
+  visibleTo?: SQL,
+): Promise<Map<string, ChangeRequestRef>> {
+  const closed = rows.filter((row) => row.status === 'closed');
+  if (closed.length === 0) return new Map();
+  const later = await db
+    .select({ crId: changeRequests.crId, number: changeRequests.number, headRef: changeRequests.headRef })
+    .from(changeRequests)
+    .where(
+      and(
+        eq(changeRequests.projectId, projectId),
+        inArray(changeRequests.headRef, [...new Set(closed.map((row) => row.headRef))]),
+        gt(changeRequests.number, Math.min(...closed.map((row) => row.number))),
+        visibleTo,
+      ),
+    )
+    .orderBy(asc(changeRequests.number));
+  const replaced = new Map<string, ChangeRequestRef>();
+  for (const row of closed) {
+    const next = later.find((cr) => cr.headRef === row.headRef && cr.number > row.number);
+    if (next) replaced.set(row.crId, { cr_id: next.crId, number: next.number });
+  }
+  return replaced;
 }
 
 /**
@@ -134,15 +181,13 @@ export async function getNextCrNumber(projectId: string): Promise<number> {
  *  malformed id a 404 rather than a 500 (prod, 2026-10-18: a caller passed
  *  the CR number to the merge route and the uuid cast 500-ed).
  */
-const CR_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function getCrById(crId: string, projectId: string) {
   const ref = crId.replace(/^#/, '');
   // `number` is int4: a digit string above 2^31-1 would bind as 22003
   // (integer out of range) — a 500, not the 404 this lookup promises.
   const num = Number(ref);
   const byNumber = /^\d+$/.test(ref) && num <= 2147483647;
-  if (!CR_UUID_RE.test(ref) && !byNumber) return null;
+  if (!isUuid(ref) && !byNumber) return null;
   const [row] = await db
     .select()
     .from(changeRequests)

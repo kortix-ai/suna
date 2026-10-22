@@ -7,7 +7,6 @@ export {
   cleanResultSnippet,
   formatRawOutput,
   looksLikeJsonPayload,
-  parseEmbeddedFailure,
   recoverLinkResults,
 } from '@kortix/sdk';
-export type { EmbeddedFailure, RecoveredResult } from '@kortix/sdk';
+export type { RecoveredResult } from '@kortix/sdk';

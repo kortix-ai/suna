@@ -59,7 +59,7 @@ export const SECTION = {
 
 export type Layer = {
   /** Stable id, also the DOM test hook and the key `LayerShowcase` switches on. */
-  id: 'source' | 'context' | 'models' | 'harness' | 'computer' | 'control-plane' | 'kortix';
+  id: 'source' | 'context' | 'models' | 'harness' | 'computer' | 'control-plane';
   /** Two-digit ordinal shown in the left gutter. */
   ordinal: string;
   /** The layer's name. Same noun as the card's own product panel header. */
@@ -170,6 +170,6 @@ export function getLocalizedHowItWorksContent(tI18nComplete: UiTranslator) {
     MARKETING_SECONDARY_TRANSLATION_KEYS,
   );
 }
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { MARKETING_SECONDARY_TRANSLATION_KEYS } from '@/i18n/marketing-secondary-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';

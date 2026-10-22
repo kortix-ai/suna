@@ -96,7 +96,6 @@ mock.module('../../llm-gateway/resolution/default-model', () => ({
 }));
 const realEnvSync = await import('../lib/sandbox-env-sync');
 mock.module('../lib/sandbox-env-sync', () => ({ ...realEnvSync, pushSessionModelToSandbox: async () => ({ ok: true }) }));
-mock.module('../../llm-gateway/enablement', () => ({ projectLlmGatewayEnabled: () => true }));
 mock.module('../../llm-gateway/models/provider-registry', () => ({
   resolveCatalogUpstream: (providerId: string) => (providerId === 'anthropic' ? { envVar: 'ANTHROPIC_API_KEY' } : null),
 }));

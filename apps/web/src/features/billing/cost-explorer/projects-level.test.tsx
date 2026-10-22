@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { CostSummary, ProjectCostPage, ProjectCostSort } from '@kortix/sdk';
 
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 
 import { CostExportButton } from './cost-export-button';
 import { CostSortHeader } from './cost-sort-header';

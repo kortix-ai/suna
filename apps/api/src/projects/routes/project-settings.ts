@@ -6,8 +6,8 @@ import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { accountTokens, projects } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import {
   AnyObject,
@@ -128,7 +128,7 @@ const patchFeatureFlagHandler = async (c: any) => {
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // An internal-only flag (`session_log`, `session_log_restore`) changes what
+  // An internal-only flag (`session_log_restore`) changes what
   // the platform records, so Kortix decides it: only a platform operator
   // writes it, never a project admin and never an agent session. An operator
   // acting in a customer project through impersonation passes (`userId`
@@ -279,12 +279,22 @@ export function registerProjectSettingsRoutes(): void {
       return c.json({ error: 'Failed to purge project connectors' }, 500);
     }
 
-    const [row] = await db
-      .update(projects)
-      .set({ status: 'archived', updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
-
+    // The archive UPDATE locks the project against concurrent token mints.
+    // Roll back both writes on failure so cleanup remains retryable.
+    const row = await db.transaction(async (tx) => {
+      const [archived] = await tx.update(projects)
+        .set({ status: 'archived', updatedAt: new Date() })
+        .where(eq(projects.projectId, projectId)).returning();
+      if (!archived) return undefined;
+      await tx.update(accountTokens)
+        .set({ status: 'revoked', revokedAt: new Date() })
+        .where(and(
+          eq(accountTokens.projectId, projectId),
+          eq(accountTokens.accountId, loaded.row.accountId),
+          eq(accountTokens.status, 'active'),
+        ));
+      return archived;
+    });
     if (!row) return c.json({ error: 'Not found' }, 404);
     // An archived project fires nothing: release its app-event provider instances.
     await releaseProjectEventSubscriptions(projectId);

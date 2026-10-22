@@ -99,6 +99,10 @@ mock.module('../secrets/account-resource', () => ({
 
 const { createInternalGatewayRoutes } = await import('./internal-routes');
 const { gatewayModelCatalog } = await import('./models/catalog-models');
+// The lineup Platinum Inference would list.
+(await import('./models/managed-models')).__setManagedLineupForTest(
+  (await import('../__tests__/fixtures/managed-lineup')).TEST_MANAGED_LINEUP,
+);
 
 const TOKEN = 'test-internal-token-aaaaaaaaaaaaaaaaaaaaaaaa';
 
@@ -462,6 +466,7 @@ describe('POST /admit — authorize, route, resolve and billing in one call', ()
     expect((json.route as { primaryModel: string }).primaryModel).toBe('codex/gpt-5.6-sol');
     expect(json.candidates).toEqual([{ provider: 'kortix', billingMode: 'credits' }]);
     expect(json.billing).toEqual({ active: true, holdUsd: 0.01 });
+    expect(Object.keys(json.timing as object).sort()).toEqual(['authorize', 'billing', 'resolve', 'route', 'total']);
   });
 
   test('takes no wallet hold for an own-key model, and returns a resolution error in the body', async () => {
@@ -479,7 +484,10 @@ describe('POST /admit — authorize, route, resolve and billing in one call', ()
 
   test('a denial answers only the admission, and an unexpected resolve failure leaves resolution to the gateway', async () => {
     authorizeAnswer = { ok: false, status: 402, errorCode: 'budget_exceeded', principal };
-    expect(await (await admit({ token: 't', input })).json()).toEqual({ admission: authorizeAnswer });
+    const { timing, ...denied } = await (await admit({ token: 't', input })).json() as Record<string, unknown>;
+    expect(denied).toEqual({ admission: authorizeAnswer });
+    // Per-step milliseconds for the gateway's internal latency split.
+    expect(timing).toMatchObject({ authorize: expect.any(Number), total: expect.any(Number) });
     authorizeAnswer = { ok: true, principal };
     resolveCandidatesMock.mockRejectedValueOnce(new Error('db down'));
     const res = await admit({ token: 't', input });
@@ -490,4 +498,25 @@ describe('POST /admit — authorize, route, resolve and billing in one call', ()
     authorizeAnswer = { ok: true };
     billingAnswer = async () => undefined;
   });
+});
+
+test('full discovery labels managed plan access separately from external credentials', async () => {
+  const res = await app().request('/models', authedRequest({
+    principal: { userId: 'u', accountId: 'a', projectId: 'p', freeModelsOnly: true },
+  }));
+  expect(res.status).toBe(200);
+  const { models } = await res.json();
+  expect(models['glm-5.3-flash']).toMatchObject({ availability: 'plan' });
+  expect(models['anthropic/claude-opus-4-8']).toMatchObject({ availability: 'provider' });
+  expect(models['codex/gpt-5.6-sol']).toMatchObject({ availability: 'login' });
+});
+
+test('paid full discovery marks managed access available without claiming external credentials', async () => {
+  const res = await app().request('/models', authedRequest({
+    principal: { userId: 'u', accountId: 'a', projectId: 'p', freeModelsOnly: false },
+  }));
+  const { models } = await res.json();
+  expect(res.status).toBe(200);
+  expect(models['glm-5.3-flash']).toMatchObject({ availability: 'available' });
+  expect(models['anthropic/claude-opus-4-8']).toMatchObject({ availability: 'provider' });
 });

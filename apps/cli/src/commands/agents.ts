@@ -469,6 +469,14 @@ function savedPromptFile(resp: { schema_version?: number; block: AgentConfigBloc
   return ' + the agent .md';
 }
 
+/** The keys `PUT /projects/:id/agents/:name/config` accepts (AgentBlockSchema
+ *  in apps/api/src/projects/routes/agent-config.ts, a strict schema). */
+const AGENT_CONFIG_PUT_KEYS = new Set([
+  'enabled', 'tools', 'sandbox', 'connectors', 'connectors_required', 'connectors_personal',
+  'secrets', 'skills', 'apps', 'kortix_permissions', 'subagents', 'commands', 'extensions',
+  'codemode', 'kortix_cli', 'repository_access', 'workspace', 'file', 'behavior', 'opencode',
+]);
+
 /** `a.b.c=value` → set `a.b.c`. The value is JSON when it parses, else a
  *  string, so `enabled=false` and `sandbox=node22` both do the obvious thing. */
 function applySet(block: Record<string, unknown>, assignment: string): string | null {
@@ -533,8 +541,12 @@ async function agentsConfig(
     // and deletes every known `.md` frontmatter key the body omits
     // (mergeFrontmatter, agent-config.ts:128). So --set has to read the current
     // block first and send it back whole, or it silently wipes everything else.
+    // The GET also serves keys the strict PUT schema refuses (`network_egress`),
+    // so only the keys it accepts go back; a key the user --sets still goes out.
     const current = await ctx.client.get<AgentConfigResponse>(path);
-    block = (current.block ?? {}) as AgentConfigBlock;
+    block = Object.fromEntries(
+      Object.entries(current.block ?? {}).filter(([key]) => AGENT_CONFIG_PUT_KEYS.has(key)),
+    ) as AgentConfigBlock;
   }
 
   for (const assignment of opts.sets) {

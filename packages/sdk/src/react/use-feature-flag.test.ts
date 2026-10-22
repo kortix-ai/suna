@@ -160,6 +160,18 @@ describe('useFeatureFlag', () => {
     expect(useFeatureFlag(null, 'apps').enabled).toBe(true);
   });
 
+  test('llm_gateway graduated: the gateway is on for every project', () => {
+    // The gateway is the only model path (2026-10-20). A stored
+    // `llm_gateway: false` from the native-mode era is inert.
+    withDetail({ llm_gateway: false });
+    expect(useFeatureFlag('p', 'llm_gateway').enabled).toBe(true);
+
+    withDetail(undefined);
+    expect(useFeatureFlag('p', 'llm_gateway').enabled).toBe(true);
+
+    expect(useFeatureFlag(null, 'llm_gateway').enabled).toBe(true);
+  });
+
   test('config_releases graduated: every session runs the base branch config release', () => {
     // A `false` a project stored while config releases were a flag is inert.
     withDetail({ config_releases: false });

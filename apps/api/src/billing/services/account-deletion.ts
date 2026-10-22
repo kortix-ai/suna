@@ -2,6 +2,7 @@ import { and, eq, inArray, isNotNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 import {
   accountDeletionRequests,
+  accountTokens,
   accounts,
   appDeploymentEvents,
   appDeployments,
@@ -11,6 +12,12 @@ import {
   connectorCalls,
   connectorConnections,
   gatewayRequestLogs,
+  gatewayApiKeys,
+  oauthAccessTokens,
+  oauthAuthorizationCodes,
+  oauthRefreshTokens,
+  scimTokens,
+  serviceAccounts,
   impersonationGrants,
   kortixApiKeys,
   legacySandboxMigrations,
@@ -37,10 +44,9 @@ import {
 } from '@kortix/db';
 import { getSupabase } from '../../shared/supabase';
 import { deleteAccountSiteObjects } from '../../apps/static-site';
-import { forgetUserJwtLiveness } from '../../shared/jwt-liveness';
 import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
-import { db } from '../../shared/db';
+import { db, withDbTransaction } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { ownedAccountRows } from '../../iam/membership-read';
 import { BillingError } from '../../errors';
@@ -84,7 +90,35 @@ export async function requestAccountDeletion(
   const scheduledFor = new Date(Date.now() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000).toISOString();
   let request: Awaited<ReturnType<typeof createDeletionRequest>>;
   try {
-    request = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+    request = await withDbTransaction(async () => {
+      const pending = await createDeletionRequest(accountId, userId, scheduledFor, reason);
+      await db.update(accountTokens)
+        .set({ status: 'revoked', revokedAt: new Date() })
+        .where(and(eq(accountTokens.accountId, accountId), eq(accountTokens.status, 'active')));
+      await db.update(kortixApiKeys)
+        .set({ status: 'revoked' })
+        .where(and(eq(kortixApiKeys.accountId, accountId), eq(kortixApiKeys.status, 'active')));
+      await db.update(gatewayApiKeys)
+        .set({ status: 'revoked', revokedAt: new Date() })
+        .where(and(eq(gatewayApiKeys.accountId, accountId), eq(gatewayApiKeys.status, 'active')));
+      await db.delete(oauthAuthorizationCodes).where(eq(oauthAuthorizationCodes.accountId, accountId));
+      await db.update(oauthAccessTokens).set({ revokedAt: new Date() })
+        .where(eq(oauthAccessTokens.accountId, accountId));
+      await db.update(oauthRefreshTokens).set({ revokedAt: new Date() })
+        .where(eq(oauthRefreshTokens.accountId, accountId));
+      await db.update(scimTokens).set({ revokedAt: new Date() })
+        .where(eq(scimTokens.accountId, accountId));
+      await db.update(serviceAccounts)
+        .set({ status: 'disabled', disabledAt: new Date(), disabledBy: userId })
+        .where(and(eq(serviceAccounts.accountId, accountId), eq(serviceAccounts.status, 'active')));
+      // A personal-account deletion ends existing sign-ins, not the identity:
+      // a fresh sign-in can still cancel during the grace period. Deleting a
+      // team account must not end the owner's access to their other accounts.
+      if (accountId === userId) {
+        await db.execute(sql`DELETE FROM auth.sessions WHERE user_id = ${userId}::uuid`);
+      }
+      return pending;
+    });
   } catch (err) {
     // A concurrent request inserted its pending row after our read.
     // uniq_account_deletion_requests_pending refuses the second one; answer it
@@ -164,6 +198,7 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
   await performDeletion(accountId, requester);
   await deleteAccountData(accountId, requestId);
   if (requester) {
+    await deleteUserAvatars(requester);
     await clearLegacyAuthUserReferences(requester);
     // A device token is the person's data; it has no foreign key to cascade.
     await db.delete(pushDeviceTokens).where(eq(pushDeviceTokens.userId, requester));
@@ -176,7 +211,22 @@ async function runAccountDeletion(accountId: string, userId?: string, requestId?
     // A user the auth schema no longer has (an admin-side delete, or a retry
     // after step 3 already ran) is the state this step produces.
     if (error && !isAuthUserNotFound(error)) throw error;
-    forgetUserJwtLiveness(requester);
+  }
+}
+
+/** Storage objects must go before GoTrue removes their owner. */
+async function deleteUserAvatars(userId: string): Promise<void> {
+  const bucket = getSupabase().storage.from('avatars');
+  let previous = '';
+  for (;;) {
+    const { data, error } = await bucket.list(userId, { limit: 100 });
+    if (error) throw error;
+    if (!data?.length) return;
+    const names = data.map(file => file.name).join('\n');
+    if (names === previous) throw new Error('Avatar storage cleanup did not complete');
+    previous = names;
+    const removed = await bucket.remove(data.map(file => `${userId}/${file.name}`));
+    if (removed.error) throw removed.error;
   }
 }
 

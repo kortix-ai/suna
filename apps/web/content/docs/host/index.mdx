@@ -205,9 +205,9 @@ Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts eve
 | Path | With `ENABLE_EMAIL_AUTOCONFIRM=true` |
 |---|---|
 | Sign-in with a pending invite | Sign-in does not accept the invite. |
-| SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. A password login does not see that invite, and accepting or declining it returns `403` `email_unconfirmed`. The person joins by signing in through the account's SAML provider. |
+| SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. A password login does not see that invite, and accepting or declining it returns `403` `email_unconfirmed`. The invite page then shows **Continue with single sign-on**: it signs in through the account's SAML provider, also for an address outside the provider's domain, and the person joins. An admin can instead click **Resend** on the pending invite: it is then an invite a person sent. |
 | **Members** → **Invite** for that address | Creates a pending invite instead of adding the login. |
-| An invite a person sent (**Members** → **Invite**, a project invite) | The login that holds the address sees it in the project chooser and the **Switch Project** menu, and can accept it. That login is whoever signed up first with the address, so it may not be the person you invited. |
+| An invite a person sent or resent (**Members** → **Invite** or **Resend**, a project invite) | The login that holds the address sees it in the project chooser and the **Switch Project** menu, and can accept it. That login is whoever signed up first with the address, so it may not be the person you invited. |
 | `KORTIX_PLATFORM_ADMIN_EMAILS` | Matches a password login with the address. Whoever signs up first with an allowlisted address is platform admin. |
 
 A login that is already a member of the account, and a login through the account's own SAML provider, still match inside that account. `KORTIX_PLATFORM_ADMIN_EMAILS` never matches a SAML login. Setting `EMAIL_URL` turns `ENABLE_EMAIL_AUTOCONFIRM` off and restores the matching. A login created while it was on is not confirmed again: after you add email, its address matches invites and SCIM like a confirmed one. Set `EMAIL_URL` before you invite people. Without it, invite a person only after that person has signed up: an address has one password login, so nobody else can take it then. A cloud instance never sets the value.
@@ -312,6 +312,16 @@ kortix self-host version                         # running, latest and channel
 
 A manual `update` uses the same rollout as the daily run. When another update holds the lock, it exits `75` and skips the rollout. A pin holds through every daily run. `init` or `update` without `--tag` moves the instance back to its channel. To change auto-update, the time or the timezone, run `kortix self-host configure`, then `kortix self-host start`.
 
+### Saved conversations after an update
+
+Since the session log release, every session's saved conversation is its session log. An instance that ran an older version also holds conversations in the older v1 store. After the update, the API converts them by itself, so you do nothing:
+
+- A background pass (`SESSION_LOG_BACKFILL`, default `write`) converts every old session, oldest first, on the leader API container. It logs `[session-log] backfill tick` with counts, and `the v1 mirror holds no session without a log` when it is done.
+- Opening an old session before the pass reaches it converts that session first.
+- A conversation over the conversion size cap (about 24 MB, `SESSION_LOG_RESTORE_MAX_BYTES`) is converted only by the background pass. Until then, its log read answers `503` `session_log_converting` with `Retry-After: 60`.
+
+`SESSION_LOG_BACKFILL=off` stops the pass. Keep it on until that line appears: the v1 store is the only copy of a conversation the pass has not converted.
+
 ## Operate and tune
 
 ### Settings and secrets
@@ -338,7 +348,7 @@ Postgres has a fixed limit of `1280m`. `KORTIX_GATEWAY_MAX_REQUEST_BYTES` raises
 
 | Variable | Default | Effect |
 |---|---|---|
-| `KORTIX_SANDBOX_AUTOSTOP_MINUTES` | `15` | A sandbox stops this many idle minutes after its last turn ends. |
+| `KORTIX_SANDBOX_AUTOSTOP_MINUTES` | `15` | A sandbox stops this many idle minutes after its last turn ends. The same window bounds how long an open session page holds the sandbox (KRTX-2451): the page never keeps it past this. |
 | `KORTIX_SANDBOX_TURN_GRANT_MINUTES` | `240` | How long a running turn holds its sandbox. Model calls and an observed running turn renew it. |
 | `KORTIX_SANDBOX_TURN_WAITING_MINUTES` | `120` | How long a turn that waits on a person holds its sandbox. At most half the turn grant. Unattended runs get 30. |
 | `KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES` | `30` | How long preview traffic keeps a sandbox running. |

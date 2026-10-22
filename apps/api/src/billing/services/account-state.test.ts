@@ -95,6 +95,7 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
     balance: '10.00',
     dailyCreditsBalance: '1.00',
     expiringCredits: '5.00',
+    nextCreditGrant: '2026-11-24T12:00:00Z',
     nonExpiringCredits: '4.00',
     autoTopupEnabled: false,
     autoTopupThreshold: null,
@@ -140,6 +141,13 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(maxInFlight).toBeGreaterThan(1);
   });
 
+  test('funded Free reports wallet admission separately from managed model access', async () => {
+    account = creditAccount({ tier: 'free', balance: '5.00' });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.credits.can_run).toBe(true);
+    expect(state.model_access).toEqual({ managed: false, requires_provider_key: true });
+  });
+
   test('response shape — credits, subscription, tier, auto_topup present; no legacy machine fields', async () => {
     getCreditAccountCalls = 0;
     account = creditAccount();
@@ -150,6 +158,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       total: 10,
       daily: 1,
       monthly: 5,
+      expires_at: '2026-11-24T12:00:00.000Z',
       extra: 4,
       can_run: true,
       lifetime_granted: 0,

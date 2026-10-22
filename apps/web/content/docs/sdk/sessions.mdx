@@ -66,7 +66,7 @@ Every field is optional. With no input, the session runs the project's default a
 | --- | --- |
 | `initial_prompt` | The first prompt. The server delivers it when the runtime is up, so you need no `send()`. |
 | `agent_name` | The agent to run. Default: the project's default agent. |
-| `model` | The model id (see [Models](/docs/project/models)). With the LLM gateway off, use the native `provider/model` form; a bare id returns `400` `INVALID_SESSION_MODEL`. A model the account cannot use returns `400`. |
+| `model` | The model id (see [Models](/docs/project/models)). A model the account cannot use returns `400`. |
 | `name` | The session title. Without it, the server makes a title from the first prompt. |
 | `labels` | Up to 20 labels, each 1 to 64 characters after trimming. Duplicates drop. Matching is exact and case-sensitive. |
 | `metadata` | A JSON object of your own keys, at most 16,384 characters of JSON per write. Server-managed keys, such as `source`, `trigger_kind` and `trigger_slug`, return `400`. Prefix your keys, for example `app_`. |
@@ -273,9 +273,9 @@ A React app uses `useSession` instead of `stream()`. See [React](/docs/sdk/react
 | Method | Returns | Wakes the sandbox |
 | --- | --- | --- |
 | `s.messages({ limit?, before?, conversationId? })` | A page of messages, oldest first, as `{ info, parts }` (`kortix.transcript.v1`), and `hasMore`. `conversationId` reads a subagent's conversation. | Yes |
-| `s.transcriptSync({ limit?, before?, child? })` | The copy the server saves after every turn: every part, with tool inputs and outputs. `limit` at most 500. Pass `next_cursor` as `before` for the older window. `child` reads a subagent's saved transcript. | No |
+| `s.transcriptSync({ limit?, before?, child? })` | Deprecated: read `s.log()`. The v1 copy of the conversation: every part, with tool inputs and outputs. `limit` at most 500. Pass `next_cursor` as `before` for the older window. `child` reads a subagent's saved transcript. | No |
 | `s.log({ thread?, before_seq?, limit? })` | One page of the stored session log (`kortix.session/2`, `SessionLogPage`): the session record, every thread head, and the thread's newest `limit` messages (default 40, at most 500) by `seq`. `thread` defaults to the root thread; pass the first message's `seq` as `before_seq` for older ones. `null` when the session has no stored log yet (it is journaled at each turn end), or no such thread. | No |
-| `s.transcript({ limit?, chars? })` | A short digest: text and tool calls without inputs and outputs. `limit` 1 to 500 (default 40), `chars` 80 to 5,000 per message (default 700). | No |
+| `s.transcript({ limit?, chars? })` | Deprecated: read `s.log()`. A short digest: text and tool calls without inputs and outputs. `limit` 1 to 500 (default 40), `chars` 80 to 5,000 per message (default 700). | No |
 | `s.get()` | The session record: status, agent, model, labels, metadata. | No |
 | `s.messageAuthors()` | The member or session that sent each message, keyed by message id, and the member who stopped each stopped turn (`stops`). | No |
 | `s.modelUsage()` | The model that answered each turn, and `fallback_from` when a fallback model answered. | No |

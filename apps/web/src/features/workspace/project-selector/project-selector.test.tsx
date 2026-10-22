@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import type { KortixAccount, KortixProject, MyAccountInvite } from '@kortix/sdk';
 
 import { ProjectSelectorView, type ProjectSelectorViewProps } from './project-selector';
-import { buildAccountSections } from './project-selector-model';
+import { buildAccountSections } from '@kortix/ui/workspace/project-selector/project-selector-model';
 
 function account(id: string, role: KortixAccount['account_role'], name: string): KortixAccount {
   return { account_id: id, name, account_role: role } as KortixAccount;

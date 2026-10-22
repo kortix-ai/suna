@@ -1,11 +1,11 @@
-import { CATALOG, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
+import { CATALOG, PLATINUM_PROVIDER, type Catalog, type CatalogModel } from '@kortix/llm-catalog';
 import { CODEX_MODELS_URL, CODEX_SEED_MODEL_IDS, parseCodexModelIds } from './codex-models';
 
 const DEFAULT_SOURCE_URL = 'https://models.dev/api.json';
 // Was 24h — a full day for a new model launch (or a provider's own metadata
 // fix) to reach every deployment is a bad user experience once the web
 // connect modal reads this SAME live catalog instead of a baked snapshot
-// (see apps/web/src/lib/llm-providers.ts). 1h is a large freshness win (24x)
+// (see packages/ui/src/internal/lib/llm-providers.ts). 1h is a large freshness win (24x)
 // while staying trivially light on models.dev — one small JSON GET/hour per
 // deployment, no auth, no burst — and the existing atomic last-known-good
 // swap (see `refresh` below) makes ANY interval safe: a failed/slow fetch
@@ -124,6 +124,8 @@ function normalizeCatalog(data: ModelsDevResponse, sourceUrl: string, fetchedAt:
   if (providers.length === 0 || modelCount === 0) {
     throw new Error('catalog API returned no providers or models');
   }
+  // Platinum is not on models.dev; keep it a provider across every refresh.
+  if (!providers.some((p) => p.id === PLATINUM_PROVIDER.id)) providers.push(PLATINUM_PROVIDER);
 
   return {
     source: sourceUrl,

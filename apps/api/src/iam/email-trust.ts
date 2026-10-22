@@ -34,6 +34,8 @@ export interface EmailTrustOptions {
    * person sent: the invitee accepts that one in person (KRTX-1715).
    */
   allowAutoconfirmed?: boolean;
+  /** Also trust what this account vouches for: its own IdP's identities, and its members (see `emailTrustedSql`). */
+  accountId?: string;
 }
 
 /** SQL predicate: the non-SSO identity's email was proven (see the module comment). */
@@ -84,7 +86,7 @@ export async function trustedEmailForUser(
 ): Promise<string> {
   if (!isUuid(userId)) return '';
   const rows = (await db.execute(sql`
-    SELECT lower(trim(u.email)) AS email, ${emailTrustedSql(sql`u`, undefined, opts)} AS trusted
+    SELECT lower(trim(u.email)) AS email, ${emailTrustedSql(sql`u`, opts.accountId, opts)} AS trusted
     FROM auth.users u
     WHERE u.id = ${userId}::uuid
     LIMIT 1

@@ -360,6 +360,10 @@ function inboxApp() {
       return { ...DEFAULT_NOTIFICATION_PREFERENCES, question: { push: false, email: true } };
     },
     emailAvailable: () => false,
+    hiddenKinds: async (...args) => {
+      record('hiddenKinds', args);
+      return ['message'];
+    },
     vapidPublicKey: async () => 'BSyntheticPublicKey',
     validateWebPush: validateWebPushSubscriptionInput,
     registerWebPush: async (...args) => {
@@ -463,12 +467,13 @@ describe('POST /v1/notifications/read', () => {
 });
 
 describe('GET and PUT /v1/notifications/preferences', () => {
-  test('GET returns every kind and whether email can be sent', async () => {
+  test('GET returns every kind, whether email can be sent, and the kinds that cannot reach the caller', async () => {
     const h = inboxApp();
     const res = await h.send('GET', '/preferences', browser);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ kinds: DEFAULT_NOTIFICATION_PREFERENCES, email_available: false });
+    expect(await res.json()).toEqual({ kinds: DEFAULT_NOTIFICATION_PREFERENCES, email_available: false, hidden_kinds: ['message'] });
     expect(h.named('loadPreferences')).toEqual([[USER_A]]);
+    expect(h.named('hiddenKinds')).toEqual([[USER_A]]);
   });
 
   test('PUT passes the partial patch and returns the saved record', async () => {

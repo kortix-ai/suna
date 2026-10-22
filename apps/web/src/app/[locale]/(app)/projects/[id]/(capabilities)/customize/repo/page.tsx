@@ -2,7 +2,7 @@
 
 import { useParams } from 'next/navigation';
 
-import { ProjectFilesView } from '@/features/workspace/project-layout/project-files-view';
+import { ProjectFilesView } from '@kortix/ui/workspace';
 
 /**
  * /projects/[id]/customize/repo — the project's git repo, a Customize tab for

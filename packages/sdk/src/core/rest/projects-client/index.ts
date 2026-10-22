@@ -42,6 +42,7 @@ export * from './review-items';
 export * from './sandbox-shares';
 export * from './public-session-shares';
 export * from './session-reminders';
+export * from './rooms';
 export * from './tokens';
 export * from './audit';
 export * from './setup-links';
@@ -50,6 +51,7 @@ export * from './templates';
 export * from './apps';
 export * from './apps-fleet';
 export * from './drives';
+export * from './goals';
 export * from './notifications';
 
 // Cross-cutting types that originally lived in this module. Re-exported
@@ -63,5 +65,6 @@ export type {
 } from './shared';
 
 export * from './model-access';
+export * from './custom-llm-providers';
 export * from './session-attachments';
 export * from './project-agents';

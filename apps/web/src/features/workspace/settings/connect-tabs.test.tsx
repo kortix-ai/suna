@@ -2,14 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { Modal } from '@/components/ui/modal';
-import { CLIENTS, mcpUrl } from '@/features/layout/connect-mcp-modal';
+import { Modal } from '@kortix/ui/modal';
+import { CLIENTS, mcpUrl } from '@kortix/ui/internal/layout/connect-mcp-modal';
 import { getEnv } from '@/lib/env-config';
 
-import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from './rail-copy-context';
-import { railGroups } from './rail';
+import { DEFAULT_SETTINGS_RAIL_CHROME_COPY } from '@kortix/ui/customize/settings/rail-copy-context';
+import { railGroups } from '@kortix/ui/customize/settings/rail';
 import { isSettingsTabAllowed, SettingsPanelShell } from './settings-panel-body';
-import { parseSettingsTab } from './settings-tabs';
+import { parseSettingsTab } from '@kortix/ui/customize/settings/settings-tabs';
 import { McpTab } from './tabs/mcp-tab';
 
 /**

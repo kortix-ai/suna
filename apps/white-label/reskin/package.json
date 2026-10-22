@@ -1,0 +1,35 @@
+{
+  "name": "@kortix/white-label-reskin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Golden white-label reference — a complete Kortix client built on ONLY @kortix/sdk and @kortix/ui. Reskin the brand config and the CSS tokens, point at any Kortix deployment.",
+  "scripts": {
+    "dev": "next dev --port ${WHITELABEL_PORT:-3010}",
+    "build": "pnpm lint:sdk-boundary && next build",
+    "lint:sdk-boundary": "node scripts/sdk-boundary.mjs",
+    "start": "next start --port ${WHITELABEL_PORT:-3010}",
+    "test": "node ../../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bun test tests/e2e\"",
+    "test:e2e": "pnpm lint:sdk-boundary && bun test tests/e2e",
+    "typecheck": "pnpm lint:sdk-boundary && tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo"
+  },
+  "dependencies": {
+    "@kortix/sdk": "workspace:*",
+    "@kortix/ui": "workspace:*",
+    "@phosphor-icons/react": "2.1.10",
+    "@tanstack/react-query": "^5.75.2",
+    "next": "16.4.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.4",
+    "@types/node": "^20",
+    "@types/react": "^19.1.17",
+    "@types/react-dom": "^19.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
+    "happy-dom": "^20.14.5",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

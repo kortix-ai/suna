@@ -3,7 +3,7 @@
  *
  * A project's identity is a UNION on the server — `icon` (one emoji) XOR
  * `icon_glyph` ({ name, colour }) XOR neither — and `EntityAvatar`
- * (`components/ui/entity-avatar.tsx`) resolves it with a fixed precedence:
+ * (`packages/ui/src/primitives/entity-avatar.tsx`) resolves it with a fixed precedence:
  * glyph, then emoji, then the label's initial. The confetti has to land on
  * the SAME face, or the particles celebrate a workspace that does not look
  * like the one on screen.

@@ -10,6 +10,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
 import { C, help, status } from '../style.ts';
 
 interface CatalogItem {
@@ -45,17 +46,19 @@ interface MarketplaceFlags {
   type?: string;
   source?: string;
   json: boolean;
+  yes: boolean;
   timeout?: string;
 }
 
 const HELP = help`Usage: kortix marketplace <subcommand> [options]
 
-Browse the Kortix marketplace.
+Browse the Kortix marketplace; remove installed project skills by folder.
 
 Subcommands:
   search [query]       Search marketplace items.
   list                 List marketplace items.
   show <id|name>       Show one marketplace item.
+  uninstall <folder>  Remove a project skill folder (including edits); requires --yes.
   install <id|name>    Wait for an agent import and verify default-branch files.
 
 Options:
@@ -63,8 +66,9 @@ Options:
   --type <type>        Filter by item type, e.g. skill.
   --source <source>    Filter by marketplace/source, e.g. kortix.
   --host <name>        Use a configured Kortix host.
-  --project <id>       Install into this project id (default: linked).
+  --project <id>       Use this project id (default: linked).
   --timeout <seconds>  Install deadline (default: 300).
+  --yes                Confirm deletion of the selected whole skill folder, including edits.
   --json               Machine-readable output.
   -h, --help           Show this help.
 
@@ -80,12 +84,13 @@ function parseFlags(argv: string[]): MarketplaceFlags {
     query: takeFlagValue(argv, ['--query', '-q']),
     type: takeFlagValue(argv, ['--type']),
     source: takeFlagValue(argv, ['--source']),
+    yes: takeFlagBool(argv, ['--yes']),
     json: takeFlagBool(argv, ['--json']),
   };
 }
 
 async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Promise<number> {
-  const itemId = argv[0];
+  let itemId = argv[0];
   if (!itemId || itemId.startsWith('-')) {
     process.stderr.write(
       `${status.err('pass an item id or name: kortix marketplace install kortix-starter:pdf')}\n`,
@@ -128,6 +133,16 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
     signal: controller.signal,
   });
   try {
+    if (!itemId.includes(':')) {
+      const item = await resolveMarketplaceItem(client, flags, itemId);
+      if (!item)
+        return finish(
+          1,
+          'not_found',
+          `No marketplace item matches "${itemId}". \`kortix marketplace search ${itemId}\` lists the close ones.`,
+        );
+      itemId = item.id;
+    }
     const result = await client.post<{ session_id: string }>(
       `/projects/${ctx.projectId}/marketplace/install-session`,
       { id: itemId },
@@ -235,6 +250,7 @@ async function marketplaceInstall(argv: string[], flags: MarketplaceFlags): Prom
         'timeout',
         `Install timed out after ${timeout}s. Inspect session ${sessionId ?? '(not yet created)'}; the agent may still be running.`,
       );
+    if (error instanceof AmbiguousMarketplaceItem) return finish(2, 'ambiguous', error.message);
     // The session hint only helps when a session exists to inspect
     // (KRTX-2075): a 400 unknown-item or a 402 plan gate never created one,
     // so the message names the cause alone.
@@ -332,6 +348,41 @@ async function marketplaceSearch(argv: string[], flags: MarketplaceFlags): Promi
   return 0;
 }
 
+class AmbiguousMarketplaceItem extends Error {}
+
+async function resolveMarketplaceItem(
+  client: ApiClient,
+  flags: MarketplaceFlags,
+  raw: string,
+): Promise<CatalogItem | null> {
+  let item: CatalogItem | null = null;
+  try {
+    item = await client.get<CatalogItem>(`/marketplace/items/${encodeURIComponent(raw)}`);
+  } catch {
+    const searched = await client
+      .get<CatalogResponse>(`/marketplace/items${queryString(flags, raw)}`)
+      .catch((error: unknown) => {
+        surfaceApiError(error);
+        return null;
+      });
+    const exact = searched?.items.filter((i) => i.id === raw || i.name === raw || i.id.endsWith(`:${raw}`)) ?? [];
+    if (exact.length > 1)
+      throw new AmbiguousMarketplaceItem(`"${raw}" names ${exact.length} items: ${exact.map((i) => i.id).join(', ')}. Pass the full id.`);
+    item = exact[0] ?? (searched?.items.length === 1 ? searched.items[0] : null);
+    if (item) {
+      try {
+        item = await client.get<CatalogItem>(
+          `/marketplace/items/${encodeURIComponent(item.id)}`,
+        );
+      } catch {
+        // The search result is still useful enough to show.
+      }
+    }
+  }
+
+  return item;
+}
+
 async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise<number> {
   const raw = argv.find((a) => !a.startsWith('-'));
   if (!raw) {
@@ -341,25 +392,12 @@ async function marketplaceShow(argv: string[], flags: MarketplaceFlags): Promise
   const ctx = resolveMarketplaceClient(flags.host);
   if (!ctx) return 1;
 
-  let item: CatalogItem | null = null;
+  let item: CatalogItem | null;
   try {
-    item = await ctx.client.get<CatalogItem>(`/marketplace/items/${encodeURIComponent(raw)}`);
-  } catch {
-    const searched = await fetchItems(flags, raw);
-    item =
-      searched?.items.find((i) => i.id === raw) ??
-      searched?.items.find((i) => i.name === raw) ??
-      searched?.items.find((i) => i.id.endsWith(`:${raw}`)) ??
-      (searched?.items.length === 1 ? searched.items[0] : null);
-    if (item) {
-      try {
-        item = await ctx.client.get<CatalogItem>(
-          `/marketplace/items/${encodeURIComponent(item.id)}`,
-        );
-      } catch {
-        // The search result is still useful enough to show.
-      }
-    }
+    item = await resolveMarketplaceItem(ctx.client, flags, raw);
+  } catch (error) {
+    surfaceApiError(error);
+    return error instanceof AmbiguousMarketplaceItem ? 2 : 1;
   }
 
   if (!item) {
@@ -417,6 +455,24 @@ export async function runMarketplace(argv: string[]): Promise<number> {
     case 'show':
     case 'view':
       return marketplaceShow(rest, flags);
+    case 'uninstall': {
+      const folder = rest[0];
+      if (!folder || !flags.yes) {
+        process.stderr.write(`${status.err('Use marketplace uninstall <project-skill-folder> --yes. This deletes the whole folder, including edits; shared assets are preserved.')}\n`);
+        return 2;
+      }
+      const ctx = await resolveProjectContext({ projectArg: flags.project, hostArg: flags.host });
+      if (!ctx) return 1;
+      try {
+        const result = await withKortixScope(ctx.auth, () => kortixFromAuth(ctx.auth).project(ctx.projectId).skills.remove({ folder, confirm: true }));
+        if (flags.json) emitJson(result);
+        else process.stdout.write(`${status.ok(`Removed ${folder} (${result.removed.length} files). Shared assets were preserved.`)}\n`);
+        return 0;
+      } catch (error) {
+        process.stderr.write(`${status.err(error instanceof Error ? error.message : String(error))}\n`);
+        return 1;
+      }
+    }
     case 'install':
       return marketplaceInstall(rest, flags);
     default:

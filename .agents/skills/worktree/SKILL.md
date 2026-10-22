@@ -131,6 +131,7 @@ pnpm worktree create <n>        [flags]   # positional name also works
 | `--no-start` | off | **Provision only, don't boot servers.** Use this for agent/CI runs. |
 | `--yes` | off | Auto-install missing deps; non-interactive. |
 | `--no-tunnel` | off | Skip the Cloudflare tunnel (offline; cloud sandboxes won't be reachable). |
+| `--no-web` | off | Boot without `next dev` (also on `start`). Use it for API/CLI-only work; each `next dev` holds GBs of RAM. Open the UI later with `pnpm worktree web <n>`. |
 
 What it does, in order: toolchain preflight → allocate the lowest slot that no
 registered worktree holds and whose whole port block is free (one `lsof` scan, up
@@ -148,7 +149,8 @@ the one exception is `--db` on a `--full-supabase` worktree (see above).
 ### `start` — boot an existing worktree (FOREGROUND, BLOCKS)
 
 ```sh
-pnpm worktree start <n> [--stripe] [--no-tunnel]
+pnpm worktree start <n> [--stripe] [--no-tunnel] [--no-web]
+pnpm worktree web <n> [--billing]   # only `next dev`, for a stack started with --no-web
 ```
 
 In shared-DB mode, ensures the primary local Supabase is reachable, checks that
