@@ -20613,7 +20613,12 @@
     "deleteTitle": "Supprimer ce fournisseur ?",
     "deleteBody": "{name} et sa clé API quittent ce projet pour tous les membres, et les sessions ne proposent plus ses modèles. Cette action est irréversible.",
     "deleted": "Fournisseur supprimé",
-    "deleteFailed": "Impossible de supprimer le fournisseur"
+    "deleteFailed": "Impossible de supprimer le fournisseur",
+    "readsImages": "Lit les images",
+    "reasoning": "Raisonnement",
+    "traitsHint": "Kortix les lit depuis l’endpoint quand il les indique. Activez-les quand il ne le fait pas.",
+    "contextWindow": "{tokens} de contexte",
+    "contextDefault": "128K de contexte (l’endpoint n’en indique aucun)"
   },
   "providerSheet": {
     "inUse": "Utilisés",

@@ -211,8 +211,8 @@ export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 export function formatTokenCount(tokens: number | null | undefined): string {
   if (!tokens || tokens <= 0) return '';
   if (tokens >= 1_000_000) {
-    const millions = tokens / 1_000_000;
-    return `${Number.isInteger(millions) ? millions : millions.toFixed(1)}M`;
+    // 1,048,576 reads "1M", not "1.0M".
+    return `${Number(Math.round((tokens / 1_000_000) * 10) / 10)}M`;
   }
   if (tokens >= 1_000) return `${Math.round(tokens / 1000)}K`;
   return `${tokens}`;

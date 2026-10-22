@@ -20613,7 +20613,12 @@
     "deleteTitle": "Eliminare questo provider?",
     "deleteBody": "{name} e la sua chiave API escono da questo progetto per tutti i membri, e le sessioni smettono di offrire i suoi modelli. Questa azione non può essere annullata.",
     "deleted": "Provider eliminato",
-    "deleteFailed": "Impossibile eliminare il provider"
+    "deleteFailed": "Impossibile eliminare il provider",
+    "readsImages": "Legge le immagini",
+    "reasoning": "Ragionamento",
+    "traitsHint": "Kortix li legge dall’endpoint quando li indica. Attivali quando non lo fa.",
+    "contextWindow": "{tokens} di contesto",
+    "contextDefault": "128K di contesto (l’endpoint non ne indica)"
   },
   "providerSheet": {
     "inUse": "In uso",

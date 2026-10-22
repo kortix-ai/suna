@@ -20613,7 +20613,12 @@
     "deleteTitle": "Diesen Anbieter löschen?",
     "deleteBody": "{name} und sein API-Schlüssel werden für alle Mitglieder aus diesem Projekt entfernt, und Sitzungen bieten seine Modelle nicht mehr an. Dies kann nicht rückgängig gemacht werden.",
     "deleted": "Anbieter gelöscht",
-    "deleteFailed": "Anbieter konnte nicht gelöscht werden"
+    "deleteFailed": "Anbieter konnte nicht gelöscht werden",
+    "readsImages": "Liest Bilder",
+    "reasoning": "Reasoning",
+    "traitsHint": "Kortix liest diese Angaben vom Endpunkt, wenn er sie meldet. Schalte sie ein, wenn er es nicht tut.",
+    "contextWindow": "{tokens} Kontext",
+    "contextDefault": "128K Kontext (der Endpunkt meldet keinen)"
   },
   "providerSheet": {
     "inUse": "Verwendet",

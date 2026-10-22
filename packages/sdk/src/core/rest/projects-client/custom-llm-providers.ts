@@ -16,9 +16,11 @@ export interface CustomLlmProvider {
   /**
    * 1–50 models when configured. A model id has no whitespace. `context` and
    * `output` are the model's token limits, read from the endpoint's `GET /models`
-   * on save; absent, the gateway serves a 128k window.
+   * on save; absent, the gateway serves a 128k window. `attachment` (reads
+   * images) and `reasoning` (takes `reasoning_effort`) come from the same read
+   * or from the switches; absent means false.
    */
-  models: { id: string; name: string; context?: number; output?: number }[];
+  models: { id: string; name: string; context?: number; output?: number; attachment?: boolean; reasoning?: boolean }[];
   /** The project secret that holds the key: `CUSTOM_<ID>_API_KEY`. */
   secret_name: string;
   /** The project-wide secret exists. The key is optional. */
@@ -31,8 +33,8 @@ export interface CustomLlmProvider {
 export interface CustomLlmProviderInput {
   name: string;
   base_url: string;
-  /** `context`/`output` override the limits the endpoint's `GET /models` reports. */
-  models: { id: string; name: string; context?: number; output?: number }[];
+  /** Each field overrides what the endpoint's `GET /models` reports; leave it out to use the endpoint's. */
+  models: { id: string; name: string; context?: number; output?: number; attachment?: boolean; reasoning?: boolean }[];
 }
 
 /** Every custom provider of the project, legacy key-only rows included (`configured: false`). */

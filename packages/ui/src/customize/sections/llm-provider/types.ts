@@ -38,6 +38,9 @@ export interface CustomFormState {
   apiKey: string;
   modelId: string;
   modelName: string;
+  /** Unset until the user flips the switch: the endpoint's `GET /models` decides. */
+  attachment?: boolean;
+  reasoning?: boolean;
 }
 
 export type ChatGptPhase = 'idle' | 'waiting' | 'done';
