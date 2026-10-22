@@ -1343,12 +1343,12 @@ flow(
   },
 );
 
-// PROJ-44 — set the project default reasoning effort (Settings → General).
+// PROJ-45 — set the project default reasoning effort (Settings → General).
 // `null`/`''` clear it (automatic); a value must be an effort label the model
 // catalog publishes. The route returns the serialized project with the field
 // re-validated on read, so the success steps double as the read-back proof.
 flow(
-  'PROJ-44',
+  'PROJ-45',
   {
     domain: 'projects',
     routes: [
