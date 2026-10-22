@@ -93,6 +93,7 @@ export async function writeProjectCustomProvider(
   projectId: string,
   id: string,
   input: CustomLlmProviderInput | null,
+  detected?: Parameters<typeof upsertCustomProvider>[3],
 ): Promise<CustomLlmProviderDefinition[] | null> {
   return db.transaction(async (tx) => {
     const [row] = await tx.select({ metadata: projects.metadata }).from(projects)
@@ -100,7 +101,7 @@ export async function writeProjectCustomProvider(
     if (!row) throw new Error('Project not found');
     const current = readCustomProviders(row.metadata);
     if (!input && !current.some((provider) => provider.id === id)) return null;
-    const next = input ? upsertCustomProvider(current, id, input) : current.filter((provider) => provider.id !== id);
+    const next = input ? upsertCustomProvider(current, id, input, detected) : current.filter((provider) => provider.id !== id);
     await tx.update(projects).set({
       metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), ${`{${CUSTOM_PROVIDERS_METADATA_KEY}}`}::text[], ${JSON.stringify(next)}::jsonb)`,
       updatedAt: new Date(),
