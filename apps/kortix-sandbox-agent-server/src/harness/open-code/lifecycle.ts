@@ -132,7 +132,7 @@ import { applyAgentToolAccess } from './tool-access'
 import { writeToolBridge } from './tool-bridge'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import { orderPermissionRules } from '@kortix/api-contract/permission-rules'
-import { MINIMAL_FALLBACK_MODELS, type KortixGatewayModel } from '@kortix/api-contract/fallback-models'
+import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
 import { managedOverlayRoot, SKILLS_DIR } from './project-layout'
 import { applyV3, compiledV3, v3OpencodeEnv } from './manifest-v3'
 import type { ExtensionDepsOptions } from './extension-deps'
@@ -780,15 +780,11 @@ function loadGatewayCatalog(opts: KortixProviderOpts): Record<string, KortixGate
     logger.info(`[opencode] loaded ${Object.keys(baked).length} models from image-baked catalog ${bakedCatalogPath()}`)
     return baked
   }
-  // Loud: this means the image was built without its catalog layer, which is a
-  // bake regression, not a runtime condition. The session boots fast on the
-  // minimal set rather than paying a cross-region fetch to hide it.
-  logger.error(
-    `[opencode] no catalog file at ${bakedCatalogPath()} — booting on the minimal ` +
-      `${Object.keys(MINIMAL_FALLBACK_MODELS).length}-model set. This is an IMAGE BAKE defect ` +
-      `(build-context.ts stages kortix-llm-catalog.json unconditionally); boot latency is preserved by design.`,
-  )
-  return MINIMAL_FALLBACK_MODELS
+  // Loud: the image was built without its catalog layer (build-context.ts stages
+  // kortix-llm-catalog.json unconditionally). The box boots on the live picker
+  // overlay and the models the session names; the background warm repairs the file.
+  logger.error(`[opencode] no catalog file at ${bakedCatalogPath()} — IMAGE BAKE defect; booting on the live picker catalog only`)
+  return {}
 }
 
 /** True when boot had to fall back to the minimal set — i.e. no catalog on disk. */
@@ -1307,7 +1303,7 @@ export function writeManagedOverlayCatalogFile(opts: {
   managed: Record<string, KortixGatewayModel>
 }): string | null {
   const base = readCatalogFile(opts.currentCatalogFile) ?? readCatalogFile(bakedCatalogPath())
-  const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? MINIMAL_FALLBACK_MODELS, opts.managed))
+  const composed = sanitizeCatalogForDisk(withManagedOverlay(base ?? {}, opts.managed))
   if (!composed) return null
   mkdirSync(dirname(opts.targetCatalogFile), { recursive: true })
   writeFileSync(opts.targetCatalogFile, JSON.stringify({ models: composed }), { mode: 0o600 })
@@ -1526,39 +1522,28 @@ export async function refreshGatewayCatalogFile(opts: {
   return { changed, catalogFile: opts.targetCatalogFile }
 }
 
-// Conservative window for a model we have no declared limit for. Better to
-// compact a little early than to never compact and get stuck at the wall.
-const DEFAULT_MODEL_LIMIT = { context: 200_000, output: 32_000 } as const
+// OpenCode compacts only when a model declares a window. The gateway serves each
+// model's real limits; a model no source can size (no live picker answer and not
+// in the baked catalog) gets this one so compaction still fires.
+const UNKNOWN_MODEL_LIMIT = { context: 200_000, output: 32_000 } as const
 
-// Known limits indexed by bare model id (the tail after the last "/"), so a
-// catalog model offered under any provider prefix (e.g.
-// "alibaba-cn/deepseek-v4-flash") still resolves to the right window.
-const KNOWN_LIMIT_BY_TAIL: Record<string, { context?: number; output?: number }> = (() => {
-  const out: Record<string, { context?: number; output?: number }> = {}
-  for (const [id, model] of Object.entries(MINIMAL_FALLBACK_MODELS)) {
-    if (!model.limit) continue
-    out[id.split('/').pop() ?? id] = model.limit
-  }
-  return out
-})()
-
-// Guarantee every model carries a context window. The gateway /models endpoint
-// returns NO per-model limits, so without this OpenCode sees models with no
-// context limit, can't size the conversation, and auto-compaction never fires —
-// long sessions then blow past the window and get stuck (session pinned at 100%
-// context). Backfill from the known-model table (exact id, then bare id), else a
-// conservative default. Models that already declare a usable limit are untouched.
 function withModelLimits(
   models: Record<string, KortixGatewayModel>,
 ): Record<string, KortixGatewayModel> {
   const out: Record<string, KortixGatewayModel> = {}
   for (const [id, model] of Object.entries(models)) {
-    if (typeof model.limit?.context === 'number' && model.limit.context > 0) {
-      out[id] = model
+    const context = model.limit?.context
+    if (typeof context !== 'number' || context <= 0) {
+      out[id] = { ...model, limit: { ...UNKNOWN_MODEL_LIMIT } }
       continue
     }
-    const known = MINIMAL_FALLBACK_MODELS[id]?.limit ?? KNOWN_LIMIT_BY_TAIL[id.split('/').pop() ?? id]
-    out[id] = { ...model, limit: known ?? { ...DEFAULT_MODEL_LIMIT } }
+    // OpenCode's schema requires `output` beside `context`; one model without it
+    // invalidates the whole config and no session starts. The gateway leaves an
+    // unknown output unset, so give it the default, never above the window.
+    const output = model.limit?.output
+    out[id] = typeof output === 'number' && output > 0
+      ? model
+      : { ...model, limit: { ...model.limit, context, output: Math.min(UNKNOWN_MODEL_LIMIT.output, context) } }
   }
   return out
 }

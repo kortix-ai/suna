@@ -421,6 +421,26 @@ describe('useSessionLogSync: negotiation, the first page and the stream', () => 
     expect(joined.filter((j) => j.options.schema !== 'v2').every((j) => j.closed)).toBe(true);
   });
 
+  test('a 404 coded session_log_missing (a new session on an API that serves the log): stays on the log, and is retried at the next turn end', async () => {
+    let calls = 0;
+    let stored = false;
+    const turn = (token: string) => ({ type: 'kortix.control.turn', cseq: 1, cepoch: 'c', at: 1, payload: { known: true, turns: [], last_ended: { turn_token: token } } });
+    const missing = () => Object.assign(new Error('No session log for this session'), { status: 404, code: 'session_log_missing' });
+    const state = mount({ loader: async () => { calls++; if (!stored) throw missing(); return v1Page(); } });
+    await flush();
+    // Not v1: no v1 saved copy is read. The log has nothing yet.
+    expect(state.dialect).toBe('missing');
+    expect(calls).toBe(1);
+    expect(joined.map((j) => j.options.schema)).toEqual([undefined]);
+    act(() => joined[0]!.options.onControl(turn('t1')));
+    stored = true;
+    act(() => joined.at(-1)!.options.onControl(turn('t2')));
+    await flush();
+    expect(calls).toBe(2);
+    expect(state.dialect).toBe('v2');
+    expect(joined.at(-1)!.options.schema).toBe('v2');
+  });
+
   test('a kortix.resync on the v2 connection re-reads the page once, with no duplicate messages', async () => {
     let calls = 0;
     mount({ loader: async () => { calls++; return v1Page(); } });

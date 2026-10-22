@@ -147,10 +147,9 @@ export function resetSessionOpenBundles(): void {
 }
 
 export interface OpenSessionBundleOptions {
-  /** Mirrored messages to ask for. `0` requests the POINTER only — what a
-   *  client whose store is already warm wants. Default: `0` while a saved
-   *  window of the session is held ({@link holdSavedWindow}), else
-   *  {@link OPEN_BUNDLE_TRANSCRIPT_LIMIT}. */
+  /** v1 transcript messages to ask for. Default `0`: the POINTER only. An
+   *  open reads the session log first (`GET …/log`), so no host reads the
+   *  snapshot's v1 window; a v1 fallback reads its own window. */
   transcript?: number;
   /** Injected clock, for tests. */
   now?: () => number;
@@ -180,9 +179,7 @@ export function openSessionBundle(
     startedAtMs: nowMs,
     settledAtMs: null,
     promise: getSessionOpenBundle(projectId, sessionId, {
-      transcript:
-        options.transcript ??
-        (heldSavedWindow(projectId, sessionId, nowMs) ? 0 : OPEN_BUNDLE_TRANSCRIPT_LIMIT),
+      transcript: options.transcript ?? 0,
     }).catch(() => null),
   };
   entry.promise = entry.promise.then((bundle) => {

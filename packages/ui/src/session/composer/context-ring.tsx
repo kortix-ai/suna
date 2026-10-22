@@ -9,7 +9,7 @@
  * the control it opens. Extracted here so neither surface re-derives the
  * ring's look on its own.
  *
- * `getContextReading` is the pure derivation (percent + tone) over the same
+ * `getContextUsage` is the pure derivation (percent + tone) over the same
  * exported helpers the hover card uses — pure so it has tests that can fail
  * (this repo's `bun test` has no DOM to assert the SVG itself).
  */
@@ -19,7 +19,7 @@ import { STATUS_TEXT } from '../../primitives/status';
 
 import type { ContextReading } from './context-usage';
 
-export { getContextReading, getContextUsage } from './context-usage';
+export { getContextUsage } from './context-usage';
 export type { ContextReading, ContextUsage } from './context-usage';
 
 export function ContextRing({ percent, tone, className }: ContextReading & { className?: string }) {

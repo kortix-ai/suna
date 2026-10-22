@@ -197,10 +197,9 @@ function useSessionPanelSurfaces({
     />
   );
 
-  // While booting, the panel is JUST the dead-center "Kortix Computer is
-  // starting" loader — no header bar (the loader has its own heading, so a panel
-  // title would be redundant), filling the whole card so it's perfectly
-  // centered. The runtime-coupled views (Actions/Files/Terminal/Browser) need a
+  // While booting, the panel is JUST the wake status — empty unless the wake
+  // needs attention, and then dead-center in the card — with no header bar.
+  // The runtime-coupled views (Actions/Files/Terminal/Browser) need a
   // live sandbox, so they only render once booted.
   //
   // Easy mode has no header either: it is the three cards and nothing else. No
@@ -212,13 +211,7 @@ function useSessionPanelSurfaces({
   // away — press it again and the same detail comes back.
   const effectivePanelHeader = booting || isEasy ? null : panelHeader;
   const effectivePanelBody = booting ? (
-    <SessionStartingLoader
-      stage={bootStage ?? 'provisioning'}
-      delayMs={0}
-      projectId={projectId}
-      sessionId={projectSessionId}
-      variant="stepper"
-    />
+    <SessionStartingLoader projectId={projectId} sessionId={projectSessionId} />
   ) : (
     panelBody
   );

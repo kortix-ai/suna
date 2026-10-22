@@ -44,7 +44,7 @@ import {
   type V1Row,
 } from '@kortix/api-contract/session-log';
 import { KORTIX_TRANSCRIPT_SCHEMA } from '@kortix/api-contract/transcript';
-import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads } from '@kortix/db';
+import { projectSessions, sessionLogMessages, sessionLogs, sessionLogThreads, sessionTranscriptMirrors } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull, lt, lte, sql, type SQL } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { qualifiedColumn } from '../shared/sql-qualified-column';
@@ -89,11 +89,24 @@ function readThreads(tx: Tx, sessionId: string): Promise<ThreadRow[]> {
 
 type PageInput = { sessionId: string; threadId: string | null; beforeSeq: number | null; limit: number };
 
-/** One page of one thread, or null when the session has no stored log (after `convertMirrorOnRead`). */
-export async function readSessionLogPage(input: PageInput): Promise<SessionLogPage | 'unknown_thread' | null> {
+/**
+ * One page of one thread. Null when the session has no stored log and no v1 mirror to convert
+ * (a new session). `'mirror_unconverted'`: no log, but a mirror this read did not convert (another
+ * read holds the session's conversion lock, or ingest is off), so the history exists and a client
+ * must not read it as "nothing saved".
+ */
+export async function readSessionLogPage(input: PageInput): Promise<SessionLogPage | 'unknown_thread' | 'mirror_unconverted' | null> {
   const page = await readPage(input);
-  if (page !== null || !(await convertMirrorOnRead(input.sessionId))) return page;
-  return readPage(input);
+  if (page !== null) return page;
+  if (await convertMirrorOnRead(input.sessionId)) return readPage(input);
+  const again = await readPage(input);
+  if (again !== null) return again;
+  const [mirror] = await db
+    .select({ sessionId: sessionTranscriptMirrors.sessionId })
+    .from(sessionTranscriptMirrors)
+    .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
+    .limit(1);
+  return mirror ? 'mirror_unconverted' : null;
 }
 
 function readPage(input: PageInput): Promise<SessionLogPage | 'unknown_thread' | null> {

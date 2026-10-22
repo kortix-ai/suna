@@ -218,9 +218,9 @@ describe('getSelectedModelName', () => {
 });
 
 describe('getContextLimit', () => {
-  test('falls back to 200k when no model is selected', () => {
-    expect(getContextLimit(undefined, undefined)).toBe(200000);
-    expect(getContextLimit([flatModel()], null)).toBe(200000);
+  test('is unknown (null) when no model is selected', () => {
+    expect(getContextLimit(undefined, undefined)).toBeNull();
+    expect(getContextLimit([flatModel()], null)).toBeNull();
   });
 
   test('uses the selected model contextWindow when present', () => {
@@ -228,14 +228,14 @@ describe('getContextLimit', () => {
     expect(getContextLimit(models, { providerID: 'anthropic', modelID: 'claude-5' })).toBe(500000);
   });
 
-  test('falls back to 200k when the selected model has no positive contextWindow', () => {
+  test('is unknown when the selected model has no positive contextWindow', () => {
     const models = [flatModel({ modelID: 'claude-5', contextWindow: 0 })];
-    expect(getContextLimit(models, { providerID: 'anthropic', modelID: 'claude-5' })).toBe(200000);
+    expect(getContextLimit(models, { providerID: 'anthropic', modelID: 'claude-5' })).toBeNull();
   });
 
-  test('falls back to 200k when the selected model is not found in the list', () => {
+  test('is unknown when the selected model is not found in the list', () => {
     const models = [flatModel({ modelID: 'claude-5', contextWindow: 500000 })];
-    expect(getContextLimit(models, { providerID: 'openai', modelID: 'gpt-5' })).toBe(200000);
+    expect(getContextLimit(models, { providerID: 'openai', modelID: 'gpt-5' })).toBeNull();
   });
 });
 

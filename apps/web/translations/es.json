@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "Barra izquierda (actual)",
+    "variantTabs": "Pestañas subrayadas agrupadas",
+    "variantGroups": "Selector de grupo + pestañas",
+    "variantInline": "Pestañas verticales con valores",
+    "previousVariant": "Variante anterior",
+    "nextVariant": "Variante siguiente"
+  },
   "repositoryDisconnected": {
     "title": "GitHub desconectado",
     "reconnect": "Reconectar GitHub",
@@ -906,6 +914,9 @@
       "iconDescription": "Se muestra junto al nombre del proyecto.",
       "name": "Nombre del proyecto",
       "nameDescription": "Se muestra en el selector y en cualquier lugar donde aparezca este proyecto.",
+      "defaultEffort": "Esfuerzo de razonamiento predeterminado",
+      "defaultEffortDescription": "Se aplica a los mensajes nuevos sin una elección explícita de esfuerzo, cuando el modelo de la sesión lo admite.",
+      "defaultEffortAutomatic": "Automático",
       "saving": "Guardando…",
       "archived": "Proyecto archivado",
       "archiveFailed": "No se pudo archivar el proyecto",
@@ -925,7 +936,19 @@
         "access": "El acceso de todo el equipo — nadie podrá volver a acceder a este proyecto"
       },
       "reassurance": "Los repositorios Git que hayas conectado tú no se eliminan. El código que ya se haya enviado permanece intacto.",
-      "keepWorkspace": "Conservar proyecto"
+      "keepWorkspace": "Conservar proyecto",
+      "transferWorkspace": "Transferir proyecto",
+      "transferDescription": "Mover este proyecto — sus sesiones, archivos, ajustes y acceso de miembros — a otra organización.",
+      "transferTitle": "Transferir proyecto",
+      "transferDialog": "Las sesiones, archivos y ajustes siguen al proyecto. Los roles del sistema se conservan; los grupos, invitaciones pendientes y roles personalizados deben concederse de nuevo en la organización destino. El uso registrado queda en la factura original.",
+      "transferTargetLabel": "Organización de destino",
+      "transferTargetPlaceholder": "Elegir una organización",
+      "transferLoadingTargets": "Cargando organizaciones…",
+      "transferNoTargets": "No eres miembro de ninguna otra organización.",
+      "transferMove": "Mover proyecto",
+      "transferMoveTo": "Mover a {name}",
+      "transferSuccess": "Proyecto transferido",
+      "transferFailed": "Error al transferir"
     },
     "sandbox": {
       "states": {
@@ -1486,6 +1509,7 @@
   },
   "sidebar": {
     "rooms": "Salas",
+    "goals": "Objetivos",
     "referAndEarn": "Referir y Ganar",
     "referralShareTitle": "Referir Amigos",
     "referralShareSubtitle": "Obtén 400 créditos",
@@ -5105,7 +5129,14 @@
       "youHaveBeenInvitedToAProject": "Te han invitado a un proyecto.",
       "joinProjectDescription": "Te unirás a {projectName} como {roleLabel}.",
       "roleManager": "administrador del proyecto",
-      "signOutAndContinue": "Cerrar sesión y continuar"
+      "signOutAndContinue": "Cerrar sesión y continuar",
+      "ssoTitle": "Inicia sesión con inicio de sesión único",
+      "ssoDescription": "El directorio de tu organización te añadió a esta cuenta. Inicia sesión con el inicio de sesión único de tu organización para unirte. Si no puedes, pide a un administrador de la cuenta que reenvíe la invitación.",
+      "ssoContinue": "Continuar con inicio de sesión único",
+      "askAdminTitle": "Pide a un administrador que la reenvíe",
+      "askAdminDescription": "El directorio de tu organización te añadió a esta cuenta y esta instancia no puede confirmar tu correo electrónico. Pide a un administrador de la cuenta que reenvíe la invitación y vuelve a abrir este enlace.",
+      "ssoDomainUnverified": "Tu proveedor de inicio de sesión único no ha verificado el dominio de este correo. Cierra sesión y vuelve a iniciarla con tu correo electrónico para usar esta invitación.",
+      "ssoUnavailable": "El inicio de sesión único no está disponible ahora. Pide a un administrador de la cuenta que reenvíe la invitación."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – El AI Operating System de código abierto",
@@ -10633,7 +10664,7 @@
       "text1458e20a1642": "Opcional. Kortix también elimina el token local al desconectar.",
       "text1459df2e344c": "Una máquina Linux se inicia desde la imagen del sandbox que declara tu proyecto. Es una máquina aislada: su propio sistema de archivos, tabla de procesos y red. Nada se comparte con otra sesión.",
       "text14683b379324": "Revocar token",
-      "text146b38e7fa80": "Cuando falla el valor predeterminado",
+      "text146b38e7fa80": "Cuando un modelo falla",
       "text146cd06d5026": "Entorno:",
       "text146fd497badf": "Email omitido: copia el enlace de invitación para compartirlo manualmente",
       "text147251df4759": "Esto suele tardar unos segundos",
@@ -16003,7 +16034,7 @@
       "textafb32719ca9e": "Secreto de cliente del bot",
       "textafb5023c3c05": "Cambios aplicados",
       "textafb837ec251a": "Okta envía los cambios a medida que ocurren (asignaciones, actualizaciones de perfil, envíos de grupos); un periodo de inactividad solo significa que no hubo cambios.",
-      "textafb9890f7c72": "Adónde va una solicitud cuando el valor predeterminado del proyecto no puede atenderla.",
+      "textafb9890f7c72": "Adónde va una solicitud cuando su modelo no puede atenderla.",
       "textafc19f1734c1": "Principal",
       "textafc8e3a5d5db": "Agrupa las solicitudes por lo que la gente realmente quiere, no por las palabras usadas; cuenta cuántas cuentas distintas plantearon cada una y adjunta las citas. Cuando alguien pregunta «¿quién pidió esto?», la respuesta está en el documento.",
       "textafdc7d79dccb": "Aprovisionamiento automático desde OneLogin",
@@ -16716,7 +16747,7 @@
       "textc3d2e79ebdd0": "Conectores",
       "textc3e3a6edeaa5": "Términos y condiciones",
       "textc3e58a73609d": "Destructivo",
-      "textc3ecd3cd791b": "Se prueban en orden después del valor predeterminado del proyecto.",
+      "textc3ecd3cd791b": "Se prueban en orden después del modelo solicitado.",
       "textc3f282c05f3f": "políticas aprobación bloquear require_approval reglas herramientas conector controles",
       "textc3f348ffaf7a": "Vincular al proyecto",
       "textc3f7bdf537c4": "solic.",
@@ -20049,6 +20080,7 @@
       "texta37dd5ef6ef2": "Personalizar barra lateral",
       "text8c712bd7c1ec": "barra lateral personalizar reordenar ocultar mostrar navegación sidebar",
       "text2313fe21ea84": "Editar {name}",
+      "text2b2c3ec032a6": "Proyecto transferido a otra cuenta",
       "text44f9fff8bdae": "Cambió el plan de créditos",
       "text3fa17bba73e1": "Tu cuenta aún no tiene un plan. Elige un importe mensual de créditos para ejecutar sesiones. Todos los miembros comparten un único fondo.",
       "text6821e42be2c1": "Tu monedero está vacío, así que las sesiones no pueden ejecutarse. Recarga para mantener el cómputo y los últimos modelos de IA en marcha; tu plan no se ve afectado.",
@@ -20306,7 +20338,12 @@
       "text57f57edb6f16": "La solicitud de cambio #{number} está lista para revisar.",
       "texta8597db6f24b": "Eliminar habilidad",
       "text5f6ba69d66d1": "Habilidad eliminada",
-      "textcb8d6b0c94c9": " y todos sus archivos, incluidos los cambios, y quita la habilidad de cada agente que la usa. Un commit en la rama predeterminada."
+      "textcb8d6b0c94c9": " y todos sus archivos, incluidos los cambios, y quita la habilidad de cada agente que la usa. Un commit en la rama predeterminada.",
+      "cliDeviceTitle": "Autorizar Kortix CLI",
+      "cliDeviceWarning": "Aprueba solo un inicio de sesión que hayas iniciado. Escribe el código que muestra tu terminal.",
+      "cliDeviceCode": "Código de inicio de sesión",
+      "cliDeviceApproved": "Inicio de sesión aprobado. Vuelve a tu terminal.",
+      "cliDeviceAction": "Autorizar CLI"
     },
     "publicShareConfirm": {
       "title": "¿Crear un enlace público?",
@@ -20322,18 +20359,6 @@
       "cancel": "Cancelar",
       "expiryNever": "Nunca",
       "expiryDays": "{count, plural, one {# día} other {# días}}"
-    },
-    "publicTranscriptShare": {
-      "sectionTitle": "Enlace público",
-      "sectionDescription": "Cualquier persona con el enlace puede leer esta conversación sin iniciar sesión.",
-      "create": "Crear enlace público",
-      "revokeDescription": "La conversación deja de cargarse para todos los que tengan el enlace. Después puedes crear un enlace nuevo.",
-      "rowMeta": "Conversación de solo lectura",
-      "unavailable": "Esta conversación no está disponible temporalmente.",
-      "unavailableDescription": "No se puede leer la conversación en este momento. Inténtalo de nuevo en unos instantes.",
-      "loadFailedDescription": "No se pudo cargar la conversación.",
-      "empty": "Aún no hay mensajes",
-      "savedCopy": "Copia guardada del {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "Cuenta de {service}",
@@ -20451,6 +20476,12 @@
       "title": "Guardado, pero {agent} aún no puede leerlo",
       "grant": "{names} no {count, plural, one {está} other {están}} entre los secretos del agente {agent}. Abre Personalizar → Agentes → {agent} → Secretos y {count, plural, one {actívalo} other {actívalos}}.",
       "allowlist": "{names} {count, plural, one {está} other {están}} fuera de los secretos de esta sesión. Inicia una nueva sesión para {count, plural, one {usarlo} other {usarlos}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Insertar",
+      "sectionDescription": "Solo para páginas del mismo sitio. Los visitantes deben haber iniciado sesión y tener acceso a esta sesión; no se admite iniciar sesión dentro de un iframe de otro sitio.",
+      "copy": "Copiar código de inserción",
+      "copied": "Código de inserción copiado"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Entrega: runtime — el valor real se carga en el entorno del sandbox. El código del agente puede leerlo.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Entrega: connector — solo en el servidor. El valor nunca entra en el entorno del sandbox.",
@@ -20582,7 +20613,12 @@
     "deleteTitle": "¿Eliminar este proveedor?",
     "deleteBody": "{name} y su clave de API salen de este proyecto para todos los miembros, y las sesiones dejan de ofrecer sus modelos. Esta acción no se puede deshacer.",
     "deleted": "Proveedor eliminado",
-    "deleteFailed": "No se pudo eliminar el proveedor"
+    "deleteFailed": "No se pudo eliminar el proveedor",
+    "readsImages": "Lee imágenes",
+    "reasoning": "Razonamiento",
+    "traitsHint": "Kortix los lee del endpoint cuando los informa. Actívalos cuando no lo hace.",
+    "contextWindow": "{tokens} de contexto",
+    "contextDefault": "128K de contexto (el endpoint no informa ninguno)"
   },
   "providerSheet": {
     "inUse": "En uso",
@@ -22292,5 +22328,95 @@
     "join": "Unirse",
     "openRoom": "Abrir",
     "gateDescription": "Activa Salas para que las sesiones de agentes y las personas de este proyecto hablen en salas de chat con nombre."
+  },
+  "goals": {
+    "title": "Objetivos",
+    "gateDescription": "Los agentes se hacen cargo de un objetivo hasta que se cumple de forma verificable: el objetivo vive en Archivos, un latido diario lo despierta, el agente persigue a las personas por lo que necesita y una comprobación independiente lo cierra.",
+    "empty": "Aún no hay objetivos",
+    "emptyHint": "Empieza uno en una sesión: describe el resultado, por ejemplo \"asegúrate de que nuestra antigua cuenta bancaria esté cerrada\". El agente crea el objetivo y aparece aquí.",
+    "loadError": "No se pudieron cargar los objetivos. Inténtalo de nuevo.",
+    "retry": "Reintentar",
+    "needsYou": "Te necesita",
+    "open": "Abiertos",
+    "closed": "Cerrados",
+    "waitingFor": "Esperando: {title}",
+    "criteria": "{met}/{total} criterios",
+    "nextWake": "Próximo despertar {time}",
+    "noWake": "Ningún despertar programado",
+    "heartbeat": "Latido",
+    "heartbeatPaused": "En pausa",
+    "lastWakeLabel": "Último despertar",
+    "progress": "Progreso",
+    "scope": {
+      "company": "Empresa",
+      "personal": "Solo tú"
+    },
+    "status": {
+      "draft": "Borrador",
+      "active": "Activo",
+      "waiting_on_user": "Esperándote",
+      "waiting_external": "En espera",
+      "verifying": "Verificando",
+      "done": "Hecho",
+      "abandoned": "Abandonado"
+    },
+    "health": {
+      "healthy": "En marcha",
+      "attention": "Requiere atención",
+      "closed": "Cerrado"
+    },
+    "issue": {
+      "no_heartbeat": "Nada despertará este objetivo: falta su recordatorio de latido.",
+      "heartbeat_paused": "El recordatorio de latido está en pausa.",
+      "heartbeat_failed": "El último despertar falló: {error}",
+      "missed_wake": "El último despertar está atrasado.",
+      "ask_overdue": "Una solicitud ha vencido.",
+      "verification_stalled": "La verificación empezó hace más de 24 horas.",
+      "unreadable": "goal.json falta o no es JSON válido."
+    },
+    "sessionChip": "Objetivo",
+    "sessionRole": {
+      "coordinator": "Esta sesión dirige este objetivo.",
+      "worker": "Esta sesión trabaja en este objetivo.",
+      "verifier": "Esta sesión verifica este objetivo."
+    },
+    "openGoal": "Abrir objetivo",
+    "openSession": "Abrir sesión principal",
+    "openFolder": "Abrir carpeta",
+    "back": "Todos los objetivos",
+    "healthTitle": "Estado",
+    "successCriteria": "Criterios de éxito",
+    "met": "Cumplido",
+    "notMet": "No cumplido",
+    "items": "Elementos",
+    "noItems": "Aún no hay elementos.",
+    "noCriteria": "Aún no hay criterios: el agente los escribe antes de que el objetivo se active.",
+    "kind": {
+      "task": "Tarea",
+      "ask": "Solicitud",
+      "wait": "Espera"
+    },
+    "itemStatus": {
+      "open": "abierto",
+      "doing": "en curso",
+      "done": "hecho",
+      "dropped": "descartado"
+    },
+    "due": "Vence {time}",
+    "sessions": "Sesiones",
+    "role": {
+      "coordinator": "Sesión principal",
+      "worker": "Trabajador",
+      "verifier": "Verificador"
+    },
+    "timeline": "Cronología",
+    "verification": "Verificación",
+    "notes": "Notas",
+    "log": "Registro",
+    "notFound": "Este objetivo ya no existe."
+  },
+  "agentEditor": {
+    "manage": "Gestionar",
+    "overviewTitle": "Resumen"
   }
 }

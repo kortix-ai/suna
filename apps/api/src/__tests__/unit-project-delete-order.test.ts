@@ -44,7 +44,9 @@ mock.module('../projects/prompt-attachments', () => ({
   },
 }));
 
+const realDeletion = await import('../projects/lib/project-deletion');
 mock.module('../projects/lib/project-deletion', () => ({
+  ...realDeletion,
   deleteManagedProjectRepo: async () => {
     steps.push('delete-repo');
     if (repoError) throw repoError;

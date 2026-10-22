@@ -7,31 +7,25 @@
  */
 import * as React from 'react';
 import { View } from 'react-native';
-import { BottomSheetScrollView, type BottomSheetModal } from '@gorhom/bottom-sheet';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { SessionParticipants } from '@kortix/sdk';
 
-import { KortixBottomSheetModal } from '@/components/kortix/sheet';
-import type { SheetRef } from '@/components/kortix/sheet';
+import { KortixBottomSheetModal, useSheetHandle, type SheetRef } from '@/components/kortix/sheet';
 import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { ParticipantAvatar, PARTICIPANT_ROW_AVATAR_SIZE } from '@/components/session/ParticipantAvatar';
 import { Text } from '@/components/ui/text';
 import { participantSheetRows } from '@/lib/session/participants';
 
-export interface SessionParticipantsSheetProps {
+interface SessionParticipantsSheetProps {
   participants: SessionParticipants | undefined;
 }
 
 export const SessionParticipantsSheet = React.forwardRef<SheetRef, SessionParticipantsSheetProps>(
   function SessionParticipantsSheet({ participants }, ref) {
     const insets = useSafeAreaInsets();
-    const modalRef = React.useRef<BottomSheetModal>(null);
+    const modalRef = useSheetHandle(ref);
     const { rows, more } = participantSheetRows(participants);
-
-    React.useImperativeHandle(ref, () => ({
-      open: () => modalRef.current?.present(),
-      close: () => modalRef.current?.dismiss(),
-    }));
 
     return (
       <KortixBottomSheetModal

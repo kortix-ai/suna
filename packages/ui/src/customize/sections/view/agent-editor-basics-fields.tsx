@@ -17,7 +17,6 @@ import { useTranslations as useI18nTranslations } from '../../../i18n';
  * reason no reader could see.
  */
 
-import { Badge } from '../../../primitives/badge';
 import { Button } from '../../../primitives/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../primitives/disclosure';
 import { Input } from '../../../primitives/input';
@@ -72,6 +71,7 @@ export function BasicsSection({
     <EditorSection
       title={tI18nComplete.raw('text8fdd2ee8475e')}
       description={tI18nComplete.raw('text4e420a5186f0')}
+      lead
     >
       <SettingRow
         label={tI18nComplete.raw('text92c1cdfdf4cb')}
@@ -176,19 +176,12 @@ export function ModelSection({
     : undefined;
   const variantChoices = selectedModel?.variants ? Object.keys(selectedModel.variants) : [];
 
-  // The sampling knobs and the step cap are set on a handful of agents and
-  // read by fewer. They open only when one of them carries a value, so an
-  // agent that tunes nothing shows one row — the model — and nothing else.
-  const advancedSet =
-    !isSliderAtDefault(oc.temperature, 0) ||
-    !isSliderAtDefault(oc.top_p, 1) ||
-    oc.steps !== undefined;
-
   return (
     <>
       <EditorSection
         title={tI18nComplete.raw('text5e2c614c23f0')}
         description={tI18nComplete.raw('text32398dbb68e2')}
+        lead
       >
         {/* "Provider model", not "Model": the section is already titled Model,
           and a row that repeats its section's name reads as a typo. */}
@@ -288,17 +281,11 @@ export function ModelSection({
         ) : null}
       </EditorSection>
 
-      {/* Its own card, rows open: the page gives each topic a full column, so
-          nothing needs hiding behind a disclosure. `advancedSet` still feeds
-          the header chip so an untouched agent reads "Defaults" at a glance. */}
+      {/* Its own section, rows open: the page gives each topic a full
+          column, so nothing needs hiding behind a disclosure. */}
       <EditorSection
         title={tI18nComplete.raw('text6d06116595a9')}
         description={tI18nComplete.raw('text33439eb47c9a')}
-        trailing={
-          <Badge variant={advancedSet ? 'outline' : 'muted'} size="sm">
-            {advancedSet ? 'Customized' : 'Defaults'}
-          </Badge>
-        }
       >
         <SliderRow
           label={tI18nComplete.raw('textb958ce8b871a')}

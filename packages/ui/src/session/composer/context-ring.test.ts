@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { sessionLogOfV1Rows, type SessionLogMessage } from '@kortix/sdk';
 
-import { getContextReading, getContextUsage } from './context-ring';
+import { getContextUsage } from './context-ring';
 import { getLastAssistantTokenBreakdown } from './token-progress';
 
 // One assistant record, as `sessionLogOfV1Rows` reads a v1 row with these tokens.
@@ -13,106 +13,72 @@ function assistantWithTokens(input: number, cache?: { read: number; write: numbe
   return sessionLogOfV1Rows('s', 'ses_root', [row] as never).threads[0]!.messages[0]!;
 }
 
-describe('getContextReading', () => {
+const MODELS = [
+  { providerID: 'p', modelID: 'm', modelName: 'Test Model', contextWindow: 200_000 },
+] as unknown as Parameters<typeof getContextUsage>[1];
+const SELECTED = { providerID: 'p', modelID: 'm' };
+const reading = (messages: SessionLogMessage[] | undefined) => {
+  const { percent, tone } = getContextUsage(messages, MODELS, SELECTED);
+  return { percent, tone };
+};
+
+describe('context reading against the model window', () => {
   test('no messages → 0% on the resting (info) tone', () => {
-    expect(getContextReading(undefined)).toEqual({ percent: 0, tone: 'info' });
+    expect(reading(undefined)).toEqual({ percent: 0, tone: 'info' });
   });
 
-  test('reads the last assistant total against the default 200k window', () => {
-    expect(getContextReading([assistantWithTokens(100_000)])).toEqual({
-      percent: 50,
-      tone: 'info',
-    });
+  test('reads the last assistant total against the window', () => {
+    expect(reading([assistantWithTokens(100_000)])).toEqual({ percent: 50, tone: 'info' });
   });
 
   test('warning band at 70%', () => {
-    expect(getContextReading([assistantWithTokens(140_000)])).toEqual({
-      percent: 70,
-      tone: 'warning',
-    });
+    expect(reading([assistantWithTokens(140_000)])).toEqual({ percent: 70, tone: 'warning' });
   });
 
   test('danger band at 85%', () => {
-    expect(getContextReading([assistantWithTokens(170_000)])).toEqual({
-      percent: 85,
-      tone: 'destructive',
-    });
+    expect(reading([assistantWithTokens(170_000)])).toEqual({ percent: 85, tone: 'destructive' });
   });
 
   test('clamps past-limit usage to 100%', () => {
-    expect(getContextReading([assistantWithTokens(999_999)])).toEqual({
-      percent: 100,
-      tone: 'destructive',
-    });
-  });
-
-  test("uses the selected model's own window when the catalog knows it", () => {
-    const models = [
-      { providerID: 'p', modelID: 'm', contextWindow: 100_000 },
-    ] as unknown as Parameters<typeof getContextReading>[1];
-    expect(
-      getContextReading([assistantWithTokens(80_000)], models, { providerID: 'p', modelID: 'm' }),
-    ).toEqual({ percent: 80, tone: 'warning' });
+    expect(reading([assistantWithTokens(999_999)])).toEqual({ percent: 100, tone: 'destructive' });
   });
 });
 
 describe('getContextUsage', () => {
   test('carries the full snapshot behind the reading', () => {
-    expect(getContextUsage([assistantWithTokens(100_000)])).toEqual({
+    expect(getContextUsage([assistantWithTokens(100_000)], MODELS, SELECTED)).toEqual({
       percent: 50,
       tone: 'info',
       ratio: 0.5,
       limit: 200_000,
-      modelName: null,
+      modelName: 'Test Model',
       breakdown: { input: 100_000, output: 0, reasoning: 0, cache: 0, total: 100_000 },
     });
   });
 
-  test('empty session → zeroed breakdown on the resting tone', () => {
-    expect(getContextUsage(undefined)).toEqual({
+  test('an unknown window is null, never invented: the usage reads 0%', () => {
+    expect(getContextUsage([assistantWithTokens(100_000)])).toEqual({
       percent: 0,
       tone: 'info',
       ratio: 0,
-      limit: 200_000,
+      limit: null,
       modelName: null,
-      breakdown: { input: 0, output: 0, reasoning: 0, cache: 0, total: 0 },
+      breakdown: { input: 100_000, output: 0, reasoning: 0, cache: 0, total: 100_000 },
     });
-  });
-
-  test("resolves the selected model's name and window from the catalog", () => {
-    const models = [
-      { providerID: 'p', modelID: 'm', modelName: 'Test Model', contextWindow: 100_000 },
-    ] as unknown as Parameters<typeof getContextUsage>[1];
-    const usage = getContextUsage([assistantWithTokens(80_000)], models, {
-      providerID: 'p',
-      modelID: 'm',
-    });
-    expect(usage.limit).toBe(100_000);
-    expect(usage.modelName).toBe('Test Model');
-    expect(usage.percent).toBe(80);
-    expect(usage.tone).toBe('warning');
-  });
-
-  test('the reading is the usage projected to percent + tone', () => {
-    const messages = [assistantWithTokens(140_000)];
-    const usage = getContextUsage(messages);
-    expect(getContextReading(messages)).toEqual({ percent: usage.percent, tone: usage.tone });
   });
 });
 
 test('unknown model and streaming assistant retain the last cached snapshot', () => {
   const previous = assistantWithTokens(100_000, { read: 20_000, write: 10_000 }, 10_000);
-
   const streaming = assistantWithTokens(0);
   const usage = getContextUsage([previous, streaming], [], { providerID: 'missing', modelID: 'missing' });
   expect(usage.breakdown).toEqual({ input: 100_000, output: 10_000, reasoning: 0, cache: 30_000, total: 140_000 });
   expect(usage.modelName).toBeNull();
-  expect(usage.limit).toBe(200_000);
-  expect(getContextReading([previous, streaming])).toEqual({ percent: usage.percent, tone: usage.tone });
+  expect(usage.limit).toBeNull();
 });
 
 test('ring reading and card breakdown agree for cached streaming usage', () => {
   const messages = [assistantWithTokens(100_000, { read: 20_000, write: 10_000 }, 10_000), assistantWithTokens(0)];
-  expect(getContextReading(messages)).toEqual({ percent: 70, tone: 'warning' });
+  expect(reading(messages)).toEqual({ percent: 70, tone: 'warning' });
   expect(getLastAssistantTokenBreakdown(messages)).toEqual({ input: 100_000, output: 10_000, reasoning: 0, cache: 30_000, total: 140_000 });
 });

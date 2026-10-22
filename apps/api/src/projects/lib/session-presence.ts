@@ -11,8 +11,9 @@
  * after 10 min without input (`human-presence.ts`). A renewal extends the
  * box by the idle grace, not the 30-min preview grant, and only for a caller
  * who may start the session; a read-only viewer keeps only the lease, which
- * routes push notifications. Presence alone keeps a box at most 2 h past its
- * latest turn (`PRESENCE_ONLY_CAP_MS`), whatever the client reports.
+ * routes push notifications. Presence alone keeps a box only to the idle
+ * window past its latest turn (the idle grace, KRTX-2451), whatever the
+ * client reports.
  */
 import { sessionPresenceLeases } from '@kortix/db';
 import { and, eq, lte, sql } from 'drizzle-orm';

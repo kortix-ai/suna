@@ -77,6 +77,10 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       'X-Kortix-Admin-Bypass',
     ],
     exposeHeaders: [
+      'X-RateLimit-Limit',
+      'X-RateLimit-Remaining',
+      'X-RateLimit-Reset',
+      'Retry-After',
       'X-Next-Cursor',
       'X-Request-Id',
       'X-Audit-Row-Count',

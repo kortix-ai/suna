@@ -92,6 +92,46 @@ const SELF_HOST_MARKETING_ONLY = [
   '/white-label',
 ];
 
+// Top-level segments that render the signed-in app. Anonymous traffic to one
+// of these is bounced to /auth; anonymous traffic to anything else falls
+// through to the localized catch-all and gets a real 404. Without this list,
+// EVERY unknown URL (`/privacy`, `/status`, a typo'd marketing link) was
+// answered with a 307 to /auth, so a crawler and a human both saw a sign-in
+// screen for a page that does not exist (pentest 2026-10-22). Adding an app
+// route means adding its segment here; it only affects signed-out visitors.
+const PROTECTED_APP_PREFIXES = [
+  '/a1o',
+  '/admin',
+  '/approve',
+  '/capture',
+  '/checkout',
+  '/cli',
+  '/connections',
+  '/debug',
+  '/github',
+  '/oauth',
+  '/preview',
+  '/slack',
+  '/teams',
+  '/tunnel',
+  '/game-of-life',
+  '/invites',
+  '/maintenance',
+  '/new',
+  '/p',
+  '/presentations',
+  '/projects',
+  '/rauch',
+  '/settings',
+  '/setup',
+];
+
+function isProtectedAppPath(pathname: string): boolean {
+  return PROTECTED_APP_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+}
+
 // Routes that don't require authentication
 const PUBLIC_ROUTES = [
   '/', // Homepage should be public!
@@ -220,9 +260,11 @@ export async function middleware(request: NextRequest) {
   // dynamic keys so the standalone container uses ECS runtime values instead of
   // build-time replacements. The gate fails closed when enabled without a secret.
   const protectionEnabled = Reflect.get(process.env, 'WEB_PROTECTION_ENABLED') as
-    string | undefined;
+    | string
+    | undefined;
   const protectionPassword = Reflect.get(process.env, 'WEB_PROTECTION_PASSWORD') as
-    string | undefined;
+    | string
+    | undefined;
   const authorization = request.headers.get('authorization');
   const accessCookie = request.cookies.get(ENVIRONMENT_ACCESS_COOKIE)?.value;
   const expectedAccessCookie =
@@ -383,8 +425,7 @@ export async function middleware(request: NextRequest) {
   const explicitLocale = locales.find((locale) => locale === pathSegments[0]);
   const remainingPath = '/' + pathSegments.slice(1).join('/');
   const isRemainingPathMarketing = MARKETING_ROUTES.some(
-    (route) => remainingPath === route ||
-      (route !== '/' && remainingPath.startsWith(route + '/')),
+    (route) => remainingPath === route || (route !== '/' && remainingPath.startsWith(route + '/')),
   );
   if (explicitLocale && !isRemainingPathMarketing) pathname = remainingPath;
 
@@ -764,6 +805,12 @@ export async function middleware(request: NextRequest) {
   try {
     // Redirect to auth if not authenticated (using the user we already fetched)
     if (authError || !user) {
+      // A URL that is not an app page and not public (a typo, a retired
+      // marketing page) is not a reason to ask for a sign-in: render the
+      // localized 404 instead of a 307 to /auth.
+      if (!isProtectedAppPath(pathname)) {
+        return finalizeEnvironmentAccess(rewriteToLocale(cookieLocale(), supabaseResponse));
+      }
       const url = request.nextUrl.clone();
       url.pathname = '/auth';
       const redirectTarget = `${pathname}${request.nextUrl.search || ''}`;

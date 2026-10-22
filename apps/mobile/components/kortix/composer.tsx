@@ -56,10 +56,8 @@ import { BUTTON_LABEL_MAX_FONT_SCALE } from '@/lib/ui/font-scale';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { cn } from '@/lib/utils/utils';
 import { StopIcon } from './StopIcon';
-import {
-  ComposerAttachmentTiles,
-  type ComposerAttachmentUpload,
-} from '@/components/session/composer-attachment-tiles';
+import { ComposerAttachmentTiles } from '@/components/session/composer-attachment-tiles';
+import { type ComposerAttachmentUpload } from '@/lib/session/composer-uploads';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { DictationWaveform } from '@/components/kortix/dictation-waveform';
 import { useDictation } from '@/hooks/useDictation';

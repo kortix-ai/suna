@@ -172,7 +172,7 @@ export function ThemeSubmenu() {
  * Every reference and legal page collapsed into one submenu, so the top level
  * only carries things you act on rather than eight links.
  *
- * External rows render a real `<a target="_blank">` rather than calling
+ * External rows render a real `<a target="_blank" rel="noopener noreferrer">` rather than calling
  * `window.open` from a handler. Three reasons: the browser opens the tab inside
  * the click's own user-gesture window, so no popup blocker can eat it — a
  * deferred close is exactly the kind of gap that trips one; cmd-click and

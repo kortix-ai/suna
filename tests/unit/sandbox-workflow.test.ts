@@ -138,7 +138,9 @@ describe('native test-lane workflow', () => {
   });
 
   test('uploads results after the worker returns', () => {
-    expect(testWorkflow).toContain('actions/upload-artifact@v7');
+    // Pinned to a commit (with the release in a comment), so assert the pin
+    // rather than the mutable tag.
+    expect(testWorkflow).toMatch(/actions\/upload-artifact@(v7\b|[0-9a-f]{40} # v7)/);
     // The upload path is a multi-line block since the bypass-state exclusion
     // landed: `path: |` then the glob, then `!…/deployment-bypass-state.json`.
     expect(testWorkflow).toMatch(/path: \|\s*\n\s*tests\/test-results\/\*\*/);
@@ -630,7 +632,9 @@ describe('the preview label is one fast deploy, and a superseded run never deplo
   const previewWorkflow = readFileSync(resolve(root, '.github/workflows/deploy-preview.yml'), 'utf8');
   const revalidate = previewWorkflow.slice(
     previewWorkflow.indexOf('- name: Revalidate exact preview approval'),
-    previewWorkflow.indexOf('- uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c'),
+    // Step, not release sha: the v8.0.1 needle went stale at the #10280 bump
+    // (a stale needle, indexOf -1, widens this slice to end of file).
+    previewWorkflow.indexOf('- uses: actions/download-artifact@'),
   );
 
   test('only an explicit act starts a run, and only a dispatch runs the suite', () => {
@@ -644,6 +648,9 @@ describe('the preview label is one fast deploy, and a superseded run never deplo
   test('a moved head, a removed label, or a deleted branch cancels the run instead of deploying', () => {
     expect(revalidate).toContain('supersede "approved ${COMMIT}; head is now ${current}."');
     expect(revalidate).toContain('supersede "the preview label was removed."');
+    // The slice must end at the first artifact download; if the boundary
+    // needle above ever stops matching, this fails instead of widening silently.
+    expect(revalidate).not.toContain('- uses: actions/download-artifact@');
     expect(revalidate).toContain('git/ref/heads/${BRANCH}');
     expect(revalidate).toContain('gh run cancel "$GITHUB_RUN_ID"');
     // Superseded is not a failure of this commit: no red check. (A lost write

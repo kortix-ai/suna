@@ -93,6 +93,8 @@ const cases = [
   ['route to the message-id codec', 'src/routes/kortix/health.ts', "import { wireIdClock } from '@kortix/sdk/wire-message-id';", false],
 
   // routes/ — controllers
+  ['route to SSRF guard', 'src/routes/proxy/web-proxy.ts', "import '@kortix/shared/ssrf-guard';", true],
+  ['lib to SSRF guard', 'src/lib/log/logger.ts', "import '@kortix/shared/ssrf-guard';", false],
   ['route to hono', 'src/routes/kortix/health.ts', "import { Hono } from 'hono';", true],
   ['route to the contract', 'src/routes/kortix/health.ts', "import type { HarnessDiagnosticsService } from '@/harness/contract/diagnostics';", true],
   ['route to lib', 'src/routes/workspace/files.ts', "import '@/lib/git/git';", true],

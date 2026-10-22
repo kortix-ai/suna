@@ -14,6 +14,8 @@ export interface FileNode {
 
 /** GET /file/content?path=<path> response */
 export interface FileContent {
+  /** Git blob revision of the displayed text, used for conditional saves. */
+  revision?: string;
   type: 'text' | 'binary';
   content: string;
   patch?: FilePatch;

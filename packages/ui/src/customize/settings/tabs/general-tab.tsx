@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../../primitives/button';
 import type { GlyphSelection } from '../../../primitives/glyph-picker';
 import { Input } from '../../../primitives/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../primitives/select';
 import { SettingsRow, SettingsRowGroup } from '../../../primitives/settings-row';
 import { SettingsSubsectionHeader } from '../../../primitives/settings-subsection-header';
 import { Skeleton } from '../../../primitives/skeleton';
@@ -28,9 +29,11 @@ import { forgetLastProjectId } from '../../../internal/lib/onboarding/last-proje
 import { PROJECT_ACTIONS } from '../../../internal/lib/project-actions';
 import { useProjectCans } from '../../../internal/lib/use-project-can';
 import { useSettingsPanelStore } from '../../../internal/stores/settings-panel-store';
+import { TransferWorkspaceEntry } from './transfer-workspace-dialog';
 import {
   archiveProject,
   getProject,
+  setDefaultReasoningEffort,
   updateProject,
   type KortixProject,
   type ProjectInput,
@@ -40,13 +43,26 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useUiRouter, useUiViewerId } from '../../../providers/ui-provider';
 import { SettingsTabHeader } from '../settings-tab-header';
 
-/** Asked for in ONE batched probe. `project.delete` and `project.write` are
+/** Asked for in ONE batched probe. `project.delete` and `project.settings.write` are
  *  separate permissions — see `ProjectSettingsGeneralProps.canDelete`. */
 const GENERAL_TAB_ACTIONS = [
-  PROJECT_ACTIONS.PROJECT_WRITE,
+  PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE,
   PROJECT_ACTIONS.PROJECT_DELETE,
 ] as const;
 
+/** The effort ladder the default-effort picker offers. These are models.dev
+ *  variant ids — technical values, shown capitalized like the composer's
+ *  own effort selector does (its `label`), never translated.
+ *
+ *  The API clamps the stored default at delivery to what the session's model
+ *  actually publishes (`effortVariantForPrompt`), so a pick the session's
+ *  model does not carry degrades to Automatic rather than breaking the turn;
+ *  the picker still offers the superset the catalog carries. */
+const DEFAULT_EFFORT_OPTIONS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+const DEFAULT_EFFORT_AUTOMATIC = '';
+
+/** `medium` → `Medium` — same casing rule as the composer's effort selector. */
+const effortOptionLabel = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
 export const DELETE_WORKSPACE_CONSEQUENCES = [
   'Every session in this workspace, with its files, history, and outputs',
   'All scheduled runs and triggers — they stop firing straight away',
@@ -91,7 +107,7 @@ export interface GeneralTabViewProps {
    *  `useQuery`/mutations, so it can't render under `renderToStaticMarkup`
    *  with no providers. */
   /** Whether the Delete-workspace section shows at all — gated on
-   *  `project.delete`, NOT the broader `project.write` gate
+   *  `project.delete`, NOT the broader `project.settings.write` gate
    *  `generalFieldsSlot`'s fields use. Deleting and editing are separate
    *  permissions, so a custom role can grant one without the other. */
   canDelete?: boolean;
@@ -101,6 +117,13 @@ export interface GeneralTabViewProps {
   onCloseArchiveDialog?: () => void;
   onConfirmArchive?: () => void;
   isArchivePending?: boolean;
+  /** `TransferWorkspaceEntry` — the second danger-zone row and its dialog.
+   *  A slot for the same reason the others are: the dialog owns its own
+   *  accounts query and mutation, so it cannot render under
+   *  `renderToStaticMarkup` with no providers. Shares the Delete section's
+   *  `canDelete` gate — the API's source gate for a transfer is the same
+   *  destructive tier that gates delete. */
+  transferSlot?: ReactNode;
 }
 
 export interface GeneralTabCopy {
@@ -153,6 +176,7 @@ export function GeneralTabView({
   onCloseArchiveDialog = () => {},
   onConfirmArchive = () => {},
   isArchivePending = false,
+  transferSlot,
 }: GeneralTabViewProps) {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-8">
@@ -193,6 +217,7 @@ export function GeneralTabView({
                     {copy.deleteWorkspace}
                   </Button>
                 </SettingsRow>
+                {transferSlot}
               </SettingsRowGroup>
             </section>
           ) : null}
@@ -287,9 +312,11 @@ export function withoutProject(data: unknown, projectId: string): unknown {
 function GeneralWorkspaceCard({
   project,
   canManage,
+  canManageEffort,
 }: {
   project: KortixProject;
   canManage: boolean;
+  canManageEffort: boolean;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const t = useTranslations('settings.workspace');
@@ -325,6 +352,14 @@ function GeneralWorkspaceCard({
   });
 
   const { mutate: mutateName, isPending: isRenamePending } = renameMutation;
+
+  const effortMutation = useMutation({
+    mutationFn: (effort: string | null) => setDefaultReasoningEffort(project.project_id, effort),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(qk.project.summary(project.project_id), updated);
+    },
+    onError: (error: Error) => errorToast(error.message || t('updateFailed')),
+  });
 
   useEffect(() => {
     if (!canManage || isRenamePending) return;
@@ -418,6 +453,33 @@ function GeneralWorkspaceCard({
           className="h-8 w-56"
         />
       </SettingsRow>
+      {/* The project-wide default effort. '' (= null on the wire) means
+          automatic. Delivery injects the stored value only when a prompt
+          carries no variant of its own, so this can never fight an explicit
+          pick made in a session. (The sandbox-provider pin instead uses a
+          distinct '__auto__' sentinel; here the empty string maps 1:1 to the
+          wire's null, so no extra token is needed.) */}
+      <SettingsRow label={t('defaultEffort')} description={t('defaultEffortDescription')}>
+        <Select
+          value={project.default_reasoning_effort ?? DEFAULT_EFFORT_AUTOMATIC}
+          onValueChange={(v) =>
+            effortMutation.mutate(v === DEFAULT_EFFORT_AUTOMATIC ? null : v)
+          }
+          disabled={!canManageEffort || effortMutation.isPending}
+        >
+          <SelectTrigger aria-label={t('defaultEffort')} className="h-8 w-40 shrink-0">
+            <SelectValue placeholder={t('defaultEffortAutomatic')} />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectItem value={DEFAULT_EFFORT_AUTOMATIC}>{t('defaultEffortAutomatic')}</SelectItem>
+            {DEFAULT_EFFORT_OPTIONS.map((effort) => (
+              <SelectItem key={effort} value={effort}>
+                {effortOptionLabel(effort)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </SettingsRow>
     </SettingsRowGroup>
   );
 }
@@ -442,12 +504,13 @@ export function GeneralTab({ projectId }: { projectId: string }) {
 
   const project = projectQuery.data;
   // Two DIFFERENT permissions, asked for separately. `project.delete` gates the
-  // Delete-workspace section; `project.write` gates the fields. Reading a
+  // Delete-workspace section; `project.settings.write` gates the fields. Reading a
   // `manager` role label instead would have hidden Delete from a custom role
   // that holds `project.delete`, and shown it to one that does not.
   const caps = useProjectCans(projectId, GENERAL_TAB_ACTIONS);
   const canDelete = caps[PROJECT_ACTIONS.PROJECT_DELETE]?.allowed === true;
-  const canEdit = caps[PROJECT_ACTIONS.PROJECT_WRITE]?.allowed === true;
+  const canEdit = caps[PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE]?.allowed === true;
+  const canEditEffort = canEdit;
 
   const archiveMutation = useMutation({
     mutationFn: () =>
@@ -508,7 +571,7 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       errorMessage={(projectQuery.error as Error)?.message ?? ''}
       onRetry={() => projectQuery.refetch()}
       generalFieldsSlot={
-        project ? <GeneralWorkspaceCard project={project} canManage={canEdit} /> : undefined
+        project ? <GeneralWorkspaceCard project={project} canManage={canEdit} canManageEffort={canEditEffort} /> : undefined
       }
       // No git-repo slot: Git repo is its own Settings section since
       // 2026-09-03 (`project-settings-sections.ts`).
@@ -519,6 +582,12 @@ export function GeneralTab({ projectId }: { projectId: string }) {
       onCloseArchiveDialog={() => setArchiveOpen(false)}
       onConfirmArchive={() => archiveMutation.mutate()}
       isArchivePending={archiveMutation.isPending}
+      transferSlot={
+        <TransferWorkspaceEntry
+          projectId={projectId}
+          currentAccountId={project?.account_id}
+        />
+      }
     />
   );
 }

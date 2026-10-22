@@ -7,8 +7,7 @@
  * `fromV1` of those same rows under producer `opencode`, as the daemon's adapter
  * journals them. The first read of the mirror-only session converts it into the
  * log (`convertMirrorOnRead`); from then on every v1 read (`transcript?shape=sync`
- * paged to the end, the child read, `shape=compact`, the open bundle, the public
- * share) answers it with the same body as the journaled one, apart from
+ * paged to the end, the child read, `shape=compact`, the open bundle) answers it with the same body as the journaled one, apart from
  * `captured_at`. No read serves the mirror: the reads pass with both mirror tables
  * renamed away, a native (pi) thread is served through `toV1`, a drained mirror is
  * never read, and a mirror over the size cap answers 503 `session_log_converting`.
@@ -50,7 +49,6 @@ let mirrorSession = '';
 let nativeSession = '';
 let ownerToken = '';
 let sandboxToken = '';
-const shareTokens = new Map<string, string>();
 
 const get = (path: string, token: string | null = ownerToken) =>
   app.request(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
@@ -118,15 +116,12 @@ async function v1Bodies(sessionId = session) {
   const childRes = await get(`${base(sessionId)}/transcript?shape=sync&child=${CHILD}`);
   const compact = await get(`${base(sessionId)}/transcript?limit=60&chars=1500&detail=full`);
   const bundle = (await (await get(`${base(sessionId)}/open-bundle`)).json()) as Record<string, Record<string, unknown>>;
-  const share = await get(`/v1/public/session-shares/${shareTokens.get(sessionId)}/messages`, null);
-  expect(share.status).toBe(200);
   return {
     pages,
     child: strip((await childRes.json()) as Record<string, unknown>),
     compact: strip((await compact.json()) as Record<string, unknown>),
     bundle: strip(bundle.transcript!),
     bundleLog: bundle.log,
-    share: strip((await share.json()) as Record<string, unknown>),
     captured,
   };
 }
@@ -145,29 +140,15 @@ beforeAll(async () => {
 afterAll(async () => {
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.accountId, project.account_id));
   await db.execute(sql`delete from kortix.account_tokens where account_id = ${project.account_id}`);
-  await db.execute(sql`delete from kortix.session_public_shares where session_id in (${session}, ${mirrorSession}, ${nativeSession})`).catch(() => undefined);
   await removeSeeded([project]);
 });
-
-/** A public share of `sessionId` with its transcript. */
-async function share(sessionId: string) {
-  const minted = await app.request(`${base(sessionId)}/public-shares`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ transcript: true }),
-  });
-  expect(minted.status).toBe(201);
-  shareTokens.set(sessionId, ((await minted.json()) as { share: { public_token: string } }).share.public_token);
-}
 
 const logOf = (sessionId: string) => db.select().from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId));
 
 describe('the v1 reads answer from the log; a mirror-only session is converted by its first read', () => {
-  test('sync pages, the child, compact, the open bundle and the public share of a converted mirror equal the journaled log apart from captured_at', async () => {
+  test('sync pages, the child, compact and the open bundle of a converted mirror equal the journaled log apart from captured_at', async () => {
     const stored = await storeInLog(session, 70);
     await storeMirrorOnly(mirrorSession, 70);
-    await share(session);
-    await share(mirrorSession);
     expect(await logOf(mirrorSession)).toHaveLength(0);
 
     const journaled = await v1Bodies(session);
@@ -185,8 +166,6 @@ describe('the v1 reads answer from the log; a mirror-only session is converted b
     expect((converted.child as { message_count: number }).message_count).toBe(2);
     expect(converted.compact).toEqual(journaled.compact);
     expect(converted.bundle).toEqual(journaled.bundle);
-    expect(converted.share).toEqual(journaled.share);
-    expect((converted.share as { message_count: number }).message_count).toBeGreaterThan(0);
 
     // captured_at is the log's last write.
     const [written] = await db.select({ updatedAt: sql<Date>`greatest(${sessionLogs.updatedAt}, (select max(m.updated_at) from kortix.session_log_messages m where m.session_id = ${session}))` }).from(sessionLogs).where(eq(sessionLogs.sessionId, session));
@@ -285,7 +264,6 @@ describe('the v1 reads answer from the log; a mirror-only session is converted b
       expect(hidden.child).toEqual(visible.child);
       expect(hidden.compact).toEqual(visible.compact);
       expect(hidden.bundle).toEqual(visible.bundle);
-      expect(hidden.share).toEqual(visible.share);
     } finally {
       await db.execute(sql`ALTER TABLE kortix.session_transcript_messages_hidden RENAME TO session_transcript_messages`);
       await db.execute(sql`ALTER TABLE kortix.session_transcript_mirrors_hidden RENAME TO session_transcript_mirrors`);
@@ -382,12 +360,37 @@ describe('GET .../log', () => {
     expect(await statuses(session, ownerToken)).toEqual([200, 200]);
   });
 
+  test('a mirror-only session whose conversion another read holds answers 404 with no code: the client reads v1, which converts it', async () => {
+    // The open's snapshot and its GET …/log both convert a mirror-only session; the second one
+    // finds the session's advisory lock taken, writes nothing, and must not claim "no log".
+    const busy = await seedSession(project, OWNER);
+    await storeMirrorOnly(busy, 2);
+    let held = false;
+    let res: Response | null = null;
+    await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`session-log:${busy}`}))`);
+      held = true;
+      res = await get(`${base(busy)}/log`);
+    });
+    expect(held).toBe(true);
+    expect(res!.status).toBe(404);
+    expect(((await res!.json()) as { code?: string }).code).toBeUndefined();
+    // With the lock free the next read converts it.
+    expect((await get(`${base(busy)}/log`)).status).toBe(200);
+  });
+
   test('refuses a bad before_seq and limit; 404 for an unknown thread and without a log', async () => {
     expect((await get(`${base()}/log?before_seq=1.5`)).status).toBe(400);
     expect((await get(`${base()}/log?limit=501`)).status).toBe(400);
-    expect((await get(`${base()}/log?thread=ses_not_a_thread`)).status).toBe(404);
+    const unknownThread = await get(`${base()}/log?thread=ses_not_a_thread`);
+    expect(unknownThread.status).toBe(404);
+    expect(((await unknownThread.json()) as { code?: string }).code).toBeUndefined();
     const empty = await seedSession(project, OWNER);
-    expect((await get(`${base(empty)}/log`)).status).toBe(404);
+    // A session with no stored log yet (a new one) says so by code: a client stays on the log
+    // instead of reading v1, which only an API without this route answers with a bare 404.
+    const missing = await get(`${base(empty)}/log`);
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: 'No session log for this session', code: 'session_log_missing' });
     expect((await get(`${base()}/log`, null)).status).toBe(401);
   });
 });

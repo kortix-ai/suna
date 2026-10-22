@@ -665,3 +665,13 @@ describe('audit ls table', () => {
     }
   });
 });
+
+test('activityStrip draws one character per UTC day, taller for more active hours', async () => {
+  const { activityStrip } = await import('../commands/audit.ts');
+  expect(
+    activityStrip('2026-10-30', '2026-11-02', [
+      { day: '2026-10-31', active_hours: 1 },
+      { day: '2026-11-02', active_hours: 24 },
+    ]),
+  ).toBe('·▁·█');
+});

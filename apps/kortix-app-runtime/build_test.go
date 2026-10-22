@@ -23,7 +23,7 @@ func TestBuildPinsPatchedCaddyRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"github.com/caddyserver/caddy/v2 v2.11.4",
+		"github.com/caddyserver/caddy/v2 v2.11.7",
 		"golang.org/x/crypto v0.57.0",
 		"golang.org/x/text v0.42.0",
 		"google.golang.org/grpc v1.83.2",

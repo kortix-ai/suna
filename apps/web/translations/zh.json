@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "左侧栏（当前）",
+    "variantTabs": "分组下划线标签",
+    "variantGroups": "分组切换 + 标签",
+    "variantInline": "带值的纵向标签",
+    "previousVariant": "上一个方案",
+    "nextVariant": "下一个方案"
+  },
   "repositoryDisconnected": {
     "title": "GitHub 已断开",
     "reconnect": "重新连接 GitHub",
@@ -42,7 +50,7 @@
     "specificMembers": "指定成员",
     "specificDescription": "只有指定的项目成员和连接所有者可以使用。",
     "accessDescription": "选择整个项目均可访问，或仅允许指定成员访问。",
-    "selectedMembersCount": "{count, plural, one {# member} other {# members}}",
+    "selectedMembersCount": "{count, plural, other {# members}}",
     "providerDisabled": "此提供商已在当前会话中禁用。",
     "unavailableKeys": "{count, plural, other {有#个所选密钥不可用。}} 请移除不可用的密钥或恢复访问权限。",
     "removeUnavailable": "移除不可用的密钥",
@@ -90,7 +98,7 @@
     "sharedTitle": "提供商连接",
     "sharedDescription": "添加 API 密钥和 ChatGPT 账户。新连接在您共享之前仅供您自己使用。为每个会话选择要使用的连接。",
     "legacyProjectKey": "现有项目密钥 · 本会话未选择密钥时使用",
-    "keyCount": "{count, plural, one {# 个密钥} other {# 个密钥}}",
+    "keyCount": "{count, plural, other {# 个密钥}}",
     "providerKeysFor": "{provider} API 密钥",
     "addKey": "添加密钥",
     "loadError": "无法加载提供商密钥。",
@@ -456,7 +464,7 @@
       "totalCredits": "总可用积分",
       "allCredits": "所有积分",
       "monthlyCredits": "月度积分",
-      "renewalIn": "在 {days} {days, plural, one {天} other {天}} 后续费",
+      "renewalIn": "在 {days} {days, plural, other {天}} 后续费",
       "noRenewal": "未安排续费",
       "extraCredits": "额外积分",
       "nonExpiring": "不过期",
@@ -906,6 +914,9 @@
       "iconDescription": "显示在项目名称旁边。",
       "name": "项目名称",
       "nameDescription": "显示在项目切换器以及列出此项目的所有位置。",
+      "defaultEffort": "默认推理强度",
+      "defaultEffortDescription": "当提示未明确选择推理强度且会话模型支持时应用。",
+      "defaultEffortAutomatic": "自动",
       "saving": "正在保存…",
       "archived": "项目已归档",
       "archiveFailed": "无法归档项目",
@@ -925,7 +936,19 @@
         "access": "整个团队的访问权限 — 任何人都无法再次访问此项目"
       },
       "reassurance": "自行连接的 Git 存储库不会被删除。已推送的代码将保留在原处。",
-      "keepWorkspace": "保留项目"
+      "keepWorkspace": "保留项目",
+      "transferWorkspace": "转移项目",
+      "transferDescription": "将此项目——包括会话、文件、设置和成员访问权限——移动到另一个组织。",
+      "transferTitle": "转移项目",
+      "transferDialog": "会话、文件、设置和系统角色随项目转移。群组、待处理邀请和自定义角色须在目标组织中重新授予。已记录的用量仍计入原组织账单。",
+      "transferTargetLabel": "目标组织",
+      "transferTargetPlaceholder": "选择一个组织",
+      "transferLoadingTargets": "正在加载组织…",
+      "transferNoTargets": "您不是任何其他组织的成员。",
+      "transferMove": "移动项目",
+      "transferMoveTo": "移动到 {name}",
+      "transferSuccess": "项目已转移",
+      "transferFailed": "转移失败"
     },
     "sandbox": {
       "states": {
@@ -1300,7 +1323,7 @@
       "loadFailed": "无法加载此帐户。",
       "resetAt": "套餐积分重置时间",
       "availableBalance": "可用余额",
-      "creditCount": "{count, plural, one {{formatted} 个积分} other {{formatted} 个积分}}",
+      "creditCount": "{count, plural, other {{formatted} 个积分}}",
       "owed": "欠款",
       "buckets": {
         "monthly": {
@@ -1319,7 +1342,7 @@
       "includedInPlan": "套餐包含",
       "usedThisPeriod": "本周期已用",
       "planCreditsSpent": "套餐积分已用完。接下来将使用已购买的积分。",
-      "grantRemaining": "{count, plural, one {本周期额度还剩 {formatted} 个积分。} other {本周期额度还剩 {formatted} 个积分。}}",
+      "grantRemaining": "{count, plural, other {本周期额度还剩 {formatted} 个积分。}}",
       "dailyAmountEvery": "每 {hours} 小时 +{credits} 个积分",
       "dailyAmount": "+{credits} 个积分",
       "countdown": {
@@ -1486,6 +1509,7 @@
   },
   "sidebar": {
     "rooms": "聊天室",
+    "goals": "目标",
     "referAndEarn": "推荐赚取",
     "referralShareTitle": "推荐好友",
     "referralShareSubtitle": "获得 400 积分",
@@ -1971,7 +1995,7 @@
     "providerRecovery": {
       "savedPrompt": "已保存的提示词",
       "noText": "未附加文本提示词。",
-      "attachments": "{count, plural, one {个附件} other {个附件}}",
+      "attachments": "{count, plural, other {个附件}}",
       "reattach": "重新加载后请重新附加这些文件。",
       "unavailable": "没有可用的已保存提示词。",
       "retrying": "正在重试…",
@@ -1981,10 +2005,10 @@
     },
     "connectorRequired": {
       "title": "连接{connectors}以继续",
-      "description": "{count, plural, one {此会话需要{connectors}，但目前尚未连接任何账户。尚未执行任何操作，也未产生任何费用——连接账户后，你的消息会重新发送。} other {此会话需要{connectors}，但目前尚未连接任何账户。尚未执行任何操作，也未产生任何费用——连接账户后，你的消息会重新发送。}}",
+      "description": "{count, plural, other {此会话需要{connectors}，但目前尚未连接任何账户。尚未执行任何操作，也未产生任何费用——连接账户后，你的消息会重新发送。}}",
       "connectOne": "连接{connector}",
       "connectMany": "连接账户",
-      "privateDescription": "{count, plural, one {{connectors}一次授权一个账户，因此必须使用此会话运行所用的账户进行连接。} other {{connectors}一次授权一个账户，因此必须使用此会话运行所用的账户进行连接。}}"
+      "privateDescription": "{count, plural, other {{connectors}一次授权一个账户，因此必须使用此会话运行所用的账户进行连接。}}"
     },
     "composerMenus": {
       "noMatches": "没有匹配项",
@@ -2169,7 +2193,7 @@
     "stopUnconfirmed": "无法确认停止。代理可能仍在运行。请再次尝试停止。",
     "stoppedBy": "由 {name} 停止",
     "queued": "排队中",
-    "queuedFiles": "{count, plural, one {# 个文件} other {# 个文件}}",
+    "queuedFiles": "{count, plural, other {# 个文件}}",
     "queuedCount": "{count} 条排队中",
     "editingQueued": "编辑中",
     "queuedActions": "消息操作",
@@ -5105,7 +5129,14 @@
       "youHaveBeenInvitedToAProject": "你已受邀加入一个项目。",
       "joinProjectDescription": "你将以{roleLabel}身份加入 {projectName}。",
       "roleManager": "管理员",
-      "signOutAndContinue": "退出并继续"
+      "signOutAndContinue": "退出并继续",
+      "ssoTitle": "使用单点登录",
+      "ssoDescription": "你所在组织的目录已将你添加到此账户。请使用组织的单点登录来加入。如果无法登录，请让账户管理员重新发送邀请。",
+      "ssoContinue": "继续使用单点登录",
+      "askAdminTitle": "请管理员重新发送",
+      "askAdminDescription": "你所在组织的目录已将你添加到此账户，但此实例无法确认你的邮箱地址。请让账户管理员重新发送邀请，然后再次打开此链接。",
+      "ssoDomainUnverified": "你的单点登录提供方尚未验证此邮箱的域名。请退出，然后使用你的邮箱地址重新登录，以使用此邀请。",
+      "ssoUnavailable": "单点登录当前不可用。请让账户管理员重新发送邀请。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 开源的 AI Operating System",
@@ -10011,7 +10042,7 @@
       "text00d60e31a4e6": "运行",
       "text00d8d3f11739": "mail",
       "text00dd9d632755": "搜索分支",
-      "text00e99be56ba9": "{count, plural, one {已删除 # 行} other {已删除 # 行}}",
+      "text00e99be56ba9": "{count, plural, other {已删除 # 行}}",
       "text00f5aae9f9d3": "该代理可以调用​​外部服务。将其标记为必需，并且在解决之前会话不会启动。",
       "text00f8ca92de43": "代理需要决定时，会发布带按钮的卡片，而不是让一次执行永久阻塞。你的点击就是裁决，会话会从该决定继续，并留在同一主题中。",
       "text00ff22485ed6": "连接它",
@@ -10633,7 +10664,7 @@
       "text1458e20a1642": "可选。断开连接时，Kortix 也会删除本地令牌。",
       "text1459df2e344c": "Linux 计算机从项目声明的沙箱镜像启动。它是一台独立隔离的计算机：拥有自己的文件系统、进程表和网络。不会与其他会话共享任何内容。",
       "text14683b379324": "撤销令牌",
-      "text146b38e7fa80": "默认设置失败时",
+      "text146b38e7fa80": "当模型失败时",
       "text146cd06d5026": "环境：",
       "text146fd497badf": "已跳过邮件 — 请复制邀请链接手动分享",
       "text147251df4759": "通常只需几秒钟",
@@ -11385,7 +11416,7 @@
       "text2a6b24ad2872": "积分",
       "text2a728809f134": "可以复用为 SAML SSO 创建的同一个 Custom Application——SCIM 位于其“Identity Management”选项卡中。",
       "text2a78025de6aa": "选择",
-      "text2a8f24e937b7": "{count, plural, one {已自定义 # 个工具} other {已自定义 # 个工具}}",
+      "text2a8f24e937b7": "{count, plural, other {已自定义 # 个工具}}",
       "text2a91147eb974": "邀请过期时间",
       "text2a94ea8db704": "从哪里获取 {value0} 密钥",
       "text2a9575e3e816": "询问",
@@ -12851,7 +12882,7 @@
       "text53f71e08be88": "Stripe 订阅",
       "text53f76274b923": "此频道连接缺少平台设置。",
       "text5405931307e3": "配置完成，正在启动服务……",
-      "text540afa4c53ff": "{label}：{count, plural, one {# 位成员} other {# 位成员}}",
+      "text540afa4c53ff": "{label}：{count, plural, other {# 位成员}}",
       "text54266bfe04ff": "更新维护配置失败",
       "text5427e0ef4eba": "权限：",
       "text542d24012988": "person@example.com",
@@ -15276,7 +15307,7 @@
       "text9a6a77d58095": "谁来执行工作——每个代理的指令、模型和访问权限。",
       "text9a6b697e6d4c": "可直接替换的 OpenAI 和 Anthropic 兼容端点。使用上方部分中的网关密钥。",
       "text9a70da1bb740": "不属于任何群组",
-      "text9a719be343e8": "{count, plural, one {# 个结果} other {# 个结果}}",
+      "text9a719be343e8": "{count, plural, other {# 个结果}}",
       "text9a72221a2747": "问题",
       "text9a788c263969": "新的通知服务应使用哪个数据库？",
       "text9a7b1baef5f5": "SAML2 网络应用 → 设置",
@@ -16003,7 +16034,7 @@
       "textafb32719ca9e": "机器人客户端密钥",
       "textafb5023c3c05": "更改已应用",
       "textafb837ec251a": "Okta 会在变更发生时推送更新（分配、配置文件更新、群组推送）——一段时间没有更新只表示没有发生变化。",
-      "textafb9890f7c72": "当项目默认设置无法处理请求时，请求将发送到的位置。",
+      "textafb9890f7c72": "当请求的模型无法处理请求时，请求将发送到的位置。",
       "textafc19f1734c1": "主体",
       "textafc8e3a5d5db": "它按人们实际想要的内容而非用词来聚类，统计提出每项请求的不同账户数量，并附上引用。当有人问“是谁提出的”，答案就在文档里。",
       "textafdc7d79dccb": "来自 OneLogin 的自动 Provision",
@@ -16716,7 +16747,7 @@
       "textc3d2e79ebdd0": "连接器",
       "textc3e3a6edeaa5": "条款与条件",
       "textc3e58a73609d": "危险操作",
-      "textc3ecd3cd791b": "在项目默认设置之后按顺序尝试。",
+      "textc3ecd3cd791b": "在请求指定的模型之后按顺序尝试。",
       "textc3f282c05f3f": "策略 审批 阻止 require_approval 规则 工具 连接器 防护措施",
       "textc3f348ffaf7a": "关联到项目",
       "textc3f7bdf537c4": "请求",
@@ -19675,7 +19706,7 @@
       "texte83e9ba50357": "任何已关联账号的项目成员都可以在此加入会话。",
       "text4540af5229a8": "只有发起会话的人才能继续该会话。",
       "textda4bd8bdfe42": "其他人需要会话所有者批准才能加入。",
-      "text5dae52a3f448": "{count, plural, one {# 个频道} other {# 个频道}}",
+      "text5dae52a3f448": "{count, plural, other {# 个频道}}",
       "text5097881a690f": "会话：{title}",
       "servedModelRow": "模型",
       "servedModelInPlaceOf": "替代",
@@ -20049,6 +20080,7 @@
       "texta37dd5ef6ef2": "自定义侧边栏",
       "text8c712bd7c1ec": "侧边栏 自定义 排序 隐藏 显示 导航 sidebar",
       "text2313fe21ea84": "编辑 {name}",
+      "text2b2c3ec032a6": "项目已转移到其他账户",
       "text44f9fff8bdae": "更改了积分套餐",
       "text3fa17bba73e1": "你的账户还没有套餐。请选择每月积分金额以运行会话。所有成员共用一个积分池。",
       "text6821e42be2c1": "你的钱包已空，会话无法运行。请充值以继续使用算力和最新的 AI 模型——你的套餐不受影响。",
@@ -20156,7 +20188,7 @@
       "text94ddcfbb2f30": "被拒绝的电话也是一场争论。没有发生的事情和已经发生的事情一样都是记录的一部分。",
       "text89faa819e995": "它永远无法达到创造它的人的影响力。这里没有传承优势可以走上去。",
       "text6a51a65a11f4": "启动会话会剪切一个分支并为其启动一台机器。数据库不会让第二个会话拥有该机器。",
-      "catalogExcludedNoActions": "{count, plural, one {1 个应用程序匹配，但未发布代理可以调用​​的任何操作。} other {{count} 个应用匹配，但未发布代理可以调用​​的操作。}}",
+      "catalogExcludedNoActions": "{count, plural, other {{count} 个应用匹配，但未发布代理可以调用​​的操作。}}",
       "text08cadd4156a5": "沙箱是一个真正的 Linux 机器，模型可以在上面运行任何东西。因此，其中唯一的凭证是一个 Kortix 代币，其范围仅限于该项目。",
       "textc7d878b8738e": "账户操作发生在同一个地方——成员资格、角色、策略、代币、组。",
       "text5b70d52b009e": "第三方 API 看到的是普通的经过身份验证的请求。答案返回给代理。凭证保留在后面。",
@@ -20306,7 +20338,12 @@
       "text57f57edb6f16": "变更请求 #{number} 已可审阅。",
       "texta8597db6f24b": "移除技能",
       "text5f6ba69d66d1": "技能已移除",
-      "textcb8d6b0c94c9": " 及其中的所有文件（包括修改），并从所有使用该技能的代理中移除它。在默认分支上提交一次。"
+      "textcb8d6b0c94c9": " 及其中的所有文件（包括修改），并从所有使用该技能的代理中移除它。在默认分支上提交一次。",
+      "cliDeviceTitle": "授权 Kortix CLI",
+      "cliDeviceWarning": "仅批准您自己发起的登录。请输入终端中显示的代码。",
+      "cliDeviceCode": "登录代码",
+      "cliDeviceApproved": "登录已批准。请返回终端。",
+      "cliDeviceAction": "授权 CLI"
     },
     "publicShareConfirm": {
       "title": "创建公开链接？",
@@ -20322,18 +20359,6 @@
       "cancel": "取消",
       "expiryNever": "永不",
       "expiryDays": "{count, plural, other {# 天}}"
-    },
-    "publicTranscriptShare": {
-      "sectionTitle": "公开链接",
-      "sectionDescription": "任何拥有此链接的人都无需登录即可阅读此对话。",
-      "create": "创建公开链接",
-      "revokeDescription": "所有持有此链接的人将无法再加载此对话。之后你可以创建新链接。",
-      "rowMeta": "只读对话",
-      "unavailable": "此对话暂时不可用。",
-      "unavailableDescription": "暂时无法读取此对话。请稍后再试。",
-      "loadFailedDescription": "无法加载此对话。",
-      "empty": "暂无消息",
-      "savedCopy": "保存于 {date} 的副本"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} 账户",
@@ -20449,8 +20474,14 @@
     },
     "secretIntakeWithheld": {
       "title": "已保存，但 {agent} 暂时无法读取",
-      "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, =1 {它} other {它们}}。",
-      "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, =1 {它} other {它们}}。"
+      "grant": "{count, plural, other {# 个密钥}}（{names}）不在智能体 {agent} 的密钥中。请打开 自定义 → Agents → {agent} → 密钥 并启用{count, plural, other {它们}}。",
+      "allowlist": "{count, plural, other {# 个密钥}}（{names}）不在此会话的密钥范围内。请启动新会话以使用{count, plural, other {它们}}。"
+    },
+    "sessionEmbed": {
+      "sectionTitle": "嵌入",
+      "sectionDescription": "仅适用于同站点页面。查看者必须已登录并拥有此会话的访问权限；不支持在跨站点 iframe 内登录。",
+      "copy": "复制嵌入代码",
+      "copied": "嵌入代码已复制"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "交付：runtime — 真实值会加载到沙箱环境中。代理代码可以读取它。",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "交付：connector — 仅在服务器端。该值绝不会进入沙箱环境。",
@@ -20582,7 +20613,12 @@
     "deleteTitle": "删除此提供商？",
     "deleteBody": "{name} 及其 API 密钥将对所有成员从此项目中移除，会话将不再提供其模型。此操作无法撤销。",
     "deleted": "提供商已删除",
-    "deleteFailed": "无法删除提供商"
+    "deleteFailed": "无法删除提供商",
+    "readsImages": "可读取图片",
+    "reasoning": "推理",
+    "traitsHint": "端点报告这些信息时，Kortix 会自动读取。端点未报告时请手动开启。",
+    "contextWindow": "{tokens} 上下文",
+    "contextDefault": "128K 上下文（端点未报告）"
   },
   "providerSheet": {
     "inUse": "使用中",
@@ -21606,7 +21642,7 @@
     "newTeamFolder": "New team folder",
     "audienceQuestion": "谁可以打开它？",
     "badgeEveryone": "Everyone",
-    "badgePeople": "{count, plural, one {# person} other {# people}}",
+    "badgePeople": "{count, plural, other {# people}}",
     "privateNote": "只有你可以打开“我的文件”，管理员也不行。共享文件夹即可让他人访问。",
     "noTeamFolders": "还没有团队文件夹。",
     "sessionFilesName": "Files",
@@ -22292,5 +22328,95 @@
     "join": "加入",
     "openRoom": "打开",
     "gateDescription": "开启聊天室，让此项目的智能体会话和成员在命名的聊天室中交流。"
+  },
+  "goals": {
+    "title": "目标",
+    "gateDescription": "智能体负责一个目标，直到它被可验证地完成：目标保存在文件中，每日心跳唤醒它，智能体向相关人员催要所需内容，并由独立检查来关闭它。",
+    "empty": "还没有目标",
+    "emptyHint": "在会话中开始一个目标：描述结果，例如“确保我们的旧银行账户已关闭”。智能体会创建目标，它会显示在这里。",
+    "loadError": "无法加载目标。请重试。",
+    "retry": "重试",
+    "needsYou": "需要你处理",
+    "open": "进行中",
+    "closed": "已关闭",
+    "waitingFor": "等待：{title}",
+    "criteria": "{met}/{total} 项标准",
+    "nextWake": "下次唤醒 {time}",
+    "noWake": "未安排唤醒",
+    "heartbeat": "心跳",
+    "heartbeatPaused": "已暂停",
+    "lastWakeLabel": "上次唤醒",
+    "progress": "进度",
+    "scope": {
+      "company": "公司",
+      "personal": "仅你可见"
+    },
+    "status": {
+      "draft": "草稿",
+      "active": "进行中",
+      "waiting_on_user": "等待你",
+      "waiting_external": "等待中",
+      "verifying": "验证中",
+      "done": "已完成",
+      "abandoned": "已放弃"
+    },
+    "health": {
+      "healthy": "运行中",
+      "attention": "需要关注",
+      "closed": "已关闭"
+    },
+    "issue": {
+      "no_heartbeat": "没有任何东西会唤醒此目标：缺少心跳提醒。",
+      "heartbeat_paused": "心跳提醒已暂停。",
+      "heartbeat_failed": "上次唤醒失败：{error}",
+      "missed_wake": "上次唤醒已逾期。",
+      "ask_overdue": "有一项请求已过期。",
+      "verification_stalled": "验证已开始超过 24 小时。",
+      "unreadable": "goal.json 缺失或不是有效的 JSON。"
+    },
+    "sessionChip": "目标",
+    "sessionRole": {
+      "coordinator": "此会话负责此目标。",
+      "worker": "此会话正在处理此目标。",
+      "verifier": "此会话负责验证此目标。"
+    },
+    "openGoal": "打开目标",
+    "openSession": "打开主会话",
+    "openFolder": "打开文件夹",
+    "back": "全部目标",
+    "healthTitle": "状态",
+    "successCriteria": "成功标准",
+    "met": "已满足",
+    "notMet": "未满足",
+    "items": "事项",
+    "noItems": "还没有事项。",
+    "noCriteria": "还没有标准：智能体会在目标进入进行中之前写好。",
+    "kind": {
+      "task": "任务",
+      "ask": "请求",
+      "wait": "等待"
+    },
+    "itemStatus": {
+      "open": "未开始",
+      "doing": "进行中",
+      "done": "已完成",
+      "dropped": "已放弃"
+    },
+    "due": "截止 {time}",
+    "sessions": "会话",
+    "role": {
+      "coordinator": "主会话",
+      "worker": "执行者",
+      "verifier": "验证者"
+    },
+    "timeline": "时间线",
+    "verification": "验证",
+    "notes": "笔记",
+    "log": "日志",
+    "notFound": "此目标已不存在。"
+  },
+  "agentEditor": {
+    "manage": "管理",
+    "overviewTitle": "概览"
   }
 }

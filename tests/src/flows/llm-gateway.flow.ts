@@ -8,20 +8,10 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET
   const gw = new Client(ctx.env.gatewayUrl);
   await ctx.step('gateway /health is public', async () => {
     const r = await gw.get('/health');
-    // `degraded` is a traffic metric (error-rate over the last 300s window),
-    // and the gate's own suite drives error traffic through this gateway. What
-    // this flow asserts is the health CONTRACT: the endpoint is public, the
-    // service names itself, and its API dependency is up. Same reasoning as
-    // the preflight in core/target-smoke.ts (#6582): serving-but-degraded is
-    // not an outage; `down`/`unhealthy` still fails.
-    r.status(200).body().has('$.service', 'kortix-llm-gateway');
-    const body = r.json<{ status?: string; checks?: { api?: { status?: string } } }>();
-    const status = body?.status;
-    const apiUp = body?.checks?.api?.status === 'up';
-    if (status !== 'healthy' && !(status === 'degraded' && apiUp)) {
-      throw new Error(
-        `gateway health contract failed: status=${status} api=${body?.checks?.api?.status}`,
-      );
+    r.status(200);
+    const body = r.json<{ status: string }>();
+    if (!['healthy', 'degraded'].includes(body.status) || Object.keys(body).length !== 1) {
+      throw new Error('gateway public health must expose only a serving status');
     }
   });
 });
@@ -29,12 +19,14 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET
 // GW-1b — the API's public streaming bridge to standalone gateway health.
 flow('GW-1b', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
   await ctx.step('the API gateway health bridge reaches the standalone service', async () => {
+    // The bridge forwards to the gateway's gated /health (#10749): a caller
+    // without gateway credentials sees only the serving status, as in GW-1.
     const r = await ctx.client.get('/v1/llm/health');
-    r.status(200)
-      .body()
-      .has('$.status', 'healthy')
-      .has('$.service', 'kortix-llm-gateway')
-      .has('$.checks.api.status', 'up');
+    r.status(200);
+    const body = r.json<{ status: string }>();
+    if (!['healthy', 'degraded'].includes(body.status) || Object.keys(body).length !== 1) {
+      throw new Error(`gateway health bridge must expose only a serving status: ${JSON.stringify(body)}`);
+    }
   });
 });
 
@@ -401,6 +393,23 @@ flow(
         .has('$.route.primaryModel', 'openai/gpt-5.5')
         .has('$.route.fallbackModels', ['morph-dsv41flash'])
         .has('$.route.fallbackOn', 'transient');
+    });
+
+    await ctx.step('the project chain covers a model that is not the default and has no override', async () => {
+      const other = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          '/v1/projects/:projectId/gateway/routing-policy/preview',
+          { requestedModel: 'anthropic/claude-sonnet-4-6', imageInput: false },
+          { params },
+        );
+      other
+        .status(200)
+        .body()
+        .has('$.route.policyId', 'project:default')
+        .has('$.route.primaryModel', 'anthropic/claude-sonnet-4-6')
+        .has('$.route.fallbackModels', ['morph-dsv41flash'])
+        .has('$.route.fallbackOn', 'any-error');
     });
 
     await ctx.step('invalid self-loop is rejected without replacing the saved policy', async () => {

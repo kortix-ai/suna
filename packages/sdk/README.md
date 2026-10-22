@@ -527,9 +527,10 @@ An open reads the session log first (`GET …/log`), on every host, with no proj
 `useSession`, `readSavedSessionCopy` (returned as `log`), `useSessionSync` with no `mirror` or
 with `savedChild`, and `loadSessionExportMessages`. No `GET …/transcript` is read then. The host
 applies a page it reads itself to the session store and renders `useSessionLogThread`.
-Only when the log answers 404 (an API older than the session log, or a session with no stored
-log yet) does an open read the v1 saved window once: the session-open snapshot carries it (the
-read waits up to 2 s for one in flight), else `GET …/transcript?shape=sync&history=true`.
+A new session with no stored log yet answers 404 with `code: 'session_log_missing'`: the open
+stays on the log and reads nothing more. Only when the log answers 404 with no `code` (an API
+older than the session log) does an open read the v1 saved window once: `GET …/transcript?shape=sync&history=true`.
+The session-open snapshot (`GET …/snapshot`) asks for no v1 window (`?transcript=0`).
 `readSavedSessionCopy` then returns it as `envelope`, and the SDK holds it for the open that
 follows (up to 5 min). The v1 reads (`getSessionTranscriptSync`, `transcriptSync`,
 `loadSessionTranscriptMirror`, …) are deprecated.
@@ -593,7 +594,7 @@ exhaustive — see `API-MAP.md` for the full per-domain surface:
 | namespace | what |
 |---|---|
 | `kortix.projects` | list · get · detail · create · provision · update · archive · llmCatalog · modelPicker · sandboxTemplates · sessions (+ more: `listForAccount`, `sandboxHealth`, `createSession`) |
-| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,webhooks.*}` (filterable project/session reconstruction log) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
+| `kortix.accounts` | list · get · create · members · invites · `secretResources.{list,create,rotate,delete,grant,revoke,setAccess}` · `tokens.{list,create,revoke}` (account-scoped CLI PATs, `kortix_pat_…`) · `audit.{log,export,activity,webhooks.*}` (filterable project/session reconstruction log; `activity` = who was active and how often, per UTC day) · `branding.{get,update,uploadAsset,removeAsset,reset}` (Enterprise organization branding: logo / icon / favicon, light + dark, product name) (+ more: `updateName`, `leave`, `invite`, `removeMember`, `updateMemberRole`) |
 | `kortix.billing` | entitlement/usage reads: `accountState` · `accountStateMinimal` · `transactions` · `transactionsSummary` · `creditBreakdown` · `usageHistory` · `usageRollup` · `sessionCosts.{list,get}` · `tierConfigurations` (with `min_monthly_usd` / `max_monthly_usd`) — plus a curated mutation surface: `setPlan` (subscribe to or change the credits plan; `useSetBillingPlan()` in `@kortix/sdk/react`) · `subscription.{createPortalSession,cancel,reactivate}` · `credits.{purchase,autoTopupSettings,configureAutoTopup}`. `checkout.{createSession,confirmSession}`, `subscription.{scheduleDowngrade,cancelScheduledChange,prorationPreview}`, `createPerSeatCheckout` and `claimPerSeatBilling` are deprecated: they reject with `ENDPOINT_RETIRED` |
 | `kortix.marketplace` | public marketplace catalog browse + sources (not project-scoped): `items` · `item` · `itemFile` · `marketplaces` · `featured` · `sources.{list,add,remove}` — distinct from the install-scoped `project(id).marketplace` |
 | `kortix.github` | account-scoped GitHub App installs and repo linking: `getInstallation` · `listInstallations` · `listLinkableInstallations` (each entry carries `linked_to_other_accounts`, a count and never a tenant name) · `listRepositories` · `listRepositoryBranches` · `linkInstallation` · `saveInstallation` · `deleteInstallation` · `linkRepository` (`source: 'managed'` imports a repository the instance backend holds — self-host operator only, and mutually exclusive with `installation_id`) · `replaceProjectRepository` (changes an existing project's repository with an expected old URL; accepts a repository-scoped PAT or a temporary GitHub user proof for a repository-scoped App grant; can atomically copy selected shared runtime secrets from another project in the same account) |
@@ -728,7 +729,7 @@ session-log types, and a test fails when the two differ. See the
 `useSessionLogThread(session, threadId?, { throttleMs? })`: the log of a session `useSession`
 owns. `useSessionLog` marks its source: `'v2'` is the API's log, which every open reads
 first when the API holds a log for the session (OpenCode or pi). No project flag is read.
-A session whose log answers 404 reads v1, and the hooks return `source: 'v1'`: the `fromV1`
+A session whose log answers 404 with no `code` (an API older than the log) reads v1, and the hooks return `source: 'v1'`: the `fromV1`
 conversion of the v1 rows, with the turn that runs kept open. Pass the session's
 `runtimeSessionId`; without it, or before the first row, they return `null`.
 `throttleMs` paces the v1 rows as `useSessionMessages` paces them. The
@@ -1505,3 +1506,11 @@ It converts blocks inside blockquotes and list items too. For a reply that is st
 Install the optional peers: `npm i zod @openuidev/lang-core@0.3.1`. `@openuidev/lang-core`
 sends one pseudonymous PostHog event at install time; set `OPENUI_TELEMETRY_DISABLED=1` or
 `DO_NOT_TRACK=1` to turn it off. Runtime telemetry is off unless you opt in.
+
+### Commit a repository file
+
+`kortix.project(projectId).files.read(path, branch)` returns the text and its
+`revision` (Git blob SHA). Pass that revision to
+`kortix.project(projectId).files.write({ path, ref: branch, content, expected_revision: revision })`.
+The server requires `project.file.write` and returns `{ commit_sha }` after pushing.
+A changed file returns HTTP 409 instead of overwriting another edit. Reload before retrying.

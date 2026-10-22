@@ -102,13 +102,14 @@ export function serverHoldsOpenTurn(working: { serverOpenTurnToken: string | nul
  * cannot drain, and saying nothing at all.
  *
  * Not "waking": nothing is booting. It names the fact (contact lost mid-turn)
- * and what a send does, for the same reason the waking notice does — the send
- * button stays live.
+ * and what a send does, because the send button stays live.
  */
 const RUNTIME_UNREACHABLE_NOTICE = SESSION_NOTICE.unreachableMidTurn;
 
 export function sessionComposerReadiness(input: {
   runtimeReady: boolean;
+  /** A prompt sent from this page is waiting for the computer. Its turn
+   *  already shows it working; do not ask for another message. */
   pendingPrompt?: boolean;
   /** A queued status already describes this send; do not ask for another. */
   pendingDelivery?: boolean;
@@ -139,8 +140,8 @@ export function sessionComposerReadiness(input: {
   /**
    * This page's own `/start` is bringing the computer up: its stage is
    * `provisioning` or `starting`, or it has not answered yet. A stopped
-   * computer is then WAKING, not idle — the boot pill above the thread says
-   * so, and the composer must not claim the next message is what wakes it.
+   * computer is then WAKING, not idle, and the composer must not claim the
+   * next message is what wakes it.
    */
   starting?: boolean;
   /**
@@ -152,28 +153,11 @@ export function sessionComposerReadiness(input: {
    * either too short (the notice flashed over a live session) or too long (a
    * genuinely parked box announced itself late).
    *
-   * `unknown` and `connecting` are WAITS. Only `waking` — the control plane
-   * saying the box is down — earns the waking notice.
+   * `unknown` and `connecting` are WAITS. Only `waking` with no wake under
+   * way — the control plane saying the box is down, and nothing bringing it
+   * up — earns a notice: the asleep one.
    */
   connection?: SessionConnection;
-  /**
-   * Nothing has been CONTACTED yet — the runtime probe has not answered and
-   * `GET .../turn` has not landed, and the mount is young enough that this is
-   * ordinary startup rather than a wait.
-   *
-   * On a cold mount every other input here is false: not ready, no open turn,
-   * not unreachable, not stalled. The fallback below then asserted the one
-   * thing nobody had checked — that the session is asleep — and a page that had
-   * just reloaded under a working agent showed "Waking this session up…" for a
-   * couple of seconds before the transcript resumed streaming (screen
-   * recording, dev, 2026-08-23). To the person watching, the session dropped
-   * and came back. It never went anywhere; we simply had not looked yet.
-   *
-   * Withholding a GUESS, never a fact: an unreachable box and a stalled boot
-   * are observations and still speak immediately, and so does a live server
-   * turn. Only the "must be waking, then" fallback waits to be sure.
-   */
-  settling?: boolean;
 }): SessionComposerReadiness {
   if (input.runtimeReady) return { ready: true, notice: null, retryable: false };
   if (input.serverTurnLive) {
@@ -202,53 +186,24 @@ export function sessionComposerReadiness(input: {
       retryable: true,
     };
   }
-  if (input.pendingPrompt) {
-    return {
-      ready: false,
-      notice: SESSION_NOTICE.starting,
-      retryable: false,
-    };
-  }
   if (input.connection === 'waking') {
     // A PARKED / idle box: the control plane says the sandbox is not up, and
     // nothing is actively booting — a genuine boot-stall is caught by `stalled`
     // above, and the SDK no longer arms the stall clock for a parked box
     // (`setOpenCodeHealth({ parked })`), so this never escalates to an infinite
     // "taking longer than usual" spinner. The box resumes on the next SEND, so
-    // say exactly that: an honest idle state, not a "waking" spinner-lie over a
-    // session that is merely asleep (RC-3).
-    return {
-      ready: false,
-      notice: input.pendingDelivery ? null : input.starting ? SESSION_NOTICE.waking : SESSION_NOTICE.idle,
-      retryable: false,
-    };
+    // say exactly that: an honest idle state (RC-3). A wake already under way
+    // says nothing: opening the session wakes its computer in the background,
+    // and a send goes out as soon as it is up.
+    const waking = input.pendingPrompt || input.pendingDelivery || input.starting;
+    return { ready: false, notice: waking ? null : SESSION_NOTICE.idle, retryable: false };
   }
-  // A wait is not a fault. `unknown` means nothing has answered; `connecting`
-  // means the control plane says the box is UP and the runtime simply has not
-  // reached us. Neither is the state this notice describes, and asserting it
-  // from them is what put "Waking this session up…" over a live, streaming
-  // session on every reload.
-  if (
-    input.connection === 'unknown' ||
-    input.connection === 'connecting' ||
-    input.connection === 'live'
-  ) {
-    return { ready: false, notice: null, retryable: false };
-  }
-  if (input.settling) {
-    // Legacy path for a caller with no connection projection yet: say nothing
-    // while the mount is young. See `settling`.
-    return { ready: false, notice: null, retryable: false };
-  }
-  return {
-    ready: false,
-    // Says what is happening AND what a send will do, because the send button
-    // stays live — without the second half, pressing it looks like nothing
-    // happened. True for an unreachable box with no open turn too: that box is
-    // parked, and the first send resumes it.
-    notice: SESSION_NOTICE.waking,
-    retryable: false,
-  };
+  // A wait is not a fault, and a routine wake is silent: `unknown` means
+  // nothing has answered, `connecting` that the box is up and the runtime has
+  // not reached us yet, and a waking box comes up in the background while a
+  // send queues. A wake that goes wrong speaks through `stalled` or
+  // `unreachable` above.
+  return { ready: false, notice: null, retryable: false };
 }
 
 /**

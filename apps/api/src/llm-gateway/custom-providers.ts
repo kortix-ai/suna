@@ -1,6 +1,7 @@
 import { z } from '@hono/zod-openapi';
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
 import { config } from '../config';
+import { safeEgressFetch } from '../shared/ssrf-guard';
 import { runtimeModelCatalog } from './models/runtime-catalog';
 
 /**
@@ -15,8 +16,12 @@ export interface CustomLlmProviderDefinition {
   id: string;
   name: string;
   base_url: string;
-  models: { id: string; name: string }[];
+  /** Each model's traits, from the input or the endpoint's `GET /models` (input wins). */
+  models: ({ id: string; name: string } & ModelTraits)[];
 }
+
+/** Token limits, image input and reasoning of one model. Absent: unknown. */
+export type ModelTraits = { context?: number; output?: number; attachment?: boolean; reasoning?: boolean };
 
 export const CUSTOM_PROVIDERS_METADATA_KEY = 'custom_llm_providers';
 const PROVIDER_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -32,6 +37,14 @@ export const CustomLlmProviderInputSchema = z.object({
   models: z.array(z.object({
     id: z.string().trim().min(1).max(200).regex(/^\S+$/, 'Model ids have no whitespace'),
     name: z.string().trim().min(1).max(100),
+    /** Context window in tokens. Absent: read from the endpoint's `GET /models`. */
+    context: z.number().int().positive().max(100_000_000).optional(),
+    /** Max output tokens. Absent: read from the endpoint, else the context window. */
+    output: z.number().int().positive().max(100_000_000).optional(),
+    /** Reads images. Absent: read from the endpoint, else false. */
+    attachment: z.boolean().optional(),
+    /** Reasons before it answers (takes `reasoning_effort`). Absent: read from the endpoint, else false. */
+    reasoning: z.boolean().optional(),
   })).min(1).max(50),
 });
 export type CustomLlmProviderInput = z.infer<typeof CustomLlmProviderInputSchema>;
@@ -62,15 +75,65 @@ export function readCustomProviders(metadata: unknown): CustomLlmProviderDefinit
     !!entry && typeof entry.id === 'string' && typeof entry.base_url === 'string' && Array.isArray(entry.models));
 }
 
-/** The list with `id` replaced (or appended), sorted by id. */
+const positive = (value: unknown) => (typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined);
+
+/**
+ * What an OpenAI-compatible `GET /models` reports per model id. Window:
+ * `context_window` (Morph), `max_model_len` (vLLM), `context_length`
+ * (OpenRouter). Output: `max_output_tokens`, `max_completion_tokens`. Images:
+ * `architecture.input_modalities` (OpenRouter) or `modalities.input`. Reasoning:
+ * `supported_parameters` naming `reasoning`. Empty when the endpoint does not answer.
+ */
+export async function probeCustomModels(baseUrl: string, apiKey: string | null): Promise<Map<string, ModelTraits>> {
+  const out = new Map<string, ModelTraits>();
+  try {
+    const res = await safeEgressFetch(`${baseUrl.replace(/\/+$/, '')}/models`, {
+      headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+      signal: AbortSignal.timeout(5_000),
+      maxRedirects: 0,
+      allowHttp: true,
+      allowPrivateHosts: config.KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS,
+    });
+    if (!res.ok) return out;
+    const body = await res.json() as { data?: Record<string, any>[] };
+    for (const model of Array.isArray(body?.data) ? body.data : []) {
+      if (typeof model?.id !== 'string') continue;
+      const inputs = model.architecture?.input_modalities ?? model.modalities?.input;
+      const params = model.supported_parameters;
+      const traits: ModelTraits = {
+        context: positive(model.context_window) ?? positive(model.max_model_len) ?? positive(model.context_length)
+          ?? positive(model.top_provider?.context_length),
+        output: positive(model.max_output_tokens) ?? positive(model.max_completion_tokens)
+          ?? positive(model.top_provider?.max_completion_tokens),
+        attachment: Array.isArray(inputs) ? inputs.includes('image') : undefined,
+        reasoning: Array.isArray(params) ? params.some((p: unknown) => p === 'reasoning' || p === 'reasoning_effort') : undefined,
+      };
+      if (Object.values(traits).some((v) => v !== undefined)) out.set(model.id, traits);
+    }
+  } catch {
+    // A dead or slow endpoint saves anyway; its models get the defaults.
+  }
+  return out;
+}
+
+/** The list with `id` replaced (or appended), sorted by id. A trait in the input wins over `detected`. */
 export function upsertCustomProvider(
   list: CustomLlmProviderDefinition[],
   id: string,
   input: CustomLlmProviderInput,
+  detected: Map<string, ModelTraits> = new Map(),
 ): CustomLlmProviderDefinition[] {
   const bare = (modelId: string) => (modelId.startsWith(`${id}/`) ? modelId.slice(id.length + 1) : modelId);
-  const models = [...new Map(input.models.map((m) => [bare(m.id), m.name])).entries()]
-    .map(([modelId, name]) => ({ id: modelId, name }));
+  const models = [...new Map(input.models.map((m) => [bare(m.id), m])).entries()].map(([modelId, m]) => {
+    const found = detected.get(modelId) ?? {};
+    const traits: ModelTraits = {
+      context: m.context ?? found.context,
+      output: m.output ?? found.output,
+      attachment: m.attachment ?? found.attachment,
+      reasoning: m.reasoning ?? found.reasoning,
+    };
+    return { id: modelId, name: m.name, ...Object.fromEntries(Object.entries(traits).filter(([, v]) => v !== undefined)) };
+  });
   const next = { id, name: input.name, base_url: input.base_url.replace(/\/+$/, ''), models };
   return [...list.filter((p) => p.id !== id), next].sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -79,7 +142,8 @@ export function upsertCustomProvider(
 export function customProviderCatalog(providers: CustomLlmProviderDefinition[]) {
   const out: Record<string, {
     name: string; provider: string; provider_name: string; tool_call: boolean; temperature: boolean;
-    attachment: boolean; limit: { context: number; output: number };
+    attachment: boolean; reasoning: boolean; reasoning_options?: { type: string; values: string[] }[];
+    limit: { context: number; output: number };
   }> = {};
   for (const provider of providers) {
     for (const model of provider.models) {
@@ -89,9 +153,13 @@ export function customProviderCatalog(providers: CustomLlmProviderDefinition[]) 
         provider_name: provider.name,
         tool_call: true,
         temperature: true,
-        attachment: false,
-        // ponytail: one default window; add a per-model limit to the form when a small-context endpoint needs it.
-        limit: { context: 128_000, output: 16_000 },
+        attachment: model.attachment === true,
+        reasoning: model.reasoning === true,
+        // The OpenAI `reasoning_effort` levels: the composer's effort control.
+        ...(model.reasoning ? { reasoning_options: [{ type: 'effort', values: ['low', 'medium', 'high'] }] } : {}),
+        // The endpoint's own limits; 128k/16k only when it reports none. pi clamps `max_tokens` to the
+        // room left in the window and OpenCode caps one reply at 65,536, so output = context is safe.
+        limit: { context: model.context ?? 128_000, output: model.output ?? model.context ?? 16_000 },
       };
     }
   }

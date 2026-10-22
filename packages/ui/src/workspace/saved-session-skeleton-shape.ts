@@ -26,18 +26,18 @@ export const LAST_LINE_WIDTHS = ['w-1/3', 'w-2/5', 'w-1/2', 'w-3/5', 'w-2/3', 'w
 /** Tailwind's `animate-pulse` period, which the `Skeleton` primitive runs. */
 export const PULSE_PERIOD_MS = 2000;
 
-export interface SkeletonLine {
+interface SkeletonLine {
   width: string;
   /** The row's place in the pulse wave; see `pulseDelayMs`. */
   phase: number;
 }
 
-export type SkeletonParagraph =
+type SkeletonParagraph =
   | { kind: 'text'; lines: SkeletonLine[] }
   /** A code block or tool output: one tall block across the measure. */
   | { kind: 'block'; phase: number };
 
-export interface SkeletonTurn {
+interface SkeletonTurn {
   prompt: SkeletonLine & { tall: boolean };
   /** A tool the agent ran before it answered, or none. */
   tool: SkeletonLine | null;

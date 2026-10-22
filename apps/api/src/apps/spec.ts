@@ -142,6 +142,30 @@ function finalDockerfileWorkdir(contents: string): string | undefined {
   return workdir;
 }
 
+/**
+ * Convex moved its images from `ghcr.io/get-convex/` to `ghcr.io/convex/`, and
+ * the old namespace refuses anonymous pulls since 2026-10-19. Apps scaffolded
+ * before the template moved still name the old prefix in their committed
+ * Dockerfile and `oci_image` block, so every release of them failed at pull.
+ * Only a digest-pinned reference is rewritten: the digest names the same bytes
+ * under the new namespace. A tag could point elsewhere there and is left alone.
+ */
+const MOVED_IMAGE_PREFIX = 'ghcr.io/get-convex/';
+const MOVED_IMAGE_TARGET = 'ghcr.io/convex/';
+
+export function movedImageReference(reference: string): string {
+  if (!reference.startsWith(MOVED_IMAGE_PREFIX) || !/@sha256:[0-9a-f]{64}$/i.test(reference)) return reference;
+  return `${MOVED_IMAGE_TARGET}${reference.slice(MOVED_IMAGE_PREFIX.length)}`;
+}
+
+/** Apply `movedImageReference` to the image of every `FROM` line. */
+export function rewriteMovedFromImages(dockerfile: string): string {
+  return dockerfile.replace(
+    /^([ \t]*FROM[ \t]+(?:--\S+[ \t]+)*)(\S+)/gim,
+    (_line, head: string, image: string) => `${head}${movedImageReference(image)}`,
+  );
+}
+
 export async function normalizeAppBuild(
   source: AppSourceSpec,
   extractedSourceDir?: string,
@@ -205,7 +229,7 @@ export async function normalizeAppBuild(
       return {
         sourceKind: source.kind,
         sourceDir: extractedSourceDir,
-        dockerfile: loaded.contents,
+        dockerfile: rewriteMovedFromImages(loaded.contents),
         runtimeSpec: {
           command: command(source.command),
           workdir: finalDockerfileWorkdir(loaded.contents),
@@ -227,7 +251,7 @@ export async function normalizeAppBuild(
       }
       return {
         sourceKind: source.kind,
-        dockerfile: `FROM ${source.image}`,
+        dockerfile: `FROM ${movedImageReference(source.image)}`,
         runtimeSpec: {
           command: appCommand,
           // No port: a worker-only release; the supervisor runs the process and serves nothing.
