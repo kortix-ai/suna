@@ -34,6 +34,10 @@ import { isUuid } from './shared/validate';
 // index.ts; the chain order is the behavior, so nothing is reordered.
 export function installHttpMiddleware(app: OpenAPIHono) {
 app.use('*', async (c, next) => {
+  await next();
+  c.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+});
+app.use('*', async (c, next) => {
   const path = c.req.path;
   if (path === '/metrics' || path.startsWith('/health') || path.startsWith('/v1/health')) {
     return next();
