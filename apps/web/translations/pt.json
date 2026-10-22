@@ -1,4 +1,12 @@
 {
+  "agentNavPrototype": {
+    "variantRail": "Barra esquerda (atual)",
+    "variantTabs": "Abas sublinhadas agrupadas",
+    "variantGroups": "Seletor de grupo + abas",
+    "variantInline": "Abas verticais com valores",
+    "previousVariant": "Variante anterior",
+    "nextVariant": "Próxima variante"
+  },
   "repositoryDisconnected": {
     "title": "GitHub desconectado",
     "reconnect": "Reconectar GitHub",
