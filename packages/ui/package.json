@@ -431,6 +431,7 @@
     "./session/composer/queue-projection": "./src/session/composer/queue-projection.ts",
     "./session/composer/session-chat-input": "./src/session/composer/session-chat-input.tsx",
     "./session/models/model-grouping": "./src/session/models/model-grouping.ts",
+    "./session/models/model-search-empty": "./src/session/models/model-search-empty.tsx",
     "./session/models/model-selector": "./src/session/models/model-selector.tsx",
     "./session/panel/audit/audit-credential-label": "./src/session/panel/audit/audit-credential-label.ts",
     "./session/panel/easy/detail-view": "./src/session/panel/easy/detail-view.tsx",
@@ -2173,6 +2174,10 @@
       "./session/models/model-grouping": {
         "types": "./dist/session/models/model-grouping.d.ts",
         "import": "./dist/session/models/model-grouping.js"
+      },
+      "./session/models/model-search-empty": {
+        "types": "./dist/session/models/model-search-empty.d.ts",
+        "import": "./dist/session/models/model-search-empty.js"
       },
       "./session/models/model-selector": {
         "types": "./dist/session/models/model-selector.d.ts",

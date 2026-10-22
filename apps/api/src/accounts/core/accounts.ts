@@ -13,6 +13,7 @@ import { impersonatedAccountFor } from "../../shared/impersonation";
 import { isPlatformAdmin } from "../../shared/platform-roles";
 import { effectiveBranding } from '../branding';
 import { sortAccountsForListing } from "./account-order";
+import { accountNameError } from "./account-name";
 import { bootstrapPersonalAccount } from "./bootstrap-personal-account";
 import {
   AccountDetailSchema,
@@ -226,8 +227,8 @@ export function registerAccountRoutes(): void {
 
       const body = await readJsonObject(c);
       const name = normalizeString(body.name);
-      if (!name) return c.json({ error: 'name is required' }, 400);
-      if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
+      const nameError = accountNameError(name);
+      if (nameError || !name) return c.json({ error: nameError }, 400);
 
       const [account] = await db.insert(accounts).values({ name }).returning();
 
@@ -361,8 +362,8 @@ export function registerAccountRoutes(): void {
 
       const body = await readJsonObject(c);
       const name = normalizeString(body.name);
-      if (!name) return c.json({ error: 'name is required' }, 400);
-      if (name.length > 255) return c.json({ error: 'name is too long' }, 400);
+      const nameError = accountNameError(name);
+      if (nameError || !name) return c.json({ error: nameError }, 400);
 
       const [row] = await db
         .update(accounts)

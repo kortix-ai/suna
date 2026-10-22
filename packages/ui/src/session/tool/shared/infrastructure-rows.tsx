@@ -4,7 +4,7 @@ import { Disclosure, DisclosureContent, DisclosureTrigger } from '../../../primi
 import { SidebarGlyph as PanelRight } from '../../../icons/sidebar-toggle';
 import { CaretRightIcon } from '@phosphor-icons/react';
 import { cn } from '../../../lib/utils';
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useState } from 'react';
 import { ToolSurfaceContext } from './surface';
 import { BoundActivateContext, ToolDurationContext, ToolOpenContext, ToolOutcomeContext, ToolRunningContext } from './infrastructure-contexts';
 import { PanelRowTitle, TOOL_ROW_CLASS, ToolHeaderRow, ToolOutcomeIcon } from './infrastructure-row-header';
@@ -298,13 +298,14 @@ export function BasicTool({
   // could only open the row on the frame AFTER mount, so a call that arrives
   // already waiting on a permission or a question rendered closed once and then
   // snapped open — a flash of the wrong answer on the exact row whose prompt is
-  // the point. The effect stays for the case it is actually for: `forceOpen`
-  // flipping true on an already-mounted row.
+  // the point. The render-time latch below covers `forceOpen` flipping true on
+  // an already-mounted row, in the same render.
   const [open, setOpen] = useState(defaultOpen || !!forceOpen);
-
-  useEffect(() => {
+  const [prevForceOpen, setPrevForceOpen] = useState(forceOpen);
+  if (forceOpen !== prevForceOpen) {
+    setPrevForceOpen(forceOpen);
     if (forceOpen) setOpen(true);
-  }, [forceOpen]);
+  }
 
   const handleOpenChange = useCallback(
     (value: boolean) => {

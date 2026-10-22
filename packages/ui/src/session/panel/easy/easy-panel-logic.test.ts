@@ -4,6 +4,7 @@ import type { OutputItem } from '../shared/derive-panels';
 import type { Step } from '@kortix/sdk';
 import {
   PREVIEW_MAX_WAIT_MS,
+  PREVIEW_SLOW_MS,
   PREVIEW_PROBE_INTERVAL_MS,
   PREVIEW_UNREACHABLE_WINDOW_MS,
   aspectChangedWidth,
@@ -16,6 +17,7 @@ import {
   outputKey,
   pathOutput,
   previewErrorReason,
+  previewSlowReason,
   previewLoadSuccessState,
   previewLoadVerdict,
   quickBrowserOutput,
@@ -878,5 +880,22 @@ describe('groupOutputsByKind (Task 9 — kind grouping for large mixed runs)', (
       'g5.md',
     ]);
     expect(groups?.find((g) => g.kind === 'image')?.items.map((o) => o.name)).toEqual(['i1', 'i2']);
+  });
+});
+
+// KRTX-3015: a frame whose request stalls (an app that has not answered yet,
+// or one busy with another client) showed a bare "Loading preview…" for up to
+// PREVIEW_MAX_WAIT_MS. Past PREVIEW_SLOW_MS the pane says so and offers Reload.
+describe('a slow preview', () => {
+  test('turns slow after the probe window and well before the failure ceiling', () => {
+    expect(PREVIEW_SLOW_MS).toBeGreaterThan(PREVIEW_UNREACHABLE_WINDOW_MS);
+    expect(PREVIEW_SLOW_MS).toBeLessThan(PREVIEW_MAX_WAIT_MS / 4);
+  });
+
+  test('names the port and the way out', () => {
+    expect(previewSlowReason({ port: 3100 })).toBe(
+      'The app on port 3100 is taking a while to answer. Reload to ask again.',
+    );
+    expect(previewSlowReason({ port: 0 })).toBe('The app is taking a while to answer. Reload to ask again.');
   });
 });

@@ -93,6 +93,8 @@ export const qk = {
     timelineRead: (accountId: string, kind: string, query: unknown) =>
       [...qk.capture.timeline(accountId), kind, query] as const,
     policy: (accountId: string) => [...qk.capture.account(accountId), 'policy'] as const,
+    /** `getCaptureStorage` — where the account keeps its recordings. */
+    storage: (accountId: string) => [...qk.capture.account(accountId), 'storage'] as const,
     /** `listCaptureEnrollmentTokens` — the IT rollout tokens. */
     enrollmentTokens: (accountId: string) => [...qk.capture.account(accountId), 'enrollment-tokens'] as const,
     /** `listCaptureEnrollments` — computers that presented a token; every status filter under one prefix. */

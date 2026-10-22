@@ -400,6 +400,7 @@ enable reminders` turns it on (the user's decision).
 | `kortix reminders add "<text>" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin` | Repeat on a 6-field cron. |
 | `kortix reminders ls [--json]` | This session's reminders: id, state (`active`/`paused`/`done`), next fire. |
 | `kortix reminders pause <id>` / `resume <id>` | Turn one off / on (resume re-arms from now). |
+| `kortix reminders run <id>` | Fire once now: retry a failed run. The schedule does not move. |
 | `kortix reminders rm <id>` | Delete it. Do this as soon as its condition is met. |
 
 Each fire arrives as `[REMINDER <id> — …]` followed by the text, and wakes a

@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { SessionOverridesComposer } from '../overrides/session-overrides-composer';
 import type { SessionOverrideSlot } from '../overrides/session-overrides-toolbar';
@@ -223,7 +223,8 @@ export function ComposerChatInput({
     onAgentSelectionChange?.(selectedAgentName);
   }, [onAgentSelectionChange, selectedAgentName]);
 
-  const [newSessionScope, setNewSessionScope] = useState<{
+  // Read only by `options()` at send time, so a ref: a commit needs no render.
+  const newSessionScopeRef = useRef<{
     agentName: string | null;
     commit: SessionScopeCommit;
   } | null>(null);
@@ -232,7 +233,7 @@ export function ComposerChatInput({
 
   const handleCommittedScope = useCallback(
     (commit: SessionScopeCommit | undefined) => {
-      setNewSessionScope(commit ? { agentName: selectedAgentName, commit } : null);
+      newSessionScopeRef.current = commit ? { agentName: selectedAgentName, commit } : null;
     },
     [selectedAgentName],
   );
@@ -276,6 +277,7 @@ export function ComposerChatInput({
     if (selectedAgentName) o.agent = selectedAgentName;
     if (local.model.currentKey) o.model = local.model.currentKey;
     if (local.model.variant.current) o.variant = local.model.variant.current;
+    const newSessionScope = newSessionScopeRef.current;
     if (!sessionId && newSessionScope && newSessionScope.agentName === selectedAgentName) {
       o.scope = newSessionScope.commit;
     }

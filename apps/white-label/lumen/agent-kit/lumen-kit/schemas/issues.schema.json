@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "issues",
+  "type": "object",
+  "required": ["schema", "doc_id", "playbook", "perspective", "summary", "issues", "unmatched", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "enum": ["issues/1"] },
+    "doc_id": { "type": "string" },
+    "playbook": { "type": "string" },
+    "perspective": { "type": "string" },
+    "summary": { "type": "string", "maxLength": 1200 },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule_id", "title", "status", "severity", "finding", "redline", "citations"],
+        "additionalProperties": false,
+        "properties": {
+          "rule_id": { "type": "string" },
+          "title": { "type": "string" },
+          "status": { "enum": ["aligned", "deviates", "missing"] },
+          "severity": { "enum": ["high", "medium", "low"] },
+          "finding": { "type": "string", "maxLength": 600 },
+          "redline": {
+            "type": ["object", "null"],
+            "required": ["a", "from", "to", "comment"],
+            "additionalProperties": false,
+            "properties": {
+              "a": { "type": "string", "pattern": "^p\\d+\\.\\d+$" },
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "comment": { "type": "string" }
+            }
+          },
+          "citations": { "type": "array", "items": { "$ref": "citation" } }
+        }
+      }
+    },
+    "unmatched": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "finding", "citations"],
+        "additionalProperties": false,
+        "properties": {
+          "title": { "type": "string" },
+          "finding": { "type": "string" },
+          "citations": { "type": "array", "items": { "$ref": "citation" } }
+        }
+      }
+    },
+    "files": { "type": "array", "items": { "type": "string" } }
+  }
+}

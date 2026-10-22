@@ -310,8 +310,10 @@ async function run(options: SessionControlStreamOptions, shared: SharedStream): 
     const withLog = withRuntime && shared.logRefs > 0;
     shared.connectedWithLog = withLog;
     try {
+      // A path-only backendUrl (a same-origin proxy) resolves against the page.
       const url = new URL(
         `${platformConfig().backendUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(options.projectId)}/sessions/${encodeURIComponent(options.sessionId)}/events`,
+        globalThis.location?.href,
       );
       if (!withRuntime) url.searchParams.set('channels', 'control');
       if (withLog) url.searchParams.set('schema', 'v2');

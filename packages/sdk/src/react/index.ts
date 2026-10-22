@@ -164,6 +164,7 @@ export {
   useCaptureEnrollmentTokens,
   useCapturePolicy,
   useCaptureSearch,
+  useCaptureStorage,
   useCaptureTimeline,
   useCaptureTimelineItems,
   useCaptureWorkspace,
@@ -175,6 +176,7 @@ export {
   useRevokeCaptureEnrollmentToken,
   useSetCaptureEnabled,
   useSetCapturePolicy,
+  useSetCaptureStorage,
 } from './use-capture';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';

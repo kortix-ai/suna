@@ -18,12 +18,15 @@ import {
   type SeededProject,
 } from './helpers/integration-fixtures';
 
+/** These tests cover the v1 mirror, which a project writes only with `session_log` off (on by default since 2026-10-22). */
+const MIRROR = { metadata: { experimental: { session_log: false } } };
+
 test('complete capture persists all pages, retries, serializes writes, and keeps history whatever the project stored', async () => {
   const db = new PgClient({ connectionString: localTestDatabaseUrl() });
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-test');
+    project = await seedProject('transcript-capture-test', MIRROR);
     const projectId = project.project_id;
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_capture';
@@ -128,7 +131,7 @@ test('complete capture persists all pages, retries, serializes writes, and keeps
     // Saved history graduated out of the flag system. A project that stored
     // the old `false` override still reads the whole history at turn end.
     await db.query(
-      `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false}}'::jsonb WHERE project_id=$1`,
+      `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"experimental":{"session_transcript_history":false,"session_log":false}}'::jsonb WHERE project_id=$1`,
       [projectId],
     );
     const overridden = await captureSessionTranscriptMirror(sessionId, {
@@ -190,7 +193,7 @@ test('a turn writes only what changed, and a shorter read deletes nothing', asyn
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-delta-test');
+    project = await seedProject('transcript-capture-delta-test', MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_delta';
     await db.query(
@@ -284,7 +287,7 @@ test("a sub-agent's transcript is saved under its own OpenCode session, and a ro
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-children-test');
+    project = await seedProject('transcript-capture-children-test', MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_parent';
     const child = 'ses_subagent';
@@ -396,7 +399,7 @@ test('a capture that leaves sub-agents unread queues the next capture, which sav
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-more-children-test');
+    project = await seedProject('transcript-capture-more-children-test', MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_fanout';
     await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [sessionId, root]);
@@ -498,7 +501,7 @@ test('a complete read of an empty conversation is saved and served as complete a
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-empty-test');
+    project = await seedProject('transcript-capture-empty-test', MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_empty';
     await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
@@ -546,7 +549,7 @@ test('a transcript string Postgres jsonb cannot represent is made storable, not 
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-jsonb-unsafe');
+    project = await seedProject('transcript-capture-jsonb-unsafe', MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_jsonb_unsafe';
     await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
@@ -623,7 +626,7 @@ test("a new runtime root keeps every row of the old root and saves its own next 
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-root-change-test');
+    project = await seedProject('transcript-capture-root-change-test', MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const oldRoot = 'ses_rootold';
     const newRoot = 'ses_rootnew';
@@ -757,7 +760,7 @@ test('only a recorded rewind deletes, and only the rewound rows', async () => {
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-rewind-test');
+    project = await seedProject('transcript-capture-rewind-test', MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_rewind';
     await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
@@ -866,7 +869,7 @@ test('a pi session never loses rows on any read', async () => {
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject('transcript-capture-pi-test');
+    project = await seedProject('transcript-capture-pi-test', MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_pirootsession';
     await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [
@@ -933,7 +936,7 @@ async function withSavedRoot(label: string, body: (fx: {
   await db.connect();
   let project: SeededProject | undefined;
   try {
-    project = await seedProject(label);
+    project = await seedProject(label, MIRROR);
     const sessionId = await seedSession(project, randomUUID());
     const root = 'ses_markerroot';
     await db.query('UPDATE kortix.project_sessions SET opencode_session_id = $2 WHERE session_id = $1', [

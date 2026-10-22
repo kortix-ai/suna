@@ -11,6 +11,7 @@ export function bindSessionLifecycleSecurity(ctx: SessionBindingContext) {
         P.updateSessionReminder(ctx.projectId, ctx.sessionId, reminderId, input),
       remove: (reminderId: string) =>
         P.deleteSessionReminder(ctx.projectId, ctx.sessionId, reminderId),
+      run: (reminderId: string) => P.runSessionReminder(ctx.projectId, ctx.sessionId, reminderId),
     },
     /** Per-session audit trail of connector-gated agent actions. */
     audit: (limit?: number, options?: Parameters<typeof P.getSessionAudit>[3]) =>

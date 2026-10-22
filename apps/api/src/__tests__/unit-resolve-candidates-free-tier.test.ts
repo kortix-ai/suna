@@ -109,15 +109,15 @@ mock.module('../llm-gateway/credentials/codex', () => ({
 // below are derived from the same stub — `managedTransportAvailable` is
 // `managedCandidates(...).length > 0` in the real module and the mock must not
 // be able to contradict itself.
-const mockManagedCandidates = (managed: { id: string; upstreamModelId?: string }) => [
+const mockManagedCandidates = (managed: { id: string }) => [
   {
-    provider: 'openrouter',
-    kind: 'openai-chat',
-    baseUrl: 'https://openrouter.ai/api/v1',
+    provider: 'platinum',
+    kind: 'openai-compat',
+    baseUrl: 'https://platinum.example/v1/inference',
     apiKey: 'managed-key',
     billingMode: 'credits',
     markup: 1.2,
-    resolvedModel: managed.upstreamModelId ?? managed.id,
+    resolvedModel: managed.id,
   },
 ];
 
@@ -133,11 +133,11 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
   }),
   livePricing: () => undefined,
   managedCandidates: mockManagedCandidates,
-  // `served-managed-models.ts` imports this to build SERVED_MANAGED_MODELS, and
+  // `served-managed-models.ts` imports this to build the served lineup, and
   // `catalog-models.ts` (which resolve-candidates.ts imports) imports that — so
   // omitting it makes the whole file fail to link with
   // `SyntaxError: Export named 'managedTransportAvailable' not found`.
-  managedTransportAvailable: (managed: { id: string; upstreamModelId?: string }) =>
+  managedTransportAvailable: (managed: { id: string }) =>
     mockManagedCandidates(managed).length > 0,
   // resolve-candidates.ts's Bedrock BYOK branch imports this unconditionally
   // (only CALLS it for kind:'bedrock' candidates, which this file never
@@ -150,6 +150,9 @@ mock.module('../llm-gateway/resolution/descriptors', () => ({
 }));
 
 const { resolveCandidates } = await import('../llm-gateway/resolution/resolve-candidates');
+const { TEST_MANAGED_LINEUP: LINEUP } = await import('./fixtures/managed-lineup');
+// The lineup Platinum Inference would list.
+(await import('../llm-gateway/models/managed-models')).__setManagedLineupForTest(LINEUP);
 
 function principal(accountId: string) {
   return {
@@ -283,14 +286,13 @@ describe('resolveCandidates free-tier premium gate', () => {
   });
 });
 
-// Every managed id the catalog serves, every legacy alias, bare and with the
-// opencode `kortix/` prefix: a new managed model or alias cannot open a path
-// for Free (2026-10-19, see the learnings ledger).
-const { MANAGED_MODELS } = await import('@kortix/llm-catalog/lite');
-const { LEGACY_MANAGED_IDS } = await import('../llm-gateway/models/managed-models');
+// Every managed id the catalog serves and retired ids sessions still carry,
+// bare and with the opencode `kortix/` prefix: a new managed model or a
+// retired id cannot open a path for Free (2026-10-19, see the learnings ledger).
+const RETIRED_SAMPLE = ['kimi-k3', 'morph-dsv41flash', 'deepseek-v4-flash-0731'];
 
 describe('no managed id or alias reaches a Free account', () => {
-  const ids = [...MANAGED_MODELS.map((m) => m.id), ...Object.keys(LEGACY_MANAGED_IDS)];
+  const ids = [...LINEUP.map((m) => m.id), ...RETIRED_SAMPLE];
   const refs = ids.flatMap((id) => [id, `kortix/${id}`]);
 
   beforeEach(() => {
@@ -321,7 +323,7 @@ describe('no managed id or alias reaches a Free account', () => {
 
   test('control: a paid plan is served the current lineup', async () => {
     accountTier = 'credits';
-    for (const { id } of MANAGED_MODELS) {
+    for (const { id } of LINEUP) {
       expect((await resolveCandidates(principal('sweep-paid'), id)).length).toBeGreaterThan(0);
     }
   });

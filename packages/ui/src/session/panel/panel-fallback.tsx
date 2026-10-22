@@ -39,6 +39,9 @@ const SessionFilesExplorer = lazy(() =>
 const SessionAuditPanel = lazy(() =>
   import('./session-audit-panel').then((m) => ({ default: m.SessionAuditPanel })),
 );
+const SessionRemindersPanel = lazy(() =>
+  import('./session-reminders-panel').then((m) => ({ default: m.SessionRemindersPanel })),
+);
 
 export interface SessionPanelFallbackProps {
   projectId: string;
@@ -70,6 +73,7 @@ export function SessionPanelFallback({
 
 function PanelViewModal({ projectId, projectSessionId, runtimeSessionId }: SessionPanelFallbackProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const tReminders = useTranslations('reminders');
   const request = usePanelFallbackStore((s) => s.request);
   if (!request) return null;
   const { view, target } = request;
@@ -80,6 +84,8 @@ function PanelViewModal({ projectId, projectSessionId, runtimeSessionId }: Sessi
         ? 'Terminal'
         : view === 'audit'
           ? tI18nComplete.raw('textbb6aea287396')
+          : view === 'reminders'
+            ? tReminders('title')
           : target?.changes
             ? 'Changes'
             : 'Files';
@@ -95,6 +101,10 @@ function PanelViewModal({ projectId, projectSessionId, runtimeSessionId }: Sessi
       />
     ) : view === 'audit' ? (
       <SessionAuditPanel projectId={projectId} projectSessionId={projectSessionId} />
+    ) : view === 'reminders' ? (
+      <div className="p-4">
+        <SessionRemindersPanel projectId={projectId} projectSessionId={projectSessionId} />
+      </div>
     ) : !runtimeSessionId ? (
       <Centered>
         <Loading className="size-5" />

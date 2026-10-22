@@ -52,8 +52,11 @@ test('a wake backfills an unmirrored session, repairs a headless one, and skips 
         `backfill-${flag === 'default' ? 'default' : flag ? 'on' : 'off'}-${randomUUID().slice(0, 8)}`,
         {
           accountId,
+          // The v1 mirror is written only with `session_log` off (on by default since 2026-10-22).
           metadata:
-            flag === 'default' ? {} : { experimental: { session_transcript_history: flag } },
+            flag === 'default'
+              ? { experimental: { session_log: false } }
+              : { experimental: { session_transcript_history: flag, session_log: false } },
         },
       );
       seeded.push(project);
@@ -229,6 +232,7 @@ test('a history the old mirror stripped is served with what it kept, read again 
     accountId = await seedAccount('transcript-backfill-stripped-test');
     const project = await seedProject(`backfill-stripped-${randomUUID().slice(0, 8)}`, {
       accountId,
+      metadata: { experimental: { session_log: false } },
     });
     seeded.push(project);
     const sessionId = await seedSessionRow(project, randomUUID());

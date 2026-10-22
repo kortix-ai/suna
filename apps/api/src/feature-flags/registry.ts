@@ -446,20 +446,24 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'session_log',
     name: 'Session log v2',
     description:
-      'Read a session through the v2 session log instead of the v1 transcript. Off by default and not offered in Settings: Kortix enables it per project. Prod rollout: internal projects first, then 10% of projects, then every project. It becomes the default in the release that ships v2 to everyone and is deleted in the next release.',
+      'Read a session through the v2 session log instead of the v1 transcript. On by default for every project since 2026-10-22, after the backfill gave every old session a log; not offered in Settings. A Kortix operator can turn it off for one project (a stored false). It is deleted in a later release, with the v1 mirror.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
-    // Internal-only (2026-10-11): not offered in Settings.
-    // A Kortix operator enables it per project.
+    // On for every project (2026-10-22): the prod backfill (P3.4) gave every old session a log.
+    // A stored project value wins: `false` keeps a project on the v1 transcript.
+    platformDefault: () => true,
+    // Internal-only (2026-10-11): not offered in Settings. A Kortix operator sets it per project
+    // (PUT /v1/admin/api/projects/:id/features).
     catalogHidden: true,
     enforcement: 'behavioral',
     enforcementNote:
-      'BEHAVIORAL only. On, the API serves the stored v1 transcript reads ' +
+      'BEHAVIORAL only. On (the default), the API serves the stored v1 transcript reads ' +
       '(transcript shape=sync and the compact fallback, the open bundle, the ' +
       'public share, MCP read_session) from the session log, and the open ' +
       'bundle carries a `log` leg (P4.2). With the flag on, the SDK reads the ' +
-      'history from the session log (P8.0a): pages, sub-agent threads, no v1 saved copy.',
+      'history from the session log (P8.0a): pages, sub-agent threads, no v1 saved copy. ' +
+      'A capture writes the log and no v1 mirror row. A session without a log still reads ' +
+      'its v1 mirror. A stored false keeps the project on the v1 transcript and the mirror.',
   },
   {
     key: 'session_log_restore',

@@ -204,3 +204,64 @@ flow(
     });
   },
 );
+
+// BILL-21 — account-state shows money only to a caller IAM grants
+// `billing.read` (pentest 2026-07 finding 1, BOLA). The route checked
+// membership alone, so a member the engine refuses every account action (here:
+// a password session in an account that enforces MFA) still read the whole
+// subscription, balance and usage. It now reads the gating view only.
+flow(
+  "BILL-21",
+  {
+    domain: "billing",
+    requires: ["database"],
+    routes: ["GET /v1/billing/account-state", "GET /v1/billing/account-state/minimal"],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember("member");
+    const query = { account_id: team.id };
+    const paths = ["/v1/billing/account-state", "/v1/billing/account-state/minimal"];
+    await ctx.step("a plain member (billing.read) reads the full state with can_manage_billing false", async () => {
+      for (const path of paths) {
+        (await ctx.client.as(member).get(path, { query })).status(200).body().exists("$.credits.total").has("$.can_manage_billing", false);
+      }
+    });
+    await ctx.step("the account enforces MFA", async () => {
+      await withDb(ctx, (db) => db.query("UPDATE kortix.accounts SET mfa_required = true WHERE account_id = $1", [team.id]));
+    });
+    await ctx.step("the OWNER (super-admin) still reads the full state: subscription, balance, can_manage_billing true", async () => {
+      for (const path of paths) {
+        (await ctx.client.as(ctx.P.OWNER).get(path, { query }))
+          .status(200)
+          .body()
+          .exists("$.subscription.status")
+          .exists("$.credits.total")
+          .has("$.can_manage_billing", true);
+      }
+    });
+    await ctx.step("the member's aal1 session reads only the gating view on both routes", async () => {
+      // IAM verdicts are cached for up to 15 s per member (IAM_CACHE_TTL_MS).
+      const deadline = Date.now() + 20_000;
+      for (const path of paths) {
+        let body: Record<string, any> = {};
+        for (;;) {
+          const r = await ctx.client.as(member).get(path, { query });
+          r.status(200);
+          body = r.json<Record<string, any>>();
+          if (!("total" in body.credits) || Date.now() > deadline) break;
+          await new Promise((done) => setTimeout(done, 1_000));
+        }
+        const leaked = ["usage_this_period", "auto_topup", "contract", "enterprise_offer"].filter((k) => k in body);
+        if ("total" in body.credits) leaked.push("credits.total");
+        for (const k of ["subscription_id", "status", "monthly_usd", "commitment", "current_period_end"]) {
+          if (k in body.subscription) leaked.push(`subscription.${k}`);
+        }
+        if (leaked.length) throw new Error(`${path} leaked without billing.read: ${leaked.join(", ")}`);
+        if (typeof body.credits.can_run !== "boolean" || !body.tier?.entitlements || body.can_manage_billing !== false) {
+          throw new Error(`${path} gating view is incomplete: ${JSON.stringify(body)}`);
+        }
+      }
+    });
+  },
+);

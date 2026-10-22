@@ -164,7 +164,8 @@ beforeEach(() => {
   sandboxRow = { status: 'active', externalId: 'box-1', provider: 'platinum', metadata: {}, deadlineAt: new Date(0) };
   mirrorRow = null;
   mirrorReads = 0;
-  projectMetadata = {};
+  // session_log is on by default (#10669); most cases here cover the v1 mirror path.
+  projectMetadata = { experimental: { session_log: false } };
   auditPending = 0;
   auditLatestAt = null;
   auditLatestResolvedAt = null;

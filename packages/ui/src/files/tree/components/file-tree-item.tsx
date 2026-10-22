@@ -239,6 +239,7 @@ export function FileTreeItem({
         <input
           type="text"
           ref={renameInputRef}
+          aria-label={tHardcodedUi.raw('i18nComplete.text3064d79a295c')}
           value={renameName}
           onChange={(e) => setRenameName(e.target.value)}
           onKeyDown={(e) => {

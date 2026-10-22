@@ -32,6 +32,11 @@ import { ComposerUnderbar } from './composer-underbar';
 import type { ComposerEditorHandle } from './editor/composer-editor';
 import type { SlashAction } from './menus/slash-actions';
 import type { AttachedFile } from './types';
+import { useUiHostConfig } from '../../providers/ui-provider';
+
+/** What the attach picker offers when the host names no list. */
+const DEFAULT_ATTACH_ACCEPT =
+  'image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar';
 
 const ComposerEditorLazy = lazy(() =>
   import('./editor/composer-editor').then((mod) => ({ default: mod.ComposerEditor })),
@@ -50,6 +55,8 @@ function ComposerEditorFallback() {
  * phase 1).
  */
 export interface ComposerCardDerived {
+  /** The commands the `/` menu lists: the `commands` prop, or none when the host hides the runtime's (`runtimeSlashEnabled`). */
+  commands: NonNullable<SessionChatInputProps['commands']>;
   tHardcodedUi: ReturnType<typeof useTranslations>;
   isDragOver: boolean;
   /** Unset inside a `ComposerDropZone`: the zone owns every file drag. */
@@ -196,6 +203,7 @@ export function ComposerCard({
   onArrowUpAtStart,
 }: ComposerCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
+  const { attachAccept } = useUiHostConfig();
   const inlineUnderbar = underbarPlacement === 'inline';
 
   return (
@@ -355,7 +363,7 @@ export function ComposerCard({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*,.pdf,.txt,.md,.json,.csv,.xml,.yaml,.yml,.toml,.js,.ts,.jsx,.tsx,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.css,.html,.vue,.svelte,.log,.sql,.zip,.tar,.gz,.rar"
+            accept={attachAccept ?? DEFAULT_ATTACH_ACCEPT}
             multiple
             className="hidden"
             onChange={handleFileSelect}

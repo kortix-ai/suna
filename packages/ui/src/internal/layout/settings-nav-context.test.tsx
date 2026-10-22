@@ -60,26 +60,17 @@ describe('useSettingsNav — inside a provider', () => {
   });
 
   test('a nested consumer receives the exact navigate function given to the provider', () => {
-    // Renders through a plain prop callback (invoked during render, but not
-    // assigning an outer-scope binding) rather than mutating a variable
-    // captured by closure — the latter trips `react-hooks/globals` ("Cannot
-    // reassign variables declared outside of the component/hook").
-    let seen: SettingsNav['navigate'] | null = null;
-    const onCapture = (nav: unknown) => {
-      seen = (nav as SettingsNav).navigate;
-    };
-    function CaptureNavigate({ report }: { report: (nav: unknown) => void }) {
-      const nav = useSettingsNav();
-      report(nav);
-      return null;
-    }
     const navigate = () => {};
-    renderToStaticMarkup(
+    function CaptureNavigate() {
+      const nav = useSettingsNav();
+      return <span data-same-navigate={String(nav.navigate === navigate)} />;
+    }
+    const html = renderToStaticMarkup(
       <SettingsNavProvider value={baseNav({ navigate })}>
-        <CaptureNavigate report={onCapture} />
+        <CaptureNavigate />
       </SettingsNavProvider>,
     );
-    expect<unknown>(seen).toBe(navigate);
+    expect(html).toContain('data-same-navigate="true"');
   });
 
   test("isOpen=false still resolves the hook (only closed-panel behavior is a view's concern, not the context's)", () => {

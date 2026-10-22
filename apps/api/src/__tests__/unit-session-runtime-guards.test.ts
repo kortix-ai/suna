@@ -1279,7 +1279,7 @@ describe('project session runtime guards', () => {
     const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
 
     expect(response.status).toBe(201);
@@ -1323,7 +1323,7 @@ describe('project session runtime guards', () => {
       const response = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+        body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
       });
       // The create still answers; the failure is in the detached provision work.
       expect(response.status).toBe(201);
@@ -1395,7 +1395,7 @@ describe('project session runtime guards', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
 
     expect(response.status).toBe(201);
@@ -1420,7 +1420,7 @@ describe('project session runtime guards', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
 
     expect(response.status).toBe(201);
@@ -1446,7 +1446,7 @@ describe('project session runtime guards', () => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${SESSION_BOUND_PAT}`,
       },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
 
     expect(response.status).toBe(201);
@@ -1465,7 +1465,7 @@ describe('project session runtime guards', () => {
     const web = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
     expect(web.status).toBe(201);
     const webSession = await web.json();
@@ -1477,7 +1477,7 @@ describe('project session runtime guards', () => {
     const cli = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Kortix-Client': 'cli' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
     expect(cli.status).toBe(201);
     expect((await cli.json()).metadata?.source).toBe('ui');
@@ -1629,7 +1629,7 @@ describe('project session runtime guards', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
     expect(createRes.status).toBe(201);
 
@@ -1692,7 +1692,7 @@ describe('project session runtime guards', () => {
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         base_ref: 'main',
         opencode_model: 'anthropic/claude-opus-4-8',
         agent_name: 'default',
@@ -1724,7 +1724,7 @@ describe('project session runtime guards', () => {
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         base_ref: 'main',
         agent_name: 'reviewer',
       }),
@@ -1744,7 +1744,7 @@ describe('project session runtime guards', () => {
         Authorization: `Bearer ${PROJECT_RUNTIME_PAT}`,
       },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         base_ref: 'main',
         model: 'anthropic/claude-opus-4-8',
       }),
@@ -1787,7 +1787,7 @@ describe('project session runtime guards', () => {
     const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+      body: JSON.stringify({ provider: 'platinum', base_ref: 'main' }),
     });
     expect(createRes.status).toBe(201);
 
@@ -2853,7 +2853,7 @@ describe('project session runtime guards', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         base_ref: 'main',
         agent_name: 'default',
       }),
@@ -2908,7 +2908,7 @@ describe('project session runtime guards', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        provider: 'daytona',
+        provider: 'platinum',
         name: 'Contract session',
         agent_name: 'reviewer',
         initial_prompt: 'Review the repo',
@@ -2922,7 +2922,7 @@ describe('project session runtime guards', () => {
     expect(body.session_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.session_id).toBe(body.sandbox_id);
     expect(body.session_id).toBe(body.branch_name);
-    expect(body.sandbox_provider).toBe('daytona');
+    expect(body.sandbox_provider).toBe('platinum');
     expect(body.base_ref).toBe('dev');
     expect(body.status).toBe('provisioning');
     expect(body.opencode_session_id).toBeNull();

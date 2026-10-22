@@ -92,6 +92,7 @@ Known API-key providers (provider → project secret(s)):
   opencode        → OPENCODE_API_KEY (OpenCode Zen)
   opencode-go     → OPENCODE_GO_API_KEY (OpenCode Go)
   bedrock         → AWS_BEARER_TOKEN_BEDROCK + AWS_REGION (--region)
+  platinum        → PLATINUM_API_KEY (Platinum Inference; models listed live)
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
@@ -137,6 +138,7 @@ export const PROVIDER_CATALOG_ID: Record<string, string> = {
   opencode: 'opencode',
   'opencode-go': 'opencode-go',
   bedrock: 'amazon-bedrock',
+  platinum: 'platinum',
 };
 
 export const PROVIDER_ENV_VARS: Record<string, string[]> = Object.fromEntries(

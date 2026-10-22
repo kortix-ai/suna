@@ -92,7 +92,10 @@ export async function seedSessionTranscript(
      * stores them. `defaults` is the default prompt and reply.
      */
     messages?: (root: string, defaults: SavedMessage[]) => SavedMessage[];
-    /** Store the history in the session log. `bearer`: the session owner's JWT or PAT, which mints the journal credential. */
+    /**
+     * Store the history in the session log. `bearer`: the session owner's JWT or PAT, which mints the journal credential.
+     * Without it the history goes to the v1 mirror and the project's `session_log` flag is stored false.
+     */
     log?: { bearer: string };
   },
 ) {
@@ -113,6 +116,13 @@ export async function seedSessionTranscript(
     if (input.log) {
       await journalSessionLog(env, { ...input, bearer: input.log.bearer, root, messages });
     } else {
+      // The v1 mirror is the saved copy only of a project with `session_log` off (on by default since 2026-10-22).
+      await db.query(
+        `UPDATE kortix.projects SET metadata = COALESCE(metadata, '{}'::jsonb)
+           || jsonb_build_object('experimental', COALESCE(metadata->'experimental', '{}'::jsonb) || '{"session_log":false}'::jsonb)
+         WHERE project_id = $1`,
+        [input.projectId],
+      );
       await db.query(
         'INSERT INTO kortix.session_transcript_mirrors (session_id, project_id, account_id, opencode_session_id, head_complete) VALUES ($1,$2,$3,$4,true)',
         [input.sessionId, input.projectId, input.accountId, root],

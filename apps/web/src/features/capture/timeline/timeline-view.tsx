@@ -29,7 +29,7 @@ import {
 } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@kortix/ui/button';
 import {
@@ -515,38 +515,39 @@ function DeviceTimeline({ accountId, device }: { accountId: string; device: Capt
   const [layers, setLayers] = useState<TrackLayers>({ screen: true, actions: true, audio: true });
 
   // Keyboard first, as in the engine window. `/` (search) lives in the search field.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.closest(
-          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="listbox"], [data-no-scrub]',
-        )
+  const onKey = useEffectEvent((event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.closest(
+        'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="listbox"], [data-no-scrub]',
       )
-        return;
-      const mod = event.metaKey || event.ctrlKey;
-      if (mod && !event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
-        event.preventDefault();
-        runJump(event.key === 'ArrowLeft' ? -1 : 1, true);
-        return;
-      }
-      if (mod || event.altKey) return;
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        event.preventDefault();
-        setPlaying(false);
-        if (event.shiftKey) runJump(event.key === 'ArrowLeft' ? -1 : 1, true);
-        else step(event.key === 'ArrowLeft' ? -1 : 1);
-      } else if (event.key === ' ' && !target?.closest('button, a')) {
-        event.preventDefault();
-        interact();
-        setPlaying((p) => !p);
-      } else if (event.key === '+' || event.key === '=') scrubber.zoom(1 / 1.6);
-      else if (event.key === '-') scrubber.zoom(1.6);
-      else if (event.key === 'l' || event.key === 'L') goLive();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [runJump, step, scrubber, goLive, interact]);
+    )
+      return;
+    const mod = event.metaKey || event.ctrlKey;
+    if (mod && !event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      event.preventDefault();
+      runJump(event.key === 'ArrowLeft' ? -1 : 1, true);
+      return;
+    }
+    if (mod || event.altKey) return;
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      setPlaying(false);
+      if (event.shiftKey) runJump(event.key === 'ArrowLeft' ? -1 : 1, true);
+      else step(event.key === 'ArrowLeft' ? -1 : 1);
+    } else if (event.key === ' ' && !target?.closest('button, a')) {
+      event.preventDefault();
+      interact();
+      setPlaying((p) => !p);
+    } else if (event.key === '+' || event.key === '=') scrubber.zoom(1 / 1.6);
+    else if (event.key === '-') scrubber.zoom(1.6);
+    else if (event.key === 'l' || event.key === 'L') goLive();
+  });
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => onKey(event);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   // Wheel and trackpad move time over the stage and the track; pinch (or Ctrl+wheel) zooms.
   const scrubAreaRef = useRef<HTMLElement>(null);

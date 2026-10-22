@@ -156,12 +156,12 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
   if (!candidate.doc || typeof candidate.doc !== 'object') return null;
   if (!Array.isArray(candidate.files)) return null;
   const legacy = liftLegacyQuoteNodes(candidate.doc);
-  const quotes: string[] = [];
+  const quotes = new Set<string>();
   const stored: unknown[] = Array.isArray(candidate.quotes) ? candidate.quotes : [];
   for (const quote of [...stored, ...legacy.quotes]) {
     if (typeof quote !== 'string') continue;
     const text = quote.trim();
-    if (text && !quotes.includes(text)) quotes.push(text);
+    if (text) quotes.add(text);
   }
   // Only `{ id, text }` with both set crosses back; anything else in storage is dropped.
   const storedPastes: unknown[] = Array.isArray(candidate.pastes) ? candidate.pastes : [];
@@ -179,7 +179,7 @@ export function deserializeDraft(raw: unknown, currentUserId: string): StoredDra
     u: candidate.u,
     doc: legacy.doc,
     files: candidate.files.filter(isRemote),
-    quotes,
+    quotes: [...quotes],
     pastes,
     uploads,
   };

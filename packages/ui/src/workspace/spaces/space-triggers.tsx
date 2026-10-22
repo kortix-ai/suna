@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { describeWhen, triggerName, triggerSubtitle } from '../../customize/triggers/schedule/schedule-copy';
 import { useTriggerControls } from '../../customize/triggers/schedule/trigger-controls';
 import { TriggerComposer } from '../../customize/triggers/schedule/trigger-composer';
-import { lastRunLabel } from '../../customize/triggers/schedule/trigger-list';
+import { lastRunLabel } from '../../internal/lib/trigger-clock';
 import { TriggerTile } from '../../customize/triggers/schedule/trigger-tile';
 import { useLocale, useTranslations } from '../../i18n';
 import { uiRoutes } from '../../lib/routes';

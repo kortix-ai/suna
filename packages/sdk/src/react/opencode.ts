@@ -19,7 +19,7 @@
 // hook — `useSession(projectId, sessionId)` — plus the pre-runtime capability
 // hooks (`useProjectModels` / `useVisibleAgents` / `useProjectConfig`) and the
 // primitives (`useSessionPicks` / `useRuntimePhase` / start-stash). The golden
-// reference (apps/whitelabel-demo) imports ONLY that surface — no `server-store`,
+// reference (apps/white-label/lumen) imports ONLY that surface — no `server-store`,
 // no `RuntimeEventStreamProvider`, no `useCanonicalRuntimeSession`, no raw
 // stores, no `getClient`.
 //

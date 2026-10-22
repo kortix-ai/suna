@@ -488,6 +488,9 @@ export function ProviderConnect({
       connectedIds,
       search,
     });
+    const disabledProviders = new Set(
+      access.data?.enforced === true ? access.data.disabledProviders : [],
+    );
     const rows: ProviderListRow[] = ordered.map((entry) => {
       const method = providerMethod(entry);
       return {
@@ -506,7 +509,7 @@ export function ProviderConnect({
               ? 'connected'
               : 'none',
         via: connectedVia(entry.id, connectedIds),
-        disabled: access.data?.enforced === true && access.data.disabledProviders.includes(entry.id),
+        disabled: disabledProviders.has(entry.id),
       };
     });
     return {

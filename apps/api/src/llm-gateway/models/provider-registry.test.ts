@@ -16,6 +16,15 @@ describe('runtime catalog provider resolution', () => {
   // packages/llm-gateway/src/transports/openai-compat/index.ts). If this ever
   // resolves to something other than the real api.openai.com host, that
   // translation silently stops firing for genuine OpenAI BYOK traffic.
+  // Platinum is not on models.dev; the overlay makes it a regular BYOK provider.
+  test('resolves Platinum to its inference endpoint with PLATINUM_API_KEY', () => {
+    expect(resolveCatalogUpstream('platinum')).toMatchObject({
+      kind: 'openai-compat',
+      envVar: 'PLATINUM_API_KEY',
+      baseUrl: 'https://api.platinum.dev/v1/inference',
+    });
+  });
+
   test('resolves OpenAI to the genuine api.openai.com host', () => {
     expect(resolveCatalogUpstream('openai')).toMatchObject({
       kind: 'openai-compat',

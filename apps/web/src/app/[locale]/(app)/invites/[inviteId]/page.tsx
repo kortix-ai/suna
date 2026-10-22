@@ -2,7 +2,7 @@
 
 import { useLocale, useTranslations } from '@/i18n/use-translations';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useSyncExternalStore } from 'react';
@@ -30,6 +30,7 @@ import {
   describeAccountInvite,
   type AccountInviteDescribe,
 } from '@kortix/sdk';
+import { qk } from '@kortix/sdk/react';
 
 type UnifiedInvite = { kind: 'account'; invite: AccountInviteDescribe };
 
@@ -46,6 +47,7 @@ export default function InvitePage() {
   const locale = useLocale();
   const { inviteId } = useParams<{ inviteId: string }>();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
   // `appHome` comes from a cookie, so the server cannot know it. The third
   // argument is the *server* snapshot, so the first render matches the server's
@@ -85,7 +87,11 @@ export default function InvitePage() {
         current.invite.email_matches_caller ? current.invite : null,
       );
     },
-    onSuccess: ({ landing }) => {
+    onSuccess: async ({ landing }) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: qk.accounts.scope() }),
+        queryClient.invalidateQueries({ queryKey: qk.projects.scope() }),
+      ]);
       // Land a newly-joined member in the project the invite granted, or in the
       // account they just joined. The plain door reopened the project this
       // browser remembered, in the account they came from (KRTX-1731).
@@ -100,7 +106,8 @@ export default function InvitePage() {
       await declineAccountInvite(inviteId!);
       return { kind: 'account' as const };
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: qk.accounts.scope() });
       // `/accounts` was a page; it is a modal (`?accountId=`) now, and a
       // declined invite is not a reason to open it. The landing door is where
       // a signed-in user with nothing else to do belongs.
