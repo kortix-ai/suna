@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 884,
+  "count": 885,
   "routes": [
     {
       "method": "GET",
@@ -2336,6 +2336,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/files/content"
+    },
+    {
+      "method": "PUT",
       "path": "/v1/projects/:projectId/files/content"
     },
     {

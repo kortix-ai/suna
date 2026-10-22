@@ -1844,3 +1844,8 @@ the synthetic account and auth user. Fail if cleanup fails.
 The [evaluation and runbook](../../.agents/skills/testing/references/e2e-evaluation.md)
 defines the pilot's scope and promotion criteria. Existing route-coverage and
 release contracts remain required.
+
+### FILE-14 — Owner edits a repository file
+Read README.md and its blob revision. PUT the edited text with the viewed revision.
+The API pushes a commit and a subsequent read returns the edited text. A stale revision
+returns 409. Anonymous and unrelated users cannot commit.
