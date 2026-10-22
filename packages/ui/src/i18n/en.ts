@@ -4376,6 +4376,7 @@ const catalog = {
       "textbdb86505f806": "Archived",
       "textbdbd7706de64": "How this works",
       "textbdc0857b99a9": "Only me",
+      "textbdc090ec61e3": "Reload",
       "textbdc7d54433e6": "Failed to add connector",
       "textbde05a7b8929": "Checking session",
       "textbe379a30f1aa": "credits",
