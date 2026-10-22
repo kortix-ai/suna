@@ -115,6 +115,21 @@ async function followTrigger(
     logger.warn('[trigger-watchers] follow failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
 }
 
+/**
+ * A DM is one member with one agent: a trigger that posts to it runs that
+ * agent, as a DM thread does (`project-sessions.ts` forces `agent_name`).
+ */
+function dmAgentMismatch(
+  space: { kind: 'channel' | 'dm'; dmAgentName: string | null } | null,
+  agent: string,
+): { error: string; code: 'agent_mismatch' } | null {
+  if (space?.kind !== 'dm' || !space.dmAgentName || agent === space.dmAgentName) return null;
+  return {
+    error: `A trigger that posts to a DM runs the DM's agent. Set agent to "${space.dmAgentName}".`,
+    code: 'agent_mismatch',
+  };
+}
+
 /** Body keys that change which event a trigger subscribes to. */
 const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 'event_config'];
 
@@ -198,7 +213,7 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
       );
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row));
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, loaded.userId));
     },
   );
 
@@ -406,7 +421,7 @@ export function registerTriggersRoutes(): void {
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'Fresh session mode only: skip holds a fire while the previous run is still active. Omit for the default: skip for cron, allow for the other types.' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private; project when space_id is a channel.' }),
-            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to as threads (project_channels flag; ignored while it is off). A DM must be the caller\'s own, and its runs are shared with that member only.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to as threads (project_channels flag; ignored while it is off). A DM must be the caller\'s own and the trigger must run the DM\'s agent. A DM run is shared with the DM\'s member; like every trigger run, trigger managers and account owners and admins can also open it.' }),
           }) } } },
       },
       responses: {
@@ -454,6 +469,8 @@ export function registerTriggersRoutes(): void {
         if ('error' in found) return c.json(found.error.body, found.error.status);
         space = found.space;
       }
+      const mismatch = dmAgentMismatch(space, draft.agent);
+      if (mismatch) return c.json(mismatch, 400);
       const parsedAccess =
         space?.kind === 'dm'
           ? { ok: true as const, access: dmTriggerSessionAccess(space) }
@@ -515,7 +532,7 @@ export function registerTriggersRoutes(): void {
       });
       await followTrigger(c, loaded.row, projectId, draft.slug);
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, loaded.userId), 201);
     },
   );
 
@@ -580,7 +597,7 @@ export function registerTriggersRoutes(): void {
         .where(eq(projects.projectId, projectId))
         .returning();
       if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-      return c.json(await loadTriggersForResponse(projectId, row));
+      return c.json(await loadTriggersForResponse(projectId, row, loaded.userId));
     },
   );
 
@@ -620,7 +637,7 @@ export function registerTriggersRoutes(): void {
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip or allow; null resets it to the default (skip for cron, allow otherwise).' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
-            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to; null clears it (project_channels flag; ignored while it is off). Moving to a channel without session_access makes its threads project-visible.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to; null clears it (project_channels flag; ignored while it is off). It applies to later runs only; moving to a channel without session_access makes later threads project-visible.' }),
           }) } } },
       },
       responses: {
@@ -659,9 +676,26 @@ export function registerTriggersRoutes(): void {
           nextSpace = found.space;
         }
       }
-      // A DM trigger's runs stay shared with the DM's member only; a move into
-      // a channel without a policy makes them project-visible.
-      const space = nextSpace !== undefined ? nextSpace : channels ? await loadTriggerSpace(projectId, slug) : null;
+      // The stored space is read whatever the flag: a flag-off sharing write on a
+      // DM trigger must stay DM-only.
+      const stored = await loadTriggerSpace(projectId, slug);
+      // Another member's DM trigger: anyone else may only move it out or switch it.
+      if (
+        stored?.kind === 'dm' &&
+        stored.dmUserId !== loaded.userId &&
+        Object.keys(body).some((key) => key !== 'space_id' && key !== 'enabled')
+      ) {
+        return c.json(
+          { error: 'Only the member a DM belongs to can edit a trigger that posts to it.', code: 'space_forbidden' },
+          403,
+        );
+      }
+      // A DM trigger's runs stay shared with the DM's member; a move into a
+      // channel without a policy makes its later runs project-visible.
+      const space = nextSpace !== undefined ? nextSpace : stored;
+      // Only an explicit sharing save outside a DM re-shares earlier threads:
+      // a space change applies to later runs only.
+      const propagate = parsedAccess !== null && nextSpace === undefined && space?.kind !== 'dm';
       if (space?.kind === 'dm' && (parsedAccess || nextSpace !== undefined)) {
         parsedAccess = { ok: true, access: dmTriggerSessionAccess(space) };
       } else if (nextSpace?.kind === 'channel' && !parsedAccess) {
@@ -683,6 +717,8 @@ export function registerTriggersRoutes(): void {
           const current = extractTriggers(manifest).specs.find((s) => s.slug === slug);
           if (!current) return { ok: false, error: 'Not found', status: 404 };
           if (!touchesManifest) {
+            const mismatch = dmAgentMismatch(space, current.agent);
+            if (mismatch) return { ok: false, status: 400, ...mismatch };
             effectivePinnedSessionId = current.pinnedSessionId;
             return { ok: true, commitMessage: null };
           }
@@ -707,6 +743,8 @@ export function registerTriggersRoutes(): void {
           if ('connector' in body && !('event_source' in body)) delete base.event_source;
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+          const mismatch = dmAgentMismatch(space, draft.agent);
+          if (mismatch) return { ok: false, status: 400, ...mismatch };
           if (draft.type === 'event' && !resolveFeatureFlag(loaded.row.metadata, 'event_triggers')) {
             return { ok: false, error: featureDisabledBody('event_triggers').error, status: 403, code: 'feature_disabled' };
           }
@@ -769,6 +807,7 @@ export function registerTriggersRoutes(): void {
           slug,
           access: parsedAccess.access,
           pinnedSessionId: effectivePinnedSessionId,
+          propagate,
         });
       }
       // Turning a trigger on also resumes it from an auto-pause (KRTX-1721):
@@ -776,7 +815,7 @@ export function registerTriggersRoutes(): void {
       if (body.enabled === true) await clearTriggerAutoPause(projectId, slug);
       await followTrigger(c, loaded.row, projectId, slug);
 
-      return c.json(await loadTriggersForResponse(projectId, loaded.row));
+      return c.json(await loadTriggersForResponse(projectId, loaded.row, loaded.userId));
     },
   );
 

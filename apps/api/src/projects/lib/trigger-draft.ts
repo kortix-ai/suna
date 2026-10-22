@@ -1,5 +1,5 @@
 import type { TriggerList } from '@kortix/api-contract';
-import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix/db';
+import { connectorConnections, connectors, projectSpaces, projectTriggerRuntime } from '@kortix/db';
 import { type TriggerFilter, cronIntervalError, formatDurationSeconds, parseTriggerFilter } from '@kortix/manifest-schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
@@ -34,6 +34,8 @@ export function buildPublicWebhookUrl(projectId: string, slug: string): string {
 export async function loadTriggersForResponse(
   projectId: string,
   project: ProjectRow,
+  /** The caller: another member's DM reads as no space. Absent: every DM does. */
+  viewerUserId?: string,
 ): Promise<TriggerList> {
   const gitProject = await withProjectGitAuth(project);
   let manifest: ParsedManifest | null = null;
@@ -82,6 +84,24 @@ export async function loadTriggersForResponse(
   );
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
   const channels = resolveFeatureFlag(project.metadata, 'project_channels');
+  // A channel, or the caller's own DM: a DM's existence is never disclosed to anyone else.
+  const spaceIds = [...new Set(runtimeRows.flatMap((row) => (row.spaceId ? [row.spaceId] : [])))];
+  const listedSpaces = new Set(
+    channels && spaceIds.length
+      ? (
+          await db
+            .select({ spaceId: projectSpaces.spaceId, kind: projectSpaces.kind, dmUserId: projectSpaces.dmUserId })
+            .from(projectSpaces)
+            .where(inArray(projectSpaces.spaceId, spaceIds))
+        )
+          .filter((space) => space.kind === 'channel' || (viewerUserId && space.dmUserId === viewerUserId))
+          .map((space) => space.spaceId)
+      : [],
+  );
+  const listedSpaceId = (slug: string) => {
+    const spaceId = runtimeBySlug.get(slug)?.spaceId;
+    return spaceId && listedSpaces.has(spaceId) ? spaceId : null;
+  };
   const sessionAccessBySlug =
     specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
 
@@ -130,7 +150,7 @@ export async function loadTriggersForResponse(
       overlap: spec.overlap ?? null,
       session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
       // The channel or DM its runs post to; omitted while `project_channels` is off.
-      ...(channels ? { space_id: runtimeBySlug.get(spec.slug)?.spaceId ?? null } : {}),
+      ...(channels ? { space_id: listedSpaceId(spec.slug) } : {}),
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,

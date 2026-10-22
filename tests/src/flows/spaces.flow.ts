@@ -1015,10 +1015,59 @@ flow(
         if ((await storedTriggerSpace(world, 'ops-digest')) !== null) throw new Error('a refused PATCH stored the DM');
       });
 
-      await ctx.step('a PATCH that moves the trigger to a channel without session_access makes its threads project-visible', async () => {
+      await ctx.step('a DM trigger runs the DM’s agent: another agent → 400 agent_mismatch on create and PATCH', async () => {
+        (await world.owner.post(TRIGGERS, cronTrigger('dm-other', { space_id: dm, agent: 'researcher' }), { params }))
+          .status(400).body().has('$.code', 'agent_mismatch');
+        (await world.owner.patch(TRIGGER, { agent: 'researcher' }, { params: { ...params, slug: 'dm-digest' } }))
+          .status(400).body().has('$.code', 'agent_mismatch');
+      });
+
+      await ctx.step('a manager who is not the DM’s member: an edit → 403 space_forbidden, on/off → 200; the list hides the DM id', async () => {
+        const manager = await team.addMember('member');
+        await team.grantProjectRole(project.id, manager.userId!, 'manager');
+        const asManager = ctx.client.as(manager);
+        (await asManager.patch(TRIGGER, { prompt_template: 'Post elsewhere' }, { params: { ...params, slug: 'dm-digest' } }))
+          .status(403).body().has('$.code', 'space_forbidden');
+        (await asManager.patch(TRIGGER, { enabled: false }, { params: { ...params, slug: 'dm-digest' } })).status(200);
+        const seen = (await asManager.get(TRIGGERS, { params })).status(200).json<{ triggers: ListedTrigger[] }>().triggers;
+        if (seen.find((t) => t.slug === 'dm-digest')?.space_id !== null) throw new Error('another member sees the DM id');
+        if ((await listedTrigger(world, 'dm-digest')).space_id !== dm) throw new Error('the DM member lost the DM id');
+      });
+
+      await ctx.step('flag off: a PATCH asking a DM trigger for project sharing keeps it DM-only', async () => {
+        await world.setFeature('project_channels', false);
+        (await world.owner.patch(TRIGGER, { session_access: { mode: 'project' } }, { params: { ...params, slug: 'dm-digest' } })).status(200);
+        await world.setFeature('project_channels', true);
+        const listed = await listedTrigger(world, 'dm-digest');
+        if (listed.session_access.mode !== 'members') throw new Error(`flag-off PATCH stored ${listed.session_access.mode}`);
+      });
+
+      await ctx.step('a PATCH that moves the trigger to a channel without session_access makes its later threads project-visible', async () => {
         (await world.owner.patch(TRIGGER, { space_id: channel }, { params: { ...params, slug: 'off-digest' } })).status(200);
         const listed = await listedTrigger(world, 'off-digest');
         if (listed.space_id !== channel || listed.session_access.mode !== 'project') throw new Error(JSON.stringify(listed));
+      });
+
+      await ctx.step('a space change keeps earlier threads’ sharing: channel → DM hides no channel thread; DM → channel exposes no DM thread', async () => {
+        const visibilityOf = async (sessionId: string) => {
+          const row = await world.db.query<{ visibility: string }>('SELECT visibility FROM kortix.project_sessions WHERE session_id = $1', [sessionId]);
+          const grants = await world.db.query('SELECT 1 FROM kortix.project_session_grants WHERE session_id = $1', [sessionId]);
+          return `${row.rows[0]?.visibility}/${grants.rows.length}`;
+        };
+        const channelRun = await insertSession(world, world.ownerUserId, 'project', {
+          spaceId: channel,
+          metadata: { trigger_kind: 'git', trigger_slug: 'off-digest' },
+        });
+        (await world.owner.patch(TRIGGER, { space_id: dm }, { params: { ...params, slug: 'off-digest' } })).status(200);
+        if ((await visibilityOf(channelRun)) !== 'project/0') throw new Error(`the old channel thread is ${await visibilityOf(channelRun)}`);
+
+        const dmRun = await insertSession(world, world.ownerUserId, 'private', {
+          spaceId: dm,
+          metadata: { trigger_kind: 'git', trigger_slug: 'dm-digest' },
+        });
+        (await world.owner.patch(TRIGGER, { space_id: channel }, { params: { ...params, slug: 'dm-digest' } })).status(200);
+        (await world.owner.patch(TRIGGER, { session_access: { mode: 'project' } }, { params: { ...params, slug: 'dm-digest' } })).status(200);
+        if ((await visibilityOf(dmRun)) !== 'private/0') throw new Error(`the old DM thread is ${await visibilityOf(dmRun)}`);
       });
     } finally {
       await world.close();
@@ -1089,6 +1138,15 @@ flow(
         if (s.space_id !== dm) throw new Error(`the run is in ${s.space_id}, expected the DM`);
         if (s.visibility !== 'restricted' || s.grants.join() !== world.ownerUserId) {
           throw new Error(`the DM run is ${s.visibility} with grants ${s.grants.join()}`);
+        }
+        // A stored `project` policy (a flag-off write) still gives a DM run DM-only sharing.
+        await world.db.query(
+          `UPDATE kortix.project_trigger_runtime SET session_access_mode = 'project' WHERE project_id = $1 AND slug = 'dm-standup'`,
+          [project.id],
+        );
+        const again = await fire('dm-standup');
+        if (again.visibility !== 'restricted' || again.grants.join() !== world.ownerUserId) {
+          throw new Error(`a DM run under a stored project policy is ${again.visibility} with grants ${again.grants.join()}`);
         }
       });
     } finally {

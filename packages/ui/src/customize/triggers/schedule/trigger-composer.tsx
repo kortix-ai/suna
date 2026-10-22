@@ -60,13 +60,14 @@ import {
   normalizeSecretName,
   runCreate,
   slugify,
+  spaceTriggerAccess,
   summarize,
   triggerConnection,
   triggerName,
   validate,
   withKind,
 } from './trigger-composer-logic';
-import { PostToField, spaceTriggerAccess } from './post-to-field';
+import { PostToField } from './post-to-field';
 import { TriggerOptions } from './trigger-options';
 import { useEventAppConnect } from './use-event-app-connect';
 import { WhenEvent } from './when-event';
@@ -454,7 +455,12 @@ function ComposerForm({
               />
               <InlineError message={blockError('name') ?? nameError} />
             </div>
-            <PostToField projectId={projectId} draft={draft} patch={patch} />
+            <PostToField
+              projectId={projectId}
+              draft={draft}
+              patch={patch}
+              baseAccess={initialDraft({}).sessionAccess}
+            />
             <div data-block="options">
               <TriggerOptions
                 projectId={projectId}

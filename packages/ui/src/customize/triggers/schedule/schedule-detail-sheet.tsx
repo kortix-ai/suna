@@ -713,7 +713,7 @@ function SheetForm({
               aria-invalid={blockError('name') ? true : undefined}
             />
             <InlineError message={blockError('name')} />
-            <PostToField projectId={projectId} draft={draft} patch={patch} />
+            <PostToField projectId={projectId} draft={draft} patch={patch} baseAccess={base.sessionAccess} />
           </section>
 
           <section data-sheet-block data-block="options">

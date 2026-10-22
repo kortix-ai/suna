@@ -297,9 +297,12 @@ export interface CreateProjectTriggerInput {
   session_access?: TriggerSessionAccess;
   /**
    * The channel or DM its runs post to as threads (`project_channels` flag;
-   * ignored while it is off). A DM must be the caller's own (else 403); its
-   * runs are shared with that member only, whatever `session_access` says.
-   * An unknown or archived space rejects with 404 `space_not_found`.
+   * ignored while it is off). A DM must be the caller's own (else 403
+   * `space_forbidden`) and the trigger must run the DM's agent (else 400
+   * `agent_mismatch`). A DM run is shared with the DM's member whatever
+   * `session_access` says; like every trigger run, trigger managers and account
+   * owners and admins can also open it. An unknown or archived space rejects
+   * with 404 `space_not_found`. A change applies to later runs only.
    */
   space_id?: string | null;
 }
@@ -351,7 +354,7 @@ export interface UpdateProjectTriggerInput {
   filter?: Record<string, TriggerFilterValue> | null;
   /** Replaces the policy and updates prior sessions created by this trigger, except those in a DM. */
   session_access?: TriggerSessionAccess;
-  /** See {@link CreateProjectTriggerInput.space_id}. null clears it; a move into a channel without `session_access` makes its threads project-visible. */
+  /** See {@link CreateProjectTriggerInput.space_id}. null clears it; a move into a channel without `session_access` makes its later threads project-visible. Another member's DM trigger accepts only `space_id` and `enabled` (else 403). */
   space_id?: string | null;
 }
 

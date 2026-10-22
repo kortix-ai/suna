@@ -13,6 +13,7 @@ import {
   connectionView,
   findDraftApp,
   initialDraft,
+  postToChange,
   resolveProfile,
   runCreate,
   summarize,
@@ -528,5 +529,47 @@ describe('composer layout: three groups, one summary', () => {
   test('the timezone sits in the schedule row as its last field', () => {
     expect(read('when-schedule.tsx')).toContain('trailing={');
     expect(read('when-schedule.tsx')).toContain('inline');
+  });
+});
+
+describe('postToChange: Post to and the sharing it implies', () => {
+  const base = { mode: 'private' as const, memberIds: [], groupIds: [] };
+  const project = { mode: 'project' as const, memberIds: [], groupIds: [] };
+  const mine = { mode: 'members' as const, memberIds: ['me'], groupIds: [] };
+  const channel = { spaceId: 'C1', kind: 'channel' as const, dmAgentName: null };
+  const dm = { spaceId: 'D1', kind: 'dm' as const, dmAgentName: 'kortix' };
+
+  test('a channel picked while the sharing is untouched shares later runs with the project', () => {
+    expect(postToChange({ sessionAccess: base }, channel, { base, current: null, viewerId: 'me' })).toEqual({
+      spaceId: 'C1',
+      sessionAccess: project,
+    });
+  });
+
+  test('sharing the person chose survives a channel pick', () => {
+    const chosen = { mode: 'members' as const, memberIds: ['u2'], groupIds: [] };
+    expect(postToChange({ sessionAccess: chosen }, channel, { base, current: null, viewerId: 'me' })).toEqual({
+      spaceId: 'C1',
+    });
+  });
+
+  test('a DM always sets its sharing and its agent', () => {
+    const chosen = { mode: 'members' as const, memberIds: ['u2'], groupIds: [] };
+    expect(postToChange({ sessionAccess: chosen }, dm, { base, current: null, viewerId: 'me' })).toEqual({
+      spaceId: 'D1',
+      sessionAccess: mine,
+      agent: 'kortix',
+    });
+  });
+
+  test('No channel gives back the base sharing when the sharing was only the space’s', () => {
+    expect(postToChange({ sessionAccess: mine }, null, { base, current: { kind: 'dm' }, viewerId: 'me' })).toEqual({
+      spaceId: null,
+      sessionAccess: base,
+    });
+    const chosen = { mode: 'members' as const, memberIds: ['u2'], groupIds: [] };
+    expect(postToChange({ sessionAccess: chosen }, null, { base, current: { kind: 'channel' }, viewerId: 'me' })).toEqual({
+      spaceId: null,
+    });
   });
 });

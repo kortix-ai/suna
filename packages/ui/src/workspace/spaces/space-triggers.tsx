@@ -95,6 +95,8 @@ export function SpaceTriggers({ projectId, space, place }: { projectId: string; 
         open={creating}
         onOpenChange={setCreating}
         initialSpace={{ spaceId: space.space_id, kind: space.kind }}
+        // A DM trigger runs the DM's agent (the API rejects any other).
+        initialAgent={space.kind === 'dm' ? space.dm_agent_name : null}
         onCreated={() => {
           setCreating(false);
           void queryClient.invalidateQueries({ queryKey: qk.project.triggers(projectId) });

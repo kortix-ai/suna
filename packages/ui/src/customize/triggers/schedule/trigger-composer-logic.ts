@@ -78,6 +78,37 @@ export interface ComposerDraft {
   overlap: 'default' | 'skip' | 'allow';
 }
 
+/** The sharing a space implies: a channel thread is project-visible; a DM thread is the viewer's. */
+export function spaceTriggerAccess(kind: 'channel' | 'dm', viewerId: string | undefined): SharingSelection {
+  return kind === 'dm' && viewerId
+    ? { mode: 'members', memberIds: [viewerId], groupIds: [] }
+    : { mode: 'project', memberIds: [], groupIds: [] };
+}
+
+const sameAccess = (a: SharingSelection, b: SharingSelection) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * "Post to" picks a space. The sharing follows the space only while the person
+ * has not chosen their own (it is still `base` or what the old space implied);
+ * a DM always sets its sharing and its agent, as the API requires. "No channel"
+ * gives back `base` when the sharing was only the space's.
+ */
+export function postToChange(
+  draft: Pick<ComposerDraft, 'sessionAccess'>,
+  next: { spaceId: string; kind: 'channel' | 'dm'; dmAgentName: string | null } | null,
+  context: { base: SharingSelection; current: { kind: 'channel' | 'dm' } | null; viewerId: string | undefined },
+): Partial<ComposerDraft> {
+  const implied = context.current ? spaceTriggerAccess(context.current.kind, context.viewerId) : null;
+  const untouched =
+    sameAccess(draft.sessionAccess, context.base) || (implied !== null && sameAccess(draft.sessionAccess, implied));
+  if (!next) return { spaceId: null, ...(untouched ? { sessionAccess: context.base } : {}) };
+  return {
+    spaceId: next.spaceId,
+    ...(next.kind === 'dm' || untouched ? { sessionAccess: spaceTriggerAccess(next.kind, context.viewerId) } : {}),
+    ...(next.kind === 'dm' && next.dmAgentName ? { agent: next.dmAgentName } : {}),
+  };
+}
+
 /** A run-limit input as the API wants it: empty → null (unset), else the number. */
 export function runCapFromInput(raw: string): number | null {
   const value = raw.trim();

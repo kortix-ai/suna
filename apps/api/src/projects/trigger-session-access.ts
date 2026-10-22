@@ -118,14 +118,20 @@ export async function setTriggerSessionAccess(input: {
   access: TriggerSessionAccess;
   /** The active pinned target keeps its own session-level sharing policy. */
   pinnedSessionId?: string | null;
+  /**
+   * False: save the policy for later runs only. A space change (or the policy
+   * a DM forces) is not a sharing choice, so earlier threads keep theirs.
+   */
+  propagate?: boolean;
 }): Promise<void> {
+  const propagate = input.propagate ?? true;
   const validationError = await validateTriggerSessionAccessPrincipals(
     input.accountId,
     input.access,
   );
   if (validationError) throw new Error(validationError);
 
-  const existingSessions = await db
+  const existingSessions = !propagate ? [] : await db
     .select({
       sessionId: projectSessions.sessionId,
       agentName: projectSessions.agentName,
@@ -189,6 +195,7 @@ export async function setTriggerSessionAccess(input: {
         })),
       );
     }
+    if (!propagate) return;
     const sessions = await tx
       .select({
         sessionId: projectSessions.sessionId,
@@ -251,8 +258,11 @@ export async function applyTriggerSessionAccess(input: {
     .select({
       accountId: projectSessions.accountId,
       agentName: projectSessions.agentName,
+      spaceKind: projectSpaces.kind,
+      dmUserId: projectSpaces.dmUserId,
     })
     .from(projectSessions)
+    .leftJoin(projectSpaces, eq(projectSpaces.spaceId, projectSessions.spaceId))
     .where(
       and(
         eq(projectSessions.projectId, input.projectId),
@@ -279,8 +289,13 @@ export async function applyTriggerSessionAccess(input: {
       )
       .for('update')
       .limit(1);
-    const mode = publicMode(runtime?.sessionAccessMode ?? 'private');
-    const triggerGrantRows = runtime
+    // A run filed in a DM is shared with the DM's member only, whatever the
+    // trigger's stored policy says (a flag-off write, a move in progress).
+    const dmUserId = row.spaceKind === 'dm' ? row.dmUserId : null;
+    const mode = dmUserId ? 'members' : publicMode(runtime?.sessionAccessMode ?? 'private');
+    const triggerGrantRows = dmUserId
+      ? [{ principalType: 'member' as const, principalId: dmUserId }]
+      : runtime
       ? await tx
           .select({
             principalType: projectTriggerSessionAccessGrants.principalType,

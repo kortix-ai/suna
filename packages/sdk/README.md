@@ -466,8 +466,11 @@ rows[0].reply_count; // messages after it; a space list only, null elsewhere
   `useProjectSessions(pid, { spaceId, parent: "root", refetchInterval, pollFirstPageOnly: true })`
   (`pollFirstPageOnly` polls page one only; experimental).
 - A trigger's `space_id` files each run of it into that channel or DM as a
-  thread. A channel trigger without `session_access` is project-visible; a DM
-  trigger's runs are shared with the DM's member only. An archived or deleted
+  thread. A channel trigger without `session_access` is project-visible. A DM
+  trigger's runs are shared with the DM's member and, like every trigger run,
+  with trigger managers and account owners and admins; it must run the DM's
+  agent (else 400 `agent_mismatch`). A space change applies to later runs only.
+  An archived or deleted
   space sends its runs to `#general`. `ProjectTrigger.space_id` is present only
   while the flag is on. `useProjectTriggers` create, update and remove refresh
   every space summary.
