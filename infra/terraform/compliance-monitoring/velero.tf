@@ -73,6 +73,7 @@ resource "aws_kms_alias" "velero" {
   target_key_id = aws_kms_key.velero.key_id
 }
 
+#trivy:ignore:AVD-AWS-0089 CloudTrail records S3 operations; a second access-log bucket adds another backup dependency (same rationale as the CKV_AWS_18 skip).
 resource "aws_s3_bucket" "velero" {
   provider = aws.euw2
 
