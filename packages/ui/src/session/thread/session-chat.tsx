@@ -4178,6 +4178,7 @@ export function SessionChat({
           detachedRows={sessionState ? undefined : hookMessages}
           source={sessionState ?? DETACHED_SESSION_MESSAGES}
           session={session}
+          sessionRow={projectSessionRow}
           providers={providers}
           allSessions={allSessions}
           servedModel={sessionServedModel}

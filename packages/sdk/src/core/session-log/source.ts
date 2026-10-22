@@ -99,6 +99,36 @@ export async function readSessionLogAnswer(
   }
 }
 
+/**
+ * How long the first page a connecting view read (`readSavedSessionCopy`) answers the bind's own
+ * first read (`useSessionLogSync`), once. A bind this close follows a box that was already up; a
+ * wake takes longer, and its bind reads the page again, so a page from before the wake never
+ * stands in for the log after it. The stream joins after the page either way.
+ */
+export const SESSION_LOG_HOLD_MS = 5_000;
+/** replica-local: one first page per session, kept the seconds between a connecting view and its bind. */
+const heldFirstPages = new Map<string, { page: SessionLogPage; atMs: number }>();
+const HELD_FIRST_PAGE_CAP = 16;
+
+/** Keep the first page a host read before `useSession` binds the session. */
+export function holdFirstSessionLogPage(projectId: string, sessionId: string, page: SessionLogPage): void {
+  const key = `${projectId}/${sessionId}`;
+  heldFirstPages.delete(key);
+  heldFirstPages.set(key, { page, atMs: Date.now() });
+  for (const oldest of heldFirstPages.keys()) {
+    if (heldFirstPages.size <= HELD_FIRST_PAGE_CAP) break;
+    heldFirstPages.delete(oldest);
+  }
+}
+
+/** The held first page of this session, at most {@link SESSION_LOG_HOLD_MS} old, taken once. */
+export function takeHeldFirstSessionLogPage(projectId: string, sessionId: string): SessionLogPage | null {
+  const key = `${projectId}/${sessionId}`;
+  const held = heldFirstPages.get(key);
+  heldFirstPages.delete(key);
+  return held && Date.now() - held.atMs <= SESSION_LOG_HOLD_MS ? held.page : null;
+}
+
 /** One page, validated. Null on any failure; never throws. */
 export async function fetchSessionLogPage(
   load: LoadSessionLogPage,
