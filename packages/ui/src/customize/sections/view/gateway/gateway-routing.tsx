@@ -710,9 +710,9 @@ export function GatewayRouting({
       const inherited = routing.data.effective.defaultFallback.models.filter(
         (model) => model !== primaryModel,
       );
-      const preferred =
-        models.find((model) => modelKeyToWire(model) === 'deepseek-v4.1-flash') ??
-        models.find((model) => modelKeyToWire(model) !== primaryModel);
+      // No model id is hardcoded: the platform fallback already follows the
+      // served lineup (`inherited`); otherwise take the first other model.
+      const preferred = models.find((model) => modelKeyToWire(model) !== primaryModel);
       return {
         ...current,
         defaultFallback: {

@@ -320,6 +320,7 @@ export async function handleChatCompletions(
   let prefetched: AdmitResult | null = null;
   try {
     prefetched = body && hooks.admit ? await hooks.admit(token, routeInput) : null;
+    if (prefetched?.timing) emit.admitSteps(prefetched.timing);
     admission = prefetched?.admission ?? await authorize(hooks, token);
   } catch (error) {
     // No principal exists yet, so there is nothing to refund and no account to

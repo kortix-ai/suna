@@ -2,7 +2,8 @@ import type { ProjectTrigger } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { CLOCK_TONE, TriggerTile, clockState } from './trigger-tile';
+import { CLOCK_TONE } from '../../../internal/lib/trigger-clock';
+import { TriggerTile, clockState } from './trigger-tile';
 
 const base = {
   slug: 'digest',

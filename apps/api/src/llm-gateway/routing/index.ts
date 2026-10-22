@@ -6,6 +6,7 @@ import { effectiveFallbackPolicies } from './policy-config';
 import { createGatewayRouteResolver } from './resolve-route';
 import { getProjectRoutingPolicy } from '../../repositories/project-routing-policies';
 import { toWireModel } from '../resolution/effective';
+import { resolveDefaultModelForPrincipal } from '../resolution/default-model';
 
 const routingCatalog = () => gatewayModelCatalog('gateway-routing');
 
@@ -20,6 +21,7 @@ const resolver = createGatewayRouteResolver({
     return routingCatalog()[wire]?.attachment === true;
   },
   getProjectPolicy: getProjectRoutingPolicy,
+  resolveDefaultModel: resolveDefaultModelForPrincipal,
   catalogModelFor: (model) => catalogModelForWireModel(model),
   canonicalModel: toWireModel,
 });

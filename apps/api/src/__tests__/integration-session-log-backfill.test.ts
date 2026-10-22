@@ -16,6 +16,7 @@ import { fromV1, SessionLogSchema, toV1, type SessionLog, type V1Row } from '@ko
 import { ZodError } from 'zod';
 import {
   projectSessions,
+  projects,
   sessionLogMessages,
   sessionLogs,
   sessionLogThreads,
@@ -491,8 +492,11 @@ describe('size cap: a mirror over the capture cap is converted by the backfill i
     });
   });
 
-  test('a session that already has a log keeps its captures past the cap: its log never goes stale', async () => {
+  test('a project with session_log off: a session that already has a log keeps its mirror captures past the cap, so its log never goes stale', async () => {
     const session = await oldSession([plain(0), plain(1)]);
+    const setFlag = (on: boolean | null) =>
+      db.update(projects).set({ metadata: on === null ? {} : { experimental: { session_log: on } } }).where(eq(projects.projectId, project.project_id));
+    await setFlag(false);
     expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
     const grown = plain(2, incompressible(6_000));
     await db.insert(sessionTranscriptMessages).values({
@@ -504,8 +508,12 @@ describe('size cap: a mirror over the capture cap is converted by the backfill i
     try {
       expect(await writeSessionLogFromMirror(session)).toMatchObject({ outcome: 'written' });
       expect((await snapshot(session)).messages.map((m) => m.id)).toContain('msg_000002');
+      // With session_log on (the default) the log is the store: a mirror never converts into a log that holds a message.
+      await setFlag(null);
+      expect(await writeSessionLogFromMirror(session)).toEqual({ outcome: 'skipped' });
     } finally {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+      await setFlag(null);
     }
   });
 });

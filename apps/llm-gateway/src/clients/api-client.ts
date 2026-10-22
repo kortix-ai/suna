@@ -234,6 +234,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
         candidates?: UpstreamDescriptor[];
         resolutionError?: ResolutionErrorBody;
         billing?: BillingBody;
+        timing?: Record<string, number>;
       };
       // One attempt, never repeated: /admit debits the admission hold as its
       // last step, and a timeout, a reset connection or an edge 502/504 can
@@ -256,6 +257,7 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
       if (wire.resolutionError) result.upstream = resolutionError(wire.resolutionError);
       else if (wire.candidates) result.upstream = wire.candidates;
       if (wire.billing) result.billing = billingResult(wire.billing);
+      if (wire.timing) result.timing = wire.timing;
       return result;
     },
     resolveRoute: async (principal, input) => {

@@ -15,6 +15,10 @@ import {
   getCaptureDeviceGrant,
   getCaptureFrame,
   getCapturePolicy,
+  getCaptureStorage,
+  setCaptureStorage,
+  type CaptureStorageInput,
+  type CaptureStorageView,
   getCaptureTimeline,
   type CaptureDisplay,
   type CaptureFocusSpan,
@@ -111,6 +115,38 @@ test('policy: read and write the account policy', async () => {
     included_bundle_ids: ['com.tinyspeck.slackmacgap'],
     included_domains: ['github.com'],
   });
+});
+
+test('storage: read the destination and set a bring-your-own bucket; the secret never comes back', async () => {
+  nextBody = { mode: 'kortix' };
+  expect((await getCaptureStorage('a1')).mode).toBe('kortix');
+  expect(last()).toMatchObject({ method: 'GET', url: `${P}/storage` });
+  const input: CaptureStorageInput = {
+    mode: 's3',
+    endpoint: 'https://s3.example.com',
+    region: 'us-east-1',
+    bucket: 'my-bucket',
+    force_path_style: true,
+    access_key_id: 'AKIAEXAMPLE',
+    secret_access_key: 'synthetic-secret',
+  };
+  const view: CaptureStorageView = {
+    mode: 's3',
+    endpoint: 'https://s3.example.com',
+    region: 'us-east-1',
+    bucket: 'my-bucket',
+    force_path_style: true,
+    role_arn: '',
+    access_key_id: 'AKIAEXAMPLE',
+    has_secret: true,
+    per_device_scoped: false,
+  };
+  nextBody = view;
+  const got = await setCaptureStorage('a1', input);
+  expect(last()).toMatchObject({ method: 'PUT', url: `${P}/storage`, body: input });
+  expect(got).toMatchObject({ mode: 's3', has_secret: true, per_device_scoped: false });
+  // The write input carries the plaintext secret; the returned view never does.
+  expect((got as Record<string, unknown>).secret_access_key).toBeUndefined();
 });
 
 test('timeline: a day, a window, and its items; the query names the subject and device', async () => {
