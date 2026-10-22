@@ -68,7 +68,7 @@ const fields = {
 };
 
 describe('CustomProviderForm save', () => {
-  test('stores the endpoint in Kortix, then the key as a gateway broker secret', async () => {
+  test('stores the key as a gateway broker secret, then the endpoint', async () => {
     const saved = mock((_id: string) => {});
     await submit({ ...fields, 'custom-api-key': 'synthetic-key' }, saved);
     expect(save).toHaveBeenCalledWith('example-llm', {
@@ -82,7 +82,9 @@ describe('CustomProviderForm save', () => {
       strategy: 'broker',
       consumer: 'llm_gateway',
     });
-    expect(calls).toEqual(['save:example-llm', 'secret:CUSTOM_EXAMPLE_LLM_API_KEY']);
+    // Key first, on purpose: saving the endpoint reads its GET /models for each
+    // model's context window and limits, and that call needs the credential.
+    expect(calls).toEqual(['secret:CUSTOM_EXAMPLE_LLM_API_KEY', 'save:example-llm']);
     expect(saved).toHaveBeenCalledWith('example-llm');
     expect(successToast).toHaveBeenCalledTimes(1);
   });
