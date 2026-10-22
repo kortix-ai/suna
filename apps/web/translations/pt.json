@@ -20760,7 +20760,11 @@
     "overlapAllow": "Iniciar uma nova execução mesmo assim",
     "perHour": "Por hora",
     "perDay": "Por dia",
-    "noLimit": "Sem limite"
+    "noLimit": "Sem limite",
+    "postTo": "Publicar em",
+    "postToHint": "Cada execução inicia uma nova thread ali. Sem canal, as execuções vão para #general.",
+    "postToNone": "Nenhum canal",
+    "postToUnavailable": "Canal indisponível"
   },
   "gatewayAccess": {
     "heroTitle": "Use os modelos deste projeto em qualquer lugar",
@@ -22417,7 +22421,10 @@
         "removeFailed": "Não foi possível remover o link. Tente de novo.",
         "loadError": "Não foi possível carregar os links."
       },
-      "appsLoadError": "Não foi possível carregar os apps."
+      "appsLoadError": "Não foi possível carregar os apps.",
+      "triggers": {
+        "loadError": "Não foi possível carregar os gatilhos."
+      }
     },
     "details": {
       "about": "Sobre",

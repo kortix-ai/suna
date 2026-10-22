@@ -1347,6 +1347,8 @@ export const SpaceSummarySchema = z
   .object({
     apps: z.number().int(),
     links: z.number().int(),
+    /** Triggers that post to this channel or DM; 0 for a caller without the trigger read permission. */
+    triggers: z.number().int(),
   })
   .strict();
 export type SpaceSummary = z.infer<typeof SpaceSummarySchema>;
@@ -1698,6 +1700,11 @@ export const TriggerSchema = z.object({
   overlap: z.enum(['skip', 'allow']).nullable().optional(),
   /** Account-local policy for sessions this trigger creates. */
   session_access: TriggerSessionAccessSchema,
+  /**
+   * The channel or DM its runs post to as threads; null = none (`#general`).
+   * Present only while the project's `project_channels` flag is on.
+   */
+  space_id: z.string().nullable().optional(),
   last_fired_at: z.string().nullable(),
   last_status: z.string().nullable(),
   last_error: z.string().nullable(),

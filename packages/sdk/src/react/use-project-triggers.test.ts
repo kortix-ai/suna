@@ -37,15 +37,15 @@ describe('useProjectTriggers (query-key stability + invalidation wiring)', () =>
     expect((useProjectTriggers('proj-1') as any).enabled).toBe(true);
   });
 
-  test('create/update/remove all invalidate the same listing key on success', () => {
+  test('create/update/remove invalidate the listing and every space summary (a trigger can post to a channel or DM)', () => {
     const result = useProjectTriggers('proj-1') as any;
-    const expectedKey = [...projectTriggersKey('proj-1')];
+    const expected = [[...projectTriggersKey('proj-1')], [...qk.project.spaceSummaries('proj-1')]];
 
     result.create.onSuccess();
     result.update.onSuccess();
     result.remove.onSuccess();
 
-    expect(invalidated).toEqual([expectedKey, expectedKey, expectedKey]);
+    expect(invalidated).toEqual([...expected, ...expected, ...expected]);
   });
 
   test('a real fire invalidates the triggers scope, which holds the run lists too', () => {

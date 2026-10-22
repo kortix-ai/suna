@@ -3,6 +3,7 @@ import { connectorConnections, connectors, projectTriggerRuntime } from '@kortix
 import { type TriggerFilter, cronIntervalError, formatDurationSeconds, parseTriggerFilter } from '@kortix/manifest-schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { config } from '../../config';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import * as store from '../trigger-events/store';
 import { EVENT_TRIGGERS_OFF_MESSAGE, eventTriggersOffForProject } from '../trigger-events/flag';
@@ -80,6 +81,7 @@ export async function loadTriggersForResponse(
     [...subscriptionBySlug.values()].flatMap((r) => (r.provider === MCP_SOURCE_ID && r.externalId ? [r.externalId] : [])),
   );
   const runtimeBySlug = new Map(runtimeRows.map((row) => [row.slug, row]));
+  const channels = resolveFeatureFlag(project.metadata, 'project_channels');
   const sessionAccessBySlug =
     specs.length === 0 ? new Map() : await loadTriggerSessionAccessMap(projectId);
 
@@ -127,6 +129,8 @@ export async function loadTriggersForResponse(
       // Overlap (KRTX-1721); null = unset (`skip` for cron, `allow` otherwise).
       overlap: spec.overlap ?? null,
       session_access: sessionAccessBySlug.get(spec.slug) ?? PRIVATE_TRIGGER_SESSION_ACCESS,
+      // The channel or DM its runs post to; omitted while `project_channels` is off.
+      ...(channels ? { space_id: runtimeBySlug.get(spec.slug)?.spaceId ?? null } : {}),
       last_fired_at: runtimeBySlug.get(spec.slug)?.lastFiredAt?.toISOString() ?? null,
       last_status: runtimeBySlug.get(spec.slug)?.lastStatus ?? null,
       last_error: runtimeBySlug.get(spec.slug)?.lastError ?? null,

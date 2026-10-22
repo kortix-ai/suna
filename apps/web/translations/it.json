@@ -20760,7 +20760,11 @@
     "overlapAllow": "Avvia comunque una nuova esecuzione",
     "perHour": "Per ora",
     "perDay": "Per giorno",
-    "noLimit": "Nessun limite"
+    "noLimit": "Nessun limite",
+    "postTo": "Pubblica in",
+    "postToHint": "Ogni esecuzione avvia lì un nuovo thread. Senza canale, le esecuzioni vanno in #general.",
+    "postToNone": "Nessun canale",
+    "postToUnavailable": "Canale non disponibile"
   },
   "gatewayAccess": {
     "heroTitle": "Usa i modelli di questo progetto ovunque",
@@ -22417,7 +22421,10 @@
         "removeFailed": "Impossibile rimuovere il link. Riprova.",
         "loadError": "Impossibile caricare i link."
       },
-      "appsLoadError": "Impossibile caricare le app."
+      "appsLoadError": "Impossibile caricare le app.",
+      "triggers": {
+        "loadError": "Impossibile caricare i trigger."
+      }
     },
     "details": {
       "about": "Informazioni",

@@ -20760,7 +20760,11 @@
     "overlapAllow": "Lancer quand même une nouvelle exécution",
     "perHour": "Par heure",
     "perDay": "Par jour",
-    "noLimit": "Sans limite"
+    "noLimit": "Sans limite",
+    "postTo": "Publier dans",
+    "postToHint": "Chaque exécution démarre un nouveau fil ici. Sans canal, les exécutions vont dans #general.",
+    "postToNone": "Aucun canal",
+    "postToUnavailable": "Canal indisponible"
   },
   "gatewayAccess": {
     "heroTitle": "Utilisez les modèles de ce projet partout",
@@ -22417,7 +22421,10 @@
         "removeFailed": "Impossible de retirer le lien. Réessayez.",
         "loadError": "Impossible de charger les liens."
       },
-      "appsLoadError": "Impossible de charger les apps."
+      "appsLoadError": "Impossible de charger les apps.",
+      "triggers": {
+        "loadError": "Impossible de charger les déclencheurs."
+      }
     },
     "details": {
       "about": "À propos",

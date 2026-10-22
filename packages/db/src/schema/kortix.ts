@@ -1758,12 +1758,23 @@ export const projectTriggerRuntime = kortixSchema.table(
     autoPausedAt: timestamp('auto_paused_at', { withTimezone: true }),
     autoPausedReason: text('auto_paused_reason'),
     autoPauseResumedAt: timestamp('auto_pause_resumed_at', { withTimezone: true }),
+    // The channel or DM (`project_spaces`) this trigger's runs post to as
+    // threads (`project_channels` flag). Account-local like the access policy,
+    // so not in the manifest. null = no space: the run lands in `#general`.
+    spaceId: uuid('space_id'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
+    foreignKey({
+      name: 'project_trigger_runtime_space_fk',
+      columns: [table.spaceId],
+      foreignColumns: [projectSpaces.spaceId],
+    }).onDelete('set null'),
     index('idx_project_trigger_runtime_owner_user').on(table.ownerUserId),
     index('idx_project_trigger_runtime_due').on(table.enabled, table.nextFireAt),
+    // A space's triggers (its Triggers tab count) and the FK's ON DELETE SET NULL.
+    index('idx_project_trigger_runtime_space').on(table.spaceId).where(sql`${table.spaceId} is not null`),
   ],
 );
 

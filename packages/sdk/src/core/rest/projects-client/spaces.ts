@@ -112,6 +112,8 @@ export interface AddProjectSpaceLinkInput {
 export interface ProjectSpaceSummary {
   apps: number;
   links: number;
+  /** Triggers that post to the space; 0 without the trigger read permission. */
+  triggers: number;
 }
 
 /**
@@ -158,7 +160,7 @@ export async function removeProjectSpaceLink(projectId: string, spaceId: string,
   );
 }
 
-/** The counts beside the channel's tab labels. A background read. */
+/** The counts beside a channel's or the caller's DM's tab labels (a DM has no Apps or links: 0). A background read. */
 export async function getProjectSpaceSummary(projectId: string, spaceId: string): Promise<ProjectSpaceSummary> {
   return unwrap(
     await backendApi.get<ProjectSpaceSummary>(`/projects/${projectId}/spaces/${spaceId}/summary`, { showErrors: false }),

@@ -78,6 +78,13 @@ import {
   validateTriggerSessionAccessPrincipals,
 } from '../trigger-session-access';
 import {
+  PROJECT_TRIGGER_SESSION_ACCESS,
+  dmTriggerSessionAccess,
+  loadTriggerSpace,
+  resolveTriggerSpace,
+  setTriggerSpace,
+} from '../lib/trigger-space';
+import {
   type GitTriggerSpec,
   type ParsedManifest,
   extractTriggers,
@@ -398,7 +405,8 @@ export function registerTriggersRoutes(): void {
             max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in any 60 minutes. Omit for the default, 60. A fire past it is a skipped run.' }),
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'Fresh session mode only: skip holds a fire while the previous run is still active. Omit for the default: skip for cron, allow for the other types.' }),
-            session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private.' }),
+            session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private; project when space_id is a channel.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to as threads (project_channels flag; ignored while it is off). A DM must be the caller\'s own, and its runs are shared with that member only.' }),
           }) } } },
       },
       responses: {
@@ -439,10 +447,19 @@ export function registerTriggersRoutes(): void {
         });
         if (configurationError) return c.json(configurationError, 409);
       }
+      // The channel or DM its runs post to. Flag off: ignored, never stored.
+      let space: Awaited<ReturnType<typeof loadTriggerSpace>> = null;
+      if (resolveFeatureFlag(loaded.row.metadata, 'project_channels') && body.space_id != null) {
+        const found = await resolveTriggerSpace(projectId, body.space_id, loaded.userId);
+        if ('error' in found) return c.json(found.error.body, found.error.status);
+        space = found.space;
+      }
       const parsedAccess =
-        body.session_access === undefined
-          ? { ok: true as const, access: PRIVATE_TRIGGER_SESSION_ACCESS }
-          : parseTriggerSessionAccess(body.session_access);
+        space?.kind === 'dm'
+          ? { ok: true as const, access: dmTriggerSessionAccess(space) }
+          : body.session_access === undefined
+            ? { ok: true as const, access: space ? PROJECT_TRIGGER_SESSION_ACCESS : PRIVATE_TRIGGER_SESSION_ACCESS }
+            : parseTriggerSessionAccess(body.session_access);
       if (!parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
       const accessValidationError = await validateTriggerSessionAccessPrincipals(
         loaded.row.accountId,
@@ -488,6 +505,7 @@ export function registerTriggersRoutes(): void {
       const createdSpecs = extractTriggers(committedManifest).specs;
       await reconcileProjectTriggerRuntime(projectId, createdSpecs);
       await reconcileEventSubscriptions(projectId, loaded.row.accountId, createdSpecs);
+      if (space) await setTriggerSpace(projectId, draft.slug, space.spaceId);
       await setTriggerSessionAccess({
         projectId,
         accountId: loaded.row.accountId,
@@ -602,6 +620,7 @@ export function registerTriggersRoutes(): void {
             max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
             overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip or allow; null resets it to the default (skip for cron, allow otherwise).' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
+            space_id: z.string().nullish().openapi({ description: 'Channel or DM its runs post to; null clears it (project_channels flag; ignored while it is off). Moving to a channel without session_access makes its threads project-visible.' }),
           }) } } },
       },
       responses: {
@@ -626,9 +645,28 @@ export function registerTriggersRoutes(): void {
       // Only commit the repo manifest when a manifest field actually changed; a
       // PATCH that touches none is a no-op that skips git entirely.
       const touchesManifest = TRIGGER_MANIFEST_KEYS.some((k) => k in body);
-      const parsedAccess =
+      let parsedAccess =
         body.session_access === undefined ? null : parseTriggerSessionAccess(body.session_access);
       if (parsedAccess && !parsedAccess.ok) return c.json({ error: parsedAccess.error }, 400);
+      // `space_id`: undefined leaves the space, null clears it. Flag off: ignored.
+      const channels = resolveFeatureFlag(loaded.row.metadata, 'project_channels');
+      let nextSpace: Awaited<ReturnType<typeof loadTriggerSpace>> | undefined;
+      if (channels && 'space_id' in body) {
+        if (body.space_id === null) nextSpace = null;
+        else {
+          const found = await resolveTriggerSpace(projectId, body.space_id, loaded.userId);
+          if ('error' in found) return c.json(found.error.body, found.error.status);
+          nextSpace = found.space;
+        }
+      }
+      // A DM trigger's runs stay shared with the DM's member only; a move into
+      // a channel without a policy makes them project-visible.
+      const space = nextSpace !== undefined ? nextSpace : channels ? await loadTriggerSpace(projectId, slug) : null;
+      if (space?.kind === 'dm' && (parsedAccess || nextSpace !== undefined)) {
+        parsedAccess = { ok: true, access: dmTriggerSessionAccess(space) };
+      } else if (nextSpace?.kind === 'channel' && !parsedAccess) {
+        parsedAccess = { ok: true, access: PROJECT_TRIGGER_SESSION_ACCESS };
+      }
       if (parsedAccess?.ok) {
         const accessValidationError = await validateTriggerSessionAccessPrincipals(
           loaded.row.accountId,
@@ -723,6 +761,7 @@ export function registerTriggersRoutes(): void {
         await reconcileProjectTriggerRuntime(projectId, updatedSpecs);
         await reconcileEventSubscriptions(projectId, loaded.row.accountId, updatedSpecs);
       }
+      if (nextSpace !== undefined) await setTriggerSpace(projectId, slug, nextSpace?.spaceId ?? null);
       if (parsedAccess?.ok) {
         await setTriggerSessionAccess({
           projectId,

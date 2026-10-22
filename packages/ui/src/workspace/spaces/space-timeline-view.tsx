@@ -2,7 +2,17 @@
 
 import type { ProjectSession, ProjectSpace } from '@kortix/sdk';
 import { useProjectSessions } from '@kortix/sdk/react';
-import { ChatTeardropTextIcon, CheckIcon, LinkSimpleIcon, RobotIcon } from '@phosphor-icons/react';
+import {
+  ChatTeardropTextIcon,
+  CheckIcon,
+  type Icon,
+  LightningIcon,
+  LinkSimpleIcon,
+  PulseIcon,
+  RobotIcon,
+  TimerIcon,
+  WebhooksLogoIcon,
+} from '@phosphor-icons/react';
 import { useMemo } from 'react';
 
 import { useLocale, useTranslations } from '../../i18n';
@@ -187,6 +197,27 @@ function DayDivider({ label }: { label: string }) {
   );
 }
 
+/** The trigger form's glyph per trigger type: a schedule, a webhook, an app event, a monitor. */
+const TRIGGER_TYPE_ICONS: Record<string, Icon> = {
+  cron: TimerIcon,
+  webhook: WebhooksLogoIcon,
+  event: LightningIcon,
+  monitor: PulseIcon,
+};
+
+/**
+ * A thread a trigger started: the trigger's name (stamped at fire time, else
+ * its slug) and the glyph of its type. Null for any other thread.
+ */
+function triggerAuthor(session: ProjectSession): { name: string; icon: Icon } | null {
+  if (session.initiator?.type !== 'trigger') return null;
+  const meta = (session.metadata ?? {}) as Record<string, unknown>;
+  const name = typeof meta.trigger_name === 'string' && meta.trigger_name ? meta.trigger_name : session.initiator.label;
+  if (!name) return null;
+  const type = typeof meta.trigger_type === 'string' ? meta.trigger_type : '';
+  return { name, icon: TRIGGER_TYPE_ICONS[type] ?? LightningIcon };
+}
+
 /**
  * One thread as a message: the author's avatar and name, the time, the first
  * prompt, and the "N replies" line that opens the thread. A thread from the
@@ -208,13 +239,17 @@ function ThreadRow({
   const t = useTranslations('spaces.view');
   const locale = useLocale();
   const created = new Date(session.created_at);
+  // A trigger's run reads as the trigger: its name and its type's glyph.
+  const trigger = triggerAuthor(session);
   // A trigger or an API key starts a thread as a service account: an agent tile, not a person.
-  const machine = session.owner_type === 'service_account';
+  const machine = trigger !== null || session.owner_type === 'service_account';
   // The profile name, never a raw email (`participantLabel`).
-  const name = machine
-    ? agentLabel(session.owner_name || t('agentFallback'))
-    : participantLabel({ name: session.owner_name ?? null, email: session.owner_email ?? null }) ||
-      t('authorFallback');
+  const name = trigger
+    ? trigger.name
+    : machine
+      ? agentLabel(session.owner_name || t('agentFallback'))
+      : participantLabel({ name: session.owner_name ?? null, email: session.owner_email ?? null }) ||
+        t('authorFallback');
 
   return (
     <MessageRow
@@ -222,7 +257,7 @@ function ThreadRow({
       selected={selected}
       avatar={
         machine ? (
-          <EntityAvatar icon={RobotIcon} label={name} size="lg" />
+          <EntityAvatar icon={trigger?.icon ?? RobotIcon} label={name} size="lg" />
         ) : (
           <UserAvatar email={session.owner_email ?? ''} name={name} avatarUrl={session.owner_avatar_url} size="lg" />
         )

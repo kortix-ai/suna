@@ -20760,7 +20760,11 @@
     "overlapAllow": "Ипак покрени ново извршавање",
     "perHour": "Po satu",
     "perDay": "Po danu",
-    "noLimit": "Bez ograničenja"
+    "noLimit": "Bez ograničenja",
+    "postTo": "Објави у",
+    "postToHint": "Свако покретање тамо започиње нову тему. Без канала, покретања иду у #general.",
+    "postToNone": "Без канала",
+    "postToUnavailable": "Недоступан канал"
   },
   "gatewayAccess": {
     "heroTitle": "Користите моделе овог пројекта било где",
@@ -22417,7 +22421,10 @@
         "removeFailed": "Линк није уклоњен. Покушај поново.",
         "loadError": "Линкови нису учитани."
       },
-      "appsLoadError": "Апликације нису учитане."
+      "appsLoadError": "Апликације нису учитане.",
+      "triggers": {
+        "loadError": "Окидачи нису могли да се учитају."
+      }
     },
     "details": {
       "about": "О каналу",

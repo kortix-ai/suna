@@ -899,3 +899,200 @@ flow('SPACE-17', meta([TAB_ROUTES.summary, TAB_ROUTES.apps, TAB_ROUTES.addLink, 
     await world.close();
   }
 });
+
+// ── Triggers that post to a channel or DM (Task 10) ─────────────────────────
+const TRIGGER_ROUTES = {
+  list: 'GET /v1/projects/:projectId/triggers',
+  create: 'POST /v1/projects/:projectId/triggers',
+  update: 'PATCH /v1/projects/:projectId/triggers/:slug',
+  fire: 'POST /v1/projects/:projectId/triggers/:slug/fire',
+};
+const TRIGGERS = '/v1/projects/:projectId/triggers';
+const TRIGGER = '/v1/projects/:projectId/triggers/:slug';
+type ListedTrigger = { slug: string; space_id?: string | null; session_access: { mode: string; memberIds: string[] } };
+
+/** A daily cron trigger body; `extra` adds `space_id` or `session_access`. */
+const cronTrigger = (slug: string, extra: Record<string, unknown> = {}) => ({
+  name: slug,
+  slug,
+  type: 'cron',
+  cron: '0 0 9 * * *',
+  timezone: 'UTC',
+  agent: 'kortix',
+  prompt_template: `Post the ${slug} digest`,
+  ...extra,
+});
+
+async function listedTrigger(world: AgentPrincipalsWorld, slug: string): Promise<ListedTrigger> {
+  const r = await world.owner.get(TRIGGERS, { params: { projectId: world.projectId } });
+  const found = r.status(200).json<{ triggers: ListedTrigger[] }>().triggers.find((t) => t.slug === slug);
+  if (!found) throw new Error(`trigger ${slug} is not listed`);
+  return found;
+}
+
+async function storedTriggerSpace(world: AgentPrincipalsWorld, slug: string): Promise<string | null> {
+  const { rows } = await world.db.query<{ space_id: string | null }>(
+    'SELECT space_id FROM kortix.project_trigger_runtime WHERE project_id = $1 AND slug = $2',
+    [world.projectId, slug],
+  );
+  return rows[0]?.space_id ?? null;
+}
+
+flow(
+  'SPACE-18',
+  meta([TRIGGER_ROUTES.list, TRIGGER_ROUTES.create, TRIGGER_ROUTES.update, TAB_ROUTES.summary, ROUTES.create, ROUTES.update, ROUTES.dm, FEATURES_ROUTE]),
+  async (ctx) => {
+    const { team, project, world } = await openWorld(ctx, { manifest: true });
+    const params = { projectId: project.id };
+    try {
+      await ctx.step('flag off: a create with space_id → 201; space_id is not stored and not listed', async () => {
+        (await world.owner.post(TRIGGERS, cronTrigger('off-digest', { space_id: randomUUID() }), { params })).status(201);
+        const listed = await listedTrigger(world, 'off-digest');
+        if ('space_id' in listed) throw new Error(`space_id listed with the flag off: ${JSON.stringify(listed)}`);
+        if ((await storedTriggerSpace(world, 'off-digest')) !== null) throw new Error('space_id stored with the flag off');
+      });
+
+      await world.setFeature('project_channels', true);
+      const general = await generalSpaceId(world, project.id);
+      const channel = (await world.owner.post(SPACES, { name: 'Ops' }, { params })).status(201).json<Space>().space_id;
+
+      await ctx.step('a trigger posted to a channel → 201; the list names the channel; its session_access defaults to project', async () => {
+        (await world.owner.post(TRIGGERS, cronTrigger('ops-digest', { space_id: channel }), { params })).status(201);
+        const listed = await listedTrigger(world, 'ops-digest');
+        if (listed.space_id !== channel) throw new Error(`space_id is ${listed.space_id}, expected the channel`);
+        if (listed.session_access.mode !== 'project') throw new Error(`session_access is ${listed.session_access.mode}, expected project`);
+        if ((await listedTrigger(world, 'off-digest')).space_id !== null) throw new Error('a trigger with no space lists a space_id');
+      });
+
+      await ctx.step('summary: the channel → triggers 1; #general → triggers 0', async () => {
+        (await world.owner.get(SPACE_SUMMARY, { params: { ...params, spaceId: channel } }))
+          .status(200).body().schema(SpaceSummarySchema).has('$.triggers', 1).has('$.apps', 0).has('$.links', 0);
+        (await world.owner.get(SPACE_SUMMARY, { params: { ...params, spaceId: general } })).status(200).body().has('$.triggers', 0);
+      });
+
+      await ctx.step('PATCH space_id null clears it: the list says null and the channel counts 0', async () => {
+        (await world.owner.patch(TRIGGER, { space_id: null }, { params: { ...params, slug: 'ops-digest' } })).status(200);
+        if ((await listedTrigger(world, 'ops-digest')).space_id !== null) throw new Error('space_id was not cleared');
+        (await world.owner.get(SPACE_SUMMARY, { params: { ...params, spaceId: channel } })).status(200).body().has('$.triggers', 0);
+      });
+
+      await ctx.step('an unknown id, a malformed id and an archived channel → 404 space_not_found; a non-string → 400', async () => {
+        const archived = (await world.owner.post(SPACES, { name: 'Old ops' }, { params })).status(201).json<Space>().space_id;
+        (await world.owner.patch(SPACE, { archived: true }, { params: { ...params, spaceId: archived } })).status(200);
+        for (const spaceId of [randomUUID(), 'not-a-uuid', archived]) {
+          (await world.owner.post(TRIGGERS, cronTrigger('bad-space', { space_id: spaceId }), { params }))
+            .status(404).body().has('$.code', 'space_not_found');
+          (await world.owner.patch(TRIGGER, { space_id: spaceId }, { params: { ...params, slug: 'ops-digest' } }))
+            .status(404).body().has('$.code', 'space_not_found');
+        }
+        (await world.owner.post(TRIGGERS, cronTrigger('bad-space', { space_id: 5 }), { params })).status(400);
+        if ((await storedTriggerSpace(world, 'ops-digest')) !== null) throw new Error('a refused PATCH stored a space');
+      });
+
+      const dm = (await world.owner.post(DM, { agent_name: 'kortix' }, { params })).status(200).json<Space>().space_id;
+      await ctx.step('a trigger posted to the caller’s own DM → 201; its runs are shared with that member only, whatever was asked', async () => {
+        (await world.owner.post(TRIGGERS, cronTrigger('dm-digest', { space_id: dm, session_access: { mode: 'project' } }), { params })).status(201);
+        const listed = await listedTrigger(world, 'dm-digest');
+        if (listed.space_id !== dm) throw new Error(`space_id is ${listed.space_id}, expected the DM`);
+        if (listed.session_access.mode !== 'members' || listed.session_access.memberIds.join() !== world.ownerUserId) {
+          throw new Error(`DM session_access is ${JSON.stringify(listed.session_access)}`);
+        }
+        (await world.owner.patch(TRIGGER, { session_access: { mode: 'project' } }, { params: { ...params, slug: 'dm-digest' } })).status(200);
+        if ((await listedTrigger(world, 'dm-digest')).session_access.mode !== 'members') throw new Error('a PATCH widened a DM trigger');
+        (await world.owner.get(SPACE_SUMMARY, { params: { ...params, spaceId: dm } }))
+          .status(200).body().schema(SpaceSummarySchema).has('$.triggers', 1).has('$.apps', 0).has('$.links', 0);
+      });
+
+      await ctx.step('another member (a manager) points a trigger at the owner’s DM → 403 space_forbidden; the DM’s summary → 404', async () => {
+        const manager = await team.addMember('member');
+        await team.grantProjectRole(project.id, manager.userId!, 'manager');
+        const asManager = ctx.client.as(manager);
+        (await asManager.post(TRIGGERS, cronTrigger('foreign-dm', { space_id: dm }), { params }))
+          .status(403).body().has('$.code', 'space_forbidden');
+        (await asManager.patch(TRIGGER, { space_id: dm }, { params: { ...params, slug: 'ops-digest' } }))
+          .status(403).body().has('$.code', 'space_forbidden');
+        (await asManager.get(SPACE_SUMMARY, { params: { ...params, spaceId: dm } })).status(404);
+        if ((await storedTriggerSpace(world, 'ops-digest')) !== null) throw new Error('a refused PATCH stored the DM');
+      });
+
+      await ctx.step('a PATCH that moves the trigger to a channel without session_access makes its threads project-visible', async () => {
+        (await world.owner.patch(TRIGGER, { space_id: channel }, { params: { ...params, slug: 'off-digest' } })).status(200);
+        const listed = await listedTrigger(world, 'off-digest');
+        if (listed.space_id !== channel || listed.session_access.mode !== 'project') throw new Error(JSON.stringify(listed));
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);
+
+/** The space, visibility and grants of the session a fire created. */
+async function firedSession(world: AgentPrincipalsWorld, sessionId: string) {
+  const { rows } = await world.db.query<{ space_id: string | null; visibility: string; metadata: Record<string, unknown> }>(
+    'SELECT space_id, visibility, metadata FROM kortix.project_sessions WHERE session_id = $1',
+    [sessionId],
+  );
+  const grants = await world.db.query<{ principal_id: string }>(
+    'SELECT principal_id FROM kortix.project_session_grants WHERE session_id = $1',
+    [sessionId],
+  );
+  return { ...rows[0]!, grants: grants.rows.map((g) => g.principal_id) };
+}
+
+// A fire creates a real session row, which needs the session create to reach
+// its insert: a sandbox provider and a reachable KORTIX_URL.
+flow(
+  'SPACE-19',
+  createMeta([TRIGGER_ROUTES.create, TRIGGER_ROUTES.fire, ROUTES.create, ROUTES.update, ROUTES.dm, FEATURES_ROUTE, 'POST /v1/projects/:projectId/secrets']),
+  async (ctx) => {
+    const { project, world } = await openWorld(ctx, { manifest: true });
+    const params = { projectId: project.id };
+    const fire = async (slug: string) => {
+      const r = await world.owner.post(`${TRIGGER}/fire`, {}, { params: { ...params, slug } });
+      const body = r.json<{ status: string; session_id?: string | null; error?: string }>();
+      if (body.status !== 'fired' || !body.session_id) throw new Error(`fire of ${slug}: ${r.text()}`);
+      world.sessions.push(body.session_id);
+      return firedSession(world, body.session_id);
+    };
+    try {
+      await world.setFeature('project_channels', true);
+      await world.fund();
+      // A BYOK key gives the account a usable model, so the fire passes the no-usable-model gate.
+      (await world.owner.post(
+        '/v1/projects/:projectId/secrets',
+        { name: 'ANTHROPIC_API_KEY', value: 'sk-ant-ke2e-spaces', strategy: 'broker', consumer: 'llm_gateway' },
+        { params },
+      )).status(200);
+      const general = await generalSpaceId(world, project.id);
+      const channel = (await world.owner.post(SPACES, { name: 'Standups' }, { params })).status(201).json<Space>().space_id;
+      const model = { model: 'anthropic/claude-sonnet-4-6' };
+      (await world.owner.post(TRIGGERS, cronTrigger('standup', { space_id: channel, ...model }), { params })).status(201);
+
+      await ctx.step('a manual fire lands its session in the channel: project-visible, the prompt as its top message, the trigger name stamped', async () => {
+        const s = await fire('standup');
+        if (s.space_id !== channel) throw new Error(`the run is in ${s.space_id}, expected the channel`);
+        if (s.visibility !== 'project') throw new Error(`the run is ${s.visibility}, expected project`);
+        if (s.metadata.first_prompt !== 'Post the standup digest') throw new Error(`first_prompt is ${String(s.metadata.first_prompt)}`);
+        if (s.metadata.trigger_name !== 'standup') throw new Error(`trigger_name is ${String(s.metadata.trigger_name)}`);
+      });
+
+      await ctx.step('the channel archived → the next run lands in #general', async () => {
+        (await world.owner.patch(SPACE, { archived: true }, { params: { ...params, spaceId: channel } })).status(200);
+        const s = await fire('standup');
+        if (s.space_id !== general) throw new Error(`the run is in ${s.space_id}, expected #general`);
+      });
+
+      await ctx.step('a DM trigger’s run lands in the DM, shared with the DM’s member only', async () => {
+        const dm = (await world.owner.post(DM, { agent_name: 'kortix' }, { params })).status(200).json<Space>().space_id;
+        (await world.owner.post(TRIGGERS, cronTrigger('dm-standup', { space_id: dm, ...model }), { params })).status(201);
+        const s = await fire('dm-standup');
+        if (s.space_id !== dm) throw new Error(`the run is in ${s.space_id}, expected the DM`);
+        if (s.visibility !== 'restricted' || s.grants.join() !== world.ownerUserId) {
+          throw new Error(`the DM run is ${s.visibility} with grants ${s.grants.join()}`);
+        }
+      });
+    } finally {
+      await world.close();
+    }
+  },
+);

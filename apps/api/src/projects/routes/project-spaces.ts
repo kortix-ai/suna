@@ -38,9 +38,11 @@ import {
   SPACE_LINKS_MAX,
   type LinkViewer,
 } from '../lib/project-space-links';
+import { countSpaceTriggers } from '../lib/trigger-space';
 import {
   createChannel,
   findLiveChannel,
+  findSessionSpace,
   getOrCreateDm,
   listSpacesForUser,
   serializeSpace,
@@ -308,24 +310,32 @@ export function registerProjectSpacesRoutes(): void {
       method: 'get',
       path: '/{projectId}/spaces/{spaceId}/summary',
       tags: ['spaces'],
-      summary: 'Count the Apps and links of a channel',
+      summary: 'Count the Apps, links and triggers of a channel or the caller’s DM',
       description:
         '`apps` counts the cards the channel’s Apps tab shows (the Apps grid rule); 0 for a caller without the App read permission. ' +
+        '`triggers` counts the triggers that post to the space; 0 without the trigger read permission. A DM has no Apps or links: both are 0. ' +
         'Later fields are added, never renamed.',
       ...auth,
       request: { params: spaceParams },
       responses: { 200: json(SpaceSummarySchema, 'The tab counts'), ...errors(403, 404) },
     }),
     async (c) => {
-      const channel = await loadChannel(c);
-      if (channel instanceof Response) return channel;
-      const { loaded, space } = channel;
+      const loaded = await loadProjectForUser(c, c.req.param('projectId'), 'session');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      const gate = requireFeatureFlag(c, loaded.row.metadata, 'project_channels');
+      if (gate) return gate;
       const { userId, row } = loaded;
+      const spaceId = c.req.param('spaceId');
+      // A live channel or the caller's own DM; another member's DM reads as not found.
+      const space = isUuid(spaceId) ? await findSessionSpace(row.projectId, spaceId, userId) : null;
+      if (!space) return c.json(CHANNEL_NOT_FOUND, 404);
       const allowed = (action: string) => projectCapabilityAllowed(c, userId, row.accountId, row.projectId, action);
-      const [appsAllowed, appAdmin, links] = await Promise.all([
-        allowed(PROJECT_ACTIONS.PROJECT_APP_READ),
-        allowed(PROJECT_ACTIONS.PROJECT_APP_ADMIN),
-        countSpaceLinks(space.spaceId),
+      const channel = space.kind === 'channel';
+      const [appsAllowed, appAdmin, triggersAllowed, links] = await Promise.all([
+        channel && allowed(PROJECT_ACTIONS.PROJECT_APP_READ),
+        channel && allowed(PROJECT_ACTIONS.PROJECT_APP_ADMIN),
+        allowed(PROJECT_ACTIONS.PROJECT_TRIGGER_READ),
+        channel ? countSpaceLinks(space.spaceId) : 0,
       ]);
       let apps = 0;
       if (appsAllowed) {
@@ -333,7 +343,8 @@ export function registerProjectSpacesRoutes(): void {
         const found = await spaceApps(row.projectId, space.spaceId, userId);
         apps = gridApps(await appsJson(found.rows, userId, found.openable), appAdmin).length;
       }
-      return c.json({ apps, links }, 200);
+      const triggers = triggersAllowed ? await countSpaceTriggers(space.spaceId) : 0;
+      return c.json({ apps, links, triggers }, 200);
     },
   );
 }

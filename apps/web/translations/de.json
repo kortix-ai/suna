@@ -20760,7 +20760,11 @@
     "overlapAllow": "Trotzdem eine neue Ausführung starten",
     "perHour": "Pro Stunde",
     "perDay": "Pro Tag",
-    "noLimit": "Kein Limit"
+    "noLimit": "Kein Limit",
+    "postTo": "Posten in",
+    "postToHint": "Jeder Lauf startet dort einen neuen Thread. Ohne Kanal landen Läufe in #general.",
+    "postToNone": "Kein Kanal",
+    "postToUnavailable": "Nicht verfügbarer Kanal"
   },
   "gatewayAccess": {
     "heroTitle": "Die Modelle dieses Projekts überall nutzen",
@@ -22417,7 +22421,10 @@
         "removeFailed": "Der Link konnte nicht entfernt werden. Versuche es erneut.",
         "loadError": "Die Links konnten nicht geladen werden."
       },
-      "appsLoadError": "Die Apps konnten nicht geladen werden."
+      "appsLoadError": "Die Apps konnten nicht geladen werden.",
+      "triggers": {
+        "loadError": "Die Trigger konnten nicht geladen werden."
+      }
     },
     "details": {
       "about": "Info",

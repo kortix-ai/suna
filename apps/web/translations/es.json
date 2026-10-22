@@ -20760,7 +20760,11 @@
     "overlapAllow": "Iniciar una nueva ejecución igualmente",
     "perHour": "Por hora",
     "perDay": "Por día",
-    "noLimit": "Sin límite"
+    "noLimit": "Sin límite",
+    "postTo": "Publicar en",
+    "postToHint": "Cada ejecución inicia un hilo nuevo allí. Sin canal, las ejecuciones van a #general.",
+    "postToNone": "Ningún canal",
+    "postToUnavailable": "Canal no disponible"
   },
   "gatewayAccess": {
     "heroTitle": "Use los modelos de este proyecto en cualquier lugar",
@@ -22417,7 +22421,10 @@
         "removeFailed": "No se pudo quitar el enlace. Inténtalo de nuevo.",
         "loadError": "No se pudieron cargar los enlaces."
       },
-      "appsLoadError": "No se pudieron cargar las apps."
+      "appsLoadError": "No se pudieron cargar las apps.",
+      "triggers": {
+        "loadError": "No se pudieron cargar los activadores."
+      }
     },
     "details": {
       "about": "Información",

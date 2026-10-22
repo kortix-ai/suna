@@ -176,7 +176,7 @@ test('addProjectSpaceLink rejects a bad url with 400 and never reaches the host 
 });
 
 test('getProjectSpaceSummary GETs the tab counts', async () => {
-  nextResponse = { status: 200, body: { apps: 2, links: 3 } };
-  expect(await getProjectSpaceSummary('P1', 'S1')).toEqual({ apps: 2, links: 3 });
+  nextResponse = { status: 200, body: { apps: 2, links: 3, triggers: 1 } };
+  expect(await getProjectSpaceSummary('P1', 'S1')).toEqual({ apps: 2, links: 3, triggers: 1 });
   expect(calls[0]).toEqual({ url: 'http://test.local/v1/projects/P1/spaces/S1/summary', method: 'GET', body: undefined });
 });

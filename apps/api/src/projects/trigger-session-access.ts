@@ -2,6 +2,7 @@ import type { TriggerSessionAccess } from '@kortix/api-contract';
 import {
   projectSessionGrants,
   projectSessions,
+  projectSpaces,
   projectTriggerRuntime,
   projectTriggerSessionAccessGrants,
 } from '@kortix/db';
@@ -103,7 +104,13 @@ export async function loadTriggerSessionAccessMap(
   );
 }
 
-/** Save a policy and propagate it to every non-pinned session this trigger created. */
+/**
+ * A run already filed in a DM keeps the DM's sharing: moving its trigger to a
+ * channel must not widen the old DM threads to the project.
+ */
+const notInDm = sql`not exists (select 1 from ${projectSpaces} where ${projectSpaces.spaceId} = ${projectSessions.spaceId} and ${projectSpaces.kind} = 'dm')`;
+
+/** Save a policy and propagate it to every non-pinned session this trigger created, except those in a DM. */
 export async function setTriggerSessionAccess(input: {
   projectId: string;
   accountId: string;
@@ -130,6 +137,7 @@ export async function setTriggerSessionAccess(input: {
         sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
         sql`${projectSessions.metadata} ->> 'trigger_slug' = ${input.slug}`,
         input.pinnedSessionId ? ne(projectSessions.sessionId, input.pinnedSessionId) : undefined,
+        notInDm,
       ),
     );
   const attributionByAgent = new Map<string, string>();
@@ -193,6 +201,7 @@ export async function setTriggerSessionAccess(input: {
           sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
           sql`${projectSessions.metadata} ->> 'trigger_slug' = ${input.slug}`,
           input.pinnedSessionId ? ne(projectSessions.sessionId, input.pinnedSessionId) : undefined,
+          notInDm,
         ),
       );
     const sessionIds = sessions.map((session) => session.sessionId);

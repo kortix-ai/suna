@@ -44,6 +44,8 @@ export const SERVER_MANAGED_SESSION_METADATA_KEYS = [
   'source',
   'trigger_kind',
   'trigger_slug',
+  // Shown as a channel thread's author (`trigger-fire.ts`).
+  'trigger_name',
   'trigger_source',
   'trigger_type',
   'trigger_session_key',

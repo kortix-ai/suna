@@ -42,6 +42,7 @@ import { TranscriptRowsContext } from '../../session/thread/transcript-rows';
 import { useProjectHomeSend } from '../layout/use-project-home-send';
 import { CreateChannelDialog } from './create-channel-dialog';
 import { SpaceLinks } from './space-links';
+import { SpaceTriggers } from './space-triggers';
 import { SpaceDetailsDialog, type SpaceDetailsTab } from './space-details-dialog';
 import { agentLabel, spaceRoster, spaceTabFromParam, spaceTabs, type SpaceTab } from './space-timeline';
 import { SpaceThreadList, SpaceTimeline, useSpaceThreads, type SpaceThreads } from './space-timeline-view';
@@ -130,8 +131,8 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
   }, [dmAgent, spaces.data, listedDm, openDmMutate]);
 
   const threads = useSpaceThreads(projectId, space?.space_id);
-  // The counts beside the Apps and Links labels; a DM has neither tab.
-  const summary = useProjectSpaceSummary(projectId, space?.kind === 'channel' ? space.space_id : null);
+  // The counts beside the Apps, Links and Triggers labels (a DM has Triggers only).
+  const summary = useProjectSpaceSummary(projectId, space?.space_id);
   const threadId = searchParams.get(THREAD_PARAM);
   const tab = spaceTabFromParam(searchParams.get(TAB_PARAM), target.kind);
   const setParams = useCallback(
@@ -232,7 +233,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
               <TabsTrigger key={value} value={value} className="w-fit flex-none">
                 {t(`tab.${value}`)}
                 {/* Apps counts the host's cards: no host gallery, no count over the empty state. */}
-                {(value === 'links' || (value === 'apps' && renderApps)) && summary.data?.[value] ? (
+                {(value === 'links' || value === 'triggers' || (value === 'apps' && renderApps)) && summary.data?.[value] ? (
                   <CountBadge count={summary.data[value]} />
                 ) : null}
               </TabsTrigger>
@@ -269,8 +270,8 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
 /**
  * The tab panels. Chat and Threads read the space's threads; Files and
  * Memory are the host's folder view, Apps the host's App gallery, Links the
- * channel's links. Triggers draws its empty state until its data is wired:
- * it says what will appear there and shows its action, disabled.
+ * channel's links, Triggers the triggers that post here. Files and Memory
+ * without a host view draw their empty state with the action disabled.
  */
 function SpaceTabs({
   projectId,
@@ -314,6 +315,10 @@ function SpaceTabs({
           ) : tab === 'links' ? (
             <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
               <SpaceLinks projectId={projectId} space={space} place={place} />
+            </TabsContent>
+          ) : tab === 'triggers' ? (
+            <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">
+              <SpaceTriggers projectId={projectId} space={space} place={place} />
             </TabsContent>
           ) : tab === 'apps' ? (
             <TabsContent key={tab} value={tab} className="min-h-0 overflow-y-auto">

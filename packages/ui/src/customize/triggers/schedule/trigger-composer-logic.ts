@@ -69,6 +69,8 @@ export interface ComposerDraft {
   secretName: string;
   startActive: boolean;
   sessionAccess: SharingSelection;
+  /** The channel or DM its runs post to (`project_channels`). Null = none: runs land in `#general`. */
+  spaceId: string | null;
   /** Run limits (KRTX-1721) as typed. Empty = unset: 60 an hour, no daily cap. */
   maxRunsPerHour: string;
   maxRunsPerDay: string;
@@ -88,6 +90,7 @@ export function initialDraft(init: {
   appSlug?: string | null;
   appSource?: string | null;
   profile?: string | null;
+  spaceId?: string | null;
 }): ComposerDraft {
   return {
     kind: init.kind ?? 'cron',
@@ -113,6 +116,7 @@ export function initialDraft(init: {
     secretName: '',
     startActive: true,
     sessionAccess: { mode: 'private', memberIds: [], groupIds: [] },
+    spaceId: init.spaceId ?? null,
     maxRunsPerHour: '',
     maxRunsPerDay: '',
     overlap: 'default',

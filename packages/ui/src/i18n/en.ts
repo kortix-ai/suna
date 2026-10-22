@@ -5935,7 +5935,11 @@ const catalog = {
     "overlapAllow": "Start a new run anyway",
     "perHour": "Per hour",
     "perDay": "Per day",
-    "noLimit": "No limit"
+    "noLimit": "No limit",
+    "postTo": "Post to",
+    "postToHint": "Each run starts a new thread there. With no channel, runs go to #general.",
+    "postToNone": "No channel",
+    "postToUnavailable": "Unavailable channel"
   },
   "gatewayAccess": {
     "heroTitle": "Use this project's models anywhere",
@@ -7069,7 +7073,10 @@ const catalog = {
         "removeFailed": "Could not remove the link. Try again.",
         "loadError": "Could not load the links."
       },
-      "appsLoadError": "Could not load the apps."
+      "appsLoadError": "Could not load the apps.",
+      "triggers": {
+        "loadError": "Could not load the triggers."
+      }
     },
     "details": {
       "about": "About",

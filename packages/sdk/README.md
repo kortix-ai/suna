@@ -432,7 +432,11 @@ const apps = await p.spaces.apps(ch.space_id); // Apps deployed from its threads
 const link = await p.spaces.links.add(ch.space_id, { url: "https://example.com/spec", title: "Spec" }); // http(s) only, ≤ 2,048 chars; title ≤ 200; else 400; 200 links per channel, then 409 link_limit
 await p.spaces.links.list(ch.space_id); // newest first; `can_delete` per link
 await p.spaces.links.remove(ch.space_id, link.link_id); // its creator or a project manager; else 403 forbidden
-await p.spaces.summary(ch.space_id); // { apps, links }: the tab counts
+await p.spaces.summary(ch.space_id); // { apps, links, triggers }: the tab counts (a DM: apps and links are 0)
+
+// A trigger that posts its runs to the channel as threads (a DM: the caller's own only, else 403)
+await p.triggers.create({ name: "Standup", type: "cron", cron: "0 0 9 * * 1-5", prompt_template: "Post the standup", space_id: ch.space_id });
+await p.triggers.update("standup", { space_id: null }); // back to #general
 
 await p.sessions.create({ space_id: ch.space_id, initial_prompt: "Plan the launch" });
 const rows = await p.sessions.list({ spaceId: ch.space_id, parent: "root" });
@@ -461,6 +465,12 @@ rows[0].reply_count; // messages after it; a space list only, null elsewhere
   `useProjectSpaceSummary(pid, spaceId)`, and
   `useProjectSessions(pid, { spaceId, parent: "root", refetchInterval, pollFirstPageOnly: true })`
   (`pollFirstPageOnly` polls page one only; experimental).
+- A trigger's `space_id` files each run of it into that channel or DM as a
+  thread. A channel trigger without `session_access` is project-visible; a DM
+  trigger's runs are shared with the DM's member only. An archived or deleted
+  space sends its runs to `#general`. `ProjectTrigger.space_id` is present only
+  while the flag is on. `useProjectTriggers` create, update and remove refresh
+  every space summary.
 - Turning the flag on files every session in no space into `#general`;
   turning it off deletes nothing.
 

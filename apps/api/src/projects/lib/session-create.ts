@@ -90,6 +90,7 @@ import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-ru
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
 import { FIRST_PROMPT_MAX_CHARS, ensureDefaultSpace, findForkSourceSpace, findSessionSpace, spaceSessionVisibility } from './project-spaces';
+import { liveTriggerSpace } from './trigger-space';
 
 import {
   resolveProjectSnapshotMode,
@@ -271,6 +272,16 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
   const warm =
     (input.metadata?.[WARM_SESSION_METADATA_KEY] ?? normalizeJsonObject(body.metadata)[WARM_SESSION_METADATA_KEY]) === true;
   if (!resolveFeatureFlag(project.metadata, 'project_channels') || warm) return { filed: false, spaceId: null };
+  // A run of a repo trigger lands in the trigger's live space, read when the
+  // create executes (a queued run sees the space as it is then). The space
+  // was checked when it was set on the trigger: a DM was the setter's own,
+  // while the run's actor is the automation stand-in. None or archived:
+  // `#general`. `source` and `trigger_*` are server-set (`createSession`).
+  const meta = input.metadata ?? {};
+  if (typeof meta.source === 'string' && meta.source.startsWith('trigger:') && meta.trigger_kind === 'git') {
+    const space = typeof meta.trigger_slug === 'string' ? await liveTriggerSpace(project.projectId, meta.trigger_slug) : null;
+    return space ? { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) } : { filed: true, spaceId: null };
+  }
   if (body.space_id === undefined) {
     // A fork lands in its source's space while the caller may still post there,
     // with its source's sharing (never wider); else in `#general`.

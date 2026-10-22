@@ -20760,7 +20760,11 @@
     "overlapAllow": "仍然启动新的运行",
     "perHour": "每小时",
     "perDay": "每天",
-    "noLimit": "不限"
+    "noLimit": "不限",
+    "postTo": "发布到",
+    "postToHint": "每次运行都会在那里开始一个新话题。未选择频道时，运行会进入 #general。",
+    "postToNone": "无频道",
+    "postToUnavailable": "不可用的频道"
   },
   "gatewayAccess": {
     "heroTitle": "在任何地方使用此项目的模型",
@@ -22417,7 +22421,10 @@
         "removeFailed": "无法移除链接，请重试。",
         "loadError": "无法加载链接。"
       },
-      "appsLoadError": "无法加载应用。"
+      "appsLoadError": "无法加载应用。",
+      "triggers": {
+        "loadError": "无法加载触发器。"
+      }
     },
     "details": {
       "about": "关于",
