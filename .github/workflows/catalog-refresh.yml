@@ -25,12 +25,12 @@ concurrency:
 jobs:
   refresh:
     name: Regenerate + merge
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -73,7 +73,8 @@ jobs:
         run: |
           (cd packages/llm-catalog && bun test)
           (cd apps/api && bun test --isolate --env-file=scripts/test.env src/llm-gateway/models)
-          (cd apps/web && bun test src/features/session/reasoning-effort-selector.test.ts src/features/workspace/customize/sections/view/gateway)
+          (cd packages/ui && bun test --isolate ./src/session/composer/reasoning-effort-selector.test.ts ./src/customize/sections/view/gateway)
+          (cd apps/web && bun test src/features/workspace/customize/sections/view/gateway)
 
       # Data-only change behind green tests: merge it, no human in the loop.
       - name: Open and merge the PR
@@ -94,11 +95,11 @@ jobs:
           $(cat catalog-summary.txt)
 
           The API refetches both live every hour; these seeds only cover a boot with no internet. Only generated JSON changes."
-          PR="$(gh pr list --base main --head "$BR" --state open --json number --jq '.[0].number // empty')"
+          PR="$(gh pr list --base dev --head "$BR" --state open --json number --jq '.[0].number // empty')"
           if [ -n "$PR" ]; then
             gh pr edit "$PR" --body "$BODY"
           else
-            gh pr create --base main --head "$BR" --title "chore(catalog): refresh model seeds" --body "$BODY"
-            PR="$(gh pr list --base main --head "$BR" --state open --json number --jq '.[0].number')"
+            gh pr create --base dev --head "$BR" --title "chore(catalog): refresh model seeds" --body "$BODY"
+            PR="$(gh pr list --base dev --head "$BR" --state open --json number --jq '.[0].number')"
           fi
           gh pr merge "$PR" --squash --delete-branch

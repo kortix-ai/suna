@@ -11,6 +11,7 @@ import {
 import { publishTeamsAppToCatalog } from './teams/catalog';
 import { signChannelState, verifyChannelState } from './core/signed-state';
 import { frontendBase, installHandoffUrl, stateForCaller, type InstallCompletion } from './core/install-completion';
+import { logger } from '../lib/logger';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -49,7 +50,12 @@ async function runCatalogPublish(input: {
   tenantId: string;
 }): Promise<Exclude<TeamsInstallRedirectStatus, 'publishing' | 'declined' | 'unconfigured'>> {
   const { projectId } = input;
-  await setTeamsPublishState(projectId, 'publishing').catch(() => {});
+  // The install row is the only record of the publish: a write lost here
+  // leaves the status at 'publishing' or the catalog id unset, and nothing
+  // repairs it but another install. Never swallow it silently.
+  const storeFailed = (step: string) => (err: unknown) =>
+    logger.error('[teams-oauth] install state write failed', { step, projectId, error: err instanceof Error ? err.message : String(err) });
+  await setTeamsPublishState(projectId, 'publishing').catch(storeFailed('setTeamsPublishState'));
   let published: Awaited<ReturnType<typeof publishTeamsAppToCatalog>>;
   try {
     published = await publishTeamsAppToCatalog({
@@ -65,17 +71,17 @@ async function runCatalogPublish(input: {
   let status: 'connected' | 'review' | 'failed';
   if (published.published) {
     status = 'connected';
-    await setTeamsOrgInstalled(projectId, true).catch(() => {});
-    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
-    if (published.version) await setTeamsAppVersion(projectId, published.version).catch(() => {});
-    await setTeamsPublishState(projectId, 'published').catch(() => {});
+    await setTeamsOrgInstalled(projectId, true).catch(storeFailed('setTeamsOrgInstalled'));
+    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(storeFailed('setTeamsCatalogAppId'));
+    if (published.version) await setTeamsAppVersion(projectId, published.version).catch(storeFailed('setTeamsAppVersion'));
+    await setTeamsPublishState(projectId, 'published').catch(storeFailed('setTeamsPublishState'));
   } else if (published.pendingReview) {
     status = 'review';
-    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(() => {});
-    await setTeamsPublishState(projectId, 'review').catch(() => {});
+    if (published.teamsAppId) await setTeamsCatalogAppId(projectId, published.teamsAppId).catch(storeFailed('setTeamsCatalogAppId'));
+    await setTeamsPublishState(projectId, 'review').catch(storeFailed('setTeamsPublishState'));
   } else {
     status = 'failed';
-    await setTeamsPublishState(projectId, 'failed', published.error ?? 'publish failed').catch(() => {});
+    await setTeamsPublishState(projectId, 'failed', published.error ?? 'publish failed').catch(storeFailed('setTeamsPublishState'));
   }
 
   console.info('[teams-oauth] install complete', {
@@ -255,7 +261,12 @@ export async function completeTeamsOauthInstall(input: {
   await saveTeamsInstall({ projectId: state.projectId, tenantId }).catch((err) =>
     console.error('[teams-oauth] saveTeamsInstall failed', err),
   );
-  void reconcileChannelConnectors(state.projectId);
+  // Materialize the Teams channel connector before the redirect. Awaited, not
+  // fire-and-forget: the dashboard the redirect lands on immediately loads the
+  // connectors list, and a reconcile still in flight loses that race — the
+  // freshly connected Teams shows nothing (same report as Slack, KRTX-2353).
+  // Never throws — reconcileChannelConnectors is best-effort by contract.
+  await reconcileChannelConnectors(state.projectId);
 
   // The publish runs to completion regardless of the response; the browser
   // only waits a bounded time for it.

@@ -11,3 +11,6 @@ apps/web/translations/*.json merge=i18n-catalog
 # Two branches that each add an entry both prepend a line; `union` keeps both.
 # `.agents/skills/learnings/scripts/index.sh` restores the order after a merge.
 .agents/skills/learnings/MEMORY.md merge=union
+
+# Session-log test fixtures: large synthetic exports. Keep them plain text (the customer-data guard greps them), collapse them in diffs.
+packages/api-contract/src/__tests__/fixtures/session-log/*.json linguist-generated=true -diff

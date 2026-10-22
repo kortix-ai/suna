@@ -20,7 +20,8 @@
  *    suite.
  */
 import { describe, expect, test } from 'bun:test';
-import { runPrePromptEnvSync, type PrePromptEnvSyncDeps } from './pre-prompt-env-sync';
+import { config } from '../config';
+import { isRetryableEnvSyncFailure, jsonProxyError, runPrePromptEnvSync, type PrePromptEnvSyncDeps } from './pre-prompt-env-sync';
 
 const RECORD = {
   accountId: 'acct-1',
@@ -67,9 +68,6 @@ function recordingDeps(
       if (opts.bindThrows) throw opts.bindThrows;
       return true;
     }) as PrePromptEnvSyncDeps['bindTurnIdentity'],
-    scheduleSnapshot: (() => {
-      log.push('scheduleSnapshot:called');
-    }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
     generateTitle: (async () => {
       log.push('generateTitle:called');
     }) as PrePromptEnvSyncDeps['generateTitle'],
@@ -121,28 +119,12 @@ describe('runPrePromptEnvSync — title generation and snapshot scheduling are n
     expect(log).toContain('generateTitle:called');
   });
 
-  test('the call returns even though scheduleSnapshot never resolves', async () => {
+  // R7.4: the prompt no longer schedules a session-list snapshot. The list
+  // follows every stored projection and the turn end, never a prompt timer.
+  test('a prompt schedules no deferred session-list snapshot', async () => {
     const log: string[] = [];
-    const deps: PrePromptEnvSyncDeps = {
-      ...recordingDeps(log),
-      // `scheduleSnapshot` is typed synchronous (`void`), so a real caller
-      // cannot literally return an unresolved promise from it — the point
-      // this pins is that the route never AWAITS its result at all. Blocking
-      // work inside it (simulated here as a long synchronous-looking call
-      // via a deferred push) must not delay the return.
-      scheduleSnapshot: ((input) => {
-        log.push(`scheduleSnapshot:called:${input.sessionId}`);
-      }) as PrePromptEnvSyncDeps['scheduleSnapshot'],
-    };
-    const startedAt = performance.now();
-    const result = await runPrePromptEnvSync(baseInput(), deps);
-    const elapsedMs = performance.now() - startedAt;
-    expect(result).toBeNull();
-    expect(log).toContain('scheduleSnapshot:called:sess-1');
-    // No `await` on this lane at all — the whole call, including the
-    // sequential syncEnv/remintGrant pair, resolves in well under a
-    // deliberately-blocking generateTitle's would-be delay.
-    expect(elapsedMs).toBeLessThan(50);
+    expect(await runPrePromptEnvSync(baseInput(), recordingDeps(log))).toBeNull();
+    expect(log.some((entry) => entry.toLowerCase().includes('snapshot'))).toBe(false);
   });
 });
 
@@ -160,6 +142,16 @@ describe('runPrePromptEnvSync — a person starting a turn binds the session tok
     expect(log.some((e) => e.startsWith('bindTurnIdentity'))).toBe(false);
   });
 
+  // The env push reads the person the session token acts for, which the bind
+  // writes. A person taking over must not get the previous person's personal
+  // secrets from the push's trusted fast path.
+  test('the bind lands before the env push', async () => {
+    const log: string[] = [];
+    await runPrePromptEnvSync(baseInput({ bindTurnIdentity: true }), recordingDeps(log));
+    expect(log.indexOf('bindTurnIdentity:sess-1:user-1')).toBeGreaterThanOrEqual(0);
+    expect(log.indexOf('bindTurnIdentity:sess-1:user-1')).toBeLessThan(log.indexOf('syncEnv:called'));
+  });
+
   test('a failed bind refuses the turn: it never runs as the previous prompter', async () => {
     const log: string[] = [];
     const result = await runPrePromptEnvSync(
@@ -169,5 +161,37 @@ describe('runPrePromptEnvSync — a person starting a turn binds the session tok
     expect(result?.status).toBe(502);
     expect(await result?.json()).toEqual({ error: 'could not bind the session to the person starting this turn' });
     expect(log).not.toContain('remintGrant:called');
+  });
+});
+
+describe('isRetryableEnvSyncFailure — status and error class, never the body text', () => {
+  const httpError = (status: number, body: string) =>
+    Object.assign(new Error(`env sync failed: ${status} ${body}`), { name: 'EnvSyncHttpError', status });
+
+  test('a 502/503/504 from the daemon and a fetch that never connected retry', () => {
+    for (const status of [502, 503, 504]) expect(isRetryableEnvSyncFailure(httpError(status, ''))).toBe(true);
+    expect(isRetryableEnvSyncFailure(Object.assign(new TypeError('Unable to connect'), { code: 'ConnectionRefused' }))).toBe(true);
+    expect(isRetryableEnvSyncFailure(Object.assign(new Error('The operation timed out.'), { name: 'TimeoutError' }))).toBe(true);
+  });
+
+  test('any other daemon status refuses, even when its body mentions a connection failure', () => {
+    expect(isRetryableEnvSyncFailure(httpError(500, 'connection refused upstream'))).toBe(false);
+    expect(isRetryableEnvSyncFailure(httpError(401, 'timeout'))).toBe(false);
+    expect(isRetryableEnvSyncFailure(new Error('socket hang up: econnreset'))).toBe(false);
+  });
+});
+
+describe('jsonProxyError — CORS follows the preview allowlist', () => {
+  // Every proxy refusal is built here (the 413 too-large body included). A
+  // credentialed grant echoed to any Origin let a cross-site page read it
+  // (KRTX-2802).
+  test('the allowlisted origin gets the credentialed pair; any other origin gets none', () => {
+    const allowed = jsonProxyError({ error: 'x' }, 413, config.FRONTEND_URL);
+    expect(allowed.headers.get('Access-Control-Allow-Origin')).toBe(config.FRONTEND_URL);
+    expect(allowed.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    const arbitrary = jsonProxyError({ error: 'x' }, 413, 'https://arbitrary.example');
+    expect(arbitrary.headers.has('Access-Control-Allow-Origin')).toBe(false);
+    expect(arbitrary.headers.has('Access-Control-Allow-Credentials')).toBe(false);
+    expect(jsonProxyError({ error: 'x' }, 502).headers.has('Access-Control-Allow-Origin')).toBe(false);
   });
 });

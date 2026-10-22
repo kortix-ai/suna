@@ -12,7 +12,7 @@ import { join, resolve } from 'node:path';
 const REPO_ROOT = resolve(import.meta.dir, '../../../../..');
 const API_SRC = join(REPO_ROOT, 'apps/api/src');
 
-const ERROR_TABLES = ['apps/web/content/docs/backend.mdx'];
+const ERROR_TABLES = ['apps/web/content/docs/sdk/sessions.mdx'];
 
 function apiSourceText(): string {
   const parts: string[] = [];
@@ -67,18 +67,26 @@ function documentedErrorCodes(markdown: string): string[] {
  *
  * `IDEMPOTENCY_*_CONFLICT` documents a family, so `*` stands for one or more
  * identifier characters; the boundaries apply to it the same way.
+ *
+ * `tokens` holds every maximal `[A-Za-z0-9_]+` run of the source, so a code is
+ * emitted when one whole token matches it. Not \b: that treats `_` as a word
+ * char, so `_FOO` would still match `X_FOO`. One pass over the source instead
+ * of a lookbehind regex over all of it per code, which took 40 s or more.
  */
-function emitsCode(source: string, code: string): boolean {
+function emitsCode(tokens: ReadonlySet<string>, code: string): boolean {
+  if (!code.includes('*')) return tokens.has(code);
   const body = code
     .split('*')
     .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('[A-Za-z0-9_]+');
-  // Not \b: that treats `_` as a word char, so `_FOO` would still match `X_FOO`.
-  return new RegExp(`(?<![A-Za-z0-9_])${body}(?![A-Za-z0-9_])`).test(source);
+  const pattern = new RegExp(`^${body}$`);
+  for (const token of tokens) if (pattern.test(token)) return true;
+  return false;
 }
 
 describe('KaaB error tables match the codes the API emits', () => {
   const source = apiSourceText();
+  const tokens = new Set(source.match(/[A-Za-z0-9_]+/g));
 
   test('the API source is actually loaded', () => {
     // Guards the whole suite against a silently empty corpus, which would make
@@ -91,7 +99,7 @@ describe('KaaB error tables match the codes the API emits', () => {
     for (const relativePath of ERROR_TABLES) {
       const codes = documentedErrorCodes(readFileSync(join(REPO_ROOT, relativePath), 'utf8'));
       expect(codes.length).toBeGreaterThan(5);
-      const phantom = codes.filter((code) => !emitsCode(source, code));
+      const phantom = codes.filter((code) => !emitsCode(tokens, code));
       expect({ [relativePath]: phantom }).toEqual({ [relativePath]: [] });
     }
   });

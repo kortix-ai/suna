@@ -122,6 +122,8 @@ interface ForbiddenRoute {
   re: RegExp;
   /** `true` = every method. Otherwise only STATE-CHANGING methods are refused. */
   allMethods?: boolean;
+  /** When set, ONLY these methods are refused (a path whose other writes stay open). */
+  methods?: string[];
 }
 
 const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
@@ -148,8 +150,9 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // account-members POST above is only one door. `iam/members` carries the
   // super-admin PATCH, `iam/groups` adds a principal to a policy-bearing
   // group, and both outlive the grant. Refuse the whole IAM subtree's
-  // state changes (reads stay open for support).
-  { re: /^\/v1\/accounts\/[^/]+\/iam\/members(\/|$)/ },
+  // state changes (reads stay open for support). `effective:batch` is a read
+  // sent as POST — the web app's permission probe on every page.
+  { re: /^\/v1\/accounts\/[^/]+\/iam\/members(?!\/[^/]+\/effective(:batch)?$)(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/groups(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/roles(\/|$)/ },
   { re: /^\/v1\/accounts\/[^/]+\/iam\/policies(\/|$)/ },
@@ -210,6 +213,25 @@ const IMPERSONATION_FORBIDDEN_ROUTES: ForbiddenRoute[] = [
   // covered one of four mutating families; block the subtree. Listing is a
   // read and stays open.
   { re: /^\/v1\/tunnel(\/|$)/ },
+  // Durable project persistence. Each of these ships operator-chosen content
+  // in the customer's project after the grant ends: a sandbox template is a
+  // Dockerfile built into future sessions; a change-request merge lands
+  // `kortix.yaml` (agent scope, triggers); a provider OAuth start binds a
+  // login; an App deploy serves operator code. Trigger and secret writes stay
+  // open on purpose (team decision recorded in unit-impersonation.test.ts).
+  { re: /^\/v1\/projects\/[^/]+\/sandbox-templates(\/|$)/ },
+  { re: /^\/v1\/projects\/[^/]+\/change-requests\/[^/]+\/merge$/ },
+  { re: /^\/v1\/projects\/[^/]+\/oauth(\/|$)/ },
+  { re: /^\/v1\/projects\/[^/]+\/apps(?!\/[^/]+\/access-session$)(\/|$)/ },
+  // Repository / provider replacement rides PATCH on the project itself.
+  { re: /^\/v1\/projects\/[^/]+$/, methods: ['PATCH'] },
+  // Account deletion, both mounts. The deletion routes run as the REAL
+  // caller: the request row records the operator as the requester, and the
+  // deletion sweeps the sandboxes of every account the requester owns. An
+  // operator inside the customer's account would schedule or run the
+  // teardown of their own accounts. Deletion is the customer's decision;
+  // the status read stays open for support.
+  { re: /^\/v1\/(billing\/)?account(\/|$)/ },
 ];
 
 /** HTTP methods that cannot change state, so cannot create durable access. */
@@ -227,6 +249,7 @@ export function isImpersonationForbiddenPath(path: string, method = 'GET'): bool
   const normalizedMethod = method.toUpperCase();
   return IMPERSONATION_FORBIDDEN_ROUTES.some((route) => {
     if (!route.re.test(path)) return false;
+    if (route.methods) return route.methods.includes(normalizedMethod);
     return route.allMethods || !READ_ONLY_METHODS.has(normalizedMethod);
   });
 }
@@ -234,8 +257,7 @@ export function isImpersonationForbiddenPath(path: string, method = 'GET'): bool
 /**
  * The complete decision, pure. Every input is already resolved by the caller
  * (the grant row read, the platform role looked up), so the security gate
- * itself is exhaustively testable without a DB — the same shape as
- * `shouldApplyAdminBypass` in projects/lib/access.ts.
+ * itself is exhaustively testable without a DB.
  *
  * Order matters and is deliberate: cheap local refusals first, so a non-admin
  * probing grant ids learns nothing from response timing beyond "denied", and

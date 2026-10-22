@@ -1,11 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { MonitorIcon, Moon, Sun } from '@phosphor-icons/react';
+import { TERMINAL_THEMES } from '@/lib/interface-themes';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 
-import { parseSettingsTab, type SettingsTab } from '@/features/workspace/settings/settings-tabs';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-
-import { THEME_OPTIONS } from './user-menu';
+import en from '../../../translations/en.json';
+import { INTERFACE_THEME_OPTIONS } from './interface-theme';
 
 /**
  * What is NOT covered here, and why.
@@ -18,148 +17,79 @@ import { THEME_OPTIONS } from './user-menu';
  * of that is reachable from a unit test. It is verified by driving the real
  * menu in a browser.
  *
- * What IS reachable is the contract the submenu is built from: the three theme
- * values, their labels, their order, and the icons they share with the
- * Appearance tab. That is what this file locks.
+ * What IS reachable is the contract the submenu is built from: the interface
+ * theme rows, their order and their labels, shared with the Appearance tab and
+ * the command palette. That is what this file locks.
  */
-describe('THEME_OPTIONS', () => {
-  test('offers exactly the three values next-themes accepts', () => {
-    expect(THEME_OPTIONS.map((option) => option.value)).toEqual(['light', 'dark', 'system']);
+describe('INTERFACE_THEME_OPTIONS', () => {
+  test('opens with System, then the four Kortix palettes, then one row per terminal theme', () => {
+    expect(INTERFACE_THEME_OPTIONS.slice(0, 5).map((option) => option.value)).toEqual([
+      'system',
+      'light',
+      'pure-light',
+      'dark',
+      'pure-dark',
+    ]);
+    expect(INTERFACE_THEME_OPTIONS.slice(0, 5).every((option) => option.kind === 'labelled')).toBe(
+      true,
+    );
+    // Every terminal theme follows, in the generated file's own order.
+    expect(INTERFACE_THEME_OPTIONS.slice(5).map((option) => option.value)).toEqual(
+      TERMINAL_THEMES.map((theme) => theme.id),
+    );
+  });
+
+  test('is exactly System + the four Kortix palettes + every terminal theme, no more', () => {
+    expect(INTERFACE_THEME_OPTIONS).toHaveLength(1 + 4 + TERMINAL_THEMES.length);
   });
 
   test('keeps System, so the menu can still hand the choice back to the OS', () => {
     // Dropping this row would silently pin every user to a fixed theme with no
     // way back to following the system, which is the default for a new account.
-    expect(THEME_OPTIONS.some((option) => option.value === 'system')).toBe(true);
+    expect(INTERFACE_THEME_OPTIONS.some((option) => option.value === 'system')).toBe(true);
   });
 
-  test('labels each value the way the Appearance tab labels it', () => {
-    expect(THEME_OPTIONS.map((option) => option.label)).toEqual(['Light', 'Dark', 'System']);
+  test('every Kortix row label resolves in the English catalog', () => {
+    const themes = en.settings.appearance.themes as Record<string, string>;
+    const labelled = INTERFACE_THEME_OPTIONS.filter((option) => option.kind === 'labelled');
+    expect(labelled.map((option) => themes[option.labelKey])).toEqual([
+      'System',
+      'Light',
+      'Pure light',
+      'Dark',
+      'Pure dark',
+    ]);
   });
 
-  test('draws each row with the shared icon the Appearance tab uses', () => {
-    // Identity, not resemblance: the submenu and the settings tab must render
-    // the same component, or the two surfaces drift into different glyphs for
-    // the same choice.
-    expect(THEME_OPTIONS.map((option) => option.Icon)).toEqual([Sun, Moon, MonitorIcon]);
-  });
-
-  test('pairs every value with a label and an icon', () => {
-    for (const option of THEME_OPTIONS) {
-      expect(option.label.length).toBeGreaterThan(0);
-      // Renderable, not necessarily a plain function. These moved from local
-      // SVG components to Phosphor, and a `forwardRef` component is an OBJECT
-      // carrying `$$typeof` — `typeof === 'function'` would fail every icon in
-      // the library while the component is perfectly valid.
-      expect(['function', 'object']).toContain(typeof option.Icon);
-      expect(option.Icon).toBeTruthy();
+  test('a terminal theme row shows its own proper noun, verbatim, not a translated label', () => {
+    const named = INTERFACE_THEME_OPTIONS.filter((option) => option.kind === 'named');
+    expect(named).toHaveLength(TERMINAL_THEMES.length);
+    for (const option of named) {
+      const source = TERMINAL_THEMES.find((theme) => theme.id === option.value);
+      expect({ name: option.name, family: option.family, group: option.group }).toEqual({
+        name: source?.name ?? '',
+        family: source?.family ?? '',
+        group: source?.mode ?? 'light',
+      });
     }
+    // Names like "Catppuccin Mocha" and "Rosé Pine Dawn" are not English catalog
+    // keys and must never be looked up as one.
+    expect(named.some((option) => option.name === 'Catppuccin Mocha')).toBe(true);
   });
 });
 
-/**
- * `openUserSettings` and the billing row's onClick both live inside
- * `UserMenu`, unexported, and `renderToStaticMarkup` cannot reach a portalled
- * `DropdownMenuContent` anyway — see this file's top. So the reachable proof
- * of what a row DOES is the source text, which is what the source-scan tests
- * below read.
- *
- * The two store tests that open this block are NOT that proof and never were:
- * they invoke the store themselves, so they pass whatever the menu is wired
- * to. They are kept, retitled to say what they actually cover — that
- * `openSettings(tab)` sets `open` and `tab`, the contract the OTHER settings
- * mounts (`project-shell.tsx:195`, `standalone-settings-route.tsx:113`) rely
- * on. `UserMenu` itself no longer touches the store at all; see
- * `openUserSettings`' header comment in the component.
- */
-describe('user menu settings entry points', () => {
-  test('the settings panel store opens on the profile tab when asked for it', () => {
-    useSettingsPanelStore.getState().openSettings('profile');
-    expect(useSettingsPanelStore.getState().open).toBe(true);
-    expect(useSettingsPanelStore.getState().tab).toBe('profile');
-  });
-
-  test('the settings panel store opens on the preferences tab when asked for it', () => {
-    // Was `billing`. Billing is not a `SettingsTab` any more — it is a section
-    // of `/accounts/[id]`, and the menu row that opens it navigates there
-    // directly (see the row-target test below). `preferences` is a surviving
-    // tab that exercises the same store contract.
-    useSettingsPanelStore.getState().openSettings('preferences');
-    expect(useSettingsPanelStore.getState().tab).toBe('preferences');
-  });
-
-  /**
-   * The two tests above invoke the store directly, so they pass no matter
-   * which tab the menu actually passes — they could not fail when the row
-   * regressed to `openUserSettings('general')` (Workspace → General, a
-   * project-scoped tab that `ACCOUNT_SCOPED_SETTINGS_TABS` filters out with
-   * no project open). With no DOM harness the only reachable proof of the
-   * call TARGET is the source itself, so this reads the file and asserts both
-   * directions: the correct tab is present AND the wrong one is absent.
-   */
-  test('the user settings row is wired to `profile`, not the project-scoped `general`', async () => {
-    const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
-    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-    const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
-    expect(tabs).toContain('profile');
-    expect(tabs).not.toContain('general');
-  });
-
-  /**
-   * The rows must NAVIGATE, not poke the store.
-   *
-   * `UserMenu`'s only mount was the app header, rendered only under the
-   * `/accounts` tree; both are deleted now. `SettingsPanel` has exactly two mounts
-   * (`project-layout/project-shell.tsx:195`,
-   * `workspace/settings/standalone-settings-route.tsx:113`) and neither is in
-   * the `/accounts` tree. So `openSettings(tab)` from here set `open: true`
-   * with no subscriber and the Settings and Billing rows did NOTHING when
-   * clicked. `/settings/<tab>` is the account-scoped route that mounts the
-   * panel itself.
-   *
-   * Comments are stripped before matching, so the prose above — which names
-   * `useSettingsPanelStore` and `openSettings` repeatedly — cannot defeat the
-   * absence assertion.
-   */
-  test('the settings and billing rows navigate instead of writing to the store', async () => {
-    const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
-    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-
-    // A prefetching anchor, not a handler. A menu row that calls `router.push`
-    // runs the RSC fetch cold at click time, and Next converts that fetch into
-    // a full document load whenever it answers wrong
-    // (fetch-server-response.js:148/177/181).
-    expect(code).toContain('<Link href="/settings/profile" prefetch>');
-    expect(code).not.toContain('router.push');
-    // The store is unreachable from this mount — no call, and no import left
-    // behind to make one look reachable.
-    expect(code).not.toContain('useSettingsPanelStore');
-
-    const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
-    expect(tabs).toContain('profile');
-    // Billing no longer goes through `openUserSettings`: it is an ACCOUNT
-    // setting, it lives in the account hub, and `parseSettingsTab('billing')`
-    // returns `null` — so `/settings/billing` would have fallen back to the
-    // default tab. The row opens the hub's Billing pane over the current page
-    // instead. Both halves are asserted so a revert to the old href fails here.
-    expect(tabs).not.toContain('billing');
-    expect(code).toContain("hubTarget(currentAccount.account_id, { tab: 'billing' })");
-    expect(code).not.toContain('/settings/billing');
-  });
-
-  /**
-   * Every tab these rows build a URL from must be a segment
-   * `app/[locale]/(app)/settings/[tab]/page.tsx` accepts, or the route silently falls
-   * back to `STANDALONE_DEFAULT_SETTINGS_TAB` and Billing opens on Profile.
-   */
-  test('every tab the rows navigate to is a real /settings segment', async () => {
-    const source = await Bun.file(new URL('./user-menu.tsx', import.meta.url)).text();
-    const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
-    const tabs = [...code.matchAll(/href="\/settings\/([a-z-]+)"/g)].map((m) => m[1]);
-
-    expect(tabs.length).toBeGreaterThan(0);
-    for (const tab of tabs) {
-      expect(parseSettingsTab(tab)).toBe(tab as SettingsTab);
+describe('settings store and theme compatibility contracts', () => {
+  test('the settings panel store opens on profile and preferences', () => {
+    for (const tab of ['profile', 'preferences'] as const) {
+      useSettingsPanelStore.getState().openSettings(tab);
+      expect(useSettingsPanelStore.getState().open).toBe(true);
+      expect(useSettingsPanelStore.getState().tab).toBe(tab);
     }
+    useSettingsPanelStore.getState().close();
+  });
+
+  test('the compatibility entry point shares the live theme options', async () => {
+    const compat = await import('./user-menu');
+    expect(compat.INTERFACE_THEME_OPTIONS).toBe(INTERFACE_THEME_OPTIONS);
   });
 });

@@ -218,7 +218,3 @@ export async function listTeamsTeamChannels(
 export function updateCard(ref: TeamsConversationRef, activityId: string, card: unknown): Promise<boolean> {
   return updateActivity(ref, activityId, cardActivity(card));
 }
-
-export async function sendTyping(ref: TeamsConversationRef): Promise<void> {
-  await sendActivity(ref, { type: 'typing' }).catch(() => null);
-}

@@ -160,6 +160,7 @@ describe('describeWhen / triggerRows', () => {
     session_access: { mode: 'private' as const, memberIds: [], groupIds: [] },
     last_fired_at: null,
     webhook_url: null,
+    event: null,
   };
 
   test('a cron trigger prints its expression and timezone', () => {
@@ -168,6 +169,23 @@ describe('describeWhen / triggerRows', () => {
 
   test('a webhook trigger prints the web’s own sentence', () => {
     expect(describeWhen({ ...base, type: 'webhook', cron: null })).toBe('When a request arrives');
+  });
+
+  test('an event trigger prints its event type and app', () => {
+    const event = {
+      connector: 'github',
+      type: 'GITHUB_PULL_REQUEST_EVENT',
+      config: {},
+      provider: 'composio',
+      app: 'github',
+      status: 'active' as const,
+      error: null,
+      last_event_at: null,
+    };
+    expect(describeWhen({ ...base, type: 'event', cron: null, event })).toBe(
+      'On GITHUB_PULL_REQUEST_EVENT · github',
+    );
+    expect(describeWhen({ ...base, type: 'event', cron: null })).toBe('On an app event');
   });
 
   test('a one-off cron prints its instant, and a poll monitor its interval', () => {

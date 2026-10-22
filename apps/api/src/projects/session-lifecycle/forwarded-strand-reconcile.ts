@@ -44,7 +44,7 @@ import type { StoredSandboxTurn } from '../session-turn-ledger';
 import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
 import { wireIdClockDelta, wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue } from './drain';
-import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
+import { readSessionMessageTip, resolveSessionOpencodeEndpoint, retractSessionMessage } from './runtime-client';
 import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, strandedPlacement, tipIsBusy } from './forwarded-placement';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -116,10 +116,7 @@ const liveDeps: StrandReconcileDeps = {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     return resolved ? readSessionMessageTip(resolved, { limit: TIP_LIMIT }) : null;
   },
-  async removeMessage(sessionId, messageId) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    return resolved ? removeRuntimeMessage(resolved, messageId) : false;
-  },
+  removeMessage: (sessionId, messageId) => retractSessionMessage(sessionId, messageId, 'forwarded-turns'),
   async requeueStranded(sessionId, messageId) {
     const [row] = await db
       .select({
@@ -146,7 +143,7 @@ const liveDeps: StrandReconcileDeps = {
     const payload = (row.payload ?? {}) as { redeliveries?: unknown };
     const redeliveries = Number(payload.redeliveries ?? 0) + 1;
     if (redeliveries > MAX_STRAND_REDELIVERIES) return 'exhausted';
-    await db
+    const requeued = await db
       .update(sessionLifecycleCommands)
       .set({
         status: 'queued',
@@ -167,7 +164,14 @@ const liveDeps: StrandReconcileDeps = {
           eq(sessionLifecycleCommands.commandId, row.commandId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
         ),
-      );
+      )
+      .returning({ commandId: sessionLifecycleCommands.commandId });
+    // The guard is the whole point of the write: a concurrent cancel (which
+    // deletes a succeeded row) or redelivery sweep (requeue and dead-letter
+    // are both guarded on `succeeded`) can take the row between the read
+    // above and this UPDATE. Then NOTHING was re-queued — say so, so the
+    // reconciler does not count or log a redelivery that never happened.
+    if (requeued.length === 0) return 'not_open';
     return 'requeued';
   },
   kickDrain(sessionId) {

@@ -51,25 +51,50 @@
  * prefix. `'kx'` makes the two factories disjoint at segment 0, so neither
  * can ever prefix-match the other. Do not "tidy" this back to `'kortix'`.
  */
+import type { ReviewItemsQuery } from '../core/rest/projects-client/review';
 import type { ListProjectSessionsOptions } from '../core/rest/projects-client/sessions';
 
-type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels'>;
+type SessionListFilters = Pick<ListProjectSessionsOptions, 'parent' | 'startedBy' | 'q' | 'labels' | 'view'>;
 
 /** The filter fields that change the server response, or undefined when none is set. */
 function normalizeSessionListFilters(filters?: SessionListFilters) {
   const q = filters?.q?.trim();
   const labels = filters?.labels?.length ? [...filters.labels].sort() : null;
-  if (!filters?.parent && !filters?.startedBy && !q && !labels) return undefined;
+  const view = filters?.view;
+  if (!filters?.parent && !filters?.startedBy && !q && !labels && !view) return undefined;
   return {
     parent: filters?.parent ?? null,
     startedBy: filters?.startedBy ?? null,
     q: q ?? null,
-    // Only present when set, so pre-label keys stay byte-identical.
+    // Only present when set, so pre-label and pre-view keys stay byte-identical.
     ...(labels ? { labels } : {}),
+    ...(view ? { view } : {}),
   };
 }
 
 export const qk = {
+  /** Kortix Capture, not project-scoped: a device sign-in grant, keyed by its user code. */
+  capture: {
+    deviceGrant: (userCode: string) => ['capture', 'device-grant', userCode] as const,
+    /** Kortix Capture: the prefix of every capture key of one account (Capture's tenant). */
+    account: (accountId: string) => ['capture', 'account', accountId] as const,
+    /** `getCaptureWorkspace` — the account switch and what IAM lets you do. */
+    workspace: (accountId: string) => [...qk.capture.account(accountId), 'workspace'] as const,
+    /** `listCaptureDevices` — mine, a member's, or the account's (`scope`). */
+    devices: (accountId: string, scope: string, userId: string | null) =>
+      [...qk.capture.account(accountId), 'devices', scope, userId] as const,
+    /** Everything read off one person's timeline: days, runs, items, search, frames. */
+    timeline: (accountId: string) => [...qk.capture.account(accountId), 'timeline'] as const,
+    timelineRead: (accountId: string, kind: string, query: unknown) =>
+      [...qk.capture.timeline(accountId), kind, query] as const,
+    policy: (accountId: string) => [...qk.capture.account(accountId), 'policy'] as const,
+    /** `getCaptureStorage` — where the account keeps its recordings. */
+    storage: (accountId: string) => [...qk.capture.account(accountId), 'storage'] as const,
+    /** `listCaptureEnrollmentTokens` — the IT rollout tokens. */
+    enrollmentTokens: (accountId: string) => [...qk.capture.account(accountId), 'enrollment-tokens'] as const,
+    /** `listCaptureEnrollments` — computers that presented a token; every status filter under one prefix. */
+    enrollments: (accountId: string) => [...qk.capture.account(accountId), 'enrollments'] as const,
+  },
   /**
    * The account LIST — `listAccounts()`, `GET /accounts`, `KortixAccount[]`.
    *
@@ -149,6 +174,29 @@ export const qk = {
       [...qk.accounts.scope(), 'my-invites', userId ?? 'anonymous'] as const,
   },
 
+  /**
+   * The caller's notifications (KRTX-1742): the inbox, the preference record,
+   * and whether the caller watches one session. Every member answers for the
+   * CALLER, so the user id is segment 2 — the `qk.accounts` rule: without it,
+   * an in-tab identity swap shows user B user A's inbox until the next poll.
+   * `null`/`undefined` route to the `'anonymous'` slot, which no hook writes
+   * (each is gated on a user id). The member literal is segment 3, so no user
+   * id can alias another member.
+   */
+  notifications: {
+    /** Invalidation prefix covering every member for every user. Never a `queryKey`. */
+    scope: () => ['kx', 'notifications'] as const,
+    /** `listNotifications({ limit })` — the newest page. The page size changes the response. */
+    inbox: (userId: string | null | undefined, limit: number) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'inbox', limit] as const,
+    /** `getNotificationPreferences()`. */
+    preferences: (userId: string | null | undefined) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'preferences'] as const,
+    /** `getSessionWatch(projectId, sessionId)` — the caller's watch on one session. */
+    sessionWatch: (userId: string | null | undefined, projectId: string, sessionId: string) =>
+      [...qk.notifications.scope(), userId ?? 'anonymous', 'session-watch', projectId, sessionId] as const,
+  },
+
   projects: {
     /** Invalidation prefix covering every account's list AND the accountless
      *  slot. Never pass this as a `queryKey` — `list(accountId)` and
@@ -159,6 +207,46 @@ export const qk = {
 
     /** Every project the account can see. `undefined` means the active account. */
     list: (accountId?: string) => [...qk.projects.scope(), accountId ?? 'all'] as const,
+
+    /** `getProjectQuota({ accountId })` — the account's project-cap state, as
+     *  the /new create form reads it before the first submit. Like `list`,
+     *  `undefined` (`'default'`) is the server-resolved default account slot,
+     *  a SIBLING of every named account — never a prefix of one. Creating a
+     *  project invalidates the `scope()` prefix, so a form remounting on the
+     *  same key refetches a fresh answer. */
+    quota: (accountId?: string) =>
+      [...qk.projects.scope(), 'quota', accountId ?? 'default'] as const,
+  },
+
+  /**
+   * Drives (`listDrives`, `listDriveFiles`, …). A drive list holds the
+   * caller's own personal drives, so it is keyed by user like
+   * `accounts.list`. Every per-drive key sits under `drive(id)`: a write or a
+   * restore invalidates that one prefix and reaches the drive's files and
+   * versions. The `'list'` / `'drive'` / `'session'` segments keep the three
+   * shapes from ever colliding.
+   */
+  drives: {
+    /** Invalidation prefix for every drive key. Never a `queryKey`. */
+    scope: () => ['kx', 'drives'] as const,
+    list: (
+      userId: string | null | undefined,
+      scope?: { projectId?: string; accountId?: string },
+    ) =>
+      [
+        ...qk.drives.scope(),
+        'list',
+        userId ?? 'anonymous',
+        scope?.projectId ? `project:${scope.projectId}` : scope?.accountId ? `account:${scope.accountId}` : 'primary',
+      ] as const,
+    /** Prefix for one drive's files and versions. */
+    drive: (driveId: string) => [...qk.drives.scope(), 'drive', driveId] as const,
+    files: (driveId: string, path: string) => [...qk.drives.drive(driveId), 'files', path] as const,
+    versions: (driveId: string) => [...qk.drives.drive(driveId), 'versions'] as const,
+    grants: (driveId: string) => [...qk.drives.drive(driveId), 'grants'] as const,
+    conflicts: (driveId: string) => [...qk.drives.drive(driveId), 'conflicts'] as const,
+    session: (projectId: string, sessionId: string) =>
+      [...qk.drives.scope(), 'session', projectId, sessionId] as const,
   },
 
   project: {
@@ -167,6 +255,23 @@ export const qk = {
 
     /** `listSessionsNeedingInput` — which sessions wait on a human decision or answer. */
     needsInput: (id: string) => [...qk.project.scope(id), 'needs-input'] as const,
+
+    /** `getReviewSummary` — the needs-you counts the always-mounted badges poll. */
+    reviewSummary: (id: string) => [...qk.project.scope(id), 'review-summary'] as const,
+    /** Invalidation prefix for every page set `useReviewItemPages` caches.
+     *  Never pass this as a `queryKey`. */
+    reviewItemsScope: (id: string) => [...qk.project.scope(id), 'review-items'] as const,
+    /** The paged inbox (`useInfiniteQuery` over `listReviewItems`): one slot
+     *  per filter, because each filter is a different server request. */
+    reviewItemPages: (id: string, query: ReviewItemsQuery = {}) =>
+      [
+        ...qk.project.reviewItemsScope(id),
+        'pages',
+        query.segment ?? 'all',
+        query.kind ?? 'all',
+        query.sessionId ?? 'all',
+        query.limit ?? 'default',
+      ] as const,
 
     /**
      * The bare project row — `getProject`, `GET /projects/:id`, a
@@ -218,6 +323,10 @@ export const qk = {
 
     /** Persisted provider/model inference restrictions and the effective default. */
     modelAccess: (projectId: string) => [...qk.project.scope(projectId), 'model-access'] as const,
+
+    /** `listCustomLlmProviders`: the project's OpenAI-compatible endpoints (`useCustomLlmProviders`). */
+    customLlmProviders: (projectId: string) =>
+      [...qk.project.scope(projectId), 'custom-llm-providers'] as const,
 
     /**
      * Invalidation prefix for the WHOLE sessions family: the list, in every
@@ -335,6 +444,14 @@ export const qk = {
     /** `getSessionTurn` — server truth about the turns running right now. */
     sessionTurn: (id: string, sessionId: string) =>
       [...qk.project.session(id, sessionId), 'turn'] as const,
+    /** The session stream's `kortix.control.runtime` frame: the box and the
+     *  server wake ladder. Written by the stream only; never fetched. */
+    sessionRuntimeControl: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'runtime-control'] as const,
+    /** The session stream's `kortix.control.audit` watermark (pending count +
+     *  newest instants). A host re-reads its audit list when it moves. */
+    sessionAuditWatermark: (id: string, sessionId: string) =>
+      [...qk.project.session(id, sessionId), 'audit-watermark'] as const,
 
     connectors: (id: string) => [...qk.project.scope(id), 'connectors'] as const,
     /** One connector's config — `getConnectorConfig(id, slug)`. */
@@ -346,6 +463,11 @@ export const qk = {
      *  so pass `connection` (the connection id, or a stable stand-in for one not
      *  created yet): two connections of one connector must not share an entry.
      *  Without it, the key is the per-connector prefix every entry sits under. */
+    /** One connector action's output — `useConnectorQuery`. Under
+     *  `connectorConfig(id, slug)`, so invalidating a connector (a new account
+     *  connected) refetches its calls. */
+    connectorCall: (id: string, slug: string, action: string, args: unknown, account?: string | null) =>
+      [...qk.project.connectorConfig(id, slug), 'call', action, account ?? null, args] as const,
     connectorOAuth2Discovery: (id: string, slug: string, connection?: string) =>
       connection === undefined
         ? ([...qk.project.connectorConfig(id, slug), 'oauth2-discovery'] as const)
@@ -372,6 +494,16 @@ export const qk = {
     /** Immutable deployment history for one App. */
     appDeployments: (id: string, appId: string) =>
       [...qk.project.apps(id), appId, 'deployments'] as const,
+    /** Machines of one App (capability `machines`). */
+    appMachines: (id: string, appId: string) => [...qk.project.apps(id), appId, 'machines'] as const,
+    /** Volumes of one App (capability `volumes`). */
+    appVolumes: (id: string, appId: string) => [...qk.project.apps(id), appId, 'volumes'] as const,
+    /** Snapshots of one volume (capability `snapshots`). */
+    appVolumeSnapshots: (id: string, appId: string, volumeId: string) =>
+      [...qk.project.appVolumes(id, appId), volumeId, 'snapshots'] as const,
+    /** One deployment and its events (build log included). */
+    appDeployment: (id: string, appId: string, deploymentId: string) =>
+      [...qk.project.appDeployments(id, appId), deploymentId] as const,
 
     /** `listProjectTriggers` — `GET /projects/:id/triggers`, the cron/webhook
      *  listing (file-defined in the repo manifest). Shared by
@@ -380,6 +512,37 @@ export const qk = {
      *  and write the identical entity through `listProjectTriggers(id)`, so
      *  they must share this one key. */
     triggers: (id: string) => [...qk.project.scope(id), 'triggers'] as const,
+
+
+    /** `listProjectTriggerEventTypes` — the app events one connector can trigger on. */
+    triggerEventTypes: (id: string, connector: string) =>
+      [...qk.project.triggers(id), 'event-types', connector] as const,
+
+    /** `listProjectTriggerEventApps` — the apps that can trigger events. */
+    triggerEventApps: (id: string) => [...qk.project.triggers(id), 'event-apps'] as const,
+
+    /** `listTriggerRuns` pages — one trigger's run history. Under `triggers`,
+     *  so a fire or replay that invalidates the listing refreshes it too. */
+    triggerRuns: (id: string, slug: string) => [...qk.project.triggers(id), 'runs', slug] as const,
+
+    /** `listProjectTriggerRuns` pages — every run of the project, one slot per status filter. */
+    projectTriggerRuns: (id: string, status?: string | null) =>
+      [...qk.project.triggers(id), 'project-runs', status ?? 'all'] as const,
+
+    /** Every conversation read of a project (flag `agent_rooms`): the prefix of
+     *  the keys below, so a post or a read refreshes the list, the unread
+     *  counts and the thread together. */
+    rooms: (id: string) => [...qk.project.scope(id), 'rooms'] as const,
+    /** `listRooms` — the named rooms. */
+    roomList: (id: string) => [...qk.project.rooms(id), 'list'] as const,
+    /** `listRooms({ mine: true })` — the caller's conversations with unread counts. */
+    roomConversations: (id: string) => [...qk.project.rooms(id), 'mine'] as const,
+    /** `getRoom` — one conversation and its members. */
+    room: (id: string, roomId: string) => [...qk.project.rooms(id), 'room', roomId] as const,
+    /** `listRoomMessages` — the newest messages of one conversation. */
+    roomMessages: (id: string, roomId: string, view: 'all' | 'top' = 'all') => [...qk.project.rooms(id), 'messages', roomId, view] as const,
+    /** `listRoomMessages(…, { thread })` — one thread. */
+    roomThread: (id: string, roomId: string, root: number) => [...qk.project.rooms(id), 'thread', roomId, root] as const,
 
     /** `listProjectReminders` — `GET /projects/:id/reminders`. Also the prefix
      *  of every `sessionReminders` key, so invalidating it refreshes the
@@ -391,6 +554,9 @@ export const qk = {
     /** `getSessionMessageAuthors` — `GET /projects/:id/sessions/:sid/message-authors`. */
     sessionMessageAuthors: (id: string, sessionId: string) =>
       [...qk.project.scope(id), 'session-message-authors', sessionId] as const,
+    /** `getSessionModelUsage` — `GET /projects/:id/sessions/:sid/model-usage`. */
+    sessionModelUsage: (id: string, sessionId: string) =>
+      [...qk.project.scope(id), 'session-model-usage', sessionId] as const,
 
     /**
      * `readProjectFile(id, path)` — a single-file source read, used by the

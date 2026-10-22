@@ -21,7 +21,7 @@ mock.module('./provider-transition-audit', () => ({
 }));
 
 // Imported AFTER mock.module so the store binds the audit spy, not the real hook.
-const { activateWithCas } = await import('./provider-transition-store');
+const { activateWithCas } = await import('./provider-transition-activate');
 
 const NOW = new Date('2026-09-29T00:00:00.000Z');
 

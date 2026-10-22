@@ -6,107 +6,39 @@ function served(...ids: string[]): ManagedModel[] {
   return ids.map((id) => ({
     id,
     name: id,
-    upstreamModelId: `vendor/${id}`,
-    transport: 'openrouter',
-    pricingRef: `openrouter/vendor/${id}`,
-    tier: 'balanced',
+    pricing: { inputPerMillion: 1, outputPerMillion: 1 },
     vision: true,
     limit: { context: 200_000, output: 32_000 },
-    openrouterProvider: { only: ['x'], allow_fallbacks: false, zdr: true, data_collection: 'deny' },
-  })) as unknown as ManagedModel[];
+  })) as ManagedModel[];
 }
 
+// The caller (session-model-repoint.ts) asks only for a RETIRED stored id.
+// No successor is hardcoded: the project default, then the platform default
+// (the configured model when Platinum serves it, else Platinum's first).
 describe('resolveSessionManagedModel', () => {
-  test('a BYOK/codex ref (not a managed id at all) is kept', () => {
-    expect(resolveSessionManagedModel('anthropic/claude-sonnet-4-6', served('kimi-k3'), null)).toEqual({
-      kind: 'kept',
+  const lineup = served('deepseek-v4.1-flash', 'glm-5.3-flash');
+
+  test('a retired id moves to the project default', () => {
+    expect(resolveSessionManagedModel('kimi-k3', lineup, 'glm-5.3-flash', 'deepseek-v4.1-flash')).toEqual({
+      kind: 'repoint', to: 'glm-5.3-flash', reason: 'project_default',
     });
   });
 
-  test('a managed id still in the runtime lineup is kept', () => {
-    expect(resolveSessionManagedModel('kimi-k3', served('kimi-k3', 'glm-5.3-flash'), null)).toEqual({
-      kind: 'kept',
+  // The reason must NOT say `project_default` when the project never set one:
+  // an audit row that claims it did sends the reader to the wrong setting.
+  test('with no project default it moves to the platform default, named as such', () => {
+    expect(resolveSessionManagedModel('glm-5.2', lineup, null, 'deepseek-v4.1-flash')).toEqual({
+      kind: 'repoint', to: 'deepseek-v4.1-flash', reason: 'platform_default',
     });
   });
 
-  // The evidence case: `deepseek-v4-flash-0731` is retired, but the catalog
-  // declares `deepseek-v4.1-flash` as its successor (managed-models.ts
-  // LEGACY_MANAGED_IDS) — and that successor IS in the runtime lineup here.
-  test('a retired id with a servable declared successor re-points to it', () => {
-    expect(
-      resolveSessionManagedModel('deepseek-v4-flash-0731', served('deepseek-v4.1-flash', 'kimi-k3'), null),
-    ).toEqual({ kind: 'repoint', to: 'deepseek-v4.1-flash', reason: 'successor' });
-  });
-
-  // The other evidence case: `grok-4.6` is retired with NO declared successor
-  // at all — the project's current default is the only fallback.
-  test('a retired id with no declared successor falls back to the project default', () => {
-    expect(resolveSessionManagedModel('grok-4.6', served('kimi-k3'), 'kimi-k3')).toEqual({
-      kind: 'repoint',
-      to: 'kimi-k3',
-      reason: 'project_default',
-    });
-  });
-
-  test('a retired id whose declared successor is ITSELF not servable here falls back to the project default', () => {
-    // deepseek-v4-flash-0731's declared successor is deepseek-v4.1-flash, but
-    // this deployment's lineup does not serve it (e.g. no credential) — must
-    // not hand a session a second dead pin, must fall through to the default.
-    expect(
-      resolveSessionManagedModel('deepseek-v4-flash-0731', served('glm-5.3-flash'), 'glm-5.3-flash'),
-    ).toEqual({ kind: 'repoint', to: 'glm-5.3-flash', reason: 'project_default' });
-  });
-
-  test('a retired id with no successor and no project default is kept — the turn error names the real cause', () => {
-    expect(resolveSessionManagedModel('grok-4.6', served('kimi-k3'), null)).toEqual({ kind: 'kept' });
-  });
-
-  test('never re-points a retired id onto itself as a "project default"', () => {
-    expect(resolveSessionManagedModel('grok-4.6', served('kimi-k3'), 'grok-4.6')).toEqual({ kind: 'kept' });
-  });
-});
-
-/**
- * The PLATFORM default is the floor under the re-point chain.
- *
- * `session-model-repoint.ts` passes `projectDefault ?? platformDefaultModelId()`.
- * Most projects never set a default model, so before that floor existed a
- * retired id with no declared successor had nothing to move to and stayed
- * pinned — a permanently dead turn. Measured 2026-09-28: 20 of one project's
- * 238 sessions were in exactly that state.
- */
-describe('the platform-default floor', () => {
-  const served = [{ id: 'deepseek-v4.1-flash' }, { id: 'kimi-k3' }] as never;
-
-  test('an orphan retired id moves to the platform default, named as such', () => {
-    // glm-5.2 is retired and has NO entry in LEGACY_MANAGED_IDS.
-    // The reason must NOT say `project_default`: this project never set one,
-    // and an audit row that claims it did sends the reader to the wrong setting.
-    expect(resolveSessionManagedModel('glm-5.2', served, null, 'deepseek-v4.1-flash')).toEqual({
-      kind: 'repoint',
-      to: 'deepseek-v4.1-flash',
-      reason: 'platform_default',
-    });
-  });
-
-  test('a project default still wins over the platform floor', () => {
-    expect(resolveSessionManagedModel('glm-5.2', served, 'kimi-k3', 'deepseek-v4.1-flash')).toEqual({
-      kind: 'repoint',
-      to: 'kimi-k3',
-      reason: 'project_default',
-    });
-  });
-
-  test('with no successor AND no default at all, it is still kept', () => {
+  test('with no default at all it is kept: the turn error names the real cause', () => {
     // The floor is supplied by the CALLER; the pure decision never invents one.
-    expect(resolveSessionManagedModel('glm-5.2', served, null)).toEqual({ kind: 'kept' });
+    expect(resolveSessionManagedModel('glm-5.2', lineup, null)).toEqual({ kind: 'kept' });
   });
 
-  test('a declared successor still wins over the floor', () => {
-    expect(resolveSessionManagedModel('deepseek-v4-flash', served, 'kimi-k3')).toEqual({
-      kind: 'repoint',
-      to: 'deepseek-v4.1-flash',
-      reason: 'successor',
-    });
+  test('never re-points a retired id onto itself', () => {
+    expect(resolveSessionManagedModel('grok-4.6', lineup, 'grok-4.6')).toEqual({ kind: 'kept' });
+    expect(resolveSessionManagedModel('grok-4.6', lineup, null, 'grok-4.6')).toEqual({ kind: 'kept' });
   });
 });

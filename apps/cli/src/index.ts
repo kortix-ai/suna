@@ -1,16 +1,23 @@
 #!/usr/bin/env bun
+import { loadAuth } from './api/auth.ts';
 import { printBanner } from './banner.ts';
+import { liftLeadingGlobalFlags } from './command-argv.ts';
+import { type Command, commandFeatureFlag, TIERS } from './command-table.ts';
+import { enabledFeatureFlags, featureOffMessage, featureShown } from './feature-flags.ts';
 import { runAccess } from './commands/access.ts';
 import { runAccounts } from './commands/accounts.ts';
 import { runAgents } from './commands/agents.ts';
 import { runApps } from './commands/apps.ts';
 import { runAudit } from './commands/audit.ts';
 import { runBilling } from './commands/billing.ts';
+import { runCapture } from './commands/capture.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
 import { runDoctor } from './commands/doctor.ts';
 import { runEnv } from './commands/env.ts';
+import { runFeedback } from './commands/feedback.ts';
+import { runDrive } from './commands/drive.ts';
 import { runFiles } from './commands/files.ts';
 import { runGateway } from './commands/gateway.ts';
 import { runGitCredential } from './commands/git-credential.ts';
@@ -22,11 +29,14 @@ import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runMarketplace } from './commands/marketplace.ts';
 import { runMembers } from './commands/members.ts';
+import { runMigrate } from './commands/migrate.ts';
 import { runModels } from './commands/models.ts';
 import { runPermissions } from './commands/permissions.ts';
 import { runProjects } from './commands/projects.ts';
 import { runProviders } from './commands/providers.ts';
 import { runRegistry } from './commands/registry.ts';
+import { runReminders } from './commands/reminders.ts';
+import { runGoals } from './commands/goals.ts';
 import { runReview } from './commands/review.ts';
 import { runRoles } from './commands/roles.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
@@ -37,16 +47,16 @@ import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runSessionsConnect } from './commands/sessions-connect.ts';
 import { runSessions } from './commands/sessions.ts';
 import { runShip } from './commands/ship.ts';
-import { SYSTEM_SKILLS_COMMAND, runSystemSkills } from './commands/system-skills.ts';
+import { runSystemSkills } from './commands/system-skills.ts';
 import { runTokens } from './commands/tokens.ts';
+import { runTools } from './commands/tools.ts';
 import { runTriggers } from './commands/triggers.ts';
-import { runReminders } from './commands/reminders.ts';
+import { runPeers, runRooms } from './commands/rooms.ts';
 import { runTui } from './commands/tui.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
-import { runWhoami } from './commands/whoami.ts';
-import { type Command, TIERS } from './command-table.ts';
+import { runToken, runWhoami } from './commands/whoami.ts';
 import { renderContext, renderHostNotice } from './host-notice.ts';
 import { confirm } from './prompts.ts';
 import { C, header, pad, rule, visibleWidth } from './style.ts';
@@ -70,8 +80,9 @@ function tierBand(label: string): string {
   return `  ${C.faded}${label} ${'─'.repeat(dashes)}${C.reset}`;
 }
 
-function renderHelp(): string {
-  const visibleCommands = (commands: readonly Command[]) => commands;
+function renderHelp(flags: Set<string> | null): string {
+  // A flagged command is listed only where its flag is known on (feature-flags.ts).
+  const visibleCommands = (commands: readonly Command[]) => commands.filter((c) => featureShown(c.featureFlag, flags));
   const allCommands = TIERS.flatMap((t) => t.sections.flatMap((s) => visibleCommands(s.commands)));
   const labelWidth = Math.max(
     ...allCommands.map((c) => (c.args ? `${c.name} ${c.args}` : c.name).length),
@@ -100,6 +111,14 @@ function renderHelp(): string {
   lines.push(
     `  ${C.dim}Run${C.reset} ${C.cyan}kortix <subcommand> --help${C.reset} ${C.dim}for command-specific options.${C.reset}`,
   );
+  lines.push(
+    '  --debug  Print resolved host, account and credential source to stderr (also KORTIX_DEBUG=1).',
+  );
+  lines.push('');
+  lines.push('  Inside a Kortix sandbox, plain commands use the delegated session identity,');
+  lines.push('  not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the');
+  lines.push('  sandbox env-file fallback. To use stored credentials, also unset exported KORTIX_TOKEN,');
+  lines.push('  KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.');
   lines.push('');
   return lines.join('\n');
 }
@@ -114,7 +133,7 @@ function printVersion(): void {
 // banner/context" surprise. The one difference is that BARE `kortix` may stop
 // at the update notice to ask (see offerInteractiveUpdate) — an explicit help
 // request stays a pure, non-blocking render.
-async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
+async function printLanding(opts: { offerUpdate: boolean; argv?: readonly string[] }): Promise<void> {
   printBanner();
   // Always surface what host/account/project commands will act on.
   process.stdout.write(`${renderContext()}\n`);
@@ -124,7 +143,9 @@ async function printLanding(opts: { offerUpdate: boolean }): Promise<void> {
     const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
     if (notice) process.stdout.write(`${notice}\n`);
   }
-  process.stdout.write(renderHelp());
+  // The linked project's flags decide which flagged commands are listed; a slow
+  // or absent answer hides them rather than delaying the help screen.
+  process.stdout.write(renderHelp(await enabledFeatureFlags(opts.argv ?? [], { timeoutMs: 1500 })));
 }
 
 /** Can we actually ask a question here? `resolveUpdateStatus` already rules out
@@ -179,7 +200,115 @@ async function offerInteractiveUpdate(): Promise<boolean> {
   return true;
 }
 
-async function main(argv: string[]): Promise<number> {
+/**
+ * argv[0] → handler for every routed command. Aliases point at the same
+ * handler (`deploy`→ship, `attach`→sessions connect, `t`→tui,
+ * `perms`→permissions, `session`→sessions); the token-only, remind and
+ * skills adapters keep their extra arguments; `registry` keeps its stderr
+ * warning. `help`, `version`, `git-credential` and bare `kortix` stay
+ * special-cased in main() — they are landing-screen or protocol verbs, not
+ * subcommand dispatch.
+ *
+ * The record's KEY ORDER is load-bearing: the did-you-mean suggestion keeps
+ * the first best match on an edit-distance tie, and this order is the
+ * pre-1341 KNOWN_COMMANDS candidate order, with `perms` (dispatched before
+ * but never listed as a suggestion candidate) added after `permissions`.
+ */
+type RootCommandHandler = (argv: string[], invoked: string) => number | Promise<number>;
+
+const COMMAND_HANDLERS: Record<string, RootCommandHandler> = {
+  init: (rest) => runInit(rest),
+  ship: (rest) => runShip(rest),
+  deploy: (rest) => runShip(rest),
+  validate: (rest) => runValidate(rest),
+  migrate: (rest) => runMigrate(rest),
+  schema: (rest) => runSchema(rest),
+  'self-host': (rest) => runSelfHost(rest),
+  login: (rest) => runLogin(rest),
+  logout: (rest) => runLogout(rest),
+  whoami: (rest) => runWhoami(rest),
+  doctor: (rest) => runDoctor(rest),
+  token: (rest) => runToken(rest),
+  hosts: (rest) => runHosts(rest),
+  accounts: (rest) => runAccounts(rest),
+  members: (rest) => runMembers(rest),
+  groups: (rest) => runGroups(rest),
+  tokens: (rest) => runTokens(rest),
+  billing: (rest) => runBilling(rest),
+  projects: (rest) => runProjects(rest),
+  sessions: (rest) => runSessions(rest),
+  session: (rest) => runSessions(rest),
+  chat: (rest) => runSessionsChat(rest),
+  connect: (rest) => runSessionsConnect(rest),
+  attach: (rest) => runSessionsConnect(rest),
+  tui: (rest) => runTui(rest),
+  t: (rest) => runTui(rest),
+  files: (rest) => runFiles(rest),
+  drive: (rest) => runDrive(rest),
+  cr: (rest) => runCr(rest),
+  review: (rest) => runReview(rest),
+  triggers: (rest) => runTriggers(rest),
+  reminders: (rest) => runReminders(rest),
+  goals: (rest) => runGoals(rest),
+  capture: (rest) => runCapture(rest),
+  remind: (rest) => runReminders(rest, true),
+  connectors: (rest) => runConnectors(rest),
+  secrets: (rest) => runSecrets(rest),
+  providers: (rest) => runProviders(rest),
+  env: (rest) => runEnv(rest),
+  gateway: (rest) => runGateway(rest),
+  apps: (rest) => runApps(rest),
+  channels: (rest) => runChannels(rest),
+  sandboxes: (rest) => runSandboxes(rest),
+  marketplace: (rest) => runMarketplace(rest),
+  'system-skills': (rest, invoked) => runSystemSkills(rest, invoked),
+  skills: (rest, invoked) => runSystemSkills(rest, invoked),
+  registry: (rest) => {
+    process.stderr.write(
+      `${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`,
+    );
+    return runRegistry(rest);
+  },
+  agents: (rest) => runAgents(rest),
+  tools: (rest) => runTools(rest),
+  models: (rest) => runModels(rest),
+  access: (rest) => runAccess(rest),
+  roles: (rest) => runRoles(rest),
+  permissions: (rest) => runPermissions(rest),
+  perms: (rest) => runPermissions(rest),
+  audit: (rest) => runAudit(rest),
+  feedback: (rest) => runFeedback(rest),
+  grants: (rest) => runGrants(rest),
+  update: (rest) => runUpdate(rest),
+  uninstall: (rest) => runUninstall(rest),
+  rooms: (rest) => runRooms(rest),
+  peers: (rest) => runPeers(rest),
+};
+
+async function main(rawArgv: string[]): Promise<number> {
+  let argv = rawArgv;
+  const separator = argv.indexOf('--');
+  const options = separator < 0 ? argv : argv.slice(0, separator);
+  // Trade-off (accepted): a `--debug` sitting in a value slot (e.g.
+  // `kortix whoami --host --debug x`) is stripped here rather than surfacing
+  // as a usage error. takeFlagValue rejects `-`-prefixed values anyway.
+  if (options.includes('--debug')) {
+    process.env.KORTIX_DEBUG = '1';
+    argv = [
+      ...options.filter((arg) => arg !== '--debug'),
+      ...(separator < 0 ? [] : argv.slice(separator)),
+    ];
+  }
+  if (process.env.KORTIX_DEBUG === '1') loadAuth();
+  // A per-invocation global flag may lead the line (KRTX-2603):
+  // `kortix --host <name> sessions ls` is `sessions ls --host <name>`.
+  // With a `--` separator the position IS the meaning — leave argv alone.
+  let liftedGlobals = 0;
+  if (separator < 0) {
+    const lift = liftLeadingGlobalFlags(argv);
+    argv = lift.argv;
+    liftedGlobals = lift.lifted;
+  }
   // Only the LEADING `--version`/`-v` is the global "print the CLI's own
   // version" flag. Scanning the whole argv used to hijack any subcommand's
   // own same-named flag (e.g. `kortix schema --version 2`, `kortix self-host
@@ -193,8 +322,50 @@ async function main(argv: string[]): Promise<number> {
   // for to READ something, and it must never block on a question. Bare
   // `kortix` must ALWAYS land here — the interactive session picker is an
   // explicit verb (`kortix connect`), never the front door.
+  //
+  // `kortix help <topic>` prints the topic's own help (the git/npm/gh
+  // convention, KRTX-2604): a known command's usage, `version`'s version,
+  // an unknown topic's suggestion. Bare `help` and a flag-shaped or absent
+  // topic stay the landing screen.
   if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
-    await printLanding({ offerUpdate: argv.length === 0 });
+    const topic = argv[0] === 'help' ? argv[1] : undefined;
+    if (!topic || topic.startsWith('-')) {
+      await printLanding({ offerUpdate: argv.length === 0, argv });
+      return 0;
+    }
+    if (topic === 'help') {
+      // `kortix help help` — the landing screen IS the help about help.
+      await printLanding({ offerUpdate: false, argv });
+      return 0;
+    }
+    if (topic === 'version') {
+      printVersion();
+      return 0;
+    }
+    const topicHandler = COMMAND_HANDLERS[topic];
+    const topicFlag = commandFeatureFlag(topic);
+    if (topicFlag) {
+      const flags = await enabledFeatureFlags(argv.slice(2));
+      if (!featureShown(topicFlag, flags)) {
+        process.stderr.write(`${C.red}kortix:${C.reset} ${featureOffMessage(`\`kortix ${topic}\``, topicFlag, flags)}\n`);
+        return 1;
+      }
+    }
+    if (topicHandler) return topicHandler(['--help'], topic);
+    const topicSuggestion = closestCommand(topic);
+    const topicLines = [`${C.red}kortix:${C.reset} unknown help topic \`${topic}\``];
+    if (topicSuggestion)
+      topicLines.push(`       Did you mean ${C.cyan}kortix help ${topicSuggestion}${C.reset}?`);
+    topicLines.push(`       Run ${C.cyan}kortix --help${C.reset} for the full list.`);
+    process.stderr.write(`${topicLines.join('\n')}\n`);
+    return 2;
+  }
+  // The documented global flags were understood but no command follows
+  // (`kortix --host x`, `kortix --host x --help`): the landing screen names
+  // the verbs — there is nothing else to report, and blaming a flag the CLI
+  // just honored would be absurd.
+  if (liftedGlobals > 0 && argv[0]?.startsWith('-')) {
+    await printLanding({ offerUpdate: false, argv });
     return 0;
   }
   if (argv[0] === 'version') {
@@ -210,168 +381,45 @@ async function main(argv: string[]): Promise<number> {
   }
   const connectorMachineCommand =
     argv[0] === 'connectors' &&
-    (['call', 'discover', 'upload', 'mcp'].includes(argv[1] ?? '') ||
+    (['call', 'discover', 'upload', 'mcp', 'types'].includes(argv[1] ?? '') ||
       (argv[1] === 'show' && (argv[2] ?? '').includes('.')) ||
-      ((argv[1] === 'ls' || argv[1] === 'list') && argv.includes('--session')));
-  if (!connectorMachineCommand) {
+      ((argv[1] === 'ls' || argv[1] === 'list') &&
+        argv.some((arg) => arg === '--session' || arg.startsWith('--session='))));
+  if (!connectorMachineCommand && !isMachineOutput(argv)) {
     printActiveHostNotice(argv);
     await printUpdateNoticeForCommand(argv[0]);
   }
-  if (argv[0] === 'init') {
-    return runInit(argv.slice(1));
+  // A flag is never a command name (KRTX-2603): after the lift, anything
+  // still leading the line flag-shaped was never a documented global flag —
+  // name the option instead of reporting `unknown command`.
+  if (argv[0].startsWith('-')) {
+    const lines = [
+      `${C.red}kortix:${C.reset} unknown option \`${argv[0]}\` in command position`,
+      '       Global flags (--host <name>, --project <id>) work before the command too.',
+      `       Run ${C.cyan}kortix --help${C.reset} for the command list.`,
+    ];
+    process.stderr.write(`${lines.join('\n')}\n`);
+    return 2;
   }
-  // `deploy` is kept as a familiar alias for `ship`.
-  if (argv[0] === 'ship' || argv[0] === 'deploy') {
-    return runShip(argv.slice(1));
-  }
-  if (argv[0] === 'validate') {
-    return runValidate(argv.slice(1));
-  }
-  if (argv[0] === 'schema') {
-    return runSchema(argv.slice(1));
-  }
-  if (argv[0] === 'login') {
-    return runLogin(argv.slice(1));
-  }
-  if (argv[0] === 'logout') {
-    return runLogout(argv.slice(1));
-  }
-  if (argv[0] === 'whoami') {
-    return runWhoami(argv.slice(1));
-  }
-  if (argv[0] === 'doctor') {
-    return runDoctor(argv.slice(1));
-  }
-  if (argv[0] === 'token') {
-    return runWhoami(['--token-only', ...argv.slice(1)]);
-  }
-  if (argv[0] === 'projects') {
-    return runProjects(argv.slice(1));
-  }
-  if (argv[0] === 'hosts') {
-    return runHosts(argv.slice(1));
-  }
-  if (argv[0] === 'accounts') {
-    return runAccounts(argv.slice(1));
-  }
-  if (argv[0] === 'members') {
-    return runMembers(argv.slice(1));
-  }
-  if (argv[0] === 'groups') {
-    return runGroups(argv.slice(1));
-  }
-  // Exact match only — the singular `token` (whoami --token-only) stays.
-  if (argv[0] === 'tokens') {
-    return runTokens(argv.slice(1));
-  }
-  if (argv[0] === 'billing') {
-    return runBilling(argv.slice(1));
-  }
-  if (argv[0] === 'secrets') {
-    return runSecrets(argv.slice(1));
-  }
-  if (argv[0] === 'providers') {
-    return runProviders(argv.slice(1));
-  }
-  if (argv[0] === 'agents') {
-    return runAgents(argv.slice(1));
-  }
-  if (argv[0] === 'models') {
-    return runModels(argv.slice(1));
-  }
-  if (argv[0] === 'gateway') {
-    return runGateway(argv.slice(1));
-  }
-  if (argv[0] === 'apps') {
-    return runApps(argv.slice(1));
-  }
-  if (argv[0] === 'self-host') {
-    return runSelfHost(argv.slice(1));
-  }
-  if (argv[0] === 'env') {
-    return runEnv(argv.slice(1));
-  }
-  // Singular `session` is a permanent alias — `kortix session new` is typed
-  // often enough that a "did you mean" round-trip is pure friction.
-  if (argv[0] === 'sessions' || argv[0] === 'session') {
-    return runSessions(argv.slice(1));
-  }
-  if (argv[0] === 'chat') {
-    return runSessionsChat(argv.slice(1));
-  }
-  // Top-level aliases for `sessions connect` — the flagship "land me in the
-  // TUI" verb deserves a first-class name.
-  if (argv[0] === 'connect' || argv[0] === 'attach') {
-    return runSessionsConnect(argv.slice(1));
-  }
-  // `kortix t` is the everyday spelling; `tui` stays the documented name.
-  if (argv[0] === 'tui' || argv[0] === 't') {
-    return runTui(argv.slice(1));
-  }
-  if (argv[0] === 'files') {
-    return runFiles(argv.slice(1));
-  }
-  if (argv[0] === 'triggers') {
-    return runTriggers(argv.slice(1));
-  }
-  if (argv[0] === 'reminders') {
-    return runReminders(argv.slice(1));
-  }
-  // `remind` is the verb spelling of `reminders add`.
-  if (argv[0] === 'remind') {
-    return runReminders(argv.slice(1), true);
-  }
-  if (argv[0] === 'channels') {
-    return runChannels(argv.slice(1));
-  }
-  if (argv[0] === 'connectors') {
-    return runConnectors(argv.slice(1));
-  }
-  if (argv[0] === 'marketplace') {
-    return runMarketplace(argv.slice(1));
-  }
-  // `system-skills` is the canonical name; `skills` stays a permanent alias
-  // because every already-baked sandbox image seeds a kortix-system skill whose
-  // live pointer says `kortix skills get <name>`. Both hand the invoked name
-  // down so every hint the command prints matches how it was called.
-  if (argv[0] === SYSTEM_SKILLS_COMMAND || argv[0] === 'skills') {
-    return runSystemSkills(argv.slice(1), argv[0]);
-  }
-  if (argv[0] === 'registry') {
-    process.stderr.write(
-      `${C.yellow}developer command:${C.reset} registry is an internal marketplace authoring format; use ${C.cyan}kortix marketplace${C.reset} for normal install/search.\n`,
-    );
-    return runRegistry(argv.slice(1));
-  }
-  if (argv[0] === 'sandboxes') {
-    return runSandboxes(argv.slice(1));
-  }
-  if (argv[0] === 'cr') {
-    return runCr(argv.slice(1));
-  }
-  if (argv[0] === 'review') {
-    return runReview(argv.slice(1));
-  }
-  if (argv[0] === 'access') {
-    return runAccess(argv.slice(1));
-  }
-  if (argv[0] === 'roles') {
-    return runRoles(argv.slice(1));
-  }
-  if (argv[0] === 'permissions' || argv[0] === 'perms') {
-    return runPermissions(argv.slice(1));
-  }
-  if (argv[0] === 'audit') {
-    return runAudit(argv.slice(1));
-  }
-  if (argv[0] === 'grants') {
-    return runGrants(argv.slice(1));
-  }
-  if (argv[0] === 'update') {
-    return runUpdate(argv.slice(1));
-  }
-  if (argv[0] === 'uninstall') {
-    return runUninstall(argv.slice(1));
+  // argv[0] → handler. One exact-match dispatch replaces the old 47-branch
+  // if-chain. Aliases point at the same handler (`deploy`→ship, `attach`→
+  // sessions connect, `t`→tui, `perms`→permissions, `session`→sessions);
+  // the token-only, remind and skills adapters keep their extra arguments.
+  //
+  // The record's KEY ORDER is load-bearing for behavior, not cosmetics: the
+  // did-you-mean suggestion keeps the first best match on an edit-distance
+  // tie, so this order must match the old KNOWN_COMMANDS list exactly.
+  const handler = COMMAND_HANDLERS[argv[0]];
+  if (handler) {
+    const flag = commandFeatureFlag(argv[0]);
+    if (flag) {
+      const flags = await enabledFeatureFlags(argv.slice(1));
+      if (!featureShown(flag, flags)) {
+        process.stderr.write(`${C.red}kortix:${C.reset} ${featureOffMessage(`\`kortix ${argv[0]}\``, flag, flags)}\n`);
+        return 1;
+      }
+    }
+    return handler(argv.slice(1), argv[0]);
   }
   // Anything else is an unknown command. This must NEVER fall through to a
   // project scaffold — `kortix <new-project-name>` used to, which turned
@@ -387,62 +435,17 @@ async function main(argv: string[]): Promise<number> {
   return 2;
 }
 
-const KNOWN_COMMANDS = [
-  'init',
-  'ship',
-  'deploy',
-  'validate',
-  'schema',
-  'self-host',
-  'login',
-  'logout',
-  'whoami',
-  'doctor',
-  'token',
-  'hosts',
-  'accounts',
-  'members',
-  'groups',
-  'tokens',
-  'billing',
-  'projects',
-  'sessions',
-  'session',
-  'chat',
-  'connect',
-  'attach',
-  'tui',
-  't',
-  'files',
-  'cr',
-  'review',
-  'triggers',
-  'reminders',
-  'remind',
-  'connectors',
-  'secrets',
-  'providers',
-  'env',
-  'gateway',
-  'apps',
-  'channels',
-  'sandboxes',
-  'marketplace',
-  'system-skills',
-  'skills',
-  'registry',
-  'agents',
-  'models',
-  'access',
-  'roles',
-  'permissions',
-  'audit',
-  'grants',
-  'update',
-  'uninstall',
+/** Suggestion candidates for an unknown argv[0]: every dispatch key, plus the
+ *  two landing-screen verbs. Kept in the handler record's order, so a tie in
+ *  edit distance still resolves to the first candidate — the exact behavior
+ *  of the pre-1341 KNOWN_COMMANDS list. */
+const SUGGESTION_CANDIDATES: readonly string[] = [
+  // A command behind a feature flag is never suggested: whether it exists here
+  // is the project's flag, which a typo suggestion does not read.
+  ...Object.keys(COMMAND_HANDLERS).filter((name) => !commandFeatureFlag(name)),
   'help',
   'version',
-] as const;
+];
 
 function editDistance(a: string, b: string): number {
   const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
@@ -465,7 +468,7 @@ function editDistance(a: string, b: string): number {
 function closestCommand(input: string): string | undefined {
   const needle = input.toLowerCase();
   let best: { name: string; distance: number } | undefined;
-  for (const name of KNOWN_COMMANDS) {
+  for (const name of SUGGESTION_CANDIDATES) {
     const distance = editDistance(needle, name);
     // The distance cap alone lets tiny inputs match anything short ("us" →
     // "cr"), so also require most of the input to survive the edit.
@@ -483,6 +486,15 @@ function closestCommand(input: string): string | undefined {
 function printActiveHostNotice(argv: readonly string[]): void {
   const notice = renderHostNotice(argv);
   if (notice) process.stderr.write(notice);
+}
+
+/** A `--json` invocation asked for machine-readable output. The human host +
+ *  update notices stay off entirely — even on stderr — so every capture style
+ *  pipes cleanly: `kortix whoami --json | jq` and a merged
+ *  `kortix whoami --json 2>&1 | jq` both parse. The command's own
+ *  diagnostics (auth errors, API failures) always keep their stream. */
+function isMachineOutput(argv: readonly string[]): boolean {
+  return argv.includes('--json');
 }
 
 // Passive, cache-only nudge for subcommands (never touches the network, so it

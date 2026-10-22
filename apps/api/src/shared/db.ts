@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs';
 import { createDb, type Database } from '@kortix/db';
 import { config } from '../config';
 import { contextualDatabase } from './db-context';
@@ -13,6 +14,11 @@ const globalForDb = globalThis as typeof globalThis & {
  * Check this before importing any DB-dependent modules.
  */
 export const hasDatabase: boolean = !!config.DATABASE_URL;
+
+/** postgres.js `debug` hook for `KORTIX_SQL_TRACE`: one whitespace-normalized statement per line. */
+function sqlTraceTo(file: string) {
+  return (_connection: number, query: string) => appendFileSync(file, `${query.replace(/\s+/g, ' ').trim()}\n`);
+}
 
 /**
  * Database connection.
@@ -42,7 +48,8 @@ function getDb(): Database {
 
   // Every statement on the request pool feeds `Server-Timing: db;dur=…;desc="n=…"`
   // (lib/server-timing.ts). Outside a request the hook is a no-op.
-  globalForDb.__kortixApiDb = createDb(config.DATABASE_URL, undefined, {
+  const trace = config.KORTIX_SQL_TRACE;
+  globalForDb.__kortixApiDb = createDb(config.DATABASE_URL, trace ? { debug: sqlTraceTo(trace) } : undefined, {
     onQuery: () => beginStage('db'),
   });
   globalForDb.__kortixApiDbUrl = config.DATABASE_URL;

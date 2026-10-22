@@ -1,5 +1,6 @@
 // Public IAM surface: existing imports continue to resolve here.
 export * from './iam-types';
+export * from './iam-actions';
 export * from './iam-groups';
 export * from './iam-grants';
 export * from './iam-policies';

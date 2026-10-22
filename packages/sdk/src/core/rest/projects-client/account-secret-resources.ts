@@ -1,6 +1,6 @@
 import { backendApi } from '../../http/api-client';
 import { unwrap } from './shared';
-import type { SecretConsumer, SecretDeliveryStrategy } from './secrets';
+import type { SecretConsumer, SecretDeliveryStrategy, SecretValueStatus } from './secrets';
 
 export interface AccountSecretResource {
   secret_id: string;
@@ -26,6 +26,10 @@ export interface AccountSecretResource {
   updated_at: string;
   granted_user_ids: string[];
   can_use: boolean;
+  /** Can the server decrypt the stored value? `undecryptable` means enter it
+   *  again with `rotateAccountSecretResource` (a ChatGPT login: reconnect).
+   *  Absent from APIs older than this field. */
+  status?: SecretValueStatus;
 }
 
 export interface CreateAccountSecretResourceInput {
@@ -63,6 +67,10 @@ export async function createAccountSecretResource(accountId: string, input: Crea
 export async function rotateAccountSecretResource(accountId: string, secretId: string, value: string) {
   return unwrap(await backendApi.put<AccountSecretResource>(`${secretPath(accountId, secretId)}/value`, { value }));
 }
+/** End the rate-limit rest of one stored account now (owner, admin or creator). */
+export async function retryAccountSecretResource(accountId: string, secretId: string) {
+  return unwrap(await backendApi.post<AccountSecretResource>(`${secretPath(accountId, secretId)}/retry`));
+}
 export async function deleteAccountSecretResource(accountId: string, secretId: string) {
   return unwrap(await backendApi.delete<{ ok: boolean }>(secretPath(accountId, secretId)));
 }
@@ -80,7 +88,17 @@ export async function getSessionProviderSecretPool(projectId: string, sessionId:
 }
 export async function listSessionProviderSecretPools(projectId: string, sessionId: string) {
   const path = `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/provider-secret-pools`;
-  return unwrap(await backendApi.get<{ pools: SessionProviderSecretPool[]; can_edit: boolean }>(path));
+  return unwrap(await backendApi.get<{
+    pools: SessionProviderSecretPool[];
+    can_edit: boolean;
+    /**
+     * The person whose own keys this session reaches, or `null` when it reaches
+     * only keys shared with the whole project. Absent from older APIs.
+     */
+    personal_user_id?: string | null;
+    /** Why `personal_user_id` is null. Absent from older APIs. */
+    personal_keys_reason?: 'shared' | 'prompted_by_another_member' | 'no_person' | null;
+  }>(path));
 }
 export async function setSessionProviderSecretPool(projectId: string, sessionId: string, providerId: string, secretIds: string[] | null) {
   return unwrap(await backendApi.put<SessionProviderSecretPool>(poolPath(projectId, sessionId, providerId), { secret_ids: secretIds }));

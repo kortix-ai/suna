@@ -1,10 +1,11 @@
 /**
  * Tripwire: request primitives have one implementation each.
  *
- *   client address   → shared/client-ip.ts (requestClientIp, requestClientKey)
+ *   client address   → shared/client-ip.ts (clientIpFromHeaders, clientKeyFromHeaders)
  *   UUID shape check → shared/validate.ts  (isUuid)
  *   JSON object body → shared/http-body.ts (readJsonObject)
  *   HTML escaping    → shared/html.ts      (escapeHtml)
+ *   bearer token     → shared/bearer-token.ts (bearerToken)
  *
  * A private copy drifts. An address read outside the trusted-proxy rule is not
  * the address KORTIX_TRUSTED_PROXY_HOPS selects, and a strict UUID regex refuses
@@ -60,9 +61,9 @@ function staleAllowlist(pattern: RegExp, allow: Record<string, string>): string[
 // header does not match.
 const XFF_READ = /[([]\s*['"`]x-forwarded-for['"`]/i;
 const XFF_ALLOW: Record<string, string> = {
+  // Also `egressIpFromHeaders`, which reads cf-connecting-ip first for the
+  // sandbox egress pin: a deliberate special case of the address rule.
   'shared/client-ip.ts': 'the one implementation',
-  'platform/services/sandbox-egress-pin.ts':
-    'reads cf-connecting-ip first and pins the sandbox egress address; a deliberate special case',
   'auth/gotrue.ts': 'sets the header on an outbound request to GoTrue',
   // TODO(follow-up): convert once the SCIM identity work lands on main.
   'scim/app.ts': 'open SCIM work edits this file; convert in a follow-up',
@@ -76,7 +77,7 @@ const UUID_LITERAL = /\[0-9a-f\]\{8\}-/i;
 const UUID_ALLOW: Record<string, string> = {
   'shared/validate.ts': 'the one implementation',
   // TODO(follow-up): convert once each open change lands.
-  'connectors/db-deps.ts': 'open PR #7236 edits this file',
+  'connectors/db-deps-rows.ts': 'open PR #7236 edits this file',
   'iam/sso-sync.ts': 'open SSO identity work edits this file',
 };
 
@@ -90,6 +91,14 @@ const JSON_OBJECT_INLINE = new RegExp(
   ].join('|'),
 );
 const JSON_OBJECT_ALLOW: Record<string, string> = {};
+
+// A hand-written `Authorization: Bearer` parse in the one helper's exact form.
+// The case-insensitive and whitespace-tolerant parsers below are different
+// contracts, so they keep their own code.
+const BEARER_PARSE = /startsWith\(\s*['"`]Bearer ['"`]\s*\)/;
+const BEARER_ALLOW: Record<string, string> = {
+  'shared/bearer-token.ts': 'the one implementation',
+};
 
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
 const ESCAPE_HTML_ALLOW: Record<string, string> = {
@@ -119,6 +128,11 @@ describe('request primitives have one implementation', () => {
   test('JSON object bodies are read only through shared/http-body.ts', () => {
     expect(offenders(JSON_OBJECT_INLINE, JSON_OBJECT_ALLOW)).toEqual([]);
     expect(staleAllowlist(JSON_OBJECT_INLINE, JSON_OBJECT_ALLOW)).toEqual([]);
+  });
+
+  test('Authorization: Bearer is parsed only in shared/bearer-token.ts', () => {
+    expect(offenders(BEARER_PARSE, BEARER_ALLOW)).toEqual([]);
+    expect(staleAllowlist(BEARER_PARSE, BEARER_ALLOW)).toEqual([]);
   });
 
   test('escapeHtml is defined only in shared/html.ts', () => {

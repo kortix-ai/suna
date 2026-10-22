@@ -32,8 +32,15 @@ import {
 import { canServeLastKnownGoodRuntime } from './runtime-freshness';
 import { openBuildLog, closeBuildLogReady, closeBuildLogFailed, recentlyBuiltSnapshotNames, PREDECESSOR_PRUNE_PROTECT_MS } from './builder-log';
 import { waitForProviderBuild, findFirstActiveSnapshot, maybeSwapAgent, ensureMetaSandboxImage, SnapshotBuildError } from './runtime-images';
+import { claimSnapshotBuild, holdSnapshotBuild, releaseSnapshotBuild, waitForSnapshotBuildRelease } from './build-claim';
 import { enabledTemplateBuildProviders } from './provider-coverage';
 import { config, type SandboxProviderName } from '../config';
+import { logger } from '../lib/logger';
+import { eq } from 'drizzle-orm';
+import { projects } from '@kortix/db';
+import { db } from '../shared/db';
+import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
+import { preparePlatinumTemplateRegion } from './providers/platinum-templates';
 
 type TemplateIdentity = Awaited<ReturnType<typeof computeTemplateIdentity>>;
 
@@ -45,7 +52,7 @@ export type { SandboxTemplateView } from './template-prebuilds';
 export { resolveTemplateBySlug as resolveTemplate };
 export { listSnapshotBuilds, reconcileStaleBuilds, buildLogProviderCandidates, shouldReconcileProviderState, recentlyBuiltStrict } from './builder-log';
 export type { ProjectSnapshotBuildSummary } from './builder-log';
-export { META_RUNTIME_SPEC, PI_WORKER_RUNTIME_SPEC, ensureMetaSandboxImage, ensurePiWorkerImage, metaSnapshotName, piWorkerSnapshotName, reapSupersededMetaSnapshots, reapSupersededPiWorkerSnapshots } from './runtime-images';
+export { META_RUNTIME_SPEC, ensureMetaSandboxImage, metaSnapshotName, reapSupersededMetaSnapshots } from './runtime-images';
 export { kickPreBuild, kickRoutedPreBuild, templateBuildProviders, kickProjectTemplatePrebuilds } from './template-prebuilds';
 
 export type SnapshotBuildSource =
@@ -69,7 +76,7 @@ export interface EnsureSandboxImageResult {
   contentHash: string;
   built: boolean;
   isDefault: boolean;
-  runtimeProfile?: 'standard' | 'meta' | 'pi-worker';
+  runtimeProfile?: 'standard' | 'meta';
   /**
    * The size this image was built with, which is the size the box boots with.
    * Compute metering bills from it. Absent only for a result constructed
@@ -162,6 +169,8 @@ export async function ensureSandboxImage(
      * API version still serves the current one. Default true.
      */
     publish?: boolean;
+    /** Internal: this call already waited once for another replica's build. */
+    peerBuildAwaited?: boolean;
   } = {},
 ): Promise<EnsureSandboxImageResult> {
   const template = await resolveTemplateBySlug(project, opts.slug);
@@ -201,6 +210,14 @@ export async function ensureSandboxImage(
   // Cache hit? (checks the ACTIVE provider — so a row built elsewhere doesn't
   // count, and we rebuild on this provider.)
   let state = await provider.getSnapshotState(identity.snapshotName);
+  // Built at home but not yet copied to the region this project's sessions
+  // boot in: Platinum refuses that create (409 replicating) and the session
+  // waits it out in 10 s retries. Serve it like a build in flight instead.
+  // A boot checks for 3 s; a build waits for the copy.
+  const regionWaitMs = canServeLastKnownGoodRuntime({ source: opts.source ?? 'session-start' }) ? 3_000 : undefined;
+  if (state === 'active' && !(await templateRegionResident(project.projectId, buildProvider, identity.snapshotName, regionWaitMs))) {
+    state = 'building';
+  }
   if (state === 'active') {
     if (publish) await recordTemplateBuilt(template.templateId, {
       snapshotName: identity.snapshotName,
@@ -314,20 +331,87 @@ export async function ensureSandboxImage(
   // provider's build and, when that one fails, fail the session with it.
   // An unpublished build must never satisfy a caller that expects the row to
   // be published, so publication is part of the key too.
+  //
+  // Across replicas, a claim row (build-claim.ts) names the one that builds.
+  // The others wait for it to finish and then re-read provider truth, which
+  // the branches above handle (active, building, failed).
   const buildKey = `${buildProvider}:${identity.snapshotName}${publish ? '' : ':unpublished'}`;
-  const existing = inflightBuilds.get(buildKey);
-  if (existing) return existing;
-
-  const buildPromise = runInlineBuild(project, template, identity, {
-    state,
-    accountId: opts.accountId,
-    source: opts.source ?? 'session-start',
-    buildProvider,
-    publish,
-  }).finally(() => inflightBuilds.delete(buildKey));
-  inflightBuilds.set(buildKey, buildPromise);
-  return buildPromise;
+  let pending = inflightBuilds.get(buildKey);
+  if (!pending) {
+    pending = (async (): Promise<EnsureSandboxImageResult | typeof BUILT_BY_PEER> => {
+      if (!(await claimSnapshotBuild(buildKey))) {
+        if (opts.peerBuildAwaited) {
+          throw new SnapshotBuildError(
+            `Sandbox image ${identity.snapshotName} is being built by another API replica on ${buildProvider}`,
+          );
+        }
+        await waitForSnapshotBuildRelease(buildKey);
+        return BUILT_BY_PEER;
+      }
+      const stopHeartbeat = holdSnapshotBuild(buildKey);
+      try {
+        return await runInlineBuild(project, template, identity, {
+          state,
+          accountId: opts.accountId,
+          source: opts.source ?? 'session-start',
+          buildProvider,
+          publish,
+        });
+      } finally {
+        stopHeartbeat();
+        await releaseSnapshotBuild(buildKey).catch((err) =>
+          logger.warn('[snapshots] build claim release failed (expires on its own)', { buildKey, error: err instanceof Error ? err.message : String(err) }),
+        );
+      }
+    })().finally(() => inflightBuilds.delete(buildKey));
+    inflightBuilds.set(buildKey, pending);
+  }
+  const result = await pending;
+  return result === BUILT_BY_PEER ? ensureSandboxImage(project, { ...opts, peerBuildAwaited: true }) : result;
 }
+
+/**
+ * True when `snapshotName` can boot in the region this project's sessions use:
+ * always for a home-region project and for non-Platinum providers. Otherwise
+ * asks Platinum to copy it there and waits up to `timeoutMs`. Never throws: a
+ * failed check answers false and the create path handles the refusal.
+ */
+export async function templateRegionResident(
+  projectId: string,
+  provider: string,
+  snapshotName: string,
+  timeoutMs?: number,
+  deps: {
+    readMetadata?: (projectId: string) => Promise<unknown>;
+    prepare?: typeof preparePlatinumTemplateRegion;
+  } = {},
+): Promise<boolean> {
+  if (provider !== 'platinum') return true;
+  try {
+    const readMetadata = deps.readMetadata ?? readProjectMetadata;
+    const region = resolveSessionSandboxRegion(await readMetadata(projectId));
+    if (!region) return true;
+    await (deps.prepare ?? preparePlatinumTemplateRegion)(snapshotName, region, { timeoutMs });
+    return true;
+  } catch (err) {
+    logger.warn('[snapshots] template not resident in the session region', {
+      projectId, snapshotName, error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+async function readProjectMetadata(projectId: string): Promise<unknown> {
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return row?.metadata ?? null;
+}
+
+/** Another replica held the build claim and has finished; re-read provider truth. */
+const BUILT_BY_PEER = Symbol('built-by-peer');
 /**
  * Do the actual provider build for a resolved (template, identity) pair and
  * record the result on the template row + build log. Always called behind the
@@ -381,6 +465,8 @@ async function runInlineBuild(
       slug: template.slug,
       isShared: !!template.isShared,
       containerRuntime: template.containerRuntime,
+      // Built where its sessions boot, so they never wait for a copy.
+      region: identity.region,
       // Cold-only, unified with Daytona: Platinum builds a cold rootfs template
       // and cold-boots it (entrypoint re-runs → opencode re-inits, ~6s) on spawn
       // AND on resume — the SAME path Daytona takes, no provider divergence.
@@ -389,6 +475,10 @@ async function runInlineBuild(
       // restore → /global/event + /pty hang while /kortix/health still
       // answered). A cold boot avoids that entirely.
     });
+    // Copy it to the project's session region before the row points at it
+    // and the predecessor is reaped (a self-host 2026-10-17: the first session
+    // after a rebuild waited 79 s on 7 creates while Platinum copied it).
+    await templateRegionResident(project.projectId, provider.id, identity.snapshotName);
     if (buildId) await closeBuildLogReady(buildId);
     if (!opts.publish) {
       return {
@@ -455,13 +545,15 @@ async function runInlineBuild(
  * In-flight inline builds, keyed by target snapshot name. Shared across every
  * build source so concurrent triggers collapse onto one build + one log row.
  */
-const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult>>();
+// replica-local: collapses this process's callers; build-claim.ts is the cross-replica guard.
+const inflightBuilds = new Map<string, Promise<EnsureSandboxImageResult | typeof BUILT_BY_PEER>>();
 /**
  * In-flight background rebuilds, keyed by provider + target snapshot name. A
  * burst of sessions booting off the same drifted identity must kick exactly
  * one build on EACH provider; same-name builds on different providers are
  * independent and must never suppress each other.
  */
+// replica-local: a second replica's kick lands on the build claim in ensureSandboxImage.
 const inflightBackgroundBuilds = new Set<string>();
 
 export function backgroundBuildKey(provider: string, snapshotName: string): string {
@@ -563,23 +655,27 @@ function startupPreBuild(): void {
           `[snapshots] startup pre-build (${providerId}): default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
         ),
       )
-      .catch((err) =>
+      .catch((err) => {
+        // A failed pre-build is retried by the next leader term, not skipped for the process lifetime.
+        startupPreBuildKicked = false;
         console.warn(
           `[snapshots] startup pre-build of platform default failed (${providerId}):`,
           err instanceof Error ? err.message : err,
-        ),
-      );
+        );
+      });
     void ensureMetaSandboxImage({ source: 'startup', provider: providerId })
       .then((r) =>
         console.log(
           `[snapshots] startup pre-build (${providerId}): meta image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
         ),
       )
-      .catch((err) =>
+      .catch((err) => {
+        // A failed pre-build is retried by the next leader term, not skipped for the process lifetime.
+        startupPreBuildKicked = false;
         console.warn(
           `[snapshots] startup pre-build of platform meta failed (${providerId}):`,
           err instanceof Error ? err.message : err,
-        ),
-      );
+        );
+      });
   }
 }

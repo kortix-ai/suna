@@ -6,6 +6,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useSyncStore } from '../browser/stores/sync-store';
 import { useRuntimeMessages, useSession, useSessionMessages } from './opencode';
+import { qk } from './query-keys';
 
 /**
  * Render cost of `useSession` while a turn streams.
@@ -347,11 +348,16 @@ describe('useRuntimeMessages({ ignoreStreamedText: true }) — panel consumers',
 
 describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () => {
   test('a burst of deltas renders the leading change at once and the latest rows once at the interval edge', async () => {
+    // A 1 s window, not 50 ms: the leading-edge count is a wall-clock claim
+    // (no flush may fire between the dispatch and the synchronous assert), and
+    // under concurrent lanes the dispatch stretch has crossed 50 ms. The
+    // throttle contract is "at most once per throttleMs" — any window is a
+    // valid instance; this one keeps the margins far above scheduling noise.
     const { streamingMessageId, streamingPartId } = seedTranscript();
     let transcriptRenders = 0;
     let liveText = '';
     function Transcript({ session }: { session: Parameters<typeof useSessionMessages>[0] }) {
-      const messages = useSessionMessages(session, { throttleMs: 50 });
+      const messages = useSessionMessages(session, { throttleMs: 1000 });
       transcriptRenders++;
       liveText = (messages[messages.length - 1]?.parts[0] as TextPart | undefined)?.text ?? '';
       return null;
@@ -376,7 +382,7 @@ describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () 
     expect(liveText).toBe(`${base} tok`);
 
     await act(async () => {
-      await Bun.sleep(80);
+      await Bun.sleep(1100);
     });
     expect(transcriptRenders - before).toBe(2);
     expect(liveText).toBe(`${base}${' tok'.repeat(STREAMED_DELTAS)}`);
@@ -403,5 +409,45 @@ describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () 
     const before = transcriptRenders;
     streamDeltas(streamingMessageId, streamingPartId, 20);
     expect(transcriptRenders - before).toBe(20);
+  });
+});
+
+describe('useSession says whether this viewer may stop the running turn', () => {
+  // In a shared session only the member who started the run, the session owner
+  // or a project manager may stop it. The server answers per caller on `/turn`
+  // (`can_stop`); the hook reads the cache entry it already keeps and adds no
+  // request. An answer without the field is an older server: Stop stays.
+  test('canStop is false only while the latest /turn answer says can_stop: false', async () => {
+    const seen: boolean[] = [];
+    function Host() {
+      seen.push(
+        useSession(PROJECT_ID, SESSION_ID, {
+          enabled: false,
+          replayStartStash: false,
+          initialOpenCodeSessionId: OC_ID,
+        }).canStop,
+      );
+      return null;
+    }
+    mount(createElement(Host));
+    expect(seen.at(-1)).toBe(true);
+
+    const key = qk.project.sessionTurn(PROJECT_ID, SESSION_ID);
+    const running = [{ turn_token: 'tt-other', state: 'active', message_id: 'msg_other' }];
+    const write = async (entry: Record<string, unknown>) => {
+      await act(async () => {
+        queryClient.setQueryData(key, entry);
+        await Bun.sleep(10);
+      });
+    };
+
+    await write({ turns: running, can_stop: false, atMs: 1 });
+    expect(seen.at(-1)).toBe(false);
+    await write({ turns: running, can_stop: true, atMs: 2 });
+    expect(seen.at(-1)).toBe(true);
+    await write({ turns: running, can_stop: false, atMs: 3 });
+    expect(seen.at(-1)).toBe(false);
+    await write({ turns: running, atMs: 4 });
+    expect(seen.at(-1)).toBe(true);
   });
 });

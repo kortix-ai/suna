@@ -37,6 +37,7 @@ import { Buffer } from 'node:buffer'
 import zlib from 'node:zlib'
 
 import {
+  BLOCKED_REQUEST_HEADERS,
   decodeRelayStatus,
   encodeRelayMeta,
   RELAY_ERROR_HEADER,
@@ -49,8 +50,7 @@ import {
   type SecretRelayMeta,
 } from '@kortix/api-contract/secret-relay'
 
-import { BLOCKED_REQUEST_HEADERS } from './blocked-headers'
-import type { ShimBrokerRule } from './rules'
+import type { ShimBrokerRule } from '@kortix/api-contract/egress-shim-rules'
 
 /** Everything the relay client needs from the shim's options. */
 export interface RelayClientOptions {

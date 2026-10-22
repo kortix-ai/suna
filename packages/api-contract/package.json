@@ -9,17 +9,24 @@
     ".": "./src/index.ts",
     "./secret-relay": "./src/secret-relay.ts",
     "./runtime-relay": "./src/runtime-relay.ts",
-    "./transcript": "./src/transcript.ts"
+    "./transcript": "./src/transcript.ts",
+    "./session-log": "./src/session-log/index.ts",
+    "./fallback-models": "./src/fallback-models.ts",
+    "./egress-shim-rules": "./src/egress-shim-rules.ts",
+    "./sandbox-layout": "./src/sandbox-layout.ts",
+    "./compiled-agent-config-env": "./src/compiled-agent-config-env.ts",
+    "./permission-rules": "./src/permission-rules.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
+    "test": "node ../../scripts/test-guard.mjs \"bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000}\""
   },
   "dependencies": {
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.0.0"
   }
 }

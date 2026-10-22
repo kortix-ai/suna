@@ -1,20 +1,37 @@
-import { getSharedQueryClient } from '@/lib/query-client-singleton';
+import { onEachQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
+import { registerDisposableFamily } from '@kortix/ui/internal/lib/storage/managed-storage';
 import {
   browserKeyValueStorage,
   createPersistedQueryCache,
   createSavedCopyStore,
   isPersistableQueryKey,
   setSavedCopyStore,
+  type KeyValueStorage,
   type PersistedQueryCache,
   type SavedCopyStore,
 } from '@kortix/sdk';
+// A sanctioned reach into an SDK internal module: IndexedDB is browser-only,
+// so the isomorphic root cannot export it. See CANONICAL_SDK_ENTRIES in
+// scripts/sdk-boundary.mjs.
+import { indexedDBKeyValueStorage } from '@kortix/sdk/internal/idb-sync-cache'; // eslint-disable-line no-restricted-imports
 
 /**
- * What this device keeps for the signed-in user between page loads: the
- * queries a user navigates by (accounts, projects, the project gate, the
- * session lists) and the saved copy of each recently opened session. A reload
- * renders the last known state and refetches it in place, instead of a
- * loading screen on every surface.
+ * What this device keeps for the signed-in user between page loads. Exactly
+ * two device caches hold session state on the web:
+ *
+ *  1. IndexedDB (`kortix-session-cache` → `saved-copies`): the saved copy of
+ *     each recently opened session, keyed `kortix.saved-copy:<userId>:…`. The
+ *     read is asynchronous, so opening a session never parses a transcript
+ *     before the first frame; the copy paints one task later.
+ *  2. One localStorage entry, `kortix.query-cache:<userId>`: the queries a
+ *     user navigates by (accounts, projects, the project gate, the session
+ *     lists), at most {@link WEB_QUERY_CACHE_MAX_BYTES}, newest first. It is
+ *     read synchronously at sign-in, so the first frame has them.
+ *
+ * A reload renders the last known state and refetches it in place, instead of
+ * a loading screen on every surface. Nothing else holds session state: the
+ * sessionStorage stream cache and the `kortix_cache_*` runtime list caches
+ * are retired, and {@link sweepRetiredDeviceCaches} frees what they left.
  *
  * Owned by the auth lifecycle, not by a component. `AuthProvider` adopts the
  * caches for a user BEFORE it publishes that user, so no consumer renders a
@@ -22,17 +39,71 @@ import {
  * sign-out and on a user switch.
  */
 
-/** The project gate's key (`project-access-boundary.tsx`): a reload opens the project it last admitted. */
-const GATE_QUERY_KEY = 'project-access-boundary';
+// IndexedDB's first open on a page load took ~430 ms in Chromium (journey 34,
+// 2026-10-10). Opened while the app boots, it is open by sign-in, where the
+// session this page load opens on is read (`withFirstReadFromMemory`).
+if (typeof window !== 'undefined') void indexedDBKeyValueStorage()?.getItem('kortix.saved-copy:open');
 
-function shouldPersistQuery(queryKey: readonly unknown[]): boolean {
-  return isPersistableQueryKey(queryKey) || queryKey[0] === GATE_QUERY_KEY;
+/**
+ * `base`, except that each prefetched key answers its first read from memory.
+ *
+ * A reload opens on the session its URL names, and IndexedDB answers only
+ * asynchronously, so that session painted skeleton rows before its saved copy
+ * (journey 34). Read at sign-in, the copy is in memory before the session view
+ * mounts, and the SDK paints it in the first task after that frame. Answered
+ * once: a later read asks IndexedDB, which another tab may have changed. A
+ * write or a removal of the key drops the copy in memory.
+ */
+function withFirstReadFromMemory(base: KeyValueStorage) {
+  // The prefetched reads of this page load; `undefined` while a read is in flight.
+  const prefetched = new Map<string, string | null | undefined>();
+  return {
+    getItem(k: string) {
+      if (!prefetched.has(k)) return base.getItem(k);
+      const value = prefetched.get(k);
+      prefetched.delete(k);
+      return value === undefined ? base.getItem(k) : value;
+    },
+    setItem(k: string, v: string) {
+      prefetched.delete(k);
+      return base.setItem(k, v);
+    },
+    removeItem(k: string) {
+      prefetched.delete(k);
+      return base.removeItem(k);
+    },
+    prefetch(k: string) {
+      prefetched.set(k, undefined);
+      void Promise.resolve(base.getItem(k)).then(
+        (read) => {
+          if (prefetched.has(k)) prefetched.set(k, read);
+        },
+        () => undefined,
+      );
+    },
+  };
 }
+
+/** The `projectId` and `sessionId` of a session URL (any locale prefix), or null. */
+function sessionInUrl(): { projectId: string; sessionId: string } | null {
+  const match = /\/projects\/([^/]+)\/sessions\/([^/?#]+)/.exec(window.location?.pathname ?? '');
+  return match ? { projectId: match[1], sessionId: match[2] } : null;
+}
+
+/**
+ * The query cache's bound, in UTF-16 code units. It is read and parsed
+ * synchronously at sign-in, so it stays small: a full 50-row session page
+ * is ~60,000 code units, so this holds the three newest plus the project rows.
+ * Over the bound, the oldest entries are dropped first.
+ */
+export const WEB_QUERY_CACHE_MAX_BYTES = 200_000;
+
+const QUERY_CACHE_NAMESPACE = 'kortix.query-cache';
 
 let adopted: {
   userId: string;
   queries: PersistedQueryCache;
-  copies: SavedCopyStore;
+  copies: SavedCopyStore | null;
   detach: () => void;
 } | null = null;
 
@@ -43,18 +114,42 @@ export function adoptDeviceCaches(userId: string): void {
   // queries under its own key.
   if (adopted) void clearDeviceCaches();
   const storage = browserKeyValueStorage();
-  const client = getSharedQueryClient();
-  if (!storage || !client) return;
+  if (!storage) return;
   try {
+    // The saved copy store does NOT need the query client, and it is what
+    // paints the opened session's conversation in the first frame. Register it
+    // and prefetch BEFORE anything else, so a client that is not registered
+    // yet (#10344 mounts the app shell one auth round trip sooner) can never
+    // delay it. Dropping this on an early return left the kept copy to paint
+    // ~1.4 s late, and the skeleton showed in the meantime (journey 34).
+    //
+    // No IndexedDB (a blocked or partitioned context): sessions open from the
+    // server's copy, as before the device kept one.
+    const indexed = indexedDBKeyValueStorage();
+    const copyStorage = indexed ? withFirstReadFromMemory(indexed) : null;
+    const copies = copyStorage ? createSavedCopyStore({ storage: copyStorage, userId }) : null;
+    const opensOn = sessionInUrl();
+    if (copyStorage && copies && opensOn) {
+      const v1Key = copies.keyFor(opensOn.projectId, opensOn.sessionId);
+      copyStorage.prefetch(v1Key);
+      // A project with the `session_log` flag on keeps the session-log page instead, under
+      // `<namespace>.log:` (the SDK's `createSavedCopyStore`, #10305).
+      copyStorage.prefetch(v1Key.replace(/^([^:]+):/, '$1.log:'));
+    }
+    setSavedCopyStore(copies);
+
+    // A draft or a preference that does not fit evicts this cache first: it
+    // refetches, the draft would be lost.
+    registerDisposableFamily(QUERY_CACHE_NAMESPACE);
     const queries = createPersistedQueryCache({
       storage,
       userId,
-      shouldPersist: shouldPersistQuery,
+      // The project gate reads `qk.project.summary`, which this keeps: a
+      // reload opens the project it last admitted.
+      shouldPersist: isPersistableQueryKey,
+      maxBytes: WEB_QUERY_CACHE_MAX_BYTES,
+      namespace: QUERY_CACHE_NAMESPACE,
     });
-    // The SDK marks each restored entry invalidated: it refetches the first
-    // time something reads it, even when younger than its staleTime.
-    queries.restore(client);
-    const stopPersisting = queries.persist(client);
     // Writes are coalesced over a second; a reload inside it would lose the
     // last change.
     const flush = () => void queries.flush();
@@ -63,18 +158,35 @@ export function adoptDeviceCaches(userId: string): void {
     };
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', flushWhenHidden);
-    const copies = createSavedCopyStore({ storage, userId });
-    setSavedCopyStore(copies);
-    adopted = {
+    let stopPersisting = () => {};
+    let stopFollowing = () => {};
+    const record = {
       userId,
       queries,
       copies,
       detach: () => {
+        stopFollowing();
         stopPersisting();
         window.removeEventListener('pagehide', flush);
         document.removeEventListener('visibilitychange', flushWhenHidden);
       },
     };
+    adopted = record;
+    // Restoring and persisting the query cache is the only part that needs the
+    // shared client. It runs when the client registers, and again for every
+    // client that replaces it: React can discard the render that registered
+    // the first one, and the app then reads a second, empty client (journey 34:
+    // a reload with every read held stayed on "Opening your project").
+    stopFollowing = onEachQueryClient((client) => {
+      // A sign-out or a user switch before the client registered supersedes
+      // this record; the newer adopt owns the client then.
+      if (adopted !== record) return;
+      stopPersisting();
+      // The SDK marks each restored entry invalidated: it refetches the first
+      // time something reads it, even when younger than its staleTime.
+      queries.restore(client);
+      stopPersisting = queries.persist(client);
+    });
   } catch (error) {
     // An accelerator only: without it the app loads as before. A throw here
     // would fail the sign-in.
@@ -96,5 +208,42 @@ export function clearDeviceCaches(): Promise<void> {
   // so the clear also removes a copy written while it was queued, and no
   // write can start after it.
   setSavedCopyStore(null);
-  return Promise.all([current.queries.clear(), current.copies.clear()]).then(() => undefined);
+  return Promise.all([current.queries.clear(), current.copies?.clear()]).then(() => undefined);
+}
+
+/** Key prefixes of the retired session caches: the runtime lists and the localStorage saved copies. */
+const RETIRED_LOCAL_PREFIXES = [
+  'kortix_cache_sessions:',
+  'kortix_cache_agents:',
+  'kortix_cache_commands:',
+  'kortix_cache_providers:',
+  'kortix.saved-copy:',
+];
+/** The retired sessionStorage stream cache. */
+const RETIRED_SESSION_PREFIXES = ['opencode_stream_cache:'];
+
+function sweep(name: 'localStorage' | 'sessionStorage', prefixes: readonly string[]): void {
+  try {
+    const storage = globalThis[name];
+    if (!storage) return;
+    const keys: string[] = [];
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (key && prefixes.some((prefix) => key.startsWith(prefix))) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+  } catch {
+    // Blocked storage holds nothing to free.
+  }
+}
+
+/**
+ * Free what the retired session caches left on this device: up to 1.5 MB of
+ * localStorage saved copies and the `kortix_cache_*` runtime lists. Run once
+ * per page load; nothing writes these keys any more, so a second run finds
+ * nothing.
+ */
+export function sweepRetiredDeviceCaches(): void {
+  sweep('localStorage', RETIRED_LOCAL_PREFIXES);
+  sweep('sessionStorage', RETIRED_SESSION_PREFIXES);
 }

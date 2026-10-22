@@ -3,7 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 
 import {
+  messageRehydrateEntryCount,
   patchKortixSessionTitleMirrors,
+  releaseMessageRehydrate,
+  reserveMessageRehydrate,
   refetchKortixSessionMirrors,
   resolveClientEvictionUrl,
   shouldSkipStatusFill,
@@ -260,5 +263,25 @@ describe('patchKortixSessionTitleMirrors', () => {
     patchKortixSessionTitleMirrors(client, 'proj_1', 'ses_a', 'Runtime title');
 
     expect(client.getQueryData(qk.project.sessionPrompts('proj_1', 'a')) as unknown).toBe(prompts);
+  });
+});
+
+describe('message rehydrate ledger (04#11)', () => {
+  test('drops entries past their cooldown instead of growing for the life of the tab', () => {
+    const realNow = Date.now;
+    let now = 5_000_000;
+    Date.now = () => now;
+    try {
+      for (let i = 0; i < 300; i++) {
+        expect(reserveMessageRehydrate(`ses_${i}`)).toBe(true);
+        releaseMessageRehydrate(`ses_${i}`);
+      }
+      expect(messageRehydrateEntryCount()).toBe(300);
+      now += 60_000;
+      expect(reserveMessageRehydrate('ses_new')).toBe(true);
+      expect(messageRehydrateEntryCount()).toBeLessThan(10);
+    } finally {
+      Date.now = realNow;
+    }
   });
 });

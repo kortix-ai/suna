@@ -4,9 +4,20 @@ import { hostname } from 'os';
 import { join } from 'path';
 
 import { PAIR_AGAIN_COMMAND, TunnelAgent } from './agent';
-import { accessFilePath, accessRequestPath, desktopAppPath, readAccess, writeAccess } from './access';
+import {
+  accessAfterPairing,
+  accessFilePath,
+  accessRequestPath,
+  accessView,
+  applyAccess,
+  desktopAppPath,
+  readAccess,
+  writeAccess,
+  type AccessChange,
+  type AccessView,
+} from './access';
 import { printStartupBanner } from './banner';
-import { createEnabledCapabilityRegistry } from './capabilities/enabled-registry';
+import { createEnabledCapabilityRegistry, desktopUnavailableReason } from './capabilities/enabled-registry';
 import { loadConfig, type TunnelConfig } from './config';
 import { CONFIG_FILE, clearSavedCredentials, saveCredentials } from './credential-store';
 import { probeCredentials } from './credential-probe';
@@ -18,12 +29,12 @@ import {
   requestDeviceAuthorization,
 } from './device-auth';
 import { collapseRepeatedLines, isShellStartupNoise } from './log-format';
-import { anyFlag, isInteractiveTerminal, isTruthyFlag, promptYesNo } from './prompts';
+import { anyFlag, isInteractiveTerminal, isTruthyFlag } from './prompts';
 import {
-  DEFAULT_INSTALL_BACKGROUND_SERVICE,
   agentTunnelHome,
   getServicePaths,
   getServiceStatus,
+  installedAppRunner,
   rotateServiceLogs,
   serviceLogFiles,
 } from './service';
@@ -34,6 +45,7 @@ import {
   describeService,
   renderServiceAction,
 } from './service-control';
+import { watchForRestart } from './self-restart';
 import { readAgentState, writeAgentState } from './state-file';
 import { blankLine, c, clearScreen, field, glyph, stripAnsi } from './terminal';
 import { agentTunnelVersion } from './version';
@@ -43,16 +55,22 @@ const BACKGROUND_FLAGS = ['daemon', 'service', 'background', 'always-online'] as
 const FOREGROUND_FLAGS = ['foreground', 'no-daemon', 'no-service', 'no-background'] as const;
 const DEFAULT_LOG_LINES = 60;
 
+/** `_` holds the words after the command (`access always` → `_: 'always'`). */
 type Flags = Record<string, string>;
 
 function parseArgs(argv: string[]): { command: string; flags: Flags } {
   const flags: Flags = {};
+  const words: string[] = [];
   for (let i = 3; i < argv.length; i++) {
     const arg = argv[i];
-    if (!arg.startsWith('--')) continue;
+    if (!arg.startsWith('--')) {
+      words.push(arg);
+      continue;
+    }
     const next = argv[i + 1];
     flags[arg.slice(2)] = next && !next.startsWith('--') ? argv[++i] : 'true';
   }
+  if (words.length > 0) flags._ = words.join(' ');
   return { command: argv[2] || 'help', flags };
 }
 
@@ -90,12 +108,19 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
     process.stdout.write = process.stderr.write.bind(process.stderr) as typeof process.stdout.write;
     options = { ...options, service: true };
   }
-  const registry = createEnabledCapabilityRegistry(config);
-  if (config.enabledCapabilities?.includes('desktop') && !registry.has('desktop')) {
-    console.error(
-      '[agent-tunnel] Computer Use is approved but unavailable: install the trusted cua-driver locally, then restart Agent Tunnel.',
-    );
-  }
+  let agent: TunnelAgent | null = null;
+  const restart = options.service
+    ? watchForRestart((reason) => {
+        process.stdout.write(`[agent-tunnel] restarting: ${reason}\n`);
+        agent?.disconnect();
+        process.exit(0);
+      })
+    : null;
+  const registry = createEnabledCapabilityRegistry(config, undefined, {
+    onPermissionMissing: restart?.permissionMissing,
+  });
+  const desktopReason = registry.unavailable.get('desktop');
+  if (desktopReason) console.error(`[agent-tunnel] Computer Use is approved but unavailable: ${desktopReason}`);
 
   if (options.service) {
     process.stdout.write(`[agent-tunnel] service starting: ${config.tunnelId} -> ${config.apiUrl}\n`);
@@ -111,7 +136,7 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
 
   // A service never stops on its own (R2): a refused credential waits in
   // `rejected` and re-reads config.json, so pairing again heals it.
-  const agent = new TunnelAgent(
+  agent = new TunnelAgent(
     config,
     registry,
     // The agent passes the credential it uses NOW: a re-pair picked up by a
@@ -122,39 +147,52 @@ function startAgent(config: TunnelConfig, options: { service?: boolean } = {}): 
       reloadConfig: () => loadConfig({ apiUrl: config.apiUrl }),
     },
   );
-  agent.connect();
-
+  // Before connect(): connect() writes state.json, and a SIGTERM that lands
+  // before a handler exists kills the process with the state left `connecting`.
   const shutdown = () => {
     if (!options.service) console.log(`\n${c.dim}  Shutting down…${c.reset}`);
-    agent.disconnect();
+    agent?.disconnect();
     process.exit(0);
   };
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+  agent.connect();
 }
 
 // ── pairing ──────────────────────────────────────────────────────────────────
 
-async function chooseBackgroundMode(flags: Flags): Promise<boolean> {
+/**
+ * A person at a terminal gets what the desktop app gives: a background
+ * connection, no question asked, and the exact commands that pause, resume,
+ * and remove it. `--foreground` keeps it in this terminal only. A script
+ * (no TTY) or `--json` keeps the foreground default it always had.
+ */
+function chooseBackgroundMode(flags: Flags): boolean {
   if (anyFlag(flags, BACKGROUND_FLAGS)) return true;
   if (anyFlag(flags, FOREGROUND_FLAGS)) return false;
-  if (jsonMode || !isInteractiveTerminal()) return false;
+  return !jsonMode && isInteractiveTerminal();
+}
 
+function printServiceControls(): void {
+  const npx = 'npx @kortix/agent-tunnel@latest';
+  console.log(`  ${c.dim}Runs in the background: starts at login, restarts after failures, keeps running after this terminal closes.${c.reset}`);
+  if (installedAppRunner()) {
+    console.log(`  ${c.dim}It runs on the Kortix app on this Mac: same connection, same macOS permissions. Control it from Your computer in the app.${c.reset}`);
+  }
   blankLine();
-  console.log(`  ${glyph.warn} ${c.bold}Security note${c.reset}`);
-  console.log(`  ${c.dim}Background mode starts at login, continues after this terminal closes, and restarts after failures.${c.reset}`);
-  console.log(`  ${c.dim}The computer must remain powered on, awake, and connected to the internet.${c.reset}`);
+  field('Pause', `${c.white}${npx} stop${c.reset}`);
+  field('Resume', `${c.white}${npx} start${c.reset}`);
+  field('Disconnect', `${c.white}${npx} logout${c.reset}`);
   blankLine();
-
-  return promptYesNo('  Install the background service now?', DEFAULT_INSTALL_BACKGROUND_SERVICE);
 }
 
 /** Starts the agent the way the caller asked for, and returns. */
 async function launch(config: TunnelConfig, flags: Flags, lease?: { serviceWasActive: boolean }): Promise<void> {
-  if (await chooseBackgroundMode(flags)) {
+  if (chooseBackgroundMode(flags)) {
     saveCredentials(config.tunnelId, config.token, config.apiUrl);
     if (!jsonMode) {
       renderServiceAction('install', SERVICE_ACTIONS.install.run());
+      printServiceControls();
       return;
     }
     // Return instead of process.exit(): an exit can cut off a piped stdout.
@@ -248,17 +286,9 @@ async function pairThisMachine(apiUrl: string, flags: Flags, lease?: { serviceWa
   }
 
   saveCredentials(outcome.tunnelId, outcome.token, apiUrl, outcome.capabilities);
-  // A1: a pairing made from the desktop app asks before each use; the app is
-  // what answers. A CLI-only machine has nobody to answer a prompt, so it is
-  // always allowed (a documented deviation from A1). A new pairing never
-  // inherits a grant or an `always` from the previous one; keep awake is a
-  // machine setting and stays.
-  writeAccess({
-    mode: existsSync(desktopAppPath()) ? 'ask' : 'always',
-    grantedUntil: null,
-    deniedUntil: null,
-    keepAwake: readAccess().keepAwake,
-  });
+  // A1: a re-pair keeps the owner's mode; a first pairing asks when the
+  // desktop app can answer, else always (see accessAfterPairing).
+  writeAccess(accessAfterPairing(agentTunnelHome(), existsSync(desktopAppPath())));
   if (jsonMode) {
     emit('approved', { tunnelId: outcome.tunnelId, capabilities: outcome.capabilities });
   } else {
@@ -396,6 +426,7 @@ function commandStatus(flags: Flags): void {
   const service = getServiceStatus();
   const paired = Boolean(config.token && config.tunnelId);
   const approved = new Set(config.enabledCapabilities ?? []);
+  const desktopReason = approved.has('desktop') ? desktopUnavailableReason() : null;
 
   if (isTruthyFlag(flags.json)) {
     console.log(JSON.stringify({
@@ -403,12 +434,13 @@ function commandStatus(flags: Flags): void {
       tunnelId: paired ? config.tunnelId : null,
       apiUrl: config.apiUrl,
       capabilities: [...approved],
+      unavailableCapabilities: desktopReason ? { desktop: desktopReason } : {},
       version: agentTunnelVersion(),
       home: agentTunnelHome(),
       serviceLabel: getServicePaths().label,
       service,
       state: readAgentState(),
-      access: readAccess(),
+      access: accessView(),
       lastActivity: lastServiceActivity(),
     }, null, 2));
     return;
@@ -566,6 +598,69 @@ function commandServiceAction(action: ServiceAction, flags: Flags): void {
   renderServiceAction(action, SERVICE_ACTIONS[action].run());
 }
 
+/** "Ask each time · allowed until 14:05", for a person at a terminal. */
+function describeAccess(view: AccessView): string {
+  const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (view.mode === 'always') return `${c.white}Always allowed${c.reset}`;
+  if (view.mode === 'off') return `${c.white}Off${c.reset} ${c.dim}(every agent call is refused)${c.reset}`;
+  const now = view.grantedUntil
+    ? `allowed until ${clock(view.grantedUntil)}`
+    : view.deniedUntil
+      ? `denied until ${clock(view.deniedUntil)}`
+      : 'asks before the next call';
+  return `${c.white}Ask each time${c.reset} ${c.dim}· ${now}${c.reset}`;
+}
+
+function printAccess(view: AccessView, flags: Flags): void {
+  if (isTruthyFlag(flags.json)) {
+    console.log(JSON.stringify(view, null, 2));
+    return;
+  }
+  const npx = 'npx @kortix/agent-tunnel@latest';
+  blankLine();
+  field('access', describeAccess(view));
+  field('keep awake', view.keepAwakeSupported ? (view.keepAwake ? `${c.white}on${c.reset}` : `${c.white}off${c.reset}`) : `${c.dim}not available on this system${c.reset}`);
+  if (view.pendingRequest) {
+    field('waiting', `${c.white}${view.pendingRequest.change ? 'a change asked for through Kortix' : `an agent call (${view.pendingRequest.capability})`}${c.reset}`);
+    field('', `${c.dim}${npx} access --allow-for 60   or   --deny${c.reset}`);
+  }
+  blankLine();
+  console.log(`  ${c.dim}Change it:${c.reset} ${c.white}${npx} access ask|always|off${c.reset}${c.dim}, --allow-for <minutes>, --revoke, --deny${c.reset}`);
+  blankLine();
+}
+
+/**
+ * `access [ask|always|off] [--allow-for <minutes>] [--revoke] [--deny]`: when
+ * Kortix may use this computer. The person at this machine is its owner, so
+ * this widens access too; the desktop app runs this command after its own
+ * confirmation. No change prints the current state.
+ */
+function commandAccess(flags: Flags): void {
+  const change: AccessChange = {};
+  if (flags._) change.mode = flags._ as AccessChange['mode'];
+  if (flags['allow-for'] !== undefined) {
+    change.grantMinutes = Number(flags['allow-for']);
+    if (!(change.grantMinutes > 0)) fail('--allow-for takes minutes, at most 1440. Example: agent-tunnel access --allow-for 60');
+  }
+  if (isTruthyFlag(flags.revoke)) change.revoke = true;
+  if (isTruthyFlag(flags.deny)) change.deny = true;
+  if (Object.keys(change).length === 0) return printAccess(accessView(), flags);
+  if (change.mode !== undefined && !['ask', 'always', 'off'].includes(change.mode)) {
+    fail('Access is one of: ask, always, off. Example: agent-tunnel access ask');
+  }
+  // A grant applies in "Ask each time"; from another mode it means "ask, allowed for now".
+  if (change.grantMinutes !== undefined && change.mode === undefined && readAccess().mode !== 'ask') change.mode = 'ask';
+  printAccess(applyAccess(change), flags);
+}
+
+/** `keep-awake [on|off]`: hold off system sleep while the agent runs (macOS, Linux). */
+function commandKeepAwake(flags: Flags): void {
+  if (flags._ === undefined) return printAccess(accessView(), flags);
+  if (flags._ !== 'on' && flags._ !== 'off') fail('Keep awake is on or off. Example: agent-tunnel keep-awake on');
+  if (!accessView().keepAwakeSupported) fail('Keep awake is not available on this system yet.');
+  printAccess(applyAccess({ keepAwake: flags._ === 'on' }), flags);
+}
+
 // ── dispatch ─────────────────────────────────────────────────────────────────
 
 interface Command {
@@ -581,6 +676,11 @@ const COMMANDS: Record<string, Command> = {
     run: commandConnect,
   },
   status: { summary: 'Show pairing, capabilities, and service state (--json)', run: commandStatus },
+  access: {
+    summary: 'When Kortix may use this computer: ask, always, off (--allow-for <min>, --revoke, --deny, --json)',
+    run: commandAccess,
+  },
+  'keep-awake': { summary: 'Keep this computer awake while connected: on, off (--json)', run: commandKeepAwake },
   logs: { summary: 'Show recent service logs (--lines <n>, --all, --clear)', run: commandLogs },
   start: {
     summary: 'Start the background service (resumes a paused one)',
@@ -620,7 +720,7 @@ const OPTIONS: ReadonlyArray<readonly [string, string]> = [
   ['--reauth', 'With connect: discard the saved credential and pair again'],
   ['--daemon / --foreground', 'With connect: skip the prompt and choose the mode'],
   ['--project-id <uuid>', 'With connect: offer "Also share with <project>" on the approval page; the computer is yours in every project either way'],
-  ['--json', 'With connect: NDJSON events, no prompts. With status and logout: machine-readable output'],
+  ['--json', 'With connect: NDJSON events, no prompts. With status, access, keep-awake, and logout: machine-readable output'],
   ['--keep-service', 'With logout: keep the background service installed'],
 ];
 
@@ -658,7 +758,7 @@ const { command, flags } = parseArgs(process.argv);
 jsonMode = command === 'connect' && isTruthyFlag(flags.json);
 
 if (Object.prototype.hasOwnProperty.call(flags, 'keep-awake')) {
-  console.error(`  ${glyph.bad} --keep-awake is not supported. Configure sleep behavior in the operating system.`);
+  console.error(`  ${glyph.bad} --keep-awake is not a flag. Run: agent-tunnel keep-awake on`);
   process.exit(2);
 }
 
@@ -669,7 +769,8 @@ const resolved =
 if (!resolved) {
   showHelp();
 } else {
-  void Promise.resolve(resolved.run(flags)).catch((error: unknown) => {
+  // `.then`: a command that throws synchronously reports like one that rejects.
+  void Promise.resolve().then(() => resolved.run(flags)).catch((error: unknown) => {
     fail(error instanceof Error ? error.message : String(error));
   });
 }

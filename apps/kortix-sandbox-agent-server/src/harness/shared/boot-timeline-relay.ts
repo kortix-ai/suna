@@ -1,5 +1,5 @@
 import { logger } from '@/lib/log/logger'
-import type { BootMark } from '../contract/boot-state'
+import type { BootMark, BootTimelineRelayBody } from '@kortix/api-contract/runtime-relay'
 import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
 
@@ -9,8 +9,8 @@ import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
  *
  * WHY: `GET /kortix/health` already exposes `bootState.timeline` (see
  * routes/health.ts's `boot_timeline` field), but nothing on the server ever
- * stores it — so the 11-15s of in-guest boot latency (repo-materialized,
- * opencode-session-created, ...) is unattributable after the fact, unlike the
+ * stores it — so the in-guest boot latency (config-release-fetched,
+ * pi-ready, opencode-session-created, ...) is unattributable after the fact, unlike the
  * HOST side which IS persisted (kortix.provider_events.marks, written by
  * apps/api/src/platform/services/provider-events.ts's recordProviderEvent).
  * This module closes that gap by POSTing the same timeline server-side.
@@ -18,7 +18,7 @@ import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
  * INTEGRATION: the connector should call `relayBootTimelineToApi(bootState.timeline)`
  * from main.ts exactly once per boot, right after `runtimeReady` first becomes
  * true — i.e. from the same place that today computes readiness for
- * routes/health.ts (mirrors relayBootstrapPinToApi, which fires at the
+ * routes/health.ts (mirrors relayRuntimeSession, which fires at the
  * analogous "session is usable" point for the bootstrap pin). Do not call it
  * more than once per boot; do not call it from the warm-seed capture path
  * (a seed has no session yet — `KORTIX_SESSION_ID` is unset there and the
@@ -26,7 +26,7 @@ import { noteControlPlaneResponse } from '@/lib/kortix-api/session-token-health'
  *
  * Fire-and-forget, non-blocking, and bounded by a timeout — never awaited by
  * the caller and never throws, so a slow or unreachable control plane can
- * never add latency to (or fail) boot. Mirrors relayBootstrapPinToApi's auth:
+ * never add latency to (or fail) boot. Mirrors relayRuntimeSession's auth:
  * same env vars, same token-fallback order, same "missing config -> silent
  * no-op" behavior (this daemon runs in local/self-host contexts where the API
  * URL or credential may simply not be set).
@@ -57,11 +57,12 @@ async function doRelay(timeline: BootMark[]): Promise<void> {
   if (timeline.length === 0) return
   const { sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/platform/boot-timeline`
+  const body: BootTimelineRelayBody = { session_id: sessionId, timeline }
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ session_id: sessionId, timeline }),
+      body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) {

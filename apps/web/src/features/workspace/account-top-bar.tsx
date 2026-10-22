@@ -1,24 +1,37 @@
 'use client';
 
-import { ArrowLeftIcon, CaretDownIcon, SignOutIcon } from '@phosphor-icons/react';
+import { CaretDownIcon, GearSixIcon, SignOutIcon } from '@phosphor-icons/react';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
+import { BackPillBody, backPillClass } from '@kortix/ui/back-pill';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dropdown-menu';
+import Loading from '@kortix/ui/loading';
 import { useTranslations } from '@/i18n/use-translations';
+
+// Client only: the inbox is per signed-in person and polls, so the server
+// renders no bell and these pages' static tests need no query client. The
+// bell itself renders only while a cached project has the
+// `notification_center` flag on (these pages have no project of their own).
+const NotificationBell = dynamic(
+  () => import('@kortix/ui/internal/notifications/notification-bell').then((mod) => mod.NotificationBell),
+  { ssr: false },
+);
 
 /**
  * The top row of the account-level pages that sit outside a project —
  * `/projects` and `/new`.
  *
- * Left: an optional way back. Right: who you are, as a button. Log out lives
+ * Left: an optional way back. Right: the notification bell (KRTX-1742, behind
+ * the `notification_center` flag), then who you are, as a button. Log out lives
  * in its menu rather than as a bare button in the corner — it is the rarest
  * action on these pages, and the identity above it is what a user checks
  * first ("am I in the right account?").
@@ -56,12 +69,11 @@ export function AccountTopBar({
         <Button
           asChild
           variant="ghost"
-          size="sm"
-          className="kx-web-only-back text-muted-foreground hover:text-foreground shrink-0 gap-1.5"
+          size="xs"
+          className={backPillClass('kx-web-only-back')}
         >
           <Link href={back.href}>
-            <ArrowLeftIcon className="size-4" />
-            {back.label}
+            <BackPillBody label={back.label} />
           </Link>
         </Button>
       ) : (
@@ -69,6 +81,7 @@ export function AccountTopBar({
       )}
 
       <div className="flex min-w-0 items-center gap-2">
+        <NotificationBell />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -91,6 +104,21 @@ export function AccountTopBar({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
+            {/* Settings must be reachable from every account-level page,
+                regardless of project count: with no projects this menu was
+                Log out only, and /settings/profile had no link at all
+                (KRTX-1327). A real anchor, so the menu closes on navigate. */}
+            <DropdownMenuItem asChild>
+              <Link href="/settings/profile" prefetch>
+                <GearSixIcon />
+                {t('actions.settings')}
+              </Link>
+            </DropdownMenuItem>
+
+            {/* Log out is the only row that ends something, so it gets its own
+                group — the last item in a menu is the one a slipped pointer
+                lands on. */}
+            <DropdownMenuSeparator />
             <DropdownMenuItem disabled={signingOut} onSelect={onLogOut}>
               <SignOutIcon />
               {signingOut ? t('actions.signingOut') : t('actions.logOut')}

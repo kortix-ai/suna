@@ -35,7 +35,7 @@ export const MANIFEST_IMPORTS_KEY = 'imports';
 /** List collections; entries are identified by `slug`. */
 export const IMPORTABLE_LIST_KEYS = ['triggers', 'connectors'] as const;
 /** Map collections; entries are identified by their key. */
-export const IMPORTABLE_MAP_KEYS = ['agents', 'apps'] as const;
+export const IMPORTABLE_MAP_KEYS = ['agents', 'apps', 'tools', 'skills', 'commands', 'extensions'] as const;
 
 export type ImportableKey =
   | (typeof IMPORTABLE_LIST_KEYS)[number]
@@ -52,6 +52,7 @@ export const ROOT_ONLY_KEYS = [
   'sandbox',
   'policy',
   'policies',
+  'approvals',
 ] as const;
 
 export const MAX_IMPORT_DEPTH = 8;
@@ -152,7 +153,7 @@ function declaredImports(file: string, raw: Record<string, unknown>): string[] {
 }
 
 function emptyOrigins(): ManifestOrigins {
-  return { triggers: {}, connectors: {}, agents: {}, apps: {} };
+  return Object.fromEntries(ALL_IMPORTABLE_KEYS.map((key) => [key, {}])) as ManifestOrigins;
 }
 
 /** Entries of one collection in one file, as [id, value] pairs. Entries without
@@ -184,6 +185,10 @@ const ALL_IMPORTABLE_KEYS: readonly ImportableKey[] = [
   ...IMPORTABLE_MAP_KEYS,
 ];
 
+/** v2 imports merge only the collections v2 had: skills, commands and
+ *  extensions are v3 keys, and a v2 root's own value for them stays as written. */
+const V2_IMPORTABLE_KEYS: readonly ImportableKey[] = [...IMPORTABLE_LIST_KEYS, 'agents', 'apps', 'tools'];
+
 /**
  * Resolve `imports:` for a parsed root manifest. A root without `imports`
  * returns immediately and never calls the reader, so projects that do not use
@@ -195,8 +200,9 @@ export function resolveManifestImportsSync(
 ): ResolvedManifest {
   const files: ManifestSourceFile[] = [root];
   const origins = emptyOrigins();
+  const importable = root.raw.kortix_version === 3 ? ALL_IMPORTABLE_KEYS : V2_IMPORTABLE_KEYS;
   if (!hasManifestImports(root.raw)) {
-    for (const key of ALL_IMPORTABLE_KEYS) {
+    for (const key of importable) {
       for (const [id] of safeEntries(root.path, key, root.raw[key])) {
         if (id !== null) origins[key][id] = root.path;
       }
@@ -209,7 +215,10 @@ export function resolveManifestImportsSync(
   const visited = new Set<string>([root.path]);
 
   const mergeFile = (file: ManifestSourceFile) => {
-    for (const key of ALL_IMPORTABLE_KEYS) {
+    // A `tools` key selects the Kortix tools, so an empty one in any file
+    // still reaches the merged document (`selectedKortixTools`).
+    if (file.raw.tools !== undefined) maps.tools ??= {};
+    for (const key of importable) {
       for (const [id, entry] of collectionEntries(file.path, key, file.raw[key])) {
         if (id !== null) {
           const declaredIn = origins[key][id];
@@ -267,6 +276,17 @@ export function resolveManifestImportsSync(
             `${entry.path}: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
+        // v3 has no silent drop: an imported file holds only importable keys.
+        if (root.raw.kortix_version === 3) {
+          const stray = Object.keys(raw).filter(
+            (key) => key !== MANIFEST_IMPORTS_KEY && !(ALL_IMPORTABLE_KEYS as readonly string[]).includes(key),
+          );
+          if (stray.length > 0) {
+            throw new ManifestImportError(
+              `${entry.path}: ${stray.map((key) => `"${key}"`).join(', ')} cannot be in an imported file — an imported file declares ${ALL_IMPORTABLE_KEYS.join(', ')} or imports`,
+            );
+          }
+        }
         for (const rootOnly of ROOT_ONLY_KEYS) {
           if (raw[rootOnly] !== undefined) {
             throw new ManifestImportError(
@@ -291,7 +311,7 @@ export function resolveManifestImportsSync(
     else if (key in maps) merged[key] = maps[key];
     else merged[key] = value;
   }
-  for (const key of ALL_IMPORTABLE_KEYS) {
+  for (const key of importable) {
     if (key in merged) continue;
     if (lists[key]) merged[key] = lists[key];
     else if (maps[key]) merged[key] = maps[key];

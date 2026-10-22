@@ -13,7 +13,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
 // pair on the common top-level path, so honoring the message here never
 // double-answers.
 
-// ─── DB mock: FIFO of query results (only threadIsOwned touches the DB) ───────
+// ─── DB mock: FIFO of query results (classifyEvent must not touch the DB) ─────
 let dbResults: unknown[][] = [];
 let lastWhere: unknown = null;
 function makeChain(): any {
@@ -83,8 +83,6 @@ mock.module('../channels/slack-api', () => ({
 }));
 
 const { classifyEvent } = await import('../channels/slack/dispatch');
-const { PgDialect } = await import('drizzle-orm/pg-core');
-type SQL = import('drizzle-orm').SQL;
 
 const BOT = 'B1';
 const ev = (e: Record<string, unknown>) => ({ type: 'message', ...e }) as any;
@@ -94,9 +92,6 @@ beforeEach(() => {
   dbResults = [];
   lastWhere = null;
 });
-
-// The bound parameters of the thread-ownership WHERE clause, as PostgreSQL gets them.
-const whereParams = (): unknown[] => new PgDialect().sqlToQuery(lastWhere as SQL).params;
 
 describe('classifyEvent — a message that @-mentions the bot is a mention', () => {
   test('THE FIX: message with the bot mention inside a thread → mention (was wrongly ignored)', async () => {
@@ -186,35 +181,28 @@ describe('classifyEvent — non-mention routing is unchanged', () => {
     expect(cls).toBe('dm');
   });
 
-  test('thread reply without a mention, in an OWNED thread → follow_up', async () => {
-    dbResults = [[{ id: 'thread-row' }]]; // threadIsOwned → found
+  test('untagged thread reply in a channel → ignore, even when a session owns the thread', async () => {
+    dbResults = [[{ id: 'thread-row' }]]; // an owning row exists; it must not matter
     const cls = await classifyEvent('T1', ev({ thread_ts: '90.0', channel_type: 'channel', text: 'make it concise' }), BOT);
-    expect(cls).toBe('follow_up');
-  });
-
-  test('thread reply without a mention, in an UNKNOWN thread → ignore (no chatter pickup)', async () => {
-    dbResults = [[]]; // threadIsOwned → not found
-    const cls = await classifyEvent('T1', ev({ thread_ts: '90.0', channel_type: 'channel', text: 'just chatting' }), BOT);
     expect(cls).toBe('ignore');
   });
 
-  test('PROD 2026-09-22: with a projectId, thread ownership is scoped to that project', async () => {
-    dbResults = [[]]; // the thread belongs to ANOTHER project's session → no row
-    const cls = await classifyEvent(
-      'T1',
-      ev({ thread_ts: '90.0', channel_type: 'channel', text: 'do u have access now' }),
-      BOT,
-      'proj-incident-reporter',
-    );
-    expect(cls).toBe('ignore');
-    expect(whereParams()).toEqual(['slack', 'T1', '90.0', 'proj-incident-reporter']);
-  });
-
-  test('without a projectId, thread ownership stays workspace-wide (shared OAuth app)', async () => {
+  test('untagged thread reply in a group DM (mpim) → ignore, even when a session owns the thread', async () => {
     dbResults = [[{ id: 'thread-row' }]];
-    const cls = await classifyEvent('T1', ev({ thread_ts: '90.0', channel_type: 'channel', text: 'make it concise' }), BOT);
-    expect(cls).toBe('follow_up');
-    expect(whereParams()).toEqual(['slack', 'T1', '90.0']);
+    const cls = await classifyEvent('T1', ev({ thread_ts: '90.0', channel_type: 'mpim', text: 'make it concise' }), BOT);
+    expect(cls).toBe('ignore');
+  });
+
+  test('untagged thread reply makes no DB query', async () => {
+    dbResults = [[{ id: 'thread-row' }]];
+    await classifyEvent('T1', ev({ thread_ts: '90.0', channel_type: 'channel', text: 'do u have access now' }), BOT);
+    expect(lastWhere).toBeNull();
+    expect(dbResults).toHaveLength(1);
+  });
+
+  test('tagged reply in a thread → mention', async () => {
+    const cls = await classifyEvent('T1', ev({ thread_ts: '90.0', channel_type: 'channel', text: '<@B1> summarize this' }), BOT);
+    expect(cls).toBe('mention');
   });
 
   test('channel-root message without a mention → ignore', async () => {

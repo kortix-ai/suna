@@ -5,39 +5,39 @@ import { join } from 'node:path'
 import {
   activateBootConfig,
   bootConfigRoot,
+  configDirFiles,
   deactivateBootConfig,
-  materializeRelease,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
+  readBootReleaseRoot,
   readQuarantine,
   releaseDir,
   verifyRelease,
   verifyReleaseDetail,
-  writeReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import {
   configReleaseApiFrom,
-  downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '@/services/config-release/api-client'
-import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+} from '@/services/config-provider/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import {
   ConvergeBusyError,
   agentRepointSentence,
   deliverGovernance,
   effectiveReleaseId,
   manifestFromDescriptor,
-} from '@/services/config-release/release'
-import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+} from '@/services/config-provider/release'
+import { clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-provider/notice'
+import { obtainRelease } from '@/services/config-provider/obtain'
 import { MAX_SWAP_DELAY_MS } from '../contract/control'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'
 import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
 import { isDaemonShuttingDown } from '@/lib/shutdown-state'
-import { managedOverlayRoot, releaseSourcePaths } from './project-layout'
+import { managedOverlayRoot, releaseSourcePaths, releaseConfigDir } from './project-layout'
 import { serveConfigDir, servingConfigDir } from './boot-link'
 import { resolveOpencodeConfigDir, type OpenCodeConfig } from './config'
 import { type Opencode, type VerifiedReloadResult } from './lifecycle'
@@ -123,9 +123,8 @@ export function runningSourceCommit(): string | null {
 }
 
 /**
- * The release directory OpenCode runs from, or null off the release path.
- * The managed-skill overlay goes there, never into `/workspace`, while a
- * release runs — proven or not yet proven.
+ * The release root (the repository checkout) OpenCode runs from, or null off
+ * the release path.
  */
 export function runningReleaseDir(root: string = bootConfigRoot()): string | null {
   return running.source === 'release' && running.release_id ? releaseDir(root, running.release_id) : null
@@ -285,6 +284,30 @@ export async function preparePlatformConfigDir(
 
 
 /**
+ * The preparation of a release, staged at `staged` (the repository checkout):
+ * the OpenCode config dir inside it gets its dependencies, as the image default
+ * does, and the managed-skill overlay lands where the project keeps its skills
+ * (`managedOverlayRoot`), exactly where it lands in `/workspace`.
+ */
+export async function prepareRelease(
+  staged: string,
+  configDir: string | null,
+  managedSkillsDir?: string,
+  depsOptions: ConfigDepsOptions = {},
+): Promise<void> {
+  const dir = configDir ? join(staged, configDir) : null
+  const hasConfig = dir !== null && (existsSync(join(dir, 'opencode.jsonc')) || existsSync(join(dir, 'opencode.json')))
+  if (hasConfig) {
+    await warnOnHarnessMcp(dir)
+    await ensureOpencodeConfigDeps(dir, { ...depsOptions, platformOwned: true })
+  }
+  await ensureInjectedManagedSkills(
+    hasConfig ? managedOverlayRoot(dir, staged) : staged,
+    managedSkillsDir ? { bakedDir: managedSkillsDir } : {},
+  )
+}
+
+/**
  * Apply the desired release. Single flight: a call while one runs throws
  * `ConvergeBusyError`. Never throws otherwise; a failure is an outcome.
  */
@@ -343,14 +366,17 @@ function respond(
  * still converge.
  */
 export function noteRunningConfig(
-  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'> & { agent_repoint_reason?: string | null },
+  descriptor: Pick<ConfigReleaseDescriptor, 'source_commit' | 'config_dir'> & {
+    agent_repoint_reason?: string | null
+    compiled_governance?: string | null
+  },
   releaseDirPath: string | null = null,
   sessionId: string | null = process.env.KORTIX_SESSION_ID ?? null,
 ): 'written' | 'unchanged' | 'failed' {
   try {
     return writeConfigReleaseNotice({
       sourceCommit: descriptor.source_commit,
-      sourcePaths: releaseSourcePaths(descriptor.config_dir),
+      sourcePaths: releaseSourcePaths(descriptor.config_dir, descriptor.compiled_governance ?? null),
       releaseDir: releaseDirPath,
       sessionId,
       agentRepoint: descriptor.agent_repoint_reason ?? null,
@@ -362,8 +388,10 @@ export function noteRunningConfig(
 }
 
 /**
- * `config_releases` is OFF for this project — per project, or platform-wide
- * through the operator kill switch. The API answered `403 feature_disabled`.
+ * Config releases are OFF for this project: the API answered `403
+ * feature_disabled`. A current API never does — config releases graduated out
+ * of the flag system in 2026-10 — so this is an API from before graduation (a
+ * self-host on an older release, or a rollback).
  *
  * This is the transition, and it must not strand a box that already runs a
  * release:
@@ -430,7 +458,8 @@ async function revertToPreReleaseConfig(
     return respond('failed', null, 'a turn is running or its state is unknown; the revert waits for the next trigger')
   }
   const previousDir = await servingConfigDir(root)
-  await serveConfigDir(dir, 'config releases are disabled for this project', root)
+  const previousRoot = await readBootReleaseRoot(root)
+  await serveConfigDir(dir, 'config releases are disabled for this project', root, cfg.projectTarget)
   const result = await opencode.reloadVerified({
     prove: (baseUrl, deadline) =>
       (deps.prove ?? provenCheck)(baseUrl, deadline, {
@@ -443,7 +472,7 @@ async function revertToPreReleaseConfig(
     mayPromote: deps.turnInFlight ? idle : undefined,
   })
   if (result.outcome === 'kept-old') {
-    if (previousDir) await serveConfigDir(previousDir, 'the workspace config dir did not start', root)
+    if (previousDir) await serveConfigDir(previousDir, 'the workspace config dir did not start', root, previousRoot)
     if (result.promotionCalledOff) return respond('failed', null, result.reason)
     logger.warn('[config-release] disabled, but the workspace config dir did not start; keeping the release', {
       dir,
@@ -473,21 +502,17 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   try {
     descriptor = await fetchConfigReleaseDescriptor(api)
   } catch (err) {
-    // Config releases are switched off for this project (spec, "Feature
-    // flag"). Not a failure: revert to the pre-release behaviour.
+    // An API from before config releases graduated has them off for this
+    // project. Not a failure: revert to the pre-release behaviour.
     if (isFeatureDisabledError(err)) return revertToPreReleaseConfig(deps, root, err.message)
     // API unreachable or older than the spec: the running config stays.
     return respond('failed', null, (err as Error).message)
   }
   const releaseId = effectiveReleaseId(descriptor)
   setRunningConfig({ desired_release_id: releaseId })
-  // No release: a config dir over the 4 MiB limit (a tree without an
-  // archive), a governance compile failure, or nothing to run at all. The
-  // running config stays.
-  const noRelease =
-    releaseId === null ||
-    (descriptor.mode === 'follow-base' && descriptor.archive === null && descriptor.config_tree_id !== null)
-  if (noRelease || releaseId === null) {
+  // No release: a v2 tree over the API's archive cap, a governance compile
+  // failure, or nothing to run at all. The running config stays.
+  if (releaseId === null) {
     return respond(descriptor.reason ? 'failed' : 'unchanged', null, descriptor.reason)
   }
 
@@ -511,19 +536,25 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     return null
   }
 
-  const swap = async (dir: string, toolNames: readonly string[], pluginFiles: readonly string[] = []) => {
+  const swap = async (
+    dir: string,
+    toolNames: readonly string[],
+    pluginFiles: readonly string[] = [],
+    releaseRoot: string | null = null,
+  ) => {
     // The boot link is the ONE thing that names OpenCode's config dir, so a
     // swap repoints it. The running process already holds its config in
     // memory, so the candidate on the standby port is the only reader of the
     // new target; a declined candidate puts the old target back.
     const previousDir = await servingConfigDir(root)
-    await serveConfigDir(dir, 'a convergence is replacing opencode', root)
+    const previousRoot = await readBootReleaseRoot(root)
+    await serveConfigDir(dir, 'a convergence is replacing opencode', root, releaseRoot)
     // Tell the session which commit's config it is about to run, BEFORE the
     // replacement spawns: `writeComposedConfig` declares this file in
     // OpenCode's `instructions`, so the new process reads it (spec, "Telling
     // the session"). Only a convergence that actually replaces something
     // reaches `swap`, and the writer is a no-op when the text is unchanged.
-    noteRunningConfig({ ...descriptor, agent_repoint_reason: agentRepointSentence(descriptor) }, dir)
+    noteRunningConfig({ ...descriptor, agent_repoint_reason: agentRepointSentence(descriptor) }, releaseRoot ?? dir)
     const restoreGovernance = deliverGovernance(descriptor.compiled_governance, descriptor.compiled_governance_etag)
     const result = await opencode.reloadVerified({
       prove: (baseUrl, deadline) =>
@@ -537,7 +568,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
       mayPromote: deps.turnInFlight ? idle : undefined,
     })
     if (result.outcome === 'kept-old') {
-      if (previousDir) await serveConfigDir(previousDir, 'the candidate was declined', root)
+      if (previousDir) await serveConfigDir(previousDir, 'the candidate was declined', root, previousRoot)
       restoreGovernance()
     }
     return result
@@ -545,7 +576,7 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
 
   // Governance only: no repository access, or no config dir on the base branch.
   // The image default config dir runs with the compiled governance.
-  if (descriptor.archive === null) {
+  if (descriptor.files === null) {
     const dir = cfg.defaultOpencodeConfigDir
     if (running.release_id === releaseId && running.source === 'image-default' && (await servingConfigDir(root)) === dir) {
       noteDesiredReleaseMet()
@@ -577,14 +608,17 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
 
   const manifest = manifestFromDescriptor(descriptor, releaseId)
   const dir = releaseDir(root, releaseId)
-  const verifies = () =>
-    verifyRelease({ dir, files: manifest.files, managedSkillsDir: deps.managedSkillsDir })
+  const verifyInput = { dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: deps.managedSkillsDir }
+  const verifies = () => verifyRelease(verifyInput)
+  // What OpenCode is served: the config dir inside the release, or the image
+  // default when the repository has none (as on the working tree).
+  const served = () => releaseConfigDir(dir, manifest.config_dir) ?? cfg.defaultOpencodeConfigDir
 
   // 3. Same release, intact copy: nothing to do. The boot path proves every
   //    release before the box is reportable as ready, so a running release is
   //    never unproven here.
-  if (running.source === 'release' && running.release_id === releaseId && (await servingConfigDir(root)) === dir) {
-    const check = await verifyReleaseDetail({ dir, files: manifest.files, managedSkillsDir: deps.managedSkillsDir })
+  if (running.source === 'release' && running.release_id === releaseId && (await servingConfigDir(root)) === served()) {
+    const check = await verifyReleaseDetail(verifyInput)
     if (check.ok) {
       noteDesiredReleaseMet()
       return respond('unchanged', null)
@@ -615,24 +649,23 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
     await new Promise((resolve) => setTimeout(resolve, injectedDelay))
   }
 
-  // 5–6. Download, extract, verify, prepare, seal, rename. An intact copy
-  //      from an earlier attempt is reused without a download.
+  // 5–6. Obtain, verify, prepare, seal, rename: an intact copy from an earlier
+  //      attempt, the project snapshot, or the archive (obtain.ts).
   try {
-    if (existsSync(dir) && (await verifies())) {
-      await writeReleaseManifest(root, manifest)
-    } else {
-      const archive = await downloadConfigArchive(api, manifest.archive_url, { expectedBytes: manifest.archive_bytes })
-      await materializeRelease({
-        root,
-        manifest,
-        archive,
-        managedSkillsDir: deps.managedSkillsDir,
-        prepare: deps.prepare ?? ((staged) => preparePlatformConfigDir(staged, deps.managedSkillsDir)),
-      })
-    }
+    await obtainRelease({
+      root,
+      manifest,
+      snapshot: descriptor.snapshot,
+      api,
+      git: cfg,
+      managedSkillsDir: deps.managedSkillsDir,
+      prepare: deps.prepare
+        ? (staged) => deps.prepare!(manifest.config_dir ? join(staged, manifest.config_dir) : staged)
+        : (staged) => prepareRelease(staged, manifest.config_dir, deps.managedSkillsDir),
+    })
   } catch (err) {
-    // The archive route gates on the feature flag too, and it can be turned
-    // off between the two calls.
+    // An API from before graduation gates the archive route on the flag too,
+    // and it can be turned off between the two calls.
     if (isFeatureDisabledError(err)) return revertToPreReleaseConfig(deps, root, err.message)
     // Transport, disk or verification failure: nothing is wrong with the
     // release itself, so it is not quarantined. The next trigger retries.
@@ -646,7 +679,8 @@ async function applyDesiredRelease(deps: ConvergeDeps): Promise<ConvergeResponse
   // ~3.3 s candidate boot, so a prompt that landed meanwhile costs nothing.
   const lateTurn = await requireRunning()
   if (lateTurn) return lateTurn
-  const result = await swap(dir, toolNamesFromFiles(manifest.files), pluginFilesFrom(manifest.files))
+  const configFiles = configDirFiles(manifest.files, manifest.config_dir)
+  const result = await swap(served(), toolNamesFromFiles(configFiles), pluginFilesFrom(configFiles), dir)
   if (result.outcome === 'kept-old') {
     // A turn that started while the release was being built is not a release
     // failure: nothing is quarantined and nothing is recorded against it.

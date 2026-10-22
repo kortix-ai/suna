@@ -6,7 +6,7 @@
  * Slack through the connector gateway, and schedules a daily cron trigger.
  *
  * Output shapes follow the parsers the renderers call:
- * - apps/web `lib/utils/kortix-tool-output.ts` (mobile port:
+ * - apps/web `packages/ui/src/internal/lib/utils/kortix-tool-output.ts` (mobile port:
  *   `apps/mobile/lib/session/tools/projects-tool-output.ts`) for
  *   `project_*` and `connector_*`;
  * - apps/web `tool/shared/error-and-connector.tsx#parseConnectorOutput`
@@ -190,7 +190,7 @@ export const CONNECTORS_PROJECTS_TOOL_GROUP: FixtureToolGroup = {
       ].join('\n'),
       error: 'Error: Connector not found: slak',
       durationMs: 260,
-      note: 'PARSER BUG (web `kortix-tool-output.ts` and mobile `projects-tool-output.ts`, identical): the notes regex `/^notes:\\s*\\n([\\s\\S]*?)$/` has no `m` flag, so `^` only matches at the start of the output and `notes` is always undefined for this realistic shape. Name, description, source badge, and env render on both surfaces; the notes block renders on neither. Title is the parsed name; `input.name === data.name`, so the subtitle is the description.',
+      note: 'Notes are the rest of the output after a `notes:` line (`/^notes:\\s*\\n([\\s\\S]*)$/m` in shared `tool-output/projects.ts`, re-exported by mobile, and web `kortix-tool-output.ts`). Name, description, source badge, env, and the notes block render on both surfaces. Title is the parsed name; `input.name === data.name`, so the subtitle is the description.',
     },
 
     // ─── Connector gateway (kortix-connectors_*) ─────────────────────────────

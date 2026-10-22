@@ -74,7 +74,7 @@ mock.module('../projects/lib/git', () => ({
     gitAuthHeaders: {},
   }),
 }));
-mock.module('../projects/index', () => ({
+mock.module('../projects/surface', () => ({
   loadManifestForEdit: async () => {
     const manifest = {
       schemaVersion: 2,

@@ -22,20 +22,22 @@
  * has no YAML dependency and can never disagree with the platform about which
  * monitors exist or what `run` they name.
  *
- * The line/batch bounds below MIRROR apps/api/src/projects/lib/monitor-events.ts.
- * They are duplicated rather than shared because the daemon compiles to a
- * standalone binary with no workspace imports; the server is authoritative and
- * re-applies each one on ingest.
+ * The line/batch bounds and the ingest body come from
+ * `@kortix/api-contract/runtime-relay`, which apps/api reads too; the server is
+ * authoritative and re-applies each bound on ingest.
  */
 
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { spawn, type ChildProcess } from 'node:child_process'
+import {
+  MONITOR_INGEST_MAX_EVENTS,
+  MONITOR_LINE_MAX_BYTES,
+  type MonitorEventKind,
+  type MonitorIngestRelayBody,
+  type MonitorWireEvent,
+} from '@kortix/api-contract/runtime-relay'
 import { logger } from '@/lib/log/logger'
 
-/** Longest serialized line the log stores; longer lines truncate with a marker. */
-export const MONITOR_LINE_MAX_BYTES = 8 * 1024
-/** Longest ingest batch one POST may carry. */
-export const MONITOR_INGEST_MAX_EVENTS = 50
 /** Batch window — how long a line waits for company before it is POSTed. */
 export const MONITOR_BATCH_WINDOW_MS = 200
 /** Queued lines held in memory before the oldest are dropped. */
@@ -51,7 +53,6 @@ export const MONITOR_RESTART_DELAY_MS = 1_000
 export const MONITOR_STDERR_RING = 200
 
 export type MonitorMode = 'poll' | 'stream'
-export type MonitorEventKind = 'event' | 'lifecycle'
 
 /** One enabled monitor, exactly as apps/api resolved it from the manifest. */
 export interface MonitorSpec {
@@ -64,14 +65,6 @@ export interface MonitorSpec {
   expectEventWithinSeconds: number | null
 }
 
-/** The wire shape of one event in an ingest batch. */
-export interface MonitorWireEvent {
-  slug: string
-  seq: number
-  kind: MonitorEventKind
-  line: Record<string, unknown>
-  emitted_at: string
-}
 
 export interface MonitorRunnerOptions {
   /** Kortix API base including `/v1`. */
@@ -592,7 +585,8 @@ export class MonitorRunner {
 
   private async post(events: MonitorWireEvent[]): Promise<boolean> {
     const url = `${this.opts.apiUrl.replace(/\/+$/, '')}/projects/${encodeURIComponent(this.opts.projectId)}/monitors/ingest`
-    const body = JSON.stringify({ box_epoch: this.opts.boxEpoch, events })
+    const payload: MonitorIngestRelayBody = { box_epoch: this.opts.boxEpoch, events }
+    const body = JSON.stringify(payload)
     const attempts = this.opts.postAttempts
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {

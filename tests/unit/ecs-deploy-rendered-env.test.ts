@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fstatSync, mkdtempSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -19,14 +19,14 @@ ARGS="$*"
 case "$ARGS" in
   *"describe-services"*"services[0].status"*) printf 'ACTIVE' ;;
   *"describe-services"*"services[0].taskDefinition"*)
-    printf 'arn:aws:ecs:us-west-2:111:task-definition/kortix-dev:41' ;;
+    printf 'arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2:41' ;;
   *"secretsmanager describe-secret"*)
-    printf 'arn:aws:secretsmanager:us-west-2:111:secret:kortix-dev-env-AbCdEf' ;;
+    printf 'arn:aws:secretsmanager:us-east-2:111:secret:kortix-dev-env-AbCdEf' ;;
   *"secretsmanager get-secret-value"*) printf '{"SECRET_ONLY":"blob-value"}' ;;
   *"describe-task-definition"*)
     cat <<'JSON'
-{"taskDefinitionArn":"arn:aws:ecs:us-west-2:111:task-definition/kortix-dev:41",
-"family":"kortix-dev","revision":41,"status":"ACTIVE","cpu":"1024","memory":"4096",
+{"taskDefinitionArn":"arn:aws:ecs:us-east-2:111:task-definition/kortix-dev-use2:41",
+"family":"kortix-dev-use2","revision":41,"status":"ACTIVE","cpu":"1024","memory":"4096",
 "containerDefinitions":[{"name":"api","image":"kortix/kortix-api:dev-old",
 "environment":[
   {"name":"KEEP","value":"from-the-running-revision"},
@@ -54,7 +54,7 @@ function dryRun(renderedFile: string | null) {
   if (renderedFile) env.ECS_DEPLOY_RENDERED_ENV_FILE = renderedFile;
   const run = spawnSync(
     'bash',
-    [script, 'dev', 'kortix/kortix-api:dev-new', '--version', '0.0.2-dev.new', '--dry-run'],
+    [script, 'dev-use2', 'kortix/kortix-api:dev-new', '--version', '0.0.2-dev.new', '--dry-run'],
     { cwd: root, encoding: 'utf8', env },
   );
   return { ...run, dir };
@@ -73,13 +73,19 @@ describe('ecs-deploy.sh --dry-run rendered environment', () => {
       // Overrides and the gateway target, sorted by name.
       { name: 'ADDED', value: 'by-override' },
       { name: 'KORTIX_PLATINUM_US_REGION', value: 'us-east' },
-      { name: 'LLM_GATEWAY_PROXY_TARGET', value: 'https://gateway-dev-ecs-fargate.kortix.com' },
+      { name: 'LLM_GATEWAY_PROXY_TARGET', value: 'https://gateway-dev-use2.kortix.com' },
       // The version stamp replaces the old one; KORTIX_COMMIT is never carried.
       { name: 'KORTIX_VERSION', value: '0.0.2-dev.new' },
     ]);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
-    // Secret values never reach the rendered environment.
-    expect(readFileSync(file, 'utf8')).not.toContain('blob-value');
+    // One open: stat and read the same handle (CodeQL js/file-system-race).
+    const fd = openSync(file, 'r');
+    try {
+      expect(fstatSync(fd).mode & 0o777).toBe(0o600);
+      // Secret values never reach the rendered environment.
+      expect(readFileSync(fd, 'utf8')).not.toContain('blob-value');
+    } finally {
+      closeSync(fd);
+    }
   });
 
   it('writes nothing when no file is requested', () => {

@@ -1,7 +1,8 @@
 /**
  * The App gate judges an agent-session credential as the AGENT — through `Authorization`,
  * through `X-Kortix-App-Authorization`, and through the connector's signed
- * assertion — and only when the project's `agent_principal` flag is on.
+ * assertion. The `agentPrincipal: false` cases cover the row field the gate
+ * still accepts; production rows always carry `true`.
  *
  * The chain is real: `authorizeAppRequest` → the real
  * `appAccessibleToAgentSession` → `authorize`. Stubbed leaves: token

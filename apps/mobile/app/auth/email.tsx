@@ -11,6 +11,14 @@
  *
  * `?method=sso` (the welcome screen's "Continue with SSO", self-hosted instances):
  * the email alone, then the domain's identity provider in the browser.
+ *
+ * SSO required (KRTX-1716, lib/auth/sso-required): before a password, code,
+ * sign-up or password-reset attempt the screen asks the API whether the
+ * email's domain requires single sign-on. If it does, GoTrue is not called:
+ * the SSO form replaces the form, the email kept, with the reason above it.
+ * `?reason=sso_required&email=` opens the screen that way after the root
+ * layout signs out a session the API refused with 403 `sso_required`. The SSO
+ * form holds for that address only: an edited email gets the form back.
  */
 
 import * as React from 'react';
@@ -22,15 +30,32 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { CaretLeftIcon as ChevronLeft } from '@/lib/icons';
 import * as Haptics from 'expo-haptics';
+import { checkAccessEmail } from '@kortix/sdk';
 
 import { PillInput } from '@/components/kortix/pill-input';
+import { useFieldRefocus } from '@/lib/ui/use-field-refocus';
+import { SettingsGroup } from '@/components/kortix/settings-list';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { API_URL } from '@/api/config';
 import { supabase } from '@/api/supabase';
-import { useAuthContext } from '@/contexts';
+import { useAuthContext, useLanguage } from '@/contexts';
 import { magicLinkEnabled, passwordEnabled, type AuthMethod } from '@/lib/auth/auth-config';
+import { emailRequiresSso } from '@/lib/auth/sso-required';
 import { log } from '@/lib/logger';
+
+/**
+ * Email and password sit in one settings group (Jay, 2026-10-08): each field is
+ * a `SettingsGroup` row tile, so the pill input drops its own fill and radius
+ * and takes a settings row's height (`py-3` around 16px text) and inset.
+ */
+const FIELD_ROW_STYLE = {
+  height: 48,
+  borderRadius: 0,
+  backgroundColor: 'transparent',
+  paddingHorizontal: 16,
+} as const;
 
 /** Supabase email OTP length; the code field submits itself at this length. */
 const OTP_LENGTH = 6;
@@ -59,17 +84,30 @@ const friendlyCodeError = (msg?: string): string => {
   return msg;
 };
 
+/** The web form's pre-check: true when the email's domain requires single sign-on. */
+const requiresSso = (email: string) =>
+  emailRequiresSso(email, (address) => checkAccessEmail(address, { backendUrl: API_URL }));
+
 export default function EmailAuthScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
+  const { t } = useLanguage();
   const { signIn, signUp, signInWithMagicLink, signInWithSSO, resetPassword } = useAuthContext();
-  const ssoOnly = useLocalSearchParams<{ method?: string }>().method === 'sso';
+  const params = useLocalSearchParams<{ method?: string; reason?: string; email?: string }>();
+  // The address the API said must use single sign-on, else null.
+  const [ssoRequiredFor, setSsoRequiredFor] = React.useState<string | null>(
+    params.reason === 'sso_required' ? (params.email ?? '').trim().toLowerCase() : null
+  );
 
   const [mode, setMode] = React.useState<'signin' | 'signup'>('signin');
-  const [method, setMethod] = React.useState<AuthMethod>(magicLinkEnabled ? 'magic' : 'password');
-  const [email, setEmail] = React.useState('');
+  // Password first, like web (#9103): typing a password costs no auth email,
+  // and the email code stays one tap away ("Use email code").
+  const [method, setMethod] = React.useState<AuthMethod>(passwordEnabled ? 'password' : 'magic');
+  const [email, setEmail] = React.useState(params.email ?? '');
   const [password, setPassword] = React.useState('');
+  const ssoRequired = ssoRequiredFor !== null && email.trim().toLowerCase() === ssoRequiredFor;
+  const ssoOnly = params.method === 'sso' || ssoRequired;
   const [loading, setLoading] = React.useState(false);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
   const [info, setInfo] = React.useState<string | null>(null);
@@ -78,6 +116,9 @@ export default function EmailAuthScreen() {
   const [verifying, setVerifying] = React.useState(false);
 
   const passwordRef = React.useRef<TextInput>(null);
+  // Back from Mail with the code: the keyboard comes back on a tap and on return.
+  const codeRef = React.useRef<TextInput>(null);
+  const refocusCode = useFieldRefocus(codeRef, !verifying);
   // Set when the user switches to a password, so the new field takes focus.
   const focusPasswordOnMount = React.useRef(false);
 
@@ -104,6 +145,16 @@ export default function EmailAuthScreen() {
     clearMessages();
   }, [clearMessages]);
 
+  // The domain requires single sign-on: the SSO form replaces this one.
+  const switchToSso = React.useCallback(
+    (address: string) => {
+      setPassword('');
+      resetToForm();
+      setSsoRequiredFor(address);
+    },
+    [resetToForm]
+  );
+
   // ── Sign in: send a code, or check the password ───────────────────────────
   const handleSignIn = React.useCallback(async () => {
     const trimmedEmail = email.trim().toLowerCase();
@@ -115,6 +166,10 @@ export default function EmailAuthScreen() {
     setLoading(true);
     clearMessages();
     try {
+      if (await requiresSso(trimmedEmail)) {
+        switchToSso(trimmedEmail);
+        return;
+      }
       if (method === 'magic') {
         const res = await signInWithMagicLink({ email: trimmedEmail });
         if (!res?.success) {
@@ -138,7 +193,7 @@ export default function EmailAuthScreen() {
     } finally {
       setLoading(false);
     }
-  }, [email, emailValid, sentEmail, method, password, signIn, signInWithMagicLink, clearMessages, router]);
+  }, [email, emailValid, sentEmail, method, password, signIn, signInWithMagicLink, clearMessages, switchToSso, router]);
 
   // ── Create account ────────────────────────────────────────────────────────
   const handleSignUp = React.useCallback(async () => {
@@ -153,7 +208,12 @@ export default function EmailAuthScreen() {
     setLoading(true);
     clearMessages();
     try {
-      const res = await signUp({ email: email.trim().toLowerCase(), password });
+      const trimmedEmail = email.trim().toLowerCase();
+      if (await requiresSso(trimmedEmail)) {
+        switchToSso(trimmedEmail);
+        return;
+      }
+      const res = await signUp({ email: trimmedEmail, password });
       if (!res?.success) {
         setErrorMessage(res?.error?.message || 'Could not create your account.');
         return;
@@ -169,7 +229,7 @@ export default function EmailAuthScreen() {
     } finally {
       setLoading(false);
     }
-  }, [email, emailValid, password, signUp, clearMessages, router]);
+  }, [email, emailValid, password, signUp, clearMessages, switchToSso, router]);
 
   // ── SSO: the email's domain → its identity provider in the browser ───────
   const handleSso = React.useCallback(async () => {
@@ -247,7 +307,13 @@ export default function EmailAuthScreen() {
     setLoading(true);
     clearMessages();
     try {
-      const res = await resetPassword({ email: email.trim().toLowerCase() });
+      const trimmedEmail = email.trim().toLowerCase();
+      // A recovery link would sign in the password identity the org closed.
+      if (await requiresSso(trimmedEmail)) {
+        switchToSso(trimmedEmail);
+        return;
+      }
+      const res = await resetPassword({ email: trimmedEmail });
       if (!res?.success) {
         setErrorMessage(res?.error?.message || 'Could not send the reset email.');
         return;
@@ -256,7 +322,7 @@ export default function EmailAuthScreen() {
     } finally {
       setLoading(false);
     }
-  }, [email, emailValid, resetPassword, clearMessages]);
+  }, [email, emailValid, resetPassword, clearMessages, switchToSso]);
 
   const toggleMode = React.useCallback(() => {
     void Haptics.selectionAsync();
@@ -375,6 +441,8 @@ export default function EmailAuthScreen() {
               </Text>
 
               <PillInput
+                ref={codeRef}
+                onPressIn={refocusCode}
                 value={otpCode}
                 onChangeText={handleCodeChange}
                 placeholder="Code"
@@ -411,8 +479,17 @@ export default function EmailAuthScreen() {
           ) : (
             /* ── Sign in / Create account ── */
             <View>
-              <View className="gap-3">
+              {ssoRequired && (
+                <Text variant="muted" className="mb-5">
+                  {t(
+                    'auth.ssoRequired',
+                    'Your organization requires single sign-on. Continue with SSO instead.'
+                  )}
+                </Text>
+              )}
+              <SettingsGroup>
                 <PillInput
+                  style={FIELD_ROW_STYLE}
                   value={email}
                   onChangeText={(value) => {
                     setEmail(value);
@@ -421,8 +498,11 @@ export default function EmailAuthScreen() {
                   placeholder={ssoOnly ? 'Work email' : 'Email address'}
                   accessibilityLabel="Email address"
                   keyboardType="email-address"
-                  textContentType="emailAddress"
-                  autoComplete="email"
+                  // `username`, not `emailAddress`/`email`: iOS AutoFill and
+                  // Android password managers pair a saved password with the
+                  // field marked as the account name, even when it is an email.
+                  textContentType="username"
+                  autoComplete="username"
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!busy}
@@ -437,6 +517,7 @@ export default function EmailAuthScreen() {
                 {showPasswordField && (
                   <PillInput
                     ref={passwordRef}
+                    style={FIELD_ROW_STYLE}
                     value={password}
                     onChangeText={(value) => {
                       setPassword(value);
@@ -454,7 +535,7 @@ export default function EmailAuthScreen() {
                     onSubmitEditing={() => void submit()}
                   />
                 )}
-              </View>
+              </SettingsGroup>
 
               {messageText}
 
@@ -467,7 +548,7 @@ export default function EmailAuthScreen() {
                 <Text>{primaryLabel}</Text>
               </Button>
 
-              {!isSignup && method === 'password' && (
+              {!ssoOnly && !isSignup && method === 'password' && (
                 <Button
                   variant="ghost"
                   size="sm"

@@ -1,19 +1,28 @@
 # staging-eu-west-2 — staging's API/gateway, colocated with the staging DB
 
-Standing-up-before-tearing-down twin of `../staging`. Same module set, same
-Fargate/Spot sizing, **different region (eu-west-2, matching the staging
-Supabase database's region and matching prod's own topology)**, different
-resource names (`kortix-staging-euw2`). See
-the apply runbook in PR #7844 for rationale, apply
-sequence, and cutover/rollback.
+Staging's API and gateway on ECS Fargate in eu-west-2, the staging Supabase
+database's region and prod's own topology. Resource names use
+`kortix-staging-euw2`. The original apply runbook is in PR #7844.
 
 | Surface | Where it runs | Managed by |
 |---|---|---|
-| `staging-api-euw2-shadow.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (eu-west-2) | **this Terraform** |
-| `gateway-staging-euw2-shadow.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (eu-west-2) | **this Terraform** |
+| `staging-api-euw2.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (eu-west-2) | **this Terraform** |
+| `gateway-staging-euw2.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (eu-west-2) | **this Terraform** |
+| `staging-fe-ecs-euw2.kortix.com` | Cloudflare (proxied) → ALB → ECS Fargate (eu-west-2) | `../staging-web-eu-west-2` |
 
-Shadow verification hostnames only. `staging-api.kortix.com` / the release
-gate keep hitting `../staging` (us-west-2) until the runbook's cutover step.
+These are origin hostnames. `staging-api.kortix.com` is the staging-api Worker,
+which routes to them (`ACTIVE_BACKEND = "eu-west-2"`). Deploy Staging rewrites
+the Worker bindings on every run (`deploy-staging.yml`), so a manual Worker
+change lasts only until the next staging deploy. `staging-fe-ecs.kortix.com` is
+a CNAME that Deploy Staging points at the web ALB. Vercel serves
+`staging.kortix.com`.
+
+Deploy Staging applies this root (`terraform-staging`) and rolls the task
+definitions with `infra/scripts/ecs-deploy.sh staging-euw2`. The env blob is
+`kortix-staging-env` in eu-west-2.
+
+**The staging database allows 120 connections.** One API task holds up to 9.
+Keep `api_task_count` × 9 plus a rolling deploy's extra tasks under that limit.
 
 ## Why this exists
 
@@ -31,26 +40,23 @@ humans.
 Unlike `../dev-us-east-2`, eu-west-2 has **no pre-existing `*.kortix.com`
 wildcard cert** (prod's own `main.tf` notes this), so this root requests two
 dedicated per-domain ACM certs (api + gateway) — same pattern `../prod` uses,
-not the wildcard-reuse shortcut `../dev-us-east-2` gets from the
-`prod-us-east-2-shadow` cert that already exists in us-east-2.
+not the shortcut `../dev-us-east-2` uses (a `*.kortix.com` validation record
+already in the zone).
 
-## Apply
+## The move from us-west-2 (done)
 
-Not yet wired into `deploy-staging.yml` — follow
-the apply runbook in PR #7844.
+Staging ran in us-west-2 (Terraform roots `staging` and `staging-web`, now
+deleted) until the move. It followed the same four phases
+as dev (`../dev-us-east-2/README.md`).
 
-```bash
-cd infra/terraform/environments/staging-eu-west-2
-export AWS_PROFILE=...                          # eu-west-2 creds
-export TF_VAR_cloudflare_api_token=...
-terraform init
-terraform plan
-```
-
-### Secrets
-
-`kortix-staging-env` must be replicated to eu-west-2 first (native Secrets
-Manager cross-region replication). See the runbook.
+- 2026-10-06: the old `kortix-staging`, `kortix-staging-gateway` and
+  `kortix-staging-web` services were scaled to 0.
+- 2026-10-12: the old roots were destroyed (staging 74, staging-web 19
+  resources) and removed from the repository. The old snapshot cache
+  `kortix-staging-project-snapshots` (a cache, last write 2026-10-06) and the
+  empty `kortix-staging-audit-archive` were deleted with the root. The
+  us-west-2 copies of `kortix-staging-env` and `kortix-staging-web-env` were
+  scheduled for deletion (30-day recovery window).
 
 > ⚠️ `terraform apply` here creates real, billable AWS resources (VPC, NAT,
-> ALB × 2, Fargate). It does not touch anything in `../staging`.
+> ALB × 2, Fargate).

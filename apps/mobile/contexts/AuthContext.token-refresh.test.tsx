@@ -20,6 +20,7 @@ const { act, create } = require('react-test-renderer') as {
 type Listener = (event: string, session: unknown) => Promise<void> | void;
 let listener: Listener | null = null;
 let restoredSession: unknown = null;
+let getSessionError: unknown = null;
 
 const noop = () => {};
 const empty = () => ({});
@@ -28,7 +29,10 @@ mock.module('@/api/supabase', () => ({
   SUPABASE_AUTH_STORAGE_KEY: 'sb-test-auth-token',
   supabase: {
     auth: {
-      getSession: async () => ({ data: { session: restoredSession } }),
+      getSession: async () =>
+        getSessionError
+          ? { data: { session: null }, error: getSessionError }
+          : { data: { session: restoredSession } },
       onAuthStateChange: (fn: Listener) => {
         listener = fn;
         return { data: { subscription: { unsubscribe: () => (listener = null) } } };
@@ -48,6 +52,8 @@ mock.module('@/lib/billing/provider', () => ({ shouldUseRevenueCat: () => false 
 mock.module('@/lib/auth/callback-state', () => ({
   consumeAuthCallbackState: async () => true,
   createAuthCallbackRedirect: async () => 'kortix://auth/callback',
+  clearWebRegistrationHandoff: async () => {},
+  grantWebRegistrationHandoff: async () => {},
 }));
 mock.module('@/lib/auth/mobile-admission', () => ({ admitMobileOAuthSession: async () => true }));
 mock.module('@/lib/auth/session-expiry-monitor', () => ({ sessionExpiry: { disarm: noop } }));
@@ -105,6 +111,7 @@ beforeEach(async () => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   seen = [];
   restoredSession = session('t0', user('user-a'));
+  getSessionError = null;
   const client = new QueryClient();
   await act(async () => {
     tree = create(
@@ -157,4 +164,32 @@ test('sign-out reaches every consumer', async () => {
   await emit('SIGNED_OUT', null);
   expect(seen.at(-1)?.user).toBeNull();
   expect(seen.at(-1)?.isAuthenticated).toBe(false);
+});
+
+function token(aal: string) {
+  return `e30.${Buffer.from(JSON.stringify({ sub: 'user-a', aal })).toString('base64url')}.sig`;
+}
+
+test('a TOTP verify releases the code screen for the same user', async () => {
+  const withTotp = { ...user('user-a'), factors: [{ id: 'f1', factor_type: 'totp', status: 'verified' }] };
+  // A first-factor sign-in of a user with a verified TOTP factor owes a code.
+  await emit('SIGNED_IN', session(token('aal1'), withTotp));
+  expect(seen.at(-1)?.mfaRequired).toBe(true);
+  const owing = seen.at(-1);
+  const renders = seen.length;
+  await emit('TOKEN_REFRESHED', session(token('aal1'), { ...withTotp }));
+  expect(seen.length).toBe(renders);
+  expect(seen.at(-1)).toBe(owing!);
+  // Same user, same data: only the token's aal changes.
+  await emit('MFA_CHALLENGE_VERIFIED', session(token('aal2'), { ...withTotp }));
+  expect(seen.at(-1)).not.toBe(owing!);
+  expect(seen.at(-1)?.mfaRequired).toBe(false);
+  expect(seen.at(-1)?.isAuthenticated).toBe(true);
+});
+
+test('a failed token refresh reaches the code screen as that error, not as "no factor"', async () => {
+  // getSession refreshes an expired token; offline it returns no session and the error.
+  getSessionError = { code: 'network_error', message: 'Network request failed' };
+  const result = await seen.at(-1)!.verifyTotp('123456');
+  expect(result).toEqual({ code: 'network_error' });
 });

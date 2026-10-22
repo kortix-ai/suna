@@ -1,4 +1,5 @@
 import { relayOrphanedTurnEndToApi } from './turn-relay'
+import { claimInitialTurn, claimedRuntimeSessionPin, relayRuntimeSession } from '../shared/turn-relay'
 import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { logger } from '@/lib/log/logger'
@@ -9,11 +10,8 @@ import { noteOpencodeStopRequested, type AbortedTurnVerdict } from './instance-g
 import type { OpencodeTurnError } from './events'
 import { isSharedSeedBakedRoot } from './opencode-fork-root'
 import { openCodeSeedBakedPinPath, openCodeSessionPinPath, readOpenCodeSessionPin, writeOpenCodeSeedBakedPin, writeOpenCodeSessionPin } from './runtime-state'
-import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { observeOpencodeDelivery } from './opencode-turn-state'
-import { claimInitialTurnFromApi, createInitialOpenCodeSession, deliverInitialOpenCodePrompt, buildInitialPromptBody } from './initial-prompt'
-
-export { resetClaimedInitialTurnForTests } from './initial-turn-claim'
+import { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, buildInitialPromptBody } from './initial-prompt'
 
 // Reuse the pinned root and deliver the initial prompt only when delivery is unconfirmed.
 /** Retry delay for the initial-session claim: 5s, 10s, …, capped at 30s. */
@@ -89,7 +87,7 @@ export async function maybeCreateInitialOpencodeSession(
   bootMark: (label: string) => void,
   onListening?: () => void,
 ): Promise<void> {
-  const claimedTurn = await claimInitialTurnFromApi()
+  const claimedTurn = await claimInitialTurn()
   if (!bootState.timeline.some((mark) => mark.label === 'initial-turn-claimed')) {
     bootMark('initial-turn-claimed')
   }
@@ -115,7 +113,12 @@ export async function maybeCreateInitialOpencodeSession(
   const resolved = await resolveExistingRoot(
     baseUrl,
     workspace,
-    priorPin,
+    // A box whose home was rebuilt or converged from a legacy runtime has no
+    // local pin file. The control plane's pin then decides: resume it, or defer
+    // while OpenCode is slow, never adopt or create another root that the relay
+    // below writes over the durable pin (prod 2026-09-23, #8322). The local pin
+    // still wins. Delivery bookkeeping keeps using the local pin only.
+    priorPin ?? claimedRuntimeSessionPin(),
     rootListDeadlineMs,
     onListening,
   )
@@ -144,6 +147,8 @@ export async function maybeCreateInitialOpencodeSession(
       sessionId,
       alreadyDelivered,
       priorPin: priorPin !== null,
+      // `file` = this box's pin, `claim` = the control plane's (pin file missing).
+      pinSource: priorPin !== null ? 'file' : claimedRuntimeSessionPin() ? 'claim' : 'none',
       known: existing.known,
       lastTurnIncomplete: existing.lastTurnIncomplete,
       lastTurnHasError: existing.lastTurnHasError,
@@ -181,7 +186,7 @@ export async function maybeCreateInitialOpencodeSession(
   // Set the durable DB pin server-side now — Slack/trigger/cron sessions that no
   // browser ever opens otherwise kept a null pin, which forced a lazy resolution
   // that could land on the wrong root.
-  void relayBootstrapPinToApi(sessionId)
+  void relayRuntimeSession(sessionId)
 
   if (prompt && !alreadyDelivered) {
     await publishInitialOpenCodeSessionAfterPrompt(bootState, sessionId, () =>
@@ -189,7 +194,7 @@ export async function maybeCreateInitialOpencodeSession(
         opencode,
         sessionId,
         workspace,
-        buildInitialPromptBody(prompt, claimedTurn?.messageId),
+        buildInitialPromptBody(prompt, claimedTurn?.messageId, claimedTurn?.context),
       ),
     )
     // F1: written ONLY after delivery actually succeeded (an exception above
@@ -346,7 +351,7 @@ function readSeedBakedSessionId(): string | null {
 
 /** One-shot: a fork has taken its OWN root, so retire the marker — later daemon
  *  restarts then reuse the fork's root via the normal idempotent reuse path. */
-function clearSeedBakedMarker(): void {
+export function clearSeedBakedMarker(): void {
   try {
     const path = openCodeSeedBakedPinPath()
     if (existsSync(path)) unlinkSync(path)
@@ -499,6 +504,13 @@ export async function resolveExistingRoot(
   if (roots.length === 0) return { status: 'create' }
   const pinned = priorPin ? roots.find((r) => r.id === priorPin) : undefined
   const chosen = pinned || pickMostRecentRoot(roots)
+  if (priorPin && !pinned) {
+    // The relay after boot writes `chosen` over the durable pin; say so.
+    logger.warn('[boot] pinned root is not in the OpenCode root list; falling back to the most recent root', {
+      pin: priorPin,
+      chosen: chosen?.id ?? null,
+    })
+  }
   if (!chosen) return { status: 'create' }
   const inspection = await inspectRoot(baseUrl, workspace, chosen.id)
   return {
@@ -730,7 +742,11 @@ export function reusedRootAlreadyDelivered(
  * `time.completed`, and it costs nothing on the path that matters — a genuinely
  * orphaned turn is already broken and two seconds later still is.
  */
-const ORPHAN_SETTLE_MS = 2_000
+let orphanSettleMs = 2_000
+/** Tests shorten the settle window: their fake roots change on a read count, not on time. */
+export function setOrphanSettleMsForTests(ms: number): void {
+  orphanSettleMs = ms
+}
 
 /** Does the root already have messages (prompt delivered), and is its last turn
  *  an assistant message left incomplete by a crash (no completion time)? */
@@ -789,7 +805,7 @@ async function confirmTurnOrphaned(
   sessionId: string,
   first: RootInspection,
 ): Promise<boolean> {
-  await new Promise((r) => setTimeout(r, ORPHAN_SETTLE_MS))
+  await new Promise((r) => setTimeout(r, orphanSettleMs))
   const second = await inspectRoot(baseUrl, workspace, sessionId)
   if (!second.known) {
     // The settle re-check itself could not read the root. Do NOT abort on the
@@ -843,37 +859,5 @@ async function abortOpencodeTurn(baseUrl: string, workspace: string, sessionId: 
     logger.info('[boot] aborted interrupted turn on reused root', { sessionId })
   } catch (err) {
     logger.warn('[boot] failed to abort interrupted turn', { sessionId, err: (err as Error).message })
-  }
-}
-
-/**
- * Report the canonical opencode root to apps/api so it writes the durable DB
- * pin (project_sessions.opencode_session_id) at bootstrap — no browser needed.
- * Best-effort and fire-once: even if it never lands (transient blip), the API
- * still heals the pin on the first /ensure-opencode. Never blocks boot.
- */
-async function relayBootstrapPinToApi(opencodeSessionId: string): Promise<void> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) return
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        session_id: sessionId,
-        kind: 'opencode_session',
-        opencode_session_id: opencodeSessionId,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!res.ok) {
-      logger.warn('[boot] bootstrap pin relay non-ok', { status: res.status })
-      return
-    }
-    logger.info('[boot] bootstrap opencode session pinned via api', { opencodeSessionId })
-  } catch (err) {
-    logger.warn('[boot] bootstrap pin relay failed', { err: (err as Error).message })
   }
 }

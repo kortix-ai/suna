@@ -8,6 +8,7 @@ export function bindAccounts() {
       list: P.listAccountSecretResources,
       create: P.createAccountSecretResource,
       rotate: P.rotateAccountSecretResource,
+      retry: P.retryAccountSecretResource,
       remove: P.deleteAccountSecretResource,
       grant: P.grantAccountSecretResource,
       revoke: P.revokeAccountSecretResourceGrant,
@@ -47,6 +48,8 @@ export function bindAccounts() {
     audit: {
       log: P.listAccountAudit,
       export: P.exportAccountAudit,
+      /** Who was active and how often, per UTC day. */
+      activity: P.getAccountAuditActivity,
       webhooks: {
         list: P.listAccountAuditWebhooks,
         create: P.createAccountAuditWebhook,

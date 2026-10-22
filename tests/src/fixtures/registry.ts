@@ -56,7 +56,7 @@ export class ResourceStack {
         );
         break;
       case "project":
-        await this.admin.del("/v1/projects/:id", { params: { id: r.id }, query: { purge: true } });
+        await this.admin.del("/v1/projects/:id", { params: { id: r.id } });
         break;
       case "database-project":
         if (!this.deleteDatabaseProject) {

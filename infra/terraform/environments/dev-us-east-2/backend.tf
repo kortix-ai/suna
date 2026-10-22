@@ -1,20 +1,14 @@
-# Remote state in the SAME S3 bucket + DynamoDB lock table every other
-# ECS-API root uses (kortix-terraform-state / kortix-terraform-locks, both
-# us-west-2 — the state backend's OWN region is independent of the region the
-# resources inside the state live in; ../prod proves this today: its state
-# lives in this us-west-2 bucket while every resource it describes is in
-# eu-west-2). A distinct KEY is all that is required to give this root its own
-# state; no new bucket/table bootstrap is needed.
-#
-# (../prod-us-east-2-shadow chose a dedicated us-east-2 bucket instead, for
-# production blast-radius isolation. Dev does not carry that requirement, so
-# this root follows the simpler dev/staging/prod precedent instead.)
+# State lives in the bucket of the region this root's resources live in
+# (security-baseline/terraform-state-{region}.tf). S3 native locking
+# (use_lockfile) replaces the DynamoDB lock table; objects are encrypted with
+# the bucket's CMK.
 terraform {
   backend "s3" {
-    bucket         = "kortix-terraform-state"
-    key            = "dev-us-east-2/ecs-api.tfstate"
-    region         = "us-west-2"
-    dynamodb_table = "kortix-terraform-locks"
-    encrypt        = true
+    bucket       = "kortix-terraform-state-us-east-2-935064898258"
+    key          = "dev-us-east-2/ecs-api.tfstate"
+    region       = "us-east-2"
+    encrypt      = true
+    kms_key_id   = "alias/kortix-terraform-state-us-east-2"
+    use_lockfile = true
   }
 }

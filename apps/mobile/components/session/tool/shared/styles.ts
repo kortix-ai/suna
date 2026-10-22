@@ -8,9 +8,6 @@ import { THEME, withAlpha } from '@/lib/utils/theme';
 
 export const monoFont = MONO_FONT_FAMILY;
 
-export function cardBorder(isDark: boolean) {
-  return withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, 0.06);
-}
 export function cardBg(isDark: boolean) {
   // Light branch keeps a near-white card fill (not the transparent
   // light.foreground-alpha shape used elsewhere) — matches the original
@@ -58,7 +55,7 @@ export const TURN_TYPE = {
   /** `text-[10px] font-medium tracking-wider uppercase` — `ToolSection` label (0.05em). */
   label10: { fontSize: 10, lineHeight: 15, letterSpacing: 0.5 },
   /** Activity sheet timeline entry: app body size on the reference's 24pt line pitch. */
-  sheetEntry: { fontSize: 16, lineHeight: 24 },
+  sheetEntry: { fontSize: 15, lineHeight: 24 },
 } as const;
 
 export const FONT_MEDIUM = 'Roobert-Medium';

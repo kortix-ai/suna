@@ -1,4 +1,5 @@
-import { Hono } from 'hono';
+import { Context, Hono } from 'hono';
+import { normalizeForwardedHeader } from '../../lib/request-url';
 import {
   PUBLIC_SHARE_BLOCKED_PORTS,
   PUBLIC_SHARE_VIEW_METHODS,
@@ -80,10 +81,11 @@ function normalizeProxyPath(value: string | undefined): string {
   return value.startsWith('/') ? value : `/${value}`;
 }
 
-function publicOrigin(c: any): string {
+function publicOrigin(c: Context): string {
   const url = new URL(c.req.url);
   const host = c.req.header('host') || url.host;
-  const proto = c.req.header('x-forwarded-proto') || url.protocol.replace(':', '');
+  // First x-forwarded-proto value: a chained proxy appends ("https, http").
+  const proto = normalizeForwardedHeader(c.req.header('x-forwarded-proto')) || url.protocol.replace(':', '');
   return `${proto}://${host}`;
 }
 

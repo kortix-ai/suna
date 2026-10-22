@@ -12,7 +12,7 @@ import {
 } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
-import { type ProviderName, type SandboxStatus, getProvider } from '../../platform/providers';
+import { type SandboxStatus, tryGetProvider } from '../../platform/providers';
 import {
   REAP_BATCH_SIZE,
   REAP_CONCURRENCY,
@@ -67,8 +67,10 @@ function nonSessionRuntimeBillingStatus(status: string | null): string | null {
  * Every compute window belongs to exactly one runtime model. Session windows
  * join through `session_sandboxes`; App windows join through `app_runtime_id`;
  * monitor windows join through `project_monitor_boxes.box_id`, which IS the
- * monitor window's `sandbox_id`. Keeping all three joins in one bounded query
- * preserves oldest-first sweep order.
+ * monitor window's `sandbox_id`. A leftover `backend` window (the retired
+ * `convex` App machine) has no runtime row: it reads as `sandbox-row-missing`
+ * and this sweep closes it. Keeping all three joins in one
+ * bounded query preserves oldest-first sweep order.
  *
  * The monitor join is load-bearing, not defensive: a monitor box has NO
  * `session_sandboxes` row, so without it every open monitor window reads as
@@ -158,7 +160,11 @@ export async function reconcileOrphanComputeSessions(
           ? row.monitorUpdatedAt
           : row.sbUpdatedAt;
       const runtimeMetadata = (
-        isApp ? row.appMetadata : isMonitor ? row.monitorMetadata : row.sbMetadata
+        isApp
+          ? row.appMetadata
+          : isMonitor
+            ? row.monitorMetadata
+            : row.sbMetadata
       ) as Record<string, unknown> | null;
       const provider = isApp
         ? row.appProvider
@@ -206,9 +212,11 @@ export async function reconcileOrphanComputeSessions(
 
       let providerStatus: SandboxStatus | null = null;
       if (!decision.reason && decision.needsProviderStatus) {
-        providerStatus = await getProvider(provider as ProviderName)
-          .getStatus(externalId as string)
-          .catch(() => null);
+        // A legacy `e2b` row has no provider (E2B support is discontinued):
+        // it stays unresolved, so the unresolved rule below closes its window.
+        providerStatus = await (tryGetProvider(provider ?? '')
+          ?.getStatus(externalId as string)
+          .catch(() => null) ?? null);
         // 'unknown' is the STEADY state for a box deleted out from under us
         // (44 of 66 open prod rows answered unknown), so track how long it has
         // been continuously unresolvable rather than treating it as transient.

@@ -366,3 +366,18 @@ describe('showRowModel — SVG never previews in the row', () => {
     expect(showRowModel({ type: 'link', path: '', url: 'https://cdn.test/logo.svg', title: '' }).thumb).toBe('glyph');
   });
 });
+
+describe('Mermaid show items', () => {
+  test.each(['flow.mmd', 'flow.mermaid', 'FLOW.MERMAID'])('%s upgrades textish declarations', (path) => {
+    for (const type of ['file', 'text', 'markdown', 'code']) {
+      expect(resolveShowType(type, path)).toBe('mermaid');
+      expect(showContentBranch({ type, path, url: '', content: 'graph TD\n A --> B' })).toBe('mermaid');
+    }
+    expect(resolveShowType('image', path)).toBe('image');
+  });
+  test('explicit inline diagrams render, path-only diagrams still load from sandbox', () => {
+    expect(showContentBranch({ type: 'mermaid', path: '', url: '', content: 'graph TD\n A --> B' })).toBe('mermaid');
+    expect(showContentBranch({ type: 'file', path: '/workspace/flow.mmd', url: '', content: '' })).toBe('sandbox-file');
+    expect(resolveShowType('file', 'flow.mmd.bak')).toBe('file');
+  });
+});

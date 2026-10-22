@@ -70,51 +70,63 @@ export function useSessionMessages(
 }
 
 function usePacedRows(readableSessionId: string, throttleMs: number): MessageWithParts[] {
-  const read = () =>
-    readableSessionId ? selectSessionRows(useSyncStore.getState(), readableSessionId) : EMPTY_ROWS;
-  const [state, setState] = useState(() => ({ id: readableSessionId, rows: read() }));
+  return usePacedStoreValue(
+    (state) => (readableSessionId ? selectSessionRows(state, readableSessionId) : EMPTY_ROWS),
+    readableSessionId,
+    throttleMs,
+  );
+}
+
+/**
+ * Internal (not in the barrel): `read(state)` delivered at most once per `throttleMs`
+ * (leading and trailing edge, the latest value always lands). `read` must return the same
+ * object for an unchanged value; a new `key` shows its value at once. Unpaced (0) callers
+ * subscribe with `useSyncStore(read)` instead.
+ */
+export function usePacedStoreValue<T>(
+  read: (state: ReturnType<typeof useSyncStore.getState>) => T,
+  key: string,
+  throttleMs: number,
+): T {
+  const current = () => read(useSyncStore.getState());
+  const [state, setState] = useState(() => ({ key, value: current() }));
 
   useEffect(() => {
     if (!throttleMs) return;
     let lastShownAt = -Infinity;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let shown: MessageWithParts[] | null = null;
+    let shown: T;
     const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
     const flush = () => {
       timer = null;
-      const rows = read();
-      if (rows === shown) return;
-      shown = rows;
+      const value = current();
+      if (value === shown) return;
+      shown = value;
       lastShownAt = now();
-      setState({ id: readableSessionId, rows });
+      setState({ key, value });
     };
-    // A new session id (or the switch to paced mode) shows its rows at once,
-    // and does not count as a paced show: the first CHANGE after it is a
-    // leading edge too.
-    const initial = read();
+    // A new key (or the switch to paced mode) shows its value at once, and
+    // does not count as a paced show: the first CHANGE after it is a leading
+    // edge too.
+    const initial = current();
     shown = initial;
-    setState((prev) =>
-      prev.id === readableSessionId && prev.rows === initial
-        ? prev
-        : { id: readableSessionId, rows: initial },
-    );
+    setState((prev) => (prev.key === key && prev.value === initial ? prev : { key, value: initial }));
+    // A store change only arms the window: `read` runs in `flush`, once per window,
+    // never once per event (KRTX-2880: a streaming turn changes the store per delta,
+    // and `read` costs the transcript's length). An unchanged value sets no state.
     const unsubscribe = useSyncStore.subscribe(() => {
-      if (read() === shown) return;
+      if (timer !== null) return;
       const wait = throttleMs - (now() - lastShownAt);
-      if (wait <= 0) {
-        if (timer !== null) clearTimeout(timer);
-        flush();
-      } else if (timer === null) {
-        timer = setTimeout(flush, wait);
-      }
+      if (wait <= 0) flush();
+      else timer = setTimeout(flush, wait);
     });
     return () => {
       unsubscribe();
       if (timer !== null) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readableSessionId, throttleMs]);
+  }, [key, throttleMs]);
 
-  // Never hand back another session's rows while the effect catches up.
-  return state.id === readableSessionId ? state.rows : read();
+  // Never hand back another key's value while the effect catches up.
+  return state.key === key ? state.value : current();
 }

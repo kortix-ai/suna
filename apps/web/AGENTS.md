@@ -1,6 +1,6 @@
 <!-- BEGIN:nextjs-agent-rules -->
 
-# This is NOT the Next.js you know
+## This is NOT the Next.js you know
 
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
 
@@ -34,7 +34,7 @@ Every clickable element shows `cursor: pointer`. Disabled elements keep
 clickable element is a `<button>`, a `<Link>`, or has a `role`. Never put
 `onClick` on a bare `div`. The base rule in `src/app/globals.css` sets the
 pointer; `tests/unit/cursor-affordance.test.ts` fails on a `cursor-default` in
-`src/components/ui` without an inline reason.
+`packages/ui/src/primitives` or `src/components/ui` without an inline reason.
 
 ## Design references
 
@@ -42,5 +42,6 @@ Before changing UI, read `.agents/skills/kortix-brand/SKILL.md` for
 the value allowlist and the voice and `.agents/skills/kortix-design-system/SKILL.md` for the
 component primitives. The canonical table is in the root `AGENTS.md` →
 "Frontend design standard". Implemented sources: `src/app/globals.css` tokens,
-`src/components/ui/`, and the `/design-system` route. The Electron shell
+`packages/ui/src/primitives/` (imported as `@kortix/ui/<name>`; this app keeps no
+re-export shims), and the `/design-system` route. The Electron shell
 renders this app; native window geometry belongs in `apps/desktop-electron/`.

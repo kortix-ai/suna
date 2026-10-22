@@ -12,11 +12,11 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pointBootLink, readBootLinkTarget } from '@/services/config-release/boot-config'
+import { pointBootLink, readBootLinkTarget } from '@/services/config-provider/boot-config'
 import type { Config } from '@/lib/config/config'
 import type { HarnessConfigConvergeResult, HarnessControlOperations } from '@/harness/contract/control'
 import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
 import { MAX_SWAP_DELAY_MS } from '@/harness/contract/control'
 import { createOpenCodeControlService } from '@/harness/open-code/control'
@@ -95,7 +95,7 @@ describe('config routes with a fake control', () => {
     const res = await router.request('/converge', {
       method: 'POST',
       headers: { ...bearer, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ format: 'config-release-v1', release_id: 'e'.repeat(64), archive: { url: 'https://evil' } }),
+      body: JSON.stringify({ format: 'config-release-v2', release_id: 'e'.repeat(64), archive: { url: 'https://evil' } }),
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(converged)
@@ -272,10 +272,11 @@ describe('POST /kortix/config/converge end to end through the OpenCode control s
     expect(body.outcome).toBe('applied')
     expect(body.config.release_id).toBe(release.descriptor.release_id)
     expect(api.descriptorRequests).toHaveLength(1)
+    // Only the API release's own archive is fetched, never the body's.
     expect(api.archiveRequests.map((request) => request.path)).toEqual([release.descriptor.archive!.url])
     const serving = (await readBootLinkTarget(store))!
     expect(readFileSync(join(serving, 'agents/kortix.md'), 'utf8')).toBe('FROM THE API\n')
-    expect(serving).toBe(join(store, release.descriptor.release_id!))
+    expect(serving).toBe(join(store, release.descriptor.release_id!, '.kortix/opencode'))
     expect(git(work, 'status', '--porcelain')).toBe('')
   })
 })

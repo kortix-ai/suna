@@ -12,8 +12,6 @@ import {
   safeSetItem,
   ScopedCache,
 } from './managed-storage';
-// Constructing the SDK session caches registers their families here.
-import { LS_SESSIONS } from '../../react/use-opencode-sessions/shared';
 
 // Each case installs its own `window` and bare storage globals. Put the
 // originals back so no mutation leaks into another case.
@@ -154,33 +152,6 @@ describe('ScopedCache', () => {
     const store = install(1_000_000);
     store.setItem('fam_legacy:x', JSON.stringify([1, 2, 3]));
     expect(new ScopedCache<number[]>('fam_legacy', 4).get('x')).toBeUndefined();
-  });
-});
-
-describe('SDK-registered session caches', () => {
-  test('quota reclaim evicts the kortix_cache_sessions family', () => {
-    const store = install(300);
-    store.setItem(`${LS_SESSIONS}:sbx_a`, JSON.stringify({ v: [], t: 1, pad: 'x'.repeat(150) }));
-
-    expect(safeSetItem('durable-pref', 'p'.repeat(120))).toBe(true);
-    expect(store.keys().some((k) => k.startsWith(`${LS_SESSIONS}:`))).toBe(false);
-  });
-
-  test('pruneAllRegisteredCaches caps the kortix_cache_sessions family', () => {
-    const store = install(1_000_000);
-    // The sessions cache keeps the 4 most recent sandboxes.
-    for (let t = 1; t <= 6; t++) {
-      store.setItem(`${LS_SESSIONS}:sbx_${t}`, JSON.stringify({ v: [], t }));
-    }
-
-    pruneAllRegisteredCaches();
-
-    expect(store.keys().filter((k) => k.startsWith(`${LS_SESSIONS}:`)).sort()).toEqual([
-      `${LS_SESSIONS}:sbx_3`,
-      `${LS_SESSIONS}:sbx_4`,
-      `${LS_SESSIONS}:sbx_5`,
-      `${LS_SESSIONS}:sbx_6`,
-    ]);
   });
 });
 

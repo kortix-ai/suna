@@ -181,9 +181,9 @@ describe('classifyPart — exhaustive part model', () => {
     const output = JSON.stringify({
       query: 'kortix ai',
       success: true,
-      answer: 'Kortix is an open AI command center.',
+      answer: 'Kortix is an open-source AI Operating System.',
       results: [
-        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open AI command center.' },
+        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open-source AI Operating System.' },
       ],
     });
     const part = {
@@ -722,6 +722,27 @@ describe('toToolView — harness-neutral tool fields', () => {
       { path: 'src/a.ts', patch: '--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-a\n+b', additions: 1, deletions: 1 },
     ]);
     expect(view.diff).toBe('--- src/a.ts\n+++ src/a.ts\n@@ -1 +1 @@\n-a\n+b');
+  });
+
+  test('an edit with a snake-case replaced block (old_string/new_string)', () => {
+    const view = toToolView(toolPart('edit', done({ file_path: '/w/a.ts', old_string: 'a', new_string: 'b' })));
+    expect(view.files).toEqual([{ path: '/w/a.ts', before: 'a', after: 'b' }]);
+  });
+
+  test('Claude Code MultiEdit: every replaced block of edits[], in order', () => {
+    const view = toToolView(
+      toolPart('MultiEdit', done({ file_path: '/w/a.ts', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: 'd' }] })),
+    );
+    expect(view.kind).toBe('edit');
+    expect(view.files).toEqual([{ path: '/w/a.ts', before: 'a\nc', after: 'b\nd' }]);
+  });
+
+  test('Claude Code NotebookEdit: the notebook path and the new cell source', () => {
+    const view = toToolView(
+      toolPart('NotebookEdit', done({ notebook_path: '/w/n.ipynb', cell_id: 'c1', new_source: 'print(1)', edit_mode: 'replace' })),
+    );
+    expect(view.kind).toBe('edit');
+    expect(view.files).toEqual([{ path: '/w/n.ipynb', after: 'print(1)' }]);
   });
 
   test('read and write name their file on either harness', () => {

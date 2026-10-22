@@ -8,16 +8,19 @@
 // (the orchestrator) so the original ordering is preserved.
 
 import { z } from '@hono/zod-openapi';
-import { accountGroupMembers, accountInvitations, accountScimUsers } from '@kortix/db';
+import { accountInvitations, accountScimUsers } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { scimAuth } from '../middleware/scim-auth';
 import { makeOpenApiApp } from '../openapi';
 import { recordAuditEvent } from '../shared/audit';
 import { db } from '../shared/db';
+import { userIdByEmailRows } from '../iam/membership-read';
+import { groupMemberUserIds } from '../iam/group-read';
 import { withDirectoryTransaction } from '../iam/directory-transaction';
 import { emailTrustedSql } from '../iam/email-trust';
 import { getSupabase } from '../shared/supabase';
+import { isUuid } from '../shared/validate';
 
 // SCIM payloads are large/dynamic — model permissively.
 export const ScimResource = z.record(z.string(), z.any());
@@ -25,10 +28,23 @@ export const ScimResource = z.record(z.string(), z.any());
 export const scimRouter = makeOpenApiApp<any>();
 
 // Auth middleware in its original position: registered before any routes.
-// app.ts is imported first by every route module, so this `.use(...)` runs
-// before the route-module side-effect registrations regardless of ES module
-// import hoisting in the orchestrator.
+// This module body runs when the first route module imports it, so this
+// `.use(...)` runs before registerScimRoutes() registers any route.
 scimRouter.use('/accounts/:accountId/*', scimAuth);
+
+// A malformed :accountId must never reach a uuid-typed column: Postgres answers
+// 22P02 and the IdP's request dies as an opaque 500 (Better Stack pattern
+// 97669531, KRTX-211). One guard here covers every SCIM route's accountId.
+scimRouter.use('/accounts/:accountId/*', async (c, next) => {
+  const accountId = c.req.param('accountId');
+  if (accountId && !isUuid(accountId)) {
+    return c.json(
+      { error: `"${accountId}" is not a valid account id (an account id is a UUID)` },
+      400,
+    );
+  }
+  await next();
+});
 
 class ScimRollback extends Error {}
 
@@ -128,21 +144,14 @@ export async function emailsByUserId(userIds: string[]): Promise<Map<string, str
 /**
  * The Auth user a directory email names. Only an identity whose email is
  * trusted (iam/email-trust.ts) qualifies: an SSO identity from another
- * account's IdP that did not verify the email's domain is never linked.
+ * account's IdP that did not verify the email's domain is never linked, and
+ * while Auth auto-confirms sign-ups a password identity is linked only when
+ * the account already holds it as a member.
  */
 export async function userIdByEmail(email: string, accountId?: string): Promise<string | null> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
-  const rows = await db.execute(sql`
-    SELECT u.id::text AS id
-    FROM auth.users u
-    LEFT JOIN kortix.account_memberships m
-      ON m.user_id = u.id AND m.account_id = ${accountId ?? null}::uuid
-    WHERE u.email = ${normalized}
-      AND ${emailTrustedSql(sql`u`, accountId)}
-    ORDER BY (m.user_id IS NOT NULL) DESC, u.created_at, u.id
-    LIMIT 1
-  `);
+  const rows = await userIdByEmailRows(normalized, accountId, emailTrustedSql(sql`u`, accountId));
   return (rows[0] as { id: string } | undefined)?.id ?? null;
 }
 
@@ -255,10 +264,7 @@ export async function buildGroup(
     updatedAt: Date;
   },
 ): Promise<GroupShape> {
-  const memberRows = await db
-    .select({ userId: accountGroupMembers.userId })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.groupId, group.groupId));
+  const memberRows = await groupMemberUserIds(group.groupId);
   const directoryUsers = await db.select().from(accountScimUsers)
     .where(eq(accountScimUsers.accountId, accountId));
   const byUserId = new Map(directoryUsers.filter(u => u.userId).map(u => [u.userId, u]));

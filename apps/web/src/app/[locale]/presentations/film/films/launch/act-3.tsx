@@ -1,13 +1,12 @@
 'use client';
 
-import { Badge } from '@/components/ui/badge';
-import { KortixLogo } from '@/components/ui/kortix-logo';
+import { Badge } from '@kortix/ui/badge';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
 import { IconFrame } from '@/components/ui/marketing/icon-frame';
 import { APPS } from '@/features/marketing/how-it-work/step/step-connectors';
-import { Github } from '@/features/icon/icons/github';
-import { Slack } from '@/features/icon/icons/slack';
-import { faviconUrlForHostname } from '@/lib/favicon';
-import { cn } from '@/lib/utils';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { Slack } from '@kortix/ui/internal/icons/slack';
+import { faviconUrlForHostname, cn } from '@kortix/ui';
 import {
   BuildingsIcon,
   CloudIcon,
@@ -347,7 +346,7 @@ export function EndCard() {
         <KortixLogo variant="brandmark" size={64} className="text-foreground" />
       </div>
       <p className="text-muted-foreground text-2xl" style={rise(f, 24)}>
-        The open-source AI Management System
+        The open-source AI Operating System
       </p>
       <p className="text-foreground font-mono text-lg" style={rise(f, 48)}>
         kortix.com

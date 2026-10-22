@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * The security walkthrough.
@@ -28,7 +28,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * corrections that must not be "restored". Read them before editing a line.
  *
  * ── FOUR CORRECTIONS TO THE SPOKEN DRAFT ─────────────────────────────────
- *  1. "a disposable microVM" — not true of the default provider. microVM is
+ *  1. "a disposable microVM" — not true of legacy Daytona. microVM is
  *     accurate for Platinum (Cloud Hypervisor) only.
  *  2. "scoped to a person or a group" — that model was retired
  *     (20260706_secrets_v2_identifier_model.sql). Scoping is per project, per
@@ -39,7 +39,7 @@ import { useTranslations } from '@/i18n/use-translations';
  *     agents, not human-only.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { getLocalizedConnectorsContent } from '@/features/marketing/connectors/content';
 import { getLocalizedSecurityContent } from '@/features/marketing/security-page/content';
 import type { ReactNode } from 'react';
@@ -52,6 +52,7 @@ import {
   PrincipalDiagram,
 } from '../engine/diagram';
 import { Dim, Panel, Rise, Shot, Slide, Spine } from '../engine/parts';
+import { useSecurityDiagramContent } from './security-diagram-content';
 
 /** The whole deck, in four words. Nothing here is decoration — see the header. */
 const CHAPTERS = ['Isolation', 'Credentials', 'The gate', 'The record'] as const;
@@ -97,6 +98,7 @@ function Chapter({ n, title, children }: { n: number; title: ReactNode; children
 }
 
 export function useSlides(): SlideDef[] {
+  const diagramContent = useSecurityDiagramContent();
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const answers = useLocalizedUiCatalog(ANSWERS);
   const { broker } = getLocalizedConnectorsContent(tI18nComplete);
@@ -180,7 +182,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={0} title={tI18nComplete.raw('text9045e34e96f2')}>
-          <IsolationDiagram step={step} />
+          <IsolationDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -199,7 +201,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={1} title={broker.title}>
-          <BrokerDiagram step={step} />
+          <BrokerDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -239,7 +241,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={2} title={tI18nComplete.raw('text74d1f5c328ca')}>
-          <ChangeRequestDiagram step={step} />
+          <ChangeRequestDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -283,7 +285,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={3} title={tI18nComplete.raw('textbc346bfb5269')}>
-          <PrincipalDiagram step={step} />
+          <PrincipalDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -301,7 +303,7 @@ export function useSlides(): SlideDef[] {
       ],
       node: (step) => (
         <Chapter n={3} title={tI18nComplete.raw('text7387eb9a3a98')}>
-          <LedgerDiagram step={step} />
+          <LedgerDiagram step={step} content={diagramContent} />
         </Chapter>
       ),
     },
@@ -311,7 +313,7 @@ export function useSlides(): SlideDef[] {
       id: 'close',
       label: tI18nComplete.raw('textf049d5d66ce7'),
       notes:
-        'That is the whole model. Isolation, so a mistake cannot spread. Credentials the agent never holds. A human gate before anything ships. A full trail of everything.\n\nIt is built to survive a security review, not slip past one. On-prem, in your VPC, or fully isolated if that is what you need.\n\nAnd because it is open source, you do not have to take my word for any of it. Read the code.\n\nKortix. Your AGI management system.',
+        'That is the whole model. Isolation, so a mistake cannot spread. Credentials the agent never holds. A human gate before anything ships. A full trail of everything.\n\nIt is built to survive a security review, not slip past one. On-prem, in your VPC, or fully isolated if that is what you need.\n\nAnd because it is open source, you do not have to take my word for any of it. Read the code.\n\nKortix. Your AI Operating System.',
       node: (
         <Slide>
           <Rise i={0}>

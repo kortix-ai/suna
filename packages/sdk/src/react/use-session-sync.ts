@@ -2,7 +2,7 @@
 
 import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import type { SessionStatus, Todo } from '../core/runtime/runtime-types';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   claimSessionCacheOwnership,
   getSessionCacheOwnership,
@@ -11,6 +11,7 @@ import {
 } from '../browser/session-sync/session-cache-ownership';
 import {
   getSessionSyncController,
+  loadSessionExportMessages,
   loadSessionRuntimeStatus,
   loadSessionTranscriptMessages,
   resetSessionSyncControllersForSession,
@@ -26,16 +27,17 @@ import {
   shouldHydrateFromMirror,
 } from '../browser/session-sync/server-transcript-mirror';
 import { currentSavedCopyStore } from '../core/session-sync/saved-copy-store';
+import { loadSessionLogPage, readFirstSessionLogAnswer } from '../core/session-log/source';
 import { chooseOlderSource, mirrorCursorAfter } from '../browser/session-sync/mirror-paging';
 import { transcriptIsFragment } from '../core/session-sync/fragment';
 import { onTabVisible } from '../browser/session-sync/visibility';
 import { useSandboxConnectionStore } from '../browser/stores/sandbox-connection-store';
-import { hasOnlyCacheSourcedMessages, useSyncStore } from '../browser/stores/sync-store';
+import { hasOnlyCacheSourcedMessages, hasRuntimeConfirmedMessage, useSyncStore } from '../browser/stores/sync-store';
 import { useCurrentRuntime } from './use-current-runtime';
 import { selectSessionRows } from './session-transcript-subscription';
 import { canQueryRuntimeSession } from './use-opencode-sessions';
 
-export { loadSessionRuntimeStatus, loadSessionTranscriptMessages };
+export { loadSessionExportMessages, loadSessionRuntimeStatus, loadSessionTranscriptMessages };
 
 /** The two store slices the fragment check reads. Local so this file does not
  *  depend on the store's full published shape. */
@@ -59,6 +61,23 @@ const IDLE_STATUS = { type: 'idle' } as SessionStatus;
  * Network synchronization lives in the framework-free SessionSyncController.
  */
 interface UseSessionSyncOptions {
+  /**
+   * The session stream is connected (R5.3): no liveness or verify reads.
+   * Omit it when this hook does not watch the stream; another hook on the same
+   * session then decides.
+   */
+  streamConnected?: boolean;
+  /**
+   * The saved copy the host already read: `useSession` passes its one
+   * saved-history read's answer, `null` while that read runs or when it found
+   * none. This hook then reads no transcript itself. Omit it and the hook
+   * reads the session log first (`GET …/log`): a page goes in the session
+   * store, and the session reads its log from then on. A 404 coded
+   * `session_log_missing` (a new session) reads nothing more. Only a 404 without
+   * that code or an invalid page reads the v1 copy (deprecated) once: the session-open snapshot's
+   * window, else `GET …/transcript?shape=sync&history=true`; a `savedChild`
+   * reads its own window.
+   */
   mirror?: SessionTranscriptSyncEnvelope | null;
   /**
    * Stable Kortix `(projectId, sessionId)` scope for disk transcript ownership.
@@ -114,6 +133,14 @@ interface UseSessionSyncOptions {
    * scope holds the conversation's copy.
    */
   savedChild?: boolean;
+  /**
+   * The session log (v2) owns this session's history: no saved copy is read (`mirror` is
+   * ignored, no `GET …/transcript`, no device v1 copy), none is refreshed after a turn, and the
+   * saved copy is not paged. The runtime tail and the live rows still fill the store; older
+   * history is the session log's. It is also on, whatever this says, while the session store
+   * holds the log of `kortixSessionScope`'s session (`useSession` read it).
+   */
+  sessionLog?: boolean;
 }
 
 /**
@@ -161,9 +188,6 @@ export function livenessBusy(input: {
   return sessionSyncBusy(input) || input.serverHoldsTurn === true;
 }
 
-// `useLayoutEffect` warns during a server render, where it cannot run anyway.
-const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffect : useEffect;
-
 export function useSessionSync(sessionId: string, options: UseSessionSyncOptions = {}) {
   const {
     kortixSessionScope,
@@ -174,6 +198,9 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     subscribeMessages = true,
     savedChild = false,
   } = options;
+  const scopeSessionId = parseKortixSessionScope(kortixSessionScope)?.sessionId;
+  const logHeld = useSyncStore((state) => !!scopeSessionId && state.sessionLogs[scopeSessionId] !== undefined);
+  const sessionLog = options.sessionLog === true || logHeld;
   const runtimeHealthy = useSandboxConnectionStore((state) => state.healthy === true);
   const runtimeScope = useCurrentRuntime((state) => state.sandboxId) ?? 'none';
   const cacheOwnerScope = resolveSessionCacheOwnerScope(runtimeScope, kortixSessionScope);
@@ -245,18 +272,22 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     mirror === undefined ? 'read' : mirror === null ? 'null' : 'envelope'
   }${savedChild ? '|child' : ''}`;
   const [mirrorAbsentFor, setMirrorAbsentFor] = useState<string | null>(null);
-  // A LAYOUT effect, so the copy kept on this device paints before the browser
-  // does: the first frame of an open shows the transcript, not placeholder rows.
-  useIsomorphicLayoutEffect(() => {
-    if (!canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
+  // A passive effect: the device's copy is read asynchronously (IndexedDB on
+  // web, AsyncStorage on mobile) and paints one task after the first frame.
+  // A layout effect over a synchronous localStorage read parsed up to 300 KB
+  // before the browser painted anything.
+  useEffect(() => {
+    if (sessionLog || !canQueryRuntimeSession(sessionId) || !kortixSessionScope) return;
     // Already have the thread (a warm remount, or the runtime beat us): the
     // live read outranks a snapshot and must never be overwritten by one.
+    // An EMPTY runtime read is not the thread: it is lost box state, so the
+    // saved copy still paints over it.
     // An earlier SAVED copy is not a live read. The host's copy arrives in a
     // later run (`mirror` goes from null to the envelope) and reconciles
     // into it; returning here kept a reload on the device's older copy until
     // the computer woke.
     const overSavedCopy = hasOnlyCacheSourcedMessages(sessionId);
-    if (sessionId in useSyncStore.getState().messages && !overSavedCopy) return;
+    if ((useSyncStore.getState().messages[sessionId]?.length ?? 0) > 0 && !overSavedCopy) return;
     const abort = new AbortController();
     const scope = parseKortixSessionScope(kortixSessionScope);
     // A sub-agent keeps nothing on the device: the scope's slot is the
@@ -273,7 +304,6 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
           envelope,
           runtimeSessionId: sessionId,
           hasMessages: replaceable ? false : (state.messages[sessionId]?.length ?? 0) > 0,
-          hasLoadedTranscript: replaceable ? false : sessionId in state.messages,
         })
       ) {
         return false;
@@ -285,9 +315,8 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       return true;
     };
 
-    // 1. The saved copy this device kept from the last open. Synchronous on
-    //    web, so it paints in this very commit. Not read again over a saved
-    //    copy already on screen: that one is this copy or newer.
+    // 1. The saved copy this device kept from the last open. Not read again
+    //    over a saved copy already on screen: that one is this copy or newer.
     let local: SessionTranscriptSyncEnvelope | null = null;
     const applyLocal = (envelope: SessionTranscriptSyncEnvelope | null) => {
       if (abort.signal.aborted || !envelope) return;
@@ -302,16 +331,29 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
 
     // 2. The server's copy, which is at least as new. It reconciles into the
     //    local paint by message id while no runtime read has landed, and it
-    //    replaces the kept copy for the next open.
-    const read = mirror !== undefined
+    //    replaces the kept copy for the next open. Without the host's copy the
+    //    session log is read first: a page goes in the store (`logHeld` turns
+    //    this effect off), and only a 404 or an invalid page reads the v1 copy.
+    const read: Promise<SessionTranscriptSyncEnvelope | null | 'log'> = mirror !== undefined
       ? Promise.resolve(mirror)
-      : loadSessionTranscriptMirror({
-          kortixSessionScope,
-          signal: abort.signal,
-          child: savedChild ? sessionId : undefined,
-        });
+      : (async () => {
+          const page = scope && loadSessionLogPage
+            ? await readFirstSessionLogAnswer(loadSessionLogPage, scope.projectId, scope.sessionId, abort.signal)
+            : null;
+          // The API serves the log and the session has none yet: nothing is saved, v1 included.
+          if (page === 'missing') return null;
+          if (page) {
+            if (!abort.signal.aborted) useSyncStore.getState().applySessionLogPage(scope!.sessionId, page);
+            return 'log' as const;
+          }
+          return loadSessionTranscriptMirror({
+            kortixSessionScope,
+            signal: abort.signal,
+            child: savedChild ? sessionId : undefined,
+          });
+        })();
     void Promise.all([read, localRead]).then(([envelope]) => {
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted || envelope === 'log') return;
       if (!envelope) {
         // No answer (a failed read, or no copy yet): whatever the device kept
         // stays painted and stays kept.
@@ -329,7 +371,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       }
     });
     return () => abort.abort();
-  }, [kortixSessionScope, sessionId, mirror, mirrorKey, savedChild]);
+  }, [kortixSessionScope, sessionId, mirror, mirrorKey, savedChild, sessionLog]);
 
   // Keep the device's copy current: the server writes a new saved copy when a
   // turn ends, so re-read it shortly after this session goes idle. Without
@@ -339,7 +381,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   useEffect(() => {
     const endedTurn = wasWorking.current && !working;
     wasWorking.current = working === true;
-    if (!endedTurn || savedChild) return;
+    if (!endedTurn || savedChild || sessionLog) return;
     const scope = parseKortixSessionScope(kortixSessionScope);
     const saved = currentSavedCopyStore();
     if (!scope || !saved) return;
@@ -347,7 +389,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       void refreshSavedCopy(saved, scope.projectId, scope.sessionId);
     }, SAVED_COPY_REFRESH_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [working, kortixSessionScope, savedChild]);
+  }, [working, kortixSessionScope, savedChild, sessionLog]);
 
   // NO DISK PAINT. The transcript renders from the runtime and from this tab's
   // own optimistic writes — nothing else.
@@ -472,16 +514,27 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
   // poll's switch are the same rule instead of two.
   const isBusy = sessionSyncBusy({ working, streamBusy });
   const isLoading = !useSyncStore((state) => readableSessionId in state.messages);
-  // What the saved-copy paint came to. `painted` and "a read already landed"
-  // are read off the store; only a refused or empty answer needs its own slot.
+  // What the saved-copy paint came to. `painted` is read off the store; only
+  // a refused or empty answer needs its own slot. A landed runtime read with
+  // no messages is NOT an answer: it is lost box state, and the saved copy may
+  // still paint over it (the paint effect's gate), so it stays `loading`.
   const mirrorState: 'idle' | 'loading' | 'painted' | 'absent' =
     !canQueryRuntimeSession(sessionId) || !kortixSessionScope
       ? 'idle'
       : messages.length > 0
         ? 'painted'
-        : !isLoading || mirrorAbsentFor === mirrorKey
+        : mirrorAbsentFor === mirrorKey
           ? 'absent'
           : 'loading';
+
+  // The controller is shared by every hook on this session. Only a hook that
+  // passes `streamConnected` speaks for the stream; one that omits it (an
+  // export dialog) must not switch the verification poll back on.
+  useEffect(() => {
+    if (options.streamConnected === undefined) return;
+    controller.setStreamReliable(options.streamConnected);
+    return () => controller.setStreamReliable(false);
+  }, [controller, options.streamConnected]);
 
   useEffect(() => {
     // No runtime session to read (`''` under `useSession({ chatEngine: false })`):
@@ -524,13 +577,22 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     mirrorPageInFlight.current = null;
   }, [kortixSessionScope, sessionId]);
 
+  // The saved window's cursor names its oldest message. Once the runtime holds that message
+  // and has no older page of its own, the runtime holds every older saved message too: the
+  // saved copy has nothing older to offer. A box that lost its state never confirms the
+  // cursor, so its saved history still pages.
+  const savedCursorCovered = useSyncStore(
+    () => !!mirrorCursor && !sync.hasOlder && hasRuntimeConfirmedMessage(sessionId, mirrorCursor),
+  );
+  const savedCursor = savedCursorCovered || sessionLog ? null : mirrorCursor;
+
   const loadOlder = useCallback((): Promise<void> => {
     const source = chooseOlderSource({
       runtimeHasOlder: sync.hasOlder,
-      mirrorCursor,
+      mirrorCursor: savedCursor,
     });
     if (source === 'runtime') return controller.loadOlder();
-    if (source !== 'mirror' || !mirrorCursor) return Promise.resolve();
+    if (source !== 'mirror' || !savedCursor) return Promise.resolve();
     // One request per cursor. The scroll sentinel and the print drain can both
     // ask at once, and a second request for the same cursor would hydrate the
     // same window twice and then advance the cursor past a page nobody read.
@@ -538,7 +600,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
     setIsLoadingOlderMirror(true);
     const pending = loadOlderSessionTranscriptMirror({
       kortixSessionScope,
-      before: mirrorCursor,
+      before: savedCursor,
       child: savedChild ? sessionId : undefined,
     })
       .then((envelope) => {
@@ -561,7 +623,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
       });
     mirrorPageInFlight.current = pending;
     return pending;
-  }, [controller, kortixSessionScope, mirrorCursor, savedChild, sessionId, sync.hasOlder]);
+  }, [controller, kortixSessionScope, savedCursor, savedChild, sessionId, sync.hasOlder]);
 
   // Re-read the tail on demand. The transcript body renders this behind its
   // "couldn't load" state so `freshness === 'error'` is recoverable without a
@@ -586,7 +648,7 @@ export function useSessionSync(sessionId: string, options: UseSessionSyncOptions
      * `savedTranscript`.
      */
     mirrorState,
-    hasOlder: sync.hasOlder || Boolean(mirrorCursor),
+    hasOlder: sync.hasOlder || Boolean(savedCursor),
     isLoadingOlder: sync.isLoadingOlder || isLoadingOlderMirror,
     loadOlder,
     diffs: diffs ?? EMPTY_DIFFS,

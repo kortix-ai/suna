@@ -1,3 +1,4 @@
+import { isRecord } from '@kortix/shared/guards';
 /**
  * The box's ACTUAL runtime document — parsed from the daemon's health
  * `runtime_truth` block. Spec: the runtime-convergence contract (PR #7785), Rule 1.
@@ -41,10 +42,6 @@ export const UNREPORTED_ACTUAL_RUNTIME: ActualRuntimeDocument = {
   managed_skills_hash: null,
   components: {},
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
 
 function str(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;

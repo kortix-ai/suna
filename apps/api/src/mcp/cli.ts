@@ -35,14 +35,25 @@ export const DENY_COMMANDS: Record<string, Denial> = {
   connect: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
   attach: { reason: 'it attaches an interactive terminal to a session', use: 'start_session and send_message' },
   token: { reason: 'it prints the raw access token', use: '`whoami --json` names the user' },
+  capture: {
+    reason: 'Kortix Capture is not on the hosted MCP server; its data is its own API',
+    use: 'the Capture API with a Kortix API key: GET /v1/accounts/<account_id>/capture/… (timeline, timeline/items, search, frames, media)',
+  },
+  tools: { reason: "it reads and edits a local kortix.yaml, and this server has no project checkout", use: 'run_command in a session sandbox, where the project lives: `kortix tools ls` there' },
+  migrate: { reason: 'it rewrites a local kortix.yaml, and this server has no project checkout', use: 'run_command in a session sandbox, where the project lives: `kortix migrate` there' },
+  goals: { reason: 'it reads and writes the goal folders of a session sandbox, and this server has none', use: 'run_command in the session sandbox that coordinates the goal: `kortix goals` there' },
 };
 
 /** [command, subcommand] → refusal. */
 export const DENY_SUBCOMMANDS: { path: [string, string]; denial: Denial }[] = [
   { path: ['env', 'pull'], denial: { reason: 'it writes a local file', use: '`secrets ls` and `secrets set`' } },
   { path: ['env', 'push'], denial: { reason: 'it reads a local file', use: '`secrets set KEY=value`' } },
+  { path: ['rooms', 'watch'], denial: { reason: 'it streams a room until interrupted', use: '`rooms read <room>`, or `rooms next <room> --timeout <s>`' } },
+  { path: ['rooms', 'chat'], denial: { reason: 'it is an interactive terminal chat', use: '`rooms send <room> "<text>"` and `rooms read <room>`' } },
+  { path: ['drive', 'put'], denial: { reason: 'it uploads a local file, and this server has none', use: 'run_command in a session sandbox, where the file lives: `kortix drive put <file> <path>` there' } },
   { path: ['apps', 'deploy'], denial: { reason: 'it deploys a local directory, and this server has none', use: 'run_command in a session sandbox, where the source lives: `kortix apps deploy <path>` there' } },
-  { path: ['connectors', 'mcp'], denial: { reason: 'it starts a stdio MCP server', use: 'list_connectors, search_connector_actions, call_connector' } },
+  { path: ['apps', 'token'], denial: { reason: 'it prints a sign-in token for an App into this conversation', use: 'run_command in a session sandbox: `kortix apps token <app>` there' } },
+  { path: ['apps', 'exec'], denial: { reason: 'it prints a machine\'s output, which can hold its secrets (an admin key), into this conversation', use: 'run_command in a session sandbox: `kortix apps exec <app> -- <command>` there' } },
   ...['connect', 'attach', 'shell', 'terminal', 'ssh', 'forward', 'ports'].flatMap((sub) =>
     ['sessions', 'session'].map((cmd) => ({ path: [cmd, sub] as [string, string], denial: { reason: 'it needs an interactive terminal or a long-lived connection', use: 'start_session, send_message, read_session, run_command' } })),
   ),
@@ -53,7 +64,7 @@ export const CLI_ALLOWED = [
   'whoami', 'doctor', 'validate', 'schema', 'accounts', 'members', 'groups', 'tokens', 'billing', 'projects',
   'sessions', 'session', 'chat', 'files', 'cr', 'review', 'triggers', 'reminders', 'remind', 'connectors',
   'secrets', 'providers', 'env', 'gateway', 'apps', 'channels', 'sandboxes', 'marketplace', 'system-skills',
-  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'audit', 'grants', 'help', 'version',
+  'skills', 'registry', 'agents', 'models', 'access', 'roles', 'permissions', 'perms', 'audit', 'grants', 'feedback', 'drive', 'rooms', 'peers', 'help', 'version',
 ];
 
 export function denial(args: string[]): Denial | null {
@@ -230,7 +241,7 @@ export const KORTIX_TOOL = {
   name: 'kortix',
   title: 'Run the kortix CLI',
   description:
-    'Run the real `kortix` CLI as you: everything the CLI does (secrets, triggers, cr, review, reminders, agents, models, gateway, providers, channels, sandboxes, apps, marketplace, files, access, roles, permissions, audit, grants, members, groups, tokens, billing, projects, sessions, system-skills, …). `args` is the argv after `kortix`, e.g. ["secrets","ls","--json"]. Discover with ["--help"] and ["<group>","--help"]; prefer `--json` for output you parse. `project_id` sets the project the command runs in; `session_id` sets the session where a command takes one. Returns {exit_code, stdout (or json: the parsed value when the output is JSON, e.g. with --json), stderr}; a non-zero exit code is `isError`. First-class tools exist for sessions, sandbox files and connectors: prefer start_session, run_command, read_file and call_connector to this one. Refused before it runs: `--host`, hosts, login, logout, init, ship, update, uninstall, self-host, tui, connect, chat without --prompt, token, env pull|push, apps deploy (a local directory: use run_command in a session sandbox), connectors mcp. Commands time out after about 45 seconds.',
+    'Run the real `kortix` CLI as you: everything the CLI does (secrets, triggers, cr, review, reminders, agents, models, gateway, providers, channels, sandboxes, apps, marketplace, files, access, roles, permissions, audit, grants, members, groups, tokens, billing, projects, sessions, system-skills, …). `args` is the argv after `kortix`, e.g. ["secrets","ls","--json"]. Discover with ["--help"] and ["<group>","--help"]; prefer `--json` for output you parse. `project_id` sets the project the command runs in; `session_id` sets the session where a command takes one. Returns {exit_code, stdout (or json: the parsed value when the output is JSON, e.g. with --json), stderr}; a non-zero exit code is `isError`. First-class tools exist for sessions, sandbox files and connectors: prefer start_session, run_command, read_file and call_connector to this one. Refused before it runs: `--host`, hosts, login, logout, init, ship, update, uninstall, self-host, tui, connect, chat without --prompt, token, env pull|push, apps deploy (a local directory: use run_command in a session sandbox), apps token, apps exec. Commands time out after about 45 seconds.',
   inputSchema: {
     type: 'object',
     properties: {

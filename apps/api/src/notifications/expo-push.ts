@@ -9,6 +9,7 @@ import type { PushDeviceTokenStore } from './device-tokens';
 export const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 export const EXPO_PUSH_BATCH_SIZE = 100;
 const DEFAULT_RETRY_DELAY_MS = 1_000;
+const POST_TIMEOUT_MS = 10_000;
 
 export interface ExpoPushMessage {
   to: string;
@@ -36,6 +37,10 @@ export interface ExpoPushOptions {
   endpoint?: string;
   /** Receives failure warnings. Defaults to `console`. */
   logger?: Pick<Console, 'warn'>;
+  /** False: send nothing and warn once per process (`EXPO_PUSH_ENABLED`, KRTX-2938). */
+  enabled?: boolean;
+  /** This API's public origin, set as `data.origin`. The app ignores a tap from another backend. */
+  origin?: string;
 }
 
 export interface ExpoPushResult {
@@ -65,9 +70,20 @@ async function postBatch(
   if (opts.accessToken) headers.authorization = `Bearer ${opts.accessToken}`;
   let res: Response;
   try {
-    res = await doFetch(opts.endpoint, { method: 'POST', headers, body: JSON.stringify(batch) });
+    res = await doFetch(opts.endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(batch),
+      signal: AbortSignal.timeout(POST_TIMEOUT_MS),
+    });
   } catch (err) {
-    return { kind: 'retryable', reason: err instanceof Error ? err.message : String(err) };
+    const reason = err instanceof Error ? err.message : String(err);
+    // A timeout is ambiguous: Expo may have accepted the batch. A second send
+    // would push every device twice, so a timeout is a failure, not a retry.
+    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      return { kind: 'failed', reason: `timed out: ${reason}` };
+    }
+    return { kind: 'retryable', reason };
   }
   const text = await res.text().catch(() => '');
   if (res.status >= 500) return { kind: 'retryable', reason: `HTTP ${res.status}` };
@@ -83,6 +99,8 @@ async function postBatch(
   return { kind: 'ok', tickets: data as ExpoPushTicket[] };
 }
 
+let skipWarned = false;
+
 /** Send `messages` to Expo. Never throws. */
 export async function sendExpoPushMessages(
   messages: readonly ExpoPushMessage[],
@@ -93,6 +111,15 @@ export async function sendExpoPushMessages(
   const logger = options.logger ?? console;
   const result: ExpoPushResult = { tickets: [], removedTokens: [], failedMessages: 0 };
   const unregistered: string[] = [];
+  if (options.enabled === false) {
+    if (!skipWarned) logger.warn('[push] expo sends are off (EXPO_PUSH_ENABLED); set it to true to send from this stack');
+    skipWarned = true;
+    return result;
+  }
+  if (options.origin) {
+    const origin = options.origin;
+    messages = messages.map((m) => ({ ...m, data: { ...m.data, origin } }));
+  }
 
   for (let start = 0; start < messages.length; start += EXPO_PUSH_BATCH_SIZE) {
     const batch = messages.slice(start, start + EXPO_PUSH_BATCH_SIZE);

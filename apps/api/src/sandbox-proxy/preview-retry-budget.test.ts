@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { DAEMON_FILE_IMPORT_TIMEOUT_MS } from '@kortix/api-contract/runtime-relay';
 
 import {
   PROXY_ATTEMPT_TIMEOUT_MS,
@@ -10,17 +10,11 @@ import {
 } from './preview-retry-budget';
 
 // The daemon answers `POST /file/import` only after download, fsync and rename,
-// bounded by its own IMPORT_TIMEOUT_MS. A shorter proxy attempt aborts a healthy
+// bounded by its own DAEMON_FILE_IMPORT_TIMEOUT_MS. A shorter proxy attempt aborts a healthy
 // import. That the import is never replayed is proven on the forward path
 // (routes/forward.test.ts).
 describe('/file/import', () => {
-  const daemonFiles = readFileSync(
-    new URL('../../../kortix-sandbox-agent-server/src/routes/workspace/files.ts', import.meta.url),
-    'utf8',
-  );
-  const daemonImportTimeoutMs = Number(
-    /const IMPORT_TIMEOUT_MS = ([\d_]+)/.exec(daemonFiles)?.[1]?.replaceAll('_', ''),
-  );
+  const daemonImportTimeoutMs = DAEMON_FILE_IMPORT_TIMEOUT_MS;
 
   test('a daemon /file/import attempt outlasts the daemon\'s own import timeout', () => {
     expect(daemonImportTimeoutMs).toBeGreaterThan(PROXY_ATTEMPT_TIMEOUT_MS);

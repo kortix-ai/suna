@@ -19,6 +19,9 @@ export function bindProjectAccessResources(projectId: string) {
         agents: (appId: string) => P.listAppAgents(projectId, appId),
       },
       remove: (appId: string) => P.deleteApp(projectId, appId),
+      /** Capability `member_tokens`: a 15-minute sign-in token for the App, naming the caller. */
+      token: (appId: string) => P.createAppToken(projectId, appId),
+      authEnv: (appId: string) => P.getAppAuthEnv(projectId, appId),
       artifacts: {
         register: (input: Parameters<typeof P.registerAppArtifact>[1]) =>
           P.registerAppArtifact(projectId, input),
@@ -43,8 +46,30 @@ export function bindProjectAccessResources(projectId: string) {
       stop: (appId: string) => P.stopApp(projectId, appId),
       rollback: (...a: DropFirst<Parameters<typeof P.rollbackApp>>) =>
         P.rollbackApp(projectId, ...a),
+      /** Machines: stable ids across releases; destroying one keeps its volume. */
+      machines: {
+        list: (appId: string) => P.listAppMachines(projectId, appId),
+        start: (appId: string, machineId: string) => P.startAppMachine(projectId, appId, machineId),
+        stop: (appId: string, machineId: string) => P.stopAppMachine(projectId, appId, machineId),
+        restart: (appId: string, machineId: string) => P.restartAppMachine(projectId, appId, machineId),
+        destroy: (appId: string, machineId: string) => P.destroyAppMachine(projectId, appId, machineId),
+      },
+      /** Machines per process group (0-20). A group with a volume runs one unless `newVolumes`. */
+      scale: (...a: DropFirst<Parameters<typeof P.scaleApp>>) => P.scaleApp(projectId, ...a),
+      /** Run one command in a machine. Project admins only. */
+      exec: (...a: DropFirst<Parameters<typeof P.execInApp>>) => P.execInApp(projectId, ...a),
+      /** Volumes: persistent disks that outlive every release; daily snapshots. */
+      volumes: {
+        list: (appId: string) => P.listAppVolumes(projectId, appId),
+        create: (...a: DropFirst<Parameters<typeof P.createAppVolume>>) => P.createAppVolume(projectId, ...a),
+        update: (...a: DropFirst<Parameters<typeof P.updateAppVolume>>) => P.updateAppVolume(projectId, ...a),
+        destroy: (...a: DropFirst<Parameters<typeof P.destroyAppVolume>>) => P.destroyAppVolume(projectId, ...a),
+        snapshots: (...a: DropFirst<Parameters<typeof P.listAppVolumeSnapshots>>) => P.listAppVolumeSnapshots(projectId, ...a),
+        snapshot: (...a: DropFirst<Parameters<typeof P.createAppVolumeSnapshot>>) => P.createAppVolumeSnapshot(projectId, ...a),
+        restore: (...a: DropFirst<Parameters<typeof P.restoreAppVolume>>) => P.restoreAppVolume(projectId, ...a),
+        fork: (...a: DropFirst<Parameters<typeof P.forkAppVolume>>) => P.forkAppVolume(projectId, ...a),
+      },
     },
-
     /** Project-scoped CLI PATs (auto-minted at session-create as `KORTIX_TOKEN`; can also be minted by hand). */
   };
 }

@@ -145,57 +145,29 @@ describe('flattenModels — gateway `provider` + `reasoning_options` pass-throug
   });
 });
 
-// Native mode (project `llm_gateway` flag OFF): the session runtime serves
-// OpenCode's own connected providers (`anthropic`, `openrouter`, `opencode`,
-// …) and the synthetic `kortix` provider does not exist. `flattenModels` must
-// flatten those — the gateway-only allowlist applies only in gateway mode, or
-// the composer has ZERO models off-gateway and refuses to send.
-describe('flattenModels — native mode (llm_gateway off)', () => {
-  const nativeList = {
-    connected: ['anthropic', 'opencode'],
+// The gateway is the only model path: `kortix` is the one renderable
+// provider. A native provider in a runtime answer is a bypass and is dropped,
+// and the deprecated `providerMode: 'native'` changes nothing.
+describe('flattenModels — native providers never render', () => {
+  const list = {
+    connected: ['anthropic', 'kortix'],
     all: [
       {
         id: 'anthropic',
         name: 'Anthropic',
         source: 'env',
-        models: {
-          'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', reasoning: true, tool_call: true },
-        },
+        models: { 'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6' } },
       },
-      {
-        id: 'opencode',
-        name: 'OpenCode',
-        source: 'custom',
-        models: { 'big-pickle': { name: 'Big Pickle' } },
-      },
-      // A disconnected provider must not flatten even in native mode.
-      { id: 'openai', name: 'OpenAI', source: 'env', models: { 'gpt-5.2': { name: 'GPT-5.2' } } },
+      { id: 'kortix', name: 'Kortix', source: 'custom', models: { 'glm-5.3-flash': { name: 'GLM' } } },
     ],
   } as unknown as ProviderListResponse;
 
-  test('native mode flattens connected native providers', () => {
-    const flat = flattenModels(nativeList, { providerMode: 'native' });
-    expect(flat.map((m) => `${m.providerID}/${m.modelID}`).sort()).toEqual([
-      'anthropic/claude-sonnet-4-6',
-      'opencode/big-pickle',
-    ]);
-  });
-
-  test('native mode still never renders the synthetic kortix provider', () => {
-    const withStaleKortix = {
-      connected: ['anthropic', 'kortix'],
-      all: [
-        ...(nativeList.all ?? []),
-        { id: 'kortix', name: 'Kortix', source: 'custom', models: { 'glm-5.3-flash': { name: 'GLM' } } },
-      ],
-    } as unknown as ProviderListResponse;
-    const flat = flattenModels(withStaleKortix, { providerMode: 'native' });
-    expect(flat.some((m) => m.providerID === 'kortix')).toBe(false);
-    expect(flat.some((m) => m.providerID === 'anthropic')).toBe(true);
-  });
-
-  test('default (gateway) mode still drops native providers entirely', () => {
-    expect(flattenModels(nativeList)).toEqual([]);
+  test('only the kortix provider flattens, whatever providerMode says', () => {
+    for (const opts of [undefined, { providerMode: 'gateway' as const }, { providerMode: 'native' as const }]) {
+      expect(flattenModels(list, opts).map((m) => `${m.providerID}/${m.modelID}`)).toEqual([
+        'kortix/glm-5.3-flash',
+      ]);
+    }
   });
 });
 
@@ -299,13 +271,12 @@ describe('isOfferedModel', () => {
   });
 });
 
-// Characterization (KRTX-452, phase 1 of KRTX-451): the canonical SDK
-// flattener already diverges from the host copy
-// (apps/web/src/features/session/model-flatten.ts) on these behaviors. The
-// host test pins the same fixtures on the host side. Later phases reconcile
-// the host onto these SDK semantics; these assertions are the spec they
-// reconcile to.
-describe('flattenModels — SDK semantics the host copy still lacks (characterization)', () => {
+// These behaviors once diverged from the web-host copy of the flattener
+// (KRTX-451 phase 1 characterized the drift against
+// apps/web/src/features/session/model-flatten.ts; KRTX-455 phase 4 deleted
+// that host file, so the SDK is the single definition). They stay as
+// regression pins on the SDK semantics every picker now runs on.
+describe('flattenModels — semantics that once diverged from the deleted host copy', () => {
   const driftList = gatewayProviderList({
     // Stale pre-removal entries a baked catalog can still carry.
     auto: { name: 'Auto' },

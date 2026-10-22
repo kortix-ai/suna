@@ -1,229 +1,250 @@
 ---
 title: Computers
-description: Connect your own machine so agents can work with its files, commands, and apps.
+description: Connect your own computer so agents can use its files, shell and screen, under access rules you set on the computer itself.
 ---
 
-A computer is your own machine — laptop, desktop, or server — connected to
-Kortix. A computer is not a sandbox. A sandbox is a disposable cloud machine
-that Kortix creates for a [session](/docs/work/sessions). A computer is a
-machine you already own, and it stays connected across sessions.
+A computer is your own machine connected to Kortix. It is not a sandbox: calls run on your real machine as your user. Agents read and write its files, run its executables and, with Computer Use, see the screen and use its apps. This page is for members who connect a computer, decide what agents may do on it, and share it with a project.
 
-A connected computer is an **account** of the `computer`
-[connector](/docs/connect/connectors), in the same way a personal Gmail
-mailbox is an account of the Gmail connector. Every project has the `computer`
-connector built in; you never add or remove it. Every member connects their
-own computer, and it **follows them**: it is an account in every project they
-belong to, in every workspace, with nothing to set up per project.
+## What a computer is
 
-## Connect your computer
+- **One connector account.** Each connected computer is one account of the built-in `computer` connector (named **Computers** in the web app). Its label is the name you give the computer. Every project has this connector. You never add or remove it, and you never declare it in `kortix.yaml`.
+- **It follows its owner.** Your computer is available in every project you belong to, in all your Kortix accounts, with no setup per project.
+- **Private by default.** Only you use it, from your private sessions. You can [share it](#share-a-computer) with a project.
+- **Three capabilities**, chosen when you approve the computer:
 
-A **Connect your computer** card sits in the project sidebar until you have a
-connected computer. Close it with **×** if you do not need it; it stays hidden
-in that browser. The card does not show on a deployment with computers turned
-off.
+  | Capability | Key | Tools | What agents can do |
+  | --- | --- | --- | --- |
+  | **Filesystem** | `filesystem` | `fs.*` | Read, write, list and delete files. |
+  | **Shell** | `shell` | `shell.exec` | Run executables. |
+  | **Computer Use** | `desktop` | `desktop.cua.*` | See the screen and use the apps. |
 
-**With the desktop app.** Click **Connect this computer** on the card. Approve
-the request in the window that opens. The app installs a background service
-that keeps the computer connected while the app is closed, and brings it back
-after sleep, a network change, or a restart. The menu bar (macOS) or
-notification-area (Windows, Linux) icon shows the status and holds the same
-controls as **Your computer** below.
+- **Three gates decide every call**, and each one can refuse it: the [access setting](#control-access-on-the-machine) on the computer, the [local limits](#local-limits) in its config file, and the project's [connector policies](/docs/connect/connectors#policies-and-approvals).
 
-**In a browser.** Click **Connect your computer** on the card. The dialog
-offers **Download Kortix for desktop**, which then connects the computer in
-one click. To connect without the app, choose **Use the CLI instead** and run
-the command it shows on the computer:
+The desktop app or the `connect` command installs a background service, `@kortix/agent-tunnel`. It starts at login and reconnects after sleep or a network change. Its token is valid for this computer only, and Kortix stores only a hash of it. It connects over HTTPS and WSS, or plain HTTP to a loopback address.
 
-```sh
-npx --yes @kortix/agent-tunnel@latest connect --api-url <api-url>/tunnel --project-id <project-id>
+A self-hosted instance turns computers off with `TUNNEL_ENABLED=false`. The default is on. See [Self-hosting](/docs/host).
+
+## Connect a computer
+
+<Tabs>
+<Tab title="Desktop app">
+
+1. Select **Connect this computer** in the sidebar, or open the project menu (top left), select **Your computer**, then select **Connect this computer**. A browser window opens the approval page.
+2. Approve the computer (see the steps below).
+3. On macOS, the dialog shows **Finish setting up your computer**. Select **Allow all**. macOS asks once for each permission: **Desktop, Documents, and Downloads**, **Accessibility** and **Screen Recording**. The permissions go to Kortix. If System Settings opens, turn on Kortix in the list.
+
+The computer stays connected after you quit the app. The menu shows **Quit Kortix (your computer stays connected)**.
+
+</Tab>
+<Tab title="Terminal">
+
+Run on the computer:
+
+```bash
+npx --yes @kortix/agent-tunnel@latest connect --api-url <api-url>/tunnel
 ```
 
-The command prints a code and opens the approval page. On the approval page:
+`<api-url>` is the Kortix API root that ends in `/v1`. The web app shows the exact command under **Connect your computer → Use the CLI instead**. The command prints a code and opens the approval page. After approval, it installs the background service and prints the commands that pause (`stop`), resume (`start`) and disconnect (`logout`) the computer.
 
-1. Check that the code matches the one on the computer.
-2. Name the computer. The name becomes the account label.
-3. Choose **Who can use this computer**: **Only you** (the default: every
-   project, your private sessions) or **Also share with** the project the
-   command named. Sharing needs permission to manage that project's
-   connections.
-4. Select what agents may do: **Filesystem**, **Shell**, **Computer Use**.
+| Flag | Effect |
+| --- | --- |
+| `--project-id <uuid>` | The approval page offers **Also share with** that project. |
+| `--reauth` | Discards the saved credential and pairs again. |
+| `--daemon` / `--foreground` | Runs as the background service, or in this terminal only. An interactive terminal defaults to the background service. A script without a terminal defaults to the foreground. |
+| `--json` | Prints newline-delimited JSON events (`challenge`, `approved`, `service`, `error`). Never prompts and never opens a browser. |
 
-The computer then shows under **Customize → Connectors → Computer →
-Accounts** in every project you belong to. Its row looks and works like every
-other connector account; a computer that is not connected right now says
-**Offline** under its name.
+On a Mac with the Kortix app installed, the command uses the app's connection: one computer entry, one set of macOS permissions, and **Your computer** in the app controls it.
 
-Kortix knows each computer by a hash of its hardware ID (the IOPlatformUUID
-on macOS, `/etc/machine-id` on Linux, `MachineGuid` on Windows). Connecting
-the same computer again, after a reinstall, a rename, or a new network,
-updates its one entry instead of adding a second one. Its name, sharing, and
-session bindings stay.
+</Tab>
+</Tabs>
 
-## Your computer (desktop app)
+On the approval page:
 
-Open the workspace menu (the project name at the top of the sidebar) and
-choose **Your computer**. The dot next to it is the computer's status. The
-dialog shows the computer's name and one status: **Online**, **Connecting**,
-**Offline**, **Paused**, or **Needs reconnect** (the computer was disconnected
-elsewhere; **Connect this computer** pairs it again). From there you can:
+1. Check that the code matches the code on the computer.
+2. Name the computer. The name defaults to its hostname and becomes the account label.
+3. Choose **Who can use this computer**: **Only you** (the default) or **Also share with** the project you connected from (the desktop app's current project, or `--project-id`). Sharing needs permission to manage that project's connections.
+4. Select the capabilities: **Filesystem**, **Shell**, **Computer Use**. Select at least one.
+5. Approve.
 
-- **Pause connection** / **Resume connection**: stop or restart the
-  background service. A paused computer is offline to agents
-  (`computer_offline`) and stays paused after a restart.
-- **Access**: whether agents may use the computer while it is connected. See
-  [Access on the computer](#access-on-the-computer).
-- **Keep this computer awake while plugged in** (macOS and Linux): the
-  computer does not sleep on power, so agents can reach it. Off by default.
-  On Windows the row shows that it is not available yet.
-- **Sharing**: open the computer connector's Accounts tab and choose
-  **Share** on the computer's row.
-- **Show logs**: open the agent's log file.
-- **Disconnect**: remove the computer from Kortix and from every project, and
-  stop the background service.
+Kortix knows each computer by its hardware. When you connect the same computer again, after a reinstall, a rename or on a new network, the page shows **Reconnect**. Kortix updates the one entry with the name and capabilities you approve. The page prefills the current name. Its projects, shares and session bindings stay.
 
-## Access on the computer
+You change the capabilities only by pairing again. In the desktop app, select **Your computer → Disconnect…**, then **Connect this computer**. In a terminal, run `npx --yes @kortix/agent-tunnel@latest connect --reauth`.
 
-The computer itself decides whether an agent may use it, whatever the
-project allows. You set it in **Your computer → Access** or from the menu-bar
-icon:
+### Commands on the computer
 
-- **Ask each time** (the default for a computer connected in the desktop
-  app): the first call from an agent shows a prompt on the computer: **Allow
-  for 24 hours**, **Allow for 1 hour** (the default button), or **Deny**. An
-  approval covers files, the shell, and the screen and keyboard, for every
-  agent that can reach the computer, until it runs out. While an approval
-  runs, the dialog shows **Allowed until 14:32** and **Revoke now**. After
-  **Deny**, calls fail at once for 10 minutes without a new prompt. Changing
-  the mode ends the current approval or denial.
-- **Always allowed**: no prompt. This is the default for a computer connected
-  with the CLI alone, because nothing on that computer can show a prompt.
-  Computers connected before this setting existed also behave this way until
-  you change it.
-- **Off**: every call is refused.
+Run each command as `npx @kortix/agent-tunnel@latest <command>`. `AGENT_TUNNEL_HOME` moves the config directory and the service away from `~/.agent-tunnel`.
 
-Only you, on the computer, can widen access. When the Kortix page asks for
-**Always allowed** or a new approval, the desktop app shows a native dialog
-first and applies the change only when you click **Allow**. Every new pairing
-starts from the default again, and **Disconnect** removes the setting.
+| Command | Effect |
+| --- | --- |
+| `connect` | Pairs the computer, then runs the service. See the Terminal tab above. |
+| `status [--json]` | Shows the pairing, the approved capabilities, the service state and the last log line. |
+| `access [ask\|always\|off]` | Sets the mode. Without an argument, shows the current access. |
+| `access --allow-for <minutes>` | Approves calls for up to 1440 minutes. From **Off** or **Always allowed**, it also sets **Ask each time**. |
+| `access --revoke` | Ends the current approval. |
+| `access --deny` | Refuses calls for 10 minutes, or declines the change that waits for you. |
+| `keep-awake on\|off` | Sets **Keep this computer awake**. |
+| `logs [--lines <n>] [--all] [--clear]` | Shows the last 60 lines of the service output and error logs. `--all` keeps shell startup noise. `--clear` empties them. |
+| `stop` (alias `pause`) | Pauses the service. It stays stopped after a restart. |
+| `start` (alias `resume`) | Starts the service. |
+| `restart` | Restarts the service. |
+| `install-service` | Installs and starts the service with the saved credential. |
+| `uninstall-service` | Stops and removes the service. |
+| `logout [--keep-service]` | Disconnects the computer. See [Disconnect](#disconnect). |
 
-The setting lives on the computer (`~/.agent-tunnel/access.json`). The
-account row and the `status` tool report it, so an agent can tell you it is
-waiting for your approval.
+`access`, `keep-awake` and `logout` also take `--json`.
 
-## Who can use a computer
+## Control access on the machine
 
-A computer follows the same rules as every other connector account:
+The computer itself decides whether an agent may use it, whatever the project allows. Its access setting has three modes:
 
-- A **private** computer (the default, **Only you**) runs only in the owner's
-  own private sessions, in every project the owner belongs to. Another member
-  cannot see or use it.
-- **Share** on the computer's row opens the same dialog as for a Gmail
-  account: pick people, groups, or everyone in the project. Nothing changes
-  until you choose **Save**, and you stay on it unless you remove yourself.
-  Sharing needs permission to manage the project's connections. The computer
-  stays one account in that project; the row then shows who can use it.
-- A computer shared with everyone runs for everyone in the project, including
-  unattended runs: triggers, schedules, and Slack messages without a linked
-  user. An unattended run can reach only shared computers.
-- Your own row follows you, so it is not removed from one project alone.
-  **Disconnect** on it removes the computer from Kortix and every project. To
-  keep it connected but unused, set its access to **Off** on the computer.
+| Mode | Behavior | Default for |
+| --- | --- | --- |
+| **Ask each time** | The first call shows a prompt on the computer, **Allow Kortix to use &lt;name&gt;?**, with **Allow for 24 hours**, **Allow for 1 hour** (the default button) and **Deny**. | A computer connected where the desktop app runs. |
+| **Always allowed** | Every call runs without a prompt. | A computer connected from a terminal only. No app is there to show a prompt. |
+| **Off** | Every call is refused. | — |
 
-To gate risky calls behind a human, set a
-[connector policy](/docs/connect/connectors) on the computer connector's
-**Tools** tab (for example, **Ask** for `shell.exec`). The request then
-appears in the project's approvals.
+In **Ask each time**:
 
-## What the computer allows
+- A call waits up to 20 seconds for your answer. Without an answer it fails with `computer_access_pending`. An answer given within 60 seconds of the prompt still applies to the agent's next call.
+- An approval covers files, the shell, and the screen and keyboard, for every agent that can reach the computer, until it runs out. The longest approval is 24 hours.
+- **Deny** refuses every call for 10 minutes, without a new prompt.
+- Changing the mode ends the current approval or denial.
+- Without the desktop app, answer from a terminal: `access --allow-for 60` or `access --deny`.
 
-You choose the capabilities once, when you approve the computer. To allow a
-capability later, connect the computer again and select it.
+Each new pairing starts from the default mode. **Keep this computer awake** stays as you set it.
 
-The local agent config is the hard ceiling on every call, whatever Kortix
-allows. It lives in `~/.agent-tunnel/config.json` on the computer:
+### Where you change it
+
+- **On the computer:** **Your computer → Access** in the desktop app, or **Access** in the menu-bar or tray icon. A change here applies at once. In a terminal, see [Commands on the computer](#commands-on-the-computer).
+- **From a browser:** the project menu → **Your computer** lists **Your computers**. Each row's **⋯** menu holds **Access**.
+
+**Your computer** shows one status: **Online**, **Connecting…**, **Offline**, **Paused** or **Needs reconnect**. **Show logs** (also in the menu-bar or tray icon) opens the service log.
+
+### Widen and narrow
+
+Only you, at the computer, can widen access. A widening is **Always allowed**, or an approval that lasts longer than the current one.
+
+- A widening sent from Kortix shows a prompt on the computer with **Allow** and **Cancel**. The change applies only when you select **Allow** within 20 seconds. Otherwise it fails with `computer_access_unconfirmed`.
+- A computer without the desktop app cannot show that prompt. A widening sent from Kortix fails at once and names the `access` command to run on the computer.
+- A narrowing applies at once, from anywhere: **Ask each time**, **Off**, **Revoke** and **Deny**. **Keep this computer awake** also applies at once.
+- An offline computer refuses every change from Kortix (`computer_offline`). Change the setting on the computer.
+
+What Kortix shows comes from the computer: the access mode, an approval and its end time, a prompt that waits for you, and the macOS Accessibility and Screen Recording permissions. The `status` tool reports the access mode, so an agent can tell you it waits for your approval.
+
+### Pause the connection
+
+- **Your computer → Run in the background** off in the desktop app, or **Pause computer access** in the menu-bar or tray icon. In a terminal, see [Commands on the computer](#commands-on-the-computer).
+- A paused computer is offline to agents (`computer_offline`). It stays paused after a restart until you resume it.
+
+### Keep the computer awake
+
+**Keep this computer awake while plugged in** in the desktop app, or `keep-awake on|off` in a terminal, stops system sleep while the service runs. It is off by default. It works on macOS and Linux. It is not available on Windows.
+
+## Share a computer
+
+- To share your computer, open **Customize → Connectors → Computers → Accounts** and select **Share** on your computer's row. Pick people, groups or everyone in the project, then select **Save**. The dialog is the same as for any [connector account](/docs/connect/connectors#share-accounts-and-give-agents-access).
+- Only the owner shares a computer. Sharing needs permission to manage the project's connections.
+- A computer shared with everyone also serves unattended runs: triggers, schedules, and email messages. Unattended runs reach only shared computers.
+- Your access setting still applies to a shared computer. In **Ask each time**, every new approval is yours to give.
+- When the owner leaves the Kortix account, is removed from it, or is deactivated through SCIM, every computer account in that account that reaches the owner's computers becomes `revoked`, with `metadata.revokedReason: owner_left`. This covers a computer shared with a project and a computer the owner paired for themselves. Calls to the computer fail with `computer_owner_left`. The computer keeps serving the owner's other Kortix accounts. See [When a person leaves](/docs/accounts#when-a-person-leaves).
+- A revoked computer account becomes `active` again when its owner pairs the same computer again, or through `PUT /v1/projects/:projectId/connections/:connectionId/activate`. An active account has no `metadata.revokedReason`.
+
+To hold risky calls for a person, set a policy on the **Tools** tab of the **Computers** connector, for example **Ask** for `shell.exec` and **Block** for `fs.delete`. A held call appears in the project's approvals. See [Policies and approvals](/docs/connect/connectors#policies-and-approvals).
+
+## Local limits
+
+`~/.agent-tunnel/config.json` on the computer is the hard limit on every call, whatever Kortix allows. Edit it, then run `restart`. The service refuses the file if it is a symlink or another user owns it, and it keeps the file at mode `0600` and its directory at `0700`.
 
 | Field | Default | Effect |
-|---|---|---|
-| `enabledCapabilities` | the capabilities you approved | Capabilities the machine accepts at all. |
-| `allowedPaths` | your home directory | Paths filesystem calls may touch. |
-| `blockedPaths` | `/etc/shadow`, `/etc/ssh`, `/proc`, … | Paths no call may touch. |
-| `allowedCommands` | empty (any command) | When set, the only executables `shell.exec` may run. |
-| `blockedCommands` | empty | Executables `shell.exec` never runs. |
+| --- | --- | --- |
+| `enabledCapabilities` | The capabilities you approved | Capabilities the computer accepts (`filesystem`, `shell`, `desktop`). Removing one turns it off. Adding one that Kortix did not approve has no effect. |
+| `allowedPaths` | Your home directory | Paths that file calls and the `shell.exec` working directory may use. |
+| `blockedPaths` | `/etc/shadow`, `/etc/passwd`, `/etc/sudoers`, `/etc/ssh`, `/root/.ssh`, `/proc`, `/sys`, `/dev` | Paths no call may use. |
+| `allowedCommands` | `[]` (any executable) | When set, the only executables `shell.exec` runs. |
+| `blockedCommands` | `[]` | Executables `shell.exec` never runs. |
+| `maxFileSize` | `10485760` (10 MiB) | Largest file a file call reads or writes. |
+| `shellTimeout` | `30000` (30 s) | Timeout of a `shell.exec` call that sets none. |
+| `shellMaxTimeout` | `120000` (2 min) | Longest timeout a call may set. |
+| `shellMaxOutputSize` | `1048576` (1 MiB) | Output kept per stream. The rest is dropped. |
 
-An unrestricted shell can run any executable available to your user. Narrow
-`allowedPaths` and `allowedCommands` to what the work needs.
+- No call reads or writes the service's own directory (`~/.agent-tunnel`), whatever the file says.
+- `shell.exec` runs one executable directly. No shell parses the command. For shell syntax or built-ins, run `sh -c` (or the platform equivalent) explicitly.
+- `shell.exec` passes only `PATH`, `HOME`, `USER`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TMPDIR`, `NODE_ENV` and `HOSTNAME` from the service environment, plus `TERM=dumb`.
 
-Computer Use requires a separately installed local `cua-driver`. The agent
-does not download, install, or update that executable.
+<Callout type="warning">
+With the **Shell** capability and an empty `allowedCommands`, an agent can run any executable your user can run. Narrow `allowedCommands` and `allowedPaths` to what the work needs.
+</Callout>
 
-## How an agent uses a computer
+## Computer Use
 
-An agent calls the computer connector like any other connector, and picks the
-computer with `--account`:
+Computer Use lets an agent see the screen and use the apps through a local driver, `cua-driver`. Approve the **Computer Use** capability when you connect the computer.
 
-```sh
+- **macOS desktop app:** the app includes the driver and runs it inside Kortix. macOS asks for **Accessibility** and **Screen Recording** for Kortix itself. Give both with **Your computer → Allow all**. Kortix restarts its connection to apply a new permission.
+- **Terminal only:** install `cua-driver` yourself. The service uses the first one it finds: the path in the `CUA_DRIVER_BIN` environment variable, `~/.local/bin/cua-driver`, `/usr/local/bin/cua-driver`, `/opt/homebrew/bin/cua-driver`. The file must be executable, belong to you or root, and not be writable by group or others. Run `restart` after you install it.
+
+Without a driver, `status` does not list the `desktop` capability, and desktop calls fail with `Capability is not registered by the connected Agent Tunnel: desktop`. The service log says that Computer Use is approved but unavailable.
+
+## Call a computer from an agent
+
+An agent calls the computer connector like any other connector. The session's agent needs `computer` in `agents.<name>.connectors` (or `all`). The agent selects the computer with `--account`:
+
+```bash
 kortix connectors accounts computer
-kortix connectors call computer status '{}' --account "Studio Mac"
-kortix connectors call computer fs.read '{"path":"/Users/me/notes.md"}' --account "Studio Mac"
-kortix connectors call computer shell.exec '{"command":"git","args":["status"]}' --account me
+kortix connectors call computer status '{}' --account "Work computer"
+kortix connectors call computer fs.read '{"path":"/Users/me/notes.md"}' --account "Work computer"
+kortix connectors call computer shell.exec '{"command":"git","args":["status"],"cwd":"/Users/me/repo"}' --account "Work computer"
 ```
 
-The tools are `status`, `fs.read`, `fs.write`, `fs.list`, `fs.stat`,
-`fs.delete`, `shell.exec`, and the `desktop.cua.*` Computer Use tools.
-`status` returns the selected computer's name, online state, platform,
-capabilities, and access setting.
+With one reachable computer, or one pinned as the default, `--account` is optional. Your first computer becomes your default. With several computers, a call without `--account` runs on the default. Change it with `kortix connectors accounts computer --default "<name>"`. See [Which account a call uses](/docs/connect/connectors#which-account-a-call-uses).
 
-A call fails with a named reason instead of guessing:
+| Tool | Arguments | Risk |
+| --- | --- | --- |
+| `status` | — | read |
+| `fs.read` | `path`, `encoding` (`utf-8` or `base64`) | read |
+| `fs.write` | `path`, `content`, `encoding`, `sha256` | write |
+| `fs.list` | `path`, `recursive` | read |
+| `fs.stat` | `path` | read |
+| `fs.delete` | `path` | destructive |
+| `shell.exec` | `command`, `args`, `cwd`, `timeout` (ms) | write |
+| `desktop.cua.list_tools` | — | read |
+| `desktop.cua.describe` | `tool` | read |
+| `desktop.cua.call` | `tool`, `args` | write |
+
+- `status` answers from Kortix, so it works while the computer is offline. It returns `name`, `online`, `platform`, `hostname`, `home_dir`, `allowed_paths`, `capabilities`, `last_heartbeat_at` and `access` (`mode`, `granted_until`). Agents call it first.
+- File paths are absolute. `fs.write` returns the SHA-256 of the written file. With `sha256` set, a mismatch rejects the write before it changes the file.
+- The desktop tools with their own action are `health_report`, `list_apps`, `list_windows`, `get_window_state`, `get_desktop_state`, `get_screen_size`, `get_accessibility_tree` (read), and `launch_app`, `click`, `double_click`, `right_click`, `type_text`, `press_key`, `hotkey`, `scroll`, `drag`, `set_value` (write). Each one is `desktop.cua.<tool>`. `desktop.cua.call` reaches every other tool the driver has.
+
+## Errors
+
+A call that cannot run fails with a named reason:
 
 | Reason | Meaning | Fix |
-|---|---|---|
-| `account_required` | Several computers are reachable and none was named or pinned. | Pass `--account`, or pin a default on the Accounts tab. |
-| `computer_offline` | The computer is paired but not connected right now. | Wake the computer, or resume access in the desktop app. |
-| `computer_unpaired` | The account points at a machine that was disconnected. | Connect the computer again. |
-| `computer_capability_not_approved` | The computer was approved without this capability. | Connect the computer again and select the capability. |
-| `computer_access_pending` | The owner has not answered the prompt on the computer yet. | Answer the prompt on the computer, then ask the agent to continue. |
-| `computer_access_denied` | The owner chose **Deny**. | Allow access from the menu-bar icon or **Your computer**. |
-| `computer_access_off` | The owner set access to **Off**. | Change **Access** on the computer. |
-| `account_not_found` | `--account`, or a legacy `computer` argument, names no reachable computer. | Use a label from `kortix connectors accounts computer`. |
+| --- | --- | --- |
+| `account_required` | Several computers are reachable, and none was named or pinned. | Pass `--account`, or pin a default with `kortix connectors accounts computer --default "<name>"`. |
+| `account_not_found` | An older agent named a computer you cannot use. | Select the computer with `--account "<name>"`. |
+| `connector_not_connected` | `--account` names no computer you can use. | Run `kortix connectors accounts computer` and pass a listed name. |
+| `computer_offline` | The computer is paired but not connected, or it is paused. | Wake the computer, start Kortix on it, or resume the connection. |
+| `computer_unpaired` | The computer was disconnected. | Connect the computer again. |
+| `computer_owner_left` | The computer's owner left this Kortix account. | Use another computer. The computer serves only Kortix accounts its owner belongs to. |
+| `computer_capability_not_approved` | The computer was approved without this capability. | Connect again and select the capability. |
+| `computer_desktop_permission_missing` | macOS has not given Kortix **Accessibility** or **Screen Recording**. | On the computer, open **Your computer** in the Kortix app and select **Allow all**. Retry after 30 seconds. |
+| `computer_access_pending` | The owner has not answered the prompt on the computer. | Answer the prompt, then ask the agent to continue. Do not retry before that. |
+| `computer_access_denied` | The owner selected **Deny**. Calls are refused for 10 minutes. | Wait 10 minutes, set **Always allowed** on the computer, or run `access --allow-for 60` there. |
+| `computer_access_off` | Access on the computer is **Off**. | Change **Access** in **Your computer**, or run `access ask` on the computer. |
 
-## Disconnect a computer
+An access change sent from Kortix can fail with:
 
-- **In the desktop app:** open **Your computer** in the workspace menu, or
-  the menu-bar icon, and choose **Disconnect**. Kortix removes the machine and
-  every project account that pointed at it. A disconnected account no longer
-  shows in any Accounts list.
-- **With the CLI:** run `npx --yes @kortix/agent-tunnel@latest logout` on the
-  computer. It removes the machine from Kortix with its own token, then
-  deletes the local credential. Offline, it deletes only the local credential.
-- **From anywhere else**, for example for a lost laptop: on **Customize →
-  Connectors → Computer → Accounts**, open the computer's row and choose
-  **Disconnect**. A desktop app still running on that computer shows
-  **Needs reconnect**.
-- **A shared computer, from one project:** a manager opens its row on the
-  Accounts tab and chooses **Disconnect**. The computer stays connected, and
-  in that project it goes back to **Only you** for its owner.
+| Reason | Meaning | Fix |
+| --- | --- | --- |
+| `computer_access_unconfirmed` | A widening was not confirmed on the computer within 20 seconds, or the computer has no desktop app. | Select **Allow** in the prompt on the computer, or run the `access` command there. |
+| `computer_offline` | The computer is not connected. | Change access on the computer itself. |
+| `agent_update_required` | The service on the computer is too old to accept changes from Kortix. | Update Kortix on the computer, or run `access` there. |
 
-A computer authenticates with a machine-specific token stored on the
-computer. The API stores only its hash. Remote connections require
-HTTPS/WSS. You configure computers from the dashboard, not from `kortix.yaml`.
+## Disconnect
 
-## Deliver binary files safely
+- **Desktop app:** **Your computer → Disconnect…**, or **Disconnect this computer…** in the menu-bar or tray icon. Kortix removes the computer from every project and stops the service.
+- **Terminal:** `npx --yes @kortix/agent-tunnel@latest logout`. The computer removes itself from Kortix with its own token, then deletes the local credential and access setting and removes the service. `--keep-service` keeps the service installed. If Kortix is unreachable, the computer stays listed in Kortix. Remove it there too, as the next item shows.
+- **From another device**, for example for a lost computer: the project menu → **Your computer** → the computer's **⋯** menu → **Disconnect…**, or **Disconnect** on its row under **Customize → Connectors → Computers → Accounts**. A desktop app still running on that computer shows **Needs reconnect**.
+- **A shared computer in one project:** a member who manages connections selects **Disconnect** on its row. That removes the shared account from this project only. The computer stays connected.
 
-For spreadsheets, PDFs, images, and other binary files, transfer bytes directly
-from a source file. Never ask the agent to copy a base64 payload from tool output.
-That can change bytes while preserving the file size.
-
-On the machine or sandbox holding the source, configure `TUNNEL_API_URL`,
-`TUNNEL_TOKEN`, and `TUNNEL_ID`, then run:
-
-```sh
-agent-tunnel-cli fs_upload '{"source":"/tmp/report.xlsx","path":"/Users/me/Desktop/report.xlsx"}'
-```
-
-The command supports files up to 3 MiB and requires the filesystem capability.
-It computes SHA-256 from the source and checks the destination's returned hash.
-Update the connected agent if its response has no `sha256` field.
-
-For larger files, generate the artifact on the destination. Validate the source
-format before delivery. A matching hash proves that the bytes arrived unchanged;
-file size and the file extension do not prove that Excel can open a workbook.
+To keep a computer connected but unused, set its access to **Off**.

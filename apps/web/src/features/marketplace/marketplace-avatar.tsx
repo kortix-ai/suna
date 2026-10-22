@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { EntityAvatar, type EntityAvatarSize } from '@/components/ui/entity-avatar';
-import { cn } from '@/lib/utils';
+import { EntityAvatar, type EntityAvatarSize } from '@kortix/ui/entity-avatar';
+import { cn } from '@kortix/ui';
 
 type MarketplaceAvatarSize = 'xs' | 'sm' | 'md' | 'lg';
 
@@ -37,6 +37,14 @@ const IMG_PX: Record<MarketplaceAvatarSize, number> = {
   lg: 56,
 };
 
+/**
+ * The Kortix source tile is the light mark in both themes: a white tile with
+ * the black symbol and no border. The logo paints in `currentColor`, so the
+ * text color here is the mark's color. Set as a named constant (like the
+ * connector logo tile) because it deliberately does not follow the theme.
+ */
+const KORTIX_TILE_COLORS = 'bg-white text-black';
+
 /** Favicon host for a non-GitHub source (URL registries get a real brand mark). */
 function faviconHost(sourceUrl?: string, id?: string): string | undefined {
   const raw = sourceUrl ?? (id?.includes('://') ? id : undefined);
@@ -51,7 +59,7 @@ function faviconHost(sourceUrl?: string, id?: string): string | undefined {
 
 /**
  * Identity tile for a marketplace source, in priority order:
- *   1. the Kortix mark for the official source,
+ *   1. the Kortix mark for the official source (light variant in both themes),
  *   2. the GitHub owner's avatar for an `owner/repo` source,
  *   3. a Google favicon for a URL-hosted registry,
  *   4. a deterministic monogram via EntityAvatar + chalkColors.
@@ -76,13 +84,19 @@ export function MarketplaceAvatar({
   const [failed, setFailed] = useState(0);
 
   // Reset the broken-image fallback when this tile is recycled to a new source.
-  useEffect(() => setFailed(0), [id, owner, sourceUrl]);
+  const sourceKey = `${id}|${owner ?? ''}|${sourceUrl ?? ''}`;
+  const [prevSourceKey, setPrevSourceKey] = useState(sourceKey);
+  if (sourceKey !== prevSourceKey) {
+    setPrevSourceKey(sourceKey);
+    setFailed(0);
+  }
 
   if (id === 'kortix') {
     return (
       <div
         className={cn(
-          'bg-muted border-border flex shrink-0 items-center justify-center border',
+          'flex shrink-0 items-center justify-center',
+          KORTIX_TILE_COLORS,
           boxClass,
           className,
         )}

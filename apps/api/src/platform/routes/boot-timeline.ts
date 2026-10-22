@@ -20,6 +20,7 @@
  */
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray } from 'drizzle-orm';
+import { BootTimelineRelayBodySchema } from '@kortix/api-contract/runtime-relay';
 import { sessionSandboxes } from '@kortix/db';
 import { pinSandboxEgressIp, requestEgressIp } from '../services/sandbox-egress-pin';
 import { db } from '../../shared/db';
@@ -28,12 +29,6 @@ import type { AppEnv } from '../../types';
 import { recordBootTimeline } from '../services/boot-timeline-store';
 import { isSessionSandboxCredential } from '../../middleware/session-sandbox-credential';
 
-const BootMarkSchema = z.object({ label: z.string(), atMs: z.number() });
-
-const BootTimelineRequestSchema = z.object({
-  session_id: z.string(),
-  timeline: z.array(BootMarkSchema),
-});
 
 export const bootTimelineRouter = makeOpenApiApp<AppEnv>();
 
@@ -45,7 +40,7 @@ bootTimelineRouter.openapi(
     summary: 'Relay a sandbox in-guest boot timeline for server-side persistence',
     ...auth,
     request: {
-      body: { content: { 'application/json': { schema: BootTimelineRequestSchema } } },
+      body: { content: { 'application/json': { schema: BootTimelineRelayBodySchema } } },
     },
     responses: {
       200: json(z.object({ ok: z.boolean() }), 'Timeline recorded'),

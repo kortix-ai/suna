@@ -1,6 +1,8 @@
 import {
   DEFAULT_HOST_NAME,
+  DEFAULT_INTERNAL_DEV_API_BASE,
   type Host,
+  activeHostEntry,
   activeHostName,
   getHost,
   listHosts,
@@ -10,7 +12,7 @@ import {
   validateHostName,
 } from '../api/config.ts';
 import { splitHelp } from '../command-argv.ts';
-import { emitJson, takeFlagBool, takeFlagValue, fail, missing } from '../command-helpers.ts';
+import { emitJson, fail, missing, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { confirm, prompt } from '../prompts.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
@@ -25,11 +27,16 @@ instance. The "active" host is what every other command operates on
 unless you pass \`--host <name>\` per invocation. Sign in with
 \`kortix hosts login\`; switch instance with \`kortix hosts use\`.
 
+Inside a Kortix sandbox, plain commands use the delegated session identity,
+not stored host credentials. KORTIX_DISABLE_SANDBOX_ENV_FILE=1 disables the
+sandbox env-file fallback. To use stored credentials, also unset exported KORTIX_TOKEN,
+KORTIX_API_URL, KORTIX_FRONTEND_URL and KORTIX_PROJECT_ID for that invocation.
+
 Built-in hosts (always exist):
   cloud                Kortix Cloud (https://api.kortix.com)
   selfhost             Your self-hosted stack (kortix self-host)
   local-dev            Local dev server (http://localhost:8008)
-  kortix-internal-dev  Kortix-internal hosted dev (http://dev-api.kortix.com)
+  kortix-internal-dev  Kortix-internal hosted dev (${DEFAULT_INTERNAL_DEV_API_BASE})
 
 Authentication:
   login [<name>]                      Sign in to a host (browser flow or
@@ -166,9 +173,29 @@ export async function runHosts(argv: string[]): Promise<number> {
 // ── ls ───────────────────────────────────────────────────────────────────
 
 function hostsLs(json = false): number {
-  const rows = listHosts();
+  const effective = activeHostEntry();
+  const rows = listHosts().map((row) => ({
+    ...row,
+    active:
+      row.name === effective.name &&
+      row.host.url === effective.host.url &&
+      row.host.token === effective.host.token,
+    credential_source: row.host.token ? 'stored' : null,
+  }));
+  if (!rows.some((row) => row.active)) {
+    rows.push({
+      ...effective,
+      active: true,
+      credential_source: effective.envWins ? 'environment' : 'url-override',
+    });
+  }
   if (json) {
-    emitJson(rows.map((r) => hostJson(r.name, r.host, r.active)));
+    emitJson(
+      rows.map((r) => ({
+        ...hostJson(r.name, r.host, r.active),
+        credential_source: r.credential_source,
+      })),
+    );
     return 0;
   }
   if (rows.length === 0) {
@@ -182,9 +209,7 @@ function hostsLs(json = false): number {
   // Auth-status column: "✓ signed in as <user/email>" vs "○ not signed in".
   // Width is measured on the visible text (glyph + label), ANSI stripped.
   const statusText = (r: (typeof rows)[number]): string =>
-    r.host.token
-      ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}`
-      : '○ not signed in';
+    r.host.token ? `✓ ${r.host.user_email || r.host.user_id || 'signed in'}` : '○ not signed in';
   const statusW = Math.max(...rows.map((r) => statusText(r).length), 8);
 
   process.stdout.write('\n');
@@ -310,7 +335,7 @@ async function hostsAdd(args: string[]): Promise<number> {
   try {
     url = takeFlagValue(args, ['--url', '--api']);
     dashboardUrl = takeFlagValue(args, ['--dashboard-url']);
-    runLoginFlow = removeBoolFlag(args, ['--login']);
+    runLoginFlow = takeFlagBool(args, ['--login']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -393,7 +418,7 @@ async function hostsAdd(args: string[]): Promise<number> {
 async function hostsRm(args: string[]): Promise<number> {
   let force = false;
   try {
-    force = removeBoolFlag(args, ['--force', '-f']);
+    force = takeFlagBool(args, ['--force', '-f']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -508,14 +533,4 @@ function hostJson(name: string, host: Host, active: boolean) {
     logged_in_at: host.logged_in_at || null,
     active,
   };
-}
-
-function removeBoolFlag(argv: string[], names: string[]): boolean {
-  for (let i = 0; i < argv.length; i += 1) {
-    if (names.includes(argv[i])) {
-      argv.splice(i, 1);
-      return true;
-    }
-  }
-  return false;
 }

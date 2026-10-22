@@ -2,14 +2,14 @@
 
 The `kortix-api` container running as an **ECS Fargate** service behind an
 **Application Load Balancer**, horizontally **autoscaled** (target-tracking on
-CPU **and** memory). One module, used by both `environments/dev` and
-`environments/prod` — only the variables differ, so promoting to prod is "the
+CPU **and** memory). One module, used by `environments/dev-us-east-2`,
+`environments/staging-eu-west-2` and `environments/prod` — only the variables differ, so promoting to prod is "the
 same thing with bigger numbers and `min_capacity >= 2`".
 
 ## What it creates
 
 - ECS cluster (Container Insights optional) + Fargate service, on `FARGATE` or
-  `FARGATE_SPOT` (`use_fargate_spot`, good for dev).
+  `FARGATE_SPOT` (`use_fargate_spot`, dev only: staging and prod run on-demand, because a Spot reclaim kills in-flight requests and agent turns).
 - ALB in public subnets; tasks in private subnets (SG locks tasks to ALB only).
 - HTTPS-only listener backed by the required `certificate_arn`; no HTTP listener
   or redirect is exposed.
@@ -29,8 +29,9 @@ same thing with bigger numbers and `min_capacity >= 2`".
 - `task_cpu` / `task_memory`, `desired_count`, `min_capacity` / `max_capacity`,
   `cpu_target` / `memory_target`.
 - `certificate_arn` — ACM cert (see `modules/acm-cloudflare`).
-- `use_fargate_spot`, `container_insights`, `alb_idle_timeout`,
-  `alb_ingress_cidrs`.
+- `use_fargate_spot`, `alb_idle_timeout`, `alb_ingress_cidrs`.
+- Container Insights is always on: CloudWatch Container Insights is a
+  monitoring control (Checkov CKV_AWS_65), not a per-environment option.
 
 ## Outputs
 

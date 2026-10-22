@@ -5,13 +5,34 @@ import {
   INVALID_SECRET_BOUNDARY_POLICY_MESSAGE,
   SANDBOX_PROVIDER_CAPACITY_MESSAGE,
   SANDBOX_PROVIDER_FAILURE_MESSAGE,
+  SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE,
   classifySandboxProvisioningFailure,
   SNAPSHOT_TOO_LARGE_MESSAGE,
 } from './sandbox-provisioning-error';
 
 describe('classifySandboxProvisioningFailure', () => {
+  // Prod 2026-10-06: a project pinned to Daytona failed 81% of its sessions
+  // because the provider organization's disk quota was full, and every one
+  // told the user "could not start this session. Try again."
   test.each([
-    'you have reached the maximum number of concurrent E2B sandboxes (8)',
+    "Total disk limit exceeded. Maximum allowed: 40000GiB.\nConsider archiving your unused Sandboxes to free up available storage.\nTo increase concurrency limits, upgrade your organization's Tier by visiting https://app.daytona.io/dashboard/limits.",
+    'Disk quota exceeded',
+    'storage quota exceeded for organization',
+  ])('names a full provider storage quota as the cause: %s', (message) => {
+    const failure = classifySandboxProvisioningFailure(new Error(message));
+    expect(failure).toEqual({
+      category: 'provider-capacity',
+      userMessage: SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE,
+      isCapacity: true,
+      isGitAuth: false,
+      transient: true,
+    });
+    expect(failure.userMessage).toBe(
+      'The sandbox provider is out of storage, so no new session can start on it. Try again later, or ask a project admin to switch the sandbox provider in Customize → Settings → Sandbox.',
+    );
+  });
+
+  test.each([
     'max number of running sandboxes on node reached',
     'too many sandboxes starting on this node',
     'No available runners can satisfy the request',
@@ -23,6 +44,7 @@ describe('classifySandboxProvisioningFailure', () => {
       userMessage: SANDBOX_PROVIDER_CAPACITY_MESSAGE,
       isCapacity: true,
       isGitAuth: false,
+      transient: true,
     });
   });
 
@@ -44,6 +66,7 @@ describe('classifySandboxProvisioningFailure', () => {
       userMessage: SANDBOX_PROVIDER_FAILURE_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
+      transient: false,
     });
     expect(result.userMessage).not.toContain(secretProviderMessage);
   });
@@ -135,6 +158,7 @@ describe('classifySandboxProvisioningFailure', () => {
       userMessage: SNAPSHOT_TOO_LARGE_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
+      transient: false,
     });
   });
 

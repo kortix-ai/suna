@@ -1,6 +1,6 @@
 'use client';
 
-import { useTranslations } from '@/i18n/use-translations';
+import type { SecurityDiagramContent } from '../decks/security-diagram-content';
 /**
  * Mechanism diagrams for the security walkthrough.
  *
@@ -24,7 +24,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * inside the sandbox, which is the one claim this deck rests on.
  */
 
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { AnimatePresence, m } from 'motion/react';
 import type { ReactNode } from 'react';
 
@@ -236,7 +236,7 @@ export function Link({
 }
 
 /** The trust boundary — a dashed vertical rule with the wall named on it. */
-export function Wall({ label = 'trust boundary', on = true }: { label?: string; on?: boolean }) {
+export function Wall({ label, on = true }: { label: string; on?: boolean }) {
   return (
     <Reveal on={on} className="relative flex w-14 shrink-0 items-center justify-center sm:w-20">
       <span
@@ -260,50 +260,50 @@ export function Row({ children, className }: { children: ReactNode; className?: 
    way back. Grounded in isolation.rows: one sandbox per session (a UNIQUE
    constraint, not a convention), one branch per session, disposable. */
 
-export function IsolationDiagram({ step }: { step: number }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const captions = [
-    'A project is a repo. main is the only thing everyone shares.',
-    'Starting a session cuts a branch and boots one machine for it. The database will not let a second session have that machine.',
-    'A second session gets its own branch and its own machine. Nothing crosses between them — same project, same team, or another customer.',
-    'The machine is disposable. A bad install goes away with it. Only what the session commits survives, and it survives as a change request.',
-  ];
+export function IsolationDiagram({
+  step,
+  content,
+}: {
+  step: number;
+  content: SecurityDiagramContent;
+}) {
+  const captions = content.isolation;
 
   return (
     <Stage caption={captions[Math.min(step, captions.length - 1)]}>
       <Row className="gap-0">
         <Box
-          label={tI18nComplete.raw('text244210e48437')}
-          title={tI18nComplete.raw('textf063543f3336')}
+          label={content.text244210e48437}
+          title={content.textf063543f3336}
           mono="main"
           tone={step >= 3 ? 'active' : 'idle'}
           className="max-w-[13rem]"
         >
           <div className="mt-3 flex flex-col gap-1.5">
             <Chip on tone="idle">
-              {tI18nComplete.raw('texte58eef890002')}
+              {content.texte58eef890002}
             </Chip>
             <Chip on tone="idle">
-              {tI18nComplete.raw('text5b3a02e57af9')}
+              {content.text5b3a02e57af9}
             </Chip>
           </div>
         </Box>
 
-        <Link on={step >= 1} label={tI18nComplete.raw('text80b787a487ea')} fire={step === 1} />
+        <Link on={step >= 1} label={content.text80b787a487ea} fire={step === 1} />
 
         <div className="flex flex-1 flex-col gap-3">
           <Box
-            label={tI18nComplete.raw('textf95155c4ddf9')}
-            title={tI18nComplete.raw('text5b3da54ff03f')}
+            label={content.textf95155c4ddf9}
+            title={content.text5b3da54ff03f}
             tone={step >= 3 ? 'danger' : step >= 1 ? 'active' : 'idle'}
             dashed
             on={step >= 1}
           >
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <Chip on={step >= 1}>{tI18nComplete.raw('text73689fa80dc8')}</Chip>
-              <Chip on={step >= 1}>{tI18nComplete.raw('text9ef8458f5ff0')}</Chip>
+              <Chip on={step >= 1}>{content.text73689fa80dc8}</Chip>
+              <Chip on={step >= 1}>{content.text9ef8458f5ff0}</Chip>
               <Chip on={step >= 3} tone="danger">
-                {tI18nComplete.raw('text9cff331d6699')}
+                {content.text9cff331d6699}
               </Chip>
             </div>
           </Box>
@@ -315,20 +315,20 @@ export function IsolationDiagram({ step }: { step: number }) {
               className="border-border absolute inset-x-0 top-1/2 border-t border-dashed"
             />
             <span className="border-border bg-card text-muted-foreground relative rounded-sm border px-2.5 py-1 font-mono text-xs">
-              {tI18nComplete.raw('textcf59e92f0d50')}
+              {content.textcf59e92f0d50}
             </span>
           </Reveal>
 
           <Box
-            label={tI18nComplete.raw('text70e72dfa3c17')}
-            title={tI18nComplete.raw('text5b3da54ff03f')}
+            label={content.text70e72dfa3c17}
+            title={content.text5b3da54ff03f}
             tone={step >= 2 ? 'active' : 'idle'}
             dashed
             on={step >= 2}
           >
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <Chip on={step >= 2}>{tI18nComplete.raw('text7c2771ec55be')}</Chip>
-              <Chip on={step >= 2}>{tI18nComplete.raw('text9ef8458f5ff0')}</Chip>
+              <Chip on={step >= 2}>{content.text7c2771ec55be}</Chip>
+              <Chip on={step >= 2}>{content.text9ef8458f5ff0}</Chip>
             </div>
           </Box>
         </div>
@@ -338,11 +338,11 @@ export function IsolationDiagram({ step }: { step: number }) {
       <Reveal on={step >= 3} className="mt-5">
         <div className="border-border bg-background flex flex-wrap items-center gap-3 rounded-sm border border-dashed p-4">
           <span className="text-muted-foreground font-mono text-xs">
-            {tI18nComplete.raw('text94d4a7d0d558')}
+            {content.text94d4a7d0d558}
           </span>
-          <Chip tone="active">{tI18nComplete.raw('text9505cacb7c71')}</Chip>
+          <Chip tone="active">{content.text9505cacb7c71}</Chip>
           <Link on className="w-10 min-w-0" />
-          <Chip tone="active">{tI18nComplete.raw('textb6e3ca291ec2')}</Chip>
+          <Chip tone="active">{content.textb6e3ca291ec2}</Chip>
           <Link on className="w-10 min-w-0" />
           <Chip tone="ok">main</Chip>
         </div>
@@ -357,22 +357,21 @@ export function IsolationDiagram({ step }: { step: number }) {
    `broker`: the sandbox carries one KORTIX_TOKEN and zero third-party
    secrets; the credential is attached server-side at call time. */
 
-export function BrokerDiagram({ step }: { step: number }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const captions = [
-    'A sandbox is a real Linux machine the model can run anything on. So the only credential in it is one Kortix token, scoped to the project.',
-    'The agent calls a tool by name. It has no URL, no host and no key — it cannot construct the request itself.',
-    'Kortix checks that this agent may use this connector, applies the policy, and decrypts the credential on its own side of the wall.',
-    'The third-party API sees an ordinary authenticated request. The answer goes back to the agent. The credential stays behind.',
-    'These four never cross into the machine the model is driving. Turning the connector off takes effect on the next call — with nothing in the sandbox to rotate.',
-  ];
+export function BrokerDiagram({
+  step,
+  content,
+}: {
+  step: number;
+  content: SecurityDiagramContent;
+}) {
+  const captions = content.broker;
 
   return (
     <Stage caption={captions[Math.min(step, captions.length - 1)]}>
       <Row className="gap-0">
         <Box
-          label={tI18nComplete.raw('text3125384115cc')}
-          title={tI18nComplete.raw('text11b39c93777e')}
+          label={content.text3125384115cc}
+          title={content.text11b39c93777e}
           tone={step === 1 ? 'active' : 'idle'}
           dashed
           className="max-w-[15rem]"
@@ -380,55 +379,42 @@ export function BrokerDiagram({ step }: { step: number }) {
           <div className="mt-3 flex flex-col gap-1.5">
             <Chip tone={step >= 1 ? 'active' : 'idle'}>KORTIX_TOKEN</Chip>
             <span className="text-muted-foreground/70 text-xs leading-snug">
-              {tI18nComplete.raw('texte7e7dd001381')}
+              {content.texte7e7dd001381}
             </span>
           </div>
         </Box>
 
-        <Link
-          on={step >= 1}
-          fire={step === 1}
-          label={<>{tI18nComplete.raw('text90d30b78cf91')}</>}
-        />
+        <Link on={step >= 1} fire={step === 1} label={<>{content.text90d30b78cf91}</>} />
 
-        <Wall label={tI18nComplete.raw('text2b040fd0129f')} />
+        <Wall label={content.text2b040fd0129f} />
 
         <Box
-          label={tI18nComplete.raw('text388f7968512c')}
-          title={tI18nComplete.raw('texteb02e1086a17')}
+          label={content.text388f7968512c}
+          title={content.texteb02e1086a17}
           tone={step === 2 ? 'active' : 'idle'}
           className="max-w-[16rem]"
         >
           <div className="mt-3 flex flex-col gap-1.5">
             <Chip on={step >= 2} tone={step >= 2 ? 'ok' : 'idle'}>
-              {tI18nComplete.raw('texte9aa82e34f3c')}
+              {content.texte9aa82e34f3c}
             </Chip>
             <Chip on={step >= 2} tone={step >= 2 ? 'ok' : 'idle'}>
-              {tI18nComplete.raw('textcdd7efcb7e2c')}
+              {content.textcdd7efcb7e2c}
             </Chip>
             <Chip on={step >= 2} tone={step >= 2 ? 'warn' : 'idle'}>
-              {tI18nComplete.raw('text7cb2ebd599ca')}
+              {content.text7cb2ebd599ca}
             </Chip>
           </div>
         </Box>
 
         <div className="flex flex-col justify-center">
-          <Link
-            on={step >= 3}
-            fire={step === 3}
-            label={<>{tI18nComplete.raw('text985e129a42ac')}</>}
-          />
-          <Link
-            on={step >= 3}
-            back
-            label={tI18nComplete.raw('texta9f4b3d22a52')}
-            className="mt-1"
-          />
+          <Link on={step >= 3} fire={step === 3} label={<>{content.text985e129a42ac}</>} />
+          <Link on={step >= 3} back label={content.texta9f4b3d22a52} className="mt-1" />
         </div>
 
         <Box
-          label={tI18nComplete.raw('textc618a193ffe9')}
-          title={tI18nComplete.raw('textf869fbbc138c')}
+          label={content.textc618a193ffe9}
+          title={content.textf869fbbc138c}
           mono="api.gmail.com"
           tone={step >= 3 ? 'active' : 'idle'}
           className="max-w-[12rem]"
@@ -439,13 +425,13 @@ export function BrokerDiagram({ step }: { step: number }) {
       <Reveal on={step >= 4} className="mt-5">
         <div className="border-border bg-background flex flex-wrap items-center gap-x-3 gap-y-2 rounded-sm border p-4">
           <span className="text-muted-foreground font-mono text-xs">
-            {tI18nComplete.raw('text156d4538a20d')}
+            {content.text156d4538a20d}
           </span>
           {[
-            tI18nComplete.raw('text98aae8972102'),
-            tI18nComplete.raw('textfe2db5690c6e'),
-            tI18nComplete.raw('text4ca57b697d2f'),
-            tI18nComplete.raw('text422a9c2f3b55'),
+            content.text98aae8972102,
+            content.textfe2db5690c6e,
+            content.text4ca57b697d2f,
+            content.text422a9c2f3b55,
           ].map((k) => (
             <Chip key={k} on={step >= 4} tone="danger" strike>
               {k}
@@ -481,14 +467,14 @@ function Dot({ on, tone = 'idle' }: { on: boolean; tone?: Tone }) {
   );
 }
 
-export function ChangeRequestDiagram({ step }: { step: number }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const captions = [
-    'Session work reaches main through a change request.',
-    'Each session has its own isolated machine and branch.',
-    'When the session wants to keep something, it opens a change request.',
-    'Nothing merges itself: work reaches main through a change request a person approves, unless an admin granted the merge capability.',
-  ];
+export function ChangeRequestDiagram({
+  step,
+  content,
+}: {
+  step: number;
+  content: SecurityDiagramContent;
+}) {
+  const captions = content.changeRequest;
 
   return (
     <Stage caption={captions[Math.min(step, captions.length - 1)]}>
@@ -503,7 +489,7 @@ export function ChangeRequestDiagram({ step }: { step: number }) {
             <span className="bg-border h-px flex-1" />
             <Dot on={step >= 3} tone="ok" />
             <Chip on={step >= 3} tone="ok">
-              {tI18nComplete.raw('text3f8f09c8e09f')}
+              {content.text3f8f09c8e09f}
             </Chip>
           </div>
         </div>
@@ -511,12 +497,12 @@ export function ChangeRequestDiagram({ step }: { step: number }) {
         {/* the session's branch, hanging off main */}
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground w-24 shrink-0 font-mono text-xs">
-            {tI18nComplete.raw('text3f3af1ecebbd')}
+            {content.text3f3af1ecebbd}
           </span>
           <div className="flex flex-1 items-center gap-3">
             <Reveal on={step >= 1} className="flex flex-1 items-center gap-3">
               <span className="text-muted-foreground/50 font-mono text-xs">
-                {tI18nComplete.raw('text693dd5a55830')}
+                {content.text693dd5a55830}
               </span>
               <Dot on={step >= 1} />
               <span className="bg-border h-px flex-1" />
@@ -527,10 +513,10 @@ export function ChangeRequestDiagram({ step }: { step: number }) {
             <Reveal on={step >= 2}>
               <div className="border-border bg-background rounded-sm border p-3">
                 <p className="text-muted-foreground font-mono text-xs">
-                  {tI18nComplete.raw('textb6e3ca291ec2')}
+                  {content.textb6e3ca291ec2}
                 </p>
                 <p className="text-foreground mt-1.5 font-mono text-xs">
-                  {tI18nComplete.raw('text1703616a8648')}
+                  {content.text1703616a8648}
                 </p>
               </div>
             </Reveal>
@@ -541,20 +527,14 @@ export function ChangeRequestDiagram({ step }: { step: number }) {
         <Reveal on={step >= 3}>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="border-kortix-green/50 bg-background rounded-sm border p-4">
-              <p className="text-muted-foreground font-mono text-xs">
-                {tI18nComplete.raw('texte0f1afb4c551')}
-              </p>
+              <p className="text-muted-foreground font-mono text-xs">{content.texte0f1afb4c551}</p>
               <p className="text-kortix-green mt-2 text-sm font-medium">
-                {tI18nComplete.raw('texte1b0ca48b6f3')}
+                {content.texte1b0ca48b6f3}
               </p>
             </div>
             <div className="border-kortix-red/50 bg-background rounded-sm border p-4">
-              <p className="text-muted-foreground font-mono text-xs">
-                {tI18nComplete.raw('text63e1a031759a')}
-              </p>
-              <p className="text-kortix-red mt-2 text-sm font-medium">
-                {tI18nComplete.raw('text29521c5c7df3')}
-              </p>
+              <p className="text-muted-foreground font-mono text-xs">{content.text63e1a031759a}</p>
+              <p className="text-kortix-red mt-2 text-sm font-medium">{content.text29521c5c7df3}</p>
             </div>
           </div>
         </Reveal>
@@ -568,42 +548,42 @@ export function ChangeRequestDiagram({ step }: { step: number }) {
    account's own path · 2 the inheritance that does not exist · 3 the
    intersection a session actually gets (identity.agents, credentials.rows[1]). */
 
-export function PrincipalDiagram({ step }: { step: number }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const captions = [
-    'A person acts through the roles they were granted, evaluated against the resource they are reaching for.',
-    'A service account is a principal of its own. Policies attach to it directly, and its request is evaluated purely against those policies.',
-    'What it never gets is the reach of whoever created it. There is no inheritance edge here to walk up.',
-    'So what a session can actually touch is the intersection: what the person may do, and what the agent was declared to be allowed. Never the union.',
-  ];
+export function PrincipalDiagram({
+  step,
+  content,
+}: {
+  step: number;
+  content: SecurityDiagramContent;
+}) {
+  const captions = content.principal;
 
   return (
     <Stage caption={captions[Math.min(step, captions.length - 1)]}>
       <div className="flex flex-col gap-3">
         <Row className="gap-0">
           <Box
-            label={tI18nComplete.raw('text69e03750027e')}
-            title={tI18nComplete.raw('text6007db63e18e')}
-            mono={tI18nComplete.raw('textb9addc023078')}
+            label={content.text69e03750027e}
+            title={content.text6007db63e18e}
+            mono={content.textb9addc023078}
             tone="active"
             className="max-w-[13rem]"
           />
-          <Link on label={tI18nComplete.raw('textf39511acff4a')} fire={step === 0} />
+          <Link on label={content.textf39511acff4a} fire={step === 0} />
           <Box
-            label={tI18nComplete.raw('text5b3a02e57af9')}
-            title={tI18nComplete.raw('textd50bf082547f')}
+            label={content.text5b3a02e57af9}
+            title={content.textd50bf082547f}
             tone={step >= 0 ? 'active' : 'idle'}
             className="max-w-[13rem]"
           >
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <Chip>{tI18nComplete.raw('text4c1029697ee3')}</Chip>
-              <Chip>{tI18nComplete.raw('text1553cc62ff24')}</Chip>
+              <Chip>{content.text4c1029697ee3}</Chip>
+              <Chip>{content.text1553cc62ff24}</Chip>
             </div>
           </Box>
-          <Link on label={tI18nComplete.raw('text1f4dada66e63')} />
+          <Link on label={content.text1f4dada66e63} />
           <Box
-            label={tI18nComplete.raw('text5de95319f174')}
-            title={tI18nComplete.raw('text969a8a299f18')}
+            label={content.text5de95319f174}
+            title={content.text969a8a299f18}
             tone="idle"
             className="max-w-[13rem]"
           />
@@ -616,35 +596,35 @@ export function PrincipalDiagram({ step }: { step: number }) {
             className="border-kortix-red/40 absolute inset-x-0 top-1/2 border-t border-dashed"
           />
           <span className="border-kortix-red/50 bg-card text-kortix-red relative rounded-sm border px-2.5 py-1 font-mono text-xs line-through">
-            {tI18nComplete.raw('text76a986043116')}
+            {content.text76a986043116}
           </span>
         </Reveal>
 
         <Row className="gap-0">
           <Box
-            label={tI18nComplete.raw('text69e03750027e')}
-            title={tI18nComplete.raw('textce5e9df4a78f')}
-            mono={tI18nComplete.raw('textcb55e9ab9d73')}
+            label={content.text69e03750027e}
+            title={content.textce5e9df4a78f}
+            mono={content.textcb55e9ab9d73}
             tone={step >= 1 ? 'active' : 'idle'}
             on={step >= 1}
             className="max-w-[13rem]"
           />
-          <Link on={step >= 1} label={tI18nComplete.raw('textf39511acff4a')} fire={step === 1} />
+          <Link on={step >= 1} label={content.textf39511acff4a} fire={step === 1} />
           <Box
-            label={tI18nComplete.raw('text5b3a02e57af9')}
-            title={tI18nComplete.raw('textb5fc7fe188d3')}
+            label={content.text5b3a02e57af9}
+            title={content.textb5fc7fe188d3}
             tone={step >= 1 ? 'active' : 'idle'}
             on={step >= 1}
             className="max-w-[13rem]"
           >
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <Chip on={step >= 1}>{tI18nComplete.raw('textce7400730dbe')}</Chip>
+              <Chip on={step >= 1}>{content.textce7400730dbe}</Chip>
             </div>
           </Box>
-          <Link on={step >= 1} label={tI18nComplete.raw('text1f4dada66e63')} />
+          <Link on={step >= 1} label={content.text1f4dada66e63} />
           <Box
-            label={tI18nComplete.raw('text5de95319f174')}
-            title={tI18nComplete.raw('text969a8a299f18')}
+            label={content.text5de95319f174}
+            title={content.text969a8a299f18}
             tone="idle"
             on={step >= 1}
             className="max-w-[13rem]"
@@ -655,11 +635,11 @@ export function PrincipalDiagram({ step }: { step: number }) {
       <Reveal on={step >= 3} className="mt-5">
         <div className="border-border bg-background flex flex-wrap items-center gap-3 rounded-sm border p-4">
           <span className="text-muted-foreground font-mono text-xs">
-            {tI18nComplete.raw('text934819f49e74')}
+            {content.text934819f49e74}
           </span>
-          <Chip tone="active">{tI18nComplete.raw('textb235bbe13b97')}</Chip>
+          <Chip tone="active">{content.textb235bbe13b97}</Chip>
           <span className="text-muted-foreground font-mono text-sm">∩</span>
-          <Chip tone="active">{tI18nComplete.raw('texta6f1a6f7e502')}</Chip>
+          <Chip tone="active">{content.texta6f1a6f7e502}</Chip>
         </div>
       </Reveal>
     </Stage>
@@ -672,56 +652,25 @@ export function PrincipalDiagram({ step }: { step: number }) {
    no path to a connected tool that skips it (connectors/content.ts `audit`).
    Arguments are stored as a preview built by subtraction — never a raw value. */
 
-const LEDGER = [
-  {
-    action: 'gmail.send_email',
-    actor: 'agent · support',
-    risk: 'write',
-    outcome: 'approved',
-    tone: 'ok' as Tone,
-  },
-  {
-    action: 'drive.trash_file',
-    actor: 'agent · support',
-    risk: 'destructive',
-    outcome: 'blocked',
-    tone: 'danger' as Tone,
-  },
-  {
-    action: 'iam.role.grant',
-    actor: 'marko@kortix.com',
-    risk: 'admin',
-    outcome: 'ran',
-    tone: 'active' as Tone,
-  },
-  {
-    action: 'cr.merge',
-    actor: 'marko@kortix.com',
-    risk: 'write',
-    outcome: 'ran',
-    tone: 'active' as Tone,
-  },
-];
-
-export function LedgerDiagram({ step }: { step: number }) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const captions = [
-    'Every call an agent makes through a connector is a row. The gateway that resolves the credential is the thing that writes it.',
-    'A denied call is a row too. What did not happen is as much a part of the record as what did.',
-    'Account actions land in the same place — membership, roles, policies, tokens, groups.',
-    'Recording is never the thing you pay for. Every plan writes this. The plan decides who may read, export, or stream it.',
-  ];
+export function LedgerDiagram({
+  step,
+  content,
+}: {
+  step: number;
+  content: SecurityDiagramContent;
+}) {
+  const captions = content.ledger;
 
   return (
     <Stage caption={captions[Math.min(step, captions.length - 1)]}>
       <div className="border-border overflow-hidden rounded-sm border">
         <div className="border-border text-muted-foreground grid grid-cols-12 gap-3 border-b px-4 py-2.5 font-mono text-xs">
-          <span className="col-span-4">{tI18nComplete.raw('textbd938c688f49')}</span>
-          <span className="col-span-4">{tI18nComplete.raw('text79c8764339a5')}</span>
-          <span className="col-span-2">{tI18nComplete.raw('text2c6ef0f0d0e4')}</span>
-          <span className="col-span-2">{tI18nComplete.raw('text25a63e52a98f')}</span>
+          <span className="col-span-4">{content.textbd938c688f49}</span>
+          <span className="col-span-4">{content.text79c8764339a5}</span>
+          <span className="col-span-2">{content.text2c6ef0f0d0e4}</span>
+          <span className="col-span-2">{content.text25a63e52a98f}</span>
         </div>
-        {LEDGER.map((r, i) => (
+        {content.rows.map((r, i) => (
           <Reveal
             key={r.action}
             on={step >= i}
@@ -745,15 +694,13 @@ export function LedgerDiagram({ step }: { step: number }) {
       <Reveal on={step >= 3} className="mt-4">
         <div className="border-border bg-background flex flex-wrap items-center gap-3 rounded-sm border p-4">
           <span className="text-muted-foreground font-mono text-xs">
-            {tI18nComplete.raw('textb192017da47f')}
+            {content.textb192017da47f}
           </span>
-          <Chip tone="idle">{tI18nComplete.raw('text9cbac18aeb11')}</Chip>
+          <Chip tone="idle">{content.text9cbac18aeb11}</Chip>
           <Chip tone="danger" strike>
-            {tI18nComplete.raw('text254f1565c507')}
+            {content.text254f1565c507}
           </Chip>
-          <span className="text-muted-foreground text-xs">
-            {tI18nComplete.raw('textc7affccb91f2')}
-          </span>
+          <span className="text-muted-foreground text-xs">{content.textc7affccb91f2}</span>
         </div>
       </Reveal>
     </Stage>

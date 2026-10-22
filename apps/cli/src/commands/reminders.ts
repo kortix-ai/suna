@@ -15,6 +15,7 @@ import {
   fail,
   missing,
   resolveProjectContext,
+  shortId,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
@@ -24,8 +25,9 @@ import { C, help, pad, status } from '../style.ts';
 const HELP = help`Usage: kortix reminders <subcommand> [options]
        kortix remind "<prompt>" [schedule]        (= reminders add)
 
-Reminders are a per-project feature flag, off by default. Turn them on with
-\`kortix projects features enable reminders\` (or Settings → Feature flags).
+Reminders are a per-project feature flag, on by default. A project that turned
+them off turns them back on with \`kortix projects features enable reminders\`
+(or Settings → Feature flags).
 
 A reminder re-prompts ONE session on a schedule — "in 24h, check whether the
 email arrived", "every hour until the deploy is green". It is a trigger scoped
@@ -39,6 +41,8 @@ Subcommands:
   ls                          List this session's reminders.
   pause <id>                  Stop firing, keep the reminder.
   resume <id>                 Fire again, re-armed from now.
+  run <id>                    Fire once now (retry a failed run). The
+                              schedule does not move.
   rm <id>                     Delete the reminder (aliases: stop, delete).
 
 Schedule (add):
@@ -63,6 +67,7 @@ Examples:
   kortix remind "Re-run the flaky test suite and report" --at 2026-10-01T09:00:00Z
   kortix reminders add "Post the standup summary" --cron "0 0 9 * * 1-5" --timezone Europe/Berlin
   kortix reminders ls
+  kortix reminders run reminder.3f9a1c2e7b04
   kortix reminders rm reminder.3f9a1c2e7b04
 `;
 
@@ -118,10 +123,11 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
 
   const sub = shortcut ? 'add' : rest.shift();
   const args = rest;
-  if (!['add', 'create', 'ls', 'list', 'pause', 'resume', 'rm', 'stop', 'delete', 'remove'].includes(sub ?? '')) {
+  if (!['add', 'create', 'ls', 'list', 'pause', 'resume', 'run', 'rm', 'stop', 'delete', 'remove'].includes(sub ?? '')) {
     return fail(`Unknown subcommand "${sub}". Run \`kortix reminders --help\`.`);
   }
 
+  const implicitSession = flags.session === undefined;
   let sessionRef = flags.session ?? process.env.KORTIX_SESSION_ID;
   if (!sessionRef) return missing('--session <id>. Inside a session it defaults to $KORTIX_SESSION_ID');
 
@@ -163,11 +169,12 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
         return 0;
       }
       const idW = Math.max(...reminders.map((r) => r.id.length), 2);
-      process.stdout.write(`\n  ${C.dim}${pad('ID', idW)}   STATE    ${pad('REPEAT', 24)}  NEXT                  LAST FIRED            TEXT${C.reset}\n`);
+      const nameW = Math.max(...reminders.map((r) => (r.name ?? '—').length), 4);
+      process.stdout.write(`\n  ${C.dim}${pad('ID', idW)}   STATE    ${pad('REPEAT', 24)}  NEXT                  LAST FIRED            ${pad('NAME', nameW)}  TEXT${C.reset}\n`);
       for (const r of reminders) {
-        const text = (r.name ?? r.prompt).replace(/\s+/g, ' ');
+        const text = r.prompt.replace(/\s+/g, ' ');
         process.stdout.write(
-          `  ${pad(r.id, idW)}   ${pad(r.state, 7)}  ${pad(describeSchedule(r).slice(0, 24), 24)}  ${pad(formatInstant(r.next_fire_at), 20)}  ${pad(formatInstant(r.last_fired_at), 20)}  ${text.length > 60 ? `${text.slice(0, 59)}…` : text}\n`,
+          `  ${pad(r.id, idW)}   ${pad(r.state, 7)}  ${pad(describeSchedule(r).slice(0, 24), 24)}  ${pad(formatInstant(r.next_fire_at), 20)}  ${pad(formatInstant(r.last_fired_at), 20)}  ${pad(r.name ?? '—', nameW)}  ${text.length > 60 ? `${text.slice(0, 59)}…` : text}\n`,
         );
         if (r.last_error) process.stdout.write(`  ${' '.repeat(idW)}   ${C.red}${r.last_error}${C.reset}\n`);
       }
@@ -183,11 +190,28 @@ export async function runReminders(argv: string[], shortcut = false): Promise<nu
       else writeReminder(updated, sub === 'pause' ? 'Paused' : 'Resumed');
       return 0;
     }
+    if (sub === 'run') {
+      const ran = await client.post<SessionReminder>(`${base}/${id}/run`, {});
+      if (json) emitJson(ran);
+      else writeReminder(ran, 'Sent to the session:');
+      return 0;
+    }
     await client.delete<{ ok: boolean }>(`${base}/${id}`);
     if (json) emitJson({ ok: true, id });
     else process.stdout.write(`${status.ok(`Removed ${id}`)}\n`);
     return 0;
   } catch (err) {
+    // The env session belongs to the sandbox's own host. Against a linked or
+    // --host project elsewhere the API 404s with a bare "Not found" that reads
+    // like a platform failure — name the mismatch and the flag instead. A bad
+    // reminder id 404s too ("Reminder not found"); keep the server's text.
+    const body = (err as { body?: { error?: unknown } })?.body;
+    if (implicitSession && (err as { status?: unknown })?.status === 404 && body?.error === 'Not found') {
+      process.stderr.write(
+        `${status.err(`Session ${shortId(sessionRef)} (from $KORTIX_SESSION_ID) not found in this project (${ctx.auth.api_base}). Pass --session <id> to target a session on this host.`)}\n`,
+      );
+      return 1;
+    }
     const code = surfaceApiError(err);
     if ((err as { body?: { code?: unknown } })?.body?.code === 'feature_disabled') {
       process.stderr.write(`  ${C.dim}Turn it on: kortix projects features enable reminders${C.reset}\n`);

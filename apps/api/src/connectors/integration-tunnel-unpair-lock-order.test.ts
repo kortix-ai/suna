@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { accounts, connectorConnections, connectors, projects, tunnelConnections } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
-import { unpairMachine } from '../tunnel/routes/connections';
+import { unpairMachine } from '../tunnel/registrations';
 import { attachComputerConnection } from './computers';
 import { ensureComputerConnector } from './sync';
 

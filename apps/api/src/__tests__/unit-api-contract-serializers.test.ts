@@ -9,7 +9,7 @@ import {
 import type { projectSecrets, projectSessions, projects, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
 import { buildSecretView, serializeProject, serializeSession } from '../projects/lib/serializers';
-import { serializeSandboxRow } from '../projects/routes/shared';
+import { serializeSandboxRow } from '../projects/session-open';
 
 const NOW = new Date('2026-07-01T12:00:00.000Z');
 const PROJECT_ID = '11111111-2222-4333-8444-555555555555';
@@ -147,22 +147,7 @@ describe('serializeProject ⇄ ProjectSchema', () => {
     );
   });
 
-  test('surfaces a configured E2B project pin', () => {
-    const originalAllowed = config.ALLOWED_SANDBOX_PROVIDERS;
-    const originalKey = config.E2B_API_KEY;
-    config.ALLOWED_SANDBOX_PROVIDERS = ['e2b'];
-    config.E2B_API_KEY = 'test-only';
-    try {
-      const out = serializeProject(projectRow({ metadata: { default_sandbox_provider: 'e2b' } }));
-      expect(out.default_sandbox_provider).toBe('e2b');
-      expect(ProjectSchema.strict().parse(out)).toEqual(out);
-    } finally {
-      config.ALLOWED_SANDBOX_PROVIDERS = originalAllowed;
-      config.E2B_API_KEY = originalKey;
-    }
-  });
-
-  test.each(['managed', 'justavps', 'unknown'])(
+  test.each(['managed', 'justavps', 'e2b', 'unknown'])(
     'does not surface retired or unknown project pin %s',
     (provider) => {
       const out = serializeProject(
@@ -481,7 +466,9 @@ describe('buildSecretView ⇄ SecretSchema', () => {
     const parsed = SecretSchema.strict().parse(out);
     expect(parsed.configured).toBe(false);
     expect(parsed.effective_source).toBe('mine');
-    expect(parsed.mine).toEqual({ active: true, updated_at: NOW.toISOString() });
+    // The fixture's `valueEnc` is no real envelope, so the override reads undecryptable.
+    expect(parsed.mine).toEqual({ active: true, updated_at: NOW.toISOString(), status: 'undecryptable' });
+    expect(parsed.status).toBeUndefined();
   });
 
   test('system git-auth secret parses and cannot be managed even by an editor', () => {

@@ -1,8 +1,4 @@
-import {
-  DEFAULT_MANAGED_MODEL_IDS,
-  MANAGED_FLAGSHIP_MODEL_ID,
-  defaultEnabledModelIds,
-} from '@kortix/llm-catalog/lite';
+import { defaultEnabledModelIds } from '@kortix/llm-catalog/lite';
 
 import type { FlatModel } from './model-flatten';
 import type { ModelKey } from './model-key';
@@ -13,13 +9,6 @@ import { createModelLookup } from './model-lookup';
  * `useModelStore` (web) wraps it with persisted pins, and any other host calls
  * it with its own.
  */
-
-/**
- * Fallback allowlist for the rare non-gateway model that carries no release-date
- * metadata: only the flagship shows out of the box, everything else is opt-in via
- * "Manage models".
- */
-const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>([MANAGED_FLAGSHIP_MODEL_ID]);
 
 /**
  * Provider id of the managed Kortix LLM gateway (see the sandbox's
@@ -37,9 +26,11 @@ const SUBSCRIPTION_PROVIDER_ID = 'codex';
 // session restart. The picker must therefore NOT show all of it by default: a
 // `kortix` model is on out-of-the-box only when it's a platform-managed default
 // or its underlying provider is connected (live, from project secrets). The
-// rest stay one search away. Single source for the managed set lives in
-// @kortix/llm-catalog (mirrors the gateway's managed-ids).
-const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+// rest stay one search away. A Kortix managed model is a bare id under the
+// gateway provider: whatever Platinum Inference offers, so no list lives here.
+function isManagedModel(model: ModelKey): boolean {
+  return model.providerID === MANAGED_GATEWAY_PROVIDER_ID && !model.modelID.includes('/');
+}
 
 // `explicitProvider` (a model's `FlatModel.provider` / `ModelKey.provider`) is
 // the robust path — the gateway now serves it directly, so grouping/gating
@@ -77,7 +68,11 @@ export function hasUsableModel(
       // from CONNECTED providers, so presence here already means usable.
       return true;
     }
-    if (MANAGED_MODEL_IDS.has(m.modelID)) return !freeTier;
+    if (isManagedModel(m)) {
+      // The gateway serves no managed model to an account without the
+      // managed-models entitlement (`freeTier`), the platform default included.
+      return !freeTier;
+    }
     const sub = subProviderOf(m.modelID, m.provider);
     return sub === SUBSCRIPTION_PROVIDER_ID
       ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
@@ -85,8 +80,9 @@ export function hasUsableModel(
   });
 }
 
+/** Shown out of the box with no release metadata: the Kortix managed models. */
 export function isDefaultVisible(model: ModelKey): boolean {
-  return DEFAULT_VISIBLE_MODEL_IDS.has(model.modelID);
+  return isManagedModel(model);
 }
 
 /**
@@ -122,8 +118,10 @@ export interface ModelVisibilityPin extends ModelKey {
  * the same model win. Rules, in order:
  *  • a `hide` pin hides;
  *  • gateway (`kortix`) models: a platform-managed model shows unless
- *    `freeTier`; any other shows only while its real provider is connected,
- *    then by `show` pin, newest-per-family, or the undated-flagship rule;
+ *    `freeTier` (the gateway refuses every managed model then); any other
+ *    shows only while its real provider is
+ *    connected, then by `show` pin, newest-per-family, or the
+ *    undated-flagship rule;
  *  • native models: `show` pin, newest per family within the window
  *    (`computeLatestSet`), else only the flagship when undated.
  *
@@ -165,9 +163,9 @@ export function createModelVisibility(input: {
         sub === SUBSCRIPTION_PROVIDER_ID
           ? (connectedProviderIds?.has(SUBSCRIPTION_PROVIDER_ID) ?? false)
           : (connectedProviderIds?.has(sub) ?? false);
-      if (MANAGED_MODEL_IDS.has(model.modelID)) {
-        if (freeTier) return false;
-        return true;
+      if (isManagedModel(model)) {
+        // Same rule as `hasUsableModel` above.
+        return !freeTier;
       }
       if (!connected) return false;
       if (state === 'show') return true;

@@ -6,6 +6,7 @@
  * this logic stays unit-testable without booting the server environment.
  * `./triggers` re-exports all of it, so existing importers are unaffected.
  */
+import { triggerFilterValueMatches } from '@kortix/manifest-schema';
 import type { GitTriggerSpec } from '../triggers';
 
 /** Longest session key we persist. Bounds hostile payloads out of metadata. */
@@ -29,6 +30,31 @@ export function templateValue(value: unknown): string {
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean') return String(value);
   return JSON.stringify(value);
+}
+
+/**
+ * UTC calendar fields of a cron slot, for `session_key` templates. A keyed
+ * trigger with `{{ cron.scheduled_date }}` in its key gets one session per UTC
+ * day, so a frequent coordinator's history is bounded to one day of passes
+ * instead of growing until the model's context limit.
+ */
+export function cronSlotFields(scheduledFor: Date) {
+  const iso = scheduledFor.toISOString();
+  return { scheduled_date: iso.slice(0, 10), scheduled_hour: iso.slice(0, 13) };
+}
+
+/** Deep-merge `override` over `base`: plain objects merge, any other value replaces. */
+export function mergeTriggerPayload(
+  base: Record<string, unknown>,
+  override: Record<string, unknown>,
+): Record<string, unknown> {
+  const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+  const out = { ...base };
+  for (const [key, value] of Object.entries(override)) {
+    if (key === '__proto__') continue;
+    out[key] = isObject(out[key]) && isObject(value) ? mergeTriggerPayload(out[key], value) : value;
+  }
+  return out;
 }
 
 export function renderPromptTemplate(template: string, payload: Record<string, unknown>) {
@@ -62,20 +88,22 @@ export function renderSessionKey(
  * means "accept the delivery, but don't spawn a session".
  *
  * The canonical use is loop-breaking: a source that reports BOTH directions of
- * a conversation would otherwise re-fire the agent with the agent's own reply.
+ * a conversation would otherwise re-fire the agent with the agent's own reply,
+ * and an agent that pushes would re-fire a push trigger (`not`, `not_prefix`).
  * Comparison is stringwise so `true`, `3` and `"3"` behave predictably across
- * JSON and manifest types. A missing path fails closed.
+ * JSON and manifest types. A missing path reads as an empty string, so an
+ * equality on it fails closed.
  */
 export function triggerFilterMatches(
   spec: GitTriggerSpec,
   payload: Record<string, unknown>,
 ): boolean {
   if (!spec.filter) return true;
-  for (const [path, expected] of Object.entries(spec.filter)) {
+  for (const [path, condition] of Object.entries(spec.filter)) {
     const [root, ...rest] = path.split('.');
     if (!root) return false;
     const actual = rest.length === 0 ? payload[root] : valueAtPath(payload[root], rest);
-    if (templateValue(actual) !== expected) return false;
+    if (!triggerFilterValueMatches(condition, actual)) return false;
   }
   return true;
 }

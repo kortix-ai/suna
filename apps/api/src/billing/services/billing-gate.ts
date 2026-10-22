@@ -10,11 +10,10 @@ import {
   resolveBillingState,
 } from './billing-state';
 import { ensureFreeTierAccountReady } from './free-tier';
-import { type BillingModel, MINIMUM_CREDIT_FOR_RUN, isPerSeatAccount } from './tiers';
-import { wallet } from '../wallet';
+import { MINIMUM_CREDIT_FOR_RUN } from './tiers';
 import { debitAndCheckAutoTopup } from './wallet-debits';
 
-type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
+type BillingGateReason = 'subscription_required' | 'insufficient_credits' | 'no_account' | 'plan_upgrade_required';
 
 export interface BillingGateOk {
   ok: true;
@@ -25,10 +24,6 @@ export interface BillingGateOk {
   // post-hoc deduct.
   //
   // Absent ONLY when billing is disabled for the whole deploy (self-host).
-  // It used to also be absent for a paying per-seat subscription, which
-  // bypassed the floor entirely — that bypass is gone, and with it the
-  // `billingHoldUsd == null` branch in hooks.ts that a bypassed account fell
-  // into and that silently discarded its spend.
   holdUsd?: number;
 }
 
@@ -37,18 +32,12 @@ export interface BillingGateBlocked {
   reason: BillingGateReason;
   balance: number;
   message: string;
-  // The account's billing model + whether it has a subscription row at all.
-  // Carried on the 402 so the client can tell a genuinely-free/no-plan account
-  // ("subscribe" pitch) apart from a paying Team account whose wallet ran dry
-  // ("top up" pitch) — the same `subscription_required` reason otherwise
-  // mislabels a per-seat Team account as Free. See web global-upgrade-modal.
-  billingModel: BillingModel;
+  // Whether the account has a subscription row at all.
   hasSubscription: boolean;
   // The UNAMBIGUOUS state (billing-state.ts). `reason` is the legacy 402 error
-  // code and is intentionally lossy — a `free` wallet at zero and a lapsed Team
-  // wallet at zero both emit `insufficient_credits`, and a never-subscribed
-  // per-seat account emits `subscription_required`. Clients should branch on
-  // `billingState` and treat `reason` as the wire-compatible code only.
+  // code and is intentionally lossy — a free wallet at zero and a paid wallet
+  // at zero both emit `insufficient_credits`. Clients branch on `billingState`
+  // and treat `reason` as the wire-compatible code only.
   billingState: BillingState;
 }
 
@@ -69,7 +58,6 @@ export class BillingGateError extends HTTPException {
     message: string,
     accountId: string,
     extra?: {
-      billingModel?: BillingModel;
       hasSubscription?: boolean;
       billingState?: BillingState;
     },
@@ -81,8 +69,6 @@ export class BillingGateError extends HTTPException {
           error: message,
           code: reason,
           balance,
-          // Distinguish "no plan → subscribe" from "Team wallet drained → top up".
-          billing_model: extra?.billingModel ?? 'legacy',
           has_subscription: extra?.hasSubscription ?? false,
           // The unambiguous state — what every client should branch on.
           billing_state: extra?.billingState ?? 'no_subscription',
@@ -97,14 +83,10 @@ export class BillingGateError extends HTTPException {
 }
 
 async function resolveAdmissionState(accountId: string) {
-  await ensureFreeTierAccountReady(accountId);
-  const account = await getCreditAccount(accountId);
+  const account = (await ensureFreeTierAccountReady(accountId)) ?? (await getCreditAccount(accountId));
   const snapshot = billingSnapshotFromAccount(account);
   const state = resolveBillingState(snapshot);
-  const billingModel: BillingModel = isPerSeatAccount(snapshot.billingModel)
-    ? 'per_seat'
-    : 'legacy';
-  return { snapshot, state, billingModel };
+  return { snapshot, state };
 }
 
 /**
@@ -123,8 +105,8 @@ export async function checkBillingAdmission(
   accountId: string,
 ): Promise<{ ok: true } | BillingGateBlocked> {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return { ok: true };
-  const { snapshot, state, billingModel } = await resolveAdmissionState(accountId);
-  return billingStateAllowsRun(state) ? { ok: true } : blockedResult(state, snapshot, billingModel);
+  const { snapshot, state } = await resolveAdmissionState(accountId);
+  return billingStateAllowsRun(state) ? { ok: true } : blockedResult(state, snapshot);
 }
 
 /**
@@ -142,14 +124,14 @@ export async function checkBillingActive(
     return { ok: true };
   }
 
-  const { snapshot, state, billingModel } = await resolveAdmissionState(accountId);
+  const { snapshot, state } = await resolveAdmissionState(accountId);
   const balance = snapshot.balance;
 
-  if (!billingStateAllowsRun(state)) return blockedResult(state, snapshot, billingModel);
+  if (!billingStateAllowsRun(state)) return blockedResult(state, snapshot);
 
   // EVERY account now reaches the admission hold below. There used to be a
   // `subscriptionBypassesWalletFloor(snapshot)` early return here that let a
-  // paying per-seat / credit-plan / paid-tier account through with no hold and
+  // paying paid-tier account through with no hold and
   // no floor. See the NO ACCOUNT BYPASSES THE WALLET FLOOR note in
   // billing-state.ts for what that cost ($588.81 spent against a $150 seat
   // grant on a $0 wallet, with the ledger silently frozen).
@@ -201,7 +183,6 @@ export async function checkBillingActive(
     return blockedResult(
       resolveBillingState({ ...snapshot, balance: 0 }),
       { ...snapshot, balance },
-      billingModel,
     );
   }
 }
@@ -209,22 +190,18 @@ export async function checkBillingActive(
 /**
  * Map a blocking `BillingState` onto the legacy 402 shape.
  *
- * `reason` is the WIRE-COMPATIBLE error code and is deliberately lossy — it
- * preserves exactly the codes clients have keyed off since PR #5141 (a
- * never-subscribed per-seat account is the only case that yields
- * `subscription_required`; every drained wallet, free or paying, yields
- * `insufficient_credits`). The real discrimination travels in `billingState`.
+ * `reason` is the WIRE-COMPATIBLE error code and is deliberately lossy: every
+ * drained wallet, free or paying, yields `insufficient_credits`. The real
+ * discrimination travels in `billingState`.
  */
 function blockedResult(
   state: BillingState,
   snapshot: BillingSnapshot,
-  billingModel: BillingModel,
 ): BillingGateBlocked {
   const hasSubscription = hasSubscriptionRecord(snapshot);
   const base = {
     ok: false as const,
     balance: snapshot.balance,
-    billingModel,
     hasSubscription,
     billingState: state,
   };
@@ -250,36 +227,23 @@ function blockedResult(
     return {
       ...base,
       reason: 'insufficient_credits',
-      message:
-        billingModel === 'per_seat'
-          ? 'Your team wallet is out of credits. Top up to keep your agents running.'
-          : 'Out of credits. Top up to continue.',
+      message: 'Out of credits. Top up or raise your plan to keep your agents running.',
     };
   }
 
-  // no_subscription. Per-seat accounts get the seat pitch and the historical
-  // `subscription_required` code; legacy/free accounts keep
-  // `insufficient_credits` (their $2 grant ran out), which the client renders
-  // as the plan pitch off `billing_state`, not off this code.
-  return billingModel === 'per_seat'
-    ? {
-        ...base,
-        reason: 'subscription_required',
-        message:
-          'Subscribe to activate your seat. $40/teammate per month includes wallet credits for compute and LLM usage.',
-      }
-    : {
-        ...base,
-        reason: 'insufficient_credits',
-        message: 'Out of credits. Top up to continue.',
-      };
+  // no_subscription: the free grant ran out. The client renders the plan pitch
+  // off `billing_state`, not off this code.
+  return {
+    ...base,
+    reason: 'insufficient_credits',
+    message: 'Out of credits. Pick a plan or top up to continue.',
+  };
 }
 
 export async function assertBillingActive(accountId: string): Promise<BillingGateOk> {
   const result = await checkBillingActive(accountId);
   if (result.ok) return result;
   throw new BillingGateError(result.reason, result.balance, result.message, accountId, {
-    billingModel: result.billingModel,
     hasSubscription: result.hasSubscription,
     billingState: result.billingState,
   });

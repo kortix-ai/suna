@@ -12,18 +12,22 @@ import { accountInvitesRouter } from './accounts/invites';
 import { adminApp } from './admin';
 import { authRouter } from './auth';
 import { headlessAuthRouter } from './auth/headless';
-import { authEmailHookApp } from './auth/send-email-hook';
+import { authEmailHookApp, registerSendEmailHookRoutes } from './auth/send-email-hook';
 import { accountDeletionApp, billingApp } from './billing';
 import { notificationsApp } from './notifications/routes';
+import { drivesApp } from './drives/routes';
+import { feedbackApp } from './feedback';
 import {
   emailWebhookApp,
+  registerEmailWebhookRoutes,
+  registerSlackWebhookRoutes,
+  registerTeamsWebhookRoutes,
   slackIdentityApp,
   slackOauthApp,
   slackWebhookApp,
   teamsIdentityApp,
   teamsOauthApp,
   teamsWebhookApp,
-  startTeamsBotTokenRefresh,
   telegramWebhookApp,
 } from './channels';
 import { connectorApp } from './connectors';
@@ -41,20 +45,22 @@ import { oauthApp } from './oauth';
 import { opsApp } from './ops';
 import { platformApp } from './platform';
 import { sandboxWebhooksApp } from './platform/webhooks/routes';
-import { projectWebhooksApp, projectsApp } from './projects';
-import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
+import { projectWebhooksApp, projectsApp, registerAllProjectRoutes, registerSessionLookupRoutes, sessionsApp } from './projects';
 import { router } from './router';
 import { runtimeAssetsApp } from './runtime-assets';
 import { sandboxProxyApp } from './sandbox-proxy';
-import { scimRouter } from './scim';
+import { registerScimRoutes, scimRouter } from './scim';
 import { setupApp } from './setup';
 import { skillsApp } from './skills';
 import { tunnelApp } from './tunnel';
 import { installHttpMiddleware } from './http-middleware';
 import { installHttpErrors } from './http-errors';
 import { registerSystemRoutes } from './routes/system';
+import { registerClientRoutes } from './routes/clients';
 import { registerPlatformEndpoints } from './routes/platform-endpoints';
+import { registerRetiredRoutes } from './routes/retired';
 import { dispatchInProcess } from './inbound-dispatch';
+import { registerCaptureStoreProxy } from './capture/store-proxy';
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
@@ -66,8 +72,23 @@ export { app };
 installHttpMiddleware(app);
 
 registerSystemRoutes(app);
+registerClientRoutes(app);
+
+// Retired routes answer 410 before any mount below can match them.
+registerRetiredRoutes(app);
 
 registerPlatformEndpoints(app);
+
+// /<capture bucket>/* — the Capture store's S3 path prefix, only when
+// KORTIX_CAPTURE_S3_PROXY_TARGET is set (self-host without a domain).
+registerCaptureStoreProxy(app);
+
+// /v1/capture/* — Kortix Capture device sign-in (public, RFC 8628), the
+// device credential endpoint (device token), the approval reads and the agent
+// tool's /v1/capture/me reads (per-route supabaseAuth). The account-scoped
+// Capture routes live under /v1/accounts/:accountId/capture.
+import { createCaptureRouter } from './capture/device-routes';
+app.route('/v1/capture', createCaptureRouter());
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
@@ -80,6 +101,7 @@ app.route('/v1/auth', headlessAuthRouter);
 app.route('/v1/auth', authRouter);
 // SCIM 2.0 — separate auth (per-account bearer tokens, not Supabase JWT).
 // Mounted outside /v1 so IdPs configure the documented protocol URL.
+registerScimRoutes();
 app.route('/scim/v2', scimRouter);
 
 // /v1/account-invites/* — accept/decline/describe pending team invitations.
@@ -115,7 +137,7 @@ app.openapi(
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
 
-app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/models, /v1/router/web-search, /v1/router/tavily/*, etc.
+app.route('/v1/router', router); // /v1/router/health and the /v1/router/{tavily,serper,firecrawl}/* billed proxies
 
 // LLM gateway surfaces: in-API /v1/llm (full pipeline), /internal/gateway
 // control-plane RPC, and the /v1/llm-gateway reverse proxy. See ./llm-gateway/wire.
@@ -129,15 +151,15 @@ app.route('/v1/router', router); // /v1/router/chat/completions, /v1/router/mode
 // test 404'd instead of exercising its gate.
 mountLlmGateway(app);
 
-// OpenRouter-parity read endpoints, scoped to the authenticated account.
-import { generationApp } from './router/routes/generation';
+// OpenRouter-parity usage read, scoped to the authenticated account.
 import { usageApp } from './router/routes/usage';
-app.route('/v1/generation', generationApp); // GET /v1/generation?id=<requestId> — single gateway-call forensics
 app.route('/v1/usage', usageApp); // GET /v1/usage[?start&end&group_by] — account usage rollup
 
 app.route('/v1/billing', billingApp); // /v1/billing/account-state, /v1/billing/webhooks/*
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
+app.route('/v1/drives', drivesApp); // personal, agent and company drives + their files and versions
 app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notifications/device-token — mobile push registration
+app.route('/v1/feedback', feedbackApp); // POST /v1/feedback — product feedback from agents, the CLI and the web app
 // Auth for the platform routes that need an identity. Scoped to these exact
 // paths, not `/v1/platform/*`: the mount point, `/sandbox/version` and the
 // github-app setup callbacks are deliberately unauthenticated and would break.
@@ -152,13 +174,18 @@ app.route('/v1/notifications', notificationsApp); // POST/DELETE /v1/notificatio
 app.use('/v1/platform/boot-timeline', supabaseAuth);
 // Same wiring, same reason, for the daemon's runtime-projection push. A route
 // mounted without this is not "insecure" — it is UNREACHABLE, answering 403 to
-// every fire-and-forget push, in silence. That is the exact defect
-// `__tests__/unit-boot-timeline-auth-mount.test.ts` exists to pin, and it now
-// pins this route too.
+// every fire-and-forget push, in silence.
 app.use('/v1/platform/runtime-projection', supabaseAuth);
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
-registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
+// A project's sign-in token issuer: public OpenID configuration and key set
+// (apps/token-issuer-routes.ts). Mounted BEFORE projectsApp, whose `/*`
+// supabaseAuth would otherwise 401 an anonymous verifier.
+import { tokenIssuerApp } from './apps/token-issuer-routes';
+app.route('/v1/projects', tokenIssuerApp); // /v1/projects/:projectId/{.well-known/openid-configuration,jwks.json}
+registerAllProjectRoutes();
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+registerSessionLookupRoutes();
+app.route('/v1/sessions', sessionsApp); // GET /v1/sessions/:sessionId — one session by id, in any project
 // /v1/mcp — the hosted MCP server, bound to the caller's token like the CLI.
 // It answers its own 401 with an OAuth challenge, so no auth middleware here.
 // dispatchInProcess takes the assembled app as its second argument (it
@@ -208,16 +235,17 @@ app.route('/v1/runtime-assets', runtimeAssetsApp); // GET /manifest, /cli, /agen
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
+registerSlackWebhookRoutes();
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 app.route('/v1/webhooks/teams/oauth', teamsOauthApp); // /v1/webhooks/teams/oauth/callback — admin-consent + catalog publish
+registerTeamsWebhookRoutes();
 app.route('/v1/webhooks/teams', teamsWebhookApp); // /v1/webhooks/teams/messages — Bot Framework activities
-// Keep the shared Teams bot token warm so the first message after a deploy
-// does not wait on login.microsoftonline.com before its live card is posted.
-startTeamsBotTokenRefresh();
 app.route('/v1/channels/slack/identity', slackIdentityApp); // /v1/channels/slack/identity/bind — authed /login bind
 app.route('/v1/channels/teams/identity', teamsIdentityApp); // /v1/channels/teams/identity/bind — authed login bind
 app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
+registerEmailWebhookRoutes();
 app.route('/v1/webhooks/email', emailWebhookApp); // /v1/webhooks/email/agentmail — AgentMail inbound email (Svix-signed)
+registerSendEmailHookRoutes();
 app.route('/v1/webhooks/auth', authEmailHookApp); // /v1/webhooks/auth/send-email — Supabase Auth send-email hook (Standard Webhooks-signed)
 
 app.route('/v1/webhooks/sandbox', sandboxWebhooksApp); // /v1/webhooks/sandbox/{daytona,platinum} — provider lifecycle → close billing
@@ -267,6 +295,7 @@ app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:to
 import { publicSessionSharesApp } from './public-session-shares';
 app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
 
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -280,7 +309,6 @@ app.route('/v1/admin', adminApp);
 app.route('/v1/oauth', oauthApp);
 app.route('/v1/connectors/oauth2', nativeOAuth2CallbackApp);
 
-import { warmPipedreamCatalog } from './connectors/pipedream';
 // TUNNEL_ENABLED=false: the relay never starts, so every tunnel route answers
 // 503. The web hides its computer surfaces when the machine list fails.
 app.use('/v1/tunnel/*', async (c, next) => {

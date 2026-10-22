@@ -58,6 +58,8 @@ let mockFetchResponses: Array<{
   error?: Error;
 }> = [];
 let mockFetchCallCount = 0;
+/** Every upstream Response the stub handed out, to check the proxy released the ones it dropped. */
+let mockFetchReturned: Response[] = [];
 let mockFetchCalls: Array<{
   url: string;
   method: string;
@@ -71,7 +73,6 @@ let mockResolvedPreviewPorts: number[] = [];
 let mockResolveIngressError: Error | null = null;
 /** Called on every ingress resolution; a fake clock uses it to make one slow. */
 let mockOnResolveIngress: (() => void) | null = null;
-let mockSnapshotSyncCalls: Array<Record<string, unknown>> = [];
 
 function mockSandboxRows(): any[] {
   if (!mockDbSandbox) return [];
@@ -214,7 +215,7 @@ mock.module('../projects/lib/on-behalf-of', () => ({
 }));
 
 // IAM — a prompt that switches to a CONCRETE agent is authorized for
-// `project.agent.read` on that agent before the re-mint (sandbox-proxy/routes/preview.ts).
+// `project.agent.read` on that agent before the re-mint (sandbox-proxy/forward/access.ts).
 // The real engine issues an `innerJoin` this file's `db` stub does not build, so
 // leaving it unmocked makes `authorize` throw, the forward retry 4x, and every
 // agent-switch assertion answer 502 instead of the 204 it is about.
@@ -345,8 +346,8 @@ mock.module('../platform/providers', () => ({
                   'X-Daytona-Disable-CORS': 'true',
                   ...(mockPreviewToken ? { 'X-Daytona-Preview-Token': mockPreviewToken } : {}),
                 }
-              : name === 'e2b' && mockPreviewToken
-                ? { 'e2b-traffic-access-token': mockPreviewToken }
+              : name === 'platinum' && mockPreviewToken
+                ? { 'x-provider-traffic-token': mockPreviewToken }
                 : {},
           effectivePort: route.effectivePort,
           websocket: route.websocket,
@@ -367,6 +368,8 @@ mock.module('../config', () => ({
     // config default, because this file's collaborators resolve a mix of the
     // mocked and the real module — a disagreement here reads as a CORS bug.
     FRONTEND_URL: 'http://localhost:3000',
+    // The origin every env push derives the gateway base URL from.
+    KORTIX_URL: 'https://api.example.test',
   },
 }));
 
@@ -416,12 +419,6 @@ mock.module('../projects/secrets', () => {
   };
 });
 
-mock.module('../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: (input: Record<string, unknown>) => {
-    mockSnapshotSyncCalls.push(input);
-  },
-}));
-
 // The proxy owns two of the four title hooks. Keep the REAL prompt extraction
 // (that is the part the proxy actually decides) and capture only the generator
 // call, whose own idempotency/CAS is covered by unit + integration tests.
@@ -442,8 +439,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
   // Let non-proxy URLs through (e.g. internal Hono test requests)
   if (
     !urlStr.startsWith('https://preview.') &&
-    !urlStr.startsWith('http://preview.') &&
-    !urlStr.includes('.e2b.test')
+    !urlStr.startsWith('http://preview.')
   ) {
     return originalFetch(url, init);
   }
@@ -473,12 +469,12 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
     return Promise.reject(responseConfig.error);
   }
 
-  return Promise.resolve(
-    new Response(responseConfig.body, {
-      status: responseConfig.status,
-      headers: responseConfig.headers || {},
-    }),
-  );
+  const response = new Response(responseConfig.body, {
+    status: responseConfig.status,
+    headers: responseConfig.headers || {},
+  });
+  mockFetchReturned.push(response);
+  return Promise.resolve(response);
 }
 
 // ─── Import proxy app AFTER mocks ────────────────────────────────────────────
@@ -553,12 +549,12 @@ beforeEach(() => {
   mockWakeCalls = [];
   mockFetchResponses = [{ status: 200, body: 'Hello from upstream' }];
   mockFetchCallCount = 0;
+  mockFetchReturned = [];
   mockFetchCalls = [];
   mockDbUpdateCalls = [];
   mockResolvedPreviewPorts = [];
   mockResolveIngressError = null;
   mockOnResolveIngress = null;
-  mockSnapshotSyncCalls = [];
   mockTitleCalls = [];
   // The per-sandbox env-push memo (`env-sync-skip-decision.ts`) would
   // otherwise carry over from the previous test on the same TEST_SANDBOX_ID
@@ -692,6 +688,7 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
     ['answers 500', { status: 500, body: 'boom' }, 4096],
     ['cannot be reached', { status: 0, body: '', error: new Error('ECONNREFUSED') }, 4096],
     ['is too old to report the field', { status: 200, body: '{"status":"ok"}' }, 4096],
+    ['names the OpenCode harness and its port', { status: 200, body: '{"harness":{"id":"opencode","details":{"port":4097}},"opencode_port":4097}' }, 4097],
   ])('an opencode PTY dials the live port: the daemon %s', async (_label, health, port) => {
     mockFetchResponses = [health];
 
@@ -704,6 +701,19 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
     expect(healthReads()).toHaveLength(1);
     // Bounded, so a wedged box cannot hang the terminal.
     expect(healthReads()[0]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  // R7.5: pi reports `opencode_port: null`. The 4096 fallback dialed a port
+  // where nothing listens and the terminal died with close code 4502.
+  test('an opencode PTY on a pi box is refused with 409 naming the Kortix PTY, after one health read', async () => {
+    mockFetchResponses = [{ status: 200, body: '{"harness":{"id":"pi","details":{"model":"kortix/x"}},"opencode_port":null}' }];
+    const res = await preparePreviewWsUpgrade(upgradeUrl('ws-pi-box', 4096, '/pty/pty_1/connect'));
+    expect(res).toMatchObject({ ok: false, status: 409 });
+    if (!res.ok) {
+      expect(res.message).toContain('pty_unsupported_runtime');
+      expect(res.message).toContain('/kortix/pty/');
+    }
+    expect(healthReads()).toHaveLength(1);
   });
 
   // The value changes on exactly the event this exists for, so it is read on
@@ -741,18 +751,6 @@ describe('Preview proxy: websocket upgrade (path form)', () => {
     expect(upstream.searchParams.get('public_share')).toBeNull();
     expect(upstream.searchParams.get('wake')).toBeNull();
     expect(upstream.searchParams.get('cursor')).toBe('5');
-  });
-
-  // Both sides of one contract in two packages: the daemon's health payload
-  // must publish the field the lookup reads.
-  test('the daemon health payload publishes the runtime port (harness.details.port)', async () => {
-    const health = await Bun.file(
-      new URL(
-        '../../../kortix-sandbox-agent-server/src/harness/open-code/diagnostics.ts',
-        import.meta.url,
-      ).pathname,
-    ).text();
-    expect(health).toContain('port: opencode.getActivePort()');
   });
 });
 
@@ -844,6 +842,50 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[0]?.url).toBe('https://preview.daytona.io/proxy-url/api/v2/page');
   });
 
+  // An upstream answer the proxy does not pass through is released, not left to
+  // GC: an unread undici body pins its connection until then (KRTX-2803).
+  test('a daemon not-ready 503 releases the upstream body it answered from a clone', async () => {
+    mockFetchResponses = [
+      { status: 503, body: '{"code":"runtime_not_ready","error":"sandbox runtime not ready"}', headers: { 'content-type': 'application/json' } },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/api/v2/page`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(503);
+    expect(await res.text()).toContain('runtime_not_ready');
+    expect(mockFetchReturned).toHaveLength(1);
+    expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  test('a 502 the proxy retries releases the upstream body it drops', async () => {
+    mockFetchResponses = [
+      { status: 502, body: 'bad gateway' },
+      { status: 200, body: 'ok' },
+    ];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/api/v2/page`, {
+      headers: { Authorization: 'Bearer test' },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('ok');
+    expect(mockFetchReturned[0]!.status).toBe(502);
+    expect(mockFetchReturned[0]!.bodyUsed).toBe(true);
+  });
+
+  test('a browser that gets the port-unreachable page leaves no upstream body unreleased', async () => {
+    mockFetchResponses = [{ status: 502, body: 'bad gateway' }];
+    const app = createProxyTestApp();
+    const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/${TEST_PORT}/`, {
+      headers: { Authorization: 'Bearer test', Accept: 'text/html' },
+    });
+    // The state page a browser renders, not the upstream's bare 502.
+    expect(res.headers.get('content-type') ?? '').toContain('text/html');
+    // MAX_RETRIES = 3 → four attempts, every answer dropped.
+    expect(mockFetchReturned).toHaveLength(4);
+    expect(mockFetchReturned.every((r) => r.bodyUsed)).toBe(true);
+  }, 15_000);
+
   test('proxies POST request with body', async () => {
     mockFetchResponses = [{ status: 201, body: '{"id":"created"}' }];
     const app = createProxyTestApp();
@@ -928,7 +970,10 @@ describe('Preview proxy: forwarding', () => {
         OPENROUTER_API_KEY: 'sk-live',
         SENTRY_DSN: 'https://example.test/1',
       },
-      llmGatewayEnabled: false,
+      // Every push carries the gateway: this is what moves a box that booted
+      // in the removed native mode onto it.
+      llmGatewayEnabled: true,
+      llmGatewayBaseUrl: 'https://api.example.test/v1/llm',
       names: ['OPENROUTER_API_KEY', 'SENTRY_DSN'],
       // `runtimeEnv` for a W3 daemon, the same map as `opencodeEnv` for an older one.
       runtimeEnv: {},
@@ -939,6 +984,50 @@ describe('Preview proxy: forwarding', () => {
     expect(mockFetchCalls[1].url).toBe(
       'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async?directory=%2Fworkspace',
     );
+  });
+
+  // The Platinum edge marks every answer it gives itself with
+  // `x-pt-edge-verdict`: it did not proxy the request, so the box never saw
+  // the prompt and a replay cannot post it twice (CFG-12, revocation-unavailable).
+  const sendPrompt = async () => {
+    const origSetTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: any) => fn()) as any;
+    try {
+      return await createProxyTestApp().request(
+        `/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async?directory=%2Fworkspace`,
+        {
+          method: 'POST',
+          headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parts: [{ type: 'text', text: 'hi' }] }),
+        },
+      );
+    } finally {
+      globalThis.setTimeout = origSetTimeout;
+    }
+  };
+
+  test('a prompt the provider edge refused itself (x-pt-edge-verdict) is sent again', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":false,"revision":"rev"}' },
+      { status: 503, body: 'Preview access denied', headers: { 'x-pt-edge-verdict': 'revocation-unavailable' } },
+      { status: 204, body: '' },
+    ];
+    const res = await sendPrompt();
+    expect(res.status).toBe(204);
+    const prompts = mockFetchCalls.filter((c) => c.url.endsWith('/session/ses_123/prompt_async?directory=%2Fworkspace'));
+    expect(prompts).toHaveLength(2);
+  });
+
+  test('a prompt answered 502 by the box itself is never sent twice', async () => {
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":false,"revision":"rev"}' },
+      { status: 502, body: '{"error":"upstream unreachable"}', headers: { 'x-pt-edge-served': '1' } },
+      { status: 204, body: '' },
+    ];
+    const res = await sendPrompt();
+    expect(res.status).toBe(502);
+    const prompts = mockFetchCalls.filter((c) => c.url.endsWith('/session/ses_123/prompt_async?directory=%2Fworkspace'));
+    expect(prompts).toHaveLength(1);
   });
 
   test('titles from a REST prompt_async body, with the model the user picked for the turn', async () => {
@@ -1007,8 +1096,9 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  // A concrete agent is forwarded when it matches the session's agent or
-  // resolves the legacy default sentinel. Switching concrete agents is refused.
+  // A concrete agent is forwarded when it matches the session's agent, when the
+  // session runs the legacy default sentinel, or — since KRTX-1290 — when the
+  // switch to it is authorized (the IAM gate above is held open here).
   test.each([
     ['the agent the session runs', 'reviewer', 'reviewer'],
     ['a concrete agent in a default session', 'default', 'kortix'],
@@ -1036,8 +1126,12 @@ describe('Preview proxy: forwarding', () => {
     });
   });
 
-  test('refuses a different concrete agent before forwarding prompt_async', async () => {
+  test('forwards an authorized switch to a different concrete agent (KRTX-1290)', async () => {
     mockDbSandbox = { ...mockDbSandbox, agentName: 'reviewer' };
+    mockFetchResponses = [
+      { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
+      { status: 204, body: '' },
+    ];
     const app = createProxyTestApp();
     const res = await app.request(`/v1/p/${TEST_SANDBOX_ID}/8000/session/ses_123/prompt_async`, {
       method: 'POST',
@@ -1045,9 +1139,15 @@ describe('Preview proxy: forwarding', () => {
       body: JSON.stringify({ agent: 'researcher', parts: [{ type: 'text', text: 'hi' }] }),
     });
 
-    expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
-    expect(mockFetchCalls).toEqual([]);
+    expect(res.status).toBe(204);
+    expect(mockFetchCalls.map((call) => call.url)).toEqual([
+      'https://preview.daytona.io/proxy-url/kortix/env',
+      'https://preview.daytona.io/proxy-url/session/ses_123/prompt_async',
+    ]);
+    expect(JSON.parse(mockFetchCalls[1]?.body ?? '{}')).toEqual({
+      agent: 'researcher',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
   });
 
   test('returns a clean proxy error when project env sync is rejected', async () => {
@@ -1121,7 +1221,10 @@ describe('Preview proxy: forwarding', () => {
       {
         status: 0,
         body: '',
-        error: new Error('Unable to connect. Is the computer able to access the url?'),
+        // Bun's real shape for a refused connection: a TypeError with a code.
+        error: Object.assign(new TypeError('Unable to connect. Is the computer able to access the url?'), {
+          code: 'ConnectionRefused',
+        }),
       },
       { status: 200, body: '{"ok":true,"changed":true,"revision":"rev"}' },
       { status: 204, body: '' },
@@ -1189,13 +1292,13 @@ describe('Preview proxy: forwarding', () => {
         'x-daytona-disable-cors': 'true',
         'x-daytona-preview-token': 'daytona-preview-token-123',
       },
-      absent: ['e2b-traffic-access-token'],
+      absent: ['x-provider-traffic-token'],
     },
     {
-      provider: 'e2b',
-      previewUrl: 'https://8080-e2b-sandbox.e2b.test',
-      token: 'e2b-traffic-token',
-      present: { 'e2b-traffic-access-token': 'e2b-traffic-token' },
+      provider: 'platinum',
+      previewUrl: 'https://preview.platinum.test/proxy-url',
+      token: 'platinum-traffic-token',
+      present: { 'x-provider-traffic-token': 'platinum-traffic-token' },
       absent: ['x-daytona-preview-token'],
     },
   ])('$provider ingress headers are forwarded as the provider resolved them', async (row) => {
@@ -1631,7 +1734,7 @@ describe('Preview proxy: retry exhaustion', () => {
 // no wake, no resend of the (non-idempotent) message, and a distinct,
 // honest signal instead of the generic "sandbox unreachable" 502. See
 // preview-retry-budget.ts (proxyAttemptTimeoutMs) and forwardToSandbox's
-// catch block in routes/preview.ts.
+// catch block in forward/retry.ts.
 describe('Preview proxy: long-turn completion timeout', () => {
   test('a connect-timer abort on POST /session/:id/message returns 504 LONG_TURN_PROXY_TIMEOUT — no wake, no resend', async () => {
     const savedFetch = globalThis.fetch;
@@ -1860,10 +1963,11 @@ describe('Preview proxy: hop attribution when the provider never resolves', () =
 // the static-file listener (3211), which reads that session's workspace.
 // Ownership alone cannot separate end-users when every session of a wrapper
 // shares one created_by.
-describe('Preview proxy: per-session gate on session-data ports', () => {
+describe('Preview proxy: per-session gate on every port', () => {
   const FOREIGN_SESSION = '99999999-9999-4999-8999-999999999999';
 
-  test.each([8000, 4096, 4097, 3211])(
+  // Pentest M-2: an app port serves that session's workspace too.
+  test.each([8000, 4096, 4097, 3211, TEST_PORT])(
     'another session\'s caller is refused on port %p',
     async (port) => {
       const res = await createProxyTestApp().request(`/v1/p/session-gate-${port}/${port}/`, {
@@ -1874,7 +1978,7 @@ describe('Preview proxy: per-session gate on session-data ports', () => {
     },
   );
 
-  test('the session\'s own caller, and any caller on an ordinary app port, are forwarded', async () => {
+  test('the session\'s own caller is forwarded on the daemon port and an app port', async () => {
     const app = createProxyTestApp();
     const own = await app.request(`/v1/p/session-gate-own/8000/kortix/health`, {
       headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': mockDbSandbox.sessionId },
@@ -1882,7 +1986,7 @@ describe('Preview proxy: per-session gate on session-data ports', () => {
     expect(own.status).toBe(200);
 
     const appPort = await app.request(`/v1/p/session-gate-app/${TEST_PORT}/`, {
-      headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': FOREIGN_SESSION },
+      headers: { Authorization: 'Bearer test', 'X-Test-Caller-Session': mockDbSandbox.sessionId },
     });
     expect(appPort.status).toBe(200);
   });

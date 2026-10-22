@@ -11,9 +11,9 @@
  * still exists for back/forward/address-bar browsing, but it is no longer what
  * a preview row opens.
  *
- * The WebView carries the live Supabase `Authorization` header ONLY for the
- * sandbox-proxy origin (`isTrustedProxyUrl`), exactly as `BrowserPage` does:
- * any other origin must not see the session token.
+ * The WebView carries the SDK's request headers (`authenticatedRequest`, the
+ * live session token) ONLY for the sandbox-proxy origin (`isTrustedProxyUrl`),
+ * exactly as `BrowserPage` does: any other origin must not see the token.
  */
 
 import * as React from 'react';
@@ -23,7 +23,10 @@ import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { API_URL, getAuthToken } from '@/api/config';
+import { authenticatedRequest } from '@kortix/sdk';
+import { API_URL } from '@/api/config';
+import { Button } from '@/components/ui/button';
+import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { KortixBottomSheetModal } from '@/components/kortix/sheet';
 import { allowBrowserNavigation, isTrustedProxyUrl } from '@/lib/utils/html-embed';
@@ -37,18 +40,6 @@ export function SandboxPreviewSheet() {
   const modalRef = React.useRef<BottomSheetModal>(null);
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
-  const [authToken, setAuthToken] = React.useState<string | null>(null);
-
-  React.useEffect(() => {
-    let alive = true;
-    void getAuthToken().then((token) => {
-      if (alive) setAuthToken(token);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   // The store is the source of truth: a tap sets the URL, which presents the
   // sheet; the sheet's dismiss clears it.
   React.useEffect(() => {
@@ -56,7 +47,7 @@ export function SandboxPreviewSheet() {
   }, [url]);
 
   const pageBackground = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
-  const trusted = !!url && isTrustedProxyUrl(url, API_URL);
+
   const loading = (
     <View className="flex-1 items-center justify-center bg-background">
       <KortixLoader />
@@ -76,24 +67,68 @@ export function SandboxPreviewSheet() {
       enableContentPanningGesture={false}
       backgroundStyle={{ backgroundColor: pageBackground }}
       onDismiss={closePreview}>
-      {url && authToken ? (
-        <WebView
-          source={{
-            uri: url,
-            headers: trusted ? { Authorization: `Bearer ${authToken}` } : undefined,
-          }}
-          originWhitelist={['*']}
-          onShouldStartLoadWithRequest={allowBrowserNavigation}
-          startInLoadingState
-          renderLoading={() => loading}
-          javaScriptEnabled
-          domStorageEnabled
-          sharedCookiesEnabled
-          style={{ flex: 1, backgroundColor: pageBackground }}
-        />
-      ) : (
-        loading
-      )}
+      {url ? <PreviewPage key={url} url={url} pageBackground={pageBackground} loading={loading} /> : loading}
     </KortixBottomSheetModal>
+  );
+}
+
+// A URL owns its credential request. Changing or closing it unmounts this
+// page, so an old credential cannot render even before the next effect runs.
+function PreviewPage({ url, pageBackground, loading }: {
+  url: string;
+  pageBackground: string;
+  loading: React.ReactElement;
+}) {
+  const trusted = isTrustedProxyUrl(url, API_URL);
+  const [credential, setCredential] = React.useState<
+    { status: 'loading' } | { status: 'error' } | { status: 'ready'; headers: Record<string, string> }
+  >({ status: 'loading' });
+  const [attempt, setAttempt] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!trusted) return;
+    let alive = true;
+    void authenticatedRequest(url).then(
+      ({ headers }) => {
+        if (alive) setCredential({ status: 'ready', headers });
+      },
+      () => { if (alive) setCredential({ status: 'error' }); },
+    );
+    return () => { alive = false; };
+  }, [url, trusted, attempt]);
+
+  if (trusted && credential.status === 'loading') return loading;
+  if (trusted && credential.status === 'error') {
+    return (
+      <View className="flex-1 items-center justify-center gap-3 bg-background px-8">
+        <Text variant="muted" className="text-center" accessibilityLiveRegion="polite">
+          Unable to load preview credentials. Try again.
+        </Text>
+        <Button variant="secondary" size="sm" className="rounded-full"
+          accessibilityLabel="Retry preview credentials"
+          onPress={() => {
+            setCredential({ status: 'loading' });
+            setAttempt((value) => value + 1);
+          }}>
+          <Text>Retry</Text>
+        </Button>
+      </View>
+    );
+  }
+  return (
+    <WebView
+      source={{
+        uri: url,
+        headers: trusted && credential.status === 'ready' ? credential.headers : undefined,
+      }}
+      originWhitelist={['*']}
+      onShouldStartLoadWithRequest={allowBrowserNavigation}
+      startInLoadingState
+      renderLoading={() => loading}
+      javaScriptEnabled
+      domStorageEnabled
+      sharedCookiesEnabled
+      style={{ flex: 1, backgroundColor: pageBackground }}
+    />
   );
 }

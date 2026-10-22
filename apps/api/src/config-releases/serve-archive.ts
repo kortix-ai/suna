@@ -7,7 +7,7 @@
  *    to unrelated history, CFG-7): the store is tried directly by its
  *    project-scoped key. A hit is served exactly like step 3 below. On a miss,
  *    the tree may be the composed release tree of the `commit` the path names
- *    (config dir plus root skills and the pi config dir, see `composeReleaseTree`): it is rebuilt
+ *    (an agent variant's plugin selection, see `composeReleaseTree`): it is rebuilt
  *    from that commit and served like step 4. Anything else is 404.
  * 3. In the mirror: the store presigns a download URL. Public host: `302` to
  *    it. Loopback or private host: stream the stored bytes. A cloud sandbox
@@ -27,6 +27,7 @@ import { rewriteStorageOrigin } from '../shared/storage-url';
 import { classifyIpHost, sanitizeUrlForLog } from '../snapshots/providers/upload-url-guard';
 import {
   buildConfigArchive,
+  buildConfigRelease,
   ConfigArchiveTooLargeError,
   isTreeObject,
   MAX_CONFIG_ARCHIVE_BYTES,
@@ -35,6 +36,7 @@ import {
   resolveReleaseTreeSource,
   storeConfigArchive,
 } from './builder';
+import { readFileTree } from './release-tree';
 import {
   CONFIG_ARCHIVE_URL_TTL_SECONDS,
   configArchiveKey,
@@ -85,6 +87,8 @@ export interface ServeConfigArchiveDeps {
   store?: ConfigArchiveStore;
   publicOverride?: string | null;
   fetch?: (input: string) => Promise<Response>;
+  /** Tests only: a smaller archive cap, so the over-limit case needs no 32 MiB fixture. */
+  archiveLimit?: number;
 }
 
 function gzipResponse(bytes: Uint8Array, treeId: string, source: 'store' | 'mirror'): Response {
@@ -189,7 +193,7 @@ export async function serveConfigArchive(
 
   // Builds the archive when the store cannot serve it. A composed tree exists
   // only in a scratch repository, so it is rebuilt from its commit.
-  let build: () => Promise<Buffer> = () => buildConfigArchive(repo, treeId);
+  let build: () => Promise<Buffer> = () => buildConfigArchive(repo, treeId, deps.archiveLimit);
   if (!inMirror) {
     try {
       const served = await tryServeFromStore(store, key, treeId, publicOverride, fetchImpl);
@@ -239,6 +243,12 @@ async function composedArchiveBuilder(
   const known = await runGitCapture(['cat-file', '-e', `${commit}^{commit}`], repo);
   if (known.exitCode !== 0) return null;
   if (agent && !/^[a-zA-Z0-9_-]+$/.test(agent)) return null;
+  if (agent) {
+    // The agent variant's release holds only its project tool modules (`toolsRelease`).
+    const release = await buildConfigRelease(project, commit, `agent:${agent}`).catch(() => null);
+    const files = release?.tools_only && release.config_tree_id === treeId ? release.files : null;
+    if (files) return async () => (await readFileTree(repo, files, { archive: true })).archive!;
+  }
   const resolved = await resolveReleaseTreeSource(repo, project, commit, agent ? `agent:${agent}` : 'project').catch(() => null);
   if (!resolved) return null;
   if (!('source' in resolved) || !isComposedSource(resolved.source)) return null;

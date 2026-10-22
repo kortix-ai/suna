@@ -71,6 +71,15 @@ export function safeAgentFile(value: unknown): string | null {
 /** JSON Schema twin of `safeAgentFile` (validated by the conformance suite). */
 export const AGENT_FILE_PATTERN = String.raw`^(?!-)(?!(?:.*/)?\.\.?(?:/|$))(?:[\w .-]+/)*[\w .-]+\.md$`;
 
+/** A project tool module (top-level `tools`): a safe repo path to a `.ts`/`.js` (`.mts`, `.mjs`, …) file, or null. */
+export function safeToolFile(value: unknown): string | null {
+  const path = safeRepoPath(value);
+  return path && /[^/]\.[cm]?[jt]s$/.test(path) ? path : null;
+}
+
+/** JSON Schema twin of `safeToolFile`. */
+export const TOOL_FILE_PATTERN = String.raw`^(?!-)(?!(?:.*/)?\.\.?(?:/|$))(?:[\w .-]+/)*[\w .-]+\.[cm]?[jt]s$`;
+
 function table(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
@@ -80,11 +89,17 @@ export function manifestOpencodeConfigDir(manifest: unknown): string | null {
   return safeRepoPath(table(table(manifest)?.opencode)?.config_dir);
 }
 
+/** A kortix_version 3 manifest: it reads no harness config folder. */
+function isV3(manifest: unknown): boolean {
+  return Number(table(manifest)?.kortix_version) === 3;
+}
+
 /**
  * OpenCode config dirs to try, in order. The first one that ships an
- * `opencode.json[c]` is the project's OpenCode config dir.
+ * `opencode.json[c]` is the project's OpenCode config dir. None for v3.
  */
 export function opencodeConfigDirCandidates(manifest: unknown): string[] {
+  if (isV3(manifest)) return [];
   const explicit = manifestOpencodeConfigDir(manifest);
   return explicit ? [explicit] : [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR];
 }
@@ -93,8 +108,10 @@ export function opencodeConfigDirCandidates(manifest: unknown): string[] {
  * pi config dirs to try, in order: the manifest's own `pi.config_dir` alone,
  * else `harnesses/pi` then `.kortix/pi`. The first one that exists is the
  * project's (the daemon's `resolvePiProjectConfigDir` applies the same rule).
+ * None for v3.
  */
 export function piConfigDirCandidates(manifest: unknown): string[] {
+  if (isV3(manifest)) return [];
   const explicit = safeRepoPath(table(table(manifest)?.pi)?.config_dir);
   return explicit ? [explicit] : [PI_CONFIG_DIR, LEGACY_PI_CONFIG_DIR];
 }

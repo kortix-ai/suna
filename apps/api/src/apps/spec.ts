@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { posix, resolve, sep } from 'node:path';
 
 export type AppSourceSpec =
@@ -20,7 +20,7 @@ export type AppSourceSpec =
       kind: 'dockerfile';
       dockerfile?: string;
       command: string[];
-      port: number;
+      port?: number;
       readinessPath?: string;
       restartLimit?: number;
     }
@@ -28,7 +28,7 @@ export type AppSourceSpec =
       kind: 'oci_image';
       image: string;
       command?: string[];
-      port: number;
+      port?: number;
       readinessPath?: string;
       restartLimit?: number;
     };
@@ -104,7 +104,11 @@ async function loadDockerfile(sourceDir: string, requested = 'Dockerfile'): Prom
   const absoluteRoot = resolve(sourceDir);
   const absolutePath = resolve(absoluteRoot, path);
   if (!isWithin(absoluteRoot, absolutePath)) throw new Error('dockerfile escapes the source directory');
-  const contents = await readFile(absolutePath, 'utf8');
+  // The lexical check above does not see symlinks: resolve both and compare again.
+  const realRoot = await realpath(absoluteRoot);
+  const realPath = await realpath(absolutePath);
+  if (!isWithin(realRoot, realPath)) throw new Error('dockerfile escapes the source directory');
+  const contents = await readFile(realPath, 'utf8');
   if (!contents.trim()) throw new Error('Dockerfile is empty');
   if (Buffer.byteLength(contents) > 1024 * 1024) throw new Error('Dockerfile exceeds 1 MiB');
   return { path, contents };
@@ -136,6 +140,30 @@ function finalDockerfileWorkdir(contents: string): string | undefined {
     workdir = value.startsWith('/') ? posix.normalize(value) : posix.resolve(workdir, value);
   }
   return workdir;
+}
+
+/**
+ * Convex moved its images from `ghcr.io/get-convex/` to `ghcr.io/convex/`, and
+ * the old namespace refuses anonymous pulls since 2026-10-19. Apps scaffolded
+ * before the template moved still name the old prefix in their committed
+ * Dockerfile and `oci_image` block, so every release of them failed at pull.
+ * Only a digest-pinned reference is rewritten: the digest names the same bytes
+ * under the new namespace. A tag could point elsewhere there and is left alone.
+ */
+const MOVED_IMAGE_PREFIX = 'ghcr.io/get-convex/';
+const MOVED_IMAGE_TARGET = 'ghcr.io/convex/';
+
+export function movedImageReference(reference: string): string {
+  if (!reference.startsWith(MOVED_IMAGE_PREFIX) || !/@sha256:[0-9a-f]{64}$/i.test(reference)) return reference;
+  return `${MOVED_IMAGE_TARGET}${reference.slice(MOVED_IMAGE_PREFIX.length)}`;
+}
+
+/** Apply `movedImageReference` to the image of every `FROM` line. */
+export function rewriteMovedFromImages(dockerfile: string): string {
+  return dockerfile.replace(
+    /^([ \t]*FROM[ \t]+(?:--\S+[ \t]+)*)(\S+)/gim,
+    (_line, head: string, image: string) => `${head}${movedImageReference(image)}`,
+  );
 }
 
 export async function normalizeAppBuild(
@@ -201,11 +229,12 @@ export async function normalizeAppBuild(
       return {
         sourceKind: source.kind,
         sourceDir: extractedSourceDir,
-        dockerfile: loaded.contents,
+        dockerfile: rewriteMovedFromImages(loaded.contents),
         runtimeSpec: {
           command: command(source.command),
           workdir: finalDockerfileWorkdir(loaded.contents),
-          target_port: targetPort(source.port),
+          // No port: a worker-only release; the supervisor runs the process and serves nothing.
+          target_port: source.port === undefined ? 0 : targetPort(source.port),
           readiness_path: readinessPath(source.readinessPath),
           restart_limit: restartLimit(source.restartLimit),
         },
@@ -222,10 +251,11 @@ export async function normalizeAppBuild(
       }
       return {
         sourceKind: source.kind,
-        dockerfile: `FROM ${source.image}`,
+        dockerfile: `FROM ${movedImageReference(source.image)}`,
         runtimeSpec: {
           command: appCommand,
-          target_port: targetPort(source.port),
+          // No port: a worker-only release; the supervisor runs the process and serves nothing.
+          target_port: source.port === undefined ? 0 : targetPort(source.port),
           readiness_path: readinessPath(source.readinessPath),
           restart_limit: restartLimit(source.restartLimit),
         },

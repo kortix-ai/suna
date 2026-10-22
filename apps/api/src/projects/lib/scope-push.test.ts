@@ -24,6 +24,7 @@ let posted: Array<{
   refreshModels?: boolean;
   opencodeEnv?: Record<string, string | null>;
   llmGatewayEnabled?: boolean;
+  llmGatewayBaseUrl?: string;
   llmGatewayDenyEnv?: string;
 }> = [];
 // One fake row that satisfies every select on this path — the sandbox lookup
@@ -49,7 +50,6 @@ let activeSandbox: {
   // silently swallowed; the double has to be able to carry it.
   status?: string;
 } | null;
-let gatewayEnabled = false;
 
 function freshSessionRow(): typeof SESSION_ROW {
   return {
@@ -98,10 +98,6 @@ mock.module('../secrets', () => ({
   }),
 }));
 
-mock.module('../../llm-gateway/enablement', () => ({
-  projectLlmGatewayEnabled: async () => gatewayEnabled,
-}));
-
 mock.module('../../sandbox-proxy/backend', () => ({
   resolveSandboxIngress: async () => ({ url: 'https://sandbox.test', headers: {} }),
 }));
@@ -117,6 +113,7 @@ function recordingFetch(): (u: unknown, init?: { body?: string }) => Promise<Res
       refreshModels: body.refreshModels as boolean | undefined,
       opencodeEnv: body.opencodeEnv as Record<string, string | null> | undefined,
       llmGatewayEnabled: body.llmGatewayEnabled as boolean | undefined,
+      llmGatewayBaseUrl: body.llmGatewayBaseUrl as string | undefined,
       llmGatewayDenyEnv: body.llmGatewayDenyEnv as string | undefined,
     } satisfies RecordedPost);
     return Response.json({ ok: true, opencode: 'ok' });
@@ -141,7 +138,6 @@ beforeEach(() => {
   posted = [];
   activeSandbox = SANDBOX_ROW;
   SESSION_ROW = freshSessionRow();
-  gatewayEnabled = false;
   // Each test starts from the recording fetch; a test that swaps it restores
   // it itself.
   (globalThis as { fetch: unknown }).fetch = recordingFetch();
@@ -209,13 +205,13 @@ describe('pushSessionScopeToSandbox', () => {
     expect(posted).toEqual([]);
   });
 
-  test('stamps LLM gateway mode without a provider-key deny list', async () => {
-    gatewayEnabled = true;
+  test('always sends the LLM gateway and its base URL, without a provider-key deny list', async () => {
     const result = await pushSessionScopeToSandbox(INPUT);
 
     expect(result).toEqual({ applied: true });
     expect(posted).toHaveLength(1);
     expect(posted[0].llmGatewayEnabled).toBe(true);
+    expect(posted[0].llmGatewayBaseUrl).toMatch(/^https?:\/\/.+\/v1\/llm$/);
     expect(posted[0].llmGatewayDenyEnv).toBeUndefined();
   });
 
@@ -233,7 +229,7 @@ describe('pushSessionScopeToSandbox', () => {
   });
 });
 
-// Prod 2026-08-27, session b3848cf5: `session_sandboxes.status` was 'stopped'
+// A prod session, 2026-08-27: `session_sandboxes.status` was 'stopped'
 // while the Platinum VM was genuinely running and serving prompts. Every push
 // filtered the lookup on `status = 'active'` and returned a bare
 // 'no active sandbox' that no caller logged, so the session silently received

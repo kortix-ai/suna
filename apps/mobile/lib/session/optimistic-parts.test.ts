@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { AttachedFile } from './attachments';
-import { optimisticUserParts } from './optimistic-parts';
+import { localUriOf, optimisticUserParts } from './optimistic-parts';
 
 const NOW = 1755500000000;
 const PHOTO: AttachedFile = {
@@ -33,6 +33,8 @@ describe('optimisticUserParts', () => {
       url: undefined,
       localUri: 'file:///cache/photo_1.jpg',
     });
+    // The bubble reads the attachment block by this id.
+    expect(localUriOf(parts[0]!.id)).toBe('file:///cache/photo_1.jpg');
   });
 
   test('text and files: text first, then one file part per file, all ids unique', () => {

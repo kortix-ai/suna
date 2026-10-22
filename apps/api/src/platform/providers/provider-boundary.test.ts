@@ -6,6 +6,14 @@ const API_SRC = resolve(import.meta.dir, '../..');
 const GENERIC_DATA_PATHS = [
   'sandbox-proxy/backend.ts',
   'sandbox-proxy/routes/preview.ts',
+  // The forwarder `routes/preview.ts` re-exports (R4.2).
+  'sandbox-proxy/forward/access.ts',
+  'sandbox-proxy/forward/forward-to-sandbox.ts',
+  'sandbox-proxy/forward/retry.ts',
+  'sandbox-proxy/forward/turn-start.ts',
+  'sandbox-proxy/forward/upstream.ts',
+  'sandbox-proxy/forward/wake.ts',
+  'sandbox-proxy/forward/ws-upstream.ts',
   'sandbox-proxy/routes/public-share.ts',
   'projects/lib/sandbox-daemon-ready.ts',
   // The env-sync implementation is split across sibling modules (KRTX-300);
@@ -15,13 +23,13 @@ const GENERIC_DATA_PATHS = [
   'projects/lib/sandbox-secret-propagation.ts',
   'projects/lib/sandbox-session-push.ts',
   'projects/opencode-mapping.ts',
-  'projects/routes/session-open.ts',
-  'projects/routes/session-open-provision.ts',
-  'projects/routes/session-open-readiness.ts',
-  'projects/routes/session-open-recovery.ts',
-  'projects/routes/session-open-guarantee.ts',
-  'projects/routes/resume-stopped-sandbox.ts',
-  'projects/routes/stopped-wake-result.ts',
+  'projects/session-open/session-open.ts',
+  'projects/session-open/session-open-provision.ts',
+  'projects/session-open/session-open-readiness.ts',
+  'projects/session-open/session-open-recovery.ts',
+  'projects/session-open/session-open-guarantee.ts',
+  'projects/session-open/resume-stopped-sandbox.ts',
+  'projects/session-open/stopped-wake-result.ts',
   // Egress-enforced delivery. There is ONE mechanism for every provider
   // and no verdict to
   // read: the guest holds a handle and the broker route substitutes the value.
@@ -37,7 +45,7 @@ describe('sandbox provider architecture boundary', () => {
   test('concrete providers use the registry helpers without changing their public behavior', async () => {
     const registry = await import('./index');
     const opts = { accountId: 'a', userId: 'u', name: 'box' };
-    for (const name of ['daytona', 'e2b', 'platinum'] as const) {
+    for (const name of ['platinum', 'daytona'] as const) {
       const provider = await import(`./${name}.ts`);
       expect(provider).toBeDefined();
       expect(registry.sandboxWorkloadType(opts)).toBe('session');
@@ -62,7 +70,7 @@ describe('sandbox provider architecture boundary', () => {
   });
 
   test('concrete providers have no runtime import of the registry', () => {
-    for (const name of ['daytona', 'e2b', 'platinum']) {
+    for (const name of ['platinum', 'daytona']) {
       const source = readFileSync(resolve(import.meta.dir, `${name}.ts`), 'utf8');
       expect(source, name).not.toMatch(
         /(?:import|export)\s*(?:type\s*)?(?:\{[^}]*\}|\*\s+from)\s*['"]\.\/index['"]/s,
@@ -74,10 +82,10 @@ describe('sandbox provider architecture boundary', () => {
     for (const relativePath of GENERIC_DATA_PATHS) {
       const source = readFileSync(resolve(API_SRC, relativePath), 'utf8');
       expect(source, relativePath).not.toMatch(
-        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum|e2b)['"]/i,
+        /(?:provider|providerName)\s*(?:===|!==|==|!=)\s*['"](?:daytona|platinum)['"]/i,
       );
       expect(source, relativePath).not.toMatch(
-        /x-daytona-|x-access-token|e2b-traffic-access-token/i,
+        /x-daytona-|x-access-token/i,
       );
     }
   });

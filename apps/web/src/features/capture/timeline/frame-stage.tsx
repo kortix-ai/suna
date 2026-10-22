@@ -1,0 +1,139 @@
+'use client';
+
+import type { CaptureFrame } from '@kortix/sdk';
+import { useCaptureChunkMedia } from '@kortix/sdk/react';
+import type { ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+/**
+ * The video and seek position for `frame`. While the next chunk's URL loads, it
+ * keeps the last one it returned: no blank flash mid-scrub or mid-play.
+ */
+export function useFrameSource(
+  accountId: string,
+  frame: CaptureFrame | null,
+  userId: string | undefined,
+) {
+  // The frame's own device: a computer linked to no one is read as itself, like the timeline.
+  const media = useCaptureChunkMedia(accountId, frame?.chunk_id ?? null, {
+    userId,
+    deviceId: frame?.device_id,
+  });
+  const video = media.data?.chunk_id === frame?.chunk_id ? (media.data?.video ?? null) : null;
+  const next =
+    video && !video.encrypted ? { src: video.url, seconds: frame?.frame_index ?? 0 } : null;
+  const [held, setHeld] = useState<{ src: string | null; seconds: number }>({
+    src: null,
+    seconds: 0,
+  });
+  if (next && (next.src !== held.src || next.seconds !== held.seconds)) setHeld(next);
+  const shown = next ?? (media.isFetching && frame ? held : { src: null, seconds: 0 });
+  return { video, shown };
+}
+
+/**
+ * The hero: the screen at the playhead. A chunk is a 1 fps video with frame i
+ * at i seconds (the Kortix Capture format), so a move inside one chunk is a
+ * seek, not a load. Two video elements take turns: the next chunk loads and
+ * seeks in the hidden one and swaps in once its frame is on screen, so
+ * scrubbing across a chunk boundary never flashes blank.
+ */
+export function FrameStage({
+  src,
+  seconds,
+  label,
+  dimmed,
+  failedLabel,
+  children,
+}: {
+  /** Shown when the browser cannot play the chunk (a broken or unsupported file). */
+  failedLabel: string | null;
+  /** The chunk's signed video URL; null shows only `children`. */
+  src: string | null;
+  /** Seek position in the chunk's video. */
+  seconds: number;
+  label: string;
+  /** The playhead is off the frame (a gap): keep the last frame, faded. */
+  dimmed: boolean;
+  children?: ReactNode;
+}) {
+  const refs = [useRef<HTMLVideoElement>(null), useRef<HTMLVideoElement>(null)];
+  const [active, setActive] = useState(0);
+  const [failed, setFailed] = useState<string | null>(null);
+  const sources = useRef<[string | null, string | null]>([null, null]);
+  const base = (url: string | null) => (url ? url.split('?')[0] : null);
+
+  useEffect(() => {
+    if (!src) return;
+    const cur = refs[active]!.current;
+    if (!cur) return;
+    const seek = (el: HTMLVideoElement) => {
+      const target = seconds + 0.01;
+      if (Math.abs(el.currentTime - target) > 0.05) el.currentTime = target;
+    };
+    if (base(sources.current[active]) === base(src)) {
+      if (cur.readyState >= 1) seek(cur);
+      return;
+    }
+    const nextIdx = active === 0 ? 1 : 0;
+    const next = refs[nextIdx]!.current;
+    if (!next) return;
+    let cancelled = false;
+    let swapped = false;
+    const swap = () => {
+      if (cancelled || swapped) return;
+      swapped = true;
+      setActive(nextIdx);
+    };
+    // Seek once the metadata is in, then swap when that frame is decoded (seeked), or at once when no seek is needed.
+    const onLoaded = () => {
+      const target = seconds + 0.01;
+      if (Math.abs(next.currentTime - target) > 0.05) next.currentTime = target;
+      else next.addEventListener('loadeddata', swap, { once: true });
+    };
+    const onSeeked = swap;
+    next.addEventListener('loadedmetadata', onLoaded, { once: true });
+    next.addEventListener('seeked', onSeeked, { once: true });
+    sources.current[nextIdx] = src;
+    next.src = src;
+    return () => {
+      cancelled = true;
+      next.removeEventListener('loadedmetadata', onLoaded);
+      next.removeEventListener('seeked', onSeeked);
+      next.removeEventListener('loadeddata', swap);
+    };
+    // `refs` are stable; `active` flips only after a swap.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src, seconds, active]);
+
+  return (
+    <div className="bg-pane relative min-h-0 flex-1 overflow-hidden">
+      {[0, 1].map((i) => (
+        <video
+          key={i}
+          ref={refs[i]}
+          muted
+          playsInline
+          preload="auto"
+          aria-label={i === active ? label : undefined}
+          aria-hidden={i !== active}
+          onError={(event) => {
+            const url = event.currentTarget.currentSrc || event.currentTarget.src;
+            if (url && base(url) === base(src)) setFailed(base(url));
+          }}
+          className={
+            i === active && src
+              ? `duration-fast absolute inset-0 size-full object-contain transition-opacity ${dimmed ? 'opacity-40' : 'opacity-100'}`
+              : 'pointer-events-none absolute inset-0 size-full object-contain opacity-0'
+          }
+        />
+      ))}
+      {failedLabel && src && failed === base(src) ? (
+        <p className="text-muted-foreground absolute top-1/2 left-1/2 z-10 max-w-sm -translate-x-1/2 -translate-y-1/2 px-6 text-center text-sm text-balance">
+          {failedLabel}
+        </p>
+      ) : null}
+      {children}
+    </div>
+  );
+}

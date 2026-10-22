@@ -152,6 +152,34 @@ describe('mapApiReviewItem', () => {
     expect(approvalDetailOf(item).actions[0].approvalContext).toBe('Sends the reply to a@b.co');
   });
 
+  test('an adapted connector call carries the content Kortix loaded from the provider', () => {
+    const detail = { execution_id: 'e', action_path: 'gmail.send_draft', args_preview: { draft_id: 'd1' } };
+    const loaded = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      detail: { ...detail, resolved_preview: { to: ['a@b.co'], body: 'Hi' } },
+    });
+    expect(approvalDetailOf(loaded).actions[0]).toMatchObject({
+      resolvedPreview: { to: ['a@b.co'], body: 'Hi' },
+    });
+    expect(approvalDetailOf(loaded).actions[0].resolvedError).toBeUndefined();
+
+    const failed = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, resolved_error: 'unavailable' } });
+    expect(approvalDetailOf(failed).actions[0].resolvedError).toBe('unavailable');
+    expect(approvalDetailOf(failed).actions[0].resolvedPreview).toBeUndefined();
+
+    const empty = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, resolved_preview: {} } });
+    expect(approvalDetailOf(empty).actions[0].resolvedPreview).toBeUndefined();
+  });
+
+  test('an adapted connector call carries the connector display name when the API sends it', () => {
+    const detail = { execution_id: 'e', action_path: 'github.merge_a_pull_request' };
+    const named = mapApiReviewItem({ ...row, kind: 'approval', detail: { ...detail, connector_name: 'GitHub' } });
+    expect(approvalDetailOf(named).actions[0]).toMatchObject({ connector: 'github', connectorName: 'GitHub' });
+    const older = mapApiReviewItem({ ...row, kind: 'approval', detail });
+    expect(approvalDetailOf(older).actions[0].connectorName).toBeUndefined();
+  });
+
   test('a viewer without argument visibility gets previewAuthorized false', () => {
     const item = mapApiReviewItem({
       ...row,
@@ -160,6 +188,91 @@ describe('mapApiReviewItem', () => {
     });
     expect(approvalDetailOf(item).actions[0].previewAuthorized).toBe(false);
     expect(approvalDetailOf(item).actions[0].argsPreview).toEqual([]);
+  });
+
+  test('can_resolve reaches the call as canResolve: the viewer may approve or deny it (KRTX-1724)', () => {
+    const call = (fields: Partial<ApiReviewItem>) =>
+      approvalDetailOf(
+        mapApiReviewItem({
+          ...row,
+          kind: 'approval',
+          detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+          ...fields,
+        }),
+      ).actions[0];
+    expect(call({ can_resolve: true, status: 'needs_you' }).canResolve).toBe(true);
+    expect(call({ can_resolve: false, status: 'waiting' }).canResolve).toBe(false);
+  });
+
+  test('resolvers reaches the call: who decides it, for a viewer who may not', () => {
+    const call = (fields: Partial<ApiReviewItem>) =>
+      approvalDetailOf(
+        mapApiReviewItem({
+          ...row,
+          kind: 'approval',
+          detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+          ...fields,
+        }),
+      ).actions[0];
+    expect(call({ can_resolve: false, status: 'waiting', resolvers: 'managers' }).resolvers).toBe(
+      'managers',
+    );
+    expect(
+      call({ can_resolve: false, status: 'waiting', resolvers: 'managers_and_launcher' }).resolvers,
+    ).toBe('managers_and_launcher');
+    // Unknown (a raced call, an older server): no field, the host keeps its plain wording.
+    expect('resolvers' in call({ resolvers: null })).toBe(false);
+    expect('resolvers' in call({})).toBe(false);
+  });
+
+  test('expires_at reaches the item and the call as expiresAt; absent means no expiry', () => {
+    const expiring = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+      expires_at: '2026-07-01T10:00:00.000Z',
+    });
+    expect(expiring.expiresAt).toBe('2026-07-01T10:00:00.000Z');
+    expect(approvalDetailOf(expiring).actions[0].expiresAt).toBe('2026-07-01T10:00:00.000Z');
+    const open = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+      expires_at: null,
+    });
+    expect(open.expiresAt).toBeUndefined();
+    expect(approvalDetailOf(open).actions[0].expiresAt).toBeUndefined();
+  });
+
+  test('an expired call keeps status expired: Done segment, no verdict', () => {
+    const item = mapApiReviewItem({
+      ...row,
+      kind: 'approval',
+      status: 'expired',
+      detail: { execution_id: 'e', action_path: 'gmail.send_email' },
+    });
+    expect(item.status).toBe('expired');
+    expect(reviewSegmentForStatus(item.status)).toBe('done');
+    expect(reviewVerdictForStatus(item.status)).toBeNull();
+  });
+
+  test('a server older than can_resolve: canResolve follows the argument verdict', () => {
+    // The same API rule decided `args_preview_authorized` before `can_resolve` existed.
+    const call = (authorized?: boolean) =>
+      approvalDetailOf(
+        mapApiReviewItem({
+          ...row,
+          kind: 'approval',
+          detail: {
+            execution_id: 'e',
+            action_path: 'gmail.send_email',
+            ...(authorized === undefined ? {} : { args_preview_authorized: authorized }),
+          },
+        }),
+      ).actions[0];
+    expect(call(false).canResolve).toBe(false);
+    expect(call(true).canResolve).toBe(true);
+    expect(call().canResolve).toBe(true);
   });
 
   test('an approval summary names the originating session when its label is known', () => {

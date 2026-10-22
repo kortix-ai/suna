@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { pointBootLink } from '@/services/config-release/boot-config'
+import { pointBootLink } from '@/services/config-provider/boot-config'
 
 /**
  * The value `KORTIX_BOOT_CONFIG_ROOT` had before any test redirected it, read

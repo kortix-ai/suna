@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
-import { isAnalyticsExcludedPath, trackRouteChange } from './gtm';
+import {
+  isAnalyticsExcludedPath,
+  trackCtaSignup,
+  trackLogin,
+  trackRouteChange,
+  trackSignUp,
+} from './gtm';
 
 // ─── Minimal browser stub ───────────────────────────────────────────────────
 // No DOM library in this package. `trackRouteChange` reads `window.location`,
@@ -101,5 +107,74 @@ describe('isAnalyticsExcludedPath', () => {
     for (const path of ['/', '/pricing', '/de/pricing', '/auth', '/checkout', '/projectsx']) {
       expect(isAnalyticsExcludedPath(path), path).toBe(false);
     }
+  });
+});
+
+// ─── Characterization of the surviving analytics surface ────────────────────
+// These pin the payloads the live trackers push, so deleting unreachable
+// siblings cannot change what routeChange / sign_up / login / cta_signup send.
+
+describe('GTM surviving event payloads', () => {
+  test('routeChange carries the full data-dictionary shape on first load', () => {
+    visit('/auth', '');
+
+    expect(g.window!.dataLayer.find((entry) => entry.event === 'routeChange')).toEqual({
+      event: 'routeChange',
+      page_location: 'https://app.example.com/auth',
+      page_path: '/auth',
+      page_title: 'Kortix',
+      page_referrer: '',
+      is_initial_load: true,
+      master_group: 'General',
+      content_group: 'User',
+      page_type: 'auth',
+    });
+  });
+
+  test('internal navigation pushes nothing; a dashboard order confirmation is tracked', () => {
+    visit('/settings/billing', '');
+    expect(g.window!.dataLayer).toEqual([]);
+
+    visit('/dashboard', 'subscription=activated');
+    const event = g.window!.dataLayer.find((entry) => entry.event === 'routeChange')!;
+    expect(event.page_type).toBe('order_confirm');
+    // `subscription` is not on the allowlist, so page_location stays clean.
+    expect(event.page_location).toBe('https://app.example.com/dashboard');
+  });
+
+  test('sign_up, login and cta_signup push their event payloads', () => {
+    trackSignUp('Google');
+    trackLogin('Email');
+    trackCtaSignup();
+
+    expect(g.window!.dataLayer).toEqual([
+      { event: 'sign_up', method: 'Google' },
+      { event: 'login', method: 'Email' },
+      { event: 'cta_signup' },
+    ]);
+  });
+});
+
+describe('GTM degrades safely', () => {
+  test('a storage-disabled WebView cannot crash a route change', () => {
+    (g.window as unknown as { sessionStorage: unknown }).sessionStorage = null;
+
+    expect(() => visit('/auth', '')).not.toThrow();
+
+    const event = g.window!.dataLayer.find((entry) => entry.event === 'routeChange')!;
+    // Storage reads degrade to null, so every navigation still counts as an
+    // initial load instead of throwing on the null accessor.
+    expect(event.is_initial_load).toBe(true);
+  });
+
+  test('without a window (SSR) the trackers are no-ops', () => {
+    g.window = undefined;
+
+    expect(() => {
+      trackRouteChange('/auth', '');
+      trackSignUp('Google');
+      trackLogin('Email');
+      trackCtaSignup();
+    }).not.toThrow();
   });
 });

@@ -1,11 +1,15 @@
 import { sessionLifecycleCommands } from '@kortix/db';
+import { promptState } from '../lib/session-prompt-state';
 import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, isNotNull, isNull, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
+import { isPgBroadcastListening, waitForLifecycleCommandSettle } from '../../shared/pg-broadcast';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { LIFECYCLE_CLAIM_LOCK_MS } from './command-lease';
-import { inboxOrderBy } from './inbox-order';
-import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, withNextDeliveryAttempt } from './store';
+import { compareInboxSendOrder, inboxOrderBy } from './inbox-order';
+import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, promoteNextInboxRow, withNextDeliveryAttempt } from './store';
+import { forwardedSql, heldSql, isStopPaused, notHeldSql, stopPausedOnDeliverySql, stopPausedSql, stoppedByUserSql } from './delivery-state';
 
 /**
  * The inbox's row operations — everything `GET/DELETE/retry/hold …/prompts`
@@ -21,9 +25,9 @@ import { type EnqueuedContinueSessionCommand, type SessionLifecycleCommandRow, w
  */
 
 /** A `continue_session` row the USER created through the composer. */
-export function inboxScope(sessionId: string) {
+export function inboxScope(sessionId: string | string[]) {
   return and(
-    eq(sessionLifecycleCommands.sessionId, sessionId),
+    (typeof sessionId === 'string' ? eq(sessionLifecycleCommands.sessionId, sessionId) : inArray(sessionLifecycleCommands.sessionId, sessionId)),
     eq(sessionLifecycleCommands.commandType, 'continue_session'),
     // THE inbox predicate. Only the prompt routes write `clientMessageId`;
     // every automation producer leaves it absent.
@@ -35,9 +39,10 @@ export function inboxScope(sessionId: string) {
  * How long a HELD prompt stays out of the drain's way.
  *
  * A hold is released by an action, never by this timer — the user sending
- * anything new, or pressing "send now" on a row. The horizon exists only so a
- * held row cannot outlive a browser that never comes back: a day later the
- * queue drains rather than holding a prompt for ever.
+ * anything new, or pressing "send now" on a row. The drain never claims a held
+ * inbox prompt (`claimDueLifecycleCommands`), so for those this is only the
+ * row's due time once the hold is lifted. A held AUTOMATION row (no
+ * `clientMessageId`) is delivered when this horizon passes.
  */
 export const INBOX_HOLD_MS = 24 * 60 * 60 * 1000;
 
@@ -46,6 +51,28 @@ export const INBOX_HOLD_MS = 24 * 60 * 60 * 1000;
 export function isForwardedInboxRow(result: unknown): boolean {
   return (result as { status?: unknown } | null)?.status === 'forwarded';
 }
+
+/**
+ * Who writes a waiting row. A row runs AS ITS AUTHOR (`actor_user_id`): the
+ * drain binds the session token to them, so the turn has their role, budget,
+ * personal connections and audit identity. Only the author edits, sends now,
+ * retries or Stop-and-sends it. A row is removed by its author or by someone
+ * who manages the session (`canManageLifecycle`), who could stop the whole
+ * session anyway. The predicate is in every write's WHERE clause, so no route
+ * can skip it.
+ */
+export interface InboxActor {
+  userId: string;
+  /** May remove another member's row. Never edit or send it. */
+  managesSession?: boolean;
+}
+
+function authoredBy(actor: InboxActor) {
+  return eq(sessionLifecycleCommands.actorUserId, actor.userId);
+}
+
+/** The write named a row that runs as another member. */
+export type InboxNotAuthor = { outcome: 'not_author' };
 
 export async function listInboxPrompts(
   sessionId: string,
@@ -66,7 +93,7 @@ export async function listInboxPrompts(
         inboxScope(sessionId),
         or(
           ne(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          forwardedSql,
         ),
       ),
     )
@@ -74,12 +101,41 @@ export async function listInboxPrompts(
     .limit(limit);
 }
 
+/** Only live work facts: terminal history and prompt/attachment bodies never leave SQL. */
+export async function listInboxPromptsForSessions(sessionIds: string[]) {
+  if (sessionIds.length === 0) return [];
+  const rows = await db.select({
+    sessionId: sessionLifecycleCommands.sessionId,
+    status: sessionLifecycleCommands.status,
+    result: sql<Record<string, unknown>>`jsonb_strip_nulls(jsonb_build_object(
+      'status', ${sessionLifecycleCommands.result}->'status',
+      'delivery_started_at', ${sessionLifecycleCommands.result}->'delivery_started_at',
+      'admission_reason', ${sessionLifecycleCommands.result}->'admission_reason',
+      'delivery_blocked', ${sessionLifecycleCommands.result}->'delivery_blocked'))`,
+    client_sent_at_ms: sql<unknown>`${sessionLifecycleCommands.payload}->'clientSentAtMs'`,
+  }).from(sessionLifecycleCommands).where(and(
+    inboxScope(sessionIds), notHeldSql,
+    or(inArray(sessionLifecycleCommands.status, ['queued', 'running']),
+      and(eq(sessionLifecycleCommands.status, 'succeeded'), forwardedSql)),
+    // promptState gives forwarded and admitted deliveries precedence over admission_reason.
+    or(forwardedSql,
+      and(eq(sessionLifecycleCommands.status, 'running'), sql`jsonb_typeof(${sessionLifecycleCommands.result}->'delivery_started_at') = 'string'`),
+      sql`${sessionLifecycleCommands.result}->>'admission_reason' IS DISTINCT FROM 'held'`),
+  ));
+  return rows.map(row => ({
+    sessionId: row.sessionId,
+    ...promptState(row),
+    client_sent_at_ms: typeof row.client_sent_at_ms === 'number' ? row.client_sent_at_ms : null,
+  }));
+}
+
 export type InboxPromptDeletion =
   /** Carries the row it removed: the DELETE is the only place the full prompt
    *  body still exists, and the client's undo has to re-create it exactly. */
   | { outcome: 'deleted'; row: SessionLifecycleCommandRow }
   | { outcome: 'delivering' }
-  | { outcome: 'missing' };
+  | { outcome: 'missing' }
+  | InboxNotAuthor;
 
 export async function deleteInboxRowsWithAttachmentGrace(predicate: SQL | undefined) {
   return db.transaction(async (tx) => {
@@ -94,14 +150,17 @@ export async function deleteInboxRowsWithAttachmentGrace(predicate: SQL | undefi
   });
 }
 
-export async function deleteInboxPrompt(
+async function deleteInboxPromptOnce(
   sessionId: string,
   promptId: string,
+  actor: InboxActor,
 ): Promise<InboxPromptDeletion> {
+  const removableBy = actor.managesSession ? undefined : authoredBy(actor);
   const deleted = await deleteInboxRowsWithAttachmentGrace(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
+        removableBy,
         inArray(sessionLifecycleCommands.status, ['queued', 'failed', 'dead_lettered']),
       ),
     );
@@ -119,14 +178,30 @@ export async function deleteInboxPrompt(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
+        removableBy,
         eq(sessionLifecycleCommands.status, 'succeeded'),
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
+        stopPausedSql,
       ),
     );
   if (stopPaused[0]) return { outcome: 'deleted', row: stopPaused[0] };
 
-  // Separate the two "no row was removed" cases: a row that is on the wire
-  // cannot be cancelled without lying about it, which is a 409, not a 404.
+  return inboxRowNotTaken(sessionId, promptId, actor, 'remove');
+}
+
+/**
+ * Why a write that names a waiting row matched nothing: the row runs as
+ * another member (`not_author`, a 403), it is on the wire (`delivering`, a
+ * 409 — changing it would be a lie about what the session is answering) or
+ * it is not this session's to change (`missing`).
+ */
+async function inboxRowNotTaken(
+  sessionId: string,
+  promptId: string,
+  actor: InboxActor,
+  write: 'remove' | 'change',
+): Promise<{ outcome: 'delivering' } | { outcome: 'missing' } | InboxNotAuthor> {
+  // Separate the two "no row was taken" cases: a row that is on the wire
+  // cannot be changed without lying about it, which is a 409, not a 404.
   //
   // TWO shapes are on the wire, for the same reason: a `running` row is inside
   // `continueSession`, and a FORWARDED row has already reached OpenCode, which
@@ -136,11 +211,15 @@ export async function deleteInboxPrompt(
     .select({
       status: sessionLifecycleCommands.status,
       result: sessionLifecycleCommands.result,
+      actorUserId: sessionLifecycleCommands.actorUserId,
     })
     .from(sessionLifecycleCommands)
     .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
     .limit(1);
   if (!existing) return { outcome: 'missing' };
+  if (existing.actorUserId !== actor.userId && !(write === 'remove' && actor.managesSession)) {
+    return { outcome: 'not_author' };
+  }
   if (existing.status === 'running') return { outcome: 'delivering' };
   // Forwarded, or confirmed `delivered` on persistence (the daemon's
   // acceptance relay — which fires long before a model step reads the
@@ -150,6 +229,97 @@ export async function deleteInboxPrompt(
   return isForwardedInboxRow(existing.result) || status === 'delivered'
     ? { outcome: 'delivering' }
     : { outcome: 'missing' };
+}
+
+export type InboxPromptEdit =
+  | { outcome: 'edited'; row: SessionLifecycleCommandRow }
+  | { outcome: 'delivering' }
+  | { outcome: 'missing' }
+  | InboxNotAuthor;
+
+/**
+ * Replace the text of a row that is still waiting — the queue list's edit.
+ *
+ * In place, and nothing else moves: the row keeps its id, its wire id, its
+ * send time (its place in the queue), its file parts and any hold. That is
+ * the whole point. A remove + re-send is a SEND — it releases a Stop hold
+ * and is admitted at once on an idle session — and the user asked to change
+ * a queued message, not to send it.
+ *
+ * The text parts collapse into one part carrying the new text, ahead of the
+ * files; `text` is the flattened copy every reader of the row shows.
+ */
+async function editInboxPromptOnce(
+  sessionId: string,
+  promptId: string,
+  text: string,
+  actor: InboxActor,
+): Promise<InboxPromptEdit> {
+  const [row] = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      payload: sql`jsonb_set(
+        jsonb_set(${qualifiedColumn(sessionLifecycleCommands.payload)}, '{text}', to_jsonb(${text}::text)),
+        '{parts}',
+        jsonb_build_array(jsonb_build_object('type', 'text', 'text', ${text}::text)) || COALESCE(
+          (SELECT jsonb_agg(part ORDER BY position)
+             FROM jsonb_array_elements(COALESCE(${qualifiedColumn(sessionLifecycleCommands.payload)}->'parts', '[]'::jsonb))
+                  WITH ORDINALITY AS parts(part, position)
+            WHERE COALESCE(part->>'type', 'text') <> 'text'),
+          '[]'::jsonb))`,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, promptId),
+        inboxScope(sessionId),
+        authoredBy(actor),
+        inArray(sessionLifecycleCommands.status, ['queued', 'failed', 'dead_lettered']),
+      ),
+    )
+    .returning();
+  if (row) return { outcome: 'edited', row };
+  return inboxRowNotTaken(sessionId, promptId, actor, 'change');
+}
+
+/**
+ * "Stop and send" on a waiting row (R10): it becomes a Quick Queue row —
+ * `delivery: 'interrupt'`, `placement: 'transcript'` — promoted and due now,
+ * so admission arms the interrupt of the running turn. Only a `queued` row:
+ * a claimed or forwarded row is already on its way (`delivering`, a 409). A
+ * Stop hold stays on the row; the next send releases it.
+ */
+async function interruptInboxPromptOnce(
+  sessionId: string,
+  promptId: string,
+  actor: InboxActor,
+): Promise<InboxPromptEdit> {
+  const [row] = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      payload: sql`${sessionLifecycleCommands.payload} || '{"delivery": "interrupt", "placement": "transcript", "remintOnDelivery": true}'::jsonb`,
+      result: sql`(COALESCE(${sessionLifecycleCommands.result}, '{}'::jsonb) - 'admission_reason' - 'admission_refusals') || '{"promoted": true}'::jsonb`,
+      availableAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(sessionLifecycleCommands.commandId, promptId),
+        inboxScope(sessionId),
+        authoredBy(actor),
+        eq(sessionLifecycleCommands.status, 'queued'),
+      ),
+    )
+    .returning();
+  if (row) return { outcome: 'edited', row };
+  // Any other state of an existing row (claimed, on the wire, failed) is a 409.
+  const [existing] = await db
+    .select({ actorUserId: sessionLifecycleCommands.actorUserId })
+    .from(sessionLifecycleCommands)
+    .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
+    .limit(1);
+  if (!existing) return { outcome: 'missing' };
+  return existing.actorUserId === actor.userId ? { outcome: 'delivering' } : { outcome: 'not_author' };
 }
 
 /**
@@ -174,10 +344,21 @@ export async function deleteInboxPrompt(
  * drain re-reads the transcript before it re-mints and drops the delivery if
  * the prompt turns out to have been answered, so this cannot double-run.
  */
-export async function retryInboxPrompt(
+async function retryInboxPromptOnce(
   sessionId: string,
   promptId: string,
-): Promise<SessionLifecycleCommandRow | null> {
+  actor: InboxActor,
+): Promise<SessionLifecycleCommandRow | InboxNotAuthor | null> {
+  // The author check runs BEFORE the hold release below: a refused send must
+  // not release the session's held queue as a side effect.
+  const [target] = await db
+    .select({ actorUserId: sessionLifecycleCommands.actorUserId })
+    .from(sessionLifecycleCommands)
+    .where(and(eq(sessionLifecycleCommands.commandId, promptId), inboxScope(sessionId)))
+    .limit(1);
+  if (!target) return null;
+  if (target.actorUserId !== actor.userId) return { outcome: 'not_author' };
+
   // "Send now" out of a Stop that holds OTHER rows is a RELEASE, and a released
   // batch is answered in ONE turn, in queue order (KRTX-683). So that row is
   // not `promoted`: promoted, it passed the order gate ahead of the older rows
@@ -216,6 +397,7 @@ export async function retryInboxPrompt(
       and(
         eq(sessionLifecycleCommands.commandId, promptId),
         inboxScope(sessionId),
+        authoredBy(actor),
         // `running` is excluded: it is already on the wire.
         inArray(sessionLifecycleCommands.status, ['queued', 'failed', 'dead_lettered']),
       ),
@@ -248,8 +430,9 @@ export async function retryInboxPrompt(
           and(
             eq(sessionLifecycleCommands.commandId, promptId),
             inboxScope(sessionId),
+            authoredBy(actor),
             eq(sessionLifecycleCommands.status, 'succeeded'),
-            sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
+            stopPausedSql,
           ),
         )
         .returning();
@@ -276,6 +459,102 @@ export async function retryInboxPrompt(
   // no other row held this clears only this row's own marks.
   if (!releasesBatch) await releaseInboxHold(sessionId);
   return sent;
+}
+
+/**
+ * A write to a waiting row is carried across the drain moving that row.
+ *
+ * The drain claims a due row (`running`) to ask admission whether the session
+ * can take it. Behind a live turn the answer is no, and `requeueForAdmission`
+ * gives the row back one round trip later. While the turn runs that repeats
+ * every 300 ms to 2 s (`INBOX_ORDER_BACKOFF_MS`). Two races followed:
+ *
+ * - The write met the claim: 409 "already with the agent" (404 for send now)
+ *   for a message that had not left. The write now waits out the claim, up to
+ *   `DRAIN_CLAIM_WAIT_MS`. A row a drain really delivers is forwarded inside
+ *   that bound, and then the refusal stands. Remove does not wait here: its
+ *   cancel arm (`cancelForwardedPrompt`) already does.
+ * - The claim began before the write and ended before the read that explains
+ *   the miss: a 404 for a row that is still waiting. A row that moved between
+ *   the two statements is written again, up to `MOVED_RETRIES` times.
+ */
+const DRAIN_CLAIM_WAIT_MS = 2_000;
+const DRAIN_CLAIM_POLL_MS = 400;
+const MOVED_RETRIES = 2;
+
+async function acrossDrainClaim<T>(
+  promptId: string,
+  missed: (out: T) => boolean,
+  write: () => Promise<T>,
+  opts: { waitOutClaim: boolean } = { waitOutClaim: true },
+): Promise<T> {
+  const deadline = Date.now() + DRAIN_CLAIM_WAIT_MS;
+  let moved = 0;
+  for (;;) {
+    // Armed before the write, so a give-back between the two is not missed.
+    const settle = waitForLifecycleCommandSettle(
+      promptId,
+      isPgBroadcastListening() ? deadline - Date.now() : DRAIN_CLAIM_POLL_MS,
+    );
+    const out = await write();
+    const [row] = missed(out)
+      ? await db
+          .select({ status: sessionLifecycleCommands.status })
+          .from(sessionLifecycleCommands)
+          .where(eq(sessionLifecycleCommands.commandId, promptId))
+          .limit(1)
+      : [];
+    if (row?.status === 'running' && opts.waitOutClaim && Date.now() < deadline) {
+      await settle.done;
+      continue;
+    }
+    settle.cancel();
+    if (row && row.status !== 'running' && moved < MOVED_RETRIES) {
+      moved += 1;
+      continue;
+    }
+    return out;
+  }
+}
+
+const notTaken = (out: { outcome: string }) => out.outcome === 'delivering' || out.outcome === 'missing';
+
+export async function deleteInboxPrompt(sessionId: string, promptId: string, actor: InboxActor): Promise<InboxPromptDeletion> {
+  const out = await acrossDrainClaim(promptId, notTaken, () => deleteInboxPromptOnce(sessionId, promptId, actor), {
+    waitOutClaim: false,
+  });
+  // A removed head opens no turn, so no turn end wakes the prompt behind it.
+  // Make that row due now; the worker tick drains it within ~1 s.
+  if (out.outcome === 'deleted') {
+    await promoteNextInboxRow(sessionId).catch((error) =>
+      logger.warn('[inbox] wake after remove failed', { session_id: sessionId, error }));
+  }
+  return out;
+}
+
+export function editInboxPrompt(
+  sessionId: string,
+  promptId: string,
+  text: string,
+  actor: InboxActor,
+): Promise<InboxPromptEdit> {
+  return acrossDrainClaim(promptId, notTaken, () => editInboxPromptOnce(sessionId, promptId, text, actor));
+}
+
+export function interruptInboxPrompt(sessionId: string, promptId: string, actor: InboxActor): Promise<InboxPromptEdit> {
+  return acrossDrainClaim(promptId, notTaken, () => interruptInboxPromptOnce(sessionId, promptId, actor));
+}
+
+export function retryInboxPrompt(
+  sessionId: string,
+  promptId: string,
+  actor: InboxActor,
+): Promise<SessionLifecycleCommandRow | InboxNotAuthor | null> {
+  return acrossDrainClaim(
+    promptId,
+    (out) => out === null,
+    () => retryInboxPromptOnce(sessionId, promptId, actor),
+  );
 }
 
 /**
@@ -353,7 +632,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         and(
           inboxScope(sessionId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
+          forwardedSql,
         ),
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });
@@ -401,7 +680,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
       .where(
         and(
           inboxScope(sessionId),
-          sql`COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'`,
+          stopPausedOnDeliverySql,
         ),
       );
 
@@ -416,7 +695,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         and(
           inboxScope(sessionId),
           inArray(sessionLifecycleCommands.status, ['queued', 'running']),
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'`,
+          heldSql,
         ),
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });
@@ -475,8 +754,8 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
         and(
           inboxScope(sessionId),
           eq(sessionLifecycleCommands.status, 'succeeded'),
-          sql`${sessionLifecycleCommands.result}->>'status' = 'forwarded'`,
-          sql`COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true'`,
+          forwardedSql,
+          stopPausedSql,
         ),
       )
       .returning({ commandId: sessionLifecycleCommands.commandId });
@@ -507,7 +786,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
           and(
             inboxScope(sessionId),
             eq(sessionLifecycleCommands.status, 'queued'),
-            sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+            notHeldSql,
           ),
         );
     }
@@ -518,9 +797,7 @@ export async function holdInboxPrompts(sessionId: string, held: boolean): Promis
 
 /** A row a Stop marked: held, stop-paused, or claimed with a pending stop mark. */
 function holdMarked(): SQL {
-  return sql`(COALESCE(${sessionLifecycleCommands.payload}->>'stopPausedOnDelivery', '') = 'true'
-    OR COALESCE(${sessionLifecycleCommands.result}->>'held', '') = 'true'
-    OR COALESCE(${sessionLifecycleCommands.result}->>'stop_paused', '') = 'true')`;
+  return stoppedByUserSql;
 }
 
 /**
@@ -534,6 +811,26 @@ export async function sessionHasHoldMark(sessionId: string): Promise<boolean> {
     .where(and(inboxScope(sessionId), holdMarked()))
     .limit(1);
   return !!marked;
+}
+
+/**
+ * What a new send has to know about its session's inbox, in one read.
+ * `held` answers what `sessionHasHoldMark` answers.
+ *
+ * `held`: a Stop mark is in force, so the send releases it (see
+ * `enqueueReleasingHold`). `pending`: another prompt is queued or in delivery,
+ * so this send may be one of a burst and its drain collects the stragglers
+ * (see `drainSessionLifecycleQueue`).
+ */
+export async function inboxSendState(sessionId: string): Promise<{ held: boolean; pending: boolean }> {
+  const [row] = await db
+    .select({
+      held: sql<boolean>`COALESCE(bool_or(${holdMarked()}), false)`,
+      pending: sql<boolean>`COALESCE(bool_or(${sessionLifecycleCommands.status} IN ('queued', 'running')), false)`,
+    })
+    .from(sessionLifecycleCommands)
+    .where(inboxScope(sessionId));
+  return { held: row?.held === true, pending: row?.pending === true };
 }
 
 /**
@@ -573,9 +870,11 @@ export async function enqueueReleasingHold(
   sessionId: string,
   enqueue: (hold: HoldOnEnqueue | null) => Promise<EnqueuedContinueSessionCommand>,
   release: (sessionId: string) => Promise<unknown> = (id) => holdInboxPrompts(id, false),
+  /** The hold read, when the caller already started it (`inboxSendState`). */
+  held: Promise<boolean> = sessionHasHoldMark(sessionId),
 ): Promise<EnqueuedContinueSessionCommand> {
   // The read failing is treated as "no hold": the send still goes in, due.
-  if (!(await sessionHasHoldMark(sessionId).catch(() => false))) return enqueue(null);
+  if (!(await held.catch(() => false))) return enqueue(null);
   const enqueued = await enqueue({ held: true, availableAt: new Date(Date.now() + INBOX_HOLD_MS) });
   // A repeat POST of a send already in the inbox changes nothing — unless the
   // first one's release failed and left that send held: the retry releases.
@@ -596,7 +895,9 @@ export async function enqueueReleasingHold(
       .update(sessionLifecycleCommands)
       .set({
         result: sql`${sessionLifecycleCommands.result} - 'held'`,
-        availableAt: new Date(),
+        // The database clock, which the claim compares against: an API clock
+        // ahead of it left the send not yet due.
+        availableAt: sql`clock_timestamp()`,
         updatedAt: new Date(),
       })
       .where(
@@ -612,7 +913,7 @@ export async function enqueueReleasingHold(
 /** Was this row's delivery stopped by the user AFTER it reached OpenCode?
  *  `requeueAbandonedPrompt` reads it to bring the repair back HELD. */
 export function isStopPausedInboxRow(result: unknown): boolean {
-  return (result as { stop_paused?: unknown } | null)?.stop_paused === true;
+  return isStopPaused(result as Record<string, unknown> | null);
 }
 
 /**
@@ -628,8 +929,9 @@ export async function claimDueSessionInboxSiblings(input: {
   limit?: number;
 }): Promise<SessionLifecycleCommandRow[]> {
   const now = input.now ?? new Date();
-  const rows = await db
-    .select()
+  // One statement, as `claimDueLifecycleCommands`: lock, skip, update.
+  const due = db
+    .select({ commandId: sessionLifecycleCommands.commandId })
     .from(sessionLifecycleCommands)
     .where(
       and(
@@ -637,7 +939,7 @@ export async function claimDueSessionInboxSiblings(input: {
         eq(sessionLifecycleCommands.commandType, 'continue_session'),
         eq(sessionLifecycleCommands.status, 'queued'),
         sql`${sessionLifecycleCommands.payload}->>'clientMessageId' IS NOT NULL`,
-        sql`COALESCE(${sessionLifecycleCommands.result}->>'held', '') <> 'true'`,
+        notHeldSql,
         or(
           isNull(sessionLifecycleCommands.lockedUntil),
           lte(sessionLifecycleCommands.lockedUntil, now),
@@ -652,26 +954,18 @@ export async function claimDueSessionInboxSiblings(input: {
       ),
     )
     .orderBy(...inboxOrderBy())
-    .limit(input.limit ?? 20);
-  const claimed: SessionLifecycleCommandRow[] = [];
-  for (const row of rows) {
-    const [locked] = await db
-      .update(sessionLifecycleCommands)
-      .set({
-        status: 'running',
-        attempts: row.attempts + 1,
-        lockedBy: input.workerId,
-        lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(sessionLifecycleCommands.commandId, row.commandId),
-          eq(sessionLifecycleCommands.status, 'queued'),
-        ),
-      )
-      .returning();
-    if (locked) claimed.push(locked as SessionLifecycleCommandRow);
-  }
-  return claimed;
+    .limit(input.limit ?? 20)
+    .for('update', { skipLocked: true });
+  const claimed = await db
+    .update(sessionLifecycleCommands)
+    .set({
+      status: 'running',
+      attempts: sql`${sessionLifecycleCommands.attempts} + 1`,
+      lockedBy: input.workerId,
+      lockedUntil: new Date(now.getTime() + LIFECYCLE_CLAIM_LOCK_MS),
+      updatedAt: now,
+    })
+    .where(sql`${sessionLifecycleCommands.commandId} = ANY(ARRAY(${due}))`)
+    .returning();
+  return (claimed as SessionLifecycleCommandRow[]).sort(compareInboxSendOrder);
 }

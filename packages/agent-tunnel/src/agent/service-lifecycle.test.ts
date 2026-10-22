@@ -13,6 +13,7 @@ import {
   rotateServiceLogs,
 } from './service';
 import { collapseRepeatedLines } from './log-format';
+import { AGENT_VERSION } from './agent';
 import { probeCredentials } from './credential-probe';
 
 const CLI_PATH = resolve(import.meta.dir, 'cli.ts');
@@ -104,6 +105,51 @@ describe('service log hygiene', () => {
 });
 
 describe('credential probe and the single-agent rule', () => {
+  test('every relay socket opens through openRelaySocket', () => {
+    const src = resolve(import.meta.dir, '..');
+    const raw: string[] = [];
+    for (const file of new Bun.Glob('**/*.ts').scanSync(src)) {
+      if (file.endsWith('.test.ts')) continue;
+      readFileSync(join(src, file), 'utf8').split('\n').forEach((line, i) => {
+        if (/\bnew WebSocket\(/.test(line) && !/^\s*(\/\/|\*)/.test(line)) raw.push(`${file}:${i + 1}`);
+      });
+    }
+    expect(raw).toEqual([]);
+  });
+
+  test('auth_ok is valid, though Bun fires close inside socket.close()', async () => {
+    let userAgent: string | null = null as string | null;
+    const server = Bun.serve({
+      port: 0,
+      fetch(request, server) {
+        // Cloudflare refuses an upgrade without a User-Agent, and Bun sends none by default.
+        userAgent = request.headers.get('user-agent');
+        return server.upgrade(request) ? undefined : new Response('no upgrade', { status: 400 });
+      },
+      websocket: {
+        message(ws) {
+          ws.send(JSON.stringify({ type: 'auth_ok' }));
+        },
+      },
+    });
+
+    try {
+      const result = await probeCredentials(
+        {
+          apiUrl: `http://127.0.0.1:${server.port}/v1/tunnel`,
+          tunnelId: '00000000-0000-4000-8000-000000000001',
+          token: 'kortix_tnl_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+          wsPath: '/ws',
+        } as never,
+        { timeoutMs: 5_000 },
+      );
+      expect(result).toBe('valid');
+      expect(userAgent).toBe(`kortix-agent-tunnel/${AGENT_VERSION}`);
+    } finally {
+      server.stop(true);
+    }
+  }, 30_000);
+
   test('treats being replaced as proof the credential is valid', async () => {
     // The relay only replaces a socket it already registered, and registration
     // happens after a successful handshake.

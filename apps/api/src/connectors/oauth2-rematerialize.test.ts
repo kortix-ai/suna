@@ -31,17 +31,27 @@ describe('oauthCompletionRematerializeInput', () => {
     });
   });
 
-  test('a member-owned or non-default connection never publishes a shared catalog', () => {
+  test('a member-owned connection re-syncs, so a first personal sign-in can load tools', () => {
     expect(
       oauthCompletionRematerializeInput({
         projectId: 'p1',
         accountId: 'a1',
         connectorId: 'c1',
         providerType: 'mcp',
-        ownerType: 'user',
-        isDefault: true,
+        ownerType: 'member',
+        isDefault: false,
       }),
-    ).toBeNull();
+    ).toEqual({
+      projectId: 'p1',
+      accountId: 'a1',
+      provider: 'mcp',
+      ownerType: 'member',
+      isDefault: false,
+      connectorId: 'c1',
+    });
+  });
+
+  test('a non-default project connection never publishes a shared catalog', () => {
     expect(
       oauthCompletionRematerializeInput({
         projectId: 'p1',

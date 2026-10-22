@@ -19,17 +19,16 @@ echo "${KORTIX_HARNESS:-opencode}"
 
 `pi` means pi. `opencode`, or an unset variable, means OpenCode.
 
-Kortix selects the harness when a session starts, restarts or resumes:
+Kortix selects the harness when a session is created:
 
 | Rule, in order | Harness |
 | --- | --- |
-| The project's `llm_gateway` flag is off | OpenCode |
-| The project's `pi_harness` flag is on | pi |
+| The project's `pi_harness` flag is on (the default) | pi |
 | `kortix.yaml` sets `runtime: pi` | pi |
 | Anything else | OpenCode |
 
-A running session keeps its harness until it restarts. pi calls models only
-through the Kortix LLM gateway.
+A session keeps its harness across restarts, so a flag change applies to new
+sessions only. pi calls models only through the Kortix LLM gateway.
 
 ## What pi reads from the repository
 
@@ -39,13 +38,12 @@ through the Kortix LLM gateway.
 | `agents/<name>.md` | The agent's prompt and behavior. See `agents.md`. |
 | `skills/<name>/SKILL.md` | Project skills. See `agents.md` → Skills. |
 | `memory/` | The project brain, through the `memory` tool. |
+| `AGENTS.md` | The project-wide rules, at the repository root. pi puts the file in the system prompt of the session and of each subagent. A root with no `AGENTS.md` gives `CLAUDE.md` instead. pi reads no `AGENTS.md` in a subdirectory. |
 | `harnesses/pi/` | pi's own config directory. See below. |
 
 pi does NOT read these. They belong to OpenCode:
 
 - `harnesses/opencode/opencode.jsonc`, `plugins/`, `tools/`, `commands/`;
-- `AGENTS.md` and `CLAUDE.md`. Put project rules in the agent's `.md` body or
-  in a skill;
 - `~/.config/opencode/` and `.opencode/`.
 
 ## The pi config directory
@@ -62,9 +60,17 @@ when the project needs one of these:
 | Path in the directory | Contents |
 | --- | --- |
 | `extensions/*.ts` | pi extensions: tools, hooks and commands. See `extensions.md`. |
-| `prompts/*.md` | pi prompt templates. A prompt that starts with `/<name>` expands the template. |
+| `prompts/*.md` | pi prompt templates. Each one is a slash command: the composer lists it, and a prompt that starts with `/<name>` expands the template. `$1`, `$2` and `$ARGUMENTS` take the arguments. |
 | `skills/<name>/SKILL.md` | Skills only pi sessions load. Prefer the root `skills/`, which both harnesses load. |
-| `settings.json` | pi settings. Kortix turns off pi's own compaction and retry, whatever the file says. Only `./` entries of `packages` load from this file; declare npm packages in `kortix.yaml`. |
+| `settings.json` | pi settings. `compaction` (`enabled`, `reserveTokens`, `keepRecentTokens`) applies. Kortix turns off pi's own retry, whatever the file says. Only `./` entries of `packages` load from this file; declare npm packages in `kortix.yaml`. |
+
+## Compaction
+
+pi summarizes the older part of a long conversation by itself: when the
+context nears the model's window, and when a model request overflows it (pi
+then retries that request once). `kortix sessions compact <id>` and the
+dashboard's "Compact" do it on demand. The transcript keeps every message;
+only the model's context gets shorter.
 
 ## What pi does not support
 
@@ -74,12 +80,10 @@ pi answers a request for a feature it does not have with
 | Feature | On pi |
 | --- | --- |
 | Rewind to a message, edit-and-resend | Not supported. |
-| Compaction | Not supported. A turn that exceeds the model's context window ends with `ContextOverflowError`. Start a new session for a long task. |
-| Slash commands (`commands/*.md`) | Not supported. Use a prompt template in `harnesses/pi/prompts/`. |
+| OpenCode command files (`harnesses/opencode/commands/*.md`) | Not read. Put the command in `harnesses/pi/prompts/` as a prompt template. |
 | MCP servers | No MCP client. Use connectors through `kortix connectors`, or a pi package. |
 | Todo list (`todowrite`) | No tool. |
 | `opencode attach` | Not supported. |
-| `AGENTS.md` | Not loaded. |
 
 Do not tell a user to "restart opencode", to edit `opencode.jsonc`, or to add
 an OpenCode plugin when the session runs pi. None of that changes a pi
@@ -98,8 +102,12 @@ session.
   `kortix sessions restart <id>`.
 - Kortix builds the npm packages in `harnesses.pi.packages` when the change
   request merges. A session started before the merge does not have them.
-- With the project's `config_releases` flag on, a running session picks up a
-  merged agent, skill or pi config change without a new session.
+- A running session picks up a merged agent, skill, `AGENTS.md` or pi config
+  change without a new session: it runs the base branch's config release. It
+  reads `AGENTS.md` from that release, never from `/workspace`: an edit in
+  `/workspace/AGENTS.md` changes nothing until it merges.
+- `harness.details.agentsMd` in `GET /kortix/health` names the `AGENTS.md` pi
+  loaded: `source`, `path`, `bytes` and `sha`.
 
 ## Reference pages
 

@@ -32,6 +32,7 @@ const REMINDER = {
 };
 
 const DONE = { ...REMINDER, id: 'reminder.done00000000', every: null, every_seconds: null, state: 'done', next_fire_at: null, last_fired_at: '2026-09-29T08:30:12.000Z', last_status: 'fired' };
+const NAMED = { ...REMINDER, id: 'reminder.named0000000', name: 'standup' };
 
 function startServer(): string {
   server = Bun.serve({
@@ -52,7 +53,10 @@ function startServer(): string {
         }
         return Response.json(REMINDER, { status: 201 });
       }
-      if (url.pathname === BASE && req.method === 'GET') return Response.json({ reminders: [REMINDER, DONE] });
+      if (url.pathname === BASE && req.method === 'GET') return Response.json({ reminders: [REMINDER, DONE, NAMED] });
+      if (url.pathname === `${BASE}/reminder.bad` && (req.method === 'PATCH' || req.method === 'DELETE')) {
+        return Response.json({ error: 'Reminder not found' }, { status: 404 });
+      }
       if (url.pathname === `${BASE}/${DONE.id}` && req.method === 'PATCH') return Response.json(DONE);
       if (url.pathname === `${BASE}/${REMINDER.id}` && req.method === 'PATCH') {
         const enabled = (body as { enabled: boolean }).enabled;
@@ -159,6 +163,15 @@ describe('kortix reminders — inside a session', () => {
     ]);
   }, 60_000);
 
+  test('a named reminder lists its prompt in TEXT and its name in NAME', async () => {
+    const ls = await runCli(['reminders', 'ls']);
+    expect(ls.code).toBe(0);
+    expect(ls.stdout).toContain('NAME');
+    const row = ls.stdout.split('\n').find((l) => l.includes('reminder.named0000000')) ?? '';
+    expect(row).toContain('standup');
+    expect(row).toContain('Did the email arrive?');
+  }, 60_000);
+
   test('resume of a fired one-shot says it stays done instead of claiming it resumed', async () => {
     const r = await runCli(['reminders', 'resume', DONE.id]);
     expect(r.code).toBe(0);
@@ -179,6 +192,31 @@ describe('kortix reminders — inside a session', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Reminders is not enabled for this project');
     expect(r.stderr).toContain('kortix projects features enable reminders');
+  }, 60_000);
+
+  test('an env session absent from this project explains the mismatch, not a bare Not found', async () => {
+    // A worker inside a sandbox carries its own host's KORTIX_SESSION_ID. When
+    // the linked project lives on another host (dev against a prod sandbox),
+    // the API 404s and the bare server text reads like a platform failure.
+    const FOREIGN = '33333333-3333-4333-8333-333333333333';
+    const ls = await runCli(['reminders', 'ls'], { KORTIX_SESSION_ID: FOREIGN });
+    expect(ls.code).toBe(1);
+    expect(ls.stderr).toContain('from $KORTIX_SESSION_ID');
+    expect(ls.stderr).toContain('Pass --session <id>');
+    expect(ls.stderr).not.toContain('✗  Not found');
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([`GET /v1/projects/${PROJECT}/sessions/${FOREIGN}/reminders`]);
+
+    const add = await runCli(['remind', 'x', '--in', '1h'], { KORTIX_SESSION_ID: FOREIGN });
+    expect(add.code).toBe(1);
+    expect(add.stderr).toContain('from $KORTIX_SESSION_ID');
+    expect(add.stderr).toContain('Pass --session <id>');
+  }, 60_000);
+
+  test('a 404 from a bad reminder id keeps the server text, not the session hint', async () => {
+    const r = await runCli(['reminders', 'pause', 'reminder.bad']);
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('Reminder not found');
+    expect(r.stderr).not.toContain('$KORTIX_SESSION_ID');
   }, 60_000);
 
   test('no session anywhere and no prompt are usage errors (exit 2), with no request', async () => {

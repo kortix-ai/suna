@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef } from 'react';
 
-import { projectIdFromPathname, useProjectSwitchStore } from '@/stores/project-switch-store';
+import { projectIdFromPathname, useProjectSwitchStore } from '@kortix/ui/internal/stores/project-switch-store';
 
 /**
  * Ends a workspace switch. One instance, in the authenticated app shell.

@@ -7,7 +7,6 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  EMAIL_RESERVED_SLUG,
   extractConnectors,
   SLACK_RESERVED_SLUG,
   RESERVED_CONNECTOR_SLUGS,
@@ -26,10 +25,11 @@ function parse(body: string) {
 
 /* ─── parser: reserved slug ─────────────────────────────────────────────────── */
 
+const EMAIL_RESERVED_SLUG = 'kortix_email';
+
 describe('reserved kortix_slack slug', () => {
   test('the reserved set + canonical slug are what the rest of the code keys on', () => {
     expect(SLACK_RESERVED_SLUG).toBe('kortix_slack');
-    expect(EMAIL_RESERVED_SLUG).toBe('kortix_email');
     expect(RESERVED_CONNECTOR_SLUGS.has('slack')).toBe(true);
     expect(RESERVED_CONNECTOR_SLUGS.has('email')).toBe(true);
     expect(RESERVED_CONNECTOR_SLUGS.has('kortix_slack')).toBe(true);
@@ -139,6 +139,66 @@ describe('hideSupersededSlack', () => {
   test('never hides the channel connector itself or unrelated connectors', () => {
     const out = hideSupersededSlack([channel, gmail]);
     expect(out).toHaveLength(2);
+  });
+
+  // KRTX-2353: the managed add flow (Composio / Pipedream) creates its Slack
+  // connector under a GENERATED slug (`slack-<random>`), so the legacy
+  // literal-slug check never matched it and a project with the Slack channel
+  // installed showed two "Slack" connectors. Match managed profiles by app
+  // identity (the toolkit/app slug persisted on the row's config), not by
+  // connection slug.
+  test('hides a managed (generated-slug) Slack profile by its app identity', () => {
+    const composioSlack = {
+      slug: 'slack-k8x2p1',
+      providerType: 'composio',
+      config: { app: 'slack', account: null },
+    };
+    const out = hideSupersededSlack([channel, composioSlack, gmail]);
+    expect(out.map((c) => c.slug).sort()).toEqual(['gmail', 'kortix_slack']);
+  });
+
+  test('hides a pipedream slack_v2 profile too — same app, different toolkit slug', () => {
+    const pipedreamSlackV2 = {
+      slug: 'slack_v2-a1b2c3',
+      providerType: 'pipedream',
+      config: { app: 'slack_v2', account: 'default' },
+    };
+    const out = hideSupersededSlack([channel, pipedreamSlackV2]);
+    expect(out.map((c) => c.slug)).toEqual(['kortix_slack']);
+  });
+
+  test('keeps a managed Slack profile when there is no channel connector yet', () => {
+    const composioSlack = {
+      slug: 'slack-k8x2p1',
+      providerType: 'composio',
+      config: { app: 'slack' },
+    };
+    const out = hideSupersededSlack([composioSlack, gmail]);
+    expect(out.map((c) => c.slug).sort()).toEqual(['gmail', 'slack-k8x2p1']);
+  });
+
+  test('does not hide managed profiles of other apps sharing a slack-ish slug', () => {
+    const teamsManaged = {
+      slug: 'microsoft-teams-9f3k',
+      providerType: 'composio',
+      config: { app: 'microsoft_teams' },
+    };
+    const otherApp = {
+      slug: 'slack-clone-tools',
+      providerType: 'composio',
+      config: { app: 'slack_clone' },
+    };
+    const out = hideSupersededSlack([channel, teamsManaged, otherApp]);
+    expect(out.map((c) => c.slug).sort()).toEqual(['kortix_slack', 'microsoft-teams-9f3k', 'slack-clone-tools']);
+  });
+
+  test('a row without config (legacy fixture shape) is only matched by its slug', () => {
+    const out = hideSupersededSlack([
+      channel,
+      { slug: 'slack', providerType: 'composio' },
+      { slug: 'gmail', providerType: 'composio', config: {} },
+    ]);
+    expect(out.map((c) => c.slug).sort()).toEqual(['gmail', 'kortix_slack']);
   });
 });
 

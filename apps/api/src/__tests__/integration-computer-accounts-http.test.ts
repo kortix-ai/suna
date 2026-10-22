@@ -54,14 +54,17 @@ import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { db } from '../shared/db';
 import { relayOwnerPatch } from '../tunnel/core/cluster-forwarder';
+import { tunnelRelay } from '../tunnel/core/relay';
+import { computerAccessView } from '../tunnel/access-control';
+import { TunnelRelayError } from 'agent-tunnel';
+import { createConnectionsRouter } from '../tunnel/routes/connections';
 import {
-  createConnectionsRouter,
   retireStaleUnidentifiedRegistrations,
   retireSupersededRegistrations,
-} from '../tunnel/routes/connections';
+} from '../tunnel/registrations';
 import { createRpcRouter } from '../tunnel/routes/rpc';
 import { deleteFromView, insertIntoView } from './helpers/compat-views';
-import { generateTunnelToken, hashSecretKey } from '../shared/crypto';
+import { fingerprintTunnelCredentialHash, generateTunnelToken, hashSecretKey } from '../shared/crypto';
 import { parseAccessState } from '../tunnel';
 import { computerAccessErrorKind, machineAccess } from '../tunnel/core/rpc-core';
 
@@ -424,6 +427,24 @@ describe('a private computer stays private', () => {
       body: JSON.stringify({ method: 'fs.read', params: { path: '/etc/hosts' } }),
     });
     expect(rpc.status).toBe(404);
+  });
+
+  test('a malformed JSON body without a JSON content-type answers 400, not a parse error', async () => {
+    const rpc = await tunnelAppFor(ALICE).request(`/rpc/${aliceTunnel}`, {
+      method: 'POST',
+      body: '{not json',
+    });
+    expect(rpc.status).toBe(400);
+    expect(await rpc.json()).toEqual({ error: 'method is required' });
+  });
+
+  test('a JSON null body answers 400, not a parse error', async () => {
+    const rpc = await tunnelAppFor(ALICE).request(`/rpc/${aliceTunnel}`, {
+      method: 'POST',
+      body: 'null',
+    });
+    expect(rpc.status).toBe(400);
+    expect(await rpc.json()).toEqual({ error: 'method is required' });
   });
 
   test('another member cannot name it, even with --account', async () => {
@@ -853,6 +874,170 @@ describe('v2: access mode on the machine', () => {
     expect(computerAccessErrorKind(-32012, 'x')).toBe('computer_access_off');
     expect(computerAccessErrorKind(-32603, 'computer_access_off: turned off')).toBe('computer_access_off');
     expect(computerAccessErrorKind(-32603, 'boom')).toBeNull();
+  });
+});
+
+describe('the owner changes access through Kortix (POST /tunnel/connections/:id/access)', () => {
+  const NOW_ACCESS = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false, keepAwakeSupported: true, pendingRequest: null };
+  let laptop = '';
+  const originals = {
+    isConnected: tunnelRelay.isConnected.bind(tunnelRelay),
+    getAgentMetadata: tunnelRelay.getAgentMetadata.bind(tunnelRelay),
+    relayRPC: tunnelRelay.relayRPC.bind(tunnelRelay),
+  };
+  const relayed: Array<{ method: string; params: Record<string, unknown> }> = [];
+  let answer: () => Promise<unknown> = async () => NOW_ACCESS;
+
+  /** This replica holds the machine's socket; the agent answers with `answer`. */
+  async function connectFakeAgent(machineInfo: Record<string, unknown>) {
+    const [row] = await db
+      .update(tunnelConnections)
+      .set({ status: 'online', lastHeartbeatAt: new Date(), machineInfo, setupTokenHash: hashSecretKey(generateTunnelToken()), ...relayOwnerPatch() })
+      .where(eq(tunnelConnections.tunnelId, laptop))
+      .returning();
+    tunnelRelay.isConnected = (id: string) => id === laptop;
+    tunnelRelay.getAgentMetadata = ((id: string) =>
+      id === laptop
+        ? { accountId: row!.accountId, capabilities: ['filesystem'], credentialFingerprint: fingerprintTunnelCredentialHash(row!.setupTokenHash!) }
+        : undefined) as typeof tunnelRelay.getAgentMetadata;
+    tunnelRelay.relayRPC = (async (_id: string, method: string, params: Record<string, unknown>) => {
+      relayed.push({ method, params });
+      return answer();
+    }) as typeof tunnelRelay.relayRPC;
+  }
+
+  beforeAll(async () => {
+    const [row] = await db
+      .select({ tunnelId: tunnelConnections.tunnelId })
+      .from(tunnelConnections)
+      .where(and(eq(tunnelConnections.ownerUserId, ALICE), eq(tunnelConnections.name, 'Alice Laptop')));
+    laptop = row!.tunnelId;
+  });
+  afterAll(async () => {
+    Object.assign(tunnelRelay, originals);
+    await db.update(tunnelConnections).set({ status: 'offline', machineInfo: {} }).where(eq(tunnelConnections.tunnelId, laptop));
+  });
+
+  const post = (userId: string, body: unknown) => request('POST', `/v1/tunnel/connections/${laptop}/access`, tokens[userId]!, body);
+
+  test('a body with no known change, or an unknown field, is 400', async () => {
+    for (const body of [{}, { mode: 'sometimes' }, { mode: 'ask', extra: 1 }, { grantMinutes: 0 }, { grantMinutes: 2000 }]) {
+      expect((await post(ALICE, body)).status).toBe(400);
+    }
+  });
+
+  test('another member cannot reach the machine: 404', async () => {
+    expect((await post(BOB, { mode: 'off' })).status).toBe(404);
+  });
+
+  test('a session credential is refused: an agent never changes access', async () => {
+    const tunnel = new Hono();
+    tunnel.use('*', async (c, next) => {
+      c.set('authType' as never, 'apiKey' as never);
+      c.set('sandboxId' as never, SHARED_SESSION as never);
+      c.set('accountId' as never, ACCOUNT as never);
+      c.set('userId' as never, ALICE as never);
+      await next();
+    });
+    tunnel.route('/connections', createConnectionsRouter());
+    const res = await tunnel.request(`/connections/${laptop}/access`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ mode: 'always' }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  test('an offline machine is 409 computer_offline, naming the local way to change it', async () => {
+    await db.update(tunnelConnections).set({ status: 'offline', relayOwnerId: null }).where(eq(tunnelConnections.tunnelId, laptop));
+    const res = await post(ALICE, { mode: 'off' });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; error: string };
+    expect(body.code).toBe('computer_offline');
+    expect(body.error).toContain('npx @kortix/agent-tunnel@latest access');
+  });
+
+  test('an agent that predates access changes is 409 agent_update_required, and nothing is relayed', async () => {
+    await connectFakeAgent({ access: { mode: 'ask', grantedUntil: null } });
+    relayed.length = 0;
+    const res = await post(ALICE, { mode: 'off' });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe('agent_update_required');
+    expect(relayed).toEqual([]);
+  });
+
+  test('the change is relayed as tunnel.access.set; the answer is stored and listed', async () => {
+    await connectFakeAgent({ controlsAccess: true, access: { ...NOW_ACCESS, desktopPermissions: { accessibility: true, screenRecording: false } } });
+    relayed.length = 0;
+    answer = async () => ({ ...NOW_ACCESS, mode: 'off', keepAwake: true });
+    const res = await post(ALICE, { mode: 'off', keepAwake: true });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      mode: 'off',
+      keepAwake: true,
+      controllable: true,
+      // The answer has no macOS permissions: the last report stays.
+      desktopPermissions: { accessibility: true, screenRecording: false },
+    });
+    expect(relayed).toEqual([{ method: 'tunnel.access.set', params: { mode: 'off', keepAwake: true } }]);
+
+    const listed = await tunnelAppFor(ALICE).request('/connections');
+    const machine = ((await listed.json()) as Array<Record<string, any>>).find((row) => row.tunnelId === laptop);
+    expect(machine?.access).toMatchObject({ mode: 'off', keepAwake: true, controllable: true });
+  });
+
+  test('a widening the owner did not confirm on the computer is 409 computer_access_unconfirmed', async () => {
+    await connectFakeAgent({ controlsAccess: true, access: NOW_ACCESS });
+    answer = async () => {
+      throw new TunnelRelayError(-32014, 'computer_access_unconfirmed: The owner declined on the computer.');
+    };
+    const res = await post(ALICE, { mode: 'always' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ code: 'computer_access_unconfirmed', error: 'The owner declined on the computer.' });
+  });
+
+  test('the RPC route and the computer connector never reach tunnel.access.set', async () => {
+    await connectFakeAgent({ controlsAccess: true, access: NOW_ACCESS });
+    relayed.length = 0;
+    const res = await tunnelAppFor(ALICE).request(`/rpc/${laptop}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ method: 'tunnel.access.set', params: { mode: 'always' } }),
+    });
+    expect(res.status).toBe(400);
+    const viaConnector = await call(principal({ userId: ALICE, requestedConnectorAccount: 'Alice Laptop' }), 'tunnel.access.set', { mode: 'always' });
+    expect(viaConnector.status).not.toBe('ok');
+    expect(relayed).toEqual([]);
+  });
+
+  test('the report keeps only known fields; a lapsed grant and a stale request read as none', () => {
+    const now = Date.parse('2030-01-01T12:00:00.000Z');
+    const report = {
+      mode: 'ask',
+      grantedUntil: '2030-01-01T11:00:00.000Z',
+      deniedUntil: '2030-01-01T12:05:00.000Z',
+      keepAwake: true,
+      keepAwakeSupported: true,
+      pendingRequest: { capability: 'shell', requestedAt: '2030-01-01T11:58:00.000Z', id: 'dropped' },
+      desktopPermissions: { accessibility: false, screenRecording: true },
+      extra: 'dropped',
+    };
+    expect(parseAccessState(report)).toEqual({
+      mode: 'ask',
+      grantedUntil: '2030-01-01T11:00:00.000Z',
+      deniedUntil: '2030-01-01T12:05:00.000Z',
+      keepAwake: true,
+      keepAwakeSupported: true,
+      pendingRequest: { capability: 'shell', requestedAt: '2030-01-01T11:58:00.000Z' },
+      desktopPermissions: { accessibility: false, screenRecording: true },
+    });
+    expect(computerAccessView({ access: report, controlsAccess: true }, now)).toMatchObject({
+      grantedUntil: null,
+      deniedUntil: '2030-01-01T12:05:00.000Z',
+      pendingRequest: null,
+      controllable: true,
+    });
+    expect(computerAccessView({}, now)).toBeNull();
   });
 });
 

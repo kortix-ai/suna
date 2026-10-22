@@ -1,8 +1,8 @@
 'use client';
 
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { Claude } from '@/features/icon/icons/claude';
-import { OpenAI } from '@/features/icon/icons/open-ai';
+import { Claude } from '@kortix/ui/internal/icons/claude';
+import { OpenAI } from '@kortix/ui/internal/icons/open-ai';
 import { HeroSurfaces } from '@/features/marketing/hero-surfaces';
 import { getLocalizedLandingContent } from '@/features/marketing/landing/content';
 import { useTranslations } from '@/i18n/use-translations';
@@ -14,7 +14,7 @@ import { type ReactNode } from 'react';
 const RIVAL_ICONS = { Claude, OpenAI } as const;
 
 /** Anchors the product against the two things a reader already knows, with
- *  their marks, so "AI Management System" lands without a paragraph first. */
+ *  their marks, so "AI Operating System" lands without a paragraph first. */
 export function RivalEyebrow({
   content,
 }: {

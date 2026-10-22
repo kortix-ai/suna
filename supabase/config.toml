@@ -40,8 +40,14 @@ site_url = "http://localhost:3000"
 additional_redirect_urls = ["http://127.0.0.1:3000", "http://localhost:3000", "kortix://**"]
 enable_signup = true
 # GoTrue must reject a rotated refresh token even outside the Kortix proxy.
-refresh_token_rotation_enabled = true
+enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 0
+
+# Authenticator-app (TOTP) MFA: Settings → Security enrolls a factor, and the
+# step-up dialog verifies it. Without this section GoTrue rejects both calls.
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
 
 [auth.email]
 enable_signup = true

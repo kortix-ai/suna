@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { turnEndCause, turnEndNotice } from './turn-end-cause';
 import { TURN_END_SETTLE_MS } from './turn-end-settle';
 
-// Session ad02e053 (2026-09-18): the sandbox memory guard aborted a turn at 97 %
+// One session (2026-09-18): the sandbox memory guard aborted a turn at 97 %
 // box memory. The transcript only says `MessageAbortedError: Aborted`; the
 // control plane's `last_ended.error` names the cause. A renderer shows the cause
 // on the turn it belongs to, and on no other.
@@ -101,7 +101,7 @@ describe('turnEndNotice', () => {
   });
 
   test('an unexplained failure waits out the settle window: the cause is often one frame behind the abort', () => {
-    // Session ad02e053: the guard's frame landed 476 ms after OpenCode's abort.
+    // That session: the guard's frame landed 476 ms after OpenCode's abort.
     // A read taken in that gap must not claim "no reason" and then change its mind.
     expect(turnEndNotice(outcome(endedMs + 400), 'msg_unnamed', SILENT)).toBeNull();
     expect(turnEndNotice(outcome(settled - 1), 'msg_unnamed', SILENT)).toBeNull();

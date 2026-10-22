@@ -10,6 +10,7 @@ import { describe, expect, mock, test } from 'bun:test';
 import { sandboxes } from '@kortix/db';
 import { getTier } from './tiers';
 import * as realUsageBreakdown from './usage-breakdown';
+import * as realCreditAccounts from '../repositories/credit-accounts';
 
 let getCreditAccountCalls = 0;
 let account: Record<string, unknown> | null = null;
@@ -34,6 +35,7 @@ mock.module('../../config', () => ({
 }));
 
 mock.module('../repositories/credit-accounts', () => ({
+  ...realCreditAccounts,
   getCreditAccount: async (_accountId: string) => {
     getCreditAccountCalls += 1;
     return account;
@@ -52,10 +54,6 @@ mock.module('./free-tier', () => ({
 // mocking them would make this suite pass even if they regressed to an
 // unconditional getCreditAccount(). They reach getCreditAccount only via the
 // mocked ../repositories/credit-accounts, so the real modules run here.
-
-mock.module('./seat-management', () => ({
-  countActiveMembers: async (_accountId: string) => trackedDelay(3),
-}));
 
 // Spread the real module: `mock.module` replaces it WHOLESALE, so a stub that
 // lists exports by hand silently deletes every other one — and the failure
@@ -94,10 +92,10 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
   return {
     accountId: 'acct-1',
     tier: 'free',
-    billingModel: 'legacy',
     balance: '10.00',
     dailyCreditsBalance: '1.00',
     expiringCredits: '5.00',
+    nextCreditGrant: '2026-11-24T12:00:00Z',
     nonExpiringCredits: '4.00',
     autoTopupEnabled: false,
     autoTopupThreshold: null,
@@ -117,8 +115,7 @@ function creditAccount(overrides: Record<string, unknown> = {}) {
     revenuecatPendingChangeProduct: null,
     revenuecatPendingChangeDate: null,
     planType: null,
-    seatCount: null,
-    maxConcurrentSessions: null,
+    planMonthlyUsd: null,
     ...overrides,
   };
 }
@@ -135,7 +132,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
 
   test('the independent lookups actually run concurrently, not sequentially', async () => {
     getCreditAccountCalls = 0;
-    account = creditAccount({ billingModel: 'per_seat' });
+    account = creditAccount();
     inFlight = 0;
     maxInFlight = 0;
 
@@ -144,7 +141,14 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(maxInFlight).toBeGreaterThan(1);
   });
 
-  test('response shape is unchanged — credits, subscription, tier, auto_topup, instances, limits all present', async () => {
+  test('funded Free reports wallet admission separately from managed model access', async () => {
+    account = creditAccount({ tier: 'free', balance: '5.00' });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.credits.can_run).toBe(true);
+    expect(state.model_access).toEqual({ managed: false, requires_provider_key: true });
+  });
+
+  test('response shape — credits, subscription, tier, auto_topup present; no legacy machine fields', async () => {
     getCreditAccountCalls = 0;
     account = creditAccount();
 
@@ -154,6 +158,7 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       total: 10,
       daily: 1,
       monthly: 5,
+      expires_at: '2026-11-24T12:00:00.000Z',
       extra: 4,
       can_run: true,
       lifetime_granted: 0,
@@ -169,30 +174,40 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
       status: 'current',
       sublabel: null,
       rank: 1,
+      monthly_usd: null,
     });
+    expect('is_grandfathered' in (state.plan ?? {})).toBe(false);
     expect(state.auto_topup).toEqual({
       enabled: false,
       threshold: expect.any(Number),
       amount: expect.any(Number),
+      // KRTX-1718: why the last charge failed; none here.
+      disabled_reason: null,
+      last_failure_reason: null,
+      last_failure_at: null,
     });
-    expect(state.instances).toEqual([]);
-    expect(state.limits?.concurrent_sessions.active).toBe(0);
-    expect(state.billing_model).toBe('legacy');
-    expect(state.member_count).toBe(3);
+    expect('instances' in state).toBe(false);
+    expect('can_add_instances' in state).toBe(false);
+    expect('limits' in state).toBe(false);
+    // Credits-only: no seats, no billing model, no claim flags.
+    for (const removed of ['billing_model', 'seats', 'member_count', 'can_claim_per_seat', 'can_claim_computer']) {
+      expect(removed in state).toBe(false);
+    }
+    expect(state.plan?.monthly_usd).toBeNull();
     expect(state.billing_state).toBe('active');
     expect(state.has_active_subscription).toBe(false);
   });
 
-  test('a per-seat account on an ACTIVE subscription with a drained wallet CANNOT run, and reports why', async () => {
+  test('a credits account on an ACTIVE subscription with a drained wallet CANNOT run, and reports why', async () => {
     // Was `can_run: true` while the wallet sat at $0.0099, because a paying
-    // per-seat subscription bypassed the floor. The bypass is gone. What this
+    // subscription bypassed the floor. The bypass is gone. What this
     // test now pins is that the three fields stay CONSISTENT with each other:
     // blocked (`can_run` false), correctly diagnosed (`out_of_credits`, so the
     // UI says "Top up"), and still recognised as a customer
     // (`has_active_subscription` true, so nothing pitches them a subscription).
     account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
+      tier: 'credits',
+      planMonthlyUsd: '100',
       balance: '0.0099614711',
       stripeSubscriptionId: 'sub_live',
       stripeSubscriptionStatus: 'active',
@@ -203,12 +218,13 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
     expect(state.billing_state).toBe('out_of_credits');
     expect(state.credits.can_run).toBe(false);
     expect(state.has_active_subscription).toBe(true);
+    expect(state.plan?.monthly_usd).toBe(100);
+    expect(state.tier.monthly_credits).toBe(100);
   });
 
-  test('a per-seat account whose subscription lapsed and whose wallet is drained is out_of_credits, not no_subscription', async () => {
+  test('a credits account whose subscription lapsed and whose wallet is drained is out_of_credits, not no_subscription', async () => {
     account = creditAccount({
-      billingModel: 'per_seat',
-      tier: 'per_seat',
+      tier: 'credits',
       balance: '0',
       stripeSubscriptionId: 'sub_gone',
       stripeSubscriptionStatus: 'canceled',
@@ -263,75 +279,119 @@ describe('buildMinimalAccountState — credit row dedupe + concurrency (measured
  *   subscription.tier_key  → STORED. What Stripe sold. Wire-compatible.
  *   plan.* / tier.*        → RESOLVED. What the account behaves as.
  */
-describe('buildMinimalAccountState — trialing account reports the trial plan', () => {
-  const TRIAL_TIER = 'tier_25_200';
+describe('buildMinimalAccountState — the Enterprise feature layer', () => {
+  test('off by default; trial is always null', async () => {
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '200' });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.enterprise).toEqual({ state: 'off' });
+    expect(state.trial).toBeNull();
+    expect(state.plan?.family).toBe('credits');
+  });
 
-  function trialing(overrides: Record<string, unknown> = {}) {
+  test('demo: Enterprise features on, the billing plan and its amount unchanged, plan limits', async () => {
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '200', demoEnterprise: true });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.enterprise).toEqual({ state: 'demo' });
+    expect(state.plan?.family).toBe('credits');
+    expect(state.plan?.monthly_usd).toBe(200);
+    expect(state.subscription.monthly_usd).toBe(200);
+    expect(state.tier.name).toBe('credits');
+    expect(state.tier.entitlements?.sso).toBe(true);
+  });
+
+  test('licensed: Enterprise limits at the gates, the billing plan unchanged', async () => {
+    account = creditAccount({ tier: 'free', enterpriseEntitled: true });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.enterprise).toEqual({ state: 'licensed' });
+    expect(state.plan?.family).toBe('free');
+    expect(state.tier.name).toBe('enterprise');
+  });
+
+  test('a stale active trial on the row grants nothing', async () => {
+    account = creditAccount({ tier: 'free', trialStatus: 'active', trialTier: 'enterprise', trialEndsAt: new Date(Date.now() + 86_400_000).toISOString() });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.enterprise).toEqual({ state: 'off' });
+    expect(state.trial).toBeNull();
+    expect(state.tier.entitlements?.sso).toBe(false);
+  });
+});
+
+/**
+ * Pending cancellation (`subscription.cancel_at_period_end`).
+ *
+ * Stripe is the truth; `payment_status: 'cancelling'` is its mirror on the
+ * credit row (the `customer.subscription.updated` webhook writes it, and the
+ * cancel route writes it eagerly so the UI flips without waiting on webhook
+ * latency). account-state hardcoded `cancel_at_period_end: false`, so a
+ * subscription the customer had cancelled kept rendering as if it renewed
+ * forever and the app had no state to show a pending cancellation against.
+ * These pin the mirror both ways.
+ */
+describe('buildMinimalAccountState — reports a pending cancellation from paymentStatus', () => {
+  function cancelling(overrides: Record<string, unknown> = {}) {
     return creditAccount({
-      tier: 'free',
-      trialStatus: 'active',
-      trialTier: TRIAL_TIER,
-      trialEndsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+      tier: 'credits',
+      stripeSubscriptionId: 'sub_cancelling',
+      stripeSubscriptionStatus: 'active',
       ...overrides,
     });
   }
 
-  test('tier.* and plan.* describe the TRIAL plan while subscription.tier_key keeps the stored one', async () => {
-    account = trialing();
+  test('paymentStatus cancelling → cancel_at_period_end true, subscription still live', async () => {
+    account = cancelling({ paymentStatus: 'cancelling' });
 
     const state = await buildMinimalAccountState('acct-1');
 
-    // Stored — unchanged wire value.
-    expect(state.subscription.tier_key).toBe('free');
-    expect(state.subscription.tier_display_name).toBe('Free');
-
-    // Resolved — what the gates enforce.
-    expect(state.tier.name).toBe(TRIAL_TIER);
-    expect(state.tier.display_name).toBe('Ultra (Legacy)');
-    expect(state.plan?.key).toBe(TRIAL_TIER);
-    expect(state.plan?.family).toBe('team');
-    expect(state.plan?.label).toBe('Team');
-    expect(state.plan?.status).toBe('grandfathered');
-    expect(state.plan?.is_grandfathered).toBe(true);
-    expect(state.plan?.shape).toBe('flat');
-    expect(state.plan?.sublabel).toBe('$200/mo · grandfathered');
+    expect(state.subscription.cancel_at_period_end).toBe(true);
+    expect(state.subscription.subscription_id).toBe('sub_cancelling');
+    expect(state.has_active_subscription).toBe(true);
   });
 
-  test('the concurrent-session ceiling shown is the trial plan’s, not free’s', async () => {
-    account = trialing();
+  test('paymentStatus active → cancel_at_period_end false', async () => {
+    account = cancelling({ paymentStatus: 'active' });
 
     const state = await buildMinimalAccountState('acct-1');
 
-    expect(state.limits?.concurrent_sessions.limit).toBe(
-      getTier(TRIAL_TIER).concurrentSessionLimit,
-    );
-    expect(state.limits?.concurrent_sessions.limit).not.toBe(
-      getTier('free').concurrentSessionLimit,
-    );
+    expect(state.subscription.cancel_at_period_end).toBe(false);
+  });
+});
+
+describe('buildMinimalAccountState — plan changes', () => {
+  test('a scheduled cut: this period keeps its amount; scheduled_change names the new one and the renewal date', async () => {
+    account = creditAccount({
+      tier: 'credits',
+      planMonthlyUsd: '5000',
+      scheduledMonthlyUsd: '3000',
+      // Postgres hands back its own text form; the wire carries ISO 8601.
+      scheduledTierChangeDate: '2026-11-14 00:00:00+00',
+      stripeSubscriptionId: 'sub_live',
+      billingCycleAnchor: '2026-09-14T00:00:00.000Z',
+    });
+    const state = await buildMinimalAccountState('acct-1');
+    expect(state.plan?.monthly_usd).toBe(5000);
+    expect(state.subscription.has_scheduled_change).toBe(true);
+    expect(state.subscription.scheduled_change).toEqual({
+      type: 'downgrade',
+      current_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 500_000, monthly_usd: 5000 },
+      target_tier: { name: 'credits', display_name: 'Credits', monthly_credits: 300_000, monthly_usd: 3000 },
+      effective_date: '2026-11-14T00:00:00.000Z',
+    });
   });
 
-  test('credit purchases follow the resolved plan — the same predicate the purchase route gates on', async () => {
-    account = trialing();
-
+  test('current_period_end is the next anchor-aligned renewal for a live credits subscription', async () => {
+    const anchor = new Date(Date.UTC(2026, 0, 14));
+    account = creditAccount({ tier: 'credits', planMonthlyUsd: '100', stripeSubscriptionId: 'sub_live', billingCycleAnchor: anchor.toISOString() });
     const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.tier.can_purchase_credits).toBe(true);
-    expect(state.subscription.can_purchase_credits).toBe(true);
+    const end = new Date((state.subscription.current_period_end ?? 0) * 1000);
+    expect(end.getUTCDate()).toBe(14);
+    expect(end.getTime()).toBeGreaterThan(Date.now());
+    expect(end.getTime() - Date.now()).toBeLessThanOrEqual(31 * 86_400_000);
   });
 
-  test('monthly_credits stays on the STORED plan — a trial grants no credits', async () => {
-    account = trialing();
-
+  test('no live subscription: no period end, no scheduled change', async () => {
+    account = creditAccount({ tier: 'free' });
     const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.tier.monthly_credits).toBe(getTier('free').monthlyCredits);
-  });
-
-  test('a per-account session override still wins over the resolved plan cap', async () => {
-    account = trialing({ maxConcurrentSessions: 7 });
-
-    const state = await buildMinimalAccountState('acct-1');
-
-    expect(state.limits?.concurrent_sessions.limit).toBe(7);
+    expect(state.subscription.current_period_end).toBeNull();
+    expect(state.subscription.scheduled_change).toBeNull();
   });
 });

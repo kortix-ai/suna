@@ -1,10 +1,14 @@
+import { BoundedMap } from '../shared/bounded-map';
 import {
+  EVENT_FORBIDDEN_KEYS,
   MONITOR_MIN_EXPECT_EVENT_WITHIN_SECONDS,
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  TRIGGER_MIN_MAX_LATENESS_SECONDS,
   formatDurationSeconds,
   parseDurationSeconds,
+  parseTriggerFilter,
 } from '@kortix/manifest-schema';
 import { isPlainObject } from '../shared/json';
 import type { GitBackedProject } from './git';
@@ -13,6 +17,7 @@ import { validateTriggerCron, validateTriggerTimezone } from './trigger-schedule
 import {
   GIT_TRIGGER_SESSION_MODES,
   type GitMonitorFields,
+  type GitTriggerEventFields,
   type GitMonitorMode,
   type GitTriggerParseError,
   type GitTriggerSessionMode,
@@ -79,6 +84,106 @@ export function parseMonitorFields(
     }
   }
   return { run, monitorMode, intervalSeconds, expectEventWithinSeconds };
+}
+
+/**
+ * Parse + validate the `type: event` fields off a manifest entry (`config` key)
+ * or a CRUD body (`event_config` key). Mirrors `@kortix/manifest-schema`'s
+ * `validateEventTrigger`. Cron/webhook/monitor wiring is a hard error. The
+ * provider validates `config` against the event's JSON schema at subscribe time.
+ */
+export function parseEventFields(
+  row: Record<string, unknown>,
+  configKey: 'config' | 'event_config',
+): GitTriggerEventFields | { error: string } {
+  const connector = typeof row.connector === 'string' ? row.connector.trim() : '';
+  if (!connector) return { error: 'event triggers must declare a `connector`' };
+  const type = typeof row.event === 'string' ? row.event.trim() : '';
+  if (!type) return { error: 'event triggers must declare an `event`' };
+  const configRaw = row[configKey];
+  if (configRaw !== undefined && configRaw !== null && !isPlainObject(configRaw)) {
+    return { error: `${configKey} must be an object` };
+  }
+  for (const key of EVENT_FORBIDDEN_KEYS) {
+    if (row[key] !== undefined && row[key] !== null) {
+      return { error: `${key} is not valid on an event trigger — events are driven by the connected app` };
+    }
+  }
+  const accountRaw = row[configKey === 'config' ? 'account' : 'event_account'];
+  if (accountRaw !== undefined && accountRaw !== null && (typeof accountRaw !== 'string' || !accountRaw.trim())) {
+    return { error: 'account must be the label of a shared account on the connector' };
+  }
+  const sourceRaw = row[configKey === 'config' ? 'source' : 'event_source'];
+  if (sourceRaw !== undefined && sourceRaw !== null && (typeof sourceRaw !== 'string' || !sourceRaw.trim())) {
+    return { error: 'source must be the event source adapter id, such as "composio"' };
+  }
+  // Omitted (not null) when unset, so an event's schedule revision stays what it was before `account` and `source` existed.
+  const account = typeof accountRaw === 'string' ? accountRaw.trim() : '';
+  const source = typeof sourceRaw === 'string' ? sourceRaw.trim() : '';
+  return { connector, ...(account ? { account } : {}), ...(source ? { source } : {}), type, config: (configRaw as Record<string, unknown> | undefined | null) ?? {} };
+}
+
+/** connector/account/source/event/config belong to event triggers only; returns the error text or null. */
+export function eventOnlyKeyError(
+  row: Record<string, unknown>,
+  configKey: 'config' | 'event_config',
+  type: string,
+): string | null {
+  const prefixed = configKey !== 'config';
+  for (const key of ['connector', prefixed ? 'event_account' : 'account', prefixed ? 'event_source' : 'source', 'event', configKey]) {
+    if (row[key] !== undefined && row[key] !== null) {
+      return `${key} is only valid on an event trigger (type is "${type}")`;
+    }
+  }
+  return null;
+}
+
+/**
+ * A cron trigger's `max_lateness` (KRTX-1743): the misfire bound. Absent → `{}`,
+ * so a spec without it keeps its shape and schedule revision. Mirrors
+ * `@kortix/manifest-schema`'s rule: cron only, at least 60s.
+ */
+export function parseMaxLateness(
+  row: Record<string, unknown>,
+  type: GitTriggerType,
+): { maxLatenessSeconds?: number } | { error: string } {
+  const raw = row.max_lateness;
+  if (raw === undefined || raw === null) return {};
+  if (type !== 'cron') return { error: 'max_lateness is only valid on a cron trigger' };
+  const parsed = parseMonitorDuration(raw, 'max_lateness', TRIGGER_MIN_MAX_LATENESS_SECONDS);
+  return 'error' in parsed ? parsed : { maxLatenessSeconds: parsed.seconds };
+}
+
+/**
+ * A trigger's run caps (KRTX-1721): `max_runs_per_hour` and `max_runs_per_day`,
+ * any type. Absent → omitted, so a spec without them keeps its shape and
+ * schedule revision. Mirrors `@kortix/manifest-schema`: a whole number ≥ 1.
+ */
+export function parseRunCaps(
+  row: Record<string, unknown>,
+): { maxRunsPerHour?: number; maxRunsPerDay?: number } | { error: string } {
+  const caps: { maxRunsPerHour?: number; maxRunsPerDay?: number } = {};
+  for (const [field, key] of [['max_runs_per_hour', 'maxRunsPerHour'], ['max_runs_per_day', 'maxRunsPerDay']] as const) {
+    const raw = row[field];
+    if (raw === undefined || raw === null) continue;
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1) {
+      return { error: `${field} must be a whole number of at least 1` };
+    }
+    caps[key] = raw;
+  }
+  return caps;
+}
+
+/**
+ * A trigger's `overlap` (KRTX-1721): `skip` or `allow`. Absent → omitted, and
+ * the default applies (`skip` for cron, `allow` otherwise). It acts on fresh
+ * session mode only (`lib/trigger-overlap.ts`).
+ */
+export function parseOverlap(row: Record<string, unknown>): { overlap?: 'skip' | 'allow' } | { error: string } {
+  const raw = row.overlap;
+  if (raw === undefined || raw === null) return {};
+  if (raw !== 'skip' && raw !== 'allow') return { error: 'overlap must be "skip" or "allow"' };
+  return { overlap: raw };
 }
 
 function parseMonitorDuration(
@@ -200,7 +305,7 @@ function forcedTriggerRefreshCooldownMs(): number {
   return Number.isFinite(value) && value >= 0 ? value : 60_000;
 }
 
-const lastForcedTriggerRefreshAt = new Map<string, number>();
+const lastForcedTriggerRefreshAt = new BoundedMap<string, number>(5_000);
 
 /**
  * Resolve one trigger for an action endpoint. A trigger can be absent from one
@@ -243,6 +348,10 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
   // Only emit model when set so manifests on the "Default" path stay byte-stable.
   if (spec.model) entry.model = spec.model;
   entry.enabled = spec.enabled;
+  // Only when set, like model: an uncapped manifest stays byte-stable.
+  if (spec.maxRunsPerHour) entry.max_runs_per_hour = spec.maxRunsPerHour;
+  if (spec.maxRunsPerDay) entry.max_runs_per_day = spec.maxRunsPerDay;
+  if (spec.overlap) entry.overlap = spec.overlap;
   // `keyed` is written as `session_key` alone: the key implies the mode on read
   // (see parseTriggerEntry), so emitting both would be redundant in the file a
   // human actually reads. It also keeps the manifest valid against the
@@ -273,6 +382,7 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
       entry.cron = spec.cron ?? '';
     }
     entry.timezone = spec.timezone;
+    if (spec.maxLatenessSeconds) entry.max_lateness = formatDurationSeconds(spec.maxLatenessSeconds);
   } else if (spec.type === 'monitor') {
     entry.run = spec.run ?? '';
     entry.mode = spec.monitorMode ?? '';
@@ -283,6 +393,12 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     if (spec.expectEventWithinSeconds !== null) {
       entry.expect_event_within = formatDurationSeconds(spec.expectEventWithinSeconds);
     }
+  } else if (spec.type === 'event' && spec.event) {
+    entry.connector = spec.event.connector;
+    if (spec.event.account) entry.account = spec.event.account;
+    if (spec.event.source) entry.source = spec.event.source;
+    entry.event = spec.event.type;
+    if (Object.keys(spec.event.config).length > 0) entry.config = spec.event.config;
   } else if (spec.secretEnv) {
     entry.secret_env = spec.secretEnv;
   }
@@ -322,10 +438,28 @@ function parseTriggerEntry(
   }
 
   const typeRaw = typeof row.type === 'string' ? row.type.trim() : '';
-  if (typeRaw !== 'cron' && typeRaw !== 'webhook' && typeRaw !== 'monitor') {
-    return err(slug, `type must be "cron", "webhook", or "monitor" (got "${typeRaw || 'unset'}")`);
+  if (
+    typeRaw !== 'cron' &&
+    typeRaw !== 'webhook' &&
+    typeRaw !== 'monitor' &&
+    typeRaw !== 'event'
+  ) {
+    return err(
+      slug,
+      `type must be "cron", "webhook", "monitor", or "event" (got "${typeRaw || 'unset'}")`,
+    );
   }
   const type = typeRaw as GitTriggerType;
+  const lateness = parseMaxLateness(row, type);
+  if ('error' in lateness) return err(slug, lateness.error);
+  const caps = parseRunCaps(row);
+  if ('error' in caps) return err(slug, caps.error);
+  const overlap = parseOverlap(row);
+  if ('error' in overlap) return err(slug, overlap.error);
+  if (type !== 'event') {
+    const bad = eventOnlyKeyError(row, 'config', type);
+    if (bad) return err(slug, bad);
+  }
 
   const prompt =
     typeof row.prompt === 'string'
@@ -403,24 +537,11 @@ function parseTriggerEntry(
   }
   const sessionKey: string | null = sessionMode === 'keyed' ? sessionKeyRaw : null;
 
-  // Optional payload guard. Values are compared as strings against the rendered
-  // path, so `true`/`1` in the manifest behave the same as in the payload.
-  let filter: Record<string, string> | null = null;
-  if (row.filter !== undefined && row.filter !== null) {
-    if (!isPlainObject(row.filter)) {
-      return err(slug, '`filter` must be a table of payload paths to expected values');
-    }
-    const entries: Record<string, string> = {};
-    for (const [key, value] of Object.entries(row.filter)) {
-      const trimmed = key.trim();
-      if (!trimmed) return err(slug, '`filter` keys must be non-empty payload paths');
-      if (value === null || typeof value === 'object') {
-        return err(slug, `\`filter.${trimmed}\` must be a string, number, or boolean`);
-      }
-      entries[trimmed] = String(value);
-    }
-    if (Object.keys(entries).length > 0) filter = entries;
-  }
+  // Optional payload guard: a value (equals) or one operator per path,
+  // compared as text against the delivery (`@kortix/manifest-schema`).
+  const parsedFilter = parseTriggerFilter(row.filter);
+  if ('error' in parsedFilter) return err(slug, parsedFilter.error);
+  const { filter } = parsedFilter;
 
   const path = `${filename}#triggers.${slug}`;
 
@@ -438,7 +559,30 @@ function parseTriggerEntry(
     pinnedSessionId,
     sessionKey,
     filter,
+    ...caps,
+    ...overlap,
   };
+
+  if (type === 'event') {
+    const event = parseEventFields(row, 'config');
+    if ('error' in event) return err(slug, event.error);
+    return {
+      ok: true,
+      spec: {
+        ...base,
+        type: 'event',
+        cron: null,
+        runAt: null,
+        timezone: 'UTC',
+        secretEnv: null,
+        run: null,
+        monitorMode: null,
+        intervalSeconds: null,
+        expectEventWithinSeconds: null,
+        event,
+      },
+    };
+  }
 
   if (type === 'monitor') {
     const monitor = parseMonitorFields(row);
@@ -497,6 +641,7 @@ function parseTriggerEntry(
           monitorMode: null,
           intervalSeconds: null,
           expectEventWithinSeconds: null,
+          ...lateness,
         },
       };
     }
@@ -518,6 +663,7 @@ function parseTriggerEntry(
         monitorMode: null,
         intervalSeconds: null,
         expectEventWithinSeconds: null,
+        ...lateness,
       },
     };
   }

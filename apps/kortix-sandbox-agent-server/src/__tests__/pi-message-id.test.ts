@@ -2,14 +2,16 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  MESSAGE_ID_TIME_MASK,
-  MESSAGE_ID,
-  MessageIdClock,
-  mintRootId,
-  mintMessageId,
-  messageIdClockDelta,
-  messageIdTime,
-} from '@/harness/pi/message-id'
+  WIRE_ID_TIME_MASK as MESSAGE_ID_TIME_MASK,
+  mintWireMessageIdAbove,
+  wireIdClock as messageIdTime,
+  wireIdClockDelta as messageIdClockDelta,
+} from '@kortix/sdk/wire-message-id'
+import { MESSAGE_ID, MessageIdClock, mintRootId } from '@/harness/pi/message-id'
+
+/** What `MessageIdClock` mints with: the platform codec at the box clock, no backdate. */
+const mintMessageId = (input: { nowMs: number; newestKnownTime?: bigint | null; random?: () => number }) =>
+  mintWireMessageIdAbove({ ...input, backdateMs: 0 })
 
 interface WireIdVectors {
   backdateMs: number

@@ -23,7 +23,7 @@ question.
 
 ## What Kortix is
 
-Kortix is an open-source AI Management System. Your agents, skills, memory,
+Kortix is an open-source AI Operating System. Your agents, skills, memory,
 and connectors are **code you own**. The unit of work is a **project**:
 a single git repository with a `kortix.yaml` at its root, holding your
 agents, skills, connectors, automations, and memory.

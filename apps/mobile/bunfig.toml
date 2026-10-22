@@ -11,3 +11,9 @@
 # `lib/testing/sdk-single-instance.ts`: `@kortix/sdk/react` shares this app's React and
 # React Query (the SDK package has its own copies; see the file).
 preload = ["./stores/in-memory-async-storage.ts", "./lib/testing/sdk-single-instance.ts"]
+# The native trees hold no tests. Locally they hold Pods and build output
+# (thousands of directories), and in Bun 1.3.14 a discovery walk that large
+# leaves every later `Bun.spawn` child with a bad stdout: the spawned process
+# reads as empty (`lib/highlight/shiki.test.ts`, every git/CLI probe). CI has
+# no native build, so only local runs failed.
+pathIgnorePatterns = ["ios/**", "android/**"]

@@ -6,6 +6,7 @@
  * earns a direct test that doesn't need a DB.
  */
 import { describe, expect, test } from 'bun:test';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { buildFilters } from '../accounts/audit-filters';
 
 const ACCOUNT = '00000000-0000-4000-a000-000000000101';
@@ -114,5 +115,34 @@ describe('audit buildFilters', () => {
     expect(buildFilters(ACCOUNT, { ...base, credentialKind: 'oauth_app' })).toHaveLength(3);
     // One condition (authoritative_source), not the old OR across both columns.
     expect(buildFilters(ACCOUNT, { ...base, source: 'cli' })).toHaveLength(2);
+  });
+});
+
+describe('audit buildFilters: LIKE input and the free-text window', () => {
+  const dialect = new PgDialect();
+  const base = { actor: null, actionPrefix: null, resourceType: null, sinceRaw: null, untilRaw: null, q: null };
+  const params = (conds: ReturnType<typeof buildFilters>) =>
+    conds.flatMap((cond) => dialect.sqlToQuery(cond).params.map(String));
+
+  test('`%` and `_` in an action prefix, resource type and q match literally', () => {
+    const conds = buildFilters(ACCOUNT, { ...base, actionPrefix: '%', resourceType: 'a_b', q: '50%' });
+    const values = params(conds);
+    expect(values).toContain('\\%%');
+    expect(values).toContain('a\\_b%');
+    expect(values).toContain('%50\\%%');
+  });
+
+  test('a free-text search without `since` is floored to the last 7 days', () => {
+    const conds = buildFilters(ACCOUNT, { ...base, q: 'abc' });
+    // account + floor + q
+    expect(conds).toHaveLength(3);
+    const floor = params(conds).find((value) => /^\d{4}-\d\d-\d\dT/.test(value));
+    expect(Date.now() - new Date(floor!).getTime()).toBeGreaterThan(6.9 * 24 * 3600 * 1000);
+    expect(Date.now() - new Date(floor!).getTime()).toBeLessThan(7.1 * 24 * 3600 * 1000);
+  });
+
+  test('an explicit `since`, or the export, keeps the caller range', () => {
+    expect(buildFilters(ACCOUNT, { ...base, q: 'abc', sinceRaw: '2026-01-01T00:00:00Z' })).toHaveLength(3);
+    expect(buildFilters(ACCOUNT, { ...base, q: 'abc' }, { floorFreeTextSearch: false })).toHaveLength(2);
   });
 });

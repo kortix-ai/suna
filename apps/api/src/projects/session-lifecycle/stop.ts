@@ -1,11 +1,16 @@
 import { sessionSandboxes } from '@kortix/db';
+import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import { type SandboxProviderName, config } from '../../config';
 import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { isAlreadyNotRunning, isLifecycleTransitionInProgress } from '../reaping/policy';
 import { applyStoppedState } from '../reaping/sandbox-state-sync';
-import { abortLiveTurnBeforeStop } from '../reaping/stop-box';
+import { claimManualSandboxStop, releaseSandboxStopClaim } from '../reaping/box-queries';
+import { abortLiveTurnBeforeStop, flushDriveSyncBeforeStop } from '../reaping/stop-box';
+import { markTurnStopRequested } from '../session-turn-ledger';
+import { holdInboxPrompts } from './inbox-rows';
 import { RUNTIME_WAKE_LATE_START_GUARD_MS, runtimeWakeInProgress } from './runtime-wake-fence';
 
 /**
@@ -51,6 +56,8 @@ export async function stopSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
+  /** The person recorded on the stopped turn; null for an agent credential. Default `userId`. */
+  stoppedBy?: string | null;
 }): Promise<{ status: number; body: Record<string, unknown> }> {
   const { projectId, sessionId, accountId, userId } = input;
   const budgetEndsAt = Date.now() + stopSyncBudgetMs();
@@ -111,15 +118,52 @@ export async function stopSession(input: {
       now,
     });
   }
+  // Claim the row BEFORE the abort. The abort, the transcript tail and
+  // provider.stop span 3 to 7 s, and a prompt that lands in that window (a
+  // second tab, a trigger, a channel message) would otherwise start a turn the
+  // power-off then kills with no requeue. While the claim is live,
+  // `beginSandboxTurn` refuses new prompts; `applyStoppedState` strips it.
+  // `cancellingWake` rows are already `stopped`: nothing to claim.
+  const claimToken = randomUUID();
+  if (!cancellingWake && !(await claimManualSandboxStop(sandbox.sandboxId, claimToken, now))) {
+    // Another stop (the idle reaper's, or a second click) owns the row.
+    return { status: 200, body: { ok: true, session_id: sessionId, status: 'stopping' } };
+  }
+  // Hold the session's queued prompts before the abort, exactly as the turn's
+  // own Stop does. Otherwise the abort's turn end promotes the next queued
+  // prompt, and a prompt parked on an unreachable runtime re-arms on its
+  // backoff: either one wakes the box the user just stopped (on the rig, a
+  // parked prompt resumed and un-archived a stopped box 8 min later). The next
+  // message the user sends releases the hold (`enqueueReleasingHold`).
+  await holdInboxPrompts(sessionId, true).catch((err) =>
+    logger.warn('[stop] holding queued prompts failed', {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    }),
+  );
   // Close the live turn before powering the box off, but only when the box is
   // actually running one: `cancellingWake` means the row is already stopped
   // (a wake was mid-flight), so there is no live opencode process to abort.
   if (!cancellingWake) {
+    // Stopping the computer stops its turn too, and that is a stop this person
+    // asked for. Stamp it on the open turns BEFORE the abort, as the turn's own
+    // Stop does: otherwise the abort's end frame, or the `runtime_gone` settle
+    // when the box dies first, reads as a failure nobody explained, and nobody
+    // sees who stopped it. Recovery is unchanged: a manual stop never resumes
+    // its turns (`sandbox-state-sync.ts` resumes provider stops only). The
+    // route already allowed only the owner or a manager. Never throws.
+    await markTurnStopRequested(sessionId, 'UserStop', {}, input.stoppedBy === undefined ? userId : input.stoppedBy);
     await abortLiveTurnBeforeStop({
       sandboxId: sandbox.sandboxId,
       externalId: sandbox.externalId,
       userId,
     });
+    // Drive sync: the daemon's final push, inside the request budget. Past it
+    // the stop goes ahead; the daemon still pushes on SIGTERM.
+    await within(
+      flushDriveSyncBeforeStop({ ...sandbox, externalId: sandbox.externalId }),
+      Math.max(0, budgetEndsAt - Date.now()),
+    );
     // The turn-end relay can still be in flight. Persist the transcript before
     // powering off the only live reader; capture failures never prevent stop.
     //
@@ -129,9 +173,9 @@ export async function stopSession(input: {
     // maintained at every turn end, which runs fire-and-forget with the box
     // definitionally up; the only gap a stop can close is the turn that just
     // ended, and one bounded page covers it.
-    const { captureSessionTranscriptMirror } = await import('../lib/session-transcript-capture');
+    const { captureJournallessSessionLog } = await import('../lib/session-transcript-capture');
     await within(
-      captureSessionTranscriptMirror(sessionId, undefined, {
+      captureJournallessSessionLog(sessionId, undefined, {
         scope: 'tail',
         actorUserId: userId,
       }),
@@ -140,6 +184,14 @@ export async function stopSession(input: {
   }
 
   const settle = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
+    try {
+      return await settleStop();
+    } catch (err) {
+      if (!cancellingWake) await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
+      throw err;
+    }
+  };
+  const settleStop = async (): Promise<{ status: number; body: Record<string, unknown> }> => {
     // A transient provider failure gets ONE bounded retry (KRTX-520). The user
     // is holding a Stop button. A degraded platform edge intermittently answers
     // the stop request with a 502/503/504 (an HTML error page), and a backlog
@@ -162,6 +214,7 @@ export async function stopSession(input: {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[stop] provider.stop failed for sandbox ${sandbox.sandboxId}: ${message}`);
         if (attempt > 1) {
+          if (!cancellingWake) await releaseSandboxStopClaim(sandbox.sandboxId, claimToken);
           return {
             status: 502,
             body: { error: err instanceof Error ? err.message : 'Failed to stop sandbox' },
@@ -177,7 +230,7 @@ export async function stopSession(input: {
     // and had drifted — it assigned `{...sandbox.metadata, stoppedAt, ...}`, a
     // whole-object write built from the SELECT above, so anything a concurrent
     // writer put in that column in between was silently dropped. Two live writers
-    // do exactly that (projects/routes/shared.ts clears and sets the
+    // do exactly that (projects/session-open/index.ts clears and sets the
     // `runtimeWakeId` wake fence), and the compute clamp's `lastAliveAt` stamp
     // lives one table over for the same reason. Merged, never assigned.
     if (!cancellingWake) {
@@ -186,7 +239,9 @@ export async function stopSession(input: {
         sessionId,
         externalId,
         stopReason: 'manual',
-        metadata: { stoppedBy: userId },
+        // `stoppedAt` is this request's start; a `/start` that arrived while
+        // the provider stop ran still predates the stop (`userStopFollowsIntent`).
+        metadata: { stoppedBy: userId, stopSettledAt: new Date().toISOString() },
         now,
       });
     }

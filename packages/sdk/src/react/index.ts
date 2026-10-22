@@ -2,6 +2,19 @@
 
 export * from './use-prompt-attachments';
 
+// The connector setup-link flow: one phase machine, one link-info cache. The
+// host injects the popup opener and browser storage (see ConnectorSetupOptions).
+export {
+  useConnectorSetup,
+  useConnectorLinkInfo,
+  type ConnectorSetupOptions,
+  type ConnectorSetupPhase,
+  type ConnectorPopupOpener,
+} from './connector-setup';
+
+// One connector action's output as a cached query, with typed connector errors.
+export { useConnectorQuery, type ConnectorQueryOptions } from './use-connector-query';
+
 // The one call a host makes on every identity change (sign-out, a different
 // user signing in) to drop the SDK's per-user in-memory session state.
 export { resetIdentityState } from './reset-identity-state';
@@ -11,6 +24,9 @@ export { resetIdentityState } from './reset-identity-state';
 // and type). This is the single source of truth the web UI binds to.
 export * from './opencode';
 export { useRuntimeSupports } from './use-runtime-supports';
+// The session's one live connection (R5.3). `useSession` mounts it; a host that
+// runs its own copy of a poll (self-heal, sync) gates it on this.
+export { useSessionStreamConnected } from './use-session-stream';
 
 // `useSession`'s reply/error-classification surface — not (yet) re-exported by
 // `./opencode`'s explicit barrel list, so re-exported directly here.
@@ -122,17 +138,63 @@ export {
 } from './use-accounts';
 export { useProjectSecrets, projectSecretsKey } from './use-project-secrets';
 export { useAccountSecretResources, useSessionProviderSecretPools } from './use-provider-secrets';
-export { useProjectTriggers, projectTriggersKey } from './use-project-triggers';
+export {
+  useProjectTriggers,
+  projectTriggersKey,
+  useProjectTriggerEventTypes,
+  useProjectTriggerEventApps,
+  projectTriggerEventAppsKey,
+  projectTriggerEventTypesKey,
+  useTriggerRuns,
+  useProjectTriggerRuns,
+  triggerRunsKey,
+  projectTriggerRunsKey,
+  type TriggerRunsQueryOptions,
+} from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms } from './use-rooms';
+export {
+  useApproveCaptureDevice,
+  useApproveCaptureEnrollment,
+  useCaptureChunkMedia,
+  useCaptureDays,
+  useCaptureDeviceGrant,
+  useCaptureDevices,
+  useCaptureEnrollments,
+  useCaptureEnrollmentTokens,
+  useCapturePolicy,
+  useCaptureSearch,
+  useCaptureStorage,
+  useCaptureTimeline,
+  useCaptureTimelineItems,
+  useCaptureWorkspace,
+  useCreateCaptureEnrollmentToken,
+  useDenyCaptureDevice,
+  useDenyCaptureEnrollment,
+  useLinkCaptureDevice,
+  useRevokeCaptureDevice,
+  useRevokeCaptureEnrollmentToken,
+  useSetCaptureEnabled,
+  useSetCapturePolicy,
+  useSetCaptureStorage,
+} from './use-capture';
 export { useSessionMessageAuthors } from './use-session-message-authors';
+export { useSessionModelUsage } from './use-session-model-usage';
 export { useChangeRequests, changeRequestsKey } from './use-change-requests';
 export { useGatewayRoutingPolicy, gatewayRoutingPolicyKey } from './use-gateway-routing-policy';
 export {
   useProjectApps,
   useAppDeployments,
+  useAppDeployment,
+  useAppMachines,
+  useAppVolumes,
+  useAppVolumeSnapshots,
+  appMachinesKey,
+  appVolumesKey,
   useAppAccess,
   projectAppsKey,
   appDeploymentsKey,
+  appDeploymentKey,
 } from './use-project-apps';
 
 // The expected "no compaction model configured" configuration state thrown by
@@ -141,6 +203,7 @@ export {
 // `instanceof`-match it without reaching into the hook's internal path.
 export { NoCompactionModelError } from './use-opencode-sessions/no-compaction-model-error';
 export * from './use-admin-accounts';
+export * from './use-admin-role';
 export * from './use-admin-projects';
 export * from './use-admin-analytics';
 export * from './use-admin-activity-analytics';
@@ -148,6 +211,7 @@ export * from './use-admin-feedback';
 export * from './use-system-status';
 export * from './use-ops-overview';
 export * from './use-admin-billing';
+export * from './use-billing-plan';
 export * from './use-impersonation';
 export * from './use-teams-installations';
 export * from './use-tunnel';
@@ -189,9 +253,15 @@ export * from './use-project-session';
 export * from './use-session-participants';
 export * from './use-project-sessions';
 export * from './use-sessions-needing-input';
+// The review inbox: needs-you counts for badges, and the paged list (KRTX-2316).
+export * from './use-review-summary';
+// The caller's notification inbox, preferences and session watch (KRTX-1742).
+export * from './use-notifications';
+export * from './use-session-list-state';
 export * from './session-cache-write';
 export * from './invalidate-project';
 export * from './use-feature-flag';
+export * from './use-project-files';
 
 // "Sign in with Kortix" — the browser half of `createKortixAuth`
 // (`@kortix/sdk/server`): the viewer hook and the sign-in link.
@@ -215,6 +285,15 @@ export {
 } from './use-kortix-app-viewer';
 
 export { useModelAccess } from './use-model-access';
+export { useCustomLlmProviders } from './use-custom-llm-providers';
+
+// The sandbox-image load state: the SDK owns the raw-file URL, the HEAD probe,
+// the auth headers, the size gate, the probe cache and the one fresh-token
+// retry; the host binds the sandbox origin and the native image events.
+// The size-gate helpers stay module-local: no host consumes them (the tests
+// import the module directly), so the public surface carries only the hook
+// and the formatter the hosts render sizes with.
+export { formatMegabytes, useSandboxImage } from './use-sandbox-image';
 
 export {
   GATEWAY_LOGS_PAGE_SIZE,
@@ -232,3 +311,5 @@ export {
   useCreateGatewayKey,
   useRevokeGatewayKey,
 } from './use-project-gateway';
+
+export * from './use-admin-providers';

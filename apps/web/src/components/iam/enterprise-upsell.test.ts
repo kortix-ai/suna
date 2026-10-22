@@ -1,14 +1,14 @@
 // The IAM surfaces (Audit, SSO/SCIM) are enterprise-gated: non-entitled
-// accounts must see the upsell card — with the "Request a demo" CTA —
-// instead of the feature. The CTA opens the in-app demo-request modal
-// (useRequestDemo) rather than navigating out to the marketing page. Guards
-// the page wiring so a refactor can't silently un-gate a tab.
+// accounts must see the upsell card instead of the feature. An owner or admin
+// turns on the Enterprise demo in one click; anyone talks to sales in one
+// click, with no form. Guards the page wiring so a refactor can't silently
+// un-gate a tab.
 //
 // Roles is deliberately NOT one of them (its `roles` copy variant was
 // deleted 2026-08-18 — written, never rendered), and neither is Groups: both
 // carry free content server-side, so they always mount and gate only their
 // own write controls on `rbacEnabled`.
-import { NAV_GROUPS } from '@/features/accounts/hub/sections';
+import { NAV_GROUPS } from '@kortix/ui/internal/account-hub/sections';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from '@/i18n/test-source';
 import { join } from 'node:path';
@@ -18,31 +18,37 @@ const upsellSource = readFileSync(join(dir, 'enterprise-upsell.tsx'), 'utf8');
 const pageSource = readFileSync(join(dir, '../../features/accounts/hub/account-hub-content.tsx'), 'utf8');
 
 describe('EnterpriseUpsell component', () => {
-  test('CTA opens the in-app demo-request modal', () => {
-    expect(upsellSource).toContain('useRequestDemo');
-    expect(upsellSource).toContain('openDemo(');
-    expect(upsellSource).toContain('Request a demo');
+  test('a billing manager turns on the demo; everyone else is told who can, and anyone talks to sales', () => {
+    expect(upsellSource).toContain('useEnterpriseDemo(accountId)');
+    expect(upsellSource).toContain('demo.set(true)');
+    expect(upsellSource).toContain("t('demoTurnOnEnterprise')");
+    expect(upsellSource).toContain("manager ? t('upsellDemoHint') : t('upsellAskManager')");
+    expect(upsellSource).toContain('canManageBilling(');
+    // One click, no demo-booking form.
+    expect(upsellSource).toContain('useTalkToSales(accountId)');
+    expect(upsellSource).not.toContain('useRequestDemo');
   });
 
-  test('covers the gated surfaces, and no longer carries the dead roles variant', () => {
-    for (const feature of ['groups:', 'audit:', 'identity:', 'branding:']) {
+  test('covers the gated surfaces, Roles included', () => {
+    for (const feature of ['groups:', 'audit:', 'identity:', 'branding:', 'roles:']) {
       expect(upsellSource).toContain(feature);
     }
-    // Deleted 2026-08-18: `RolesTab` gates itself with an inline InfoBanner,
-    // so this copy variant was unreachable in every code path.
-    expect(upsellSource).not.toContain('Custom roles are an Enterprise feature');
-    expect(upsellSource).not.toMatch(/^\s{2}roles: \{/m);
+  });
+
+  // Jay, 2026-10-13: the Enterprise tag carried a lock glyph inside a grey
+  // badge. One plan tag now: words only, the info tint, sans text.
+  test('the Enterprise tag has no lock and uses the shared EnterpriseBadge', () => {
+    expect(upsellSource).not.toContain('LockIcon');
+    expect(upsellSource).toContain('export function EnterpriseBadge');
+    expect(upsellSource).toContain('<EnterpriseBadge />');
   });
 });
 
 describe('account page gates each IAM surface behind the entitlement', () => {
-  // Groups and Roles are NOT gated the way Audit/Identity are: `GET
-  // .../groups` and `GET .../roles` carry no entitlement check server-side
-  // (only the mutating routes do), so the built-in roles and an account's
-  // real group list are free content, not upsell. `GroupsTab`/`RolesTab`
-  // always render and gate only their own "Create"/"New role" controls on
-  // `rbacEnabled` internally — see this file's other describe block, and
-  // `page.tsx`'s comment above these two sections.
+  // The hub does not swap Groups or Roles for an upsell: `GET .../groups` and
+  // `GET .../roles` carry no entitlement check server-side. Each tab decides
+  // on its own from `rbacEnabled`: without Enterprise, Roles renders only
+  // `EnterpriseUpsell`, and Groups renders it while the account has no groups.
   // "No entitlement gate" — NOT "no gate". PERMISSION is a separate axis and
   // both panes now carry it (`sectionVisible.groups` / `.roles`, from the
   // `group.read` / `role.read` probes): a caller who cannot read the list must
@@ -54,7 +60,7 @@ describe('account page gates each IAM surface behind the entitlement', () => {
       /activeSection === 'groups' && sectionVisible\.groups \?[\s\S]*?<GroupsTab/,
     );
     expect(pageSource).toMatch(/<GroupsTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
-    expect(pageSource).not.toContain('<EnterpriseUpsell feature="groups" />');
+    expect(pageSource).not.toContain('<EnterpriseUpsell feature="groups" accountId={account.account_id} />');
   });
 
   test('roles tab: no entitlement gate, passed rbacEnabled to gate its own controls', () => {
@@ -62,13 +68,13 @@ describe('account page gates each IAM surface behind the entitlement', () => {
       /activeSection === 'roles' && sectionVisible\.roles \?[\s\S]*?<RolesTab/,
     );
     expect(pageSource).toMatch(/<RolesTab[\s\S]*?rbacEnabled=\{rbacEnabled\}/);
-    expect(pageSource).not.toContain('<EnterpriseUpsell feature="roles" />');
+    expect(pageSource).not.toContain('<EnterpriseUpsell feature="roles" accountId={account.account_id} />');
   });
 
   test('audit tab: auditAccess entitlement or upsell', () => {
     expect(pageSource).toContain('const auditEnabled = !!entitlements?.auditAccess');
     expect(pageSource).toMatch(/auditEnabled \? \(\s*<AuditTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="audit" />');
+    expect(pageSource).toContain('<EnterpriseUpsell feature="audit" accountId={account.account_id} />');
   });
 
   test('identity section: sso/scim entitlement or upsell (cards no longer just hidden)', () => {
@@ -76,13 +82,13 @@ describe('account page gates each IAM surface behind the entitlement', () => {
     // it between the entitlement check and <SsoCard> while still asserting
     // SsoCard renders before ScimCard.
     expect(pageSource).toMatch(/enterpriseIdentityEnabled \? \([\s\S]*?<SsoCard[\s\S]*?<ScimCard/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="identity" />');
+    expect(pageSource).toContain('<EnterpriseUpsell feature="identity" accountId={account.account_id} />');
   });
 
   test('branding pane: branding entitlement or upsell', () => {
     expect(pageSource).toContain('const brandingEnabled = !!entitlements?.branding');
     expect(pageSource).toMatch(/brandingEnabled \? \(\s*<BrandingTab/);
-    expect(pageSource).toContain('<EnterpriseUpsell feature="branding" />');
+    expect(pageSource).toContain('<EnterpriseUpsell feature="branding" accountId={account.account_id} />');
   });
 
   test('no upsell flash while entitlements load', () => {
@@ -117,7 +123,7 @@ describe('account page rail groups every access surface under Access', () => {
     expect(pageSource).toMatch(/activeSection === 'identity' && canWriteAccount/);
     const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
     expect(settingsStart).toBeGreaterThan(-1);
-    const settingsEnd = pageSource.indexOf('</m.div>', settingsStart);
+    const settingsEnd = pageSource.indexOf('section-panes:end', settingsStart);
     const settingsBody = pageSource.slice(settingsStart, settingsEnd);
     // The connection cards (and the tokens-tab cards) still live only on
     // their own sections — SsoCard/ScimCard never move into Settings.
@@ -126,26 +132,10 @@ describe('account page rail groups every access surface under Access', () => {
     }
   });
 
-  test('the enterprise-demo toggle moved OUT of Identity and INTO Settings (tucked away, not headline)', () => {
-    const identityStart = pageSource.indexOf("activeSection === 'identity' && canWriteAccount");
-    const identityEnd = pageSource.indexOf('</m.div>', identityStart);
-    const settingsStart = pageSource.indexOf("activeSection === 'settings' && canWriteAccount");
-    const identityBody = pageSource.slice(identityStart, Math.min(identityEnd, settingsStart));
-    expect(identityBody).not.toContain('EnterpriseDemoCard');
-
-    const settingsEnd = pageSource.indexOf('</m.div>', settingsStart);
-    const settingsBody = pageSource.slice(settingsStart, settingsEnd);
-    expect(settingsBody).toContain('EnterpriseDemoCard');
-    // Placed above Danger zone, not at the top — tucked away.
-    const demoIdx = settingsBody.indexOf('EnterpriseDemoCard');
-    const dangerIdx = settingsBody.indexOf('Danger zone');
-    expect(demoIdx).toBeGreaterThan(-1);
-    expect(dangerIdx).toBeGreaterThan(-1);
-    expect(demoIdx).toBeLessThan(dangerIdx);
-  });
-
-  test('the demo card + upsell are skipped entirely when a self-host Enterprise license already forces entitlements on', () => {
-    expect(pageSource).toContain('accountStateQuery.data?.enterprise_license_available');
+  // The Enterprise row moved to Billing (2026-10-15): the demo, the license
+  // and the plan are read and managed in one place.
+  test('the Enterprise access row is not in Settings or Identity', () => {
+    expect(pageSource).not.toContain('EnterpriseAccessRow');
   });
 
   /**
@@ -156,7 +146,7 @@ describe('account page rail groups every access surface under Access', () => {
    * reason (a policy form is not what someone opening "Tokens" came for).
    */
   test('tokens section carries the keys list and then the key rules', () => {
-    expect(pageSource).toMatch(/activeSection === 'tokens' && canWriteAccount/);
+    expect(pageSource).toMatch(/activeSection === 'tokens' && sectionVisible.tokens/);
     expect(pageSource).toMatch(
       /activeSection === 'tokens'[\s\S]*?<ApiKeysSection[\s\S]*?<KeyRulesCard/,
     );

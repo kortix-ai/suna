@@ -9,14 +9,15 @@
  * the credential: the upstream answers 401 and the secret looks broken rather
  * than undelivered.
  *
- * The contract is asserted against the daemon's own resolver rather than a
- * copied list of variable names, so renaming one on either side fails here
- * instead of silently disarming the shim in production.
+ * The contract is asserted against the resolver the daemon bundles
+ * (`@kortix/api-contract/egress-shim-rules`) rather than a copied list of
+ * variable names, so renaming one on either side fails here instead of
+ * silently disarming the shim in production.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 mock.module('../sandbox-ownership', () => ({ sandboxOwnershipMarker: async () => 'v2-owner-a' }));
 
-import { resolveShimConfig } from '../../../../kortix-sandbox-agent-server/src/services/egress-shim/rules';
+import { resolveShimConfig } from '@kortix/api-contract/egress-shim-rules';
 
 // Each provider is constructed directly rather than through the registry, so
 // nothing here needs an admission list or a real credential. Assigned with
@@ -24,7 +25,6 @@ import { resolveShimConfig } from '../../../../kortix-sandbox-agent-server/src/s
 // overwriting a variable a neighbouring suite already set is how a test starts
 // failing in company while passing alone.
 process.env.KORTIX_URL ??= 'https://api.example.com';
-process.env.E2B_API_KEY ??= 'e2b_test_key';
 process.env.DATABASE_URL ??= 'postgres://x';
 process.env.SUPABASE_URL ??= 'http://supabase.test';
 
@@ -55,32 +55,6 @@ const SESSION_ENV = {
 
 /** The env map the provider under test actually handed to its runtime SDK. */
 let deliveredEnv: Record<string, string> | undefined;
-
-function fakeE2BSandbox() {
-  return {
-    sandboxId: 'sb-shim',
-    trafficAccessToken: 'traffic-shim',
-    files: {
-      write: async (path: string) => ({ path }),
-    },
-    commands: {
-      list: async () => [],
-      run: async () => ({ exitCode: 0 }),
-    },
-    kill: async () => true,
-    getHost: (port: number) => `${port}-sb-shim.e2b.test`,
-  };
-}
-
-mock.module('e2b', () => ({
-  Sandbox: {
-    create: async (_template: string, opts: { envs: Record<string, string> }) => {
-      deliveredEnv = opts.envs;
-      return fakeE2BSandbox();
-    },
-  },
-  SandboxNotFoundError: class extends Error {},
-}));
 
 mock.module('../../shared/daytona', () => ({
   getDaytona: () => ({
@@ -125,7 +99,6 @@ mock.module('../sandbox-frontend-url', () => ({
 }));
 
 const { DaytonaProvider } = await import('./daytona');
-const { E2BProvider } = await import('./e2b');
 const { PlatinumProvider } = await import('./platinum');
 
 const CREATE_OPTS = {
@@ -139,7 +112,6 @@ const CREATE_OPTS = {
 const PROVIDERS = [
   { name: 'daytona', create: () => new DaytonaProvider().create({ ...CREATE_OPTS }) },
   { name: 'platinum', create: () => new PlatinumProvider().create({ ...CREATE_OPTS }) },
-  { name: 'e2b', create: () => new E2BProvider().create({ ...CREATE_OPTS }) },
 ] as const;
 
 beforeEach(() => {

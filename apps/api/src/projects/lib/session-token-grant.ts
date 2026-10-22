@@ -43,12 +43,13 @@
 import { type AgentGrant, accountTokens, readStoredAgentGrant, projectSessions, projects } from '@kortix/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '../../shared/db';
-import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { existingProjectMirrorPath, runGitCapture } from '../git/mirror';
+import { DEFAULT_AGENT_SENTINEL, grantFromLoadedAgents, isLaunchableAgentName, loadProjectAgents, type LoadedAgents } from '../agents';
+import { type MirrorRefresh, existingProjectMirrorPath, runGitCapture } from '../git/mirror';
 import {
   agentGrantDiffers,
   isAgentLaunchableForProject,
   resolveSessionAgentGrant,
+  withGrantProvenance,
 } from './secret-grant';
 
 /** The re-mint could not be written. The caller must FAIL the prompt: letting it
@@ -283,7 +284,7 @@ async function resolveCurrentGrant(input: {
   sessionId: string;
   sessionAgent: string;
   runningAgent: string;
-  forceRefresh: boolean;
+  forceRefresh: MirrorRefresh;
 }): Promise<AgentGrant | null> {
   try {
     const project = await loadGitProjectRow(input.projectId);
@@ -417,7 +418,10 @@ export async function remintGrantForAgentSwitch(
     runningAgent = input.sessionAgent;
   }
 
-  const stored = await loadStoredSessionGrant(input.sessionId);
+  // The stored grant and the manifest read need nothing from each other: they
+  // start together. Awaited in the original order.
+  const storedRead = loadStoredSessionGrant(input.sessionId);
+  storedRead.catch(() => undefined);
   // Synchronous for the same-agent case too — every ordinary turn. This ran in
   // the background for one release (the manifest read is a git fetch of the
   // project mirror, ~0.8s on the path of every prompt) and the security review
@@ -428,44 +432,19 @@ export async function remintGrantForAgentSwitch(
   // broader grant for the first calls of the next turn. Only the connector
   // gateway reconciles at call time (`reconcileStoredSessionAgentGrant`).
   // The prompt must not be forwarded before the row is rewritten.
-  const resolve = () =>
-    resolveCurrentGrant({
-      ...input,
-      runningAgent,
-      forceRefresh: true,
-    });
-  const running = await resolve();
-  return applyResolvedGrant(input, stored, running, resolve);
-}
-
-/**
- * Bound the forced mirror fetch the gateway path performs.
- *
- * `reconcileStoredSessionAgentGrant` runs on EVERY connector call, and a forced
- * refresh is a `git fetch --prune` of the whole project mirror (2,000+ refs on
- * a busy project, ~0.6 s). A turn that fans out five tool calls paid for five
- * fetches. Within this window the mirror is served as-is; a manifest commit
- * from another replica is picked up by the first call after it. The prompt
- * path (`remintGrantForAgentSwitch`) still forces unconditionally — once per
- * turn.
- */
-function grantRefreshCooldownMs(): number {
-  const value = Number(process.env.KORTIX_GRANT_REFRESH_COOLDOWN_MS || 3_000);
-  return Number.isFinite(value) && value >= 0 ? value : 3_000;
-}
-
-const lastForcedGrantRefreshAt = new Map<string, number>();
-
-function shouldForceGrantRefresh(projectId: string, now = Date.now()): boolean {
-  const last = lastForcedGrantRefreshAt.get(projectId) ?? 0;
-  if (now - last < grantRefreshCooldownMs()) return false;
-  lastForcedGrantRefreshAt.set(projectId, now);
-  return true;
-}
-
-/** Test seam: forget every cooldown so the next reconcile forces a refresh. */
-export function resetGrantRefreshCooldownForTest(): void {
-  lastForcedGrantRefreshAt.clear();
+  //
+  // `'tip-proof'`, not `true`: the read ran `git ls-remote` (~600 ms) on every
+  // prompt to learn that the manifest had not moved. A manifest change made
+  // through Kortix drops the proof in every API process, so the case above
+  // still reads the new manifest before the turn (see `MirrorRefresh`). The
+  // tie-break read stays strict: it exists to contradict the first one.
+  const resolve = (forceRefresh: MirrorRefresh) =>
+    resolveCurrentGrant({ ...input, runningAgent, forceRefresh });
+  const runningRead = resolve('tip-proof');
+  runningRead.catch(() => undefined);
+  const stored = await storedRead;
+  const running = await runningRead;
+  return applyResolvedGrant(input, stored, running, () => resolve(true));
 }
 
 /**
@@ -491,13 +470,68 @@ export function resetGrantRefreshCooldownForTest(): void {
 export async function reconcileStoredSessionAgentGrant(input: {
   projectId: string;
   sessionId: string;
+  /** The grant the caller read off the token row this request. When given, the
+   *  reconcile skips its own by-session read: a re-mint rewrites every ACTIVE
+   *  token of the session in one statement, so the row the auth middleware just
+   *  validated already carries the session's stored grant. Every /call saves
+   *  one `account_tokens` round trip. */
+  storedGrant?: AgentGrant | null;
+  /** The git columns of this project's row, read earlier in the SAME request
+   *  (the principal resolver loads the row to bind the token account). When
+   *  given, the reconcile skips its own projects read — the two reads answered
+   *  the same row. Per-request threading, not a cache: the next request reads
+   *  fresh again, so a manifest edit still applies from the very next call. */
+  projectRow?: Awaited<ReturnType<typeof loadGitProjectRow>>;
 }): Promise<AgentGrant | null> {
-  const stored = await loadStoredSessionGrant(input.sessionId);
+  const stored =
+    input.storedGrant !== undefined ? input.storedGrant : await loadStoredSessionGrant(input.sessionId);
+
+  // The git project row feeds both the launch check and the grant resolution;
+  // read it once. A failed read is the manifest-unreadable path's twin: keep
+  // the last-known-good grant when there is one, fail closed otherwise — the
+  // shared keep-stored block below serves both. The caller's already-loaded
+  // row (same request) answers it without a second round trip.
+  let project: Awaited<ReturnType<typeof loadGitProjectRow>> | null = input.projectRow ?? null;
+  let rowError: unknown = null;
+  if (input.projectRow === undefined) {
+    try {
+      project = await loadGitProjectRow(input.projectId);
+    } catch (err) {
+      rowError = err;
+    }
+  }
 
   let runningAgent = stored?.agent?.trim() ?? '';
+  // ONE manifest read answers every gate this request needs: whether the stored
+  // agent is still declared (INC-2026-09-15) and what grant the agent holds.
+  // The launch check and the grant resolution used to load the manifest agents
+  // twice per call — two more round trips to the same rows.
+  let loaded: LoadedAgents | null = null;
+  let manifestError: unknown = null;
+  if (!rowError && project?.defaultBranch) {
+    try {
+      loaded = await loadProjectAgents(
+        {
+          projectId: input.projectId,
+          repoUrl: project.repoUrl ?? '',
+          defaultBranch: project.defaultBranch,
+          manifestPath: project.manifestPath,
+          gitAuthToken: null,
+        },
+        // Runs on EVERY connector call: the tip proof bounds the remote reads
+        // to one per refresh interval, and a manifest commit handled by another
+        // replica drops it (see `MirrorRefresh`).
+        { rethrowReadErrors: true, forceRefresh: 'tip-proof' },
+      );
+    } catch (err) {
+      manifestError = err;
+    }
+  }
   // Self-heal INC-2026-09-15: a stored agent the project does not declare is not
   // an identity to keep serving. Fall back to the session's own agent below.
-  if (runningAgent && !(await agentLaunchableInProject(input.projectId, runningAgent))) {
+  // Only a READ manifest can prove non-declaration; an unreadable one goes to
+  // the keep-stored path below untouched.
+  if (runningAgent && loaded && !isLaunchableAgentName(runningAgent, loaded)) {
     console.error('[session-token-grant] stored session grant names an undeclared agent; healing to the session agent', {
       sessionId: input.sessionId,
       projectId: input.projectId,
@@ -505,7 +539,7 @@ export async function reconcileStoredSessionAgentGrant(input: {
     });
     runningAgent = '';
   }
-  if (!runningAgent) {
+  if (!runningAgent && !rowError) {
     try {
       const [session] = await db
         .select({ agentName: projectSessions.agentName })
@@ -524,25 +558,36 @@ export async function reconcileStoredSessionAgentGrant(input: {
   }
 
   // This path refreshes connector and CLI authorization only. Secret delivery
-  // already ran at prompt time, so resolve this agent against itself.
+  // already ran at prompt time, so resolve this agent against itself — from the
+  // manifest agents already loaded above, exactly as `resolveSessionAgentGrant`
+  // would (same `loadGrantForRunningAgent` derivation, minus the duplicate
+  // manifest read).
   let running: AgentGrant | null;
-  try {
-    running = await resolveCurrentGrant({
-      ...input,
-      sessionAgent: runningAgent,
-      runningAgent,
-      forceRefresh: shouldForceGrantRefresh(input.projectId),
-    });
-  } catch (err) {
-    if (!stored) throw err;
+  if (rowError || manifestError) {
+    // The manifest cannot be read (mirror fetch failed, git proxy hop timed
+    // out, or the project row itself did). A token with a stored grant keeps
+    // it; one without fails closed.
+    const unreadableError = rowError ?? manifestError;
+    if (!stored) throw new SessionGrantRemintError(input.sessionId, unreadableError);
     console.error('[session-token-grant] manifest unreadable; serving the last-known-good session grant', {
       sessionId: input.sessionId,
       projectId: input.projectId,
       reason: 'manifest_unreadable' satisfies RemintKeepReason,
-      error: err instanceof Error ? err.message : String(err),
+      error: unreadableError instanceof Error ? unreadableError.message : String(unreadableError),
       stored: describeGrant(stored),
     });
     return stored;
+  }
+  if (!project?.defaultBranch) {
+    // No git context: no per-agent governance, the unrestricted grant.
+    running = null;
+  } else if (loaded) {
+    running = withGrantProvenance(grantFromLoadedAgents(runningAgent, loaded), loaded);
+  } else {
+    // Unreachable with `rethrowReadErrors: true` (a failed read throws, and a
+    // successful one returns agents); if it ever happens, serve the stored
+    // grant rather than derive from nothing.
+    running = stored;
   }
   let decision: RemintDecision;
   try {

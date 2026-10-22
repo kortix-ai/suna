@@ -2,16 +2,18 @@ import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { ROLES_TRANSLATION_KEYS } from '@/i18n/roles-translation-keys.generated';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
 import { ArtifactPanel } from './artifact';
 import { ROLES } from './registry';
 import { RoleHeroVisual } from './role-hero-visual';
-import { DefinitionRows, Eyebrow, Section, SectionDivider } from './shared';
+import { Eyebrow, Section } from '../component/section-primitives';
+import { SectionDivider } from '../component/public-route-helpers';
+import { DefinitionRows } from './shared';
 import type { RoleContent } from './types';
 
 const MODE_STEP: Record<RoleContent['cadence']['modes'][number]['id'], string> = {

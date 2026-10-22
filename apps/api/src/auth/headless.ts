@@ -19,17 +19,21 @@ import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { db } from '../shared/db';
+import { isTransientDatabaseError } from '../shared/database-errors';
+import { logger } from '../lib/logger';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
-import { auditLoginFail } from '../shared/auth-audit';
-import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueSession, type GoTrueUser } from './gotrue';
+import { auditLoginFail } from '../middleware/auth-audit';
+import { gotrue, gotrueAuthorizeUrl, sessionFrom, type GoTrueUser } from './gotrue';
 import { ssoEnforcedForEmail } from '../repositories/sso';
-import { requestClientIp, requestClientKey } from '../shared/client-ip';
+import { canSignUp } from '../shared/access-control-cache';
+import { requestClientIp, requestClientKey } from '../middleware/client-ip';
 import { config } from '../config';
 
 export const headlessAuthRouter = makeOpenApiApp<AppEnv>();
 
+// replica-local: limit × API replicas (shared/rate-limit.ts).
 const limiter = new TokenBucketRateLimiter('headless-auth');
 /** Per client IP: generous for a human, tight enough to blunt credential stuffing. */
 const IP_POLICY = { limit: 30, windowMs: 60_000 };
@@ -177,15 +181,25 @@ headlessAuthRouter.openapi(
         z.object({ user: UserSchema.nullable(), session: SessionSchema.nullable(), requires_email_confirmation: z.boolean() }),
         'Created. `session` is null until the email is confirmed when confirmation is required.',
       ),
-      ...errors(400, 422, 429),
+      ...errors(400, 403, 422, 429),
     },
   }),
   async (c: any): Promise<any> => {
     const limited = throttled(c);
     if (limited) return limited;
     const body = c.req.valid('json');
+    const email = body.email.trim().toLowerCase();
+    // The same two rules the web sign-up form gets from `/access/check-email`,
+    // so a direct API call cannot create the account the form would refuse
+    // (KRTX-1716): an SSO-only domain, and closed sign-ups off the allowlist.
+    const denied = await ssoRequired(c, email);
+    if (denied) return denied;
+    if (!canSignUp(email)) {
+      auditLoginFail({ c, reason: 'signup_closed', authType: 'supabase' });
+      return c.json({ error: 'signup_closed', error_description: 'Sign-ups are closed for this email address.' }, 403);
+    }
     const result = await gotrue<Record<string, unknown>>('/signup', {
-      body: { email: body.email.trim().toLowerCase(), password: body.password, data: body.data ?? {} },
+      body: { email, password: body.password, data: body.data ?? {} },
       clientIp: requestClientIp(c),
       query: { redirect_to: safeRedirect(body.redirect_to) },
     });
@@ -413,7 +427,14 @@ headlessAuthRouter.openapi(
         VALUES (${digest}, now() + interval '90 days')
         ON CONFLICT DO NOTHING RETURNING token_hash
       `);
-    } catch {
+    } catch (error) {
+      // Only a connection-level failure clears on its own. A missing table or a
+      // permission error (a self-host whose migration did not run) is a fault:
+      // the global handler logs its SQLSTATE and answers 500 (KRTX-2977).
+      if (!isTransientDatabaseError(error)) throw error;
+      logger.warn('[auth] refresh-token ledger unavailable', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return c.json({ error: 'auth_unavailable', error_description: 'Refresh temporarily unavailable' }, 503);
     }
     if (!claimed.length) return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);
@@ -495,5 +516,3 @@ headlessAuthRouter.openapi(
     return c.json({ sent: true as const });
   },
 );
-
-export type { GoTrueSession };

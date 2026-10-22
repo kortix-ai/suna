@@ -1,4 +1,9 @@
-import { connectorConnections, connectors, connectionCredentials } from '@kortix/db';
+import {
+  accountMemberships,
+  connectorConnections,
+  connectors,
+  connectionCredentials,
+} from '@kortix/db';
 import type { OAuth2ClientCredentials } from '@kortix/api-contract';
 /**
  * Connector credentials. A connector is project-wide visible — the only
@@ -11,7 +16,7 @@ import type { OAuth2ClientCredentials } from '@kortix/api-contract';
  * server-side only.
  */
 import { and, eq, gte, inArray, isNull, or, sql } from 'drizzle-orm';
-import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
+import { decryptNamedProjectSecret, encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import { isUniqueViolation } from '../shared/postgres-errors';
 import {
@@ -34,10 +39,30 @@ interface CredentialRow {
   kind: string;
   valueEnc: string;
   projectId: string;
+  /** The connector's slug: names it when its credential cannot be decrypted. */
+  slug: string;
 }
 
 interface OAuth2CredentialRuntime {
   acquire?: (config: OAuth2ClientCredentials) => Promise<OAuth2AccessToken>;
+}
+
+/**
+ * A stored credential this server cannot decrypt is not a missing one: the
+ * caller gets `SecretUndecryptableError` naming the connector, never `null`
+ * (which reads as "not connected").
+ */
+function decryptCredential(row: CredentialRow, valueEnc: string): string {
+  return decryptNamedProjectSecret(
+    row.projectId,
+    valueEnc,
+    `The credential of connector ${row.slug}`,
+    // A delegated login is redone through the OAuth application, which the
+    // same key encrypted: it has to be saved again before the sign-in starts.
+    row.kind === 'oauth2_delegated'
+      ? 'Save its OAuth application again, then reconnect the account.'
+      : 'Reconnect the account or enter the credential again.',
+  );
 }
 
 async function resolveCredentialRow(
@@ -45,11 +70,7 @@ async function resolveCredentialRow(
   runtime: OAuth2CredentialRuntime = {},
 ): Promise<string | null> {
   if (row.kind !== 'oauth2_client_credentials' && row.kind !== 'oauth2_delegated') {
-    try {
-      return decryptProjectSecret(row.projectId, row.valueEnc);
-    } catch {
-      return null;
-    }
+    return decryptCredential(row, row.valueEnc);
   }
   return db.transaction(async (tx) => {
     await tx.execute(
@@ -64,16 +85,8 @@ async function resolveCredentialRow(
       .where(eq(connectionCredentials.credentialId, row.credentialId))
       .limit(1);
     if (!current) return null;
-    let value: string;
-    try {
-      value = decryptProjectSecret(row.projectId, current.valueEnc);
-    } catch {
-      return null;
-    }
-    if (
-      current.kind !== 'oauth2_client_credentials' &&
-      current.kind !== 'oauth2_delegated'
-    ) {
+    const value = decryptCredential(row, current.valueEnc);
+    if (current.kind !== 'oauth2_client_credentials' && current.kind !== 'oauth2_delegated') {
       return value;
     }
     const resolved =
@@ -93,7 +106,8 @@ async function resolveCredentialRow(
   });
 }
 
-/** Resolve a credential value/binding (decrypted) for (connector, user|shared). */
+/** Resolve a credential value/binding (decrypted) for (connector, user|shared).
+ *  Throws `SecretUndecryptableError` when the stored value cannot be decrypted. */
 export async function resolveCredentialValue(
   connectorId: string,
   userId: string | null,
@@ -106,12 +120,10 @@ export async function resolveCredentialValue(
       kind: connectionCredentials.kind,
       valueEnc: connectionCredentials.valueEnc,
       projectId: connectors.projectId,
+      slug: connectors.slug,
     })
     .from(connectionCredentials)
-    .innerJoin(
-      connectors,
-      eq(connectors.connectorId, connectionCredentials.connectorId),
-    )
+    .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
     .where(
       and(
         eq(connectionCredentials.connectorId, connectorId),
@@ -127,6 +139,49 @@ export async function resolveCredentialValue(
     .limit(1);
   if (!row) return null;
   return resolveCredentialRow(row, runtime);
+}
+
+/**
+ * The earliest signed-in member account's credential on a connector. The MCP
+ * catalog falls back to it when no project account has a credential, so an app
+ * authorized only by "Only you" accounts still lists its tools. Others see the
+ * tool names; each still needs an account of their own to run them.
+ */
+export async function resolveFirstMemberCredential(connectorId: string): Promise<string | null> {
+  const [row] = await db
+    .select({
+      credentialId: connectionCredentials.credentialId,
+      kind: connectionCredentials.kind,
+      valueEnc: connectionCredentials.valueEnc,
+      projectId: connectors.projectId,
+      slug: connectors.slug,
+    })
+    .from(connectionCredentials)
+    .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
+    .innerJoin(
+      connectorConnections,
+      eq(connectorConnections.connectionId, connectionCredentials.connectionId),
+    )
+    // Only a person still in the account: a member who left publishes nothing.
+    .innerJoin(
+      accountMemberships,
+      and(
+        eq(accountMemberships.accountId, connectors.accountId),
+        sql`${accountMemberships.userId}::text = ${connectorConnections.ownerId}`,
+      ),
+    )
+    .where(
+      and(
+        eq(connectionCredentials.connectorId, connectorId),
+        // A member's own account: never an agent, embedded-user or shared one.
+        eq(connectorConnections.ownerType, 'member'),
+        eq(connectorConnections.status, 'active'),
+      ),
+    )
+    .orderBy(connectionCredentials.createdAt)
+    .limit(1);
+  if (!row) return null;
+  return resolveCredentialRow(row);
 }
 
 export async function credentialExists(
@@ -181,7 +236,10 @@ export async function connectorAccountLandedSince(
   const reachable = memberId
     ? or(
         eq(connectorConnections.ownerType, 'project'),
-        and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, memberId)),
+        and(
+          eq(connectorConnections.ownerType, 'member'),
+          eq(connectorConnections.ownerId, memberId),
+        ),
       )
     : eq(connectorConnections.ownerType, 'project');
   // A credential not yet bound to a connection row is scoped by `user_id`.
@@ -219,6 +277,36 @@ export async function connectorAccountLandedSince(
       .limit(1),
   ]);
   return !!credential || !!connection;
+}
+
+/**
+ * Whether an account is signed in: it holds a credential, or (Composio) its
+ * row carries the connected account or the no-auth marker. The same rule as
+ * `connectorAccountLandedSince`.
+ */
+export function connectionSignedIn(
+  metadata: Record<string, unknown> | null,
+  hasCredential: boolean,
+): boolean {
+  if (hasCredential) return true;
+  const meta = metadata ?? {};
+  return (
+    typeof meta.connected_account_id === 'string' ||
+    meta.is_no_auth === true ||
+    meta.is_no_auth === 'true'
+  );
+}
+
+/** Which of these accounts hold a credential row. One query. */
+export async function connectionIdsWithCredentials(
+  connectionIds: readonly string[],
+): Promise<Set<string>> {
+  if (connectionIds.length === 0) return new Set();
+  const rows = await db
+    .select({ connectionId: connectionCredentials.connectionId })
+    .from(connectionCredentials)
+    .where(inArray(connectionCredentials.connectionId, [...connectionIds]));
+  return new Set(rows.map((row) => row.connectionId).filter((id): id is string => id !== null));
 }
 
 export async function connectorIdsWithSharedCredentials(
@@ -266,9 +354,7 @@ export async function connectorIdsWithSharedCredentials(
   // though nothing is pinned). Two or more unpinned project rows never count
   // here: neither disambiguates which one's credential is "the" shared one.
   const soleProjectConnector = new Set(
-    projectConnectionCounts
-      .filter((row) => Number(row.count) === 1)
-      .map((row) => row.connectorId),
+    projectConnectionCounts.filter((row) => Number(row.count) === 1).map((row) => row.connectorId),
   );
   const out = new Set<string>();
   for (const row of credentialRows) {
@@ -373,12 +459,10 @@ export async function resolveConnectionCredentialValue(
       kind: connectionCredentials.kind,
       valueEnc: connectionCredentials.valueEnc,
       projectId: connectors.projectId,
+      slug: connectors.slug,
     })
     .from(connectionCredentials)
-    .innerJoin(
-      connectors,
-      eq(connectors.connectorId, connectionCredentials.connectorId),
-    )
+    .innerJoin(connectors, eq(connectors.connectorId, connectionCredentials.connectorId))
     .where(
       and(
         eq(connectionCredentials.connectorId, input.connectorId),
@@ -428,29 +512,27 @@ export async function upsertConnectionCredential(input: {
     .limit(1);
   if (!connection) throw new Error('Connection not found');
   const valueEnc = encryptProjectSecret(input.projectId, input.value);
-  const [existing] = await db
-    .select({ credentialId: connectionCredentials.credentialId })
-    .from(connectionCredentials)
-    .where(eq(connectionCredentials.connectionId, input.connectionId))
-    .limit(1);
-  if (existing) {
-    await db
-      .update(connectionCredentials)
-      .set({ valueEnc, kind: input.kind ?? 'secret', updatedAt: new Date() })
-      .where(eq(connectionCredentials.credentialId, existing.credentialId));
-  } else {
-    await db.insert(connectionCredentials).values({
-      connectorId: input.connectorId,
-      connectionId: input.connectionId,
-      userId: null,
-      kind: input.kind ?? 'secret',
-      valueEnc,
-      createdBy: input.createdBy ?? null,
-    });
-  }
+  await db.insert(connectionCredentials).values({
+    connectorId: input.connectorId,
+    connectionId: input.connectionId,
+    userId: null,
+    kind: input.kind ?? 'secret',
+    valueEnc,
+    createdBy: input.createdBy ?? null,
+  }).onConflictDoUpdate({
+    // One atomic write — the partial index is the arbiter, so its predicate must be named.
+    target: connectionCredentials.connectionId,
+    targetWhere: sql`${connectionCredentials.connectionId} is not null`,
+    set: { valueEnc, kind: input.kind ?? 'secret', updatedAt: new Date() },
+  });
   await db
     .update(connectorConnections)
-    .set({ status: 'active', updatedAt: new Date() })
+    .set({
+      status: 'active',
+      // A new credential is no longer the one the upstream rejected.
+      metadata: sql`${connectorConnections.metadata} - 'credential_rejected_at'`,
+      updatedAt: new Date(),
+    })
     .where(eq(connectorConnections.connectionId, input.connectionId));
 }
 
@@ -535,10 +617,7 @@ export async function ensureMemberConnection(input: {
     .select()
     .from(connectors)
     .where(
-      and(
-        eq(connectors.connectorId, input.connectorId),
-        eq(connectors.projectId, input.projectId),
-      ),
+      and(eq(connectors.connectorId, input.connectorId), eq(connectors.projectId, input.projectId)),
     )
     .limit(1);
   if (!connector) throw new Error('Connector not found while creating its member connection');
@@ -607,10 +686,7 @@ export async function ensureDefaultConnection(input: {
     .select()
     .from(connectors)
     .where(
-      and(
-        eq(connectors.connectorId, input.connectorId),
-        eq(connectors.projectId, input.projectId),
-      ),
+      and(eq(connectors.connectorId, input.connectorId), eq(connectors.projectId, input.projectId)),
     )
     .limit(1);
   if (!connector) throw new Error('Connector not found while creating its default connection');
@@ -689,7 +765,10 @@ export async function upsertCredential(opts: {
       and(
         eq(connectionCredentials.connectorId, opts.connectorId),
         userClause(opts.userId),
-        or(eq(connectionCredentials.connectionId, connectionId), isNull(connectionCredentials.connectionId)),
+        or(
+          eq(connectionCredentials.connectionId, connectionId),
+          isNull(connectionCredentials.connectionId),
+        ),
       ),
     )
     .limit(1);
@@ -708,6 +787,11 @@ export async function upsertCredential(opts: {
       createdBy: opts.createdBy ?? null,
     });
   }
+  // A new credential is no longer the one the upstream rejected.
+  await db
+    .update(connectorConnections)
+    .set({ metadata: sql`${connectorConnections.metadata} - 'credential_rejected_at'` })
+    .where(eq(connectorConnections.connectionId, connectionId));
   // Reflect "connected" in the connector status.
   await db
     .update(connectors)

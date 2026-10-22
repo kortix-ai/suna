@@ -127,6 +127,7 @@ interface SessionWindow {
   lastSeenMs: number;
 }
 
+// replica-local: a session pinned to one replica per stream; a spread costs limit × replicas.
 const windows = new Map<string, SessionWindow>();
 
 function evictIfNeeded(now: number, windowMs: number): void {

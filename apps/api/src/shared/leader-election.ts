@@ -36,6 +36,17 @@ const LOCK_KEY = 'background-workers';
 const TTL_MS = 60_000;
 const RENEW_INTERVAL_MS = 20_000;
 const ACQUIRE_RETRY_MS = 15_000;
+// One lease query may take this long. postgres.js has no per-query timeout, and
+// a half-open socket to the pooler leaves the promise pending forever.
+const QUERY_TIMEOUT_MS = 10_000;
+// The leader steps down this long BEFORE its lease can expire, measured from the
+// moment the last winning renew was SENT (the DB clock started then, not when the
+// reply arrived). The margin covers clock drift and `onRelease` latency.
+const DEMOTE_AFTER_MS = TTL_MS - 10_000;
+// Independent of the tick chain: a hung tick must not be able to hide an expired lease.
+const WATCHDOG_MS = 5_000;
+// An onAcquire that waited this long for an onRelease drain logs a warning.
+const ACQUIRE_WAIT_WARN_MS = 30_000;
 
 export interface LeaderElectionHandlers {
   /** Called once when this node becomes leader (start singleton workers). */
@@ -81,7 +92,7 @@ export function shouldDemote(
  * DEAD-WEIGHT leader — holding it, renewing it, running nothing — silently
  * starving the cron scheduler fleet-wide with no error and no churn. That is what
  * left an EKS API-only pod able to freeze every cron in the 2026-06-21 outage. A
- * pod is an owner unless ALL five worker flags are explicitly "false"; default
+ * pod is an owner unless ALL four worker flags are explicitly "false"; default
  * (unset) = owner, so single-node / self-host is unaffected.
  */
 export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -91,9 +102,30 @@ export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): bool
     on(env.KORTIX_TRIGGER_SCHEDULER_ENABLED) ||
     on(env.KORTIX_PROJECT_MAINTENANCE_ENABLED) ||
     on(env.KORTIX_ACTIVE_TURN_RENEWAL_ENABLED) ||
-    on(env.KORTIX_LEGACY_MIGRATION_WORKER_ENABLED) ||
-    on(env.KORTIX_SUNA_MIGRATION_WORKER_ENABLED)
+    on(env.KORTIX_LEGACY_MIGRATION_WORKER_ENABLED)
   );
+}
+
+/** Reject if `work` does not settle within `ms`; `onTimeout` runs once on expiry (cancel the query). */
+export async function withTimeout<T>(work: PromiseLike<T>, ms: number, onTimeout?: () => void): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          try {
+            onTimeout?.();
+          } catch {
+            // best-effort cancel
+          }
+          reject(new Error(`leader lease query timed out after ${ms}ms`));
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // ─── Runtime state ───────────────────────────────────────────────────────────
@@ -104,12 +136,39 @@ let sql: ReturnType<typeof postgres> | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let leader = false;
-let lastRenewSuccessMs = 0;
+// performance.now() taken BEFORE the last winning acquire/renew was sent.
+let lastRenewStartedMono = 0;
+let watchdog: ReturnType<typeof setTimeout> | null = null;
 let handlers: LeaderElectionHandlers | null = null;
 let tableReady = false;
+// The last onAcquire/onRelease call. The watchdog demotes beside the lease tick, so a re-acquire
+// can come while onRelease still awaits. An onAcquire that ran then found the workers' guards
+// still up and started nothing, and the rest of onRelease then stopped them for the whole term
+// (2026-10-16 prod: the backfill worker stopped after a lease flap, cron kept running).
+let handlerChain: Promise<void> = Promise.resolve();
+let handlersPending = 0;
+// Moves on every promote and demote: a failed onAcquire steps down only if no newer change came.
+let term = 0;
 
+/** Run `fn` after every earlier handler call settled, in call order. */
+function serially(fn: () => Promise<void>): Promise<void> {
+  handlersPending += 1;
+  const next = handlerChain.then(fn).finally(() => {
+    handlersPending -= 1;
+  });
+  handlerChain = next.catch(() => undefined);
+  return next;
+}
+
+/**
+ * True while this node holds a lease it can still trust. A singleton writer
+ * calls this before a side effect: a leader whose renew deadline passed is
+ * already a former leader, even if `demote` has not finished yet (fencing).
+ */
 export function isLeader(): boolean {
-  return leader;
+  if (!leader) return false;
+  if (!sql) return true; // single node, no lease to lose
+  return !shouldDemote(lastRenewStartedMono, performance.now(), DEMOTE_AFTER_MS);
 }
 
 async function ensureLeaseTable(): Promise<void> {
@@ -140,7 +199,7 @@ async function acquireOrRenew(): Promise<boolean> {
   if (!sql) return false;
   await ensureLeaseTable();
   const ttlSec = Math.ceil(TTL_MS / 1000);
-  const rows = await sql<{ owner_id: string }[]>`
+  const query = sql<{ owner_id: string }[]>`
     INSERT INTO kortix.worker_leader_lease AS l (lock_key, owner_id, expires_at, updated_at)
     VALUES (${LOCK_KEY}, ${ownerId}, now() + make_interval(secs => ${ttlSec}), now())
     ON CONFLICT (lock_key) DO UPDATE
@@ -150,13 +209,29 @@ async function acquireOrRenew(): Promise<boolean> {
       WHERE l.owner_id = EXCLUDED.owner_id OR l.expires_at < now()
     RETURNING owner_id
   `;
+  const rows = await withTimeout(query, QUERY_TIMEOUT_MS, () => query.cancel());
   return interpretAcquireResult(rows, ownerId);
 }
 
 async function promote(): Promise<void> {
   if (leader) return;
   leader = true;
+  const myTerm = ++term;
   logger.info('[leader] acquired background-worker leadership', { ownerId });
+  const queuedAt = performance.now();
+  const behindRelease = handlersPending > 0;
+  // Not awaited: the lease tick must not wait for an onRelease still in flight before it renews.
+  void serially(async () => {
+    if (behindRelease) {
+      const ms = Math.round(performance.now() - queuedAt);
+      if (ms > ACQUIRE_WAIT_WARN_MS) logger.warn('[leader] onAcquire waited for onRelease', { ms });
+      else logger.info('[leader] onAcquire waited for onRelease', { ms });
+    }
+    await acquireHandlers(myTerm);
+  });
+}
+
+async function acquireHandlers(myTerm: number): Promise<void> {
   try {
     await handlers?.onAcquire();
   } catch (err) {
@@ -168,7 +243,7 @@ async function promote(): Promise<void> {
     logger.error('[leader] onAcquire failed — stepping down to retry next tick', {
       error: err instanceof Error ? err.message : String(err),
     });
-    leader = false;
+    if (term === myTerm) leader = false;
     try {
       await handlers?.onRelease();
     } catch (releaseErr) {
@@ -182,21 +257,25 @@ async function promote(): Promise<void> {
 async function demote(reason: string): Promise<void> {
   if (!leader) return;
   leader = false;
+  term += 1;
   logger.warn('[leader] released background-worker leadership', { ownerId, reason });
-  try {
-    await handlers?.onRelease();
-  } catch (err) {
-    logger.error('[leader] onRelease failed', { error: err instanceof Error ? err.message : String(err) });
-  }
+  await serially(async () => {
+    try {
+      await handlers?.onRelease();
+    } catch (err) {
+      logger.error('[leader] onRelease failed', { error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 }
 
 async function tick(): Promise<void> {
   if (!running) return;
   let nextDelay = leader ? RENEW_INTERVAL_MS : ACQUIRE_RETRY_MS;
   try {
+    const sentAtMono = performance.now();
     const won = await acquireOrRenew();
     if (won) {
-      lastRenewSuccessMs = Date.now();
+      lastRenewStartedMono = sentAtMono;
       await promote();
     } else if (leader) {
       // Someone else holds a live lease — step down immediately.
@@ -204,11 +283,8 @@ async function tick(): Promise<void> {
     }
   } catch (err) {
     logger.error('[leader] lease tick failed', { error: err instanceof Error ? err.message : String(err) });
-    // Can't confirm leadership; step down once our last good lease has lapsed so
-    // a healthy peer can take over without overlap. Retry sooner meanwhile.
-    if (leader && shouldDemote(lastRenewSuccessMs, Date.now())) {
-      await demote('renew failures exceeded lease TTL');
-    }
+    // Can't confirm leadership; the watchdog steps down at the renew deadline so a
+    // healthy peer can take over without overlap. Retry sooner meanwhile.
     nextDelay = Math.min(nextDelay, ACQUIRE_RETRY_MS);
   } finally {
     if (running) timer = setTimeout(() => void tick(), nextDelay);
@@ -255,6 +331,14 @@ export function startLeaderElection(
   });
 
   logger.info('[leader] starting election', { ownerId, ttlMs: TTL_MS, renewMs: RENEW_INTERVAL_MS });
+  const watch = () => {
+    if (leader && shouldDemote(lastRenewStartedMono, performance.now(), DEMOTE_AFTER_MS)) {
+      void demote('renew deadline passed');
+    }
+    watchdog = setTimeout(watch, WATCHDOG_MS);
+    watchdog.unref?.();
+  };
+  watch();
   void tick();
 }
 
@@ -268,6 +352,10 @@ export async function stopLeaderElection(): Promise<void> {
   if (timer) {
     clearTimeout(timer);
     timer = null;
+  }
+  if (watchdog) {
+    clearTimeout(watchdog);
+    watchdog = null;
   }
   const wasLeader = leader;
   await demote('shutdown');

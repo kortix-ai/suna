@@ -88,6 +88,9 @@ export interface PlacementTipMessage {
   /** Ids of the message's parts. A USER message with zero parts is a husk a
    *  cancel left behind (the model never sees it) — see the reconcile sweep. */
   partIds?: string[];
+  /** A USER message that holds an automatic compaction (`type: 'compaction'`,
+   *  `auto: true`): the runtime wrote it inside a running turn. */
+  autoCompaction?: boolean;
 }
 
 export interface PlacementVerdict {
@@ -285,15 +288,15 @@ export function parsePlacementTip(body: unknown): PlacementTipMessage[] | null {
     const info = (entry as { info?: Record<string, unknown> } | null)?.info;
     if (!info || typeof info.id !== 'string' || typeof info.role !== 'string') continue;
     const time = info.time as { created?: unknown; completed?: unknown } | undefined;
+    const parts = (entry as { parts?: Array<{ id?: unknown; type?: unknown; auto?: unknown }> }).parts ?? [];
     out.push({
       id: info.id,
       role: info.role,
       parentID: typeof info.parentID === 'string' ? info.parentID : null,
       created: typeof time?.created === 'number' ? time.created : null,
       completed: typeof time?.completed === 'number' ? time.completed : null,
-      partIds: (
-        (entry as { parts?: Array<{ id?: unknown }> }).parts ?? []
-      ).flatMap((part) => (typeof part?.id === 'string' ? [part.id] : [])),
+      partIds: parts.flatMap((part) => (typeof part?.id === 'string' ? [part.id] : [])),
+      ...(parts.some((part) => part?.type === 'compaction' && part.auto === true) ? { autoCompaction: true } : {}),
     });
   }
   return out;

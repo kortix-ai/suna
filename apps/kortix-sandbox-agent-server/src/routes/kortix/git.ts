@@ -3,11 +3,7 @@ import { Hono } from 'hono'
 import type { Config } from '@/lib/config/config'
 import { commitAndPushWorkingTree } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
-
-function bearerToken(header: string | undefined): string | null {
-  if (!header?.startsWith('Bearer ')) return null
-  return header.slice('Bearer '.length).trim() || null
-}
+import { bearerMatches } from './control-auth'
 
 /**
  * Daemon git control surface (`/kortix/git/*`). Today just `commit-push`: the
@@ -29,7 +25,7 @@ export function createGitRouter(cfg: Config): Hono {
     if (!cfg.sandboxToken) {
       return c.json({ error: 'daemon not configured', detail: 'KORTIX_TOKEN unset' }, 503)
     }
-    if (bearerToken(c.req.header('Authorization')) !== cfg.sandboxToken) {
+    if (!bearerMatches(c.req.header('Authorization'), cfg.sandboxToken)) {
       return c.json({ error: 'unauthorized' }, 401)
     }
     if (inFlight) {

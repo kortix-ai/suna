@@ -137,10 +137,16 @@ describe('shouldAutoResumeStoppedSandbox', () => {
 // The 504 LONG_TURN_PROXY_TIMEOUT answer itself (code, no-store, the way out)
 // is proven at the route in __tests__/e2e-preview-proxy.test.ts.
 describe('longTurnTimeoutResponse', () => {
-  test('reflects CORS origin like every other proxy response, and omits it with no Origin', () => {
-    const res = longTurnTimeoutResponse('https://app.kortix.ai');
-    expect(res.headers.get('Access-Control-Allow-Origin')).toBe('https://app.kortix.ai');
+  // The same allowlist as every preview response: the preview cookie is ambient
+  // on cross-site requests, so a credentialed grant to any origin let a
+  // cross-site page read this refusal (KRTX-2802).
+  test('grants CORS to the allowlisted origin only, and to no Origin nothing', () => {
+    const res = longTurnTimeoutResponse(config.FRONTEND_URL);
+    expect(res.headers.get('Access-Control-Allow-Origin')).toBe(config.FRONTEND_URL);
     expect(res.headers.get('Access-Control-Allow-Credentials')).toBe('true');
+    const arbitrary = longTurnTimeoutResponse('https://arbitrary.example');
+    expect(arbitrary.headers.has('Access-Control-Allow-Origin')).toBe(false);
+    expect(arbitrary.headers.has('Access-Control-Allow-Credentials')).toBe(false);
     expect(longTurnTimeoutResponse('').headers.has('Access-Control-Allow-Origin')).toBe(false);
   });
 });
@@ -201,6 +207,12 @@ describe('isProxiedBaseReset', () => {
 // this proxy strips; that strip is proven at the route in
 // __tests__/e2e-preview-proxy.test.ts.
 describe('the forward strip list', () => {
+  test('credential and hop-by-hop headers never reach a user app', () => {
+    for (const name of ['x-kortix-token', 'proxy-authorization', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer', 'keep-alive']) {
+      expect(STRIP_FORWARD_HEADERS.has(name)).toBe(true);
+    }
+  });
+
   test('the strip list is matched case-insensitively, as headers are', () => {
     // Headers arrive in whatever case the client sent; the forward loop
     // lowercases before testing membership, so the entry must be lowercase.
@@ -258,6 +270,12 @@ describe('stripFrameAncestors', () => {
     expect(stripFrameAncestors('  FRAME-ANCESTORS * ; img-src data:')).toBe('img-src data:');
   });
 
+  test('cleans every policy of a comma-separated list and drops the ones left empty', () => {
+    expect(stripFrameAncestors(", frame-ancestors https://sandbox.example.test; img-src 'self'")).toBe("img-src 'self'");
+    expect(stripFrameAncestors("frame-ancestors 'self', frame-ancestors *")).toBeNull();
+    expect(stripFrameAncestors("script-src 'self'; frame-ancestors 'none', img-src data:")).toBe("script-src 'self', img-src data:");
+  });
+
   test('a lookalike directive is not eaten', () => {
     expect(stripFrameAncestors('frame-ancestors-src *')).toBe('frame-ancestors-src *');
   });
@@ -298,6 +316,24 @@ describe('clientResponseHeaders', () => {
     const csp = "default-src 'self'; script-src 'wasm-unsafe-eval'";
     const headers = clientResponseHeaders(new Headers({ 'content-security-policy': csp }), '');
     expect(headers.get('content-security-policy')).toBe(csp);
+  });
+
+  test('the upstream cannot forge the proxy attribution headers', () => {
+    // X-Kortix-Proxy-Hop / X-Kortix-Upstream-Status are the PROXY's voice about
+    // which hop failed. The request-log suppression keys on them
+    // (request-log-level.ts), so an upstream passthrough that carried its own
+    // copy could name a designed-answer hop and silence a real failure. The
+    // proxy re-sets both where it means to (retry.ts's not-ready passthrough,
+    // portUnreachableResponse); a plain passthrough leaves them absent.
+    const forged = clientResponseHeaders(
+      new Headers({
+        'x-kortix-proxy-hop': 'control_plane',
+        'x-kortix-upstream-status': '200',
+      }),
+      '',
+    );
+    expect(forged.has('x-kortix-proxy-hop')).toBe(false);
+    expect(forged.has('x-kortix-upstream-status')).toBe(false);
   });
 
   test('the CORS grant follows the same allowlist as every preview response', () => {
@@ -403,9 +439,9 @@ describe('isConnectionRefusedError', () => {
   });
 });
 
-// The unreachable-port page reconstructs the address the browser is on from the
-// preview host headers (the sign-in hand-off carries it), falling back to ''.
-test('the unreachable-port page carries the reconstructed browser address', async () => {
+// The unreachable-port page never prints the sandbox address: it is an
+// internal host, and the card header already names the preview (KRTX-1644).
+test('the unreachable-port page does not print the browser address', async () => {
   const res = portUnreachableResponse({
     port: 3000,
     status: 502,
@@ -414,7 +450,7 @@ test('the unreachable-port page carries the reconstructed browser address', asyn
     reason: 'x',
     hop: 'upstream_port',
   });
-  expect(await res.text()).toContain('https://p.example');
+  expect(await res.text()).not.toContain('p.example');
 });
 
 test('without host headers the page simply omits the address', async () => {

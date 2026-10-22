@@ -46,4 +46,16 @@ describe('provider failover wiring', () => {
     expect(source.slice(helper, helper + 400)).toContain('fallbackEnabled: providerFallbackSetting().enabled');
     expect(failover).toBe(-1); // guard against a stray rename leaving two paths
   });
+
+  test('failover writes the row\'s new provider first, and fails over only when that write lands', async () => {
+    const source = await read('../../platform/services/session-sandbox.ts');
+    const switchWrite = source.indexOf("switched = await transitionSandbox('reprovision'");
+    const reassign = source.indexOf('providerName = next;');
+    expect(switchWrite).toBeGreaterThan(-1);
+    // A box created on `next` under a row naming the old provider is stopped
+    // by the orphan sweep, so the switch must precede the reassignment.
+    expect(reassign).toBeGreaterThan(switchWrite);
+    expect(source).toContain('if (next && switched) {');
+    expect(source).not.toMatch(/transitionSandbox\('reprovision'[^;]*\.catch\(\(\) => \{\}\)/);
+  });
 });

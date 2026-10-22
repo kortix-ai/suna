@@ -72,8 +72,12 @@ describe('serializeSession redaction', () => {
       { canAccess: true },
     ) as Record<string, unknown>;
     expect(out.name).toBe('Migrating the payroll database');
-    expect(out.opencode_sessions).toEqual([{ id: 'oc1' }]);
-    expect(out.runtime_sessions).toEqual([{ id: 'oc1' }]);
+    // Kept, in the contract shape: a partial stored entry is normalized on read.
+    const tree = [
+      { id: 'oc1', title: null, parent_id: null, project_id: null, created_at: null, updated_at: null, archived_at: null },
+    ];
+    expect(out.opencode_sessions).toEqual(tree);
+    expect(out.runtime_sessions).toEqual(tree);
   });
 
   test('the runtime session id is served under its neutral name too', () => {

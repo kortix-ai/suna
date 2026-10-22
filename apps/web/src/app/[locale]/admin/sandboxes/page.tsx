@@ -1,14 +1,13 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations as useI18nTranslations } from '@/i18n/use-translations';
 import { ArrowsLeftRightIcon, DotsThreeIcon } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   ChartContainer,
   ChartLegend,
@@ -16,18 +15,18 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
+} from '@kortix/ui/chart';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Field, FieldLabel } from '@/components/ui/field';
-import Hint from '@/components/ui/hint';
-import { Input } from '@/components/ui/input';
-import { IconInbox } from '@/components/ui/kortix-icons';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dropdown-menu';
+import { Field, FieldLabel } from '@kortix/ui/field';
+import Hint from '@kortix/ui/hint';
+import { Input } from '@kortix/ui/input';
+import { IconInbox } from '@kortix/ui/kortix-icons';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalContent,
@@ -35,16 +34,16 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
+} from '@kortix/ui/select';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
 import {
   Table,
   TableBody,
@@ -52,20 +51,19 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { SandboxProviderLabel } from '@kortix/ui/customize/sections/view/sandbox-provider-coverage';
 import {
-  getAdminProviderAnalytics,
-  getAdminProviderDistribution,
-  getAdminProviderFallback,
-  listAdminSandboxes,
-  migrateAdminSandboxProvider,
-  setAdminProviderDistribution,
-  setAdminProviderFallback,
-} from '@kortix/sdk';
+  formatSandboxProvider,
+  isLegacySandboxProvider,
+  sortSandboxProviders,
+} from '@kortix/ui/internal/lib/sandbox-providers';
+import { cn } from '@kortix/ui';
+import type { AdminProviderSandbox } from '@kortix/sdk';
+import { useAdminProviderDistribution, useAdminProviderSandboxes, useAdminProviderAnalytics, useAdminProviderFallback, useSetAdminProviderDistribution, useMigrateAdminSandboxProvider, useSetAdminProviderFallback } from '@kortix/sdk/react';
 
 import { AdminPageShell, AdminRefreshButton } from '../_components/admin-page-shell';
 import {
@@ -76,60 +74,6 @@ import {
 } from '../_components/admin-panel';
 import { AdminSearch } from '../_components/admin-table';
 import { StatGrid, StatGridSkeleton, StatTile } from '../_components/stat-tile';
-
-// ── types ──────────────────────────────────────────────────────────────────
-interface Dist {
-  allowed: string[];
-  default: string;
-  weights: Record<string, number>;
-}
-interface Sbx {
-  sandboxId: string;
-  sessionId: string;
-  accountId: string;
-  projectId: string;
-  provider: string;
-  externalId: string | null;
-  status: string;
-  lastUsedAt: string | null;
-}
-interface SbxResp {
-  sandboxes: Sbx[];
-  byProvider: { provider: string; count: number }[];
-}
-interface ProviderStat {
-  provider: string;
-  provisions: number;
-  ok: number;
-  error: number;
-  stopped: number;
-  successRate: number | null;
-  p50Ms: number;
-  p95Ms: number;
-  avgMs: number;
-  phases: { label: string; avgMs: number }[];
-}
-interface Analytics {
-  days: number;
-  totals: {
-    provisions: number;
-    ok: number;
-    error: number;
-    stopped: number;
-    migrations: number;
-    successRate: number | null;
-  };
-  providers: ProviderStat[];
-  latencyByDay: Record<string, unknown>[];
-  volumeByDay: Record<string, unknown>[];
-  migrations: { flow: string; count: number }[];
-  recentErrors: {
-    provider: string;
-    errorClass: string | null;
-    error: string | null;
-    createdAt: string;
-  }[];
-}
 
 // ── chart colour ────────────────────────────────────────────────────────────
 /**
@@ -205,26 +149,14 @@ const RANGES = [
 
 export default function AdminSandboxesPage() {
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
+  const tSandbox = useI18nTranslations('settings.sandbox');
   const ranges = useLocalizedUiCatalog(RANGES);
-  const qc = useQueryClient();
   const [tab, setTab] = useState('overview');
   const [days, setDays] = useState(7);
 
-  const distQ = useQuery({
-    queryKey: ['admin', 'provider-distribution'],
-    queryFn: async () => getAdminProviderDistribution<Dist>(),
-  });
-  const listQ = useQuery({
-    queryKey: ['admin', 'sandboxes'],
-    queryFn: async () => listAdminSandboxes<SbxResp>(300),
-    refetchInterval: 10_000,
-  });
-  const anQ = useQuery({
-    queryKey: ['admin', 'provider-analytics', days],
-    queryFn: async () => getAdminProviderAnalytics<Analytics>(days),
-    enabled: tab === 'analytics',
-    refetchInterval: tab === 'analytics' ? 30_000 : false,
-  });
+  const distQ = useAdminProviderDistribution();
+  const listQ = useAdminProviderSandboxes();
+  const anQ = useAdminProviderAnalytics(days, tab === 'analytics');
 
   const [weights, setWeights] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -234,51 +166,38 @@ export default function AdminSandboxesPage() {
     setWeights(w);
   }, [distQ.data]);
 
-  const saveWeights = useMutation({
-    mutationFn: async () => {
-      const body: Record<string, number> = {};
-      for (const k in weights) body[k] = Number(weights[k]) || 0;
-      return setAdminProviderDistribution(body);
-    },
+  const saveWeights = useSetAdminProviderDistribution({
     onSuccess: () => {
       successToast(tI18nComplete.raw('textadf5fc6a2d24'));
-      qc.invalidateQueries({ queryKey: ['admin', 'provider-distribution'] });
     },
     onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('text53ad6f999b1f')),
   });
 
-  const [migrating, setMigrating] = useState<Sbx | null>(null);
+  const [migrating, setMigrating] = useState<AdminProviderSandbox | null>(null);
   const [target, setTarget] = useState('');
-  const migrate = useMutation({
-    mutationFn: async () => migrateAdminSandboxProvider(migrating!.sessionId, target),
+  const migrate = useMigrateAdminSandboxProvider({
     onSuccess: () => {
       successToast(tI18nComplete('text44df00d3050e', { value0: target }));
       setMigrating(null);
-      qc.invalidateQueries({ queryKey: ['admin', 'sandboxes'] });
     },
     onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('textc98995fad3b9')),
   });
 
   // ── Provider failover (one-shot, on session init) ─────────────────────────
-  const fbQ = useQuery({
-    queryKey: ['admin', 'provider-fallback'],
-    queryFn: async () => getAdminProviderFallback(),
-  });
+  const fbQ = useAdminProviderFallback();
   const [fbEnabled, setFbEnabled] = useState(false);
   useEffect(() => {
     if (fbQ.data) setFbEnabled(!!fbQ.data.enabled);
   }, [fbQ.data]);
-  const saveFb = useMutation({
-    mutationFn: async () => setAdminProviderFallback(fbEnabled),
+  const saveFb = useSetAdminProviderFallback({
     onSuccess: () => {
       successToast(tI18nComplete.raw('textbc86ed0acea7'));
-      qc.invalidateQueries({ queryKey: ['admin', 'provider-fallback'] });
     },
     onError: (e: Error) => errorToast(e?.message ?? tI18nComplete.raw('text53ad6f999b1f')),
   });
 
   const dist = distQ.data;
-  const allowed = useMemo(() => dist?.allowed ?? [], [dist]);
+  const allowed = useMemo(() => sortSandboxProviders(dist?.allowed ?? []), [dist]);
   const totalW = allowed.reduce((s, p) => s + (Number(weights[p]) || 0), 0);
   const list = listQ.data;
   const targets = migrating ? allowed.filter((p) => p !== migrating.provider) : [];
@@ -373,7 +292,11 @@ export default function AdminSandboxesPage() {
                 return (
                   <StatTile
                     key={p}
-                    label={p[0].toUpperCase() + p.slice(1)}
+                    label={
+                      isLegacySandboxProvider(p)
+                        ? `${formatSandboxProvider(p)} · ${tSandbox('provider.legacy')}`
+                        : formatSandboxProvider(p)
+                    }
                     value={(countByProvider[p] ?? 0).toLocaleString()}
                     hint={tI18nComplete('text347cf684f3e7', { value0: pct })}
                   />
@@ -384,9 +307,9 @@ export default function AdminSandboxesPage() {
 
           <AdminSection
             title={tI18nComplete.raw('text43a857886565')}
-            description={tI18nComplete('textf6668c33ea1a', {
-              value0: dist ? ` (${dist.default})` : '',
-            })}
+            description={`${tI18nComplete('textf6668c33ea1a', {
+              value0: dist ? ` (${formatSandboxProvider(dist.default)})` : '',
+            })}${allowed.some(isLegacySandboxProvider) ? ` ${tSandbox('provider.legacyNote')}` : ''}`}
           >
             <AdminPanel className="space-y-5">
               {distQ.isLoading ? (
@@ -401,9 +324,9 @@ export default function AdminSandboxesPage() {
                         <Field key={p} className="w-40">
                           <FieldLabel
                             htmlFor={`weight-${p}`}
-                            className="flex items-center gap-1.5 capitalize"
+                            className="flex items-center gap-1.5"
                           >
-                            {p}
+                            <SandboxProviderLabel provider={p} />
                             {p === dist?.default && (
                               <Badge variant="outline" size="sm">
                                 {tI18nComplete.raw('text37a8eec1ce19')}
@@ -437,7 +360,11 @@ export default function AdminSandboxesPage() {
                   </div>
                   <Button
                     size="sm"
-                    onClick={() => saveWeights.mutate()}
+                    onClick={() => {
+                      const body: Record<string, number> = {};
+                      for (const k in weights) body[k] = Number(weights[k]) || 0;
+                      saveWeights.mutate(body);
+                    }}
                     disabled={saveWeights.isPending || !allowed.length}
                     className="gap-1.5"
                   >
@@ -470,7 +397,7 @@ export default function AdminSandboxesPage() {
               </div>
               <Button
                 size="sm"
-                onClick={() => saveFb.mutate()}
+                onClick={() => saveFb.mutate(fbEnabled)}
                 disabled={saveFb.isPending}
                 className="gap-1.5"
               >
@@ -642,7 +569,7 @@ export default function AdminSandboxesPage() {
                 <StatTile
                   label={tI18nComplete.raw('text7982ad72bd36')}
                   value={an.totals.provisions.toLocaleString()}
-                  hint={`${an.totals.migrations} migrations`}
+                  hint={tI18nComplete('textbdb4791584c6', { count: an.totals.migrations })}
                 />
                 <StatTile
                   label={tI18nComplete.raw('text49da60f8a292')}
@@ -958,8 +885,8 @@ export default function AdminSandboxesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {targets.map((p) => (
-                    <SelectItem key={p} value={p} className="capitalize">
-                      {p}
+                    <SelectItem key={p} value={p}>
+                      <SandboxProviderLabel provider={p} />
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -971,8 +898,8 @@ export default function AdminSandboxesPage() {
               {tI18nComplete.raw('text19766ed6ccb2')}
             </Button>
             <Button
-              onClick={() => migrate.mutate()}
-              disabled={!target || migrate.isPending}
+              onClick={() => migrating && migrate.mutate({ sessionId: migrating.sessionId, targetProvider: target })}
+              disabled={!migrating || !target || migrate.isPending}
               className="gap-1.5"
             >
               {migrate.isPending ? <Loading className="size-4 shrink-0" /> : null}

@@ -16,8 +16,18 @@ export function bindCommerce() {
       get: P.getSessionCostRecord,
     },
     tierConfigurations: P.getBillingTierConfigurations,
+    /** Subscribe to, or change, the credits plan (`POST /billing/plan`). */
+    setPlan: P.setBillingPlan,
+    previewPlan: P.previewBillingPlan,
+    /** Accept the open Enterprise offer: a Stripe Checkout link (`POST /billing/enterprise-offer/checkout`). */
+    acceptEnterpriseOffer: P.acceptEnterpriseOffer,
+    /** "Talk to sales": one click, no form (`POST /billing/enterprise/contact`). */
+    contactSales: P.contactEnterpriseSales,
 
-    /** Stripe checkout — start a subscription and confirm it post-redirect. */
+    /**
+     * @deprecated The API retired these routes. Both reject with
+     * `ENDPOINT_RETIRED`. Use `setPlan`. Removed in the next major.
+     */
     checkout: {
       createSession: (input: Parameters<typeof P.createCheckoutSession>[0]) =>
         P.createCheckoutSession(input),
@@ -31,9 +41,12 @@ export function bindCommerce() {
         P.createPortalSession(returnUrl, accountId),
       cancel: (feedback?: string, accountId?: string) => P.cancelSubscription(feedback, accountId),
       reactivate: (accountId?: string) => P.reactivateSubscription(accountId),
+      /** @deprecated Rejects with `ENDPOINT_RETIRED`. Use `createPortalSession`. Removed in the next major. */
       scheduleDowngrade: (targetTierKey: string, commitmentType?: string, accountId?: string) =>
         P.scheduleDowngrade(targetTierKey, commitmentType, accountId),
+      /** @deprecated Rejects with `ENDPOINT_RETIRED`. Use `setPlan`. Removed in the next major. */
       cancelScheduledChange: (accountId?: string) => P.cancelScheduledChange(accountId),
+      /** @deprecated Rejects with `ENDPOINT_RETIRED`. Removed in the next major. */
       prorationPreview: (newPriceId: string, accountId?: string) =>
         P.getProrationPreview(newPriceId, accountId),
     },

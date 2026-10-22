@@ -1,3 +1,4 @@
+import { BoundedMap } from '../../shared/bounded-map';
 import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
@@ -142,7 +143,7 @@ async function resolveBoundProject(tenantId: string, conversationId: string): Pr
  * without a name and then `labelTeamsChannelBinding` names it: compared as
  * whole strings, the two alternated and wrote twice per message.
  */
-const describedBindings = new Map<string, { projectId: string; channelName: string | null; channelType: string | null }>();
+const describedBindings = new BoundedMap<string, { projectId: string; channelName: string | null; channelType: string | null }>(10_000);
 
 export function resetTeamsBindingCacheForTest(): void {
   describedBindings.clear();

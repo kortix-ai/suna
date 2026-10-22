@@ -182,7 +182,7 @@ describe.skipIf(!dockerAvailable)('session_sandboxes anchor guard — real Postg
   }, 60_000);
 
   afterAll(() => {
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
   describe('INSERT', () => {

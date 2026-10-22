@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, lt } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { chatPendingAuthMessages } from '@kortix/db';
 import { db } from '../../shared/db';
 import type { TeamsActivity } from './types';
@@ -53,6 +53,7 @@ export async function peekPendingTeamsAuthSenderName(input: {
           eq(chatPendingAuthMessages.workspaceId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
+          isNotNull(chatPendingAuthMessages.projectId),
         ),
       )
       .limit(1);
@@ -85,6 +86,7 @@ export async function latestPendingTeamsAuthMessageId(input: {
           eq(chatPendingAuthMessages.workspaceId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
+          isNotNull(chatPendingAuthMessages.projectId),
         ),
       )
       .orderBy(desc(chatPendingAuthMessages.expiresAt))
@@ -115,10 +117,11 @@ export async function consumePendingTeamsAuthMessage(input: {
           eq(chatPendingAuthMessages.workspaceId, input.tenantId),
           eq(chatPendingAuthMessages.platformUserId, input.teamsUserId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
+          isNotNull(chatPendingAuthMessages.projectId),
         ),
       )
       .limit(1);
-    if (!row) return null;
+    if (!row?.projectId) return null;
     await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.pendingId, input.pendingId));
     return { projectId: row.projectId, activity: row.event as unknown as TeamsActivity };
   } catch (err) {
@@ -143,7 +146,7 @@ export async function createPendingTeamsPickerMessage(input: {
     const rows = await db
       .insert(chatPendingAuthMessages)
       .values({
-        projectId: '',
+        projectId: null,
         platform: 'teams',
         workspaceId: input.tenantId,
         platformUserId: input.teamsUserId || '',
@@ -171,21 +174,20 @@ export async function consumePendingTeamsPickerMessage(input: {
 }): Promise<TeamsActivity | null> {
   if (!input.pendingId || !input.tenantId) return null;
   try {
+    // One statement: two replicas racing on the same click cannot both replay.
     const [row] = await db
-      .select({ event: chatPendingAuthMessages.event })
-      .from(chatPendingAuthMessages)
+      .delete(chatPendingAuthMessages)
       .where(
         and(
           eq(chatPendingAuthMessages.pendingId, input.pendingId),
           eq(chatPendingAuthMessages.workspaceId, input.tenantId),
+          isNull(chatPendingAuthMessages.projectId),
           gt(chatPendingAuthMessages.expiresAt, new Date()),
+          sql`${chatPendingAuthMessages.event}->'conversation'->>'id' = ${input.conversationId}`,
         ),
       )
-      .limit(1);
-    const parked = row?.event as unknown as TeamsActivity | undefined;
-    if (!parked || parked.conversation?.id !== input.conversationId) return null;
-    await db.delete(chatPendingAuthMessages).where(eq(chatPendingAuthMessages.pendingId, input.pendingId));
-    return parked;
+      .returning({ event: chatPendingAuthMessages.event });
+    return (row?.event as unknown as TeamsActivity | undefined) ?? null;
   } catch (err) {
     console.warn('[teams-webhook] failed to consume pending picker message', err);
     return null;

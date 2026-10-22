@@ -20,13 +20,11 @@ import {
   type ResolvedPrepIdentity,
   type TransitionDeps,
 } from './provider-transition-runner';
+import { setPinWithGenerationBump } from './provider-transition-activate';
+import { readActiveRouting } from './provider-transition-routing';
 import {
-  setPinWithGenerationBump,
-  insertPrebuildTransition,
   listTransitionsForProject,
-  readActiveRouting,
   reserveSwitchTransition,
-  type ProviderTransitionRow,
 } from './provider-transition-store';
 import {
   classifyProviderSwitch,
@@ -35,14 +33,13 @@ import {
 } from './provider-transition-core';
 import {
   serializeTransition,
-  toPublicTransitionView,
   toPublicTransitionState,
   type PreparationView,
-  type PublicTransitionView,
   type PublicTransitionState,
 } from './provider-transition-view';
 import { emitProviderTransitionEvent } from './provider-transition-metrics';
 import { logger } from '../../lib/logger';
+import { DEPRECATED_PROVIDER_ERROR, isDeprecatedProvider } from '../../platform/providers/deprecated';
 
 type ProjectRow = typeof projects.$inferSelect;
 
@@ -171,13 +168,6 @@ export function kickDrive(transitionId: string, database: Database = appDb): voi
   );
 }
 
-// FIX-L: the PATCH-response + poll-endpoint shapes (PreparationView,
-// serializeTransition, the PUBLIC projection) live in the pure, config-free
-// provider-transition-view module (imported above). Re-export the locals so
-// existing importers keep this module as their entrypoint.
-export { serializeTransition, toPublicTransitionView, toPublicTransitionState };
-export type { PreparationView, PublicTransitionView, PublicTransitionState };
-
 export class ProviderTransitionError extends Error {
   constructor(message: string, readonly code: 'bad_provider' | 'not_found') {
     super(message);
@@ -211,7 +201,11 @@ export async function requestProviderTransition(input: {
   if (!row || row.status === 'archived') throw new ProviderTransitionError('project not found', 'not_found');
 
   // Validate the target (enabled provider) — a disabled/unknown target is a hard
-  // 400, never a silently-ignored switch.
+  // 400, never a silently-ignored switch. A deprecated provider (Daytona) is
+  // refused even while it is enabled: no project may be pinned to it.
+  if (isDeprecatedProvider(target)) {
+    throw new ProviderTransitionError(DEPRECATED_PROVIDER_ERROR, 'bad_provider');
+  }
   if (target !== null && !config.isProviderEnabled(target as never)) {
     throw new ProviderTransitionError(`Unknown or disabled sandbox provider: ${target}`, 'bad_provider');
   }
@@ -284,40 +278,4 @@ export async function readPublicProjectTransitionState(
   database: Database = appDb,
 ): Promise<PublicTransitionState> {
   return toPublicTransitionState(await readProjectTransitionState(projectId, database));
-}
-
-/**
- * Prebuild a project's target ppwarm image WITHOUT switching traffic (operational
- * migration mode). Same table + same dedup key, terminal-ready, invisible to
- * routing until an on-demand switch adopts it. Returns null when the project can't
- * be prepared (no repo / archived).
- */
-export async function requestPrebuild(input: {
-  projectId: string;
-  targetProvider: string;
-  database?: Database;
-  autoDrive?: boolean;
-}): Promise<ProviderTransitionRow | null> {
-  const database = input.database ?? appDb;
-  const [row] = await database.select().from(projects).where(eq(projects.projectId, input.projectId)).limit(1);
-  if (!row || row.status === 'archived' || !row.repoUrl) return null;
-  if (!config.isProviderEnabled(input.targetProvider as never)) return null;
-
-  const routing = await readActiveRouting(database, input.projectId);
-  const sourceProvider = routing?.activeProvider ?? config.getDefaultProvider();
-  const project = toGitBackedProject(row);
-  const resolved = await resolvePrepIdentity(project, input.targetProvider);
-  const { row: transition } = await insertPrebuildTransition(database, {
-    accountId: row.accountId,
-    sourceProvider,
-    identity: {
-      projectId: input.projectId,
-      targetProvider: input.targetProvider,
-      commitSha: resolved.commitSha,
-      baseRuntimeIdentity: resolved.baseRuntimeIdentity,
-      snapshotName: resolved.snapshotName,
-    },
-  });
-  if (input.autoDrive !== false) kickDrive(transition.transitionId, database);
-  return transition;
 }

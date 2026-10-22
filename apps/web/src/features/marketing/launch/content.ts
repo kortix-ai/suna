@@ -8,7 +8,7 @@
  */
 
 export const hero = {
-  title: 'The open-source AI Management System',
+  title: 'The open-source AI Operating System',
   sub: 'Your agents, skills, company memory and connectors in one git repo you own. Any model, your keys, self-hosted or managed cloud.',
   ctaPrimary: 'Get started',
   ctaPrimaryHref: '/auth',
@@ -78,7 +78,7 @@ export const kit = {
     { token: 'bg-kortix-green', label: 'Merged — the one accent' },
   ],
   type: [
-    { sample: 'The open-source AI Management System', spec: 'Roobert Medium · tight tracking · headlines' },
+    { sample: 'The open-source AI Operating System', spec: 'Roobert Medium · tight tracking · headlines' },
     { sample: 'kortix ship', spec: 'Roobert Mono · commands, paths, branches only', mono: true },
   ],
   motion: [

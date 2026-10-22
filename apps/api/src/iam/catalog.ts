@@ -13,10 +13,11 @@
  * change only when a migration runs, so a 60s window costs one query per minute
  * per replica and removes them from the request path entirely.
  */
-import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
 import { iamRoleActions, iamRoles, objectPolicies, permissions } from '@kortix/db';
 import { db } from '../shared/db';
 import { ttlMemo } from '../shared/ttl-memo';
+import { VALID_ACTIONS } from './actions';
 
 /** How long a catalog/system-role read is reused. Structural data, not grants. */
 const CATALOG_TTL_MS = (() => {
@@ -25,7 +26,7 @@ const CATALOG_TTL_MS = (() => {
 })();
 
 export type ScopeType = 'account' | 'project';
-export type ObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'connection';
+export type ObjectType = 'agent' | 'skill' | 'secret' | 'app' | 'trigger' | 'connection' | 'folder';
 
 export interface PermissionEntry {
   action: string;
@@ -70,7 +71,10 @@ const loadCatalogMemo = ttlMemo({
         implies: permissions.implies,
       })
       .from(permissions);
-    const all = rows.map((r) => ({
+    // A catalog row the code no longer knows is a retired action: it is never
+    // offered or reported again. A contract migration then deletes the row
+    // (20261017134834494_retire_customize_permissions for `project.customize.*`).
+    const all = rows.filter((r) => VALID_ACTIONS.has(r.action)).map((r) => ({
       action: r.action,
       scopeType: r.scopeType as ScopeType,
       resourceType: r.resourceType,
@@ -95,7 +99,7 @@ export async function loadPermissionCatalog(): Promise<Catalog> {
  * The scope an action is granted at.
  *
  * The catalog column is the ONE classifier — it replaces both
- * `scopeForActionV2` (account|project) and `resourceTypeForAction` (7 buckets),
+ * `scopeForActionV2` (account|project) and `resourceTypeForAction` (account|project, from the prefix),
  * which disagreed in shape and were reported by different surfaces
  * (`/effective` returned the second while the engine decided on the first).
  *
@@ -117,16 +121,12 @@ export function scopeForUncatalogedAction(action: string): ScopeType {
     action.startsWith('group.') ||
     action.startsWith('role.') ||
     action.startsWith('policy.') ||
-    action.startsWith('token.')
+    action.startsWith('token.') ||
+    action.startsWith('capture.')
   ) {
     return 'account';
   }
   return 'project';
-}
-
-export async function scopeForAction(action: string): Promise<ScopeType> {
-  const catalog = await loadPermissionCatalog();
-  return catalog.byAction.get(action)?.scopeType ?? scopeForUncatalogedAction(action);
 }
 
 // ─── System roles ───────────────────────────────────────────────────────────
@@ -185,46 +185,6 @@ export async function loadSystemRoles(): Promise<SystemRoles> {
   return loadSystemRolesMemo();
 }
 
-/**
- * Actions a CUSTOM role grants. Memoized per role id; a role's action set
- * changes only through `PUT /iam/roles/:id/permissions`, which busts it.
- */
-const loadCustomRoleActionsMemo = ttlMemo({
-  ttlMs: CATALOG_TTL_MS,
-  keyFn: (roleId: string) => roleId,
-  loader: async (roleId: string): Promise<ReadonlySet<string>> => {
-    const rows = await db
-      .select({ action: iamRoleActions.action })
-      .from(iamRoleActions)
-      .where(eq(iamRoleActions.roleId, roleId));
-    return new Set(rows.map((r) => r.action));
-  },
-});
-
-export function invalidateRoleActions(roleId: string): void {
-  loadCustomRoleActionsMemo.invalidate(roleId);
-}
-
-export async function loadCustomRoleActions(roleId: string): Promise<ReadonlySet<string>> {
-  return loadCustomRoleActionsMemo(roleId);
-}
-
-/** Every non-system role in an account, for the roles API and for `assignRole`. */
-export async function loadAccountRoles(accountId: string): Promise<
-  Array<{ roleId: string; key: string; name: string; scopeType: ScopeType }>
-> {
-  const rows = await db
-    .select({
-      roleId: iamRoles.roleId,
-      key: iamRoles.key,
-      name: iamRoles.name,
-      scopeType: iamRoles.scopeType,
-    })
-    .from(iamRoles)
-    .where(and(eq(iamRoles.accountId, accountId), isNotNull(iamRoles.accountId)));
-  return rows.map((r) => ({ ...r, scopeType: r.scopeType as ScopeType }));
-}
-
 // ─── Object policies ────────────────────────────────────────────────────────
 
 export type UnscopedDefault = 'open' | 'closed';
@@ -255,12 +215,4 @@ const loadObjectPoliciesMemo = ttlMemo({
 export async function unscopedDefaultFor(objectType: string): Promise<UnscopedDefault> {
   const policies = await loadObjectPoliciesMemo();
   return policies.get(objectType) ?? 'closed';
-}
-
-/** Test hook: drop every structural memo. */
-export function clearCatalogCaches(): void {
-  loadCatalogMemo.clear();
-  loadSystemRolesMemo.clear();
-  loadCustomRoleActionsMemo.clear();
-  loadObjectPoliciesMemo.clear();
 }

@@ -82,8 +82,8 @@ export function buildAgentUnavailablePickerBlocks(input: {
 }): Array<Record<string, unknown>> {
   const bad = input.badAgent && input.badAgent.trim() ? input.badAgent.trim() : null;
   const lead = bad
-    ? `:warning:  *I couldn't start a session — the agent set for this channel (\`${escapeMrkdwn(bad)}\`) no longer exists.*\nIt was deleted, renamed, or disabled. Pick one of this project's current agents below, then send your message again.`
-    : `:warning:  *I couldn't start a session — this channel's default agent no longer exists.*\nIt was deleted, renamed, or disabled. Pick one of this project's current agents below, then send your message again.`;
+    ? `:warning:  *I couldn't start a session — the agent set for this channel (\`${escapeMrkdwn(bad)}\`) no longer exists.*\nIt was deleted, renamed, or disabled. Pick one of this project's current agents below, then mention me again.`
+    : `:warning:  *I couldn't start a session — this channel's default agent no longer exists.*\nIt was deleted, renamed, or disabled. Pick one of this project's current agents below, then mention me again.`;
   // Mark nothing as "current": the previously-selected agent is the dead one, so
   // implying an existing selection would be misleading. Pass the bad name as
   // `currentAgent` — it isn't in the list, so no row gets a ✓.

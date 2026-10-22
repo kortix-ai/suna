@@ -462,7 +462,7 @@ request into `staging` that touches `packages/db/**`. A pull request into
 
 ```bash
 pnpm --filter @kortix/db lint                                   # lint + squawk
-git diff --diff-filter=M --name-only origin/main... -- 'packages/db/migrations/*.sql'   # immutability: must print nothing
+git diff --diff-filter=M --name-only origin/HEAD... -- 'packages/db/migrations/*.sql'   # immutability: must print nothing
 ( cd packages/db && bun scripts/generate.ts __local_schema_sync ) && git status --porcelain -- packages/db/migrations packages/db/drizzle   # schema-sync: must print nothing
 pnpm test -- --db-only                                          # fresh-DB apply + migration suites
 ```
@@ -533,7 +533,17 @@ PostgreSQL 15 (dev, staging, prod) and 16 (CI) renderings compare equal. Known,
 deliberate gaps are listed with their evidence in
 `scripts/verify-live-schema-waivers.ts`; that list only shrinks. The output also
 lists migrations the live database has not applied yet: objects those create
-show as missing until the next deploy runs them.
+show as missing until the next deploy runs them. The nightly prod job
+(`.github/workflows/db-drift.yml`) removes that noise: before it builds the
+canonical database, `scripts/prune-unapplied-migrations.ts --live <url>`
+deletes (in the throwaway CI checkout) every migration file the live ledger does
+not record. A red run then means "recorded as applied, object absent". Never run
+that script in a working checkout you keep.
+
+The strict dev signature diff (`scripts/schema-signature.sql`) skips the weekly
+`audit_events_pYYYYMMDD` partitions. `audit_events_ensure_partitions` creates
+them at runtime, so their set differs between a fresh build and a long-lived
+database.
 
 It is how the 2026-09-25 prod gap was found: prod's `credit_ledger` had 4 of 15
 indexes, `account_memberships` had no primary key, and 8 other constraints were
@@ -564,9 +574,9 @@ cd packages/db && bun scripts/verify-live-schema.ts
 ```
 
 The nightly `DB Drift Sentinel` (`.github/workflows/db-drift.yml`,
-`prod-presence`) runs the same comparison against prod, and the deploy-prod
-`verify-schema` job runs it before the ECS roll when the
-`ENABLE_PROD_SCHEMA_GATE` repository variable is `true`.
+`prod-presence`) runs the same comparison against prod. No deploy-prod job
+runs it before the ECS roll: the former `verify-schema` job was removed because
+it never gated `deploy-ecs`.
 
 ---
 

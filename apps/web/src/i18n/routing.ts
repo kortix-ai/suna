@@ -1,3 +1,4 @@
+import { readUnverifiedSession } from '@/lib/supabase/session-cookie';
 import { defaultLocale, locales } from './catalog.mjs';
 
 /**
@@ -29,10 +30,11 @@ export function localizedPathname(locale: RoutingLocale, pathname: string): stri
 
 /**
  * Paths that are not pages and must reach Next without a locale prefix:
- * Route Handlers outside `app/[locale]`, the `next.config.ts` rewrite sources,
- * and the static `/docs` site in `public/docs`. A new top-level Route Handler
- * must be listed here; `middleware-locale-routing.test.ts` scans `src/app`
- * and fails when one is missing.
+ * Route Handlers outside `app/[locale]`, the `next.config.ts` rewrite sources
+ * (including `/blog`, the separate blog app), and the static `/docs` site in
+ * `public/docs`. A new top-level Route Handler must be listed here;
+ * `middleware-locale-routing.test.ts` scans `src/app` and fails when one is
+ * missing.
  */
 const NON_PAGE_PREFIXES = [
   '/_next/',
@@ -41,6 +43,7 @@ const NON_PAGE_PREFIXES = [
   '/scim/',
   '/supabase/',
   '/ingest/',
+  '/blog',
   '/monitoring',
   '/_betterstack',
   '/docs',
@@ -112,43 +115,21 @@ function localeFromJwt(token: unknown): RoutingLocale | null {
  * Use this only to pick the language of a page that is the same for every
  * visitor (static marketing HTML). It is never an identity: a forged cookie
  * can only change the language the forger sees. Protected routes use the
- * verified identity instead.
- *
- * `@supabase/ssr` stores the session JSON in `<name>` or in chunks
- * `<name>.0`, `<name>.1`, …, optionally as `base64-<base64url>`.
+ * verified identity instead. The cookie assembly itself lives in
+ * `lib/supabase/session-cookie.ts`.
  */
 export function unverifiedSessionLocale(
   cookies: ReadonlyArray<{ name: string; value: string }>,
   cookieName: string,
 ): RoutingLocale | null {
-  const whole = cookies.find((cookie) => cookie.name === cookieName)?.value;
-  let raw = whole;
-  if (!raw) {
-    const chunks: string[] = [];
-    for (let index = 0; ; index += 1) {
-      const chunk = cookies.find((cookie) => cookie.name === `${cookieName}.${index}`)?.value;
-      if (chunk === undefined) break;
-      chunks.push(chunk);
-    }
-    raw = chunks.length > 0 ? chunks.join('') : undefined;
-  }
-  if (!raw) return null;
-
-  let json: string | null = raw;
-  if (raw.startsWith('base64-')) json = decodeBase64Url(raw.slice('base64-'.length));
-  if (!json) return null;
-  try {
-    const session = JSON.parse(json) as {
-      access_token?: unknown;
-      user?: { user_metadata?: { locale?: unknown } };
-    };
-    return (
-      normalizeRoutingLocale(session.user?.user_metadata?.locale) ??
-      localeFromJwt(session.access_token)
-    );
-  } catch {
-    return null;
-  }
+  const session = readUnverifiedSession(cookies, cookieName);
+  if (!session) return null;
+  return (
+    normalizeRoutingLocale(
+      (session.user as { user_metadata?: { locale?: unknown } } | undefined)?.user_metadata
+        ?.locale,
+    ) ?? localeFromJwt(session.access_token)
+  );
 }
 
 export { defaultLocale };

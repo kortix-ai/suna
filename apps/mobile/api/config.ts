@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { createRefreshingToken } from './refreshing-token';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import { log } from '@/lib/logger';
 import { resolveEndpoints } from '@/lib/deployment/deployment';
@@ -22,11 +23,11 @@ export async function getAuthToken(): Promise<string | null> {
   return session?.access_token || null;
 }
 
-export async function getAuthHeaders(): Promise<HeadersInit> {
-  const token = await getAuthToken();
-  
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+/** The SDK's `getToken`: a 401 makes the next read refresh the Supabase session. */
+export const kortixGetToken = createRefreshingToken({
+  read: getAuthToken,
+  refresh: async () => {
+    const { data } = await supabase.auth.refreshSession();
+    return data.session?.access_token ?? null;
+  },
+});

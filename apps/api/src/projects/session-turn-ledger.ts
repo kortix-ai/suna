@@ -223,7 +223,12 @@ export function extractTurnIdentity(
 export interface SandboxTurnStart extends SandboxTurnIdentity {
   token: string;
 }
-export type RuntimeTurnAdoption = 'adopted' | 'open_turn_exists' | 'known_message' | 'no_box';
+export type RuntimeTurnAdoption =
+  | 'adopted'
+  | 'identity_bound'
+  | 'open_turn_exists'
+  | 'known_message'
+  | 'no_box';
 /**
  * Apply terminal evidence. A retryable error is not terminal. When both sides
  * know the OpenCode user message ID, a delayed event may clear only that turn.
@@ -434,16 +439,25 @@ export interface RequestedStopScope {
  * Stamp a requested stop on the session's open turns. A row whose OpenCode
  * session is not recorded yet still matches: it cannot be proved to be another
  * session's turn, and an unmarked stop reads as a failure.
+ *
+ * `by` is the person who asked for the stop, shown to everyone else as
+ * "Stopped by <name>". A later stamp of the same stop without a person (the
+ * hold settle's re-abort) keeps the one already recorded.
  */
 export async function markTurnStopRequested(
   sessionId: string,
   name: RequestedStopName,
   scope: RequestedStopScope = {},
+  by: string | null = null,
 ): Promise<void> {
-  const mark = JSON.stringify({ name, message: null });
+  const mark = JSON.stringify(by ? { name, message: null, by } : { name, message: null });
   await recordTurnLedger(
     sql`UPDATE kortix.session_turns
-           SET end_error = ${mark}::jsonb,
+           SET end_error = CASE
+                 WHEN ${by}::text IS NULL AND end_error->>'name' = ${name} AND end_error ? 'by'
+                   THEN end_error
+                 ELSE ${mark}::jsonb
+               END,
                updated_at = now()
          WHERE session_id = ${sessionId}
            AND state <> 'ended'
@@ -498,13 +512,86 @@ export const REAPER_TURN_CAUSES = {
     name: 'SandboxStoppedMidTurn',
     message: 'The sandbox stopped unexpectedly while this turn was running.',
   },
-  /** Same box-gone event, but an unattended session's turn is being resumed
-   *  automatically — see `session-lifecycle/unattended-runtime-recovery.ts`. */
+  /** Same box-gone event, after the turn's continuation reached the runtime.
+   *  Written by `markTurnResumed` on delivery, never at the stop: a stop
+   *  cannot know that the continuation will go out (KRTX-1732). */
   boxStoppedMidTurnRecovering: {
     name: 'SandboxStoppedMidTurnRecovering',
     message: 'The sandbox stopped unexpectedly. Kortix restarted it and resumed this turn.',
   },
+  /** A runtime restart ended the turn and the sandbox kept running (a config
+   *  swap, a wake that found the turn open), after its continuation reached
+   *  the runtime. The settle names no cause for a restart. */
+  runtimeRestartedMidTurnRecovering: {
+    name: 'RuntimeRestartedMidTurnRecovering',
+    message: 'The runtime restarted during this turn. Kortix resumed it.',
+  },
+  /** The turn waited on a person past `turnWaitingMaxMs`; the reaper ended it. */
+  awaitingInput: {
+    name: 'TurnAwaitingInput',
+    message:
+      'This turn stopped because the agent waited for an answer or an approval that did not come. Send a message to continue.',
+  },
 } as const satisfies Record<string, SessionTurnEndErrorRecord>;
+
+/** The newest turn a prompt started, as the drain's continuation check reads it. */
+export interface PromptTurnRecord {
+  turnToken: string;
+  messageId: string;
+  state: string;
+  endReason: string | null;
+  endError: SessionTurnEndErrorRecord | null;
+  endedAt: Date | null;
+}
+
+/** The newest turn of `sessionId` started under any of `messageIds`, or null. */
+export async function readNewestPromptTurn(
+  sessionId: string,
+  messageIds: readonly string[],
+): Promise<PromptTurnRecord | null> {
+  if (messageIds.length === 0) return null;
+  const ids = sql.join(messageIds.map((id) => sql`${id}`), sql`, `);
+  const [row] =
+    normalizeRows(
+      await execute(sql`
+        SELECT turn_token, message_id, state, end_reason, end_error, ended_at
+          FROM kortix.session_turns
+         WHERE session_id = ${sessionId}
+           AND message_id IN (${ids})
+         ORDER BY started_at DESC, created_at DESC
+         LIMIT 1`),
+    ) ?? [];
+  if (!row) return null;
+  const endError = row.end_error as SessionTurnEndErrorRecord | null;
+  return {
+    turnToken: String(row.turn_token),
+    messageId: String(row.message_id),
+    state: String(row.state),
+    endReason: ledgerText(row.end_reason),
+    endError: endError && typeof endError === 'object' ? endError : null,
+    endedAt: row.ended_at ? new Date(row.ended_at as string) : null,
+  };
+}
+
+/**
+ * The continuation of a turn a runtime loss cut short reached the runtime:
+ * the turn now says Kortix resumed it. Only over the provider stop's generic
+ * cause, or over no cause (a runtime restart, which says so); a named cause
+ * stays.
+ */
+export async function markTurnResumed(turnToken: string): Promise<void> {
+  await recordTurnLedger(
+    sql`UPDATE kortix.session_turns
+           SET end_error = CASE WHEN end_error IS NULL
+                 THEN ${JSON.stringify(REAPER_TURN_CAUSES.runtimeRestartedMidTurnRecovering)}::jsonb
+                 ELSE ${JSON.stringify(REAPER_TURN_CAUSES.boxStoppedMidTurnRecovering)}::jsonb END,
+               updated_at = now()
+         WHERE turn_token = ${turnToken}
+           AND end_reason = 'runtime_gone'
+           AND (end_error IS NULL OR end_error->>'name' = ${REAPER_TURN_CAUSES.boxStoppedMidTurn.name})`,
+    `resumed ${turnToken}`,
+  );
+}
 
 /** How long after a bare abort a cause with no turn identity may still claim it. */
 export const UNIDENTIFIED_CAUSE_WINDOW_MS = 60_000;
@@ -661,35 +748,6 @@ export function endedTurnLedger(
 }
 
 /**
- * The rows a ledger INSERT is allowed to create a turn from: the sandbox that
- * still holds this exact token's authority, locked.
- *
- * Both writers that OPEN a ledger row do it in a SECOND round trip after their
- * authority write, and a stop can commit in that gap. The stop erases
- * `activeTurns` and settles the sandbox's open rows in one transaction, so a
- * row created after it commits can never be closed by anything: every
- * token-scoped settle CASes against the entry the stop deleted, and the
- * sandbox-scoped one has already run. That row would claim a turn is running
- * for ever on a parked box.
- *
- * `FOR UPDATE` is what closes the window rather than narrowing it. A plain
- * predicate reads its own snapshot and happily passes while the stop is
- * mid-commit; the lock makes this statement WAIT for that transaction and then
- * re-evaluate against the row it wrote, so the two orderings are the only two
- * outcomes: the INSERT lands first and the stop settles it, or the stop lands
- * first and the INSERT writes nothing. Lock order is unchanged
- * (session_sandboxes, then session_turns), so this adds no deadlock edge.
- */
-export function openableTurnOwner(sandboxId: string, token: string): SQL {
-  return sql`SELECT s.session_id, s.sandbox_id, s.project_id, s.account_id
-               FROM kortix.session_sandboxes s
-              WHERE s.sandbox_id = ${sandboxId}::uuid
-                AND s.status IN ('active', 'provisioning')
-                AND s.metadata->'activeTurns'->${token} IS NOT NULL
-              FOR UPDATE`;
-}
-
-/**
  * Settle every still-open ledger row of one sandbox.
  *
  * The stop writer (reaping/sandbox-state-sync.ts) erases `activeTurn` /
@@ -817,7 +875,7 @@ export async function settleOrphanedSandboxTurns(): Promise<number> {
 
 /**
  * A second end frame for a turn that is already closed may still be the only one
- * that says WHY. Session ad02e053 (2026-09-18): OpenCode's own "Aborted" frame
+ * that says WHY. A session on 2026-09-18: OpenCode's own "Aborted" frame
  * closed the turn 476 ms before the memory guard's frame named the cause. Same
  * identity match as `wasSandboxTurnAlreadyClosed`; touches `failed` rows only,
  * and only to replace a missing or abort-only error with a named cause.

@@ -10,12 +10,12 @@ import { useTranslations } from '@/i18n/use-translations';
  */
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
-import { cn } from '@/lib/utils';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@kortix/ui/internal/lib/kortix-cli';
+import { cn } from '@kortix/ui';
 import {
   ArrowRightIcon as ArrowRight,
   RobotIcon as Bot,
@@ -626,7 +626,7 @@ export function useSlides(): SlideDef[] {
       ),
     },
 
-    /* 9 — COMMAND CENTER OVERVIEW ───────────────────────────────────────── */
+    /* 9 — AI OS OVERVIEW ──────────────────────────────────────────────── */
     {
       id: 'command-center',
       label: tI18nHardcoded.raw('i18nComplete.text2522f9d16f3b'),

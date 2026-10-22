@@ -107,6 +107,21 @@ describe('sendExpoPushMessages', () => {
     expect(result.tickets).toHaveLength(1);
   });
 
+  test('a timeout is not retried: Expo may already hold the batch', async () => {
+    const { fn, calls } = fakeFetch(() => {
+      throw new DOMException('The operation timed out.', 'TimeoutError');
+    });
+    const result = await sendExpoPushMessages([message(1)], { fetch: fn, retryDelayMs: 0, logger });
+    expect(calls).toHaveLength(1);
+    expect(result.failedMessages).toBe(1);
+  });
+
+  test('every POST carries a timeout signal', async () => {
+    const { fn, calls } = fakeFetch(okTickets);
+    await sendExpoPushMessages([message(1)], { fetch: fn, retryDelayMs: 0, logger });
+    expect(calls[0]!.init.signal).toBeInstanceOf(AbortSignal);
+  });
+
   test('gives up after the one retry and never throws', async () => {
     const { fn, calls } = fakeFetch(() => new Response('down', { status: 502 }));
     const result = await sendExpoPushMessages([message(1), message(2)], { fetch: fn, retryDelayMs: 0, logger });
@@ -168,6 +183,19 @@ describe('sendExpoPushMessages', () => {
     };
     const result = await sendExpoPushMessages([message(1)], { fetch: fn, store, retryDelayMs: 0, logger });
     expect(result.removedTokens).toEqual([]);
+  });
+
+  test('enabled: false sends nothing (a local stack, KRTX-2938)', async () => {
+    const { fn, calls } = fakeFetch(okTickets);
+    const result = await sendExpoPushMessages([message(1)], { fetch: fn, retryDelayMs: 0, logger, enabled: false });
+    expect(calls).toHaveLength(0);
+    expect(result).toEqual({ tickets: [], removedTokens: [], failedMessages: 0 });
+  });
+
+  test('origin is stamped into every message data', async () => {
+    const { fn, calls } = fakeFetch(okTickets);
+    await sendExpoPushMessages([message(1)], { fetch: fn, retryDelayMs: 0, logger, origin: 'https://api.example.test' });
+    expect(calls[0].body[0].data).toEqual({ ...message(1).data, origin: 'https://api.example.test' });
   });
 
   test('an empty message list sends nothing', async () => {

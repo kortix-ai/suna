@@ -36,7 +36,7 @@ Six beats. Tell them in this order. Each beat ends where the next one starts.
 
 ## 3. The message house
 
-- **Category:** AI Management System.
+- **Category:** AI Operating System (AI OS).
 - **Roof (promise):** Run your whole company from one place you own: a workforce of AI agents that does real work.
 - **Four pillars:**
   1. **Open and yours.** Open source and self-hostable. Your data, your models, your infrastructure. No lock-in, fully auditable.
@@ -86,7 +86,7 @@ The full text is `MANIFESTO.md`. Use these moves when you write founder voice.
 
 **Rule.** Write founder voice in the first person plural, in short declarative sentences, and name the stakes. — *Why:* The manifesto reads as a position, not a pitch. — *Where:* marketing (about, careers) | deck | social (founder account). — *When silent:* use "we" for the team and "you" for the reader. Do not write "I" unless the post is from a named founder account.
 
-**Rule.** Keep "AGI" in founder voice (mission, manifesto, about). Keep it out of headlines, product names and meta text. — *Why:* D1 retires "open AGI platform" as a product line. — *Where:* marketing | store listing. — *When silent:* use "AI Management System".
+**Rule.** Keep "AGI" in founder voice (mission, manifesto, about). Keep it out of headlines, product names and meta text. — *Why:* D1 retires "open AGI platform" as a product line. — *Where:* marketing | store listing. — *When silent:* use "AI Operating System".
 
 ## 6. Why now
 

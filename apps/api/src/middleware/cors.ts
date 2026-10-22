@@ -4,8 +4,6 @@ const CLOUD_ORIGINS = [
   'https://www.kortix.com',
   'https://kortix.com',
   'https://dev.kortix.com',
-  'https://new-dev.kortix.com',
-  'https://dev-new.kortix.com',
   'https://staging.kortix.com',
   'https://kortix.cloud',
   'https://www.kortix.cloud',
@@ -61,6 +59,8 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       // builds from before the change still send it, and dropping it here would
       // fail their CORS preflight.
       'X-Kortix-Client',
+      // The SDK sends the host's release version on every request (R0.6).
+      'X-Kortix-Client-Version',
       // Defense in depth for the session stream: a cross-origin SSE reader that
       // sends `Cache-Control: no-cache` (older SDKs, the opencode fallback) would
       // otherwise fail preflight and the stream would never open. The current SDK
@@ -72,9 +72,8 @@ export function createCorsMiddleware(options: CorsMiddlewareOptions) {
       // server-side design refuses to allow. It has to be declared here for the
       // banner to ever be true in a browser.
       'X-Kortix-Impersonate',
-      // Same reason for the platform-admin read-only bypass the SDK already
-      // attaches (setAdminBypass → `x-kortix-admin-bypass: 1`): without it, the
-      // header never survives a cross-origin preflight.
+      // The retired read-only admin bypass. The API ignores it; it stays allowed
+      // so an older SDK that still sends it passes its preflight.
       'X-Kortix-Admin-Bypass',
     ],
     exposeHeaders: [

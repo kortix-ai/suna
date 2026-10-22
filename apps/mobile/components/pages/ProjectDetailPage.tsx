@@ -24,11 +24,12 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useQueryClient } from '@tanstack/react-query';
 
 const monoFont = MONO_FONT_FAMILY;
+import { CountBadge } from '@/components/kortix/count-badge';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/kortix/switch';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -38,7 +39,7 @@ import { BottomSheetModal, BottomSheetView, BottomSheetScrollView, BottomSheetTe
 // touchable on Android (and RN's own on iOS) for correct gesture arbitration
 // inside a BottomSheetModal. Use the gesture-handler `Pressable` directly.
 const BottomSheetTouchable = GestureHandlerPressable;
-import { useThemeColors } from '@/lib/theme-colors';
+import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import {
@@ -92,7 +93,8 @@ import {
 import { useTabStore } from '@/stores/tab-store';
 import { PageHeader } from '@/components/kortix/page-header';
 import { PageContent } from '@/components/kortix/page-content';
-import { formatCost, formatTokens } from '@kortix/sdk';
+import { formatTokens } from '@kortix/sdk';
+import { formatUsdAsCredits } from '@kortix/shared';
 import {
   useProjectSessionStats,
   totalTokens as sumTokens,
@@ -138,9 +140,6 @@ interface ProjectDetailPageProps {
   projectId: string;
   onBack: () => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -149,9 +148,6 @@ export function ProjectDetailPage({
   projectId,
   onBack,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: ProjectDetailPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -643,9 +639,6 @@ export function ProjectDetailPage({
           </Pressable>
         }
         onOpenDrawer={onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
           <Pressable
             onPress={handleDelete}
@@ -704,30 +697,10 @@ export function ProjectDetailPage({
                 }}>
                 {t.label}
               </RNText>
-              {t.count > 0 && (
-                <View
-                  style={{
-                    backgroundColor: active
-                      ? isDark
-                        ? withAlpha(THEME.dark.foreground, 0.1)
-                        : withAlpha(THEME.light.foreground, 0.06)
-                      : isDark
-                        ? withAlpha(THEME.dark.foreground, 0.05)
-                        : withAlpha(THEME.light.foreground, 0.03),
-                    borderRadius: 10,
-                    paddingHorizontal: 6,
-                    paddingVertical: 1,
-                  }}>
-                  <RNText
-                    style={{
-                      fontSize: 11,
-                      fontFamily: 'Roobert',
-                      color: active ? fg : mutedStrong,
-                    }}>
-                    {t.count}
-                  </RNText>
-                </View>
-              )}
+              <CountBadge
+                count={t.count}
+                textClassName={active ? 'text-primary' : 'text-muted-foreground'}
+              />
             </Pressable>
           );
         })}
@@ -1613,7 +1586,7 @@ export function ProjectDetailPage({
                         }}>
                         Description
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.description}
                       </SelectableMarkdownText>
                     </View>
@@ -1633,7 +1606,7 @@ export function ProjectDetailPage({
                         }}>
                         Verification condition
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.verification_condition}
                       </SelectableMarkdownText>
                     </View>
@@ -1669,7 +1642,7 @@ export function ProjectDetailPage({
                           Input needed
                         </RNText>
                       </View>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.blocking_question}
                       </SelectableMarkdownText>
                     </View>
@@ -1697,7 +1670,7 @@ export function ProjectDetailPage({
                         }}>
                         Result
                       </RNText>
-                      <SelectableMarkdownText isDark={isDark}>
+                      <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                         {selectedTask.result}
                       </SelectableMarkdownText>
                       {!!selectedTask.verification_summary && (
@@ -1721,7 +1694,7 @@ export function ProjectDetailPage({
                             }}>
                             Verification
                           </RNText>
-                          <SelectableMarkdownText isDark={isDark}>
+                          <SelectableMarkdownText isDark={isDark} surface={getSheetBg(isDark)}>
                             {selectedTask.verification_summary}
                           </SelectableMarkdownText>
                         </View>
@@ -2376,7 +2349,7 @@ function ProjectTotalsCard({
     { label: 'Sessions', value: String(totalSessions), dim: false },
     { label: 'Messages', value: String(messageCount), dim: loading },
     { label: 'Tokens', value: formatTokens(tokens), dim: loading },
-    { label: 'Cost', value: formatCost(cost), dim: loading },
+    { label: 'Cost', value: `${formatUsdAsCredits(cost)} credits`, dim: loading },
   ];
   return (
     <View

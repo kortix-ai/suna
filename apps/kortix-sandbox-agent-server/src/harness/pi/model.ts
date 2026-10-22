@@ -22,11 +22,17 @@ import {
   type MutableModels,
 } from '@earendil-works/pi-ai'
 import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy'
+import { DEFAULT_COMPACTION_SETTINGS } from '@earendil-works/pi-coding-agent'
 import { LLM_PROXY_PLACEHOLDER_KEY } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
+import type { KortixGatewayModel } from '@kortix/api-contract/fallback-models'
+import { variantsFromReasoningOptions } from '../shared/reasoning-variants'
 
-/** Staged unconditionally by apps/api's snapshot build-context. */
-export const BAKED_LLM_CATALOG_PATH = '/opt/kortix/llm-catalog.json'
+/** Staged unconditionally by apps/api's snapshot build-context. A host that
+ *  really bakes one (every Kortix sandbox image) can hide it from the test
+ *  suite through KORTIX_BAKED_LLM_CATALOG_PATH. */
+export const BAKED_LLM_CATALOG_PATH =
+  process.env.KORTIX_BAKED_LLM_CATALOG_PATH || '/opt/kortix/llm-catalog.json'
 export const KORTIX_PROVIDER_ID = 'kortix'
 const PI_THINKING_LEVELS = new Set(['minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
@@ -38,7 +44,7 @@ export interface CatalogModel {
   attachment?: boolean
   limit?: { context?: number; input?: number; output?: number }
   variants?: Record<string, unknown>
-  reasoning_options?: Array<{ type?: string }>
+  reasoning_options?: KortixGatewayModel['reasoning_options']
 }
 
 export function readCatalogFile(path: string = process.env.KORTIX_LLM_CATALOG_FILE || BAKED_LLM_CATALOG_PATH): Record<string, CatalogModel> {
@@ -62,10 +68,7 @@ export function nativeModelId(ref: string | undefined | null): string | null {
 /** OpenCode `variant` names that pi can honour as a thinking level. */
 export function reasoningVariants(entry: CatalogModel | undefined): string[] {
   if (!entry?.reasoning) return []
-  const names = [
-    ...Object.keys(entry.variants ?? {}),
-    ...(entry.reasoning_options ?? []).map((o) => o.type ?? '').filter(Boolean),
-  ]
+  const names = [...Object.keys(entry.variants ?? {}), ...Object.keys(variantsFromReasoningOptions(entry) ?? {})]
   return [...new Set(names.filter((name) => PI_THINKING_LEVELS.has(name)))]
 }
 
@@ -114,7 +117,25 @@ function gatewayModel(id: string, entry: CatalogModel | undefined, target: Gatew
     contextWindow: entry?.limit?.context ?? 128_000,
     maxTokens: entry?.limit?.output ?? 32_768,
     compat: { thinkingFormat: 'openai', supportsStore: false, supportsDeveloperRole: false },
+    // pi-ai clamps `xhigh` and `max` down to `high` unless the model maps them.
+    thinkingLevelMap: Object.fromEntries(
+      reasoningVariants(entry).filter((level) => level === 'xhigh' || level === 'max').map((level) => [level, level]),
+    ),
   }
+}
+
+/**
+ * pi compacts at `window - reserveTokens`, so a 1M window fills to ~1M before it does, and every
+ * request re-sends all of it. A per-model reserve of `window - compactAt` moves the cut to
+ * `compactAt` for every model larger than that; smaller models keep pi's default.
+ */
+export function compactionSettings(catalog: Record<string, CatalogModel>, compactAt: number) {
+  const modelOverrides: Record<string, { reserveTokens: number }> = {}
+  for (const [id, entry] of Object.entries(catalog)) {
+    const reserveTokens = (entry?.limit?.context ?? 128_000) - compactAt
+    if (reserveTokens > DEFAULT_COMPACTION_SETTINGS.reserveTokens) modelOverrides[`${KORTIX_PROVIDER_ID}/${id}`] = { reserveTokens }
+  }
+  return { modelOverrides }
 }
 
 export async function createPiModels(input: {

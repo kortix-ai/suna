@@ -13,29 +13,31 @@ import { useTranslations } from '@/i18n/use-translations';
  * **Why it sits in Tokens.** A client secret is a credential the account
  * issues to a machine, exactly like a service account token, and it answers to
  * the same permissions (`token.create` / `token.revoke`). So it lives beside
- * the service account list, in the same row, with the same create → show-once
- * modal — a person who has minted a token here already knows how this works.
+ * the service account list, with the same create → show-once flow in the
+ * account hub's split sheet — a person who has minted a token here already
+ * knows how this works.
  *
  * **The secret is shown once.** Create and rotate return `client_secret`
- * exactly once; list and get never do. Both halves (form → reveal) live in one
- * `Modal` on purpose, the way `CreateApiKeyDialog` does: a dialog that closes
- * and reopens somewhere else is how a one-time secret gets lost.
+ * exactly once; list and get never do. Register reopens the sheet with the
+ * credentials from the mutation's own `onSuccess`, so closing the sheet
+ * mid-request never loses them. Rotate shows its secret in a modal after the
+ * confirm.
  *
- * **Layout.** `AccessList` / `AccessRow` from `features/workspace/shared/access`
- * — the single row every access surface in this account uses.
+ * **Layout.** A flat, Linear-style table (`iam-table.tsx`) — App, Type,
+ * Redirect URIs, Scopes, Created — Jay's pick from the Paper "API · auth apps"
+ * variants (03, 2026-10-13). The row kebab is `AccessRow`'s own (`RowKebab`).
  */
 
 import { type FormEvent, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Button } from '@kortix/ui/button';
+import { Checkbox } from '@kortix/ui/checkbox';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -44,27 +46,23 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { ErrorState } from '@/features/layout/section/error-state';
-import {
-  AccessList,
-  AccessRow,
-  CopyRow,
-  type KebabItem,
-  copyValue,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/select';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { Switch } from '@kortix/ui/switch';
+import { Textarea } from '@kortix/ui/textarea';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
+import { ErrorState } from '@kortix/ui/error-state';
+import { CopyRow, RowKebab, type KebabItem, copyValue } from '@kortix/ui/access/access/index';
+import { cn } from '@kortix/ui';
 import {
   type CreateOAuthClientInput,
   type CreatedOAuthClient,
@@ -77,7 +75,7 @@ import {
   rotateOAuthClientSecret,
   updateOAuthClient,
 } from '@/lib/iam-client';
-import { relativeTime } from '@/lib/relative-time';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 import {
   AppWindowIcon,
   ArrowsClockwiseIcon,
@@ -87,8 +85,10 @@ import {
   TrashIcon,
   WarningIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from '@/components/site-link';
+
+import { IamTable, IamTableCell, IamTableHead, IamTableRow } from './iam-table';
 
 const OAUTH_CLIENTS_KEY = (accountId: string) => ['oauth-clients', accountId];
 
@@ -172,6 +172,41 @@ export function summarizeRedirectUris(uris: string[]): string {
   return `${uris[0]} +${uris.length - 1} more`;
 }
 
+/** Lets the sheet's pinned footer read the register/edit request's state: it renders outside the form. */
+const OAUTH_APP_MUTATION_KEY = (accountId: string) => ['oauth-app-save', accountId];
+const oauthAppFormId = (client?: OAuthClient) => `oauth-app-form-${client?.client_id ?? 'new'}`;
+
+/** Cancel and Register / Save, pinned at the sheet's bottom and tied to the form by id. */
+function OAuthAppSheetFooter({ accountId, client }: { accountId: string; client?: OAuthClient }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const sheet = useAccountHubSheet();
+  const pending = useIsMutating({ mutationKey: OAUTH_APP_MUTATION_KEY(accountId) }) > 0;
+  return (
+    // Cancel on the left edge, the commit action on the right.
+    <div className="flex w-full items-center justify-between gap-2">
+      <Button type="button" variant="outline-ghost" size="sm" onClick={sheet.close} disabled={pending}>
+        {tI18nComplete.raw('text19766ed6ccb2')}
+      </Button>
+      <Button type="submit" form={oauthAppFormId(client)} size="sm" disabled={pending} className="gap-1.5">
+        {pending ? <Loading className="size-3.5 shrink-0" /> : null}
+        {client ? tI18nComplete.raw('textdd0ae7a5cbcf') : tI18nComplete.raw('text02290f388fa8')}
+      </Button>
+    </div>
+  );
+}
+
+/** The table's "Redirect URIs" cell: the first URI's host, plus how many more. */
+export function redirectHostSummary(uris: string[]): string {
+  if (uris.length === 0) return '—';
+  let host = uris[0];
+  try {
+    host = new URL(uris[0]).host;
+  } catch {
+    // Not a URL the browser parses: show it whole rather than nothing.
+  }
+  return uris.length > 1 ? `${host} +${uris.length - 1}` : host;
+}
+
 function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback;
 }
@@ -189,8 +224,7 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
   const queryClient = useQueryClient();
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: OAUTH_CLIENTS_KEY(accountId) });
-  const [registerOpen, setRegisterOpen] = useState(false);
-  const [editing, setEditing] = useState<OAuthClient | null>(null);
+  const sheet = useAccountHubSheet();
   const [pending, setPending] = useState<PendingAction | null>(null);
   /** A rotated secret, shown once in its own modal after the confirm. */
   const [rotated, setRotated] = useState<CreatedOAuthClient | null>(null);
@@ -225,6 +259,30 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
   const scopesSupported = clientsQuery.data?.scopes_supported ?? Object.keys(SCOPE_HELP);
   const busy = deleteMutation.isPending || rotateMutation.isPending;
 
+  // Register and Edit open in the account hub's split sheet, beside the list.
+  // Keyed on the client so a switch from one app to another mounts a fresh form.
+  const openRegister = () =>
+    sheet.open({
+      title: tI18nComplete.raw('text26c880f0d774'),
+      description: tI18nComplete.raw('texte5c8b30df3c9'),
+      body: <OAuthAppSheetForm key="new" accountId={accountId} scopesSupported={scopesSupported} />,
+      footer: <OAuthAppSheetFooter accountId={accountId} />,
+    });
+  const openEdit = (client: OAuthClient) =>
+    sheet.open({
+      title: tI18nComplete('text2313fe21ea84', { name: client.name }),
+      description: tI18nComplete.raw('texte59a1d133be1'),
+      body: (
+        <OAuthAppSheetForm
+          key={client.client_id}
+          accountId={accountId}
+          scopesSupported={scopesSupported}
+          client={client}
+        />
+      ),
+      footer: <OAuthAppSheetFooter key={client.client_id} accountId={accountId} client={client} />,
+    });
+
   return (
     <section className="space-y-4">
       <SettingsSubsectionHeader
@@ -235,7 +293,7 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
             <code className="text-foreground font-mono">createKortixAuth</code>{' '}
             {tI18nComplete.raw('text75857a458999')}{' '}
             <code className="text-foreground font-mono">@kortix/sdk/server</code>.{' '}
-            <Link href="/docs/sdk/sign-in" className="text-foreground underline underline-offset-2">
+            <Link href="/docs/sdk/auth#sign-in-with-kortix" className="text-foreground underline underline-offset-2">
               {tI18nComplete.raw('text83b3b277abbf')}
             </Link>
             .
@@ -247,7 +305,7 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
               size="sm"
               variant="secondary"
               className="gap-1.5"
-              onClick={() => setRegisterOpen(true)}
+              onClick={() => openRegister()}
             >
               <PlusIcon className="size-4 shrink-0" />
               {tI18nComplete.raw('text02290f388fa8')}
@@ -276,7 +334,15 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
       ) : clients.length === 0 ? null : (
         // No apps, no chrome — same rule as the service account list above it:
         // the register action lives in the header where the eye already lands.
-        <AccessList>
+        <IamTable label={tI18nComplete.raw('textafff11a43d8f')}>
+          <IamTableHead>
+            <IamTableCell header>{tI18nComplete.raw('text0d04bfeb7d64')}</IamTableCell>
+            <IamTableCell header width="w-24">{tI18nComplete.raw('textbaaddf70fb5d')}</IamTableCell>
+            <IamTableCell header width="w-40">{tI18nComplete.raw('text721353f1b4eb')}</IamTableCell>
+            <IamTableCell header width="w-14" align="end">{tI18nComplete.raw('text0d5644ff52ce')}</IamTableCell>
+            <IamTableCell header width="w-20" align="end">{tI18nComplete.raw('textd70b9e24bca2')}</IamTableCell>
+            <IamTableCell width="w-7" />
+          </IamTableHead>
           {clients.map((client) => {
             const kebab: KebabItem[] = [
               {
@@ -294,7 +360,7 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
                     {
                       label: tI18nComplete.raw('textf8301e6fd45e'),
                       icon: <PencilSimpleIcon className="size-3.5 shrink-0" />,
-                      onSelect: () => setEditing(client),
+                      onSelect: () => openEdit(client),
                     },
                     ...(client.client_type === 'confidential'
                       ? [
@@ -316,67 +382,65 @@ export function OAuthAppsCard({ accountId, canManage }: OAuthAppsCardProps) {
                   ] satisfies KebabItem[])
                 : []),
             ];
+            const rowBusy = busy && pending?.client.client_id === client.client_id;
             return (
-              <AccessRow
-                key={client.client_id}
-                leading={<EntityAvatar icon={AppWindowIcon} label={client.name} size="sm" />}
-                title={client.name}
-                badges={
-                  <>
-                    <Badge variant={client.active ? 'success' : 'muted'} size="sm">
-                      {client.active ? 'Active' : 'Inactive'}
-                    </Badge>
-                    <Badge
-                      variant="outline"
-                      size="sm"
-                      title={
-                        client.client_type === 'confidential'
-                          ? tI18nComplete.raw('text41cb2b40561f')
-                          : tI18nComplete.raw('text4e7a78e97ff7')
-                      }
-                    >
-                      {CLIENT_TYPE_LABEL[client.client_type]}
-                    </Badge>
-                  </>
-                }
-                metaParts={[
-                  <code key="id" className="font-mono">
-                    {client.client_id}
-                  </code>,
-                  <span key="uris" title={client.redirect_uris.join('\n')}>
-                    {summarizeRedirectUris(client.redirect_uris)}
-                  </span>,
-                  <code key="scopes" className="font-mono">
-                    {client.scopes.length > 0
-                      ? client.scopes.join(' ')
-                      : tI18nComplete.raw('textae5b8724e862')}
-                  </code>,
-                  `Created ${relativeTime(client.created_at)}`,
-                ]}
-                kebab={kebab}
-                kebabLabel={tI18nComplete('text33da220b1a34', { value0: client.name })}
-                pending={busy && pending?.client.client_id === client.client_id}
-              />
+              <IamTableRow key={client.client_id} muted={!client.active}>
+                <IamTableCell>
+                  <EntityAvatar icon={AppWindowIcon} label={client.name} size="xs" />
+                  <span className={cn('truncate', client.active && 'font-medium')}>
+                    {client.name}
+                  </span>
+                  {client.active ? null : (
+                    <span className="text-muted-foreground shrink-0 text-xs">
+                      {tI18nComplete.raw('textca7981b46ecf')}
+                    </span>
+                  )}
+                </IamTableCell>
+                <IamTableCell
+                  width="w-24"
+                  className="text-muted-foreground"
+                >
+                  <span
+                    title={
+                      client.client_type === 'confidential'
+                        ? tI18nComplete.raw('text41cb2b40561f')
+                        : tI18nComplete.raw('text4e7a78e97ff7')
+                    }
+                  >
+                    {CLIENT_TYPE_LABEL[client.client_type]}
+                  </span>
+                </IamTableCell>
+                <IamTableCell width="w-40" className="text-muted-foreground">
+                  <span className="truncate" title={client.redirect_uris.join('\n')}>
+                    {redirectHostSummary(client.redirect_uris)}
+                  </span>
+                </IamTableCell>
+                <IamTableCell
+                  width="w-14"
+                  align="end"
+                  className="text-muted-foreground tabular-nums"
+                >
+                  <span title={client.scopes.join(' ')}>{client.scopes.length}</span>
+                </IamTableCell>
+                <IamTableCell width="w-20" align="end" className="text-muted-foreground">
+                  {relativeTime(client.created_at)}
+                </IamTableCell>
+                <IamTableCell width="w-7" align="end">
+                  {rowBusy ? (
+                    <Loading className="size-3.5" />
+                  ) : (
+                    <RowKebab
+                      items={kebab}
+                      label={tI18nComplete('text33da220b1a34', { value0: client.name })}
+                    />
+                  )}
+                </IamTableCell>
+              </IamTableRow>
             );
           })}
-        </AccessList>
+        </IamTable>
       )}
 
-      <OAuthAppDialog
-        accountId={accountId}
-        open={registerOpen}
-        onOpenChange={setRegisterOpen}
-        scopesSupported={scopesSupported}
-      />
-      <OAuthAppDialog
-        accountId={accountId}
-        open={editing !== null}
-        onOpenChange={(open) => {
-          if (!open) setEditing(null);
-        }}
-        scopesSupported={scopesSupported}
-        client={editing ?? undefined}
-      />
 
       <ConfirmDialog
         open={!!pending}
@@ -471,10 +535,8 @@ function SecretReveal({ client }: { client: CreatedOAuthClient }) {
   );
 }
 
-interface OAuthAppDialogProps {
+interface OAuthAppSheetFormProps {
   accountId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   scopesSupported: string[];
   /** Present → edit that client. Absent → register a new one. */
   client?: OAuthClient;
@@ -510,31 +572,19 @@ function initialForm(client: OAuthClient | undefined, scopesSupported: string[])
  * off. Every API rejection (`{ error }`) lands in the banner at the top of the
  * form, not in a toast, so it stays on screen beside the field it names.
  */
-function OAuthAppDialog({
-  accountId,
-  open,
-  onOpenChange,
-  scopesSupported,
-  client,
-}: OAuthAppDialogProps) {
+function OAuthAppSheetForm({ accountId, scopesSupported, client }: OAuthAppSheetFormProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const isEdit = client !== undefined;
-  // Keyed on the client so switching from one Edit to another re-seeds.
-  const [seededFor, setSeededFor] = useState<string | undefined>(client?.client_id);
+  const sheet = useAccountHubSheet();
+  // The owner keys this form on the client, so each app gets a fresh form.
   const [form, setForm] = useState<FormState>(() => initialForm(client, scopesSupported));
   const [formError, setFormError] = useState<string | null>(null);
-  const [created, setCreated] = useState<CreatedOAuthClient | null>(null);
-
-  if (seededFor !== client?.client_id) {
-    setSeededFor(client?.client_id);
-    setForm(initialForm(client, scopesSupported));
-    setFormError(null);
-  }
 
   const patch = (next: Partial<FormState>) => setForm((prev) => ({ ...prev, ...next }));
 
   const mutation = useMutation({
+    mutationKey: OAUTH_APP_MUTATION_KEY(accountId),
     mutationFn: async (input: CreateOAuthClientInput | UpdateOAuthClientInput) => {
       if (isEdit)
         return updateOAuthClient(accountId, client.client_id, input as UpdateOAuthClientInput);
@@ -544,10 +594,31 @@ function OAuthAppDialog({
       queryClient.invalidateQueries({ queryKey: OAUTH_CLIENTS_KEY(accountId) });
       if (isEdit) {
         successToast(tI18nComplete.raw('text99db90df9291'));
-        close();
+        sheet.close();
         return;
       }
-      setCreated(result as CreatedOAuthClient);
+      // From the mutation's own options, not a `mutate` callback: this still
+      // runs if the sheet was closed mid-request, and reopens it with the
+      // one-time secret instead of losing it.
+      const created = result as CreatedOAuthClient;
+      sheet.open({
+        title: tI18nComplete.raw('text72320149c3c2'),
+        description: (
+          <>
+            <strong>{created.name}</strong> {tI18nComplete.raw('text8e15f0dbfa86')}
+            {created.client_secret ? tI18nComplete.raw('text3f5966e76ae1') : ''}{' '}
+            {tI18nComplete.raw('texte2762471c9d7')}{' '}
+            <code className="font-mono">createKortixAuth</code>{' '}
+            {tI18nComplete.raw('texta45f266b33b5')}
+          </>
+        ),
+        body: <SecretReveal client={created} />,
+        footer: (
+          <Button type="button" size="sm" onClick={sheet.close}>
+            {tI18nComplete.raw('text11a6767d5674')}
+          </Button>
+        ),
+      });
     },
     onError: (err: Error) =>
       setFormError(
@@ -555,20 +626,10 @@ function OAuthAppDialog({
       ),
   });
 
-  function close() {
-    onOpenChange(false);
-    // Reset after the close animation so the form does not visibly blank out
-    // underneath the fading overlay.
-    setTimeout(() => {
-      setForm(initialForm(undefined, scopesSupported));
-      setFormError(null);
-      setCreated(null);
-    }, 200);
-  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (mutation.isPending || created) return;
+    if (mutation.isPending) return;
     const name = form.name.trim();
     if (!name) {
       setFormError('Give the app a name.');
@@ -614,217 +675,156 @@ function OAuthAppDialog({
   const fieldId = (suffix: string) => `oauth-app-${client?.client_id ?? 'new'}-${suffix}`;
 
   return (
-    <Modal
-      open={open}
-      onOpenChange={(next) => {
-        if (mutation.isPending) return;
-        if (!next) close();
-        else onOpenChange(true);
-      }}
-    >
-      <ModalContent className="lg:max-w-lg">
-        {created ? (
-          <>
-            <ModalHeader>
-              <ModalTitle>{tI18nComplete.raw('text72320149c3c2')}</ModalTitle>
-              <ModalDescription>
-                <strong>{created.name}</strong> {tI18nComplete.raw('text8e15f0dbfa86')}
-                {created.client_secret ? tI18nComplete.raw('text3f5966e76ae1') : ''}{' '}
-                {tI18nComplete.raw('texte2762471c9d7')}{' '}
-                <code className="font-mono">createKortixAuth</code>{' '}
-                {tI18nComplete.raw('texta45f266b33b5')}
-              </ModalDescription>
-            </ModalHeader>
-            <ModalBody>
-              <SecretReveal client={created} />
-            </ModalBody>
-            <ModalFooter>
-              <Button type="button" size="sm" onClick={close}>
-                {tI18nComplete.raw('text11a6767d5674')}
-              </Button>
-            </ModalFooter>
-          </>
-        ) : (
-          <>
-            <ModalHeader>
-              <ModalTitle>
-                {isEdit ? `Edit ${client.name}` : tI18nComplete.raw('text26c880f0d774')}
-              </ModalTitle>
-              <ModalDescription>
-                {isEdit
-                  ? tI18nComplete.raw('texte59a1d133be1')
-                  : tI18nComplete.raw('texte5c8b30df3c9')}
-              </ModalDescription>
-            </ModalHeader>
-            <form onSubmit={submit}>
-              <ModalBody className="max-h-[60vh] space-y-4 overflow-y-auto">
-                {formError ? (
-                  <InfoBanner tone="destructive" icon={WarningIcon}>
-                    {formError}
-                  </InfoBanner>
-                ) : null}
+    <form id={oauthAppFormId(client)} onSubmit={submit} className="space-y-4">
+        {formError ? (
+          <InfoBanner tone="destructive" icon={WarningIcon}>
+            {formError}
+          </InfoBanner>
+        ) : null}
 
-                <div className="space-y-1.5">
-                  <Label htmlFor={fieldId('name')}>{tI18nComplete.raw('textdcd1d5223f73')}</Label>
-                  <Input
-                    id={fieldId('name')}
-                    value={form.name}
-                    onChange={(event) => patch({ name: event.target.value })}
-                    placeholder={tI18nComplete.raw('texta53bcafb67d9')}
-                    disabled={mutation.isPending}
-                    maxLength={255}
-                    autoFocus
-                    variant="popover"
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    {tI18nComplete.raw('text13e8da46c7b1')}
-                  </p>
-                </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={fieldId('name')}>{tI18nComplete.raw('textdcd1d5223f73')}</Label>
+          <Input
+            id={fieldId('name')}
+            value={form.name}
+            onChange={(event) => patch({ name: event.target.value })}
+            placeholder={tI18nComplete.raw('texta53bcafb67d9')}
+            disabled={mutation.isPending}
+            maxLength={255}
+            required
+            autoFocus
+            variant="popover"
+          />
+          <p className="text-muted-foreground text-xs">
+            {tI18nComplete.raw('text13e8da46c7b1')}
+          </p>
+        </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor={fieldId('description')}>
-                    {tI18nComplete.raw('text526e0087cc3f')}{' '}
+        <div className="space-y-1.5">
+          <Label htmlFor={fieldId('description')}>
+            {tI18nComplete.raw('text526e0087cc3f')}{' '}
+            <span className="text-muted-foreground text-xs font-normal">
+              {tI18nComplete.raw('text0059798b7f70')}
+            </span>
+          </Label>
+          <Input
+            id={fieldId('description')}
+            value={form.description}
+            onChange={(event) => patch({ description: event.target.value })}
+            placeholder={tI18nComplete.raw('text0ca058a2bd7f')}
+            disabled={mutation.isPending}
+            maxLength={1024}
+            variant="popover"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor={fieldId('type')}>{tI18nComplete.raw('textbaaddf70fb5d')}</Label>
+          <Select
+            value={form.clientType}
+            onValueChange={(value) => patch({ clientType: value as OAuthClientType })}
+            disabled={mutation.isPending || isEdit}
+          >
+            <SelectTrigger id={fieldId('type')} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem
+                size="sm"
+                value="confidential"
+                description={tI18nComplete.raw('textceb733acfa16')}
+              >
+                {tI18nComplete.raw('texta3e83aee8605')}
+              </SelectItem>
+              <SelectItem
+                size="sm"
+                value="public"
+                description={tI18nComplete.raw('textdbbfc6cf8952')}
+              >
+                {tI18nComplete.raw('text591935b15b1c')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          {isEdit ? (
+            <p className="text-muted-foreground text-xs">
+              {tI18nComplete.raw('text854e6dd9d777')}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor={fieldId('redirect-uris')}>
+            {tI18nComplete.raw('text721353f1b4eb')}
+          </Label>
+          <Textarea
+            id={fieldId('redirect-uris')}
+            value={form.redirectUris}
+            onChange={(event) => patch({ redirectUris: event.target.value })}
+            placeholder={
+              'https://app.example.com/api/kortix/auth/callback\nhttp://localhost:3000/api/kortix/auth/callback'
+            }
+            disabled={mutation.isPending}
+            minHeight={72}
+            maxHeight={240}
+            className="font-mono text-xs"
+            spellCheck={false}
+          />
+          <p className="text-muted-foreground text-xs">
+            {tI18nComplete.raw('text8d49ce8a5936')}
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>{tI18nComplete.raw('text0d5644ff52ce')}</Label>
+          {/* The sidebar's Connect MCP / Connect your computer block: one
+              filled row per scope, a 1px seam between them, outer corners
+              rounded-md and inner corners rounded-sm. No border, no padding. */}
+          <div className="flex flex-col gap-px">
+            {scopesSupported.map((scope) => (
+              // The Checkbox's own label IS the row: one fill, one padding.
+              // Title over description; `items-start` + `mt-px` sits the 18px
+              // box on the title's 20px line.
+              // Its hover/checked tints are overridden so the row stays flat.
+              <Checkbox
+                key={scope}
+                checked={form.scopes.includes(scope)}
+                onCheckedChange={(checked) => toggleScope(scope, checked === true)}
+                disabled={mutation.isPending}
+                className="bg-hover hover:bg-hover has-data-[state=checked]:bg-hover has-data-[state=checked]:hover:bg-hover items-start rounded-sm px-2.5 py-2 first:rounded-t-md last:rounded-b-md [&>button]:mt-px"
+                label={
+                  <span className="flex min-w-0 flex-col">
+                    <span className="font-medium">{scope}</span>
                     <span className="text-muted-foreground text-xs font-normal">
-                      {tI18nComplete.raw('text0059798b7f70')}
+                      {SCOPE_HELP[scope] ?? scope}
                     </span>
-                  </Label>
-                  <Input
-                    id={fieldId('description')}
-                    value={form.description}
-                    onChange={(event) => patch({ description: event.target.value })}
-                    placeholder={tI18nComplete.raw('text0ca058a2bd7f')}
-                    disabled={mutation.isPending}
-                    maxLength={1024}
-                    variant="popover"
-                  />
-                </div>
+                  </span>
+                }
+              />
+            ))}
+          </div>
+          <p className="text-muted-foreground text-xs">
+            {tI18nComplete.raw('text9428545e3f14')}
+          </p>
+        </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor={fieldId('type')}>{tI18nComplete.raw('textbaaddf70fb5d')}</Label>
-                  <Select
-                    value={form.clientType}
-                    onValueChange={(value) => patch({ clientType: value as OAuthClientType })}
-                    disabled={mutation.isPending || isEdit}
-                  >
-                    <SelectTrigger id={fieldId('type')} className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem
-                        size="sm"
-                        value="confidential"
-                        description={tI18nComplete.raw('textceb733acfa16')}
-                      >
-                        {tI18nComplete.raw('texta3e83aee8605')}
-                      </SelectItem>
-                      <SelectItem
-                        size="sm"
-                        value="public"
-                        description={tI18nComplete.raw('textdbbfc6cf8952')}
-                      >
-                        {tI18nComplete.raw('text591935b15b1c')}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {isEdit ? (
-                    <p className="text-muted-foreground text-xs">
-                      {tI18nComplete.raw('text854e6dd9d777')}
-                    </p>
-                  ) : null}
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor={fieldId('redirect-uris')}>
-                    {tI18nComplete.raw('text721353f1b4eb')}
-                  </Label>
-                  <Textarea
-                    id={fieldId('redirect-uris')}
-                    value={form.redirectUris}
-                    onChange={(event) => patch({ redirectUris: event.target.value })}
-                    placeholder={
-                      'https://app.example.com/api/kortix/auth/callback\nhttp://localhost:3000/api/kortix/auth/callback'
-                    }
-                    disabled={mutation.isPending}
-                    minHeight={72}
-                    maxHeight={240}
-                    className="font-mono text-xs"
-                    spellCheck={false}
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    {tI18nComplete.raw('text8d49ce8a5936')}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label>{tI18nComplete.raw('text0d5644ff52ce')}</Label>
-                  <div className="rounded-md border p-1">
-                    {scopesSupported.map((scope) => (
-                      <Checkbox
-                        key={scope}
-                        checked={form.scopes.includes(scope)}
-                        onCheckedChange={(checked) => toggleScope(scope, checked === true)}
-                        disabled={mutation.isPending}
-                        label={
-                          <span className="flex min-w-0 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
-                            <code className="font-mono">{scope}</code>
-                            <span className="text-muted-foreground text-xs font-normal">
-                              {SCOPE_HELP[scope] ?? scope}
-                            </span>
-                          </span>
-                        }
-                      />
-                    ))}
-                  </div>
-                  <p className="text-muted-foreground text-xs">
-                    {tI18nComplete.raw('text9428545e3f14')}
-                  </p>
-                </div>
-
-                {isEdit ? (
-                  <div className="flex items-center justify-between gap-4 rounded-md border px-4 py-3">
-                    <div className="min-w-0 space-y-0.5">
-                      <Label htmlFor={fieldId('active')}>
-                        {tI18nComplete.raw('text92340695899b')}
-                      </Label>
-                      <p className="text-muted-foreground text-xs">
-                        {tI18nComplete.raw('text99f4941ae829')}
-                      </p>
-                    </div>
-                    <Switch
-                      id={fieldId('active')}
-                      checked={form.active}
-                      onCheckedChange={(checked) => patch({ active: checked })}
-                      disabled={mutation.isPending}
-                    />
-                  </div>
-                ) : null}
-              </ModalBody>
-              <ModalFooter className="sm:justify-between">
-                <Button
-                  type="button"
-                  variant="outline-ghost"
-                  size="sm"
-                  onClick={close}
-                  disabled={mutation.isPending}
-                >
-                  {tI18nComplete.raw('text19766ed6ccb2')}
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={!form.name.trim() || mutation.isPending}
-                  className="gap-1.5"
-                >
-                  {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                  {isEdit
-                    ? tI18nComplete.raw('textdd0ae7a5cbcf')
-                    : tI18nComplete.raw('text02290f388fa8')}
-                </Button>
-              </ModalFooter>
-            </form>
-          </>
-        )}
-      </ModalContent>
-    </Modal>
+        {isEdit ? (
+          <div className="flex items-center justify-between gap-4 rounded-md border px-4 py-3">
+            <div className="min-w-0 space-y-0.5">
+              <Label htmlFor={fieldId('active')}>
+                {tI18nComplete.raw('text92340695899b')}
+              </Label>
+              <p className="text-muted-foreground text-xs">
+                {tI18nComplete.raw('text99f4941ae829')}
+              </p>
+            </div>
+            <Switch
+              id={fieldId('active')}
+              checked={form.active}
+              onCheckedChange={(checked) => patch({ active: checked })}
+              disabled={mutation.isPending}
+            />
+          </div>
+        ) : null}
+    </form>
   );
 }

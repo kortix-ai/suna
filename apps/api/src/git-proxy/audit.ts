@@ -25,7 +25,10 @@ import type { GitPrincipal } from './ref-policy';
 import type { RefUpdate } from './receive-pack';
 import { isCreate, isDelete } from './receive-pack';
 import type { ProjectRow } from '../projects/lib/serializers';
+import { eq } from 'drizzle-orm';
+import { accountTokens } from '@kortix/db';
 import { loadTokenBinding } from '../iam/actor';
+import { db } from '../shared/db';
 import { agentPrincipalModeFor } from '../iam/agent-principal';
 import type { AuditActorType, AuditOutcome } from '../shared/audit';
 import { annotateAuditEvent, bindAuditPrincipal } from '../shared/audit-scope';
@@ -96,7 +99,21 @@ async function resolveGitPrincipalAttribution(
   projectId: string,
 ): Promise<AgentAuditAttribution | null> {
   if (principal.kind !== 'session') return null;
-  const binding = principal.tokenId ? await loadTokenBinding(principal.tokenId).catch(() => null) : null;
+  const tokenId = principal.tokenId;
+  // `on_behalf_of` changes per turn, so it is read fresh from the token row,
+  // never from the 15 s binding memo. This runs when the audit row is written,
+  // off the git request path.
+  const [binding, onBehalfOfUserId] = tokenId
+    ? await Promise.all([
+        loadTokenBinding(tokenId).catch(() => null),
+        db
+          .select({ onBehalfOfUserId: accountTokens.onBehalfOfUserId })
+          .from(accountTokens)
+          .where(eq(accountTokens.tokenId, tokenId))
+          .limit(1)
+          .then((rows) => rows[0]?.onBehalfOfUserId ?? null, () => null),
+      ])
+    : [null, null];
   const agentPrincipal = binding?.serviceAccountId
     ? await agentPrincipalModeFor(projectId, binding.agentGrant).catch(() => false)
     : false;
@@ -106,7 +123,7 @@ async function resolveGitPrincipalAttribution(
     agentName: binding?.agentGrant?.agent ?? null,
     agentPrincipal,
     tokenUserId: principal.userId ?? null,
-    onBehalfOfUserId: binding?.onBehalfOfUserId ?? null,
+    onBehalfOfUserId,
   });
 }
 

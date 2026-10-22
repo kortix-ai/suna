@@ -1,5 +1,7 @@
 /** Pairing a machine through the real device-code flow (TUN-*). */
+import { strict as assert } from "node:assert";
 import type { Client } from "../core/client";
+import { waitFor } from "../core/poll";
 
 /**
  * `POST /v1/tunnel/device-auth` (public, 5 per minute per client address).
@@ -45,4 +47,54 @@ export async function pair(
     connectionId: approved.json<any>().connectionId,
     token: poll.json<any>().token,
   };
+}
+
+/**
+ * A member's machines in both placements (KRTX-1722): one paired privately,
+ * which lives in their personal account and reaches the project through their
+ * private computer account, and one shared with the project, which joins the
+ * team account. Sharing needs the project's manager role.
+ */
+export async function pairBothPlacements(
+  anon: Client,
+  member: Client,
+  input: { projectId: string; name: (slug: string) => string },
+) {
+  const capabilities = ["filesystem"];
+  return {
+    personal: await pair(anon, member, { name: input.name("leaver-laptop"), projectId: input.projectId, capabilities }),
+    shared: await pair(anon, member, {
+      name: input.name("leaver-studio"),
+      projectId: input.projectId,
+      capabilities,
+      share: "project",
+    }),
+  };
+}
+
+/** One computer account of the project, as `client` lists it. */
+export async function projectComputerAccount(client: Client, projectId: string, connectionId: string) {
+  const r = await client.get("/v1/projects/:projectId/connections", { params: { projectId } });
+  r.status(200);
+  return r.json<any>().connections.find((c: any) => c.connection_id === connectionId);
+}
+
+/**
+ * The `member.offboarded` audit event of `userId` in the account: exactly one
+ * per offboarding (KRTX-1722). Audit writes are queued, so poll for it.
+ */
+export async function offboardingEvent(owner: Client, accountId: string, userId: string) {
+  const events = await waitFor(
+    async () => {
+      const r = await owner.get("/v1/accounts/:accountId/audit", {
+        params: { accountId },
+        query: { action: "member.offboarded" },
+      });
+      r.status(200);
+      return r.json<{ events: any[] }>().events.filter((e) => e.resource_id === userId);
+    },
+    { until: (rows) => rows.length > 0, timeoutMs: 30_000, intervalMs: 1_000, description: "the member.offboarded audit event" },
+  );
+  assert.equal(events.length, 1, `one member.offboarded event per offboarding: ${JSON.stringify(events)}`);
+  return events[0];
 }

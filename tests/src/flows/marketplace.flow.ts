@@ -58,6 +58,20 @@ flow('MKTP-1', { domain: 'marketplace', routes: ['GET /v1/marketplace/items'] },
       throw new Error(`expected "${KNOWN_ITEM_ID}" in query-filtered results`);
     }
   });
+  await ctx.step('the kortix source lists the Kortix Starter project and its skills badged to it; managed kortix-* system skills stay off the list', async () => {
+    const r = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/items', { query: { source: 'kortix' } });
+    r.status(200);
+    const items = r.json<{ items: Array<{ id: string; name: string; managedBy?: string; partOfProject?: { id: string; title: string } }> }>().items;
+    if (!items.some((it) => it.id === 'kortix-projects:starter')) throw new Error('the Kortix Starter project is missing');
+    const agentBrowser = items.find((it) => it.name === 'agent-browser');
+    if (agentBrowser?.partOfProject?.id !== 'kortix-projects:starter' || agentBrowser.partOfProject.title !== 'Kortix Starter') {
+      throw new Error(`agent-browser badge: ${JSON.stringify(agentBrowser)}`);
+    }
+    if (!items.some((it) => it.name === 'pdf')) throw new Error('the starter pdf skill is missing');
+    const hidden = ['kortix-computer', 'kortix-connectors', 'kortix-memory', 'kortix-slack', 'kortix-system', 'pty', 'web_search', 'kortix', 'harness-reflector'];
+    const leaked = items.filter((it) => it.managedBy === 'kortix' || hidden.includes(it.name)).map((it) => it.name);
+    if (leaked.length > 0) throw new Error(`managed or internal items listed: ${leaked.join(', ')}`);
+  });
 });
 
 // ─── MKTP-2 — GET /v1/marketplace/items/:id ───────────────────────────────
@@ -81,6 +95,16 @@ flow(
         .as(ctx.P.ANON)
         .get('/v1/marketplace/items/:id', { params: { id: 'nope-' + NOPE } });
       r.status(404);
+    });
+    await ctx.step('the Kortix Starter project detail lists its skills; a starter skill is badged back to it; a managed system skill → 404', async () => {
+      const project = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/items/:id', { params: { id: 'kortix-projects:starter' } });
+      project.status(200).body().has('$.name', 'starter').has('$.type', 'registry:project');
+      if (!project.json<{ dependencyItems: Array<{ name: string }> }>().dependencyItems.some((d) => d.name === 'pdf')) {
+        throw new Error('the starter project detail does not list pdf');
+      }
+      const skill = await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/items/:id', { params: { id: 'kortix-starter:agent-browser' } });
+      skill.status(200).body().has('$.name', 'agent-browser').has('$.type', 'registry:skill').has('$.partOfProject', { id: 'kortix-projects:starter', title: 'Kortix Starter' });
+      (await ctx.client.as(ctx.P.ANON).get('/v1/marketplace/items/:id', { params: { id: 'kortix-starter:kortix-system' } })).status(404);
     });
   },
 );

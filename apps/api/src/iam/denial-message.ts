@@ -46,6 +46,10 @@ export function denialReasonMessage(action: string, reason?: string): string | n
       // The session authorizes AS the agent's service account (an admin gave it
       // a standing role), so the launching user's role is irrelevant here.
       return `This agent runs as its own service account, and the role assigned to it does not allow "${action}". Ask an account admin to update that role.`;
+    case 'sso_required':
+      // The account enforces single sign-on for this email domain. The remedy
+      // is a new sign-in through the IdP, not a role change.
+      return 'Your organization requires single sign-on. Sign in with your company SSO to continue.';
     case 'token_out_of_scope':
       return 'This token is scoped to a single project and cannot be used for this request.';
     case 'resource_scope_insufficient':
@@ -134,6 +138,8 @@ const ACTION_VERBS: Record<string, string> = {
   'token.revoke': 'revoke account tokens',
   'token.personal.create': 'create your own personal access token',
   'token.personal.revoke': 'revoke your own personal access token',
+  'capture.read_all': 'read other members’ Kortix Capture recordings',
+  'capture.manage': 'manage Kortix Capture for this account',
   // Billing
   'billing.read': 'view billing',
   'billing.write': 'change billing',

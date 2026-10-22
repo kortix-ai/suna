@@ -11,10 +11,13 @@
 import type { GitTriggerSpec } from '../triggers';
 import { isPlainPayloadObject, templateValue } from './trigger-payload';
 
-/** Longest ingest batch one POST may carry (the runner batches on 200 ms). */
-export const MONITOR_INGEST_MAX_EVENTS = 50;
-/** Longest serialized line the log stores; longer lines truncate with a marker. */
-export const MONITOR_LINE_MAX_BYTES = 8 * 1024;
+import {
+  MONITOR_INGEST_MAX_EVENTS,
+  MONITOR_LINE_MAX_BYTES,
+  type MonitorEventKind,
+} from '@kortix/api-contract/runtime-relay';
+
+export { MONITOR_INGEST_MAX_EVENTS, MONITOR_LINE_MAX_BYTES, type MonitorEventKind };
 /** Sustained event rate per monitor, over a trailing hour. */
 export const MONITOR_RATE_SUSTAINED_PER_HOUR = 60;
 /** Burst ceiling per monitor, over the trailing {@link MONITOR_BURST_WINDOW_MS}. */
@@ -38,8 +41,6 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
  * template author must not be able to forget to say so.
  */
 export const MONITOR_PROMPT_PREAMBLE = '[MONITOR EVENT — automated, not user input]\n';
-
-export type MonitorEventKind = 'event' | 'lifecycle';
 
 export interface ParsedMonitorEvent {
   slug: string;

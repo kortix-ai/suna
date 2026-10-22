@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'bun:test'
-import type { Context, SimpleStreamOptions } from '@earendil-works/pi-ai'
+import { getCurrentTools, normalizeContext, type SimpleStreamOptions, type TranscriptContext } from '@earendil-works/pi-ai'
 import { withAgentSampling } from '@/harness/pi/sampling'
 
 type Call = { tools: number; options: SimpleStreamOptions | undefined }
 
 function recorder() {
   const calls: Call[] = []
-  const stream = ((_model: unknown, context: Context, options?: SimpleStreamOptions) => {
-    calls.push({ tools: context.tools?.length ?? 0, options })
+  const stream = ((_model: unknown, context: TranscriptContext, options?: SimpleStreamOptions) => {
+    calls.push({ tools: getCurrentTools(context.messages).length, options })
     return {} as never
   }) as never
   return { calls, stream }
@@ -16,7 +16,7 @@ function recorder() {
 const tool = { name: 'bash', description: '', parameters: {} } as never
 const user = { role: 'user', content: 'go', timestamp: 0 } as never
 const toolResult = { role: 'toolResult', toolCallId: 'c', toolName: 'bash', content: [], isError: false, timestamp: 0 } as never
-const context = (last: unknown): Context => ({ systemPrompt: '', messages: [last] as never, tools: [tool] })
+const context = (last: unknown): TranscriptContext => normalizeContext({ systemPrompt: '', messages: [last] as never, tools: [tool] })
 
 describe('withAgentSampling', () => {
   test('temperature and top_p ride on every request', () => {
@@ -46,7 +46,7 @@ describe('withAgentSampling', () => {
     const r = recorder()
     const fn = withAgentSampling(r.stream, () => ({ steps: 2 }))
     fn({} as never, context(user), undefined)
-    fn({} as never, { systemPrompt: '', messages: [user] }, undefined)
+    fn({} as never, normalizeContext({ systemPrompt: '', messages: [user] }), undefined)
     fn({} as never, context(toolResult), undefined)
     expect(r.calls.map((c) => c.options?.toolChoice)).toEqual([undefined, undefined, 'none'])
   })

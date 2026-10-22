@@ -658,6 +658,7 @@ export async function promptRuntimeMessage({
   }
 }
 
+/** @deprecated Use `useSession().send`: it posts to the durable prompt inbox. Removed in the next major. */
 export function useSendRuntimeMessage() {
   return useMutation({
     mutationFn: promptRuntimeMessage,

@@ -12,27 +12,28 @@
  * user's entries synchronously. (loadTokenProjectBinding is keyed by tokenId,
  * not userId — token bindings are immutable after mint, so it isn't registered.)
  *
+ * The bust crosses replicas over LISTEN/NOTIFY (`shared/pg-broadcast.ts`,
+ * channel `kortix_iam_cache_bust`): the writing replica busts its own memos at
+ * once and publishes; every replica busts its own memos on receipt. Without the
+ * LISTEN (a transaction pooler) the 15 s TTL is the backstop.
+ *
  * Registration is push-based (memos call register at module load) to avoid an
  * import cycle: this module must not import the engine/access modules that own
- * the memos. Process-local only — each API replica busts its own cache; that's
- * correct because each replica owns an independent in-memory Map.
+ * the memos. Each replica owns an independent in-memory Map.
  */
 
 import { eq } from 'drizzle-orm';
 import { accountGroupMembers, accountMemberships, roleAssignments } from '@kortix/db';
 import * as database from '../shared/db';
+import { onIamCacheBust, publishIamCacheBust } from '../shared/pg-broadcast';
+import {
+  type PrincipalScopedMemo,
+  principalScopedMemos,
+  registerPrincipalScopedMemo,
+} from '../shared/principal-scoped-memos';
 const { db } = database;
 
-interface PrincipalScopedMemo {
-  invalidateByPrefix: (prefix: string) => void;
-}
-
-const principalScopedMemos: PrincipalScopedMemo[] = [];
-
-/** A memo keyed `${userId}|…` registers so it can be busted per principal. */
-export function registerPrincipalScopedMemo(memo: PrincipalScopedMemo): void {
-  principalScopedMemos.push(memo);
-}
+export { registerPrincipalScopedMemo };
 
 // ── Project-scoped memos (keyed `${projectId}|…`) ──────────────────────────
 // The object-grant memo (`loadObjectGrants` in iam/authorize.ts) is keyed by
@@ -52,17 +53,38 @@ export function registerProjectScopedMemo(memo: PrincipalScopedMemo): void {
  *  mutation. Process-local (same contract as the principal-scoped busts). */
 export function invalidateIamCacheForProjectResources(projectId: string | null | undefined): void {
   if (!projectId) return;
+  bustProjectLocal(projectId);
+  publishIamCacheBust(`project:${projectId}`);
+}
+
+function bustProjectLocal(projectId: string): void {
   const prefix = `${projectId}|`;
   for (const memo of projectScopedMemos) memo.invalidateByPrefix(prefix);
 }
 
+function bustUserLocal(userId: string): void {
+  const prefix = `${userId}|`;
+  for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
+}
+
+// A bust announced by another replica (or echoed from this one; busting is idempotent).
+onIamCacheBust((payload) => {
+  const sep = payload.indexOf(':');
+  const id = payload.slice(sep + 1);
+  if (!id) return;
+  const kind = payload.slice(0, sep);
+  if (kind === 'user') bustUserLocal(id);
+  else if (kind === 'project') bustProjectLocal(id);
+});
+
 /** Drop every cached authz entry for one user across all registered memos. */
 export function invalidateIamCacheForUser(userId: string | null | undefined): void {
   if (!userId) return;
-  const prefix = `${userId}|`;
-  for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
+  bustUserLocal(userId);
+  publishIamCacheBust(`user:${userId}`);
   database.afterDbCommit?.(() => {
-    for (const memo of principalScopedMemos) memo.invalidateByPrefix(prefix);
+    bustUserLocal(userId);
+    publishIamCacheBust(`user:${userId}`);
   });
 }
 

@@ -1,5 +1,6 @@
 import { sessionLifecycleCommands } from '@kortix/db';
 import { type SQL, sql } from 'drizzle-orm';
+import type { SessionPromptDelivery, SessionPromptSteerFallback } from '@kortix/api-contract';
 
 /**
  * `payload.deliveryAttempt + 1`, merged into the payload expression given.
@@ -60,6 +61,14 @@ export interface PromptPartWire {
   filename?: string;
   name?: string;
   source?: unknown;
+  /**
+   * Harness-authored context, not the customer's words (KRTX-2597): the
+   * transcript renders a synthetic text part as a notice, never as a user
+   * bubble, and the SDK's turn model reads a prompt made only of these as an
+   * internal continuation turn. Only Kortix's own continuation paths set it
+   * (`interruptedTurnContinuationParts`, the agent-server's auto-resume).
+   */
+  synthetic?: boolean;
 }
 
 /** The per-prompt picks the producer captured at submit time. Applied verbatim
@@ -84,6 +93,16 @@ export interface QueuedContinueSessionPayload {
    *  dead-letter alert so "which automation lost its prompt" is answerable
    *  from the log line alone. */
   triggerSlug?: string | null;
+  /** Allow-listed env applied before delivery (email turns on connector MCP). */
+  opencodeEnv?: Record<string, string | null>;
+  /**
+   * Written by `deliverThroughQueue` for a producer that used to call
+   * `continueSession` directly (a channel reply, a question answer). Two things
+   * keep that call's behaviour: admission does not hold it behind a live turn
+   * (a Slack reply mid-turn joins the turn whose handle streams its answer),
+   * and a dead-letter does not park the session.
+   */
+  directFollowUp?: boolean;
 
   // ── Prompt-inbox fields. Absent on every row enqueued before the inbox
   //    existed, which is why every reader below falls back to `text`.
@@ -139,6 +158,13 @@ export interface QueuedContinueSessionPayload {
   /** How many times a PROVEN-abandoned delivery has been requeued. Capped by
    *  `MAX_PROMPT_REDELIVERIES`. */
   redeliveries?: number;
+  /** The last requeue proved a runtime loss nobody asked for, so the drain
+   *  continues a turn it cut short (`findInterruptedTurn`). Written by every
+   *  `requeueAbandonedPrompt`. */
+  resumeIfInterrupted?: boolean;
+  /** The turn token this prompt continues. Its delivery marks that turn
+   *  resumed in the ledger (`markTurnResumed`). */
+  resumesTurn?: string;
   /** How many times this row has already been POSTed to OpenCode. Suffixes the
    *  delivery's idempotency key — see `withNextDeliveryAttempt`. */
   deliveryAttempt?: number;
@@ -161,6 +187,15 @@ export interface QueuedContinueSessionPayload {
    *  POSTs race (boot shell vs chat during the crossfade). */
   clientSentAtMs?: number;
   placement?: 'transcript' | 'composer';
+  /**
+   * How the prompt reaches a running turn (`SessionPromptDelivery`). Absent on
+   * rows from before steering: `placement` implies it. `placement` is stored
+   * beside it, derived (`interrupt` → `transcript`, else `composer`), so an
+   * older API task treats a `steer` row as a Queue List row.
+   */
+  delivery?: SessionPromptDelivery;
+  /** Why a `steer` row went out as `queue` instead. Written once, with `delivery: 'queue'`. */
+  steerFallback?: SessionPromptSteerFallback;
   parts?: PromptPartWire[];
   overrides?: PromptOverridesWire;
   /** The row's `actor_user_id` is the person who sent it — see
@@ -170,6 +205,11 @@ export interface QueuedContinueSessionPayload {
   /** The Kortix session whose agent sent this prompt. Absent when a person
    *  sent it. Set by the server from the caller's credential, never the body. */
   authorSessionId?: string;
+  /** The sender was the session owner or a project manager when they sent
+   *  this, so as a Quick Queue row it may end ANY running turn. Without it the
+   *  row ends only a turn its own sender prompted (`turn-stop-authority.ts`).
+   *  Absent on rows from before the rule. */
+  mayStopAnyTurn?: boolean;
   /** Deliver as OpenCode `noReply`: the message joins the transcript and no
    *  turn starts. The first message of a conversation with people. */
   noReply?: boolean;

@@ -26,13 +26,12 @@
  * {@link maxWireIdClock}. `tests/spec/wire-message-id.vectors.json` pins the
  * behavior.
  *
- * WHAT IS NOT HERE. Three other places touch the clock, each on purpose:
- *  - `apps/kortix-sandbox-agent-server/src/harness/pi/message-id.ts` is the one
- *    remaining COPY: it mints the pi harness's reply ids. kortixd is a
- *    standalone compiled binary with no workspace dependencies. The copy
- *    orders on the ring through its own `messageIdClockDelta`, and
- *    `pi-message-id.test.ts` runs this file's regex and the golden mint and
- *    `delta` vectors against it. It mints with no backdate, at the box clock.
+ * kortixd bundles this file too: the pi harness mints its reply ids with
+ * `mintWireMessageIdAbove` (`backdateMs: 0`, at the box clock), reaching it
+ * through a tsconfig path because the daemon is a standalone binary. Keep the
+ * file import-free (the test below enforces it).
+ *
+ * WHAT IS NOT HERE. Two other places touch the clock, each on purpose:
  *  - `./wire-id-unwrap` (internal, not exported) builds on the constants here:
  *    `core/turns/grouping.ts` orders messages for display on an UNWRAPPED
  *    clock anchored on `time.created`.

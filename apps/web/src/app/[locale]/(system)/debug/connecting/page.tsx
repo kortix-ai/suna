@@ -184,28 +184,26 @@ function renderVariant(
 
   switch (variant) {
     case 'connecting':
-      return <ConnectingScreen forceConnecting labelOverride="sandbox-83e1c69c-3" />;
+      return <ConnectingScreen labelOverride="sandbox-83e1c69c-3" />;
     case 'connecting-with-title':
       return (
         <ConnectingScreen
-          forceConnecting
           title={tHardcodedUi.raw('appDebugConnectingPage.line171JsxAttrTitleOpeningWorkspace')}
           labelOverride="sandbox-83e1c69c-3"
         />
       );
     case 'connecting-stage-auth':
-      return <ConnectingScreen forceConnecting overrideStage={'auth' as Stage} />;
+      return <ConnectingScreen overrideStage={'auth' as Stage} />;
     case 'connecting-stage-routing':
-      return <ConnectingScreen forceConnecting overrideStage={'routing' as Stage} />;
+      return <ConnectingScreen overrideStage={'routing' as Stage} />;
     case 'connecting-stage-reaching':
-      return <ConnectingScreen forceConnecting overrideStage={'reaching' as Stage} />;
+      return <ConnectingScreen overrideStage={'reaching' as Stage} />;
     case 'connecting-stage-restoring':
-      return <ConnectingScreen forceConnecting overrideStage={'restoring' as Stage} />;
+      return <ConnectingScreen overrideStage={'restoring' as Stage} />;
 
     case 'minimal-signing-in':
       return (
         <ConnectingScreen
-          forceConnecting
           minimal
           title={tHardcodedUi.raw('appDebugConnectingPage.line185JsxAttrTitleSigningIn')}
         />
@@ -213,13 +211,12 @@ function renderVariant(
     case 'minimal-authorizing':
       return (
         <ConnectingScreen
-          forceConnecting
           minimal
           title={tHardcodedUi.raw('appCliAuthorizePage.line249JsxTextAuthorizing')}
         />
       );
     case 'minimal-no-title':
-      return <ConnectingScreen forceConnecting minimal />;
+      return <ConnectingScreen minimal />;
 
     case 'provisioning-0':
       return (
@@ -309,11 +306,8 @@ function renderVariant(
       return <ConnectingScreen stopped={{ name: 'sandbox-83e1c69c-3' }} />;
 
     case 'unreachable':
-      // Simulate unreachable by rendering with provisioning? No — we need the
-      // store-driven view. The component reads from the sandbox connection
-      // store for that. We approximate by synthesizing a labelOverride and
-      // forcing the error view with a connection-flavored message, since
-      // touching the store here would affect the real app.
+      // The screen has no unreachable mode of its own: an unreachable
+      // workspace renders as the error view with a connection message.
       return (
         <ConnectingScreen
           labelOverride="sandbox-83e1c69c-3"

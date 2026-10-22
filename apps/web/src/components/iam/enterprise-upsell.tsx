@@ -3,33 +3,34 @@
 import { useTranslations } from '@/i18n/use-translations';
 // Upsell state for the enterprise-gated IAM surfaces (Audit, SAML SSO +
 // SCIM). Non-entitled accounts keep the tab/section visible for
-// discoverability, but its content is this card: what the feature does, and a
-// "Request a demo" CTA that opens the demo-request modal directly (no detour to
-// the marketing page). Mirrors the server-side gate — the create/update routes
-// 402 without the entitlement (requireEntitlement), so we never render controls
-// the backend would reject.
+// discoverability, but its content is this card: what the feature does, and
+// how to get it. An owner or admin turns on the Enterprise demo in one click
+// (the features switch on at once, sales is told); anyone may talk to sales in
+// one click, without a form. Mirrors the server-side gate: the create/update
+// routes 402 without the entitlement (requireEntitlement), so we never render
+// controls the backend would reject.
 //
-// Roles is NOT one of them and never was: `GET .../iam/roles` carries no
-// entitlement check, so the built-in roles are free content and `RolesTab`
-// gates only its own New role / Edit / Duplicate controls, with an inline
-// `InfoBanner` carrying `RBAC_UPSELL_MESSAGE`. The `roles` copy variant this
-// map used to hold was written but never rendered anywhere — deleted
-// 2026-08-18 rather than left as a second, contradictory gating story.
+// Roles joined them on 2026-10-13 (Jay): an account without the `rbac`
+// entitlement sees this card instead of the read-only built-in role list,
+// the disabled New role button and an info banner. One gated state, the
+// same on every Enterprise pane.
+//
+// `EnterpriseBadge` is the one plan tag: no lock glyph, a calm blue tint,
+// sentence-case sans text (the base `Badge` is mono uppercase).
 
-import { CheckIcon as Check, LockIcon as Lock } from '@phosphor-icons/react';
+import { CheckIcon as Check } from '@phosphor-icons/react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { useRequestDemo } from '@/features/contact/request-demo-provider';
-import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { useEnterpriseDemo, useTalkToSales } from '@/features/billing/use-enterprise-sales';
+import { useAccountState } from '@kortix/ui/internal/billing/index';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
+import { canManageBilling } from '@kortix/sdk';
 
-// The marketing enterprise page. CTAs no longer navigate here — they open the
-// in-app demo-request modal — but keep the constant exported for any surface
-// that still wants to link out.
-export const ENTERPRISE_PAGE_URL = 'https://kortix.com/enterprise';
-
-type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding';
+type UpsellFeature = 'groups' | 'audit' | 'identity' | 'branding' | 'roles';
 
 const FEATURE_COPY: Record<
   UpsellFeature,
@@ -69,6 +70,16 @@ const FEATURE_COPY: Record<
       'SCIM keeps users and groups in sync, including offboarding',
     ],
   },
+  roles: {
+    title: 'Custom roles are an Enterprise feature',
+    blurb:
+      'Define roles of your own — pick exactly what a member may view and change — and hand them out from Members and Projects like the built-in ones.',
+    points: [
+      'Start from a built-in role and remove what you do not need',
+      'Assign a custom role on the account or on one project',
+      'See every capability a role grants before you assign it',
+    ],
+  },
   branding: {
     title: 'Branding is an Enterprise feature',
     blurb:
@@ -81,26 +92,38 @@ const FEATURE_COPY: Record<
   },
 };
 
-interface EnterpriseUpsellProps {
-  feature: UpsellFeature;
+/** The plan tag for an Enterprise-only surface. No lock: the word is the signal. */
+export function EnterpriseBadge({ className }: { className?: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <Badge variant="info" size="sm" className={cn('font-sans tracking-normal', className)}>
+      {tI18nComplete.raw('text3fbe5ed156f1')}
+    </Badge>
+  );
 }
 
-export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
+interface EnterpriseUpsellProps {
+  feature: UpsellFeature;
+  accountId: string;
+}
+
+export function EnterpriseUpsell({ feature, accountId }: EnterpriseUpsellProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const t = useTranslations('billing.access');
   const copy = localizeUiCatalog(FEATURE_COPY, tI18nComplete, APP_REGISTRY_TRANSLATION_KEYS)[
     feature
   ];
-  const openDemo = useRequestDemo();
+  // Turning on the demo needs `billing.write` (owners and admins).
+  const manager = canManageBilling(useAccountState({ accountId }).data);
+  const demo = useEnterpriseDemo(accountId);
+  const sales = useTalkToSales(accountId);
 
   return (
     <section className="bg-popover rounded-md border">
       <div className="space-y-3 px-4 py-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="space-y-1.5">
+          <EnterpriseBadge />
           <h3 className="text-foreground text-sm font-medium">{copy.title}</h3>
-          <Badge variant="kortix" size="sm">
-            <Lock />
-            {tI18nComplete.raw('text3fbe5ed156f1')}
-          </Badge>
         </div>
         <p className="text-muted-foreground max-w-xl text-sm">{copy.blurb}</p>
         <ul className="space-y-1.5">
@@ -113,14 +136,25 @@ export function EnterpriseUpsell({ feature }: EnterpriseUpsellProps) {
         </ul>
       </div>
       <div className="border-border flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textc7bad0051b8a')}</p>
-        <Button
-          size="sm"
-          className="shrink-0"
-          onClick={() => openDemo({ source: `accounts-${feature}` })}
-        >
-          {tI18nComplete.raw('text1af2ef8f1409')}
-        </Button>
+        <p className="text-muted-foreground text-xs">
+          {manager ? t('upsellDemoHint') : t('upsellAskManager')}
+        </p>
+        <span className="flex shrink-0 flex-wrap gap-2">
+          <Button size="sm" variant="outline" disabled={sales.isPending} onClick={sales.talk}>
+            {t('talkToSales')}
+          </Button>
+          {manager ? (
+            <Button
+              size="sm"
+              className="gap-1.5"
+              disabled={demo.isPending}
+              onClick={() => demo.set(true)}
+            >
+              {demo.isPending ? <Loading className="size-4 shrink-0" /> : null}
+              {t('demoTurnOnEnterprise')}
+            </Button>
+          ) : null}
+        </span>
       </div>
     </section>
   );

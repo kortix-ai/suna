@@ -43,6 +43,8 @@ describe('platform meta agent', () => {
     expect(config.agents[0]).toMatchObject({
       name: 'meta',
       path: '/workspace/AGENTS.md',
+      // Platform-owned: hosts render it read-only and never open the editor.
+      platform: true,
       scope: {
         env: [],
         connectors: [],
@@ -57,7 +59,7 @@ describe('platform meta agent', () => {
     expect(JSON.parse(buildPlatformMetaOpenCodeConfig())).toEqual({
       agent: {
         meta: {
-          description: 'Starts specialized Kortix sessions and coordinates their work.',
+          description: 'Runs your other agents for you. Hands every task to the right session.',
           mode: 'primary',
           prompt:
             'Follow /workspace/AGENTS.md. Coordinate work through the Kortix CLI. You are the only coordinator: spawn specialized sessions to do the work, give each one bounded task via --prompt, and never ask a session to spawn further sessions.',

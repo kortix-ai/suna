@@ -15,8 +15,9 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, desc, gt, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
+import { eq, and, desc, gt, gte, inArray, isNull, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { anyAccountMembershipOf } from '../iam/membership-read';
 import { hashSecretKey, randomAlphanumeric, verifySecretKey } from '../shared/crypto';
 import { hashSecretKeyAsync } from '../shared/token-hash';
 import { supabaseAuth } from '../middleware/auth';
@@ -28,70 +29,51 @@ import {
   oauthAccessTokens,
   oauthConsents,
   oauthRefreshTokens,
-  accountMembers,
 } from '@kortix/db';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import { isMcpResource, oauthAuthorizationServerMetadata, oauthIssuer } from './discovery';
 import { createOAuthClient, normalizeRedirectUris, OAuthClientInputError } from '../repositories/oauth-clients';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
-import { requestClientKey } from '../shared/client-ip';
-import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE } from './access-token';
+import { requestClientKey } from '../middleware/client-ip';
+import { isOAuthAccessToken, isOAuthRefreshToken, isOAuthScope, OAUTH_SCOPE_EMAIL, OAUTH_SCOPE_KORTIX, OAUTH_SCOPE_PROFILE, validateOAuthAccessToken } from './access-token';
 import { isUuid } from '../shared/validate';
 import { actsAsFullIdentity } from '../accounts/core/tokens';
 import { actorOf } from '../iam/actor';
 import { resolveAccountId } from '../shared/resolve-account';
+import { bearerToken } from '../shared/bearer-token';
 
-// ─── Rate Limiter (in-memory, per client_id) ────────────────────────────────
+// ─── Rate Limiter (per client_id) ───────────────────────────────────────────
 
-const TOKEN_RATE_LIMIT = 20;
-const TOKEN_RATE_WINDOW_MS = 60_000;
-const tokenRateMap = new Map<string, number[]>();
+// replica-local: the bucket lives in this process, so the fleet allows
+// 20/min × replicas. It stops runaway clients; it does not meter a quota.
+const tokenRateLimiter = new TokenBucketRateLimiter('oauth_token');
 
 function checkTokenRateLimit(clientId: string): boolean {
-  const now = Date.now();
-  const timestamps = tokenRateMap.get(clientId) ?? [];
-  const recent = timestamps.filter((t) => now - t < TOKEN_RATE_WINDOW_MS);
-  if (recent.length >= TOKEN_RATE_LIMIT) {
-    tokenRateMap.set(clientId, recent);
-    return false;
-  }
-  recent.push(now);
-  tokenRateMap.set(clientId, recent);
-  return true;
+  return tokenRateLimiter.check(clientId, { limit: 20, windowMs: 60_000 }).allowed;
 }
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, timestamps] of tokenRateMap) {
-    const recent = timestamps.filter((t) => now - t < TOKEN_RATE_WINDOW_MS);
-    if (recent.length === 0) tokenRateMap.delete(key);
-    else tokenRateMap.set(key, recent);
-  }
-}, 5 * 60_000).unref?.();
 
 // ─── OAuth Access Token Middleware (userinfo only) ───────────────────────────
 
 async function oauthTokenAuth(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = bearerToken(authHeader);
+  if (token === null) {
     throw new HTTPException(401, { message: 'Missing or invalid Authorization header' });
   }
-  const token = authHeader.slice(7);
   if (!token) throw new HTTPException(401, { message: 'Missing token' });
 
-  const tokenHash = await hashSecretKeyAsync(token);
-  const [row] = await db
-    .select()
-    .from(oauthAccessTokens)
-    .where(and(eq(oauthAccessTokens.tokenHash, tokenHash), isNull(oauthAccessTokens.revokedAt)))
-    .limit(1);
-  if (!row) throw new HTTPException(401, { message: 'Invalid access token' });
-  if (row.expiresAt < new Date()) throw new HTTPException(401, { message: 'Access token expired' });
+  // One validator: the canonical access-token path (client-active rejection, markTokenValidated).
+  const v = await validateOAuthAccessToken(token);
+  if (!v.isValid) {
+    // This route keeps the 401 messages it has always returned; the inactive client is the validator's verdict.
+    const message = v.error === 'OAuth access token expired' ? 'Access token expired' : v.error === 'OAuth client is inactive' ? v.error : 'Invalid access token';
+    throw new HTTPException(401, { message });
+  }
 
-  c.set('oauthUserId', row.userId);
-  c.set('oauthAccountId', row.accountId);
-  c.set('oauthClientId', row.clientId);
-  c.set('oauthScopes', row.scopes ?? []);
+  c.set('oauthUserId', v.userId);
+  c.set('oauthAccountId', v.accountId);
+  c.set('oauthClientId', v.clientId);
+  c.set('oauthScopes', v.scopes ?? []);
   await next();
 }
 
@@ -592,11 +574,7 @@ oauthApp.openapi(
     }
 
     const userId = (c as any).get('userId') as string;
-    const [membership] = await db
-      .select({ accountId: accountMembers.accountId })
-      .from(accountMembers)
-      .where(eq(accountMembers.userId, userId))
-      .limit(1);
+    const [membership] = await anyAccountMembershipOf(userId);
     const accountId = membership?.accountId ?? userId;
 
     const code = generateAuthCode();
@@ -634,7 +612,7 @@ function redirectTarget(redirectUri: string): string {
   return url.protocol === 'http:' || url.protocol === 'https:' ? url.host : url.protocol;
 }
 
-// ponytail: per-instance bucket; a shared store if registration spam spans instances.
+// replica-local: per-instance bucket; a shared store if registration spam spans instances.
 const registerLimiter = new TokenBucketRateLimiter('oauth_register');
 const REGISTER_POLICY = { limit: 30, windowMs: 60 * 60 * 1000 };
 

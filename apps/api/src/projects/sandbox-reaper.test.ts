@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionEnvironments, sessionSandboxes } from '@kortix/db';
+import { appRuntimes, projectMonitorBoxes, projectSessions, sandboxComputeSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../billing/services/compute-metering';
 import * as realProviders from '../platform/providers';
+import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 import { mockConfigModule } from './reaping/test-support/mock-config';
 import { __resetProbeBackoffForTests } from './reaping/box-reaper';
 
 // ── mock state ──────────────────────────────────────────────────────────────
 let candidates: any[] = [];
 let appRuntimeKeepRows: any[] = [];
-let environmentKeepRows: any[] = [];
 let monitorKeepRows: any[] = [];
 let freshReference = async (_provider: string, _externalId: string): Promise<boolean> => false;
 mock.module('./reaping/orphan-box-references', () => ({
@@ -24,7 +24,7 @@ let stopErrorByExternal: Record<string, Error> = {};
 let stops: string[] = [];
 let stopsByProvider: Array<{ provider: string; externalId: string }> = [];
 let managedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
-let e2bManagedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
+let platinumManagedBoxes: Array<{ externalId: string; createdAt: Date | null }> = [];
 let cacheInvalidations: string[] = [];
 let pausedCompute: string[] = [];
 let endedCompute: string[] = [];
@@ -55,6 +55,13 @@ let daemonTurnEndBySandbox: Record<string, 'completed' | 'failed' | 'abandoned'>
 /** The daemon's `turn_orphaned_prompt`: a user message on record with nothing
  *  answering it. Evidence about the PROMPT, not about the turn. */
 let orphanedPromptByToken: Record<string, boolean> = {};
+/** What `/kortix/runtime/state` says the turn on each runtime conversation waits on. */
+let turnWaitingByRuntimeSession: Record<string, 'permission' | 'question' | 'unknown'> = {};
+/** Every runtime conversation the pass asked about. */
+let turnWaitingCalls: string[] = [];
+/** Sessions nobody attends: a cron, schedule or trigger run, or a worker session. */
+let unattendedBySession: Record<string, boolean> = {};
+let shortenedDeadlines: Array<{ sessionId: string; graceMs: number | undefined }> = [];
 let deliveringTurnRecoveryCalls: Array<{
   sandboxId: string;
   token: string;
@@ -76,6 +83,7 @@ let unconfirmedTurnDrips: string[] = [];
 // it.
 let clearedTurnReasons: Array<string | undefined> = [];
 let clearedTurnCauses: Array<string | null> = [];
+let clearedTurnPastDeadlineOnly: boolean[] = [];
 let ledgerSettleStatements: string[] = [];
 let huskFinalizeCalls: Array<{
   sandboxId: string;
@@ -205,7 +213,7 @@ const visitStamps = () => updateCalls.filter(isVisitStamp);
 const reaperConfigModule = mockConfigModule({
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15,
   KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES: 5,
-  ALLOWED_SANDBOX_PROVIDERS: ['daytona', 'e2b'],
+  ALLOWED_SANDBOX_PROVIDERS: ['platinum', 'daytona'],
 });
 const reaperConfig = reaperConfigModule.config as Record<string, unknown>;
 mock.module('../config', () => reaperConfigModule);
@@ -268,8 +276,6 @@ mock.module('../shared/db', () => ({
                 ? selectedSandboxRows
                 : table === appRuntimes
                   ? appRuntimeKeepRows
-                  : table === sessionEnvironments
-                    ? environmentKeepRows
                     : table === projectMonitorBoxes
                       ? monitorKeepRows
                   : table === sandboxComputeSessions
@@ -349,12 +355,13 @@ mock.module('../platform/providers', () => ({
       const err = lifecycleRenewErrorByExternal[externalId];
       if (err) throw err;
     },
-    listManagedRunningSandboxes: async () => (name === 'e2b' ? e2bManagedBoxes : managedBoxes),
+    listManagedRunningSandboxes: async () => (name === 'platinum' ? platinumManagedBoxes : managedBoxes),
   }),
 }));
 
-mock.module('../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
+mock.module('../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));
@@ -386,7 +393,6 @@ const {
   reconcileOrphanComputeSessions,
   reapOrphanProviderBoxes,
   reconcileStuckActiveSessions,
-  REAP_BATCH_SIZE,
   observeSandboxTurn,
 } = sandboxReaper;
 
@@ -439,7 +445,9 @@ const reapAndReconcileSandboxes = (
       _graceMs?: number,
       reason?: string,
       cause?: { name: string | null } | null,
+      onlyPastDeadline?: boolean,
     ) => {
+      clearedTurnPastDeadlineOnly.push(onlyPastDeadline === true);
       clearedTurnCalls.push({
         sandboxId,
         token,
@@ -476,6 +484,14 @@ const reapAndReconcileSandboxes = (
       promotedQueueSessions.push(sessionId);
       return `prompt:${sessionId}`;
     },
+    observeTurnWaiting: async (_externalId: string, runtimeSessionId: string) => {
+      turnWaitingCalls.push(runtimeSessionId);
+      return turnWaitingByRuntimeSession[runtimeSessionId] ?? 'none';
+    },
+    sessionIsUnattended: async (sessionId: string) => unattendedBySession[sessionId] ?? false,
+    shortenSandboxDeadline: async (sessionId: string, graceMs?: number) => {
+      shortenedDeadlines.push({ sessionId, graceMs });
+    },
     drainSessionLifecycleQueue: async (input: { idempotencyKey?: string }) => {
       if (input.idempotencyKey) targetedQueueDrains.push(input.idempotencyKey);
       return { claimed: 1, completed: 1, failed: 0 };
@@ -487,7 +503,6 @@ const HOUR = 3_600_000;
 beforeEach(() => {
   candidates = [];
   appRuntimeKeepRows = [];
-  environmentKeepRows = [];
   monitorKeepRows = [];
   freshReference = async () => false;
   statusByExternal = {};
@@ -495,7 +510,7 @@ beforeEach(() => {
   stops = [];
   stopsByProvider = [];
   managedBoxes = [];
-  e2bManagedBoxes = [];
+  platinumManagedBoxes = [];
   cacheInvalidations = [];
   pausedCompute = [];
   endedCompute = [];
@@ -516,11 +531,16 @@ beforeEach(() => {
   daemonAnsweredByToken = {};
   daemonTurnEndBySandbox = {};
   orphanedPromptByToken = {};
+  turnWaitingByRuntimeSession = {};
+  turnWaitingCalls = [];
+  unattendedBySession = {};
+  shortenedDeadlines = [];
   deliveringTurnRecoveryCalls = [];
   clearedTurnCalls = [];
   promptRedeliveries = [];
   clearedTurnReasons = [];
   clearedTurnCauses = [];
+  clearedTurnPastDeadlineOnly = [];
   unconfirmedTurnDrips = [];
   __resetProbeBackoffForTests();
   ledgerSettleStatements = [];
@@ -1033,6 +1053,135 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(r.stopped).toBe(0);
   });
 
+  // KRTX-1739. The daemon answers `turn_in_flight: true` while a turn waits on a
+  // permission ask or a question, so each pass renewed four more hours until the
+  // 24 h ceiling. Prod, 7 days to 2026-10-08: 70 turns ran to that ceiling, 1,680
+  // box-hours, most of them cron runs that hit an ask 0.4 min in with nobody there.
+  describe('a turn that waits on a person renews nothing', () => {
+    const MIN = 60_000;
+    const waitingRow = (over: Partial<any> = {}, startedMinutesAgo = 10) =>
+      candidate({
+        deadlineAt: new Date(NOW.getTime() + 4 * HOUR),
+        metadata: {
+          activeTurns: {
+            'turn-token': {
+              token: 'turn-token',
+              state: 'active',
+              runtimeSessionId: 'ses_root',
+              opencodeSessionId: 'ses_root',
+              messageId: 'msg_turn_1',
+              startedAtMs: NOW.getTime() - startedMinutesAgo * MIN,
+            },
+          },
+        },
+        ...over,
+      });
+    beforeEach(() => {
+      statusByExternal['ext-1'] = 'running';
+      turnObservationByToken['turn-token'] = 'active';
+      activeTurnRenewalBySandbox['sb-1'] = 'renewed';
+    });
+
+    test('an unattended run on a permission ask: no renewal, and the deadline comes in to 30 minutes', async () => {
+      candidates = [waitingRow()];
+      turnWaitingByRuntimeSession['ses_root'] = 'permission';
+      unattendedBySession['sess-1'] = true;
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(turnWaitingCalls).toEqual(['ses_root']);
+      expect(activeTurnRenewalCalls).toEqual([]);
+      expect(shortenedDeadlines).toEqual([{ sessionId: 'sess-1', graceMs: 30 * MIN }]);
+      expect(clearedTurnCalls).toEqual([]);
+      expect(r.stopped).toBe(0);
+      // The provider's own timer still follows the Kortix deadline, which has not passed.
+      expect(timeoutRenewals).toEqual([{ provider: 'daytona', externalId: 'ext-1' }]);
+    });
+
+    test("a person's session on a question keeps the box two hours", async () => {
+      candidates = [waitingRow()];
+      turnWaitingByRuntimeSession['ses_root'] = 'question';
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(activeTurnRenewalCalls).toEqual([]);
+      expect(shortenedDeadlines).toEqual([{ sessionId: 'sess-1', graceMs: 120 * MIN }]);
+    });
+
+    test('a deadline already inside the bound is not written again', async () => {
+      candidates = [waitingRow({ deadlineAt: new Date(NOW.getTime() + 10 * MIN) })];
+      turnWaitingByRuntimeSession['ses_root'] = 'permission';
+      unattendedBySession['sess-1'] = true;
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(shortenedDeadlines).toEqual([]);
+      expect(activeTurnRenewalCalls).toEqual([]);
+      expect(r.stopped).toBe(0);
+    });
+
+    test('past its deadline while still waiting: the turn ends failed, naming why', async () => {
+      candidates = [waitingRow({ deadlineAt: new Date(NOW.getTime() - 1) })];
+      turnWaitingByRuntimeSession['ses_root'] = 'question';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(clearedTurnCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
+      expect(clearedTurnReasons).toEqual(['failed']);
+      expect(clearedTurnCauses).toEqual(['TurnAwaitingInput']);
+      // The batch deadline is from before the probes: the clear re-reads it.
+      expect(clearedTurnPastDeadlineOnly).toEqual([true]);
+      expect(activeTurnRenewalCalls).toEqual([]);
+      expect(r.turnsSettled).toBe(1);
+      // Nobody answered it: the prompt is not run again by a sweep.
+      expect(promptRedeliveries).toEqual([]);
+    });
+
+    test('a turn that no longer waits renews, as before', async () => {
+      candidates = [waitingRow()];
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(turnWaitingCalls).toEqual(['ses_root']);
+      expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
+      expect(shortenedDeadlines).toEqual([]);
+    });
+
+    test('a failed read while a hold is in effect renews nothing and keeps the anchor', async () => {
+      // A held deadline sits inside the attended bound; a renewal would put it
+      // four hours out and restart the bound on the next readable pass.
+      candidates = [waitingRow({ deadlineAt: new Date(NOW.getTime() + 25 * MIN) })];
+      turnWaitingByRuntimeSession['ses_root'] = 'unknown';
+
+      const r = await reapAndReconcileSandboxes(NOW);
+
+      expect(activeTurnRenewalCalls).toEqual([]);
+      expect(shortenedDeadlines).toEqual([]);
+      expect(clearedTurnCalls).toEqual([]);
+      expect(r.stopped).toBe(0);
+    });
+
+    test('a failed read on a turn that was never held renews, as before', async () => {
+      candidates = [waitingRow()];
+      turnWaitingByRuntimeSession['ses_root'] = 'unknown';
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
+      expect(shortenedDeadlines).toEqual([]);
+    });
+
+    test('a turn younger than five minutes is not asked about', async () => {
+      candidates = [waitingRow({}, 2)];
+      turnWaitingByRuntimeSession['ses_root'] = 'permission';
+
+      await reapAndReconcileSandboxes(NOW);
+
+      expect(turnWaitingCalls).toEqual([]);
+      expect(activeTurnRenewalCalls).toEqual([{ sandboxId: 'sb-1', token: 'turn-token' }]);
+    });
+  });
+
   test('a turn record past the absolute ceiling is settled, never probed and never renewed', async () => {
     // PROD 2026-09-09: 44 open turn records on `active` boxes, 42 of them older
     // than 24 h and the oldest 20 DAYS. The daemon on those boxes answers every
@@ -1171,7 +1320,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     statusByExternal['ext-1'] = 'running';
     turnObservationByToken['delivering-token'] = 'terminal';
 
-    const r = await reapAndReconcileSandboxes(NOW);
+    await reapAndReconcileSandboxes(NOW);
 
     // Not settled by the new ceiling; the existing delivering-state path (its
     // own grace already long expired at 31 min) reconciles it instead.
@@ -1492,8 +1641,8 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     // the moments between OpenCode ACKing a prompt and starting it look like.
     // Redelivering into that window runs the user's prompt twice.
     //
-    // EXPECTATION CHANGED 2026-08-20 (live incident, SampleCo session
-    // d1b74954): this used to CLEAR the record while skipping the redelivery.
+    // EXPECTATION CHANGED 2026-08-20 (live incident, a SampleCo
+    // session): this used to CLEAR the record while skipping the redelivery.
     // Clearing deletes the record — the only thing that can ever trigger the
     // redelivery — so a terminal observation landing inside the age floor was
     // a one-shot race that swallowed the prompt for good (cleared `unknown` at
@@ -2007,7 +2156,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE SILENT RENEWAL STARVATION THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a): `deadlineGrant` stayed
+  // Incident 2026-08-17T20:40:03Z (a prod session): `deadlineGrant` stayed
   // `boot_floor` for the box's whole life. The daemon on that warm snapshot
   // answered the turn probe with nothing readable, so `observeSandboxTurn`
   // never returned `active`, `renewActiveSandboxTurn` never ran, and the box
@@ -2046,7 +2195,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE PROBE ITSELF WAS THE LOAD ═══
-  // SampleCo 2026-08-25 (session 9df2a873): two API replicas re-asked one box
+  // SampleCo 2026-08-25 (one session): two API replicas re-asked one box
   // 345 times in an hour after `unknown`; every ask made OpenCode serialise
   // its 140 MB transcript, and the kernel OOM-killed it mid-turn. An unknown
   // answer now backs the PROBE off (20 s → 5 min) while the drip still runs.
@@ -2515,7 +2664,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   test('every provider renews its native lifecycle while the Kortix deadline is live', async () => {
-    candidates = (['daytona', 'platinum', 'e2b'] as const).map((provider, index) =>
+    candidates = (['platinum', 'daytona'] as const).map((provider, index) =>
       candidate({
         sandboxId: `sb-${provider}`,
         sessionId: `sess-${provider}`,
@@ -2524,24 +2673,23 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
         deadlineAt: new Date(NOW.getTime() + HOUR + index),
       }),
     );
-    for (const provider of ['daytona', 'platinum', 'e2b']) {
+    for (const provider of ['platinum', 'daytona']) {
       statusByExternal[`ext-${provider}`] = 'running';
     }
 
     const r = await reapAndReconcileSandboxes(NOW);
 
-    expect(r.skipped).toBe(3);
-    expect(r.lifecycleRenewed).toBe(3);
+    expect(r.skipped).toBe(2);
+    expect(r.lifecycleRenewed).toBe(2);
     expect(timeoutRenewals).toEqual([
-      { provider: 'daytona', externalId: 'ext-daytona' },
       { provider: 'platinum', externalId: 'ext-platinum' },
-      { provider: 'e2b', externalId: 'ext-e2b' },
+      { provider: 'daytona', externalId: 'ext-daytona' },
     ]);
     expect(stops).toEqual([]);
   });
 
   test('an expired box is stopped without renewing its provider lifecycle', async () => {
-    candidates = [candidate({ provider: 'e2b', deadlineAt: new Date(NOW.getTime() - 1) })];
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() - 1) })];
     statusByExternal['ext-1'] = 'running';
 
     const r = await reapAndReconcileSandboxes(NOW);
@@ -2553,7 +2701,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   test('a renewal failure never turns a live Kortix deadline into a stop decision', async () => {
-    candidates = [candidate({ provider: 'e2b', deadlineAt: new Date(NOW.getTime() + HOUR) })];
+    candidates = [candidate({ provider: 'platinum', deadlineAt: new Date(NOW.getTime() + HOUR) })];
     statusByExternal['ext-1'] = 'running';
     lifecycleRenewErrorByExternal['ext-1'] = new Error('provider renewal unavailable');
 
@@ -2789,7 +2937,7 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
   });
 
   // ═══ THE MID-TURN PARK THIS CLOSES ═══
-  // Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): one
+  // Incident 2026-08-17T20:40:03Z (a prod session on Daytona): one
   // provider read of `stopped` durably parked a box that was running a turn,
   // `stopReason: provider_reconcile`, and Daytona's own autoStopInterval was 720
   // — the provider never stopped it. `stopping` and `pending_stop` both map to
@@ -2959,6 +3107,19 @@ describe('reapAndReconcileSandboxes — the one rule: deadline_at <= now', () =>
     expect(stops).toEqual([]);
   });
 
+  test('a legacy e2b row reconciles locally as removed without a provider call', async () => {
+    // E2B support is discontinued; the DB enum still holds the value.
+    candidates = [candidate({ provider: 'e2b' as never })];
+
+    const r = await reapAndReconcileSandboxes(NOW);
+
+    expect(r.reconciled).toBe(1);
+    expect(statusCalls).toEqual([]);
+    expect(endedCompute).toEqual(['sb-1']);
+    expect(updateCalls.find((c) => c.table === sessionSandboxes)?.updates.status).toBe('stopped');
+    expect(stops).toEqual([]);
+  });
+
   test('a failed provider.stop closes NOTHING — no status flip, no billing close', async () => {
     candidates = [candidate({ deadlineAt: new Date(NOW.getTime() - HOUR) })];
     statusByExternal['ext-1'] = 'running';
@@ -3005,10 +3166,9 @@ describe('reapOrphanProviderBoxes', () => {
   const NOW2 = new Date('2026-06-21T12:00:00Z');
   const hoursAgo = (h: number) => new Date(NOW2.getTime() - h * 3_600_000);
 
-  test('keeps worker environments and monitor boxes', async () => {
-    environmentKeepRows = [{ provider: 'daytona', externalId: 'worker-env' }];
+  test('keeps monitor boxes', async () => {
     monitorKeepRows = [{ provider: 'daytona', externalId: 'monitor' }];
-    managedBoxes = ['worker-env', 'monitor'].map((externalId) => ({ externalId, createdAt: hoursAgo(48) }));
+    managedBoxes = ['monitor'].map((externalId) => ({ externalId, createdAt: hoursAgo(48) }));
     expect((await reapOrphanProviderBoxes(NOW2)).stopped).toBe(0);
     expect(stops).toEqual([]);
   });
@@ -3085,13 +3245,13 @@ describe('reapOrphanProviderBoxes', () => {
 
   test('lists and stops orphan boxes through every configured provider adapter', async () => {
     managedBoxes = [{ externalId: 'daytona-orphan', createdAt: hoursAgo(10) }];
-    e2bManagedBoxes = [{ externalId: 'e2b-orphan', createdAt: hoursAgo(10) }];
+    platinumManagedBoxes = [{ externalId: 'platinum-orphan', createdAt: hoursAgo(10) }];
 
     const r = await reapOrphanProviderBoxes(NOW2);
 
     expect(stopsByProvider).toEqual([
+      { provider: 'platinum', externalId: 'platinum-orphan' },
       { provider: 'daytona', externalId: 'daytona-orphan' },
-      { provider: 'e2b', externalId: 'e2b-orphan' },
     ]);
     expect(r).toMatchObject({ listed: 2, orphans: 2, stopped: 2, errors: 0 });
   });

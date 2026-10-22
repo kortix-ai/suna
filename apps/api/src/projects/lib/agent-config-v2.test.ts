@@ -227,7 +227,7 @@ describe('grantSecretToAgentV2', () => {
     const res = grantSecretToAgentV2(committed(), 'support', 'ALPHA');
     expect(res).toMatchObject({ ok: true, alreadyGranted: false, adoptedGovernance: true });
     if (!res.ok) return;
-    expect(res.raw.agents).toEqual({ support: { secrets: ['ALPHA'] } });
+    expect(res.raw.agents).toEqual({ support: { secrets: ['ALPHA'], workspace: { project_repository: true } } });
   });
 
   test('a v1 manifest is refused with the upgrade flag, not a throw', () => {
@@ -246,5 +246,27 @@ describe('grantSecretToAgentV2', () => {
       'ALPHA',
     );
     expect(res.ok).toBe(false);
+  });
+});
+
+describe('a YAML null agent entry parses past the validator — each path pins base semantics', () => {
+  const nullEntry = { support: null } as Record<string, unknown>;
+
+  test('the read path rejects it as malformed (the editor must show the broken shape)', () => {
+    expect(readAgentBlockV2(manifest(nullEntry), 'support')).toEqual({
+      ok: false,
+      error: 'agents.support is malformed (expected a table/object).',
+    });
+  });
+
+  test('the scope path reports the agent as not declared', () => {
+    const res = applyAgentScopeV2(manifest(nullEntry), 'support', { connectors: ['gmail'] });
+    expect(res).toMatchObject({ ok: false, notFound: true });
+  });
+
+  test('the secret-grant path upserts it (an absent entry is widened, not rewritten)', () => {
+    const res = grantSecretToAgentV2(committed(nullEntry), 'support', 'ALPHA_KEY');
+    expect(res).toMatchObject({ ok: true, alreadyGranted: false, adoptedGovernance: false });
+    expect(blockOf(res).support).toEqual({ secrets: ['ALPHA_KEY'], workspace: { project_repository: true } });
   });
 });

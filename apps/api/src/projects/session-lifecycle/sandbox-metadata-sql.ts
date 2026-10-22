@@ -1,5 +1,5 @@
 import { sessionSandboxes } from '@kortix/db';
-import { sql, type SQL } from 'drizzle-orm';
+import { sql, type AnyColumn, type SQL } from 'drizzle-orm';
 
 /**
  * `coalesce(metadata, '{}') - 'a' - 'b' - …`, generated from a key list.
@@ -7,11 +7,14 @@ import { sql, type SQL } from 'drizzle-orm';
  * Hand-written `-` chains are how the readiness clocks drifted apart: the wake
  * claim stripped four of the ten, `clearRuntimeReadinessClocks` stripped eight
  * by hardcoded index, and `runtimeBootWaitFirstSeenAt` was therefore cleared
- * by nothing except a human Restart. That immortal clock parked session
- * 29861dfa's second attempt 14 ms before its daemon claimed its first turn
+ * by nothing except a human Restart. That immortal clock parked a SampleCo
+ * session's second attempt 14 ms before its daemon claimed its first turn
  * (2026-08-26). One generator, one list, no drift.
  */
-export function stripMetadataKeys(keys: readonly string[]): SQL {
+export function stripMetadataKeys(
+  keys: readonly string[],
+  column: AnyColumn = sessionSandboxes.metadata,
+): SQL {
   return keys.reduce<SQL>((acc, key) => {
     // A LITERAL, not a bind parameter. `jsonb - $1` leaves the parameter type
     // unknown and Postgres cannot choose between `jsonb - text` and
@@ -21,7 +24,7 @@ export function stripMetadataKeys(keys: readonly string[]): SQL {
       throw new Error(`refusing to strip a non-identifier metadata key: ${key}`);
     }
     return sql`${acc} - ${sql.raw(`'${key}'`)}`;
-  }, sql`coalesce(${sessionSandboxes.metadata}, '{}'::jsonb)`);
+  }, sql`coalesce(${column}, '{}'::jsonb)`);
 }
 
 /**

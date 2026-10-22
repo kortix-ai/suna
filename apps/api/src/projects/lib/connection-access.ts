@@ -83,7 +83,7 @@ export function connectionNeedsPrivateSession(
  * as one person's identity.
  *
  * `agentPrincipal`: present when the caller is an agent session under the agent-principal model
- * (flag `agent_principal` ON, governed grant). Its acting principal is the
+ * (a governed grant). Its acting principal is the
  * agent's service account, so neither `actingUserId` (the launcher) nor the
  * service-account flag decides. A `member` row is reachable only when
  * `ownerId === onBehalfOfUserId` AND the session is `private`. An unattended

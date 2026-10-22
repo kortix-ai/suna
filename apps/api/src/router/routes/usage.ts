@@ -3,7 +3,10 @@ import { usageEvents } from '@kortix/db';
 import { type SQL, and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { PROJECT_ACTIONS } from '../../iam/actions';
+import { ACCOUNT_ACTIONS, PROJECT_ACTIONS } from '../../iam/actions';
+import { assertAuthorized, listAccessible } from '../../iam/authorize';
+import { visibleDirectory } from '../../iam/directory-visibility';
+import { actorOf } from '../../middleware/actor';
 import { combinedAuth } from '../../middleware/auth';
 import { rejectSandboxTokens } from '../../middleware/reject-sandbox-tokens';
 import { auth, errors, json, makeOpenApiApp } from '../../openapi';
@@ -19,7 +22,7 @@ import {
   parseCostWindow,
 } from '../../shared/cost-window';
 import { db } from '../../shared/db';
-import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { resolveScopedAccountId } from '../../middleware/resolve-account';
 import { getSessionCostRecord, listSessionCosts } from '../../shared/session-costs';
 import type { AppEnv } from '../../types';
 import {
@@ -63,24 +66,60 @@ async function resolveSessionCostAccountId(
     );
     return tokenAccountId;
   }
-  if (tokenAccountId) return tokenAccountId;
-
-  if (c.req.query('account_id') || !projectId) {
-    return resolveScopedAccountId(c, 'query');
+  if (projectId) {
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) {
+      throw new HTTPException(404, { message: 'Project not found' });
+    }
+    const explicitAccountId = tokenAccountId ?? c.req.query('account_id');
+    if (explicitAccountId && explicitAccountId !== loaded.row.accountId) {
+      throw new HTTPException(404, { message: 'Project not found' });
+    }
+    await assertProjectCapability(
+      c,
+      loaded.userId,
+      loaded.row.accountId,
+      projectId,
+      PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+    );
+    return loaded.row.accountId;
   }
+  return resolveAccountWideUsageAccountId(c);
+}
 
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) {
-    throw new HTTPException(404, { message: 'Project not found' });
+/**
+ * Account-wide usage, cost and request-log reads. Every credential class
+ * (JWT, PAT, OAuth, service account) needs `billing.read`: an account-bound
+ * token or `?account_id=` alone is not authority. Project-scoped reads use the
+ * project leaves instead (resolveSessionCostAccountId).
+ */
+export async function resolveAccountWideUsageAccountId(c: Context<AppEnv>): Promise<string> {
+  if (c.get('tokenProjectId')) {
+    throw new HTTPException(403, { message: 'Project-scoped tokens cannot read account-wide usage' });
   }
-  await assertProjectCapability(
-    c,
-    loaded.userId,
-    loaded.row.accountId,
-    projectId,
-    PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
-  );
-  return loaded.row.accountId;
+  const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+  await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_READ);
+  return accountId;
+}
+
+/**
+ * Session costs name each session's owner, with their email. A caller without
+ * `member.read` sees only their own sessions (iam/directory-visibility.ts):
+ * another `owner_id` → 403, the same answer whether that person exists or not.
+ * Returns the owner filter to apply; undefined = every owner.
+ */
+async function sessionCostOwner(
+  c: Context<AppEnv>,
+  accountId: string,
+  requested: string | undefined,
+): Promise<string | undefined> {
+  const actor = await actorOf(c, accountId);
+  const { userIds } = await visibleDirectory(actor);
+  if (!userIds) return requested;
+  if (requested && requested !== actor.userId) {
+    throw new HTTPException(403, { message: 'You can read only your own session costs' });
+  }
+  return actor.userId;
 }
 
 const UsageTotalsSchema = z
@@ -363,7 +402,7 @@ usageApp.openapi(
       throw err;
     }
 
-    const accountId = c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+    const accountId = await resolveAccountWideUsageAccountId(c);
 
     const conds: SQL[] = [eq(usageEvents.accountId, accountId)];
     if (parsed.start) conds.push(gte(usageEvents.createdAt, parsed.start));
@@ -496,8 +535,8 @@ usageApp.openapi(
     }
 
     const projectId = c.req.query('project_id') || undefined;
-    const ownerId = c.req.query('owner_id') || undefined;
     const accountId = await resolveSessionCostAccountId(c, projectId);
+    const ownerId = await sessionCostOwner(c, accountId, c.req.query('owner_id') || undefined);
 
     if (c.req.query('format') === 'csv') {
       // Same filtered query as the JSON branch (accountId, projectId, ownerId,
@@ -578,7 +617,8 @@ usageApp.openapi(
       projectId,
       sessionId: c.req.param('sessionId'),
     });
-    if (!detail) {
+    const owner = await sessionCostOwner(c, accountId, undefined);
+    if (!detail || (owner && detail.owner_id !== owner)) {
       throw new HTTPException(404, { message: 'Session not found' });
     }
     return c.json(detail);
@@ -595,8 +635,10 @@ usageApp.openapi(
       'Groups LLM and billed compute spend by project. LLM is windowed on request time ' +
       '(created_at); compute is windowed on the billing window start (started_at). Bounds ' +
       'are half-open [from, to) and always UTC; an absent from/to defaults to the trailing ' +
-      '30 days. Paging happens in memory: an account has tens to hundreds of projects, not ' +
-      'the tens of thousands a session list can reach.',
+      '30 days. A project_id narrows the rollup to that project and needs ' +
+      'project.gateway.spend.read on it (project.usage.read for a project token). Paging ' +
+      'happens in memory: an account has tens to hundreds of projects, not the tens of ' +
+      'thousands a session list can reach.',
     ...auth,
     request: {
       query: z
@@ -641,10 +683,12 @@ usageApp.openapi(
       // surface as 400 instead of 403 — telling an unauthorized caller which
       // of their parameters was malformed. Authorization must be decided
       // before input validation, not after.
-      projectId = c.get('tokenProjectId') || undefined;
+      // A project token names its own project; any other caller may name one
+      // with `project_id`, checked exactly as /session-costs checks it.
+      projectId = c.get('tokenProjectId') || c.req.query('project_id') || undefined;
       accountId = projectId
         ? await resolveSessionCostAccountId(c, c.req.query('project_id'))
-        : c.get('accountId') ?? (await resolveScopedAccountId(c, 'query'));
+        : await resolveAccountWideUsageAccountId(c);
       window = parseCostWindow({ from: c.req.query('from'), to: c.req.query('to') });
       sort = parseCostSort(c.req.query('sort'), PROJECT_COST_SORTS, 'total_desc');
       ({ limit, offset } = parseCostPagination({
@@ -658,6 +702,17 @@ usageApp.openapi(
       throw error;
     }
 
+    // billing.read shows the account's spend, not every project's name: a
+    // caller sees the rows of the projects they can read (owners and admins:
+    // all of them). A named project was already checked above.
+    const accessible = projectId
+      ? null
+      : await listAccessible(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_READ, 'project');
+    const visibleProjectIds =
+      !accessible || accessible.mode === 'all'
+        ? undefined
+        : accessible.mode === 'allow_only' ? accessible.allowed : new Set<string>();
+
     if (c.req.query('format') === 'csv') {
       // Same filtered query as the JSON branch (accountId, window, sort) —
       // only limit/offset differ, because a CSV export wants up to
@@ -665,6 +720,7 @@ usageApp.openapi(
       const page = await listCostByProject({
         accountId,
         projectId,
+        visibleProjectIds,
         window,
         sort,
         limit: CSV_ROW_CAP,
@@ -697,7 +753,7 @@ usageApp.openapi(
       });
     }
 
-    return c.json(await listCostByProject({ accountId, projectId, window, sort, limit, offset }));
+    return c.json(await listCostByProject({ accountId, projectId, visibleProjectIds, window, sort, limit, offset }));
   },
 );
 

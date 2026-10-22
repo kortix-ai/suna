@@ -8,6 +8,7 @@
  * calling another tool — OpenCode's `steps` behavior.
  */
 import type { StreamFn } from '@earendil-works/pi-agent-core'
+import { getCurrentTools } from '@earendil-works/pi-ai'
 
 export interface AgentSampling {
   temperature?: number
@@ -23,7 +24,7 @@ export function withAgentSampling(stream: StreamFn, sampling: () => AgentSamplin
     const { temperature, top_p, steps, acceptsTemperature = true } = sampling()
     const next = { ...options }
     // A request without tools (compaction, a summary) is not a step of the run.
-    if (context.tools?.length) {
+    if (getCurrentTools(context.messages).length) {
       // A run starts at a user message; every later step follows a tool result.
       step = context.messages.at(-1)?.role === 'user' ? 1 : step + 1
       if (steps !== undefined && steps > 0 && step >= steps) next.toolChoice = 'none'

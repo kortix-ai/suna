@@ -1,4 +1,11 @@
 import { logger } from '../lib/logger';
+import {
+  APPROVAL_ENRICHERS,
+  type ApprovalEnricher,
+  enricherKey,
+  type ResolvedPreview,
+  resolveApprovalPreview,
+} from './approval-enrichers';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
 import {
   emailChannelAttachmentArgs,
@@ -21,8 +28,10 @@ import {
   type ConnectorAuth,
   type FetchImpl,
   executeCall,
+  mcpJsonRpcError,
   paramHintsFromSchema,
 } from './call';
+import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 /**
  * Connector gateway — the chokepoint every tool call goes through. Resolves the
  * connector + action, resolves the credential SERVER-SIDE, runs the call,
@@ -46,6 +55,7 @@ import { connectorRequestDigest } from './request-digest';
 import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
 import type { ConnectionOwnerType } from '../projects/lib/connection-access';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
 
 export interface GatewayConnector {
   connectorId: string;
@@ -178,7 +188,10 @@ export interface GatewayDeps {
     slug: string,
     selector: unknown,
   ): Promise<GatewayConnector | null | 'not_computer'>;
-  loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
+  /** `providerType` — the loaded connector's provider, when the caller has it
+   *  in hand (the call path does), so the store skips its duplicate read of
+   *  the `connectors` row. */
+  loadAction(connectorId: string, relPath: string, providerType: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
    * set = that member's own. Receives the loaded connector so the resolver can
@@ -239,6 +252,13 @@ export interface GatewayDeps {
   loadDefaultMode?(projectId: string): Promise<DefaultMode>;
   /** Records the audit row; returns the new execution id used in the approval URL. */
   recordExecution(rec: ExecutionRecord): Promise<string | null>;
+  /** Set (`true`) or clear (`false`) `metadata.credential_rejected_at` on a
+   *  connection: the upstream answered 401 to its stored credential. Optional:
+   *  absent = the mark is never written. */
+  markCredentialRejected?(connectionId: string, rejected: boolean): Promise<void>;
+  /** `connection_credentials.kind` of the connection's stored credential, or
+   *  null when it has none. Read only after an upstream 401, to name the fix. */
+  credentialKind?(connectionId: string): Promise<string | null>;
   /** Approval carry-over: atomically claim a recent human approval for this
    *  exact request. The callback asks the session to continue, and its next
    *  attempt consumes the approval once instead of creating another gate. */
@@ -248,7 +268,13 @@ export interface GatewayDeps {
     connectorId: string;
     actionPath: string;
     requestDigest: string;
-  }): Promise<boolean>;
+    /** An object when claimed: `resolvedDigest` is the approved row's
+     *  `result_summary.resolved_digest`, the content the human saw;
+     *  `resolvedError` is true when that content could not be read. */
+  }): Promise<boolean | { resolvedDigest: string | null; resolvedError?: boolean }>;
+  /** Approval enrichers by `enricherKey` (approval-enrichers.ts). Absent =
+   *  the production registry. */
+  approvalEnrichers?: Readonly<Record<string, ApprovalEnricher>>;
   /** Reuse a legacy client's pending row only when it identifies this exact
    *  session-bound request. Prevents a caller from relabeling another approval. */
   isPendingApprovalExecution?(input: {
@@ -269,7 +295,7 @@ export interface GatewayDeps {
     projectId: string;
     executionId: string;
     sessionId: string | null;
-  }): string | null;
+  }): string | null | Promise<string | null>;
   /**
    * Post an approval card into the chat thread of the session that made a
    * gated call (Slack). Resolves `posted: false` for sessions with no thread.
@@ -333,6 +359,8 @@ export interface GatewayDeps {
   }): Promise<ComputerCallOutcome>;
   /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
   enforcePolicies?: boolean;
+  /** Upstream deadline per call. Default: KORTIX_CONNECTOR_CALL_TIMEOUT_MS (60 s). */
+  callTimeoutMs?: number;
 }
 
 /** Result of a `computer` connector call (gateway maps it onto a CallResult). */
@@ -340,17 +368,22 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`,
+      /** `computer_unpaired` | `computer_owner_left` (its owner left the account) |
+       *  `computer_offline` | `computer_capability_not_approved`,
        *  an access refusal on the machine (`computer_access_pending` |
-       *  `computer_access_denied` | `computer_access_off`), or `error` for a
+       *  `computer_access_denied` | `computer_access_off`),
+       *  `computer_desktop_permission_missing` (macOS has not given Kortix
+       *  Accessibility or Screen Recording), or `error` for a
        *  failure on the machine or in the relay. */
       kind:
         | 'computer_unpaired'
+        | 'computer_owner_left'
         | 'computer_offline'
         | 'computer_capability_not_approved'
         | 'computer_access_pending'
         | 'computer_access_denied'
         | 'computer_access_off'
+        | 'computer_desktop_permission_missing'
         | 'error';
       message: string;
     };
@@ -384,8 +417,23 @@ export interface CallResultAccount {
   owner_type: string;
 }
 
+/** The kind of binding that ran a call: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, … */
+export type CallBinding = ActionBinding['kind'];
+
 export type CallResult =
-  | { status: 'ok'; data: unknown; risk: Risk; account?: CallResultAccount }
+  | {
+      status: 'ok';
+      data: unknown;
+      risk: Risk;
+      account?: CallResultAccount;
+      binding: CallBinding;
+      /** The payload without the binding's envelope (see `callOutput`). */
+      output: unknown;
+      /** The upstream HTTP status. Null when no HTTP upstream answered (a computer). */
+      upstreamStatus: number | null;
+      /** A failure the upstream reported inside a 2xx answer (MCP `isError`, GraphQL `errors`). */
+      upstreamError?: string;
+    }
   /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
   | { status: 'denied'; reason: string; message?: string }
   | {
@@ -407,7 +455,86 @@ export type CallResult =
       /** Agent instruction for the asynchronous handoff. */
       approvalInstructions?: string | null;
     }
-  | { status: 'error'; reason: string };
+  | {
+      status: 'error';
+      reason: string;
+      /** Set once the action resolved. */
+      binding?: CallBinding;
+      /** The upstream HTTP status when an upstream answered. */
+      upstreamStatus?: number;
+      /** The upstream's Retry-After, in seconds, when it sent one. */
+      retryAfterSeconds?: number;
+    };
+
+/**
+ * The largest upstream answer a call reads. The body is held as text, parsed,
+ * and serialized again into the `/call` response, so the API holds several
+ * copies of it at once.
+ */
+const MAX_UPSTREAM_RESPONSE_BYTES = 64 * 1024 * 1024;
+
+/** Reason prefix of a call that hit the upstream deadline. */
+export const UPSTREAM_TIMEOUT = 'upstream_timeout';
+
+/**
+ * The upstream deadline: below Cloudflare's 100 s proxy timeout, so the
+ * caller always gets the gateway's answer. A client timeout must exceed it.
+ */
+function callTimeoutMs(deps: GatewayDeps): number {
+  return deps.callTimeoutMs ?? configuredTimeoutMs('KORTIX_CONNECTOR_CALL_TIMEOUT_MS', 60_000, 1_000);
+}
+
+function isTimeout(error: unknown): boolean {
+  // Ours (withTimeout) and the fetch abort (AbortSignal.timeout) share the name.
+  return (error as { name?: unknown } | null)?.name === 'TimeoutError';
+}
+
+/**
+ * The payload of a successful call without its binding's envelope:
+ *   - composio: `data.result`;
+ *   - mcp: `result.structuredContent ?? result.content`;
+ *   - graphql: `data.data`;
+ *   - every other binding: `data` itself.
+ * `upstreamError` names a failure the upstream reported inside a 2xx answer:
+ * an MCP JSON-RPC error or `isError` tool result, or GraphQL `errors` with no
+ * data. `data` keeps the raw answer either way.
+ */
+export function callOutput(
+  binding: CallBinding,
+  data: unknown,
+  secret?: string | null,
+): { output: unknown; upstreamError?: string } {
+  const body = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  if (binding === 'composio') return { output: body ? (body.result ?? null) : data };
+  if (binding === 'mcp') {
+    const rpcError = mcpJsonRpcError(data, secret);
+    if (rpcError) return { output: null, upstreamError: `JSON-RPC ${rpcError}` };
+    const result = body?.result && typeof body.result === 'object' ? (body.result as Record<string, unknown>) : null;
+    if (!result) return { output: data };
+    const output = result.structuredContent ?? result.content ?? null;
+    if (result.isError !== true) return { output };
+    const text = Array.isArray(result.content)
+      ? result.content
+          .map((item) => (item && typeof item === 'object' ? (item as { text?: unknown }).text : null))
+          .filter((t): t is string => typeof t === 'string')
+          .join('\n')
+      : '';
+    return { output, upstreamError: (text || 'MCP tool returned isError').slice(0, 2000) };
+  }
+  if (binding === 'graphql') {
+    const output = body ? (body.data ?? null) : data;
+    const errors = Array.isArray(body?.errors) ? (body.errors as unknown[]) : [];
+    const noData =
+      output == null ||
+      (typeof output === 'object' && Object.values(output as Record<string, unknown>).every((v) => v == null));
+    if (errors.length === 0 || !noData) return { output };
+    const messages = errors
+      .map((e) => (e && typeof e === 'object' ? (e as { message?: unknown }).message : null))
+      .filter((m): m is string => typeof m === 'string');
+    return { output, upstreamError: (messages.join('; ') || 'GraphQL errors').slice(0, 2000) };
+  }
+  return { output: data };
+}
 
 const MAX_APPROVAL_CONTEXT = 4_000;
 const CARD_POST_BUDGET_MS = 5_000;
@@ -652,23 +779,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   const resolved = await resolveConnectorForCall(deps, input);
   const fullPath = `${resolved.slug}.${input.actionPath}`;
 
-  let connector = resolved.connector;
-  // v2 X7: older agents select a machine with a `computer` argument. Map it to
-  // that account and strip it; relaying it would run the call on the default
-  // machine instead. An unknown name is refused, never ignored.
-  if (input.args && Object.hasOwn(input.args, 'computer') && deps.selectComputerAccount) {
-    const { computer: selector, ...args } = input.args;
-    const selected = await deps.selectComputerAccount(input.projectId, resolved.slug, selector);
-    if (selected !== 'not_computer') {
-      input = { ...input, args };
-      if (!selected) {
-        const reason = `account_not_found: no computer account you can use matches "${String(selector).slice(0, 120)}". Select the computer with --account "<name>".`;
-        await audit(deps, input, null, 'denied', null, { reason: 'account_not_found' });
-        return { status: 'denied', reason };
-      }
-      connector = selected;
-    }
-  }
+  const selection = await selectComputerAccountForCall(deps, input, resolved.slug, resolved.connector);
+  if ('status' in selection) return selection;
+  input = selection.input;
+  const connector = selection.connector;
   if (!connector || !connector.enabled) {
     const reason = !connector
       ? deps.explainMissingConnector
@@ -679,7 +793,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason };
   }
 
-  const action = await deps.loadAction(connector.connectorId, input.actionPath);
+  const action = await deps.loadAction(connector.connectorId, input.actionPath, connector.provider);
   if (!action) {
     await audit(deps, input, connector, 'denied', null, {
       reason: 'action_not_found',
@@ -709,14 +823,16 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
 
   const emailExecution = await resolveEmailExecutionContext(deps, input, connector, resolved.slug);
   let usable: Awaited<ReturnType<typeof connectorUsable>>;
-  let attachmentClaim: Awaited<ReturnType<ConnectorAttachmentStore['claimForEmail']>> | null = null;
-  let attachmentRefs: ReturnType<typeof findAttachmentRefs> = [];
   try {
     usable = await connectorUsable(deps, connector, input, emailExecution.secretOverride);
   } catch (error) {
     if (error instanceof CredentialNotSharedError) {
       await audit(deps, input, connector, 'denied', action.risk, { reason: error.reason });
       return { status: 'denied', reason: error.reason, message: error.message };
+    }
+    if (error instanceof SecretUndecryptableError) {
+      await audit(deps, input, connector, 'denied', action.risk, { reason: 'credential_undecryptable' });
+      return { status: 'denied', reason: 'credential_undecryptable', message: error.message };
     }
     const reason = (error as Error).message || 'credential_resolution_failed';
     await audit(deps, input, connector, 'error', action.risk, {
@@ -747,184 +863,297 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
 
   // Layered enforcement: project → connection → risk default.
   if (deps.enforcePolicies !== false) {
-    const [connectorPolicies, projectPolicies, defaultMode] = await Promise.all([
-      deps.loadPolicies(connector.connectorId),
-      deps.loadProjectPolicies?.(input.projectId) ?? Promise.resolve([] as Policy[]),
-      deps.loadDefaultMode?.(input.projectId) ?? Promise.resolve('allow_all' as DefaultMode),
-    ]);
-    // Built once per gated call: the redacted preview goes in the audit row and
-    // the one-liner rides alongside the link, so an out-of-band relay ("approve
-    // this: <url>") is still specific about what is being approved.
-    const argsPreviewDetails = buildArgsPreviewDetails(executionArgs);
-    const argsPreview = argsPreviewDetails.preview;
-    const approvalContext =
-      input.approvalContext?.trim().slice(0, MAX_APPROVAL_CONTEXT) || null;
-    // Keys are OMITTED when empty rather than set to null: the pending_approval
-    // result is a wire shape other code compares against, and a key that carries
-    // no information shouldn't change it.
-    const approvalExtras = (executionId: string | null | undefined) => {
-      const url =
-        executionId && deps.mintApprovalLink
-          ? deps.mintApprovalLink({
-              projectId: input.projectId,
-              executionId,
-              sessionId: input.sessionId ?? null,
-            })
-          : null;
-      const summary = summarizeArgsPreview(argsPreview);
-      return {
-        ...(url ? { approvalUrl: url } : {}),
-        ...(summary ? { approvalSummary: summary } : {}),
-        ...(url
-          ? {
-              approvalInstructions: input.sessionId
-                ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.${approvalContext ? '' : CONTEXT_HINT}`
-                : `Share approval_url with a human. Retry this exact call once they approve it.${approvalContext ? '' : CONTEXT_HINT}`,
-            }
-          : {}),
-      };
-    };
-
-    const decision = resolveEffectiveAction({
+    const gated = await enforceCallPolicies(
+      deps,
+      input,
+      connector,
+      action,
       fullPath,
-      relPath: input.actionPath,
-      projectPolicies,
-      connectorPolicies,
-      risk: action.risk,
-      defaultMode,
-      sensitive: connector.sensitive,
-      // Rules may also condition on the ARGUMENTS ("only to these addresses"),
-      // so the engine needs the real payload. This is the post-context-injection
-      // form — the same args the call will actually execute with — so a rule
-      // can't be dodged by a field the gateway fills in later.
-      args: executionArgs,
-      argsAvailable: true,
-    });
-    if (decision.action === 'block') {
-      await audit(
-        deps,
-        input,
-        connector,
-        'denied',
-        action.risk,
-        {
-          reason: 'policy_block',
-          policy_source: decision.source,
-          args_preview_complete: argsPreviewDetails.complete,
-          // A block is only auditable if you can see WHAT was blocked — otherwise
-          // "denied gmail.send_email" can't be told apart from a false positive.
-          args_preview: argsPreview,
-        },
-        requestDigest,
-      );
-      return { status: 'denied', reason: 'policy_block' };
-    }
-    if (decision.action === 'require_approval') {
-      // SESSION-WIDE GRANTS ARE NO LONGER HONOURED.
-      //
-      // "Allow for this session" / "Allow everything" used to let one click
-      // pre-authorise every later call of a tool, whatever its arguments — so a
-      // mail send approved for one recipient silently covered a send to any
-      // other. The gate has to see each call, because the ARGUMENTS are what
-      // make a call safe or not, and they change per call.
-      //
-      // Deliberately dropped at the ENFORCEMENT point, not just in the UI: rows
-      // written before this change still exist in session_tool_approvals, and
-      // reading them would keep those old grants silently bypassing the gate.
-      // Historical session grants remain in the ledger for audit only. No
-      // runtime dependency can consult them for authorization.
-      //
-      // Approval carry-over claims one human approval for the exact request
-      // digest after the decision callback asks the session to continue.
-      const carriedOver = deps.consumeApprovedExecution
-        ? await deps.consumeApprovedExecution({
-            sessionId: input.sessionId ?? null,
-            actingUserId: input.subject.userId,
-            connectorId: connector.connectorId,
-            // The audit-row form (see audit() below), NOT the relative form.
-            actionPath: `${input.connectorSlug}.${input.actionPath}`,
-            requestDigest,
-          })
-        : false;
-      if (carriedOver) {
-        await audit(deps, input, connector, 'ok', action.risk, {
-          reason: 'approval_carryover',
-          policy_source: decision.source,
-        });
-      } else {
-        // Older clients can pass an existing id. Preserve that row instead of
-        // stacking another one, but never poll it. New clients make one request
-        // and wait for the server-side session callback.
-        const reuseExisting =
-          input.approvalExecutionId && deps.isPendingApprovalExecution
-            ? await deps.isPendingApprovalExecution({
-                executionId: input.approvalExecutionId,
-                projectId: input.projectId,
-                sessionId: input.sessionId ?? null,
-                actingUserId: input.subject.userId,
-                connectorId: connector.connectorId,
-                actionPath: `${input.connectorSlug}.${input.actionPath}`,
-                requestDigest,
-              })
-            : false;
-        const executionId =
-          (reuseExisting ? input.approvalExecutionId : null) ??
-          (await audit(
-            deps,
-            input,
-            connector,
-            'pending_approval',
-            action.risk,
-            {
-              reason: 'policy_require_approval',
-              policy_source: decision.source,
-              args_preview_complete: argsPreviewDetails.complete,
-              // WITHOUT THIS the approval prompt can name the tool but not its
-              // target — a human was being asked to authorise `gmail.send_email`
-              // with no way to see who it emails. Redacted (see args-preview.ts):
-              // credential-shaped fields never reach the audit trail.
-              args_preview: argsPreview,
-              // Reference args (`{draft_id}`) name a target without showing it,
-              // so the agent may describe the effect. Unverified by design.
-              ...(approvalContext ? { approval_context: approvalContext } : {}),
-            },
-            requestDigest,
-          ));
-        const extras = approvalExtras(executionId);
-        const cardPosted =
-          !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
-            ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
-                deps.postApprovalCard!({
-                  projectId: input.projectId,
-                  sessionId: input.sessionId!,
-                  executionId,
-                  actionPath: `${input.connectorSlug}.${input.actionPath}`,
-                  risk: action.risk,
-                  resultSummary: {
-                    args_preview: argsPreview,
-                    args_preview_complete: argsPreviewDetails.complete,
-                    ...(approvalContext ? { approval_context: approvalContext } : {}),
-                  },
-                  approvalUrl: extras.approvalUrl ?? null,
-                }),
-              )
-            : false;
-        return {
-          status: 'pending_approval',
-          reason: 'policy_require_approval',
-          executionId,
-          retryable: false,
-          ...extras,
-          // The human decides on the card in their thread; a pasted link next
-          // to it would only duplicate the request.
-          ...(cardPosted
-            ? { approvalInstructions: `${CARD_POSTED_INSTRUCTIONS}${approvalContext ? '' : CONTEXT_HINT}` }
-            : {}),
-        };
-      }
-    }
+      executionArgs,
+      requestDigest,
+    );
+    if (gated) return gated;
   }
 
+  return runConnectorAction(
+    deps,
+    input,
+    connector,
+    action,
+    fullPath,
+    executionArgs,
+    executionSecret,
+    channelGate,
+    channelWrite,
+  );
+}
+
+// v2 X7: older agents select a machine with a `computer` argument. Map it to
+// that account and strip it; relaying it would run the call on the default
+// machine instead. An unknown name is refused, never ignored.
+async function selectComputerAccountForCall(
+  deps: GatewayDeps,
+  input: CallInput,
+  slug: string,
+  connector: GatewayConnector | null,
+): Promise<CallResult | { input: CallInput; connector: GatewayConnector | null }> {
+  if (input.args && Object.hasOwn(input.args, 'computer') && deps.selectComputerAccount) {
+    const { computer: selector, ...args } = input.args;
+    const selected = await deps.selectComputerAccount(input.projectId, slug, selector);
+    if (selected !== 'not_computer') {
+      input = { ...input, args };
+      if (!selected) {
+        const reason = `account_not_found: no computer account you can use matches "${String(selector).slice(0, 120)}". Select the computer with --account "<name>".`;
+        await audit(deps, input, null, 'denied', null, { reason: 'account_not_found' });
+        return { status: 'denied', reason };
+      }
+      connector = selected;
+    }
+  }
+  return { input, connector };
+}
+
+/**
+ * Layered enforcement: project → connection → risk default. Returns the
+ * result to answer with when policy blocks the call or holds it for approval,
+ * or null when the call may run.
+ */
+async function enforceCallPolicies(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  action: GatewayAction,
+  fullPath: string,
+  executionArgs: Record<string, unknown>,
+  requestDigest: string,
+): Promise<CallResult | null> {
+  const [connectorPolicies, projectPolicies, defaultMode] = await Promise.all([
+    deps.loadPolicies(connector.connectorId),
+    deps.loadProjectPolicies?.(input.projectId) ?? Promise.resolve([] as Policy[]),
+    deps.loadDefaultMode?.(input.projectId) ?? Promise.resolve('allow_all' as DefaultMode),
+  ]);
+  // Built once per gated call: the redacted preview goes in the audit row and
+  // the one-liner rides alongside the link, so an out-of-band relay ("approve
+  // this: <url>") is still specific about what is being approved.
+  const argsPreviewDetails = buildArgsPreviewDetails(executionArgs);
+  const argsPreview = argsPreviewDetails.preview;
+  const approvalContext =
+    input.approvalContext?.trim().slice(0, MAX_APPROVAL_CONTEXT) || null;
+  // Keys are OMITTED when empty rather than set to null: the pending_approval
+  // result is a wire shape other code compares against, and a key that carries
+  // no information shouldn't change it.
+  const approvalExtras = async (executionId: string | null | undefined) => {
+    const url =
+      executionId && deps.mintApprovalLink
+        ? await deps.mintApprovalLink({
+            projectId: input.projectId,
+            executionId,
+            sessionId: input.sessionId ?? null,
+          })
+        : null;
+    const summary = summarizeArgsPreview(argsPreview);
+    return {
+      ...(url ? { approvalUrl: url } : {}),
+      ...(summary ? { approvalSummary: summary } : {}),
+      ...(url
+        ? {
+            approvalInstructions: input.sessionId
+              ? `Share approval_url with a human, then stop this turn. Kortix resumes the session after approve or deny.${approvalContext ? '' : CONTEXT_HINT}`
+              : `Share approval_url with a human. Retry this exact call once they approve it.${approvalContext ? '' : CONTEXT_HINT}`,
+          }
+        : {}),
+    };
+  };
+
+  const decision = resolveEffectiveAction({
+    fullPath,
+    relPath: input.actionPath,
+    projectPolicies,
+    connectorPolicies,
+    risk: action.risk,
+    defaultMode,
+    sensitive: connector.sensitive,
+    // Rules may also condition on the ARGUMENTS ("only to these addresses"),
+    // so the engine needs the real payload. This is the post-context-injection
+    // form — the same args the call will actually execute with — so a rule
+    // can't be dodged by a field the gateway fills in later.
+    args: executionArgs,
+    argsAvailable: true,
+  });
+  if (decision.action === 'block') {
+    await audit(
+      deps,
+      input,
+      connector,
+      'denied',
+      action.risk,
+      {
+        reason: 'policy_block',
+        policy_source: decision.source,
+        args_preview_complete: argsPreviewDetails.complete,
+        // A block is only auditable if you can see WHAT was blocked — otherwise
+        // "denied gmail.send_email" can't be told apart from a false positive.
+        args_preview: argsPreview,
+      },
+      requestDigest,
+    );
+    return { status: 'denied', reason: 'policy_block' };
+  }
+  if (decision.action === 'require_approval') {
+    // SESSION-WIDE GRANTS ARE NO LONGER HONOURED.
+    //
+    // "Allow for this session" / "Allow everything" used to let one click
+    // pre-authorise every later call of a tool, whatever its arguments — so a
+    // mail send approved for one recipient silently covered a send to any
+    // other. The gate has to see each call, because the ARGUMENTS are what
+    // make a call safe or not, and they change per call.
+    //
+    // Deliberately dropped at the ENFORCEMENT point, not just in the UI: rows
+    // written before this change still exist in session_tool_approvals, and
+    // reading them would keep those old grants silently bypassing the gate.
+    // Historical session grants remain in the ledger for audit only. No
+    // runtime dependency can consult them for authorization.
+    //
+    // Approval carry-over claims one human approval for the exact request
+    // digest after the decision callback asks the session to continue.
+    const carriedOver = deps.consumeApprovedExecution
+      ? await deps.consumeApprovedExecution({
+          sessionId: input.sessionId ?? null,
+          actingUserId: input.subject.userId,
+          connectorId: connector.connectorId,
+          // The audit-row form (see audit() below), NOT the relative form.
+          actionPath: `${input.connectorSlug}.${input.actionPath}`,
+          requestDigest,
+        })
+      : false;
+    // Content binding: an approval given for enriched content (a draft's
+    // recipients and body) covers that content only. Re-read it; a change or
+    // a failed read asks again instead of running. An approval given while the
+    // content could not be read is re-read too: content that is now readable
+    // asks again so a human sees it; still unreadable, the approver's informed
+    // decision stands. The claim above already consumed the approval.
+    const enricher = (deps.approvalEnrichers ?? APPROVAL_ENRICHERS)[
+      enricherKey(connector, action.binding, input.actionPath)
+    ] as ApprovalEnricher | undefined;
+    const enrich = async (): Promise<ResolvedPreview | null> =>
+      enricher
+        ? resolveApprovalPreview(enricher, { deps, input, connector, binding: action.binding, args: executionArgs })
+        : null;
+    const approved = typeof carriedOver === 'object' ? carriedOver : null;
+    let resolved: ResolvedPreview | null = null;
+    let contentChanged = false;
+    if (approved?.resolvedDigest) {
+      resolved = await enrich();
+      contentChanged =
+        !resolved || !('resolved_digest' in resolved) || resolved.resolved_digest !== approved.resolvedDigest;
+    } else if (approved?.resolvedError && enricher) {
+      resolved = await enrich();
+      contentChanged = resolved !== null && 'resolved_digest' in resolved;
+    }
+    if (carriedOver && !contentChanged) {
+      await audit(deps, input, connector, 'ok', action.risk, {
+        reason: 'approval_carryover',
+        policy_source: decision.source,
+      });
+    } else {
+      // Older clients can pass an existing id. Preserve that row instead of
+      // stacking another one, but never poll it. New clients make one request
+      // and wait for the server-side session callback.
+      const reason = contentChanged ? 'content_changed' : 'policy_require_approval';
+      const reuseExisting =
+        !contentChanged && input.approvalExecutionId && deps.isPendingApprovalExecution
+          ? await deps.isPendingApprovalExecution({
+              executionId: input.approvalExecutionId,
+              projectId: input.projectId,
+              sessionId: input.sessionId ?? null,
+              actingUserId: input.subject.userId,
+              connectorId: connector.connectorId,
+              actionPath: `${input.connectorSlug}.${input.actionPath}`,
+              requestDigest,
+            })
+          : false;
+      // Only a new row reads the content. Never blocks or fails the hold: a
+      // slow or failed read is recorded as `resolved_error`. Only an action
+      // with an enricher carries these keys.
+      if (!reuseExisting) resolved ??= await enrich();
+      const executionId =
+        (reuseExisting ? input.approvalExecutionId : null) ??
+        (await audit(
+          deps,
+          input,
+          connector,
+          'pending_approval',
+          action.risk,
+          {
+            reason,
+            policy_source: decision.source,
+            args_preview_complete: argsPreviewDetails.complete,
+            // WITHOUT THIS the approval prompt can name the tool but not its
+            // target — a human was being asked to authorise `gmail.send_email`
+            // with no way to see who it emails. Redacted (see args-preview.ts):
+            // credential-shaped fields never reach the audit trail.
+            args_preview: argsPreview,
+            // Reference args (`{draft_id}`) name a target without showing it,
+            // so the agent may describe the effect. Unverified by design.
+            ...(approvalContext ? { approval_context: approvalContext } : {}),
+            ...resolved,
+          },
+          requestDigest,
+        ));
+      const extras = await approvalExtras(executionId);
+      const cardPosted =
+        !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
+          ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
+              deps.postApprovalCard!({
+                projectId: input.projectId,
+                sessionId: input.sessionId!,
+                executionId,
+                actionPath: `${input.connectorSlug}.${input.actionPath}`,
+                risk: action.risk,
+                resultSummary: {
+                  args_preview: argsPreview,
+                  args_preview_complete: argsPreviewDetails.complete,
+                  ...(approvalContext ? { approval_context: approvalContext } : {}),
+                  ...resolved,
+                },
+                approvalUrl: extras.approvalUrl ?? null,
+              }),
+            )
+          : false;
+      return {
+        status: 'pending_approval',
+        reason,
+        executionId,
+        retryable: false,
+        ...extras,
+        // The human decides on the card in their thread; a pasted link next
+        // to it would only duplicate the request.
+        ...(cardPosted
+          ? { approvalInstructions: `${CARD_POSTED_INSTRUCTIONS}${approvalContext ? '' : CONTEXT_HINT}` }
+          : {}),
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Execute an authorized call on its provider and audit the outcome. Attachment
+ * claims are completed on success and released on every failure.
+ */
+async function runConnectorAction(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  action: GatewayAction,
+  fullPath: string,
+  executionArgs: Record<string, unknown>,
+  executionSecret: string | null,
+  channelGate: ChannelReadGate | null,
+  channelWrite: ChannelWriteGate | null,
+): Promise<CallResult> {
+  let attachmentClaim: Awaited<ReturnType<ConnectorAttachmentStore['claimForEmail']>> | null = null;
+  let attachmentRefs: ReturnType<typeof findAttachmentRefs> = [];
   try {
     // `{ "$kortix_attachment": id }` references. The bytes are resolved only
     // into the provider-bound copy of the arguments, below.
@@ -946,104 +1175,21 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // Computers (Agent Computer Tunnel): the generic resolver chose the
     // account; its machine receives the call through the shared tunnel core.
     if (connector.provider === 'computer') {
-      if (action.binding.kind !== 'tunnel') {
-        throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
-      }
-      if (!deps.executeComputerCall) throw new Error('computer runner not wired');
-      const outcome = connector.connectionTunnelId
-        ? await deps.executeComputerCall({
-            tunnelId: connector.connectionTunnelId,
-            accountId: input.accountId,
-            projectId: input.projectId,
-            sessionId: input.sessionId ?? null,
-            actorUserId: input.subject.userId,
-            method: action.binding.method,
-            args: executionArgs,
-          })
-        : ({
-            ok: false,
-            kind: 'computer_unpaired',
-            message: 'This computer was unpaired. Pair it again to use it.',
-          } as const);
-      if (outcome.ok) {
-        await audit(deps, input, connector, 'ok', action.risk, {
-          method: action.binding.method,
-        });
-        return { status: 'ok', data: outcome.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
-      }
-      await audit(deps, input, connector, 'error', action.risk, {
-        reason: outcome.kind,
-        message: outcome.message.slice(0, 500),
-      });
-      if (outcome.kind !== 'error') {
-        return { status: 'error', reason: `${outcome.kind}: ${outcome.message}` };
-      }
-      logger.warn(`[connector] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
-      return { status: 'error', reason: outcome.message };
+      return await runComputerCall(deps, input, connector, action, executionArgs, fullPath);
     }
 
+    // One deadline for the upstream request. The race answers the caller;
+    // the signal also closes the socket of an http-family request.
+    const deadline = callTimeoutMs(deps);
+    const signal = AbortSignal.timeout(deadline);
+    const withDeadline = <T>(work: Promise<T>) => withTimeout(work, deadline, UPSTREAM_TIMEOUT);
     let result: ExecResult;
     if (connector.provider === 'pipedream') {
-      const b = action.binding;
-      if (!usable.secret) {
-        throw new Error(
-          'pipedream connector has no connected account (run `kortix connectors connect`)',
-        );
-      }
-      // A session-selected connection gets its own stable Pipedream external-user
-      // identity. The legacy/default connection preserves the existing shared
-      // `${projectId}:${slug}` identity for backwards compatibility.
-      const userId =
-        connector.connectionId && !connector.connectionIsDefault ? connector.connectionId : null;
-      if (b.kind === 'pipedream') {
-        if (!deps.executePipedream) throw new Error('pipedream action runner not wired');
-        result = await deps.executePipedream({
-          projectId: input.projectId,
-          connectorSlug: input.connectorSlug,
-          app: b.app,
-          actionKey: b.actionKey,
-          args: executionArgs,
-          accountId: usable.secret, // the resolved binding = Pipedream account id
-          userId,
-        });
-      } else if (b.kind === 'pipedream_proxy') {
-        if (!deps.executePipedreamProxy) throw new Error('pipedream proxy runner not wired');
-        result = await deps.executePipedreamProxy({
-          projectId: input.projectId,
-          connectorSlug: input.connectorSlug,
-          app: b.app,
-          args: executionArgs,
-          accountId: usable.secret,
-          userId,
-        });
-      } else {
-        throw new Error(`pipedream connector has unexpected binding kind "${b.kind}"`);
-      }
+      result = await withDeadline(
+        runPipedreamAction(deps, input, connector, action.binding, executionSecret, executionArgs),
+      );
     } else if (connector.provider === 'composio') {
-      const b = action.binding;
-      if (b.kind !== 'composio') {
-        throw new Error(`composio connector has unexpected binding kind "${b.kind}"`);
-      }
-      if (!connector.connectionId) throw new Error('composio_connection_missing');
-      const persistedSessionId =
-        typeof connector.connectionMetadata?.session_id === 'string'
-          ? connector.connectionMetadata.session_id
-          : null;
-      const connectedAccountId =
-        typeof connector.connectionMetadata?.connected_account_id === 'string'
-          ? connector.connectionMetadata.connected_account_id
-          : null;
-      const runner = deps.executeComposio ?? executeComposio;
-      result = await runner({
-        projectId: input.projectId,
-        connectorSlug: input.connectorSlug,
-        connectionId: connector.connectionId,
-        sessionId: persistedSessionId,
-        toolkit: b.toolkit,
-        toolSlug: b.toolSlug,
-        args: executionArgs,
-        connectedAccountId,
-      });
+      result = await withDeadline(runComposioAction(deps, input, connector, action.binding, executionArgs));
     } else {
       let providerArgs =
         connector.provider === 'channel'
@@ -1089,17 +1235,20 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
           claim.files,
         );
       }
-      result = await executeCall({
-        binding: action.binding,
-        baseUrl: connector.baseUrl,
-        auth: connector.auth,
-        headers: connector.headers,
-        secret: executionSecret,
-        args: providerArgs,
-        paramHints: paramHintsFromSchema(action.inputSchema),
-        appAuthorization: await appAuthorizationForCall(deps, input, connector, action.binding),
-        fetchImpl: deps.fetchImpl,
-      });
+      const appAuthorization = await appAuthorizationForCall(deps, input, connector, action.binding);
+      result = await withDeadline(
+        executeCall({
+          binding: action.binding,
+          baseUrl: connector.baseUrl,
+          auth: connector.auth,
+          headers: connector.headers,
+          secret: executionSecret,
+          args: providerArgs,
+          paramHints: paramHintsFromSchema(action.inputSchema),
+          appAuthorization,
+          fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
+        }),
+      );
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).
@@ -1123,15 +1272,15 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
       if (misfire) {
         const undone = misfire.undo
-          ? await executeCall({
+          ? await withDeadline(executeCall({
               binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
               baseUrl: connector.baseUrl,
               auth: connector.auth,
               headers: connector.headers,
               secret: executionSecret,
               args: misfire.undo.args,
-              fetchImpl: deps.fetchImpl,
-            })
+              fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal }),
+            }))
               .then((undo) => mapChannelEnvelope(undo).ok)
               .catch(() => false)
           : false;
@@ -1140,6 +1289,11 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         await audit(deps, input, connector, 'denied', action.risk, { reason, message, removed: undone });
         return { status: 'denied', reason, message };
       }
+    }
+    const markedRejected = Boolean(connector.connectionMetadata?.credential_rejected_at);
+    const credentialRejected = await rejectedCredentialAccount(deps, connector, result, markedRejected);
+    if (connector.connectionId && (credentialRejected ? !markedRejected : markedRejected && result.ok)) {
+      await deps.markCredentialRejected?.(connector.connectionId, Boolean(credentialRejected)).catch(() => {});
     }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {
@@ -1160,7 +1314,15 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
       });
       const named = await withSlackAuthorNames(deps, input, connector, executionSecret, result.data);
       const data = await withSlackThreadBinding(deps, input, connector, executionArgs, named);
-      return { status: 'ok', data, risk: action.risk, account: gatewayConnectorAccount(connector) };
+      return {
+        status: 'ok',
+        data,
+        risk: action.risk,
+        account: gatewayConnectorAccount(connector),
+        binding: action.binding.kind,
+        upstreamStatus: result.status,
+        ...callOutput(action.binding.kind, data, executionSecret),
+      };
     }
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
@@ -1170,30 +1332,172 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     // An upstream that echoes the rejected body would echo the file's base64.
     const upstream = upstreamReason(result);
     const reason =
+      credentialRejected +
       teamsReadConsentHint(connector, result) +
       (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
       fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       http_status: result.status,
+      ...(credentialRejected ? { error_code: CREDENTIAL_REJECTED } : {}),
       reason: reason.slice(0, 500),
     });
     const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
     if (connector.provider === 'composio' && result.status === 400) logger.debug(message);
     else logger.warn(message);
-    return { status: 'error', reason };
+    return {
+      status: 'error',
+      reason,
+      binding: action.binding.kind,
+      upstreamStatus: result.status,
+      ...(result.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: result.retryAfterSeconds }),
+    };
   } catch (e) {
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
         ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
         .catch(() => {});
     }
-    const reason = (e as Error).message + fallbackHint(connector, action.binding);
+    const reason = isTimeout(e)
+      ? `${UPSTREAM_TIMEOUT}: ${fullPath} did not answer within ${callTimeoutMs(deps) / 1000} s. ` +
+        'The call may still have run upstream: check its effect before you repeat a write.'
+      : (e as Error).message + fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
     });
     logger.warn(`[connector] ${fullPath} threw: ${reason.slice(0, 500)}`);
-    return { status: 'error', reason };
+    return { status: 'error', reason, binding: action.binding.kind };
   }
+}
+
+/** Run a call on a paired computer through the tunnel and audit the outcome. */
+async function runComputerCall(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  action: GatewayAction,
+  executionArgs: Record<string, unknown>,
+  fullPath: string,
+): Promise<CallResult> {
+  if (action.binding.kind !== 'tunnel') {
+    throw new Error(`computer connector has unexpected binding kind "${action.binding.kind}"`);
+  }
+  if (!deps.executeComputerCall) throw new Error('computer runner not wired');
+  const outcome = connector.connectionTunnelId
+    ? await deps.executeComputerCall({
+        tunnelId: connector.connectionTunnelId,
+        accountId: input.accountId,
+        projectId: input.projectId,
+        sessionId: input.sessionId ?? null,
+        actorUserId: input.subject.userId,
+        method: action.binding.method,
+        args: executionArgs,
+      })
+    : ({
+        ok: false,
+        kind: 'computer_unpaired',
+        message: 'This computer was unpaired. Pair it again to use it.',
+      } as const);
+  if (outcome.ok) {
+    await audit(deps, input, connector, 'ok', action.risk, {
+      method: action.binding.method,
+    });
+    return {
+      status: 'ok',
+      data: outcome.data,
+      risk: action.risk,
+      account: gatewayConnectorAccount(connector),
+      binding: 'tunnel',
+      output: outcome.data,
+      upstreamStatus: null,
+    };
+  }
+  await audit(deps, input, connector, 'error', action.risk, {
+    reason: outcome.kind,
+    message: outcome.message.slice(0, 500),
+  });
+  if (outcome.kind !== 'error') {
+    return { status: 'error', reason: `${outcome.kind}: ${outcome.message}`, binding: 'tunnel' };
+  }
+  logger.warn(`[connector] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
+  return { status: 'error', reason: outcome.message, binding: 'tunnel' };
+}
+
+/** A Pipedream action or proxy call on the connected account `secret`. */
+async function runPipedreamAction(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  b: ActionBinding,
+  secret: string | null,
+  executionArgs: Record<string, unknown>,
+): Promise<ExecResult> {
+  if (!secret) {
+    throw new Error(
+      'pipedream connector has no connected account (run `kortix connectors connect`)',
+    );
+  }
+  // A session-selected connection gets its own stable Pipedream external-user
+  // identity. The legacy/default connection preserves the existing shared
+  // `${projectId}:${slug}` identity for backwards compatibility.
+  const userId =
+    connector.connectionId && !connector.connectionIsDefault ? connector.connectionId : null;
+  if (b.kind === 'pipedream') {
+    if (!deps.executePipedream) throw new Error('pipedream action runner not wired');
+    return await deps.executePipedream({
+      projectId: input.projectId,
+      connectorSlug: input.connectorSlug,
+      app: b.app,
+      actionKey: b.actionKey,
+      args: executionArgs,
+      accountId: secret, // the resolved binding = Pipedream account id
+      userId,
+    });
+  } else if (b.kind === 'pipedream_proxy') {
+    if (!deps.executePipedreamProxy) throw new Error('pipedream proxy runner not wired');
+    return await deps.executePipedreamProxy({
+      projectId: input.projectId,
+      connectorSlug: input.connectorSlug,
+      app: b.app,
+      args: executionArgs,
+      accountId: secret,
+      userId,
+    });
+  } else {
+    throw new Error(`pipedream connector has unexpected binding kind "${b.kind}"`);
+  }
+}
+
+/** A Composio tool call on the connection's server-owned account and session. */
+export async function runComposioAction(
+  deps: GatewayDeps,
+  input: CallInput,
+  connector: GatewayConnector,
+  b: ActionBinding,
+  executionArgs: Record<string, unknown>,
+): Promise<ExecResult> {
+  if (b.kind !== 'composio') {
+    throw new Error(`composio connector has unexpected binding kind "${b.kind}"`);
+  }
+  if (!connector.connectionId) throw new Error('composio_connection_missing');
+  const persistedSessionId =
+    typeof connector.connectionMetadata?.session_id === 'string'
+      ? connector.connectionMetadata.session_id
+      : null;
+  const connectedAccountId =
+    typeof connector.connectionMetadata?.connected_account_id === 'string'
+      ? connector.connectionMetadata.connected_account_id
+      : null;
+  const runner = deps.executeComposio ?? executeComposio;
+  return await runner({
+    projectId: input.projectId,
+    connectorSlug: input.connectorSlug,
+    connectionId: connector.connectionId,
+    sessionId: persistedSessionId,
+    toolkit: b.toolkit,
+    toolSlug: b.toolSlug,
+    args: executionArgs,
+    connectedAccountId,
+  });
 }
 
 function hasAttachmentHandles(args: Record<string, unknown>): boolean {
@@ -1330,6 +1634,50 @@ function upstreamReason(result: ExecResult): string {
     }
   }
   return `upstream_${result.status}`;
+}
+
+const CREDENTIAL_REJECTED = 'credential_rejected';
+
+/**
+ * An upstream 401 to the credential Kortix stored for this account: the key
+ * expired, was revoked, or is wrong. The bare upstream body (`api_key_expired`)
+ * reads like a Kortix auth failure, so name the account and the fix. Empty
+ * for any other result, and for a channel: it sends the platform install
+ * token, not an account credential. A later ok call clears the mark, so one
+ * stray 401 does not leave a working account flagged.
+ */
+async function rejectedCredentialAccount(
+  deps: GatewayDeps,
+  connector: GatewayConnector,
+  result: ExecResult,
+  markedRejected: boolean,
+): Promise<string> {
+  if (result.status !== 401 || !connector.hasAuth || !connector.connectionId || connector.provider === 'channel') {
+    return '';
+  }
+  const label = connector.connectionLabel || connector.connectionId;
+  const kind = await deps.credentialKind?.(connector.connectionId).catch(() => null);
+  let fix: string;
+  if (kind === 'secret') {
+    fix =
+      'A project member replaces it in Connectors, or runs ' +
+      `\`kortix connectors connections credential ${connector.connectionId} -\` with the new value on stdin.`;
+  } else if (!kind && connector.authSecret) {
+    fix = `A project member replaces the value of the project secret ${connector.authSecret} in Secrets.`;
+  } else if (kind?.startsWith('oauth2_')) {
+    // OAuth refreshes the token before expiry, so its 401 means the grant was revoked.
+    fix = `A project member signs in to account "${label}" again in Connectors.`;
+  } else if (connector.provider === 'pipedream') {
+    fix = `A project member reconnects it: \`kortix connectors connect ${connector.slug}\`.`;
+  } else {
+    fix = 'A project member replaces or reconnects it in Connectors.';
+  }
+  return (
+    `${CREDENTIAL_REJECTED}: ${connector.slug} rejected the credential stored in account "${label}" (HTTP 401): ` +
+    `it expired, was revoked, or is wrong. ${fix} ` +
+    (markedRejected ? 'Retrying returns this error until the credential is replaced. ' : '') +
+    'Upstream: '
+  );
 }
 
 /**

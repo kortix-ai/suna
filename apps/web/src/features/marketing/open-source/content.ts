@@ -49,7 +49,7 @@
  *     `/enterprise`, which `/self-hosted` routes to.
  *  5. Do not claim "egress controlled at the network" — nothing implements it.
  *  6. Do not claim blanket "microVM isolation" — true for Platinum, not for
- *     Daytona, which is the default. This section names no isolation boundary.
+ *     Daytona, the legacy fallback. This section names no isolation boundary.
  *  7. Any CLI command put back here must be a shipped one. The two that used to
  *     sit in this file were `kortix self-host start`
  *     (`apps/cli/src/commands/self-host.ts`) and `kortix hosts use <host>`
@@ -83,7 +83,7 @@ export const openSource = {
    * The whole note. Sentence one is `/about` → `hero.title` verbatim; sentence
    * two is the first clause of `hero.lead`. Keep the two files in step.
    */
-  title: 'We are building the open-source AI Management System. Every company should own all of it.',
+  title: 'We are building the open-source AI Operating System. Every company should own all of it.',
 
   /** Primary way out: the rest of the reason. */
   aboutLabel: 'Why we are building it',

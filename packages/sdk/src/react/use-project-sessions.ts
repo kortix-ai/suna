@@ -15,6 +15,7 @@
  */
 
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import {
   listProjectSessionsPage,
   type ListProjectSessionsOptions,
@@ -60,8 +61,30 @@ export function flattenProjectSessionPages(
   return flat;
 }
 
+/**
+ * How many pages the list reads on its own while every page so far was empty.
+ * Each server page scans a bounded number of rows, so 5 pages cover about
+ * 2,400 newer rows the viewer cannot see. Past that, the viewer presses
+ * Load more.
+ */
+export const EMPTY_SESSION_PAGE_SCAN_LIMIT = 5;
+
+/**
+ * Whether to read the next page on its own (KRTX-1727). The server drops rows
+ * the viewer may not see, and deleted ones, after a bounded scan, so a page
+ * can be empty and still carry a cursor. That is not an empty list.
+ */
+export function shouldScanPastEmptySessionPages(
+  data: { pages: ProjectSessionPage[]; pageParams: unknown[] } | undefined,
+  hasNextPage: boolean,
+): boolean {
+  if (!data || !hasNextPage) return false;
+  if (data.pages.length >= EMPTY_SESSION_PAGE_SCAN_LIMIT) return false;
+  return data.pages.every((page) => page.items.length === 0);
+}
+
 export interface UseProjectSessionsOptions
-  extends Pick<ListProjectSessionsOptions, 'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels'> {
+  extends Pick<ListProjectSessionsOptions, 'scope' | 'limit' | 'parent' | 'startedBy' | 'q' | 'labels' | 'view'> {
   enabled?: boolean;
   /** Milliseconds, or false. Evaluated against the sessions loaded SO FAR. */
   refetchInterval?: number | false | ((sessions: ProjectSession[]) => number | false);
@@ -76,9 +99,9 @@ export interface UseProjectSessionsOptions
  */
 export function useProjectSessions(projectId: string, options?: UseProjectSessionsOptions) {
   const scope = options?.scope ?? 'visible';
-  const { parent, startedBy, q, labels } = options ?? {};
+  const { parent, startedBy, q, labels, view } = options ?? {};
   const query = useInfiniteQuery({
-    queryKey: qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels }),
+    queryKey: qk.project.sessionsPaged(projectId, scope, { parent, startedBy, q, labels, view }),
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) =>
       listProjectSessionsPage(projectId, {
@@ -89,20 +112,36 @@ export function useProjectSessions(projectId: string, options?: UseProjectSessio
         startedBy,
         q,
         labels,
+        view,
       }),
     getNextPageParam: projectSessionsPageParam,
     enabled: options?.enabled ?? true,
     refetchOnWindowFocus: options?.refetchOnWindowFocus,
+    ...contract('inventory'),
     refetchInterval: (query) => {
       const interval = options?.refetchInterval;
       if (typeof interval !== 'function') return interval ?? false;
       return interval(flattenProjectSessionPages(query.state.data));
     },
-    ...contract('inventory'),
   });
+
+  // A failed fetch ends the scan: Load more (or a refetch) is the retry.
+  const isScanning = shouldScanPastEmptySessionPages(query.data, query.hasNextPage) && !query.isError;
+  const { isFetching, data, dataUpdatedAt, fetchNextPage } = query;
+  useEffect(() => {
+    // `data` and `dataUpdatedAt` run this on each answer: a fast page can land
+    // before React renders its fetch, and `isFetching` then reads false twice.
+    if (isScanning && !isFetching) void fetchNextPage();
+  }, [isScanning, isFetching, data, dataUpdatedAt, fetchNextPage]);
 
   return {
     ...query,
+    /**
+     * True while every page so far was empty and the list reads the next one
+     * on its own. Render it as loading, never as "no sessions". A failed
+     * fetch ends it: offer Load more, which is the retry.
+     */
+    isScanning,
     /**
      * Every page loaded so far, flattened and de-duplicated.
      *

@@ -12,7 +12,7 @@
  *
  * REALITY, same as run-session-backlog.flow.ts: every flow here needs a real
  * booted sandbox, which the local profile does not have. Every flow is gated
- * `requires: ["funded", "daytona"]`; the local runner self-skips it cleanly
+ * `requires: ["funded", "sandbox"]`; the local runner self-skips it cleanly
  * (planLocalFlows), and it runs for real against a deployed target.
  *
  * RUN-9, SESS-23 and SESS-24 run once per harness (`harnessFlow`) and read the
@@ -25,6 +25,7 @@
  * reachable from an external client, so SESS-23 observes its effect only
  * through the transcript.
  */
+import { isKe2eRetryableError } from '../core/client';
 import { flow, harnessFlow } from '../core/flow';
 import { waitFor } from '../core/poll';
 import {
@@ -65,7 +66,7 @@ harnessFlow(
   'RUN-9',
   {
     domain: 'agent-run',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 900_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -177,24 +178,11 @@ harnessFlow(
   'SESS-23',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
-    // Un-quarantined in 09aa887a55 (2026-08-24) on the expectation that the
-    // stop-time abort + boot-time orphan finalizer had closed the wake path.
-    // Its first release-gate run since (v0.13.6, run 32992496089, api shard 2)
-    // failed again at 168.7s: `status in [200] — expected [200], got 503` on
-    // the first OpenCode read through the preview proxy right after `/start`
-    // reported ready — the box was still waking (the "503 = waking state"
-    // class), i.e. the same pre-existing stop→wake defect the earlier
-    // quarantine documented (#6638 investigation). On Kortix routes
-    // (2026-09-28, local stack, 2 of 2 runs) the OpenCode defect reads
-    // differently: the first prompt after the wake is recorded
-    // "accepted by the runtime but never became a message" and gets no
-    // reply. SESS-23-pi passed the same flow. Quarantined until the wake path
-    // is proven on a staging dry run
-    // (`gh workflow run tests-release.yml --ref staging -f expected_sha=<sha>`);
-    // un-quarantine ONLY in the PR that carries that green run.
-    quarantine:
-      'stop→wake on OpenCode: the first prompt after the wake is accepted by the runtime but never becomes a message, so it gets no reply (local stack 2026-09-28, 2 of 2 runs; pi passes). First seen as a post-wake 503 on gate run 32992496089; quarantined since 2026-08-26',
+    requires: ['funded', 'sandbox'],
+    // Known OpenCode defect (local stack 2026-09-28, 2 of 2 runs): the first
+    // prompt after the wake is "accepted by the runtime but never became a
+    // message" and gets no reply. SESS-23-pi passed the same flow. A red
+    // SESS-23 is that bug, not this test.
     // Boot readiness 540_000 + turn start 120_000 + stop settle 60_000 + wake
     // 180_000 + reply 240_000 exceeds 900_000 only when every wait runs to its
     // bound; 1_200_000 matches SESS-24.
@@ -348,7 +336,7 @@ harnessFlow(
   'SESS-24',
   {
     domain: 'sessions',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     timeoutMs: 1_200_000,
     routes: [
       'POST /v1/projects/:projectId/sessions',
@@ -489,31 +477,6 @@ harnessFlow(
       },
     );
 
-    let detailSnapshotBeforeStop: any = null;
-    await ctx.step(
-      "session A's detail read exposes the server-owned title/tree mirror before stopping (baseline)",
-      async () => {
-        detailSnapshotBeforeStop = await waitFor(
-          async () => {
-            const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
-              params: { projectId: project.id, sessionId: sessionA.id },
-            });
-            r.status(200);
-            return r.json<any>();
-          },
-          {
-            until: (row) => {
-              const title = typeof row?.name === 'string' ? row.name.trim() : '';
-              return Boolean(title) && !/^new (session|agent)\b/i.test(title);
-            },
-            timeoutMs: 180_000,
-            intervalMs: 3_000,
-            description: `session A's mirrored title settles`,
-          },
-        );
-      },
-    );
-
     await ctx.step("session A's completed turn has a durable transcript before stopping", async () => {
       await waitFor(
         async () => {
@@ -537,27 +500,89 @@ harnessFlow(
       );
     });
 
+    // After the durable transcript, and the same title on two polls in a row:
+    // a title generated after the first non-default one replaced it between
+    // this baseline and the post-stop read (release gate v0.13.58, attempt 3).
+    let detailSnapshotBeforeStop: any = null;
+    await ctx.step(
+      "session A's detail read exposes the server-owned title/tree mirror before stopping (baseline)",
+      async () => {
+        let previousTitle = '';
+        detailSnapshotBeforeStop = await waitFor(
+          async () => {
+            const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+              params: { projectId: project.id, sessionId: sessionA.id },
+            });
+            r.status(200);
+            return r.json<any>();
+          },
+          {
+            until: (row) => {
+              const title = typeof row?.name === 'string' ? row.name.trim() : '';
+              const settled = Boolean(title) && !/^new (session|agent)\b/i.test(title) && title === previousTitle;
+              previousTitle = title;
+              return settled;
+            },
+            timeoutMs: 180_000,
+            intervalMs: 3_000,
+            description: `session A's mirrored title settles`,
+          },
+        );
+      },
+    );
+
     await ctx.step("stop session A's sandbox → 200 stopped (or stopping, then stopped)", async () => {
       await stopSessionAndWait(ctx, project.id, sessionA.id);
     });
 
+    // `name` resolves custom_name ?? the runtime root title in the mirrored tree
+    // ?? the Kortix-generated title (serializers.ts `serializeSession`).
+    // The runtime's own title reaches the mirror asynchronously and outranks
+    // the generated one, so a baseline read can legitimately hold the
+    // generated title while the post-stop read holds the runtime's (release
+    // gate 38737177991: "Exact Single Token Reply" → "Reply with SESS24
+    // session token"). The contract is a mirrored, non-default title and an
+    // unwiped tree that stay put once no runtime is left to change them.
     await ctx.step(
-      "the DB-backed session detail read (the web's persisted-pin cached-paint source) still returns the SAME mirrored title/tree for the now-stopped session — the read path works without a live runtime",
+      "the DB-backed session detail read (the web's persisted-pin cached-paint source) still returns the mirrored title/tree for the now-stopped session, stable across reads — the read path works without a live runtime",
       async () => {
-        const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
-          params: { projectId: project.id, sessionId: sessionA.id },
-        });
-        r.status(200)
-          .body()
-          .has('$.name', detailSnapshotBeforeStop.name)
-          .has('$.session_id', sessionA.id);
-        const body = r.json<any>();
+        const read = async () => {
+          const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId', {
+            params: { projectId: project.id, sessionId: sessionA.id },
+          });
+          r.status(200).body().has('$.session_id', sessionA.id);
+          return r.json<any>();
+        };
+        const body = await read();
+        const tree: any[] = Array.isArray(body.opencode_sessions) ? body.opencode_sessions : [];
+        const root =
+          tree.find((entry) => entry?.id === body.runtime_session_id) ?? tree.find((entry) => !entry?.parent_id);
+        const runtimeTitle = typeof root?.title === 'string' ? root.title.trim() : '';
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name || /^new (session|agent)\b/i.test(name)) {
+          throw new Error(`the stopped session's detail read lost its title: ${JSON.stringify(body.name)}`);
+        }
+        if (name !== detailSnapshotBeforeStop.name && name !== runtimeTitle) {
+          throw new Error(
+            `the stopped session's title is neither the pre-stop title nor the mirrored runtime title: ` +
+              `before=${JSON.stringify(detailSnapshotBeforeStop.name)} after=${JSON.stringify(body.name)} runtime=${JSON.stringify(runtimeTitle)}`,
+          );
+        }
+        const ids = new Set(tree.map((entry) => entry?.id));
+        const lost = (detailSnapshotBeforeStop.opencode_sessions ?? [])
+          .map((entry: any) => entry?.id)
+          .filter((id: unknown) => !ids.has(id));
+        if (lost.length > 0) {
+          throw new Error(`the mirrored opencode_sessions tree lost ${lost.join(', ')} across the stop`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        const again = await read();
         if (
-          JSON.stringify(body.opencode_sessions) !==
-          JSON.stringify(detailSnapshotBeforeStop.opencode_sessions)
+          again.name !== body.name ||
+          JSON.stringify(again.opencode_sessions) !== JSON.stringify(body.opencode_sessions)
         ) {
           throw new Error(
-            'the mirrored opencode_sessions tree changed (or was wiped) across the stop — the cached-paint read is not stable without a live runtime',
+            'the stopped session\'s mirrored title/tree changed between two reads with no live runtime — the cached-paint read is not stable',
           );
         }
       },
@@ -617,8 +642,8 @@ flow(
   'SESS-25',
   {
     domain: 'sessions',
-    requires: ['daytona', 'funded'],
-    // Preview run 34938179244 measured a fresh Daytona image build at up to
+    requires: ['sandbox', 'funded'],
+    // Preview run 34938179244 measured a fresh provider image build at up to
     // 439s. Readiness now permits that cold path before the inbox assertions.
     timeoutMs: 1_200_000,
     routes: [
@@ -626,6 +651,7 @@ flow(
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
       'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
       'DELETE /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+      'PATCH /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts/:promptId/retry',
       'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
     ],
@@ -788,6 +814,35 @@ flow(
       r.status([200, 404]);
     });
 
+    await ctx.step('PATCH edits a waiting prompt in place, or refuses it honestly if it is on the wire', async () => {
+      // The queue list's edit: new text, same row, nothing sent. 409 means the
+      // agent already has the old text; 404 means it is answered and gone.
+      const empty = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+        { text: '  ' },
+        { params: { ...params, promptId } },
+      );
+      empty.status(400);
+      const r = await owner.patch(
+        '/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId',
+        { text: 'SESS-25 edited prompt' },
+        { params: { ...params, promptId } },
+      );
+      r.status([200, 409, 404]);
+      if (r.statusCode === 200) {
+        const edited = r.json<any>();
+        if (edited.prompt_id !== promptId || edited.full_text !== 'SESS-25 edited prompt') {
+          throw new Error(`PATCH did not return the edited row: ${JSON.stringify(edited)}`);
+        }
+        const listed = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params });
+        listed.status(200);
+        const mine = (listed.json<any>().prompts ?? []).find((p: any) => p.prompt_id === promptId);
+        if (mine && mine.full_text !== 'SESS-25 edited prompt') {
+          throw new Error(`the queue still lists the old text: ${mine.full_text}`);
+        }
+      }
+    });
+
     await ctx.step('DELETE removes the prompt, or refuses it honestly if it is on the wire', async () => {
       const r = await owner.del('/v1/projects/:projectId/sessions/:sessionId/prompts/:promptId', {
         params: { ...params, promptId },
@@ -811,6 +866,110 @@ flow(
         params: { projectId: project.id, sessionId: other.id, promptId },
       });
       r.status(404);
+    });
+  },
+);
+
+// R7.1: pi's Kortix prompt route dropped `no_reply`, so a released Stop batch
+// ran one turn per row on pi instead of one turn for the batch.
+harnessFlow(
+  'SESS-49',
+  {
+    domain: 'sessions',
+    requires: ['funded', 'sandbox'],
+    // Boot (≤540s) + the boot turn + a held turn + the batch turn.
+    timeoutMs: 1_200_000,
+    routes: [
+      'POST /v1/projects/:projectId/sessions',
+      'POST /v1/projects/:projectId/sessions/:sessionId/start',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'GET /v1/projects/:projectId/sessions/:sessionId/prompts',
+      'POST /v1/projects/:projectId/sessions/:sessionId/prompts/hold',
+      'GET /v1/projects/:projectId/sessions/:sessionId/turn',
+      'GET /v1/projects/:projectId/sessions/:sessionId/transcript',
+    ],
+  },
+  async (ctx, harness) => {
+    const session = await bootSession(ctx, harness);
+    const { projectId, sessionId } = session;
+    const params = { projectId, sessionId };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const stamp = Date.now();
+    const alpha = `ALPHA${stamp}`;
+    const batch = `BATCH${stamp}`;
+    const waiting = async () => {
+      const r = await owner.get('/v1/projects/:projectId/sessions/:sessionId/prompts', { params });
+      r.status(200);
+      return (r.json<{ prompts?: Array<{ prompt_id: string; state: string; reason?: string | null }> }>().prompts ?? []);
+    };
+
+    await ctx.step('a long turn runs', async () => {
+      await sendPrompt(ctx, projectId, sessionId, `Run the shell command "sleep 90" with your bash tool, then reply with the word LONG${stamp}.`);
+      await waitForTurn(ctx, projectId, sessionId, (turn) => turn.turns.some((t) => t.state === 'active'), `a running turn in ${sessionId}`);
+      // An active turn is not yet a long one: a model that answers without the
+      // tool ends the turn at once, the next prompt is then delivered as a turn of
+      // its own, and "queued behind the running turn" has nothing to prove. Wait
+      // for the bash call itself to be in flight.
+      await waitFor(
+        async () => (await readTranscript(ctx, projectId, sessionId)).messages,
+        {
+          until: (messages) =>
+            messages.some((m) => m.role === 'assistant' && (m.tools ?? []).some((t) => t.tool === 'bash' && (t.status === 'running' || t.status === 'pending'))),
+          timeoutMs: 120_000,
+          intervalMs: 2_000,
+          description: `the sleep command to be running in ${sessionId}`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
+    });
+
+    let ids: string[] = [];
+    await ctx.step('two prompts queue behind the running turn and wait', async () => {
+      ids = [
+        await sendPrompt(ctx, projectId, sessionId, `Remember the code word ${alpha}. Do not answer this message on its own.`),
+        await sendPrompt(ctx, projectId, sessionId, `Reply with the word ${batch}, then the code word from my previous message.`),
+      ];
+      // `queued` or `waiting`: in the inbox, not handed to the runtime.
+      const rows = await waiting();
+      for (const id of ids) {
+        const row = rows.find((p) => p.prompt_id === id);
+        if (row?.state !== 'queued' && row?.state !== 'waiting') {
+          throw new Error(`a queued prompt did not wait behind the running turn: ${JSON.stringify(row)}`);
+        }
+      }
+    });
+
+    await ctx.step('Stop holds both prompts and ends the turn', async () => {
+      (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts/hold', { held: true }, { params })).status(200);
+      await abortTurn(ctx, session);
+      await waitForTurn(ctx, projectId, sessionId, (turn) => turn.turns.length === 0, `the stopped turn to end in ${sessionId}`);
+      const rows = await waiting();
+      for (const id of ids) {
+        const row = rows.find((p) => p.prompt_id === id);
+        if (row?.reason !== 'held') throw new Error(`Stop did not hold a queued prompt: ${JSON.stringify(row)}`);
+      }
+    });
+
+    // A queued row can reach the live turn at a step boundary before Stop lands
+    // (its inbox row shows `attempts: 1` while still `waiting`), and the model may
+    // answer it there. That answer belongs to the aborted turn, not to the batch.
+    // Only assistant messages that appear after the release count against it.
+    const beforeRelease = new Set(
+      (await readTranscript(ctx, projectId, sessionId)).messages.filter((m) => m.role === 'assistant').map((m) => m.id),
+    );
+    await ctx.step('Resume releases both as one batch: one turn answers both, parented on the second', async () => {
+      (await owner.post('/v1/projects/:projectId/sessions/:sessionId/prompts/hold', { held: false }, { params })).status(200);
+      const messages = await waitForAssistantText(ctx, projectId, sessionId, batch);
+      const first = messages.find((m) => m.role === 'user' && m.text.includes(alpha));
+      const second = messages.find((m) => m.role === 'user' && m.text.includes(batch));
+      if (!first?.id || !second?.id) throw new Error(`a batch prompt is missing from the transcript: ${JSON.stringify({ first, second })}`);
+      const answeredFirst = messages.filter((m) => m.role === 'assistant' && m.parent_id === first.id && !beforeRelease.has(m.id));
+      if (answeredFirst.length > 0) {
+        throw new Error(`the first batch row ran a turn of its own on ${harness}: ${JSON.stringify(answeredFirst.map((m) => m.text))}`);
+      }
+      if (!messages.some((m) => m.role === 'assistant' && m.parent_id === second.id && m.text.includes(batch))) {
+        throw new Error(`no reply parented on the second batch row carries ${batch}`);
+      }
     });
   },
 );

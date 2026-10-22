@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import * as crypto from '../shared/crypto';
 import * as ownership from '../shared/preview-ownership';
-import * as audit from '../shared/auth-audit';
+import * as audit from './auth-audit';
 import * as sentry from '../lib/sentry';
 import * as context from '../lib/request-context';
 import * as sso from '../iam/sso-sync';
@@ -45,7 +45,14 @@ mock.module('../shared/jwt-verify', () => ({
   decodeSupabaseJwtPayload: () => null,
 }));
 mock.module('../shared/preview-ownership', () => ({ ...ownership, canAccessPreviewSandbox: async () => true }));
-mock.module('../shared/auth-audit', () => ({ ...audit, auditLoginSuccess: () => {}, auditLoginFail: () => {} }));
+const loginFails: Array<Parameters<typeof audit.auditLoginFail>[0]> = [];
+mock.module('./auth-audit', () => ({
+  ...audit,
+  auditLoginSuccess: () => {},
+  auditLoginFail: (args: Parameters<typeof audit.auditLoginFail>[0]) => {
+    loginFails.push(args);
+  },
+}));
 mock.module('../lib/sentry', () => ({ ...sentry, setSentryUser: () => {} }));
 mock.module('../lib/request-context', () => ({ ...context, setContextField: () => {} }));
 mock.module('../iam/sso-sync', () => ({ ...sso, syncSsoMembership: async () => {} }));
@@ -130,5 +137,34 @@ describe('auth principal characterization', () => {
     for (const header of [undefined, 'Bearer ', 'Bearer jwt-valid', 'Bearer kortix_sb_invalid']) {
       expect((await app.request('/v1/projects/project-1', { headers: header ? { Authorization: header } : {} })).status).toBe(401);
     }
+  });
+
+  // KRTX-2168: one 401 body served both "no header at all" and "present but
+  // not a Bearer scheme", so an edge that strips the header and a browser
+  // answering an HTTP auth challenge were indistinguishable in recorded
+  // shapes. The middleware must separate the two in the response body AND in
+  // the audit reason, and a received-but-invalid Bearer token keeps its own
+  // third failure in both channels.
+  test('apiKeyAuth separates a missing header from a non-Bearer scheme', async () => {
+    const app = appFor(apiKeyAuth);
+    const errorOf = async (response: Response) => ((await response.json()) as { error: string }).error;
+
+    loginFails.length = 0;
+    const absent = await app.request('/v1/projects/project-1');
+    expect(absent.status).toBe(401);
+    expect(await errorOf(absent)).toBe('Missing Authorization header');
+    expect(loginFails.at(-1)?.reason).toBe('missing_auth_header');
+
+    loginFails.length = 0;
+    const basic = await app.request('/v1/projects/project-1', { headers: { Authorization: 'Basic a29ydGl4OnBhc3N3b3Jk' } });
+    expect(basic.status).toBe(401);
+    expect(await errorOf(basic)).toBe('Unsupported Authorization scheme: expected "Bearer <token>"');
+    expect(loginFails.at(-1)?.reason).toBe('invalid_auth_scheme');
+
+    loginFails.length = 0;
+    const junk = await app.request('/v1/projects/project-1', { headers: { Authorization: 'Bearer not-a-kortix-token' } });
+    expect(junk.status).toBe(401);
+    expect(await errorOf(junk)).toBe('Invalid token format — expected kortix_ prefix');
+    expect(loginFails.at(-1)?.reason).toBe('bad_token_format');
   });
 });

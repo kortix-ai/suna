@@ -26,12 +26,15 @@ export type RuntimeRequest =
     }
   | { kind: 'abort'; runtimeSessionId: string; prefix: string }
   | { kind: 'message-list'; runtimeSessionId: string; prefix: string }
+  /** A client answers (`reply`) or dismisses (`reject`) an agent question. Both harnesses serve it. */
+  | { kind: 'question-answer'; requestId: string; prefix: string }
   | { kind: 'other' };
 
 const OTHER: RuntimeRequest = { kind: 'other' };
 const PREFIX = /^\/proxy\/\d+(?=\/)/;
 const KORTIX = /^\/kortix\/(?:runtime|opencode)\/sessions\/([^/?#]+)\/(prompt|abort)\/?$/;
 const NATIVE = /^\/session\/([^/?#]+)\/(prompt_async|message|command|summarize|abort)(?=$|[/?#])(.*)$/;
+const QUESTION = /^\/question\/([^/?#]+)\/(?:reply|reject)\/?(?:$|[?#])/;
 
 /**
  * Drop the in-box dynamic-port nesting a client may address through, so one
@@ -62,6 +65,12 @@ export function classifyRuntimeRequest(method: string, path: string): RuntimeReq
     return kortix[2] === 'prompt'
       ? { kind: 'turn-start', verb: 'prompt', runtimeSessionId, prefix }
       : { kind: 'abort', runtimeSessionId, prefix };
+  }
+
+  const question = QUESTION.exec(bare);
+  if (question) {
+    const requestId = decodeSegment(question[1]!);
+    return verb === 'POST' && requestId ? { kind: 'question-answer', requestId, prefix } : OTHER;
   }
 
   const native = NATIVE.exec(bare);

@@ -14,18 +14,23 @@
  *   - Turn: every turn a member starts binds the session token to that member
  *     (`bindSessionTurnIdentity`): `user_id` and `on_behalf_of` both become the
  *     prompter, so a person never acts through another person's authority or
- *     accounts (closes V6). A turn from a non-person (trigger, channel sender,
- *     service account) clears `on_behalf_of` and keeps `user_id`.
+ *     accounts (closes V6). In a private session that is not the prompter's,
+ *     `on_behalf_of` is cleared instead: no one's personal accounts. A turn from
+ *     a non-person (trigger, channel sender, service account) clears
+ *     `on_behalf_of` and keeps `user_id`.
  *
  * Readers: `getRequestOnBehalfOf(c)` (fresh, per request, from the auth
- * middleware) or `credentialOnBehalfOf(actor)` (iam/actor.ts, 15 s memo).
+ * middleware) or the token row itself. No memo carries it: it changes per turn.
  */
-import type { Context } from 'hono';
 import { and, eq, isNotNull, isNull, ne, sql } from 'drizzle-orm';
-import { accountMemberships, accountTokens, projectSessions } from '@kortix/db';
+import { accountTokens, projectSessions } from '@kortix/db';
 import { config } from '../../config';
-import { loadTokenBinding } from '../../iam/actor';
 import { db } from '../../shared/db';
+import { membershipExistsSql, membershipRow } from '../../iam/membership-read';
+
+// The request reader `getRequestOnBehalfOf` lives in `middleware/on-behalf-of.ts`.
+// Re-exported here so every importer and mock keeps working.
+export { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
 
 /** Session metadata key stamped when a prompt cleared `on_behalf_of`. A
  *  re-mint of the session credential reads it and never restores the value. */
@@ -87,9 +92,9 @@ export function channelPrompterForOnBehalfOf(input: {
   teamsRequiresUserIdentity: boolean;
 }): string | null | undefined {
   if (typeof input.source !== 'string') return undefined;
-  // A reminder prompt is text its creator wrote earlier. The reminder create route
-  // already cleared `on_behalf_of` when that creator was another human, so a
-  // fire is like `system:connector-connected`: the session's own human caused it.
+  // A reminder the session's own agent set is that session's background work:
+  // its fire leaves the identity as is. A reminder a person set is marked
+  // `bindTurnIdentity` at fire time instead (trigger-fire.ts) and never gets here.
   if (input.source === 'trigger:reminder') return undefined;
   if (input.source.startsWith('trigger:')) return null;
   if (input.source === 'email' || input.source === 'telegram') return null;
@@ -119,11 +124,7 @@ export async function resolveSessionOnBehalfOf(input: {
     const metadata = (session.metadata ?? {}) as Record<string, unknown>;
     const parentId = typeof metadata.spawned_by_session === 'string' ? metadata.spawned_by_session : null;
     const [membership, parent] = await Promise.all([
-      db
-        .select({ userId: accountMemberships.userId })
-        .from(accountMemberships)
-        .where(and(eq(accountMemberships.userId, input.userId), eq(accountMemberships.accountId, input.accountId)))
-        .limit(1),
+      membershipRow(input.userId, input.accountId),
       parentId
         ? db
             .select({ onBehalfOfUserId: accountTokens.onBehalfOfUserId })
@@ -185,9 +186,6 @@ export async function clearSessionOnBehalfOfForPrompt(input: {
     )
     .returning({ tokenId: accountTokens.tokenId });
   if (cleared.length === 0) return false;
-  // The IAM token-binding memo carries the value for 15 s; drop it here so
-  // this replica's next request already sees NULL.
-  for (const row of cleared) loadTokenBinding.invalidate(row.tokenId);
   await db
     .update(projectSessions)
     .set({
@@ -202,8 +200,14 @@ export async function clearSessionOnBehalfOfForPrompt(input: {
  * the session token acts as them:
  *
  *   - a member of the account: `user_id` (authorization, LLM usage and member
- *     budgets, audit) and `on_behalf_of` (personal resources) both become the
- *     prompter, and the cleared stamp is removed so a re-mint follows them;
+ *     budgets, audit) becomes the prompter. `on_behalf_of` (personal resources)
+ *     becomes the prompter too, and the cleared stamp is removed so a re-mint
+ *     follows them — except in a PRIVATE session the prompter did not create.
+ *     There `on_behalf_of` is cleared and stamped: an admin (through
+ *     oversight) or a Slack thread participant may prompt someone's private
+ *     session, but neither their own mailbox, Drive, secrets, keys and screen
+ *     history (which would land in a transcript the creator owns) nor the
+ *     creator's (which they would then drive) belong in that turn;
  *   - anyone else (a service account, an API-key caller): `on_behalf_of` is
  *     cleared and stamped, `user_id` is kept — the same result as
  *     `clearSessionOnBehalfOfForPrompt`.
@@ -220,23 +224,34 @@ export async function bindSessionTurnIdentity(input: {
   prompterUserId: string;
 }): Promise<boolean> {
   const prompter = sql`${input.prompterUserId}::uuid`;
-  const member = sql`exists (select 1 from kortix.account_memberships m where m.user_id = ${prompter} and m.account_id = ${input.accountId})`;
+  const member = membershipExistsSql(prompter, input.accountId);
+  // The turn's `on_behalf_of`: the prompter, unless they are not a member, or
+  // the session is private and not theirs. A session row that is missing
+  // answers no row, which reads as null: fail closed.
+  const onBehalfOf = sql`(
+    select case
+      when not ${member} then null
+      when s.visibility <> 'private' or s.created_by = ${prompter} then ${prompter}
+      else null end
+      from kortix.project_sessions s
+     where s.session_id = ${input.sessionId}
+  )`;
   const changed = await db.execute<{ token_id: string }>(sql`
-    with changed as (
+    with target as (select ${onBehalfOf} as on_behalf_of),
+    changed as (
       update kortix.account_tokens t
          set user_id = case when ${member} then ${prompter} else t.user_id end,
-             on_behalf_of_user_id = case when ${member} then ${prompter} else null end
+             on_behalf_of_user_id = (select on_behalf_of from target)
        where t.session_id = ${input.sessionId}
          and t.account_id = ${input.accountId}
          and t.status = 'active'
          and t.revoked_at is null
-         and case when ${member}
-               then (t.user_id is distinct from ${prompter} or t.on_behalf_of_user_id is distinct from ${prompter})
-               else t.on_behalf_of_user_id is not null end
+         and ((${member} and t.user_id is distinct from ${prompter})
+              or t.on_behalf_of_user_id is distinct from (select on_behalf_of from target))
       returning t.token_id
     ), stamped as (
       update kortix.project_sessions s
-         set metadata = case when ${member}
+         set metadata = case when (select on_behalf_of from target) is not null
                then coalesce(s.metadata, '{}'::jsonb) - ${ON_BEHALF_OF_CLEARED_KEY}::text
                else coalesce(s.metadata, '{}'::jsonb) || jsonb_build_object(${ON_BEHALF_OF_CLEARED_KEY}::text, now()::text) end
        where s.session_id = ${input.sessionId}
@@ -244,11 +259,5 @@ export async function bindSessionTurnIdentity(input: {
     )
     select token_id from changed
   `);
-  for (const row of changed) loadTokenBinding.invalidate(row.token_id);
   return changed.length > 0;
-}
-
-/** Fresh per-request value set by the auth middleware; null for non-session tokens. */
-export function getRequestOnBehalfOf(c: Context): string | null {
-  return (c.get('onBehalfOfUserId') as string | null | undefined) ?? null;
 }

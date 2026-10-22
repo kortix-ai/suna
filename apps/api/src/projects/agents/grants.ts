@@ -3,14 +3,16 @@ import { isMetaAgentName } from '@kortix/shared';
 import { canonicalizeGrantActions, canonicalizeGrantConnectors } from '../../iam/agent-scope';
 import type { GitBackedProject } from '../git';
 import { platformMetaAgentGrant } from '../lib/platform-meta-agent';
-import { loadProjectAgents } from './parse';
+import { type ManifestFormat, OPENCODE_BUILTIN_AGENTS_V3 } from '@kortix/manifest-schema';
+import { parseManifestString } from '../manifest-io';
+import { extractAgents, loadProjectAgents } from './parse';
 import type { AgentSpec, LoadedAgents } from './types';
 
 /**
  * The non-binding agent sentinel. `project_sessions.agent_name` defaults to this
  * literal and NO agent is ever named `default` — the runtime resolves it to
  * OpenCode's configured `default_agent` (a general-purpose agent). Kept in sync
- * with the proxy's copy (sandbox-proxy/routes/preview.ts).
+ * with the proxy's copy (sandbox-proxy/pre-prompt-env-sync.ts).
  */
 export const DEFAULT_AGENT_SENTINEL = 'default';
 
@@ -63,7 +65,9 @@ export const OPENCODE_BUILTIN_AGENT_NAMES: ReadonlySet<string> = new Set([
  * one of those sessions lost its CLI and connector access.
  *
  *   - `default`, the platform meta agent and OpenCode's built-in agents are
- *     always launchable: none of them is ever another project's agent.
+ *     launchable: none of them is ever another project's agent. In a v3
+ *     project `build`/`plan`/`general`/`explore` are launchable only when
+ *     declared.
  *   - A project with no per-agent governance (no specs, no parse errors) keeps
  *     the runtime roster as the authority, unchanged.
  *   - Otherwise the name must be a declared, enabled spec. A manifest that
@@ -78,8 +82,11 @@ export function isLaunchableAgentName(agentName: string, loaded: LoadedAgents): 
   // OpenCode ships these in every runtime and a governed project's picker can
   // still send one. They are the runtime's own, not another project's, so they
   // keep running exactly as before: an undeclared built-in resolves to the
-  // deny-all grant in `grantFromLoadedAgents`, never a widening.
-  if (OPENCODE_BUILTIN_AGENT_NAMES.has(name)) return true;
+  // deny-all grant in `grantFromLoadedAgents`, never a widening. kortix_version 3
+  // runs only declared agents: its compiled config disables build/plan/general/
+  // explore unless the manifest declares the name.
+  const v3Disabled = (loaded.schemaVersion ?? 0) >= 3 && (OPENCODE_BUILTIN_AGENTS_V3 as readonly string[]).includes(name);
+  if (OPENCODE_BUILTIN_AGENT_NAMES.has(name) && !v3Disabled) return true;
   if (loaded.specs.length === 0 && loaded.errors.length === 0) return true;
   return loaded.specs.some((s) => s.name === name && s.enabled);
 }
@@ -119,6 +126,34 @@ function grantFromSpec(agentName: string, spec: AgentSpec): AgentGrant | null {
       ...appsGrantOf(spec),
     }),
   );
+}
+
+/**
+ * Every declared, enabled agent's grant, by name: what each agent's sessions
+ * would receive. The non-escalation check (iam/agent-grant-ceiling.ts) diffs
+ * this before and after a manifest write.
+ */
+export function grantsByAgent(loaded: LoadedAgents): Map<string, AgentGrant> {
+  const out = new Map<string, AgentGrant>();
+  for (const spec of loaded.specs) {
+    const grant = spec.enabled ? grantFromSpec(spec.name, spec) : null;
+    if (grant) out.set(spec.name, grant);
+  }
+  return out;
+}
+
+/**
+ * `grantsByAgent` of a manifest's text (the file at some ref). An absent or
+ * unparseable manifest declares no grants: the runtime default-denies every
+ * agent of an unparseable manifest, so reading it as empty never widens.
+ */
+export function grantsOfManifestText(text: string | null, format: ManifestFormat): Map<string, AgentGrant> {
+  if (!text?.trim()) return new Map();
+  try {
+    return grantsByAgent(extractAgents(parseManifestString(text, format)));
+  } catch {
+    return new Map();
+  }
 }
 
 /** Pure resolution rule (no I/O) — see `resolveAgentGrant`. Exported for tests. */
@@ -203,9 +238,12 @@ export function sandboxFromLoadedAgents(agentName: string, loaded: LoadedAgents)
   return loaded.specs.find((spec) => spec.name === concreteName && spec.enabled)?.sandbox ?? null;
 }
 
-/** Resolve the selected agent's project file delivery mode without repository I/O. */
+/** Resolve the selected agent's project file delivery mode without repository I/O.
+ *  An agent block that fails to parse gets no repository: a typo in
+ *  `workspace` must not grant the checkout it tried to withhold. */
 export function repositoryAccessFromLoadedAgents(agentName: string, loaded: LoadedAgents): boolean {
   const name = agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent ? loaded.defaultAgent : agentName;
+  if (loaded.errors.some((error) => error.name === name)) return false;
   return loaded.specs.find((spec) => spec.name === name && spec.enabled)?.repositoryAccess ?? true;
 }
 
@@ -213,20 +251,6 @@ export function repositoryAccessFromLoadedAgents(agentName: string, loaded: Load
 export function legacyReadWorkspaceFromLoadedAgents(agentName: string, loaded: LoadedAgents): boolean {
   const name = agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent ? loaded.defaultAgent : agentName;
   return loaded.specs.find((spec) => spec.name === name && spec.enabled)?.legacyReadWorkspace ?? false;
-}
-
-/**
- * Resolve the connectors that the selected agent requires at session start.
- * Each connector controls which connection owner is valid.
- */
-export function requiredConnectorsForAgent(agentName: string, loaded: LoadedAgents): string[] {
-  if (loaded.specs.length === 0 && loaded.errors.length === 0) return [];
-  const spec =
-    loaded.specs.find((s) => s.name === agentName && s.enabled) ??
-    (agentName === DEFAULT_AGENT_SENTINEL && loaded.defaultAgent
-      ? loaded.specs.find((s) => s.name === loaded.defaultAgent && s.enabled)
-      : undefined);
-  return spec?.connectorsRequired ?? [];
 }
 
 /**

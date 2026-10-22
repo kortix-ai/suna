@@ -21,7 +21,7 @@ import { dirname } from 'node:path'
 import { logger } from '@/lib/log/logger'
 import { createEphemeralCa } from './ca'
 import { createEgressShim } from './shim'
-import { resolveShimConfig, type ShimConfig, shimUnavailableReason } from './rules'
+import { resolveShimConfig, type ShimConfig, shimUnavailableReason } from '@kortix/api-contract/egress-shim-rules'
 
 /** Loopback only. Follows the daemon's `4319`/`4320` proxy convention. */
 const DEFAULT_SHIM_PORT = 4321

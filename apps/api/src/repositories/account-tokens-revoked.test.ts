@@ -21,8 +21,10 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { accountTokens, sessionSandboxes } from '@kortix/db';
 
-let capturedWhere: unknown = null;
+let capturedWheres: unknown[] = [];
 let rows: Array<Record<string, unknown>> = [];
+/** Rows the SECOND (relaxed) lookup returns — the dead-credential naming read. */
+let deadRows: Array<Record<string, unknown>> = [];
 let leaseRows: Array<Record<string, unknown>> = [];
 
 mock.module('../shared/db', () => ({
@@ -30,16 +32,22 @@ mock.module('../shared/db', () => ({
     select: () => ({
       from: (table: unknown) => table === sessionSandboxes ? ({
         where: (cond: unknown) => {
-          capturedWhere = cond;
+          capturedWheres.push(cond);
           return { limit: async () => leaseRows };
         },
       }) : ({
         innerJoin: () => ({
           where: (cond: unknown) => {
-            capturedWhere = cond;
+            capturedWheres.push(cond);
+            // The first lookup: the active-row gate, joined to accounts.
             return { limit: async () => rows };
           },
         }),
+        where: (cond: unknown) => {
+          capturedWheres.push(cond);
+          // The naming re-read (KRTX-1564): no join, no active filters.
+          return { limit: async () => deadRows };
+        },
       }),
     }),
     update: () => ({
@@ -73,8 +81,9 @@ function filteredColumns(node: unknown, seen = new Set<unknown>(), out: string[]
 }
 
 beforeEach(() => {
-  capturedWhere = null;
+  capturedWheres = [];
   rows = [];
+  deadRows = [];
   leaseRows = [];
 });
 
@@ -84,7 +93,7 @@ describe('validateAccountToken revocation gate', () => {
 
     await validateAccountToken(secretKey);
 
-    const columns = filteredColumns(capturedWhere);
+    const columns = filteredColumns(capturedWheres[0]);
     expect(columns).toContain('secret_key_hash');
     expect(columns).toContain('status');
     // The fix. Without it a `revoked_at`-stamped row authenticates cleanly and
@@ -161,6 +170,15 @@ describe('validateAccountToken revocation gate', () => {
       // KRTX-446: the lease refusal is a DEAD credential — the auth gate
       // marks it with the typed 401 so a retrying client can stop.
       credentialDead: true,
+      // KRTX-1749: the sandbox credential hash-matched a real row, so the
+      // gateway refusal keeps its owner.
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-session',
+        projectId: 'project-1',
+        sessionId: 'session-1',
+      },
     });
   });
 
@@ -184,6 +202,132 @@ describe('validateAccountToken revocation gate', () => {
     const result = await validateAccountToken('not-a-kortix-pat');
 
     expect(result.isValid).toBe(false);
-    expect(capturedWhere).toBeNull();
+    expect(capturedWheres).toHaveLength(0);
+  });
+});
+
+describe('a dead credential is named by its refusal (KRTX-1564)', () => {
+  test('the naming re-read runs only on the active-row miss and keeps the active filters out', async () => {
+    const { secretKey } = generateAccountTokenPair();
+    rows = [];
+    deadRows = [
+      { tokenId: 'tok-dead', projectId: null, sessionId: null, status: 'revoked', revokedAt: new Date() },
+    ];
+
+    await validateAccountToken(secretKey);
+
+    // Exactly two lookups: the gate, then the relaxed naming re-read.
+    expect(capturedWheres).toHaveLength(2);
+    const relaxed = filteredColumns(capturedWheres[1]);
+    expect(relaxed).toContain('secret_key_hash');
+    // The re-read must NOT re-apply the active filters — that is the whole
+    // point: the row it exists to find is the one they exclude.
+    expect(relaxed).not.toContain('status');
+    expect(relaxed).not.toContain('revoked_at');
+  });
+
+  test('a revoked project token is named', async () => {
+    const { secretKey } = generateAccountTokenPair();
+    rows = [];
+    deadRows = [
+      { tokenId: 'tok-proj', accountId: 'acct-1', userId: 'user-1', projectId: 'project-1', sessionId: null, status: 'revoked', revokedAt: new Date() },
+    ];
+
+    const result = await validateAccountToken(secretKey);
+
+    expect(result).toEqual({
+      isValid: false,
+      error: 'project token tok-proj is revoked',
+      credentialDead: true,
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-proj',
+        projectId: 'project-1',
+        sessionId: null,
+      },
+    });
+  });
+
+  test('a revoked session token is named', async () => {
+    const { secretKey } = generateAccountTokenPair();
+    rows = [];
+    deadRows = [
+      { tokenId: 'tok-sess', accountId: 'acct-1', userId: 'user-1', projectId: 'project-1', sessionId: 'sess-1', status: 'active', revokedAt: new Date() },
+    ];
+
+    const result = await validateAccountToken(secretKey);
+
+    expect(result).toEqual({
+      isValid: false,
+      error: 'session token tok-sess is revoked',
+      credentialDead: true,
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-sess',
+        projectId: 'project-1',
+        sessionId: 'sess-1',
+      },
+    });
+  });
+
+  test('a revoked account-level token is named', async () => {
+    const { secretKey } = generateAccountTokenPair();
+    rows = [];
+    deadRows = [
+      { tokenId: 'tok-pat', accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null, status: 'revoked', revokedAt: new Date() },
+    ];
+
+    const result = await validateAccountToken(secretKey);
+
+    expect(result).toEqual({
+      isValid: false,
+      error: 'token tok-pat is revoked',
+      credentialDead: true,
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-pat',
+        projectId: null,
+        sessionId: null,
+      },
+    });
+  });
+
+  test('a row the re-read finds alive stays the generic refusal (a race, not a naming case)', async () => {
+    const { secretKey } = generateAccountTokenPair();
+    rows = [];
+    deadRows = [
+      { tokenId: 'tok-live', accountId: 'acct-1', userId: 'user-1', projectId: null, sessionId: null, status: 'active', revokedAt: null },
+    ];
+
+    const result = await validateAccountToken(secretKey);
+
+    // The prose stays generic (a race, not a naming case), but the row the
+    // secret hashes to is real: its identity still rides on the refusal
+    // (KRTX-1749).
+    expect(result).toEqual({
+      isValid: false,
+      error: 'PAT not found or revoked',
+      credentialDead: true,
+      refusedIdentity: {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        tokenId: 'tok-live',
+        projectId: null,
+        sessionId: null,
+      },
+    });
+  });
+
+  test('a row absent from both lookups keeps the generic refusal', async () => {
+    const { secretKey } = generateAccountTokenPair();
+    rows = [];
+    deadRows = [];
+
+    const result = await validateAccountToken(secretKey);
+
+    expect(result).toEqual({ isValid: false, error: 'PAT not found or revoked', credentialDead: true });
   });
 });

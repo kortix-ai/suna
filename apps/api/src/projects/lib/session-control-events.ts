@@ -4,7 +4,7 @@
  * `GET .../sessions/:sid/stream` multiplexes two sources onto one client
  * connection: the sandbox daemon's sequenced runtime events, and the facts only
  * the API knows — the prompt queue, the turn verdict, the wake/boot envelope,
- * the transcript mirror's watermark. This module owns the second half.
+ * the audit watermark. This module owns the second half.
  *
  * ─── TWO CURSORS, NEVER ONE ────────────────────────────────────────────────
  * WS-Z1's rule, verbatim: *"Do not renumber: `seq` is the daemon's, and a
@@ -41,6 +41,7 @@
  * instance serving them. Losing it degrades a client from "skip the snapshot I
  * already have" to "apply the snapshot again", which is idempotent.
  */
+import { decideTurnStop } from '../../shared/turn-stop-refusal';
 
 /**
  * This API process's id. `cseq` is meaningless outside it — exactly as the
@@ -69,8 +70,6 @@ export type ControlEventType =
   | 'kortix.control.queue'
   /** Runtime reachability + wake/boot progress, as the CONTROL plane sees it. */
   | 'kortix.control.runtime'
-  /** The transcript mirror's watermark (how far the durable copy has caught up). */
-  | 'kortix.control.mirror'
   /**
    * The session's audit/approval WATERMARK — a change-detection signal for the
    * per-session audit surface (`GET .../audit`). It carries the count of
@@ -83,7 +82,17 @@ export type ControlEventType =
    */
   | 'kortix.control.audit'
   /** The daemon's `/kortix/opencode/state` projection, when the stream has one. */
-  | 'kortix.control.runtime_state';
+  | 'kortix.control.runtime_state'
+  /** The session's title and the project's secrets version (R5.2). */
+  | 'kortix.control.session';
+
+/**
+ * Internal field of a `kortix.control.turn` payload: who prompted the newest
+ * running turn. The frame is one broadcast per session, and whether a viewer
+ * may stop the run is a per-person answer, so the session stream replaces this
+ * field with the viewer's own `can_stop` before it writes the frame.
+ */
+export const TURN_FRAME_STOP_PROMPTER = 'stop_prompter_user_id';
 
 export interface ControlEvent {
   /** Which id-space this frame belongs to. Present on EVERY frame the stream writes. */
@@ -118,6 +127,7 @@ interface SessionChannel {
   touchedAt: number;
 }
 
+// replica-local: by design; each replica's reconciler re-reads the database (see header).
 const channels = new Map<string, SessionChannel>();
 
 function now(): number {
@@ -293,4 +303,24 @@ export function controlChannelState(sessionId: string): {
 /** Test-only: forget every channel. */
 export function __resetControlEventsForTests(): void {
   channels.clear();
+}
+
+/**
+ * A `kortix.control.turn` frame as one viewer receives it: the session-wide
+ * prompter field becomes that viewer's `can_stop`, so the prompter's id never
+ * reaches a client. Every other frame is written as published.
+ */
+export function viewerControlEvent(
+  event: ControlEvent,
+  viewer: { canManageLifecycle: boolean; callerUserId: string | null },
+): ControlEvent {
+  if (event.type !== 'kortix.control.turn' || !event.payload || typeof event.payload !== 'object') return event;
+  const { [TURN_FRAME_STOP_PROMPTER]: prompter, ...payload } = event.payload as Record<string, unknown>;
+  const turns = Array.isArray(payload.turns) ? payload.turns : [];
+  const verdict = decideTurnStop({
+    ...viewer,
+    running: turns.length > 0,
+    prompterUserId: typeof prompter === 'string' ? prompter : null,
+  });
+  return { ...event, payload: { ...payload, can_stop: verdict.allowed } };
 }

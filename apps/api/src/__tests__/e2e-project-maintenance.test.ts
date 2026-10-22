@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import * as realSandboxProxyBackend from '../sandbox-proxy/backend';
 
 let sandboxCandidates: any[] = [];
 let branchCandidates: any[] = [];
@@ -13,7 +14,6 @@ let auditInserts: Array<Record<string, unknown>> = [];
 mock.module('../config', () => ({
   config: { KORTIX_SANDBOX_AUTOSTOP_MINUTES: 15 },
   SANDBOX_VERSION: 'test',
-  KORTIX_MARKUP: 1,
   PLATFORM_FEE_MARKUP: 0,
   getToolCost: () => 0,
 }));
@@ -74,8 +74,9 @@ mock.module('../platform/providers', () => ({
   }),
 }));
 
-mock.module('../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
+mock.module('../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));
@@ -92,6 +93,7 @@ mock.module('../projects/git', () => ({
   listRepoFiles: async () => [],
   loadProjectConfig: async () => ({}),
   readRepoFile: async () => '',
+  isRepoFileNotFoundError: () => false,
   readManifestFromRepo: async () => null,
   listBranches: async () => [],
   remoteBranchExists: async () => true,

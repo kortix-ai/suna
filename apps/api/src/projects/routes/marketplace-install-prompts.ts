@@ -43,6 +43,11 @@ interface ProjectCatalogEntry {
   };
 }
 
+/** Does this manifest text declare kortix_version 3? */
+function isManifestV3(raw: string | null): boolean {
+  return raw !== null && /^kortix_version:\s*["']?3["']?\s*(?:#.*)?$/m.test(raw);
+}
+
 /** Build the initial prompt for an agent-driven merge of a `registry:project`
  *  item into an EXISTING project. This is judgment-heavy (does the incoming
  *  agent persona collide with one that already exists? does the target project
@@ -92,9 +97,17 @@ export function buildRegistryProjectInstallPrompt(
   lines.push(
     '',
     'Steps:',
-    "1. Read this project's current kortix.yaml and its agent files (`agents/`; older projects also `.kortix/opencode/agents/`) to see what already exists.",
-    '2. Add the template\'s agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.',
-    "3. Merge the template's kortix.yaml `agents:` entry for that agent into this project's kortix.yaml. Leave default_agent and every other existing agent untouched unless the user asks otherwise.",
+    ...(isManifestV3(targetManifestRaw)
+      ? [
+          "1. Read this project's kortix.yaml (kortix_version 3) to see what already exists: the registries (`skills`, `tools`, `commands`, `extensions`) and each agent's block with its `prompt_file`. It is the only config file: there is no `harnesses/` folder and no agent frontmatter.",
+          "2. Add the template's agent as a new block under `agents:` — rename it if the name collides with an existing agent. Put its behavior keys (description, mode, model, permission) in the block, its prompt alone (no frontmatter) in `agents/<name>.md`, and point `prompt_file` at it. Do not remove or overwrite any existing agent.",
+          "3. Register what the template ships — each skill folder under `skills:`, each tool module under `tools:`, each command under `commands:`, each plugin or pi package under `extensions:` — and enable on the new agent only what it uses (`skills`, `subagents`, `commands`, `extensions`, `connectors`, `secrets`, `kortix_permissions`). Leave default_agent and every other existing agent untouched unless the user asks otherwise. `kortix validate` must pass.",
+        ]
+      : [
+          "1. Read this project's current kortix.yaml and its agent files (`agents/`; older projects also `.kortix/opencode/agents/`) to see what already exists.",
+          '2. Add the template\'s agent persona as a new agent file — rename it if the name collides with an existing agent. Do not remove or overwrite any existing agent.',
+          "3. Merge the template's kortix.yaml `agents:` entry for that agent into this project's kortix.yaml. Leave default_agent and every other existing agent untouched unless the user asks otherwise.",
+        ]),
     '4. Install the marketplace skills listed above.',
     '5. If the template includes `install.md`, read it from the supplied file block before you finish. Use it as the template-specific setup guide and tell the user what company inputs, connectors, secrets, webhooks, or trigger decisions it will need after the files land.',
     '6. Open a change request with the result — do not push directly to the default branch.',
@@ -140,7 +153,7 @@ export function buildTemplateInstallPrompt(entry: TemplateCatalogEntry, id: stri
     );
   }
   steps.push(
-    "Wire the template's trigger (`.template.triggers` from the show output) into this project's `kortix.yaml`, rendering my input values into it (replace every `{{key}}` with what I gave you), and ship it **DISABLED** (`enabled: false`). Add the matching agent grant (`.template.agents`) under `agents:`.",
+    "Wire the template's trigger (`.template.triggers` from the show output) into this project's `kortix.yaml`, rendering my input values into it (replace every `{{key}}` with what I gave you), and ship it **DISABLED** (`enabled: false`). Add the matching agent grant (`.template.agents`) under `agents:`. In a kortix_version 3 project the agent is one block: move the agent file's frontmatter into it, keep the prompt alone in the file as its `prompt_file`, register each installed skill under `skills:` and enable it on the agent; `kortix validate` must pass.",
   );
   const needs = [
     secrets.length ? `secrets ${secrets.join(', ')} (Settings → Secrets)` : null,
@@ -149,7 +162,7 @@ export function buildTemplateInstallPrompt(entry: TemplateCatalogEntry, id: stri
   ].filter(Boolean);
   if (needs.length) {
     steps.push(
-      `Walk me through connecting what it needs — ${needs.join('; ')}. Mint setup links with the \`request_secret\` / \`connect\` tools — never ask me to paste a raw key into the chat.`,
+      `Walk me through connecting what it needs — ${needs.join('; ')}. Mint setup links with \`kortix secrets request\` / \`kortix connectors connect\` — never ask me to paste a raw key into the chat.`,
     );
   }
   steps.push(

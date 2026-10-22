@@ -1,14 +1,14 @@
-import { clientFromAuth } from '../api/client.ts';
+import type { clientFromAuth } from '../api/client.ts';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   missing,
   resolveAccountContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
   takeFlagValues,
-  fail,
 } from '../command-helpers.ts';
 import { resolveUserId } from '../iam.ts';
 import { confirm } from '../prompts.ts';
@@ -98,7 +98,7 @@ Options:
                       invite: project roles are manager|member (default
                       member). Applied on accept for a pending invite. Ignored
                       by the server for an admin invite.
-  --account <id>      Operate on this account (default: the active account).
+  --account <id>      Operate on this account (default: the linked project's account, else the active account).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output (read subcommands).
   -y, --yes           Skip the confirmation prompt.
@@ -225,9 +225,7 @@ async function membersLs(
 // ── members invite ─────────────────────────────────────────────────────────
 
 /** `--project <id>:<role>` → the `project_grants` entry the API expects. */
-export function parseProjectGrant(
-  raw: string,
-): { project_id: string; role: string } | { error: string } {
+function parseProjectGrant(raw: string): { project_id: string; role: string } | { error: string } {
   const idx = raw.lastIndexOf(':');
   const projectId = idx < 0 ? raw : raw.slice(0, idx);
   const role = idx < 0 ? 'member' : raw.slice(idx + 1);
@@ -302,7 +300,9 @@ async function membersInvite(
     }
   }
   for (const g of result.project_grants ?? []) {
-    process.stdout.write(`  ${C.dim}project ${C.reset}${g.project_id} ${C.faded}${g.role}${C.reset}\n`);
+    process.stdout.write(
+      `  ${C.dim}project ${C.reset}${g.project_id} ${C.faded}${g.role}${C.reset}\n`,
+    );
   }
   return 0;
 }

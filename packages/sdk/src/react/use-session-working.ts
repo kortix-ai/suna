@@ -26,6 +26,12 @@ import type { SessionTurnOutcome } from '../core/session/turn-end-cause';
 import { TURN_END_SETTLE_MS } from '../core/session/turn-end-settle';
 import { qk } from './query-keys';
 import { usePollOwner } from './use-poll-owner';
+import {
+  projectServerWorking,
+  serverWorkingExpiryAtMs,
+  type SessionWorkingVerdict,
+} from '../core/session/working-server';
+import { useSessionStreamConnected } from './use-session-stream';
 
 /**
  * The ONE answer to "is this session working?", and where the answer came from.
@@ -76,6 +82,12 @@ export interface SessionTurnObservation {
   turns: SessionTurn[];
   last_ended?: SessionTurnEnded;
   recent_failures?: SessionTurnFailure[];
+  /** May THIS caller stop the running turn (`SessionTurnStatus.can_stop`)?
+   *  Absent from an older server, and from a stream frame that changed the
+   *  open turns without saying. */
+  can_stop?: boolean;
+  /** The server's own verdict. Present when the session stream wrote the entry. */
+  working?: SessionWorkingVerdict;
   atMs: number;
 }
 
@@ -216,6 +228,7 @@ export async function readSessionTurnObservation(
         turns: turn.turns,
         last_ended: turn.last_ended,
         recent_failures: turn.recent_failures,
+        ...(turn.can_stop !== undefined ? { can_stop: turn.can_stop } : {}),
         atMs: turn.atMs,
       };
     }
@@ -235,6 +248,7 @@ export async function readSessionTurnObservation(
       turns: status.turns ?? [],
       last_ended: status.last_ended,
       recent_failures: status.recent_failures,
+      ...(typeof status.can_stop === 'boolean' ? { can_stop: status.can_stop } : {}),
       atMs,
     };
   });
@@ -342,6 +356,9 @@ export function useSessionWorking(
     projectWorking(inputsFor(turn, nowMs));
 
   const pollOwner = usePollOwner(`turn:${projectId}/${sessionId}`, canRead);
+  // While the session stream is up, every `kortix.control.turn` frame writes
+  // this entry with the server's own verdict (R5.3): no poll, no refetch.
+  const streamConnected = useSessionStreamConnected(projectId, sessionId);
 
   const queryClient = useQueryClient();
   const query = useQuery({
@@ -360,10 +377,10 @@ export function useSessionWorking(
     // reads inside one 25 s open. Non-owners read the same entry the owner
     // refreshes, so nobody sees a staler answer; only the scheduling moved.
     refetchInterval: (query) =>
-      pollOwner ? workingPollMs(project(query.state.data, Date.now())) : false,
+      pollOwner && !streamConnected ? workingPollMs(project(query.state.data, Date.now())) : false,
     // Coming back to a tab is the moment a turn that started (or ended) while
-    // it was hidden has to be on screen.
-    refetchOnWindowFocus: true,
+    // it was hidden has to be on screen. A connected stream already says so.
+    refetchOnWindowFocus: !streamConnected,
     // A read that failed says nothing; it must not fabricate either state.
     // `SERVER_OBSERVATION_MAX_MS` is what stops the retained last-success from
     // deciding once the failures outlast it.
@@ -384,14 +401,14 @@ export function useSessionWorking(
   // for the measured `busy`/`retry` oscillation this stops re-fetching on.
   const streamPhase = streamTurnPhase(stream?.status);
   useEffect(() => {
-    if (!canRead || streamPhase === 'none') return;
+    if (!canRead || streamConnected || streamPhase === 'none') return;
     void queryClient.invalidateQueries({
       queryKey: qk.project.sessionTurn(projectId, sessionId),
     });
     void queryClient.invalidateQueries({
       queryKey: qk.project.sessionPrompts(projectId, sessionId),
     });
-  }, [canRead, projectId, sessionId, streamPhase, queryClient]);
+  }, [canRead, streamConnected, projectId, sessionId, streamPhase, queryClient]);
 
   // A ROW LEAVING THE QUEUE is news about `/turn`, and nothing else would ask.
   //
@@ -408,16 +425,29 @@ export function useSessionWorking(
   // re-reading a list that is empty for a known reason buys nothing.
   const drainedAtMs = inbox?.drainedAtMs;
   useEffect(() => {
-    if (!canRead || drainedAtMs == null) return;
+    if (!canRead || streamConnected || drainedAtMs == null) return;
     void queryClient.invalidateQueries({
       queryKey: qk.project.sessionTurn(projectId, sessionId),
     });
-  }, [canRead, projectId, sessionId, drainedAtMs, queryClient]);
+  }, [canRead, streamConnected, projectId, sessionId, drainedAtMs, queryClient]);
 
   // Re-evaluated on every render because `nowMs` moves — the projection is
   // pure, so this costs one object and cannot drift from the poll's own view.
   const inputs = inputsFor(canRead ? query.data : undefined, Date.now());
-  const projection = projectWorking(inputs);
+  // The server decides while its stream is up; this tab adds only its own
+  // unanswered send or Stop. Without the stream, the six-signal projection
+  // over the `/turn` poll stays the answer.
+  const serverVerdict = canRead && streamConnected ? query.data?.working : undefined;
+  const projection =
+    serverVerdict && query.data
+      ? projectServerWorking({
+          working: serverVerdict,
+          atMs: query.data.atMs,
+          optimistic,
+          abort,
+          nowMs: Date.now(),
+        })
+      : projectWorking(inputs);
 
   // EVERY input ages out, and nothing else re-renders at the instant it does.
   //
@@ -428,7 +458,9 @@ export function useSessionWorking(
   // after the first failure, and the bound was never applied. The timer
   // decides nothing: it asks the pure projection again with a newer `now`.
   const [, setExpiryTick] = useState(0);
-  const expiryAtMs = workingExpiryAtMs(inputs);
+  const expiryAtMs = serverVerdict
+    ? serverWorkingExpiryAtMs({ optimistic, abort })
+    : workingExpiryAtMs(inputs);
   useEffect(() => {
     if (expiryAtMs === null) return;
     const timer = setTimeout(
@@ -490,4 +522,19 @@ export function useSessionTurnOutcome(projectId: string, sessionId: string): Ses
     () => ({ last_ended: lastEnded, recent_failures: recentFailures, atMs }),
     [lastEnded, recentFailures, atMs],
   );
+}
+
+/**
+ * May this viewer stop the running turn? False only when the `/turn` entry
+ * `useSessionWorking` keeps says `can_stop: false`. A cache reader like
+ * `useSessionTurnOutcome`: no request, no timer. Unknown is allowed — the
+ * server still refuses a stop it does not permit (403 `not_turn_prompter`).
+ */
+export function useSessionCanStop(projectId: string, sessionId: string): boolean {
+  const query = useQuery<SessionTurnObservation>({
+    queryKey: qk.project.sessionTurn(projectId, sessionId),
+    queryFn: () => readSessionTurnObservation(projectId, sessionId, { bundle: false }),
+    enabled: false,
+  });
+  return query.data?.can_stop !== false;
 }

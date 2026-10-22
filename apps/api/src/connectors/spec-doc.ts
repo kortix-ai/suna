@@ -6,6 +6,22 @@
 import { parse as parseYaml } from 'yaml';
 
 /**
+ * Typed error for a spec source that could not be loaded: the fetch failed (a
+ * non-OK HTTP status, or the network refused the connection) or the body does
+ * not parse to a JSON/YAML object. Distinct from `RepoFileNotFoundError` (a
+ * spec path missing in the repository — the same expected user-input state,
+ * already degraded) and from `AllowedSourceValidationError`/`UnsafeEgressError`
+ * (a URL the egress guard refuses — a structured 400), so callers can degrade
+ * on an unreadable spec without swallowing git faults or bypassing the egress
+ * envelope.
+ */
+export class SpecLoadError extends Error {}
+
+export function isSpecLoadError(err: unknown): err is SpecLoadError {
+  return err instanceof SpecLoadError;
+}
+
+/**
  * Parse a spec document from raw text into an object. Specs show up in several
  * shapes — JSON or YAML (the common OpenAPI form), sometimes prefixed with a
  * UTF-8 BOM or surrounding whitespace — and a remote fetch can silently return
@@ -22,14 +38,14 @@ export function parseSpecDocument(raw: string, source: string): any {
   // break JSON.parse and can trip up YAML — strip them up front.
   const text = (raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw).trim();
   if (!text) {
-    throw new Error(`spec at ${source} is empty`);
+    throw new SpecLoadError(`spec at ${source} is empty`);
   }
   // A leading '<' means HTML/XML — almost always a 404 or login wall returned in
   // place of the spec. No JSON ('{') or YAML spec starts this way, and YAML would
   // otherwise silently read the whole page as a scalar string, so reject it here
   // with a message that points at the real problem.
   if (text.startsWith('<')) {
-    throw new Error(
+    throw new SpecLoadError(
       `spec at ${source} looks like an HTML/XML page, not a JSON or YAML spec — check the URL and auth`,
     );
   }
@@ -49,12 +65,12 @@ export function parseSpecDocument(raw: string, source: string): any {
   }
 
   if (parseErr) {
-    throw new Error(`spec at ${source} is not valid JSON or YAML: ${parseErr.message}`);
+    throw new SpecLoadError(`spec at ${source} is not valid JSON or YAML: ${parseErr.message}`);
   }
 
   if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
     const kind = doc === null ? 'null' : Array.isArray(doc) ? 'array' : typeof doc;
-    throw new Error(`spec at ${source} did not parse to an object (got ${kind})`);
+    throw new SpecLoadError(`spec at ${source} did not parse to an object (got ${kind})`);
   }
   return doc;
 }

@@ -164,11 +164,10 @@ const actionPills = (root: ReactTestRenderer) =>
   instances(root, (node) => node.props.variant === 'secondary' && node.props.size === 'sm' && node.props.className === ACTION_PILL);
 
 describe('SandboxHealthPill chrome', () => {
-  test('a faulted computer draws the composer card with a pinging orange dot and both actions', async () => {
+  test('a faulted computer draws the composer card with a pinging orange dot without the stale switch action', async () => {
     wording = { label: "Can't reach computer", tone: 'danger' };
     const onHealth = () => {};
-    const onSwitch = () => {};
-    const root = await render(<SandboxHealthPill onHealth={onHealth} onSwitch={onSwitch} />);
+    const root = await render(<SandboxHealthPill onHealth={onHealth} />);
 
     expect(byClassName(root, WRAPPER)).toHaveLength(1);
     expect(byClassName(root, CARD)).toHaveLength(1);
@@ -196,23 +195,21 @@ describe('SandboxHealthPill chrome', () => {
     expect(elapsed.props.className).toBe('opacity-60');
     expect(elapsed.children[0]).toBe(' · 53s');
 
-    // Health and Switch are the composer's secondary sm pills with 14pt icons.
+    // Health remains available without navigating to the legacy instance selector.
     const pills = actionPills(root);
-    expect(pills).toHaveLength(2);
+    expect(pills).toHaveLength(1);
     expect(pills[0].props.onPress).toBe(onHealth);
-    expect(pills[1].props.onPress).toBe(onSwitch);
     const pillText = (pill: ReactTestInstance) => (pill.children[1] as ReactTestInstance).children[0];
     for (const pill of pills) {
       expect(pill.children).toHaveLength(2);
       expect((pill.children[0] as ReactTestInstance).props.size).toBe(14);
     }
     expect(pillText(pills[0])).toBe('Health');
-    expect(pillText(pills[1])).toBe('Switch');
   });
 
   test('a waking computer draws the same card in yellow with no actions', async () => {
     wording = { label: 'Waking computer', tone: 'progress' };
-    const root = await render(<SandboxHealthPill onHealth={() => {}} onSwitch={() => {}} />);
+    const root = await render(<SandboxHealthPill onHealth={() => {}} />);
 
     expect(byClassName(root, WRAPPER)).toHaveLength(1);
     expect(byClassName(root, CARD)).toHaveLength(1);

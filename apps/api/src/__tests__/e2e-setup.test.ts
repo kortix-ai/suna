@@ -26,10 +26,15 @@ mock.module('../middleware/auth', () => ({
 
 mock.module('child_process', () => ({
   ...childProcess,
-  spawnSync: () => ({ status: 0 }),
+  // The docker probe in the /status route awaits execFile; fake it so the
+  // tests never shell out to a real docker daemon.
+  execFile: (_file: string, _args: string[], _opts: unknown, cb: (err: Error | null) => void) => {
+    queueMicrotask(() => cb(null));
+  },
 }));
 
 const { setupApp } = await import('../setup');
+const { config } = await import('../config');
 
 const ORIGINAL_CWD = process.cwd();
 const TEST_DIR = mkdtempSync(join(tmpdir(), 'kortix-setup-test-'));
@@ -70,6 +75,44 @@ afterAll(() => {
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe('/v1/setup', () => {
+
+  // KRTX-1715. While no user exists, bootstrap-owner creates a CONFIRMED account
+  // for any email, so only the host (which holds INTERNAL_SERVICE_KEY) may call it.
+  describe('POST /v1/setup/bootstrap-owner', () => {
+    const post = (headers: Record<string, string>) =>
+      createSetupTestApp().request('/v1/setup/bootstrap-owner', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ email: 'not-an-email', password: 'long-enough' }),
+      });
+
+    it('refuses a caller without the host key, naming the header', async () => {
+      const res = await post({});
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        success: false,
+        error: 'Send the instance INTERNAL_SERVICE_KEY as X-Kortix-Internal-Key',
+      });
+    });
+
+    it('refuses a wrong key', async () => {
+      expect((await post({ 'X-Kortix-Internal-Key': 'not-the-key' })).status).toBe(401);
+      expect((await post({ Authorization: 'Bearer not-the-key' })).status).toBe(401);
+    });
+
+    it('lets the host through, as a header or a Bearer, to the request checks', async () => {
+      const hostHeaders: Array<Record<string, string>> = [
+        { 'X-Kortix-Internal-Key': config.INTERNAL_SERVICE_KEY },
+        { Authorization: `Bearer ${config.INTERNAL_SERVICE_KEY}` },
+      ];
+      for (const headers of hostHeaders) {
+        const res = await post(headers);
+        // Past the gate, the malformed email answers.
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({ success: false, error: 'Valid email is required' });
+      }
+    });
+  });
 
   describe('GET /v1/setup/status', () => {
     it('returns 200', async () => {
@@ -121,8 +164,8 @@ describe('/v1/setup', () => {
       const app = createSetupTestApp();
       const res = await app.request('/v1/setup/health');
       const data = await res.json();
-      expect(data.daytona).toBeDefined();
-      expect(typeof data.daytona.ok).toBe('boolean');
+      // One check per allowed provider. Platinum is the default (#10310).
+      expect(typeof data.platinum.ok).toBe('boolean');
     });
   });
 });

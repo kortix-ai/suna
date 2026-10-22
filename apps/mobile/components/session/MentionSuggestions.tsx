@@ -17,7 +17,7 @@ import { PressableSurface } from '@/components/kortix/pressable-surface';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { getFileIconComponent } from '@/components/files/FileItem';
+import { fileIcon } from '@/components/files/file-icons';
 import {
   ChatIcon as MessageSquare,
   FolderIcon as Folder,
@@ -149,8 +149,6 @@ function mentionRowContent(item: MentionItem): { label: string; detail?: string;
   const slash = cleanPath.lastIndexOf('/');
   const name = slash === -1 ? cleanPath : cleanPath.slice(slash + 1);
   const folder = slash === -1 ? undefined : cleanPath.slice(0, slash);
-  const icon = isDir
-    ? Folder
-    : (getFileIconComponent({ name, path: cleanPath, type: 'file' } as never) as AppIcon);
+  const icon = isDir ? Folder : fileIcon(name);
   return { label: name, detail: folder, icon };
 }

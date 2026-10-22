@@ -48,10 +48,22 @@ export function writeAgentState(
   }
 }
 
+function isAlive(pid: unknown): boolean {
+  if (typeof pid !== 'number' || !Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/** The last status the agent wrote. A writer that died without writing `offline` reads as offline. */
 export function readAgentState(home: string = agentTunnelHome()): AgentStateFile | null {
   try {
     const parsed = JSON.parse(readFileSync(stateFilePath(home), 'utf8')) as AgentStateFile;
-    return parsed && typeof parsed === 'object' && typeof parsed.status === 'string' ? parsed : null;
+    if (!parsed || typeof parsed !== 'object' || typeof parsed.status !== 'string') return null;
+    return parsed.status !== 'offline' && !isAlive(parsed.pid) ? { ...parsed, status: 'offline' } : parsed;
   } catch {
     return null;
   }

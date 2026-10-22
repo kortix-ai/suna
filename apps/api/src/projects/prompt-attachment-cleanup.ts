@@ -4,6 +4,7 @@ import { and, asc, eq, gt, inArray, lt, ne, or, sql, type SQLWrapper } from 'dri
 import { db } from '../shared/db';
 import type { PromptPartWire } from './session-lifecycle/store';
 import { PromptAttachmentError, type PromptAttachmentScope, type Row, type Transaction, storage, chunkedMode, chunkBytes, filePath, chunkPath, assertOwner, noReferences, FINALIZE_LEASE_MS } from './prompt-attachment-storage';
+import { forwardedSql } from './session-lifecycle/delivery-state';
 
 /** Rows claimed per cleanup batch. In direct mode one batch is one Storage call. */
 const CLEANUP_BATCH_SIZE = 100;
@@ -151,7 +152,7 @@ async function releaseDeliveredPromptAttachments(now = new Date()): Promise<numb
     .where(
       and(
         eq(sessionLifecycleCommands.status, 'succeeded'),
-        sql`${sessionLifecycleCommands.result}->>'status' IS DISTINCT FROM 'forwarded'`,
+        sql`(${forwardedSql}) IS NOT TRUE`,
         lt(
           sessionLifecycleCommands.updatedAt,
           new Date(now.getTime() - PROMPT_ATTACHMENT_RELEASE_GRACE_MS),

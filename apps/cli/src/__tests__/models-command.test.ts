@@ -60,8 +60,8 @@ function writeConfig(apiBase: string): string {
 }
 
 /** Mirrors GET /projects/:id/model-picker (apps/api/src/projects/routes/models.ts). */
-function picker(overrides: Record<string, boolean>) {
-  const models: Record<string, unknown> = {
+function picker(overrides: Record<string, boolean>, models?: Record<string, unknown>) {
+  const all: Record<string, unknown> = models ?? {
     'glm-5.3-flash': { name: 'GLM 5.3 Flash', provider: 'zai' },
     'anthropic/claude-opus-4-8': { name: 'Claude Opus 4.8', provider: 'anthropic' },
     'openai/gpt-5.5': { name: 'GPT-5.5', provider: 'openai' },
@@ -69,7 +69,7 @@ function picker(overrides: Record<string, boolean>) {
   const defaultEnabled = new Set(['glm-5.3-flash', 'anthropic/claude-opus-4-8']);
   return {
     models: Object.fromEntries(
-      Object.entries(models).map(([id, m]) => [
+      Object.entries(all).map(([id, m]) => [
         id,
         { ...(m as object), enabled: overrides[id] ?? defaultEnabled.has(id) },
       ]),
@@ -80,7 +80,10 @@ function picker(overrides: Record<string, boolean>) {
   };
 }
 
-function startServer(seed: Record<string, boolean> = {}): string {
+function startServer(
+  seed: Record<string, boolean> = {},
+  opts: { models?: Record<string, unknown>; catalog?: Record<string, { provider: string; availability: string }> } = {},
+): string {
   let overrides = { ...seed };
   let projectDefault: string | null = 'glm-5.3-flash';
   let accountDefault: string | null = null;
@@ -92,7 +95,7 @@ function startServer(seed: Record<string, boolean> = {}): string {
       calls.push({ method: req.method, path: url.pathname, query: url.search, body });
       const p = url.pathname;
       if (p === `/v1/projects/${PROJECT}/model-picker` && req.method === 'GET') {
-        return Response.json(picker(overrides));
+        return Response.json({ ...picker(overrides, opts.models), catalog: opts.catalog });
       }
       if (p === `/v1/projects/${PROJECT}/model-enablement` && req.method === 'PUT') {
         const next = (body as { modelOverrides: Record<string, boolean> }).modelOverrides;
@@ -199,7 +202,7 @@ describe('kortix models', () => {
     expect(r.stdout).toContain('disable <model-id>');
     expect(r.stdout).toContain('reset');
     expect(r.stdout).toContain('default <model-id>');
-    expect(r.stdout).toContain('project.customize.write');
+    expect(r.stdout).toContain('project.model.write');
   });
 
   test('no args exits 2 with help', async () => {
@@ -223,6 +226,40 @@ describe('kortix models', () => {
     const payload = JSON.parse(j.stdout) as { defaultModel: string; modelOverrides: unknown };
     expect(payload.defaultModel).toBe('glm-5.3-flash');
     expect(payload.modelOverrides).toEqual({ 'openai/gpt-5.5': true });
+  });
+
+  test('ls shows unavailable catalog ids even when no model is served', async () => {
+    const catalog = {
+      'managed-example': { provider: 'kortix', availability: 'plan' },
+      'openai/example': { provider: 'openai', availability: 'provider' },
+      'codex/example': { provider: 'codex', availability: 'login' },
+    };
+    const config = writeConfig(startServer({}, { models: {}, catalog }));
+    const result = await runCli(['models', 'ls', '--project', PROJECT], config);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/managed-example.*plan/);
+    expect(result.stdout).toMatch(/openai\/example.*provider/);
+    expect(result.stdout).toMatch(/codex\/example.*login/);
+    expect(result.stdout).not.toContain('No models yet');
+    const json = await runCli(['models', 'ls', '--json', '--project', PROJECT], config);
+    expect(JSON.parse(json.stdout).catalog).toEqual(catalog);
+  });
+
+  // KRTX-3011: a default kept in the picker whose provider is not connected
+  // reads `available: false`; the row says what to connect instead of reading
+  // like a runnable model.
+  test('ls marks a served model that is not runnable and says what to connect', async () => {
+    const models = {
+      'glm-5.3-flash': { name: 'GLM 5.3 Flash', provider: 'zai' },
+      'codex/gpt-6-astra': { name: 'GPT-6 Astra', provider: 'codex', available: false, availability: 'login' },
+      'anthropic/claude-opus-4-8': { name: 'Claude Opus 4.8', provider: 'anthropic', available: false, availability: 'provider' },
+    };
+    const config = writeConfig(startServer({ 'codex/gpt-6-astra': true }, { models }));
+    const r = await runCli(['models', 'ls', '--project', PROJECT], config);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toMatch(/codex\/gpt-6-astra.*not connected: kortix providers login openai/);
+    expect(r.stdout).toMatch(/anthropic\/claude-opus-4-8.*not connected: kortix providers set anthropic/);
+    expect(r.stdout).not.toMatch(/glm-5\.3-flash.*not connected/);
   });
 
   test('enable MERGES into the stored overrides before the replace-whole-map PUT', async () => {
@@ -280,6 +317,37 @@ describe('kortix models', () => {
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('Not served by this project: not-a-model');
     expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+  });
+
+  test('an empty picker points at providers, never at an empty ls (the dogfood dead end)', async () => {
+    // A fresh account on internal billing serves zero models until a provider
+    // key is connected (apps/api/src/llm-gateway/models/picker-catalog.ts). The
+    // hint used to send the user to `kortix models ls`, which then printed
+    // "No models served for this project." — a dead end.
+    const config = writeConfig(startServer({}, { models: {} }));
+
+    const ls = await runCli(['models', 'ls', '--project', PROJECT], config);
+    expect(ls.code).toBe(0);
+    expect(ls.stdout).toContain('No models yet');
+    expect(ls.stdout).toContain('kortix providers set');
+    expect(ls.stdout).not.toContain('No models served for this project');
+
+    const enable = await runCli(
+      ['models', 'enable', 'anthropic/claude-opus-4-8', '--project', PROJECT],
+      config,
+    );
+    expect(enable.code).toBe(1);
+    expect(enable.stderr).toContain('Not served by this project: anthropic/claude-opus-4-8');
+    expect(enable.stderr).toContain('kortix providers set');
+    expect(enable.stderr).not.toContain('List the ids with');
+    expect(calls.some((c) => c.method === 'PUT')).toBe(false);
+
+    const disable = await runCli(
+      ['models', 'disable', 'openai/gpt-5.5', '--project', PROJECT],
+      config,
+    );
+    expect(disable.code).toBe(1);
+    expect(disable.stderr).toContain('kortix providers set');
   });
 
   test('enable with no id exits 2', async () => {

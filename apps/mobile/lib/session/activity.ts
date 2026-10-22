@@ -1,49 +1,32 @@
 /**
- * Pure rules behind the assistant turn's activity rows — thinking, bursts,
- * same-family groups, file chips, and tool-row state. Ported from apps/web
+ * Pure rules behind the assistant turn's activity rows — bursts, same-family
+ * groups, and tool-row state. Ported from apps/web
  * `features/session/turn/activity-burst.tsx`, `activity-step.tsx`,
- * `activity-file-chips.tsx`, `tool/tool-part-renderer.tsx`, and
+ * `tool/tool-part-renderer.tsx`, and
  * `components/ui/text-shimmer.tsx`. The grouping and counting themselves come
- * from `@kortix/sdk` (`mergeBurstSteps`, `burstSummary`, `burstSummaryLabel`,
- * `stepLabel`), so web and mobile count one burst the same way.
+ * from `@kortix/sdk`'s block burst layer (`sessionLogBurstSteps`,
+ * `sessionLogBurstSummary`, `burstSummaryLabel`), so web and mobile count one
+ * burst the same way. Every row reads session-log blocks.
  *
  * No React, no React Native. `components/session/turn/*` and
  * `components/session/tool/*` own how the rows look.
  */
 
 import {
-  burstSummary,
   burstSummaryLabel,
-  formatDuration,
-  isReasoningPart,
-  isToolPart,
-  mergeBurstSteps,
   normalizeActivityToolName,
-  parseReadOutput,
-  partOutcome,
-  reasoningIsRunning,
-  stepLabel,
-  type BurstStep,
+  sessionLogBurstRunning,
+  sessionLogBurstSteps,
+  sessionLogBurstSummary,
+  sessionLogCallStatus,
+  sessionLogOpenCall,
   type BurstSummary,
-  type Part,
-  type ToolPart,
+  type SessionLogBlock,
+  type SessionLogBurstStep,
+  type ToolCallBlock,
 } from '@kortix/sdk';
 
-// ─── Thinking ────────────────────────────────────────────────────────────────
-
-/**
- * The thought row's label. `formatDuration` returns '' under 1000ms, so a
- * sub-second or untimed thought reads "Thinking", never "0s".
- *
- * `liveElapsedMs` is measured on the client from the moment the row went live
- * (web `useLiveElapsedMs`), not from the part's `time.start`: a restored
- * transcript's start stamp would render "Thinking for 4h".
- */
-export function thoughtLabel(running: boolean, liveElapsedMs: number, durationMs?: number): string {
-  const elapsed = formatDuration(running ? liveElapsedMs : (durationMs ?? 0));
-  if (!elapsed) return 'Thinking';
-  return running ? `Thinking for ${elapsed}` : `Thought for ${elapsed}`;
-}
+import { partStreamingInput } from './tool-part-accessors';
 
 // ─── Disclosure ──────────────────────────────────────────────────────────────
 
@@ -79,17 +62,6 @@ export function disclosureBodyMaxHeight(progress: number, contentHeight: number)
   if (progress >= 1) return DISCLOSURE_UNCAPPED_HEIGHT;
   if (progress <= 0) return 0;
   return Math.max(0, contentHeight) * progress;
-}
-
-// ─── Thought body ────────────────────────────────────────────────────────────
-
-/**
- * A thought still being written sits in web's `max-h-54` scroll area, pinned to
- * the newest words. A finished thought shows in full, and the transcript
- * scrolls (a deliberate departure from web's permanent cap).
- */
-export function thoughtBodyCapped(running: boolean): boolean {
-  return running;
 }
 
 /** Top/bottom fade visibility for a scroll area (web `FadedScrollArea`). */
@@ -128,39 +100,9 @@ export function samePartsList<T>(a: ReadonlyArray<T>, b: ReadonlyArray<T>): bool
 
 // ─── Burst ───────────────────────────────────────────────────────────────────
 
-/**
- * True when a burst should stay open as "in progress" (web `burstIsRunning`).
- * The trailing burst stays open for the whole working turn so SSE gaps between
- * tool calls do not blink it shut.
- */
-export function burstIsRunning(
-  parts: ReadonlyArray<Part>,
-  working: boolean,
-  isTrailing = false,
-): boolean {
-  if (!working) return false;
-  if (isTrailing) return true;
-  return parts.some((part) => {
-    const status = (part as { state?: { status?: string } }).state?.status;
-    if (status === 'pending' || status === 'running') return true;
-    if (isReasoningPart(part)) return reasoningIsRunning(part);
-    return false;
-  });
-}
-
-/** A `question` call with both the questions asked and the user's answers. */
-export function isAnsweredQuestionPart(part: Part): boolean {
-  if (!isToolPart(part)) return false;
-  if (normalizeActivityToolName(part.tool) !== 'question') return false;
-  const state = part.state as { input?: { questions?: unknown }; metadata?: { answers?: unknown } };
-  const questions = state.input?.questions;
-  const answers = state.metadata?.answers;
-  return Array.isArray(questions) && questions.length > 0 && Array.isArray(answers) && answers.length > 0;
-}
-
 export interface BurstView {
   running: boolean;
-  steps: BurstStep[];
+  steps: SessionLogBurstStep[];
   summary: BurstSummary;
   /**
    * "Working · N steps", "Completed N steps", … Every burst, even one thought
@@ -168,29 +110,31 @@ export interface BurstView {
    * Mobile never expands a step inline (Jay, 2026-09-24).
    */
   title: string;
-  /** Every part merged to nothing (plumbing only): render no burst at all. */
+  /** Every block merged to nothing (plumbing only): render no burst at all. */
   hidden: boolean;
 }
 
+/**
+ * The burst's line and sheet steps, from the SDK's block burst layer
+ * (`sessionLogBurstSteps`, `sessionLogBurstSummary`, `sessionLogBurstRunning`):
+ * the trailing burst stays running for the whole working turn, so SSE gaps
+ * between calls do not blink it shut, and an answered question owns its row.
+ */
 export function burstView(
-  parts: ReadonlyArray<Part>,
+  allBlocks: ReadonlyArray<SessionLogBlock>,
   working: boolean,
   isTrailing = false,
 ): BurstView {
-  const running = burstIsRunning(parts, working, isTrailing);
-  const merged = mergeBurstSteps(parts, (p) => stepLabel(p).tier);
-  // An answered question owns its row, so it never shares a group row.
-  const steps = merged.flatMap<BurstStep>((step) =>
-    step.kind === 'group' && step.step.parts.some(isAnsweredQuestionPart)
-      ? step.step.parts.map((part) => ({ kind: 'part' as const, key: part.id, part }))
-      : [step],
-  );
-  const summary = burstSummary(parts);
+  // Mobile never shows thinking: a thought is not a step, in the row or the sheet.
+  const blocks = allBlocks.filter((block) => block.type !== 'reasoning');
+  const running = sessionLogBurstRunning(blocks, { working, trailing: isTrailing });
+  const steps = sessionLogBurstSteps(blocks);
+  const summary = sessionLogBurstSummary(blocks);
   return {
     running,
     steps,
     summary,
-    title: steps.length === 1 && steps[0]?.kind === 'thought' ? 'Thinking' : burstSummaryLabel(summary, running),
+    title: burstSummaryLabel(summary, running),
     hidden: steps.length === 0,
   };
 }
@@ -228,238 +172,9 @@ const ICON_KEY_BY_TOOL: Record<string, ActivityIconKey> = {
 };
 
 /** Web `activity-step.tsx` `ICONS` table, as keys. */
-export function activityIconKey(part: Part): ActivityIconKey {
-  if (!isToolPart(part)) return 'generic';
-  return ICON_KEY_BY_TOOL[normalizeActivityToolName(part.tool)] ?? 'generic';
-}
-
-// ─── Tool input ──────────────────────────────────────────────────────────────
-
-const EMPTY_RECORD: Record<string, unknown> = Object.freeze({}) as Record<string, unknown>;
-
-/** Web `parsePartialJSON`: closes open strings, brackets, and braces. */
-export function parsePartialJson(raw: string): Record<string, unknown> {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw);
-    if (typeof parsed === 'object' && parsed !== null) return parsed;
-  } catch {}
-  try {
-    let attempt = raw.trim();
-    let braces = 0;
-    let brackets = 0;
-    let inString = false;
-    let escape = false;
-    for (const ch of attempt) {
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (ch === '\\') {
-        escape = true;
-        continue;
-      }
-      if (ch === '"') {
-        inString = !inString;
-        continue;
-      }
-      if (inString) continue;
-      if (ch === '{') braces++;
-      if (ch === '}') braces--;
-      if (ch === '[') brackets++;
-      if (ch === ']') brackets--;
-    }
-    if (inString) attempt += '"';
-    for (let i = 0; i < brackets; i++) attempt += ']';
-    for (let i = 0; i < braces; i++) attempt += '}';
-    const parsed = JSON.parse(attempt);
-    if (typeof parsed === 'object' && parsed !== null) return parsed;
-  } catch {}
-  const result: Record<string, unknown> = {};
-  const re = /"(\w+)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(raw)) !== null) {
-    result[m[1]] = m[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-  }
-  return result;
-}
-
-/** A call's arguments, including half-arrived ones in `state.raw` (web `partStreamingInput`). */
-export function toolStreamingInput(part: Part): Record<string, unknown> {
-  if (!isToolPart(part)) return EMPTY_RECORD;
-  const state = part.state as { status: string; input?: Record<string, unknown>; raw?: string };
-  if (state.input && Object.keys(state.input).length > 0) return state.input;
-  if ((state.status === 'pending' || state.status === 'running') && state.raw) {
-    return parsePartialJson(state.raw);
-  }
-  return state.input ?? EMPTY_RECORD;
-}
-
-// ─── File chips ──────────────────────────────────────────────────────────────
-
-const FILE_CHIP_VERBS: ReadonlyMap<string, { verb: string; running: string }> = new Map([
-  ['read', { verb: 'Read', running: 'Reading' }],
-  ['write', { verb: 'Wrote', running: 'Writing' }],
-]);
-
-const PATH_KEYS = ['filePath', 'path', 'file'] as const;
-
-export function isFileChipPart(part: Part): boolean {
-  return isToolPart(part) && FILE_CHIP_VERBS.has(normalizeActivityToolName(part.tool));
-}
-
-function chipPath(part: ToolPart): string | undefined {
-  const input = toolStreamingInput(part);
-  for (const key of PATH_KEYS) {
-    const value = input[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-  return undefined;
-}
-
-function completedOutput(part: ToolPart): string {
-  const state = part.state as { status: string; output?: string };
-  return state.status === 'completed' ? (state.output ?? '').trim() : '';
-}
-
-function isDirectoryTarget(part: ToolPart, path: string): boolean {
-  if (path.endsWith('/')) return true;
-  return parseReadOutput(completedOutput(part))?.type === 'directory';
-}
-
-export interface FileChipRun {
-  /** Deduped paths, in first-seen order. */
-  paths: string[];
-  /** Parts that are not chips: failed, directory, or no path yet. */
-  fallbacks: Part[];
-  failedCount: number;
-  /** Running wins over error (web `groupSteps.statusOf` precedence). */
-  status: 'running' | 'error' | 'done';
-  label: string;
-  /** A bare run that produced no chip renders its plain tool rows instead. */
-  bareFallback: boolean;
-}
-
-export function fileChipRun(
-  parts: ReadonlyArray<Part>,
-  options: { bare?: boolean; toDisplayPath?: (path: string) => string } = {},
-): FileChipRun | null {
-  const first = parts[0];
-  const family =
-    first && isToolPart(first) ? FILE_CHIP_VERBS.get(normalizeActivityToolName(first.tool)) : undefined;
-  if (!family) return null;
-
-  const paths: string[] = [];
-  const seen = new Set<string>();
-  const fallbacks: Part[] = [];
-  let failedCount = 0;
-  let inFlight = false;
-
-  for (const part of parts) {
-    if (!isToolPart(part)) {
-      fallbacks.push(part);
-      continue;
-    }
-    const status = part.state.status;
-    if (status === 'pending' || status === 'running') inFlight = true;
-    if (partOutcome(part) !== 'ok') {
-      failedCount += 1;
-      fallbacks.push(part);
-      continue;
-    }
-    const path = chipPath(part);
-    if (!path || isDirectoryTarget(part, path)) {
-      fallbacks.push(part);
-      continue;
-    }
-    if (!seen.has(path)) {
-      seen.add(path);
-      paths.push(path);
-    }
-  }
-
-  const status = inFlight ? 'running' : failedCount > 0 ? 'error' : 'done';
-  const count = paths.length + fallbacks.length;
-  const toDisplayPath = options.toDisplayPath ?? ((p: string) => p);
-  const object =
-    count === 1 && paths.length === 1 ? toDisplayPath(paths[0]) : `${count} ${count === 1 ? 'file' : 'files'}`;
-  const label =
-    `${status === 'running' ? family.running : family.verb} ${object}` +
-    (status === 'error' ? ` · ${failedCount} failed` : '');
-
-  return {
-    paths,
-    fallbacks,
-    failedCount,
-    status,
-    label,
-    bareFallback: Boolean(options.bare) && paths.length === 0,
-  };
-}
-
-export function filenameOf(path: string): string {
-  const segments = path.split('/').filter(Boolean);
-  return segments[segments.length - 1] || path;
-}
-
-export type FileCategory =
-  | 'image'
-  | 'code'
-  | 'text'
-  | 'markdown'
-  | 'pdf'
-  | 'audio'
-  | 'video'
-  | 'csv'
-  | 'spreadsheet'
-  | 'archive'
-  | 'database'
-  | 'other';
-
-function extensionOf(filename: string): string {
-  return filename.includes('.') ? (filename.split('.').pop() ?? '').toLowerCase() : '';
-}
-
-/** Web `lib/utils/file-utils.ts` `getFileType`. */
-export function fileCategory(filename: string): FileCategory {
-  const ext = extensionOf(filename);
-  const is = (list: string[]) => list.includes(ext);
-  if (is(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'heic', 'heif', 'avif'])) return 'image';
-  if (is(['js', 'jsx', 'ts', 'tsx', 'html', 'css', 'json', 'py', 'java', 'c', 'cpp'])) return 'code';
-  if (is(['txt', 'log', 'env'])) return 'text';
-  if (is(['md', 'markdown'])) return 'markdown';
-  if (ext === 'pdf') return 'pdf';
-  if (is(['mp3', 'wav', 'ogg', 'flac'])) return 'audio';
-  if (is(['mp4', 'webm', 'mov', 'avi'])) return 'video';
-  if (is(['csv', 'tsv'])) return 'csv';
-  if (is(['xls', 'xlsx'])) return 'spreadsheet';
-  if (is(['zip', 'rar', 'tar', 'gz'])) return 'archive';
-  if (is(['db', 'sqlite', 'sql'])) return 'database';
-  return 'other';
-}
-
-const CATEGORY_LABELS: Record<Exclude<FileCategory, 'code' | 'other'>, string> = {
-  image: 'Image',
-  text: 'Text',
-  markdown: 'Markdown',
-  pdf: 'PDF',
-  audio: 'Audio',
-  video: 'Video',
-  csv: 'CSV',
-  spreadsheet: 'Spreadsheet',
-  archive: 'Archive',
-  database: 'Database',
-};
-
-/**
- * The chip's second line: web `getTypeLabel`, with its "File" fallback
- * replaced by the extension (`activity-file-chips.tsx`).
- */
-export function fileChipTypeLabel(filename: string): string {
-  const ext = extensionOf(filename);
-  const category = fileCategory(filename);
-  if (category === 'code' || category === 'other') return ext ? ext.toUpperCase() : 'File';
-  return CATEGORY_LABELS[category];
+export function activityIconKey(block: SessionLogBlock): ActivityIconKey {
+  if (block.type !== 'tool_call') return 'generic';
+  return ICON_KEY_BY_TOOL[normalizeActivityToolName(block.name)] ?? 'generic';
 }
 
 // ─── Errors ──────────────────────────────────────────────────────────────────
@@ -546,25 +261,27 @@ export function parseErrorContent(error: string): ParsedErrorContent {
 /**
  * A call whose arguments never arrived, from a turn that is over. While the
  * turn is live the same shape is a call that has not spoken YET, so `turnLive`
- * is the only discriminator (web `TurnLiveContext`).
+ * is the only discriminator (web `TurnLiveContext`). A call the closure rule
+ * closed reads as the open call it was (`sessionLogCallStatus`).
  */
-export function isStalePending(part: Part, turnLive: boolean): boolean {
-  if (turnLive || !isToolPart(part)) return false;
-  const state = part.state as { status: string; input?: Record<string, unknown>; raw?: string };
-  return state.status === 'pending' && Object.keys(state.input ?? {}).length === 0 && !state.raw;
+export function isStalePending(call: ToolCallBlock, turnLive: boolean): boolean {
+  const open = sessionLogOpenCall(call);
+  return (
+    sessionLogCallStatus(open, turnLive) === 'interrupted' &&
+    open.status === 'pending' &&
+    Object.keys(partStreamingInput(open)).length === 0
+  );
 }
 
-export function isToolRunning(part: Part, turnLive: boolean): boolean {
-  if (!isToolPart(part)) return false;
-  const status = part.state.status;
-  return !isStalePending(part, turnLive) && (status === 'running' || status === 'pending');
+export function isToolRunning(call: ToolCallBlock, turnLive: boolean): boolean {
+  const { status } = sessionLogOpenCall(call);
+  return !isStalePending(call, turnLive) && (status === 'running' || status === 'pending');
 }
 
-export function toolDurationMs(part: Part): number | undefined {
-  const time = (part as { state?: { time?: { start?: unknown; end?: unknown } } }).state?.time;
-  const s = time?.start;
-  const e = time?.end;
-  if (typeof s === 'number' && typeof e === 'number' && e > s) return e - s;
+export function toolDurationMs(call: ToolCallBlock): number | undefined {
+  const s = call.started_at ? Date.parse(call.started_at) : NaN;
+  const e = call.ended_at ? Date.parse(call.ended_at) : NaN;
+  if (Number.isFinite(s) && Number.isFinite(e) && e > s) return e - s;
   return undefined;
 }
 

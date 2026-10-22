@@ -1,7 +1,7 @@
 {
   "name": "@kortix/cli",
   "version": "0.1.0",
-  "description": "Kortix CLI \u2014 scaffold a Kortix project (.kortix/) inside any git repository.",
+  "description": "Open-source AI Operating System: your agents, skills, memory, and connectors in one repo you own. Any model. Self-host or cloud.",
   "private": true,
   "type": "module",
   "bin": {
@@ -10,7 +10,7 @@
   "scripts": {
     "cli": "bun run src/index.ts",
     "build": "bash scripts/build.sh",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsgo --noEmit --incremental --tsBuildInfoFile node_modules/.cache/tsgo.tsbuildinfo",
     "bundle": "bash bundle/bundle-host.sh",
     "bundle:all": "bash bundle/bundle-all.sh",
     "bundle:darwin-arm64": "bash bundle/bundle-darwin-arm64.sh",
@@ -18,7 +18,7 @@
     "bundle:linux-x64": "bash bundle/bundle-linux-x64.sh",
     "bundle:linux-arm64": "bash bundle/bundle-linux-arm64.sh",
     "bundle:clean": "rm -f bundle/kortix bundle/kortix-darwin-* bundle/kortix-linux-*",
-    "test": "pnpm lint:sdk-boundary && bun test --timeout ${KORTIX_TEST_TIMEOUT_MS:-15000} --isolate --parallel=4",
+    "test": "node ../../scripts/test-guard.mjs \"pnpm lint:sdk-boundary && bash scripts/test.sh\"",
     "lint:sdk-boundary": "node scripts/sdk-boundary.mjs"
   },
   "dependencies": {
@@ -28,13 +28,16 @@
     "@kortix/sdk": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
+    "@openuidev/lang-core": "0.3.1",
     "ignore": "7.0.5",
     "smol-toml": "^1.3.0",
     "tar": "7.5.21",
-    "yaml": "^2.8.2"
+    "yaml": "^2.8.2",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/bun": "^1.1.0",
+    "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "typescript": "^5.4.0"
   }
 }

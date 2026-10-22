@@ -88,7 +88,16 @@ export const rowProviderBilledSpendSql: SQL<string> = sql`(case when ${rowBilled
 /** Per-row: what Kortix debited from your wallet. */
 export const rowKortixBilledSpendSql: SQL<string> = sql`${gatewayRequestLogs.finalCost}`;
 
-/** Per-row: every dollar the request cost you. */
+/**
+ * Per-row: every dollar the request cost you.
+ *
+ * SECOND COPY: the plpgsql trigger function kortix.gateway_spend_daily_add()
+ * (migration 20261020122531072_gateway_spend_daily.sql) writes this same rule
+ * into gateway_spend_daily for every new log row, and the budgets read that
+ * total. A rule change here needs a forward migration that replaces the
+ * function and re-inserts the affected days into gateway_spend_pending_days.
+ * llm-gateway/gateway-spend-daily.integration.test.ts pins the two together.
+ */
 export const rowTotalSpendSql: SQL<string> = sql`(${gatewayRequestLogs.finalCost} + ${rowProviderBilledSpendSql})`;
 
 const aggregate = (rowExpression: SQL<string>) =>
@@ -96,6 +105,10 @@ const aggregate = (rowExpression: SQL<string>) =>
 
 /** Windowed total LLM spend for gateway observability. */
 export const totalSpendSql = aggregate(rowTotalSpendSql);
+
+/** `totalSpendSql` over only the rows `filter` matches, so one scan can sum several windows. */
+export const totalSpendWhereSql = (filter: SQL): SQL<number> =>
+  sql<number>`coalesce(sum(${rowTotalSpendSql}) filter (where ${filter}), 0)::float8`;
 
 /** Windowed spend debited from the Kortix wallet. */
 export const kortixBilledSpendSql = aggregate(rowKortixBilledSpendSql);

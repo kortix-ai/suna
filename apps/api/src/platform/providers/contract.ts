@@ -1,6 +1,9 @@
 import { config } from '../../config';
 
-export type ProviderName = 'daytona' | 'platinum' | 'e2b';
+// Platinum is the reference provider; Daytona is a legacy fallback (removal
+// scheduled). E2B support is discontinued: a stored `e2b` row resolves through
+// tryGetProvider() to null.
+export type ProviderName = 'platinum' | 'daytona';
 
 export class WarmRuntimeUnavailableError extends Error {
   constructor(message: string) {
@@ -13,6 +16,14 @@ export class SandboxTemplateNotFoundError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'SandboxTemplateNotFoundError';
+  }
+}
+
+/** The provider is still building (or copying) the image a create needs. */
+export class SnapshotStillBuildingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SnapshotStillBuildingError';
   }
 }
 
@@ -30,6 +41,12 @@ export interface CreateSandboxOpts {
   envVars?: Record<string, string>;
   serverType?: string;
   location?: string;
+  /**
+   * True ⇒ the box runs in `location` or not at all. False/absent ⇒ Platinum
+   * boots it in its home region when `location` cannot hold the image and no
+   * copy is running (platinum.ts). Set for warm (speculative) session boxes.
+   */
+  locationRequired?: boolean;
   /**
    * Override the provider's default snapshot/image with one built
    * specifically for this project. The snapshot builder
@@ -65,6 +82,17 @@ export interface CreateSandboxOpts {
   };
   /** Ports that the provider must make reachable through resolveIngress(). */
   publishedPorts?: number[];
+  /**
+   * Volumes mounted at create, keyed by guest mount path: the session's
+   * drives. Platinum only; every other provider ignores it.
+   */
+  volumes?: Record<string, { volume: string; read_only?: boolean; subdir?: string; ref?: string; share?: 'node' | 'private' }>;
+  /**
+   * The box keeps its state on its `volumes` (an App machine), so Platinum's
+   * periodic whole-box backup is off. (A create refused over any `volumes`
+   * always fails: a box never boots without them.)
+   */
+  volumesRequired?: boolean;
 }
 
 export function sandboxWorkloadType(opts: CreateSandboxOpts): SandboxWorkloadType {
@@ -153,48 +181,6 @@ export interface ProvisioningStatus {
   errorMessage?: string;
 }
 
-/**
- * Which dimensions of an App machine specification a provider can actually
- * enforce. Kortix bills an App from the specification it recorded, so a
- * dimension the provider cannot honor must not reach the meter: E2B's
- * Template.build accepts cpuCount and memoryMB and has no disk parameter
- * (e2b 2.37.0), so an App on E2B was being charged for disk nobody allocated.
- */
-export interface AppMachineSupport {
-  cpu: boolean;
-  memoryGb: boolean;
-  diskGb: boolean;
-}
-
-export const FULL_APP_MACHINE_SUPPORT: AppMachineSupport = {
-  cpu: true,
-  memoryGb: true,
-  diskGb: true,
-};
-
-export interface AppMachine {
-  cpuCores: number;
-  memoryGb: number;
-  diskGb: number;
-}
-
-/**
- * The machine a provider will really allocate, which is what billing must use.
- * A dimension the provider cannot set bills as zero rather than as the number
- * the customer typed. Absent support means the provider honors everything.
- */
-export function effectiveAppMachine(
-  provider: { appMachineSupport?: AppMachineSupport },
-  requested: AppMachine,
-): AppMachine {
-  const support = provider.appMachineSupport ?? FULL_APP_MACHINE_SUPPORT;
-  return {
-    cpuCores: support.cpu ? requested.cpuCores : 0,
-    memoryGb: support.memoryGb ? requested.memoryGb : 0,
-    diskGb: support.diskGb ? requested.diskGb : 0,
-  };
-}
-
 
 /** Result of a provider-level command run inside a sandbox VM/container. */
 export interface SandboxExecResult {
@@ -228,8 +214,6 @@ export interface SandboxProvider {
    * default cache. Use zero when the provider owns a shorter credential cache.
    */
   readonly ingressCacheTtlMs?: number;
-  /** Absent means the provider enforces the whole App machine specification. */
-  readonly appMachineSupport?: AppMachineSupport;
   create(opts: CreateSandboxOpts): Promise<ProvisionResult>;
   /**
    * Ensure the Kortix App supervisor is running after create or resume.
@@ -245,7 +229,7 @@ export interface SandboxProvider {
    * precise warm image activation chose — the name path can drift behind a
    * truncated template list or an idempotent-adopt that reused a name. OPTIONAL:
    * only providers with a durable external template id implement it (Platinum;
-   * Daytona and E2B keep the name-only default). On a DEFINITIVE
+   * Daytona keeps the name-only default). On a DEFINITIVE
    * not-found (404 = GC'd pin) it MUST throw {@link SandboxTemplateNotFoundError}
    * so the caller can fall back to a name-boot; a transient 5xx throws a normal
    * (retryable) error and MUST NOT be turned into a name fallback.
@@ -279,7 +263,7 @@ export interface SandboxProvider {
   recoverInPlace?(externalId: string): Promise<InPlaceRecoveryStatus>;
   /**
    * Run one command as root inside the sandbox through the PROVIDER's own
-   * channel (Platinum `/exec`, Daytona toolbox, E2B commands) — independent of
+   * channel (Platinum `/exec`, Daytona toolbox) — independent of
    * the in-box kortix-agent daemon, which is exactly what a legacy-runtime
    * bootstrap needs: the daemon being replaced cannot be the thing that
    * replaces it. Optional: a provider without an exec channel cannot be
@@ -349,8 +333,7 @@ export interface SandboxProvider {
  *
  * FLOOR 60. Never below the value this function returned before the split, so a
  * mis-set env var cannot resurrect the mid-work-kill class. Callers needing a
- * deliberately short timer pass an explicit override instead (the trigger path
- * does: KORTIX_SANDBOX_TRIGGER_AUTOSTOP_MINUTES). The floor is also what makes
+ * deliberately short timer pass an explicit override instead. The floor is also what makes
  * the required ordering `billingLivenessGraceMinutes() <= this` structural
  * rather than coincidental — the billing grace floors at the same 60 and only
  * leaves that floor above a 30-minute idle window, which no environment sets.

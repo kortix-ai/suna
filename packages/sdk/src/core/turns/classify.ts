@@ -39,6 +39,9 @@ import type {
 } from '../runtime/client';
 import { type GatewayAttemptFailure, extractGatewayErrorDetails, unwrapError } from './errors';
 import { getChildSessionId } from './parts';
+import { isToolCallBlock, toolPartOf } from '../session-log/tool-call';
+import type { ToolCallBlock } from '../session-log/types';
+import { editBlocks } from './edit-blocks';
 import { type ToolKind, inputPath, toolKind } from './tool-kind';
 import { toolInfo } from './tool-registry';
 import type { TokenUsageLike } from './types';
@@ -202,15 +205,17 @@ function toolFiles(kind: ToolKind, input: Record<string, unknown>, metadata: Rec
   if (kind !== 'edit') return undefined;
   // OpenCode sends the whole file before and after; the daemon drops metadata
   // over 4 KB, so the replaced block in the input is the fallback. pi sends a
-  // unified patch.
+  // unified patch. Claude Code sends only its input: the replaced blocks (`Edit`,
+  // `MultiEdit`), or a notebook cell's new source (`NotebookEdit`).
   const filediff = record(metadata.filediff);
   const patch = filediff ? undefined : text(metadata.patch);
   const counts = patch ? patchLineCounts(patch) : undefined;
+  const blocks = filediff || patch ? [] : editBlocks(input);
   return [
     defined<ToolFile>({
       path,
-      before: text(filediff?.before) ?? text(input.oldString),
-      after: text(filediff?.after) ?? text(input.newString),
+      before: text(filediff?.before) ?? (blocks.length ? blocks.map(([before]) => before).join('\n') : undefined),
+      after: text(filediff?.after) ?? (blocks.length ? blocks.map(([, after]) => after).join('\n') : text(input.new_source)),
       patch,
       additions: count(filediff?.additions) ?? counts?.additions,
       deletions: count(filediff?.deletions) ?? counts?.deletions,
@@ -275,8 +280,9 @@ function classifyToolState(tool: string, state: ToolState): ToolView {
   };
 }
 
-/** The harness-neutral view of one tool part. */
-export function toToolView(part: Pick<ToolPart, 'tool' | 'state'>): ToolView {
+/** The harness-neutral view of one tool part, or of a session-log tool call block. */
+export function toToolView(call: Pick<ToolPart, 'tool' | 'state'> | ToolCallBlock): ToolView {
+  const part = isToolCallBlock(call) ? toolPartOf(call) : call;
   return classifyToolState(part.tool, part.state);
 }
 

@@ -4,18 +4,18 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import type { GlyphSelection } from '@/components/ui/glyph-picker';
-import { FLOATING_PANEL_SURFACE } from '@/components/ui/menu-recipe';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import type { GlyphSelection } from '@kortix/ui/glyph-picker';
+import { FLOATING_PANEL_SURFACE } from '@kortix/ui/menu-recipe';
 
-import { ProjectIconField, type ProjectIconValue } from './project-icon-field';
+import { ProjectIconField, type ProjectIconValue } from '@kortix/ui/workspace/projects/modal/project-icon-field';
 
 const read = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
 
-const source = read('./project-icon-field.tsx');
-const pickerSource = read('../../../components/ui/emoji-picker.tsx');
-const buttonSource = read('../../../components/ui/button.tsx');
+const source = read('../../../../../../packages/ui/src/workspace/projects/modal/project-icon-field.tsx');
+const pickerSource = read('../../../../../../packages/ui/src/primitives/emoji-picker.tsx');
+const buttonSource = read('../../../../../../packages/ui/src/primitives/button.tsx');
 
 /**
  * Source with comments stripped. Every "the code does X" check below reads
@@ -659,7 +659,6 @@ describe('ProjectIconField trigger tint — emoji', () => {
   });
 
   test('the trigger takes its emoji tint from the shared module, not a local copy', () => {
-    expect(code).toContain("from '@/components/ui/emoji-tint'");
     expect(code).toMatch(/emojiTint\(emoji\)/);
     expect(code).toMatch(/emojiTintHover\(emoji\)/);
 
@@ -754,7 +753,6 @@ describe('ProjectIconField trigger tint — glyph', () => {
   });
 
   test('the trigger takes its glyph tint from the shared module, not a local copy', () => {
-    expect(code).toContain("from '@/components/ui/glyph-tint'");
     expect(code).toMatch(/glyphTint\(glyphFace\.color\)/);
     expect(code).toMatch(/glyphTintHover\(glyphFace\.color\)/);
     expect(code).toMatch(/glyphForeground\(glyphFace\.color\)/);

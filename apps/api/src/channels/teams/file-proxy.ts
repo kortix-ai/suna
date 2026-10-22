@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { teamsPendingUploads } from '@kortix/db';
 import { eq, lt } from 'drizzle-orm';
+import { dbChannelOwnership, gateChannelRead, type ChannelOwnership } from '../../connectors/channel-read-scope';
 import { db } from '../../shared/db';
+import { DOWNLOAD_TOO_LARGE, readCapped } from '../core/download';
 import { loadTeamsBotCredentials } from '../install-store';
 import { provenTeamsTenants } from './inbound';
 import { sendActivity, sendCard } from '../teams-api';
@@ -9,9 +11,11 @@ import { buildNoticeCard } from './cards';
 import { resolveTeamsProjectConversation } from './post';
 import { assertValidTeamsServiceUrl } from '../teams-service-url';
 import { botConnectorToken, graphToken } from '../teams-auth';
+import { logger } from '../../lib/logger';
 import type { TeamsActivity, TeamsConversationRef } from './types';
 import type { TeamsInbound } from './inbound';
 
+const MAX_DOWNLOAD_REDIRECTS = 5;
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const UPLOAD_TTL_MS = 15 * 60 * 1000;
 
@@ -60,12 +64,60 @@ export function isAllowedGraphDownload(url: URL): boolean {
   return GRAPH_DOWNLOAD_PATHS.some((re) => re.test(url.pathname));
 }
 
+/**
+ * The conversation a hosted-content URL belongs to, as the read gate names it:
+ * a channel message's thread (`/teams/{t}/channels/{c}/messages/{m}/…`), or a
+ * chat (`/chats/{chat}/messages/…`). Null when an id does not decode.
+ */
+function hostedContentConversation(
+  url: URL,
+): { actionPath: 'get_message' | 'list_messages'; args: Record<string, string> } | null {
+  try {
+    const seg = url.pathname.split('/').map(decodeURIComponent);
+    return seg[2] === 'chats'
+      ? { actionPath: 'list_messages', args: { 'channel-id': seg[3] } }
+      : { actionPath: 'get_message', args: { 'channel-id': seg[5], 'message-id': seg[7] } };
+  } catch {
+    return null;
+  }
+}
+
 export type FileProxyError = { ok: false; error: string; status: number };
 
+/**
+ * Why a Teams token could not be minted (KRTX-2978). Microsoft's token endpoint
+ * answering 400/401 is configuration a person must fix, and its AADSTS code
+ * says which; anything else (network, 5xx) stays the transient 502. The log
+ * carries the status and the code, never the response body or the secret.
+ */
+function tokenFailure(kind: 'bot' | 'Graph', error: unknown): FileProxyError {
+  const message = error instanceof Error ? error.message : String(error);
+  const status = /^Teams token request failed \((\d{3})\)/.exec(message)?.[1];
+  const aadsts = /AADSTS\d+/.exec(message)?.[0];
+  logger.warn('[teams] token mint failed', { kind, status: status ?? null, aadsts: aadsts ?? null });
+  if (status !== '400' && status !== '401') return { ok: false, error: `could not mint a ${kind} token`, status: 502 };
+  const code = aadsts ? ` (${aadsts})` : '';
+  return {
+    ok: false,
+    status: 409,
+    error: kind === 'bot'
+      ? `Microsoft refused the Teams bot token${code}. Renew the Teams bot secret.`
+      : `Microsoft refused the Microsoft Graph token${code}. Renew the Teams bot secret or grant admin consent for Microsoft Graph.`,
+  };
+}
+
+/**
+ * Fetch a file an inbound Teams message carried. A Graph hosted-content URL is
+ * confined like a read of its conversation: the Graph token is the tenant's,
+ * and one tenant can be connected to several projects. A Bot Framework
+ * attachment id and a SharePoint download URL name no conversation; both are
+ * unguessable and come only from an activity this project received.
+ */
 export async function downloadTeamsFile(
   projectId: string,
   url: string,
-): Promise<{ ok: true; body: ArrayBuffer; contentType: string } | FileProxyError> {
+  ownership: ChannelOwnership = dbChannelOwnership,
+): Promise<{ ok: true; body: Uint8Array; contentType: string } | FileProxyError> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -87,27 +139,68 @@ export async function downloadTeamsFile(
     // A Bot Framework attachment (an image pasted into the chat): the
     // connector token that posts our cards is the credential that reads it.
     const creds = await loadTeamsBotCredentials(projectId);
-    const token = await botConnectorToken(creds).catch(() => null);
-    if (!token) return { ok: false, error: 'could not mint a bot token', status: 502 };
+    let token: string;
+    try {
+      token = await botConnectorToken(creds);
+    } catch (error) {
+      return tokenFailure('bot', error);
+    }
     headers.Authorization = `Bearer ${token}`;
   } else if (GRAPH_HOST.test(parsed.hostname)) {
     // The tenant comes from the install record the connect paths proved, not
     // from a project secret an admin can overwrite.
     const [tenant] = await provenTeamsTenants(projectId);
     if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
+    const conversation = hostedContentConversation(parsed);
+    if (!conversation) return { ok: false, error: 'invalid url', status: 400 };
+    const gate = await gateChannelRead({ projectId, platform: 'teams', risk: 'read', ...conversation }, ownership);
+    if (gate.refusal) return { ok: false, error: gate.refusal.message, status: 403 };
     const creds = await loadTeamsBotCredentials(projectId);
-    const token = await graphToken(tenant, creds).catch(() => null);
-    if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
+    let token: string;
+    try {
+      token = await graphToken(tenant, creds);
+    } catch (error) {
+      return tokenFailure('Graph', error);
+    }
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(parsed.href, { headers, signal: AbortSignal.timeout(60_000) });
+  // Redirects are followed by hand. The default `fetch` follows them with the
+  // bot/Graph bearer attached, to any host: a pre-authenticated SharePoint link,
+  // or any `*.microsoft.com` page with an open redirect, would then receive the
+  // token. Each hop must pass the same https + host allowlist, and the bearer
+  // goes only to the host it was minted for.
+  let current = parsed;
+  let res: Response | null = null;
+  for (let hop = 0; hop <= MAX_DOWNLOAD_REDIRECTS; hop++) {
+    res = await fetch(current.href, {
+      headers: current.host === parsed.host ? headers : {},
+      redirect: 'manual',
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (res.status < 300 || res.status >= 400) break;
+    const location = res.headers.get('location');
+    if (!location) break;
+    let next: URL;
+    try {
+      next = new URL(location, current);
+    } catch {
+      return { ok: false, error: 'invalid redirect', status: 502 };
+    }
+    if (
+      next.protocol !== 'https:' ||
+      (!ALLOWED_DOWNLOAD_HOST.test(next.hostname) && !ALLOWED_BOT_ATTACHMENT_HOST.test(next.hostname))
+    ) {
+      return { ok: false, error: 'redirect leaves the allowed Microsoft/SharePoint hosts', status: 502 };
+    }
+    current = next;
+    res = null;
+  }
+  if (!res) return { ok: false, error: 'too many redirects', status: 502 };
   if (!res.ok) return { ok: false, error: `download failed: HTTP ${res.status}`, status: 502 };
-  return {
-    ok: true,
-    body: await res.arrayBuffer(),
-    contentType: res.headers.get('content-type') ?? 'application/octet-stream',
-  };
+  const body = await readCapped(res);
+  if (!body) return { ok: false, error: DOWNLOAD_TOO_LARGE, status: 413 };
+  return { ok: true, body, contentType: res.headers.get('content-type') ?? 'application/octet-stream' };
 }
 
 export interface TeamsUploadArgs {
@@ -317,8 +410,12 @@ async function uploadToTeamDrive(
   const [tenant] = await provenTeamsTenants(projectId);
   if (!tenant) return { ok: false, error: 'Teams not connected for this project', status: 404 };
   const creds = await loadTeamsBotCredentials(projectId);
-  const token = await graphToken(tenant, creds).catch(() => null);
-  if (!token) return { ok: false, error: 'could not mint a Graph token', status: 502 };
+  let token: string;
+  try {
+    token = await graphToken(tenant, creds);
+  } catch (error) {
+    return tokenFailure('Graph', error);
+  }
 
   // The drive is chosen by the TEAM THAT OWNS THIS CONVERSATION, verified
   // server-side — never by the client-supplied id alone. Without this, a

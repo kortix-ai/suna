@@ -8,8 +8,13 @@ import {
   generateApiKeyPair,
   generateSandboxKeyPair,
   isApiKeySecretConfigured,
+  isGatewayKey,
   isKortixToken,
+  isAccountToken,
+  isServiceAccountToken,
+  isTunnelToken,
 } from '../shared/crypto';
+import { isOAuthAccessToken, isOAuthRefreshToken } from '../oauth/access-token';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -104,63 +109,6 @@ export async function createApiKey(params: CreateApiKeyParams): Promise<CreateAp
   };
 }
 
-/**
- * List all API keys for a sandbox. Never returns secret data.
- */
-export async function listApiKeys(sandboxId: string) {
-  return db
-    .select({
-      keyId: kortixApiKeys.keyId,
-      publicKey: kortixApiKeys.publicKey,
-      title: kortixApiKeys.title,
-      description: kortixApiKeys.description,
-      type: kortixApiKeys.type,
-      status: kortixApiKeys.status,
-      sandboxId: kortixApiKeys.sandboxId,
-      expiresAt: kortixApiKeys.expiresAt,
-      lastUsedAt: kortixApiKeys.lastUsedAt,
-      createdAt: kortixApiKeys.createdAt,
-    })
-    .from(kortixApiKeys)
-    .where(eq(kortixApiKeys.sandboxId, sandboxId));
-}
-
-/**
- * Revoke an API key (soft-delete — sets status to 'revoked').
- */
-export async function revokeApiKey(keyId: string, accountId: string): Promise<boolean> {
-  const result = await db
-    .update(kortixApiKeys)
-    .set({ status: 'revoked' })
-    .where(
-      and(
-        eq(kortixApiKeys.keyId, keyId),
-        eq(kortixApiKeys.accountId, accountId),
-        eq(kortixApiKeys.status, 'active'),
-      ),
-    )
-    .returning({ keyId: kortixApiKeys.keyId });
-
-  return result.length > 0;
-}
-
-/**
- * Hard-delete an API key.
- */
-export async function deleteApiKey(keyId: string, accountId: string): Promise<boolean> {
-  const result = await db
-    .delete(kortixApiKeys)
-    .where(
-      and(
-        eq(kortixApiKeys.keyId, keyId),
-        eq(kortixApiKeys.accountId, accountId),
-      ),
-    )
-    .returning({ keyId: kortixApiKeys.keyId });
-
-  return result.length > 0;
-}
-
 // ─── Validation ──────────────────────────────────────────────────────────────
 
 /**
@@ -174,6 +122,23 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
 
   if (!isKortixToken(secretKey)) {
     return { isValid: false, error: 'Invalid API key format — expected kortix_ prefix' };
+  }
+
+  // A credential minted into one of the platform's other tables — a session or
+  // CLI PAT, a service account, a gateway key, a tunnel token, an OAuth token —
+  // can never match kortix_api_keys. Refuse it by shape: no doomed indexed
+  // probe and an error that names the presented credential, not "not found"
+  // (prod 2026-10-03: one client presenting its session PAT to /v1/router/*
+  // wrote 71 "Token not found in DB" warns in a minute; the token was valid).
+  const foreign = isAccountToken(secretKey) ? 'a personal access token (kortix_pat_)'
+    : isServiceAccountToken(secretKey) ? 'a service-account token (kortix_sa_)'
+    : isGatewayKey(secretKey) ? 'a gateway key (kortix_gw_)'
+    : isTunnelToken(secretKey) ? 'a tunnel token (kortix_tnl_)'
+    : isOAuthAccessToken(secretKey) ? 'an OAuth access token (kortix_oat_)'
+    : isOAuthRefreshToken(secretKey) ? 'an OAuth refresh token (kortix_ort_)'
+    : null;
+  if (foreign) {
+    return { isValid: false, error: `Invalid API key format — ${foreign} is not an API key` };
   }
 
   try {
@@ -200,7 +165,9 @@ export async function validateSecretKey(secretKey: string): Promise<ApiKeyValida
     if (!row) {
       // No second probe query here: a miss must cost one indexed lookup, not
       // two, because anyone can present an unknown token.
-      console.warn(`[validateSecretKey] Token not found in DB. hash=${secretKeyHashes[0]!.slice(0, 16)}... prefix="${secretKey.slice(0, 20)}..."`);
+      // Family prefix only (`kortix_pat_`): any further character of a presented
+      // key, or of its hash, is credential material.
+      console.warn(`[validateSecretKey] Token not found in DB. family=${secretKey.match(/^kortix_[a-z]+_|^kortix_/)?.[0] ?? 'unknown'}`);
       return { isValid: false, error: 'API key not found or invalid' };
     }
 

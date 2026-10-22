@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { confirmPromptLanded } from './prompt-landing-proof';
+import {
+  LANDING_PROOF_MIN_BODY_BYTES,
+  confirmPromptLanded,
+  promptNeedsLandingProof,
+} from './prompt-landing-proof';
 
 const NO_WAIT = { attempts: 3, delayMs: 0 };
 
@@ -15,7 +19,7 @@ describe('confirmPromptLanded', () => {
       },
       ...NO_WAIT,
     });
-    expect(landed).toBe(true);
+    expect(landed).toBe('landed');
     // One read is enough when the runtime already answers.
     expect(reads).toEqual(['msg_1']);
   });
@@ -27,7 +31,7 @@ describe('confirmPromptLanded', () => {
       readMessage: async () => (++calls < 3 ? null : { id: 'msg_2' }),
       ...NO_WAIT,
     });
-    expect(landed).toBe(true);
+    expect(landed).toBe('landed');
     expect(calls).toBe(3);
   });
 
@@ -45,13 +49,13 @@ describe('confirmPromptLanded', () => {
       },
       ...NO_WAIT,
     });
-    expect(landed).toBe(false);
+    expect(landed).toBe('missing');
     expect(calls).toBe(3);
   });
 
   // A read that THROWS is not proof of absence — the box may be mid-resume.
   // Treating it as absence would re-send a prompt the runtime already took.
-  test('treats an unreadable runtime as landed, never as absent', async () => {
+  test('an unreadable runtime is unknown: never absent, and not claimed as landed', async () => {
     const landed = await confirmPromptLanded({
       messageId: 'msg_4',
       readMessage: async () => {
@@ -59,7 +63,7 @@ describe('confirmPromptLanded', () => {
       },
       ...NO_WAIT,
     });
-    expect(landed).toBe(true);
+    expect(landed).toBe('unknown');
   });
 
   test('cannot prove anything without a wire id, so it does not try', async () => {
@@ -72,7 +76,21 @@ describe('confirmPromptLanded', () => {
       },
       ...NO_WAIT,
     });
-    expect(landed).toBe(true);
+    expect(landed).toBe('unknown');
     expect(calls).toBe(0);
+  });
+});
+
+// The provider edge drops bodies from ~115 KB; anything smaller cannot be
+// dropped by it, so only a large body pays for the read-back.
+describe('promptNeedsLandingProof', () => {
+  test('an ordinary prompt is not read back', () => {
+    expect(promptNeedsLandingProof(2_000)).toBe(false);
+    expect(promptNeedsLandingProof(LANDING_PROOF_MIN_BODY_BYTES - 1)).toBe(false);
+  });
+
+  test('a body near the edge ceiling is read back', () => {
+    expect(promptNeedsLandingProof(LANDING_PROOF_MIN_BODY_BYTES)).toBe(true);
+    expect(promptNeedsLandingProof(6_100_000)).toBe(true);
   });
 });

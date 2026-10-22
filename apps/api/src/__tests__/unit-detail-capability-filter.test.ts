@@ -25,7 +25,7 @@ const sampleConfig: Record<string, unknown> = {
   }),
 };
 const files = [{ path: 'a' }, { path: 'b' }, { path: 'c' }];
-const ALL = { canFiles: true, canAgents: true, canSkills: true, canCommands: true, canCustomize: true };
+const ALL = { canFiles: true, canAgents: true, canSkills: true, canCommands: true };
 
 describe('applyDetailCapabilityFilter — /detail per-capability section gating', () => {
   test('all caps → nothing filtered', () => {
@@ -61,11 +61,11 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.default_agent).toBeNull();
   });
 
-  // A project member holds agent.read but not customize.read. Blanking the
+  // A project member holds agent.read but not file.read. Blanking the
   // default for them made the composer fall back to the first agent
   // alphabetically (`harness-reflector`) and RUN it instead of `kortix`.
-  test('agent.read without customize.read → the default agent name survives', () => {
-    const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canCustomize: false });
+  test('agent.read without file.read → the default agent name survives', () => {
+    const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canFiles: false });
     expect(out.config.agents).toEqual([{ name: 'a' }]);
     expect(out.config.open_code_default_agent).toBe('bot');
     expect(out.config.default_agent).toBe('bot');
@@ -76,8 +76,9 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.commands).toEqual([]);
   });
 
-  test('no customize.read → raw config blanked, structural signals kept', () => {
-    const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canCustomize: false });
+  // The raw manifest and OpenCode config are repository files: file.read.
+  test('no file.read → raw config blanked, structural signals kept', () => {
+    const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canFiles: false });
     expect(out.config.manifest_raw).toBeNull();
     expect(out.config.manifest).toEqual({});
     expect(out.config.env).toEqual([]);
@@ -87,8 +88,8 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     expect(out.config.signals).toEqual({ manifest: true });
   });
 
-  test('no customize.read → the manifest verdict is restricted, never a migration prompt', () => {
-    const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canCustomize: false });
+  test('no file.read → the manifest verdict is restricted, never a migration prompt', () => {
+    const out = applyDetailCapabilityFilter(sampleConfig, files, { ...ALL, canFiles: false });
     expect(out.config.manifest_version).toEqual({
       version: null,
       latest_version: 3,
@@ -99,7 +100,7 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     });
   });
 
-  test('with customize.read the real verdict passes through untouched', () => {
+  test('with file.read the real verdict passes through untouched', () => {
     const out = applyDetailCapabilityFilter(sampleConfig, files, ALL);
     expect(out.config.manifest_version).toEqual({
       version: 1,
@@ -111,15 +112,15 @@ describe('applyDetailCapabilityFilter — /detail per-capability section gating'
     });
   });
 
-  test('member profile (all config reads, NO file.read) → config visible, file list hidden', () => {
+  test('member profile (agent/skill/command reads, NO file.read) → rosters visible, files and raw config hidden', () => {
     const out = applyDetailCapabilityFilter(sampleConfig, files, {
-      canFiles: false, canAgents: true, canSkills: true, canCommands: true, canCustomize: true,
+      canFiles: false, canAgents: true, canSkills: true, canCommands: true,
     });
     expect(out.files).toEqual([]);
     expect(out.file_count).toBe(0);
     expect(out.config.agents).toEqual([{ name: 'a' }]);
     expect(out.config.skills).toEqual([{ name: 's' }]);
-    expect(out.config.manifest_raw).toBe('raw toml');
+    expect(out.config.manifest_raw).toBeNull();
   });
 
   test('files capped at 300 but file_count is the true total', () => {

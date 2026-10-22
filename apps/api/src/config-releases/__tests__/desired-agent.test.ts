@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { resolveDesiredRelease, type DesiredReleaseDeps } from '../desired';
 import type { ConfigRelease, ConfigReleaseVariant } from '../builder';
 import type { DeclaredAgentRoster } from '../session-agent';
-import { MemoryConfigReleaseLedger } from '../quarantine';
+import { MemoryConfigReleaseLedger } from './fakes';
 
 const PROJECT = {
   projectId: '33333333-3333-4333-8333-333333333333',
@@ -33,7 +33,6 @@ let built: ConfigReleaseVariant[] = [];
 /** One release per variant, so the release ID proves which variant was built. */
 function releaseFor(variant: ConfigReleaseVariant): ConfigRelease {
   return {
-    format: 'config-release-v1',
     release_id: `${variant}-release`,
     source_commit: TIP,
     config_dir: '.kortix/opencode',
@@ -54,8 +53,9 @@ function deps(roster: DeclaredAgentRoster = ROSTER): DesiredReleaseDeps {
       return releaseFor(variant);
     },
     resolveBase: async () => TIP,
+    readBase: async () => TIP,
     loadRoster: async () => roster,
-    invalidate: () => {},
+    checkBase: async () => TIP,
   };
 }
 

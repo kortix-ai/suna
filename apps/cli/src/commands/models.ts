@@ -13,18 +13,19 @@
  *  2. DEFAULTS (`default`) — what `auto` resolves to, at project or account
  *     scope. The per-AGENT pin stays on `kortix agents model <agent> <id>`.
  *
- * Both writes assert `project.customize.write`.
+ * Both writes assert `project.model.write`.
  */
 
+import type { ModelDefaultsResponse } from '@kortix/sdk';
 import { splitHelp } from '../command-argv.ts';
 import {
   emitJson,
+  fail,
   missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
   takeFlagValue,
-  fail,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
 
@@ -36,25 +37,27 @@ interface PickerModel {
   free?: boolean;
   reasoning?: boolean;
   tool_call?: boolean;
+  /** `false`: kept because a default names it, but its provider is not
+   *  connected for you, so the gateway would refuse it (KRTX-3011). */
+  available?: boolean;
+  availability?: 'login' | 'provider';
+}
+
+/** The connect command for a served model that is not runnable, else ''. */
+function connectHint(id: string, model: PickerModel): string {
+  if (model.available !== false) return '';
+  const provider = model.provider ?? id.split('/')[0];
+  const command = model.availability === 'login' ? 'kortix providers login openai' : `kortix providers set ${provider}`;
+  return `  ${C.yellow}not connected: ${command}${C.reset}`;
 }
 
 /** GET /projects/:id/model-picker (routes/models.ts). */
 interface ModelPicker {
   models: Record<string, PickerModel>;
+  catalog?: Record<string, { provider?: string; availability: string }>;
   modelOverrides?: Record<string, boolean>;
   usingDefaults?: boolean;
   defaultModel?: string;
-}
-
-/** GET /projects/:id/model-defaults (routes/models.ts). */
-interface ModelDefaults {
-  platformDefault: string | null;
-  accountDefault: string | null;
-  agentDefaults: Record<string, string>;
-  projectDefault: string | null;
-  resolvedForCaller: string | null;
-  resolvedSource?: string;
-  freeTier?: boolean;
 }
 
 const HELP = help`Usage: kortix models <subcommand> [options]
@@ -73,7 +76,8 @@ Enablement is display-only — it decides what pickers OFFER, never what the
 gateway serves.
 
 Subcommands:
-  ls [--json]                     List every model: state, origin, how it is
+  ls [--json]                     List served and unavailable catalog ids,
+                                  availability, state, origin, how it is
                                   paid for (VIA), provider.
   enable <model-id>...            Offer these models.
   disable <model-id>...           Stop offering them. The project default
@@ -98,7 +102,7 @@ Options:
   --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
-Writes need the \`project.customize.write\` permission.
+Writes need the \`project.model.write\` permission.
 `;
 
 export async function runModels(argv: string[]): Promise<number> {
@@ -162,11 +166,19 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     const p = (a.provider ?? '').localeCompare(b.provider ?? '');
     return p !== 0 ? p : aId.localeCompare(bId);
   });
-  if (rows.length === 0) {
-    process.stdout.write(`  ${C.dim}No models served for this project.${C.reset}\n`);
+  const unavailable = Object.entries(picker.catalog ?? {}).filter(([id]) => !(id in picker.models));
+  if (rows.length === 0 && unavailable.length === 0) {
+    // Same state the web Models tab's empty state answers ("Add a key on the
+    // Providers tab"): a fresh account on internal billing serves nothing until
+    // a provider key is connected. Name the CLI path instead of a bare dead end.
+    process.stdout.write(
+      `  ${C.dim}No models yet — connect a provider key with ${C.reset}${C.cyan}kortix providers set <provider>${C.reset}` +
+        `${C.dim} or ${C.reset}${C.cyan}kortix providers login <provider>${C.reset}${C.dim}.` +
+        ` The models it unlocks show up here.${C.reset}\n`,
+    );
     return 0;
   }
-  const idW = Math.min(44, Math.max(...rows.map(([id]) => id.length), 5));
+  const idW = Math.max(...rows.map(([id]) => id.length), ...unavailable.map(([id]) => id.length), 5);
   process.stdout.write('\n');
   process.stdout.write(
     `  ${C.dim}${pad('MODEL', idW)}   STATE   ORIGIN     ${pad('VIA', 8)}  PROVIDER${C.reset}\n`,
@@ -177,10 +189,22 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
     if (on) enabledCount += 1;
     const isDefault = id === picker.defaultModel;
     const marker = isDefault ? `${C.green}●${C.reset} ` : '  ';
-    const state = on ? `${C.green}${pad('on', 6)}${C.reset}` : `${C.faded}${pad('off', 6)}${C.reset}`;
+    const state = on
+      ? `${C.green}${pad('on', 6)}${C.reset}`
+      : `${C.faded}${pad('off', 6)}${C.reset}`;
     const origin = id in overrides ? 'override' : 'default';
     process.stdout.write(
-      `${marker}${pad(trim(id, idW), idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}\n`,
+      `${marker}${pad(id, idW)}   ${state}  ${pad(origin, 9)}  ${pad(paidVia(id, model.provider), 8)}  ${C.faded}${model.provider ?? '—'}${C.reset}${connectHint(id, model)}\n`,
+    );
+  }
+  if (unavailable.length > 0) {
+    process.stdout.write(`\n  ${C.dim}Unavailable catalog ids (not served by this project):${C.reset}\n`);
+    for (const [id, model] of unavailable.sort(([a], [b]) => a.localeCompare(b))) {
+      process.stdout.write(`  ${pad(id, idW)}   ${model.availability}\n`);
+    }
+    process.stdout.write(
+      '  plan = managed-model plan required; login = connect ChatGPT with kortix providers login openai;\n' +
+      '  provider = configure provider access with kortix providers set (some providers need dashboard setup).\n',
     );
   }
   const exceptions = Object.keys(overrides).length;
@@ -199,7 +223,10 @@ async function modelsLs(client: Client, base: string, json: boolean): Promise<nu
 }
 
 /** How a model is paid for: a ChatGPT subscription, a provider API key, or Kortix. */
-export function paidVia(id: string, provider: string | undefined): 'ChatGPT' | 'API key' | 'Kortix' {
+export function paidVia(
+  id: string,
+  provider: string | undefined,
+): 'ChatGPT' | 'API key' | 'Kortix' {
   if (id.startsWith('codex/') || provider === 'codex') return 'ChatGPT';
   if (!id.includes('/') || provider === 'kortix') return 'Kortix';
   return 'API key';
@@ -224,9 +251,15 @@ async function modelsToggle(
   const known = new Set(Object.keys(picker.models ?? {}));
   const unknown = ids.filter((id) => !known.has(id));
   if (unknown.length > 0) {
+    // With nothing served, "list the ids with models ls" points at an empty
+    // list — the dead end behind KRTX-1538. Answer how to get models instead.
+    const hint =
+      known.size === 0
+        ? `This project serves no models yet — connect one with ${C.cyan}kortix providers set <provider>${C.reset} ` +
+          `or ${C.cyan}kortix providers login <provider>${C.reset}; ${C.cyan}kortix models ls${C.reset} lists what they unlock.`
+        : `List the ids with ${C.cyan}kortix models ls${C.reset}.`;
     process.stderr.write(
-      `${status.err(`Not served by this project: ${unknown.join(', ')}`)} ` +
-        `List the ids with ${C.cyan}kortix models ls${C.reset}.\n`,
+      `${status.err(`Not served by this project: ${unknown.join(', ')}`)} ${hint}\n`,
     );
     return 1;
   }
@@ -282,7 +315,7 @@ async function modelsDefault(
   }
 
   if (!model) {
-    const d = await client.get<ModelDefaults>(path);
+    const d = await client.get<ModelDefaultsResponse>(path);
     if (opts.json) {
       emitJson(d);
       return 0;
@@ -323,8 +356,4 @@ function row(label: string, value: string | null): void {
   process.stdout.write(
     `  ${C.dim}${pad(label, 9)}${C.reset} ${value ? `${C.cyan}${value}${C.reset}` : `${C.faded}unset${C.reset}`}\n`,
   );
-}
-
-function trim(s: string, max: number): string {
-  return s.length <= max ? s : `${s.slice(0, max - 1)}…`;
 }

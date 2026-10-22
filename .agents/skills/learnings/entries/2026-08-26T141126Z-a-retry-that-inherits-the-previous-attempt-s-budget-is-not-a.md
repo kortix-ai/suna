@@ -4,7 +4,7 @@ commit: ba67f3f702
 ---
 # A retry that inherits the previous attempt's budget is not a retry
 
-*Incident (2026-08-26, SampleCo, session `29861dfa` / box `inqwpv4a`).* The
+*Incident (2026-08-26, a SampleCo session on an E2B box).* The
 first production outing of the automatic wake-cooldown ladder (see "A stamped
 failure is a cooldown, never a gravestone") defeated itself.
 

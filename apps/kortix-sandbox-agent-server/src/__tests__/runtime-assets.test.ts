@@ -9,6 +9,7 @@ import {
   reconcileRuntimeAssets,
   resetRuntimeConvergenceForTests,
   runningRuntimeAssets,
+  __resetVerifiedDigestsForTests,
   registerHarnessAssets,
   resetHarnessAssetsForTests,
 } from '@/services/runtime-assets/runtime-assets'
@@ -115,6 +116,12 @@ async function run(ws: Awaited<ReturnType<typeof workspace>>, stub: ReturnType<t
     cliPath: ws.cliPath,
     managedSkillsDir: ws.skillsDir,
     statePath: ws.statePath,
+    // Own the box: the chunk index hashes whatever these resolve to, and the
+    // defaults reach this host's real agent binary (/usr/local/bin/kortix-agent,
+    // ~100 MB hashed 8 bytes at a time by the stub's chunk size). A CI runner
+    // has neither, so pointing both into the fixture restores that shape.
+    agentStateDir: join(ws.root, 'agent-state'),
+    agentBakedPath: join(ws.root, 'absent-agent'),
     fetchImpl: stub.impl,
     // The fixtures are text files, not executables. A downloaded CLI is now
     // EXECUTED before it replaces a working one, so every case that is not about
@@ -185,7 +192,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stub)
 
     expect(result).toEqual({ cli: 'updated', skills: 'updated' })
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect((await stat(ws.cliPath)).mode & 0o777).toBe(0o755)
     expect(await readFile(join(ws.skillsDir, 'kortix-system/SKILL.md'), 'utf8')).toContain('body v2')
     expect(await readFile(join(ws.skillsDir, 'kortix-cli/SKILL.md'), 'utf8')).toBe('cli skill v2\n')
@@ -401,7 +408,7 @@ describe('reconcileRuntimeAssets', () => {
     const result = await run(ws, stubFetch())
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
   })
 })
 
@@ -494,6 +501,49 @@ describe('bakeRuntimeAssetsState', () => {
     expect(running.harness_version).toBe('1.18.23')
   })
 
+  test('a binary replaced after the bake reports the bytes now on disk, not the baked digest', async () => {
+    // The Platinum agent-swap fast path patches the agent binary into the
+    // predecessor's rootfs and keeps its state file. Before this, a fresh box
+    // reported the predecessor's agent digest until its first reconcile, and
+    // session open relaunched a daemon that already ran the right bytes.
+    const ws = await bakedImage()
+    const agentPath = join(ws.root, 'bin', 'kortix-agent')
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath,
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+    __resetVerifiedDigestsForTests()
+
+    await Bun.write(agentPath, 'SWAPPED-IN-AGENT-BYTES')
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.agent_sha256).toBe(sha('SWAPPED-IN-AGENT-BYTES'))
+    expect(running.agent_path).toBe(agentPath)
+    // The CLI was not touched: the baked digest is still the truth.
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+  })
+
+  test('a baked digest whose file is gone cannot prove anything', async () => {
+    const ws = await bakedImage()
+    const agentPath = join(ws.root, 'bin', 'kortix-agent')
+    await bakeRuntimeAssetsState({
+      cliPath: ws.cliPath,
+      agentPath,
+      managedSkillsDir: ws.skillsDir,
+      statePath: ws.statePath,
+      harnessVersion: '1.18.23',
+    })
+    await rm(agentPath)
+
+    const running = await runningRuntimeAssets(ws.statePath)
+
+    expect(running.agent_sha256).toBeNull()
+    expect(running.cli_sha256).toBe(sha('NEW-CLI-BYTES'))
+  })
+
   test('a missing baked asset fails the image build instead of shipping a lie', async () => {
     const ws = await workspace()
     await Bun.write(ws.cliPath, 'NEW-CLI-BYTES')
@@ -567,7 +617,12 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, oldCli)
     const stub = chunkAwareStub(oldCli, newCli)
 
-    const result = await run(ws, stub as ReturnType<typeof stubFetch>)
+    // The store is the box's previous CLI — not whatever real binaries this
+    // test box happens to run, which a Kortix sandbox image carries and the
+    // 8-byte fixture chunking would hash for minutes.
+    const result = await run(ws, stub as ReturnType<typeof stubFetch>, {
+      localChunkSources: [ws.cliPath],
+    })
 
     expect(result.cli).toBe('updated')
     expect(Buffer.compare(Buffer.from(await readFile(ws.cliPath)), newCli)).toBe(0)
@@ -583,10 +638,10 @@ describe('reconcileRuntimeAssets over chunks', () => {
     await Bun.write(ws.cliPath, 'OLD-CLI-BYTES')
     const stub = stubFetch()
 
-    const result = await run(ws, stub)
+    const result = await run(ws, stub, { localChunkSources: [ws.cliPath] })
 
     expect(result.cli).toBe('updated')
-    expect(await readFile(ws.cliPath, 'utf8')).toBe('NEW-CLI-BYTES')
+    expect(await Bun.file(ws.cliPath).text()).toBe('NEW-CLI-BYTES')
     expect(stub.calls).toContain(`${API_URL}/v1/runtime-assets/cli`)
   })
 })

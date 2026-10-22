@@ -1,121 +1,450 @@
 ---
-title: Self-hosting
-description: Run your own Kortix instance with Docker Compose, on a VPS or for evaluation.
+title: "Self-hosting"
+description: "Run Kortix on your own server with kortix self-host: install, configure, secure, connect clients, update, back up and operate."
 ---
 
-Kortix runs as one Docker Compose stack: the frontend, the API, the LLM gateway, and the Supabase distribution. This page shows the three ways to install it, how updates work, and how to back up your data.
-
-Agent sessions run on a separate sandbox provider, not on this stack. The default is [Daytona](https://www.daytona.io/); Platinum and E2B are also supported.
-
-## One-shot bootstrap
-
-On a bare Linux box, one command installs Docker, installs the `kortix` CLI, and starts the stack:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/main/scripts/kortix-selfhost-up.sh \
-  | bash -s -- --domain kortix.example.com --email ops@example.com
-```
-
-This script runs on Linux only. On another OS, install the CLI directly and use the manual path below.
-
-## Manual path
+A self-hosted instance is the full Kortix platform on a server you control: one Docker Compose stack that the `kortix self-host` CLI installs, configures and updates. This page is for the operator who runs that server. Sessions run on Platinum sandboxes, not on the server. The instance must be reachable from the internet so those sandboxes can call back.
 
 <Steps>
+<Step title="Point DNS at the server">
+Create A or AAAA records for `kortix.example.com` and `api.kortix.example.com`, plus a wildcard `*.p.kortix.example.com` for previews. Open ports 80 and 443.
+</Step>
+<Step title="Run the bootstrap on the server">
+It installs Docker and the CLI, then starts the stack with a TLS certificate.
 
-<Step title="Install the CLI">
+```sh
+curl -fsSL https://raw.githubusercontent.com/kortix-ai/suna/dev/scripts/kortix-selfhost-up.sh \
+  | bash -s -- --domain kortix.example.com --email ops@example.com
+```
+</Step>
+<Step title="Answer the setup questions">
+If the bootstrap added you to the `docker` group, open a new shell first. Run `kortix self-host configure`. Give your admin email, your Platinum API key (`PLATINUM_API_KEY`) and the preview domain `p.kortix.example.com`. Then run `kortix self-host start` to apply the answers.
+</Step>
+<Step title="Sign up as the admin">
+Open `https://kortix.example.com` and sign up with the admin email. Connect GitHub at `/admin/git`, create the team account and a project, then add a model key. See [First sign-in and setup](#first-sign-in-and-setup).
+
+Do this as soon as the stack starts. Until you set `EMAIL_URL` or `DISABLE_SIGNUP=true`, anyone who reaches the instance can create a confirmed account for any address, the admin address included.
+</Step>
+<Step title="Check the instance">
+Run `kortix self-host doctor` and fix every failing check. See [Secure the instance](#secure-the-instance).
+</Step>
+</Steps>
+
+## What runs where
+
+`kortix self-host init` writes `docker-compose.yml`, `.env`, a `Caddyfile` and `updater.sh` into `~/.config/kortix/self-host/<instance>/`. `kortix self-host start` runs `docker compose up`. One Compose project, `kortix-<instance>`, holds every service.
+
+| Service | What it does |
+|---|---|
+| `frontend` | The web app. |
+| `kortix-api` | The REST API at `/v1`. It relays any `/v1/llm` request that reaches it to `llm-gateway`. |
+| `llm-gateway` | The standalone LLM gateway. Caddy sends `api.<domain>/v1/llm*` here. |
+| `kortix-migrate` | A one-shot job. It migrates the database before `kortix-api` starts. |
+| `kortix-updater` | Pulls new images once a day, migrates, and rolls the app services. It mounts the Docker socket. |
+| `supabase-*` | The Supabase distribution, every image pinned by digest: Postgres (`supabase-db`), auth, REST, realtime, storage, imgproxy, meta, functions, Kong, the Supavisor pooler, Studio, analytics and vector. |
+| `caddy` | Domain mode only. Terminates TLS on ports 80 and 443 with ACME HTTP-01 and routes traffic. |
+| `cloudflared` | Tunnel mode only. Publishes `kortix-api` through a Cloudflare tunnel. |
+
+Off the box:
+
+- **Sandboxes.** Every session runs on Platinum, the reference sandbox provider. `kortix-api` creates them with `PLATINUM_API_KEY`. The sandbox calls back to the instance's public API URL, `KORTIX_URL`.
+- **Images.** `kortix/kortix-frontend`, `kortix/kortix-api` and `kortix/kortix-gateway` on Docker Hub. Pulls need no credentials.
+- **Model providers.** The gateway calls the providers your projects connect.
+
+### Reachability modes
+
+| Mode | How you set it | Public URLs | App replicas | Sessions run |
+|---|---|---|---|---|
+| domain | `--domain <domain>` | `https://<domain>` and `https://api.<domain>` | 2 each of `kortix-api`, `llm-gateway`, `frontend` behind Caddy | yes |
+| tunnel | `--tunnel cloudflare` | The web app stays on `http://localhost:13737`. Only the API is public, at the tunnel URL. | 1 each | yes |
+| local | neither flag | none: every port binds `127.0.0.1` | 1 each | no, the sandbox cannot reach the API |
+
+Domain mode is the production setup. Tunnel mode is for evaluation on your own machine. Without a domain, the services publish loopback ports: frontend `13737`, API `13738`, Supabase `13740`. When the stack is stopped, `start` moves a port that is in use to a free one.
+
+## Requirements
+
+- **A Linux server** with a public IP. The bootstrap installs Docker Engine and the Compose plugin. On a server that has them, install only the CLI. The CLI runs on Linux and macOS, on x86_64 and arm64.
+- **DNS.** A or AAAA records for `<domain>` and `api.<domain>`, both pointed at the server, before the first start. Caddy needs them to get the certificate.
+- **Ports 80 and 443** open inbound.
+- **Wildcard records** for the optional origins:
+  - `*.p.<domain>` for sandbox previews. Use it on every public instance: without it, browser previews fall back to a path proxy that breaks root-absolute links, and `doctor` fails.
+  - `*.<apps base domain>`, for example `*.apps.<domain>`, to host [Apps](/docs/apps).
+- **A Platinum API key** (`PLATINUM_API_KEY`). Without it, sessions do not start.
+- **A model provider key.** You add it in the web app after the first sign-in.
+
+## Install
+
+### Bootstrap a bare server
+
+The bootstrap script runs on Linux only. It installs Docker and the Compose plugin when they are missing, installs the CLI, runs `kortix self-host init`, sets the domain, and runs `kortix self-host start`. Re-running it is safe.
+
+| Flag | Default | Sets |
+|---|---|---|
+| `--domain <domain>` | none | `KORTIX_DOMAIN`. Turns on Caddy and TLS. |
+| `--api-domain <domain>` | `api.<domain>` | `KORTIX_API_DOMAIN` |
+| `--email <email>` | `admin@<domain>` | `KORTIX_ACME_EMAIL`, the certificate contact |
+| `--channel <stable\|latest>` | `stable` | The image channel |
+| `--auto-update <on\|off>` | `on` | The daily updater |
+| `--instance <name>` | `default` | The instance name |
+
+The bootstrap runs `init` non-interactively. It sets no admin email, no Platinum key and no preview domain, so run `kortix self-host configure` and then `kortix self-host start` after it. When the script adds your user to the `docker` group, open a new shell before the next `kortix self-host` command.
+
+### Install by hand
+
+Use this path on a server that already has Docker and the Compose plugin.
+
 ```sh
 curl -fsSL https://kortix.com/install | bash
-```
-</Step>
-
-<Step title="Point DNS, then initialize">
-Create an A/AAAA record for your domain and for `api.<domain>`, both pointing
-at the box's IP. Open ports 80 and 443 — the bundled Caddy proxy uses them to
-issue a TLS certificate. Then run:
-
-```sh
-kortix self-host init --domain kortix.example.com
-```
-</Step>
-
-<Step title="Start the stack">
-```sh
+kortix self-host init --domain kortix.example.com --admin-email you@example.com
 kortix self-host start
 ```
 
-Check `kortix self-host status`, `logs`, and `doctor` while the stack starts.
-</Step>
+A first `init` in a terminal asks every setup question. `--yes`, or a shell with no terminal, skips the questions and keeps the defaults. `start` runs `init` first when the instance has no configuration. When the sandbox key is missing, `init` and `start` print a warning and continue.
 
-</Steps>
+### Evaluate with a Cloudflare tunnel
 
-## Evaluation mode
-
-To try Kortix with no domain, use a Cloudflare tunnel instead of a domain:
+To try Kortix on your own machine with no domain:
 
 ```sh
 kortix self-host init --tunnel cloudflare
 kortix self-host start
 ```
 
-The tunnel URL changes on every restart. Use this mode for evaluation, not production.
-
-After the stack starts, set your sandbox provider key:
+The web app opens at `http://localhost:13737`. `cloudflared` publishes the API at an `https://<random>.trycloudflare.com` URL. That URL changes each time `cloudflared` restarts, and `start` and `update` capture the new one. For a stable URL, create a named tunnel in Cloudflare Zero Trust, point its public hostname at `http://kortix-api:8008`, then set both values:
 
 ```sh
-kortix self-host configure
+kortix self-host env set CLOUDFLARE_TUNNEL_TOKEN=<token> CLOUDFLARE_TUNNEL_HOSTNAME=kortix-api.example.com
+kortix self-host start
 ```
 
-`configure` is an interactive prompt for the sandbox provider key, and
-optionally a managed-git token. Sign up in the dashboard, then connect your
-own LLM key in the model picker. Self-hosted instances use your own key
-by default.
+## Configure
 
-:::info
-By default, only the platform admin can create new organization accounts. The
-platform admin is the super-admin flag on a membership, not a role.
-Any signed-in user can still join by invite or SSO. Opt out with
-`kortix self-host init --no-restrict-account-creation`, or re-enable the
-admin-only default with `--restrict-account-creation`.
-:::
+`kortix self-host configure` asks the setup questions again, in this order. Each answer is pre-filled with the current value, so Enter keeps it. `configure` writes the files only. Run `kortix self-host start` to apply them.
 
-Each API container has a 640 MiB memory limit by default.
-Keep this default on an 8 GiB host.
-Use a 1 GiB limit on a 16 GiB host when API traffic reaches the default limit:
+| Step | What it sets |
+|---|---|
+| Reachability | `domain` (domain, API subdomain, ACME email) or `tunnel` (quick or named tunnel). |
+| Admin email | `KORTIX_PLATFORM_ADMIN_EMAILS`, comma-separated. These people are platform admins. Also `--admin-email <email>`. |
+| Enterprise license | `ENTERPRISE_LICENSE_AVAILABLE`. With a license, it unlocks SSO, SCIM, role-based access control and audit. Also `--enterprise-license`. |
+| Restrict account creation | On by default. Only a platform admin can create a new account. Others get `403` `account_creation_restricted`. Sign-ups, invites, SSO and each person's personal account still work. Also `--no-restrict-account-creation` and `--restrict-account-creation`. |
+| Sandbox provider | `platinum` (the default) or the legacy `daytona`, written to `ALLOWED_SANDBOX_PROVIDERS`, plus that provider's settings (below). |
+| Apps hosting | Optional. `KORTIX_APPS_BASE_DOMAIN`, which needs a wildcard DNS record. |
+| Preview origins | `KORTIX_PREVIEW_BASE_DOMAIN`, suggested `p.<domain>`, which needs a `*.p.<domain>` record. In domain mode the default answer is configure. |
+| Composio | Optional. `COMPOSIO_API_KEY`, the app catalog for [connectors](/docs/connect/connectors). |
+| Update policy | Auto-update on or off, channel, daily time and timezone. |
+
+| Provider | Key | Other settings and defaults |
+|---|---|---|
+| `platinum` | `PLATINUM_API_KEY` | `PLATINUM_API_URL` (`https://api.platinum.dev`), `PLATINUM_TEMPLATE` (optional) |
+| `daytona` (legacy) | `DAYTONA_API_KEY` | `DAYTONA_SERVER_URL` (`https://app.daytona.io/api`), `DAYTONA_TARGET` (`us`) |
+
+<Callout type="warning">
+**Legacy: Daytona.** Daytona is a legacy fallback provider. Its removal is scheduled. Existing Daytona sessions keep working for now, but Daytona gets no new features and no support guarantee. Use Platinum. E2B support is discontinued.
+</Callout>
+
+SAML sign-in is on in every instance, and `init` generates `SAML_PRIVATE_KEY` once. Do not change that key after you register an identity provider: it is the instance's SAML identity. To set up SSO, see [Sign-in, SSO & API keys](/docs/accounts/identity).
+
+## First sign-in and setup
+
+1. **Sign up as the admin.** Open `https://<domain>` and sign up with an address in `KORTIX_PLATFORM_ADMIN_EMAILS`. A password, email-code or social sign-in matches that list. A SAML sign-in never does. To change the admins later, set the full comma-separated list: `kortix self-host env set KORTIX_PLATFORM_ADMIN_EMAILS=you@example.com,ops@example.com`. The value replaces the list.
+2. **Connect managed git.** Open `/admin/git`. Kortix creates and pushes every new project repository through this one GitHub identity. Pick **Create a GitHub App** (recommended), **Paste an existing App**, or **Use an access token**. Until it is set, Kortix cannot create project repositories. You can still connect an existing repository. See [Git](/docs/git).
+3. **Create the team account.** Your sign-up account is personal. It cannot hold SAML SSO (`403` `sso_personal_account`), and a project cannot move to another account. The menu that creates accounts lives inside a project, so first create one project at `/new`. In it, open the project menu → **Switch Project** → **Create an account…**. Only platform admins can create accounts by default. Invite your team and set up SSO in this account.
+4. **Create a project** in the team account. After **Create an account…**, Kortix opens `/new` with the new account selected.
+5. **Add a model key** in the project: **Customize → Models → Providers**, or `kortix providers set <provider>`. Each project needs its own key. A self-hosted instance has no Kortix-managed models. See [Connect your own provider](/docs/project/models#connect-your-own-provider).
+6. **Turn on email.** Set one connection string:
+
+   ```sh
+   kortix self-host env set EMAIL_URL=smtp://user:password@smtp.example.com:587
+   ```
+
+   Kortix then sends sign-in and invitation mail through it, requires email confirmation for new accounts, and adds magic-link sign-in. `EMAIL_FROM` defaults to `Kortix <noreply@<domain>>`. Other forms: `smtps://user:password@host:465`, `resend://<api-key>`, `ses://<key-id>:<secret>@<region>`, `ses://<region>`, `mailtrap://<api-token>`. Separate several with commas for a fallback chain, tried left to right.
+7. **Close sign-up.** When your team has signed up, run `kortix self-host env set DISABLE_SIGNUP=true`, then `kortix self-host start` so the auth service reads it.
+
+A new instance starts with these defaults:
+
+| Setting | Default |
+|---|---|
+| Sign-in methods | Password only. Email sign-ups confirm without an email, so a sign-up's address is unproven. See [Unconfirmed email addresses](#unconfirmed-email-addresses). |
+| Social sign-in | None |
+| Billing | Off |
+| Marketing pages | Off. Every marketing route opens the web app. Turn on with `KORTIX_PUBLIC_DISABLE_LANDING_PAGE=false`. |
+| Connector app catalog | Hidden until `COMPOSIO_API_KEY` is set |
+| Account creation | Platform admins only |
+
+## Secure the instance
+
+`kortix self-host doctor` runs these checks. It exits `0` when all pass and `1` when one fails. `--json` prints the result as JSON.
+
+| Check | Fails when | Fix |
+|---|---|---|
+| `docker` | `docker --version` fails | Install Docker. |
+| `docker-compose` | The Compose plugin is missing | Install the Compose plugin. |
+| `compose-config` | The rendered `docker-compose.yml` is not valid | Correct the value the error names with `env set`. |
+| `instance-dir` | The instance directory moved since the last write | Run `kortix self-host configure`, or any of `init`, `start`, `update`, `env set`. |
+| `email-url` | `EMAIL_URL` is set but does not parse | Correct the value. |
+| `preview-origins` | Domain mode and `KORTIX_PREVIEW_BASE_DOMAIN` is empty | Point `*.p.<domain>` at the server, then `kortix self-host env set KORTIX_PREVIEW_BASE_DOMAIN=p.<domain> KORTIX_PREVIEW_ALLOW_DIRECT_EDGE=true`. |
+| `open-sign-up` | A domain or tunnel instance has sign-up open and email confirmation off | Set `EMAIL_URL`, or set `DISABLE_SIGNUP=true` once your team is in. |
+
+<Callout type="warning">
+A new instance confirms every sign-up without an email. Until you fix `open-sign-up`, anyone who reaches the instance can create a confirmed account for any address, an admin address included. Sign up as the admin first, then set `EMAIL_URL` or `DISABLE_SIGNUP=true`. `kortix self-host init` prints the same warning on a domain or tunnel instance. `init --disable-signup` turns sign-up off from the first start, for an install that creates its accounts another way: while it is off, nobody can sign up, the admin included.
+</Callout>
+
+What the stack does by itself:
+
+- Only Caddy publishes public ports, 80 and 443. Every other published port binds `127.0.0.1`.
+- `.env` and `docker-compose.yml` are written with mode `0600`.
+- [Connectors](/docs/connect/connectors) refuse private and internal addresses with `connector_egress_blocked`. List the internal hosts they may reach in `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`.
+- `kortix-updater` holds the Docker socket, so its image is pinned by digest.
+
+Keep `.env` safe: it holds every secret, and `API_KEY_SECRET` in it encrypts every stored secret, connector credential and token. A lost `API_KEY_SECRET` makes them unreadable. The Secrets page marks each such project secret **Undecryptable**, and **Customize → Models → Providers** does the same for each account key and ChatGPT login. A connector credential shows no mark: a call through it returns `credential_undecryptable`. A session start names the first value it needs, and any other request that needs one answers `409 SECRET_UNDECRYPTABLE`. Enter each value again to fix it, and save each OAuth application again before you reconnect its account.
+
+### Unconfirmed email addresses
+
+`ENABLE_EMAIL_AUTOCONFIRM=true` is the default until you set `EMAIL_URL`. Auth then confirms each sign-up without an email, and the API reads the same value from `.env`. While it is `true`, the API treats the email of a password, email-code or social login as unproven, because whoever signed up first holds the address:
+
+| Path | With `ENABLE_EMAIL_AUTOCONFIRM=true` |
+|---|---|
+| Sign-in with a pending invite | Sign-in does not accept the invite. |
+| SCIM `POST /Users` for that address | Creates a pending invite (`201`). No membership. A password login does not see that invite, and accepting or declining it returns `403` `email_unconfirmed`. The invite page then shows **Continue with single sign-on**: it signs in through the account's SAML provider, also for an address outside the provider's domain, and the person joins. An admin can instead click **Resend** on the pending invite: it is then an invite a person sent. |
+| **Members** → **Invite** for that address | Creates a pending invite instead of adding the login. |
+| An invite a person sent or resent (**Members** → **Invite** or **Resend**, a project invite) | The login that holds the address sees it in the project chooser and the **Switch Project** menu, and can accept it. That login is whoever signed up first with the address, so it may not be the person you invited. |
+| `KORTIX_PLATFORM_ADMIN_EMAILS` | Matches a password login with the address. Whoever signs up first with an allowlisted address is platform admin. |
+
+A login that is already a member of the account, and a login through the account's own SAML provider, still match inside that account. `KORTIX_PLATFORM_ADMIN_EMAILS` never matches a SAML login. Setting `EMAIL_URL` turns `ENABLE_EMAIL_AUTOCONFIRM` off and restores the matching. A login created while it was on is not confirmed again: after you add email, its address matches invites and SCIM like a confirmed one. Set `EMAIL_URL` before you invite people. Without it, invite a person only after that person has signed up: an address has one password login, so nobody else can take it then. A cloud instance never sets the value.
+
+## The platform admin console
+
+Platform admins open `/admin`. On a self-hosted instance, a platform admin is a person listed in `KORTIX_PLATFORM_ADMIN_EMAILS`.
+
+| Page | Path | What it holds |
+|---|---|---|
+| Overview | `/admin` | Live instance numbers, refreshed every 15 seconds. |
+| Accounts | `/admin/accounts` | Every account. Filter, sort and inspect one. |
+| Projects | `/admin/projects` | Every project across every account, most active first, with its operator-managed [feature flags](/docs/project#feature-flags). |
+| Analytics | `/admin/analytics` | Daily platform activity, by UTC day. |
+| Sandboxes | `/admin/sandboxes` | Where new sandboxes are placed, and the live fleet. |
+| Git | `/admin/git` | The instance's managed GitHub identity. When `MANAGED_GIT_*` environment variables set it, the page is read-only. |
+| Maintenance | `/admin/utils` | System-wide notices and the full-lockdown switch. |
+
+## Connect your clients
+
+`kortix self-host start` registers the CLI host `selfhost` on the server. To point the web, CLI, TUI, desktop and mobile clients at the instance, see [Connect to a self-hosted instance](/docs/clients#connect-to-a-self-hosted-instance).
+
+## Integrations
+
+Set these with `kortix self-host env set`. Each row says what the variable turns on or off.
+
+| Variables | Effect |
+|---|---|
+| `COMPOSIO_API_KEY` | The connector app catalog. Without it, Easy connect, the `/connections` page and the onboarding apps step are hidden. Custom connectors work without it. |
+| `COMPOSIO_WEBHOOK_SECRET` | Composio app-event [triggers](/docs/connect/triggers). Without it, `POST /v1/webhooks/events/composio` answers `503` `event_ingress_not_configured`. |
+| `KORTIX_EVENT_POLLS_ENABLED` | Default `true`. `false` pauses every check of the app events that Kortix checks itself ([source `mcp`](/docs/connect/triggers#how-checks-work)). The triggers stay, and fires already queued still run. Checks resume when it is `true` again. |
+| `KORTIX_OAUTH_CLIENTS` | Your own OAuth clients for the [MCP app catalog](/docs/connect/connectors#the-mcp-app-catalog-experimental) apps whose servers have no dynamic client registration. JSON, one entry per vendor: `google`, `github`, `slack`, `hubspot`, `asana`, `box`. Without an entry, those apps are not listed. See [Kortix OAuth clients](#kortix-oauth-clients). |
+| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET` | One-click **Add to Slack** with your own Slack app. Without all three, each project connects its own Slack app. See [Slack, Teams & email](/docs/connect/channels). |
+| `MICROSOFT_APP_ID`, `MICROSOFT_APP_PASSWORD`, `MICROSOFT_APP_TENANT` (default `botframework.com`) | One shared Microsoft Teams bot. Without them, each project brings its own bot app. |
+| `AGENTMAIL_API_KEY` | Managed inboxes for the email channel. |
+| `TUNNEL_ENABLED` | Default `true`. `false` turns off [computers](/docs/connect/computers): `/v1/tunnel/*` answers `503` `tunnel_disabled`. |
+| `PLATINUM_API_KEY` | Monitors (also need `platinum` in `ALLOWED_SANDBOX_PROVIDERS`), project Files (`volumes`). |
+
+OAuth callbacks, such as `<KORTIX_URL>/v1/connectors/oauth2/callback` and the Slack and Teams redirects, use `KORTIX_URL`. Domain mode and a named tunnel keep it stable. A quick tunnel changes it at every restart and breaks every callback you registered.
+
+### Kortix OAuth clients
+
+Some MCP servers in the catalog do not let Kortix register itself. Kortix signs in to them with an OAuth client that you create at the vendor once per instance.
+
+1. At the vendor, create an OAuth app with the redirect URI `<KORTIX_URL>/v1/connectors/oauth2/callback`.
+   - Google: a **Web application** client. Select **Use this client for an AI-powered agent**, enable the Gmail, Calendar, Drive, Docs and Sheets APIs and their MCP services, and add the scopes from Google's [MCP server guide](https://developers.google.com/workspace/guides/configure-mcp-servers). The Workspace MCP servers are a Google developer preview.
+   - GitHub: an OAuth app (not a GitHub App).
+2. Store the clients as one JSON value:
+
+   ```sh
+   kortix self-host env set KORTIX_OAUTH_CLIENTS='{"google":{"client_id":"<id>","client_secret":"<secret>"},"github":{"client_id":"<id>","client_secret":"<secret>"}}'
+   ```
+
+3. Restart the API. The apps of each configured vendor appear in the catalog.
+
+### Receive Composio app events
+
+One Composio project has one webhook URL, so it serves one instance.
+
+1. Set `COMPOSIO_API_KEY`.
+2. In a checkout of `kortix-ai/suna`, run the subscription script with [Bun](https://bun.sh). Add `--dry-run` to see the plan first.
+
+   ```sh
+   cd apps/api
+   COMPOSIO_API_KEY=<key> bun scripts/composio-webhook-subscription.ts \
+     --url https://api.kortix.example.com/v1/webhooks/events/composio
+   ```
+
+3. The script prints the signing secret once, when it creates the subscription. Store it: `kortix self-host env set COMPOSIO_WEBHOOK_SECRET=<secret>`.
+
+### Composio toolkits that need your own OAuth app
+
+Some toolkits have no Composio-managed sign-in. Syncing one fails with `422` `composio_auth_config_required`. In the Composio dashboard, open **Auth Configs** and create one with your own OAuth app. Then sync again. No restart is needed.
+
+## Updates and versions
+
+`kortix-updater` checks once a day at `KORTIX_UPDATE_TIME` (default `02:00`) in `KORTIX_UPDATE_TZ` (default `America/New_York`). Auto-update is on by default.
+
+| Track | Images |
+|---|---|
+| `stable` (default) | A release that Kortix promotes to self-hosted instances after it runs in production. |
+| `latest` | Every Kortix release. |
+| `--tag <version>` | One exact version. A pin wins over the channel. |
+
+Each run:
+
+1. Checks free disk space. It stops below `KORTIX_MIN_FREE_DISK_MB` (default `2048`).
+2. Pulls the configured tags. When no image changed, it stops.
+3. Runs `kortix-migrate`. When a migration fails, nothing is swapped and the previous version keeps serving.
+4. Rolls `kortix-api`, `llm-gateway` and `frontend`. With 2 replicas, new containers must pass their health check within `KORTIX_ROLLOUT_TIMEOUT` (default `300` seconds) before the old ones stop, so the instance stays up. A swap that fails keeps the previous version. With 1 replica, each service restarts in place with a short interruption.
+5. Removes superseded images after a fully successful run. It keeps the current and the previous version for a fast rollback.
+
+`kortix self-host status` shows the last outcome (`ok`, `degraded`, `failed`, `skipped` or `never-run`), the version change, a drift check of running images against the configuration, and the schedule. Set `KORTIX_UPDATE_WEBHOOK_URL` to receive each run's status as a JSON `POST`.
 
 ```sh
-kortix self-host env set KORTIX_API_MEMORY_LIMIT=1024m
+kortix self-host update                          # apply the channel now
+kortix self-host update --channel latest         # switch channel
+kortix self-host update --tag <version>          # pin one version
+kortix self-host rollback --release <version>    # go back to a version
+kortix self-host version                         # running, latest and channel
 ```
 
-Confirm the applied limit with `docker stats --no-stream`.
+A manual `update` uses the same rollout as the daily run. When another update holds the lock, it exits `75` and skips the rollout. A pin holds through every daily run. `init` or `update` without `--tag` moves the instance back to its channel. To change auto-update, the time or the timezone, run `kortix self-host configure`, then `kortix self-host start`.
 
-## Updates
+### Saved conversations after an update
 
-Every instance updates itself automatically. Pin an exact version instead:
+Since the session log release, every session's saved conversation is its session log. An instance that ran an older version also holds conversations in the older v1 store. After the update, the API converts them by itself, so you do nothing:
+
+- A background pass (`SESSION_LOG_BACKFILL`, default `write`) converts every old session, oldest first, on the leader API container. It logs `[session-log] backfill tick` with counts, and `the v1 mirror holds no session without a log` when it is done.
+- Opening an old session before the pass reaches it converts that session first.
+- A conversation over the conversion size cap (about 24 MB, `SESSION_LOG_RESTORE_MAX_BYTES`) is converted only by the background pass. Until then, its log read answers `503` `session_log_converting` with `Retry-After: 60`.
+
+`SESSION_LOG_BACKFILL=off` stops the pass. Keep it on until that line appears: the v1 store is the only copy of a conversation the pass has not converted.
+
+## Operate and tune
+
+### Settings and secrets
+
+Every setting lives in the instance `.env`.
+
+- `kortix self-host env ls` lists every value by group and masks secrets. `--show` reveals them.
+- `kortix self-host env set KEY=VALUE ...` writes values and restarts the services that read them. A bare `KEY` prompts for the value. A new `API_KEY_SECRET` makes every stored credential undecryptable, so `env set` warns first: at a terminal it asks you to confirm, and a script must pass `--yes` (without it the command exits `2` and writes nothing).
+- `kortix self-host env rotate <KEY>` or `--all-generated` regenerates a generated secret. Rotating `SUPABASE_JWT_SECRET` also regenerates the anon and service-role keys. The CLI refuses `API_KEY_SECRET`, `POSTGRES_PASSWORD` and `SAML_PRIVATE_KEY`, because a new value breaks stored data or connections.
+
+`env set` refuses the image and version keys (`KORTIX_VERSION`, `API_IMAGE`, `FRONTEND_IMAGE`, `GATEWAY_IMAGE`). Use `--tag` or `--channel` instead. When a change does not take effect, run `kortix self-host start`: it recreates every service whose configuration changed.
+
+### Memory limits
+
+| Variable | Default | Container |
+|---|---|---|
+| `KORTIX_API_MEMORY_LIMIT` | `2048m` | `kortix-api`, which relays `/v1/llm` request bodies when they reach it |
+| `KORTIX_GATEWAY_MEMORY_LIMIT` | `2048m` | `llm-gateway` |
+| `KORTIX_FRONTEND_MEMORY_LIMIT` | `512m` | `frontend` |
+
+Postgres has a fixed limit of `1280m`. `KORTIX_GATEWAY_MAX_REQUEST_BYTES` raises the gateway's request-body cap for image-heavy turns. Raise the gateway memory limit with it.
+
+### Session and sandbox lifecycle
+
+| Variable | Default | Effect |
+|---|---|---|
+| `KORTIX_SANDBOX_AUTOSTOP_MINUTES` | `15` | A sandbox stops this many idle minutes after its last turn ends. |
+| `KORTIX_SANDBOX_TURN_GRANT_MINUTES` | `240` | How long a running turn holds its sandbox. Model calls and an observed running turn renew it. |
+| `KORTIX_SANDBOX_TURN_WAITING_MINUTES` | `120` | How long a turn that waits on a person holds its sandbox. At most half the turn grant. Unattended runs get 30. |
+| `KORTIX_SANDBOX_PREVIEW_GRANT_MINUTES` | `30` | How long preview traffic keeps a sandbox running. |
+| `KORTIX_SANDBOX_WARM_GRANT_MINUTES` | `60` | The lifetime of an unclaimed warm sandbox. |
+| `KORTIX_SANDBOX_PROVIDER_AUTOSTOP_MINUTES` | `720` | The provider's own idle stop, a backstop for sandboxes the API cannot reach. |
+| `KORTIX_SANDBOX_AUTOARCHIVE_MINUTES` | `720` | Legacy Daytona only: a stopped sandbox moves to archive storage. |
+| `KORTIX_SANDBOX_AUTODELETE_MINUTES` | `-1` | Legacy Daytona only: never delete automatically. |
+| `ALLOWED_SANDBOX_PROVIDERS` | `platinum` | The providers sessions may use, comma-separated. `daytona` is a legacy fallback. |
+| `KORTIX_DEFAULT_SANDBOX_CPU`, `_MEMORY_GB`, `_DISK_GB` | `2`, `4`, `20` | The sandbox size when a template sets none. |
+
+Users see the effect of these values on [Sessions](/docs/work/sessions) and [Sandboxes & previews](/docs/work/runtime).
+
+### Logs, containers and the database console
+
+- `kortix self-host logs [service]` follows the logs, for example `kortix self-host logs kortix-api`. Each container keeps 3 log files of 10 MB.
+- `kortix self-host ps` lists the containers. `status` adds the update report.
+- Supabase Studio answers on `http://127.0.0.1:13740` (`SUPABASE_PORT`) on the server. Reach it through an SSH tunnel and sign in as `kortix` with `DASHBOARD_PASSWORD` from `env ls --show`.
+
+### Several instances on one server
+
+Pass `--instance <name>` to every command. A name starts with a letter and holds letters, digits, dots, underscores and dashes. Each instance has its own directory and Compose project. Only one instance per server can run in domain mode, because Caddy binds ports 80 and 443. `KORTIX_SELF_HOST_CONFIG_DIR` moves the root directory from `~/.config/kortix/self-host`.
+
+### How Caddy routes
+
+| Host | Path | Goes to |
+|---|---|---|
+| `api.<domain>` | `/v1/llm*` | `llm-gateway:8090` |
+| `api.<domain>` | everything else | `kortix-api:8008` |
+| `<domain>` | `/rest/v1`, `/auth/v1`, `/storage/v1`, `/realtime/v1`, `/functions/v1`, `/graphql/v1` | `supabase-kong:8000` |
+| `<domain>` | everything else | `frontend:3000` |
+| `*.<preview base domain>` | all | `kortix-api`, one origin per sandbox port |
+| `*.<apps base domain>` | all | `kortix-api`, one hostname per App |
+
+Caddy health-checks each replica and retries a failed connection on the other one. It sends `Strict-Transport-Security` with a 30-day max-age. The two wildcard blocks exist only when their base domain is set. Caddy gets one certificate per hostname on its first request. The API approves each hostname before Caddy asks for the certificate. You need a wildcard DNS record, not a wildcard certificate.
+
+## Back up and uninstall
+
+The instance directory, `~/.config/kortix/self-host/<instance>/`, holds everything to back up:
+
+| Path | Contents |
+|---|---|
+| `.env` | Every secret and signing key |
+| `volumes/db/data` | The Postgres database |
+| `volumes/storage` | Stored files |
+
+Stop the stack so the database files are consistent, copy the directory, then start again:
 
 ```sh
-kortix self-host update --tag 0.9.84
+kortix self-host stop
+sudo tar -czf kortix-backup.tgz -C ~/.config/kortix/self-host default
+kortix self-host start
 ```
 
-Turn the updater off with `--auto-update off`. See
-[Self-hosting architecture](/docs/host/architecture) for
-the update schedule, the zero-downtime swap, and the channels.
+To restore, put the directory back in the same place and run `kortix self-host start`.
 
-## Backups
+<Callout type="warning">
+`kortix self-host uninstall` runs `docker compose down --volumes --remove-orphans` and deletes the instance directory, with its database and files. It cannot be undone. In a terminal you type the instance name to confirm. Without a terminal it needs `--yes`.
+</Callout>
 
-Kortix has no separate backup system. Each instance stores its data as two
-directories under `~/.config/kortix/self-host/<instance>/`: `volumes/db/data`
-(the Postgres database) and `volumes/storage` (file storage). The instance's
-`.env` file holds every secret and signing key it uses. Back up all three
-before you run a destructive command.
+## Commands
 
-:::warning
-`kortix self-host uninstall` stops the stack, deletes its containers and
-volumes, and deletes the instance directory. This cannot be undone.
-:::
+Every subcommand takes `--instance <name>` (default `default`).
 
-## Learn more
+| Command | What it does |
+|---|---|
+| `init` | Writes or refreshes the Compose file and `.env`. A first run in a terminal asks the setup questions. |
+| `start` | Pulls the images and starts the stack. Alias `up`. |
+| `stop` | Stops the stack. Data stays. Alias `down`. |
+| `restart` | `stop`, then `start`. |
+| `configure` | Asks the setup questions again. |
+| `status` | Container state, the last update, drift and the schedule. `--json` |
+| `ps` | `docker compose ps` only. |
+| `doctor` | Runs the checks in [Secure the instance](#secure-the-instance). `--json` |
+| `plan` | Validates the Compose file. Applies nothing. `--json` |
+| `logs [service]` | Follows the logs. |
+| `open` | Opens the web app in a browser. |
+| `version` | The running version, the newest release and the channel. |
+| `update` | Applies the channel, or `--tag <version>`, now. Aliases `upgrade`, `reconcile`. |
+| `rollback --release <version>` | Updates to that version. `--tag` also works. |
+| `env ls [--show]` | Lists every setting. `--json` |
+| `env set KEY=VALUE ...` | Sets values and restarts the affected services. |
+| `env rotate KEY` or `--all-generated` | Regenerates a generated secret. |
+| `uninstall` | Deletes the stack, its data and its directory. |
+| `connect-github` | Deprecated. Prints where to connect GitHub. Use `/admin/git`. |
 
-- [Self-hosting architecture](/docs/host/architecture) —
-  how the stack fits together.
-- [CLI reference](/docs/cli) — every `kortix self-host` subcommand
-  and flag.
+| Flag | Used with | Meaning |
+|---|---|---|
+| `--domain <domain>` | `init`, `configure`, `update` | Domain mode. `--domain ""` clears the domain. |
+| `--tunnel cloudflare` | `init`, `configure`, `update` | Tunnel mode. |
+| `--tag <version>` | `init`, `update`, `rollback` | Pin a version. Aliases `--version`, `--release`. |
+| `--channel <stable\|latest>` | `init`, `update`, `configure` | The channel to track. |
+| `--auto-update <on\|off>` | `init`, `update`, `configure` | The daily updater. Takes effect at the next `start`. |
+| `--update-time <HH:MM>`, `--update-tz <zone>` | `init`, `update`, `configure` | The daily window, as 24-hour time and an IANA zone. Takes effect at the next `start`. |
+| `--admin-email <email>` | `init`, `configure` | Sets `KORTIX_PLATFORM_ADMIN_EMAILS`. |
+| `--enterprise-license` | `init`, `configure`, `update` | Sets `ENTERPRISE_LICENSE_AVAILABLE=true`. |
+| `--restrict-account-creation`, `--no-restrict-account-creation` | `init`, `configure`, `update` | Account creation for admins only, or for everyone. |
+| `--disable-signup` | `init`, `configure`, `update` | Sets `DISABLE_SIGNUP=true`. Nobody can sign up, the admin included. `env set DISABLE_SIGNUP=false` opens it again. |
+| `--yes` | any | Accept defaults. Required for `uninstall` without a terminal. |
+| `--json` | `status`, `doctor`, `plan`, `env ls` | Machine-readable output. |

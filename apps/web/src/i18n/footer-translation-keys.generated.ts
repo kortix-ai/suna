@@ -3,6 +3,7 @@ export const FOOTER_TRANSLATION_KEYS: Readonly<Record<string, string>> = {
   About: 'text4efca0d10c5f',
   'Agent Computer': 'text698ea902f038',
   'Agents & Skills': 'textdf80c0ee2f08',
+  'AI Operating System': 'text6243d930fc1c',
   Automations: 'textad1fb9ec0cb3',
   Blog: 'text8c6bc099534a',
   Brand: 'text090ed4316f1d',

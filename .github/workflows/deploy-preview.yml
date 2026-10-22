@@ -2,7 +2,7 @@ name: Deploy Preview (PR)
 
 on:
   pull_request_target:
-    branches: [main]
+    branches: [dev]
     # `closed` is deliberately absent. A preview environment lives until its
     # BRANCH is deleted, not until the pull request is closed — closing one is
     # routine (superseded, reopened later, split into two) and used to destroy a
@@ -54,7 +54,8 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action == 'labeled' && github.event.label.name == 'preview') ||
       github.event_name == 'workflow_dispatch'
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
@@ -109,8 +110,7 @@ jobs:
             echo "::error::Pull request head is not a full Git SHA."
             exit 1
           }
-          # Previews run on Platinum only, host and sessions (2026-09-22). The
-          # shared Daytona org hit its snapshot quota on 2026-09-21.
+          # Previews run on Platinum, the reference provider, host and sessions.
           case "$provider" in auto|platinum) ;; *) echo "::error::Previews run on Platinum only."; exit 1 ;; esac
 
           current="$(gh api "repos/${REPO}/pulls/${num}" --jq .head.sha)"
@@ -177,26 +177,20 @@ jobs:
   build-api:
     name: Build preview API image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
-        with:
-          cache-key: apps/api/Dockerfile:linux/amd64
-      - uses: useblacksmith/build-push-action@v2
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/api/Dockerfile
@@ -208,7 +202,7 @@ jobs:
             KORTIX_VERSION=pr-${{ needs.authorize.outputs.pr_number }}
             KORTIX_COMMIT=${{ needs.authorize.outputs.sha }}
           tags: kortix/kortix-api:pr-${{ needs.authorize.outputs.sha }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: preview-api-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-api.tar
@@ -219,26 +213,20 @@ jobs:
   build-gateway:
     name: Build preview gateway image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
-        with:
-          cache-key: apps/llm-gateway/Dockerfile:linux/amd64
-      - uses: useblacksmith/build-push-action@v2
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/llm-gateway/Dockerfile
@@ -249,7 +237,7 @@ jobs:
             KORTIX_VERSION=pr-${{ needs.authorize.outputs.pr_number }}
             KORTIX_COMMIT=${{ needs.authorize.outputs.sha }}
           tags: kortix/kortix-gateway:pr-${{ needs.authorize.outputs.sha }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: preview-gateway-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-gateway.tar
@@ -260,16 +248,17 @@ jobs:
   build-web:
     name: Build preview frontend image
     needs: authorize
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
+    timeout-minutes: 25
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.authorize.outputs.sha }}
           submodules: false
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with: { node-version: 22 }
       - run: corepack enable pnpm
       - run: pnpm install --frozen-lockfile
@@ -288,17 +277,10 @@ jobs:
           NEXT_PUBLIC_KORTIX_VERSION: pr-${{ needs.authorize.outputs.pr_number }}
           NEXT_PUBLIC_KORTIX_COMMIT: ${{ needs.authorize.outputs.sha }}
           NEXT_OUTPUT: standalone
-      - name: Set up Docker builder (Blacksmith sticky-disk layer cache)
-        # Layers persist on a Blacksmith sticky disk keyed by Dockerfile+platform,
-        # shared by every workflow in this repo that builds the same image.
-        # Off-Blacksmith (CI_RUNNER_* override) the action falls back to a plain
-        # local buildx builder. The registry cache-from/cache-to below stays:
-        # measured 2026-08-25, five consecutive sticky-disk builds of this key
-        # reused 0 layers while the registry cache reused 34-45.
-        uses: useblacksmith/setup-docker-builder@v2
-        with:
-          cache-key: apps/web/Dockerfile:linux/amd64
-      - uses: useblacksmith/build-push-action@v2
+      - name: Set up Docker Buildx
+        # Layers come from the registry cache-from/cache-to on the build step.
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: apps/web/Dockerfile
@@ -306,7 +288,7 @@ jobs:
           push: false
           outputs: type=docker,dest=/tmp/preview-web.tar
           tags: kortix/kortix-frontend:pr-${{ needs.authorize.outputs.sha }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: preview-web-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-web.tar
@@ -317,7 +299,7 @@ jobs:
   deploy:
     name: Deploy full self-host preview
     needs: [authorize, build-api, build-gateway, build-web]
-    runs-on: ${{ vars.CI_RUNNER_L || 'blacksmith-8vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_L || 'ubuntu-24.04' }}
     # ~10 min deploy + up to 45 min waiting for pool and GitHub capacity
     # (PREVIEW_SUITE_WAIT_MINUTES) + <= 80 min suite.
     timeout-minutes: 145
@@ -358,22 +340,19 @@ jobs:
       PREVIEW_LOCKFILE_SHA256: ${{ needs.authorize.outputs.lockfile_sha256 }}
       PREVIEW_SANDBOX_PROVIDER: ${{ needs.authorize.outputs.provider }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       # Preview runtime credentials. The dedicated preview GitHub App and
       # managed-Git values are CI-only (kortix-ci-env); the rest are read from
-      # the runtime blob that already holds them. DAYTONA_API_URL was never
-      # stored and stays unset (sandbox-preview.ts falls back to
-      # DAYTONA_SERVER_URL, then the public API). MANAGED_GIT_GITHUB_TOKEN is
+      # the runtime blob that already holds them. MANAGED_GIT_GITHUB_TOKEN is
       # optional and takes PRECEDENCE over the App when set: the App can only
       # create repos if it is installed on the owner AND has administration:
       # write; a PAT needs neither.
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -384,8 +363,6 @@ jobs:
         with:
           keys: |
             PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
-            DAYTONA_API_URL?
-            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
             KE2E_STRIPE_SECRET_KEY=kortix-staging-env:STRIPE_SECRET_KEY
             KE2E_STRIPE_WEBHOOK_SECRET=kortix-staging-env:STRIPE_WEBHOOK_SECRET
             KORTIX_GITHUB_APP_ID=kortix-ci-env:PREVIEW_KORTIX_GITHUB_APP_ID
@@ -394,9 +371,8 @@ jobs:
             MANAGED_GIT_GITHUB_INSTALL_ID=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_INSTALL_ID
             MANAGED_GIT_GITHUB_OWNER=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_OWNER
             MANAGED_GIT_GITHUB_TOKEN=kortix-ci-env:PREVIEW_MANAGED_GIT_GITHUB_TOKEN?
-            OPENROUTER_API_KEY
-            MORPH_API_KEY=kortix-preview-env:MORPH_API_KEY
-      - uses: oven-sh/setup-bun@v2
+            PLATINUM_INFERENCE_API_KEY=kortix-dev-env:PLATINUM_INFERENCE_API_KEY?
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - name: Revalidate exact preview approval
         run: |
           set -euo pipefail
@@ -423,20 +399,20 @@ jobs:
           [[ " $labels " == *" preview "* ]] || supersede "the preview label was removed."
           gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BRANCH}" --silent 2>/dev/null \
             || supersede "branch ${BRANCH} no longer exists."
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: preview-api-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-api
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: preview-gateway-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-gateway
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: preview-web-${{ needs.authorize.outputs.sha }}
           path: /tmp/preview-web
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -448,7 +424,7 @@ jobs:
           keys: |
             DOCKERHUB_USERNAME
             DOCKERHUB_TOKEN
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           username: ${{ env.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN || secrets.DOCKERHUB_TOKEN }}
@@ -493,7 +469,7 @@ jobs:
         run: bun tests/bin/sandbox-preview.ts deploy
       - name: Check out the aws-env action
         if: ${{ !cancelled() && needs.authorize.outputs.public_worker != '' }}
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -617,7 +593,7 @@ jobs:
           SUITE: ${{ steps.preview.outputs.suite }}
           SUITE_OUTCOME: ${{ steps.suite.outputs.superseded == '1' && 'superseded' || steps.suite.outcome || 'cancelled' }}
         run: bash scripts/ci/preview-sticky-comment.sh
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: preview-results-pr-${{ needs.authorize.outputs.pr_number }}-${{ needs.authorize.outputs.sha }}
@@ -640,7 +616,7 @@ jobs:
       github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.action == 'unlabeled' && github.event.label.name == 'preview'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -656,14 +632,13 @@ jobs:
       # branch environment has no expiry to fall back on.
       PREVIEW_BRANCH_ENV: ${{ github.event.pull_request.head.ref }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -674,10 +649,8 @@ jobs:
         with:
           keys: |
             PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
-            DAYTONA_API_URL?
-            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
-      - uses: oven-sh/setup-bun@v2
-      - name: Delete the Platinum or Daytona preview sandbox
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Delete the Platinum preview sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
       - name: Mark GitHub deployment inactive
         run: |
@@ -692,7 +665,7 @@ jobs:
           id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PREVIEW_PR_NUMBER}/comments" --paginate \
             --jq "map(select(.body | startswith(\"${marker}\"))) | .[0].id // empty")"
           body="$(printf '%s\n' "$marker" '## Preview environment - torn down' '' \
-            'The Platinum or Daytona sandbox and its full self-host data plane were deleted.')"
+            'The Platinum sandbox and its full self-host data plane were deleted.')"
           [ -z "$id" ] || gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" >/dev/null
 
   teardown-branch:
@@ -710,7 +683,7 @@ jobs:
     # One Platinum list plus at most one delete — a small runner is enough, and
     # this fires on EVERY branch deletion in the repository, not just previewed
     # ones.
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -719,9 +692,7 @@ jobs:
       GITHUB_REPOSITORY: ${{ github.repository }}
       # No PREVIEW_PR_NUMBER: a delete event carries no pull request, and it
       # needs none — the branch IS the environment's identity, so the CLI
-      # accepts the branch alone. There is no Daytona credential either: a
-      # branch environment is pinned to Platinum (a Daytona fallback would
-      # change its origin), so nothing of it can exist there.
+      # accepts the branch alone. Previews run on Platinum only.
       #
       # The branch name is attacker-chosen text, so it arrives as an environment
       # variable and is never interpolated into a `run:` script. `bun` compares
@@ -729,12 +700,12 @@ jobs:
       PREVIEW_BRANCH_ENV: ${{ github.event.ref }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -745,7 +716,7 @@ jobs:
         with:
           keys: |
             PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - name: Delete the branch environment's sandbox
         run: bun tests/bin/sandbox-preview.ts teardown
       # No deployment or sticky-comment step: a delete event has no pull request
@@ -755,7 +726,7 @@ jobs:
   reconcile:
     name: Reconcile stale preview sandboxes
     if: github.event_name == 'schedule'
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     timeout-minutes: 20
     permissions:
       contents: read
@@ -765,14 +736,13 @@ jobs:
       GITHUB_TOKEN: ${{ github.token }}
       GITHUB_REPOSITORY: ${{ github.repository }}
       PLATINUM_API_URL: ${{ vars.PLATINUM_API_URL }}
-      DAYTONA_CI_TARGET: ${{ vars.DAYTONA_CI_TARGET }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
+          ref: ${{ github.event.repository.default_branch }}
           persist-credentials: false
       - name: Check out the aws-env action
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.workflow_sha }}
           path: .aws-env
@@ -783,7 +753,5 @@ jobs:
         with:
           keys: |
             PLATINUM_API_KEY=kortix-dev-env:PLATINUM_API_KEY
-            DAYTONA_API_URL?
-            DAYTONA_API_KEY=kortix-preview-env:DAYTONA_API_KEY
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun tests/bin/sandbox-preview.ts reconcile

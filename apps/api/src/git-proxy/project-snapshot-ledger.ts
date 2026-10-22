@@ -1,10 +1,10 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { projectGitConnections, projectSnapshotArchives } from '@kortix/db';
-import { validateSha } from '../projects/git-ref';
+import { validateSha } from '../shared/git-ref';
 import type { GitBackedProject } from '../projects/git/types';
 import { db } from '../shared/db';
 import { PROJECT_SNAPSHOT_FORMAT, headObject, projectSnapshotTreeKey, projectSnapshotBlobsKey, presignProjectSnapshotDownload, projectSnapshotStorageConfigured, type ProjectSnapshotRepository } from './project-snapshot-store';
-import { normalizeSnapshotRef, type ReadyProjectSnapshot } from './project-snapshot';
+import { normalizeSnapshotRef, type ReadyProjectSnapshot } from './project-snapshot-shared';
 
 
 function repoNameFromUrl(repoUrl: string): { owner: string; name: string } | null {

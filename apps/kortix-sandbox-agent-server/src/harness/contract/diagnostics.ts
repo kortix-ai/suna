@@ -66,9 +66,10 @@ export interface HarnessLogTail {
 export interface HarnessDiagnosticsService {
   /**
    * The session features this runtime serves, listed in health `capabilities`
-   * (E1). A client hides the control of a feature that is absent.
+   * (E1). A client hides the control of a feature that is absent. Read on
+   * each health call: a feature can depend on the running runtime's version.
    */
-  readonly capabilities: readonly RuntimeCapability[]
+  capabilities(): Promise<readonly RuntimeCapability[]>
   /** The live model-catalog signal, for a harness that has one. */
   readonly catalogSnapshot?: CatalogSnapshot
   health(context: HarnessDiagnosticsContext, query: HarnessHealthQuery): Promise<HarnessHealthReport>

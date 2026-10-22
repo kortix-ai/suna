@@ -79,11 +79,15 @@ write_env "apps/api/.env.local" \
   "$(kv TUNNEL_SIGNING_SECRET)" \
   "" \
   "# Sandbox" \
-  "$(kv ALLOWED_SANDBOX_PROVIDERS daytona)" \
+  "$(kv ALLOWED_SANDBOX_PROVIDERS platinum)" \
   "$(kv KORTIX_URL)" \
   "$(kv FRONTEND_URL "$(e NEXT_PUBLIC_URL http://localhost:3000)")" \
   "" \
-  "# Daytona (conditional — only if daytona provider enabled)" \
+  "# Platinum (the reference sandbox provider)" \
+  "$(kv PLATINUM_API_KEY)" \
+  "$(kv PLATINUM_API_URL)" \
+  "" \
+  "# Daytona (legacy fallback, removal scheduled — only if daytona is in ALLOWED_SANDBOX_PROVIDERS)" \
   "$(kv DAYTONA_API_KEY)" \
   "$(kv DAYTONA_SERVER_URL)" \
   "$(kv DAYTONA_TARGET)" \

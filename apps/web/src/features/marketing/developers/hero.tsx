@@ -1,18 +1,19 @@
 'use client';
 
-import { HighlightedCode } from '@/components/markdown/code';
+import { HighlightedCode } from '@kortix/ui/markdown';
 import SiteLink from '@/components/site-link';
 import { Button } from '@/components/ui/marketing/button';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '@kortix/ui/tabs';
 import { ARROW_RIGHT_GROUP_CLASS, ArrowRightIcon } from '@/features/icon/arrow-right';
-import { Copy } from '@/features/icon/icons/copy';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
-import { useCopy } from '@/hooks/use-copy';
-import { KORTIX_CLI_INSTALL_COMMAND } from '@/lib/kortix-cli';
-import { cn } from '@/lib/utils';
+import { Copy } from '@kortix/ui/icons';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
+import { useCopy } from '@kortix/ui/internal/hooks/use-copy';
+import { KORTIX_CLI_INSTALL_COMMAND } from '@kortix/ui/internal/lib/kortix-cli';
+import { cn } from '@kortix/ui';
 import { m, useReducedMotion } from 'motion/react';
 import { useState, type ReactNode } from 'react';
-import { DOCS_URL, hero } from './content';
+import { DOCS_URL } from './content';
+import { useDevelopersCopy } from './use-developers-copy';
 import { DitherField } from './shared';
 
 const STAGGER_MS = 60;
@@ -49,6 +50,7 @@ const tabState = (active: boolean) =>
 type Audience = 'humans' | 'agents';
 
 function InstallRow({ audience }: { audience: Audience }) {
+  const { hero } = useDevelopersCopy();
   const { copied, copy } = useCopy({ toast: false });
   const text = audience === 'humans' ? KORTIX_CLI_INSTALL_COMMAND : hero.agentInstruction;
 
@@ -84,6 +86,7 @@ function InstallRow({ audience }: { audience: Audience }) {
 }
 
 function FileWindow() {
+  const { hero } = useDevelopersCopy();
   const reduce = useReducedMotion();
   const [active, setActive] = useState(0);
   const tab = hero.fileTabs[active];
@@ -125,6 +128,7 @@ function FileWindow() {
 }
 
 export function DevelopersHero() {
+  const { hero } = useDevelopersCopy();
   const [audience, setAudience] = useState<Audience>('humans');
   return (
     <section id="hero" className="relative w-full overflow-clip">

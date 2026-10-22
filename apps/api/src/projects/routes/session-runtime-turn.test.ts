@@ -251,8 +251,28 @@ mock.module('../lib/access', () => ({
   },
 }));
 
+// `can_stop` (`turn-stop-authority.ts`, whose reads are tested beside it): the
+// route hands it the turn read and the caller; this records both.
+let canStop = true;
+let canStopCalls: Array<{ newest: string | null; callerUserId: string | null; canManageLifecycle: boolean }> = [];
+const realStopAuthority = await import('../session-lifecycle/turn-stop-authority');
+mock.module('../session-lifecycle/turn-stop-authority', () => ({
+  ...realStopAuthority,
+  canStopTurns: async (
+    state: { turns: Array<{ message_id: string | null }> },
+    input: { callerUserId: string | null; canManageLifecycle: boolean },
+  ) => {
+    canStopCalls.push({
+      newest: state.turns[0]?.message_id ?? null,
+      callerUserId: input.callerUserId,
+      canManageLifecycle: !!input.canManageLifecycle,
+    });
+    return canStop;
+  },
+}));
+
 const { projectsApp } = await import('../lib/app');
-await import('./session-runtime');
+(await import('./session-runtime')).registerSessionRuntimeRoutes();
 
 /** `c.get('sessionId')` is OVERLOADED: a Kortix project-session id under a
  *  connector token, the SUPABASE AUTH session id under a browser JWT. The
@@ -294,6 +314,8 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     visibleSessionCallerIds = [];
     loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
     visibleSession = { row: { sessionId: SESSION_ID } };
+    canStop = true;
+    canStopCalls = [];
   });
 
   test('rejects a non-UUID session id with 400 before any DB read', async () => {
@@ -361,7 +383,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     const response = await getTurn();
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body).toEqual({ turns: [] });
+    expect(body).toEqual({ turns: [], can_stop: true });
     // `last_ended` is OMITTED, not null: its absence is the only signal that
     // this session has never run a turn.
     expect(Object.hasOwn(body, 'last_ended')).toBe(false);
@@ -408,6 +430,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
           accepted_at: null,
         },
       ],
+      can_stop: true,
     });
   });
 
@@ -553,7 +576,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
   });
 
   test('lists the turns that died, names the cause when there is one, and never a stop somebody asked for', async () => {
-    // Session ad02e053: four sub-agent tasks read "failed" and the turn said
+    // The 2026-09-18 memory-guard incident: four sub-agent tasks read "failed" and the turn said
     // nothing. A failure the user cannot see is the bug.
     const at = (s: number) => new Date(`2026-08-17T00:00:0${s}.000Z`);
     const ended = (
@@ -638,6 +661,7 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
         end_reason: 'runtime_gone',
         ended_at: '2026-08-17T00:00:09.000Z',
       },
+      can_stop: true,
     });
   });
 
@@ -723,6 +747,37 @@ describe('GET /v1/projects/:projectId/sessions/:sessionId/turn', () => {
     expect(body).toEqual({
       turns: [],
       last_ended: { turn_token: 't-unsettled', end_reason: null, ended_at: null },
+      can_stop: true,
+    });
+  });
+
+  // Whether THIS caller may stop the running turn: its prompter, the session
+  // owner or a project manager. Clients show Stop from it.
+  describe('can_stop', () => {
+    test("answers per caller from the newest live turn of the same read", async () => {
+      sandboxTable = [
+        runningBox(
+          authorityTurn({ token: 't-old', messageId: 'msg_old', startedAtMs: 1 }),
+          authorityTurn({ token: 't-new', messageId: 'msg_new', startedAtMs: 2 }),
+        ),
+      ];
+      canStop = false;
+      const body = await (await getTurn()).json();
+      expect(body.can_stop).toBe(false);
+      expect(canStopCalls).toEqual([{ newest: 'msg_new', callerUserId: USER_ID, canManageLifecycle: false }]);
+      // No second box read: the answer comes from the read the route already made.
+      expect(queries.filter((q) => q.table === 'sandboxes')).toHaveLength(1);
+    });
+
+    test("an owner's or manager's standing reaches the rule", async () => {
+      visibleSession = { row: { sessionId: SESSION_ID }, canManageLifecycle: true };
+      await getTurn();
+      expect(canStopCalls).toEqual([{ newest: null, callerUserId: USER_ID, canManageLifecycle: true }]);
+    });
+
+    test('an agent credential is never a prompter: it is asked as nobody', async () => {
+      await getTurn(SESSION_ID, { authType: 'pat', sessionId: SESSION_ID });
+      expect(canStopCalls).toEqual([{ newest: null, callerUserId: null, canManageLifecycle: false }]);
     });
   });
 });

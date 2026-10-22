@@ -1,4 +1,5 @@
 import { beforeEach, expect, mock, test } from "bun:test";
+import { platinumHttpError } from "../../__tests__/helpers/platinum-http-error";
 
 process.env.SUPABASE_URL ??= "http://127.0.0.1:54321";
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role";
@@ -103,9 +104,7 @@ test("renewLifecycle resets Platinum activity with one bounded no-op exec", asyn
 });
 
 test("renewLifecycle never wakes a stopped Platinum sandbox", async () => {
-  lifecycleExecError = new Error(
-    'platinum POST /v1/sandboxes/sbx-stopped/exec -> 409 {"code":"sandbox_not_running"}',
-  );
+  lifecycleExecError = platinumHttpError('platinum POST /v1/sandboxes/sbx-stopped/exec -> 409 {"code":"sandbox_not_running"}');
   const provider = new PlatinumProvider();
 
   await expect(provider.renewLifecycle("sbx-stopped")).rejects.toThrow("sandbox_not_running");
@@ -133,9 +132,7 @@ test("ensureAppRuntimeStarted remains idempotent when the hosting layer calls it
 });
 
 test("start treats a running conflict as an idempotent success", async () => {
-  startError = new Error(
-    'platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"sandbox not stopped/archived","state":"running","code":"conflict"}',
-  );
+  startError = platinumHttpError('platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"sandbox not stopped/archived","state":"running","code":"conflict"}');
   const provider = new PlatinumProvider();
 
   await expect(provider.start("sbx_app")).resolves.toBeUndefined();
@@ -147,9 +144,7 @@ test("start treats a running conflict as an idempotent success", async () => {
 });
 
 test("start waits for an accepted stop to settle before retrying the wake", async () => {
-  startError = new Error(
-    'platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"stopping","code":"conflict"}',
-  );
+  startError = platinumHttpError('platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"stopping","code":"conflict"}');
   sandboxStateSequence = ["stopping", "stopped"];
   const provider = new PlatinumProvider();
 
@@ -163,9 +158,7 @@ test("start waits for an accepted stop to settle before retrying the wake", asyn
 });
 
 test("start preserves a conflict when the provider reports a terminal state", async () => {
-  startError = new Error(
-    'platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"failed","code":"conflict"}',
-  );
+  startError = platinumHttpError('platinum POST /v1/sandboxes/sbx_app/start -> 409 {"error":"conflict","state":"failed","code":"conflict"}');
   sandboxState = "failed";
   const provider = new PlatinumProvider();
 

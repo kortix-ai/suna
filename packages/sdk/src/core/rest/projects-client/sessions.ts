@@ -1,9 +1,13 @@
 // Project sessions — session CRUD, sharing, public shares, preview candidates.
 
-import { ApiError, type ApiClientOptions, backendApi } from '../../http/api-client';
+import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
-import { type ConnectorSharing, unwrap } from './shared';
+import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
+import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopped';
+import { isSessionLogPage } from '../../session-log/guard';
+import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
+import { type ConnectorSharing, unwrap } from './shared';
 
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
@@ -61,13 +65,16 @@ export interface ProjectSessionInitiator {
 }
 
 export interface ProjectSession {
+  /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
   branch_name: string;
   base_ref: string;
-  sandbox_provider: 'daytona' | 'platinum' | 'e2b' | null;
-  sandbox_id: string;
+  sandbox_provider: 'platinum' | 'daytona' | null;
+  /** Null until the session has a sandbox. */
+  sandbox_id: string | null;
   sandbox_url: string | null;
   /** The session's root conversation in its runtime. Served by APIs since W4. */
   runtime_session_id?: string | null;
@@ -93,6 +100,13 @@ export interface ProjectSession {
   labels?: string[];
   agent_name: string | null;
   status: ProjectSessionStatus;
+  /** Canonical work activity, independent of computer lifecycle. Absent on older servers. */
+  working?: {
+    state: 'working' | 'idle';
+    since: string | null;
+    turn_token: string | null;
+    pending_delivery: boolean;
+  };
   error: string | null;
   metadata: ProjectSessionMetadata;
   /** The runtime's conversation tree. Served by APIs since W4. */
@@ -142,9 +156,17 @@ export interface ProjectSession {
   can_access?: boolean;
   /** Exact lifecycle state of the backing runtime resource, when present. */
   runtime_status?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
-  /** Server-managed soft-deletion audit fields, present in project inventory mode. */
+  /** Server-managed soft-deletion audit fields: the `project` inventory and
+   *  the `deleted: 'only'` list (Recently deleted). */
   deleted_at?: string | null;
   deleted_by?: string | null;
+  /** A deleted session: the last instant `restoreProjectSession` takes it back. */
+  restore_until?: string | null;
+  /** When the caller pinned / archived this session in their own list
+   *  (KRTX-2418). Present for a person's list and read by id; absent for an
+   *  agent, an API key or a service account. */
+  pinned_at?: string | null;
+  archived_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -154,8 +176,8 @@ export interface ProjectSession {
  *
  * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
  * 'string'` cast over an `unknown` bag
- * (`apps/web/src/components/projects/session-label.ts:61`,
- * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * (`packages/ui/src/session/actions/session-label.ts:61`,
+ * `packages/ui/src/session/actions/project-session-list-helpers.ts:359`,
  * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
  * malformed row is possible and a non-string must never escape as a session
  * id. A self-referential link is rejected too: a session that is its own
@@ -216,11 +238,19 @@ export interface PendingSessionPrompt {
  * The later `/start` call is an idempotent readiness/resume operation.
  */
 export interface CreateProjectSessionInput {
+  /** Authorized platform session whose saved conversation is copied before boot. */
+  fork_from_session_id?: string;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
   sandbox_slug?: string;
   initial_prompt?: string;
+  /**
+   * Harness context that rides beside `initial_prompt` and is delivered to the
+   * model as a synthetic (model-only) message part — the transcript keeps
+   * showing the caller's own words. At most 8192 characters.
+   */
+  initial_context?: string;
   /** Durable recovery copy. The server never delivers this field automatically. */
   pending_prompt?: PendingSessionPrompt;
   /** The session's `provider/model` pin. Accepted by APIs since W4; wins over `opencode_model`. */
@@ -232,7 +262,9 @@ export interface CreateProjectSessionInput {
   labels?: string[];
   /** Client-generated RFC 4122 v4 UUID for optimistic navigation. */
   session_id?: string;
-  provider?: 'daytona' | 'platinum' | 'e2b';
+  provider?: 'platinum' | 'daytona';
+  /** @deprecated Withdrawn — persistent machines left the product. The API ignores it. Removed in the next major. */
+  persistent_machine?: boolean;
   branch_already_created?: boolean;
   /**
    * Client metadata. Server-owned lifecycle and trigger-attribution keys are
@@ -293,6 +325,8 @@ export interface ClaimWarmProjectSessionInput {
 /** One conversation in the session runtime's tree (the root and its subagent children). */
 export interface ProjectRuntimeSession {
   id: string;
+  /** Explicit server-registered fork provenance, never inferred from titles. */
+  fork_source_id?: string;
   title: string | null;
   parent_id: string | null;
   project_id: string | null;
@@ -342,6 +376,11 @@ export interface ListProjectSessionsOptions {
   q?: string;
   /** Only sessions that carry EVERY one of these labels (exact match). */
   labels?: string[];
+  /** Only the caller's pinned or archived sessions. Omit for the list, which
+   *  leaves out the sessions the caller archived. `'deleted'`: Recently
+   *  deleted, the deleted sessions the caller may restore
+   *  (`restoreProjectSession`) inside their window, each with `restore_until`. */
+  view?: 'pinned' | 'archived' | 'deleted';
 }
 
 /** One keyset page of a project's sessions. */
@@ -361,6 +400,7 @@ function projectSessionListQuery(options?: ListProjectSessionsOptions): string {
   const q = options?.q?.trim();
   if (q) params.set('q', q);
   for (const label of options?.labels ?? []) params.append('label', label);
+  if (options?.view) params.set(options.view, 'only');
   return params.size > 0 ? `?${params}` : '';
 }
 
@@ -382,6 +422,10 @@ export async function listProjectSessionsPage(
 ): Promise<ProjectSessionPage> {
   const response = await backendApi.get<ProjectSession[]>(
     `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
+    // A background read (shell prefetch, 5s sidebar poll): its query state
+    // reports a failure. The host toast would announce a 403 over the access
+    // gate that already explains it.
+    { showErrors: false },
   );
   const items = unwrap(response);
   return {
@@ -399,10 +443,7 @@ export async function listProjectSessionsPage(
  * nothing had to learn an envelope. It returns ONE page — use
  * `listProjectSessionsPage` when you need to know whether more follow.
  */
-export async function listProjectSessions(
-  projectId: string,
-  options?: ListProjectSessionsOptions,
-) {
+export async function listProjectSessions(projectId: string, options?: ListProjectSessionsOptions) {
   return unwrap(
     await backendApi.get<ProjectSession[]>(
       `/projects/${projectId}/sessions${projectSessionListQuery(options)}`,
@@ -456,6 +497,60 @@ export async function getSessionParticipants(projectId: string, sessionId: strin
       `/projects/${projectId}/sessions/${sessionId}/participants`,
       { showErrors: false },
     ),
+  );
+}
+
+/**
+ * Is the caller notified about this session (KRTX-1742)? The creator and
+ * everyone who prompted it watch it until they mute it; `watching` is false
+ * after a mute. A failed read does not call the host's error handler.
+ */
+export async function getSessionWatch(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+      showErrors: false,
+    }),
+  );
+}
+
+/**
+ * Watch (`true`) or mute (`false`) a session for the caller. A mute holds
+ * until the caller watches again: prompting the session does not undo it.
+ * Needs a person's credential; an agent token gets 403.
+ */
+export async function setSessionWatch(projectId: string, sessionId: string, watching: boolean) {
+  return unwrap(
+    await backendApi.put<{ watching: boolean }>(`/projects/${projectId}/sessions/${sessionId}/watch`, {
+      watching,
+    }),
+  );
+}
+
+/** The caller's own pin and archive of one session. */
+export interface SessionListState {
+  pinned_at: string | null;
+  archived_at: string | null;
+}
+
+/**
+ * Pin (`true`) or unpin (`false`) a session at the top of the caller's own
+ * list. Pinning takes it out of the archive; no one else's list changes.
+ * Needs a person's credential; an agent token gets 403.
+ */
+export async function setSessionPinned(projectId: string, sessionId: string, pinned: boolean) {
+  return unwrap(
+    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/pin`, { pinned }),
+  );
+}
+
+/**
+ * Archive (`true`) or unarchive (`false`) a session in the caller's own list.
+ * An archived session leaves the list (`view: 'archived'` lists it) and loses
+ * its pin; no one else's list changes. Needs a person's credential.
+ */
+export async function setSessionArchived(projectId: string, sessionId: string, archived: boolean) {
+  return unwrap(
+    await backendApi.put<SessionListState>(`/projects/${projectId}/sessions/${sessionId}/archive`, { archived }),
   );
 }
 
@@ -522,6 +617,34 @@ export interface CreateSessionPublicShareInput {
   mode?: 'view' | 'interactive';
   label?: string;
   expires_at?: string | null;
+}
+
+/**
+ * The copyable URL of one public share, best-effort.
+ *
+ * `public_url` first: it is the share's own origin, already absolute. The
+ * others are paths on the API origin and only work where no preview domain is
+ * configured, so a relative path resolves against `origin` — the caller's own
+ * `window.location.origin` in a browser, or nothing outside one (Node, RN),
+ * where the raw path comes back untouched.
+ *
+ * Pure: pass a share from `listSessionPublicShares`.
+ */
+export function resolvePublicShareUrl(
+  share: Pick<SessionPublicShare, 'public_url' | 'public_path' | 'proxy_path' | 'public_token'>,
+  origin?: string,
+): string {
+  const raw = share.public_url ?? share.public_path ?? share.proxy_path ?? share.public_token ?? '';
+  if (!raw) return '';
+  if (/^https?:\/\//.test(raw)) return raw;
+  if (origin) {
+    try {
+      return new URL(raw, origin).toString();
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
 }
 
 /**
@@ -607,7 +730,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   // `session_id` is exactly the route param those navigations land on.
   // Skip when an initial_prompt is set: those sessions get a server-side reply,
   // so they must mount the real chat to stream it (the shell would hold it back).
-  if (!input?.initial_prompt) {
+  if (!input?.initial_prompt && !input?.fork_from_session_id) {
     markSessionFresh((session as ProjectSession | undefined)?.session_id);
   }
   return session;
@@ -631,8 +754,7 @@ export interface EnsureWarmProjectSessionOptions {
  * Speculative by contract: the caller ignores every failure and falls through to
  * `createProjectSession`, which re-evaluates every gate and surfaces the real
  * error. `showErrors: false` keeps the recoverable `409 WARM_SESSION_UNAVAILABLE`
- * — an account with no concurrent-session headroom, a project whose repo cannot
- * be read — out of the global error sink, where it became a toast on an ordinary
+ * — a project whose repo cannot be read, say — out of the global error sink, where it became a toast on an ordinary
  * project page view.
  */
 export async function ensureWarmProjectSession(
@@ -717,6 +839,20 @@ export interface SessionAuditAction {
    * the row is unresolved; a settled decision carries no live link.
    */
   approval_url?: string | null;
+  /**
+   * True only on an unresolved row this viewer may approve or deny — the
+   * verdict `resolveApproval` would get (today: a project manager or the
+   * session's launcher). False on every other row. Show Approve / Deny only
+   * when it is true; absent on a server older than KRTX-1724.
+   */
+  can_resolve?: boolean;
+  /**
+   * Who decides an unresolved row, for a viewer whose `can_resolve` is false:
+   * `managers` for a session started with an API token or a service account,
+   * else `managers_and_launcher`. Null on every settled row; absent on an
+   * older server.
+   */
+  resolvers?: 'managers' | 'managers_and_launcher' | null;
 }
 
 export interface SessionAudit {
@@ -757,11 +893,13 @@ export async function getSessionAudit(
   );
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptToolCall {
   tool: string;
   status: string | null;
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptMessage {
   role: string;
   created: string | null;
@@ -781,12 +919,17 @@ export interface SessionTranscriptMessage {
  * STOPPED or waking session answer at all. `none` is the honest "nothing could
  * answer" and is the only value that accompanies `available: false`. The two
  * sources are never merged — this field says which one you got.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
 
 /** Compact server-side transcript read — text + tool calls, stripped of tool
  *  inputs/outputs, for project automation (callable with project-scoped
- *  session tokens, unlike the raw sandbox proxy). */
+ *  session tokens, unlike the raw sandbox proxy).
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
@@ -806,7 +949,10 @@ export interface SessionTranscript {
 
 /** One mirrored message in the shape the session sync store hydrates from:
  *  OpenCode's own envelope, with the parts array stripped of tool
- *  inputs/outputs and file urls. */
+ *  inputs/outputs and file urls.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscriptSyncMessage {
   info: Record<string, unknown>;
   parts: Array<Record<string, unknown>>;
@@ -818,6 +964,8 @@ export interface SessionTranscriptSyncMessage {
  * `source` is `mirror` or `none` — never `live`. A client whose sandbox is up
  * reads the runtime directly, so this endpoint deliberately does not re-proxy
  * it.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export interface SessionTranscriptSyncEnvelope {
   available: boolean;
@@ -846,6 +994,7 @@ export interface SessionTranscriptSyncEnvelope {
   messages: SessionTranscriptSyncMessage[];
 }
 
+/** @deprecated Reads the v1 transcript (`GET …/transcript`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export async function getSessionTranscript(
   projectId: string,
   sessionId: string,
@@ -872,6 +1021,8 @@ export async function getSessionTranscript(
  * Messages carry OpenCode's real ids, so a client hydrates them provisionally
  * (`hydrate(..., { source: 'cache' })`) and the live runtime read SETTLES them
  * by id rather than duplicating them.
+ *
+ * @deprecated Reads the v1 transcript (`GET …/transcript?shape=sync`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export async function getSessionTranscriptSync(
   projectId: string,
@@ -906,6 +1057,30 @@ export async function getSessionTranscriptSync(
       { showErrors: false, signal: options?.signal },
     ),
   );
+}
+
+/**
+ * One page of one thread of the session's stored log (`kortix.session/2`): the session record,
+ * every thread head, and the thread's newest `limit` messages (default 40, max 500) with
+ * `seq < before_seq`, ascending. `thread` defaults to the root thread. Read from Postgres, so it
+ * answers while the sandbox is stopped; the daemon journals each turn at its end.
+ * Null on a 404: the session has no stored log yet, or no such thread.
+ */
+export async function getSessionLogPage(
+  projectId: string,
+  sessionId: string,
+  query: SessionLogPageQuery = {},
+  options?: { signal?: AbortSignal },
+): Promise<SessionLogPage | null> {
+  let page: unknown;
+  try {
+    page = await loadSessionLogPage!(projectId, sessionId, query, options?.signal);
+  } catch (error) {
+    if ((error as { status?: unknown } | null)?.status === 404) return null;
+    throw error;
+  }
+  if (!isSessionLogPage(page)) throw new Error('The response is not a session log page');
+  return page;
 }
 
 /** 'delivering' — the control plane minted the turn but has not confirmed
@@ -967,6 +1142,11 @@ export interface SessionTurnStatus {
    *  Reported whether or not a turn is running; `last_ended` is only one row.
    *  Absent when there are none. */
   recent_failures?: SessionTurnFailure[];
+  /** May the CALLER stop the running turn? In a shared session only the member
+   *  who started it, the session owner or a project manager may; a refused
+   *  stop answers 403 `not_turn_prompter`. True when nothing runs. Absent from
+   *  an older server: treat it as allowed. */
+  can_stop?: boolean;
 }
 
 /** Server truth about this session's running turns (`GET .../turn`), answered
@@ -981,9 +1161,15 @@ export interface SessionTurnStatus {
 export async function getSessionTurn(
   projectId: string,
   sessionId: string,
+  /** `showErrors: false` keeps a failed read from the host's `onError`: for a
+   *  background read the person did not ask for. */
+  options?: { showErrors?: boolean },
 ): Promise<SessionTurnStatus> {
   return unwrap(
-    await backendApi.get<SessionTurnStatus>(`/projects/${projectId}/sessions/${sessionId}/turn`),
+    await backendApi.get<SessionTurnStatus>(
+      `/projects/${projectId}/sessions/${sessionId}/turn`,
+      options?.showErrors === false ? { showErrors: false } : undefined,
+    ),
   );
 }
 
@@ -1033,11 +1219,11 @@ export interface SessionOpenBundleConfig {
   known: true;
   base_ref: string | null;
   agent_name: string | null;
+  /** @deprecated Always true: the LLM gateway is the only model path. Removed in the next major. */
   llm_gateway_enabled: boolean;
 }
 
-/** = `GET /projects/:id/model-defaults`. `known: false` with
- *  `reason: 'llm_gateway_disabled'` mirrors that route's own 404. */
+/** = `GET /projects/:id/model-defaults`. `known: false` when that read failed. */
 export type SessionOpenBundleModels =
   | {
       known: true;
@@ -1056,14 +1242,45 @@ export type SessionOpenBundleModels =
  *  audit-queue flush and answers "show me history", not "what's blocking this
  *  run"). Byte-identical to `SessionAudit` minus `events`/`next_cursor`. */
 export type SessionOpenBundleAudit =
-  | ({
+  | {
       known: true;
       session_id: string;
       agent: string | null;
       audit_access: boolean;
       count: number;
       actions: SessionAuditAction[];
-    })
+    }
+  | SessionOpenBundleUnknown;
+
+/** = the runtime projection the daemon last pushed (or the API pulled).
+ *  `fresh: false` means the identity or age check failed: paint, then verify. */
+export type SessionOpenBundleRuntime =
+  | {
+      known: true;
+      fresh: boolean;
+      source: 'daemon_push' | 'api_pull';
+      captured_at: string;
+      age_ms: number;
+      runtime_running: boolean;
+      /** The daemon stream cursor at capture. */
+      epoch: string | null;
+      seq: number | null;
+      identity: {
+        schema: string | null;
+        harness: string | null;
+        runtime_session_id: string | null;
+        harness_version: string | null;
+        /** @deprecated The pre-W5 name of `runtime_session_id`. */
+        opencode_session_id: string | null;
+        /** @deprecated The pre-W5 name of `harness_version`. */
+        opencode_version: string | null;
+        daemon_build: number | null;
+        agent_config_etag: string | null;
+        head_seq: Record<string, number> | null;
+      };
+      /** The runtime state document, verbatim. */
+      state: Record<string, unknown>;
+    }
   | SessionOpenBundleUnknown;
 
 export interface SessionOpenBundle {
@@ -1077,6 +1294,9 @@ export interface SessionOpenBundle {
   transcript: SessionOpenBundleTranscript;
   config: SessionOpenBundleConfig;
   models: SessionOpenBundleModels;
+  /** The runtime projection: the agent roster and state a stopped session
+   *  can paint without a sandbox. Absent from servers older than this leg. */
+  runtime?: SessionOpenBundleRuntime;
   audit: SessionOpenBundleAudit;
 }
 
@@ -1159,9 +1379,43 @@ export interface SessionPromptOverrides {
  */
 export type SessionPromptState = 'queued' | 'delivering' | 'waiting' | 'failed';
 
+/**
+ * How a prompt reaches a session whose turn is running.
+ * - `steer`: the running turn reads it at its next step boundary. The turn
+ *   does not stop.
+ * - `queue` (Queue List): waits for the turn to end, then runs as its own turn.
+ * - `interrupt` (Quick Queue, "Stop and send"): ends the turn after the
+ *   running tool, then runs as its own turn.
+ * With no turn running, all three start a turn.
+ */
+export type SessionPromptDelivery = 'steer' | 'queue' | 'interrupt';
+
+/**
+ * Why a `steer` prompt was delivered as `queue` instead:
+ * - `unsupported`: the session's runtime cannot take a message mid-turn.
+ * - `not_prompter`: the running turn belongs to another member.
+ * - `turn_ended`: the turn ended before the message reached it.
+ */
+export type SessionPromptSteerFallback = 'unsupported' | 'not_prompter' | 'turn_ended';
+
+/** The placement a delivery mode implies: `interrupt` paints in the
+ *  transcript, `steer` and `queue` wait in the composer list. */
+function placementForDelivery(
+  delivery: SessionPromptDelivery | undefined,
+): 'transcript' | 'composer' | undefined {
+  if (!delivery) return undefined;
+  return delivery === 'interrupt' ? 'transcript' : 'composer';
+}
+
 export interface SessionPrompt {
   /** Pending presentation only; both placements use the same automatic FIFO. */
   placement?: 'transcript' | 'composer';
+  /** Absent from servers built before steering: read it as `placement`
+   *  implies (`transcript` = `interrupt`, `composer` = `queue`). */
+  delivery?: SessionPromptDelivery;
+  /** Set when a `steer` prompt fell back to `queue`; `delivery` then reads
+   *  `queue`. Null or absent otherwise. */
+  steer_fallback?: SessionPromptSteerFallback | null;
   /** Full accepted text for pending messages after reload. Absent on older servers. */
   full_text?: string;
   prompt_id: string;
@@ -1186,6 +1440,9 @@ export interface SessionPrompt {
   /** The sender tab's clock at Enter, when the producer supplied it. */
   client_sent_at_ms?: number | null;
   attempts: number;
+  /** Automatic re-attempts a runtime-unreachable park has spent. Absent from
+   *  servers older than this field. */
+  runtime_retries?: number;
   last_error: string | null;
   /** This prompt's files, by NAME and TYPE only — never their bytes.
    *
@@ -1197,6 +1454,10 @@ export interface SessionPrompt {
   /** Posted without a turn: no agent answers it, so show no "thinking"
    *  state. Absent from servers older than this field. */
   no_reply?: boolean;
+  /** The member who sent it. The prompt runs as this member, so only they
+   *  edit, send now or retry it (`sessionPromptActions`). Null for a prompt
+   *  with no recorded sender; absent from servers older than this field. */
+  author_user_id?: string | null;
   created_at: string;
   available_at: string;
 }
@@ -1215,8 +1476,12 @@ export interface CreateSessionPromptResult {
 }
 
 export interface CreateSessionPromptInput {
-  /** Pending presentation; omitted preserves the legacy composer queue. */
+  /** Pending presentation; omitted preserves the legacy composer queue. When
+   *  only `delivery` is given, the placement it implies is sent. */
   placement?: 'transcript' | 'composer';
+  /** How the prompt reaches a running turn. Omitted: `placement` decides, as
+   *  before steering (`transcript` = `interrupt`, `composer` = `queue`). */
+  delivery?: SessionPromptDelivery;
   clientMessageId: string;
   messageId: string;
   parts: SessionPromptPart[];
@@ -1253,6 +1518,8 @@ export async function createSessionPrompt(
   sessionId: string,
   input: CreateSessionPromptInput,
 ): Promise<CreateSessionPromptResult> {
+  // An API built before steering ignores `delivery` and reads `placement`.
+  const placement = input.placement ?? placementForDelivery(input.delivery);
   return unwrap(
     await backendApi.post<CreateSessionPromptResult>(
       `/projects/${projectId}/sessions/${sessionId}/prompts`,
@@ -1260,7 +1527,8 @@ export async function createSessionPrompt(
         client_message_id: input.clientMessageId,
         message_id: input.messageId,
         parts: input.parts,
-        ...(input.placement ? { placement: input.placement } : {}),
+        ...(placement ? { placement } : {}),
+        ...(input.delivery ? { delivery: input.delivery } : {}),
         ...(input.overrides ? { overrides: input.overrides } : {}),
         ...(input.remintOnDelivery ? { remint_on_delivery: true } : {}),
         ...(typeof input.clientSentAtMs === 'number'
@@ -1328,6 +1596,50 @@ export async function deleteSessionPrompt(
     ),
   );
   return body.removed;
+}
+
+/**
+ * Replace the text of a prompt that is still waiting in the queue.
+ *
+ * The row keeps its place, its files, its wire id and any hold. Nothing is
+ * sent: an edit is not a new message, so unlike `createSessionPrompt` it never
+ * releases a Stop hold or admits the row early. A row already on the wire
+ * answers `409` — the agent has the old text.
+ */
+export async function editSessionPrompt(
+  projectId: string,
+  sessionId: string,
+  promptId: string,
+  text: string,
+): Promise<SessionPrompt> {
+  return unwrap(
+    await backendApi.patch<SessionPrompt>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      { text },
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
+    ),
+  );
+}
+
+/**
+ * "Stop and send": turn a prompt still waiting in the queue into Quick Queue
+ * (`delivery: 'interrupt'`). The running turn ends after its running tool,
+ * then this prompt runs. A row already on the wire answers `409`.
+ */
+export async function interruptSessionPrompt(
+  projectId: string,
+  sessionId: string,
+  promptId: string,
+): Promise<SessionPrompt> {
+  return unwrap(
+    await backendApi.patch<SessionPrompt>(
+      `/projects/${projectId}/sessions/${sessionId}/prompts/${promptId}`,
+      { delivery: 'interrupt' },
+      // The caller toasts its own message; the host sink would add a second.
+      { showErrors: false },
+    ),
+  );
 }
 
 /**
@@ -1408,29 +1720,94 @@ export async function updateProjectSession(
   );
 }
 
+/**
+ * Delete a session. It stays restorable until `restore_until` (30 days):
+ * `restoreProjectSession` brings it back. Its branch is kept for good; its
+ * messages and stored files are deleted after the window. `restore_until` is
+ * absent from an API that predates restore.
+ */
 export async function deleteProjectSession(projectId: string, sessionId: string) {
+  const result = unwrap(
+    await backendApi.delete<{ ok: boolean; restore_until?: string }>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+    ),
+  );
+  // The device's saved copy of a deleted session would only take space.
+  void currentSavedCopyStore()?.remove(projectId, sessionId);
+  noteSessionDeleted(sessionId);
+  return result;
+}
+
+/**
+ * Continue a lost session on a new computer (KRTX-2419). A session is lost when
+ * the provider removed its sandbox (`/start` answers `failed` with reason
+ * `runtime_identity_unavailable`). Its next start boots a fresh sandbox from the
+ * session branch, which restores the saved conversation. A refusal rejects with
+ * an `ApiError` and changes nothing: 409 `session_not_lost`, 409
+ * `session_transcript_missing` (no saved conversation to continue from), 409
+ * `session_sandbox_removal_pending` (retry in a minute), 503
+ * `session_log_restore_off`.
+ */
+export async function recoverProjectSession(projectId: string, sessionId: string) {
   return unwrap(
-    await backendApi.delete<{ ok: boolean }>(`/projects/${projectId}/sessions/${sessionId}`),
+    await backendApi.post<{ ok: true }>(
+      `/projects/${projectId}/sessions/${sessionId}/recover`,
+      {},
+      // The caller shows the refusal in place (the lost-session banner).
+      { showErrors: false },
+    ),
   );
 }
 
-export async function restartProjectSession(projectId: string, sessionId: string) {
+/**
+ * Restore a deleted session before its `restore_until`. Its messages, stored
+ * files and branch come back; its next start boots a fresh sandbox from the
+ * branch. A refusal rejects with an `ApiError`: 409 `session_not_deleted`
+ * (nothing to restore), 409 `session_sandbox_removal_pending` (the old sandbox
+ * is still being removed: retry in a minute), 410 `session_purged` (past
+ * `restore_until`). Public links the delete revoked stay revoked.
+ */
+export async function restoreProjectSession(projectId: string, sessionId: string) {
   return unwrap(
-    await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
-      `/projects/${projectId}/sessions/${sessionId}/restart`,
+    await backendApi.post<{ ok: boolean }>(
+      `/projects/${projectId}/sessions/${sessionId}/restore`,
       {},
+      // The caller reports the outcome itself (an Undo toast, a CLI line).
+      { showErrors: false },
     ),
+  );
+}
+
+/** Restart a session's sandbox. */
+export async function restartProjectSession(
+  projectId: string,
+  sessionId: string,
+  /** @deprecated Withdrawn with persistent machines. Ignored. Removed in the next major. */
+  _opts: { reset_machine?: boolean; discard_state?: boolean } = {},
+) {
+  return unwrap(
+    await backendApi.post<{
+      ok: boolean;
+      session_id: string;
+      status: string;
+      /** @deprecated Never sent: persistent machines left the product. Removed in the next major. */
+      state_carried?: boolean | null;
+      /** @deprecated Never sent: persistent machines left the product. Removed in the next major. */
+      warning?: string;
+    }>(`/projects/${projectId}/sessions/${sessionId}/restart`, {}),
   );
 }
 
 /** Manual pause: stops the running sandbox in place, resumable via start(). */
 export async function stopProjectSession(projectId: string, sessionId: string) {
-  return unwrap(
+  const stopped = unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/stop`,
       {},
     ),
   );
+  noteSessionStopped(sessionId);
+  return stopped;
 }
 
 /**
@@ -1909,14 +2286,22 @@ export async function setProjectSessionModel(
  * project default. The pin is stored under the pre-W4 metadata key
  * `opencode_model`; read it through this function, not from `metadata`.
  */
-export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }): string | null {
+export function sessionModelPin(session: { metadata?: Record<string, unknown> | null }):
+  | string
+  | null {
   const stored = session.metadata?.opencode_model;
   return typeof stored === 'string' && stored.trim() ? stored.trim() : null;
 }
 
 /** Who wrote one message: a project member, or another session's agent. */
 export type SessionMessageAuthor =
-  | { kind: 'member'; user_id: string; name: string; email: string | null; avatar_url?: string | null }
+  | {
+      kind: 'member';
+      user_id: string;
+      name: string;
+      email: string | null;
+      avatar_url?: string | null;
+    }
   /** `name` is the session title; `agent` is the agent that session runs. */
   | { kind: 'session'; session_id: string; name: string; agent?: string };
 
@@ -1926,6 +2311,10 @@ export interface SessionMessageAuthors {
   /** A spawned session's first message came from its parent's agent. Null
    *  when the session was not spawned with a first prompt. */
   initial_author: SessionMessageAuthor | null;
+  /** Who stopped a turn, keyed by the user message that started it (the same
+   *  ids as `authors`). Only stops a known member asked for are listed. Absent
+   *  from an older server. */
+  stops?: Record<string, SessionMessageAuthor>;
 }
 
 /** Who wrote each message of a session, from the server's authenticated
@@ -1937,6 +2326,56 @@ export async function getSessionMessageAuthors(
   return unwrap(
     await backendApi.get<SessionMessageAuthors>(
       `/projects/${projectId}/sessions/${sessionId}/message-authors`,
+      { showErrors: false },
+    ),
+  );
+}
+
+/** The model each request ended up on, read from the gateway's request record. */
+export interface SessionServedModel {
+  /** Route id recorded for the request — the model that answered it, or on an
+   *  unanswered request the model it was being served by. */
+  served_model: string;
+  /** The model the request was rerouted to after a failed attempt, whether or
+   *  not the fallback answered. Null when no attempt failed. */
+  fallback_from: string | null;
+  at: string;
+  /** How the request ended: `answered` (a model answered it), `client_aborted`
+   *  (the caller canceled it) or `error` (it failed outright). A cancel is not
+   *  a model failure — the UI must not present one as such (KRTX-2572). */
+  outcome?: 'answered' | 'client_aborted' | 'error';
+}
+
+/** The models that answered one turn, and what Kortix billed for it. */
+export interface SessionTurnModelUsage {
+  /** Successful fallback requests, oldest first. Error codes are safe public categories. */
+  fallbacks?: { requested_model: string; served_model: string; error_code: string }[];
+  /** Route ids of the models that answered in this turn, most requests first. */
+  served_models: string[];
+  fallback_from: string | null;
+  /** What Kortix debited for this turn's model calls, in USD. */
+  billed_cost: number;
+}
+
+export interface SessionModelUsage {
+  /** The newest request and how it ended. Null before the first request. */
+  latest: SessionServedModel | null;
+  /** What Kortix debited for the session's model calls, in USD. */
+  billed_cost: number;
+  /** Keyed by the runtime message id of the prompt that started each turn. */
+  turns: Record<string, SessionTurnModelUsage>;
+}
+
+/** Which model answered a session's turns and what Kortix billed for them,
+ *  from the gateway's request record. The runtime transcript records only the
+ *  model a turn asked for, so it cannot show a fallback or its cost. */
+export async function getSessionModelUsage(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionModelUsage> {
+  return unwrap(
+    await backendApi.get<SessionModelUsage>(
+      `/projects/${projectId}/sessions/${sessionId}/model-usage`,
       { showErrors: false },
     ),
   );

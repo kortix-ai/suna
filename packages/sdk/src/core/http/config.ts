@@ -34,6 +34,13 @@ export interface KortixPlatformConfig {
    * asks for a fresh token instead of re-sending the dead one.
    */
   getToken: (() => Promise<string | null>) & { invalidate?: (rejectedToken: string) => void };
+  /**
+   * Send the token from `getToken` raw in this header instead of
+   * `Authorization: Bearer`. For a backend proxy that reads the credential from
+   * a custom header (for example `x-app-reader-token`). `Authorization` stays
+   * unset; the 401 replay still asks `getToken()` for a fresh token.
+   */
+  credentialHeader?: string;
   /** Optional fetch implementation for tests, edge runtimes, and compatibility adapters.
    *  Any fetch-shaped function is accepted (the global `fetch` type also carries
    *  runtime extras such as Bun's `preconnect`, which no adapter needs to provide). */
@@ -50,8 +57,24 @@ export interface KortixPlatformConfig {
    *  trail records the authenticated credential (`credential_kind`), not a
    *  self-reported surface. Accepted so existing hosts keep compiling. */
   clientSource?: 'api' | 'cli' | 'mobile' | 'tui' | 'web';
+  /** The host's surface and release version as `<surface>/<version>` (e.g.
+   *  `cli/0.13.42`), sent as `X-Kortix-Client-Version`. The API writes it to
+   *  its request log only, to see which client versions still call a route
+   *  before the route is retired. It is self-reported telemetry: it never
+   *  reaches the audit trail and grants nothing. Omitted when unset or blank. */
+  clientVersion?: string;
   /** Optional UI error sink (toast/log). No-op by default. */
   onError?: (error: unknown, context?: unknown) => void;
+  /**
+   * The API refused a request with a 403 the person can fix:
+   * `sso_required` (sign in again through the account's identity provider) or
+   * `account_mfa_required` (complete multi-factor authentication). Called for every
+   * response of the REST client (`backendApi`), including `showErrors: false`
+   * calls; the runtime proxy and the event stream do not call it. A browser also gets the
+   * `kortix:sso-required` / `kortix:mfa-required` window event; a host without
+   * DOM events (React Native) uses this instead. No-op by default.
+   */
+  onAccessRemedy?: (code: 'sso_required' | 'account_mfa_required') => void;
   /** Default sandbox id for local/single-sandbox hosts (was `getEnv().SANDBOX_ID`). */
   sandboxId?: string | null;
   /** Whether billing gates are active (was `isBillingEnabled()`). */

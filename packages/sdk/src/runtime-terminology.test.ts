@@ -7,8 +7,10 @@ import ts from 'typescript';
  * The session runtime is OpenCode or pi, so a public name says "runtime", not
  * "opencode". Every name below is a pre-W4 name kept until the next major: it
  * is `@deprecated`, and its neutral replacement is public and NOT deprecated.
- * `null` = deprecated with no replacement: it wraps an OpenCode-only route and
- * is removed with it.
+ * `null` = deprecated with no neutral replacement: it wraps an OpenCode-only
+ * route, or no first-party host calls it, so the old name and the neutral name
+ * are both removed in the next major (`CHANGELOG.md`, "Removed in the next
+ * major").
  *
  * A NEW public name containing "opencode" fails the first test. Name it
  * neutrally instead ("runtime"); the harness is a server-side concern.
@@ -53,7 +55,7 @@ const PRE_W4_NAMES: Record<string, string | null> = {
   useCreateOpenCodeSession: 'useCreateRuntimeSession',
   useDeleteOpenCodeSession: null,
   useExecuteOpenCodeCommand: 'useExecuteRuntimeCommand',
-  useOpenCodeAgent: 'useRuntimeAgent',
+  useOpenCodeAgent: null,
   useOpenCodeAgents: 'useRuntimeAgents',
   useOpenCodeCommands: 'useRuntimeCommands',
   useOpenCodeConfig: 'useRuntimeConfig',
@@ -69,17 +71,17 @@ const PRE_W4_NAMES: Record<string, string | null> = {
   useOpenCodePtyList: 'useRuntimePtyList',
   useOpenCodeRuntimeReady: 'useRuntimeReady',
   useOpenCodeSession: 'useRuntimeSession',
-  useOpenCodeSessionDiff: 'useRuntimeSessionDiff',
+  useOpenCodeSessionDiff: null,
   useOpenCodeSessionTodo: 'useRuntimeSessionTodo',
   useOpenCodeSessions: 'useRuntimeSessions',
   useOpenCodeSkills: null,
   useOpenCodeToolIds: null,
-  useOpenCodeTools: 'useRuntimeTools',
+  useOpenCodeTools: null,
   useOpenCodeVcsDiff: 'useRuntimeVcsDiff',
-  useSendOpenCodeMessage: 'useSendRuntimeMessage',
+  useSendOpenCodeMessage: null,
   useSummarizeOpenCodeSession: 'useSummarizeRuntimeSession',
   useUpdateOpenCodeConfig: 'useUpdateRuntimeConfig',
-  useUpdateOpenCodeSession: 'useUpdateRuntimeSession',
+  useUpdateOpenCodeSession: null,
 };
 
 const PKG_ROOT = join(import.meta.dir, '..');

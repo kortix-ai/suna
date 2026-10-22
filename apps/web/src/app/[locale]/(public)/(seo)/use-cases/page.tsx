@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation';
 import { UseCasesBrowser } from '@/components/use-cases/use-cases-browser';
 import { getTranslations } from '@/i18n/get-translations';
 import { safeJsonForHtml } from '@/lib/security/safe-json';
-import { siteMetadata } from '@/lib/site-metadata';
+import { siteMetadata } from '@kortix/ui/internal/lib/site-metadata';
 import { getAllUseCases } from '@/lib/use-cases';
 
 const URL = `${siteMetadata.url}/use-cases`;
@@ -19,7 +19,7 @@ export async function generateMetadata(): Promise<Metadata> {
     keywords: [
       'Kortix use cases',
       'AI agent case studies',
-      'AI command center',
+      'AI Operating System',
       'AI workforce',
       'loop engineering',
       'agent automation',
@@ -46,8 +46,10 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function UseCasesIndexPage() {
   if (process.env.NEXT_PUBLIC_USE_CASES_ENABLED === 'false') notFound();
-  const t = await getTranslations('hardcodedUi.i18nComplete');
-  const tUseCases = await getTranslations('useCases');
+  const [t, tUseCases] = await Promise.all([
+    getTranslations('hardcodedUi.i18nComplete'),
+    getTranslations('useCases'),
+  ]);
   const title = t.raw('textb697dd6a71d9');
   const description = t.raw('text7fa8aef486d8');
   const useCases = getAllUseCases();

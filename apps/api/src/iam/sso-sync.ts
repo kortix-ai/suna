@@ -54,7 +54,7 @@ function ssoIdFromProviderTag(value: unknown): string | null {
  *
  * Real Supabase SAML tokens carry the id INSIDE `app_metadata.provider` (and
  * `app_metadata.providers[]`) as the string `"sso:<uuid>"`, e.g.
- * `provider: "sso:464651b7-6157-46b1-afaa-5bbd7fa37599"`. We also accept a bare
+ * `provider: "sso:<sso_provider_id>"`. We also accept a bare
  * `sso_provider_id`/`provider_id` for forward-compat and simpler test fixtures.
  *
  * The previous implementation read ONLY the bare fields, which no real Supabase
@@ -86,27 +86,27 @@ export function extractSsoProviderId(
 }
 
 /**
- * Read a group claim out of the JWT. The claim name is configurable per
- * account; we accept string OR string[] (different IdPs ship either).
+ * Read a group claim. The claim name is configurable per account; we accept
+ * string OR string[] (different IdPs ship either).
+ *
+ * Only server-written sources count. Supabase SSO maps SAML attributes into
+ * `custom_claims` on the SSO identity (`auth.identities.identity_data`) and
+ * copies them into `user_metadata` — but `user_metadata` is writable by the user
+ * (`PUT /auth/v1/user`), so reading it let any SSO user grant themselves groups.
+ * `identityData` is that identity row's `identity_data`; GoTrue alone writes it.
  */
 export function extractGroupClaims(
   payload: Record<string, unknown> | undefined,
   claimName: string,
+  identityData?: Record<string, unknown>,
 ): string[] {
-  if (!payload) return [];
   const asObj = (v: unknown): Record<string, unknown> | undefined =>
     v && typeof v === 'object' ? (v as Record<string, unknown>) : undefined;
-  const app = asObj(payload.app_metadata);
-  const user = asObj(payload.user_metadata);
-  // Supabase SSO nests the mapped SAML attributes under
-  // `user_metadata.custom_claims` (e.g. `custom_claims.groups`) — NOT at the top
-  // of user_metadata — so check custom_claims FIRST, then fall back to the flat
-  // locations other IdPs / non-SSO tokens use.
+  const app = asObj(payload?.app_metadata);
   const sources: Array<Record<string, unknown> | undefined> = [
-    asObj(user?.custom_claims),
+    asObj(identityData?.custom_claims),
     asObj(app?.custom_claims),
     app,
-    user,
     payload,
   ];
   for (const src of sources) {
@@ -394,7 +394,15 @@ export async function syncSsoMembership(args: {
     }
 
     // 2. Sync IAM group memberships from the claim.
-    const claims = extractGroupClaims(args.jwtPayload, provider.groupClaimName);
+    const [ssoIdentity] = await db.execute(sql`
+      SELECT identity_data
+      FROM auth.identities
+      WHERE user_id=${args.userId}::uuid
+        AND provider='sso:' || ${provider.supabaseSsoProviderId}::text
+      ORDER BY updated_at DESC NULLS LAST
+      LIMIT 1
+    `) as unknown as Array<{ identity_data: Record<string, unknown> | null }>;
+    const claims = extractGroupClaims(args.jwtPayload, provider.groupClaimName, ssoIdentity?.identity_data ?? undefined);
 
     // Auto-provision: when enabled, create an IAM group + mapping for every
     // (deduped) group the IdP sent BEFORE reading the mappings below, so the

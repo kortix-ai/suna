@@ -1,8 +1,8 @@
-import type { FilePart, Part } from '@/ui';
+import { sessionLogOfV1Rows, type SessionLogBlock } from '@kortix/sdk';
 import { sanitizePromptUploadFilename } from '@kortix/shared';
 import { describe, expect, test } from 'bun:test';
 
-import { mergeSentAttachments, normalizeAttachments } from './user-message';
+import { mergeSentAttachments, normalizeAttachments } from '@kortix/ui/session';
 
 // The bug this guards: an upload reaches the transcript as a
 // `<file path mime filename>` TAG in the message text (uploaded-file-refs.ts),
@@ -10,14 +10,20 @@ import { mergeSentAttachments, normalizeAttachments } from './user-message';
 // rendered that list, so the tag left the visible text and the file vanished —
 // attach a PNG or a CSV and the message showed only what you typed.
 
-function part(id: string, filename: string, mime: string, url?: string): FilePart {
-  return { id, type: 'file', filename, mime, url } as unknown as FilePart;
+/** One v1 part as the block the transcript reads for it (`sessionLogOfV1Rows`, flag off). */
+function blockOf(part: object): SessionLogBlock {
+  const row = { info: { id: 'm', role: 'user' }, parts: [part] } as never;
+  return sessionLogOfV1Rows('s', 'rs', [row]).threads[0]!.messages[0]!.blocks[0]!;
+}
+
+function part(id: string, filename: string, mime: string, url?: string): SessionLogBlock {
+  return blockOf({ id, type: 'file', filename, mime, url });
 }
 
 const upload = (path: string, mime: string, filename: string) => ({ path, mime, filename });
 
-function textPart(id: string, text: string): Part {
-  return { id, type: 'text', text } as unknown as Part;
+function textPart(id: string, text: string): SessionLogBlock {
+  return blockOf({ id, type: 'text', text });
 }
 
 describe('normalizeAttachments', () => {

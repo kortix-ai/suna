@@ -20,6 +20,7 @@ const {
   isRetryablePlatinumBuildError,
   isPlatinumSizeCapBuildFailure,
   PlatinumSizeCapBuildError,
+  PlatinumTemplateBuildFailedError,
 } = await import('./platinum');
 
 describe('Platinum build-error retry classifier', () => {
@@ -51,6 +52,19 @@ describe('Platinum build-error retry classifier', () => {
     // An EXPLICIT build failure — Platinum registered the template, actually ran
     // the build, and it failed. Retrying would just fail identically.
     ['explicit build failure', new Error('Platinum template kortix-default-abc123 build failed')],
+    // The failure now carries its log lines, which can contain transient-looking
+    // words. They must never turn a real build failure into a retry.
+    [
+      'explicit build failure whose log mentions a timeout and a missing file',
+      new PlatinumTemplateBuildFailedError(
+        'kortix-default-abc123',
+        'curl: (28) Connection timed out | cp: /src/x: No such file or directory | network unreachable | [build failed] podman build: exit status 1',
+      ),
+    ],
+    [
+      'the same failure re-wrapped as a plain Error',
+      new Error('attempt 1/3: Platinum template kortix-default-abc123 build failed: curl: (28) Connection timed out | network gateway 502'),
+    ],
     // Reached a real (non-missing) state before giving up — a genuine stuck
     // build, not a registration no-show.
     [

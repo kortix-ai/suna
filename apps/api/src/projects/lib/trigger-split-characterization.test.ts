@@ -19,7 +19,7 @@ describe('trigger split characterization', () => {
 
   test('webhook payload keeps parsed body and selected headers', async () => {
     const app = new Hono();
-    app.post('/', (c) => c.json(webhookPayload(c, '{"event":"synthetic"}')));
+    app.post('/', (c) => c.json(webhookPayload((name) => c.req.header(name), '{"event":"synthetic"}')));
     const response = await app.request('/', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'user-agent': 'synthetic-agent' },
@@ -55,8 +55,8 @@ describe('trigger split characterization', () => {
     [{ session_mode: 'unknown' }, 'session_mode must be one of'],
     [{ session_mode: 'pinned' }, 'requires a session_id'],
     [{ session_mode: 'keyed' }, 'requires a session_key'],
-    [{ filter: [] }, 'filter must be an object'],
-    [{ filter: { ' ': 'value' } }, 'filter keys must be non-empty'],
+    [{ filter: [] }, 'filter must map payload paths to a value or one operator'],
+    [{ filter: { ' ': 'value' } }, 'filter paths must not be blank'],
     [{ filter: { event: null } }, 'filter.event must be'],
     [{ secret_env: '' }, 'must declare `secret_env`'],
     [{ secret_env: 'lowercase' }, 'secret_env must look like'],

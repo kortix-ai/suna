@@ -1,7 +1,7 @@
 import type { ProjectRow, ProjectSessionRow, RequestAuditContext } from '../lib/serializers';
 import type { PromptOverridesWire, PromptPartWire } from './prompt-payload';
 import type { SessionCreateError } from '../lib/sessions';
-import type { SessionStartResult } from '../routes/shared';
+import type { SessionStartResult } from '../session-open';
 
 export type SessionInvocationSource =
   | 'ui'
@@ -15,15 +15,18 @@ export type SessionInvocationSource =
   | 'trigger:cron'
   | 'trigger:manual'
   | 'trigger:monitor'
+  | 'trigger:event'
   | 'trigger:reminder'
   | 'system:sandbox-build-fix'
   | 'system:approval-resume'
   | 'system:secret-submitted'
   | 'system:connector-connected'
-  /** Unattended-session recovery after a provider-originated `runtime_gone`
-   *  (see `unattended-runtime-recovery.ts`), when the turn that died was the
-   *  session's own initial prompt — there is no `continue_session` inbox row
-   *  to release, so a synthetic continue prompt is enqueued instead. */
+  /** A message another participant posted in a room the session joined (`projects/rooms`). */
+  | 'system:room-message'
+  /** The continuation of a turn a provider-originated `runtime_gone` cut short
+   *  when no `continue_session` row took the turn over — the session's own
+   *  initial prompt, or an unattended session's row that could not be requeued
+   *  (`sandbox-state-sync.ts` `enqueueTurnContinuation`). */
   | 'system:auto-recovery'
   | 'admin';
 
@@ -46,6 +49,16 @@ export type SessionLifecyclePostCreateAction =
       /** Resolve at execution time so queued creates never capture stale access. */
       type: 'apply_trigger_session_access';
       triggerSlug: string;
+    }
+  | {
+      /** Move a session reminder to the new session (its session failed). */
+      type: 'repin_reminder';
+      reminderId: string;
+    }
+  | {
+      /** Take over the chat threads bound to a failed predecessor session. */
+      type: 'adopt_chat_threads';
+      fromSessionId: string;
     };
 
 export type SessionLifecycleStatus =
@@ -76,7 +89,6 @@ export interface CreateSessionCommand {
   mayManageSystemConnections?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
-  enforceAccountCap?: boolean;
   request?: RequestAuditContext;
   idempotencyKey?: string | null;
   queuePolicy?: QueuePolicy;
@@ -100,7 +112,6 @@ export interface QueuedCreateSessionPayload {
   extraEnvVars?: Record<string, string>;
   visibility?: 'private' | 'project' | 'restricted';
   mayManageSystemConnections?: boolean;
-  enforceAccountCap?: boolean;
   postCreate?: SessionLifecyclePostCreateAction[];
   // Origin-derivation signals captured at ENQUEUE time. Without them a queued
   // backend create would replay as origin 'user'. Absent on rows queued before
@@ -149,6 +160,13 @@ export interface ContinueSessionCommand {
    *  them from this turn on (`bindSessionTurnIdentity`). Set by the prompt
    *  route for a non-agent caller; absent keeps the token's identity. */
   bindTurnIdentity?: boolean;
+  /**
+   * When an automation prompt (no `clientMessageId`) was queued. A user Stop
+   * after it wins: the delivery does not wake the box, and the prompt waits
+   * parked until the user opens the session again. Inbox prompts are held by
+   * the Stop itself (`holdInboxPrompts`) and released by the next send.
+   */
+  queuedAt?: Date;
 }
 
 /** JSON metadata used to gate the one-time repair of pre-materialization prompts. */
@@ -180,6 +198,12 @@ export interface StartSessionCommand {
    *  learns `ready` the instant it flips instead of on its own poll tick.
    *  Bounded server-side (START_AWAIT_MAX_MS); omit/0 = original one-shot. */
   waitMs?: number;
+  /** Keep-alive poll (`?keep_stopped=1`): report a deliberately stopped box, never wake it. */
+  keepStopped?: boolean;
+  /** When the request arrived. A user Stop that settles after it wins over it. */
+  wakeIntentAt?: Date;
+  /** Aborts the long-poll when the caller disconnects. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -248,7 +272,8 @@ export interface SessionLifecycleResult {
   delivery?: SessionDeliveryOutcome;
   deduped?: boolean;
   retryable?: boolean;
+  /** The command row went back to the queue: the drain owns the outcome. */
+  requeued?: boolean;
   reason?: string;
-  error?: SessionCreateError | { status: number; body: Record<string, unknown> };
-  headers?: Record<string, string>;
+  error?: SessionCreateError;
 }

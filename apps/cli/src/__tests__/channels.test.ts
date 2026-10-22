@@ -22,8 +22,15 @@ const ENV_KEYS = [
   'SLACK_SIGNING_SECRET',
 ] as const;
 
-const INSTALL_URL = 'https://slack.com/oauth/v2/authorize?client_id=1.2&scope=chat:write&state=signed';
+const INSTALL_URL =
+  'https://slack.com/oauth/v2/authorize?client_id=1.2&scope=chat:write&state=signed';
 const TEAMS_CONSENT_URL = 'https://login.microsoftonline.com/common/adminconsent?client_id=teams-1';
+const TEAMS_MANIFEST = {
+  manifestVersion: '1.17',
+  id: 'teams-1',
+  bots: [{ botId: 'teams-1', scopes: ['personal', 'team'] }],
+  validDomains: ['api.test'],
+};
 const INSTALLATION = {
   workspaceId: 'T012AB3CD',
   workspaceName: 'Acme',
@@ -66,7 +73,10 @@ interface MockState {
 let state: MockState;
 let installationGets = 0;
 let teamsInstall: typeof TEAMS_INSTALLATION | null = null;
-let bindingsResponse: { projectDefaultAgent: string | null; bindings: Array<Record<string, unknown>> } | null = null;
+let bindingsResponse: {
+  projectDefaultAgent: string | null;
+  bindings: Array<Record<string, unknown>>;
+} | null = null;
 
 function writeConfig(url = 'https://api.test'): void {
   const file = join(tmp, 'config.json');
@@ -98,7 +108,10 @@ function captureOutput() {
 }
 
 function json(data: unknown): Response {
-  return new Response(JSON.stringify(data), { status: 200, headers: { 'content-type': 'application/json' } });
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 }
 
 function mockApi() {
@@ -108,7 +121,11 @@ function mockApi() {
     const method = (init?.method ?? 'GET').toUpperCase();
     let body: any = undefined;
     if (typeof init?.body === 'string') {
-      try { body = JSON.parse(init.body); } catch { body = init.body; }
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
     }
     requests.push({ url, method, body });
 
@@ -131,6 +148,12 @@ function mockApi() {
     if (url.includes('/channels/slack/connect') && method === 'POST') {
       return json(INSTALLATION);
     }
+    if (url.includes('/channels/email/mode')) {
+      return json({ enabled: true, managed_available: true });
+    }
+    if (url.includes('/channels/email/installation')) {
+      return json(null);
+    }
     // Teams endpoints
     // Mirrors the real GET /channels/teams/mode payload: `enabled` is the
     // project's `teams` experiment, `available` is whether bot credentials
@@ -143,6 +166,16 @@ function mockApi() {
         orgInstalled: Boolean(teamsInstall),
         deepLinkUrl: teamsInstall?.catalogAppId ?? null,
       });
+    }
+    // GET /channels/teams/manifest: the app manifest the API builds, or 409
+    // when no bot credentials resolve.
+    if (url.endsWith('/channels/teams/manifest') && method === 'GET') {
+      if (!state.oauthAvailable) {
+        return new Response(JSON.stringify({ error: 'Teams is not configured on this server' }), {
+          status: 409,
+        });
+      }
+      return json(TEAMS_MANIFEST);
     }
     if (url.includes('/channels/teams/installation') && method === 'GET') {
       return json(teamsInstall ?? null);
@@ -166,7 +199,10 @@ function mockApi() {
 
 beforeEach(() => {
   saved = {};
-  for (const key of ENV_KEYS) { saved[key] = process.env[key]; delete process.env[key]; }
+  for (const key of ENV_KEYS) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
   process.env.KORTIX_DISABLE_SANDBOX_ENV_FILE = '1';
   process.env.KORTIX_PROJECT_ID = 'proj_1';
   originalCwd = process.cwd();
@@ -232,6 +268,40 @@ describe('kortix channels connect — one-click (cloud)', () => {
     expect(out).toContain(INSTALL_URL);
     expect(out).toContain('Connected to Acme');
   });
+
+  // A non-numeric --timeout made the poll deadline `Number('abc')` = NaN; the
+  // poll's only exit is `Date.now() >= deadline`, which NaN never satisfies —
+  // the CLI hung forever. Same for a deadline of Infinity. Reject the value
+  // where the flag is parsed, before the command touches the API.
+  test('--wait --timeout abc fails fast with a usage error instead of hanging on a NaN deadline', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', 'abc']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain(
+      "--timeout requires a non-negative number of seconds, got 'abc'",
+    );
+    expect(requests).toEqual([]);
+  });
+
+  test('--wait --timeout Infinity fails fast too (a deadline that never arrives hangs the poll)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', 'Infinity']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got 'Infinity'");
+    expect(requests).toEqual([]);
+  });
+
+  test('--wait --timeout=-5 fails fast (a negative timeout is invalid input)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout=-5']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got '-5'");
+    expect(requests).toEqual([]);
+  });
+
+  test('--wait --timeout 2e305 fails fast too (a finite value whose ms deadline overflows to Infinity)', async () => {
+    const code = await runChannels(['connect', '--wait', '--timeout', '2e305']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain("got '2e305'");
+    expect(requests).toEqual([]);
+  });
 });
 
 describe('kortix channels connect — manual (self-host)', () => {
@@ -250,14 +320,22 @@ describe('kortix channels connect — manual (self-host)', () => {
     process.env.SLACK_SIGNING_SECRET = 'sig-abc';
     const code = await runChannels(['connect']);
     expect(code).toBe(0);
-    const post = requests.find((r) => r.method === 'POST' && r.url.includes('/channels/slack/connect'));
+    const post = requests.find(
+      (r) => r.method === 'POST' && r.url.includes('/channels/slack/connect'),
+    );
     expect(post).toBeDefined();
     expect(post!.body).toMatchObject({ bot_token: 'xoxb-123', signing_secret: 'sig-abc' });
     expect(stripAnsi(stdout)).toContain('Connected to Acme');
   });
 
   test('explicit --bot-token/--signing-secret skips the /mode lookup entirely', async () => {
-    const code = await runChannels(['connect', '--bot-token', 'xoxb-456', '--signing-secret', 'sig-def']);
+    const code = await runChannels([
+      'connect',
+      '--bot-token',
+      'xoxb-456',
+      '--signing-secret',
+      'sig-def',
+    ]);
     expect(code).toBe(0);
     expect(requests.some((r) => r.url.includes('/channels/slack/mode'))).toBe(false);
     const post = requests.find((r) => r.method === 'POST');
@@ -272,7 +350,13 @@ describe('kortix channels connect — manual (self-host)', () => {
   });
 
   test('bad bot token prefix is rejected client-side', async () => {
-    const code = await runChannels(['connect', '--bot-token', 'xoxp-oops', '--signing-secret', 's']);
+    const code = await runChannels([
+      'connect',
+      '--bot-token',
+      'xoxp-oops',
+      '--signing-secret',
+      's',
+    ]);
     expect(code).toBe(2);
     expect(stripAnsi(stderr)).toContain('xoxb-');
     expect(requests.some((r) => r.method === 'POST')).toBe(false);
@@ -281,7 +365,7 @@ describe('kortix channels connect — manual (self-host)', () => {
 
 describe('kortix channels status', () => {
   test('not connected → points at `kortix channels connect`', async () => {
-    const code = await runChannels(['status']);
+    const code = await runChannels(['status', '--platform', 'slack']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
     expect(out).toContain('not connected');
@@ -290,7 +374,7 @@ describe('kortix channels status', () => {
 
   test('--json reports connected + installation', async () => {
     state.installation = INSTALLATION;
-    const code = await runChannels(['status', '--json']);
+    const code = await runChannels(['status', '--platform', 'slack', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
     expect(parsed.connected).toBe(true);
@@ -301,7 +385,7 @@ describe('kortix channels status', () => {
     writeConfig('https://api.test/v1');
     state.installation = INSTALLATION;
 
-    const code = await runChannels(['status']);
+    const code = await runChannels(['status', '--platform', 'slack']);
 
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
@@ -310,7 +394,95 @@ describe('kortix channels status', () => {
   });
 });
 
+// Characterization for the KRTX-1334 split: `channels manifest` builds the
+// Slack app manifest entirely client-side (no API call) and prints it — an
+// operator pastes it into api.slack.com verbatim. Pin the whole document byte
+// for byte so a restructure cannot drift a scope or the webhook URL.
+describe('kortix channels manifest', () => {
+  test('prints the full manifest JSON built client-side, no API call', async () => {
+    const code = await runChannels(['manifest']);
+    expect(code).toBe(0);
+    expect(stdout).toBe(
+      JSON.stringify(
+        {
+          display_information: {
+            name: 'Kortix',
+            description: 'Run a Kortix project from Slack',
+            background_color: '#0a0a0a',
+          },
+          features: { bot_user: { display_name: 'kortix', always_online: true } },
+          oauth_config: {
+            scopes: {
+              bot: [
+                'app_mentions:read',
+                'channels:history',
+                'channels:read',
+                'channels:join',
+                'chat:write',
+                'chat:write.public',
+                'files:read',
+                'files:write',
+                'groups:history',
+                'groups:read',
+                'im:history',
+                'im:read',
+                'im:write',
+                'mpim:history',
+                'mpim:read',
+                'reactions:read',
+                'reactions:write',
+                'users:read',
+              ],
+            },
+          },
+          settings: {
+            event_subscriptions: {
+              request_url: 'https://api.test/v1/webhooks/slack/proj_1',
+              bot_events: [
+                'app_mention',
+                'message.im',
+                'message.channels',
+                'message.groups',
+                'message.mpim',
+                'reaction_added',
+                'reaction_removed',
+                'member_joined_channel',
+                'file_shared',
+              ],
+            },
+            org_deploy_enabled: false,
+            socket_mode_enabled: false,
+            token_rotation_enabled: false,
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+    expect(requests).toEqual([]);
+  });
+});
+
 describe('kortix channels --platform teams', () => {
+  // KRTX-2990: `manifest` built an absolute URL the client read as a path
+  // (`/v1/https://…`) and asked the /mode route instead of /manifest.
+  test('manifest GETs the server-built app manifest and prints it verbatim', async () => {
+    const code = await runChannels(['manifest', '--platform', 'teams']);
+    expect(code).toBe(0);
+    expect(requests).toEqual([
+      { url: 'https://api.test/v1/projects/proj_1/channels/teams/manifest', method: 'GET', body: undefined },
+    ]);
+    expect(JSON.parse(stdout)).toEqual(TEAMS_MANIFEST);
+  });
+
+  test('manifest on a host with no Teams bot surfaces the 409 and exits 1', async () => {
+    state.oauthAvailable = false;
+    const code = await runChannels(['manifest', '--platform', 'teams']);
+    expect(code).toBe(1);
+    expect(stripAnsi(stderr)).toContain('Teams is not configured on this server');
+    expect(stdout).toBe('');
+  });
+
   test('status not connected → points at `kortix channels connect --platform teams`', async () => {
     const code = await runChannels(['status', '--platform', 'teams']);
     expect(code).toBe(0);
@@ -337,7 +509,13 @@ describe('kortix channels --platform teams', () => {
   // connected — printing "not connected" for it (the old `!orgInstalled`
   // shortcut) sent users back to a consent flow that had already succeeded.
   test('status: tenant bound, catalog publish still running → connected + "publishing"', async () => {
-    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: null, publishState: 'publishing', publishError: null };
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      orgInstalled: false,
+      catalogAppId: null,
+      publishState: 'publishing',
+      publishError: null,
+    };
     const code = await runChannels(['status', '--platform', 'teams']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
@@ -364,7 +542,13 @@ describe('kortix channels --platform teams', () => {
   });
 
   test('status: submitted for admin review → connected + "review"', async () => {
-    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: 'sub-9', publishState: 'review', publishError: null };
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      orgInstalled: false,
+      catalogAppId: 'sub-9',
+      publishState: 'review',
+      publishError: null,
+    };
     const code = await runChannels(['status', '--platform', 'teams']);
     expect(code).toBe(0);
     const out = stripAnsi(stdout);
@@ -423,7 +607,13 @@ describe('kortix channels --platform teams', () => {
   });
 
   test('status --json exposes publishState and publishError verbatim', async () => {
-    teamsInstall = { ...TEAMS_INSTALLATION, orgInstalled: false, catalogAppId: null, publishState: 'failed', publishError: 'boom' };
+    teamsInstall = {
+      ...TEAMS_INSTALLATION,
+      orgInstalled: false,
+      catalogAppId: null,
+      publishState: 'failed',
+      publishError: 'boom',
+    };
     const code = await runChannels(['status', '--platform', 'teams', '--json']);
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout);
@@ -485,15 +675,13 @@ describe('kortix channels --platform teams', () => {
     const code = await runChannels(['disconnect', '--platform', 'teams']);
     expect(code).toBe(0);
     expect(
-      requests.some(
-        (r) => r.method === 'DELETE' && r.url.includes('/channels/teams/installation'),
-      ),
+      requests.some((r) => r.method === 'DELETE' && r.url.includes('/channels/teams/installation')),
     ).toBe(true);
     expect(stripAnsi(stdout)).toContain('Disconnected');
   });
 
-  test('default (no --platform) still routes to Slack', async () => {
-    const code = await runChannels(['status']);
+  test('explicit Slack status only requests Slack', async () => {
+    const code = await runChannels(['status', '--platform', 'slack']);
     expect(code).toBe(0);
     expect(requests.some((r) => r.url.includes('/channels/slack/installation'))).toBe(true);
     expect(requests.some((r) => r.url.includes('/channels/teams/'))).toBe(false);
@@ -502,6 +690,41 @@ describe('kortix channels --platform teams', () => {
 
 // Every Slack binding on dev listed as a bare `C0…` id (2026-10-02): no Slack
 // name lookup had ever succeeded. The CLI reads names the way the web does.
+describe('flag-first channels dispatch', () => {
+  test('dispatches --json bindings to bindings, not Slack status', async () => {
+    expect(await runChannels(['--json', 'bindings'])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ projectDefaultAgent: null, bindings: [] });
+    expect(requests.some((r) => r.url.includes('/channels/slack/installation'))).toBe(false);
+  });
+
+  test('removes platform values before selecting connect', async () => {
+    expect(await runChannels(['--platform', 'teams', 'connect'])).toBe(0);
+    expect(stdout).toContain(TEAMS_CONSENT_URL);
+    expect(requests.some((r) => r.url.includes('/channels/teams/mode'))).toBe(true);
+    expect(requests.some((r) => r.url.includes('/channels/teams/installation'))).toBe(false);
+  });
+
+  test('preserves the nested email status action', async () => {
+    expect(await runChannels(['--json', 'email', 'status'])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({
+      connected: false, mode: { enabled: true, managed_available: true }, installation: null,
+    });
+    expect(requests.some((r) => r.url.includes('/channels/email/mode'))).toBe(true);
+  });
+
+  test('keeps flag-only invocations on status', async () => {
+    expect(await runChannels(['--json', '--platform', 'teams'])).toBe(0);
+    expect(JSON.parse(stdout)).toEqual({ connected: false, installation: null });
+    expect(requests.some((r) => r.url.includes('/channels/teams/installation'))).toBe(true);
+  });
+
+  test('rejects an unknown positional subcommand after flags', async () => {
+    expect(await runChannels(['--json', 'unknown'])).toBe(2);
+    expect(stderr).toContain('unknown subcommand "unknown"');
+    expect(requests).toEqual([]);
+  });
+});
+
 describe('kortix channels bindings', () => {
   const binding = (over: Record<string, unknown>) => ({
     bindingId: 'bnd-0',
@@ -523,8 +746,18 @@ describe('kortix channels bindings', () => {
     bindingsResponse = {
       projectDefaultAgent: 'kortix',
       bindings: [
-        binding({ bindingId: 'bnd-1', channelId: 'C0TEST1', channelName: 'general', channelType: 'channel' }),
-        binding({ bindingId: 'bnd-2', channelId: 'D0TEST1', channelName: 'Sam Rivera', channelType: 'im' }),
+        binding({
+          bindingId: 'bnd-1',
+          channelId: 'C0TEST1',
+          channelName: 'general',
+          channelType: 'channel',
+        }),
+        binding({
+          bindingId: 'bnd-2',
+          channelId: 'D0TEST1',
+          channelName: 'Sam Rivera',
+          channelType: 'im',
+        }),
         binding({ bindingId: 'bnd-3', channelId: 'C0GONE1', channelUnavailable: true }),
         binding({ bindingId: 'bnd-4', channelId: 'C0TEST4' }),
       ],
@@ -543,8 +776,18 @@ describe('kortix channels bindings', () => {
     bindingsResponse = {
       projectDefaultAgent: 'kortix',
       bindings: [
-        binding({ bindingId: 'bnd-1', channelId: 'C0TEST1', channelName: 'general', channelType: 'channel' }),
-        binding({ bindingId: 'bnd-2', channelId: 'D0TEST1', channelName: 'Sam Rivera', channelType: 'im' }),
+        binding({
+          bindingId: 'bnd-1',
+          channelId: 'C0TEST1',
+          channelName: 'general',
+          channelType: 'channel',
+        }),
+        binding({
+          bindingId: 'bnd-2',
+          channelId: 'D0TEST1',
+          channelName: 'Sam Rivera',
+          channelType: 'im',
+        }),
       ],
     };
     expect(await runChannels(['bind', 'bnd-1', '--agent', 'reviewer'])).toBe(0);

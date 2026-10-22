@@ -1,7 +1,7 @@
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validateOAuthAccessToken, oauthScopeAllowsPath } from '../oauth/access-token';
-import { auditLoginFail, auditLoginSuccess } from '../shared/auth-audit';
+import { auditLoginFail, auditLoginSuccess } from './auth-audit';
 import { setSentryUser } from '../lib/sentry';
 import { setContextField } from '../lib/request-context';
 
@@ -18,10 +18,12 @@ export async function applyOAuthAccessTokenPrincipal(c: Context, token: string):
     throw new HTTPException(401, { message: result.error || 'Invalid OAuth access token' });
   }
   const scopes = result.scopes ?? [];
-  if (!oauthScopeAllowsPath(scopes, c.req.path)) {
+  if (!oauthScopeAllowsPath(scopes, c.req.path, c.req.method)) {
     auditLoginFail({ c, reason: 'insufficient_scope', authType: 'oauth', accountId: result.accountId ?? null });
     throw new HTTPException(403, {
-      message: `insufficient_scope: this OAuth token was not granted the "kortix" scope, so it cannot reach ${c.req.path}`,
+      message: scopes.includes('kortix')
+        ? `insufficient_scope: an OAuth token cannot ${c.req.method} ${c.req.path} (credentials, sign-in and account deletion need the user's own session or PAT)`
+        : `insufficient_scope: this OAuth token was not granted the "kortix" scope, so it cannot reach ${c.req.path}`,
     });
   }
   c.set('userId', result.userId);

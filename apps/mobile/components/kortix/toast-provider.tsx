@@ -19,7 +19,7 @@ import { Toaster, toast as sonner } from 'sonner-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useToastIcons, useToastSkin } from './toast';
+import { ToastEntityIcon, undoActionStyles, useToastIcons, useToastSkin } from './toast';
 import { haptics } from '@/lib/haptics';
 import {
   TOAST_DEFAULT_DURATION_MS,
@@ -28,24 +28,24 @@ import {
   toastDuration,
   toastErrorMessage,
   toastHaptic,
+  toastDescription,
   toastKeepsCloseButton,
   resolveToastMessage,
   type ToastOptions,
   type ToastType,
 } from '@/lib/ui/toast-model';
 
-export type { ToastAction, ToastOptions, ToastType } from '@/lib/ui/toast-model';
 
 type ShowToast = (message: string, options?: ToastOptions) => string;
 
-export interface ToastPromiseMessages<T> {
+interface ToastPromiseMessages<T> {
   loading: string;
   success: string | ((data: T) => string);
   /** Omit to show no error toast (the promise still rejects), like web's `loadingToast`. */
   error?: string | ((error: unknown) => string);
 }
 
-export interface ToastApi {
+interface ToastApi {
   success: ShowToast;
   error: ShowToast;
   info: ShowToast;
@@ -70,14 +70,27 @@ const SHOW: Record<ToastType, (message: string, data?: Record<string, unknown>) 
   loading: (m, d) => sonner.loading(m, d),
 };
 
+/**
+ * The scheme the toasts draw in. `show` runs outside React, so the one
+ * `ToastProvider` mirrors `useColorScheme` here for the per-toast pieces
+ * (the entity tile, the undo key) that pick their own colours.
+ */
+let isDarkScheme = false;
+
 function show(type: ToastType, message: string, options?: ToastOptions): string {
   const duration = toastDuration(type, options?.duration);
   const buzz = toastHaptic(type);
   // An update in place (`{ id }`) is the same toast, so it does not buzz again.
   if (buzz && !options?.id) haptics[buzz]();
+  const description = toastDescription(options);
+  const undo = options?.action?.kind === 'undo' ? undoActionStyles(isDarkScheme) : null;
   const id = SHOW[type](message, {
     ...(options?.id ? { id: options.id } : null),
-    ...(options?.description ? { description: options.description } : null),
+    ...(description ? { description } : null),
+    ...(options?.entity && type !== 'loading'
+      ? { icon: <ToastEntityIcon icon={options.entity.icon} type={type} isDark={isDarkScheme} /> }
+      : null),
+    ...(undo ? { actionButtonStyle: undo.button, actionButtonTextStyle: undo.text } : null),
     // sonner-native takes no Infinity: a toast that never leaves is one that
     // is not dismissible by a timer, so it gets the close button instead.
     ...(Number.isFinite(duration) ? { duration } : { duration: Number.MAX_SAFE_INTEGER }),
@@ -130,6 +143,7 @@ const ToastContext = React.createContext<ToastContextType | undefined>(undefined
 /** Mounts the toaster and provides `useToast()`. One per app, in `app/_layout.tsx`. */
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const { colorScheme } = useColorScheme();
+  isDarkScheme = colorScheme === 'dark';
   // `offset` measures from the screen edge, not the safe area, so a toast
   // landed under the status bar / notch (Jay, 2026-09-22).
   const insets = useSafeAreaInsets();

@@ -1,68 +1,60 @@
 <!--
-  Every change to `main`, `staging` or `prod` goes through a pull request (SOC 2 CC8.1).
-  Procedure: CONTRIBUTING.md and the `contributing` skill (.agents/skills/contributing).
+  Written for a human reviewer who decides "merge or iterate" without reading the diff.
+  Keep only what helps that decision. Delete a section that does not apply; never write "N/A".
+  How to write each section: the `create-pr` skill (.agents/skills/create-pr).
 
-  - A pull request into `main` runs no CI. Run `pnpm test` and the changed behaviour on
-    your local stack before you open it; list the commands below. Add `test` or
-    `preview` only for one explicit CI run.
-  - `prod` needs an approving review and the `full suite + quality gates` check.
-    `main` / `staging` need the pull request only. The author owns what was verified.
-  - This repo is public. Use synthetic data only, in text, screenshots, and video.
+  - English only, title and body. Title: `type(scope): <outcome a user notices>`.
+  - Every change to `dev`, `staging` or `prod` goes through a pull request (SOC 2 CC8.1).
+    A pull request into `dev` runs no CI. The author owns what was verified.
+  - This repo is public. Synthetic data only, in text, screenshots and video.
 -->
 
 ## Summary
 
-<!-- What changes, and why. One short paragraph. Link the issue if there is one. -->
+<!-- 2–5 sentences. What behavior is different now, for whom (user, admin, agent, operator),
+     on which surface (route, screen, CLI command, API), and why. Say what happened before.
+     Describe what users see or what the system does, not the code. Link the issue. -->
 
 Closes #
 
-## Demo video
+## Demo
 
-<!--
-  Required. Record the change with agent-browser on your local stack
-  (`agent-browser record start output/pr/demo.mp4 http://localhost:<web port>/<route> --cursor`).
-  Keep the line below. Run from the repo root:
-    gh pr create --base main --body-file output/pr/body.md --attach ./output/pr/demo.mp4
-  gh uploads the file and replaces the path with a video player.
-  No user-visible surface: record the terminal or the rendered result, or state why a
-  video adds nothing.
--->
+<!-- Required. Bold caption first: surface, route, viewport, state, and what to watch for.
+     Record with agent-browser on your local stack (the `contributing` skill, step 4), then:
+       gh pr create --base dev --body-file output/pr/body.md --attach ./output/pr/demo.mp4
+     gh uploads the file and replaces the path below with a video player.
+     No user-visible surface: record the terminal, or say in one sentence why a video adds nothing. -->
 
 ![Demo](./output/pr/demo.mp4)
 
+## What is affected
 
-## Type of change
+<!-- Who and what: users and roles, routes and screens, CLI, SDK surface, data, migrations,
+     auth / IAM, billing, secrets, background workers, integrations, self-host.
+     Also say what is NOT affected when a reviewer would plausibly worry about it. -->
 
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor / chore
-- [ ] Docs / skills
-- [ ] Infrastructure / CI
-- [ ] Security fix
-- [ ] Breaking change
+## Verification
 
-## How was this tested?
+| Command / scenario | Result | What it proves |
+| --- | --- | --- |
+|  |  |  |
 
-<!-- The exact commands you ran in your box and their results: the narrowest test,
-     `pnpm test`, and the changed behaviour on the local stack. -->
+<!-- One row per check that matters. Result: PASS / FAIL / BLOCKED / SKIPPED + reason.
+     Name the commit and the environment (worktree stack, dev). Pending CI is not PASS.
+     End with 1–2 sentences: why the change works, and what is not verified. -->
 
-## Security & data review
+## Risks and rollback
 
-- [ ] No secrets, keys, or credentials are committed (verified by secret scan / review)
-- [ ] Authorization checks are in place for any new/changed endpoints (IAM / access control)
-- [ ] User input is validated (e.g. Zod) and output is safe
-- [ ] No sensitive data (tokens, PII, secrets) is written to logs
-- [ ] No customer names, people's names, emails, or real prod IDs in the code, commits, this PR text, or the demo video (AGENTS.md → "NEVER write customer data or PII")
-- [ ] DB schema / migration changes are reviewed and reversible
-- [ ] Touches auth / IAM / crypto / billing / migrations → requested the relevant code owner
+<!-- Regressions, migrations, flags, env vars, rollout order, decisions the reviewer must make,
+     and how to revert. "None" only when that is true. -->
 
-## Rollout / rollback
+## Reviewer focus
 
-<!-- Migrations, feature flags, env vars, and how to revert if this misbehaves. -->
+<!-- 1–3 concrete checks, highest risk first, each with the file or screen to look at. -->
 
-## Reviewer checklist
+<details>
+<summary>Changed files</summary>
 
-- [ ] Change is scoped and understandable
-- [ ] The demo video shows the change working
-- [ ] Tests cover the change, and `pnpm test` passed locally
-- [ ] Security & data review above is satisfied
+<!-- Paths grouped by responsibility, one short line each. -->
+
+</details>

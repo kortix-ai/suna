@@ -1,18 +1,19 @@
 import { projects } from '@kortix/db';
+import { assertRepositoryConnected } from './git';
+import { REPOSITORY_DISCONNECTED_CODE, isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { eq } from 'drizzle-orm';
-import { config } from '../../config';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
 import { isLeader } from '../../shared/leader-election';
 import { claimDueScheduleSlots, claimTriggerExecutions, markTriggerExecutionDispatched, markTriggerExecutionFailed, markTriggerExecutionSkipped, markTriggerExecutionSucceeded, type TriggerExecutionRow } from '../trigger-execution-store';
 import type { GitTriggerSpec } from '../triggers';
 import { drainMonitorEvents } from './monitor-observer';
 import { renderPromptTemplate } from './trigger-payload';
 import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
+import { raiseTriggerAlert } from './trigger-alerts';
 import { runProjectConnectorSweep } from './trigger-connector-sweep';
-import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, triggerSchedulerIntervalMs, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, triggersPausedForProject, withTimeout, globalForProjectTriggers, type TriggerSchedulerTimer } from './trigger-scheduler-state';
+import { schedulerHealth, triggerFireTimeoutMs, triggerScheduleClaimLimit, triggerExecutionConcurrency, connectorSweepIntervalMs, initialCatalogBackfillIncomplete, mapWithConcurrency, schedulerSweepIsStale, automaticFirePauseReason, withTimeout } from './trigger-scheduler-state';
 
-export let triggerSchedulerTimer: TriggerSchedulerTimer | null = null;
 export let triggerSweepRunning = false;
 let triggerExecutionDrainRunning = false;
 
@@ -27,7 +28,6 @@ export let lastConnectorSweepAt = 0;
 
 export async function runProjectTriggerSweep(now = new Date()): Promise<{
   projects: number;
-  projectFailures: number;
   scanned: number;
   fired: number;
   queued: number;
@@ -37,7 +37,6 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
   if (triggerSweepRunning) {
     return {
       projects: 0,
-      projectFailures: 0,
       scanned: 0,
       fired: 0,
       queued: 0,
@@ -50,7 +49,6 @@ export async function runProjectTriggerSweep(now = new Date()): Promise<{
   schedulerHealth.lastSweepStartedAt = now.toISOString();
   const result = {
     projects: 0,
-    projectFailures: 0,
     scanned: 0,
     fired: 0,
     queued: 0,
@@ -94,7 +92,6 @@ export async function runGitTriggerSweep(
   now: Date,
   accumulator: {
     projects: number;
-    projectFailures: number;
     scanned: number;
     fired: number;
     queued: number;
@@ -130,17 +127,32 @@ async function executeTriggerExecution(
     .from(projects)
     .where(eq(projects.projectId, row.projectId))
     .limit(1);
-  if (!project || project.status !== 'active' || triggersPausedForProject(project.metadata)) {
+  // The project's own pause, then the account's Pause all automations (KRTX-1721).
+  const paused = project && project.status === 'active' ? await automaticFirePauseReason(project) : null;
+  if (!project || project.status !== 'active' || paused) {
     const reason = !project
       ? 'project not found'
       : project.status !== 'active'
         ? 'project is not active'
-        : 'project triggers are paused';
+        : paused!;
     await markTriggerExecutionSkipped({
       row,
       skippedAt: new Date(),
       reason,
     });
+    return 'skipped';
+  }
+
+  // A disconnected repository (KRTX-2955): skip the run with the cause, no
+  // retries and no alert per slot. The trigger shows the cause as its last
+  // error; the next slot after a reconnect fires normally.
+  try {
+    await assertRepositoryConnected(project);
+  } catch (error) {
+    if (!isRepositoryDisconnectedError(error)) throw error;
+    const skippedAt = new Date();
+    await markTriggerExecutionSkipped({ row, skippedAt, reason: `${error.code}: ${error.message}` });
+    await markGitTriggerAttemptFailed(row.projectId, row.slug, skippedAt, error.message).catch(() => {});
     return 'skipped';
   }
 
@@ -169,6 +181,7 @@ async function executeTriggerExecution(
     const message = error instanceof Error ? error.message : String(error);
     const state = await markTriggerExecutionFailed({ row, failedAt, error: message });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, failedAt, message).catch(() => {});
+    if (state === 'dead_lettered') await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error: message });
     return state === 'queued' ? 'queued' : 'failed';
   }
 }
@@ -177,7 +190,13 @@ async function recordTriggerExecutionResult(
   row: TriggerExecutionRow,
   result: Awaited<ReturnType<typeof fireGitTrigger>>,
   completedAt: Date,
-): Promise<'fired' | 'queued' | 'failed'> {
+): Promise<'fired' | 'queued' | 'failed' | 'skipped'> {
+    // A run cap held the slot (KRTX-1721): a skipped run, not a failure. The
+    // trigger keeps its last status; fireGitTrigger already told the watchers.
+    if (result.status === 'skipped') {
+      await markTriggerExecutionSkipped({ row, skippedAt: completedAt, reason: result.reason ?? 'skipped' });
+      return 'skipped';
+    }
     if (result.status === 'fired' || result.status === 'queued') {
       // `queued` means two different things to `fireGitTrigger`. A reuse/keyed/
       // pinned fire that hands the prompt to an EXISTING session (`reason:
@@ -200,7 +219,9 @@ async function recordTriggerExecutionResult(
           sessionId: result.sessionId,
           commandId: result.commandId,
         }),
-        markGitTriggerFired(row.projectId, row.slug, completedAt, runtimeStatus),
+        // The handoff shows as `fired`, but only a fire that reached a session
+        // ends an alert streak; the prompt's delivery ends it (KRTX-1742).
+        markGitTriggerFired(row.projectId, row.slug, completedAt, runtimeStatus, { endsAlert: result.status === 'fired' }),
       ]);
       return result.status;
     }
@@ -214,10 +235,18 @@ async function recordTriggerExecutionResult(
     const terminal = result.errorCode === 'insufficient_credits'
       || result.errorCode === 'subscription_required'
       || result.errorCode === 'no_account'
+      // The model gate fails identically on every retry until the account
+      // gains a usable model; retrying only delays the terminal state the
+      // same way a billing rejection does.
+      || result.errorCode === 'no_usable_model'
       // The fire already paused the reminder; a retry cannot bring the session back.
-      || result.errorCode === 'reminder_session_gone';
+      || result.errorCode === 'reminder_session_gone'
+      // No retry reaches a repository until a person reconnects GitHub.
+      || result.errorCode === REPOSITORY_DISCONNECTED_CODE;
     const state = await markTriggerExecutionFailed({ row, failedAt: completedAt, error, terminal });
     await markGitTriggerAttemptFailed(row.projectId, row.slug, completedAt, error);
+    // Only the dead letter alerts the watchers: a retried attempt may still work.
+    if (state === 'dead_lettered') await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error });
     return state === 'queued' ? 'queued' : 'failed';
 }
 
@@ -235,8 +264,14 @@ export async function drainTriggerExecutionQueue(
       workerId: `trigger-execution:${process.pid}:${now.getTime()}`,
       limit: triggerScheduleClaimLimit(),
     });
+    // A throw outside the execution's own try (the project read, the failure
+    // mark) must not reject the drain while sibling fires still run: the
+    // in-flight guard would clear under them.
     const outcomes = await mapWithConcurrency(rows, triggerExecutionConcurrency(), (row) =>
-      executeTriggerExecution(row),
+      executeTriggerExecution(row).catch((error): 'failed' => {
+        logger.error('[trigger-executions] execution threw', { executionId: row.executionId, error: error instanceof Error ? error.message : String(error) });
+        return 'failed';
+      }),
     );
     const result = { fired: 0, queued: 0, failed: 0, skipped: 0 };
     for (const outcome of outcomes) result[outcome] += 1;
@@ -252,87 +287,71 @@ export async function drainTriggerExecutionQueue(
   }
 }
 
-export function startProjectTriggerScheduler(): void {
-  if ((config as any).KORTIX_TRIGGER_SCHEDULER_ENABLED === false) return;
-  if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
-    clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
+/** One scheduler tick: stall watchdog, trigger sweep + execution drain, monitor drain, connector backstop. */
+export function runProjectTriggerSchedulerTick(): void {
+  // Watchdog: if we're the leader but the sweep has stalled (started and never
+  // completed within the stale window), make it LOUD. A silent dead scheduler
+  // is what turned a single hung fire into an ~18h fleet-wide outage.
+  if (schedulerSweepIsStale(isLeader())) {
+    console.error(
+      '[project-triggers] SCHEDULER STALLED — leader but last sweep has not completed',
+      {
+        lastSweepStartedAt: schedulerHealth.lastSweepStartedAt,
+        lastSweepCompletedAt: schedulerHealth.lastSweepCompletedAt,
+      },
+    );
   }
-  const tickBody = () => {
-    // Watchdog: if we're the leader but the sweep has stalled (started and never
-    // completed within the stale window), make it LOUD. A silent dead scheduler
-    // is what turned a single hung fire into an ~18h fleet-wide outage.
-    if (schedulerSweepIsStale(isLeader())) {
-      console.error(
-        '[project-triggers] SCHEDULER STALLED — leader but last sweep has not completed',
-        {
-          lastSweepStartedAt: schedulerHealth.lastSweepStartedAt,
-          lastSweepCompletedAt: schedulerHealth.lastSweepCompletedAt,
-        },
-      );
-    }
 
-    runProjectTriggerSweep()
-      .then(() => drainTriggerExecutionQueue())
-      .then((result) => {
-        if (result.fired || result.queued || result.failed || result.skipped) {
-          console.log('[project-triggers] execution drain completed', result);
-        }
-      })
-      .catch((error) => {
-        console.error('[project-triggers] scheduler tick failed:', error);
-      });
+  runProjectTriggerSweep()
+    .then(() => drainTriggerExecutionQueue())
+    .then((result) => {
+      if (result.fired || result.queued || result.failed || result.skipped) {
+        console.log('[project-triggers] execution drain completed', result);
+      }
+    })
+    .catch((error) => {
+      console.error('[project-triggers] scheduler tick failed:', error);
+    });
 
-    // Monitor events land in their own append-only log, so they drain beside
-    // the execution queue rather than through it — one slow monitor fire must
-    // not stall a due cron slot, and vice versa.
-    drainMonitorEvents()
-      .then((result) => {
-        if (result.fired || result.failed || result.skipped) {
-          console.log('[project-monitors] event drain completed', result);
-        }
-      })
-      .catch((error) => {
-        console.error('[project-monitors] event drain failed:', error);
-      });
+  // Monitor events land in their own append-only log, so they drain beside
+  // the execution queue rather than through it — one slow monitor fire must
+  // not stall a due cron slot, and vice versa.
+  drainMonitorEvents()
+    .then((result) => {
+      if (result.fired || result.failed || result.skipped) {
+        console.log('[project-monitors] event drain completed', result);
+      }
+    })
+    .catch((error) => {
+      console.error('[project-monitors] event drain failed:', error);
+    });
 
-    // Connector reconcile backstop — slower cadence than the trigger sweep so
-    // we don't re-read every manifest each tick. Catches out-of-band manifest
-    // edits (raw git push / CLI) and heals any DB drift / retries error rows.
-    if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
-      lastConnectorSweepAt = Date.now();
-      runProjectConnectorSweep()
-        .then(() => {
-          if (initialCatalogBackfillIncomplete(schedulerHealth)) {
-            // On a new scheduler release, drain the bounded catalog batches
-            // continuously instead of waiting two minutes between each batch.
-            // Once both cursors complete a full cycle with no pending rows, the
-            // normal connector cadence resumes. Individual project failures
-            // retry on that bounded cadence; a permanently inaccessible repo
-            // must not force an unbounded full-fleet reconciliation loop.
-            lastConnectorSweepAt = 0;
-          }
-        })
-        .catch((error) => {
+  // Connector reconcile backstop — slower cadence than the trigger sweep so
+  // we don't re-read every manifest each tick. Catches out-of-band manifest
+  // edits (raw git push / CLI) and heals any DB drift / retries error rows.
+  if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
+    lastConnectorSweepAt = Date.now();
+    runProjectConnectorSweep()
+      .then(() => {
+        if (initialCatalogBackfillIncomplete(schedulerHealth)) {
+          // On a new scheduler release, drain the bounded catalog batches
+          // continuously instead of waiting two minutes between each batch.
+          // Once both cursors complete a full cycle with no pending rows, the
+          // normal connector cadence resumes. Individual project failures
+          // retry on that bounded cadence; a permanently inaccessible repo
+          // must not force an unbounded full-fleet reconciliation loop.
           lastConnectorSweepAt = 0;
-          console.error('[project-connectors] sweep failed:', error);
-        });
-    }
-  };
-  // Everything the tick starts (sweep, drains, connector reconcile) inherits
-  // the worker context through AsyncLocalStorage.
-  const tick = () => void runWorkerTick('trigger-scheduler', tickBody);
-  tick();
-  triggerSchedulerTimer = setInterval(tick, triggerSchedulerIntervalMs());
-  globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = triggerSchedulerTimer;
+        }
+      })
+      .catch((error) => {
+        lastConnectorSweepAt = 0;
+        console.error('[project-connectors] sweep failed:', error);
+      });
+  }
 }
 
-export function stopProjectTriggerScheduler(): void {
-  if (triggerSchedulerTimer) {
-    clearInterval(triggerSchedulerTimer);
-    triggerSchedulerTimer = null;
-  }
-  if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
-    clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
-    globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer = null;
-  }
-}
+export {
+  startProjectTriggerScheduler,
+  stopProjectTriggerScheduler,
+  triggerSchedulerTimer,
+} from '../../workers/trigger-scheduler-worker';

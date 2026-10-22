@@ -17,7 +17,7 @@ import { join, relative } from 'node:path';
 //     path-based proxy edge.
 //
 // The repo already has the guard for this exact collision —
-// `projects/lib/caller-session.ts` `callerKortixSessionId`, whose docstring lists
+// `middleware/caller-session.ts` `callerKortixSessionId`, whose docstring lists
 // three prior outages of the same shape. This test is what stops the next call
 // site from reaching for the obvious context var instead.
 

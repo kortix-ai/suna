@@ -461,6 +461,19 @@ height of `sm`) and an empty `'icon-md'` entry to `buttonTextVariants`. No
 other change. Part of the same `button.tsx` deviation, not a new forked file.
 Re-apply after any `add --all --overwrite`.
 
+### button.tsx `icon-lg` size — DEVIATES (2026-10-20)
+
+Jay, 2026-10-20: the iOS header buttons (hamburger, Go back, the thread's
+`···`) "feel smaller" than the system's 44pt bar buttons. Stock has `icon`
+(40pt) as its largest icon size, and sizing a `Button` by class is banned
+(CLAUDE.md → Button).
+
+Decision: add `size['icon-lg']` to `buttonVariants` as `h-11 w-11` (44pt, the
+height of `lg`) and an empty `'icon-lg'` entry to `buttonTextVariants`. No
+other change. Only `HEADER_BUTTON_SIZE` (`components/kortix/header-button.ts`)
+selects it, on iOS; Android keeps `icon`. Part of the same `button.tsx`
+deviation, not a new forked file. Re-apply after any `add --all --overwrite`.
+
 Consumers of `size="icon-md"`: `components/kortix/composer.tsx` (add, Stop,
 send) and `components/session/SessionChatInput.tsx` (AutoContinue). Each passes
 `hitSlop={COMPOSER_CONTROL_HIT_SLOP}` (4pt), so the touch target stays 44pt.
@@ -629,3 +642,28 @@ passes the `className` color from `style.color` to the `color` prop, because
 Phosphor fills with `color` and ignores `style.color` (default `#000`). An
 explicit `color` prop still wins. `size` mapping and `TextClassContext` are
 unchanged from stock.
+
+## 2026-10-09 — KRTX-1292 registry-file deltas (Kortix refactor sweep)
+
+All five overlay-portal registry files (dialog, alert-dialog, context-menu,
+popover, select) and progress/badge carry the deltas below. Re-apply after any
+`add --all --overwrite`.
+
+- **dialog.tsx, alert-dialog.tsx, context-menu.tsx, popover.tsx, select.tsx —
+  shared FullWindowOverlay.** Stock each defines a local
+  `const FullWindowOverlay = Platform.OS === 'ios' ? RNFullWindowOverlay : React.Fragment;`
+  from a direct `react-native-screens` import. The fork deletes the local const
+  and imports the one shared primitive:
+  `import { FullWindowOverlay } from '@/components/kortix/full-window-overlay';`
+  (moved out of `components/ui/` in KRTX-1292 — it is app-owned, not registry
+  output; iOS-only gorhom wrap, `React.Fragment` elsewhere). Function bodies
+  unchanged.
+- **progress.tsx — one platform decision, no fallback.** Stock:
+  `Platform.select({ web, native, default: NullIndicator })` with per-component
+  always-false `Platform.OS` guards. The fork renders
+  `const Indicator = Platform.OS === 'web' ? WebIndicator : NativeIndicator`
+  (module scope; iOS and Android both match `native`, so the `default`
+  NullIndicator arm was unreachable) and drops the two guards and
+  `NullIndicator`. Rendering unchanged on all three platforms.
+- **badge.tsx — `badgeTextVariants` no longer exported** (dropped from the
+  `export {}` list; zero importers, internal only). Variant palette unchanged.

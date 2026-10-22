@@ -9,11 +9,12 @@ import type { RuntimeClient } from '../runtime/client';
 import { bindProjectAccessResources } from './project-access-resources';
 import { bindProjectAccessSecurity } from './project-access-security';
 import { projectConnections } from './project-connections';
-import { connectorDataPlane } from './project-connectors';
+import { connectorDataPlane, connectorHandle } from './project-connectors';
 import { bindProjectCore } from './project-core';
 import { bindProjectOperations } from './project-operations';
 import { bindProjectPlatformResources } from './project-platform-resources';
 import { bindProjectPlatformSecurity } from './project-platform-security';
+import { captureClient } from './capture';
 /**
  * createKortix — the single opinionated entry point to the Kortix data layer.
  *
@@ -37,10 +38,32 @@ import { getClient } from '../runtime/client';
 
 import { type KortixPlatformConfig, configureKortix } from '../http/config';
 import * as P from '../rest/projects-client';
+import { getMobileClientPolicy } from '../rest/platform-client/client-policy';
 
 function runtime(): RuntimeClient {
   return getClient();
 }
+
+// The config the last GLOBAL client wrote. A second global client with another
+// backend or token source re-points every earlier client, so it is a bug in a
+// multi-tenant process. One warning per process, never an error: a host that
+// re-creates its one client (HMR, a re-login) is legitimate.
+let lastGlobalConfig: KortixPlatformConfig | null = null;
+let warnedGlobalRepoint = false;
+
+function noteGlobalClient(config: KortixPlatformConfig): void {
+  const previous = lastGlobalConfig;
+  lastGlobalConfig = config;
+  if (warnedGlobalRepoint || !previous) return;
+  if (previous.backendUrl === config.backendUrl && previous.getToken === config.getToken) return;
+  warnedGlobalRepoint = true;
+  console.warn(
+    '[kortix] createKortix() was called again with a different backendUrl or getToken. ' +
+      'Every client shares one process-global config, so the earlier client now uses the new one. ' +
+      'For several tenants in one process use createScopedKortix() from @kortix/sdk/server.',
+  );
+}
+
 export function createKortix(config: KortixPlatformConfig, opts?: { global?: boolean }) {
   // Wire the platform seam once. All wrapped functions read it.
   //
@@ -49,6 +72,7 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
   // `AsyncLocalStorage` scope `createScopedKortix` wraps every method call in,
   // so this returned facade never touches (or is affected by) the module-global
   // singleton other concurrent `createKortix()` calls in the same process share.
+  if (opts?.global !== false) noteGlobalClient(config);
   configureKortix(config, opts);
 
   const resolvePreviewOptsForSandbox = bindPreviewOptions(config);
@@ -67,6 +91,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
       ...bindProjectOperations(projectId, connections),
       ...bindProjectPlatformResources(projectId),
       ...bindProjectPlatformSecurity(projectId),
+      /** One connector of this project: `run`, `call`, `describe`, `accounts`, `paginate`. */
+      connector: <S extends string>(slug: S) => connectorHandle(projectId, slug),
       session: (sessionId: string) =>
         session(projectId, sessionId, config, resolvePreviewOptsForSandbox),
     };
@@ -85,6 +111,8 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     projects,
     /** Connector calls scoped by an agent/session token when no project id is available. */
     connectors: connectorDataPlane(),
+    /** One connector in the token's scope (a project-scoped token or a session token). */
+    connector: <S extends string>(slug: S) => connectorHandle(undefined, slug),
     project,
     session: (projectId: string, sessionId: string) =>
       session(projectId, sessionId, config, resolvePreviewOptsForSandbox),
@@ -100,6 +128,28 @@ export function createKortix(config: KortixPlatformConfig, opts?: { global?: boo
     connectStatus,
     /** Public marketplace catalog browse + sources (`/v1/marketplace/*`, not project-scoped). */
     marketplace,
+    /** Kortix Capture: `account(id)` (the tenant), the device sign-in approval, and `me` (the agent tool's reads). */
+    capture: captureClient,
+    /**
+     * The caller's notifications (`/v1/notifications/*`): push device tokens
+     * for a native app, the inbox, per-kind push and email preferences, and
+     * Web Push for this browser. Muting one session is `session(pid, sid).setWatch`.
+     * `releaseDeviceToken` needs no token: a signed-out app removes its row.
+     */
+    notifications: {
+      registerDeviceToken: P.registerDeviceToken,
+      unregisterDeviceToken: P.unregisterDeviceToken,
+      releaseDeviceToken: P.releaseDeviceToken,
+      list: P.listNotifications,
+      markRead: P.markNotificationsRead,
+      preferences: P.getNotificationPreferences,
+      updatePreferences: P.updateNotificationPreferences,
+      webPushPublicKey: P.getWebPushPublicKey,
+      registerWebPushSubscription: P.registerWebPushSubscription,
+      unregisterWebPushSubscription: P.unregisterWebPushSubscription,
+    },
+    /** The operator's mobile release policy (`GET /v1/clients/mobile`). Public: needs no token. */
+    mobileClientPolicy: getMobileClientPolicy,
     /** The pasted-API-key UX check — `GET /accounts/me`, never throws. */
     validateToken: P.validateToken,
     /** Escape hatch: the typed opencode client for the active sandbox. */

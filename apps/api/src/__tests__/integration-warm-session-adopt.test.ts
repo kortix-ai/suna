@@ -42,12 +42,14 @@ async function rowOf(sessionId: string) {
   const [row] = await db
     .select({
       metadata: projectSessions.metadata,
+      createdAt: projectSessions.createdAt,
       updatedAt: projectSessions.updatedAt,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId));
   return {
     metadata: (row?.metadata ?? {}) as Record<string, unknown>,
+    createdAt: row?.createdAt,
     updatedAt: row?.updatedAt,
   };
 }
@@ -103,15 +105,44 @@ describe('dropWarmSessionMarkerOnAdopt', () => {
     expect(after?.toISOString()).toBe('2026-08-17T09:30:00.000Z');
   });
 
+  // A warm row is pre-provisioned while the user sits on the project home,
+  // possibly hours before the send. Its insert time is pool bookkeeping, not
+  // when the user started the session: the web session list's hover card
+  // read it and showed "4h" for a session started minutes ago. Adoption is
+  // the user-visible creation.
+  test('resets created_at to the adoption time — a pre-provisioned row was not created by the user', async () => {
+    const sessionId = await seed({ warm: true });
+
+    await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2099-08-17T09:30:00.000Z'));
+
+    const after = (await rowOf(sessionId)).createdAt;
+    expect(after?.toISOString()).toBe('2099-08-17T09:30:00.000Z');
+  });
+
   test('a session that was never warm keeps its updated_at — the WHERE guard bounds the touch', async () => {
     const sessionId = await seed({ source: 'ui' });
-    const before = (await rowOf(sessionId)).updatedAt;
+    const before = await rowOf(sessionId);
 
     await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2026-08-17T09:30:00.000Z'));
 
     const after = await rowOf(sessionId);
-    expect(after.updatedAt?.getTime()).toBe(before?.getTime());
+    expect(after.updatedAt?.getTime()).toBe(before.updatedAt?.getTime());
+    expect(after.createdAt?.getTime()).toBe(before.createdAt?.getTime());
     expect(after.metadata).toEqual({ source: 'ui' });
+  });
+
+  // A `genui` flag change retires warm sessions by tombstoning them with the
+  // marker kept (projects/session-lifecycle/actions.ts retireWarmProjectSessions).
+  // The adoption CAS must refuse that row, or a racing adopt revives it.
+  test('a tombstoned warm session is not adopted — the marker and timestamps stay', async () => {
+    const sessionId = await seed({ warm: true, deletedAt: '2026-08-17T09:00:00.000Z' });
+    const before = await rowOf(sessionId);
+
+    await dropWarmSessionMarkerOnAdopt(sessionId, Date.parse('2026-08-17T09:30:00.000Z'));
+
+    const after = await rowOf(sessionId);
+    expect(after.metadata.warm).toBe(true);
+    expect(after.updatedAt?.getTime()).toBe(before.updatedAt?.getTime());
   });
 
   test('idempotent — a second call finds no marker left and never re-stamps', async () => {

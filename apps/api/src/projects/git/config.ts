@@ -13,10 +13,12 @@ import {
   manifestFormatForPath,
   opencodeConfigDirCandidates,
   parseManifestText,
+  SKILLS_DIR,
   skillDirs,
 } from '@kortix/manifest-schema';
 import { type LoadedAgents, extractAgents } from '../agents';
-import { resolveManifestVerdict } from '../lib/manifest-verdict';
+import { listManagedSkills } from '../../skills/catalog';
+import { disconnectedManifestVerdict, resolveManifestVerdict } from '../lib/manifest-verdict';
 import { listRepoFiles, readManifestFromRepo, readRepoFile } from './files';
 import type { GitBackedProject, ProjectConfigSummary, ProjectFileEntry } from './types';
 
@@ -121,9 +123,26 @@ function parseFrontmatter(raw: string | null) {
   for (const line of raw.slice(3, end).split(/\r?\n/)) {
     const match = line.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);
     if (!match) continue;
-    meta[match[1]] = match[2].trim().replace(/^["']|["']$/g, '');
+    meta[match[1]] = frontmatterScalar(match[2]);
   }
   return meta;
+}
+
+/** Read one scalar the way a YAML writer may have serialized it. A
+ *  double-quoted scalar carries escapes (a writer like `stringifyYaml` emits
+ *  one whenever the text needs quoting); strip the quotes and unescape its
+ *  two escapes. Single-quoted and plain scalars carry no backslash escapes:
+ *  unwrap a matched quote pair, and leave a lone quote character — a plain
+ *  scalar may end in one (`Deploy "v1"`) — exactly where it is. */
+function frontmatterScalar(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (trimmed.length >= 2 && trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
 }
 
 function agentNameFromPath(path: string) {
@@ -183,8 +202,11 @@ export function resolveConfigAgents(
   const nativeByPath = new Map(nativeAgents.map((agent) => [agent.path, agent]));
   return {
     agent_discovery: 'declarative',
+    // The FULL registered roster: a disabled agent stays listed with
+    // `enabled: false` (the SDK pickers' `isSelectableAgent` and the web agents
+    // page's disabled badge already filter it at their own layer). Dropping it
+    // here made GET agents answer a subset of what the manifest registers.
     agents: loadedAgents.specs
-      .filter((spec) => spec.enabled)
       .map((spec) => {
         const file = spec.file ?? resolveFile(spec);
         const native = (file ? nativeByPath.get(file) : undefined) ?? nativeByName.get(spec.name);
@@ -193,6 +215,7 @@ export function resolveConfigAgents(
           path: file ?? native?.path ?? spec.path,
           description: native?.description ?? null,
           mode: native?.mode ?? null,
+          ...(native?.hidden === true ? { hidden: true } : {}),
           model: native?.model ?? null,
           source: 'kortix.yaml' as const,
           enabled: spec.enabled,
@@ -222,7 +245,7 @@ interface ResolvedProjectManifest {
   manifest: Record<string, unknown>;
   loadedAgents: LoadedAgents;
   repoPaths: Set<string>;
-  opencodeDir: string;
+  opencodeDir: string | null;
   openCodeRaw: string | null;
 }
 
@@ -263,6 +286,10 @@ async function resolveProjectManifest(
         raw: parsedManifest,
         format: manifestFormat,
         path: manifestFilePath,
+        // The import origins: an agent declared in an imported (nested YAML)
+        // file is attributed to the file that declares it, not the root
+        // manifest. Without it every spec anchored at the root path.
+        imports: resolved?.imports,
       })
     : hasAgentsDeclaration(manifestRaw)
       ? {
@@ -283,8 +310,9 @@ async function resolveProjectManifest(
   const opencodeDir =
     opencodeCandidates.find(
       (dir) => repoPaths.has(`${dir}/opencode.jsonc`) || repoPaths.has(`${dir}/opencode.json`),
-    ) ?? opencodeCandidates[0]!;
-  const openCodeRaw = await optionalFile(project, `${opencodeDir}/opencode.jsonc`);
+    ) ?? opencodeCandidates[0] ?? null;
+  // v3 has no OpenCode config dir (no candidates).
+  const openCodeRaw = opencodeDir ? await optionalFile(project, `${opencodeDir}/opencode.jsonc`) : null;
   return {
     repoFiles,
     resolved,
@@ -338,6 +366,7 @@ async function scanAgents(
         path,
         description: meta.description || null,
         mode: meta.mode || null,
+        ...(meta.hidden === 'true' ? { hidden: true } : {}),
         model: meta.model || null,
       };
     },
@@ -412,6 +441,29 @@ async function scanCommands(
   );
 }
 
+/**
+ * The config of a project whose repository cannot be reached: nothing was
+ * read, and `manifest_version.unknown_reason` says why instead of
+ * `unreadable` (KRTX-2955).
+ */
+export function disconnectedProjectConfig(): ProjectConfigSummary {
+  return {
+    is_kortix_repo: false,
+    signals: { manifest: false, openCodeConfig: false, openCodeAgent: false },
+    manifest_raw: null,
+    manifest: {},
+    manifest_version: disconnectedManifestVerdict(),
+    env: { required: [], optional: [] },
+    open_code_raw: null,
+    default_agent: null,
+    open_code_default_agent: null,
+    agent_discovery: 'declarative',
+    agents: [],
+    skills: [],
+    commands: [],
+  };
+}
+
 export async function loadProjectConfig(
   project: GitBackedProject,
   files?: ProjectFileEntry[],
@@ -429,13 +481,28 @@ export async function loadProjectConfig(
     openCodeRaw,
   } = await resolveProjectManifest(project, candidatePaths, files);
 
+  if (manifestSchemaVersionFor(manifest) >= 3) {
+    return {
+      ...(await loadProjectConfigV3(project, manifest, loadedAgents, repoPaths)),
+      is_kortix_repo: true,
+      signals: { manifest: true, openCodeConfig: false, openCodeAgent: loadedAgents.specs.length > 0 },
+      manifest_raw: resolved?.rootContent ?? manifestRaw,
+      manifest,
+      manifest_version: resolveManifestVerdict({ raw: manifestRaw, format: manifestFormat, path: resolved?.path ?? null }),
+      env: envRequirements(manifest),
+      open_code_raw: null,
+      default_agent: loadedAgents.defaultAgent ?? null,
+      open_code_default_agent: loadedAgents.defaultAgent ?? null,
+    };
+  }
+
   // Agents live in `agents/` and, in the legacy layout, `<config dir>/agents/`.
   // The trailing `s?` there is opencode's own historical quirk (it accepts
   // both `agent/` and `agents/`); we follow suit. A declared agent's own
   // `file` (or first existing conventional path) is listed too, wherever it is.
   const legacyDir = escapeRegExp(legacyConfigDir(manifest));
   const agentRe = new RegExp(`^(?:${escapeRegExp(AGENTS_DIR)}|${legacyDir}/agents?)/[^/]+\\.md$`);
-  const commandRe = new RegExp(`^${escapeRegExp(opencodeDir)}/commands?/([^/]+)\\.md$`);
+  const commandRe = new RegExp(`^${escapeRegExp(opencodeDir ?? '')}/commands?/([^/]+)\\.md$`);
   const declaredAgentFile = (spec: LoadedAgents['specs'][number]) =>
     agentFileCandidates(manifest, spec.name).find((path) => repoPaths.has(path));
   const declaredAgentPaths = new Set(
@@ -484,6 +551,61 @@ export async function loadProjectConfig(
     skills,
     commands,
   };
+}
+
+/**
+ * The v3 listing. kortix.yaml is the only source: agents are its blocks
+ * (`path` is the `prompt_file`, else the block), skills are the `skills`
+ * registry plus the Kortix skills, commands are the `commands` registry. A
+ * folder or file the manifest does not register is never listed.
+ */
+async function loadProjectConfigV3(
+  project: GitBackedProject,
+  manifest: Record<string, unknown>,
+  loadedAgents: LoadedAgents,
+  repoPaths: ReadonlySet<string>,
+): Promise<Pick<ProjectConfigSummary, 'agent_discovery' | 'agents' | 'skills' | 'commands'>> {
+  const map = (value: unknown) =>
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value : null);
+  const blocks = map(manifest.agents);
+  const natives: NativeAgentSummary[] = loadedAgents.specs.map((spec) => {
+    const block = map(blocks[spec.name]);
+    return {
+      name: spec.name,
+      path: text(block.prompt_file) ?? spec.path,
+      description: text(block.description),
+      mode: text(block.mode),
+      ...(block.hidden === true ? { hidden: true } : {}),
+      model: text(block.model),
+    };
+  });
+  const { agents } = resolveConfigAgents(natives, loadedAgents, (spec) => text(map(blocks[spec.name]).prompt_file) ?? undefined);
+
+  const projectSkills = await Promise.all(
+    Object.entries(map(manifest.skills)).map(async ([name, folder]) => {
+      const path = `${String(folder)}/SKILL.md`;
+      const meta = repoPaths.has(path) ? parseFrontmatter(await optionalFile(project, path)) : {};
+      return { name, path, description: meta.description || null };
+    }),
+  );
+  const kortixSkills = listManagedSkills().map((skill) => ({
+    name: skill.name,
+    path: `${SKILLS_DIR}/${skill.name}/SKILL.md`,
+    description: skill.description || null,
+  }));
+  const skills = [...projectSkills, ...kortixSkills].sort((a, b) => a.name.localeCompare(b.name));
+
+  const manifestPath = project.manifestPath || 'kortix.yaml';
+  const commands = Object.entries(map(manifest.commands))
+    .map(([name, entry]) => ({
+      name,
+      path: text(map(entry).prompt_file) ?? `${manifestPath}#commands.${name}`,
+      description: text(map(entry).description),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { agent_discovery: 'declarative', agents, skills, commands };
 }
 
 function escapeRegExp(input: string): string {

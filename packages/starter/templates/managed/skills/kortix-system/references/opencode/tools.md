@@ -286,6 +286,17 @@ Each question includes a header, the question text, and a list of options. Users
 
 ## Custom tools
 
+> **In a Kortix project, write a project tool instead** (`kortix.yaml` `tools:`,
+> `../kortix/tools.md`): one module that OpenCode and pi both run. The rest of
+> this section is OpenCode's own custom-tool format, which only an OpenCode
+> session loads.
+>
+> A Kortix OpenCode session also has the Kortix tools (`web_search`,
+> `image_search`, `scrape_webpage`, `memory`, `show`) that `kortix.yaml`
+> lists as `<name>: kortix:<name>`, or all five with no `tools:` key. To
+> change one, run `kortix tools eject <name>`; to remove one, delete its line.
+> Do not copy a Kortix tool into this folder.
+
 Custom tools are functions you create that the LLM can call during conversations. They work alongside built-in tools.
 
 Tools are defined as **TypeScript** or **JavaScript** files. The tool definition can invoke scripts written in **any language** — TS/JS is only used for the definition itself.

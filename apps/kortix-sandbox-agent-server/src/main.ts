@@ -90,19 +90,6 @@ if (import.meta.main) {
         )
         process.exit(1)
       })
-  } else if (subcommand === 'install-compiled-runtime') {
-    const cfg = loadConfig()
-    resolveHarness(cfg).installCompiledRuntime(cfg)
-      .then((result) => {
-        process.stdout.write(`${result.path}\n`)
-        process.exit(0)
-      })
-      .catch((error) => {
-        process.stderr.write(
-          `[compiled-runtime] install failed: ${error instanceof Error ? error.message : String(error)}\n`,
-        )
-        process.exit(1)
-      })
   } else if (isManagementSubcommand(subcommand)) {
     // kortixd management CLI: version / install / update / rollback /
     // --health-check / --help. `serve` and any unrecognized verb fall through

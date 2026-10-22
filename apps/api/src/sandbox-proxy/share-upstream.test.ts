@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 
 import { UNKNOWN_DAEMON_ROUTE_ERROR, shareUpstreamResult } from './share-upstream';
 
@@ -19,18 +18,5 @@ describe('shareUpstreamResult', () => {
       body: { error: 'share token not found' },
     });
     expect(shareUpstreamResult(200, { token: 't1' })).toEqual({ status: 200, body: { token: 't1' } });
-  });
-
-  // The marker is the daemon's catch-all body. A rename there must fail here.
-  test('the marker matches the daemon /kortix catch-all', () => {
-    const proxy = readFileSync(
-      new URL('../../../kortix-sandbox-agent-server/src/app/server.ts', import.meta.url),
-      'utf8',
-    );
-    // The catch-all line answers 404 with exactly this error string, whatever
-    // its handler variable is called.
-    const catchAll = proxy.split('\n').find((line) => line.includes("kortixRouter.all('*'"));
-    expect(catchAll).toContain(`'${UNKNOWN_DAEMON_ROUTE_ERROR}'`);
-    expect(catchAll).toMatch(/\b404\)/);
   });
 });

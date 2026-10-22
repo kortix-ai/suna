@@ -2,7 +2,7 @@
 export const SEO_COVERAGE_MANIFEST = {
   canonicalOrigin: 'https://kortix.com',
   machineRoutes: ['/llms.txt', '/llms-full.txt', '/api/ai'],
-  markdownFamilies: ['marketing', 'blog', 'docs', 'use-case'],
+  markdownFamilies: ['marketing', 'docs', 'use-case'],
   requiredMarkdownHeaders: {
     'Content-Type': 'text/markdown; charset=utf-8',
     'Content-Disposition': 'inline',

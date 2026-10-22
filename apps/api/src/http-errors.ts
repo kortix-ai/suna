@@ -1,10 +1,11 @@
+import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from './shared/repository-health';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { BillingError } from './errors';
 import { logger as appLogger } from './lib/logger';
 import { captureException, isSentryIgnoredError } from './lib/sentry';
-import { isRequestDeadlineHTTPException } from './middleware/request-deadline';
+import { isRequestDeadlineHTTPException, isDeadlineOrphan, REQUEST_DEADLINE_CODE } from './middleware/request-deadline';
 import {
   GIT_MIRROR_UNAVAILABLE_CODE,
   isRemotePushPolicyRejection,
@@ -13,10 +14,20 @@ import {
 } from './projects/git/mirror';
 import { resolvePrefixEscape } from './sandbox-proxy/prefix-escape';
 import { previewBaseDomain } from './sandbox-proxy/preview-hosts';
+import { SecretUndecryptableError } from './secrets/undecryptable';
+import { deadCredentialLogDecision, deadCredentialLogKey, isDeadCredential } from './shared/dead-credential-log';
 import { inspectDatabaseError } from './shared/database-errors';
 import { isDaytonaRateLimitError } from './shared/daytona-rate-limit';
+import {
+  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+  isDaytonaStateTransitionConflict,
+} from './shared/daytona-state-transition';
 import { isDaytonaTransientProviderError } from './shared/daytona-transient';
-import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import {
+  CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
+  isComposioTransientProviderError,
+} from './shared/composio-transient';
+import { isPlatinumSandboxNotRunningError, PlatinumExecOutcomeUnknownError } from './shared/platinum';
 
 // The typed branch handlers keep every ladder branch verbatim (comment,
 // predicate, body); the dispatcher below calls them in the original ladder
@@ -24,7 +35,7 @@ import { isPlatinumSandboxNotRunningError } from './shared/platinum';
 function handleSandboxProxyAbort(err: Error, c: Context, errName: string, path: string): Response | null {
   // Suppress SSE/long-poll abort noise — these are expected timeouts on sandbox proxy,
   // not real errors. The client reconnects automatically.
-  const isAbort = errName === 'DOMException' || err.message?.includes('The operation was aborted');
+  const isAbort = errName === 'DOMException' || err.name === 'AbortError';
   const isSandboxProxy = path.includes('/p/') && path.includes('/global/event');
   if (isAbort && isSandboxProxy) {
     return c.json({ error: true, message: 'Request timeout', status: 504 }, 504);
@@ -164,6 +175,45 @@ function handlePushPolicyRejection(err: Error, c: Context, method: string): Resp
   return null;
 }
 
+function handleDaytonaStateTransitionConflict(err: Error, c: Context, method: string, path: string): Response | null {
+  // Daytona answers HTTP 409 when a sandbox state transition is already in
+  // flight ("Sandbox state change in progress") — e.g. a second stop request
+  // arrives while the first is still settling. `apps.ts hosting.stop()`'s
+  // settle window expires and re-throws a plain Error whose cause is the
+  // original DaytonaConflictError; any call site without its own try/catch
+  // (the POST /v1/projects/:id/apps/:appId/stop route) forwarded it to the
+  // generic 500 → Sentry → Better Stack pattern `6bc03d7d…`. The in-flight
+  // transition is already doing what the caller asked, so this is an
+  // EXPECTED, self-resolving state: answer a typed 409
+  // `sandbox_state_change_in_progress` WITHOUT paging Sentry. The SDK
+  // classifies that code silent to onError and the web toast shows the
+  // retryable message. Other 409s (a DaytonaConflictError for a different
+  // reason, or an unrelated upstream) still fall through to the generic
+  // capture below. See shared/daytona-state-transition.ts.
+  if (isDaytonaStateTransitionConflict(err)) {
+    appLogger.warn(
+      `${method} ${path} -> 409 [DaytonaConflictError:state-transition] ${err.message.slice(0, 200)}`,
+      {
+        method,
+        path,
+        errorType: 'DaytonaConflictError',
+        errorName: err.name,
+        statusCode: (err as { statusCode?: unknown }).statusCode ?? null,
+      },
+    );
+    return c.json(
+      {
+        error: true,
+        message: 'sandbox state change in progress; try again shortly',
+        code: SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
+        status: 409,
+      },
+      409,
+    );
+  }
+  return null;
+}
+
 function handleDaytonaTransientProviderError(err: Error, c: Context, method: string, path: string): Response | null {
   // A transient Daytona provider gateway / connection / timeout failure is
   // EXPECTED — the upstream Daytona API (or its nginx / Cloudflare-style
@@ -245,16 +295,25 @@ function handleHttpException(err: HTTPException, c: Context, method: string, pat
     // is untouched — while `level = error` goes back to meaning the platform
     // failed. Same line, same fields, same grouping; only the severity moves.
     const level = err.status >= 500 ? 'error' : 'warn';
-    appLogger[level](
-      `${method} ${path} -> ${err.status} [HTTPException]${reason ? ` ${reason}` : ''}`,
-      {
-        status: err.status,
-        message: err.message,
-        reason,
-        path,
-        method,
-      },
-    );
+    const line = `${method} ${path} -> ${err.status} [HTTPException]${reason ? ` ${reason}` : ''}`;
+    const fields = { status: err.status, message: err.message, reason, path, method };
+    // A dead-credential refusal is the one 4xx a caller can receive forever:
+    // the typed body already tells it to stop (code session_token_revoked),
+    // but a caller that does not read it — an in-sandbox agent CLI retrying
+    // per streamed step — turns every refusal into a warn line, ~1.19M in ten
+    // days across the sandbox relay routes (KRTX-1039). Rate-limit the LINE
+    // (first per window per normalized key, best-effort count in `suppressed`), never
+    // the response; see shared/dead-credential-log.ts. Every other HTTPException
+    // keeps its per-request line.
+    if (isDeadCredential(err)) {
+      // The bucket key normalizes the route's and the reason's token ids out
+      // (deadCredentialLogKey), so KRTX-1564's named refusal cannot shard the
+      // window one bucket per token. The line itself keeps the id.
+      const { log, suppressed } = deadCredentialLogDecision(deadCredentialLogKey(method, path, err.status, reason), Date.now());
+      if (log) appLogger.warn(line, { ...fields, suppressed });
+    } else {
+      appLogger[level](line, fields);
+    }
 
     // An HTTPException built with an explicit `res` carries a machine-readable
     // body its thrower needs the CLIENT to branch on — `code:'account_mfa_required'`
@@ -360,24 +419,139 @@ function handleDatabaseOrUnknownError(err: Error, c: Context, errName: string, m
   );
 }
 
+function handleComposioTransientProviderError(err: Error, c: Context, method: string, path: string): Response | null {
+  // A transient Composio (hosted connectors provider) API failure is EXPECTED
+  // and retryable — Composio's own API 5xx-ing (e.g. their DB-backed API-key
+  // lookup failing with error code 809, Better Stack pattern `0386d70c…` on
+  // GET /v1/connectors/projects/:projectId/connect/toolkits, a 102 s request
+  // after the SDK's own three attempts), or the connection dropping /
+  // client-timing out (`APIConnectionError` incl. its timeout subclass). The
+  // @composio/client SDK already retries such calls internally (maxRetries 2)
+  // before surfacing them, so what reaches here is a failure the provider did
+  // not recover from within its own retry budget. This single classifier
+  // covers EVERY remaining + future call site: it downgrades the failure to a
+  // retryable 503 + Retry-After WITHOUT paging Sentry (mirroring the Platinum
+  // / git-timeout / Daytona / request-deadline patterns), so a forgotten
+  // try/catch at any Composio call site can no longer page Better Stack for
+  // an upstream blip. Composio 4xx (auth/validation/not-found/conflict) and
+  // 429 (owned by `executeComposio`'s call-site 429 + Retry-After answer)
+  // still fall through to the generic capture below, so real faults stay
+  // loud. See shared/composio-transient.ts.
+  if (isComposioTransientProviderError(err)) {
+    appLogger.warn(
+      `${method} ${path} -> 503 [ComposioError:transient] ${err.message.slice(0, 200)}`,
+      {
+        method,
+        path,
+        errorType: 'ComposioError',
+        errorName: err.constructor?.name || err.name,
+        statusCode: (err as { status?: unknown }).status ?? null,
+      },
+    );
+    c.header('Retry-After', '10');
+    return c.json(
+      {
+        error: true,
+        // A stable code lets the SDK/frontend classify this transient 503 as
+        // an EXPECTED, retryable degradation (silent to Sentry) instead of an
+        // opaque `ApiError` — the git-mirror precedent. See
+        // shared/composio-transient.ts's CONNECTORS_PROVIDER_UNAVAILABLE_CODE.
+        code: CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
+        message: 'connectors provider is temporarily unavailable',
+        status: 503,
+      },
+      503,
+    );
+  }
+  return null;
+}
+
+function handleSecretUndecryptable(err: Error, c: Context, method: string, path: string): Response | null {
+  // A stored value this server cannot decrypt (API_KEY_SECRET changed, or the
+  // row is damaged) is a state a person fixes by entering the value again, not
+  // a server fault (KRTX-1719). Answer 409 with the message that names the
+  // value, and send no Sentry event.
+  if (!(err instanceof SecretUndecryptableError)) return null;
+  appLogger.warn(`${method} ${path} -> 409 [SecretUndecryptableError] ${err.message}`, {
+    method,
+    path,
+    errorType: 'SecretUndecryptableError',
+  });
+  return c.json({ error: err.message, code: 'SECRET_UNDECRYPTABLE' }, 409);
+}
+
+function handleRepositoryDisconnected(err: Error, c: Context): Response | null {
+  // The project's GitHub repository cannot be reached until a person acts
+  // (reinstall the App, re-grant the repo): a 409 with the cause and the fix,
+  // never the transient 503 a failed clone would become. No log line here: the
+  // state change was logged once where it was classified (KRTX-2952..2955).
+  let cause: unknown = err;
+  for (let depth = 0; cause && depth < 5; depth++) {
+    if (isRepositoryDisconnectedError(cause)) return c.json(repositoryDisconnectedBody(cause), 409);
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
 // The dispatcher keeps the original head of the onError callback; each branch
 // below it was extracted whole into the typed handler above it.
 function handleUnhandledError(err: Error, c: Context): Response {
   const method = c.req.method;
   const path = c.req.path;
   const errName = err.constructor?.name || 'Error';
+  // A request whose deadline already fired had its 503 (Retry-After) served
+  // while the handler kept running with no owner — see request-deadline.ts.
+  // When that orphan resumes it touches the served context (`c.header(...)`
+  // makes Hono recreate the sent Response from its consumed body stream, and
+  // Bun rejects that with `TypeError: Body object should not be disturbed or
+  // locked`), compose catches the throw at its dispatch level and calls
+  // onError a SECOND time with an error that can no longer reach any client.
+  // prod 2026-10-16 22:43:05, request mvbjzd4t-a8d: the manifest handler,
+  // orphaned for 675 ms behind a stalled DB pool, threw exactly that and was
+  // captured as a 500 (Better Stack pattern 235fd74b…).
+  //
+  // Classify it: warn (not error), no captureException, and a 503 body — the
+  // request already degraded as 503 and nobody reads this discarded response.
+  // MUST NOT call c.header/c.status here: on a served context those recreate
+  // the consumed body and would throw the very error this branch absorbs.
+  if (isDeadlineOrphan(c, err)) {
+    appLogger.warn(`${method} ${path} -> 503 [deadline-orphan] handler resumed after its response was served`, {
+      method,
+      path,
+      errorType: 'deadline-orphan',
+      causeErrorType: errName,
+      causeMessage: err.message.slice(0, 200),
+    });
+    return c.json(
+      { error: true, message: 'Request deadline already exceeded', status: 503, code: REQUEST_DEADLINE_CODE },
+      503,
+    );
+  }
   const abort = handleSandboxProxyAbort(err, c, errName, path);
   if (abort) return abort;
+  if (err instanceof PlatinumExecOutcomeUnknownError) {
+    // Preserve ambiguity without a retry hint: the provider may have executed the write.
+    appLogger.warn('Sandbox exec outcome unknown after provider timeout', { method, path, status: 504 });
+    return c.json({ error: true, code: 'sandbox_exec_outcome_unknown', message: err.message, status: 504 }, 504);
+  }
   const platinum = handlePlatinumSandboxNotRunning(err, c, method, path);
   if (platinum) return platinum;
   const daytonaRateLimited = handleDaytonaRateLimit(err, c, method, path);
   if (daytonaRateLimited) return daytonaRateLimited;
+  const disconnected = handleRepositoryDisconnected(err, c);
+  if (disconnected) return disconnected;
   const gitUnavailable = handleTransientGitMirrorFailure(err, c, method, path);
   if (gitUnavailable) return gitUnavailable;
   const pushRejected = handlePushPolicyRejection(err, c, method);
   if (pushRejected) return pushRejected;
+  const stateTransition = handleDaytonaStateTransitionConflict(err, c, method, path);
+  if (stateTransition) return stateTransition;
   const daytonaTransient = handleDaytonaTransientProviderError(err, c, method, path);
   if (daytonaTransient) return daytonaTransient;
+  const composioTransient = handleComposioTransientProviderError(err, c, method, path);
+  if (composioTransient) return composioTransient;
+  const undecryptable = handleSecretUndecryptable(err, c, method, path);
+  if (undecryptable) return undecryptable;
   if (err instanceof BillingError) {
     appLogger.error(`${method} ${path} -> ${err.statusCode} [BillingError]`, {
       statusCode: err.statusCode,

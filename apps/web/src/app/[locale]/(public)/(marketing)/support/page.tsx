@@ -7,8 +7,8 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from '@/components/ui/accordion';
-import { Separator } from '@/components/ui/separator';
+} from '@kortix/ui/accordion';
+import { Separator } from '@kortix/ui/separator';
 import {
   ChannelCard,
   LINK,
@@ -20,7 +20,7 @@ import {
   SupportDocGrid,
   SupportHeader,
 } from '@/features/marketing/support/support-doc';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { BookOpenIcon, DiscordLogoIcon, EnvelopeIcon, PulseIcon } from '@phosphor-icons/react';
 import Link from '@/components/site-link';
 import { useSearchParams } from 'next/navigation';
@@ -286,7 +286,7 @@ function SupportPageFallback() {
   return (
     <main className="bg-background min-h-screen">
       <div className={SUPPORT_CONTAINER}>
-        <SupportHeader title={t('title')} lead={t('lead')} />
+        <SupportHeader as="p" title={t('title')} lead={t('lead')} />
       </div>
     </main>
   );

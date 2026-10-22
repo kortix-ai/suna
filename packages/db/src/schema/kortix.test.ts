@@ -38,6 +38,7 @@ import {
   appDeployments,
   appRuntimes,
   appDeploymentEvents,
+  accountTokens,
   creditAccounts,
   creditLedger,
   usageEvents,
@@ -311,6 +312,7 @@ describe('connectors', () => {
     ]);
     expect(indexNames(connectorCalls)).toEqual([
       'idx_connector_calls_project',
+      'idx_connector_calls_pending_expiry',
       'idx_connector_calls_project_session_created',
       'idx_connector_calls_connector',
       'idx_connector_calls_connection',
@@ -342,6 +344,28 @@ describe('connectors', () => {
     expect(columnNames(connectorCalls)).toContain('connection_id');
     expect(columnNames(connectorCalls)).not.toContain('profile_id');
     expect(columnNames(projectSessionConnectorBindings)).toContain('connection_id');
+  });
+});
+
+describe('account_tokens foreign-key coverage', () => {
+  // The Supabase performance advisor (unindexed_foreign_keys) flags a foreign
+  // key whose referencing column is not the leading column of any index: every
+  // ON DELETE CASCADE / SET NULL walk over that column seq-scans the table.
+  // account_tokens carries four FKs — three declared here (account_id,
+  // project_id, service_account_id) plus the SQL-only
+  // account_tokens_on_behalf_of_user_fk (auth.users is outside this schema;
+  // added NOT VALID by 20260922135103135_agent_session_on_behalf_of). The
+  // advisor reported service_account_id and on_behalf_of_user_id unindexed in
+  // prod (KRTX-1091); account_id and project_id were already covered.
+  // Regression guard: every FK column must lead some index on the table.
+  test('indexes every foreign key column the table carries', () => {
+    const leading = getTableConfig(accountTokens).indexes.map((i) => {
+      const first = i.config.columns[0];
+      return first && 'name' in first ? first.name : undefined;
+    });
+    for (const fk of ['account_id', 'project_id', 'service_account_id', 'on_behalf_of_user_id']) {
+      expect(leading).toContain(fk);
+    }
   });
 });
 
@@ -397,7 +421,18 @@ describe('Kortix Apps schema', () => {
   test('stores provider runtimes and append-only deployment events', () => {
     expect(getTableConfig(appRuntimes).name).toBe('app_runtimes');
     expect(getTableConfig(appDeploymentEvents).name).toBe('app_deployment_events');
-    expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_deployment');
+    // One live instance per machine (a release runs many machines).
+    expect(indexNames(appRuntimes)).toContain('app_runtimes_one_live_per_machine');
+    expect(indexNames(appRuntimes)).not.toContain('app_runtimes_one_live_per_deployment');
+  });
+
+  test('covers the app_deployment_events runtime foreign key with an index', () => {
+    // The FK runtime_id -> app_runtimes.runtime_id is ON DELETE set null: a
+    // runtime delete scans app_deployment_events for referencing rows. The
+    // advisor (supabase:advisor:unindexed-foreign-keys:kortix.app_deployment_events)
+    // flags the FK when no index leads with runtime_id; the deployment_idx
+    // leads with deployment_id and cannot serve it.
+    expect(indexNames(appDeploymentEvents)).toContain('app_deployment_events_runtime_idx');
   });
 
   test('attributes compute windows to App runtimes', () => {
@@ -502,9 +537,10 @@ describe('account membership', () => {
 
   test('account_memberships declares the indexes the database has', () => {
     // The primary key leads with user_id, so account-only reads need their own index.
+    // idx_account_members_user_account duplicated the primary key and was dropped
+    // by 20261003145424803_drop_duplicate_account_memberships_index.
     expect(indexNames(accountMemberships).sort()).toEqual([
       'idx_account_members_account_id',
-      'idx_account_members_user_account',
     ]);
   });
 });

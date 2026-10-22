@@ -48,8 +48,13 @@ describe('denial', () => {
     [['whoami', '--token-only']],
     [['env', 'pull']],
     [['env', 'push']],
+    [['drive', 'put', './a.txt', '/a.txt']],
+    [['goals', 'ls']],
+    [['rooms', 'watch', 'general']],
+    [['rooms', 'chat', 'general']],
     [['apps', 'deploy', './x']],
-    [['connectors', 'mcp']],
+    [['apps', 'exec', 'db', '--', 'ls']],
+    [['apps', 'token', 'main']],
     [['sessions', 'shell', 'abc']],
   ])('%j is refused with a reason and an alternative', (args) => {
     const d = denial(args);
@@ -59,6 +64,16 @@ describe('denial', () => {
 
   test('apps deploy names run_command in a session sandbox', () => {
     expect(denial(['apps', 'deploy'])?.use).toContain('run_command in a session sandbox');
+  });
+
+  test('migrate points at a session sandbox, where the project checkout lives', () => {
+    expect(denial(['migrate', '--write'])?.use).toContain('`kortix migrate` there');
+  });
+
+  test('apps list and create run; token points at a session sandbox', () => {
+    expect(denial(['apps', 'list'])).toBeNull();
+    expect(denial(['apps', 'create', 'main'])).toBeNull();
+    expect(denial(['apps', 'token', 'main'])?.use).toContain('run_command in a session sandbox');
   });
 
   test.each([
@@ -84,9 +99,16 @@ describe('denial', () => {
 
   test('every top-level command of the CLI is either denied or allowed: a new command needs a decision', () => {
     const source = readFileSync(join(import.meta.dir, '../../../cli/src/index.ts'), 'utf8');
-    const block = /const KNOWN_COMMANDS = \[([\s\S]*?)\] as const;/.exec(source)?.[1];
+    // KRTX-1341 replaced the KNOWN_COMMANDS literal with one handler record;
+    // the suggestion list derives from its keys plus the two landing verbs.
+    const block = /const COMMAND_HANDLERS: Record<string, RootCommandHandler> = \{([\s\S]*?)\n\};/.exec(
+      source,
+    )?.[1];
     expect(block).toBeDefined();
-    const commands = [...block!.matchAll(/'([^']+)'/g)].map((m) => m[1]!);
+    const keys = [...(block!.matchAll(/^ {2}(?:'([^']+)'|([a-z][a-z0-9]*)):/gm))].map(
+      (m) => m[1] ?? m[2],
+    );
+    const commands = [...keys, 'help', 'version'].filter((c): c is string => typeof c === 'string');
     expect(commands.length).toBeGreaterThan(40);
     const decided = new Set([...Object.keys(DENY_COMMANDS), ...CLI_ALLOWED]);
     expect(commands.filter((c) => !decided.has(c))).toEqual([]);
@@ -141,7 +163,10 @@ describe('runCli', () => {
     const r = await runCli({ ...base, args: ['whoami'], timeoutMs: 300, cli: fakeCli('sleep 30') });
     const out = JSON.parse((r as { json: string }).json);
     expect(out.timed_out).toContain('killed');
-    expect(Date.now() - started).toBeLessThan(5_000);
+    // The 300 ms timeout must fire, not the 30 s sleep. Half the sleep leaves
+    // headroom for a loaded lane while still failing a regression that waits
+    // the command out.
+    expect(Date.now() - started).toBeLessThan(15_000);
   });
 
   test('--json output comes back as a JSON value, a large one too; a cut one stays a string with the note', async () => {
@@ -168,13 +193,14 @@ describe('runCli', () => {
   });
 
   test('at most MAX_CONCURRENT children run at once; the next call is told to retry', async () => {
-    const slow = fakeCli('sleep 1');
+    const slow = fakeCli('sleep 0.5');
     const first = Array.from({ length: MAX_CONCURRENT }, () => runCli({ ...base, args: ['whoami'], cli: slow }));
     const extra = await runCli({ ...base, args: ['whoami'], cli: slow });
     expect(extra).toMatchObject({ ok: false });
     expect((extra as { error: string }).error).toContain('Busy');
     for (const r of await Promise.all(first)) expect(r.ok).toBe(true);
-    expect((await runCli({ ...base, args: ['whoami'], cli: slow })).ok).toBe(true);
+    // The finished children gave their slots back: the next call runs.
+    expect((await runCli({ ...base, args: ['whoami'], cli: fakeCli('echo ok') })).ok).toBe(true);
   });
 
   test('a binary that cannot run falls through to the next candidate', async () => {

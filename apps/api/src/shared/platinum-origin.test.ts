@@ -21,8 +21,11 @@ const {
   acceptedPlatinumOrigin,
   platinumJson,
   platinumOriginForSandbox,
+  platinumOriginForRegion,
+  platinumRegionControlPlane,
   PlatinumSandboxNotRunningError,
   PLATINUM_ORIGIN_CACHE_MAX,
+  PLATINUM_REGION_RETRY_AFTER_MS,
   __resetPlatinumSandboxOriginsForTests,
 } = await import('./platinum');
 
@@ -30,6 +33,9 @@ const US = 'https://us-east.api.platinum.dev';
 const GLOBAL = 'https://api.platinum.dev';
 
 type Call = { url: string; method: string; auth: string | null };
+// Compare the parsed origin, never a URL prefix: a prefix also matches `https://host.evil`.
+const onOrigin = (call: Call, origin: string): boolean => new URL(call.url).origin === origin;
+
 type Reply = { status?: number; body?: unknown; headers?: Record<string, string> } | Error;
 
 const originalFetch = globalThis.fetch;
@@ -73,7 +79,7 @@ afterEach(() => {
 
 test('a forwarded answer names the owner, and the next call for that id goes straight to it', async () => {
   respond = (call) =>
-    call.url.startsWith(GLOBAL)
+    onOrigin(call, GLOBAL)
       ? { body: { id: 'sbx_us', state: 'running' }, headers: { 'x-pt-served-by': US } }
       : { body: { result: { exit_code: 0 } } };
 
@@ -107,7 +113,7 @@ test('a sandbox body teaches its api_url, but only for the id it describes', asy
   expect(platinumOriginForSandbox('sbx_us_other')).toBe(GLOBAL);
 });
 
-test('a create answer records the new box owner, so its first call by id is direct', async () => {
+test('a create naming a region goes straight to it, and its answer records the box owner', async () => {
   respond = (call) =>
     call.method === 'POST' && call.url.includes('/v1/sandboxes?')
       ? { status: 201, body: { id: 'sbx_new', state: 'running', region: 'us-east', api_url: US } }
@@ -120,7 +126,7 @@ test('a create answer records the new box owner, so its first call by id is dire
   await platinumJson('/v1/sandboxes/sbx_new/expose', { method: 'POST', body: '{"port":8000}' });
 
   expect(calls.map((c) => c.url)).toEqual([
-    `${GLOBAL}/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000`,
+    `${US}/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000`,
     `${US}/v1/sandboxes/sbx_new/expose`,
   ]);
 });
@@ -161,14 +167,14 @@ test('an unreachable owner is forgotten and the call is sent once via the global
   respond = (call) => {
     if (call.url === `${GLOBAL}/v1/sandboxes/sbx_us`)
       return { body: { id: 'sbx_us', api_url: US } };
-    if (call.url.startsWith(US)) return networkError('ConnectionRefused');
+    if (onOrigin(call, US)) return networkError('ConnectionRefused');
     return { body: { result: { exit_code: 0 } } };
   };
   await platinumJson('/v1/sandboxes/sbx_us');
   calls = [];
   // The global origin answers this one without naming the owner again.
   respond = (call) =>
-    call.url.startsWith(US)
+    onOrigin(call, US)
       ? networkError('ConnectionRefused')
       : { body: { result: { exit_code: 0 } } };
 
@@ -188,7 +194,7 @@ test('a write that may have reached the owner is not sent twice; a read is', asy
   await platinumJson('/v1/sandboxes/sbx_us');
   calls = [];
   respond = (call) =>
-    call.url.startsWith(US) ? networkError('ECONNRESET') : { body: { id: 'sbx_us', api_url: US } };
+    onOrigin(call, US) ? networkError('ECONNRESET') : { body: { id: 'sbx_us', api_url: US } };
 
   await expect(
     platinumJson('/v1/sandboxes/sbx_us/exec', { method: 'POST', body: '{}' }),
@@ -279,4 +285,139 @@ test('the origin cache is bounded and drops the oldest entry first', async () =>
   expect(platinumOriginForSandbox('sbx_0')).toBe(GLOBAL);
   expect(platinumOriginForSandbox('sbx_1')).toBe(US);
   expect(platinumOriginForSandbox(`sbx_${PLATINUM_ORIGIN_CACHE_MAX}`)).toBe(US);
+});
+
+
+test('a create for a region this process has already seen goes straight to that region', async () => {
+  respond = (call) => {
+    if (call.method === 'GET') return { body: { id: 'sbx_seen', state: 'running', region: 'us-east', api_url: US } };
+    return { status: 201, body: { id: 'sbx_next', state: 'running', region: 'us-east', api_url: US } };
+  };
+
+  await platinumJson('/v1/sandboxes/sbx_seen');
+  expect(platinumOriginForRegion('us-east')).toBe(US);
+  await platinumJson('/v1/sandboxes?wait_for_state=running', {
+    method: 'POST',
+    body: JSON.stringify({ template: 'tpl_x', region: 'us-east' }),
+  });
+  // No region asked for → the home region, through the global origin as before.
+  await platinumJson('/v1/sandboxes?wait_for_state=running', {
+    method: 'POST',
+    body: JSON.stringify({ template: 'tpl_x' }),
+  });
+  // A region nothing has taught yet → its regional name.
+  await platinumJson('/v1/sandboxes?wait_for_state=running', {
+    method: 'POST',
+    body: JSON.stringify({ template: 'tpl_x', region: 'ap-south' }),
+  });
+
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    `GET ${GLOBAL}/v1/sandboxes/sbx_seen`,
+    `POST ${US}/v1/sandboxes?wait_for_state=running`,
+    `POST ${GLOBAL}/v1/sandboxes?wait_for_state=running`,
+    `POST https://ap-south.api.platinum.dev/v1/sandboxes?wait_for_state=running`,
+  ]);
+});
+
+test('a home-region box keeps its region on the global origin, and a foreign api_url never becomes a region origin', async () => {
+  respond = (call) => {
+    if (call.url.endsWith('/sbx_eu')) return { body: { id: 'sbx_eu', region: 'eu-west', api_url: GLOBAL } };
+    if (call.url.endsWith('/sbx_evil')) return { body: { id: 'sbx_evil', region: 'us-east', api_url: 'https://evil.example' } };
+    return { body: {} };
+  };
+  await platinumJson('/v1/sandboxes/sbx_eu');
+  await platinumJson('/v1/sandboxes/sbx_evil');
+  expect(platinumOriginForRegion('eu-west')).toBe(GLOBAL);
+  // Its regional name, never the foreign origin.
+  expect(platinumOriginForRegion('us-east')).toBe(US);
+});
+
+test('an image build and a prepare naming a region go straight to it; without one they stay global', async () => {
+  respond = () => ({ body: { upload_url: 'https://s3.example/put', context_s3_key: 'k', id: 'tpl_1' } });
+  const post = (path: string, body: unknown) => platinumJson(path, { method: 'POST', body: JSON.stringify(body) });
+
+  await post('/v1/templates/from-build/presign', { region: 'us-east' });
+  await post('/v1/templates/from-build', { name: 'kortix-tpl-x', context_s3_key: 'k', region: 'us-east' });
+  await post('/v1/templates/tpl_1/prepare', { region: 'us-east' });
+  await post('/v1/templates/from-build/presign', {});
+  await post('/v1/templates/from-build', { name: 'kortix-tpl-y', context_s3_key: 'k' });
+  await platinumJson('/v1/templates?name=kortix-tpl-x');
+
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    `POST ${US}/v1/templates/from-build/presign`,
+    `POST ${US}/v1/templates/from-build`,
+    `POST ${US}/v1/templates/tpl_1/prepare`,
+    `POST ${GLOBAL}/v1/templates/from-build/presign`,
+    `POST ${GLOBAL}/v1/templates/from-build`,
+    `GET ${GLOBAL}/v1/templates?name=kortix-tpl-x`,
+  ]);
+});
+
+test("a region's control plane that does not connect is sent once via global, then skipped for a minute", async () => {
+  respond = (call) =>
+    onOrigin(call, US) ? networkError('ConnectionRefused') : { status: 201, body: { id: 'sbx_new', region: 'us-east' } };
+  const create = () =>
+    platinumJson('/v1/sandboxes', { method: 'POST', body: JSON.stringify({ template: 't', region: 'us-east' }) });
+
+  await create();
+  await create();
+  expect(calls.map((c) => c.url)).toEqual([`${US}/v1/sandboxes`, `${GLOBAL}/v1/sandboxes`, `${GLOBAL}/v1/sandboxes`]);
+
+  const realNow = Date.now;
+  Date.now = () => realNow() + PLATINUM_REGION_RETRY_AFTER_MS + 1;
+  try {
+    calls = [];
+    respond = () => ({ status: 201, body: { id: 'sbx_next', region: 'us-east' } });
+    await create();
+    expect(calls.map((c) => c.url)).toEqual([`${US}/v1/sandboxes`]);
+  } finally {
+    Date.now = realNow;
+  }
+});
+
+test('a deployment configured with the region itself sends its region calls there', async () => {
+  mockPlatinumApiUrl = US;
+  respond = () => ({ status: 201, body: { id: 'sbx_us', region: 'us-east', api_url: US } });
+
+  await platinumJson('/v1/sandboxes', { method: 'POST', body: JSON.stringify({ template: 't', region: 'us-east' }) });
+
+  expect(calls.map((c) => c.url)).toEqual([`${US}/v1/sandboxes`]);
+});
+
+test('a regional create whose connection never opened retries once via global and forgets the region', async () => {
+  let first = true;
+  respond = (call) => {
+    if (call.method === 'GET') return { body: { id: 'sbx_seen', region: 'us-east', api_url: US } };
+    if (onOrigin(call, US) && first) {
+      first = false;
+      return networkError('ConnectionRefused');
+    }
+    return { status: 201, body: { id: 'sbx_new', region: 'us-east', api_url: US } };
+  };
+  await platinumJson('/v1/sandboxes/sbx_seen');
+  await platinumJson('/v1/sandboxes', { method: 'POST', body: JSON.stringify({ template: 't', region: 'us-east' }) });
+  expect(calls.slice(1).map((c) => c.url)).toEqual([`${US}/v1/sandboxes`, `${GLOBAL}/v1/sandboxes`]);
+});
+
+test('a regional create reset mid-request is never sent twice', async () => {
+  respond = (call) => {
+    if (call.method === 'GET') return { body: { id: 'sbx_seen', region: 'us-east', api_url: US } };
+    return networkError('ECONNRESET');
+  };
+  await platinumJson('/v1/sandboxes/sbx_seen');
+  await expect(
+    platinumJson('/v1/sandboxes', { method: 'POST', body: JSON.stringify({ template: 't', region: 'us-east' }) }),
+  ).rejects.toThrow();
+  expect(calls.slice(1).map((c) => c.url)).toEqual([`${US}/v1/sandboxes`]);
+});
+
+test("a region's control plane is its regional name under the configured host, and a listing goes only there", async () => {
+  expect(platinumRegionControlPlane('us-east')).toBe(US);
+  expect(platinumRegionControlPlane('../evil')).toBeNull();
+  await platinumJson('/v1/sandboxes?paginated=true&regions=local&limit=200&offset=0', {}, US);
+  expect(calls.map((c) => c.url)).toEqual([`${US}/v1/sandboxes?paginated=true&regions=local&limit=200&offset=0`]);
+  expect(calls[0]!.auth).toBe('Bearer pt_test_key');
+  // A host with no subdomain form (a local control plane) gets no regional origin.
+  mockPlatinumApiUrl = 'http://127.0.0.1:9000';
+  expect(platinumRegionControlPlane('us-east')).toBeNull();
 });

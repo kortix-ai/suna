@@ -26,18 +26,18 @@
  * the portal lands back here.
  */
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
-import { Button } from '@/components/ui/button';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Skeleton } from '@/components/ui/skeleton';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
+import { Button } from '@kortix/ui/button';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Skeleton } from '@kortix/ui/skeleton';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
-import { usePermission } from '@/lib/use-permission';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { usePermission } from '@kortix/ui/workspace';
+import { BillingAccountProvider } from '@kortix/ui/internal/stores/billing-account-context';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 
 function planReturnUrl(): string {
   return typeof window !== 'undefined'
@@ -60,15 +60,13 @@ export function PlanTab({ accountId }: { accountId: string | undefined }) {
         </div>
       ) : canWrite.allowed ? (
         <BillingAccountProvider accountId={accountId}>
-          {/* `showWallet={false}` (Jay, 2026-09-03: "in the plan, you need to
-              show just the team part, team seat"). The pane leads with
-              `PlanCard` — the subscription, with the seat count, price each
-              and monthly total as properties under it — instead of the
-              wallet-first `AccountOverviewTab`. Balance, credit composition,
-              period spend and limits are the Credits pane's subject now
-              (`tabs/credits-tab.tsx`), one row above this one in the rail.
-              the hub's Billing pane passes nothing and keeps the
-              wallet-first layout unchanged. */}
+          {/* `showWallet={false}`: the pane leads with `PlanCard` — the
+              subscription, its monthly amount, and the picker that changes
+              it — instead of the wallet-first `AccountOverviewTab`. Balance,
+              credit composition, period spend and limits are the Credits
+              pane's subject (`tabs/credits-tab.tsx`), one row above this one
+              in the rail. The hub's Billing pane passes nothing and keeps the
+              wallet-first layout. */}
           <BillingTab returnUrl={planReturnUrl()} isActive showWallet={false} />
           <GlobalUpgradeModal />
         </BillingAccountProvider>

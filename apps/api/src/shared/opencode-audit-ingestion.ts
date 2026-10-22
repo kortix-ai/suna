@@ -1,4 +1,17 @@
+import type { RuntimeAuditBatch, RuntimeAuditEvent } from '@kortix/api-contract/runtime-relay';
 import type { auditEvents } from '@kortix/db';
+
+/**
+ * A batch and its events as received: each contract field may be absent or
+ * malformed, so every read below validates it. A field renamed in the contract
+ * stops compiling here. A daemon built before W3 sends `opencode_session_id`.
+ */
+type ReceivedAuditBatch = { [K in keyof RuntimeAuditBatch]?: unknown };
+type ReceivedAuditEvent = { [K in keyof RuntimeAuditEvent]?: unknown } & {
+  opencode_session_id?: unknown;
+  initiator_actor_type?: unknown;
+  initiator_actor_id?: unknown;
+};
 
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const EVENT_TYPE_RE = /^[a-z0-9_.:-]{1,128}$/i;
@@ -253,14 +266,14 @@ export function parseOpenCodeAuditBatch(
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new Error('body must be an object');
   }
-  const events = (body as { events?: unknown }).events;
+  const events = (body as ReceivedAuditBatch).events;
   if (!Array.isArray(events) || events.length === 0 || events.length > MAX_BATCH_SIZE) {
     throw new Error(`events must contain 1 to ${MAX_BATCH_SIZE} items`);
   }
   // Since W3 the daemon tags a batch with `source: 'runtime'` and the harness
   // that produced it. A batch without them comes from a daemon built before
   // W3, which only ever ran OpenCode.
-  const batch = body as { source?: unknown; harness?: unknown };
+  const batch = body as ReceivedAuditBatch;
   const source = batch.source === 'runtime' ? 'runtime' : 'opencode';
   const harness =
     typeof batch.harness === 'string' && IDENTIFIER_RE.test(batch.harness) ? batch.harness : 'opencode';
@@ -269,7 +282,7 @@ export function parseOpenCodeAuditBatch(
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
       fail(index, 'is invalid');
     }
-    const event = item as Record<string, unknown>;
+    const event = item as ReceivedAuditEvent;
     const eventId = requiredSha256(event.event_id, index, 'event_id');
     const type =
       typeof event.type === 'string' && EVENT_TYPE_RE.test(event.type)

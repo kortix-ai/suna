@@ -1,27 +1,67 @@
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, mock, test } from 'bun:test';
 
-import { registerQueryClient } from '@/lib/query-client-singleton';
-import { createPersistedQueryCache, currentSavedCopyStore } from '@kortix/sdk';
+import { getSharedQueryClient, registerQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
+import { safeSetItem } from '@kortix/ui/internal/lib/storage/managed-storage';
+import {
+  type SessionTranscriptSyncEnvelope,
+  createPersistedQueryCache,
+  createSavedCopyStore,
+  currentSavedCopyStore,
+} from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { QueryClient } from '@tanstack/react-query';
 
-import { adoptDeviceCaches, clearDeviceCaches } from './device-caches';
+/** A Storage-shaped map: enough for the SDK's storage helpers and the sweep. */
+function memoryStorage() {
+  const entries = new Map<string, string>();
+  return {
+    entries,
+    /** Keys whose write throws, as a full bucket does. */
+    full: new Set<string>(),
+    get length() {
+      return entries.size;
+    },
+    key: (index: number) => [...entries.keys()][index] ?? null,
+    getItem: (key: string) => entries.get(key) ?? null,
+    setItem(key: string, value: string) {
+      if (this.full.has(key)) throw new DOMException('full', 'QuotaExceededError');
+      entries.set(key, value);
+    },
+    removeItem: (key: string) => void entries.delete(key),
+  };
+}
 
-const entries = new Map<string, string>();
-const storage = {
-  getItem: (key: string) => entries.get(key) ?? null,
-  setItem: (key: string, value: string) => void entries.set(key, value),
-  removeItem: (key: string) => void entries.delete(key),
+const local = memoryStorage();
+const session = memoryStorage();
+const entries = local.entries;
+/** The IndexedDB the saved copies go to, as an asynchronous key-value store. */
+const indexed = new Map<string, string>();
+const indexedStorage = {
+  getItem: async (key: string) => indexed.get(key) ?? null,
+  setItem: async (key: string, value: string) => void indexed.set(key, value),
+  removeItem: async (key: string) => void indexed.delete(key),
 };
-const pageWindow = new EventTarget();
+// A bun module mock is process-wide: keep the real exports, or a file that runs
+// after this one in the same `bun test` process imports a module with holes.
+const idbSyncCache = await import('@kortix/sdk/internal/idb-sync-cache');
+mock.module('@kortix/sdk/internal/idb-sync-cache', () => ({
+  ...idbSyncCache,
+  indexedDBKeyValueStorage: () => indexedStorage,
+}));
+const { adoptDeviceCaches, clearDeviceCaches, sweepRetiredDeviceCaches, WEB_QUERY_CACHE_MAX_BYTES } =
+  await import('./device-caches');
+
+const pageWindow = Object.assign(new EventTarget(), { localStorage: local, sessionStorage: session });
 const pageDocument = Object.assign(new EventTarget(), { visibilityState: 'visible' });
 const originals = {
   localStorage: Object.getOwnPropertyDescriptor(globalThis, 'localStorage'),
+  sessionStorage: Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage'),
   window: Object.getOwnPropertyDescriptor(globalThis, 'window'),
   document: Object.getOwnPropertyDescriptor(globalThis, 'document'),
 };
 for (const [name, value] of Object.entries({
-  localStorage: storage,
+  localStorage: local,
+  sessionStorage: session,
   window: pageWindow,
   document: pageDocument,
 })) {
@@ -36,10 +76,152 @@ afterAll(() => {
 
 const USER = 'user-a';
 const STORAGE_KEY = `kortix.query-cache:${USER}`;
-const gateKey = ['project-access-boundary', 'project-1', USER];
+const gateKey = qk.project.summary('project-1');
 const listKey = qk.project.sessionsPaged('project-1');
 const messagesKey = qk.project.messages('project-1', 'session-1');
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+function envelope(): SessionTranscriptSyncEnvelope {
+  return {
+    available: true,
+    reason: null,
+    source: 'mirror',
+    complete: true,
+    captured_at: '2026-10-06T00:00:00.000Z',
+    opencode_session_id: 'ses_root',
+    message_count: 1,
+    messages: [
+      {
+        info: { id: 'msg_1', role: 'user', sessionID: 'ses_root', time: { created: 1 } },
+        parts: [{ id: 'prt_1', type: 'text', text: 'hello' }],
+      },
+    ],
+  } as unknown as SessionTranscriptSyncEnvelope;
+}
+
+/** A session row of the size the API serves: ids, names, metadata, the runtime tree. */
+function sessionRow(n: number) {
+  const id = `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  return {
+    session_id: id,
+    account_id: '00000000-0000-4000-8000-000000000001',
+    project_id: '00000000-0000-4000-8000-000000000002',
+    branch_name: `kortix/session-${n}`,
+    base_ref: 'main',
+    sandbox_provider: 'platinum',
+    sandbox_id: id,
+    sandbox_url: null,
+    runtime_session_id: `ses_${'r'.repeat(26)}`,
+    opencode_session_id: `ses_${'r'.repeat(26)}`,
+    name: 'Fix the flaky upload test in the billing worker',
+    custom_name: null,
+    labels: [],
+    agent_name: 'kortix',
+    status: 'stopped',
+    error: null,
+    metadata: { name: 'Fix the flaky upload test in the billing worker', model: 'kortix/default' },
+    runtime_sessions: [{ id: `ses_${'r'.repeat(26)}`, title: 'Fix the flaky upload test', parent_id: null }],
+    opencode_sessions: [{ id: `ses_${'r'.repeat(26)}`, title: 'Fix the flaky upload test', parent_id: null }],
+    created_by: '00000000-0000-4000-8000-000000000003',
+    parent_session_id: null,
+    child_count: 0,
+    owner_email: 'owner@example.test',
+    owner_name: 'Example Owner',
+    owner_avatar_url: null,
+    owner_type: 'user',
+    visibility: 'project',
+    origin: 'user',
+    is_owner: true,
+    can_manage_sharing: true,
+    created_at: '2026-10-06T00:00:00.000Z',
+    updated_at: '2026-10-06T00:00:00.000Z',
+  };
+}
+
+// Runs FIRST, while `getSharedQueryClient()` is still null: the app shell
+// mounts one auth round trip sooner (#10344), so `adoptDeviceCaches` can run
+// before `ReactQueryProvider` registers the client. Dropping adopt on that
+// null client left the saved-copy store unset, so the reloaded session painted
+// the skeleton instead of its kept conversation (journey 34, release 0.14.3).
+describe('adopt runs before the query client registers (#10344)', () => {
+  const user = 'user-early';
+  const gate = qk.project.summary('project-early');
+  const opensOn = (pathname: string) => Object.assign(pageWindow, { location: { pathname } });
+
+  test('registers the saved-copy store and prefetches the opened session with no client yet', async () => {
+    // This test's premise: no client registered yet. A prior test that
+    // registered one would make the assertion below a false pass.
+    expect(getSharedQueryClient()).toBeNull();
+
+    // The device kept this session's conversation, and the previous load left a
+    // persisted query cache, both for this user.
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write(
+      'project-early',
+      'session-early',
+      envelope(),
+    );
+    const previous = new QueryClient();
+    previous.setQueryData(gate, { project_id: 'project-early' });
+    const writer = createPersistedQueryCache({ storage: local, userId: user, shouldPersist: () => true });
+    writer.persist(previous);
+    await writer.flush();
+
+    opensOn('/projects/project-early/sessions/session-early');
+    adoptDeviceCaches(user);
+    await settle();
+
+    // The fix: the saved-copy store does not wait on the client, so the opened
+    // session's copy is in memory for the first frame.
+    expect(currentSavedCopyStore()).not.toBeNull();
+    const first = currentSavedCopyStore()!.read('project-early', 'session-early');
+    expect(first).not.toBeInstanceOf(Promise);
+    expect((first as SessionTranscriptSyncEnvelope).messages).toHaveLength(1);
+
+    // The query cache waits for the client, then restores when it registers —
+    // not dropped on the early return.
+    const client = new QueryClient();
+    expect<unknown>(client.getQueryData(gate)).toBeUndefined();
+    registerQueryClient(client);
+    expect<unknown>(client.getQueryData(gate)).toEqual({ project_id: 'project-early' });
+
+    await clearDeviceCaches();
+  });
+});
+
+// React can discard a render in which `ReactQueryProvider` created and registered
+// its client (a hydration retry, a suspension, Strict Mode), then commit a second
+// client. The restore ran once, on the first: the committed client was empty, so the
+// project gate had no kept project and a reload with every read held showed
+// "Opening your project" until the network answered (journey 34).
+describe('a client registered after the restore (a discarded render) gets the kept queries too', () => {
+  const user = 'user-replaced';
+  const gate = qk.project.summary('project-replaced');
+
+  test('the second client holds the restored gate, and the writer follows it', async () => {
+    const previous = new QueryClient();
+    previous.setQueryData(gate, { project_id: 'project-replaced' });
+    const writer = createPersistedQueryCache({ storage: local, userId: user, shouldPersist: () => true });
+    writer.persist(previous);
+    await writer.flush();
+
+    const discarded = new QueryClient();
+    registerQueryClient(discarded);
+    adoptDeviceCaches(user);
+    expect<unknown>(discarded.getQueryData(gate)).toEqual({ project_id: 'project-replaced' });
+
+    const committed = new QueryClient();
+    registerQueryClient(committed);
+    expect<unknown>(committed.getQueryData(gate)).toEqual({ project_id: 'project-replaced' });
+
+    // What the committed client changes is what the next reload restores.
+    committed.setQueryData(gate, { project_id: 'project-replaced', name: 'renamed' });
+    pageWindow.dispatchEvent(new Event('pagehide'));
+    await settle();
+    expect(entries.get(`kortix.query-cache:${user}`)).toContain('renamed');
+
+    await clearDeviceCaches();
+  });
+});
 
 describe('device caches', () => {
   const client = new QueryClient();
@@ -53,21 +235,27 @@ describe('device caches', () => {
       pageParams: [null],
     });
     previous.setQueryData(messagesKey, ['a message']);
-    const writer = createPersistedQueryCache({ storage, userId: USER, shouldPersist: () => true });
+    const writer = createPersistedQueryCache({ storage: local, userId: USER, shouldPersist: () => true });
     writer.persist(previous);
     await writer.flush();
 
     registerQueryClient(client);
     adoptDeviceCaches(USER);
 
-    expect(client.getQueryData(gateKey)).toEqual({ project_id: 'project-1' });
-    expect(client.getQueryData(listKey)).toEqual({
+    expect<unknown>(client.getQueryData(gateKey)).toEqual({ project_id: 'project-1' });
+    expect<unknown>(client.getQueryData(listKey)).toEqual({
       pages: [{ items: [], next_cursor: null }],
       pageParams: [null],
     });
     expect(client.getQueryData(messagesKey)).toBeUndefined();
     expect(client.getQueryState(gateKey)?.isInvalidated).toBe(true);
     expect(currentSavedCopyStore()).not.toBeNull();
+  });
+
+  test('saved copies go to IndexedDB, never to localStorage', async () => {
+    await currentSavedCopyStore()!.write('project-1', 'session-1', envelope());
+    expect([...indexed.keys()].some((key) => key.startsWith(`kortix.saved-copy:${USER}:`))).toBe(true);
+    expect([...entries.keys()].filter((key) => key.startsWith('kortix.saved-copy'))).toEqual([]);
   });
 
   test('leaving the page writes the latest state without waiting for the throttle', async () => {
@@ -77,15 +265,138 @@ describe('device caches', () => {
     expect(entries.get(STORAGE_KEY)).toContain('renamed');
   });
 
+  test('the query cache stays under its cap and keeps the newest lists', async () => {
+    // A full first page of 50 sessions, for four projects, written oldest first.
+    for (let project = 1; project <= 4; project += 1) {
+      client.setQueryData(
+        qk.project.sessionsPaged(`bulk-${project}`),
+        { pages: [{ items: Array.from({ length: 50 }, (_, n) => sessionRow(project * 100 + n)), next_cursor: null }], pageParams: [null] },
+        { updatedAt: Date.now() + project },
+      );
+    }
+    const onePage = JSON.stringify(client.getQueryData(qk.project.sessionsPaged('bulk-4'))).length;
+    pageWindow.dispatchEvent(new Event('pagehide'));
+    await settle();
+
+    const stored = entries.get(STORAGE_KEY)!;
+    expect(stored.length).toBeLessThanOrEqual(WEB_QUERY_CACHE_MAX_BYTES);
+    // The newest list survives whole, the oldest is dropped; the cap holds
+    // three full pages (~62,500 code units each with these rows).
+    expect(stored).toContain('"bulk-4"');
+    expect(stored).not.toContain('"bulk-1"');
+    expect(onePage * 3).toBeLessThan(WEB_QUERY_CACHE_MAX_BYTES);
+  });
+
+  test('a draft that does not fit evicts the query cache instead of failing', () => {
+    expect(entries.has(STORAGE_KEY)).toBe(true);
+    local.full.add('draft');
+    const write = local.setItem.bind(local);
+    // The bucket frees up once the disposable query cache is gone.
+    local.setItem = (key: string, value: string) => {
+      if (key === 'draft' && !entries.has(STORAGE_KEY)) local.full.delete('draft');
+      write(key, value);
+    };
+    try {
+      expect(safeSetItem('draft', 'text')).toBe(true);
+      expect(entries.has(STORAGE_KEY)).toBe(false);
+    } finally {
+      local.setItem = write;
+      local.full.clear();
+    }
+  });
+
   test('a sign-out stops the writer at once and forgets the user', async () => {
     await clearDeviceCaches();
     expect(currentSavedCopyStore()).toBeNull();
     expect(entries.has(STORAGE_KEY)).toBe(false);
+    expect([...indexed.keys()]).toEqual([]);
 
     // The next user's first query must not land under the previous user's key.
     client.setQueryData(qk.project.summary('project-2'), { project_id: 'project-2' });
     pageWindow.dispatchEvent(new Event('pagehide'));
     await settle();
     expect(entries.has(STORAGE_KEY)).toBe(false);
+  });
+});
+
+describe('the session a page load opens on', () => {
+  const user = 'user-reload';
+  const opensOn = (pathname: string) => Object.assign(pageWindow, { location: { pathname } });
+
+  test('its saved copy is read at sign-in, and the first read answers from memory', async () => {
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
+    opensOn('/projects/project-1/sessions/session-1');
+    adoptDeviceCaches(user);
+    await settle();
+
+    const first = currentSavedCopyStore()!.read('project-1', 'session-1');
+    expect(first).not.toBeInstanceOf(Promise);
+    expect((first as SessionTranscriptSyncEnvelope).messages).toHaveLength(1);
+    // Answered once: a later read asks IndexedDB, which another tab may have changed.
+    expect(currentSavedCopyStore()!.read('project-1', 'session-1')).toBeInstanceOf(Promise);
+    await clearDeviceCaches();
+  });
+
+  test('a write before the first read drops the copy in memory', async () => {
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
+    opensOn('/projects/project-1/sessions/session-1');
+    adoptDeviceCaches(user);
+    await settle();
+
+    await currentSavedCopyStore()!.write('project-1', 'session-1', {
+      ...envelope(),
+      captured_at: '2026-10-07T00:00:00.000Z',
+    });
+    expect(currentSavedCopyStore()!.read('project-1', 'session-1')).toBeInstanceOf(Promise);
+    await clearDeviceCaches();
+  });
+
+  test('a page that is not a session reads every copy from IndexedDB', async () => {
+    await createSavedCopyStore({ storage: indexedStorage, userId: user }).write('project-1', 'session-1', envelope());
+    opensOn('/projects/project-1');
+    adoptDeviceCaches(user);
+    await settle();
+
+    expect(currentSavedCopyStore()!.read('project-1', 'session-1')).toBeInstanceOf(Promise);
+    await clearDeviceCaches();
+  });
+});
+
+describe('sweepRetiredDeviceCaches', () => {
+  test('frees what the retired session caches left on the device, and nothing else', () => {
+    entries.clear();
+    session.entries.clear();
+    const retired = [
+      'kortix_cache_sessions:sbx_1',
+      'kortix_cache_agents:global',
+      'kortix_cache_commands:sbx_1',
+      'kortix_cache_providers:proj:p1:native',
+      `kortix.saved-copy:${USER}:index`,
+      `kortix.saved-copy:${USER}:project-1/session-1`,
+    ];
+    const kept = [STORAGE_KEY, 'kortix_composer_draft:s1', 'theme'];
+    for (const key of [...retired, ...kept]) entries.set(key, '{}');
+    session.entries.set('opencode_stream_cache:ses_1', '{}');
+    session.entries.set('kortix-impersonation', '{}');
+
+    sweepRetiredDeviceCaches();
+
+    expect([...entries.keys()].sort()).toEqual([...kept].sort());
+    expect([...session.entries.keys()]).toEqual(['kortix-impersonation']);
+  });
+
+  test('never throws where storage is blocked', () => {
+    const blocked = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('blocked', 'SecurityError');
+      },
+    });
+    try {
+      expect(() => sweepRetiredDeviceCaches()).not.toThrow();
+    } finally {
+      Object.defineProperty(globalThis, 'localStorage', blocked!);
+    }
   });
 });

@@ -49,6 +49,17 @@ function runtimeSession(updatedAt: string | null, id = 'oc-1') {
 }
 
 describe('sessionDisplayTitle', () => {
+  test('strips Teams mentions from each title candidate', () => {
+    expect(sessionDisplayTitle(makeSession({ custom_name: '<at>Demo Bot</at> Review plan' }))).toBe('Review plan');
+    expect(sessionDisplayTitle(makeSession({ name: '<at id="0">Demo Bot</at>&nbsp;Review plan' }))).toBe('Review plan');
+    expect(sessionDisplayTitle(makeSession({ metadata: { session_name: '<AT>Demo Bot</AT> Review plan' } }))).toBe('Review plan');
+  });
+
+  test('mention-only candidates fall through to the next name or untitled label', () => {
+    expect(sessionDisplayTitle(makeSession({ custom_name: '<at>Demo Bot</at>', name: 'Server title' }))).toBe('Server title');
+    expect(sessionDisplayTitle(makeSession({ name: '<at>Demo Bot</at>' }))).toBe('New session');
+  });
+
   test('a user rename (custom_name) wins over everything else', () => {
     const session = makeSession({
       custom_name: 'My renamed session',

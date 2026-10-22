@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import type { HarnessDiagnosticsContext, HarnessDiagnosticsService } from '@/harness/contract/diagnostics'
 import { readHostHealth } from '@/harness/shared/host-health'
 import { legacyHealthFields, legacyRunningFields } from './legacy-names'
+import { COMPILED_AGENT_CONFIG_GZ_CAPABILITY } from '@kortix/api-contract/compiled-agent-config-env'
 
 /**
  * `GET /kortix/health`: the host facts, the selected harness's closed `harness`
@@ -22,9 +23,10 @@ export function createHealthRouter(
           messageId: c.req.query('turn_message_id')?.trim(),
         }
       : undefined
-    const [host, report] = await Promise.all([
+    const [host, report, runtimeCapabilities] = await Promise.all([
       readHostHealth(context, diagnostics.catalogSnapshot),
       diagnostics.health(context, { turn }),
+      diagnostics.capabilities(),
     ])
     const { running } = host.runtime
     const harness = {
@@ -36,9 +38,9 @@ export function createHealthRouter(
     const runtimeReady = host.repo_ready && !repoError && harness.ready
     return c.json({
       daemon: 'ok',
-      // Host-owned `/file` routes for every harness, then what the control and
-      // the runtime serve.
-      capabilities: ['file.import', 'file.append', ...controlCapabilities, ...diagnostics.capabilities],
+      // Host-owned `/file` routes and the compiled agent config's gzip env form,
+      // for every harness, then what the control and the runtime serve.
+      capabilities: ['file.import', 'file.append', COMPILED_AGENT_CONFIG_GZ_CAPABILITY, ...controlCapabilities, ...runtimeCapabilities],
       status: runtimeReady ? 'ok' : repoError || harness.error ? 'error' : harness.state,
       runtimeReady,
       boot_error: repoError ?? harness.error,

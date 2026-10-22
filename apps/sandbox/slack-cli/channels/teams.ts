@@ -401,6 +401,7 @@ Files:
 Reading the conversation (a CHANNEL; in a personal chat every message is already in your session):
   history [--limit 30]                              # recent messages in this channel, oldest first
   thread  [--limit 30]                              # the thread you were mentioned in: its root + every reply
+                                                    # a message's \`images\` download with \`teams download --url\`; \`files\` names SharePoint files
 
 Read commands (Microsoft Graph, via the Connector):
   team      --team <team-id>

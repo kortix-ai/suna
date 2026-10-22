@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Below API 26 there are no adaptive icons: the dev build shows the store icon. -->
+<resources>
+    <item name="ic_launcher_dev" type="mipmap">@mipmap/ic_launcher</item>
+</resources>

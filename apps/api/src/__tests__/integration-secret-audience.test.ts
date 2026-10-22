@@ -23,10 +23,14 @@ import {
   projectSecrets,
   projectSessions,
   projects,
+  roleAssignments,
   serviceAccounts,
 } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
-import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
+import { and, eq, isNull } from 'drizzle-orm';
+import { assignRole, deleteProjectScopeAssignments, SYSTEM_ACTOR } from '../iam/assignments';
+import { deleteResourceGrant } from '../iam/resource-grants';
+import { deleteGroup } from '../repositories/iam';
+import { deleteServiceAccount } from '../repositories/service-accounts';
 import { clearAuthorizeCaches } from '../iam/authorize';
 import {
   getProjectSecretValueForConsumer,
@@ -37,7 +41,6 @@ import {
 import { resolveGrantedSecretSelection } from '../projects/secrets/grant-policy';
 import {
   clearSecretAudience,
-  secretAudiencePerson,
   secretAudienceSubject,
   sessionPersonOnlyPlaintextSecrets,
   setSecretAudience,
@@ -189,16 +192,16 @@ describe('secret audience — who may use one value', () => {
   });
 
   test('the session person: private session → its human; shared session and trigger → nobody', async () => {
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_PRIVATE })).toBe(OWNER);
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_SHARED })).toBeNull();
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_TRIGGER })).toBeNull();
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_PRIVATE })).personId).toBe(OWNER);
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_SHARED })).personId).toBeNull();
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_TRIGGER })).personId).toBeNull();
     // No session: the direct caller.
-    expect(await secretAudiencePerson({ projectId: PROJECT, actorUserId: TEAMMATE })).toBe(TEAMMATE);
+    expect((await secretAudienceSubject({ projectId: PROJECT, actorUserId: TEAMMATE })).personId).toBe(TEAMMATE);
   });
 
   test('a token minted before on_behalf_of existed resolves by the mint rule; a cleared one stays nobody', async () => {
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_LEGACY })).toBe(OWNER);
-    expect(await secretAudiencePerson({ projectId: PROJECT, sessionId: OWNER_CLEARED })).toBeNull();
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_LEGACY })).personId).toBe(OWNER);
+    expect((await secretAudienceSubject({ projectId: PROJECT, sessionId: OWNER_CLEARED })).personId).toBeNull();
   });
 
   test('shared with an AGENT: every session of that agent gets it, a trigger included; another agent and a person do not', async () => {
@@ -294,5 +297,119 @@ describe('secret audience — who may use one value', () => {
     await clearSecretAudience({ accountId: ACCOUNT, projectId: PROJECT, secretId });
     clearAuthorizeCaches();
     expect(await viaConnector({ actorUserId: TEAMMATE })).toBe('payroll-owner');
+  });
+});
+
+/**
+ * An audience outlives the people, groups and agents it names.
+ *
+ * A value with no grant is usable by everyone, so deleting its LAST audience
+ * grant widened it instead of closing it. Promoting the owner to admin,
+ * removing them, their leaving, deleting the group, or deleting a service
+ * account bulk-deleted that principal's rows, audience grants included: an
+ * "Only you" value became everyone's. The audience rows now stay, and a grant
+ * to someone gone reaches nobody.
+ */
+describe('an audience outlives the principals it names', () => {
+  const LEAVER = crypto.randomUUID();
+  const CONTRACTORS = crypto.randomUUID();
+  const CONTRACTOR = crypto.randomUUID();
+  const PLAIN_SA = crypto.randomUUID();
+
+  const audienceOf = async (objectType: string, objectId: string) =>
+    db
+      .select({ principalId: roleAssignments.principalId })
+      .from(roleAssignments)
+      .where(and(eq(roleAssignments.objectType, objectType), eq(roleAssignments.objectId, objectId)));
+
+  beforeAll(async () => {
+    for (const userId of [LEAVER, CONTRACTOR]) {
+      await insertIntoView(db, accountMembers, { userId, accountId: ACCOUNT, accountRole: 'member' });
+    }
+    await db.insert(accountGroups).values({ groupId: CONTRACTORS, accountId: ACCOUNT, name: 'Contractors' });
+    await db.insert(accountGroupMembers).values({ groupId: CONTRACTORS, userId: CONTRACTOR });
+    await db.insert(serviceAccounts).values({
+      serviceAccountId: PLAIN_SA, accountId: ACCOUNT, name: `sa-${PLAIN_SA}`,
+      secretHash: `sa-${PLAIN_SA}`, publicPrefix: 'kortix_sa_audience', createdBy: OWNER,
+    });
+    await assignRole(SYSTEM_ACTOR, ACCOUNT, {
+      principal: { type: 'user', id: LEAVER },
+      roleKey: 'member',
+      scope: { type: 'project', id: PROJECT },
+    });
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'LEAVER_KEY', value: 'leaver-only' });
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'CONTRACTOR_KEY', value: 'contractors-only' });
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'SA_KEY', value: 'agent-only' });
+    await writeSharedProjectSecret({ projectId: PROJECT, name: 'OWNER_KEY', value: 'owner-only' });
+    await onlyFor('LEAVER_KEY', [{ principal_type: 'user', principal_id: LEAVER }]);
+    await onlyFor('CONTRACTOR_KEY', [{ principal_type: 'group', principal_id: CONTRACTORS }]);
+    await onlyFor('SA_KEY', [{ principal_type: 'agent', principal_id: PLAIN_SA }]);
+    await onlyFor('OWNER_KEY', [{ principal_type: 'user', principal_id: OWNER }]);
+  });
+
+  test('promoting, removing or losing the owner keeps an "Only you" value closed', async () => {
+    const secretId = await secretIdOf('LEAVER_KEY');
+    // A shared connector account narrowed to the same person: same store, same rule.
+    const [grant] = await db
+      .select()
+      .from(roleAssignments)
+      .where(and(eq(roleAssignments.objectType, 'secret'), eq(roleAssignments.objectId, secretId)));
+    const connectionId = crypto.randomUUID();
+    await db.insert(roleAssignments).values({
+      ...grant!,
+      assignmentId: crypto.randomUUID(),
+      objectType: 'connection',
+      objectId: connectionId,
+    });
+    expect((await envFor(LEAVER)).LEAVER_KEY).toBe('leaver-only');
+
+    // What promotion to admin, member removal and leaving all run.
+    await deleteProjectScopeAssignments(ACCOUNT, LEAVER);
+    clearAuthorizeCaches();
+
+    expect(await envFor(TEAMMATE)).not.toHaveProperty('LEAVER_KEY');
+    expect(await audienceOf('secret', secretId)).toEqual([{ principalId: LEAVER }]);
+    expect(await audienceOf('connection', connectionId)).toEqual([{ principalId: LEAVER }]);
+    // The delete still does its job: the person's project role is gone.
+    expect(
+      await db
+        .select({ id: roleAssignments.assignmentId })
+        .from(roleAssignments)
+        .where(
+          and(
+            eq(roleAssignments.principalId, LEAVER),
+            eq(roleAssignments.scopeType, 'project'),
+            isNull(roleAssignments.objectType),
+          ),
+        ),
+    ).toEqual([]);
+    // A promoted owner still reaches their own value.
+    expect((await envFor(LEAVER)).LEAVER_KEY).toBe('leaver-only');
+  });
+
+  test('deleting the only group in an audience keeps the value closed', async () => {
+    expect((await envFor(CONTRACTOR)).CONTRACTOR_KEY).toBe('contractors-only');
+    expect(await deleteGroup(ACCOUNT, CONTRACTORS)).toBe(true);
+    clearAuthorizeCaches();
+    expect(await envFor(TEAMMATE)).not.toHaveProperty('CONTRACTOR_KEY');
+    expect(await envFor(CONTRACTOR)).not.toHaveProperty('CONTRACTOR_KEY');
+  });
+
+  test('deleting a service account named in an audience keeps the value closed', async () => {
+    expect((await envFor(null, PLAIN_SA)).SA_KEY).toBe('agent-only');
+    expect(await deleteServiceAccount(ACCOUNT, PLAIN_SA)).toBe(true);
+    clearAuthorizeCaches();
+    expect(await envFor(TEAMMATE)).not.toHaveProperty('SA_KEY');
+  });
+
+  test('the members-manage resource-grant delete cannot remove a secret audience grant', async () => {
+    const secretId = await secretIdOf('OWNER_KEY');
+    const [grant] = await db
+      .select({ id: roleAssignments.assignmentId })
+      .from(roleAssignments)
+      .where(and(eq(roleAssignments.objectType, 'secret'), eq(roleAssignments.objectId, secretId)));
+    expect(await deleteResourceGrant(grant!.id, PROJECT, ACCOUNT)).toBe(false);
+    clearAuthorizeCaches();
+    expect(await envFor(TEAMMATE)).not.toHaveProperty('OWNER_KEY');
   });
 });

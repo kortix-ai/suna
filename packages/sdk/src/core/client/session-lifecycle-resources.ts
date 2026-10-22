@@ -9,11 +9,26 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
     // ── lifecycle (Kortix REST) ──────────────────────────────────────────
     get: (opts?: { showErrors?: boolean }) =>
       P.getProjectSession(ctx.projectId, ctx.sessionId, opts),
-    presence: (input: { tab_id: string; active: boolean }) =>
-      backendApi.put<{ ok: boolean }>(
+    /**
+     * This tab's presence lease. `alerts: true` says the tab shows its own
+     * notifications, so the server skips the phone and Web Push while the
+     * person is here (KRTX-1742). `keepalive` lets the request outlive a
+     * closing page. Default: on for an absent report, off for a present one.
+     *
+     * A present report from a person who may start the session keeps its
+     * computer on, and the response says until when (KRTX-1729):
+     * `awake_until` is the computer's stop time after this renewal, and
+     * `awake_cap_at` the time presence cannot keep it on past. Both are null
+     * otherwise, and absent from an API before KRTX-1729.
+     */
+    presence: (
+      input: { tab_id: string; active: boolean; alerts?: boolean },
+      options?: { keepalive?: boolean },
+    ) =>
+      backendApi.put<{ ok: boolean; awake_until?: string | null; awake_cap_at?: string | null }>(
         `/projects/${ctx.projectId}/sessions/${ctx.sessionId}/presence`,
         input,
-        { showErrors: false },
+        { showErrors: false, keepalive: options?.keepalive ?? !input.active },
       ),
     /** Unified finalized LLM and compute cost for this session. */
     cost: () => P.getSessionCostRecord(ctx.sessionId, { projectId: ctx.projectId }),
@@ -25,8 +40,15 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
       ctx.forgetReady();
       return P.deleteProjectSession(ctx.projectId, ctx.sessionId);
     },
+    /** Take the deleted session out of the trash before its `restore_until`. */
+    restore: () => P.restoreProjectSession(ctx.projectId, ctx.sessionId),
+    /** A lost session (its computer gone at the provider) continues on a new computer. */
+    recover: () => P.recoverProjectSession(ctx.projectId, ctx.sessionId),
     start: (...a: DropFirst2<Parameters<typeof P.startProjectSession>>) =>
       P.startProjectSession(ctx.projectId, ctx.sessionId, ...a),
+    /** `start`, but a failed request rejects with the API error instead of yielding `null`. */
+    startOrThrow: (...a: DropFirst2<Parameters<typeof P.startProjectSessionOrThrow>>) =>
+      P.startProjectSessionOrThrow(ctx.projectId, ctx.sessionId, ...a),
     restart: () => {
       // Restart preserves the established sandbox identity, but readiness
       // and the proxy connection must still be resolved again after reboot.
@@ -60,6 +82,14 @@ export function bindSessionLifecycleResources(ctx: SessionBindingContext) {
       P.setProjectSessionSharing(ctx.projectId, ctx.sessionId, intent),
     previews: () => P.getSessionPreviewCandidates(ctx.projectId, ctx.sessionId),
     participants: () => P.getSessionParticipants(ctx.projectId, ctx.sessionId),
+    /** Is the caller notified about this session? */
+    watch: () => P.getSessionWatch(ctx.projectId, ctx.sessionId),
+    /** Watch (`true`) or mute (`false`) this session for the caller. */
+    setWatch: (watching: boolean) => P.setSessionWatch(ctx.projectId, ctx.sessionId, watching),
+    /** Pin (`true`) or unpin this session in the caller's own list. */
+    setPinned: (pinned: boolean) => P.setSessionPinned(ctx.projectId, ctx.sessionId, pinned),
+    /** Archive (`true`) or unarchive this session in the caller's own list. */
+    setArchived: (archived: boolean) => P.setSessionArchived(ctx.projectId, ctx.sessionId, archived),
     commit: (input?: Parameters<typeof P.commitSessionChanges>[2]) =>
       P.commitSessionChanges(ctx.projectId, ctx.sessionId, input),
     publicShares: {

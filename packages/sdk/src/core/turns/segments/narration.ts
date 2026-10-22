@@ -18,6 +18,8 @@
  */
 
 import type { ToolPart } from '../../runtime/client';
+import { asToolPart } from '../../session-log/tool-call';
+import type { ToolCallBlock } from '../../session-log/types';
 import { inputPath, type ToolKind, toolKind } from '../tool-kind';
 import { getToolPrimaryArg, normalizeName } from '../tools/tool-meta';
 import { parseWebSearchOutput, wsDomain } from '../tools/web-helpers';
@@ -38,6 +40,7 @@ export type StepFamily =
   | 'explore'
   | 'edit'
   | 'run'
+  | 'script'
   | 'web'
   | 'create'
   | 'plan'
@@ -64,6 +67,11 @@ const FAMILY_OF_KIND: Record<ToolKind, StepFamily | 'hidden'> = {
   apply_patch: 'edit',
   bash: 'run',
   pty: 'run',
+  // pi's codemode: a script the model wrote that calls the other tools. Its own
+  // family — its sentence ("Ran a script") is what the registered renderer's
+  // own card says ("Ran script"), and a registered tool must never land in the
+  // `other` fallback that exists for unknown MCP tools.
+  script: 'script',
   web_search: 'web',
   webfetch: 'web',
   media: 'create',
@@ -389,7 +397,7 @@ function basename(p: string): string {
  * `show`/`show_user` display an existing result — a file, a link, a block of
  * text. `getToolPrimaryArg` has no case for them, so it used to fall through
  * to its generic fallback-key list, which returns `input.path`/`input.url`
- * completely verbatim (a real sandbox path or e2b preview URL straight to a
+ * completely verbatim (a real sandbox path or provider preview URL straight to a
  * non-technical user — rule 2 forbids exactly this). ShowTool itself renders
  * `input.title` as its own heading, so prefer that; then a description; and
  * only when neither exists fall back to a BASENAME or DOMAIN — never the raw
@@ -518,7 +526,8 @@ const PRESENTATION_GEN_ARTIFACT_ACTIONS = new Set(['create_slide', 'export_pdf',
  * edit/upscale/remove a background gets an empty Outputs card despite the
  * agent having actually produced something.
  */
-export function createArtifactKind(part: ToolPart): CreateArtifactKind | null {
+export function createArtifactKind(call: ToolPart | ToolCallBlock): CreateArtifactKind | null {
+  const part = asToolPart(call);
   const t = normalizeName(part.tool);
   if (t === 'image_gen') return 'image';
   if (t === 'video_gen') return 'video';
@@ -584,7 +593,8 @@ function mixedCreateSentence(keys: string[]): string {
  * tools (e.g. `image_gen` + `video_gen`, or `connector_get` + `connector_setup`).
  * Every branch below inspects every part, never just `parts[0]`.
  */
-export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
+export function narrateStep(family: StepFamily, calls: ReadonlyArray<ToolPart | ToolCallBlock>): string {
+  const parts = calls.map(asToolPart);
   const n = parts.length;
   const arg = firstArg(parts);
 
@@ -604,6 +614,8 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
     }
     case 'run':
       return n === 1 ? 'Ran a command' : `Ran ${n} commands`;
+    case 'script':
+      return n === 1 ? 'Ran a script' : `Ran ${n} scripts`;
     case 'web': {
       const isSearch = (p: ToolPart) => {
         const t = normalizeName(p.tool);
@@ -779,7 +791,8 @@ export function narrateStep(family: StepFamily, parts: ToolPart[]): string {
  * already 'error' (see group-steps.statusOf), so the sentence owns the whole
  * step: vague-but-true beats specific-but-false here exactly as everywhere else.
  */
-export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string {
+export function narrateFailedStep(family: StepFamily, calls: ReadonlyArray<ToolPart | ToolCallBlock>): string {
+  const parts = calls.map(asToolPart);
   const arg = firstArg(parts);
   switch (family) {
     case 'explore':
@@ -793,6 +806,8 @@ export function narrateFailedStep(family: StepFamily, parts: ToolPart[]): string
     }
     case 'run':
       return 'A command failed';
+    case 'script':
+      return 'A script failed';
     case 'web':
       return "Couldn't finish searching the web";
     case 'create':

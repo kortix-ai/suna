@@ -115,6 +115,47 @@ describe.if(hasDatabase)('buildActor', () => {
     expect(actor.credential.activated).toBe(false);
   });
 
+  test('the binding the PAT check already read gives the same credential as reading it again', async () => {
+    const base = {
+      userId: USER,
+      accountId: ACCOUNT,
+      authType: 'pat',
+      iamTokenId: AGENT_TOKEN,
+      sessionId: 'sess-1',
+      agentGrant: GRANT,
+    };
+    const reloaded = await actorFromContext(base);
+    // What `patPrincipal` stores from the validation row (same row, same request).
+    const seeded = await actorFromContext({
+      ...base,
+      iamTokenBinding: {
+        tokenId: AGENT_TOKEN,
+        projectId: PROJECT,
+        agentGrant: GRANT,
+        serviceAccountId: SA,
+        onBehalfOfUserId: null,
+      },
+    });
+    expect(seeded?.credential.kind).toBe('agent_session');
+    expect(seeded?.credential).toEqual(reloaded?.credential);
+  });
+
+  test('a stored binding for a different token is ignored', async () => {
+    const actor = await actorFromContext({
+      userId: USER,
+      accountId: ACCOUNT,
+      authType: 'pat',
+      iamTokenId: AGENT_TOKEN,
+      sessionId: 'sess-1',
+      agentGrant: GRANT,
+      // Belongs to another token: must not stand in for AGENT_TOKEN's row.
+      iamTokenBinding: { tokenId: PAT_TOKEN, projectId: null, agentGrant: null, serviceAccountId: null, onBehalfOfUserId: null },
+    });
+    expect(actor?.credential.kind).toBe('agent_session');
+    if (actor?.credential.kind !== 'agent_session') throw new Error('unreachable');
+    expect(actor.credential.serviceAccountId).toBe(SA);
+  });
+
   test('an OBJECT grant to the service account (a shared secret or account) does not activate it', async () => {
     const roleId = crypto.randomUUID();
     await raw(

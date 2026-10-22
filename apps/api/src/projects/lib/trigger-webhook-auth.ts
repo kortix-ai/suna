@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import type { Context } from 'hono';
 import { normalizeString } from './serializers';
 
 /**
@@ -9,7 +8,7 @@ import { normalizeString } from './serializers';
  * `cron` — the session it mints is stamped `trigger:monitor`. `reminder` is a
  * session reminder's fire (`lib/session-reminders.ts`); it only re-prompts a session.
  */
-export type TriggerFireSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder';
+export type TriggerFireSource = 'cron' | 'webhook' | 'manual' | 'monitor' | 'reminder' | 'event';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
@@ -80,14 +79,15 @@ export function parseWebhookJsonBody(rawBody: string): unknown {
   }
 }
 
-export function webhookPayload(c: Context, rawBody: string) {
+/** The fire payload: the parsed body and three request headers, read through `header`. */
+export function webhookPayload(header: (name: string) => string | undefined, rawBody: string) {
   const body = parseWebhookJsonBody(rawBody);
   return {
     body,
     headers: {
-      content_type: c.req.header('content-type') ?? null,
-      user_agent: c.req.header('user-agent') ?? null,
-      forwarded_for: c.req.header('x-forwarded-for') ?? null,
+      content_type: header('content-type') ?? null,
+      user_agent: header('user-agent') ?? null,
+      forwarded_for: header('x-forwarded-for') ?? null,
     },
   };
 }

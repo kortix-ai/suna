@@ -14,6 +14,7 @@
  */
 import type { Ports } from './ports';
 import { dbModeOf, type DbMode, type Registry, type SlotEntry } from './registry';
+import { branchDbName } from './branch-db';
 import { SHARED_SUPABASE_PORTS } from './supabase';
 import { bold, cyan, dim, green, link, yellow } from './term';
 
@@ -130,7 +131,7 @@ function footer(rows: ListRow[], opts: RailOpts): string {
   // Naming the shared Supabase ports is only honest while every row uses them;
   // an isolated worktree binds its own slot-derived block instead.
   parts.push(
-    rows.every((r) => r.dbMode === 'shared')
+    rows.every((r) => r.dbMode !== 'isolated')
       ? `shared Supabase db :${SHARED_SUPABASE_PORTS.sbDb} studio :${SHARED_SUPABASE_PORTS.sbStudio}`
       : 'mixed DB modes — `pnpm worktree list <name>` for per-worktree ports',
   );
@@ -154,6 +155,7 @@ export function renderDetail(row: ListRow, opts: { probed: boolean }): string[] 
     field('api', `http://localhost:${p.api}/v1`),
     field('studio', `http://localhost:${p.sbStudio}`),
   ];
+  if (row.dbMode === 'branch') out.push(`    ${dim('db'.padEnd(7))} ${branchDbName(row.name)} ${dim(`(:${p.sbDb})`)}`);
   if (row.branch !== row.name) out.push(`    ${dim('branch'.padEnd(7))} ${row.branch}`);
   out.push(`    ${dim('path'.padEnd(7))} ${dim(row.path)}`);
   return out;

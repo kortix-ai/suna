@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto';
 import { projectMonitorBoxes, projectTriggerRuntime } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { type ProviderName, getProvider } from '../../platform/providers';
+import { getProvider } from '../../platform/providers';
 import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { createApiKey } from '../../repositories/api-keys';
 import { db } from '../../shared/db';

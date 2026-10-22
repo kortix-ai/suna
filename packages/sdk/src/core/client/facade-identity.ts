@@ -33,6 +33,8 @@ export function bindIdentity() {
     listMine: P.listMyAccountInvites,
     describe: P.describeAccountInvite,
     accept: P.acceptAccountInvite,
+    /** Accept, then where to land: the invited project, or the account joined. */
+    acceptAndLand: P.acceptAccountInviteAndLand,
     decline: P.declineAccountInvite,
   };
 

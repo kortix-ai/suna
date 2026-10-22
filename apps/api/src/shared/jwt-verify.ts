@@ -9,7 +9,7 @@
  * Local verification is also ~10x faster.
  *
  * Liveness: signature checks cannot see revocation, so both algorithms confirm
- * the session with GoTrue through `jwt-liveness.ts` (cached per TTL).
+ * the session through `jwt-liveness.ts` (an `auth.sessions` lookup, no cache).
  *
  * Fallback: if JWKS fetch fails (Supabase not up yet) or key is unknown, we
  * fall back to the network call so nothing breaks during cold starts.
@@ -41,6 +41,11 @@ interface JwksResponse {
 const keyCache = new Map<string, CryptoKey>();
 let jwksFetchedAt = 0;
 const JWKS_TTL_MS = 60 * 60 * 1000; // 1 hour
+// `kid` is unauthenticated input: one refetch per minute at most, or every
+// forged kid costs a JWKS request. A token signed by a key rotated in inside
+// that minute falls back to the network check (`no-key-for-kid` is inconclusive).
+const UNKNOWN_KID_REFETCH_MS = 60 * 1000;
+let unknownKidRefetchAt = 0;
 
 async function loadJwks(): Promise<void> {
   const supabaseUrl = config.SUPABASE_URL;
@@ -190,8 +195,9 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
   let key: CryptoKey | undefined;
   if (header.kid) {
     key = keyCache.get(header.kid);
-    if (!key) {
+    if (!key && Date.now() - unknownKidRefetchAt >= UNKNOWN_KID_REFETCH_MS) {
       // Unknown kid — JWKS may have rotated, try refreshing once
+      unknownKidRefetchAt = Date.now();
       await loadJwks();
       key = keyCache.get(header.kid);
     }
@@ -240,22 +246,21 @@ export async function verifySupabaseJwt(token: string): Promise<VerifyResult | V
     return { ok: false, reason: 'no-sub' };
   }
 
-  // Signature and expiry say nothing about revocation. Ask GoTrue (through the
-  // short-TTL cache) whether the session behind this token is still live, as
-  // the HS256 path does: logout, a ban or a deleted user must end an ES256
-  // token at once, not at `exp`.
+  // Signature and expiry say nothing about revocation. Confirm the session
+  // behind this token is still live, as the HS256 path does: logout, a ban or
+  // a deleted user must end an ES256 token at once, not at `exp`.
   return confirmLive(token, payload, payload.email || (payload.user_metadata?.email as string) || '');
 }
 
 /**
- * Final step shared by the symmetric and asymmetric paths. A GoTrue failure is
- * INCONCLUSIVE (`liveness-unavailable`): the caller then asks GoTrue itself and
- * fails closed. Only GoTrue's own verdict (`session-not-live`) is definitive.
+ * Final step shared by the symmetric and asymmetric paths. A liveness failure
+ * is INCONCLUSIVE (`liveness-unavailable`): the caller then asks GoTrue itself
+ * and fails closed. Only a verdict (`session-not-live`) is definitive.
  */
 async function confirmLive(token: string, payload: JwtPayload, fallbackEmail: string): Promise<VerifyResult | VerifyFailure> {
   let live: Awaited<ReturnType<typeof confirmJwtLive>>;
   try {
-    live = await confirmJwtLive(token, payload.exp);
+    live = await confirmJwtLive(token, { sub: payload.sub as string, session_id: payload.session_id });
   } catch {
     return { ok: false, reason: 'liveness-unavailable' };
   }
@@ -270,11 +275,13 @@ async function confirmLive(token: string, payload: JwtPayload, fallbackEmail: st
 
 // ── Legacy symmetric (HS256) tokens ──────────────────────────────────────────
 //
-// Prod GoTrue still signs with the legacy HS256 secret. Without this path every
-// HS256 request fell through to a GoTrue `getUser` round trip. With
+// Every hosted project (dev, staging, prod) signs with ES256 since 2026-08-21;
+// the legacy HS256 secret is only `previously_used` there, kept until the legacy
+// anon/service_role API keys are retired. Self-hosted Supabase may still sign
+// HS256. Without this path every HS256 request fell through to a GoTrue
+// `getUser` round trip. With
 // `SUPABASE_JWT_SECRET` set we check signature + expiry here, then confirm the
-// session is still live through the short-TTL cache in `jwt-liveness.ts`, which
-// is what bounds revocation latency (see that file for the contract).
+// session is still live through `jwt-liveness.ts` (see that file).
 //
 // Every failure that could be OUR misconfiguration (no secret, a secret that
 // does not match GoTrue's, GoTrue unreachable) is INCONCLUSIVE, so the caller

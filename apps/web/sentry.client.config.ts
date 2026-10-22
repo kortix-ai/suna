@@ -8,7 +8,7 @@
 
 import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
 import * as Sentry from '@sentry/nextjs';
-import { shouldIgnoreSentryNoiseEvent } from '@/lib/browser-error-noise';
+import { shouldIgnoreSentryNoiseEvent } from '@kortix/ui/internal/lib/browser-error-noise';
 
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -33,6 +33,9 @@ if (SENTRY_DSN) {
 
     // Ignore noisy browser errors
     ignoreErrors: [
+      // Non-Error rejection noise (KRTX-2948); anchor to the SDK prefix so
+      // real Error exceptions and messages that only quote it still report.
+      /^Non-Error promise rejection captured/,
       // Browser extensions and ad-blockers
       'ResizeObserver loop',
       'ResizeObserver loop completed with undelivered notifications',
@@ -50,7 +53,7 @@ if (SENTRY_DSN) {
       // Ad-blocker blocked requests
       'ERR_BLOCKED_BY_CLIENT',
       // Transient "session runtime not ready" — `RuntimeNotReadyError`
-      // (`[opencode-sdk] Server URL not ready — sandbox is still loading`) from
+      // (`[kortix-runtime] Server URL not ready — sandbox is still loading`) from
       // `getClient()` for the ~1s window before a session's runtime URL pins.
       // Expected + self-healing on every session switch/provisioning; never an
       // error. `app/error.tsx` already suppresses the render-path case, but the
@@ -104,6 +107,12 @@ if (SENTRY_DSN) {
       'invalid group specifier name',
       // Browser extension/runtime bridge noise
       'Invalid call to runtime.sendMessage(). Tab not found.',
+      // A third-party injected script's `chrome: call method` window-message
+      // RPC (page world → extension world) rejects when no receiver answers
+      // in time. Extension noise, never app code — `browser-error-noise.ts`
+      // drops it from `beforeSend` too; this string gate covers frame-less
+      // onerror/onunhandledrejection captures.
+      'Window message "chrome: call method" timed out.',
       // Firefox: an extension set `window.onerror` before this SDK loaded, and
       // the SDK's chained `_oldOnErrorHandler.apply(...)` is refused across the
       // extension compartment. The frame is the SDK in our bundle, so only

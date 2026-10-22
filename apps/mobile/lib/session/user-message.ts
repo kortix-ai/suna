@@ -6,15 +6,21 @@
  * `turn/queued-prompt-bubbles.tsx`, and `session-chat.tsx`.
  */
 
-import { isAbortError, isTextPart, splitUserParts } from '@kortix/sdk';
-import type { TextPart } from '@/lib/session/types';
+import { isSessionAttachmentRef, type SessionLogBlock, type SessionLogMessage, type SessionPromptPart, type SessionLogTurn } from '@kortix/sdk';
+import { localUriOf } from './optimistic-parts';
+import { messageAborted } from './turn-error';
 import {
+  expandPastedContent,
   fileTagBlocks,
+  promptFileReferenceXml,
   referenceHeaders,
   removeSpans,
   replaceSpans,
   selfClosingTags,
+  serializePromptWithPastes,
+  splitPastedContent,
   tagBlocks,
+  type PastedContent,
   type TagBlock,
 } from '@kortix/shared';
 
@@ -37,8 +43,14 @@ export interface MessageAttachment {
   filename: string;
   mime?: string;
   src?: string;
+  /** An upload ref's workspace path. Unset on a native file part. */
+  path?: string;
+  /** An upload ref's saved copy (`kortix-attachment://…`), when the API kept one. */
+  attachment?: string;
   /** The picked file on the device (an optimistic send, COR-185): shown until the server echo replaces the message. */
   localUri?: string;
+  /** A `<pasted_content>` block: a text tile that opens its full text. */
+  pasted?: PastedContent;
 }
 
 // ─── Text parsing ────────────────────────────────────────────────────────────
@@ -47,6 +59,7 @@ export interface ParsedFileRef {
   path: string;
   mime: string;
   filename: string;
+  attachment?: string;
 }
 
 export interface ParsedSessionRef {
@@ -63,6 +76,8 @@ export interface ParsedUserMessageText {
   files: ParsedFileRef[];
   /** `<session_ref>` mentions. */
   sessions: ParsedSessionRef[];
+  /** `<pasted_content>` blocks, in order: drawn as "Pasted text" tiles. */
+  pasted: PastedContent[];
 }
 
 const XML_ATTR_ESCAPES: Readonly<Record<string, string>> = {
@@ -183,8 +198,9 @@ export function extractReplyContexts(text: string): { text: string; quotes: stri
 
 /**
  * Strip every structured block a user message carries and keep what the user
- * typed. Order matches web's pipeline: kortix_system, reply context, uploads,
- * project refs, file refs, agent refs, session refs.
+ * typed. Order matches web's pipeline: pastes, kortix_system, reply context,
+ * uploads, project refs, file refs, agent refs, session refs. Pastes come out
+ * first: a paste is the user's text, so a tag inside one is paste content.
  *
  * Every tag is found with a scanner from `@kortix/shared/tag-blocks`, never a
  * lazy regex. The regexes re-scanned the rest of the message for each tag that
@@ -192,7 +208,11 @@ export function extractReplyContexts(text: string): { text: string; quotes: stri
  * laptop, more with Hermes on a phone, on every mount of the message.
  */
 export function parseUserMessageText(raw: string): ParsedUserMessageText {
-  let text = raw ?? '';
+  const { text: withoutPastes, pastes } = splitPastedContent(raw ?? '');
+  // A command template can repeat its args, and so a paste: one tile per id (web does the same).
+  const seen = new Set<string>();
+  const pasted = pastes.filter((paste) => !seen.has(paste.id) && Boolean(seen.add(paste.id)));
+  let text = withoutPastes;
   text = removeSpans(text, tagBlocks(text, 'kortix_system', { attributes: 'any', ignoreCase: true }));
   text = text.replace(/\n{3,}/g, '\n\n').trim();
 
@@ -208,7 +228,8 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
     const path = pick('path');
     const filename = pick('filename');
     if (path === undefined && filename === undefined) return whole;
-    files.push({ path: path ?? '', mime: pick('mime') ?? '', filename: filename ?? '' });
+    const attachment = pick('attachment');
+    files.push({ path: path ?? '', mime: pick('mime') ?? '', filename: filename ?? '', ...(attachment ? { attachment } : {}) });
     return '';
   }).trim();
 
@@ -224,35 +245,86 @@ export function parseUserMessageText(raw: string): ParsedUserMessageText {
   });
   text = removeSpans(text, referenceHeaders(text, 'sessions', SESSION_REFERENCE_HINT)).trim();
 
-  return { text, quotes, files, sessions };
+  return { text, quotes, files, sessions, pasted };
 }
 
-export function parseUserMessageParts(parts: Parameters<typeof splitUserParts>[0]) {
-    const { attachments: fileParts, stickyParts } = splitUserParts(parts);
-    const rawText = stickyParts
-      .filter(
-        (p) =>
-          isTextPart(p) &&
-          !!(p as TextPart).text?.trim() &&
-          !(p as TextPart & { synthetic?: boolean }).synthetic &&
-          !(p as TextPart & { ignored?: boolean }).ignored,
-      )
-      .map((p) => (p as TextPart).text)
+/** A harness `file` block carries the v1 file part of a text/plain or directory mention. */
+type FileData = { filename?: string; mime?: string; url?: string };
+
+/**
+ * The prompt of a user message: its visible text (text blocks the harness did
+ * not write, joined by a line break) parsed once, and the attachment tiles in
+ * order: pastes, `<file>` uploads, then the message's files (attachment
+ * blocks, and harness `file` blocks: a text/plain or directory mention).
+ */
+export function parseUserMessageBlocks(blocks: ReadonlyArray<SessionLogBlock>) {
+    const rawText = blocks
+      .flatMap((b) => (b.type === 'text' && !b.synthetic && b.text.trim() ? [b.text] : []))
       .join('\n');
     const content = parseUserMessageText(rawText);
+    const files = blocks.flatMap((b): MessageAttachment[] => {
+      if (b.type === 'attachment') {
+        return [{ key: b.id, filename: b.name || 'File', mime: b.mime, src: b.url, localUri: localUriOf(b.id) }];
+      }
+      if (b.type !== 'harness' || b.kind !== 'file') return [];
+      const data = (b.data ?? {}) as FileData;
+      return [{ key: b.id, filename: data.filename || 'File', mime: data.mime ?? '', src: data.url, localUri: localUriOf(b.id) }];
+    });
     const attachments: MessageAttachment[] = [
+      ...content.pasted.map((paste) => ({ key: `pasted:${paste.id}`, filename: 'Pasted text', pasted: paste })),
       ...content.files.map((f, i) => ({
         key: `upload:${i}:${f.path}`,
         filename: f.filename || f.path.split('/').pop() || 'File',
         mime: f.mime,
         src: f.path || undefined,
+        path: f.path,
+        ...(f.attachment ? { attachment: f.attachment } : {}),
       })),
-      ...fileParts.map((p) => {
-        const fp = p as unknown as { id: string; filename?: string; mime: string; url?: string; localUri?: string };
-        return { key: fp.id, filename: fp.filename || 'File', mime: fp.mime, src: fp.url, localUri: fp.localUri };
-      }),
+      ...files,
     ];
     return { rawText, content, attachments };
+}
+
+/**
+ * What an edited prompt sends again for the attachments the editor kept.
+ * Port of web `editResendAttachments` (`features/session/turn/user-message.tsx`).
+ *
+ * A saved copy (`kortix-attachment://`) or a native file part rides as a URL
+ * part; the API writes a saved copy into the sandbox again. An upload whose
+ * saved copy is missing is still in the sandbox, so its `<file>` ref is resent
+ * as text, joined under the trimmed `text` (refs alone when the text is blank).
+ * A tile with neither source has nothing to resend. A kept paste is written
+ * back as its `<pasted_content>` block, ahead of the text, as the composer does.
+ */
+export function editResendAttachments(
+  kept: readonly MessageAttachment[],
+  text: string,
+): {
+  fileParts: SessionPromptPart[];
+  text: string;
+} {
+  const fileParts: SessionPromptPart[] = [];
+  const refs: string[] = [];
+  const pastes: PastedContent[] = [];
+  for (const { src, path, attachment, filename, mime, pasted } of kept) {
+    if (pasted) {
+      pastes.push(pasted);
+      continue;
+    }
+    const type = mime || 'application/octet-stream';
+    const url = isSessionAttachmentRef(attachment) ? attachment : path ? undefined : src;
+    if (url) fileParts.push({ type: 'file', mime: type, url, filename });
+    else if (path) refs.push(promptFileReferenceXml({ path, mime: type, filename }));
+  }
+  const joined = refs.join('\n');
+  const body = text.trim();
+  const withRefs = joined ? (body ? `${body}\n\n${joined}` : joined) : text;
+  return { fileParts, text: serializePromptWithPastes(withRefs, pastes) };
+}
+
+/** What "Copy" writes: each paste as its text, not its XML, then the typed text. */
+export function userMessageCopyText(text: string, pasted: readonly PastedContent[]): string {
+  return pasted.length > 0 ? expandPastedContent(serializePromptWithPastes(text, [...pasted])) : text;
 }
 
 /**
@@ -267,7 +339,8 @@ export function commandMessageText(
   name: string,
   args: string | undefined,
 ): { body: string; prompt: string } {
-  const body = extractReplyContexts(args ?? '').text;
+  // A paste in the args is drawn as a tile (`content.pasted`), never as XML.
+  const body = extractReplyContexts(splitPastedContent(args ?? '').text).text;
   return { body, prompt: body ? `/${name} ${body}` : `/${name}` };
 }
 
@@ -278,26 +351,6 @@ export function commandMessageText(
  */
 export function quoteMarginBottom(index: number, count: number, hasText: boolean): number {
   return index < count - 1 || hasText ? webSpace(2) : 0;
-}
-
-interface PartLike {
-  type: string;
-  text?: string;
-  synthetic?: boolean;
-  ignored?: boolean;
-  metadata?: { edited?: boolean } | Record<string, unknown>;
-}
-
-/** Web's rule: any visible (non-synthetic, non-ignored, non-empty) text part with `metadata.edited`. */
-export function isUserMessageEdited(parts: readonly PartLike[]): boolean {
-  return parts.some(
-    (part) =>
-      part.type === 'text' &&
-      Boolean(part.text?.trim()) &&
-      !part.synthetic &&
-      !part.ignored &&
-      Boolean((part.metadata as { edited?: boolean } | undefined)?.edited),
-  );
 }
 
 // ─── Sent time (the long-press menu) ─────────────────────────────────────────
@@ -318,35 +371,23 @@ function sameDay(a: Date, b: Date): boolean {
 /**
  * When a message was sent, in full, for the long-press menu's first line
  * (Jay, 2026-09-27: it replaced the "just now" under the bubble): "Today,
- * 3:42 PM", "Yesterday, 9:05 AM", "Sep 3, 12:15 AM", "Dec 31, 2025, 12:00 PM",
- * then " · Edited" for an edited message. Empty with neither.
+ * 3:42 PM", "Yesterday, 9:05 AM", "Sep 3, 12:15 AM", "Dec 31, 2025, 12:00 PM".
+ * Empty without a time.
  */
-export function userMessageSentLabel({
-  timestamp,
-  edited,
-  now,
-}: {
-  timestamp: number | null;
-  edited: boolean;
-  now: number;
-}): string {
-  const parts: string[] = [];
-  if (timestamp !== null) {
-    const sent = new Date(timestamp);
-    const today = new Date(now);
-    const yesterday = new Date(now);
-    yesterday.setDate(today.getDate() - 1);
-    const day = sameDay(sent, today)
-      ? 'Today'
-      : sameDay(sent, yesterday)
-        ? 'Yesterday'
-        : sent.getFullYear() === today.getFullYear()
-          ? `${MONTHS[sent.getMonth()]} ${sent.getDate()}`
-          : `${MONTHS[sent.getMonth()]} ${sent.getDate()}, ${sent.getFullYear()}`;
-    parts.push(`${day}, ${clockTime(sent)}`);
-  }
-  if (edited) parts.push('Edited');
-  return parts.join(' · ');
+export function userMessageSentLabel({ timestamp, now }: { timestamp: number | null; now: number }): string {
+  if (timestamp === null) return '';
+  const sent = new Date(timestamp);
+  const today = new Date(now);
+  const yesterday = new Date(now);
+  yesterday.setDate(today.getDate() - 1);
+  const day = sameDay(sent, today)
+    ? 'Today'
+    : sameDay(sent, yesterday)
+      ? 'Yesterday'
+      : sent.getFullYear() === today.getFullYear()
+        ? `${MONTHS[sent.getMonth()]} ${sent.getDate()}`
+        : `${MONTHS[sent.getMonth()]} ${sent.getDate()}, ${sent.getFullYear()}`;
+  return `${day}, ${clockTime(sent)}`;
 }
 
 // ─── Queued prompt state ─────────────────────────────────────────────────────
@@ -359,50 +400,48 @@ export function queuedPromptStatusLabel(state: QueuedPromptState): string | null
   return state === 'interrupted' ? 'Queued — runs with your next message' : null;
 }
 
-interface TurnLike {
-  userMessage: { info: { id: string } };
-  assistantMessages: ReadonlyArray<{ info: unknown }>;
-}
-
 /**
  * User messages a Stop stranded: the session is idle, the newest turn with
- * assistant content ended by abort, and these turns came after it with
- * nothing under them. Port of `interruptedTurnIds` in web `session-chat.tsx`.
+ * replies ended by abort, and these turns came after it with nothing under
+ * them. Port of `interruptedTurnIds` in web `session-chat.tsx`.
  */
-export function interruptedTurnIds(turns: readonly TurnLike[], sessionWorking: boolean): Set<string> {
+export function interruptedTurnIds(
+  turns: ReadonlyArray<Pick<SessionLogTurn, 'id' | 'assistant'>>,
+  sessionWorking: boolean,
+): Set<string> {
   if (sessionWorking) return new Set();
   let newestWithContent = -1;
   for (let i = turns.length - 1; i >= 0; i--) {
-    if (turns[i]!.assistantMessages.length > 0) {
+    if (turns[i]!.assistant.length > 0) {
       newestWithContent = i;
       break;
     }
   }
   if (newestWithContent < 0 || newestWithContent === turns.length - 1) return new Set();
-  const last = turns[newestWithContent]!.assistantMessages.at(-1);
-  if (!last || !isAbortError((last.info as { error?: unknown }).error)) return new Set();
-  return new Set(turns.slice(newestWithContent + 1).map((t) => t.userMessage.info.id));
+  const last = turns[newestWithContent]!.assistant.at(-1);
+  if (!last || !messageAborted(last)) return new Set();
+  return new Set(turns.slice(newestWithContent + 1).map((t) => t.id));
 }
 
 // ─── Edit (rewind) ───────────────────────────────────────────────────────────
 
-interface MessageLike {
-  info: { id: string; time?: { created?: number } };
-}
-
 /**
  * The messages an edit at `messageId` abandons: the boundary and every message
- * after it, ordered by `time.created` with the id as the tie-break (the order
+ * after it, ordered by `created_at` with the id as the tie-break (the order
  * the server's `MessageV2.latest()` uses). Empty when the boundary is unknown.
  */
-export function rewindHiddenMessageIds(messages: readonly MessageLike[], messageId: string): string[] {
+export function rewindHiddenMessageIds(
+  messages: ReadonlyArray<Pick<SessionLogMessage, 'message_id' | 'created_at'>>,
+  messageId: string,
+): string[] {
+  const at = (m: Pick<SessionLogMessage, 'created_at'>) => Date.parse(m.created_at) || 0;
   const sorted = [...messages].sort((a, b) => {
-    const ca = a.info.time?.created ?? 0;
-    const cb = b.info.time?.created ?? 0;
+    const ca = at(a);
+    const cb = at(b);
     if (ca !== cb) return ca - cb;
-    return a.info.id < b.info.id ? -1 : a.info.id > b.info.id ? 1 : 0;
+    return a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0;
   });
-  const index = sorted.findIndex((m) => m.info.id === messageId);
+  const index = sorted.findIndex((m) => m.message_id === messageId);
   if (index < 0) return [];
-  return sorted.slice(index).map((m) => m.info.id);
+  return sorted.slice(index).map((m) => m.message_id);
 }

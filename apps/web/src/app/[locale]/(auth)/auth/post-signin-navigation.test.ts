@@ -1,6 +1,6 @@
 // The destination a sign-in navigates to must be the one the SERVER resolved.
 //
-// `signInWithPassword`, `verifyOtp` and `signUpWithPassword` each run the
+// `signInWithPassword` and `signUpWithPassword` each run the
 // return URL through the identity gate (`shouldDemoteReturnUrl`) and hand back
 // a `redirectTo`. `AuthContent` separately holds `returnUrl` — the RAW query
 // param — and redirects to it the moment a session exists

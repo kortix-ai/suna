@@ -3,7 +3,7 @@ import { act } from 'react';
 
 import { testRender } from '@opentui/react/test-utils';
 
-import { fakeSession, message, shellOutput, textPart, toolPart } from './test-session.ts';
+import { fakeSession, message, seedSessionStore, shellOutput, textPart, toolPart } from './test-session.ts';
 import { type SessionState, Transcript } from './transcript.tsx';
 
 // React 19 needs this before `act`. Without `act` a key press updates state but
@@ -30,6 +30,7 @@ async function settle(flush: () => Promise<unknown>): Promise<void> {
 }
 
 function render(session: SessionState) {
+  seedSessionStore(session);
   return testRender(<Transcript session={session} focused width={70} height={22} />, SIZE);
 }
 
@@ -52,6 +53,43 @@ describe('<Transcript/> turns', () => {
     expect(frame).toContain('◆ galileo');
     expect(frame).toContain('Done — the workspace is empty.');
     renderer.destroy();
+  });
+
+  test('a compaction is one message: its marker and its summary under one compaction header', async () => {
+    const session = fakeSession({
+      messages: [
+        message('m1', 'user', [{ id: 'pc', sessionID: 's1', messageID: 'm1', type: 'compaction', auto: false }]),
+        message('m2', 'assistant', [textPart('p2', 'SUMMARY of the work so far.')], { agent: 'compaction', mode: 'compaction', summary: true, parentID: 'm1', time: { created: Date.now() - 50_000, completed: Date.now() - 49_000 } }),
+      ],
+    });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    await settle(flush);
+    const frame = captureCharFrame();
+    expect(frame).toContain('◆ compaction');
+    expect(frame).toContain('context compacted (manual)');
+    expect(frame).toContain('SUMMARY of the work so far.');
+    expect(frame).not.toContain('❯ you');
+    renderer.destroy();
+  });
+
+  test('synthetic user text stays hidden while ordinary text renders', async () => {
+    const session = fakeSession({
+      messages: [
+        message('m1', 'user', [
+          textPart('p1', 'hidden synthetic instruction', true),
+          textPart('p2', 'visible user request'),
+        ]),
+      ],
+    });
+    const { captureCharFrame, flush, renderer } = await render(session);
+    try {
+      await settle(flush);
+      const frame = captureCharFrame();
+      expect(frame).toContain('visible user request');
+      expect(frame).not.toContain('hidden synthetic instruction');
+    } finally {
+      renderer.destroy();
+    }
   });
 
   test('an empty transcript says so', async () => {
@@ -143,6 +181,7 @@ describe('<Transcript/> step collapsing', () => {
   });
 
   test('an unfocused transcript ignores Enter', async () => {
+    seedSessionStore(session);
     const { captureCharFrame, flush, mockInput, renderer } = await testRender(
       <Transcript session={session} focused={false} width={70} height={22} />,
       SIZE,

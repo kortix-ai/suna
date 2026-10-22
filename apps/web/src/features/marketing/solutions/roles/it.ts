@@ -5,7 +5,7 @@ export const it: RoleContent = {
   slug: 'it',
   name: 'IT',
   navDescription: 'Runbooks that execute, and a platform that survives your review',
-  seoTitle: 'Kortix for IT teams',
+  seoTitle: 'AI agents for IT teams',
   seoDescription:
     'Access reviews, joiner-mover-leaver runs and service-desk triage, run as sessions on isolated machines. Plus the honest answers IT needs before approving an agent platform at all.',
 

@@ -60,17 +60,11 @@ export function lastKnownManagedCatalog(sessionId: string): RunningCatalogEntry 
   return { ids: entry.ids, fallbackReason: entry.fallbackReason };
 }
 
-/** A box we just told to converge is no longer known to have (or lack) a
- *  model — the next turn re-measures instead of re-sending. */
-export function forgetRunningCatalog(sessionId: string): void {
-  runningCatalog.delete(sessionId);
-  confirmedModels.delete(sessionId);
-}
-
 /**
  * Per-model answers for ids OUTSIDE the managed lineup (`codex/…`, BYOK), which
- * no health report lists. `null` = this box's daemon predates per-model
- * converge, so asking it again is pointless until the TTL lapses.
+ * no health report lists. `null` = this box cannot converge on demand — its
+ * daemon predates per-model converge, or its runtime has no catalog (pi) — so
+ * asking it again is pointless until the TTL lapses.
  */
 const confirmedModels = new Map<string, { models: Set<string> | null; at: number }>();
 

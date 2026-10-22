@@ -21,7 +21,7 @@ mock.module('../services/auto-topup', () => ({
 }));
 
 const { wallet } = await import('./index');
-const { InsufficientCreditsError } = await import('../../errors');
+const { InsufficientCreditsError, WalletUnavailableError } = await import('../../errors');
 
 /** A Drizzle failure: the pg detail hangs off `cause`, not `message`. */
 function queryError(cause: Record<string, unknown>) {
@@ -41,14 +41,14 @@ beforeEach(() => {
 });
 
 describe('wallet failure branches', () => {
-  test('a debit that cannot reach the database is refused as a deduction error', async () => {
+  test('a debit that cannot reach the database is a retryable 503, not "insufficient credits"', async () => {
     executeError = lostConnection;
     const error = await wallet
       .debit({ accountId: 'acct', amount: 1, description: 'x', kind: 'usage', key: null })
       .catch((err) => err);
-    expect(error).toBeInstanceOf(InsufficientCreditsError);
-    expect(error.reason).toBe('Deduction error');
-    expect(error.statusCode).toBe(402);
+    expect(error).toBeInstanceOf(WalletUnavailableError);
+    expect(error).not.toBeInstanceOf(InsufficientCreditsError);
+    expect(error.statusCode).toBe(503);
   });
 
   test('a settlement that cannot reach the database fails loudly', async () => {

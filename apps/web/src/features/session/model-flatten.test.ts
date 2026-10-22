@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-import type { ProviderListResponse } from '@kortix/sdk/react';
-import { flattenModels } from './model-flatten';
+import { type ProviderListResponse, flattenModels } from '@kortix/sdk/react';
 
 // `provider` must survive from the API catalog (`GatewayModel.provider`)
 // through the SDK response type (`GatewayCatalogModel.provider`) to
@@ -16,7 +18,7 @@ function gatewayProviders(models: Record<string, unknown>): ProviderListResponse
   } as unknown as ProviderListResponse;
 }
 
-describe('flattenModels — gateway provider pass-through', () => {
+describe('flattenModels — gateway provider pass-through (@kortix/sdk)', () => {
   test('carries `provider` for a dot-namespaced BYOK Bedrock model', () => {
     const [flat] = flattenModels(
       gatewayProviders({
@@ -34,7 +36,11 @@ describe('flattenModels — gateway provider pass-through', () => {
   test('names a BYOK model after its real provider (OpenCode Go, not "Kortix")', () => {
     const [flat] = flattenModels(
       gatewayProviders({
-        'opencode-go/glm-5.3': { name: 'GLM-5.3', provider: 'opencode-go', provider_name: 'OpenCode Go' },
+        'opencode-go/glm-5.3': {
+          name: 'GLM-5.3',
+          provider: 'opencode-go',
+          provider_name: 'OpenCode Go',
+        },
       }),
     );
     expect(flat.providerID).toBe('kortix');
@@ -104,68 +110,65 @@ describe('flattenModels — gateway provider pass-through', () => {
   });
 });
 
-// Characterization (KRTX-452, phase 1 of KRTX-451): pins the host copy where
-// it still drifts from the canonical SDK flattener
-// (packages/sdk/src/core/models/model-flatten.ts). The SDK twin of this file
-// pins the same fixtures on the SDK side. Later phases reconcile the host
-// onto the SDK semantics; rewrite these assertions then, deliberately, inside
-// the reconciliation PR — never as a quiet drive-by.
-describe('flattenModels — host drift vs @kortix/sdk (characterization)', () => {
-  const driftProviders = {
-    default: {},
-    connected: ['kortix', 'anthropic'],
-    all: [
-      {
-        id: 'kortix',
-        name: 'Kortix',
-        source: 'gateway',
-        models: {
-          // A catalog silent on modalities, in both wire shapes.
-          'custom/mystery': { name: 'Mystery' },
-          'custom/silent': { name: 'Silent', capabilities: { reasoning: true } },
-          // Zero-cost managed model: the gateway stamps `free`.
-          'kortix/free-tier': { name: 'Free Tier', free: true, cost: { input: 0, output: 0 } },
-          'kortix/paid-tier': { name: 'Paid Tier', cost: { input: 1, output: 2 } },
-          // Stale pre-removal entries a baked catalog can still carry.
-          auto: { name: 'Auto' },
-          'kortix/auto': { name: 'Kortix Auto' },
-        },
-      },
-      {
-        id: 'anthropic',
-        name: 'Anthropic',
-        source: 'env',
-        models: { 'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6' } },
-      },
-    ],
-  } as unknown as ProviderListResponse;
+// Phase 4 guard (KRTX-455): the host copy of the model flattener was deleted;
+// `@kortix/sdk` is its single definition. These are filesystem assertions on
+// the tracked tree, so a re-introduced host definition (or a quiet re-import
+// of the deleted module) fails CI instead of silently re-splitting the two
+// implementations.
+const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+  cwd: import.meta.dir,
+  encoding: 'utf8',
+}).trim();
 
-  function byModelID(flat: ReturnType<typeof flattenModels>) {
-    return new Map(flat.map((m) => [m.modelID, m]));
+// The pathspecs below are repo-root-relative: git grep resolves them against
+// the cwd, so every grep here runs with `cwd: repoRoot`, never the test's
+// directory — a wrong cwd would make a pathspec match nothing and the
+// "absence" assertions pass vacuously.
+
+/** `git grep` exits 1 on zero matches — that is the passing case here. */
+function gitGrep(pattern: string, ...pathspecs: string[]): string {
+  try {
+    return execFileSync('git', ['grep', '-n', '-E', pattern, '--', ...pathspecs], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+  } catch (error) {
+    if ((error as { status?: number }).status === 1) return '';
+    throw error;
   }
+}
 
-  test('no provider-mode filter: connected native providers flatten next to the gateway provider', () => {
-    const flat = flattenModels(driftProviders);
-    // The SDK drops `anthropic` in gateway mode and `kortix` in native mode;
-    // the host has no provider-mode filter at all and keeps both.
-    expect(new Set(flat.map((m) => m.providerID))).toEqual(new Set(['kortix', 'anthropic']));
+describe('the host model flattener stays deleted (KRTX-455 phase 4)', () => {
+  // The guard excludes itself: the assertions below quote the patterns they
+  // search for, and those quotes are the only allowed occurrences.
+  const notThisTest = ':(exclude)apps/web/src/features/session/model-flatten.test.ts';
+
+  test('no file under apps/web defines `export function flattenModels`', () => {
+    expect(gitGrep('export function flattenModels', 'apps/web/src', notThisTest)).toBe('');
   });
 
-  test('a catalog silent on modalities pins vision to false — the SDK leaves it undefined', () => {
-    const byId = byModelID(flattenModels(driftProviders));
-    expect(byId.get('custom/mystery')?.capabilities?.vision).toBe(false);
-    expect(byId.get('custom/silent')?.capabilities?.vision).toBe(false);
+  test('no file under apps/web defines the `FlatModel` type', () => {
+    expect(gitGrep('export (interface|type) FlatModel', 'apps/web/src', notThisTest)).toBe('');
   });
 
-  test('stale auto/kortix/auto entries are NOT dropped — the SDK drops them', () => {
-    const byId = byModelID(flattenModels(driftProviders));
-    expect(byId.has('auto')).toBe(true);
-    expect(byId.has('kortix/auto')).toBe(true);
+  test('the deleted host module is not imported again', () => {
+    expect(gitGrep("from '[^']*model-flatten'", 'apps/web/src', notThisTest)).toBe('');
   });
 
-  test('free pins to a boolean: true on a zero-cost model, false when the catalog is silent', () => {
-    const byId = byModelID(flattenModels(driftProviders));
-    expect(byId.get('kortix/free-tier')?.free).toBe(true);
-    expect(byId.get('kortix/paid-tier')?.free).toBe(false);
+  test('the host file itself is gone', () => {
+    expect(existsSync(join(repoRoot, 'apps/web/src/features/session/model-flatten.ts'))).toBe(
+      false,
+    );
+  });
+
+  test('@kortix/sdk is the single definition of the flattener', () => {
+    const definitions = gitGrep('export function flattenModels', 'packages/sdk/src')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.slice(0, line.indexOf(':')));
+    expect(definitions).toEqual(['packages/sdk/src/core/models/model-flatten.ts']);
+    expect(
+      readFileSync(join(repoRoot, 'packages/sdk/src/react/model-flatten.ts'), 'utf8'),
+    ).toContain("export * from '../core/models/model-flatten'");
   });
 });

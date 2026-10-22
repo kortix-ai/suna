@@ -24,7 +24,7 @@ import { eq } from 'drizzle-orm';
 import { dbConnectorRouterDeps } from '../connectors/db-deps';
 import { createConnectorRouter } from '../connectors/router';
 import {
-  resolveProjectDefaultConnectorConnection,
+  resolveProjectDefaultConnectorConnectionOutcome,
   resolveSessionConnectorConnection,
 } from '../projects/lib/session-connector-bindings';
 import { encryptProjectSecret } from '../projects/secrets';
@@ -371,7 +371,7 @@ describe('connector catalog and call resolver use one session scope', () => {
     });
     expect(revoked).toBeNull();
 
-    const projectDefault = await resolveProjectDefaultConnectorConnection({
+    const projectDefault = await resolveProjectDefaultConnectorConnectionOutcome({
       accountId: ACCOUNT,
       projectId: PROJECT,
       alias: 'revoked',
@@ -379,7 +379,9 @@ describe('connector catalog and call resolver use one session scope', () => {
     });
     // A different active project default exists. The explicit revoked binding
     // still fails closed instead of falling through to it.
-    expect(projectDefault?.connectionId).toBe(CONNECTION_REVOKED_DEFAULT);
+    expect(projectDefault.kind === 'ok' ? projectDefault.connection.connectionId : null).toBe(
+      CONNECTION_REVOKED_DEFAULT,
+    );
 
     const catalog = await dbConnectorRouterDeps.listCatalog(principalFor(SESSION_BUG));
     expect(catalog.map((c) => c.slug)).not.toContain('revoked');

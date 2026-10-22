@@ -4,9 +4,12 @@ import {
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { calculateNextCreditGrant } from './credit-grant-schedule';
+import { ROTATION_BATCH_SIZE } from './rotation-batch';
 import { wallet } from '../wallet';
+import { formatUsdAsCredits } from '@kortix/shared';
+import { getTier } from './tiers';
 
-const FREE_TIER_MONTHLY_CREDITS_USD = 2;
+const FREE_TIER_MONTHLY_CREDITS_USD = getTier('free').monthlyCredits;
 
 function rotationMonth(now: Date): string {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
@@ -17,36 +20,47 @@ export async function processFreeTierCreditRotation(now = new Date()): Promise<{
   skipped: number;
   errors: string[];
 }> {
-  const accounts = await getFreeAccountsDueForRotation();
   let processed = 0;
   let skipped = 0;
   const errors: string[] = [];
 
-  for (const account of accounts) {
-    if (!isFreeTierAccountDueForRotation(account, now)) {
-      skipped++;
-      continue;
-    }
+  let after: string | undefined;
+  for (;;) {
+    const accounts = await getFreeAccountsDueForRotation(after);
+    await rotateBatch(accounts);
+    if (accounts.length < ROTATION_BATCH_SIZE) break;
+    after = accounts[accounts.length - 1]!.accountId;
+  }
 
-    try {
-      const idempotencyKey = `free_tier_rotation_${account.accountId}_${rotationMonth(now)}`;
-      await wallet.reset({
-        accountId: account.accountId,
-        amount: FREE_TIER_MONTHLY_CREDITS_USD,
-        description: `Free tier monthly credit reset: ${FREE_TIER_MONTHLY_CREDITS_USD} credits`,
-        key: { event: idempotencyKey },
-      });
+  async function rotateBatch(accounts: Awaited<ReturnType<typeof getFreeAccountsDueForRotation>>) {
+    for (const account of accounts) {
+      if (!isFreeTierAccountDueForRotation(account, now)) {
+        skipped++;
+        continue;
+      }
 
-      await updateCreditAccount(account.accountId, {
-        nextCreditGrant: calculateNextCreditGrant(now).toISOString(),
-        lastGrantDate: now.toISOString(),
-      });
+      try {
+        const idempotencyKey = `free_tier_rotation_${account.accountId}_${rotationMonth(now)}`;
+        const expiresAt = calculateNextCreditGrant(now).toISOString();
+        await wallet.reset({
+          accountId: account.accountId,
+          amount: FREE_TIER_MONTHLY_CREDITS_USD,
+          expiresAt,
+          description: `Free tier monthly credit reset: ${formatUsdAsCredits(FREE_TIER_MONTHLY_CREDITS_USD)} credits`,
+          key: { event: idempotencyKey },
+        });
 
-      processed++;
-    } catch (err) {
-      const msg = `Error processing free-tier rotation for ${account.accountId}: ${(err as Error).message}`;
-      console.error(`[FreeTierRotation] ${msg}`);
-      errors.push(msg);
+        await updateCreditAccount(account.accountId, {
+          nextCreditGrant: expiresAt,
+          lastGrantDate: now.toISOString(),
+        });
+
+        processed++;
+      } catch (err) {
+        const msg = `Error processing free-tier rotation for ${account.accountId}: ${(err as Error).message}`;
+        console.error(`[FreeTierRotation] ${msg}`);
+        errors.push(msg);
+      }
     }
   }
 

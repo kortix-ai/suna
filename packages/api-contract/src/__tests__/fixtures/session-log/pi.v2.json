@@ -1,0 +1,1443 @@
+{
+  "schema": "kortix.session/2",
+  "v": 1,
+  "session_id": "ses_pilive0000000000000001",
+  "title": null,
+  "created_at": "2026-10-09T16:56:04.468Z",
+  "restore_grade": "native",
+  "harness": {
+    "current": "pi",
+    "history": [
+      {
+        "harness": "pi",
+        "version": "1.0.3",
+        "from_seq": 1,
+        "at": "2026-10-09T16:56:04.468Z"
+      }
+    ]
+  },
+  "selection": {
+    "agent": null,
+    "model": {
+      "provider": "mock",
+      "model": "mock-model-2"
+    }
+  },
+  "todos": [],
+  "pending": {
+    "questions": [],
+    "permissions": []
+  },
+  "threads": [
+    {
+      "schema": "kortix.session/2",
+      "v": 1,
+      "thread_id": "ses_pilive0000000000000001",
+      "parent_thread_id": null,
+      "spawned_by": null,
+      "agent": null,
+      "title": null,
+      "created_at": "2026-10-09T16:56:04.468Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "6edf2226",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 1,
+          "role": "system",
+          "kind": "context",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.478Z",
+          "completed_at": "2026-10-09T16:56:04.479Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "You are pi, running in a Kortix schema-restore test. Be concise.\n\n<cwd>\n/work/proto/harness/pi/live/work\n</cwd>"
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "data": {
+                "message": {
+                  "role": "system",
+                  "content": "",
+                  "sections": {
+                    "preamble": "You are pi, running in a Kortix schema-restore test. Be concise.",
+                    "cwd": "<cwd>\n/work/proto/harness/pi/live/work\n</cwd>"
+                  },
+                  "timestamp": 1791564964478,
+                  "toolsAdded": [
+                    {
+                      "name": "read",
+                      "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                      "parameters": {
+                        "type": "object",
+                        "required": [
+                          "path"
+                        ],
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Path to the file to read (relative or absolute)"
+                          },
+                          "offset": {
+                            "type": "number",
+                            "description": "Line number to start reading from (1-indexed)"
+                          },
+                          "limit": {
+                            "type": "number",
+                            "description": "Maximum number of lines to read"
+                          }
+                        }
+                      },
+                      "constrainedSampling": {
+                        "type": "json_schema",
+                        "strict": "prefer"
+                      }
+                    },
+                    {
+                      "name": "bash",
+                      "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                      "parameters": {
+                        "type": "object",
+                        "required": [
+                          "command"
+                        ],
+                        "properties": {
+                          "command": {
+                            "type": "string",
+                            "description": "Shell command to execute"
+                          },
+                          "timeout": {
+                            "type": "number",
+                            "description": "Timeout in seconds (optional, no default timeout)"
+                          }
+                        }
+                      },
+                      "constrainedSampling": {
+                        "type": "json_schema",
+                        "strict": "prefer"
+                      }
+                    },
+                    {
+                      "name": "task",
+                      "description": "Launch a subagent to handle a task with a fresh context. The subagent returns one final report.",
+                      "parameters": {
+                        "type": "object",
+                        "required": [
+                          "description",
+                          "prompt",
+                          "subagent_type"
+                        ],
+                        "properties": {
+                          "description": {
+                            "type": "string",
+                            "description": "A short (3-5 words) description of the task"
+                          },
+                          "prompt": {
+                            "type": "string",
+                            "description": "The task for the agent to perform"
+                          },
+                          "subagent_type": {
+                            "type": "string",
+                            "description": "The type of specialized agent to use for this task"
+                          },
+                          "task_id": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "853dc971",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 2,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.478Z",
+          "completed_at": "2026-10-09T16:56:04.479Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "Create hello.txt containing hi"
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "b87360a2",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 3,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.494Z",
+          "completed_at": "2026-10-09T16:56:04.499Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "I'll create the file."
+            },
+            {
+              "type": "tool_call",
+              "id": "b1",
+              "call_id": "call_mv17itu96",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "echo hi > hello.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "(no output)"
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0
+              },
+              "ended_at": "2026-10-09T16:56:04.504Z",
+              "ext": {
+                "pi": {
+                  "version": "1.0.3",
+                  "data": {
+                    "result_entry_id": "2b82547a"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "b87360a2",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itu95",
+                  "rawStopReason": "tool_calls"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "a5fe6fad",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 4,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.505Z",
+          "completed_at": "2026-10-09T16:56:04.506Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "reasoning",
+              "id": "b0",
+              "text": "The file exists now.",
+              "ext": {
+                "pi": {
+                  "version": "1.0.3",
+                  "data": {
+                    "type": "thinking",
+                    "thinking": "The file exists now.",
+                    "thinkingSignature": "reasoning_content"
+                  }
+                }
+              }
+            },
+            {
+              "type": "text",
+              "id": "b1",
+              "text": "Done."
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "a5fe6fad",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17ituh7",
+                  "rawStopReason": "stop"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "da1cf7e5",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 5,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.528Z",
+          "completed_at": "2026-10-09T16:56:04.528Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "Read hello.txt and look at this image"
+            },
+            {
+              "type": "attachment",
+              "id": "b1",
+              "ref": "blob:c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+              "mime": "image/png",
+              "bytes": 70,
+              "sha256": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "9ea7b093",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 6,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.528Z",
+          "completed_at": "2026-10-09T16:56:04.529Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "id": "b0",
+              "call_id": "call_mv17itv59",
+              "name": "read",
+              "kind": "read",
+              "input": {
+                "path": "hello.txt"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "hi\n"
+                  }
+                ],
+                "is_error": false
+              },
+              "ended_at": "2026-10-09T16:56:04.531Z",
+              "ext": {
+                "pi": {
+                  "version": "1.0.3",
+                  "data": {
+                    "result_entry_id": "ad89d820"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "9ea7b093",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itv58",
+                  "rawStopReason": "tool_calls"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "59e33288",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 7,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.531Z",
+          "completed_at": "2026-10-09T16:56:04.531Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "It says hi. The image is a single pixel."
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "59e33288",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itv7a",
+                  "rawStopReason": "stop"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "9e3b0013",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 8,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.532Z",
+          "completed_at": "2026-10-09T16:56:04.532Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "Run the command `false` and report the result."
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "84fa4aad",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 9,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "error",
+          "in_context": false,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "error",
+          "error": {
+            "code": "unknown",
+            "message": "stream reset"
+          },
+          "created_at": "2026-10-09T16:56:04.532Z",
+          "completed_at": "2026-10-09T16:56:04.533Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "Partial answer that failed"
+            }
+          ],
+          "hidden_reason": "failed_attempt",
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "84fa4aad",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itv8b",
+                  "rawStopReason": "stop"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "0d40ccd2",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 10,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.533Z",
+          "completed_at": "2026-10-09T16:56:04.534Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "id": "b0",
+              "call_id": "call_mv17itvad",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "false"
+              },
+              "status": "error",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "(no output)\n\nCommand exited with code 1"
+                  }
+                ],
+                "is_error": true,
+                "error": {
+                  "message": "(no output)\n\nCommand exited with code 1"
+                },
+                "exit_code": 1
+              },
+              "ended_at": "2026-10-09T16:56:04.537Z",
+              "ext": {
+                "pi": {
+                  "version": "1.0.3",
+                  "data": {
+                    "result_entry_id": "fb41bd83"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "0d40ccd2",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itvac",
+                  "rawStopReason": "tool_calls"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "8bbe04ee",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 11,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.537Z",
+          "completed_at": "2026-10-09T16:56:04.538Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "The command failed with exit code 1."
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "8bbe04ee",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itvde",
+                  "rawStopReason": "stop"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "87acc3e3",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 12,
+          "role": "user",
+          "kind": "compaction",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.539Z",
+          "completed_at": "2026-10-09T16:56:04.539Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "compaction",
+              "id": "b0",
+              "summary": "SUMMARY-L: the user created hello.txt containing hi and checked an image.",
+              "first_kept_message_id": "da1cf7e5",
+              "tokens_before": 110
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "87acc3e3",
+              "data": {
+                "compaction": {
+                  "details": {
+                    "readFiles": [],
+                    "modifiedFiles": []
+                  },
+                  "fromHook": false,
+                  "systemMessage": {
+                    "role": "system",
+                    "content": "",
+                    "sections": {
+                      "preamble": "You are pi, running in a Kortix schema-restore test. Be concise.",
+                      "cwd": "<cwd>\n/work/proto/harness/pi/live/work\n</cwd>"
+                    },
+                    "toolsAdded": [
+                      {
+                        "name": "read",
+                        "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                        "parameters": {
+                          "type": "object",
+                          "required": [
+                            "path"
+                          ],
+                          "properties": {
+                            "path": {
+                              "type": "string",
+                              "description": "Path to the file to read (relative or absolute)"
+                            },
+                            "offset": {
+                              "type": "number",
+                              "description": "Line number to start reading from (1-indexed)"
+                            },
+                            "limit": {
+                              "type": "number",
+                              "description": "Maximum number of lines to read"
+                            }
+                          }
+                        },
+                        "constrainedSampling": {
+                          "type": "json_schema",
+                          "strict": "prefer"
+                        }
+                      },
+                      {
+                        "name": "bash",
+                        "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                        "parameters": {
+                          "type": "object",
+                          "required": [
+                            "command"
+                          ],
+                          "properties": {
+                            "command": {
+                              "type": "string",
+                              "description": "Shell command to execute"
+                            },
+                            "timeout": {
+                              "type": "number",
+                              "description": "Timeout in seconds (optional, no default timeout)"
+                            }
+                          }
+                        },
+                        "constrainedSampling": {
+                          "type": "json_schema",
+                          "strict": "prefer"
+                        }
+                      },
+                      {
+                        "name": "task",
+                        "description": "Launch a subagent to handle a task with a fresh context. The subagent returns one final report.",
+                        "parameters": {
+                          "type": "object",
+                          "required": [
+                            "description",
+                            "prompt",
+                            "subagent_type"
+                          ],
+                          "properties": {
+                            "description": {
+                              "type": "string",
+                              "description": "A short (3-5 words) description of the task"
+                            },
+                            "prompt": {
+                              "type": "string",
+                              "description": "The task for the agent to perform"
+                            },
+                            "subagent_type": {
+                              "type": "string",
+                              "description": "The type of specialized agent to use for this task"
+                            },
+                            "task_id": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    ],
+                    "timestamp": 1791564964539
+                  },
+                  "usage": {
+                    "input": 100,
+                    "output": 10,
+                    "cacheRead": 0,
+                    "cacheWrite": 0,
+                    "reasoning": 0,
+                    "totalTokens": 110,
+                    "cost": {
+                      "input": 0,
+                      "output": 0,
+                      "cacheRead": 0,
+                      "cacheWrite": 0,
+                      "total": 0
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "ebe4ee56",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 13,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.540Z",
+          "completed_at": "2026-10-09T16:56:04.540Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "Spawn a helper to list the files"
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "d71442ca",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 14,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.540Z",
+          "completed_at": "2026-10-09T16:56:04.541Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "id": "b0",
+              "call_id": "call_mv17itvhh",
+              "name": "task",
+              "kind": "task",
+              "input": {
+                "description": "list files",
+                "prompt": "List the files in the workspace",
+                "subagent_type": "general"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "task_id: ses_pilive0000000000000001-child1 (for resuming to continue this task if needed)\n\n<task_result>\nFound hello.txt\n</task_result>"
+                  }
+                ],
+                "is_error": false,
+                "details": {
+                  "sessionId": "ses_pilive0000000000000001-child1",
+                  "model": {
+                    "providerID": "mock",
+                    "modelID": "mock-model-2"
+                  }
+                }
+              },
+              "ended_at": "2026-10-09T16:56:04.548Z",
+              "ext": {
+                "pi": {
+                  "version": "1.0.3",
+                  "data": {
+                    "result_entry_id": "c58e1c7c"
+                  }
+                }
+              }
+            },
+            {
+              "type": "subtask",
+              "id": "b1",
+              "thread_id": "ses_pilive0000000000000001-child1",
+              "agent": "general",
+              "description": "list files",
+              "call_id": "call_mv17itvhh"
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "d71442ca",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itvhg",
+                  "rawStopReason": "tool_calls"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "bf70bb3f",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 15,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.549Z",
+          "completed_at": "2026-10-09T16:56:04.549Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "The helper found hello.txt."
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "bf70bb3f",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itvpl",
+                  "rawStopReason": "stop"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "2f8b1fe9",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 16,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.549Z",
+          "completed_at": "2026-10-09T16:56:04.549Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "What is in hello.txt? Answer in one word."
+            }
+          ]
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "a7f13f9f",
+          "thread_id": "ses_pilive0000000000000001",
+          "seq": 17,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.549Z",
+          "completed_at": "2026-10-09T16:56:04.550Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "hi"
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "native_id": "a7f13f9f",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itvqm",
+                  "rawStopReason": "stop"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "ext": {
+        "pi": {
+          "version": "1.0.3",
+          "native_id": "ses_pilive0000000000000001",
+          "data": {
+            "cwd": "/work/proto/harness/pi/live/work",
+            "header_version": 3
+          }
+        }
+      }
+    },
+    {
+      "schema": "kortix.session/2",
+      "v": 1,
+      "thread_id": "ses_pilive0000000000000001-child1",
+      "parent_thread_id": "ses_pilive0000000000000001",
+      "spawned_by": {
+        "message_id": "d71442ca",
+        "call_id": "call_mv17itvhh"
+      },
+      "agent": "general",
+      "title": "list files (@general subagent)",
+      "created_at": "2026-10-09T16:56:04.541Z",
+      "messages": [
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "ses_pilive0000000000000001-child1.m0",
+          "thread_id": "ses_pilive0000000000000001-child1",
+          "seq": 1,
+          "role": "system",
+          "kind": "context",
+          "status": "complete",
+          "in_context": true,
+          "model": null,
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "1970-01-01T00:00:00.000Z",
+          "completed_at": "1970-01-01T00:00:00.000Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "You are a subagent working inside a Kortix sandbox. Another agent delegated one task to you."
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "data": {
+                "message": {
+                  "role": "system",
+                  "content": "You are a subagent working inside a Kortix sandbox. Another agent delegated one task to you.",
+                  "toolsAdded": [
+                    {
+                      "name": "read",
+                      "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+                      "parameters": {
+                        "type": "object",
+                        "required": [
+                          "path"
+                        ],
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "description": "Path to the file to read (relative or absolute)"
+                          },
+                          "offset": {
+                            "type": "number",
+                            "description": "Line number to start reading from (1-indexed)"
+                          },
+                          "limit": {
+                            "type": "number",
+                            "description": "Maximum number of lines to read"
+                          }
+                        }
+                      },
+                      "constrainedSampling": {
+                        "type": "json_schema",
+                        "strict": "prefer"
+                      }
+                    },
+                    {
+                      "name": "bash",
+                      "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+                      "parameters": {
+                        "type": "object",
+                        "required": [
+                          "command"
+                        ],
+                        "properties": {
+                          "command": {
+                            "type": "string",
+                            "description": "Shell command to execute"
+                          },
+                          "timeout": {
+                            "type": "number",
+                            "description": "Timeout in seconds (optional, no default timeout)"
+                          }
+                        }
+                      },
+                      "constrainedSampling": {
+                        "type": "json_schema",
+                        "strict": "prefer"
+                      }
+                    }
+                  ],
+                  "timestamp": 0
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "ses_pilive0000000000000001-child1.m1",
+          "thread_id": "ses_pilive0000000000000001-child1",
+          "seq": 2,
+          "role": "user",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": null,
+          "finish": null,
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.541Z",
+          "completed_at": "2026-10-09T16:56:04.541Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "List the files in the workspace"
+            }
+          ],
+          "origin": "subagent"
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "ses_pilive0000000000000001-child1.m2",
+          "thread_id": "ses_pilive0000000000000001-child1",
+          "seq": 3,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "tool_calls",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.541Z",
+          "completed_at": "2026-10-09T16:56:04.541Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "tool_call",
+              "id": "b0",
+              "call_id": "call_mv17itvhj",
+              "name": "bash",
+              "kind": "shell",
+              "input": {
+                "command": "ls"
+              },
+              "status": "complete",
+              "result": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "hello.txt\n"
+                  }
+                ],
+                "is_error": false,
+                "exit_code": 0
+              },
+              "ended_at": "2026-10-09T16:56:04.548Z",
+              "ext": {
+                "pi": {
+                  "version": "1.0.3",
+                  "data": {
+                    "result_entry_id": "ses_pilive0000000000000001-child1.m3"
+                  }
+                }
+              }
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itvhi",
+                  "rawStopReason": "tool_calls"
+                }
+              }
+            }
+          }
+        },
+        {
+          "schema": "kortix.session/2",
+          "v": 1,
+          "message_id": "ses_pilive0000000000000001-child1.m4",
+          "thread_id": "ses_pilive0000000000000001-child1",
+          "seq": 4,
+          "role": "assistant",
+          "kind": "turn",
+          "status": "complete",
+          "in_context": true,
+          "model": {
+            "provider": "mock",
+            "model": "mock-model-2",
+            "api": "openai-chat"
+          },
+          "usage": {
+            "input": 100,
+            "output": 10,
+            "cache_read": 0,
+            "cache_write": 0,
+            "reasoning": 0
+          },
+          "finish": "stop",
+          "error": null,
+          "created_at": "2026-10-09T16:56:04.548Z",
+          "completed_at": "2026-10-09T16:56:04.548Z",
+          "producer": {
+            "harness": "pi",
+            "harness_version": "1.0.3",
+            "adapter_version": "0.1.0"
+          },
+          "blocks": [
+            {
+              "type": "text",
+              "id": "b0",
+              "text": "Found hello.txt"
+            }
+          ],
+          "ext": {
+            "pi": {
+              "version": "1.0.3",
+              "data": {
+                "assistant_meta": {
+                  "api": "openai-completions",
+                  "responseId": "chatcmpl_mv17itvok",
+                  "rawStopReason": "stop"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

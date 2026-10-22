@@ -1,4 +1,4 @@
-import { HTTPException } from 'hono/http-exception';
+import { formatUsdAsCredits } from '@kortix/shared';
 
 // ─── Billing Errors ─────────────────────────────────────────────────────────
 
@@ -19,8 +19,24 @@ export class InsufficientCreditsError extends BillingError {
     /** Why the wallet refused, e.g. `Insufficient credits` or `No credit account found`. */
     public readonly reason: string = 'Insufficient credits',
   ) {
-    super(`Insufficient credits. Balance: $${balance.toFixed(4)}, required: $${required.toFixed(4)}`, 402);
+    // Credits for people (1 credit = $0.01). `balance` / `required` stay USD;
+    // clients parse either shape (`parseBalanceUsd` in @kortix/shared).
+    super(
+      `Insufficient credits. Balance: ${formatUsdAsCredits(balance)} credits, required: ${formatUsdAsCredits(required)} credits`,
+      402,
+    );
     this.name = 'InsufficientCreditsError';
+  }
+}
+
+/**
+ * The wallet could not answer: pool exhausted, statement timeout, deadlock,
+ * lost connection. NOT a refusal. The account may have funds. Retryable.
+ */
+export class WalletUnavailableError extends BillingError {
+  constructor(message = 'Billing is temporarily unavailable. Retry shortly.') {
+    super(message, 503);
+    this.name = 'WalletUnavailableError';
   }
 }
 
@@ -35,11 +51,5 @@ export class WebhookError extends BillingError {
   constructor(message: string) {
     super(message, 400);
     this.name = 'WebhookError';
-  }
-}
-
-export class ValidationError extends HTTPException {
-  constructor(message: string) {
-    super(400, { message });
   }
 }

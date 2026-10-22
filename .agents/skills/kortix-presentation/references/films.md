@@ -82,7 +82,7 @@ kit (`positioning.md`, `concepts.md`, `claims.md`). No invented metric. `Northwi
 | # | Bars | Time | On screen | Motion | Sound |
 | --- | --- | --- | --- | --- | --- |
 | 1 | 0–2 | 0–6 s | "The models got good." → "They still wake up with no memory of you." → "A toy." / "Or a cage." | word rise, blur-bridge swap, split | pad, typing ticks |
-| 2 | 3–4 | 6–10 s | The Kortix mark lands. Lockup. "The open-source AI Management System." | settle across the black gap; mark orbit | riser → impact on bar 3 |
+| 2 | 3–4 | 6–10 s | The Kortix mark lands. Lockup. "The open-source AI Operating System." | settle across the black gap; mark orbit | riser → impact on bar 3 |
 | 3 | 5–7 | 10–16 s | "Your company is a git repository." Northwind tree + `kortix.yaml` | lines type in, compressing stagger; panel tilt | groove starts |
 | 4 | 8–10 | 16–22 s | "Every session gets its own computer." Prompt → boot → clone → branch → tests pass | status rows resolve one per beat | ticks on each row |
 | 5 | 11–13 | 22–28 s | "Thousands of sessions. One config." One card becomes a field of isolated sessions | camera pull-back, grid doubling per beat | whoosh |

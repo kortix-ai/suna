@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // status" order was carried by a comment repeated in each copy.
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import * as realComputeMetering from '../../billing/services/compute-metering';
+import * as realSandboxProxyBackend from '../../sandbox-proxy/backend';
 import { RUNTIME_WAKE_LEASE_MS } from '../session-lifecycle/runtime-wake-fence';
 import { mockConfigModule } from './test-support/mock-config';
 
@@ -83,8 +84,9 @@ mock.module('../../shared/db', () => ({
   },
 }));
 
-mock.module('../../sandbox-proxy', () => ({
-  invalidateProviderCache: (externalId: string) => {
+mock.module('../../sandbox-proxy/backend', () => ({
+  ...realSandboxProxyBackend,
+  invalidateSandbox: (externalId: string) => {
     cacheInvalidations.push(externalId);
   },
 }));
@@ -275,7 +277,7 @@ describe('applyStoppedState', () => {
 
   // The lost update: a whole-object write assembled from a stale SELECT drops
   // whatever a concurrent writer put in the column in between — the
-  // `runtimeWakeId` wake fence (projects/routes/shared.ts) and, one table over,
+  // `runtimeWakeId` wake fence (projects/session-open/index.ts) and, one table over,
   // the `lastAliveAt` stamp the compute clamp bills against.
   //
   // The fixture deliberately avoids a `stopReason` key inside `metadata` here:
@@ -378,27 +380,38 @@ describe('applyStoppedState — unattended recovery after runtime_gone', () => {
     expect(drainCalls).toBe(0);
   });
 
-  test('policy says claimed: the recovering cause, and the drain is kicked', async () => {
+  test('policy says claimed: the generic cause, one keyed continuation, and the drain is kicked', async () => {
     withAbandonedTurn();
     unattendedOutcome = 'claimed';
     await applyStoppedState(providerWrite);
 
+    // "Resumed" is written when the continuation reaches the runtime, never at
+    // the stop (KRTX-1732): the stop cannot know the drain will deliver it.
     const rendered = describeSql(executedStatements[0]?.sql);
-    expect(rendered).toContain('SandboxStoppedMidTurnRecovering');
+    expect(rendered).toContain('SandboxStoppedMidTurn');
+    expect(rendered).not.toContain('SandboxStoppedMidTurnRecovering');
     // Fire-and-forget dynamic import; give its microtask a turn to run.
     await Bun.sleep(0);
     expect(drainCalls).toBe(1);
     // The fixture's abandoned turn has no matching `continue_session` inbox
     // row (this mock's db.select cannot satisfy `findPromptByWireId`), which
     // is the SAME shape a session's own initial prompt has for real — no row
-    // ever existed. A synthetic continue prompt must fill that gap.
+    // ever existed. A synthetic continue prompt must fill that gap, keyed by
+    // the turn so a second observer of the same stop writes nothing.
     expect(syntheticContinueCalls).toHaveLength(1);
     expect(syntheticContinueCalls[0]).toMatchObject({
       source: 'system:auto-recovery',
       sessionId: 'sess-2',
       accountId: 'acc-2',
       projectId: 'proj-2',
+      actorUserId: null,
+      idempotencyKey: 'prompt:sess-2:resume_tok-1',
+      resumesTurn: 'tok-1',
+      // A tracked turn: a second stop of the continuation requeues this row.
+      wireMessageId: expect.any(String),
+      remintOnDelivery: true,
     });
+    expect((syntheticContinueCalls[0] as { text: string }).text).toContain('Continue from where you left off');
   });
 
   test('a real redelivered prompt (not a fresh session) skips the synthetic continue', async () => {
@@ -544,7 +557,7 @@ describe('reconcileSandboxStoppedByExternalId', () => {
   });
 
   // Account deletion, the orphan-box sweep, and the access path in
-  // projects/routes/shared.ts all call this AFTER stopping the box themselves.
+  // projects/session-open/index.ts all call this AFTER stopping the box themselves.
   // Making those wait for a second observation would leave the row `active`
   // against a box that is off — still billing — and shared.ts reads the row back
   // expecting `stopped` before it resumes it, so a deferred park breaks session

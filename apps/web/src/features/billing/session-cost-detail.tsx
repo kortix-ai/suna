@@ -5,13 +5,13 @@ import {
   ArrowSquareOutIcon as ExternalLink,
   ReceiptIcon as ReceiptText,
 } from '@phosphor-icons/react';
-import { useTranslations } from '@/i18n/use-translations';
+import { useLocale, useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -19,14 +19,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { EmptyState } from '@/features/layout/section/empty-state';
+} from '@kortix/ui/table';
+import { EmptyState } from '@kortix/ui/empty-state';
 
 import {
+  formatSessionCostCredits,
   formatSessionCostDuration,
-  formatSessionCostExactUsd,
-  formatSessionCostUsd,
-} from './session-cost-format';
+  formatSessionCostExactCredits,
+} from '@kortix/ui/internal/billing/session-cost-format';
 
 interface SessionCostDetailContentProps {
   detail: SessionCostDetail | undefined;
@@ -85,6 +85,8 @@ export function SessionCostDetailContent({
   error,
 }: SessionCostDetailContentProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const locale = useLocale();
+  const tCredits = useTranslations('settings.credits');
   if (error) {
     return (
       <div className="space-y-4">
@@ -147,19 +149,24 @@ export function SessionCostDetailContent({
           re-checking that against both column counts. */}
       <div className="border-border bg-border grid grid-cols-2 gap-px overflow-hidden rounded-md border sm:grid-cols-3">
         {[
-          ['Total', formatSessionCostUsd(detail.total_cost)],
-          ['LLM', formatSessionCostUsd(detail.llm_cost)],
-          ['Compute', formatSessionCostUsd(detail.compute_cost)],
+          ['Total', formatSessionCostCredits(detail.total_cost, locale), tCredits('unit', { count: detail.total_cost * 100 })],
+          ['LLM', formatSessionCostCredits(detail.llm_cost, locale), tCredits('unit', { count: detail.llm_cost * 100 })],
+          ['Compute', formatSessionCostCredits(detail.compute_cost, locale), tCredits('unit', { count: detail.compute_cost * 100 })],
           ['Requests', detail.request_count.toLocaleString('en-US')],
           ['Tokens', tokenTotal.toLocaleString('en-US')],
           [
             tI18nComplete.raw('texte4fa25e6edd6'),
             formatSessionCostDuration(detail.compute_seconds),
           ],
-        ].map(([label, value]) => (
+        ].map(([label, value, unit]) => (
           <div key={label} className="bg-popover px-3 py-2.5">
             <p className="text-muted-foreground text-xs">{label}</p>
-            <p className="mt-0.5 font-mono text-sm font-medium tabular-nums">{value}</p>
+            <p className="mt-0.5 text-sm font-medium tabular-nums">
+              {value}
+              {unit ? (
+                <span className="text-muted-foreground ml-1 text-xs font-normal">{unit}</span>
+              ) : null}
+            </p>
           </div>
         ))}
       </div>
@@ -186,7 +193,7 @@ export function SessionCostDetailContent({
                     {tI18nComplete.raw('texta039dfb9628b')}
                   </TableHead>
                   <TableHead className="text-right">
-                    {tI18nComplete.raw('text204a5eb2cd28')}
+                    {tI18nComplete.raw('text0f046f7588f9')}
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -204,7 +211,7 @@ export function SessionCostDetailContent({
                       {(usage.input_tokens + usage.output_tokens).toLocaleString('en-US')}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs tabular-nums">
-                      {formatSessionCostUsd(usage.cost)}
+                      {formatSessionCostCredits(usage.cost, locale)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -239,7 +246,7 @@ export function SessionCostDetailContent({
                     {tI18nComplete.raw('text8d59829c1e15')}
                   </TableHead>
                   <TableHead className="text-right">
-                    {tI18nComplete.raw('text204a5eb2cd28')}
+                    {tI18nComplete.raw('text0f046f7588f9')}
                   </TableHead>
                   <TableHead className="w-[170px]">
                     {tI18nComplete.raw('textc04730f12fa8')}
@@ -263,7 +270,7 @@ export function SessionCostDetailContent({
                         : formatSessionCostDuration(entry.compute_seconds)}
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs tabular-nums">
-                      {formatSessionCostExactUsd(entry.cost)}
+                      {formatSessionCostExactCredits(entry.cost, locale)}
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {formatTimestamp(ledgerTimestamp(entry))}

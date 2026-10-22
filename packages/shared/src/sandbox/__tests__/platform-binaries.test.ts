@@ -27,6 +27,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'bun:test';
+// Relative: @kortix/shared does not depend on the contract package. This file
+// is import-free, and kortixd bundles the same one.
+import { MANAGED_SKILLS_DIR, RUNTIME_ASSETS_STATE_PATH } from '../../../../api-contract/src/sandbox-layout';
 
 import { OPENCODE_VERSION } from '../../runtime-versions';
 import { kortixArtifactLayer, kortixToolchainLayer } from '../dockerfile-layer';
@@ -130,13 +133,8 @@ describe('platform-owned binaries', () => {
 
   test('the bake writes the one path the daemon reads', () => {
     expect(SANDBOX_RUNTIME_ASSETS_STATE_PATH).toBe('/opt/kortix/runtime-assets-state.json');
-    // Same constant the daemon defaults to (runtime-assets.ts DEFAULT_STATE_PATH)
-    // and the same overlay root it overlays from.
-    const daemon = readFileSync(
-      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/services/runtime-assets/runtime-assets.ts'),
-      'utf8',
-    );
-    expect(daemon).toContain(`const DEFAULT_STATE_PATH = '${SANDBOX_RUNTIME_ASSETS_STATE_PATH}'`);
-    expect(daemon).toContain(`const DEFAULT_MANAGED_SKILLS_DIR = '${SANDBOX_MANAGED_SKILLS_DIR}'`);
+    // The same paths the daemon defaults to (runtime-assets.ts).
+    expect(SANDBOX_RUNTIME_ASSETS_STATE_PATH).toBe(RUNTIME_ASSETS_STATE_PATH);
+    expect(SANDBOX_MANAGED_SKILLS_DIR).toBe(MANAGED_SKILLS_DIR);
   });
 });

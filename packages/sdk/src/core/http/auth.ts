@@ -16,12 +16,11 @@
  * callers that historically asked for "the Supabase token" specifically —
  * same delegate, same value.
  *
- * `invalidateTokenCache()` / `setCachedAuthToken()` / `setBootstrapAuthToken()`
- * are no-ops here (there is no SDK-side cache to invalidate or seed); they're
- * kept as exported names so existing call sites compile unchanged, and a host
- * that layers its own caching on top of `getToken()` can wire these to that
- * cache if it wants the "invalidate on 401" / "seed before hydration" hooks to
- * do something.
+ * `invalidateTokenCache()` calls the host's `getToken.invalidate(lastToken)`.
+ * A host that caches MUST implement `invalidate` (web and mobile do), or a 401
+ * replay and the SSE auth recovery re-read the same dead token.
+ * `setCachedAuthToken(token)` / `setBootstrapAuthToken()` are inert: the SDK
+ * has no cache to seed.
  */
 
 import {
@@ -31,14 +30,14 @@ import {
 } from '../../platform/auth-core';
 import { AuthError } from './api/errors';
 import { platformConfig } from './config';
-import { send } from './transport';
+import { hostToken, invalidateHostToken, send } from './transport';
 
 /**
  * Get the current auth token. Delegates directly to `platformConfig().getToken()`
  * — any caching/deduplication the host wants happens inside that function.
  */
 export async function getSupabaseAccessToken(): Promise<string | null> {
-	return platformConfig().getToken();
+	return hostToken();
 }
 
 /**
@@ -52,10 +51,7 @@ export async function getSupabaseAccessToken(): Promise<string | null> {
  * Retries up to `attempts` times (default 1 = no retry) until `getToken()`
  * returns a truthy token, waiting `baseDelayMs` between attempts (default 0).
  * When `invalidateBetweenAttempts` is set, calls `invalidateTokenCache()`
- * before each retry — a no-op in this file (there's no SDK-side cache), but
- * kept as a real call so a host that layers its own cache on `getToken()` (and
- * wires `invalidateTokenCache`/`setCachedAuthToken` to it, per this file's
- * top-of-file doc comment) gets invalidated between attempts as intended.
+ * before each retry, which reaches the host's `getToken.invalidate`.
  */
 export async function getSupabaseAccessTokenWithRetry(
 	options?: TokenRetryOptions,
@@ -66,27 +62,29 @@ export async function getSupabaseAccessTokenWithRetry(
 }
 
 /**
- * Invalidate the cached token (e.g. after a 401 response).
- * The next getSupabaseAccessToken() call will fetch fresh.
+ * Invalidate the token the host last issued (e.g. after a 401 response).
+ * Calls the host's `getToken.invalidate(token)`, so the next
+ * `getSupabaseAccessToken()` fetches fresh. A host whose `getToken` has no
+ * `invalidate` has no cache to clear: nothing happens.
  */
 export function invalidateTokenCache(): void {
-	setCachedAuthToken(null);
+	invalidateHostToken();
 }
 
 /**
- * Sync the resolved auth token cache without affecting bootstrap mode.
+ * `null` invalidates like `invalidateTokenCache()`. A token is ignored: the SDK
+ * holds no token cache to seed.
+ * @deprecated Seed the host's own `getToken` instead.
  */
 export function setCachedAuthToken(token: string | null): void {
-	// Token caching/refresh is owned by the host via platformConfig().getToken().
+	if (token === null) invalidateHostToken();
 }
 
 /**
- * Seed auth for setup/install flows that receive a JWT from server actions
- * before the browser Supabase client has established local session state.
+ * Inert: the SDK holds no token state, so there is nothing to seed.
+ * @deprecated Return the bootstrap token from the host's own `getToken`.
  */
-export function setBootstrapAuthToken(token: string | null): void {
-	// Token acquisition is owned by the host via platformConfig().getToken().
-}
+export function setBootstrapAuthToken(_token: string | null): void {}
 
 /**
  * Unified auth token getter.
@@ -120,7 +118,8 @@ export async function getAuthTokenWithRetry(
  *   - `retryOnAuthError`: replay a 401 once with a fresh token (default `true`).
  *   - `timeoutMs`: override the default deadline (`DEFAULT_FETCH_TIMEOUT_MS`)
  *     for bodies large enough that it is a throughput limit rather than a hang
- *     detector (`uploadTimeoutMsForBytes` in `core/files/client.ts`). A caller
+ *     detector (`uploadTimeoutMsForBytes` in `core/files/client.ts`), or `null`
+ *     for no transport deadline — the caller's signal is the only one. A caller
  *     `init.signal` still composes with it; whichever fires first wins.
  */
 export async function authenticatedFetch(
@@ -128,7 +127,7 @@ export async function authenticatedFetch(
   init?: RequestInit,
   options?: {
     retryOnAuthError?: boolean;
-    timeoutMs?: number;
+    timeoutMs?: number | null;
   },
 ): Promise<Response> {
   try {

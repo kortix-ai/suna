@@ -1,11 +1,24 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // A literal IP, never 'localhost': vite@7's buildStart resolves 'localhost'
+  // through DNS on every startup, and a container without a readable
+  // /etc/hosts (the factory worker sandboxes) crashes the whole lane before a
+  // single test runs. vite@8 already skips that probe under a verbatim
+  // result order; pinning the host skips it everywhere.
+  server: {
+    host: '127.0.0.1',
+  },
   test: {
     name: 'unit',
     root: import.meta.dirname,
     environment: 'node',
     globals: true,
+    // Several unit tests spawn bash or git, and `pnpm test` runs this lane beside
+    // five others. A test that spawns a shell script (announce-dev-live,
+    // kortixd-package-boundary) takes under 1 s alone and passed 5 s, vitest's
+    // default, at a load average of 33.
+    testTimeout: 30_000,
     include: ['**/*.test.ts'],
     reporters: ['default', ['junit', { suiteName: 'unit' }]],
     outputFile: {

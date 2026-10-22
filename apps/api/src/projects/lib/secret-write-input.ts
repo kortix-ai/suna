@@ -34,6 +34,42 @@ export type SecretWriteInputResult =
   | { ok: true; input: SecretWriteInput }
   | { ok: false; status: 400 | 403; body: Record<string, unknown> };
 
+/**
+ * The strategy→consumer contract, encoded once: which consumers a strategy
+ * accepts, and the consumer a bare strategy is completed with. `broker` is
+ * the one strategy with several consumers and no default — it requires an
+ * explicit one.
+ */
+const STRATEGY_CONSUMERS: Record<
+  'runtime' | 'broker' | 'egress' | 'denied',
+  {
+    accepts: readonly (SecretConsumer | null)[];
+    default: SecretConsumer | null | undefined;
+    error: string;
+  }
+> = {
+  runtime: {
+    accepts: ['sandbox'],
+    default: 'sandbox',
+    error: 'runtime creation requires the sandbox consumer',
+  },
+  broker: {
+    accepts: ['llm_gateway', 'connector', 'http_broker'],
+    default: undefined,
+    error: 'broker creation requires a supported server consumer',
+  },
+  egress: {
+    accepts: ['network'],
+    default: 'network',
+    error: 'egress creation requires the network consumer',
+  },
+  denied: {
+    accepts: [null],
+    default: null,
+    error: 'denied creation cannot have a consumer',
+  },
+};
+
 export function resolveSecretWriteInput(
   body: Record<string, unknown>,
   isAgentSession: boolean,
@@ -100,50 +136,23 @@ export function resolveSecretWriteInput(
       body: { error: 'secret creation supports runtime, broker, egress, or denied delivery' },
     };
   }
-  if (
-    requestedStrategy === 'broker' &&
-    requestedConsumerData !== 'llm_gateway' &&
-    requestedConsumerData !== 'connector' &&
-    requestedConsumerData !== 'http_broker'
-  ) {
-    return {
-      ok: false,
-      status: 400,
-      body: { error: 'broker creation requires a supported server consumer' },
-    };
-  }
-  if (
-    requestedStrategy === 'runtime' &&
-    requestedConsumer !== undefined &&
-    requestedConsumerData !== 'sandbox'
-  ) {
-    return {
-      ok: false,
-      status: 400,
-      body: { error: 'runtime creation requires the sandbox consumer' },
-    };
-  }
-  if (
-    requestedStrategy === 'egress' &&
-    requestedConsumer !== undefined &&
-    requestedConsumerData !== 'network'
-  ) {
-    return {
-      ok: false,
-      status: 400,
-      body: { error: 'egress creation requires the network consumer' },
-    };
-  }
-  if (
-    requestedStrategy === 'denied' &&
-    requestedConsumer !== undefined &&
-    requestedConsumerData !== null
-  ) {
-    return {
-      ok: false,
-      status: 400,
-      body: { error: 'denied creation cannot have a consumer' },
-    };
+  const explicitStrategy = requestedStrategy as
+    | 'runtime'
+    | 'broker'
+    | 'egress'
+    | 'denied'
+    | undefined;
+  if (explicitStrategy !== undefined) {
+    const contract = STRATEGY_CONSUMERS[explicitStrategy];
+    // An invalid consumer body already returned above, so an unparsed consumer
+    // here means it was not sent at all — the bare-strategy case.
+    if (!requestedConsumer?.success) {
+      if (contract.default === undefined) {
+        return { ok: false, status: 400, body: { error: contract.error } };
+      }
+    } else if (!contract.accepts.includes(requestedConsumer.data)) {
+      return { ok: false, status: 400, body: { error: contract.error } };
+    }
   }
   if (requestedStrategy === undefined && requestedConsumer !== undefined) {
     return { ok: false, status: 400, body: { error: 'consumer requires a strategy' } };
@@ -183,21 +192,11 @@ export function resolveSecretWriteInput(
   // get. The web secrets manager already sent `runtime`/`sandbox` outright, so
   // this also ends a split-brain where the same name landed differently
   // depending on which surface created it.
-  const explicitStrategy = requestedStrategy as
-    | 'runtime'
-    | 'broker'
-    | 'egress'
-    | 'denied'
-    | undefined;
   const explicitConsumer =
     requestedConsumer === undefined
-      ? requestedStrategy === 'runtime'
-        ? 'sandbox'
-        : requestedStrategy === 'egress'
-          ? 'network'
-          : requestedStrategy === 'denied'
-            ? null
-            : undefined
+      ? explicitStrategy
+        ? STRATEGY_CONSUMERS[explicitStrategy].default
+        : undefined
       : requestedConsumerData;
   let explicitPolicy = null;
   if (explicitConsumer === 'http_broker' || explicitConsumer === 'network') {

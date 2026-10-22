@@ -48,13 +48,13 @@ mock.module('../shared/db', () => ({
 const {
   NON_TURN_DEADLINE_CAP_MS,
   extendSandboxDeadline,
+  extendSandboxDeadlineForPresence,
   extendUnconfirmedTurnDeadline,
   grantWarmPoolLifetime,
   idleGraceMs,
   isSandboxAuthored,
   isTurnStartRequest,
   shortenSandboxDeadline,
-  shortenSandboxDeadlineOnTurnEnd,
   turnGrantMs,
   turnUnconfirmedDripMs,
 } = await import('./sandbox-deadline');
@@ -157,6 +157,52 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
   });
 });
 
+// KRTX-1729: the composer shows how long presence keeps the computer on. The
+// renewal returns the deadline it wrote and the cap it used, from the same
+// statement, so the two values cannot disagree with the write.
+describe('extendSandboxDeadlineForPresence — the idle grace, capped 2 h past the latest turn', () => {
+  test('is monotone and capped, and returns the deadline and the cap from one statement', async () => {
+    await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' });
+
+    expect(executed).toHaveLength(1);
+    // RETURNING repeats the cap: each half is asserted on its own, or a SET
+    // that lost the cap still matched 7200 and 86400 from RETURNING.
+    const parts = squish(executed[0]).split(' RETURNING ');
+    expect(parts).toHaveLength(2);
+    const [write, readBack] = parts as [string, string];
+    expect(write).toMatch(/deadline_at = GREATEST\( ?s\.deadline_at, LEAST\(/);
+    expect(write).toContain('7200'); // PRESENCE_ONLY_CAP_MS in seconds
+    expect(write).toContain('86400'); // NON_TURN_DEADLINE_CAP_MS in seconds
+    expect(write).toContain(String(idleGraceMs() / 1000));
+    expect(write).toContain("status IN ('active', 'provisioning')");
+    expect(write).not.toMatch(/active_since\s*=/);
+    // The deadline the SET wrote, and the cap it applied.
+    expect(readBack).toMatch(/s\.deadline_at.*AS deadline_ms/);
+    expect(readBack).toMatch(/86400.*7200.*AS cap_ms/);
+  });
+
+  test('returns the written deadline and the cap as Dates', async () => {
+    const deadline = Date.UTC(2026, 9, 12, 10, 15);
+    const cap = Date.UTC(2026, 9, 12, 11, 40);
+    // postgres.js may return a float8 as a number or as a string.
+    executeResult = [{ deadline_ms: deadline, cap_ms: String(cap) }];
+
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toEqual({
+      deadlineAt: new Date(deadline),
+      capAt: new Date(cap),
+    });
+  });
+
+  test('returns null when no live box matched', async () => {
+    executeResult = [];
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
+    executeResult = { rows: [] };
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
+    executeResult = undefined;
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
+  });
+});
+
 // ═══ THE FEATURE-DEFEATING BUG THIS CLOSES ═══
 // The warm exemption was deleted with no replacement. An unclaimed warm box has
 // no turns, no LLM calls and no human traffic, so it can NEVER receive an extend
@@ -203,7 +249,7 @@ describe('grantWarmPoolLifetime — the one box that can never be observed', () 
 });
 
 // ═══ THE MID-TURN STARVATION THIS CLOSES ═══
-// Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box
+// Incident 2026-08-17T20:40:03Z (a prod session on Daytona): the box
 // held a control-plane-minted turn record for its whole life and `deadlineGrant`
 // never left `boot_floor`. The daemon on that warm snapshot answered the turn
 // probe with nothing readable, so `observeSandboxTurn` never returned `active`,
@@ -330,45 +376,6 @@ describe('shortenSandboxDeadline — sandbox-reported, structurally unable to ex
     await shortenSandboxDeadline('sess-1');
 
     expect(executed[0]).toContain('900'); // 15 min in seconds
-  });
-});
-
-// ═══ THE MID-TURN KILL THIS CLOSES ═══
-// `session.error` fires while opencode is RETRYING too. Shortening the box there
-// cut it to the 15-minute idle tail WHILE THE TURN WAS STILL RUNNING, so any
-// rate-limit backoff longer than 15 minutes killed live work. The classifier
-// ships bound to the write so a future caller cannot re-wire one without the
-// other.
-describe('shortenSandboxDeadlineOnTurnEnd — a retry is not a turn end', () => {
-  test('an idle turn end shortens the box to the idle tail', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'idle');
-
-    expect(executed).toHaveLength(1);
-    expect(executed[0]).toContain('900'); // 15 min in seconds
-    expect(executed[0]).not.toContain('GREATEST'); // still LEAST-only
-  });
-
-  test('REGRESSION: a RETRYABLE error writes NOTHING — the turn is still running', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
-      isRetryable: true,
-    });
-
-    expect(executed).toEqual([]);
-  });
-
-  test('a permanent error shortens the box', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
-      isRetryable: false,
-    });
-
-    expect(executed).toHaveLength(1);
-  });
-
-  test('an error with no retry flag shortens — unknown is never assumed alive', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error');
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', undefined);
-
-    expect(executed).toHaveLength(2);
   });
 });
 

@@ -96,7 +96,12 @@ export function messagesAuthorization(
 
 export function buildServer(options: { inflight?: InflightBudget } = {}): GatewayServer {
   const inflight = options.inflight ?? defaultInflight;
-  const api = createApiClient({ baseUrl: config.apiUrl, token: config.apiToken });
+  const api = createApiClient({
+    baseUrl: config.apiUrl,
+    internalBaseUrl: config.apiInternalUrl,
+    token: config.apiToken,
+    edgeKey: config.internalEdgeKey,
+  });
 
   const logger = createGatewayLogger();
 
@@ -114,11 +119,13 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       '[gateway] LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY unset — Langfuse disabled (request logs still persist via the API)',
     );
 
+  const { recordOutcome, recordUpstream, trafficSnapshot, upstreamIncidents } = createTraffic();
   const gateway = createGateway(
     {
       authenticate: api.authenticate,
       // Combined authentication + budget gate. Billing runs after model resolution.
       authorize: api.authorize,
+      admit: api.admit,
       resolveRoute: api.resolveRoute,
       resolveUpstream: api.resolveUpstream,
       notePoolRateLimit: api.notePoolRateLimit,
@@ -128,6 +135,7 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
       recordUsage: api.recordUsage,
       listModels: api.listModels,
       recordTrace: async (trace) => {
+        recordUpstream(trace);
         const sinks: Promise<unknown>[] = [api.recordTrace(trace)];
         if (traces) sinks.push(traces.record(trace));
         await Promise.allSettled(sinks);
@@ -136,9 +144,8 @@ export function buildServer(options: { inflight?: InflightBudget } = {}): Gatewa
     { logger, imageWindow: config.imageWindow },
   );
   const app = new Hono();
-  const { recordOutcome, trafficSnapshot } = createTraffic();
   const inflightRequests = trackInflight(app);
-  registerHealth(app, api, inflight, traces, trafficSnapshot);
+  registerHealth(app, api, inflight, traces, trafficSnapshot, upstreamIncidents);
   registerRoutes(app, gateway, inflight, recordOutcome);
   return { app, traces, inflightRequests };
 }

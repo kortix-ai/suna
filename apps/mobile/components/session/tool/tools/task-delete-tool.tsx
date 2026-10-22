@@ -23,16 +23,16 @@ import { ToolRegistry } from '../shared/registry';
 import { TURN_SPACE, TURN_TYPE, useTurnPalette } from '../shared/styles';
 import type { ToolProps } from '../shared/types';
 
-export function TaskDeleteTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function TaskDeleteTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const output = partOutput(part);
-  const status = partStatus(part);
+  const output = partOutput(call);
+  const status = partStatus(call);
   const outputIsError = useMemo(() => isErrorOutput(output), [output]);
   const isError = status === 'completed' && outputIsError;
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TrashIcon}
       trigger={{ title: 'Delete task', subtitle: isError ? 'failed' : undefined }}
       defaultOpen={defaultOpen}

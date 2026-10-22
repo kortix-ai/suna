@@ -1,6 +1,6 @@
 /**
  * The in-guest egress shim — the ONE way an egress-enforced secret is spent,
- * identically on daytona, e2b and platinum.
+ * identically on platinum and the legacy daytona fallback.
  *
  * No provider edge serves secrets any more, and one of them never could:
  * Daytona has no credential edge and cannot be pointed at one
@@ -38,7 +38,7 @@ import net from 'node:net'
 import type { Duplex } from 'node:stream'
 import zlib from 'node:zlib'
 
-import { BLOCKED_REQUEST_HEADERS } from './blocked-headers'
+import { BLOCKED_REQUEST_HEADERS } from '@kortix/api-contract/secret-relay'
 import { LeafIssuer, type EphemeralCa } from './ca'
 import {
   canStreamDecode,
@@ -46,7 +46,7 @@ import {
   relayStreaming,
   RelayRefusedError,
 } from './relay-client'
-import type { ShimBrokerRule } from './rules'
+import type { ShimBrokerRule } from '@kortix/api-contract/egress-shim-rules'
 
 export interface EgressShimOptions {
   readonly ca: EphemeralCa
@@ -63,7 +63,7 @@ const BROKER_TIMEOUT_MS = 30_000
 
 /**
  * The broker's own request ceiling (`MAX_REQUEST_BYTES`,
- * apps/api/src/secrets/http-broker.ts). Decoding past it only produces bytes
+ * apps/api/src/secrets/broker/errors.ts). Decoding past it only produces bytes
  * the broker answers 413 to, so it doubles as the decompression-bomb guard: a
  * 1 KiB gzip that expands to a gigabyte stops here instead of in this process.
  */

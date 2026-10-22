@@ -4,7 +4,6 @@ import { Hono } from 'hono';
 
 mock.module('../config', () => ({
   config: {
-    LLM_GATEWAY_ENABLED: true,
     LLM_GATEWAY_PROXY_TARGET: 'http://gateway.test',
     LLM_GATEWAY_PROXY_PORT: 0,
     KORTIX_LLM_GATEWAY_REQS_PER_MIN: 2,
@@ -18,7 +17,7 @@ mock.module('../shared/audit', () => ({
 }));
 
 const { mountLlmGateway } = await import('./wire');
-const { resetRateLimiters } = await import('../shared/rate-limit');
+const { resetRateLimiters } = await import('../middleware/rate-limit');
 
 let fetched = 0;
 function stubUpstream(body = '{"models":{}}') {

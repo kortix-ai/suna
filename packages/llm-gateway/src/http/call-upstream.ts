@@ -1,3 +1,4 @@
+import { resolvePinnedEgress, UnsafeEgressError } from '@kortix/shared/ssrf-guard';
 import type { UpstreamDescriptor } from '../domain';
 import { ClientAbortError, UpstreamHttpError, UpstreamMisconfiguredError } from '../errors';
 import type { AiSdkFetch } from '../transports/ai-sdk';
@@ -69,27 +70,7 @@ function toAiSdkFetch(fetchImpl: FetchImpl): AiSdkFetch {
   return (input, init) => fetchImpl(String(input), init ?? {});
 }
 
-// OpenRouter extensions that a strict OpenAI-schema upstream (OpenCode Zen)
-// answers with 400 "Extra inputs are not permitted" (probed 2026-10-01).
-// Clients replay them after an OpenRouter turn; the Responses ingress sends `reasoning`.
-const NON_OPENAI_BODY_FIELDS = ['reasoning', 'usage', 'provider', 'transforms', 'verbosity', 'modalities', 'safety_identifier'];
-
-function toStrictChat(body: Record<string, any>): Record<string, unknown> {
-  const out = { ...body };
-  if (out.reasoning_effort === undefined && typeof out.reasoning?.effort === 'string') out.reasoning_effort = out.reasoning.effort;
-  for (const field of NON_OPENAI_BODY_FIELDS) delete out[field];
-  if (!Array.isArray(out.messages)) return out;
-  out.messages = out.messages.map(({ reasoning, reasoning_details, annotations, ...message }: Record<string, any>) => {
-    const details = Array.isArray(reasoning_details) ? reasoning_details.map((d) => d?.text ?? '').join('') : '';
-    const prior = details || (typeof reasoning === 'string' ? reasoning : '');
-    if (message.reasoning_content === undefined && prior) message.reasoning_content = prior;
-    if (Array.isArray(message.content)) message.content = message.content.map(({ cache_control, ...part }: Record<string, unknown>) => part);
-    return message;
-  });
-  return out;
-}
-
-function directOpenAiRequest(
+async function directOpenAiRequest(
   body: Record<string, unknown>,
   descriptor: UpstreamDescriptor,
   opts: CallUpstreamOptions,
@@ -101,17 +82,25 @@ function directOpenAiRequest(
   if (descriptor.headers) Object.assign(headers, descriptor.headers);
   if (opts.requestId) headers['x-request-id'] = opts.requestId;
 
-  let payload = descriptor.strictChatSchema ? toStrictChat(body) : body;
-  if (descriptor.bodyExtras) payload = { ...payload, ...descriptor.bodyExtras };
-  if (descriptor.resolvedModel) payload = { ...payload, model: descriptor.resolvedModel };
+  const payload = descriptor.resolvedModel ? { ...body, model: descriptor.resolvedModel } : body;
 
   const fetchImpl = opts.fetchImpl ?? ((input, init) => fetch(input, init));
-  return fetchImpl(`${trimTrailingSlash(descriptor.baseUrl)}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
-    signal: opts.signal,
-  });
+  const url = `${trimTrailingSlash(descriptor.baseUrl)}/chat/completions`;
+  const init: RequestInit = { method: 'POST', headers, body: JSON.stringify(payload), signal: opts.signal };
+  if (!descriptor.egress) return fetchImpl(url, init);
+  let pinned: Awaited<ReturnType<typeof resolvePinnedEgress>>;
+  try {
+    pinned = await resolvePinnedEgress(url, { allowHttp: true, allowPrivateHosts: descriptor.egress.allowPrivateHosts });
+  } catch (error) {
+    if (!(error instanceof UnsafeEgressError)) throw error;
+    throw new UpstreamMisconfiguredError(descriptor.provider, `the base URL is not reachable from the gateway (${error.message})`);
+  }
+  if (pinned.host) headers.host = pinned.host;
+  return fetchImpl(pinned.url, {
+    ...init,
+    redirect: 'manual',
+    ...(pinned.serverName ? { tls: { serverName: pinned.serverName } } : {}),
+  } as RequestInit);
 }
 
 /**

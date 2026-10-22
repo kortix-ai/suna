@@ -280,9 +280,9 @@ export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
  *   with no such value (cold instance), fall back to normal operation.
  *
  * A lockdown that must hold even while Vercel is unreachable does not depend on
- * this path: the cutover workflow sets `MAINTENANCE_LEVEL_OVERRIDE=blocking`
- * directly on the worker (`.github/workflows/cutover-prod-us-east-2.yml`),
- * which is evaluated before the state URL is ever fetched.
+ * this path: an operator sets `MAINTENANCE_LEVEL_OVERRIDE=blocking` directly
+ * on the api-router worker (`infra/cloudflare/workers/api-router`), which is
+ * evaluated before the state URL is ever fetched.
  */
 export async function getEdgeMaintenanceConfig(): Promise<MaintenanceConfig> {
   if (!process.env.EDGE_CONFIG) return { ...memoryStore };

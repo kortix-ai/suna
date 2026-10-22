@@ -61,7 +61,7 @@ globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
   return new Response('ok');
 }) as unknown as typeof fetch;
 
-const { postApprovalCard } = await import('../channels/approval-card-relay');
+const { postApprovalCard, markApprovalCardDecided } = await import('../channels/approval-card-relay');
 const { handleBlockAction, handleViewSubmission } = await import('../channels/slack/interactivity');
 const { approvalActionId } = await import('../channels/slack/approval-card');
 const { decideConnectorApproval, loadApprovalRow } = await import('../projects/lib/connector-approval-decision');
@@ -310,6 +310,16 @@ test('a decision made in Kortix replaces the card buttons in the thread too', as
   });
   const row = await loadApprovalRow(project.project_id, executionId);
 
+  // The web surface supplies the card relay as the decision's observer (see
+  // routes/approvals.ts); the decision core itself stays out of channels.
+  const updateStaleCard = () =>
+    markApprovalCardDecided({
+      projectId: project.project_id,
+      row: row!,
+      decision: 'approve',
+      note: 'Looks right.',
+      actorUserId: LAUNCHER,
+    });
   const outcome = await decideConnectorApproval({
     projectId: project.project_id,
     accountId: project.account_id,
@@ -319,6 +329,7 @@ test('a decision made in Kortix replaces the card buttons in the thread too', as
     actorUserId: LAUNCHER,
     auditSource: 'human',
     resume: 'queue',
+    updateStaleCard,
   });
 
   expect(outcome).toBe('resolved');
@@ -327,4 +338,20 @@ test('a decision made in Kortix replaces the card buttons in the thread too', as
   expect(updated[0]).toMatchObject({ channel: CHANNEL, ts: '200.0009' });
   expect(JSON.stringify(updated[0].blocks)).toContain(`<@${SLACK.launcher}>`);
   expect(JSON.stringify(updated[0].blocks)).toContain('Looks right.');
+
+  // A call that already resolved decides nothing and fires no observer.
+  const again = await decideConnectorApproval({
+    projectId: project.project_id,
+    accountId: project.account_id,
+    row: row!,
+    decision: 'deny',
+    note: '',
+    actorUserId: LAUNCHER,
+    auditSource: 'human',
+    resume: 'queue',
+    updateStaleCard,
+  });
+  expect(again).toBe('already_resolved');
+  await Bun.sleep(100);
+  expect(updated).toHaveLength(1);
 });

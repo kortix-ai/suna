@@ -1,7 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountInvitations, accountMemberships, accounts, projects } from '@kortix/db';
 import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
-import { onMemberAdded } from '../../billing/services/seat-management';
 import { ACCOUNT_ACTIONS, assertAuthorized, authorize } from '../../iam';
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { actorOf } from '../../iam/actor';
@@ -13,6 +12,8 @@ import { readJsonObject } from '../../shared/http-body';
 import { buildInviteUrl, sendAccountInviteEmail } from '../email';
 import { AccountIdParam, AccountInviteSchema, type AccountRole, OkSchema, accountsRouter, getMembership, normalizeEmail, parseRole } from './app';
 import { grantAccountRole } from './member-role-write';
+import { logger } from '../../lib/logger';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 
 export function registerMemberInviteRoute(): void {
   // POST /v1/accounts/:accountId/members — invite a user by email. If the user
@@ -109,23 +110,6 @@ export function registerMemberInviteRoute(): void {
         }
       }
 
-      // Trial seat gate — covers both branches below (direct add + invite).
-      const { trialSeatLimitBlocksNewMember } = await import(
-        '../../billing/services/seat-management'
-      );
-      const seatBlock = await trialSeatLimitBlocksNewMember(accountId);
-      if (seatBlock) {
-        return c.json(
-          {
-            error: `Your trial includes ${seatBlock.limit} ${seatBlock.limit === 1 ? 'seat' : 'seats'} and all are in use. Contact the Kortix team to extend the trial.`,
-            code: 'trial_seat_limit_reached',
-            limit: seatBlock.limit,
-            members: seatBlock.members,
-          },
-          403,
-        );
-      }
-
       // Need account name for the invite email
       const [accountRow] = await db
         .select({ name: accounts.name })
@@ -163,8 +147,6 @@ export function registerMemberInviteRoute(): void {
           WHERE account_id=${accountId}::uuid AND lower(user_name)=lower(${email})
         `);
 
-        // Billing v2 — mint YOLO + push +1 seat to Stripe (no-op for legacy).
-        void onMemberAdded(accountId, targetUserId).catch(() => {});
 
         for (const g of projectGrants) {
           await grantProjectRole({
@@ -191,10 +173,14 @@ export function registerMemberInviteRoute(): void {
       // User doesn't exist — create or refresh a pending invitation.
       // Upsert on the unique (account_id, email) index; if one exists,
       // refresh expires_at + initial_role (e.g. inviter changed role).
-      // bootstrap_grants is fully replaced (not merged) on every call — the
-      // caller resubmits the complete desired project-access set each time,
-      // same "what you see is what you get" contract project_grants above
-      // documents; a re-invite that no longer lists a project drops it.
+      // The project grants in bootstrap_grants are fully replaced (not merged)
+      // on every call — the caller resubmits the complete desired
+      // project-access set each time, same "what you see is what you get"
+      // contract project_grants above documents; a re-invite that no longer
+      // lists a project drops it. The `{group_id}` entries SCIM parked on a
+      // still-pending invite stay: only the IdP adds or removes those
+      // (KRTX-2329). An accepted invite already applied its groups, and
+      // offboarding removed them, so a refresh never hands them back.
       const bootstrapGrants = projectGrants.map((g) => ({
         project_id: g.project_id,
         role: g.role,
@@ -218,7 +204,12 @@ export function registerMemberInviteRoute(): void {
             invitedBy: userId,
             // Clear any prior accepted_at so a refreshed invite is "pending" again.
             acceptedAt: null,
-            bootstrapGrants,
+            bootstrapGrants: sql`COALESCE((
+              SELECT jsonb_agg(entry)
+              FROM jsonb_array_elements(${qualifiedColumn(accountInvitations.bootstrapGrants)}) AS entry
+              WHERE entry->>'group_id' IS NOT NULL
+                AND ${qualifiedColumn(accountInvitations.acceptedAt)} IS NULL
+            ), '[]'::jsonb) || excluded.bootstrap_grants`,
           },
         })
         .returning();
@@ -342,7 +333,10 @@ export function registerInviteRoutes(): void {
   );
 
   // POST /v1/accounts/:accountId/invites/:inviteId/resend — re-send the invite
-  // email and bump expires_at to a fresh 14-day window.
+  // email and bump expires_at to a fresh 14-day window. The resender becomes
+  // the inviter, as a fresh Invite makes them: a SCIM invite an admin resends
+  // is one a person shares, so a password email accepts it on an instance that
+  // does not confirm emails (accounts/invites.ts addressedToCaller).
   accountsRouter.openapi(
     createRoute({
       method: 'post',
@@ -378,7 +372,7 @@ export function registerInviteRoutes(): void {
       const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
       const [updated] = await db
         .update(accountInvitations)
-        .set({ expiresAt })
+        .set({ expiresAt, invitedBy: userId })
         .where(
           and(
             eq(accountInvitations.inviteId, inviteId),

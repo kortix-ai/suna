@@ -1,0 +1,1033 @@
+{
+  "driver_version": "0.31.0",
+  "tools": {
+    "health_report": {
+      "description": "Single-call end-to-end driver diagnostics. Designed to let downstream consumers ship one stable call instead of stitching together check_permissions, doctor, version, bundle attribution, and platform capability status. On macOS, prompt-capable direct capture is deliberately skipped; use `cua-driver permissions grant` to verify it explicitly. cua-driver owns the health model; consumers stay thin.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "include": {
+            "description": "Only run these checks (canonical names). Wins over `skip`.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skip": {
+            "description": "Skip these checks (canonical names). Ignored when `include` is set.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "get_screen_size": {
+      "description": "Return the logical size of the main display in points plus its backing scale factor. Agents click in points; Retina displays have scale_factor 2.0. Requires no TCC permissions.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "list_apps": {
+      "description": "List macOS apps — both currently running and installed-but-not-running — with per-app state flags:",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "list_windows": {
+      "description": "List all layer-0 top-level windows currently known to WindowServer. Includes off-screen windows (minimized, on another Space, hidden-launched). Use this to find a window_id before calling get_window_state.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "on_screen_only": {
+            "description": "When true, drop windows not on the current Space. Default false.",
+            "type": "boolean"
+          },
+          "pid": {
+            "description": "Optional pid filter. When set, only this pid's windows are returned.",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "get_accessibility_tree": {
+      "description": "Return a lightweight snapshot of the desktop: running regular apps and on-screen visible windows with their bounds, z-order, and owner pid.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "get_window_state": {
+      "description": "Walk a running app's AX tree and return BOTH a structured `elements` array (preferred) AND a Markdown rendering of the same tree (back-compat). Every actionable element is tagged with [element_index N] in the markdown and as `element_index` in the structured array; pass each element's `element_token` to click, type_text, press_key, etc.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "capture_mode": {
+            "description": "DEPRECATED and ignored. get_window_state always returns BOTH the element tree and a screenshot — ground on both. The modality is chosen at action time by how you address the target: an element ax action (element_token) or an element px action (x,y). Any value (including the old \"som\"/\"screenshot\" aliases) is accepted but has no effect.",
+            "enum": [
+              "ax",
+              "vision"
+            ],
+            "type": "string"
+          },
+          "include_accessibility_tree": {
+            "description": "Default true — walk the AX tree and return `elements` + `tree_markdown` alongside the screenshot. Set false to SKIP the AX walk entirely (the expensive part, bounded by timeout_ms) and return just the screenshot plus window metadata (bounds, scale, app_name, window_title) — the capture-only path for rendering a live window preview / picture-in-picture. Mirrors include_screenshot. Setting BOTH include_accessibility_tree:false AND include_screenshot:false is an error (nothing to return).",
+            "type": "boolean"
+          },
+          "include_screenshot": {
+            "description": "Default true — returns a grounding screenshot alongside the tree. Set false to skip the grab and return the tree only (the cheap path when you're just re-indexing before an element ax action; saves the image tokens + screen-grab latency). screenshot_out_file still forces a capture to disk.",
+            "type": "boolean"
+          },
+          "max_depth": {
+            "description": "Cap on the AX-tree walk depth. Nodes whose rendered indent would exceed this are omitted. Omit for the default (25). Lower this for deep menu/Electron trees.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_dimension": {
+            "description": "Optional cap on the returned screenshot's long edge, in pixels (aspect ratio preserved) — the cheap path for a small preview / thumbnail. Applied on top of the session/global max_image_dimension ceiling; the tighter of the two wins. Omit for the configured default.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_elements": {
+            "description": "Cap on the total number of AX nodes walked. Truncates depth-first; markdown and structured elements truncate together. Omit for the default (2 000). Lower this for Electron / Obsidian / large web apps that produce 10k+ element trees and blow context windows.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "max_image_dimension": {
+            "description": "Per-call override for the returned screenshot's long edge in pixels. An explicit value wins over the session/global setting; 0 returns native resolution. Omit to preserve configured behavior.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Case-insensitive filter for tree_markdown and structured elements. Returns matching actionable rows plus their actionable ancestors without renumbering element_index values.",
+            "type": "string"
+          },
+          "screenshot_out_file": {
+            "description": "When set, write the PNG to this file path (~ expanded) instead of embedding base64 in the response. The structured output will contain screenshot_file_path instead.",
+            "type": "string"
+          },
+          "timeout_ms": {
+            "default": 1000,
+            "description": "Wall-clock budget in milliseconds for the accessibility-tree walk (default 1000, min 100, max 120000). Bounds the WHOLE walk. When the budget runs out the tool returns the PARTIAL tree it has, flagged with `truncated: true`, `truncation_reason`, `nodes_visited`, `nodes_pending` and `elements_complete: false`; retry with a larger value (e.g. 5000) or narrow with `query` / `max_depth`.",
+            "maximum": 120000,
+            "minimum": 100,
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "Target window ID from list_windows.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id"
+        ],
+        "type": "object"
+      }
+    },
+    "get_desktop_state": {
+      "description": "Capture the full display in true screen pixels, full size unless `max_image_dimension` caps it. Use its PNG as the coordinate source for actions whose target is {kind:\"desktop\",display_id:\"primary\"}. Returns the true screen size and backing scale factor. Vision-only: no AX tree walk.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "max_image_dimension": {
+            "description": "Optional long-edge cap for the returned PNG, in pixels (aspect ratio preserved). Omitted or 0 returns the full-size capture. When the cap downsizes the image, the response reports `screenshot_original_width/height`, and x/y read off it for this session's later scope:\"desktop\" actions (or passed with its `capture_id`) are mapped back to the full-size frame automatically.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "screenshot_out_file": {
+            "description": "Write PNG here instead of base64.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "launch_app": {
+      "description": "Launch a macOS app in the background — the target does NOT come to the foreground.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "additional_arguments": {
+            "description": "Extra arguments appended after --args when launching.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bundle_id": {
+            "description": "App bundle identifier, e.g. com.apple.calculator. Preferred over name.",
+            "type": "string"
+          },
+          "creates_new_application_instance": {
+            "description": "When true, force a new app instance even if already running (open -n). Use for concurrent multi-agent/multi-session work so each session gets an isolated instance + window instead of sharing one — on single-instance apps (e.g. Calculator) every caller otherwise gets the same window and the sessions clobber each other.",
+            "type": "boolean"
+          },
+          "name": {
+            "description": "App display name. Used only when bundle_id is absent.",
+            "type": "string"
+          },
+          "urls": {
+            "description": "Optional file paths or URLs to open with the app (e.g. a folder path for Finder).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "webkit_inspector_port": {
+            "description": "Open a WebKit inspector server on this port (sets WEBKIT_INSPECTOR_SERVER env var).",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "click": {
+      "description": "Click against a target pid. **Prefer `element_token` over pixel coordinates** — the token works on backgrounded / minimized / hidden / off-Space windows, identifies one exact snapshot element, and tells you what you're clicking via the cached element's role + label. Reach for `x, y` only when the target is a canvas / video / WebGL / custom-drawn surface that doesn't appear in the AX tree.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "AX action: press, show_menu, pick, confirm, cancel, open.",
+            "type": "string"
+          },
+          "button": {
+            "description": "Mouse button. Default: \"left\" — omit for legacy left-click behaviour. Pixel path uses the matching CGEvent primitive; AX path maps \"right\" to AXShowMenu and falls back to a pixel middle-click at the element's center for \"middle\".",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ],
+            "type": "string"
+          },
+          "capture_id": {
+            "description": "Optional immutable source capture ID returned by get_window_state or get_desktop_state. With x,y, Driver atomically admits and consumes that exact capture before dispatch; stale, mismatched, or out-of-bounds captures are refused without fallback.",
+            "type": "string"
+          },
+          "count": {
+            "description": "Click count (pixel path only). Default 1.",
+            "type": "integer"
+          },
+          "debug_image_out": {
+            "description": "Optional file path. When set on a pixel-addressed click, captures a fresh screenshot, draws a red crosshair at (x, y), and writes the PNG. Use to verify coordinate spaces. Requires window_id; incompatible with from_zoom.",
+            "type": "string"
+          },
+          "delivery_mode": {
+            "description": "Best-effort-background ladder rung (default \"background\"). \"background\": perform the AX action or post the CGEvent without fronting. \"foreground\": briefly front the window, act, let transient UI settle, then restore the prior frontmost app. Requires window_id. Modified clicks require \"foreground\" so macOS observes physical modifier-key state. A generic click has no independent postcondition read-back, except selection of list-like AX rows whose AXSelected state can be confirmed; otherwise confirm the effect from a fresh state snapshot. Use the agent loop: background AX (element_token) → snapshot → background pixel (x/y) → snapshot → delivery_mode:\"foreground\".",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "type": "string"
+          },
+          "from_zoom": {
+            "description": "When true, x and y are in the last zoom image for this pid; driver translates back to full-window coordinates.",
+            "type": "boolean"
+          },
+          "modifier": {
+            "description": "Modifier keys: cmd, shift, option/alt, ctrl.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "scope": {
+            "description": "Coordinate frame for a windowless screen-absolute click (default \"window\"). Pass \"desktop\" when sending x,y with NO pid/window_id — the coordinates are then true screen pixels (read from get_desktop_state with scope=\"desktop\"). Per-call; not a setting.",
+            "enum": [
+              "window",
+              "desktop"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+            "oneOf": [
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "kind": {
+                    "const": "window",
+                    "type": "string"
+                  },
+                  "pid": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "window_id": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "pid",
+                  "window_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": true,
+                "properties": {
+                  "display_id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "const": "desktop",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "display_id"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "window_id": {
+            "description": "Target window ID. Omit when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "x": {
+            "description": "X in screenshot pixels. A window target uses the get_window_state PNG; a desktop target uses the native get_desktop_state PNG. The driver reverses Retina backing scale and any window-image downscale.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Y in screenshot pixels from the image selected by target.",
+            "type": "number"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    "double_click": {
+      "description": "Double-click at (x, y) or on an AX element identified by element_token.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "description": "Best-effort-background ladder rung (default \"background\"). \"background\": inject without fronting or raising the target — no focus steal. \"foreground\": briefly front the target, act, then restore the prior frontmost — the explicit last resort when a background attempt didn't land. Re-call with \"foreground\" only for the action that needs it.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "CGWindowID. Omit when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "x": {
+            "description": "Screen X coordinate (pixel path).",
+            "type": "number"
+          },
+          "y": {
+            "description": "Screen Y coordinate (pixel path).",
+            "type": "number"
+          }
+        },
+        "required": [
+          "pid"
+        ],
+        "type": "object"
+      }
+    },
+    "right_click": {
+      "description": "Right-click against a target pid. Two addressing modes:",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "description": "Best-effort-background ladder rung (default \"background\"). \"background\": inject without fronting or raising the target — no focus steal. \"foreground\": briefly front the target, act, then restore the prior frontmost — the explicit last resort when a background attempt didn't land. Re-call with \"foreground\" only for the action that needs it.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "type": "string"
+          },
+          "modifier": {
+            "description": "Modifier keys held during the right-click: cmd/shift/option/ctrl. Pixel path only.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "window_id": {
+            "description": "CGWindowID. Omit when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "x": {
+            "description": "X in window-local screenshot pixels. Must be provided together with y.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Y in window-local screenshot pixels. Must be provided together with x.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "pid"
+        ],
+        "type": "object"
+      }
+    },
+    "type_text": {
+      "description": "Insert text into the target pid via `AXSetAttribute(kAXSelectedText)`. Works for standard Cocoa text fields and text views. No keystrokes are synthesized — special keys (Return / Escape / arrows) go through `press_key` / `hotkey`. For Chromium / Electron inputs that don't implement `kAXSelectedText`, the tool falls back to CGEvent character synthesis automatically when the estimated route stays within the daemon transport budget. Longer synthesized routes are refused before character events and return a safe chunk size; one-call AX insertion remains uncapped.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "delay_ms": {
+            "description": "Milliseconds between characters in the CGEvent fallback path. Default 30. Ignored when the AX path succeeds.",
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "delivery_mode": {
+            "description": "Best-effort-background ladder rung (default \"background\"). \"background\": AX insert, then CGEvent keystrokes if needed — no focus steal; native controls can be confirmed via AXValue read-back, while web-content writes remain effect:\"unverifiable\". \"foreground\": briefly front the window, type, restore the prior frontmost — the explicit last resort for focus-sensitive surfaces (e.g. WhatsApp/Catalyst) where background keystrokes don't land. Re-call with \"foreground\" when a background attempt remains unverifiable and a fresh snapshot shows the text did not appear.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "type": "string"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "scope": {
+            "default": "window",
+            "description": "Use desktop with no pid/window_id to type into the frontmost application.",
+            "enum": [
+              "window",
+              "desktop"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pid",
+                      "window_id"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "display_id"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "description": "Text to insert at the target's cursor.",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "CGWindowID. Omit when element_token is supplied (the token carries it).",
+            "type": "integer"
+          },
+          "x": {
+            "description": "Screenshot-pixel X of the field to type into — the element px action form. Pass x,y (no element_token) and the tool pixel-clicks there to establish real renderer focus, then types. Use for Chromium/Electron inputs the AX path can't reach. Read straight off the get_window_state PNG, same convention as click.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Screenshot-pixel Y of the field (see x).",
+            "type": "number"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "type": "object"
+      }
+    },
+    "press_key": {
+      "description": "Press and release a single key. Follows the same `delivery_mode` ladder as click/type_text — it does NOT raise the window by default:\n• `background` (default): post to the pid WITHOUT fronting/raising — the auth-message path (Chromium-safe). With element_token it focuses that AX element first. `window_id` only targets; it does not raise.\n• `foreground`: guard and briefly front the exact window, focus an addressed AX element when supplied, send a genuine HID key transition so Chromium content, inline editors, and native menu equivalents receive it, then restore prior frontmost. Requires window_id.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "description": "Best-effort-background ladder rung (default \"background\"). \"background\": inject without fronting or raising the target — no focus steal. \"foreground\": briefly front the target, act, then restore the prior frontmost — the explicit last resort when a background attempt didn't land. Re-call with \"foreground\" only for the action that needs it.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "type": "string"
+          },
+          "key": {
+            "description": "Key name: return, tab, escape, up, down, etc.",
+            "type": "string"
+          },
+          "modifiers": {
+            "description": "Modifier keys: cmd, shift, option/alt, ctrl, fn.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "scope": {
+            "default": "window",
+            "description": "Use desktop with no pid/window_id to send the key to the frontmost application.",
+            "enum": [
+              "window",
+              "desktop"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pid",
+                      "window_id"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "display_id"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window_id": {
+            "description": "Target window. Required for delivery_mode:\"foreground\". Does NOT itself raise the window — raising is gated on delivery_mode.",
+            "type": "integer"
+          },
+          "x": {
+            "description": "Screenshot-pixel X — the element px action form: pixel-click there to focus, then send the key. Use when the key must go to a Chromium/Electron surface the AX path can't focus. Pass with y, no element_token.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Screenshot-pixel Y (see x).",
+            "type": "number"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "type": "object"
+      }
+    },
+    "hotkey": {
+      "description": "Press a key combination — e.g. `[\"cmd\", \"c\"]` for Copy, `[\"cmd\", \"shift\", \"4\"]` for screenshot selection. Follows the same `delivery_mode` ladder as click/type_text — it does NOT raise the window by default:\n• `background` (default): post the combo to the target pid WITHOUT fronting or raising it — uses the macOS 14+ auth-message envelope so Chromium/Electron accept it as trusted live input. With an AX target, focus that exact element first. No top-level focus steal. `window_id` here only targets the combo; it does not raise.\n• `foreground`: briefly front the window (NSMenu path, < 1 ms via SLPSSetFrontProcessWithOptions) so native menu key-equivalents (Cmd+Z, Cmd+W) dispatch, then restore the prior frontmost — the explicit escalation for menu-bar shortcuts on non-Chromium apps that ignore a background combo. With an AX target or x,y, the focused field receives the chord through the foreground HID queue (needed by native Chromium fields such as the omnibox). Requires window_id.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery_mode": {
+            "description": "Best-effort-background ladder rung (default \"background\"). \"background\": inject without fronting or raising the target — no focus steal. \"foreground\": briefly front the target, act, then restore the prior frontmost — the explicit last resort when a background attempt didn't land. Re-call with \"foreground\" only for the action that needs it.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "type": "string"
+          },
+          "keys": {
+            "description": "Modifier(s) and one non-modifier key, e.g. [\"cmd\", \"c\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "scope": {
+            "default": "window",
+            "description": "Use desktop with no pid/window_id to send the chord to the frontmost application.",
+            "enum": [
+              "window",
+              "desktop"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pid",
+                      "window_id"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "display_id"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window_id": {
+            "description": "Target window. Required for delivery_mode:\"foreground\" (the NSMenu activation needs a window). Does NOT itself raise the window — raising is gated on delivery_mode.",
+            "type": "integer"
+          },
+          "x": {
+            "description": "Screenshot-pixel X — the element px action form: pixel-click there to focus, then send the combo (so e.g. Cmd+V pastes into that field). Pass with y. Use for Chromium/Electron surfaces the background combo can't reach.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Screenshot-pixel Y (see x).",
+            "type": "number"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "type": "object"
+      }
+    },
+    "scroll": {
+      "description": "Scroll the target pid. Two paths, picked by how you address the scroll:",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "amount": {
+            "description": "Pixel-wheel path: number of wheel notches. Keystroke path: number of keystroke repetitions. Larger requests are clamped to the maximum. Default: 3.",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "by": {
+            "description": "Scroll granularity. Default: line.",
+            "enum": [
+              "line",
+              "page"
+            ],
+            "type": "string"
+          },
+          "delivery_mode": {
+            "description": "Best-effort-background ladder rung (default \"background\"). \"background\": inject without fronting or raising the target — no focus steal. \"foreground\": briefly front the target, act, then restore the prior frontmost — the explicit last resort when a background attempt didn't land. Re-call with \"foreground\" only for the action that needs it.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "direction": {
+            "description": "Scroll direction.",
+            "enum": [
+              "up",
+              "down",
+              "left",
+              "right"
+            ],
+            "type": "string"
+          },
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "scope": {
+            "default": "window",
+            "description": "Use desktop with x,y and no pid/window_id for native get_desktop_state screenshot coordinates.",
+            "enum": [
+              "window",
+              "desktop"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pid",
+                      "window_id"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "display_id"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "window_id": {
+            "type": "integer"
+          },
+          "x": {
+            "description": "Window-local screenshot X (top-left origin of the PNG from get_window_state). With `y`, routes through the pixel-wheel path at this point — use for a scrollable surface that isn't in the AX tree. Requires window_id to anchor the window→screen conversion.",
+            "type": "number"
+          },
+          "y": {
+            "description": "Window-local screenshot Y. See `x`.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "direction"
+        ],
+        "type": "object"
+      }
+    },
+    "drag": {
+      "description": "Press-drag-release gesture from (from_x, from_y) to (to_x, to_y) in window-local screenshot pixels — the same space get_window_state returns. Top-left origin of the target's window.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "button": {
+            "description": "Mouse button used for the drag. Default: left.",
+            "enum": [
+              "left",
+              "right",
+              "middle"
+            ],
+            "type": "string"
+          },
+          "delivery_mode": {
+            "description": "Best-effort-background ladder rung (default \"background\"). \"background\": inject without fronting or raising the target — no focus steal. \"foreground\": briefly front the target, act, then restore the prior frontmost — the explicit last resort when a background attempt didn't land. Re-call with \"foreground\" only for the action that needs it.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "duration_ms": {
+            "description": "Wall-clock duration of the drag path between mouseDown and mouseUp. Default: 500.",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "from_x": {
+            "description": "Drag-start X in window-local screenshot pixels. Top-left origin.",
+            "type": "number"
+          },
+          "from_y": {
+            "description": "Drag-start Y in window-local screenshot pixels. Top-left origin.",
+            "type": "number"
+          },
+          "from_zoom": {
+            "description": "When true, coordinates are in the last zoom image for this pid; driver maps back to window coordinates.",
+            "type": "boolean"
+          },
+          "modifier": {
+            "description": "Modifier keys held across the entire gesture: cmd/shift/option/ctrl.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "pid": {
+            "description": "Target process ID.",
+            "type": "integer"
+          },
+          "scope": {
+            "default": "window",
+            "description": "Use desktop with no pid/window_id for native get_desktop_state screenshot coordinates.",
+            "enum": [
+              "window",
+              "desktop"
+            ],
+            "type": "string"
+          },
+          "steps": {
+            "description": "Number of intermediate mouseDragged events linearly interpolated along the path. Default: 20.",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "description": "Exact capture/input target selected independently for each action.\n\n`display_id=\"primary\"` is the portable desktop target in this release.\nPlatforms that cannot address another display reject it explicitly rather\nthan silently changing coordinate spaces.",
+                "oneOf": [
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "kind": {
+                        "const": "window",
+                        "type": "string"
+                      },
+                      "pid": {
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "window_id": {
+                        "minimum": 0,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "pid",
+                      "window_id"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "properties": {
+                      "display_id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "const": "desktop",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "display_id"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "to_x": {
+            "description": "Drag-end X in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "to_y": {
+            "description": "Drag-end Y in window-local screenshot pixels.",
+            "type": "number"
+          },
+          "window_id": {
+            "description": "CGWindowID for the window the pixel coordinates were measured against. Optional only when pid owns exactly one eligible top-level window; otherwise the action refuses with ambiguous_window_target.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_x",
+          "from_y",
+          "to_x",
+          "to_y"
+        ],
+        "type": "object"
+      }
+    },
+    "set_value": {
+      "description": "Set a value on a UI element. Two modes depending on element role:",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "element_token": {
+            "description": "Opaque per-snapshot element handle from `structuredContent.elements[].element_token`. Returns an explicit stale error naming the current snapshots once a newer read supersedes it.",
+            "type": "string"
+          },
+          "pid": {
+            "type": "integer"
+          },
+          "value": {
+            "description": "New value. AX will coerce to the element's native type.",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "CGWindowID. Omit when element_token is supplied (the token carries it).",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "value"
+        ],
+        "type": "object"
+      }
+    }
+  }
+}

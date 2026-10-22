@@ -27,6 +27,7 @@ import { HTTPException } from 'hono/http-exception';
 import * as realRequestContext from '../../lib/request-context';
 import * as realPreviewOwnership from '../../shared/preview-ownership';
 import * as realPublicShares from '../../shared/session-public-shares';
+import * as realRetryBudget from '../preview-retry-budget';
 
 const ACTIVE_RECORD = {
   sandboxId: 'sbx-uuid-1',
@@ -55,8 +56,12 @@ const counts = {
   markSandboxUsed: 0,
   markSandboxErrored: 0,
   resumeStopped: 0,
+  registerRuntimeFork: 0,
 };
 
+// The retry sleeps (250 ms / 1 s / 3 s) shrink to 1 ms: these cases assert the
+// attempts and their outcome, not the backoff's wall time.
+mock.module('../preview-retry-budget', () => ({ ...realRetryBudget, PROXY_RETRY_DELAYS_MS: [1, 1, 1] }));
 mock.module('../../config', () => ({
   config: { FRONTEND_URL: 'http://localhost:3000' },
 }));
@@ -89,12 +94,9 @@ mock.module('../../projects/lib/session-token-grant', () => ({
   SessionGrantRemintError: class SessionGrantRemintError extends Error {},
 }));
 mock.module('../../projects/lib/turn-start-convergence', () => ({
-  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  convergeConfigIfBehind: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   scheduleAssetConvergence: () => {},
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
-}));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
 }));
 mock.module('../../projects/session-activity', () => ({
   recordSessionActivity: async () => {},
@@ -106,7 +108,14 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
-mock.module('../../projects/routes/shared', () => ({
+// A forwarded fork is recorded through projects/surface (#10421); the real
+// module loads the whole projects graph, so the record is counted here.
+mock.module('../../projects/surface', () => ({
+  registerRuntimeFork: async () => {
+    counts.registerRuntimeFork += 1;
+  },
+}));
+mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async (externalId: string) => {
     counts.resumeStopped += 1;
     return Boolean(externalId);
@@ -291,6 +300,27 @@ describe('forwardToSandbox refusal branches', () => {
     expect(fetchCalls).toBe(0);
   });
 
+  test('an encoded spelling of /kortix/env or the base reset is refused like the plain one', async () => {
+    const env = await forward({ method: 'POST', path: '/kortix/%65nv', port: 8000, body: bodyOf({ FOO: 'bar' }) });
+    expect(env.status).toBe(404);
+    const reset = await forward({ path: '/kortix/r%65fresh', query: '?base=1', port: 8000 });
+    expect(reset.status).toBe(403);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('an ambiguous path on the daemon port is a 400; an app port keeps its escapes', async () => {
+    for (const path of ['/kortix/a%2Fb', '/kortix/%zz', '/kortix/%2e%2e/env']) {
+      const res = await forward({ path, port: 8000 });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid request path', code: 'INVALID_PATH' });
+    }
+    expect(fetchCalls).toBe(0);
+    recordingFetch(new Response('app', { status: 200 }));
+    const app = await forward({ path: '/a%2Fb', port: 3000 });
+    expect(app.status).toBe(200);
+    expect(String(lastFetch?.url)).toContain('/a%2Fb');
+  });
+
   test('the destructive base reset is refused with its code; a plain refresh is not', async () => {
     const refused = await forward({ path: '/kortix/refresh', query: '?base=1', port: 8000 });
     expect(refused.status).toBe(403);
@@ -306,25 +336,24 @@ describe('forwardToSandbox refusal branches', () => {
     expect(fetchCalls).toBe(1);
   });
 
-  test('a member without session visibility is refused on the daemon port, not on an app port', async () => {
-    sessionAccessAllowed = false;
-    let thrown: unknown = null;
-    try {
-      await forward({ port: 8000, path: '/session' });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).toBeInstanceOf(HTTPException);
-    expect((thrown as HTTPException).status).toBe(403);
-    expect((thrown as HTTPException).message).toBe('Not authorized to access this session');
-    expect(fetchCalls).toBe(0);
-
-    // An ordinary app port carries no conversation, so the visibility gate does not apply.
-    queueFetch(new Response('app', { status: 200 }));
-    const appPort = await forward({ port: 3000, path: '/' });
-    expect(appPort.status).toBe(200);
-    expect(fetchCalls).toBe(1);
-  });
+  // Pentest M-2: an app port serves the session's workspace too, so a member
+  // whose session access was revoked must not replay ids into its dev server.
+  test.each([[8000, '/session'], [3000, '/'], [3211, '/file.txt']])(
+    'a member without session visibility is refused on port %d',
+    async (port, path) => {
+      sessionAccessAllowed = false;
+      let thrown: unknown = null;
+      try {
+        await forward({ port, path });
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).toBeInstanceOf(HTTPException);
+      expect((thrown as HTTPException).status).toBe(403);
+      expect((thrown as HTTPException).message).toBe('Not authorized to access this session');
+      expect(fetchCalls).toBe(0);
+    },
+  );
 
   test('a share-token caller cannot switch agents — refused with no principal to authorize', async () => {
     queueFetch(new Response('should never be fetched'));
@@ -370,6 +399,41 @@ describe('forwardToSandbox on a stopped sandbox', () => {
     expect(fetchCalls).toBe(0);
     expect(counts.wakeSandbox).toBe(0);
     expect(counts.resumeStopped).toBe(0);
+  });
+
+  test.each([
+    [8000, '/session/sess-1/fork'],
+    [4096, '/session/sess-1/fork/'],
+    [4097, '/proxy/4096/session/sess-1/fork'],
+    [8000, '/session/sess-1/%66ork'],
+  ])('forking a stopped conversation on port %s at %s returns an actionable conflict', async (port, path) => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const res = await forward({ method: 'POST', port, path, body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: 'Resume the session before forking the conversation.',
+      code: 'session_stopped',
+    });
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('forking an active conversation still forwards the runtime result', async () => {
+    queueFetch(new Response('{"id":"fork-1"}', { status: 200 }));
+    const res = await forward({ method: 'POST', port: 8000, path: '/session/sess-1/fork', body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ id: 'fork-1' });
+    expect(fetchCalls).toBe(1);
+    expect(counts.registerRuntimeFork).toBe(1);
+    expect(counts.resumeStopped).toBe(0);
+  });
+
+  test('an app route named fork retains the normal stopped-preview response', async () => {
+    currentRecord = { ...ACTIVE_RECORD, status: 'stopped' };
+    const res = await forward({ method: 'POST', port: 3000, path: '/session/sess-1/fork', body: bodyOf({}), headers: jsonHeaders() });
+    expect(res.status).toBe(503);
+    expect(counts.resumeStopped).toBe(0);
+    expect(fetchCalls).toBe(0);
   });
 
   test('a browser navigation gets the 200 starting page, not the 5xx', async () => {
@@ -430,10 +494,7 @@ describe('forwardToSandbox on a stopped sandbox', () => {
 // ── the retry / wake machinery ───────────────────────────────────────────────
 
 describe('forwardToSandbox retry and wake', () => {
-  // The retry sleeps (250 ms / 1 s / 3 s) are real, so the four-attempt cases
-  // need ~4.5 s — above Bun's 5 s default per-test timeout on a direct run.
-  // The explicit 8 s keeps them honest and fast instead of loosening the
-  // batch runner's 15 s floor.
+  // The retry sleeps are 1 ms here (the PROXY_RETRY_DELAYS_MS mock above).
   test('a GET 502 invalidates the ingress link and retries to a 200, never waking the box', async () => {
     queueFetch(new Response('bad gateway', { status: 502 }), new Response('ok', { status: 200 }));
     const res = await forward({ port: 3000, path: '/' });
@@ -454,7 +515,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(browser.headers.get('x-kortix-upstream-status')).toBe('502');
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(0);
-  }, 8_000);
+  });
 
   test('retries exhausted: a machine client gets the bare upstream 5xx', async () => {
     const fiftyTwo = () => new Response('bad gateway', { status: 502 });
@@ -464,24 +525,27 @@ describe('forwardToSandbox retry and wake', () => {
     expect(await machine.text()).toBe('bad gateway');
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(0);
-  }, 8_000);
+  });
 
   test('a connection-refused GET wakes the sandbox once, then gives up with a 502 on the daemon hop', async () => {
     queueFetch(refused(), refused(), refused(), refused());
     // The give-up must leave its per-stage timeline behind: the stage deltas
     // (load-sandbox / ingress) are what makes a latency spike on this path
-    // attributable from the log line alone.
+    // attributable from the log line alone. The timeline ships through the api
+    // logger (`logger.info` — console.log does not reach Better Stack), so the
+    // capture spies that seam.
+    const { logger } = await import('../../lib/logger');
+    const originalInfo = logger.info;
     const logs: unknown[][] = [];
-    const originalLog = console.log;
-    console.log = (...args: unknown[]) => {
+    logger.info = ((...args: unknown[]) => {
       logs.push(args);
-      originalLog(...args);
-    };
+      originalInfo(...(args as Parameters<typeof originalInfo>));
+    }) as typeof logger.info;
     let res: Response;
     try {
       res = await forward({ port: 8000, path: '/session' });
     } finally {
-      console.log = originalLog;
+      logger.info = originalInfo;
     }
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({
@@ -504,7 +568,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(timeline?.[0]).toContain('total=');
     expect(timeline?.[0]).toContain('ingress=');
     expect(timeline?.[1]).toEqual({ path: '/session', port: 8000, hop: 'daemon' });
-  }, 8_000);
+  });
 
   test('a Daytona stopped-box 400 wakes once and retries; the last attempt passes the 400 through', async () => {
     const down = () => new Response('failed to get runner info: no IP address found', { status: 400 });
@@ -517,7 +581,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(counts.invalidatePreviewLink).toBe(3);
     // The 400 was returned before the give-up path, so the row was never errored.
     expect(counts.markSandboxErrored).toBe(0);
-  }, 8_000);
+  });
 
   test('a dead signal followed by an unreachable network errors the row before the 502', async () => {
     queueFetch(
@@ -531,7 +595,7 @@ describe('forwardToSandbox retry and wake', () => {
     expect(fetchCalls).toBe(4);
     expect(counts.wakeSandbox).toBe(1);
     expect(counts.markSandboxErrored).toBe(1);
-  }, 8_000);
+  });
 });
 
 // ── provider-edge and signed-context auth failures ───────────────────────────
@@ -568,7 +632,7 @@ describe('forwardToSandbox authentication failures', () => {
   });
 
   test('an upstream 401 that the provider did not sign is a 502 signed-context rejection', async () => {
-    currentRecord = { ...ACTIVE_RECORD, provider: 'e2b' };
+    currentRecord = { ...ACTIVE_RECORD, provider: 'platinum' };
     queueFetch(new Response('unauthorized', { status: 401 }));
     const res = await forward({ port: 3000, path: '/' });
     expect(res.status).toBe(502);
@@ -597,11 +661,13 @@ describe('forwardToSandbox authentication failures', () => {
     expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
   });
 
-  // pi (and OpenCode's boot steps) refuse with another text, and a W6 daemon
-  // adds `code: runtime_not_ready`. Both must release the claim too.
-  for (const [name, body] of [
-    ['the daemon text of a pi runtime', '{"error":"sandbox runtime not ready","phase":"starting"}'],
-    ['the runtime_not_ready code', '{"code":"runtime_not_ready","error":"starting","phase":"starting"}'],
+  // pi (and OpenCode's boot steps) refuse with another text, a W6 daemon adds
+  // `code: runtime_not_ready`, and every daemon names its boot phase in
+  // `X-Kortix-Boot-Phase`. Each must release the claim on its own.
+  for (const [name, body, headers] of [
+    ['the daemon text of a pi runtime', '{"error":"sandbox runtime not ready","phase":"starting"}', {}],
+    ['the runtime_not_ready code', '{"code":"runtime_not_ready","error":"starting","phase":"starting"}', {}],
+    ['only the boot-phase header', '{"error":"starting"}', { 'X-Kortix-Boot-Phase': 'opencode-starting' }],
   ] as const) {
     test(`a not-ready 503 with ${name} passes through and releases the dedupe claim`, async () => {
       const args = {
@@ -611,7 +677,7 @@ describe('forwardToSandbox authentication failures', () => {
         body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
         headers: jsonHeaders({ 'idempotency-key': `nr-${name}` }),
       } as const;
-      queueFetch(new Response(body, { status: 503 }));
+      queueFetch(new Response(body, { status: 503, headers }));
       const first = await forward(args);
       expect(first.status).toBe(503);
       expect(await first.text()).toBe(body);
@@ -622,6 +688,78 @@ describe('forwardToSandbox authentication failures', () => {
       expect(await retry.json()).not.toEqual({ status: 'duplicate', deduplicated: true });
     });
   }
+
+  test('a not-ready 503 on a GET passthrough carries the daemon attribution', async () => {
+    // The hydrate reads (/lsp/diagnostics, /permission, /question, /vcs/diff, …)
+    // land on this branch when the runtime restarts behind a live box. The
+    // passthrough must say WHICH hop answered (proxy-hop.ts): `daemon`, plus
+    // the status the daemon returned, so the request log can tell the designed
+    // boot-window answer from a failure (request-log-level.ts).
+    const args = {
+      method: 'GET',
+      path: '/lsp/diagnostics',
+      port: 8000,
+      origin: 'http://localhost:3000',
+    } as const;
+    queueFetch(
+      new Response('{"error":"starting"}', {
+        status: 503,
+        headers: { 'X-Kortix-Boot-Phase': 'opencode-starting' },
+      }),
+    );
+    const res = await forward(args);
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe('{"error":"starting"}');
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('daemon');
+    expect(res.headers.get('X-Kortix-Upstream-Status')).toBe('503');
+    // The web app and the API are different origins: without the expose the
+    // browser hides both headers from JS and the probe is back to guessing.
+    expect(res.headers.get('Access-Control-Expose-Headers')).toBe(
+      'X-Kortix-Proxy-Hop, X-Kortix-Upstream-Status',
+    );
+    expect(fetchCalls).toBe(1);
+  });
+
+  test('a not-ready-shaped 503 from an APP port is attributed to that port, not the daemon', async () => {
+    // The not-ready match is header/body text (KRTX-397 self-review): a user
+    // app on an ordinary port could answer with the same shape. The hop must
+    // be the PORT's hop (portFailureHop), so the GET line stays logged
+    // (request-log-level.ts suppresses only the `daemon` hop) and the probe
+    // counts it — an app cannot borrow the daemon's designed answer.
+    const args = {
+      method: 'GET',
+      path: '/healthz',
+      port: 3000,
+      origin: 'http://localhost:3000',
+    } as const;
+    queueFetch(
+      new Response('starting', {
+        status: 503,
+        headers: { 'X-Kortix-Boot-Phase': 'opencode-starting' },
+      }),
+    );
+    const res = await forward(args);
+    expect(res.status).toBe(503);
+    expect(res.headers.get('X-Kortix-Proxy-Hop')).toBe('upstream_port');
+    expect(res.headers.get('X-Kortix-Upstream-Status')).toBe('503');
+    expect(fetchCalls).toBe(1);
+  });
+
+  test('a 503 that only mentions "not ready" in an unrelated body keeps the claim', async () => {
+    const args = {
+      method: 'POST',
+      path: '/session/sess-1/message',
+      port: 8000,
+      body: bodyOf({ parts: [{ type: 'text', text: 'hi' }] }),
+      headers: jsonHeaders({ 'idempotency-key': 'nr-ambiguous' }),
+    } as const;
+    queueFetch(new Response('{"error":"gateway not ready","code":"upstream_unavailable"}', { status: 503 }));
+    expect((await forward(args)).status).toBe(503);
+
+    // The runtime may hold the message: the retry dedupes instead of re-sending.
+    const retry = await forward(args);
+    expect(await retry.json()).toEqual({ status: 'duplicate', deduplicated: true });
+  });
 });
 
 // ── redirects, CORS, cookies — originMode vs the path form ───────────────────
@@ -730,13 +868,13 @@ describe('resolvePreviewWsUpstream', () => {
     expect(result).toEqual({ ok: false, status: 403, message: 'not authorized' });
   });
 
-  test('session visibility gates the conversation ports, not an app port', async () => {
+  test('session visibility gates every port, an app port included', async () => {
     sessionAccessAllowed = false;
     const daemon = await resolvePreviewWsUpstream(wsArgs());
     expect(daemon).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
 
     const appPort = await resolvePreviewWsUpstream(wsArgs({ upstreamPort: 3000, remainingPath: '/ws' }));
-    expect(appPort.ok).toBe(true);
+    expect(appPort).toEqual({ ok: false, status: 403, message: 'not authorized for this session' });
   });
 
   test('a stopped box stays 503 unless the attach was marked user-initiated on a PTY path', async () => {

@@ -32,6 +32,9 @@ export function bindProjectOperations(
       ) => P.setConnectorAuthorizationStrategy(projectId, ...a),
       setCredential: (...a: DropFirst<Parameters<typeof P.setConnectorCredential>>) =>
         P.setConnectorCredential(projectId, ...a),
+      /** Disconnect: remove the connector's stored credential. */
+      deleteCredential: (...a: DropFirst<Parameters<typeof P.deleteConnectorCredential>>) =>
+        P.deleteConnectorCredential(projectId, ...a),
       setSensitive: (...a: DropFirst<Parameters<typeof P.setConnectorSensitive>>) =>
         P.setConnectorSensitive(projectId, ...a),
       connections,
@@ -41,6 +44,10 @@ export function bindProjectOperations(
         set: (...a: DropFirst<Parameters<typeof P.setConnectorPolicies>>) =>
           P.setConnectorPolicies(projectId, ...a),
       },
+      /** Pipedream and Composio connectors and the Kortix app each moves to (`connectors_v2`). */
+      listMoves: () => P.listConnectorMoves(projectId),
+      /** Move a Pipedream or Composio connector to its Kortix app; it keeps its slug. */
+      move: (...a: DropFirst<Parameters<typeof P.moveConnector>>) => P.moveConnector(projectId, ...a),
       /** Easy-connect (Pipedream): app catalog + connect/finalize handshake. */
       pipedream: {
         listApps: (...a: DropFirst<Parameters<typeof P.listPipedreamApps>>) =>

@@ -50,6 +50,14 @@ export const TEAMS_START_ERROR_COMMANDS: StartErrorCommands = {
   login: '`/login`',
 };
 
+/** Telegram has no Kortix commands: every fix is in the project's channel settings. */
+export const TELEGRAM_START_ERROR_COMMANDS: StartErrorCommands = {
+  surface: 'chat',
+  settings: 'Channels → Telegram in the Kortix project',
+  switchProject: 'Channels → Telegram in the Kortix project',
+  login: 'Channels → Telegram in the Kortix project',
+};
+
 export function startErrorMessage(
   status: number | undefined,
   body: unknown,
@@ -70,6 +78,8 @@ export function startErrorMessage(
       return "I couldn't start a session — Kortix couldn't reach the sandbox runtime just now. This is usually a brief infrastructure hiccup; give it a moment and send your message again.";
     case 'WORKSPACE_MODE_UNAVAILABLE':
       return "I couldn't start a session because the agent uses the `read` workspace mode. Restricted workspace artifacts are not enabled yet. Set the agent's workspace to `runtime` or `branch`, then send your message again.";
+    case 'project_archived':
+      return `This Kortix workspace was deleted, so I can't start a session here. Connect this ${commands.surface} to another workspace with ${commands.switchProject}.`;
     case 'session_already_exists':
       return "I couldn't start a session — one with this id already exists. Start a new one and send your message again.";
   }
@@ -87,7 +97,7 @@ export function startErrorMessage(
     case 409:
       return `I couldn't find a Kortix account to run this session as. Connect your account with ${commands.login}, then send your message again.`;
     case 429:
-      return 'This workspace is at its concurrent-session limit right now. Close or finish a running session, then send your message again.';
+      return "Kortix is getting too many requests from this workspace right now. Wait a minute, then send your message again.";
     case 500:
     case 502:
     case 503:

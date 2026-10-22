@@ -1,7 +1,7 @@
 // Kortix API + gateway router — the blue/green cutover switch in front of both
 // public services. One worker per env handles BOTH hostnames:
 //
-//   api.kortix.com          → API      → EKS | EU ECS | US ECS   (ACTIVE_BACKEND)
+//   api.kortix.com          → API      → EKS | EU ECS | US ECS | eu-west-2 ECS   (ACTIVE_BACKEND)
 //   gateway.kortix.com      → gateway  → EKS | EU ECS | US ECS   (GATEWAY_ACTIVE_BACKEND)
 //   (staging-/dev- variants route to the "staging"/"dev" worker envs)
 //
@@ -76,8 +76,19 @@ function originUnreachableResponse(isGateway, request, reason) {
 }
 
 function addSecurityHeaders(response) {
-  response.headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY);
-  response.headers.set('X-Content-Type-Options', 'nosniff');
+  const headers = response.headers;
+  headers.set('Strict-Transport-Security', STRICT_TRANSPORT_SECURITY);
+  headers.set('X-Content-Type-Options', 'nosniff');
+  if (!headers.has('Referrer-Policy')) headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // JSON is never framed or rendered. HTML keeps the origin's own framing
+  // headers: the /v1/p/* preview proxy strips them on purpose so the web app
+  // can frame a sandbox page.
+  if ((headers.get('Content-Type') || '').includes('application/json')) {
+    headers.set('X-Frame-Options', 'DENY');
+    if (!headers.has('Content-Security-Policy')) {
+      headers.set('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    }
+  }
   return response;
 }
 
@@ -249,6 +260,35 @@ function maintenanceConfigResponse(config, source) {
   );
 }
 
+const INTERNAL_EDGE_HEADER = 'x-kortix-internal-edge-key';
+
+// `/internal/*` is the gateway-to-API control plane. The public API host must
+// not serve it to anyone but the gateway. When INTERNAL_EDGE_KEY is set, the
+// gateway proves itself with that key (KORTIX_INTERNAL_EDGE_KEY on the gateway)
+// and every other caller gets 404. Unset keeps the pre-key behaviour so the
+// worker can ship before the gateway env does: set the gateway env first.
+// The API matches the DECODED path, so `/%69nternal/` must be gated too. The
+// key is forwarded: the API checks it again, because the backend origins are
+// public hostnames that never pass through this Worker.
+function isInternalPath(pathname) {
+  let path = pathname;
+  try {
+    path = decodeURIComponent(pathname);
+  } catch {
+    // Malformed escapes: gate on the raw path.
+  }
+  return path.toLowerCase().startsWith('/internal/');
+}
+
+function internalEdgeDenied(env, request, url) {
+  if (!env.INTERNAL_EDGE_KEY || !isInternalPath(url.pathname)) return false;
+  const given = request.headers.get(INTERNAL_EDGE_HEADER) ?? '';
+  const want = env.INTERNAL_EDGE_KEY;
+  let diff = given.length ^ want.length;
+  for (let i = 0; i < want.length; i++) diff |= (given.charCodeAt(i) || 0) ^ want.charCodeAt(i);
+  return diff !== 0;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -261,11 +301,13 @@ export default {
           eks: env.GATEWAY_BACKEND_EKS,
           'ecs-fargate': env.GATEWAY_BACKEND_ECS_FARGATE,
           'us-east-2': env.GATEWAY_BACKEND_US_EAST_2,
+          'eu-west-2': env.GATEWAY_BACKEND_EU_WEST_2,
         }
       : {
           eks: env.BACKEND_EKS,
           'ecs-fargate': env.BACKEND_ECS_FARGATE,
           'us-east-2': env.BACKEND_US_EAST_2,
+          'eu-west-2': env.BACKEND_EU_WEST_2,
         };
 
     const backendUrl = backends[active];
@@ -284,6 +326,10 @@ export default {
           Location: url.toString(),
         },
       });
+    }
+
+    if (!isGateway && internalEdgeDenied(env, request, url)) {
+      return addSecurityHeaders(Response.json({ error: 'not found' }, { status: 404 }));
     }
 
     const targetUrl = new URL(url.pathname + url.search, backendUrl);
@@ -378,22 +424,39 @@ export default {
     ) {
       originHeaders.set('User-Agent', SCIM_RELAY_USER_AGENT);
     }
+    // The Workers runtime throws inside `new Request` when a GET or HEAD
+    // carries a body, and this construction sits outside the try/catch: the
+    // client got Cloudflare's bare "error code: 1101" 500 before the origin
+    // ever ran (reproduced on workerd at this construction). GET and HEAD
+    // bodies have no defined semantics; drop the body and the content-length
+    // that frames it, so the request reaches the origin and answers as a
+    // normal GET/HEAD.
+    const dropBody = request.method === 'GET' || request.method === 'HEAD';
+    if (dropBody) originHeaders.delete('content-length');
     const modifiedRequest = new Request(targetUrl, {
       method: request.method,
       headers: originHeaders,
-      body: request.body,
+      body: dropBody ? null : request.body,
       redirect: 'manual',
     });
 
+    // A GET or HEAD whose origin connection drops before any response is sent
+    // once more: it has no body and no side effect. A reset Cloudflare→ALB
+    // connection ("Network connection lost") failed staging release-gate
+    // flows on 2026-10-13. Never a POST: the origin may already have run it.
+    const attempts = dropBody ? 2 : 1;
     let response;
-    try {
-      response = await fetch(modifiedRequest);
-    } catch (error) {
-      return originUnreachableResponse(
-        isGateway,
-        request,
-        error instanceof Error && error.message ? error.message : 'fetch failed',
-      );
+    for (let attempt = 1; !response; attempt++) {
+      try {
+        response = await fetch(modifiedRequest);
+      } catch (error) {
+        if (attempt < attempts) continue;
+        return originUnreachableResponse(
+          isGateway,
+          request,
+          error instanceof Error && error.message ? error.message : 'fetch failed',
+        );
+      }
     }
     // Cloudflare attaches the accepted socket to response.webSocket. Creating
     // a new Response drops that non-standard property and breaks the upgrade.

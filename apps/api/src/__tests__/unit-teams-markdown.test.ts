@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { markdownToCardElements } from '../channels/teams/markdown';
 
 /**
- * The first live Teams answer on dev (2026-09-18, session 196a99f5…) rendered
+ * The first live Teams answer on dev (2026-09-18, a dev session) rendered
  * a `teams send` body as ONE TextBlock. Teams' TextBlock markdown knows bold,
  * italic, lists and links — nothing else — so every `filename` span vanished
  * and a fenced directory tree lost its fences and its monospace font. These

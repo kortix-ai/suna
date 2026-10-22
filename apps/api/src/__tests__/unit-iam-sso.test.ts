@@ -25,11 +25,11 @@ describe('extractSsoProviderId', () => {
     expect(
       extractSsoProviderId({
         app_metadata: {
-          provider: 'sso:464651b7-6157-46b1-afaa-5bbd7fa37599',
-          providers: ['sso:464651b7-6157-46b1-afaa-5bbd7fa37599'],
+          provider: 'sso:5a1e0c05-0000-4000-8000-000000000550',
+          providers: ['sso:5a1e0c05-0000-4000-8000-000000000550'],
         },
       }),
-    ).toBe('464651b7-6157-46b1-afaa-5bbd7fa37599');
+    ).toBe('5a1e0c05-0000-4000-8000-000000000550');
   });
 
   test('reads the id out of the providers[] array when provider is absent', () => {
@@ -80,13 +80,16 @@ describe('extractGroupClaims', () => {
     expect(out).toEqual(['Engineers', 'Admins']);
   });
 
-  test('reads the real Supabase SSO location: user_metadata.custom_claims.groups', () => {
+  test('reads the real Supabase SSO location: the SSO identity custom_claims', () => {
     expect(
-      extractGroupClaims(
-        { user_metadata: { custom_claims: { groups: ['Everyone', 'Managers'] } } },
-        'groups',
-      ),
+      extractGroupClaims({}, 'groups', { custom_claims: { groups: ['Everyone', 'Managers'] } }),
     ).toEqual(['Everyone', 'Managers']);
+  });
+
+  test('never reads user_metadata: the user can write it', () => {
+    const forged = { user_metadata: { custom_claims: { groups: ['Admins'] }, groups: ['Admins'] } };
+    expect(extractGroupClaims(forged, 'groups')).toEqual([]);
+    expect(extractGroupClaims(forged, 'groups', { custom_claims: { groups: ['Everyone'] } })).toEqual(['Everyone']);
   });
 
   test('reads string claim and wraps as array', () => {
@@ -95,10 +98,7 @@ describe('extractGroupClaims', () => {
     ).toEqual(['Engineers']);
   });
 
-  test('falls back to user_metadata then top level', () => {
-    expect(
-      extractGroupClaims({ user_metadata: { roles: ['admin'] } }, 'roles'),
-    ).toEqual(['admin']);
+  test('falls back to the top-level JWT claim', () => {
     expect(extractGroupClaims({ memberOf: ['x'] }, 'memberOf')).toEqual(['x']);
   });
 

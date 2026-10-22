@@ -9,20 +9,20 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-release/boot-config'
-import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import { pointBootLink, readBootConfigPointer, readBootLinkTarget, readQuarantine, releaseDir } from '@/services/config-provider/boot-config'
+import type { ConfigReleaseApi } from '@/services/config-provider/api-client'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-release/notice'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice, writeConfigReleaseNotice } from '@/services/config-provider/notice'
 import { releaseSourcePaths } from '@/harness/open-code/project-layout'
 import {
   __setDaemonShuttingDownForTests,
   isDaemonShuttingDown,
   resetDaemonShutdownStateForTests,
 } from '@/lib/shutdown-state'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import {
   configReleaseReport,
   convergeConfigRelease,
@@ -51,6 +51,7 @@ import {
   initRepo,
   FEATURE_DISABLED,
   serveRelease,
+  serveSnapshot,
   startFakeApi,
   write,
   type BuiltRelease,
@@ -226,6 +227,11 @@ function converge(
   })
 }
 
+/** The session committed work of its own: its checkout is no longer the release's commit. */
+function sessionCommitted(): void {
+  git(work, 'commit', '--allow-empty', '-qm', 'session work')
+}
+
 function baseRelease(governance: string | null = GOV_V1): BuiltRelease {
   return buildRelease(origin, git(origin, 'rev-parse', 'HEAD'), DIR, { governance })
 }
@@ -257,7 +263,10 @@ beforeEach(() => {
   git(work, 'config', 'user.name', 'T')
   git(work, 'checkout', '-q', '-b', 'ses-1')
   api = startFakeApi('sandbox-token')
-})
+  // bun's 5 s default applies to hooks too; under the packages lane's
+  // concurrent waves (API suite + CLI + kortixd at once) the git + fake-API
+  // setup here crossed it once. The runner's own budget is 30 s.
+}, 30_000)
 
 /**
  * What OpenCode reads right now. A booted box always has its boot link pointed
@@ -270,11 +279,12 @@ async function servingDir(): Promise<string | null> {
 
 beforeEach(async () => {
   await pointBootLink(join(work, DIR), store)
-})
+}, 30_000)
 
 afterEach(() => {
   // One bun process runs every daemon test file and bun's file order is not stable,
   // so a file that leaves `running.release_id` set poisons whichever file runs next.
+  // 30 s: same concurrent-wave budget as the beforeEach hooks above.
   resetConfigReleaseStateForTests()
   resetDaemonShutdownStateForTests()
   resetAgentSwapBlockersForTests()
@@ -282,6 +292,86 @@ afterEach(() => {
   api.stop()
   spawnSync('chmod', ['-R', 'u+w', root])
   rmSync(root, { recursive: true, force: true })
+}, 30_000)
+
+describe('convergeConfigRelease — where the release comes from', () => {
+  test('the checkout is never a config source: a checkout at the release commit still downloads it', async () => {
+    const release = baseRelease()
+    serveRelease(api, release)
+    const id = release.descriptor.release_id!
+
+    expect((await converge(fakeOpencode())).outcome).toBe('applied')
+    expect(api.archiveRequests).toHaveLength(1)
+    expect(readFileSync(join(releaseDir(store, id), DIR, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    expect(git(work, 'status', '--porcelain')).toBe('')
+  })
+
+  test('a release over the archive cap (v3, no archive) is built from the project snapshot', async () => {
+    write(origin, 'assets/big.bin', 'export-ignored, never in the release\n')
+    const tip = commitAll(origin, 'big')
+    const built = buildRelease(origin, tip, DIR, { governance: GOV_V1 })
+    // The session is behind: its checkout cannot be the release.
+    sessionCommitted()
+    const descriptor = {
+      ...built.descriptor,
+      format: 'config-release-v3' as const,
+      archive: null,
+      files: built.descriptor.files!.filter(([path]) => !path.startsWith('assets/')),
+      snapshot: serveSnapshot(api, origin, tip),
+    }
+    api.respond({ status: 200, json: descriptor })
+    const oc = fakeOpencode()
+
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('applied')
+    expect(response.config).toMatchObject({ release_id: descriptor.release_id, source: 'release', proven: true })
+    expect(api.archiveRequests).toEqual([])
+    // One presigned GET, and the sandbox token never reaches storage.
+    expect(api.storageRequests).toEqual([{ authorization: null, path: `/snapshots/snapshot-${tip}` }])
+    const dir = releaseDir(store, descriptor.release_id!)
+    expect(await servingDir()).toBe(join(dir, DIR))
+    expect(readFileSync(join(dir, DIR, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
+    // Only listed files ship: no `.git`, nothing the release leaves out.
+    expect(existsSync(join(dir, '.git'))).toBe(false)
+    expect(existsSync(join(dir, 'assets'))).toBe(false)
+    expect(readdirSync(store).filter((name) => name.endsWith('.snapshot'))).toEqual([])
+  })
+
+  test('a snapshot whose digest does not match is refused, and nothing is quarantined', async () => {
+    const release = baseRelease()
+    sessionCommitted()
+    const snapshot = serveSnapshot(api, origin, release.descriptor.source_commit!)
+    api.respond({
+      status: 200,
+      json: { ...release.descriptor, format: 'config-release-v3', archive: null, snapshot: { ...snapshot, sha256: 'f'.repeat(64) } },
+    })
+    const oc = fakeOpencode()
+
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toContain('the project snapshot did not deliver it')
+    expect(oc.state.reloads).toBe(0)
+    expect(await servingDir()).toBe(join(work, DIR))
+    expect(await readQuarantine(store)).toEqual({})
+    expect(readdirSync(store).filter((name) => name.endsWith('.snapshot') || name.endsWith('.tmp'))).toEqual([])
+  })
+
+  test('no archive and no snapshot yet: the running config stays and the box says why', async () => {
+    const release = baseRelease()
+    sessionCommitted()
+    api.respond({ status: 200, json: { ...release.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const oc = fakeOpencode()
+
+    const response = await converge(oc)
+
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toContain('the API has no project snapshot of this commit yet')
+    expect(response.reason).toContain('there is no archive')
+    expect(oc.state.reloads).toBe(0)
+    expect(await readQuarantine(store)).toEqual({})
+  })
 })
 
 describe('convergeConfigRelease — follow-base', () => {
@@ -308,7 +398,7 @@ describe('convergeConfigRelease — follow-base', () => {
       reload: { how: 'restarted', turn_ended: false, orphaned_message_id: null },
       reason: null,
     })
-    expect(await servingDir()).toBe(releaseDir(store, id))
+    expect(await servingDir()).toBe(join(releaseDir(store, id), DIR))
     expect(readFileSync(join((await servingDir())!, 'agents/kortix.md'), 'utf8')).toBe('PROMPT v1\n')
     expect(oc.state.governanceAtSpawn).toEqual([GOV_V1])
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(release.descriptor.compiled_governance_etag!)
@@ -320,10 +410,10 @@ describe('convergeConfigRelease — follow-base', () => {
       proven: true,
     })
     expect(runningSourceCommit()).toBe(release.descriptor.source_commit!)
-    expect(prepared).toEqual([expect.stringMatching(new RegExp(`${id}\\.[0-9a-f-]+\\.tmp$`))])
+    expect(prepared).toEqual([expect.stringMatching(new RegExp(`${id}\\.[0-9a-f-]+\\.tmp/\\.kortix/opencode$`))])
     expect(git(work, 'status', '--porcelain')).toBe('')
-    // The descriptor request has no inputs at all.
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({})
+    // The descriptor request has no inputs that pick the release; it asks for v3.
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({ accept: ['config-release-v3'], capabilities: ['agent-config.env-gz.v1'] })
   })
 
   test('the pointer is written only after the proof', async () => {
@@ -585,8 +675,8 @@ describe('convergeConfigRelease — failures keep the running config', () => {
 
   // ── DEF-FLAGON-2 — a healed session must not keep claiming a failure ──────
   test('the base branch is fixed: the next convergence clears the fallback, with no new release', async () => {
-    // Measured on a real Platinum box, 2026-09-25 (config-converge e2e, session
-    // `7c18c223`): a broken `opencode.jsonc` was reverted, the release the box
+    // Measured on a real Platinum box, 2026-09-25 (config-converge e2e, one
+    // session): a broken `opencode.jsonc` was reverted, the release the box
     // was ALREADY running became the desired one again (a release is
     // content-addressed, so the fix restored the same ID), the convergence
     // answered `unchanged` — and `fallback_reason` / `failed_release_id` stayed
@@ -647,6 +737,7 @@ describe('convergeConfigRelease — failures keep the running config', () => {
   })
 
   test('an archive that does not match the descriptor is refused and not quarantined', async () => {
+    sessionCommitted()
     const release = baseRelease()
     serveRelease(api, release)
     write(origin, `${DIR}/agents/kortix.md`, 'SWAPPED IN STORAGE\n')
@@ -726,16 +817,16 @@ describe('convergeConfigRelease — other sources', () => {
     const oc = fakeOpencode()
     await converge(oc)
     const dir = releaseDir(store, good.descriptor.release_id!)
-    expect(await servingDir()).toBe(dir)
+    expect(await servingDir()).toBe(join(dir, DIR))
 
     write(work, `${DIR}/agents/kortix.md`, 'SESSION EDIT\n')
     const response = await converge(oc)
 
     expect(response.outcome).toBe('unchanged')
     expect(response.config).toMatchObject({ source: 'release', mode: 'follow-base', proven: true })
-    expect(await servingDir()).toBe(dir)
-    // The descriptor request carries no inputs at all.
-    expect(api.descriptorRequests.at(-1)!.body).toEqual({})
+    expect(await servingDir()).toBe(join(dir, DIR))
+    // The descriptor request carries no inputs that pick the release; it asks for v3.
+    expect(api.descriptorRequests.at(-1)!.body).toEqual({ accept: ['config-release-v3'], capabilities: ['agent-config.env-gz.v1'] })
 
     // The edit reaches the box by being pushed to the base branch.
     write(origin, `${DIR}/agents/kortix.md`, 'SESSION EDIT\n')
@@ -744,7 +835,7 @@ describe('convergeConfigRelease — other sources', () => {
     const after = await converge(oc)
     expect(after.outcome).toBe('applied')
     expect(after.config.release_id).toBe(pushed.descriptor.release_id!)
-    expect(await servingDir()).toBe(releaseDir(store, pushed.descriptor.release_id!))
+    expect(await servingDir()).toBe(join(releaseDir(store, pushed.descriptor.release_id!), DIR))
   })
 
   test('repository access withheld: the image default dir runs with the governance', async () => {
@@ -840,6 +931,22 @@ describe('convergeConfigRelease — other sources', () => {
     expect(oc.state.reloads).toBe(0)
   })
 
+  // 2026-10-05: a composed release over the limit has no tree ID either. The
+  // box used to derive a governance-only ID from it and swap to the image
+  // default.
+  test('no release and no tree (composed release over the limit): running config kept, reason reported', async () => {
+    const release = baseRelease()
+    api.respond({
+      status: 200,
+      json: { ...release.descriptor, release_id: null, config_tree_id: null, archive: null, files: null, reason: 'over the limit' },
+    })
+    const oc = fakeOpencode()
+    const response = await converge(oc)
+    expect(response.outcome).toBe('failed')
+    expect(response.reason).toBe('over the limit')
+    expect(oc.state.reloads).toBe(0)
+  })
+
   test('the boot record seeds the running state the next convergence compares against', async () => {
     const release = baseRelease()
     serveRelease(api, release)
@@ -924,7 +1031,9 @@ describe('an unexpected conflict is an ordinary failure', () => {
 })
 
 /**
- * The `config_releases` feature flag, off (spec, "Feature flag").
+ * An API from before config releases graduated, with the `config_releases`
+ * flag off for the project. A current API never answers this; the daemon keeps
+ * handling it so a rolled-back or older API still gets a working box.
  *
  * The API answers `403 feature_disabled`. The box must then do what it did
  * before config releases existed: OpenCode reads the session's workspace
@@ -932,13 +1041,13 @@ describe('an unexpected conflict is an ordinary failure', () => {
  * this very convergence and clears its boot pointer, so a later reboot does
  * not come back on the release. Nothing is quarantined, nothing retries.
  */
-describe('config_releases off: the box reverts to its workspace config dir', () => {
+describe('an API with config releases off: the box reverts to its workspace config dir', () => {
   test('a box on a release reverts, clears the pointer, and quarantines nothing', async () => {
     const release = baseRelease()
     serveRelease(api, release)
     const oc = fakeOpencode()
     await converge(oc)
-    expect(await servingDir()).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect(await servingDir()).toBe(join(releaseDir(store, release.descriptor.release_id!), DIR))
     expect(await readBootConfigPointer(store)).not.toBeNull()
 
     api.respond(FEATURE_DISABLED)
@@ -989,6 +1098,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
   })
 
   test('the same 403 from the archive route reverts too', async () => {
+    sessionCommitted()
     serveRelease(api, baseRelease())
     api.archiveOverride = FEATURE_DISABLED
     const oc = fakeOpencode()
@@ -1020,7 +1130,7 @@ describe('config_releases off: the box reverts to its workspace config dir', () 
       mode: 'follow-base',
       proven: true,
     })
-    expect(await servingDir()).toBe(releaseDir(store, release.descriptor.release_id!))
+    expect(await servingDir()).toBe(join(releaseDir(store, release.descriptor.release_id!), DIR))
     expect((await readBootConfigPointer(store))!.release_id).toBe(release.descriptor.release_id!)
   })
 })
@@ -1055,11 +1165,11 @@ describe('the session is told which commit it runs', () => {
     expect(applied).toContain(`commit ${release.descriptor.source_commit!.slice(0, 12)}`)
     expect(applied).toContain('`/workspace` is a separate checkout')
     expect(applied).toContain('pushed to the base branch')
-    const mtime = statSync(CONFIG_RELEASE_NOTICE_PATH).mtimeMs
+    const mtime = Bun.file(CONFIG_RELEASE_NOTICE_PATH).lastModified
 
     // Nothing moved: the agent must not be told its config changed.
     expect((await converge(oc)).outcome).toBe('unchanged')
-    expect(statSync(CONFIG_RELEASE_NOTICE_PATH).mtimeMs).toBe(mtime)
+    expect(Bun.file(CONFIG_RELEASE_NOTICE_PATH).lastModified).toBe(mtime)
 
     // A push to the base branch: the notice names the new commit.
     write(origin, `${DIR}/agents/kortix.md`, 'PROMPT v2\n')
@@ -1088,7 +1198,7 @@ describe('the session is told which commit it runs', () => {
     // every spawn, so the note survives the restart the convergence performs.
     const lifecycle = readFileSync(join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts'), 'utf8')
     expect(lifecycle).toContain('configReleaseNoticePath: configReleaseNoticePath()')
-    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-release/notice'")
+    expect(lifecycle).toContain("import { configReleaseNoticePath } from '@/services/config-provider/notice'")
     expect(noteFor({ source_commit: 'a'.repeat(40), config_dir: DIR })).toBe('written')
     expect(readNotice()).toContain('kortix sessions reload ses-1')
   })

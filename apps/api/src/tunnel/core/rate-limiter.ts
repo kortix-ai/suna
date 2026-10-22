@@ -11,6 +11,7 @@ interface RateLimitConfig {
 }
 
 class TunnelRateLimiter {
+  // replica-local: limit × API replicas; stops runaway clients, not a quota.
   private buckets = new Map<string, Bucket>();
   private readonly maxBuckets = 10_000;
 
@@ -26,6 +27,9 @@ class TunnelRateLimiter {
     deviceAuthCreateGlobal: { limit: 100, windowMs: 60_000 },
     deviceAuthCreate: { limit: 5, windowMs: 60_000 },
     deviceAuthPoll: { limit: 30, windowMs: 60_000 },
+    // One bucket per client address: an unauthenticated caller cannot mint
+    // buckets faster than this by varying the bearer.
+    deviceAuthPollIp: { limit: 300, windowMs: 60_000 },
     deviceAuthInfo: { limit: 30, windowMs: 60_000 },
     deviceAuthApprove: { limit: 10, windowMs: 60_000 },
     deviceAuthDeny: { limit: 10, windowMs: 60_000 },
@@ -50,13 +54,20 @@ class TunnelRateLimiter {
 
     if (!bucket) {
       if (this.buckets.size >= this.maxBuckets) this.cleanup(true);
+      // Still full: evict the least recently used bucket. Refusing new keys let
+      // a flood of throwaway keys make every other caller answer 429.
       if (this.buckets.size >= this.maxBuckets) {
-        return { allowed: false, retryAfterMs: windowMs };
+        const oldest = this.buckets.keys().next().value;
+        if (oldest !== undefined) this.buckets.delete(oldest);
       }
       bucket = { tokens: limit - 1, lastRefill: now };
       this.buckets.set(key, bucket);
       return { allowed: true };
     }
+
+    // Re-insert so Map order stays least-recently-used first.
+    this.buckets.delete(key);
+    this.buckets.set(key, bucket);
 
     const elapsed = now - bucket.lastRefill;
     const refill = Math.floor((elapsed / windowMs) * limit);

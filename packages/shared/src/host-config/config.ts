@@ -97,6 +97,15 @@ export interface ActiveAccount {
 export interface Config {
   active: string;
   hosts: Record<string, Host>;
+  /** The host the user explicitly selected with `kortix hosts use <name>`
+   *  while the platform delegation env (KORTIX_TOKEN) was injected (KRTX-1705).
+   *  Plain commands then honor this host's stored credential over the injected
+   *  identity. The marker lives here because the sandbox's injected env cannot
+   *  carry it: only an explicit `hosts use` writes it, so a script or CI job
+   *  that merely sets KORTIX_TOKEN on a machine with a stored login keeps
+   *  env-over-stored as the default. Read-time comparison with `active` keeps
+   *  a stale marker harmless. */
+  sandbox_selected?: string;
 }
 
 // ─── File path resolution ──────────────────────────────────────────────────
@@ -190,7 +199,10 @@ export function deleteConfig(): void {
 /**
  * Resolve the active Host for the current invocation. Priority:
  *   1. KORTIX_TOKEN env var (synthetic ephemeral host, never persisted).
- *      It carries the session-scoped token the platform injects into a sandbox.
+ *      It carries the session-scoped token the platform injects into a
+ *      sandbox — unless the user explicitly selected the stored active host
+ *      with `kortix hosts use <name>` while the delegation env was injected
+ *      (config.sandbox_selected, KRTX-1705).
  *   2. KORTIX_API_URL env var (URL override for the stored active host)
  *   3. `--host` flag (handled at the call site via `getHost(name)`)
  *   4. The `active` host in config.json
@@ -210,19 +222,50 @@ export function hasEnvTokenHost(): boolean {
   return Boolean(sandboxCliToken());
 }
 
-export function activeHost(): Host | null {
+/** True when an explicit in-sandbox `hosts use` selection owns plain
+ *  resolution: the marker matches the active host and that host holds a
+ *  token. The ambient project chain (KORTIX_PROJECT_ID, the directory link)
+ *  belongs to the injected deployment, so stored-credential callers must skip
+ *  it — exactly as an explicit `--host` resolves. The marker stays active
+ *  after the injected env disappears (it lives in the config file), so this
+ *  does not require the env token to be present. */
+export function markerActive(config: Config = loadConfig()): boolean {
+  const stored = config.hosts[config.active];
+  return Boolean(
+    config.sandbox_selected && config.sandbox_selected === config.active && stored?.token,
+  );
+}
+
+/** The synthetic host the platform delegation env would resolve to — null
+ *  when no KORTIX_TOKEN is injected. Its url is the injected base the
+ *  ambient project ids belong to. */
+export function envTokenHost(): Host | null {
   const envToken = sandboxCliToken();
-  if (envToken) {
-    return {
-      url: sandboxEnvValue('KORTIX_API_URL') ?? DEFAULT_API_BASE,
-      token: envToken,
-      user_id: '',
-      user_email: '',
-      account_id: '',
-      logged_in_at: new Date().toISOString(),
-    };
-  }
+  if (!envToken) return null;
+  return {
+    url: sandboxEnvValue('KORTIX_API_URL') ?? DEFAULT_API_BASE,
+    token: envToken,
+    user_id: '',
+    user_email: '',
+    account_id: '',
+    logged_in_at: new Date().toISOString(),
+  };
+}
+
+export function activeHost(): Host | null {
   const config = loadConfig();
+  const stored = config.hosts[config.active];
+  if (sandboxCliToken()) {
+    // Explicit in-sandbox selection (KRTX-1705): `kortix hosts use <name>`
+    // ran while the delegation env was injected, so plain commands act as the
+    // selected stored credential — with its own url, exactly like `--host`.
+    // Without the marker the injected identity wins (env-over-stored is the
+    // default): a KORTIX_TOKEN on a machine with a stored `kortix login` is
+    // the env identity, and the sandbox's injected env cannot carry the
+    // marker to flip it.
+    if (stored?.token && markerActive(config)) return stored;
+    return envTokenHost();
+  }
   const host = config.hosts[config.active];
   if (!host) return null;
   const envApiUrl = sandboxEnvValue('KORTIX_API_URL');
@@ -242,13 +285,23 @@ export function listHosts(): { name: string; host: Host; active: boolean }[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function activeHostEntry(): { name: string; host: Host } {
-  const envHost = activeHost();
-  if (sandboxCliToken() && envHost) return { name: 'sandbox', host: envHost };
-  if (sandboxEnvValue('KORTIX_API_URL') && envHost) return { name: 'env', host: envHost };
+export function activeHostEntry(): { name: string; host: Host; envWins: boolean } {
+  const envToken = sandboxCliToken();
   const config = loadConfig();
-  const name = config.hosts[config.active] ? config.active : DEFAULT_HOST_NAME;
-  return { name, host: config.hosts[name] ?? defaultHost(DEFAULT_API_BASE) };
+  const stored = config.hosts[config.active] ?? null;
+  // Same winner activeHost() picks, spelled out for the callers that name the
+  // acting host: `sandbox`/`env` while the injected identity serves the
+  // command, the stored host's name once an in-sandbox selection took over.
+  const storedWins = Boolean(
+    envToken && stored?.token && config.sandbox_selected === config.active,
+  );
+  const envHost = activeHost();
+  if (envToken && !storedWins && envHost) return { name: 'sandbox', host: envHost, envWins: true };
+  if (!envToken && sandboxEnvValue('KORTIX_API_URL') && envHost) {
+    return { name: 'env', host: envHost, envWins: false };
+  }
+  const name = stored ? config.active : DEFAULT_HOST_NAME;
+  return { name, host: stored ?? defaultHost(DEFAULT_API_BASE), envWins: false };
 }
 
 export function activeHostName(): string | null {
@@ -258,11 +311,27 @@ export function activeHostName(): string | null {
 
 // ─── Active account + default project ───────────────────────────────────────
 
+/** The host whose PERSISTED identity state (active account, default
+ *  project) plain commands read. The env-token host is synthetic — the
+ *  delegation env carries neither — so when it wins, the stored active host
+ *  (the one `accounts use` and `projects use` write) is the only place that
+ *  state exists; reading the env host there reports "no active account" and
+ *  `default_project: null` although the config holds both (KRTX-1951,
+ *  KRTX-1804). With an in-sandbox `hosts use` selection or no injected
+ *  token, `activeHost()` already resolves to the stored host. */
+function persistedStateHost(): Host | null {
+  const config = loadConfig();
+  const stored = config.hosts[config.active] ?? null;
+  if (sandboxCliToken() && !markerActive(config)) return stored;
+  return activeHost();
+}
+
 /** The active account for the current invocation (the active host's
- *  stored account), or null when there's no host / no account yet (e.g.
- *  inside a sandbox, where the env host carries no account). */
+ *  stored account), or null when there's no host / no account yet. Inside a
+ *  sandbox this is the stored active host's account — the env host carries
+ *  none, and the stored host is what `accounts use` maintains. */
 export function activeAccount(): ActiveAccount | null {
-  const host = activeHost();
+  const host = persistedStateHost();
   if (!host || !host.account_id) return null;
   return {
     id: host.account_id,
@@ -271,9 +340,11 @@ export function activeAccount(): ActiveAccount | null {
   };
 }
 
-/** The active host's global default project, or null when none is set. */
+/** The active host's global default project, or null when none is set.
+ *  Inside a sandbox this is the stored active host's default — the env host
+ *  never carries one, and the stored host is what `projects use` writes. */
 export function defaultProject(): DefaultProjectRef | null {
-  const host = activeHost();
+  const host = persistedStateHost();
   return host?.default_project ?? null;
 }
 
@@ -360,6 +431,7 @@ export function removeHost(name: string): { removed: boolean; switchedTo?: strin
     delete config.hosts[name];
   }
   let switchedTo: string | undefined;
+  if (config.sandbox_selected === name) config.sandbox_selected = undefined;
   if (config.active === name) {
     const remaining = Object.keys(config.hosts).sort();
     config.active = remaining[0] ?? DEFAULT_HOST_NAME;
@@ -369,10 +441,19 @@ export function removeHost(name: string): { removed: boolean; switchedTo?: strin
   return { removed: true, switchedTo };
 }
 
+/** Switch the active host — what `kortix hosts use <name>` runs. When the
+ *  selection happens inside a sandbox (the platform delegation env is
+ *  injected), record it in `sandbox_selected` so plain commands honor this
+ *  host's stored credential over the injected identity (KRTX-1705). Outside
+ *  a sandbox the marker is cleared: the selection was made without a
+ *  delegation env, so env-over-stored stays the default everywhere else. */
 export function useHost(name: string): boolean {
   const config = loadConfig();
   if (!config.hosts[name]) return false;
   config.active = name;
+  // A selection made without the delegation env clears the marker (assigning
+  // undefined keeps JSON.stringify from persisting the key).
+  config.sandbox_selected = hasEnvTokenHost() ? name : undefined;
   saveConfig(config);
   return true;
 }
@@ -519,15 +600,15 @@ function normalizeConfig(parsed: Partial<Config>): Config {
 
   // Legacy `default`: the original single-host name. If it still points at
   // Kortix Cloud, fold it into `cloud`. If it is a never-logged-in placeholder
-  // (no token), it is a stale artifact — drop it and fall back to cloud. A
-  // `default` host that actually carries credentials is left untouched.
+  // (no token and the cloud URL), it is a stale artifact — drop it and fall
+  // back to cloud. Custom deployments keep their registration after logout.
   const legacyDefault = cleaned.default;
   if (legacyDefault) {
     if (!cleaned[CLOUD_HOST_NAME] && legacyDefault.url === DEFAULT_API_BASE) {
       cleaned[CLOUD_HOST_NAME] = legacyDefault;
       delete cleaned.default;
       renamed.default = CLOUD_HOST_NAME;
-    } else if (!legacyDefault.token) {
+    } else if (!legacyDefault.token && legacyDefault.url === DEFAULT_API_BASE) {
       delete cleaned.default;
       renamed.default = CLOUD_HOST_NAME;
     }
@@ -570,7 +651,15 @@ function normalizeConfig(parsed: Partial<Config>): Config {
   if (!cleaned[active]) {
     active = cleaned[DEFAULT_HOST_NAME] ? DEFAULT_HOST_NAME : Object.keys(cleaned)[0]!;
   }
-  return { active, hosts: cleaned };
+  return {
+    active,
+    hosts: cleaned,
+    // A marker naming a host that no longer exists (or a renamed one) is
+    // stale — activeHost()'s read-time comparison with `active` ignores it.
+    ...(parsed.sandbox_selected && cleaned[parsed.sandbox_selected]
+      ? { sandbox_selected: parsed.sandbox_selected }
+      : {}),
+  };
 }
 
 function isDefaultProjectRef(value: unknown): value is DefaultProjectRef {
@@ -630,8 +719,15 @@ function importSingleHostAuth(
  * appends endpoint paths verbatim — so the version mount must be present
  * exactly once.
  */
+/** Strip trailing `/` without a backtracking regex (CodeQL js/polynomial-redos). */
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return value.slice(0, end);
+}
+
 export function sdkBackendUrl(apiBase: string): string {
-  let base = secureRemoteBase(apiBase).replace(/\/+$/, '');
+  let base = trimTrailingSlashes(secureRemoteBase(apiBase));
   if (base.endsWith('/v1')) base = base.slice(0, -3);
-  return `${base.replace(/\/+$/, '')}/v1`;
+  return `${trimTrailingSlashes(base)}/v1`;
 }

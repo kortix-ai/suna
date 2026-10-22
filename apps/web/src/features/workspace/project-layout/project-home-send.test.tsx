@@ -2,8 +2,8 @@ import { afterEach, expect, mock, test } from 'bun:test';
 import type { SessionPromptPart } from '@kortix/sdk';
 import { createElement, type ComponentProps, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ComposerChatInput } from '@/features/session/composer-chat-input';
-import type { FirstChat } from './home/first-chat';
+import type { ComposerChatInput } from '@kortix/ui/composer';
+import type { FirstChat } from '@kortix/ui/workspace/home/first-chat';
 
 let composer!: ComponentProps<typeof ComposerChatInput>;
 let firstChat: ComponentProps<typeof FirstChat> | undefined;
@@ -12,48 +12,51 @@ let firstChatPending = false;
 let firstChatRequested = true;
 // `mock.module` is process-wide: every shared module keeps its real exports and
 // overrides only what this test needs, so other suites in the same run still link.
-const realComposerInput = await import('@/features/session/composer-chat-input');
+const realComposerInput = await import('@kortix/ui/session/composer/composer-chat-input');
 const realTranslations = await import('@/i18n/use-translations');
 const realQuery = await import('@tanstack/react-query');
-const realProjectCan = await import('@/lib/use-project-can');
-const realAccountPanel = await import('@/stores/account-panel-store');
+const realProjectCan = await import('@kortix/ui/internal/lib/use-project-can');
+const realAccountPanel = await import('@kortix/ui/internal/stores/account-panel-store');
 const realSdk = await import('@kortix/sdk');
 const realSdkReact = await import('@kortix/sdk/react');
-const realFirstChatStore = await import('@/stores/first-chat-store');
-const realNavigation = await import('next/navigation');
-mock.module('next/navigation', () => ({
-  ...realNavigation,
-  useSearchParams: () => new URLSearchParams(firstChatRequested ? 'chat=first' : ''),
+const realFirstChatStore = await import('@kortix/ui/internal/stores/first-chat-store');
+const realUiProvider = { ...(await import('@kortix/ui/providers/ui-provider')) };
+mock.module('@kortix/ui/providers/ui-provider', () => ({
+  ...realUiProvider,
+  useUiSearchParams: () => new URLSearchParams(firstChatRequested ? 'chat=first' : ''),
 }));
-mock.module('@/features/session/composer-chat-input', () => ({
+mock.module('@kortix/ui/session/composer/composer-chat-input', () => ({
   ...realComposerInput,
   ComposerChatInput: (props: typeof composer) => {
     composer = props;
     return null;
   },
 }));
-mock.module('@/i18n/use-translations', () => ({
+const translationsMock = () => ({
   ...realTranslations,
   // Callable for the first chat's keys (`firstChat.placeholder`), `.raw` for
   // the home placeholder. Both return something a test can tell apart.
   useTranslations: (namespace: string) =>
     Object.assign((key: string) => `${namespace}.${key}`, { raw: () => 'Message' }),
-}));
+});
+mock.module('@/i18n/use-translations', translationsMock);
+mock.module('@kortix/ui/i18n', translationsMock);
 // Zustand hooks read the store's initial state under `renderToStaticMarkup`, so
 // the pending flag is set here rather than through the store.
-mock.module('@/stores/first-chat-store', () => ({
+mock.module('@kortix/ui/internal/stores/first-chat-store', () => ({
   ...realFirstChatStore,
   useFirstChatPending: () => firstChatPending,
 }));
 mock.module('@tanstack/react-query', () => ({
   ...realQuery,
   useQuery: () => ({ data: undefined }),
+  useQueryClient: () => new realQuery.QueryClient(),
 }));
-mock.module('@/lib/use-project-can', () => ({
+mock.module('@kortix/ui/internal/lib/use-project-can', () => ({
   ...realProjectCan,
   useProjectCan: () => ({ allowed: false }),
 }));
-mock.module('@/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
+mock.module('@kortix/ui/internal/stores/account-panel-store', () => ({ ...realAccountPanel, hubTarget: () => null }));
 mock.module('@kortix/sdk', () => ({
   ...realSdk,
   getProjectDetail: mock(),
@@ -73,24 +76,22 @@ mock.module('@kortix/sdk/react', () => ({
     },
   },
 }));
-mock.module('@/features/workspace/project-layout/sidebar-toggle', () => ({
+mock.module('@kortix/ui/internal/layout/sidebar-toggle', () => ({
   SidebarToggle: () => null,
 }));
-mock.module('./home/access-requests-bell', () => ({ AccessRequestsBell: () => null }));
-mock.module('./home/meta-runtime-indicator', () => ({ MetaRuntimeIndicator: () => null }));
-mock.module('./home/sandbox-picker', () => ({ SandboxPicker: () => null }));
-mock.module('./home/setup-tiles', () => ({ PROJECT_SETUP_TILE_ACTIONS: [] }));
-mock.module('./home/first-chat', () => ({
+mock.module('@kortix/ui/workspace/home/access-requests-bell', () => ({ AccessRequestsBell: () => null }));
+mock.module('@kortix/ui/workspace/home/sandbox-picker', () => ({ SandboxPicker: () => null }));
+mock.module('@kortix/ui/workspace/home/first-chat', () => ({
   FirstChat: (props: ComponentProps<typeof FirstChat>) => {
     firstChat = props;
     return props.composer;
   },
 }));
-mock.module('./home/welcome-body', () => ({
+mock.module('@kortix/ui/workspace/home/welcome-body', () => ({
   ProjectHomeWallpaper: () => null,
   ProjectHomeWelcomeBody: ({ composer: input }: { composer: ReactNode }) => input,
 }));
-const { ProjectHome } = await import('./project-home');
+const { ProjectHome } = await import('@kortix/ui/workspace/layout/project-home');
 
 const handle: SessionPromptPart = {
   type: 'file',

@@ -1,6 +1,6 @@
 'use client';
 
-import { SessionSharedIcon } from '@/components/projects/session-shared-icon';
+import { SessionSharedIcon } from '@kortix/ui/workspace/projects/session-shared-icon';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,8 +10,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+} from '@kortix/ui/alert-dialog';
+import { Badge } from '@kortix/ui/badge';
 import {
   CommandDialog,
   CommandFooter,
@@ -20,39 +20,57 @@ import {
   CommandItem,
   CommandList,
   CommandShortcut,
-} from '@/components/ui/command';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { Kbd } from '@/components/ui/kbd';
-import Loading from '@/components/ui/loading';
-import { SidebarContext } from '@/components/ui/sidebar';
-import { TextShimmer } from '@/components/ui/text-shimmer';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { preloadAccountHub } from '@/features/accounts/hub/account-hub-entry';
-import { useWorkspaceSearch } from '@/features/files';
-import { fetchChangeRequests } from '@/features/project-files/api/change-requests';
-import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
-import { ProjectFilesProvider } from '@/features/project-files/context';
-import { changeRequestKeys } from '@/features/project-files/hooks/use-change-requests';
+} from '@kortix/ui/command';
+import { useCommandState } from 'cmdk';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { Kbd } from '@kortix/ui/kbd';
+import Loading from '@kortix/ui/loading';
+import { SidebarContext } from '@kortix/ui/sidebar';
+import { TextShimmer } from '@kortix/ui/text-shimmer';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { preloadAccountHub } from '@kortix/ui/internal/account-hub/account-hub-entry';
+import { useAccountHubAccess } from '@kortix/ui/internal/account-hub/use-account-hub-access';
+import {
+  useWorkspaceSearch,
+  ChangeRequestDetailDialog,
+  ProjectFilesProvider,
+  openChangeRequestListQuery,
+} from '@kortix/ui/files';
+import {
+  ThemeSwatch,
+  useInterfaceTheme,
+  useInterfaceThemePreview,
+} from '@/features/layout/interface-theme';
 import { useAuth } from '@/features/providers/auth-provider';
-import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@/features/providers/provider-branding';
-import { buildAgentGitReconciliationPrompt } from '@/features/session/agent-git-reconciliation';
-import { DiffDialog } from '@/features/session/diff-dialog';
-import { CompactModal } from '@/features/session/header/compact-modal';
-import { pickerGroupId, pickerGroupLabel } from '@/features/session/model-grouping';
-import { openSessionQuickView } from '@/features/session/open-session-quick-view';
-import { flattenModels } from '@/features/session/session-chat-input';
-import { LEGACY_PALETTE_HIDDEN } from '@/features/workspace/command-palette-visibility';
-import { ModelCapabilityIcons } from '@/features/workspace/customize/sections/llm-provider/model-capability-icons';
+import { MODEL_SELECTOR_PROVIDER_IDS, ProviderLogo } from '@kortix/ui/internal/lib/provider-branding';
+import { buildAgentGitReconciliationPrompt } from '@kortix/ui/session/status/agent-git-reconciliation';
+import { DiffDialog, openSessionQuickView } from '@kortix/ui/session-panel';
+import {
+  CompactModal,
+  sessionLastActivityAt,
+  sortSessionsByLastActivity,
+} from '@kortix/ui/session';
+import { pickerGroupId, pickerGroupLabel } from '@kortix/ui/session/models/model-grouping';
+import {
+  activeCapabilityTab,
+  useCapabilityAccess,
+  useProjectNavRows,
+  PROJECT_ACTIONS,
+  useProjectCan,
+  useProjectPageCans,
+} from '@kortix/ui/workspace';
+import {
+  LEGACY_PALETTE_HIDDEN,
+  paletteRowPermitted,
+} from '@/features/workspace/command-palette-visibility';
+import { useAppsRowVisible } from '@kortix/ui/workspace/sidebar/footer/project-apps-nav';
+import { ModelCapabilityIcons } from '@kortix/ui/customize/sections/llm-provider/model-capability-icons';
 import { modelIdAddsInformation } from '@/features/workspace/model-id-display';
 import {
   OPEN_COMMAND_PALETTE_EVENT,
   consumePendingCommandPalette,
-} from '@/features/workspace/open-command-palette';
-import {
-  sessionLastActivityAt,
-  sortSessionsByLastActivity,
-} from '@/features/workspace/project-sidebar/project-session-list-helpers';
+} from '@kortix/ui/internal/layout/open-command-palette';
 import {
   PALETTE_NO_PROJECT_DEFAULT_TAB,
   filterSettingsPaletteGroups,
@@ -63,7 +81,7 @@ import {
   DEFAULT_SETTINGS_TAB,
   type SettingsTab,
   resolveSettingsOverlayHref,
-} from '@/features/workspace/settings/settings-tabs';
+} from '@kortix/ui/customize/settings/settings-tabs';
 import { useSettingsAccountId } from '@/features/workspace/settings/use-settings-account-id';
 import {
   type WorkspacePaletteRow,
@@ -74,37 +92,38 @@ import {
   workspacePageResults,
   workspacePaletteValue,
 } from '@/features/workspace/workspace-palette';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { useDebounce } from '@/hooks/use-debounced-value';
-import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
+import { useDebounce } from '@kortix/ui/internal/hooks/use-debounced-value';
+import { useNewProjectSession } from '@kortix/ui/internal/hooks/projects/use-new-project-session';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
-import { copyToClipboard } from '@/lib/utils/clipboard';
-import { isDesktop } from '@/lib/desktop';
+import { copyToClipboard } from '@kortix/ui/internal/lib/utils/clipboard';
+import { isDesktop } from '@kortix/ui/internal/lib/desktop';
 import { performSignOut } from '@/lib/auth/perform-sign-out';
 import { isBillingEnabled } from '@/lib/config';
+import type { InterfaceThemeId } from '@/lib/interface-themes';
 import {
   type MenuItemDef,
   type SettingsTabId,
   getItemsForSurface,
   translateMenuItem,
 } from '@/lib/menu-registry';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { PROJECT_ACTIONS } from '@/lib/project-actions';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { track } from '@/lib/track';
-import { useProjectCan } from '@/lib/use-project-can';
-import { useProjectFeatureFlags } from '@/lib/use-project-feature-flags';
-import { cn } from '@/lib/utils';
-import { DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
-import { hubTarget, openAccountPanel } from '@/stores/account-panel-store';
-import { useChatSendStore } from '@/stores/chat-send-store';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { useProjectFeatureFlags } from '@kortix/ui/internal/lib/use-project-feature-flags';
+import { cn } from '@kortix/ui';
+import { DEFAULT_WALLPAPER_ID } from '@kortix/ui/theme';
+import { openCustomizeSidebar } from '@kortix/ui/internal/stores/sidebar-nav-store';
+import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
+import { useChatSendStore } from '@kortix/ui/internal/stores/chat-send-store';
+import { firstChatHref, useFirstChatPending } from '@kortix/ui/internal/stores/first-chat-store';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { useProjectSwitchStore } from '@/stores/project-switch-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { type ConversationDensity, useUserPreferencesStore } from '@/stores/user-preferences-store';
+import { useProjectSwitchStore } from '@kortix/ui/internal/stores/project-switch-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
+import { openTabAndNavigate } from '@kortix/ui/internal/stores/tab-store';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
+import { type ConversationDensity, useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import {
   type FeatureFlagKey,
   type KortixAccount,
@@ -125,11 +144,11 @@ import {
 import {
   agentScopedModelSelectionKey,
   contract,
+  flattenModels,
   flattenProjectSessionPages,
   invalidateProject,
   modelProviderMode,
   qk,
-  refreshProjectProviderState,
   useCreatePty,
   useCreateRuntimeSession,
   useModelStore,
@@ -159,14 +178,13 @@ import {
   XIcon as X,
 } from '@phosphor-icons/react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useTheme } from 'next-themes';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Copy } from '@/features/icon/icons/copy';
 import {
-  SidebarToggle as PanelLeftClose,
-  SidebarToggle as PanelLeftIcon,
-} from '@/features/icon/icons/sidebar-toggle';
+  Copy,
+  SidebarGlyph as PanelLeftClose,
+  SidebarGlyph as PanelLeftIcon,
+} from '@kortix/ui/icons';
 
 type PalettePage =
   | 'root'
@@ -220,13 +238,36 @@ function sanitizeCmdkValue(value: string): string {
  * be unique — two rows sharing a `value` are both marked `aria-selected` and
  * Enter always fires the first one. cmdk 0.2.1 (the installed version, checked
  * against `node_modules/cmdk/dist/index.d.ts`) has no separate `keywords` prop
- * to move the search text onto, and `CommandDialog` in `components/ui/command`
+ * to move the search text onto, and `CommandDialog` in `packages/ui/src/primitives/command`
  * forwards neither `filter` nor `shouldFilter`, so the value is the only lever.
  * Uniqueness therefore rests on the curated text itself, which is safe because
  * a collision means two rows with the SAME label and the SAME keywords — rows
  * a user could not tell apart either. `command-palette-search.test.ts` asserts
  * it for every row the palette can render at once.
  */
+/**
+ * Previews the theme of the highlighted row (↑/↓ or pointer) on the whole
+ * page; Enter keeps it. Leaving theme rows, changing page or closing the
+ * palette (it unmounts with the dialog) puts the saved theme back.
+ */
+function ThemeHighlightPreview({
+  themeByValue,
+  onPreview,
+}: {
+  themeByValue: ReadonlyMap<string, InterfaceThemeId>;
+  onPreview: (id: InterfaceThemeId | null) => void;
+}) {
+  const highlighted = useCommandState((state) => state.value);
+  const themeId = themeByValue.get(highlighted) ?? null;
+
+  useEffect(() => {
+    onPreview(themeId);
+  }, [themeId, onPreview]);
+  useEffect(() => () => onPreview(null), [onPreview]);
+
+  return null;
+}
+
 export function buildPaletteSearchText(item: { label: string; keywords?: string }): string {
   return sanitizeCmdkValue(`${item.label} ${item.keywords ?? ''}`);
 }
@@ -579,15 +620,15 @@ function FileSearchPage({
  * The 'changes' page — this workspace's OPEN change requests, listed by number
  * and title, each opening its own detail dialog.
  *
- * **Why it reads the list itself instead of `useChangeRequests`.** That hook
- * takes its project id from `ProjectFilesContext`, and the palette mounts
+ * **Why it reads the list itself instead of `useOpenChangeRequestList`.** That
+ * hook takes its project id from `ProjectFilesContext`, and the palette mounts
  * outside every provider that supplies one (`AppHeader` and `ProjectShell`
  * both render it as a sibling of the file explorer, not inside it). Wrapping
  * the whole palette in a `ProjectFilesProvider` to satisfy one page would put
  * the file feature's context on every route the palette mounts on. Reading
- * `fetchChangeRequests` directly under the SAME query key the hook uses
- * (`changeRequestKeys.list`) costs nothing extra: the sidebar pill's cache
- * entry is reused when it is mounted, and populated for it when it is not.
+ * `openChangeRequestListQuery` (the hook's own key and read) costs nothing
+ * extra: the count badge's cache entry is reused when it is mounted, and
+ * populated for it when it is not.
  *
  * The detail dialog DOES need the context (it resolves the project id for the
  * manifest filename and every mutation), so it — and only it — is wrapped, in
@@ -604,8 +645,7 @@ function ChangeRequestsPage({
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data, isLoading } = useQuery({
-    queryKey: changeRequestKeys.list(projectId, 'open'),
-    queryFn: () => fetchChangeRequests(projectId, 'open'),
+    ...openChangeRequestListQuery(projectId),
     staleTime: 5_000,
   });
 
@@ -664,7 +704,7 @@ function ChangeRequestsPage({
  * Same data, same route, same permission gate as the Feature flags section of
  * `/projects/<id>/config` (`settings/tabs/experimental-tab.tsx`): the project
  * summary's `experimental_features`, `PATCH /projects/:id/features` through
- * `updateFeatureFlag`, and `PROJECT_CUSTOMIZE_WRITE`. Two doors onto one
+ * `updateFeatureFlag`, and `PROJECT_SETTINGS_WRITE`. Two doors onto one
  * behaviour, not a second implementation of it — the cache writes below are
  * the same set that tab performs, so the flag-gated rail, sidebar and palette
  * rows all re-resolve together either way.
@@ -672,7 +712,7 @@ function ChangeRequestsPage({
  * **Why toggling here rather than linking there.** Every other flag surface
  * costs three navigations to answer "is Voice on for this workspace?". The
  * flags are also the one settings list whose ROWS are what people search for
- * ("warm sessions", "llm_gateway" out of a changelog) — a single row pointing
+ * ("warm sessions", "pi_harness" out of a changelog) — a single row pointing
  * at a page they then have to search again is the defect this whole change
  * exists to remove. Selecting a row when the permission probe denies (or is
  * still in flight) navigates to the section instead of failing silently.
@@ -694,7 +734,7 @@ function FeatureFlagsPage({
     ...contract('config'),
   });
 
-  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_CUSTOMIZE_WRITE);
+  const writeCap = useProjectCan(projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
   // Fail-closed while the probe is in flight — the same rule `ExperimentalTab`
   // applies, so a slow probe never offers a toggle the server would reject.
   const canEdit = !writeCap.isLoading && writeCap.allowed === true;
@@ -720,9 +760,6 @@ function FeatureFlagsPage({
       );
       void invalidateProject(queryClient, projectId);
       queryClient.invalidateQueries({ queryKey: qk.projects.scope() });
-      if (variables.key === 'llm_gateway') {
-        refreshProjectProviderState(queryClient, projectId, { removeProjectScopedCache: true });
-      }
       successToast(
         `${variables.key} ${variables.next ? tI18nComplete.raw('textfb9cf75606b4') : tI18nComplete.raw('text17eb3c0168d0')}`,
       );
@@ -742,7 +779,7 @@ function FeatureFlagsPage({
     if (!q) return withPending;
     // Matches `key` as well as `name`/`description`, for the same reason
     // `filterFeatures` in experimental-tab.tsx does: flags get turned on from
-    // docs and changelogs that name the raw key (`llm_gateway`).
+    // docs and changelogs that name the raw key (`warm_sessions`).
     return withPending.filter(
       (f) =>
         f.name.toLowerCase().includes(q) ||
@@ -828,6 +865,15 @@ export function sessionMatchesPaletteQuery(session: ProjectSession, query: strin
   );
 }
 
+/**
+ * The welcome chat (KRTX-2476). The sidebar lists "Your first chat with
+ * Kortix" under Sessions while it is pending, but it is not a session yet, so
+ * the server search never returns it. Search finds it by its title instead.
+ */
+export function firstChatMatchesPaletteQuery(pending: boolean, title: string, query: string): boolean {
+  return pending && query.length > 0 && title.toLowerCase().includes(query);
+}
+
 export function CommandPalette() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -867,7 +913,13 @@ export function CommandPalette() {
   const sidebarOpen = sidebarCtx?.open ?? false;
   const createSession = useCreateRuntimeSession();
   const createPty = useCreatePty();
-  const { theme, setTheme } = useTheme();
+  const {
+    selected: activeInterfaceTheme,
+    select: selectInterfaceTheme,
+    choice: themeChoice,
+  } = useInterfaceTheme();
+  const { preview: previewInterfaceTheme, commit: commitThemePreview } =
+    useInterfaceThemePreview(themeChoice);
   const activeWallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
@@ -876,7 +928,7 @@ export function CommandPalette() {
     (s) => s.preferences.conversationDensity ?? 'normal',
   );
   const billingEnabled = isBillingEnabled();
-  // What the active session's runtime serves (E1): a pi session has no compact.
+  // What the active session's runtime serves (E1): a control shows only with its capability.
   const runtimeCapabilities = useRuntimeConnectionStore((s) => s.runtimeCapabilities);
 
   // The project's own agents from the Kortix project config, filtered by the
@@ -967,14 +1019,13 @@ export function CommandPalette() {
   /**
    * The open change requests, for the count on the "Review changes" row.
    *
-   * Same query key the sidebar pill and the 'changes' page use
-   * (`changeRequestKeys.list`), so the three share one cache entry and one
+   * Same key and read as the count badge and the 'changes' page
+   * (`openChangeRequestListQuery`), so the three share one cache entry and one
    * request. `enabled` on `open` keeps it off every route the palette merely
    * mounts on.
    */
   const { data: openChangeRequests } = useQuery({
-    queryKey: changeRequestKeys.list(projectId ?? '', 'open'),
-    queryFn: () => fetchChangeRequests(projectId!, 'open'),
+    ...openChangeRequestListQuery(projectId ?? ''),
     enabled: open && !!projectId,
     staleTime: 5_000,
   });
@@ -988,17 +1039,16 @@ export function CommandPalette() {
   // `useProjectFeatureFlags`) decides for every surface, so a palette entry can
   // never survive a flag its rail item does not. Fail-closed: unresolved detail
   // ⇒ every flag reads false.
-  //
-  // `llm_gateway` used to resolve to AVAILABILITY here while the Customize
-  // panel rendered nothing unless it was ENABLED — a palette entry that opened
-  // a blank pane. It now follows enablement like every other flag.
   // `projectFlags`, not `featureFlags` — the SDK's `featureFlags` is the
   // DEPLOYMENT flag set (build-time capabilities like `enableProjects`), a
   // different concept from the
   // per-project feature flags this gates on.
   const { flags: projectFlags } = useProjectFeatureFlags(open ? projectId : null);
 
-  const allModels = useMemo(() => flattenModels(providers), [providers]);
+  const allModels = useMemo(
+    () => flattenModels(providers, { providerMode: modelProviderMode(providers) }),
+    [providers],
+  );
   // Only for the persisted selection state (session agent, per-agent model,
   // recents) — model visibility is the server's `enabled` flag on each model,
   // never a store heuristic.
@@ -1040,8 +1090,6 @@ export function CommandPalette() {
         id: `terminal:${pty.id}`,
         title: pty.title || pty.command || 'Terminal',
         type: 'terminal',
-        // LEGACY: terminal tabs only surface through <SidebarRight />, which
-        // both AppProviders call sites mount with showRightSidebar={false}.
         // `/terminal/<id>` is not a route.
         href: `/terminal/${pty.id}`,
       });
@@ -1080,12 +1128,14 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', down);
   }, [handleOpenTerminal]);
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (!open) {
       setQuery('');
       setPage('root');
     }
-  }, [open]);
+  }
 
   useEffect(() => {
     const openFileSearch = () => {
@@ -1135,7 +1185,44 @@ export function CommandPalette() {
 
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
+  // Joined so the memo below keys on the answer, not on a fresh array.
+  const customizeTabs = useCapabilityAccess(projectId ?? undefined).tabs.join(' ');
+  // A row is offered only when the caller can act on it: the same verdicts
+  // the account hub nav and the sidebar rows read, joined so the memo keys on
+  // the answers. Every one is false until its probe lands.
+  const { sectionVisible } = useAccountHubAccess(selectedAccountId ?? undefined);
+  const accountSections = Object.entries(sectionVisible)
+    .filter(([, visible]) => visible)
+    .map(([section]) => section)
+    .join(' ');
+  const navRows = useProjectNavRows(projectId ?? undefined);
+  const customizeRow = navRows.customize !== null;
+  const repoRow = navRows.files === 'repo';
+  const canInvite =
+    useProjectPageCans(projectId ?? undefined)[PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE]?.allowed ===
+    true;
+  const appsRow = useAppsRowVisible(projectId ?? undefined);
   const allPaletteItems = useMemo(() => {
+    const gates = {
+      accountSections: Object.fromEntries(
+        accountSections.split(' ').map((section) => [section, true]),
+      ),
+      rows: {
+        'proj-customize': customizeRow,
+        'proj-files': repoRow,
+        'proj-apps': appsRow,
+        'proj-invite': canInvite,
+        // The roster is read-only without the leaf that changes it.
+        'proj-members': canInvite,
+        // Open change requests are the Review tab's business: only a caller
+        // who can act on reviews gets the list.
+        'review-changes': customizeTabs.split(' ').includes('review'),
+        // Customize tabs with their own row: shown exactly when the tab is.
+        'proj-reminders': customizeTabs.split(' ').includes('reminders'),
+        'proj-repo': customizeTabs.split(' ').includes('files'),
+      },
+    };
+    const customizeTabSet = new Set(customizeTabs.split(' '));
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
       const item = translateMenuItem(sourceItem, tI18nComplete);
@@ -1157,10 +1244,15 @@ export function CommandPalette() {
       // an `{accountId}` href could not. Same guard, off the kind instead of
       // off a token, so a new account row can never ship without it.
       if (item.kind === 'account' && !selectedAccountId) continue;
+      if (!paletteRowPermitted(item, gates)) continue;
       let href = item.href;
       if (href?.includes('{projectId}')) {
         if (!projectId) continue;
         href = href.replaceAll('{projectId}', projectId);
+        // A Customize tab is offered only when `capabilityAccess()` lists it:
+        // the same rule the sidebar row and the tab bar follow.
+        const tab = activeCapabilityTab(href.split('?')[0]);
+        if (tab && !customizeTabSet.has(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
         if (!selectedAccountId) continue;
@@ -1178,6 +1270,12 @@ export function CommandPalette() {
     sidebarCtx,
     projectFlags,
     tI18nComplete,
+    customizeTabs,
+    accountSections,
+    customizeRow,
+    repoRow,
+    appsRow,
+    canInvite,
   ]);
 
   const filteredNavItems = useMemo(() => {
@@ -1331,7 +1429,7 @@ export function CommandPalette() {
       .then((session) => {
         // LEGACY, unreachable in the product: this branch runs only when
         // there is NO projectId, and every authed route is `/projects/[id]/*`.
-        // `/sessions/<id>` is not a route — see `lib/navigation/session-href.ts`.
+        // `/sessions/<id>` is not a route — see `packages/ui/src/internal/lib/navigation/session-href.ts`.
         openTabAndNavigate({
           id: session.id,
           title: tHardcodedUi.raw('i18nComplete.textcffdba22adf2'),
@@ -1345,7 +1443,7 @@ export function CommandPalette() {
       })
       .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.textb6f7df17e0a2')))
       .finally(() => setIsCreating(false));
-  }, [isCreating, projectId, newSession, createSession, openProjectTab, close, tHardcodedUi]);
+  }, [isCreating, projectId, newSession, createSession, close, tHardcodedUi]);
 
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 
@@ -1386,15 +1484,13 @@ export function CommandPalette() {
   const handleSelectAccount = useCallback(
     (a: KortixAccount) => {
       setSelectedAccountId(a.account_id);
-      // The landing door, NOT `latestProjectPath`: the last-project cookie
-      // names a project in the account just left, which still passes the
-      // ownership check (it's scoped by user, not account) and would open
-      // the wrong account's workspace. Same rule `account-switcher.tsx`
-      // follows after creating an account.
+      // The landing door for THIS account (`?account=`). The plain door
+      // reopened the project the browser remembered, in the account just
+      // left, and set the selected account back to it (KRTX-1731).
       // nav-contract: prefetch-only — a cmdk row activated by keyboard, and the
       // push must follow `setSelectedAccountId`. The 'accounts' page effect
       // warms it.
-      router.push(PROJECT_LANDING_PATH);
+      router.push(`${PROJECT_LANDING_PATH}?account=${encodeURIComponent(a.account_id)}`);
       close();
     },
     [setSelectedAccountId, router, close],
@@ -1490,6 +1586,13 @@ export function CommandPalette() {
     if (!hasQuery || !projectId) return [];
     return filteredProjectSessionsList.slice(0, 8);
   }, [hasQuery, projectId, filteredProjectSessionsList]);
+
+  const tFirstChat = useTranslations('firstChat');
+  const firstChatPending = useFirstChatPending(projectId ?? '');
+  const firstChatTitle = tFirstChat('title');
+  const firstChatResult =
+    !!projectId &&
+    firstChatMatchesPaletteQuery(firstChatPending, firstChatTitle, query.trim().toLowerCase());
 
   /**
    * Workspaces matching a ROOT query.
@@ -1696,7 +1799,7 @@ export function CommandPalette() {
     [tPalette, close],
   );
 
-  const hasSessionResults = rootSessionResults.length > 0;
+  const hasSessionResults = rootSessionResults.length > 0 || firstChatResult;
   const hasWorkspaceResults = rootWorkspaceRows.length > 0;
   const hasSettingsResults = settingsResultCount > 0;
   const hasAnyResults =
@@ -1743,6 +1846,11 @@ export function CommandPalette() {
     sidebarCtx?.toggleSidebar({ instant: true });
     close();
   }, [sidebarCtx, close]);
+
+  const handleCustomizeSidebar = useCallback(() => {
+    close();
+    openCustomizeSidebar();
+  }, [close]);
 
   const handleTogglePanelMode = useCallback(() => {
     close();
@@ -1821,7 +1929,7 @@ export function CommandPalette() {
    *
    * Calling `openSettings()` where no panel is mounted did two things, both
    * bad: the click did nothing, AND `open: true` stuck in the module-level
-   * store (`stores/settings-panel-store.ts`), so the overlay sprang open
+   * store (`packages/ui/src/internal/stores/settings-panel-store.ts`), so the overlay sprang open
    * unrequested on the next client-side navigation into a project.
    */
   const openSettingsTab = useCallback(
@@ -1877,12 +1985,27 @@ export function CommandPalette() {
   }, []);
 
   const handleSetTheme = useCallback(
-    (newTheme: string) => {
-      setTheme(newTheme);
+    (newTheme: InterfaceThemeId) => {
+      // `<html>` already shows `newTheme` (the highlighted row's preview):
+      // keep it, so no restore runs after the store write.
+      commitThemePreview();
+      selectInterfaceTheme(newTheme);
       close();
     },
-    [setTheme, close],
+    [commitThemePreview, selectInterfaceTheme, close],
   );
+
+  // cmdk's highlighted value (`buildPaletteSearchText`, trimmed and lowercased
+  // the way cmdk stores it) -> the theme that row picks.
+  const themeByHighlightValue = useMemo(() => {
+    const map = new Map<string, InterfaceThemeId>();
+    for (const item of filteredNavItems) {
+      if (item.kind === 'theme' && item.themeValue) {
+        map.set(buildPaletteSearchText(item).trim().toLowerCase(), item.themeValue);
+      }
+    }
+    return map;
+  }, [filteredNavItems]);
 
   const handleSetWallpaper = useCallback(
     (newWallpaperId: string) => {
@@ -2005,7 +2128,7 @@ export function CommandPalette() {
 
   const handleOpenProviderModal = useCallback(() => {
     close();
-    import('@/stores/provider-modal-store').then(({ useProviderModalStore }) => {
+    import('@kortix/ui/internal/stores/provider-modal-store').then(({ useProviderModalStore }) => {
       useProviderModalStore.getState().openProviderModal('connected');
     });
   }, [close]);
@@ -2059,6 +2182,7 @@ export function CommandPalette() {
       // the action branch runs — same arrangement as `conversationDensity`.
       reviewChanges: handleReviewChanges,
       toggleSidebar: handleToggleSidebar,
+      customizeSidebar: handleCustomizeSidebar,
       togglePanelMode: handleTogglePanelMode,
       // Fallback only: SUBMENU_PAGE_BY_ID intercepts `activity-density`
       // before the action branch runs. If that map entry is ever removed, the
@@ -2083,6 +2207,7 @@ export function CommandPalette() {
       handleOpenProjectMembers,
       handleReviewChanges,
       handleToggleSidebar,
+      handleCustomizeSidebar,
       handleTogglePanelMode,
       goToPage,
       handleOpenSessionTerminal,
@@ -2233,6 +2358,7 @@ export function CommandPalette() {
     return (
       filteredNavItems.length +
       rootSessionResults.length +
+      (firstChatResult ? 1 : 0) +
       rootWorkspaceRows.length +
       sessionActionItems.length +
       settingsResultCount +
@@ -2243,6 +2369,7 @@ export function CommandPalette() {
     hasQuery,
     filteredNavItems,
     rootSessionResults,
+    firstChatResult,
     rootWorkspaceRows,
     sessionActionItems,
     settingsResultCount,
@@ -2334,7 +2461,14 @@ export function CommandPalette() {
         />
 
         <FadedScrollArea fadeColor="from-popover" className="max-h-[min(60vh,380px)]">
-          <CommandList className="max-h-none overflow-visible">
+          {/* `scroll-my-10` = the fade's `h-10`: cmdk scrolls the highlighted
+              row with `scrollIntoView({ block: 'nearest' })`, which stops at
+              the edge — under the fade. The margin stops it clear of it. */}
+          <CommandList className="max-h-none overflow-visible [&_[cmdk-item]]:scroll-my-10">
+            <ThemeHighlightPreview
+              themeByValue={themeByHighlightValue}
+              onPreview={previewInterfaceTheme}
+            />
             {page === 'root' && (
               <>
                 {!hasQuery && (
@@ -2602,7 +2736,8 @@ export function CommandPalette() {
                                 ? tHardcodedUi.raw('i18nComplete.text5f7c8d97889a')
                                 : tHardcodedUi.raw('i18nComplete.text9b21dbb9a947')
                               : item.label;
-                          const isActiveTheme = item.kind === 'theme' && theme === item.themeValue;
+                          const isActiveTheme =
+                            item.kind === 'theme' && activeInterfaceTheme === item.themeValue;
                           const isActiveWallpaper =
                             item.kind === 'wallpaper' && activeWallpaperId === item.wallpaperValue;
                           const submenuPage = SUBMENU_PAGE_BY_ID[item.id];
@@ -2618,6 +2753,9 @@ export function CommandPalette() {
                             >
                               {item.id === 'new-session' && isCreating ? (
                                 <Loading className="text-muted-foreground size-4 shrink-0" />
+                              ) : item.kind === 'theme' && item.themeValue ? (
+                                // The same live palette preview the Appearance tab shows.
+                                <ThemeSwatch value={item.themeValue} choice={themeChoice} />
                               ) : (
                                 <SidebarIcon className="size-4" />
                               )}
@@ -2700,6 +2838,19 @@ export function CommandPalette() {
                             </span>
                           </CommandItem>
                         ))}
+                        {firstChatResult && projectId && (
+                          <CommandItem
+                            value={sanitizeCmdkValue(`session ${firstChatTitle}`)}
+                            onSelect={() => {
+                              // nav-contract: prefetch-only — a cmdk row activated by keyboard.
+                              router.push(firstChatHref(projectId));
+                              close();
+                            }}
+                          >
+                            <MessageCircle className="size-4 shrink-0" />
+                            <span className="flex-1 truncate">{firstChatTitle}</span>
+                          </CommandItem>
+                        )}
                       </CommandGroup>
                     )}
 

@@ -134,3 +134,28 @@ describe('createAppViewerKortix', () => {
     expect(identityOnly.code).toBe('identity_only');
   });
 });
+
+describe('readAppViewer: the whole member', () => {
+  test('carries name, picture, group names, role and project when the gate signs them', async () => {
+    const viewer = await readAppViewer(
+      req({
+        [APP_VIEWER_HEADER]: sign(
+          payload({ name: 'Ada', picture: 'https://example.test/a.png', groups: ['Finance'], role: 'admin', projectId: 'proj-1' }),
+        ),
+      }),
+      { secret: SECRET },
+    );
+    expect(viewer).toMatchObject({ name: 'Ada', picture: 'https://example.test/a.png', groups: ['Finance'], role: 'admin', projectId: 'proj-1' });
+  });
+
+  test('an older gate without them reads as null and empty', async () => {
+    const viewer = await readAppViewer(req({ [APP_VIEWER_HEADER]: sign(payload()) }), { secret: SECRET });
+    expect(viewer).toMatchObject({ name: null, picture: null, groups: [], role: null, projectId: null });
+  });
+
+  test('a malformed new field is refused, never coerced', async () => {
+    for (const bad of [{ groups: 'Finance' }, { groups: [1] }, { name: 7 }, { role: ['admin'] }]) {
+      expect(await readAppViewer(req({ [APP_VIEWER_HEADER]: sign(payload(bad)) }), { secret: SECRET })).toBeNull();
+    }
+  });
+});

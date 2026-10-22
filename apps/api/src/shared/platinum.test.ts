@@ -44,7 +44,10 @@ test('platinumJson gives up on a stalled connection instead of hanging forever',
     port: 0,
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  // `localhost` does not resolve on a platform sandbox, which answers
+  // ConnectionRefused instead of the stall this row simulates. Loopback by
+  // address connects on every host.
+  mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 
@@ -61,7 +64,9 @@ test('platinumJson respects an explicit caller-provided signal instead of the de
     port: 0,
     fetch: () => new Promise<Response>(() => {}),
   });
-  mockPlatinumApiUrl = `http://localhost:${server.port}`;
+  // Same platform-sandbox resolution as the row above: the stall must reach
+  // the AbortSignal, not die as ConnectionRefused.
+  mockPlatinumApiUrl = `http://127.0.0.1:${server.port}`;
 
   const { platinumJson } = await import('./platinum');
 
@@ -153,7 +158,8 @@ test('a 409 with a DIFFERENT code stays a generic Error (not misclassified as no
   const err = await platinumJson('/v1/sandboxes/sbx_1/expose', { method: 'POST' }).catch((e) => e);
   expect(isPlatinumSandboxNotRunningError(err)).toBe(false);
   expect(err).toBeInstanceOf(Error);
-  expect((err as Error).name).toBe('Error');
+  expect((err as Error).name).toBe('PlatinumHttpError');
+  expect(err).toMatchObject({ status: 409, code: 'port_in_use' });
   expect((err as Error).message).toContain('409');
 
   globalThis.fetch = originalFetch;
@@ -168,7 +174,8 @@ test('a 500 / non-JSON 409 stays a generic Error (unexpected failures stay loud)
   let err = await platinumJson('/v1/sandboxes/sbx_1/expose', { method: 'POST' }).catch((e) => e);
   expect(isPlatinumSandboxNotRunningError(err)).toBe(false);
   expect(err).toBeInstanceOf(Error);
-  expect((err as Error).name).toBe('Error');
+  expect((err as Error).name).toBe('PlatinumHttpError');
+  expect(err).toMatchObject({ status: 500 });
   expect((err as Error).message).toContain('500');
 
   // 409 with a NON-JSON body — the `code` field can't be parsed, so it must
@@ -177,7 +184,8 @@ test('a 500 / non-JSON 409 stays a generic Error (unexpected failures stay loud)
   err = await platinumJson('/v1/sandboxes/sbx_1/expose', { method: 'POST' }).catch((e) => e);
   expect(isPlatinumSandboxNotRunningError(err)).toBe(false);
   expect(err).toBeInstanceOf(Error);
-  expect((err as Error).name).toBe('Error');
+  expect((err as Error).name).toBe('PlatinumHttpError');
+  expect((err as { code?: string }).code).toBeUndefined();
   expect((err as Error).message).toContain('409');
 
   globalThis.fetch = originalFetch;

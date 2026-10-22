@@ -7,17 +7,34 @@ import {
   SecretSchema as ContractSecretSchema,
   SessionCreateInputSchema as ContractSessionCreateInputSchema,
   SessionCreateAcceptedSchema as ContractSessionCreateAcceptedSchema,
+  SessionDeleteResultSchema as ContractSessionDeleteResultSchema,
   SessionStartResultSchema as ContractSessionStartResultSchema,
-  TriggerSchema as ContractTriggerSchema,
   WarmProjectSessionResultSchema as ContractWarmProjectSessionResultSchema,
   ClaimWarmProjectSessionInputSchema as ContractClaimWarmProjectSessionInputSchema,
+  ChangeRequestSchema as ContractChangeRequestSchema,
+  ChangeRequestListSchema as ContractChangeRequestListSchema,
+  CreateSessionPromptResultSchema as ContractCreateSessionPromptResultSchema,
+  SessionPromptListSchema as ContractSessionPromptListSchema,
+  SessionPromptSchema as ContractSessionPromptSchema,
+  SessionSnapshotSchema as ContractSessionSnapshotSchema,
+  SessionTranscriptSchema as ContractSessionTranscriptSchema,
+  SessionTranscriptSyncEnvelopeSchema as ContractSessionTranscriptSyncEnvelopeSchema,
+  SessionTurnStatusSchema as ContractSessionTurnStatusSchema,
+  TriggerListSchema as ContractTriggerListSchema,
+  TriggerRunListSchema as ContractTriggerRunListSchema,
+  TriggerRunSchema as ContractTriggerRunSchema,
+  TriggerFireRequestSchema as ContractTriggerFireRequestSchema,
+  TriggerDryRunResultSchema as ContractTriggerDryRunResultSchema,
+  TriggerReplayRequestSchema as ContractTriggerReplayRequestSchema,
 } from '@kortix/api-contract';
 import { z } from '@hono/zod-openapi';
-import { Hono } from 'hono';
 
 export const projectsApp = makeOpenApiApp<AppEnv>();
 
-export const projectWebhooksApp = new Hono<AppEnv>();
+export const projectWebhooksApp = makeOpenApiApp<AppEnv>();
+
+/** `/v1/sessions`: one session by id, in any project (routes/project-sessions.ts). */
+export const sessionsApp = makeOpenApiApp<AppEnv>();
 
 // ─── Reusable OpenAPI schemas (these power the docs, not runtime response
 // validation). Core project-domain surfaces come from @kortix/api-contract —
@@ -34,6 +51,8 @@ export const SessionCreateAcceptedSchema = ContractSessionCreateAcceptedSchema.o
 
 export const SessionCreateInputSchema = ContractSessionCreateInputSchema.openapi('SessionCreateInput');
 
+export const SessionDeleteResultSchema = ContractSessionDeleteResultSchema.openapi('SessionDeleteResult');
+
 export const WarmProjectSessionResultSchema =
   ContractWarmProjectSessionResultSchema.openapi('WarmProjectSessionResult');
 
@@ -42,11 +61,55 @@ export const ClaimWarmProjectSessionInputSchema =
 
 export const OkSchema = ContractOkResponseSchema.openapi('Ok');
 
-export const ChangeRequestSchema = z.object({}).passthrough().openapi('ChangeRequest');
+export const ChangeRequestSchema = ContractChangeRequestSchema.openapi('ChangeRequest');
+
+export const ChangeRequestListSchema = ContractChangeRequestListSchema.openapi('ChangeRequestList');
 
 export const SecretSchema = ContractSecretSchema.openapi('Secret');
 
-export const TriggerSchema = ContractTriggerSchema.openapi('Trigger');
+export const TriggerListSchema = ContractTriggerListSchema.openapi('TriggerList');
+
+export const TriggerRunSchema = ContractTriggerRunSchema.openapi('TriggerRun');
+
+export const TriggerRunListSchema = ContractTriggerRunListSchema.extend({ runs: TriggerRunSchema.array() }).openapi('TriggerRunList');
+
+export const TriggerFireRequestSchema = ContractTriggerFireRequestSchema.openapi('TriggerFireRequest');
+
+export const TriggerDryRunResultSchema = ContractTriggerDryRunResultSchema.openapi('TriggerDryRunResult');
+
+export const TriggerReplayRequestSchema = ContractTriggerReplayRequestSchema.openapi('TriggerReplayRequest');
+
+/** A manual fire or a webhook delivery: the run was queued (a session will
+ *  start) or fired, or the same delivery was already queued. */
+export const TriggerFireResultSchema = z
+  .object({
+    status: z.enum(['queued', 'fired', 'deduped']),
+    command_id: z.string().nullable(),
+    session_id: z.string().nullable(),
+    reason: z.string().nullable().optional(),
+    deduped: z.boolean(),
+    /** The run this fire wrote to the trigger's history (KRTX-1743). */
+    run_id: z.string().nullable().optional(),
+  })
+  .openapi('TriggerFireResult');
+
+export const SessionTranscriptReadSchema = z
+  .union([
+    ContractSessionTranscriptSchema.openapi('SessionTranscript'),
+    ContractSessionTranscriptSyncEnvelopeSchema.openapi('SessionTranscriptSyncEnvelope'),
+  ])
+  .openapi('SessionTranscriptRead');
+
+export const SessionTurnStatusSchema = ContractSessionTurnStatusSchema.openapi('SessionTurnStatus');
+
+export const SessionPromptSchema = ContractSessionPromptSchema.openapi('SessionPrompt');
+
+export const SessionPromptListSchema = ContractSessionPromptListSchema.openapi('SessionPromptList');
+
+export const CreateSessionPromptResultSchema =
+  ContractCreateSessionPromptResultSchema.openapi('CreateSessionPromptResult');
+
+export const SessionSnapshotSchema = ContractSessionSnapshotSchema.openapi('SessionSnapshot');
 
 export const SnapshotSchema = z.object({}).passthrough().openapi('Snapshot');
 

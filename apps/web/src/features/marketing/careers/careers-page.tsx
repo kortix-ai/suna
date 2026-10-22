@@ -6,11 +6,11 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from '@/components/ui/accordion';
+} from '@kortix/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { useState, type ReactNode } from 'react';
@@ -169,7 +169,7 @@ export function CareersPage(): ReactNode {
   return (
     <main className="bg-background min-h-screen">
       <section className="mx-auto max-w-7xl px-6 pt-32 pb-12 sm:pt-44 sm:pb-16">
-        <SectionHeader eyebrow={hero.eyebrow} title={hero.title} description={hero.lead} />
+        <SectionHeader as="h1" eyebrow={hero.eyebrow} title={hero.title} description={hero.lead} />
         <Reveal delay={0.06}>
           <div className="kx-hero-text mt-8 flex w-full shrink-0 flex-wrap items-center gap-2 [--kx-enter:210ms] sm:w-auto sm:gap-3">
             <Button

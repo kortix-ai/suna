@@ -2,7 +2,7 @@ import { type Kortix, type KortixPlatformConfig, createKortix } from '@kortix/sd
 import { runWithKortix } from '@kortix/sdk/server';
 
 import type { Auth } from './auth.ts';
-import { ApiError } from './client.ts';
+import { openKortixWebSocket } from './kortix-socket.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 export { sdkBackendUrl } from '@kortix/shared/host-config';
@@ -19,6 +19,9 @@ export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
   return {
     backendUrl: sdkBackendUrl(auth.api_base),
     getToken: async () => token || null,
+    // Baked by the release build (`--define`); `dev` in a local `bun run`. The
+    // API names a CLI-created session's source from it (KRTX-2914).
+    clientVersion: `cli/${process.env.KORTIX_CLI_VERSION ?? 'dev'}`,
   };
 }
 
@@ -62,6 +65,9 @@ export interface RunningSandboxPortProxy {
 interface StartSandboxPortProxyOpts {
   runtimeUrl: string;
   token: string;
+  /** Read for every request and WebSocket upgrade; falls back to `token`. A
+   *  proxy lives as long as `opencode attach`, longer than one credential. */
+  getToken?: () => string | null | undefined | Promise<string | null | undefined>;
   port?: number;
 }
 
@@ -95,7 +101,7 @@ export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningS
       const incoming = new URL(req.url);
       if (req.headers.get('upgrade')?.toLowerCase() === 'websocket') {
         const upstream = new URL(`${baseWs}${incoming.pathname}${incoming.search}`);
-        upstream.searchParams.set('token', opts.token);
+        upstream.searchParams.set('token', (await opts.getToken?.()) || opts.token);
         const upgraded = bunServer.upgrade(req, {
           data: { upstreamUrl: upstream.toString() },
         });
@@ -103,7 +109,7 @@ export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningS
       }
 
       const upstream = `${baseHttp}${incoming.pathname}${incoming.search}`;
-      return forwardProxiedHttp(req, upstream, opts.token);
+      return forwardProxiedHttp(req, upstream, (await opts.getToken?.()) || opts.token);
     },
     websocket: {
       open(ws) {
@@ -111,7 +117,7 @@ export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningS
         ws.data.ready = false;
         let upstream: WebSocket;
         try {
-          upstream = new WebSocket(ws.data.upstreamUrl);
+          upstream = openKortixWebSocket(ws.data.upstreamUrl);
         } catch {
           try {
             ws.close(1011, 'upstream connect failed');

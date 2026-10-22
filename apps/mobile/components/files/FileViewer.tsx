@@ -41,12 +41,291 @@ import { MONO_FONT_FAMILY } from '@/lib/utils/mono-font';
 import { THEME, withAlpha } from '@/lib/utils/theme';
 import { sheetHandleIndicatorStyle } from '@/components/kortix/sheet';
 import { useConfirmDialog } from '@/components/kortix/confirm-dialog';
+import { blobToDataURL } from '@/lib/files/hooks';
 import { PortalHost } from '@rn-primitives/portal';
 
 /** Portal host inside the viewer's native `Modal`: the root host draws under it. */
 const FILE_VIEWER_PORTAL_HOST = 'file-viewer';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/**
+ * The inline text editor's state machine, lifted out of the `FileViewer`
+ * shell: whether the editor is open, its draft, and the save / cancel /
+ * discard-confirm flows around it. `close` is the viewer's own close; the
+ * guarded variant confirms unsaved edits first.
+ */
+function useInlineTextEditor({
+  file,
+  sandboxUrl,
+  textContent,
+  visible,
+  initialEditing,
+  canEdit,
+  close,
+}: {
+  file: SandboxFile | null;
+  sandboxUrl?: string;
+  textContent?: string | null;
+  visible: boolean;
+  initialEditing?: boolean;
+  canEdit: boolean;
+  close: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const writeMutation = useWriteSandboxFile();
+  const { confirm, dialog: confirmDialog } = useConfirmDialog({ portalHost: FILE_VIEWER_PORTAL_HOST });
+
+  const dirty = editing && draft !== (textContent ?? '');
+
+  // Reset edit mode whenever the file changes or the viewer closes. A freshly
+  // created file (initialEditing) opens straight into the editor.
+  useEffect(() => {
+    setEditing(visible && !!initialEditing);
+    setDraft('');
+  }, [file?.path, visible, initialEditing]);
+
+  const handleStartEdit = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setDraft(textContent ?? '');
+    setEditing(true);
+  }, [textContent]);
+
+  const confirmDiscard = useCallback(
+    (onDiscard: () => void) => {
+      if (!dirty) return onDiscard();
+      confirm({
+        title: 'Discard changes?',
+        description: 'Your edits will be lost.',
+        cancelLabel: 'Keep editing',
+        confirmLabel: 'Discard',
+        destructive: true,
+        onConfirm: onDiscard,
+      });
+    },
+    [dirty, confirm],
+  );
+
+  const handleCancelEdit = useCallback(() => {
+    confirmDiscard(() => setEditing(false));
+  }, [confirmDiscard]);
+
+  const handleSave = useCallback(async () => {
+    if (!file || !sandboxUrl) return;
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await writeMutation.mutateAsync({ sandboxUrl, path: file.path, content: draft });
+      setEditing(false); // content query is invalidated → refetches the saved text
+    } catch (e) {
+      // One-button acknowledgement, not a toast: the root toaster draws under
+      // this native Modal on Android.
+      const message = e instanceof Error ? e.message : 'Could not save the file. Your edits are kept — try again.';
+      Alert.alert('Save failed', message);
+    }
+  }, [file, sandboxUrl, draft, writeMutation]);
+
+  const handleCloseGuarded = useCallback(() => {
+    confirmDiscard(() => {
+      setEditing(false);
+      close();
+    });
+  }, [confirmDiscard, close]);
+
+  return {
+    editing,
+    draft,
+    setDraft,
+    dirty,
+    canEdit,
+    isPending: writeMutation.isPending,
+    handleStartEdit,
+    handleCancelEdit,
+    handleSave,
+    handleCloseGuarded,
+    confirmDialog,
+  };
+}
+
+/** The header's right side: Cancel and Save while editing, and the view
+ * actions (file navigation, edit pencil, download, close) otherwise. */
+function EditorHeaderActions({
+  isDark,
+  editing,
+  isPending,
+  dirty,
+  onCancel,
+  onSave,
+  onPrevious,
+  onNext,
+  showNavigation,
+  canPrevious,
+  canNext,
+  canEdit,
+  onStartEdit,
+  onDownload,
+  isDownloading,
+  onClose,
+  closeScale,
+  closeAnimatedStyle,
+}: {
+  isDark: boolean;
+  editing: boolean;
+  isPending: boolean;
+  dirty: boolean;
+  onCancel: () => void;
+  onSave: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  showNavigation: boolean;
+  canPrevious: boolean;
+  canNext: boolean;
+  canEdit: boolean;
+  onStartEdit: () => void;
+  onDownload: () => void;
+  isDownloading: boolean;
+  onClose: () => void;
+  closeScale: ReturnType<typeof useSharedValue<number>>;
+  closeAnimatedStyle: object;
+}) {
+  const fg = isDark ? THEME.dark.foreground : THEME.light.foreground;
+  if (editing) {
+    return (
+      <View className="flex-row items-center gap-2">
+        <Pressable onPress={onCancel} className="px-2 py-2" hitSlop={8}>
+          <Text
+            style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.6 : 0.5) }}
+            className="font-roobert-medium text-sm">
+            Cancel
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={onSave}
+          disabled={isPending || !dirty}
+          hitSlop={6}
+          className="flex-row items-center rounded-full px-3.5 py-2"
+          style={{
+            backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
+            opacity: isPending || !dirty ? 0.5 : 1,
+            gap: 6,
+          }}>
+          {isPending ? (
+            <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
+          ) : (
+            <Icon as={Check} size={16} color={isDark ? THEME.dark.background : THEME.light.background} />
+          )}
+          <Text
+            style={{ color: isDark ? THEME.dark.background : THEME.light.background }}
+            className="font-roobert-medium text-sm">
+            {isPending ? 'Saving…' : 'Save'}
+          </Text>
+        </Pressable>
+      </View>
+    );
+  }
+  return (
+    <View className="flex-row items-center gap-3">
+      {showNavigation && (
+        <>
+          <AnimatedPressable
+            onPress={onPrevious}
+            disabled={!canPrevious}
+            className="p-2"
+            style={{ opacity: canPrevious ? 1 : 0.3 }}
+            accessibilityRole="button"
+            accessibilityLabel="Previous file">
+            <Icon as={ChevronLeft} size={24} color={fg} />
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={onNext}
+            disabled={!canNext}
+            className="p-2"
+            style={{ opacity: canNext ? 1 : 0.3 }}
+            accessibilityRole="button"
+            accessibilityLabel="Next file">
+            <Icon as={ChevronRight} size={24} color={fg} />
+          </AnimatedPressable>
+        </>
+      )}
+      {canEdit && (
+        <AnimatedPressable onPress={onStartEdit} className="p-2" hitSlop={6} accessibilityRole="button" accessibilityLabel="Edit file">
+          <Icon as={Pencil} size={20} color={fg} />
+        </AnimatedPressable>
+      )}
+      <AnimatedPressable
+        onPress={onDownload}
+        disabled={isDownloading}
+        className="p-2"
+        style={{ opacity: isDownloading ? 0.6 : 1 }}
+        accessibilityRole="button"
+        accessibilityLabel="Download">
+        {isDownloading ? (
+          <KortixLoader size="small" />
+        ) : (
+          <Icon as={Download} size={22} color={fg} />
+        )}
+      </AnimatedPressable>
+      <AnimatedPressable
+        onPressIn={() => {
+          closeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+        }}
+        onPressOut={() => {
+          closeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+        }}
+        onPress={onClose}
+        style={closeAnimatedStyle}
+        className="p-2"
+        accessibilityRole="button"
+        accessibilityLabel="Close">
+        <Icon as={X} size={24} color={fg} />
+      </AnimatedPressable>
+    </View>
+  );
+}
+
+/** The editing body: the mono draft field over the keyboard. */
+function EditorPane({
+  draft,
+  setDraft,
+  isPending,
+  isDark,
+}: {
+  draft: string;
+  setDraft: (next: string) => void;
+  isPending: boolean;
+  isDark: boolean;
+}) {
+  const insets = useSafeAreaInsets();
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={insets.top + 8}>
+      <TextInput
+        value={draft}
+        onChangeText={setDraft}
+        multiline
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoComplete="off"
+        spellCheck={false}
+        editable={!isPending}
+        textAlignVertical="top"
+        style={{
+          flex: 1,
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: insets.bottom + 12,
+          fontFamily: MONO_FONT_FAMILY,
+          fontSize: 13,
+          lineHeight: 19,
+          color: isDark ? THEME.dark.foreground : THEME.light.foreground,
+        }}
+      />
+    </KeyboardAvoidingView>
+  );
+}
+
 
 interface FileViewerProps {
   visible: boolean;
@@ -78,13 +357,7 @@ export function FileViewer({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const closeScale = useSharedValue(1);
-  const [viewMode, setViewMode] = useState<'preview' | 'raw'>('preview');
   const [isDownloading, setIsDownloading] = useState(false);
-  // In-place text editing
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-  const writeMutation = useWriteSandboxFile();
-  const { confirm, dialog: confirmDialog } = useConfirmDialog({ portalHost: FILE_VIEWER_PORTAL_HOST });
   const toast = useToast();
 
   const {
@@ -121,12 +394,9 @@ export function FileViewer({
       const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
       let source: string | null = null;
       if (imageBlob && isBinaryFile && !blobTooLarge) {
-        const reader = new FileReader();
-        const base64Data = await new Promise<string>((resolve, reject) => {
-          reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-          reader.onerror = reject;
-          reader.readAsDataURL(imageBlob);
-        });
+        // The hook already made the `data:...;base64,` URL for the preview; the
+        // bytes after the comma are the base64 payload.
+        const base64Data = (await blobToDataURL(imageBlob, file.path)).split(',')[1];
         await FileSystem.writeAsStringAsync(fileUri, base64Data, { encoding: FileSystem.EncodingType.Base64 });
         source = fileUri;
       } else if (textContent) {
@@ -167,74 +437,24 @@ export function FileViewer({
   // ── In-place editing ──────────────────────────────────────────────────────
   // Text files can be edited once their content has loaded.
   const canEdit = !!file && !!sandboxUrl && !!shouldFetchText && !isLoading && !textError;
-  const dirty = editing && draft !== (textContent ?? '');
-
-  // Reset edit mode whenever the file changes or the viewer closes. A freshly
-  // created file (initialEditing) opens straight into the editor.
-  useEffect(() => {
-    setEditing(visible && !!initialEditing);
-    setDraft('');
-  }, [file?.path, visible, initialEditing]);
+  const {
+    editing,
+    draft,
+    setDraft,
+    dirty,
+    isPending,
+    handleStartEdit,
+    handleCancelEdit,
+    handleSave,
+    handleCloseGuarded,
+    confirmDialog,
+  } = useInlineTextEditor({ file, sandboxUrl, textContent, visible, initialEditing, canEdit, close: handleClose });
 
   // A native modal does not take the focus from the field behind it, so the
   // keyboard would stay up over the viewer. Same rule as the sheets.
   useEffect(() => {
     if (visible) Keyboard.dismiss();
   }, [visible]);
-
-  const handleStartEdit = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setDraft(textContent ?? '');
-    setEditing(true);
-  }, [textContent]);
-
-  const handleCancelEdit = useCallback(() => {
-    if (dirty) {
-      confirm({
-        title: 'Discard changes?',
-        description: 'Your edits will be lost.',
-        cancelLabel: 'Keep editing',
-        confirmLabel: 'Discard',
-        destructive: true,
-        onConfirm: () => setEditing(false),
-      });
-      return;
-    }
-    setEditing(false);
-  }, [dirty, confirm]);
-
-  const handleSave = useCallback(async () => {
-    if (!file || !sandboxUrl) return;
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await writeMutation.mutateAsync({ sandboxUrl, path: file.path, content: draft });
-      setEditing(false); // content query is invalidated → refetches the saved text
-    } catch (e: any) {
-      // One-button acknowledgement, not a toast: the root toaster draws under
-      // this native Modal on Android.
-      Alert.alert('Save failed', e?.message || 'Could not save the file. Your edits are kept — try again.');
-    }
-  }, [file, sandboxUrl, draft, writeMutation]);
-
-  const handleCloseGuarded = useCallback(() => {
-    if (editing && dirty) {
-      confirm({
-        title: 'Discard changes?',
-        description: 'Your edits will be lost.',
-        cancelLabel: 'Keep editing',
-        confirmLabel: 'Discard',
-        destructive: true,
-        onConfirm: () => {
-          setEditing(false);
-          handleClose();
-        },
-      });
-      return;
-    }
-    handleClose();
-  }, [editing, dirty, handleClose, confirm]);
-
-  const insets = useSafeAreaInsets();
 
   if (!visible || !file) {
     return null;
@@ -286,135 +506,33 @@ export function FileViewer({
             </View>
 
             {/* Action Buttons */}
-            {editing ? (
-              <View className="flex-row items-center gap-2">
-                <Pressable onPress={handleCancelEdit} className="px-2 py-2" hitSlop={8}>
-                  <Text
-                    style={{ color: withAlpha(isDark ? THEME.dark.foreground : THEME.light.foreground, isDark ? 0.6 : 0.5) }}
-                    className="font-roobert-medium text-sm">
-                    Cancel
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleSave}
-                  disabled={writeMutation.isPending || !dirty}
-                  hitSlop={6}
-                  className="flex-row items-center rounded-full px-3.5 py-2"
-                  style={{
-                    backgroundColor: isDark ? THEME.dark.foreground : THEME.light.foreground,
-                    opacity: writeMutation.isPending || !dirty ? 0.5 : 1,
-                    gap: 6,
-                  }}>
-                  {writeMutation.isPending ? (
-                    <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
-                  ) : (
-                    <Icon as={Check} size={16} color={isDark ? THEME.dark.background : THEME.light.background} />
-                  )}
-                  <Text
-                    style={{ color: isDark ? THEME.dark.background : THEME.light.background }}
-                    className="font-roobert-medium text-sm">
-                    {writeMutation.isPending ? 'Saving…' : 'Save'}
-                  </Text>
-                </Pressable>
-              </View>
-            ) : (
-              <View className="flex-row items-center gap-3">
-                {canNavigate && (
-                  <>
-                    <AnimatedPressable
-                      onPress={handlePrevious}
-                      disabled={currentIndex <= 0}
-                      className="p-2"
-                      style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Previous file">
-                      <Icon
-                        as={ChevronLeft}
-                        size={24}
-                        color={isDark ? THEME.dark.foreground : THEME.light.foreground}
-                      />
-                    </AnimatedPressable>
-                    <AnimatedPressable
-                      onPress={handleNext}
-                      disabled={currentIndex >= (fileList?.length || 0) - 1}
-                      className="p-2"
-                      style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Next file">
-                      <Icon
-                        as={ChevronRight}
-                        size={24}
-                        color={isDark ? THEME.dark.foreground : THEME.light.foreground}
-                      />
-                    </AnimatedPressable>
-                  </>
-                )}
-                {canEdit && (
-                  <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6} accessibilityRole="button" accessibilityLabel="Edit file">
-                    <Icon as={Pencil} size={20} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
-                  </AnimatedPressable>
-                )}
-                <AnimatedPressable
-                  onPress={() => void handleDownload()}
-                  disabled={isDownloading}
-                  className="p-2"
-                  style={{ opacity: isDownloading ? 0.6 : 1 }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Download">
-                  {isDownloading ? (
-                    <KortixLoader size="small" />
-                  ) : (
-                    <Icon as={Download} size={22} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
-                  )}
-                </AnimatedPressable>
-                <AnimatedPressable
-                  onPressIn={() => {
-                    closeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-                  }}
-                  onPressOut={() => {
-                    closeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                  }}
-                  onPress={handleCloseGuarded}
-                  style={closeAnimatedStyle}
-                  className="p-2"
-                  accessibilityRole="button"
-                  accessibilityLabel="Close">
-                  <Icon as={X} size={24} color={isDark ? THEME.dark.foreground : THEME.light.foreground} />
-                </AnimatedPressable>
-              </View>
-            )}
+            <EditorHeaderActions
+              isDark={isDark}
+              editing={editing}
+              isPending={isPending}
+              dirty={dirty}
+              onCancel={handleCancelEdit}
+              onSave={handleSave}
+              onPrevious={handlePrevious}
+              onNext={handleNext}
+              showNavigation={!!canNavigate}
+              canPrevious={currentIndex > 0}
+              canNext={!!fileList && currentIndex < fileList.length - 1}
+              canEdit={canEdit}
+              onStartEdit={handleStartEdit}
+              onDownload={() => void handleDownload()}
+              isDownloading={isDownloading}
+              onClose={handleCloseGuarded}
+              closeScale={closeScale}
+              closeAnimatedStyle={closeAnimatedStyle}
+            />
           </Animated.View>
         </View>
 
         {/* Content */}
         <View className="flex-1">
           {editing ? (
-            <KeyboardAvoidingView
-              style={{ flex: 1 }}
-              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-              keyboardVerticalOffset={insets.top + 8}>
-              <TextInput
-                value={draft}
-                onChangeText={setDraft}
-                multiline
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoComplete="off"
-                spellCheck={false}
-                editable={!writeMutation.isPending}
-                textAlignVertical="top"
-                style={{
-                  flex: 1,
-                  paddingHorizontal: 16,
-                  paddingTop: 12,
-                  paddingBottom: insets.bottom + 12,
-                  fontFamily: MONO_FONT_FAMILY,
-                  fontSize: 13,
-                  lineHeight: 19,
-                  color: isDark ? THEME.dark.foreground : THEME.light.foreground,
-                }}
-              />
-            </KeyboardAvoidingView>
+            <EditorPane draft={draft} setDraft={setDraft} isPending={isPending} isDark={isDark} />
           ) : isLoading ? (
             <View className="flex-1 items-center justify-center">
               <KortixLoader size="small" />

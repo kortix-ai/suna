@@ -17,14 +17,32 @@ describe('classifyTurnError', () => {
       message: 'Payment Required: Insufficient credits. Balance: $-0.06',
     });
     expect(r.title).toBe('Out of credits');
-    // Balance is parsed out of the message and surfaced.
-    expect(r.text).toContain('$-0.06');
+    // Balance is parsed out of the message and surfaced in credits.
+    expect(r.text).toContain('*-6 credits*');
   });
 
   test('usage limit — 429 status', () => {
     const r = classifyTurnError({ name: 'APIError', statusCode: 429, message: 'Too Many Requests' });
     expect(r.title).toBe('Usage limit reached');
     expect(r.text.toLowerCase()).toContain('usage limit');
+  });
+
+  // A prod thread was told "give it a minute" while its only ChatGPT account
+  // was out for 4 more days. The gateway names the reset; the card repeats it.
+  test('usage limit — a ChatGPT plan limit names its reset and the model command, not "a minute"', () => {
+    const body = JSON.stringify({
+      message: 'All selected ChatGPT connections reached their usage limit. The first resets in 4 days.',
+      code: 'provider_pool_rate_limited',
+      suggestion: 'Choose another model, or connect another ChatGPT account.',
+    });
+    const info = { name: 'UnknownError', statusCode: 429, code: 'rate_limit' as const, message: `429: ${body}` };
+    const slack = classifyTurnError(info);
+    expect(slack.title).toBe('Usage limit reached');
+    expect(slack.text).toContain('ChatGPT usage limit');
+    expect(slack.text).toContain('resets in 4 days');
+    expect(slack.text).toContain('`/kortix models`');
+    expect(slack.text).not.toContain('minute');
+    expect(classifyTurnError(info, TEAMS_TURN_ERROR_COMMANDS).text).toContain('`/models`');
   });
 
   test('usage limit — "usage limit has been reached" message', () => {
@@ -301,11 +319,16 @@ describe('classifyTurnError — the daemon code decides (W5 E11)', () => {
 });
 
 describe('parseBalance', () => {
-  test('parses a negative balance', () => {
-    expect(parseBalance('Insufficient credits. Balance: $-0.06')).toBe('$-0.06');
+  test('reads the credits message the API sends', () => {
+    expect(parseBalance('Insufficient credits. Balance: 1,250 credits, required: 3 credits')).toBe('1,250 credits');
+    expect(parseBalance('Insufficient credits. Balance: -6 credits, required: 0.34 credits')).toBe('-6 credits');
   });
-  test('parses a positive balance without a dollar sign', () => {
-    expect(parseBalance('balance: 12.5 remaining')).toBe('$12.50');
+  test('reads the dollar message an older server sends, in credits', () => {
+    expect(parseBalance('Insufficient credits. Balance: $-0.06')).toBe('-6 credits');
+    expect(parseBalance('Insufficient credits. Balance: $1.0000, required: $5.0000')).toBe('100 credits');
+  });
+  test('reads a bare positive balance as dollars', () => {
+    expect(parseBalance('balance: 12.5 remaining')).toBe('1,250 credits');
   });
   test('returns null when there is no balance', () => {
     expect(parseBalance('Payment Required')).toBeNull();

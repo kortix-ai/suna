@@ -13,6 +13,13 @@ export function bindProjectCore(projectId: string) {
     },
     get: (opts?: Parameters<typeof P.getProject>[1]) => P.getProject(projectId, opts),
     detail: () => P.getProjectDetail(projectId),
+    skills: {
+      remove: (...a: DropFirst<Parameters<typeof P.removeProjectSkill>>) =>
+        P.removeProjectSkill(projectId, ...a),
+      /** Create a skill file on the default branch — no model needed. */
+      create: (...a: DropFirst<Parameters<typeof P.createProjectSkill>>) =>
+        P.createProjectSkill(projectId, ...a),
+    },
     /** Canonical project-scoped audit timeline. */
     audit: (options?: Parameters<typeof P.listProjectAudit>[1]) =>
       P.listProjectAudit(projectId, options),
@@ -23,9 +30,14 @@ export function bindProjectCore(projectId: string) {
     modelAccess: () => P.getProjectModelAccess(projectId),
     setModelAccess: (change: P.ProjectModelAccessChange) =>
       P.setProjectModelAccess(projectId, change),
+    /** The project's custom OpenAI-compatible providers. */
+    customLlmProviders: () => P.listCustomLlmProviders(projectId),
+    setCustomLlmProvider: (providerId: string, input: P.CustomLlmProviderInput) =>
+      P.putCustomLlmProvider(projectId, providerId, input),
+    /** Deletes the definition and its `CUSTOM_<ID>_API_KEY` secret. */
+    deleteCustomLlmProvider: (providerId: string) => P.deleteCustomLlmProvider(projectId, providerId),
     sandboxHealth: () => P.getProjectSandboxHealth(projectId),
     onboardingComplete: (...a: DropFirst<Parameters<typeof P.setProjectOnboardingComplete>>) =>
       P.setProjectOnboardingComplete(projectId, ...a),
-
   };
 }

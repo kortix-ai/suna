@@ -11,10 +11,8 @@
 
 import {
 	createRuntimeRestClient,
-	fetchEventTransport,
 	type RuntimeClient,
 	type RuntimeClientConfig,
-	type RuntimeEventTransport,
 } from "./runtime-rest-client";
 
 // The types a host reads runtime data with: the Kortix transcript
@@ -42,8 +40,8 @@ export type OpencodeClientConfig = RuntimeClientConfig;
 export type createOpencodeClient = typeof createRuntimeRestClient;
 
 import { authenticatedFetch } from "../http/auth";
-import { isConfigured, platformConfig } from "../http/config";
-import { platformRequestHeaders } from "../http/transport";
+import { isConfigured } from "../http/config";
+import { platformEventTransport } from "../stream/platform-event-transport";
 import { getActiveRuntimeUrl } from "../session/server-store/active";
 import { ApiError } from "../http/api/errors";
 
@@ -78,6 +76,10 @@ export * from "./kortix-master";
  * its own runtime at the same time. Keyed by absolute base URL.
  */
 const clientsByUrl = new Map<string, RuntimeClient>();
+/** One client per sandbox URL; a window that cycles hundreds of sessions
+ *  forgets the least recently used. A forgotten client in use is simply
+ *  recreated on its next `getClientForUrl`. */
+const MAX_CLIENTS_BY_URL = 256;
 
 /**
  * Thrown when the active runtime's sandbox URL hasn't resolved yet (e.g. a
@@ -88,7 +90,7 @@ const clientsByUrl = new Map<string, RuntimeClient>();
  * remaining string-match fallback.
  */
 export class RuntimeNotReadyError extends Error {
-	constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
+	constructor(message = '[kortix-runtime] Server URL not ready — sandbox is still loading') {
 		super(message);
 		this.name = 'RuntimeNotReadyError';
 	}
@@ -128,14 +130,19 @@ export function getClient(): RuntimeClient {
  */
 export function getClientForUrl(url: string): RuntimeClient {
 	if (!url) {
-		throw new Error('[opencode-sdk] getClientForUrl called without a url');
+		throw new Error('[kortix-runtime] getClientForUrl called without a url');
 	}
 	const existing = clientsByUrl.get(url);
-	if (existing) return existing;
+	if (existing) {
+		// Touch: Map order is the LRU order.
+		clientsByUrl.delete(url);
+		clientsByUrl.set(url, existing);
+		return existing;
+	}
 
 	if (!isConfigured()) {
 		throw new Error(
-			'[opencode-sdk] No auth token provider configured — call configureKortix()/createKortix() before talking to a sandbox runtime.',
+			'[kortix-runtime] No auth token provider configured — call configureKortix()/createKortix() before talking to a sandbox runtime.',
 		);
 	}
 
@@ -145,28 +152,11 @@ export function getClientForUrl(url: string): RuntimeClient {
 		eventTransport: platformEventTransport,
 	});
 	clientsByUrl.set(url, client);
+	if (clientsByUrl.size > MAX_CLIENTS_BY_URL) {
+		clientsByUrl.delete(clientsByUrl.keys().next().value as string);
+	}
 	return client;
 }
-
-/**
- * The live event stream's transport, read from the platform config on every
- * connection: the host's `eventStreamTransport` with the platform auth headers,
- * or the streaming `authenticatedFetch`.
- */
-const platformEventTransport: RuntimeEventTransport = async function* (request) {
-	const custom = platformConfig().eventStreamTransport;
-	if (!custom) {
-		yield* fetchEventTransport(authenticatedFetch as typeof fetch)(request);
-		return;
-	}
-	const { headers, rejected } = await platformRequestHeaders(request.url, request.headers);
-	try {
-		yield* custom({ ...request, headers });
-	} catch (error) {
-		if ((error as { status?: unknown } | null)?.status === 401) rejected();
-		throw error;
-	}
-};
 
 /**
  * Drop a per-URL client (e.g. when a session sandbox is closed). No-op if the
@@ -214,7 +204,7 @@ const publicClientsByUrl = new Map<string, RuntimeClient>();
  */
 export function getPublicClientForUrl(url: string): RuntimeClient {
 	if (!url) {
-		throw new Error('[opencode-sdk] getPublicClientForUrl called without a url');
+		throw new Error('[kortix-runtime] getPublicClientForUrl called without a url');
 	}
 	const existing = publicClientsByUrl.get(url);
 	if (existing) return existing;
@@ -280,7 +270,7 @@ export interface SystemReloadResult {
 export async function systemReload(mode: SystemReloadMode): Promise<SystemReloadResult> {
 	const url = getActiveRuntimeUrl();
 	if (!url) {
-		throw new ApiError('[opencode-sdk] Server URL not ready — sandbox is still loading', {
+		throw new ApiError('[kortix-runtime] Server URL not ready — sandbox is still loading', {
 			code: 'RUNTIME_UNAVAILABLE',
 		});
 	}

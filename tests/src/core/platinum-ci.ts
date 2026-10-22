@@ -12,7 +12,7 @@ export const PLATINUM_CI_TEMPLATE_VERSION = 'v15';
 const PLATINUM_CI_BASE_TEMPLATE_VERSION = 'v13';
 export const PLATINUM_CI_NODE_IMAGE =
   'node:22.22.2-bookworm@sha256:62e4daa6819762bbd3072af77cc282ab72c631c4aed30dd7980192babaf385b3';
-export const PLATINUM_CI_BUN_VERSION = '1.3.14';
+export const PLATINUM_CI_BUN_VERSION = '1.4.3';
 export const PLATINUM_CI_PNPM_VERSION = '8.11.0';
 export const CI_DOCKER_COMPOSE_VERSION = 'v2.40.3';
 export const CI_DOCKER_COMPOSE_AMD64_SHA256 =
@@ -400,9 +400,8 @@ export function buildWorkerScript(input: {
   sha: string;
   testArgs: string[];
   skipSdkPackageTests?: boolean;
-  provider?: 'platinum' | 'daytona';
 }): string {
-  const provider = input.provider ?? 'platinum';
+  const provider = 'platinum';
   const command = ['pnpm', 'test', ...(input.testArgs.length ? ['--', ...input.testArgs] : [])];
   const testCommand = command.map(shellQuote).join(' ');
   const prestartSupabase = input.testArgs.includes('--browser-only')
@@ -410,9 +409,7 @@ export function buildWorkerScript(input: {
 echo "[${provider}-ci] supabase_prestarted=1"`
     : '';
   const providerLogs =
-    provider === 'daytona'
-      ? '/workspace/daytona-bootstrap.log /workspace/daytona-warm.log /workspace/daytona-dockerd.log'
-      : '/workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log';
+    '/workspace/kortix-bootstrap.log /workspace/kortix-template-warm.log /workspace/kortix-template-dockerd.log';
   return `#!/usr/bin/env bash
 set -euo pipefail
 
@@ -470,7 +467,6 @@ done
 echo "[${provider}-ci] container_modules_checked=1"
 
 if ! docker info >/dev/null 2>&1; then
-  ${provider === 'daytona' ? 'rm -rf /var/lib/docker/tmp /var/lib/docker/runtimes' : ''}
   nohup dockerd --host=unix:///var/run/docker.sock > /workspace/dockerd.log 2>&1 &
   for _ in $(seq 1 180); do
     docker info >/dev/null 2>&1 && break
@@ -594,6 +590,17 @@ export class PlatinumApi {
   }
 }
 
+/**
+ * One page of the home-region sandbox list. Without `regions`, a multi-region
+ * org gets a merged global list and Platinum rejects any page that ends above
+ * row 10000 (`pagination_limit`, HTTP 400). `regions=local` keeps the
+ * single-region contract, which has no cap. CI boxes and preview hosts are
+ * created in the home region.
+ */
+export function platinumSandboxListPath(limit: number, offset: number): string {
+  return `/v1/sandboxes?paginated=true&limit=${limit}&regions=local&offset=${offset}`;
+}
+
 export function selectOutstandingPlatinumSandboxIds(
   sandboxes: PlatinumSandbox[],
   runId: string,
@@ -628,7 +635,7 @@ export async function cleanupPlatinumCiSandboxes(input: {
   const limit = 100;
   for (let offset = 0; ; offset += limit) {
     const page = await api.json<PlatinumSandboxPage>(
-      `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}`,
+      platinumSandboxListPath(limit, offset),
     );
     sandboxes.push(...page.rows);
     if (!page.has_more || page.rows.length === 0) break;
@@ -696,35 +703,17 @@ async function waitForTemplate(
   );
 }
 
-export async function ensureTemplate(
+/**
+ * The ceremony both template kinds repeat: list by name, reuse a matching
+ * built template when one is reusable, else create (direct or derived) under
+ * an idempotency key and wait the build out.
+ */
+async function ensurePlatinumTemplate(
   api: PlatinumApi,
-  spec: PlatinumTemplateSpec,
+  name: string,
+  create: (templates: PlatinumTemplate[]) => Promise<PlatinumTemplate>,
+  missLog = '',
 ): Promise<PlatinumTemplate> {
-  const templates = await api.json<PlatinumTemplate[]>(
-    `/v1/templates?name=${encodeURIComponent(spec.name)}&limit=20`,
-    {},
-    { attempts: 20 },
-  );
-  const existing = selectReusablePlatinumTemplate(templates, spec.name);
-  if (existing) {
-    console.log(`[platinum-ci] template=${spec.name} cache=hit id=${existing.id}`);
-    return waitForTemplate(api, existing);
-  }
-  console.log(`[platinum-ci] template=${spec.name} cache=miss`);
-  const queued = await api.json<PlatinumTemplate>('/v1/templates/from-spec', {
-    method: 'POST',
-    headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(spec.name, templates) },
-    body: JSON.stringify(spec),
-  });
-  return waitForTemplate(api, queued);
-}
-
-export async function ensureWarmTemplate(
-  api: PlatinumApi,
-  base: PlatinumTemplate,
-  lockHash: string,
-): Promise<PlatinumTemplate> {
-  const name = platinumTemplateName(lockHash);
   const templates = await api.json<PlatinumTemplate[]>(
     `/v1/templates?name=${encodeURIComponent(name)}&limit=20`,
     {},
@@ -735,13 +724,41 @@ export async function ensureWarmTemplate(
     console.log(`[platinum-ci] template=${name} cache=hit id=${existing.id}`);
     return waitForTemplate(api, existing);
   }
-  console.log(`[platinum-ci] template=${name} cache=miss parent=${base.id}`);
-  const derived = await api.json<PlatinumTemplate>(`/v1/templates/${base.id}/derive`, {
-    method: 'POST',
-    headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(name, templates) },
-    body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash)),
-  });
-  return waitForTemplate(api, derived);
+  console.log(`[platinum-ci] template=${name} cache=miss${missLog}`);
+  const queued = await create(templates);
+  return waitForTemplate(api, queued);
+}
+
+export async function ensureTemplate(
+  api: PlatinumApi,
+  spec: PlatinumTemplateSpec,
+): Promise<PlatinumTemplate> {
+  return ensurePlatinumTemplate(api, spec.name, (templates) =>
+    api.json<PlatinumTemplate>('/v1/templates/from-spec', {
+      method: 'POST',
+      headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(spec.name, templates) },
+      body: JSON.stringify(spec),
+    }),
+  );
+}
+
+export async function ensureWarmTemplate(
+  api: PlatinumApi,
+  base: PlatinumTemplate,
+  lockHash: string,
+): Promise<PlatinumTemplate> {
+  const name = platinumTemplateName(lockHash);
+  return ensurePlatinumTemplate(
+    api,
+    name,
+    (templates) =>
+      api.json<PlatinumTemplate>(`/v1/templates/${base.id}/derive`, {
+        method: 'POST',
+        headers: { 'idempotency-key': platinumTemplateCreateIdempotencyKey(name, templates) },
+        body: JSON.stringify(buildPlatinumWarmTemplateRequest(lockHash)),
+      }),
+    ` parent=${base.id}`,
+  );
 }
 
 export async function observePlatinumSandboxStart(input: {

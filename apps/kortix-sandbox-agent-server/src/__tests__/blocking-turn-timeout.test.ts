@@ -15,11 +15,9 @@
  */
 import { describe, expect, test } from 'bun:test'
 
-// The daemon sits INSIDE the sandbox and cannot import from apps/api, so the
-// predicate is duplicated there. This test file may import it: a drift means
-// the inner layer aborts what the outer one is patiently waiting for —
-// silently, as a 502 that looks like a dead sandbox.
-import { isLongTurnCompletionRequest } from '../../../api/src/sandbox-proxy/preview-retry-budget'
+// apps/api's proxy (`isLongTurnCompletionRequest`) reads the same
+// `BLOCKING_TURN_VERBS` from `@kortix/api-contract/runtime-relay`, so the two
+// layers cannot disagree on which calls block.
 import { isBlockingTurnRequest } from '@/harness/open-code/proxy'
 
 // Production passes `url.pathname` only, so no row carries a query string.
@@ -49,9 +47,5 @@ const ROWS: Array<[method: string, path: string, blocking: boolean]> = [
 describe('which upstream calls may outlive the short proxy bound', () => {
   test.each(ROWS)('%s %s blocks for the whole turn: %p', (method, path, blocking) => {
     expect(isBlockingTurnRequest(method, path)).toBe(blocking)
-  })
-
-  test.each(ROWS)('apps/api agrees on %s %s', (method, path) => {
-    expect(isLongTurnCompletionRequest({ method, path })).toBe(isBlockingTurnRequest(method, path))
   })
 })

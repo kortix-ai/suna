@@ -173,14 +173,14 @@ describe('Platinum CI worker plan', () => {
     vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
       const url = String(input);
       requests.push(`${init?.method ?? 'GET'} ${url}`);
-      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&offset=0')) {
+      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&regions=local&offset=0')) {
         return Response.json({
           rows: [{ id: 'other', name: 'customer', metadata: {} }],
           total: 2,
           has_more: true,
         });
       }
-      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&offset=100')) {
+      if (url.endsWith('/v1/sandboxes?paginated=true&limit=100&regions=local&offset=100')) {
         return Response.json({
           rows: [
             {
@@ -208,10 +208,50 @@ describe('Platinum CI worker plan', () => {
       }),
     ).resolves.toBe(1);
     expect(requests).toEqual([
-      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&offset=0',
-      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&offset=100',
+      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&regions=local&offset=0',
+      'GET https://api.platinum.dev/v1/sandboxes?paginated=true&limit=100&regions=local&offset=100',
       'DELETE https://api.platinum.dev/v1/sandboxes/exact',
     ]);
+  });
+
+  test('post cleanup never requests a global offset above the 10000-row regional cap', async () => {
+    const total = 10_158;
+    const requests: string[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      requests.push(`${init?.method ?? 'GET'} ${url.pathname}${url.search}`);
+      if (url.pathname === '/v1/sandboxes' && !init?.method) {
+        const offset = Number(url.searchParams.get('offset'));
+        const limit = Number(url.searchParams.get('limit'));
+        // Platinum rejects a global offset above 10000 unless `regions` is set.
+        if (!url.searchParams.has('regions') && offset + limit > 10_000) {
+          return Response.json(
+            { error: 'regional listing offset exceeds 10000 rows', code: 'pagination_limit' },
+            { status: 400 },
+          );
+        }
+        const rows = Array.from({ length: Math.max(0, Math.min(limit, total - offset)) }, (_, i) =>
+          offset + i === total - 1
+            ? { id: 'exact', name: 'kortix-ci-1-1', metadata: { owner: 'kortix-ci', run_id: '1' } }
+            : { id: `other-${offset + i}`, name: 'x', metadata: {} },
+        );
+        return Response.json({ rows, total, has_more: offset + rows.length < total });
+      }
+      if (url.pathname === '/v1/sandboxes/exact' && init?.method === 'DELETE') {
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({ error: 'unexpected request' }, { status: 500 });
+    });
+
+    await expect(
+      cleanupPlatinumCiSandboxes({
+        apiUrl: 'https://api.platinum.dev',
+        apiKey: 'test',
+        runId: '1',
+        runAttempt: '1',
+      }),
+    ).resolves.toBe(1);
+    expect(requests).toContain('DELETE /v1/sandboxes/exact');
   });
 
   test('checks out the requested ref and rejects any SHA mismatch', () => {

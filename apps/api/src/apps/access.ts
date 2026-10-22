@@ -1,13 +1,15 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { accountGroups, accountMembers, appAccessGrants, apps, type AgentGrant } from '@kortix/db';
+import { appAccessGrants, apps, type AgentGrant } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { resolveShareSubject, type SecretGrant, type ShareSubject } from '../connectors/share';
 import { config } from '../config';
+import { requestMemo } from '../lib/request-context';
 import { authorize, PROJECT_ACTIONS } from '../iam';
-import { actorForToken, actorForUser } from '../iam/actor';
+import { actorForToken } from '../iam/actor';
 import { agentMayOpenApp } from '../iam/agent-scope';
-import { resolveFeatureFlag, type FeatureFlagKey } from '../feature-flags/registry';
 import { db } from '../shared/db';
+import { accountMembersAmong } from '../iam/membership-read';
+import { accountGroupsAmong } from '../iam/group-read';
 
 export type AppAccessMode = 'private' | 'project' | 'restricted' | 'public' | 'password';
 export type AppAccessTokenKind = 'kortix' | 'password';
@@ -98,21 +100,9 @@ export function verifyAppAccessToken(
  *
  * An agent-session credential (a `kortix_pat_` bound to a session, carrying the
  * running agent's grant) is judged as the AGENT, not as the human who launched
- * the session — but only on a project whose `agent_principal` flag is on.
- * Flag OFF, or a null grant (ungoverned project), keeps today's human
- * decision (`appAccessibleToUser`) byte for byte.
+ * the session. A null grant (ungoverned project) keeps the human decision
+ * (`appAccessibleToUser`).
  */
-
-/**
- * The project feature flag that switches governed agents to the §2 model.
- * Registered by the IAM lane; until it exists `resolveFeatureFlag` answers
- * false for an unknown key, which is exactly "flag OFF".
- */
-const AGENT_PRINCIPAL_FLAG = 'agent_principal' as FeatureFlagKey;
-
-export function agentPrincipalEnabled(projectMetadata: unknown): boolean {
-  return resolveFeatureFlag(projectMetadata, AGENT_PRINCIPAL_FLAG);
-}
 
 /**
  * Pure: may this agent session open the App? The §2.5 table.
@@ -315,22 +305,8 @@ export async function validateAppAccessPrincipals(
   const memberIds = [...new Set(input.memberIds)];
   const groupIds = [...new Set(input.groupIds)];
   const [memberRows, groupRows] = await Promise.all([
-    memberIds.length > 0
-      ? db.select({ userId: accountMembers.userId })
-          .from(accountMembers)
-          .where(and(
-            eq(accountMembers.accountId, accountId),
-            inArray(accountMembers.userId, memberIds),
-          ))
-      : [],
-    groupIds.length > 0
-      ? db.select({ groupId: accountGroups.groupId })
-          .from(accountGroups)
-          .where(and(
-            eq(accountGroups.accountId, accountId),
-            inArray(accountGroups.groupId, groupIds),
-          ))
-      : [],
+    memberIds.length > 0 ? accountMembersAmong(accountId, memberIds) : [],
+    groupIds.length > 0 ? accountGroupsAmong(accountId, groupIds) : [],
   ]);
   const existingMemberIds = new Set(memberRows.map((row) => row.userId));
   const missingMemberId = memberIds.find((id) => !existingMemberIds.has(id));
@@ -362,11 +338,26 @@ export async function persistAppAccessPolicy(
     : input.mode === 'password' ? current.accessPasswordHash : null;
 
   return db.transaction(async (tx) => {
+    // The revision signs every viewer out: bump it only when who may view changes.
+    // A redeploy repeats an unchanged policy, and that must keep viewers signed in.
+    const grants = current.accessMode === 'restricted' && input.mode === 'restricted'
+      ? await tx.select({ principalType: appAccessGrants.principalType, principalId: appAccessGrants.principalId })
+        .from(appAccessGrants).where(eq(appAccessGrants.appId, current.appId))
+      : [];
+    const grantKey = (list: Array<{ principalType: string; principalId: string }>) =>
+      list.map((grant) => `${grant.principalType}:${grant.principalId}`).sort().join(',');
+    const changed = current.accessMode !== input.mode
+      || Boolean(input.password)
+      || (input.viewerTokenScope !== undefined && input.viewerTokenScope !== current.viewerTokenScope)
+      || (input.mode === 'restricted' && grantKey(grants) !== grantKey([
+        ...memberIds.map((principalId) => ({ principalType: 'member', principalId })),
+        ...groupIds.map((principalId) => ({ principalType: 'group', principalId })),
+      ]));
     const [updated] = await tx.update(apps).set({
       accessMode: input.mode,
       accessPasswordHash: passwordHash,
       ...(input.viewerTokenScope ? { viewerTokenScope: input.viewerTokenScope } : {}),
-      accessRevision: sql`${apps.accessRevision} + 1`,
+      ...(changed ? { accessRevision: sql`${apps.accessRevision} + 1` } : {}),
       updatedAt: new Date(),
     }).where(and(
       eq(apps.appId, current.appId),
@@ -394,6 +385,20 @@ export async function persistAppAccessPolicy(
   });
 }
 
+/**
+ * The Actor for an App access check. Every caller already passed the account
+ * MFA gate at its own level: the Apps routes authorize the request first, and
+ * the App origin admits a cookie that `access-session` minted only after that.
+ * Asked with no level, the gate refused every member of an account that
+ * requires MFA except a super admin: their App card read "You do not have
+ * access to preview this App" while the list showed it (2026-10-19). Same rule
+ * as `memberMayReadProject` (secrets/account-resource.ts). A token caller is
+ * unaffected: the gate skips tokens.
+ */
+function appCheckActor(userId: string, accountId: string, actingTokenId?: string) {
+  return actorForToken(userId, accountId, actingTokenId, { ctx: { mfaAal: 'aal2' } });
+}
+
 export async function appAccessibleToUser(
   app: {
     appId: string;
@@ -416,7 +421,7 @@ export async function appAccessibleToUser(
   // the user's role; without one (browser cookie/JWT, or the public-app proxy
   // with a resolved viewer id) the verdict is role-only.
   const projectAccess = await authorize(
-    await actorForToken(userId, app.accountId, actingTokenId),
+    await appCheckActor(userId, app.accountId, actingTokenId),
     PROJECT_ACTIONS.PROJECT_READ,
     { type: 'project', id: app.projectId },
   );
@@ -503,26 +508,44 @@ export function appVisibleToSubject(input: {
   }
 }
 
-/** Bulk-load App grants → map appId → grants. Mirrors loadSessionGrants. */
+/** Bulk-load App grants → map appId → grants. Mirrors loadSessionGrants.
+ *
+ *  One read per distinct id set per request (`requestMemo`): the Apps list
+ *  calls this back-to-back with the same restricted ids — once for the
+ *  visibility filter, once for the openable set over the visible rows
+ *  (appsOpenableByUser re-resolves what filterAppsVisibleToUser just
+ *  resolved; KRTX-2341) — and the second call answered from the DB only to
+ *  compute a second predicate over identical data. (When a restricted App is
+ *  not visible to the caller the openable set's ids are a subset of the
+ *  filter's — their own memo key, one honest extra read.) Sorted ids make the
+ *  key independent of caller ordering. Request scope, not a TTL: every
+ *  request still reads fresh, and no flow writes grants and re-reads them
+ *  through this loader in the same request (the policy PUT route returns the
+ *  row it built and re-serializes through the single-app `loadAppAccessGrants`,
+ *  and `reconcileAccountIdentities` — the bulk grants write — does not
+ *  re-read through this loader either). */
 export async function loadAppAccessGrantsFor(
   appIds: string[],
 ): Promise<Map<string, SecretGrant[]>> {
-  const out = new Map<string, SecretGrant[]>();
-  if (appIds.length === 0) return out;
-  const rows = await db.select({
-    appId: appAccessGrants.appId,
-    principalType: appAccessGrants.principalType,
-    principalId: appAccessGrants.principalId,
-  }).from(appAccessGrants).where(inArray(appAccessGrants.appId, appIds));
-  for (const row of rows) {
-    const list = out.get(row.appId) ?? [];
-    list.push({
-      principalType: row.principalType as 'member' | 'group',
-      principalId: row.principalId,
-    });
-    out.set(row.appId, list);
-  }
-  return out;
+  const key = `app-access-grants:${[...appIds].sort().join(',')}`;
+  return requestMemo(key, async () => {
+    const out = new Map<string, SecretGrant[]>();
+    if (appIds.length === 0) return out;
+    const rows = await db.select({
+      appId: appAccessGrants.appId,
+      principalType: appAccessGrants.principalType,
+      principalId: appAccessGrants.principalId,
+    }).from(appAccessGrants).where(inArray(appAccessGrants.appId, appIds));
+    for (const row of rows) {
+      const list = out.get(row.appId) ?? [];
+      list.push({
+        principalType: row.principalType as 'member' | 'group',
+        principalId: row.principalId,
+      });
+      out.set(row.appId, list);
+    }
+    return out;
+  });
 }
 
 interface TeamScopedApp {
@@ -533,6 +556,16 @@ interface TeamScopedApp {
   createdBy: string | null;
 }
 
+/** Is this user an App admin of the project (`project.app.admin`: the `admins` service access, like exec)? */
+export async function isAppAdmin(app: { accountId: string; projectId: string }, userId: string): Promise<boolean> {
+  const verdict = await authorize(
+    await appCheckActor(userId, app.accountId),
+    PROJECT_ACTIONS.PROJECT_APP_ADMIN,
+    { type: 'project', id: app.projectId },
+  );
+  return verdict.allowed;
+}
+
 async function projectManager(
   accountId: string,
   projectId: string,
@@ -540,7 +573,7 @@ async function projectManager(
   actingTokenId?: string,
 ): Promise<boolean> {
   const verdict = await authorize(
-    await actorForToken(userId, accountId, actingTokenId),
+    await appCheckActor(userId, accountId, actingTokenId),
     PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE,
     { type: 'project', id: projectId },
   );

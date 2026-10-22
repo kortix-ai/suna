@@ -28,8 +28,7 @@ import type {
   ResolvedEmailMessage,
 } from './types';
 
-export type { EmailAddress, EmailMessage, EmailProvider, EmailSendResult } from './types';
-export { closeSmtpTransports } from './providers/smtp';
+export type { EmailSendResult } from './types';
 
 const FALLBACK_FROM: EmailAddress = { email: 'noreply@kortix.com', name: 'Kortix' };
 
@@ -177,18 +176,8 @@ function hasAwsWorkloadIdentity(): boolean {
   );
 }
 
-/** Providers that will be attempted, in order. Empty = no email delivery. */
-export function configuredEmailProviders(): EmailProvider[] {
-  return resolveEmailChain().targets.map((target) => target.kind);
-}
-
 export function isEmailConfigured(): boolean {
   return resolveEmailChain().targets.length > 0;
-}
-
-/** The address every email is sent from, after EMAIL_FROM / legacy fallback. */
-export function emailSender(): EmailAddress {
-  return resolveEmailChain().from;
 }
 
 /** Operator-facing description of the chain, safe to log (no credentials). */

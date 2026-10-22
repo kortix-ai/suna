@@ -4,6 +4,7 @@
  * Health is pi's closed `harness` block; `routes/kortix/health.ts` adds the
  * host facts, the pre-W3 flat fields the API still reads, and `runtimeReady`.
  */
+import { HARNESS_RUNTIME_CAPABILITIES } from '@kortix/api-contract/session-log'
 import type { HarnessDiagnosticsService, HarnessHealthReport } from '../contract/diagnostics'
 import { daemonLogFilePath } from '@/lib/log/logger'
 import { tailFile } from '@/lib/log/log-tail'
@@ -21,10 +22,9 @@ export function createPiDiagnosticsService(
   releases: Pick<PiConfigReleases, 'report' | 'sourceCommit'>,
 ): HarnessDiagnosticsService {
   return {
-    // Subagents (the `task` tool) are native; rewind, compact, commands, fork,
-    // MCP, todo, shell and the harness's own terminal client are not yet
-    // (pi/surface.ts answers them 501 `feature_not_supported`).
-    capabilities: ['session.subagents'],
+    // `HARNESS_RUNTIME_CAPABILITIES.pi` names what is native; pi/surface.ts answers the rest 501
+    // `feature_not_supported`. apps/api reads the same list for the switch preflight.
+    capabilities: async () => [...HARNESS_RUNTIME_CAPABILITIES.pi],
     async health(context, query): Promise<HarnessHealthReport> {
       const bootState: PiBootState = context.bootState
       const rt = runtime()
@@ -48,6 +48,8 @@ export function createPiDiagnosticsService(
             model: model ? `${model.providerID}/${model.modelID}` : null,
             // Which pi extensions loaded, and why any package did not (not installed, load error).
             extensions: rt?.extensionStatus() ?? null,
+            // The root AGENTS.md (or CLAUDE.md) in the system prompt: where it came from and which version.
+            agentsMd: rt?.agentsMd() ?? null,
           },
         },
         config,

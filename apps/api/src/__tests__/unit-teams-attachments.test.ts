@@ -67,7 +67,7 @@ describe('extractTeamsAttachments', () => {
 
   /**
    * The shape Teams ACTUALLY sends for a pasted screenshot — verified on dev
-   * 2026-09-19, session 196a99f5. The subtype is the literal `*`, so the old
+   * 2026-09-19, on a dev session. The subtype is the literal `*`, so the old
    * code named the file `image.*`, which is not a filename.
    */
   test('the wildcard image/* type produces a filename, not "image.*"', () => {

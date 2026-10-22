@@ -1,8 +1,7 @@
-import { and, eq, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, lt, sql } from 'drizzle-orm';
 import { registerSessionFailureNotifier } from '../../shared/session-failure-notifier';
 import { chatThreads, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
-import { runWorkerTick } from '../../shared/audit-scope';
 import { config } from '../../config';
 import { classifyTurnError, TEAMS_TURN_ERROR_COMMANDS, type TurnErrorInfo } from '../slack/errors';
 import { sessionWebUrl } from '../slack/util';
@@ -507,7 +506,9 @@ export async function finalizeTurn(
   // decides that from the card's real size.
   const raw = opts.answer ?? opts.error ?? '';
   const body = raw.length > MAX_BODY_CHARS ? raw.slice(0, MAX_BODY_CHARS) : raw;
-  const title = opts.title ?? (opts.error ? 'Run failed' : 'Task complete');
+  // A finished run gets no title: the answer is the card. Failures, stops and
+  // waits keep theirs, because there the title is the news.
+  const title = opts.title ?? (opts.error ? 'Run failed' : undefined);
   const sessionUrl =
     handle.projectId && handle.sessionId
       ? sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId)
@@ -660,6 +661,7 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
         sql`${chatTurnStreams.channelRef}->>'platform' = 'teams'`,
       ),
     )
+    .orderBy(asc(chatTurnStreams.updatedAt))
     .limit(50);
   for (const row of stale) {
     // Thirty minutes without a step is not proof of a dead run: one long
@@ -680,10 +682,6 @@ export async function sweepStaleTeamsTurns(): Promise<void> {
     await abortDeadRuntimeTurn(row.sessionId);
   }
 }
-
-setInterval(() => {
-  runWorkerTick('teams-turn-gc', sweepStaleTeamsTurns).catch((err) => console.warn('[teams-webhook] gc tick failed', err));
-}, 5 * 60 * 1000).unref();
 
 /**
  * Does the runtime's turn ledger still hold a live turn for this session?

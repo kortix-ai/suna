@@ -1,3 +1,4 @@
+import { isRecord } from '@kortix/shared/guards';
 /**
  * The health `runtime` block, as the API reads it.
  *
@@ -75,13 +76,9 @@ function num(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
 /**
  * The managed lineup is deliberately tiny by product policy (a handful of
- * open-weight ids — see `RUNTIME_MANAGED_MODELS`), so this cap is generous
+ * open-weight ids — see `managedLineup()`), so this cap is generous
  * headroom, not a working limit. It exists so a malformed or hostile daemon
  * response cannot make the API hold an unbounded array per session.
  */

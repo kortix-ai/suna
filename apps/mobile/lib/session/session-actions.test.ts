@@ -9,6 +9,8 @@ import {
   splitChangePath,
   summarizeSessionChanges,
   type SessionActionRowsInput,
+  sessionListActions,
+  sessionListChange,
 } from './session-actions';
 
 describe('summarizeSessionChanges', () => {
@@ -109,11 +111,41 @@ describe('open change request prompt', () => {
   });
 });
 
+describe('sessionActionRows files row', () => {
+  const input: SessionActionRowsInput = {
+    isOpenThread: true,
+    hasRuntime: true,
+    canManageLifecycle: true,
+    canOpenChangeRequest: true,
+    canCompact: true,
+    changes: { pending: false, error: false, count: 0 },
+    busy: false,
+    compacting: false,
+  };
+
+  test('open thread: visible and enabled', () => {
+    expect(sessionActionRows(input).files).toEqual({ visible: true, enabled: true });
+  });
+
+  test('asleep sandbox (no runtime): still visible and enabled', () => {
+    expect(sessionActionRows({ ...input, hasRuntime: false }).files).toEqual({ visible: true, enabled: true });
+  });
+
+  test('busy session: still enabled', () => {
+    expect(sessionActionRows({ ...input, busy: true }).files.enabled).toBe(true);
+  });
+
+  test('not the open thread: hidden', () => {
+    expect(sessionActionRows({ ...input, isOpenThread: false }).files.visible).toBe(false);
+  });
+});
+
 describe('sessionActionRows', () => {
   const base: SessionActionRowsInput = {
     isOpenThread: true,
     hasRuntime: true,
     canManageLifecycle: true,
+    canOpenChangeRequest: true,
     canCompact: true,
     changes: { pending: false, error: false, count: 3 },
     busy: false,
@@ -125,6 +157,10 @@ describe('sessionActionRows', () => {
     expect(rows.openChangeRequest).toEqual({ visible: true, enabled: true });
     expect(rows.viewChanges).toEqual({ visible: true, enabled: true, value: '3 files' });
     expect(rows.compact).toEqual({ visible: true, enabled: true });
+  });
+
+  test('without project.write + gitops.push the Open change request row is hidden', () => {
+    expect(sessionActionRows({ ...base, canOpenChangeRequest: false }).openChangeRequest.visible).toBe(false);
   });
 
   test('no changes disables View changes with "No changes"', () => {
@@ -193,5 +229,25 @@ describe('sessionActionRows', () => {
 
   test('Open change request stays enabled while the session works (the prompt queues)', () => {
     expect(sessionActionRows({ ...base, busy: true }).openChangeRequest).toEqual({ visible: true, enabled: true });
+  });
+});
+
+// KRTX-2418: Pin and Archive change only the viewer's own list.
+describe('sessionListActions', () => {
+  test('Pin and Archive by default; Unpin while pinned; Unarchive while archived', () => {
+    expect(sessionListActions({ pinned_at: null, archived_at: null })).toEqual({ pin: 'pin', archive: 'archive' });
+    expect(sessionListActions({ pinned_at: '2026-10-15T10:00:00Z', archived_at: null })).toEqual({ pin: 'unpin', archive: 'archive' });
+    expect(sessionListActions({ pinned_at: null, archived_at: '2026-10-15T10:00:00Z' })).toEqual({ pin: 'pin', archive: 'unarchive' });
+  });
+
+  test('no rows when the server keeps no list state for this caller (no pinned_at field)', () => {
+    expect(sessionListActions({})).toBeNull();
+  });
+
+  test('each action sends its own flag', () => {
+    expect(sessionListChange('pin')).toEqual({ pinned: true });
+    expect(sessionListChange('unpin')).toEqual({ pinned: false });
+    expect(sessionListChange('archive')).toEqual({ archived: true });
+    expect(sessionListChange('unarchive')).toEqual({ archived: false });
   });
 });

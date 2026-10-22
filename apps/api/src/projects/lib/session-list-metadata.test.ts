@@ -12,7 +12,7 @@ import {
  * (`initial_prompt` alone 36%), and the sidebar re-fetches the list several
  * times per session open. No client reads any of them back — verified by an
  * exhaustive read-side sweep of apps/web, apps/mobile, packages/sdk and
- * apps/whitelabel-demo (2026-08-26). These tests pin BOTH halves of that
+ * apps/white-label/lumen (2026-08-26). These tests pin BOTH halves of that
  * contract: the five go, and everything a client actually reads stays.
  */
 const CLIENT_READ_METADATA = {
@@ -47,7 +47,7 @@ const row = (over: Record<string, unknown> = {}) =>
     projectId: 'p',
     branchName: 'b',
     baseRef: 'main',
-    sandboxProvider: 'e2b',
+    sandboxProvider: 'platinum',
     sandboxId: 's',
     sandboxUrl: null,
     opencodeSessionId: null,
@@ -122,4 +122,57 @@ describe('list metadata trimming', () => {
 test('session labels survive list metadata trimming', () => {
   const output = serializeSession(row({ labels: ['urgent'], metadata: { initial_prompt: 'private' } }), { trimListMetadata: true });
   expect(output.labels).toEqual(['urgent']);
+});
+
+/** Warm metadata controls inventory visibility, not the runtime lifecycle. */
+describe('serializeSession warm status', () => {
+  test('project auto-session reads leave Starting when provisioning finishes or fails', () => {
+    const metadata = { source: 'ui', warm: true };
+    const provisioning = row({ status: 'provisioning', metadata });
+    expect(serializeSession(provisioning).status).toBe('provisioning');
+
+    const ready = row({ status: 'running', metadata, sandboxUrl: 'https://sandbox.example.test' });
+    expect(serializeSession(ready).status).toBe('running');
+    expect(serializeSession(ready, { trimListMetadata: true }).status).toBe('running');
+    expect(serializeSession(ready).metadata.warm).toBe(true);
+
+    const failed = row({ status: 'failed', metadata, error: 'Sandbox provisioning timed out' });
+    expect(serializeSession(failed).status).toBe('failed');
+    expect(serializeSession(failed).error).toBe('Sandbox provisioning timed out');
+  });
+
+  test('a prompted session still reports running', () => {
+    const out = serializeSession(row({ status: 'running', metadata: {} }));
+    expect(out.status).toBe('running');
+  });
+
+  test('a warm session keeps every other status verbatim', () => {
+    for (const status of ['queued', 'branching', 'provisioning', 'stopped', 'failed', 'completed'] as const) {
+      const out = serializeSession(row({ status, metadata: { warm: true } }));
+      expect(out.status).toBe(status);
+    }
+  });
+
+  test('a warm session with no metadata does not crash', () => {
+    const out = serializeSession(row({ status: 'running', metadata: null }));
+    expect(out.status).toBe('running');
+  });
+
+  test('the reported status never mutates the row it was handed', () => {
+    const source = row({ status: 'running', metadata: { warm: true } });
+    serializeSession(source);
+
+    expect((source as { status: unknown }).status).toBe('running');
+    expect((source as { metadata: Record<string, unknown> }).metadata.warm).toBe(true);
+  });
+});
+
+test('list serialization prefers the durable conversation selection without changing the creation pin', () => {
+  const source = row({ metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+  const out = serializeSession(source, { trimListMetadata: true, conversationModel: 'kortix/glm-5.3-flash' });
+  expect(out.model).toBe('kortix/glm-5.3-flash');
+  expect(out.metadata.opencode_model).toBe('kortix/deepseek-v4.1-flash');
+  expect(serializeSession(source).model).toBe('kortix/deepseek-v4.1-flash');
+  expect(serializeSession(row({ metadata: {} })).model).toBeNull();
+  expect(serializeSession(source, { canAccess: false, conversationModel: 'kortix/glm-5.3-flash' }).model).toBeNull();
 });

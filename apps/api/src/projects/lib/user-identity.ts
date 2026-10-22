@@ -5,7 +5,6 @@ import {
   isImpersonatingAccount,
   isImpersonationBlockedAccount,
 } from '../../shared/impersonation';
-import { isPlatformAdmin } from '../../shared/platform-roles';
 import { getSupabase } from '../../shared/supabase';
 import { ttlMemo } from '../../shared/ttl-memo';
 import { isUuid } from '../../shared/validate';

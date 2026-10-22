@@ -1,4 +1,5 @@
-import { stat, readFile } from 'node:fs/promises'
+import { open, readFile, stat, type FileHandle } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { Config } from '@/lib/config/config'
 import type { HarnessAssetsService } from './port'
@@ -7,6 +8,7 @@ import type { RuntimeAssetsResult, RuntimeAssetsState, RuntimeComponent, Reconci
 
 const DEFAULT_AGENT_STATE_DIR = '/opt/kortix'
 const DEFAULT_STATE_PATH = '/opt/kortix/runtime-assets-state.json'
+const DEFAULT_CLI_PATH = '/usr/local/bin/kortix'
 export const AGENT_SWAP_EXIT_CODE = 75
 
 async function readState(path: string): Promise<RuntimeAssetsState> {
@@ -405,15 +407,84 @@ function str(value: unknown): string | null {
  * verdict, because it makes the control plane schedule a pass rather than skip
  * one.
  */
+/**
+ * Digests verified against the file on disk, memoised by (path, size, mtime) so
+ * a health read hashes a ~100 MB binary at most once per distinct file version.
+ */
+const verifiedDigests = new Map<string, string>()
+
+/** Test-only. */
+export function __resetVerifiedDigestsForTests(): void {
+  verifiedDigests.clear()
+}
+
+/**
+ * The persisted digest is a CACHE keyed by the file's size and mtime, never
+ * proof on its own. The image bake writes it once; anything that replaces the
+ * file afterwards without rewriting the state file leaves it describing bytes
+ * that are no longer there. The Platinum agent-swap fast path does exactly
+ * that: it patches `/usr/local/bin/kortix-agent` into the predecessor's rootfs
+ * and keeps the predecessor's state file, so a fresh box reported the OLD
+ * agent's digest until its first reconcile (~20 s) finished. Session open read
+ * that, saw a mismatch against the manifest, and relaunched a daemon that was
+ * already running the right bytes (Dev, 2026-10-02: +17 s on every session
+ * booted from a swapped template, both regions).
+ *
+ * So: when the file's size or mtime no longer match the cache, hash the file.
+ * A missing file answers null ("cannot prove"), never the stale cached value.
+ */
+async function verifiedDigest(
+  path: string | null,
+  cachedSha: string | null,
+  cachedSize: unknown,
+  cachedMtimeMs: unknown,
+): Promise<string | null> {
+  // Only a stat-keyed cache (the bake and every reconcile write size + mtime)
+  // claims to describe one specific file version. Without that key there is
+  // nothing to check the file against — answer exactly what was persisted.
+  if (!path || typeof cachedSize !== 'number' || typeof cachedMtimeMs !== 'number') return cachedSha
+  // One open file: the stat and the read describe the same inode, so a swap
+  // between "check" and "use" cannot make them disagree.
+  let fh: FileHandle
+  try {
+    fh = await open(path, 'r')
+  } catch {
+    return null
+  }
+  try {
+    const st = await fh.stat()
+    if (!st.isFile()) return null
+    const size = st.size
+    const mtimeMs = Math.trunc(st.mtimeMs)
+    if (cachedSha && cachedSize === size && cachedMtimeMs === mtimeMs) return cachedSha
+    const key = `${path}\0${size}\0${mtimeMs}`
+    const memo = verifiedDigests.get(key)
+    if (memo) return memo
+    const sha = createHash('sha256').update(await fh.readFile()).digest('hex')
+    verifiedDigests.set(key, sha)
+    return sha
+  } catch {
+    return null
+  } finally {
+    await fh.close().catch(() => {})
+  }
+}
+
 export async function runningRuntimeAssets(
   statePath: string = DEFAULT_STATE_PATH,
 ): Promise<RunningRuntimeAssets> {
   const state = (await readState(statePath)) as RuntimeAssetsState & Record<string, unknown>
+  const agentPath = str(state.agent_path)
+  const cliPath = str(state.cli_path) ?? DEFAULT_CLI_PATH
+  const [agentSha, cliSha] = await Promise.all([
+    verifiedDigest(agentPath, str(state.agent_sha256), state.agent_size, state.agent_mtime_ms),
+    verifiedDigest(cliPath, str(state.cli_sha256), state.cli_size, state.cli_mtime_ms),
+  ])
   return {
-    cli_sha256: str(state.cli_sha256),
+    cli_sha256: cliSha,
     managed_skills_hash: str(state.managed_skills_hash),
-    agent_sha256: str(state.agent_sha256),
-    agent_path: str(state.agent_path),
+    agent_sha256: agentSha,
+    agent_path: agentPath,
     staged_agent_sha256: str(state.staged_agent_sha256),
     harness: str(state.harness),
     harness_version: str(state.harness_version),

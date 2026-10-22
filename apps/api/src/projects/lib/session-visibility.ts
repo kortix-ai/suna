@@ -1,4 +1,5 @@
 import {
+  agentSessionStanding,
   isSessionTargetVisibleToCaller,
   isProjectSessionVisibleTo,
   isTriggerRunSession,
@@ -13,14 +14,12 @@ import {
 // is replaced wholesale by `mock.module` in several route tests.
 import { authorize } from '../../iam/authorize';
 import { isAgentPrincipalActor, type Actor } from '../../iam/actor';
-import { agentSessionStanding } from './agent-session-standing';
 import { hasAccountSessionOversight } from '../../iam/session-oversight';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { projectSessions, serviceAccounts } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { ttlMemo } from '../../shared/ttl-memo';
-import { roleAllows, type ProjectRole } from '../access';
 import type { ProjectRow, ProjectSessionRow } from './serializers';
 
 async function loadProjectSessionRow(
@@ -37,6 +36,20 @@ async function loadProjectSessionRow(
     ))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * The project that holds `sessionId`, or null. One primary-key read; it decides
+ * nothing about access: the caller still runs the project gate and
+ * `loadVisibleSession` on the project it returns.
+ */
+export async function sessionProjectId(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ projectId: projectSessions.projectId })
+    .from(projectSessions)
+    .where(eq(projectSessions.sessionId, sessionId))
+    .limit(1);
+  return row?.projectId ?? null;
 }
 
 // Memoized like the membership/role loaders above, and for the same reason:
@@ -112,19 +125,23 @@ export async function sessionOwnerIsMachine(
  * it `canManageLifecycle` — producing a 403 on stop, restart, delete and
  * change-model for every manager who is not the owner.
  *
- * Pure and exported for unit tests, like shouldApplyAdminBypass above.
+ * Standing is the engine's `project.members.manage` verdict, so a custom role
+ * that holds the leaf has it and the role label plays no part.
  */
-export function callerHasManagerStanding(
-  effectiveRole: ProjectRole,
+export async function callerHasManagerStanding(
+  loaded: { actor?: Actor | null; row: { projectId: string } },
   boundCredentialSessionId: string | null,
-): boolean {
-  return boundCredentialSessionId === null && roleAllows(effectiveRole, 'manage');
+): Promise<boolean> {
+  if (boundCredentialSessionId !== null || !loaded.actor) return false;
+  return (
+    await authorize(loaded.actor, 'project.members.manage', { type: 'project', id: loaded.row.projectId })
+  ).allowed;
 }
 
 /**
- * Manager standing for the session LIST/serialization path: role standing, or a
- * `project.members.manage` capability probe — both behind the same binding gate
- * as `callerHasManagerStanding`.
+ * Manager standing for the session LIST/serialization path: the
+ * `project.members.manage` capability probe, behind the same binding gate as
+ * `callerHasManagerStanding`.
  *
  * The list route used to compute this from the role alone, so a session-bound
  * agent credential launched by a manager saw `can_manage_lifecycle: true` on
@@ -139,12 +156,10 @@ export function callerHasManagerStanding(
  * invoked for a bound credential — standing there is false before any I/O.
  */
 export async function viewerManagerStanding(
-  effectiveRole: ProjectRole,
   boundCredentialSessionId: string | null,
   probeManageCapability: () => Promise<boolean>,
 ): Promise<boolean> {
   if (boundCredentialSessionId !== null) return false;
-  if (roleAllows(effectiveRole, 'manage')) return true;
   return probeManageCapability();
 }
 
@@ -155,7 +170,7 @@ export async function viewerManagerStanding(
  * inventory), so any route that loads a session by id and then acts on it must
  * ask this first — `/start` and `/restart` used to skip it, answer
  * `stage: "stopped"` / 202 on a deleted session, and leave the UI looping on a
- * Restart button that could never work (sampleco session b04a9911, 2026-08-24).
+ * Restart button that could never work (a SampleCo session, 2026-08-24).
  */
 export function sessionIsTombstoned(row: { metadata: unknown }): boolean {
   const metadata = (row.metadata ?? {}) as Record<string, unknown>;
@@ -203,8 +218,6 @@ async function recordOversightSessionRead(input: {
 type VisibleSessionRequest = {
   row: ProjectRow;
   userId: string;
-  effectiveRole: ProjectRole;
-  adminBypass?: boolean;
   actor?: Actor | null;
 };
 
@@ -233,7 +246,7 @@ async function sessionManagerStanding(
   row: ProjectSessionRow,
   boundCredentialSessionId: string | null,
 ): Promise<boolean> {
-  let canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
+  let canManageProject = await callerHasManagerStanding(loaded, boundCredentialSessionId);
   if (
     !canManageProject &&
     boundCredentialSessionId === null &&
@@ -316,21 +329,7 @@ async function sessionReadAccess(
   ) {
     visible = true;
   }
-  if (!visible) {
-    // A platform-admin bypass already verified for the parent project (see
-    // loadProjectForUser) also covers a session that would otherwise be
-    // invisible (private / not-my-grant). Audit every use — this is a real
-    // support/investigation escape hatch, not a standing grant.
-    if (!loaded.adminBypass) return null;
-    await recordAuditEvent({
-      accountId: loaded.row.accountId,
-      actorUserId: loaded.userId,
-      action: 'project.admin_bypass_session_read',
-      resourceType: 'project_session',
-      resourceId: sessionId,
-      metadata: { via: 'admin_bypass_header', sessionVisibility: row.visibility },
-    });
-  }
+  if (!visible) return null;
   let isOwner = row.createdBy === loaded.userId;
   if (loaded.actor && isAgentPrincipalActor(loaded.actor)) {
     // Spec §2: never the launcher's standing. Checked after the ordinary
@@ -342,12 +341,45 @@ async function sessionReadAccess(
   return { canManageProject, isOwner };
 }
 
+/** The per-session shape both read paths return. */
+type VisibleSessionAccess = {
+  row: ProjectSessionRow;
+  subject: ShareSubject;
+  grants: SecretGrant[];
+  isOwner: boolean;
+  canManageProject: boolean;
+  canManageLifecycle: boolean;
+  canManageSharing: boolean;
+  ownerIsMachine: boolean;
+};
+
+async function finalizeVisibleAccess(
+  loaded: VisibleSessionRequest,
+  row: ProjectSessionRow,
+  subject: ShareSubject,
+  grants: SecretGrant[],
+  access: { canManageProject: boolean; isOwner: boolean },
+): Promise<VisibleSessionAccess> {
+  const { canManageProject, isOwner } = access;
+  const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
+    ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
+    : false;
+  return {
+    row,
+    subject,
+    grants,
+    isOwner,
+    canManageProject,
+    canManageLifecycle: isOwner || canManageProject,
+    canManageSharing: mayManageSessionSharing({ isOwner, canManageProject, ownerIsMachine }),
+    ownerIsMachine,
+  };
+}
+
 export async function loadVisibleSession(
   loaded: {
     row: ProjectRow;
     userId: string;
-    effectiveRole: ProjectRole;
-    adminBypass?: boolean;
     /** The request's canonical principal. Absent only in tests that build a
      *  `loaded` shape by hand; the members.manage probe below then declines
      *  rather than widening. */
@@ -372,19 +404,7 @@ export async function loadVisibleSession(
    * ONLY the trigger-session manager override reads this field.
    */
   boundCredentialSessionId: string | null,
-): Promise<{
-  row: ProjectSessionRow;
-  subject: ShareSubject;
-  grants: SecretGrant[];
-  isOwner: boolean;
-  canManageProject: boolean;
-  /** Stop / restart / delete / model — manager-tier, unchanged. */
-  canManageLifecycle: boolean;
-  /** Who may open the session — owner-governed. See mayManageSessionSharing. */
-  canManageSharing: boolean;
-  /** True when `created_by` names a service account (or nobody). */
-  ownerIsMachine: boolean;
-} | null> {
+): Promise<VisibleSessionAccess | null> {
   const prefetch = await sessionReadPrefetch(loaded, sessionId);
   if (!prefetch) return null;
   const { row, subject, grants } = prefetch;
@@ -392,20 +412,71 @@ export async function loadVisibleSession(
     loaded, row, sessionId, subject, grants, callerSessionId, boundCredentialSessionId,
   );
   if (!access) return null;
-  const { canManageProject, isOwner } = access;
-  const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
-    ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
-    : false;
-  return {
-    row,
-    subject,
-    grants,
-    isOwner,
-    canManageProject,
-    canManageLifecycle: isOwner || canManageProject,
-    canManageSharing: mayManageSessionSharing({ isOwner, canManageProject, ownerIsMachine }),
-    ownerIsMachine,
-  };
+  return finalizeVisibleAccess(loaded, row, subject, grants, access);
+}
+
+/**
+ * The LIST counterpart of `loadVisibleSession` — the same visibility verdicts
+ * for many sessions at once, against a bounded statement count.
+ *
+ * The single-session path costs 3 reads per session (row, share subject, session
+ * grants) plus the service-account owner probe. A list route that gated N rows
+ * through `loadVisibleSession` issued those 3N reads in ONE `Promise.all` —
+ * measured at 64 statements for one `GET /v1/projects/:id/reminders` request
+ * (KRTX-532) — and on a 5-connection per-task pool that fan-out alone queues
+ * every concurrent statement on the task behind it. This helper reads the rows
+ * with one `inArray`, the caller's subject once (it is per-caller, identical
+ * for every row), and the grants in one batched read. The per-row verdicts then
+ * run through the SAME `sessionReadAccess` rules as the single path — one copy
+ * of the security decision, shared — and the rare per-row escape hatches
+ * (trigger authorization, oversight) stay exactly where
+ * they were: per row, only when a verdict was refused without them.
+ *
+ * The owner probe (`service_accounts` lookup) stays memoized per creator, so a
+ * list of agent sessions pays once per distinct `created_by`, not per row.
+ *
+ * Sessions not present in this project, or invisible under the ordinary rules,
+ * are simply absent from the returned map — a list route filters by membership
+ * (`map.has`) exactly as it did with per-row nulls.
+ */
+export async function loadVisibleSessionsForList(
+  loaded: VisibleSessionRequest,
+  sessionIds: readonly string[],
+  callerSessionId: string | null,
+  boundCredentialSessionId: string | null,
+): Promise<Map<string, VisibleSessionAccess>> {
+  const ids = [...new Set(sessionIds.filter(Boolean))];
+  const out = new Map<string, VisibleSessionAccess>();
+  if (ids.length === 0) return out;
+  // One batched read for the rows, and the two per-caller reads — subject and
+  // grants — issued together with it, exactly like the single-session prefetch
+  // but once for the whole list instead of once per row.
+  const subjectRead = resolveShareSubject(loaded.userId);
+  const grantsRead = loadSessionGrants(ids);
+  subjectRead.catch(() => undefined);
+  grantsRead.catch(() => undefined);
+  const rows = await db
+    .select()
+    .from(projectSessions)
+    .where(and(
+      eq(projectSessions.projectId, loaded.row.projectId),
+      eq(projectSessions.accountId, loaded.row.accountId),
+      inArray(projectSessions.sessionId, ids),
+    ));
+  const byId = new Map(rows.map((row) => [row.sessionId, row]));
+  if (byId.size === 0) return out;
+  const subject = await subjectRead;
+  const grants = await grantsRead;
+  for (const sessionId of ids) {
+    const row = byId.get(sessionId);
+    if (!row) continue;
+    const access = await sessionReadAccess(
+      loaded, row, sessionId, subject, grants.get(sessionId) ?? [], callerSessionId, boundCredentialSessionId,
+    );
+    if (!access) continue;
+    out.set(sessionId, await finalizeVisibleAccess(loaded, row, subject, grants.get(sessionId) ?? [], access));
+  }
+  return out;
 }
 
 /**
@@ -430,7 +501,7 @@ export async function loadVisibleSession(
  *    gate denied them — the same escalation the member-sharing rule closes.
  */
 export async function loadSessionForSharing(
-  loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole; actor?: Actor | null },
+  loaded: { row: ProjectRow; userId: string; actor?: Actor | null },
   sessionId: string,
   /**
    * The caller's AGENT/SANDBOX token binding — always `callerKortixSessionId(c)`,
@@ -475,7 +546,7 @@ export async function loadSessionForSharing(
   }
   // Same standing rule as loadVisibleSession: a session-bound credential acts
   // for one session and does not carry the launching user's manage role.
-  const canManageProject = callerHasManagerStanding(loaded.effectiveRole, boundCredentialSessionId);
+  const canManageProject = await callerHasManagerStanding(loaded, boundCredentialSessionId);
   const ownerIsMachine = ownerIsMachineCanMatter(isOwner, canManageProject)
     ? await sessionOwnerIsMachine(loaded.row.accountId, row.createdBy)
     : false;

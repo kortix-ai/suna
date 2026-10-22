@@ -12,14 +12,37 @@ export type AuthorizeResult =
   | { ok: true; principal: AuthedPrincipal }
   | {
       ok: false;
-      status: 401 | 402;
+      // 401 unauthenticated, 402 billing/budget, 403 authenticated but not
+      // allowed (e.g. a project-less account PAT refused for inference,
+      // KRTX-2295).
+      status: 401 | 402 | 403;
       errorCode: string;
       message?: string;
       principal?: AuthedPrincipal;
     };
 
+/**
+ * The answers of `authorize`, `resolveRoute`, `resolveUpstream` for the routed
+ * model, and `assertBillingActive`, fetched in one call. A missing field means
+ * the host did not answer it, and the handler calls that hook itself. An
+ * `Error` is what the hook would have thrown.
+ */
+export interface AdmitResult {
+  admission: AuthorizeResult;
+  route?: ModelRoutePlan | null;
+  upstream?: UpstreamDescriptor[] | Error;
+  billing?: { holdUsd?: number } | Error;
+  /** Milliseconds the host spent per admission step (internal latency split). */
+  timing?: Record<string, number>;
+}
+
 export interface GatewayHooks {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
+  /**
+   * Optional one-call admission. Null means the host cannot answer it (for
+   * example an older control plane), and the handler uses the separate hooks.
+   */
+  admit?: (token: string, input: ModelRouteInput) => Promise<AdmitResult | null>;
   // Optional combined authentication + budget gate. Billing runs after
   // upstream resolution because BYOK must never touch the Kortix wallet.
   // listModels still uses authenticate directly.
@@ -55,8 +78,10 @@ export interface GatewayHooks {
  * `managedOnly` serves ONLY the platform-managed lineup (~3KB) instead of the
  * project's full catalog (~3.3MB). A sandbox fetches it on every boot to learn
  * the current managed set, because the catalog baked into its image goes stale
- * the moment the managed lineup changes. Free-tier semantics are unchanged: an
- * account with no managed access still gets an empty managed set. */
+ * the moment the managed lineup changes. Free tier is carved out (KRTX-1067):
+ * a free-tier account gets the platform default alone — the one managed model
+ * every tier may use — and an empty managed set only when the deployment
+ * serves no platform default. */
 export interface ListModelsOptions {
   managedOnly?: boolean;
   /**

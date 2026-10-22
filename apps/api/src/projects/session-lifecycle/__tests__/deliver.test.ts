@@ -47,6 +47,26 @@ describe('deliverWithRetry — hand the prompt off through the post-wake flake',
     expect(reopens).toBe(0);
   });
 
+  // The awake target is read with the sandbox row the proxy needs. The first
+  // hand-off passes it on, so the proxy does not load the row again. A target
+  // re-opened after a failure carries none: the proxy must read the row fresh.
+  test('the sandbox row rides the first hand-off only; a retry makes the proxy read it fresh', async () => {
+    const record = { sandboxId: 'sbx-1', externalId: 'ext-1', status: 'active' } as never;
+    const seen: unknown[] = [];
+    const outcome = await deliverWithRetry({
+      opened: { ...ready('ext-1', 'oc-1'), record },
+      reopen: async () => ready('ext-1', 'oc-1'),
+      send: async (_ext, _oc, passed) => {
+        seen.push(passed);
+        return seen.length === 2;
+      },
+      now: stepNow(1000),
+      sleepFn: noSleep,
+    });
+    expect(outcome).toBe('delivered');
+    expect(seen).toEqual([record, undefined]);
+  });
+
   test('THE FIX: a transient send failure is healed + retried → delivered (not pending)', async () => {
     let sends = 0;
     const outcome = await deliverWithRetry({

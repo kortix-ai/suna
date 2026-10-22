@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import type { AdminCreateEnterpriseContractVariables } from './use-admin-accounts';
 import {
+  ADMIN_ENTITLEMENT_OVERRIDE_KEYS,
   ADMIN_OVERRIDE_KEYS,
   adminAccountLookupPath,
   adminAccountOverridesPath,
@@ -50,8 +52,8 @@ describe('admin member-role mutation contract', () => {
 
 describe('admin live-Stripe-subscription read', () => {
   // What Stripe ACTUALLY charges, shown next to the resolved plan badge. A
-  // stored 'pro' tier renders "Team · $20/mo · grandfathered" while the real
-  // subscription can be a $40/mo legacy machine sub — the sheet needs both.
+  // stored legacy tier renders as Credits while the real
+  // subscription can be a legacy machine sub — the sheet needs both.
   test('adminAccountSubscriptionPath targets the admin subscription route', () => {
     expect(adminAccountSubscriptionPath('acct_1')).toBe('/admin/api/accounts/acct_1/subscription');
   });
@@ -102,20 +104,20 @@ describe('admin accounts list — resolved plan block', () => {
   // and that it stays OPTIONAL so a console pointed at an older API still
   // type-checks (and falls back at runtime).
   test('AdminAccount carries the resolved plan, and it is optional', () => {
-    const grandfathered: Pick<AdminAccount, 'plan'> = {
+    const paid: Pick<AdminAccount, 'plan'> = {
       plan: {
-        key: 'per_seat',
-        family: 'team',
-        label: 'Team',
-        sublabel: '$40/seat/mo · grandfathered',
-        status: 'grandfathered',
-        is_grandfathered: true,
+        key: 'credits',
+        family: 'credits',
+        label: 'Credits',
+        sublabel: null,
+        status: 'current',
+        monthlyUsd: 100,
       },
     };
     const olderApi: Pick<AdminAccount, 'plan'> = {};
 
-    expect(grandfathered.plan?.label).toBe('Team');
-    expect(grandfathered.plan?.sublabel).toContain('grandfathered');
+    expect(paid.plan?.label).toBe('Credits');
+    expect(paid.plan?.monthlyUsd).toBe(100);
     expect(olderApi.plan).toBeUndefined();
   });
 });
@@ -136,9 +138,10 @@ describe('admin entitlement-override mutation contract', () => {
     expect(typeof useAdminSetOverrides).toBe('function');
   });
 
-  // The eleven keys the server's `validateOverridePatch` accepts — an unknown key
-  // is a 400, so the console must not be able to invent one.
-  test('ADMIN_OVERRIDE_KEYS is exactly the server-side override catalog', () => {
+  // The ten keys the server's `validateOverridePatch` accepts — an unknown key
+  // is a 400, so the console must not be able to invent one — plus the retired
+  // `maxConcurrentSessions`, kept because narrowing the union is breaking.
+  test('ADMIN_OVERRIDE_KEYS is the server-side override catalog plus the retired key', () => {
     expect([...ADMIN_OVERRIDE_KEYS]).toEqual([
       'enterpriseEntitled',
       'demoEnterprise',
@@ -151,7 +154,14 @@ describe('admin entitlement-override mutation contract', () => {
       'auditAccess',
       'branding',
       'managedModels',
+      'byokFee',
     ]);
+  });
+
+  // The BYOK platform fee is an entitlement, on by default, that an operator
+  // can switch off (or on) per account.
+  test('ADMIN_ENTITLEMENT_OVERRIDE_KEYS ends with byokFee', () => {
+    expect(ADMIN_ENTITLEMENT_OVERRIDE_KEYS.at(-1)).toBe('byokFee');
   });
 
   // Merge-patch (RFC 7386): an entry sets, `null` deletes, an absent key is
@@ -199,4 +209,13 @@ describe('admin accounts list — stored entitlement overrides', () => {
 
     expect(typeof raw === 'number' ? raw : null).toBe(12);
   });
+});
+
+// A license carries no credits (2026-10-15): the create variables need none, and
+// the accounts list reports the Enterprise layer per row.
+test('a license is created without credits, and an account row carries its Enterprise state', () => {
+  const license: AdminCreateEnterpriseContractVariables = { accountId: 'acc-1', licenseUsd: 25000, collection: 'invoice' };
+  const state: NonNullable<AdminAccount['enterprise']>[] = ['off', 'demo', 'licensed'];
+  expect(license.licenseUsd).toBe(25000);
+  expect(state).toHaveLength(3);
 });

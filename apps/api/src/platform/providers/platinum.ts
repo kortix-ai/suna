@@ -53,11 +53,13 @@
  */
 
 import type { SandboxExecOptions, SandboxExecResult } from './contract';
+import { isProviderNotFound } from './status';
 import { createHash } from 'node:crypto';
 import { SANDBOX_VERSION, config } from '../../config';
 import { currentInstanceId } from '../../projects/instance-scope';
 import { isOpencodePort } from '../../shared/opencode-ports';
-import { platinumJson, platinumJsonResponse } from '../../shared/platinum';
+import { logger } from '../../lib/logger';
+import { platinumJson, platinumJsonResponse, type PlatinumHttpError } from '../../shared/platinum';
 import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { serviceKeyForExternalId } from '../service-key';
 import type {
@@ -76,6 +78,7 @@ import type {
 } from './contract';
 import {
   SandboxTemplateNotFoundError,
+  SnapshotStillBuildingError,
   assertWorkloadCredential,
   sandboxWorkloadType,
 } from './contract';
@@ -86,6 +89,34 @@ import { sandboxOwnershipMarker } from '../sandbox-ownership';
 const AGENT_PORT = 8000;
 const START_CONFLICT_GRACE_MS = 30_000;
 const START_CONFLICT_POLL_MS = 250;
+/**
+ * States in which Platinum is already bringing the box up for another caller.
+ * A /start that meets one joins it and waits for `running`, inside the restore
+ * budget. It used to give up after the 30 s stop grace: a resume that had to
+ * move hosts (S3 copy ~53 s) then failed every second caller (prod 2026-10-13).
+ */
+const START_IN_FLIGHT_STATES: ReadonlySet<string> = new Set([
+  'starting',
+  'resuming',
+  'restoring',
+  'migrating',
+  'pending',
+]);
+/**
+ * 503 codes Platinum answers with "retry later" while it moves a stopped box
+ * to another host. The S3 copy keeps warming the target, so the next /start
+ * finishes faster (prod 2026-10-13: copies of 53 s, 12 s, 4 s, then running).
+ * `capacity` is "host saturated": the box's own host has no room until other
+ * boxes stop. Failing on it parked the session stopped and dropped the prompt
+ * that woke it (staging and prod 2026-10-14).
+ */
+const START_RETRY_CODES: ReadonlySet<string> = new Set([
+  'relocation_fetch_timeout',
+  'relocation_failed',
+  'relocation_unavailable',
+  'capacity',
+]);
+export const START_RETRY_BACKOFF_MS = 2_000;
 /**
  * How long `stop()` waits for Platinum to confirm the VM actually powered
  * off, and the poll interval. Read per-call (not a module-load constant) so
@@ -141,6 +172,8 @@ interface PlatinumSandboxPage {
   rows?: PlatinumSandbox[];
   total?: number;
   has_more?: boolean;
+  /** Present on a merged multi-region list: the peers asked and the ones that did not answer. */
+  regions?: { asked?: string[]; unavailable?: Array<{ region: string; error?: string }> };
 }
 /**
  * A box created before `auto_resume: false` shipped (see create) still lets any
@@ -231,33 +264,27 @@ type PlatinumExecResponse = {
  * FIX-A: a DEFINITIVE "pinned template is gone" signal — a 404 on the create
  * POST (the template id doesn't exist / was GC'd). ONLY a 404 qualifies: a 400
  * (bad request) or 5xx (transient outage) is NOT a GC'd pin and must NOT trigger
- * a name-boot fallback. Matches the `platinum <method> <path> -> 404 …` shape
- * platinumJson throws.
+ * a name-boot fallback.
  */
 function isDefinitiveTemplateNotFound(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  return / -> 404\b/.test(message);
+  // A 404 about a volume in the create body is not a missing template.
+  return platinumHttp(error).status === 404 && !isVolumeRejection(error);
 }
 
-function isMissingSandboxError(error: unknown): boolean {
-  const err = error as
-    | { status?: unknown; statusCode?: unknown; code?: unknown; message?: unknown }
-    | null
-    | undefined;
-  if (err?.status === 404 || err?.statusCode === 404) return true;
-  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
-  if (code === 'not_found' || code === 'notfound') return true;
-  const message =
-    typeof err?.message === 'string'
-      ? err.message.toLowerCase()
-      : String(error ?? '').toLowerCase();
-  return (
-    message.includes('-> 404') ||
-    message.includes('"code":"not_found"') ||
-    message.includes('not found') ||
-    message.includes('no such sandbox') ||
-    message.includes('sandbox does not exist')
-  );
+/**
+ * Platinum refused a create because of its `volumes` (a volume it cannot
+ * find, no host that can mount volumes, a mount limit): a definite refusal,
+ * so no box exists, and the same body can never succeed.
+ */
+function isVolumeRejection(error: unknown): boolean {
+  const { status, code, body } = platinumHttp(error);
+  if (typeof status !== 'number' || !((status >= 400 && status < 500) || status === 503)) return false;
+  return /volume|mount/i.test(`${code ?? ''} ${body ?? ''}`);
+}
+
+/** The `status`, `code` and `body` of the `PlatinumHttpError` `platinumJson` throws. */
+function platinumHttp(error: unknown): Partial<Pick<PlatinumHttpError, 'status' | 'code' | 'body'>> {
+  return error instanceof Error ? (error as Partial<PlatinumHttpError>) : {};
 }
 
 /**
@@ -325,20 +352,50 @@ function buildIdempotencyKey(sandboxId: string, templateId: string, attempt: num
 
 /**
  * Platinum refuses a create in a region that does not hold the template yet:
- * `409 template_not_resident`, with `state` 'absent', 'replicating' or
- * 'failed'. Platinum copies the template there on its own (the copy's progress
- * is what `state` reports), so this is the "image still building" condition in
- * another form, and it gets the same patient retry window: the rewritten
- * message matches `isSnapshotStillBuilding` in sandbox-init-state.ts.
+ * `409 template_not_resident`. The create itself asks Platinum to copy the
+ * template there (platinum templateResidency.ts requestResidency), so `state`
+ * says whether waiting can help:
+ *   - 'replicating': a copy runs (or was just queued) ⇒ wait, like an image
+ *     that is still building.
+ *   - 'failed': the last copy failed under 2 min ago; the next create after
+ *     that cooldown requeues it. `error` carries Platinum's reason.
+ *   - 'absent': this control plane cannot copy the template at all.
+ * Null for any other error.
  */
-function regionalTemplateNotReady(error: unknown, template: string): Error | null {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  if (!/ -> 409\b/.test(message) || !/template_not_resident/.test(message)) return null;
-  const region = /"region"\s*:\s*"([^"]+)"/.exec(message)?.[1] ?? 'the requested region';
-  const state = /"state"\s*:\s*"([^"]+)"/.exec(message)?.[1] ?? 'absent';
-  return new Error(
-    `Sandbox image snapshot ${template} is building in ${region}: Platinum is copying the template there (state=${state})`,
-  );
+function regionalTemplateRefusal(error: unknown): { region: string; state: string; reason: string } | null {
+  const http = platinumHttp(error);
+  if (http.status !== 409 || http.code !== 'template_not_resident') return null;
+  let body: { region?: unknown; state?: unknown; error?: unknown } = {};
+  try {
+    body = JSON.parse(http.body ?? '') as typeof body;
+  } catch {
+    // code parsed from this body, so it is JSON; keep the defaults if not
+  }
+  return {
+    region: typeof body.region === 'string' ? body.region : 'the requested region',
+    state: typeof body.state === 'string' ? body.state : 'absent',
+    reason: typeof body.error === 'string' ? body.error : 'no reason given',
+  };
+}
+
+/**
+ * A create in a requested region refused because a volume it mounts (a drive)
+ * lives in another region. Volumes never cross regions, and a drive is opened
+ * through PLATINUM_API_URL, so it lives in the home region. Platinum names the
+ * owner (`409 volume_in_other_region` with `region`); a control plane without
+ * the volume directory answers `404 volume_not_found` instead, owner unknown.
+ */
+function volumeRegionRefusal(error: unknown): { volumeRegion: string | null } | null {
+  const http = platinumHttp(error);
+  if (http.status === 404 && http.code === 'volume_not_found') return { volumeRegion: null };
+  if (http.status !== 409 || http.code !== 'volume_in_other_region') return null;
+  let body: { region?: unknown } = {};
+  try {
+    body = JSON.parse(http.body ?? '') as typeof body;
+  } catch {
+    // code parsed from this body, so it is JSON
+  }
+  return { volumeRegion: typeof body.region === 'string' ? body.region : null };
 }
 
 /**
@@ -352,9 +409,8 @@ function regionalTemplateNotReady(error: unknown, template: string): Error | nul
  * key, which the CP replays to the already-committed box).
  */
 function isNameTakenConflict(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error ?? '');
-  if (!/ -> 409\b/.test(message)) return false;
-  return /name_taken|name[_ ]?already|name.{0,24}(exists|conflict|taken)/i.test(message);
+  const http = platinumHttp(error);
+  return http.status === 409 && http.code === 'name_taken';
 }
 
 export class PlatinumProvider implements SandboxProvider {
@@ -474,9 +530,11 @@ export class PlatinumProvider implements SandboxProvider {
       auto_resume: workloadType === 'app',
       // The project's `us_region` flag (platform/services/sandbox-region.ts).
       // Absent ⇒ Platinum places the box in its home region, exactly as
-      // before. PLATINUM_API_URL forwards a regional create to that region's
-      // control plane; the answer names the owner (`api_url`), and every
-      // later call by id goes straight to it (shared/platinum.ts).
+      // before. A create for a region this process has already seen a box in
+      // goes straight to that region's control plane; otherwise
+      // PLATINUM_API_URL forwards it there. The answer names the owner
+      // (`api_url`), and every later call by id goes straight to it
+      // (shared/platinum.ts).
       ...(opts.location ? { region: opts.location } : {}),
       // Database + instance ownership. The versioned marker also excludes
       // these boxes from older clients' environment-wide orphan sweeps.
@@ -495,6 +553,20 @@ export class PlatinumProvider implements SandboxProvider {
     };
     if (dedup) {
       createBody.name = dedup.name;
+    }
+    if (opts.resourceSpec) {
+      // An App machine is sized at create, so a resize never rebuilds its image.
+      createBody.cpu = opts.resourceSpec.cpuCores;
+      createBody.ram_mb = Math.round(opts.resourceSpec.memoryGb * 1024);
+      createBody.disk_gb = opts.resourceSpec.diskGb;
+    }
+    if (opts.volumes && Object.keys(opts.volumes).length > 0) {
+      createBody.volumes = opts.volumes;
+    }
+    if (opts.volumesRequired) {
+      // The box's state lives on its volumes, so Platinum's periodic
+      // whole-box backup would only upload a disposable disk.
+      createBody.backup_interval_min = 0;
     }
     const createBodyJson = JSON.stringify(createBody);
     const CREATE_PATH = '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000';
@@ -519,8 +591,73 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await postCreate();
     } catch (err) {
-      const notYetInRegion = regionalTemplateNotReady(err, template);
-      if (notYetInRegion) throw notYetInRegion;
+      const elsewhere = opts.location && createBody.volumes ? volumeRegionRefusal(err) : null;
+      if (elsewhere && !opts.locationRequired) {
+        // A box must run where its drives live. With no region the create goes
+        // to the home control plane, which holds the drive (or routes the
+        // create to the region that does). A drive missing everywhere still
+        // fails loudly there. A warm box keeps its region and fails below.
+        const fallback = {
+          requested: opts.location!,
+          state: 'volume_in_other_region',
+          volumeRegion: elsewhere.volumeRegion,
+          at: new Date().toISOString(),
+        };
+        // Stable message: alert on it.
+        logger.warn('[platinum] region fallback: a mounted volume lives in another region; the box boots where it lives', {
+          ...fallback,
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+        });
+        const home = await this.provisionFromTemplate(template, { ...opts, location: undefined });
+        return { ...home, metadata: { ...home.metadata, regionFallback: fallback } };
+      }
+      // A full fleet stays a capacity error (retried, "try again in a minute").
+      if (createBody.volumes && isVolumeRejection(err) && !/no capacity/i.test(platinumHttp(err).body ?? '')) {
+        // Mounts a session cannot run without (its drives, its state): fail
+        // loudly, never boot without them.
+        const reason = (platinumHttp(err).body ?? '').slice(0, 300);
+        if (workloadType === 'app') {
+          throw new Error(`[apps] The machine's volume could not be mounted (storage refused: ${reason}). The machine did not start without it.`);
+        }
+        throw new Error(
+          `[drives] This session’s drives could not be mounted (storage refused: ${reason}). The session did not start without them.`,
+        );
+      }
+      const regional = regionalTemplateRefusal(err);
+      if (regional?.state === 'replicating') {
+        // sandbox-init-state.ts waits this class out (~5 min).
+        throw new SnapshotStillBuildingError(
+          `Sandbox image snapshot ${template} is building in ${regional.region}: Platinum is copying the template there (state=replicating)`,
+        );
+      }
+      if (regional && opts.location) {
+        // No copy is running, so waiting cannot help. `us_region` chooses
+        // compute placement only: boot this session in the home region now.
+        // The next regional create after Platinum's cooldown retries the copy.
+        // A speculative (warm) box must match its project's region, so it
+        // fails fast instead (warm-sessions.ts warmSessionPlacement).
+        // The recursion sends no region, so it cannot come back here.
+        // ponytail: an ambiguous home create that fails, followed by a later
+        // regional create that succeeds, leaves the home box orphaned for the
+        // orphan reaper: the two creates use different Idempotency-Keys.
+        const fallback = { requested: regional.region, state: regional.state, at: new Date().toISOString() };
+        if (opts.locationRequired) {
+          throw new Error(
+            `[platinum] template ${template} is not usable in ${regional.region} (state=${regional.state}: ${regional.reason}); this box must run there, so it does not start`,
+          );
+        }
+        // Stable message: alert on it. The fields say which region and why.
+        logger.warn('[platinum] region fallback: the template is not usable in the requested region; the box boots in the home region', {
+          ...fallback,
+          reason: regional.reason,
+          template,
+          sandboxId: opts.sandboxId ?? opts.name,
+        });
+        const home = await this.provisionFromTemplate(template, { ...opts, location: undefined });
+        // Durable record on the session box row: a US-flag project on home compute.
+        return { ...home, metadata: { ...home.metadata, regionFallback: fallback } };
+      }
       if (!dedup || !isNameTakenConflict(err)) throw err;
       // See isNameTakenConflict + the module doc: the name is exclusively
       // ours, so this can only be our own prior commit under this same
@@ -593,7 +730,7 @@ export class PlatinumProvider implements SandboxProvider {
     // (apps/api/src/api/sandboxes.ts maybeWait). So a create can hand back an id
     // for a DEAD box. Before this guard we read `sandbox.id` and marched on, so
     // an intermittent guest-boot stall surfaced as a "running" session that was
-    // actually failed-start (proven 2026-07-07, session c6fef0b5: Platinum
+    // actually failed-start (proven 2026-07-07 on one session: Platinum
     // state=failed-start, comp status=active). Throw on a non-running terminal
     // state so retrySandboxProvisionCreate re-attempts (fresh box, possibly
     // another host) instead of silently returning an unusable sandbox. The
@@ -713,6 +850,14 @@ export class PlatinumProvider implements SandboxProvider {
     let deadline = Date.now() + START_CONFLICT_GRACE_MS;
     const restoreDeadline = Date.now() + START_RESTORE_BUDGET_MS;
     let firstConflict: unknown = null;
+    // Renews the caller's lease while this call waits on Platinum. The first
+    // report is immediate, then one per START_PROGRESS_INTERVAL_MS.
+    let reportedAt = Number.NEGATIVE_INFINITY;
+    const progress = async () => {
+      if (!opts.onProgress || Date.now() - reportedAt < START_PROGRESS_INTERVAL_MS) return;
+      reportedAt = Date.now();
+      await opts.onProgress().catch(() => undefined);
+    };
     // true = the box is back on disk and gets a fresh /start. That /start
     // gets a fresh stop grace too: another waiter may win the race to it, and
     // this one must then see the box through `starting`, not fail at once.
@@ -738,23 +883,43 @@ export class PlatinumProvider implements SandboxProvider {
         // the wake fence gave up at 90 s with start_timeout (KRTX-197; 162 of
         // 241 prod unarchives on 2026-09-25 outran the inline wait).
         const state = String(started.body?.state ?? '').toLowerCase();
-        if (started.status !== 202 && !state.includes('archiv')) return;
-        if (await restored()) continue;
-        return;
+        // 202 {state:'starting'}: Platinum joined a start already in flight, or
+        // keeps moving the box to another host (code 'relocating',
+        // kortix-ai/platinum#1535). Wait here as for a 409 join. Returning
+        // would hand a silent `starting` to the wake fence, whose 90 s
+        // no-change grace a slow S3 copy outlasts.
+        if (started.status === 202 && START_IN_FLIGHT_STATES.has(state)) {
+          firstConflict ??= new Error(
+            `platinum sandbox ${externalId} still ${state} after the ${START_RESTORE_BUDGET_MS / 1000}s start budget`,
+          );
+        } else {
+          if (started.status !== 202 && !state.includes('archiv')) return;
+          if (await restored()) continue;
+          return;
+        }
       } catch (error) {
+        // The CALL gave up, not Platinum: a restore it started keeps going
+        // server-side. Wait on the box's real state instead of failing the wake.
+        if (error instanceof Error && error.name === 'TimeoutError' && Date.now() < restoreDeadline) {
+          if (await restored()) continue;
+          return;
+        }
+        const http = platinumHttp(error);
+        if (
+          http.status === 503 &&
+          START_RETRY_CODES.has(String(http.code)) &&
+          Date.now() + START_RETRY_BACKOFF_MS < restoreDeadline
+        ) {
+          await progress();
+          await Bun.sleep(START_RETRY_BACKOFF_MS);
+          continue;
+        }
         // Platinum acknowledges stop before the VM always reaches `stopped`.
         // An immediate user reopen can therefore race `stopping` and receive
         // 409. Keep the provider call inside this adapter until the accepted
         // stop settles, then retry start. The control plane remains stopped and
         // unbilled until its separate provider-running confirmation succeeds.
-        const message = error instanceof Error ? error.message : String(error ?? '');
-        // The CALL gave up, not Platinum: a restore it started keeps going
-        // server-side. Wait on the box's real state instead of failing the wake.
-        if (/ timed out after /.test(message) && Date.now() < restoreDeadline) {
-          if (await restored()) continue;
-          return;
-        }
-        if (!/ -> 409\b/.test(message)) throw error;
+        if (http.status !== 409) throw error;
         firstConflict ??= error;
       }
 
@@ -770,13 +935,19 @@ export class PlatinumProvider implements SandboxProvider {
           if (await restored()) continue attempt;
           return;
         }
-        if (!['starting', 'stopping', 'pending'].includes(state) || Date.now() >= deadline) {
+        if (START_IN_FLIGHT_STATES.has(state)) {
+          if (Date.now() >= restoreDeadline) throw firstConflict;
+          await progress();
+        } else if (state !== 'stopping' || Date.now() >= deadline) {
           throw firstConflict;
         }
-        await Bun.sleep(START_CONFLICT_POLL_MS);
+        await Bun.sleep(Date.now() < deadline ? START_CONFLICT_POLL_MS : START_RESTORE_POLL_MS);
       }
 
-      if (Date.now() >= deadline) throw firstConflict;
+      // Back to stopped: the other caller's start failed or its stop settled.
+      // The box needs a /start of its own, inside the same budget.
+      if (Date.now() >= restoreDeadline) throw firstConflict;
+      deadline = Date.now() + START_CONFLICT_GRACE_MS;
     }
   }
 
@@ -920,13 +1091,24 @@ export class PlatinumProvider implements SandboxProvider {
   > {
     const owner = await sandboxOwnershipMarker();
     const out: Array<{ externalId: string; createdAt: Date | null }> = [];
-    const limit = 100;
+    const limit = 200; // Platinum's maximum page size.
+    // `state=running` keeps the scan to the running set (tens of rows). An
+    // unfiltered list holds every archived box too (10k+ in the shared org),
+    // sorts newest first, and hid any running box past the page cap.
+    // `regions=all` merges every region; a merged scan above row 10000 is
+    // refused (`pagination_limit`), which the running set never reaches.
     // Bounded page count as well as page size: a paginator that never reports
     // `has_more: false` must not spin this sweep forever.
     for (let offset = 0, page = 0; page < 50; offset += limit, page++) {
       const body = await platinumJson<PlatinumSandboxPage>(
-        `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}`,
+        `/v1/sandboxes?paginated=true&limit=${limit}&offset=${offset}&state=running&regions=all`,
       );
+      const unavailable = body.regions?.unavailable ?? [];
+      if (unavailable.length) {
+        logger.warn(
+          `[platinum] running-box scan missed regions: ${unavailable.map((r) => r.region).join(',')}`,
+        );
+      }
       const rows = body.rows ?? [];
       for (const sandbox of rows) {
         if (!sandbox.id) continue;
@@ -973,7 +1155,7 @@ export class PlatinumProvider implements SandboxProvider {
       if (state === 'error' || state === 'failed') return 'terminal';
       return 'unknown'; // provisioning / starting / resuming / migrating — transitional
     } catch (err) {
-      if (isMissingSandboxError(err)) return 'removed';
+      if (isProviderNotFound(err)) return 'removed';
       return 'unknown';
     }
   }
@@ -983,10 +1165,10 @@ export class PlatinumProvider implements SandboxProvider {
     try {
       sandbox = await platinumJson<PlatinumSandbox>(`/v1/sandboxes/${externalId}`);
     } catch (err) {
-      if (!isMissingSandboxError(err)) return 'recovering';
+      if (!isProviderNotFound(err)) return 'recovering';
       // A 404 is NOT proof the data is gone — it is also what a TOMBSTONED
       // sandbox returns. Platinum's reconciler deletes a box whose disk it has
-      // already backed up to S3 (incident 2026-08-12, sbx_01KZP370WDB8DGYNAQM1B875VR:
+      // already backed up to S3 (incident 2026-08-12, one Platinum sandbox:
       // deleted with a completed 4.87 GB backup), and from then on the GET 404s.
       //
       // Returning 'unavailable' here made the restore branch below DEAD CODE:

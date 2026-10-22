@@ -30,20 +30,16 @@
  * network calls.
  *
  * WHAT IT NEVER DOES. `POST /kortix/catalog/converge` — the one call this
- * gate can make — is idle-gated and verified-swap based on the daemon side
- * (`convergeManagedModelCatalog` in the sandbox agent server), exactly like
- * `config-release.ts`: it never ends a running turn, and it takes ONE
- * attempt with a bounded timeout, never a retry ladder.
+ * gate can make — is idle-gated on the daemon side
+ * (`convergeManagedModelCatalog` in the sandbox agent server): it never ends
+ * a running turn, and it takes ONE attempt with a bounded timeout, never a
+ * retry ladder. The daemon registers the id and reloads OpenCode's config in
+ * place; it decides nothing about whether the gateway serves the model.
  */
 
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
+import { SANDBOX_SERVICE_PORT } from './sandbox-env-transport';
 import { loadActiveSandbox } from './sandbox-runtime-refresh';
-import {
-  lastKnownManagedCatalog,
-  modelConfirmation,
-  noteModelConfirmation,
-  noteRunningCatalog,
-} from '../../runtime-assets/running-catalog';
 import { logger } from '../../lib/logger';
 
 /**
@@ -65,7 +61,6 @@ export interface ModelCatalogConvergeDeps {
   fetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 }
 
-const SANDBOX_SERVICE_PORT = 8000;
 
 const defaultConvergeDeps: ModelCatalogConvergeDeps = {
   loadActiveSandbox,
@@ -76,7 +71,8 @@ const defaultConvergeDeps: ModelCatalogConvergeDeps = {
 
 /** `POST /kortix/catalog/converge`. Null on any failure to reach or parse —
  *  the caller treats that as "could not repair", never as "confirmed absent"
- *  or "confirmed present". */
+ *  or "confirmed present". `unsupported`: the box answered 404, so its runtime
+ *  has no catalog to converge (pi). */
 export async function convergeSandboxModelCatalog(
   sessionId: string,
   deps: ModelCatalogConvergeDeps = defaultConvergeDeps,
@@ -96,6 +92,7 @@ export async function convergeSandboxModelCatalog(
       ...(model ? { body: JSON.stringify({ model }) } : {}),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+    if (res.status === 404) return { outcome: 'unsupported' };
     if (!res.ok) return null;
     const body = (await res.json().catch(() => null)) as
       | { outcome?: unknown; missing?: unknown; model_present?: unknown }
@@ -138,7 +135,8 @@ export type ModelCatalogTurnStartDecision =
  * whether the repair actually landed IN TIME for the request it is about to
  * forward, so it can refuse with a diagnosable error instead of proxying
  * into a guaranteed failure:
- *   - `'restarted'` — a fresh OpenCode is up with the model. Forward normally.
+ *   - `'reloaded'` / `'restarted'` — the running OpenCode registers the model
+ *     (config reloaded in place, or a verified swap). Forward normally.
  *   - `'unchanged'` / `'file-updated'` — nothing to swap, or the file is
  *     staged for the box's NEXT natural restart. Forward normally; if the
  *     model was genuinely absent this is `declined`/`no-gateway`, not these.
@@ -166,7 +164,7 @@ export interface ModelCatalogTurnStartDeps {
   /** Is this a model id the control plane currently serves as managed? A
    *  request for anything else (BYOK, a retired id, a typo) is out of scope
    *  for this lane — see the module doc. */
-  isManagedModelId: (id: string) => boolean;
+  isLineupModelId: (id: string) => boolean;
   lastKnown: (sessionId: string) => RunningCatalogLookup | undefined;
   /** One health GET, the same one the config/asset gates already make when
    *  cold. Fills the memo for THIS call and every later one within the TTL. */
@@ -200,9 +198,12 @@ export async function convergeModelCatalogBeforeTurnStart(
 ): Promise<ModelCatalogTurnStartResult> {
   try {
     if (!requestedManagedModelId) return { decision: 'skipped' };
-    if (!deps.isManagedModelId(requestedManagedModelId)) {
+    if (!deps.isLineupModelId(requestedManagedModelId)) {
       return await convergeOneModel(sessionId, requestedManagedModelId, deps);
     }
+    // The box said it cannot converge its catalog (pi): asking again is
+    // pointless until the TTL lapses. It cost every prompt a probe and a 404.
+    if (deps.modelConfirmation(sessionId, requestedManagedModelId) === 'legacy') return { decision: 'skipped' };
     let known = deps.lastKnown(sessionId);
     if (known === undefined) known = await deps.probe(sessionId).catch(() => undefined);
     if (known?.ids && known.ids.includes(requestedManagedModelId)) return { decision: 'current' };
@@ -212,6 +213,10 @@ export async function convergeModelCatalogBeforeTurnStart(
     // unnecessary (the model landed between our probe and this call) costs
     // one `unchanged` response, not a wrong restart.
     const result = await deps.convergeCatalog(sessionId);
+    if (result?.outcome === 'unsupported') {
+      deps.noteModelConfirmation(sessionId, null);
+      return { decision: 'skipped' };
+    }
     return result ? { decision: 'converged', daemonOutcome: result.outcome } : { decision: 'unknown' };
   } catch (error) {
     logger.warn('[projects] turn-start model-catalog convergence threw', {
@@ -245,31 +250,4 @@ async function convergeOneModel(
   }
   if (result.modelPresent) deps.noteModelConfirmation(sessionId, model);
   return { decision: 'converged', daemonOutcome: result.outcome };
-}
-
-/**
- * Record what a health read said about this box's managed catalog. Called
- * from the SAME probe `turn-start-convergence.ts`'s `noteAssetsFromHealth`
- * already runs — never a second network call.
- */
-export function noteManagedCatalogFromHealth(
-  sessionId: string,
-  ids: string[] | null,
-  fallbackReason: string | null,
-): void {
-  noteRunningCatalog(sessionId, ids, fallbackReason);
-}
-
-export function defaultModelCatalogTurnStartDeps(
-  isManagedModelId: (id: string) => boolean,
-  probe: (sessionId: string) => Promise<RunningCatalogLookup | undefined>,
-): ModelCatalogTurnStartDeps {
-  return {
-    isManagedModelId,
-    lastKnown: lastKnownManagedCatalog,
-    probe,
-    convergeCatalog: async (sessionId, model) => convergeSandboxModelCatalog(sessionId, undefined, model),
-    modelConfirmation,
-    noteModelConfirmation,
-  };
 }

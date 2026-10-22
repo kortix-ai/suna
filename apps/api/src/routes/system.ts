@@ -1,10 +1,13 @@
-import { timingSafeEqual } from 'node:crypto';
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { config } from '../config';
-import { metricsEnabled, renderMetrics, setEventLoopLagSeconds } from '../lib/metrics';
+import { metricsEnabled, renderMetrics } from '../lib/metrics';
 import { json, mountOpenApiDocs } from '../openapi';
 import { mcpProtectedResourceMetadata, oauthAuthorizationServerMetadata } from '../oauth/discovery';
 import { draining, schemaReady } from '../bootstrap';
+import { eventLoopLagMs } from '../workers/event-loop-lag-worker';
+import { hasInternalServiceKey } from '../shared/internal-service-key';
+
+const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
 
 export function registerSystemRoutes(app: OpenAPIHono) {
 // === Top-Level Health Check (no auth) ===
@@ -62,35 +65,6 @@ app.openapi(
   healthHandler,
 );
 
-// ─── Event-loop lag monitor → a real liveness signal ─────────────────────────
-//
-// The /health handlers above answer in <1ms even when the event loop is badly
-// degraded. During the 2026-06-18 incident that meant k8s liveness NEVER fired
-// and wedged pods were never restarted — a 90-minute outage instead of a ~45s
-// self-heal. This samples ACTUAL event-loop lag (a healthy loop drifts a few ms;
-// a starved one drifts into seconds) and exposes it at /health/live so a
-// degraded-but-not-dead pod can be detected and restarted by the kubelet.
-//
-// NOTE: the chart's livenessProbe still points at the shallow /v1/health by
-// default — flip health.livenessPath to /health/live only AFTER an image that
-// serves this route is confirmed live (otherwise old pods 404 their liveness
-// probe and crash-loop). See infra/k8s/charts/kortix-api.
-const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
-let eventLoopLagMs = 0;
-{
-  const SAMPLE_INTERVAL_MS = 1000;
-  let lastSample = performance.now();
-  const lagTimer = setInterval(() => {
-    const now = performance.now();
-    // How much longer than the interval the loop took to come back to this tick.
-    eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
-    lastSample = now;
-    setEventLoopLagSeconds(eventLoopLagMs / 1000);
-  }, SAMPLE_INTERVAL_MS);
-  // Never keep the process alive just for the sampler.
-  (lagTimer as { unref?: () => void }).unref?.();
-}
-
 const livenessHandler = (c: any) => {
   const lag = Math.round(eventLoopLagMs);
   if (eventLoopLagMs > MAX_EVENT_LOOP_LAG_MS) {
@@ -137,19 +111,6 @@ const readinessHandler = (c: any) => {
 app.get('/health/ready', readinessHandler);
 app.get('/v1/health/ready', readinessHandler);
 
-function hasInternalObservabilityAuth(c: any): boolean {
-  const authHeader = c.req.header('Authorization');
-  const bearer = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : '';
-  const header = c.req.header('X-Kortix-Internal-Key') ?? '';
-  const expected = config.INTERNAL_SERVICE_KEY;
-  const safeEq = (a: string, b: string) => {
-    const aa = Buffer.from(a);
-    const bb = Buffer.from(b);
-    return aa.length === bb.length && timingSafeEqual(aa, bb);
-  };
-  return (!!bearer && safeEq(bearer, expected)) || (!!header && safeEq(header, expected));
-}
-
 // Sign in with Kortix — RFC 8414 discovery at the API root. The issuer is the
 // configured public API origin (KORTIX_URL); the request origin is only the
 // fallback for a bare local run. Mirrored under /v1/oauth/.well-known/… for
@@ -182,7 +143,7 @@ app.get('/.well-known/openid-configuration', (c) => {
 });
 
 app.get('/metrics', (c) => {
-  if (!hasInternalObservabilityAuth(c)) {
+  if (!hasInternalServiceKey(c)) {
     return c.text('unauthorized\n', 401);
   }
   if (process.env.KORTIX_LOCAL_TEST_PROFILE === '1') {

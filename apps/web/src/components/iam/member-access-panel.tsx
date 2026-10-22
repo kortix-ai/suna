@@ -40,20 +40,20 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { InlineMeta } from '@/components/ui/inline-meta';
-import { Label } from '@/components/ui/label';
+} from '@kortix/ui/dropdown-menu';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { InlineMeta } from '@kortix/ui/inline-meta';
+import { Label } from '@kortix/ui/label';
 import {
   Modal,
   ModalBody,
@@ -61,17 +61,15 @@ import {
   ModalDescription,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   AccessDetailShell,
-  AccessDialog,
   AccessList,
-  AccessRow,
   builtinRole,
   builtinRoleLabel,
   customRole,
@@ -80,7 +78,11 @@ import {
   principalLabel,
   type KebabItem,
   type RoleValue,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/access/access/index';
+import {
+  AccessDialog,
+  AccessRow,
+} from '@kortix/ui/access';
 import {
   listMemberGroups,
   listMemberProjectAccess,
@@ -90,8 +92,8 @@ import {
   type MemberGroupSummary,
   type MemberProjectAccess,
 } from '@/lib/iam-client';
-import { usePermission, usePermissionsFor } from '@/lib/use-permission';
-import { cn } from '@/lib/utils';
+import { usePermission, usePermissionsFor } from '@kortix/ui/workspace';
+import { cn } from '@kortix/ui';
 import {
   listAccountMembers,
   listProjectResourceGrants,
@@ -99,7 +101,7 @@ import {
   type IamPolicy,
 } from '@kortix/sdk';
 import { contract, invalidatePermissionProbes, qk } from '@kortix/sdk/react';
-import { areaLabel, permissionLabel } from './role-capability-matrix';
+import { areaLabel, permissionLabel } from './role-capability-model';
 
 const PANEL = 'bg-popover rounded-md border';
 
@@ -288,8 +290,9 @@ export function MemberAccessPanel({
   }
 
   return (
+    // No "‹ All members" here: the hub's breadcrumb bar reads
+    // Settings / <account> / Members / <member>, and Members is a link.
     <AccessDetailShell
-      back={{ label: tI18nComplete.raw('text3d6fe3e703f6'), onClick: onBack }}
       loading={membersQuery.isLoading}
       avatar={<UserAvatar email={memberLabel} name={member?.email ?? undefined} size="lg" />}
       title={memberLabel}

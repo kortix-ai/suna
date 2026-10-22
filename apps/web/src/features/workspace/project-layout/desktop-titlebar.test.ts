@@ -32,13 +32,22 @@ const chrome = require_(join(repoRoot, 'apps/desktop-electron/src/window-chrome.
     contentLeft: number;
   };
   macTrafficLightPosition: () => { x: number; y: number };
+  winBandMetrics: () => {
+    band: number;
+    controlsWidth: number;
+    controlTop: number;
+    menuLeft: number;
+    menuEnd: number;
+    controlLeft: number;
+    contentLeft: number;
+  };
 };
 
 const css = readFileSync(join(repoRoot, 'apps/web/src/app/globals.css'), 'utf8');
 
 test('account settings keeps Back to app left and utilities right in web browsers', () => {
   const sidebar = readFileSync(
-    join(repoRoot, 'apps/web/src/features/accounts/hub/account-settings-sidebar.tsx'),
+    join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-sidebar.tsx'),
     'utf8',
   );
   expect(codeOnly(sidebar)).toMatch(/kx-overlay-sidebar-titlebar[^'"\n]*justify-between/);
@@ -61,7 +70,7 @@ test('desktop native theme waits for next-themes hydration', () => {
     join(repoRoot, 'apps/web/src/components/desktop/desktop-chrome.tsx'),
     'utf8',
   );
-  const bridgeSource = readFileSync(join(repoRoot, 'apps/web/src/lib/desktop.ts'), 'utf8');
+  const bridgeSource = readFileSync(join(repoRoot, 'packages/ui/src/internal/lib/desktop.ts'), 'utf8');
   expect(chromeSource).toContain('if (!isDesktop() || !theme) return;');
   expect(bridgeSource).toContain("if (typeof window === 'undefined' || !theme) return;");
 });
@@ -207,7 +216,7 @@ describe('no app control overlaps the macOS traffic lights', () => {
  * out, or the alignment above is silently wrong by a factor of the zoom.
  */
 describe('the shell zoom does not drag the band off the OS controls', () => {
-  const desktopLib = readFileSync(join(repoRoot, 'apps/web/src/lib/desktop.ts'), 'utf8');
+  const desktopLib = readFileSync(join(repoRoot, 'packages/ui/src/internal/lib/desktop.ts'), 'utf8');
   const baseBlock = css.match(/html\[data-desktop='true'\]\s*\{([^}]*)\}/);
 
   test('CSS seeds the same factor the shell actually applies', () => {
@@ -247,14 +256,17 @@ describe('the shell zoom does not drag the band off the OS controls', () => {
       /--kx-titlebar-control-size:\s*calc\(\s*28px\s*\/\s*var\(--kx-desktop-zoom\)/,
     );
     const control = readFileSync(
-      join(repoRoot, 'apps/web/src/components/desktop/titlebar-control.ts'),
+      join(repoRoot, 'packages/ui/src/internal/desktop/titlebar-control.ts'),
       'utf8',
     );
     expect(control).toContain('h-[var(--kx-titlebar-control-size)]');
     expect(control).not.toContain('h-[28px]');
   });
 
-  test('Win/Linux use the native frame and reserve no web-drawn control area', () => {
+  // Linux, and a Windows shell older than the overlay title bar, keep the
+  // native frame: the baseline reserves nothing. The overlay block below is
+  // keyed on the shell's own `data-desktop-titlebar` marker.
+  test('native-frame shells reserve no web-drawn control area', () => {
     const desktopChrome = readFileSync(
       join(repoRoot, 'apps/web/src/components/desktop/desktop-chrome.tsx'),
       'utf8',
@@ -276,15 +288,15 @@ describe('the shell zoom does not drag the band off the OS controls', () => {
 describe('nothing re-hard-codes the band', () => {
   const shell = readFileSync(join(import.meta.dir, 'project-shell.tsx'), 'utf8');
   const control = readFileSync(
-    join(repoRoot, 'apps/web/src/components/desktop/titlebar-control.ts'),
+    join(repoRoot, 'packages/ui/src/internal/desktop/titlebar-control.ts'),
     'utf8',
   );
   const backButton = readFileSync(
-    join(repoRoot, 'apps/web/src/components/desktop/desktop-back-button.tsx'),
+    join(repoRoot, 'packages/ui/src/internal/desktop/desktop-back-button.tsx'),
     'utf8',
   );
   const sessionHeader = readFileSync(
-    join(repoRoot, 'apps/web/src/features/session/header/session-site-header.tsx'),
+    join(repoRoot, 'packages/ui/src/session/header/session-site-header.tsx'),
     'utf8',
   );
   const main = readFileSync(join(repoRoot, 'apps/desktop-electron/src/main.js'), 'utf8');
@@ -320,7 +332,7 @@ describe('nothing re-hard-codes the band', () => {
       "html[data-desktop-platform='macos'] .kx-project-shell-drag-region {",
     );
     expect(css).toMatch(
-      /\[data-kx-titlebar-owner\]:has\(\.kx-titlebar-row\)\s*>\s*\.kx-project-shell-drag-region\s*\{[^}]*display:\s*none/s,
+      /\[data-kx-titlebar-owner\]:has\(\.kx-titlebar-row\)\s*>\s*\.kx-project-shell-drag-region\s*\{[^}]*display:\s*none/,
     );
   });
 
@@ -330,14 +342,14 @@ describe('nothing re-hard-codes the band', () => {
     // not subtract from it. Blink maps `none` to no-drag, so only `initial`
     // resets the shell's injected rule.
     const reset = css.match(
-      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\)\s*\{([^}]*)\}/s,
+      /:where\(body:has\(\[data-kx-titlebar-owner\]\)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\)\s*\{([^}]*)\}/,
     );
     expect(reset?.[1]).toContain('-webkit-app-region: initial');
     expect(reset?.[1]).toContain('app-region: initial');
     expect(reset?.[1]).not.toMatch(/app-region:\s*none/);
 
     const scoped = css.match(
-      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/s,
+      /:is\(\s*\.kx-titlebar-row,([^)]*)\)\s*:is\(\s*button,\s*a,\s*input[^)]*\),\s*html\[data-desktop-platform='macos'\] \[class\*='app-region:no-drag'\]\s*\{\s*-webkit-app-region: no-drag;/,
     );
     expect(scoped).not.toBeNull();
     for (const owner of [
@@ -422,7 +434,7 @@ describe('nothing re-hard-codes the band', () => {
 
 describe('sidebar hover peek owns one toggle and no title-bar gap', () => {
   const sidebar = readFileSync(
-    join(repoRoot, 'apps/web/src/features/workspace/project-sidebar/project-sidebar.tsx'),
+    join(repoRoot, 'packages/ui/src/workspace/sidebar/project-sidebar.tsx'),
     'utf8',
   );
 
@@ -448,7 +460,7 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
     presentation: readFileSync(
       join(
         repoRoot,
-        'apps/web/src/features/file-renderers/presentation/FullScreenPresentationViewer.tsx',
+        'packages/ui/src/files/renderers/presentation/FullScreenPresentationViewer.tsx',
       ),
       'utf8',
     ),
@@ -475,8 +487,8 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
   });
 
   test('account hub actions and breadcrumb share the titlebar band', () => {
-    const sidebar = codeOnly(readFileSync(join(repoRoot, 'apps/web/src/features/accounts/hub/account-settings-sidebar.tsx'), 'utf8'));
-    const shell = codeOnly(readFileSync(join(repoRoot, 'apps/web/src/features/accounts/hub/account-settings-shell.tsx'), 'utf8'));
+    const sidebar = codeOnly(readFileSync(join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-sidebar.tsx'), 'utf8'));
+    const shell = codeOnly(readFileSync(join(repoRoot, 'packages/ui/src/internal/account-hub/account-settings-shell.tsx'), 'utf8'));
     expect(sidebar).toContain('kx-titlebar-row kx-titlebar-band-height');
     expect(shell).toContain('kx-titlebar-row kx-titlebar-band-height');
     expect(shell).toContain('data-sidebar-collapsed={open ? undefined :');
@@ -489,7 +501,7 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
   });
 
   test('project-only top inset does not push the account sidebar below its breadcrumb', () => {
-    const projectSidebar = readFileSync(join(repoRoot, 'apps/web/src/features/workspace/project-sidebar/project-sidebar.tsx'), 'utf8');
+    const projectSidebar = readFileSync(join(repoRoot, 'packages/ui/src/workspace/sidebar/project-sidebar.tsx'), 'utf8');
     expect(projectSidebar).toContain('kx-project-sidebar-header');
     expect(css).toContain("html[data-desktop-platform='macos'] .kx-project-sidebar-header {");
     expect(css).not.toContain("[data-side='left'] [data-sidebar='header']");
@@ -512,24 +524,28 @@ describe('top-reaching standalone surfaces clear native macOS controls', () => {
  */
 describe('page-level sidebar openers are all the one SidebarToggle', () => {
   const views = {
-    'project-home.tsx': join(import.meta.dir, 'project-home.tsx'),
+    'project-home.tsx': join(repoRoot, 'packages/ui/src/workspace/layout/project-home.tsx'),
     'project-sessions-view.tsx': join(
       repoRoot,
-      'apps/web/src/features/workspace/project-sessions/project-sessions-view.tsx',
+      'packages/ui/src/workspace/sessions/project-sessions-view.tsx',
     ),
     'capability-tabs.tsx': join(
       repoRoot,
-      'apps/web/src/features/workspace/capabilities/shared/capability-tabs.tsx',
+      'packages/ui/src/customize/shared/capability-tabs.tsx',
     ),
     'session-site-header.tsx': join(
       repoRoot,
-      'apps/web/src/features/session/header/session-site-header.tsx',
+      'packages/ui/src/session/header/session-site-header.tsx',
     ),
     'drive-header.tsx': join(
       repoRoot,
-      'apps/web/src/features/project-files/components/drive-header.tsx',
+      'packages/ui/src/files/project/components/drive-header.tsx',
     ),
-    'apps-view.tsx': join(repoRoot, 'apps/web/src/features/apps/apps-view.tsx'),
+    // Apps draws its opener through this shared header.
+    'project-page-header.tsx': join(
+      repoRoot,
+      'packages/ui/src/internal/layout/project-page-header.tsx',
+    ),
     // The route that had NO opener on any of its headerless surfaces, which is
     // why the component exists. See HeaderlessSessionSurface.
     'sessions/[sessionId]/page.tsx': join(
@@ -542,7 +558,6 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
     const source = readFileSync(path, 'utf8');
 
     test(`${name} renders the shared SidebarToggle`, () => {
-      expect(source).toContain("from '@/features/workspace/project-layout/sidebar-toggle'");
       expect(source).toContain('<SidebarToggle');
     });
 
@@ -560,5 +575,58 @@ describe('page-level sidebar openers are all the one SidebarToggle', () => {
   test('only the desktop shell draws an opener in the band', () => {
     const shell = readFileSync(join(import.meta.dir, 'project-shell.tsx'), 'utf8');
     expect(shell).toContain('desktopShell && !isExpanded');
+  });
+});
+
+/**
+ * Windows: `titleBarOverlay` draws the caption buttons over the page's top
+ * row, top-right. The CSS block keyed on the shell's marker must agree with
+ * WIN_TITLEBAR, and every macOS band rule must also apply to it.
+ */
+describe('Windows overlay band: CSS mirrors the Electron geometry', () => {
+  const metrics = chrome.winBandMetrics();
+  const match = css.match(/html\[data-desktop-titlebar='overlay'\]\s*\{([^}]*)\}/);
+  const block = match?.[1] ?? '';
+
+  test('the block exists', () => {
+    expect(match).not.toBeNull();
+  });
+
+  test('band, menu slot, shell control, content and caption buttons', () => {
+    expect(cssVarPx(block, '--kx-titlebar-inset')).toBe(metrics.band);
+    expect(cssVarPx(block, '--kx-titlebar-menu-left')).toBe(metrics.menuLeft);
+    expect(cssVarPx(block, '--kx-titlebar-lights-end')).toBe(metrics.menuEnd);
+    expect(cssVarPx(block, '--kx-titlebar-control-top')).toBe(metrics.controlTop);
+    expect(cssVarPx(block, '--kx-titlebar-control-left')).toBe(metrics.controlLeft);
+    expect(cssVarPx(block, '--kx-titlebar-content-left')).toBe(metrics.contentLeft);
+    expect(cssVarPx(block, '--kx-titlebar-controls-width')).toBe(metrics.controlsWidth);
+  });
+
+  test('every offset cancels the shell zoom', () => {
+    for (const n of ['inset', 'menu-left', 'control-top', 'control-left', 'content-left', 'controls-width']) {
+      expect(block).toMatch(new RegExp(`--kx-titlebar-${n}:\\s*calc\\([^;]*var\\(--kx-desktop-zoom\\)`));
+    }
+  });
+
+  test('every macOS band rule also applies to the overlay band', () => {
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').split('}');
+    const missing = rules
+      .map((rule) => rule.slice(0, rule.indexOf('{')).trim())
+      .filter((sel) => sel.includes("html[data-desktop-platform='macos'] ") || sel.includes("html[data-desktop-platform='macos']\n"))
+      // The traffic-light gutter on the 6px drag strip is macOS only.
+      .filter((sel) => sel !== "html[data-desktop-platform='macos'] .kx-desktop-drag")
+      .filter((sel) => !sel.includes("html[data-desktop-titlebar='overlay']"));
+    expect(missing).toEqual([]);
+  });
+
+  test('the app-menu button shows only in the overlay band', () => {
+    expect(css).toMatch(/\.kx-desktop-app-menu\s*\{\s*display:\s*none;/);
+    expect(css).toMatch(/html\[data-desktop-titlebar='overlay'\] \.kx-desktop-app-menu\s*\{\s*display:\s*flex;/);
+    const desktopChrome = readFileSync(
+      join(repoRoot, 'apps/web/src/components/desktop/desktop-chrome.tsx'),
+      'utf8',
+    );
+    expect(desktopChrome).toContain('kx-desktop-app-menu');
+    expect(desktopChrome).toContain('showDesktopAppMenu(');
   });
 });

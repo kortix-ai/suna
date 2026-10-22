@@ -1,11 +1,15 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountMembers, accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
+import { SecretValueStatusSchema } from '@kortix/api-contract';
+import { accountSecretGrants, accountSecretResources, projects, sessionProviderSecretPools } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
+import type { Context } from 'hono';
+import type { AppEnv } from '../types';
 import { auth, errors, json } from '../openapi';
 import { db } from '../shared/db';
-import { encryptAccountSecret, memberMayReadProject, secretUsableInProject } from '../secrets/account-resource';
+import { accountMemberRow } from '../iam/membership-read';
+import { clearAccountSecretCooldown, encryptAccountSecret, memberMayReadProject, probeAccountSecret, secretUsableInProject } from '../secrets/account-resource';
 import { resolveFeatureFlag } from '../feature-flags/registry';
-import { actorOf, authorize, PROJECT_ACTIONS } from '../iam';
+import { ACCOUNT_ACTIONS, actorOf, authorize, PROJECT_ACTIONS } from '../iam';
 import { resolveCatalogUpstream } from '../llm-gateway/models/provider-registry';
 import { AccountIdParam, accountsRouter, getMembership } from './core/app';
 import { readJsonObject } from '../shared/http-body';
@@ -21,6 +25,8 @@ const View = z.object({
   needs_reauth_at: z.string().nullable(),
   created_by: z.string(), created_at: z.string(), updated_at: z.string(),
   granted_user_ids: z.array(z.string()), can_use: z.boolean(),
+  /** Can the server decrypt the stored value? Never carries the value. */
+  status: SecretValueStatusSchema,
 });
 const Create = z.object({
   project_id: z.string().uuid().optional(),
@@ -39,9 +45,14 @@ async function loadSecret(accountId: string, secretId: string) {
     .where(and(eq(accountSecretResources.accountId, accountId), eq(accountSecretResources.secretId, secretId))).limit(1);
   return row ?? null;
 }
-async function mayManage(userId: string, accountId: string, creatorId: string) {
-  const membership = await getMembership(userId, accountId);
-  return Boolean(membership && (membership.accountRole === 'owner' || membership.accountRole === 'admin' || creatorId === userId));
+/** The caller may manage a resource they created, or any resource with account.write. */
+async function mayManage(c: Context<AppEnv>, accountId: string, creatorId: string) {
+  const userId = c.get('userId') as string;
+  if (creatorId === userId) return Boolean(await getMembership(userId, accountId));
+  return mayWriteAccount(c, accountId);
+}
+async function mayWriteAccount(c: Context<AppEnv>, accountId: string) {
+  return (await authorize(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE)).allowed;
 }
 async function view(row: typeof accountSecretResources.$inferSelect, actorId: string) {
   const grants = await db.select({ userId: accountSecretGrants.userId }).from(accountSecretGrants)
@@ -54,6 +65,7 @@ async function view(row: typeof accountSecretResources.$inferSelect, actorId: st
     needs_reauth_at: row.needsReauthAt?.toISOString() ?? null,
     created_by: row.createdBy, created_at: row.createdAt.toISOString(), updated_at: row.updatedAt.toISOString(),
     granted_user_ids: grants.map((grant) => grant.userId),
+    status: probeAccountSecret(row.accountId, row.valueEnc),
     can_use: row.projectId
       ? secretUsableInProject(row, row.projectId, grants.some((grant) => grant.userId === actorId)) &&
         await memberMayReadProject(row.accountId, row.projectId, actorId)
@@ -77,7 +89,7 @@ export function registerSecretResourceRoutes() {
     if (projectId && !(await memberMayReadProject(accountId, projectId, userId, { mfaAal: c.get('mfaAal') }))) {
       return c.json({ error: 'Forbidden' }, 403);
     }
-    const manager = membership.accountRole === 'owner' || membership.accountRole === 'admin';
+    const manager = await mayWriteAccount(c, accountId);
     const rows = await db.select().from(accountSecretResources).where(eq(accountSecretResources.accountId, accountId));
     const scoped = rows.filter((row) => !projectId ? row.projectId === null : row.projectId === null || row.projectId === projectId);
     const views = await Promise.all(scoped.map((row) => view(row, userId)));
@@ -153,7 +165,7 @@ export function registerSecretResourceRoutes() {
     const actorId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!row.projectId || !(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!row.projectId || !(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     // Narrowing a key to its creator skips the `authorize` below: the caller's
     // own request, with its MFA level, is checked here instead.
     if (!(await memberMayReadProject(accountId, row.projectId, actorId, { mfaAal: c.get('mfaAal') }))) {
@@ -193,7 +205,7 @@ export function registerSecretResourceRoutes() {
     const userId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(userId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     if (row.providerId === 'codex' && row.name === 'CODEX_AUTH_JSON') {
       return c.json({ error: 'Reconnect this ChatGPT account to refresh its OAuth login' }, 400);
     }
@@ -202,6 +214,23 @@ export function registerSecretResourceRoutes() {
     const [updated] = await db.update(accountSecretResources).set({ valueEnc: encryptAccountSecret(accountId, parsed.data.value), cooldownUntil: null, needsReauthAt: null, updatedAt: new Date() })
       .where(eq(accountSecretResources.secretId, row.secretId)).returning();
     return c.json(await view(updated!, userId));
+  });
+
+  // An owner's "retry now": a ChatGPT plan's usage can be reset before the reset
+  // the provider named; the rest ends now instead of on the next 15-min re-try.
+  accountsRouter.openapi(createRoute({
+    method: 'post', path: '/{accountId}/secret-resources/{secretId}/retry', tags: ['secrets'],
+    summary: 'End the rate-limit rest of one stored account', ...auth,
+    request: { params: SecretIdParam },
+    responses: { 200: json(View, 'Secret metadata with no cooldown'), ...errors(403, 404) },
+  }), async (c) => {
+    const { accountId, secretId } = c.req.valid('param');
+    const userId = c.get('userId') as string;
+    const row = await loadSecret(accountId, secretId);
+    if (!row) return c.json({ error: 'Not found' }, 404);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    await clearAccountSecretCooldown(row.secretId, accountId);
+    return c.json(await view({ ...row, cooldownUntil: null, cooldownProbeAt: null }, userId));
   });
 
   accountsRouter.openapi(createRoute({
@@ -214,7 +243,7 @@ export function registerSecretResourceRoutes() {
     const userId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(userId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     await db.transaction(async (tx) => {
       await tx.update(sessionProviderSecretPools)
         .set({ secretIds: sql`${sessionProviderSecretPools.secretIds} - ${row.secretId}`, updatedAt: new Date() })
@@ -235,10 +264,24 @@ export function registerSecretResourceRoutes() {
     const userId = c.req.param('userId');
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
-    const [member] = await db.select({ userId: accountMembers.userId }).from(accountMembers)
-      .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId))).limit(1);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    const [member] = await accountMemberRow(accountId, userId);
     if (!member) return c.json({ error: 'Member not found' }, 404);
+    // Same checks as `PUT .../access`: a project key is shared only by someone
+    // who may read the project, and sharing beyond the creator needs
+    // `project.secret.write`; the grantee must be able to read the project.
+    if (row.projectId) {
+      if (!(await memberMayReadProject(accountId, row.projectId, actorId, { mfaAal: c.get('mfaAal') }))) {
+        return c.json({ error: 'Forbidden' }, 403);
+      }
+      if (userId !== row.createdBy) {
+        const verdict = await authorize(await actorOf(c, accountId), PROJECT_ACTIONS.PROJECT_SECRET_WRITE, { type: 'project', id: row.projectId });
+        if (!verdict.allowed) return c.json({ error: 'Project secret write access required' }, 403);
+      }
+      if (!(await memberMayReadProject(accountId, row.projectId, userId))) {
+        return c.json({ error: 'Member has no project access' }, 400);
+      }
+    }
     await db.insert(accountSecretGrants).values({ accountId, secretId: row.secretId, userId, grantedBy: actorId }).onConflictDoNothing();
     return c.json(await view(row, actorId));
   });
@@ -253,7 +296,7 @@ export function registerSecretResourceRoutes() {
     const actorId = c.get('userId') as string;
     const row = await loadSecret(accountId, c.req.param('secretId'));
     if (!row) return c.json({ error: 'Not found' }, 404);
-    if (!(await mayManage(actorId, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
+    if (!(await mayManage(c, accountId, row.createdBy))) return c.json({ error: 'Forbidden' }, 403);
     if (row.providerId === 'codex' && row.createdBy === c.req.param('userId')) {
       return c.json({ error: 'The connection owner keeps access' }, 400);
     }

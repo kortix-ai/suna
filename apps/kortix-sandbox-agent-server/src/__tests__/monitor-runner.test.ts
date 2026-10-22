@@ -11,14 +11,8 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import {
-  MONITOR_LINE_MAX_BYTES,
-  MonitorRunner,
-  type MonitorSpec,
-  type MonitorWireEvent,
-  normalizeLine,
-  parseMonitorSpecs,
-} from '@/services/monitor/monitor-runner'
+import { MONITOR_LINE_MAX_BYTES, type MonitorWireEvent } from '@kortix/api-contract/runtime-relay'
+import { MonitorRunner, type MonitorSpec, normalizeLine, parseMonitorSpecs } from '@/services/monitor/monitor-runner'
 
 const API_URL = 'http://api.test/v1'
 const PROJECT_ID = 'proj-1'
@@ -241,7 +235,9 @@ describe('batching', () => {
   test('an overflow during a POST drops behind the lines on the wire, never them', async () => {
     script(
       'wave.sh',
-      '#!/bin/bash\nfor i in $(seq 1 5); do echo "line-$i"; done\n' +
+      // line-1..5 leave in ONE write: five echoes can reach the reader in two
+      // chunks under load, and the first POST then carries only three.
+      "#!/bin/bash\nprintf 'line-1\\nline-2\\nline-3\\nline-4\\nline-5\\n'\n" +
         'while [ ! -e go ]; do sleep 0.01; done\n' +
         'for i in $(seq 6 40); do echo "line-$i"; done\nsleep 30\n',
     )

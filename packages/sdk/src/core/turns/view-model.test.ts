@@ -38,9 +38,9 @@ describe('toolViewModel — web-search / image-search', () => {
       output: JSON.stringify({
         query: 'kortix ai',
         success: true,
-        answer: 'Kortix is an open AI command center.',
+        answer: 'Kortix is an open-source AI Operating System.',
         results: [
-          { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open AI command center.' },
+          { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open-source AI Operating System.' },
         ],
       }),
       title: 'Web Search',
@@ -52,9 +52,9 @@ describe('toolViewModel — web-search / image-search', () => {
       kind: 'web-search',
       query: 'kortix ai',
       results: [
-        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open AI command center.' },
+        { title: 'Kortix', url: 'https://kortix.ai', snippet: 'The open-source AI Operating System.' },
       ],
-      answer: 'Kortix is an open AI command center.',
+      answer: 'Kortix is an open-source AI Operating System.',
     });
   });
 
@@ -242,6 +242,29 @@ describe('toolViewModel — file read/write/edit', () => {
         { type: 'removed', text: 'line2' },
         { type: 'added', text: 'CHANGED' },
         { type: 'unchanged', text: 'line3' },
+      ],
+    });
+  });
+});
+
+describe('toolViewModel — Claude Code edits', () => {
+  test('MultiEdit: one diff per replaced block of edits[]', () => {
+    const tool = classifyToolPart('MultiEdit', {
+      status: 'completed',
+      input: { file_path: '/repo/a.ts', edits: [{ old_string: 'a', new_string: 'b' }, { old_string: 'c', new_string: 'd' }] },
+      output: 'ok',
+      title: '',
+      metadata: {},
+      time: { start: 0, end: 1 },
+    });
+    expect(toolViewModel(tool)).toEqual({
+      kind: 'file-edit',
+      path: '/repo/a.ts',
+      diff: [
+        { type: 'removed', text: 'a' },
+        { type: 'added', text: 'b' },
+        { type: 'removed', text: 'c' },
+        { type: 'added', text: 'd' },
       ],
     });
   });

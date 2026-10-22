@@ -112,7 +112,15 @@ describe('renamed constants', () => {
     expect(GRANTABLE_KORTIX_PERMISSIONS.every((a) => a.startsWith('project.'))).toBe(true);
   });
   test('alias tables are exported under the new names', () => {
-    expect(DEPRECATED_KORTIX_PERMISSION_ALIASES['project.cr.open']).toBe('project.gitops.push');
+    expect(DEPRECATED_KORTIX_PERMISSION_ALIASES['project.cr.open']).toEqual(['project.gitops.push']);
+    // One-to-many: the retired umbrella leaf expands to one leaf per topic.
+    expect(DEPRECATED_KORTIX_PERMISSION_ALIASES['project.customize.write']).toEqual([
+      'project.settings.write',
+      'project.sandbox.write',
+      'project.model.read',
+      'project.model.write',
+      'project.agent.write',
+    ]);
     expect(LEGACY_TOLERATED_KORTIX_PERMISSIONS).toContain('project.schedule.read');
   });
 });

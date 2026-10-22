@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { mkdtemp } from 'node:fs/promises';
@@ -33,6 +33,8 @@ let transcriptRequests: URL[] = [];
 let transcriptSources: Record<string, 'live' | 'mirror'> = {};
 let apiRequests: string[] = [];
 let clientCreatesBranch = false;
+let readinessStage = 'ready';
+let onStart = () => {};
 
 function git(args: string[], cwd?: string): string {
   return execFileSync('git', args, {
@@ -104,6 +106,8 @@ describe('sessions new CLI flow', () => {
     transcriptSources = {};
     apiRequests = [];
     clientCreatesBranch = false;
+    readinessStage = 'ready';
+    onStart = () => {};
 
     cpSync(join(templateRoot, 'repo'), repo, { recursive: true });
     cpSync(join(templateRoot, 'origin.git'), origin, { recursive: true });
@@ -162,6 +166,20 @@ describe('sessions new CLI flow', () => {
             metadata: {},
             created_at: '2026-01-01T00:00:00.000Z',
             updated_at: '2026-01-01T00:00:00.000Z',
+          });
+        }
+        if (req.method === "POST" && url.pathname.endsWith("/start")) {
+          onStart();
+          return Response.json({ stage: readinessStage });
+        }
+        if (
+          req.method === "GET" &&
+          url.pathname.startsWith(`/v1/projects/${PROJECT_ID}/sessions/`) &&
+          !url.pathname.endsWith("/transcript")
+        ) {
+          return Response.json({
+            session_id: "00000000-0000-4000-a000-000000000333",
+            status: readinessStage === "ready" ? "running" : readinessStage,
           });
         }
         if (req.method === 'GET' && url.pathname === `/v1/projects/${PROJECT_ID}/sessions`) {
@@ -256,6 +274,86 @@ describe('sessions new CLI flow', () => {
     if (root) rmSync(root, { recursive: true, force: true });
   });
 
+  for (const stage of ["ready", "failed", "stopped"]) {
+    test(`--wait --json reports creation and ${stage} on stderr, leaving stdout as JSON`, async () => {
+      readinessStage = stage;
+      let stderr = "";
+      const output = spyOn(process.stderr, "write").mockImplementation(
+        (chunk) => {
+          stderr += String(chunk);
+          return true;
+        },
+      );
+      onStart = () => {
+        expect(stderr).toContain("created");
+      };
+      try {
+        const { code, stdout } = await captureStdout(() =>
+          runSessions(["new", "--wait", "--json"]),
+        );
+        expect(code).toBe(stage === "ready" ? 0 : 1);
+        expect(stderr).toContain("created");
+        expect(stderr).toContain("00000000-0000-4000-a000-000000000333");
+        expect(stderr).toContain(stage);
+        expect(JSON.parse(stdout)).toMatchObject({
+          status: stage === "ready" ? "running" : stage,
+        });
+      } finally {
+        output.mockRestore();
+      }
+    });
+  }
+
+  test('reports intermediate readiness transitions only once', async () => {
+    let stderr = '';
+    let polls = 0;
+    const output = spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      stderr += String(chunk);
+      return true;
+    });
+    onStart = () => {
+      polls += 1;
+      readinessStage = polls < 3 ? 'provisioning' : 'ready';
+    };
+    try {
+      const { code, stdout } = await captureStdout(() => runSessions(['new', '--wait', '--json']));
+      expect(code).toBe(0);
+      expect(stderr.match(/: provisioning\n/g)).toHaveLength(1);
+      expect(stderr).toContain(': ready\n');
+      expect(JSON.parse(stdout)).toMatchObject({ status: 'running' });
+    } finally {
+      output.mockRestore();
+    }
+  });
+
+  test("real CLI keeps progress off JSON stdout", async () => {
+    const child = Bun.spawn(
+      [
+        process.execPath,
+        new URL("../index.ts", import.meta.url).pathname,
+        "sessions",
+        "new",
+        "--wait",
+        "--json",
+      ],
+      {
+        cwd: repo,
+        env: process.env,
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
+    expect(code).toBe(0);
+    expect(JSON.parse(stdout)).toMatchObject({ status: "running" });
+    expect(stderr).toContain("created");
+    expect(stderr).toContain("ready");
+  });
+
   test('creates the session branch with local git credentials before creating the API session', async () => {
     clientCreatesBranch = true;
     const code = await runSessions(['new']);
@@ -288,6 +386,33 @@ describe('sessions new CLI flow', () => {
     expect(code).toBe(0);
     expect(sessionCreateBody).not.toBeNull();
     expect(sessionCreateBody).not.toHaveProperty('agent_name');
+  });
+
+  test('--prompt from inside a sandbox stores the prompt verbatim and the contract as initial_context', async () => {
+    // The ambient session token is what makes a spawn "from inside a sandbox".
+    process.env.KORTIX_TOKEN = 'test-token';
+    try {
+      const code = await runSessions(['new', '--prompt', 'Reply with the single word pong']);
+
+      expect(code).toBe(0);
+      expect(sessionCreateBody).not.toBeNull();
+      // The stored user message is the caller's words, verbatim.
+      expect(sessionCreateBody!.initial_prompt).toBe('Reply with the single word pong');
+      // The worker contract rides beside it, for the model, not the transcript.
+      expect(sessionCreateBody!.initial_context).toMatch(/Do not spawn other sessions/);
+      expect(sessionCreateBody!.title_source).toBe('Reply with the single word pong');
+    } finally {
+      delete process.env.KORTIX_TOKEN;
+    }
+  });
+
+  test('--prompt from a human host stores the prompt verbatim with no contract', async () => {
+    const code = await runSessions(['new', '--prompt', 'Reply with the single word pong']);
+
+    expect(code).toBe(0);
+    expect(sessionCreateBody).not.toBeNull();
+    expect(sessionCreateBody!.initial_prompt).toBe('Reply with the single word pong');
+    expect(sessionCreateBody).not.toHaveProperty('initial_context');
   });
 
   test('creates a session with explicit connector scope', async () => {

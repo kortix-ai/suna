@@ -3,8 +3,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { type ReactTestRenderer, act, create } from 'react-test-renderer';
 import { useSyncStore } from '../browser/stores/sync-store';
+import type { KeyValueStorage } from '../core/cache/persisted-query-cache';
 import { configureKortix } from '../core/http/config';
+import type { SessionTranscriptSyncEnvelope } from '../core/rest/projects-client/sessions';
 import { resetSessionOpenBundles } from '../core/session/open-bundle';
+import { createSavedCopyStore, setSavedCopyStore } from '../core/session-sync/saved-copy-store';
+import { readSavedSessionCopy } from '../core/session-sync/saved-transcript';
 import { useSession } from './opencode';
 
 /**
@@ -78,20 +82,37 @@ function envelope(saved: boolean) {
 function bundle(
   pin: string | null,
   saved: boolean,
-  legs: { turn?: Record<string, unknown>; queue?: Record<string, unknown> } = {},
+  legs: {
+    turn?: Record<string, unknown>;
+    queue?: Record<string, unknown>;
+    /** The saved window the snapshot carries. Default: `envelope(saved)`. */
+    transcript?: Record<string, unknown>;
+  } = {},
 ) {
   return {
     observed_at: '2026-09-25T00:00:00Z',
     session: row(pin),
     turn: legs.turn ?? { known: false, reason: 'test' },
     queue: legs.queue ?? { known: false, reason: 'test' },
-    transcript: { known: true, requested: true, ...envelope(saved) },
-    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: false },
+    transcript: { known: true, requested: true, ...(legs.transcript ?? envelope(saved)) },
+    config: { known: true, base_ref: null, agent_name: null, llm_gateway_enabled: true },
     models: { known: false, reason: 'test' },
   };
 }
 
-/** Routes the session-open reads; `/start` and anything unlisted never answer. */
+/** A snapshot read that failed: every consumer falls back to its own route. */
+const failedSnapshot = async () => Response.json({ error: 'Not found' }, { status: 404 });
+
+/** Every URL the hook requested, in order. */
+let urls: string[] = [];
+/** The saved-window reads among them (`/transcript?…`), with or without history. */
+const transcriptReads = () => urls.filter((url) => url.includes('/transcript?'));
+const snapshotReads = () => urls.filter((url) => url.includes('/snapshot'));
+
+/**
+ * Routes the session-open reads; `/start` and anything unlisted never answer. `GET …/log`
+ * answers 404: these tests pin the v1 saved copy, the fallback on a server older than the log.
+ */
 function serve(routes: {
   snapshot?: () => Promise<Response>;
   history?: () => Promise<Response>;
@@ -100,8 +121,11 @@ function serve(routes: {
   experimental?: Record<string, boolean>;
 }) {
   const never = () => new Promise<Response>(() => {});
+  urls = [];
   globalThis.fetch = mock(async (input: unknown) => {
     const url = String(input instanceof Request ? input.url : input);
+    urls.push(url);
+    if (new URL(url).pathname.endsWith('/log')) return Response.json({ error: 'Not found' }, { status: 404 });
     if (url.includes('/snapshot')) return (routes.snapshot ?? never)();
     if (url.includes('/transcript?') && url.includes('history=true'))
       return (routes.history ?? never)();
@@ -227,7 +251,7 @@ test('the history read paints the copy without waiting for the project detail', 
   // Saved history has no project flag any more, so nothing it needs sits
   // behind the project detail read.
   serve({
-    snapshot: () => new Promise<Response>(() => {}),
+    snapshot: failedSnapshot,
     history: async () => Response.json(envelope(true)),
   });
   await mount({ enabled: true });
@@ -238,7 +262,7 @@ test('the history read paints the copy without waiting for the project detail', 
 test('a project that stored the old off override still paints its saved history', async () => {
   serve({
     experimental: { session_transcript_history: false },
-    snapshot: () => new Promise<Response>(() => {}),
+    snapshot: failedSnapshot,
     history: async () => Response.json(envelope(true)),
   });
   await mount({ enabled: true });
@@ -246,16 +270,118 @@ test('a project that stored the old off override still paints its saved history'
   expect(current().messages).toHaveLength(1);
 });
 
+describe('one saved-history read per open (KRTX-189)', () => {
+  // The snapshot carries the saved window; with no snapshot to ride, the
+  // history route answers. The sync layer's own read never runs beside it,
+  // also when the root is known before the history answers (`initialPin`),
+  // which is when it used to.
+  afterEach(() => setSavedCopyStore(null));
+
+  function held() {
+    let answer!: (response: Response) => void;
+    const response = () =>
+      new Promise<Response>((resolve) => {
+        answer = resolve;
+      });
+    return { response, answer: (body: unknown) => answer(Response.json(body)) };
+  }
+
+  test('with the snapshot in flight, the snapshot carries the window: no transcript route is read', async () => {
+    const snapshot = held();
+    serve({ snapshot: snapshot.response, history: async () => Response.json(envelope(true)) });
+    await mount({ enabled: true, initialPin: ROOT });
+    expect(current().savedTranscript).toBe('loading');
+    await act(async () => snapshot.answer(bundle(ROOT, true)));
+    await flush();
+    expect(current().savedTranscript).toBe('shown');
+    expect(current().messages).toHaveLength(1);
+    expect(snapshotReads()).toHaveLength(1);
+    expect(transcriptReads()).toEqual([]);
+  });
+
+  test('with no snapshot to ride, exactly one transcript read answers', async () => {
+    serve({ snapshot: failedSnapshot, history: async () => Response.json(envelope(true)) });
+    await mount({ enabled: true, initialPin: ROOT });
+    expect(current().savedTranscript).toBe('shown');
+    expect(transcriptReads()).toHaveLength(1);
+    expect(transcriptReads()[0]).toContain('history=true');
+  });
+
+  test('a copy read before the bind answers the open: the snapshot asks for the pointer only, and no transcript route is read again', async () => {
+    serve({
+      snapshot: async () => Response.json(bundle(ROOT, true, { transcript: { requested: false } })),
+      history: async () => Response.json(envelope(true)),
+    });
+    // A connecting view read the copy while the computer woke.
+    await readSavedSessionCopy({ projectId: PROJECT_ID, sessionId: SESSION_ID, runtimeSessionId: ROOT });
+    expect(transcriptReads()).toHaveLength(1);
+    await mount({ enabled: true, initialPin: ROOT });
+    expect(current().savedTranscript).toBe('shown');
+    expect(current().messages).toHaveLength(1);
+    expect(snapshotReads()).toHaveLength(1);
+    expect(snapshotReads()[0]).toContain('transcript=0');
+    expect(transcriptReads()).toHaveLength(1);
+  });
+
+  test('an absent history still resolves to none, with one transcript read', async () => {
+    serve({ snapshot: failedSnapshot, history: async () => Response.json(envelope(false)) });
+    await mount({ enabled: true, initialPin: ROOT });
+    expect(current().savedTranscript).toBe('none');
+    expect(transcriptReads()).toHaveLength(1);
+  });
+
+  test("the device's copy paints first, and the snapshot's copy reconciles into it with no transcript read", async () => {
+    const data = new Map<string, string>();
+    const storage: KeyValueStorage = {
+      getItem: (key) => data.get(key) ?? null,
+      setItem: (key, value) => {
+        data.set(key, value);
+      },
+      removeItem: (key) => {
+        data.delete(key);
+      },
+    };
+    const copies = createSavedCopyStore({ storage, userId: 'user-a' });
+    const kept = envelope(true);
+    await copies.write(PROJECT_ID, SESSION_ID, {
+      ...kept,
+      captured_at: '2026-09-24T00:00:00Z',
+      message_count: 2,
+      messages: [
+        { ...kept.messages[0], info: { ...kept.messages[0].info, id: 'msg_device_0', time: { created: 0, completed: 1 } } },
+        ...kept.messages,
+      ],
+    } as unknown as SessionTranscriptSyncEnvelope);
+    setSavedCopyStore(copies);
+    const snapshot = held();
+    serve({ snapshot: snapshot.response });
+
+    await mount({ enabled: true, initialPin: ROOT });
+    expect(current().savedTranscript).toBe('shown');
+    expect(current().messages).toHaveLength(2);
+
+    await act(async () => snapshot.answer(bundle(ROOT, true)));
+    await flush();
+    expect(current().messages.some((message) => message.info.id === 'msg_saved_1')).toBe(true);
+    expect(transcriptReads()).toEqual([]);
+  });
+});
+
 describe('an empty conversation', () => {
   // The server's saved copy proves the conversation empty: a complete read of
   // the runtime found no messages. With no turn ever and nothing queued there
   // is nothing to wait for, so a host opens it on its composer.
   const neverRan = { turn: { known: true, turns: [] }, queue: { known: true, prompts: [], held: false } };
-  const provenEmpty = () =>
-    Response.json({ ...envelope(true), message_count: 0, total: 0, messages: [] });
+  // The snapshot carries the same window the route serves: the saved-history
+  // read takes it from whichever answers this open (KRTX-189).
+  const provenEmptyCopy = { ...envelope(true), message_count: 0, total: 0, messages: [] };
+  const provenEmpty = () => Response.json(provenEmptyCopy);
 
   test('a saved copy that proves it empty, no turn ever and nothing queued is an empty conversation', async () => {
-    serve({ snapshot: async () => Response.json(bundle(ROOT, false, neverRan)), history: async () => provenEmpty() });
+    serve({
+      snapshot: async () => Response.json(bundle(ROOT, false, { ...neverRan, transcript: provenEmptyCopy })),
+      history: async () => provenEmpty(),
+    });
     await mount({ enabled: true });
     expect(current().savedTranscript).toBe('none');
     expect(current().conversationEmpty).toBe(true);
@@ -282,13 +408,19 @@ describe('an empty conversation', () => {
         last_ended: { turn_token: 'tok_1', message_id: null, end_reason: 'completed', ended_at: '2026-09-25T00:00:00Z' },
       },
     };
-    serve({ snapshot: async () => Response.json(bundle(ROOT, false, ended)), history: async () => provenEmpty() });
+    serve({
+      snapshot: async () => Response.json(bundle(ROOT, false, { ...ended, transcript: provenEmptyCopy })),
+      history: async () => provenEmpty(),
+    });
     await mount({ enabled: true });
     expect(current().conversationEmpty).toBe(false);
   });
 
   test('an unanswered turn record is an unknown, never an empty, and never the boot screen', async () => {
-    serve({ snapshot: async () => Response.json(bundle(ROOT, false)), history: async () => provenEmpty() });
+    serve({
+      snapshot: async () => Response.json(bundle(ROOT, false, { transcript: provenEmptyCopy })),
+      history: async () => provenEmpty(),
+    });
     await mount({ enabled: true });
     expect(current().conversationEmpty).toBe(false);
     // The composer may be one read away: placeholder rows, not a boot screen.

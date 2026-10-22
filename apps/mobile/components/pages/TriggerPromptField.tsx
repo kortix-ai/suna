@@ -22,8 +22,24 @@ import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { CaretRightIcon } from '@/lib/icons';
 
-/** Read-only prompt tile. It scrolls with the sheet and never takes focus. */
-export function PromptPreview({ value, onEdit }: { value: string; onEdit: () => void }) {
+/**
+ * Read-only prompt tile. It scrolls with the sheet and never takes focus.
+ * Without `onEdit` (a viewer who may not update the trigger) it is plain text:
+ * no press, no chevron.
+ */
+export function PromptPreview({ value, onEdit }: { value: string; onEdit?: () => void }) {
+  if (!onEdit) {
+    return (
+      <View className="gap-2">
+        <Text variant="muted" className="px-4">
+          Prompt
+        </Text>
+        <View className="overflow-hidden rounded-2xl bg-secondary px-4 py-3">
+          <Text numberOfLines={4}>{value.trim() || 'No prompt'}</Text>
+        </View>
+      </View>
+    );
+  }
   return (
     <View className="gap-2">
       <Text variant="muted" className="px-4">

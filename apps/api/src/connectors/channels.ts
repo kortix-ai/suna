@@ -9,6 +9,7 @@
  * Slack catalog mirrors the in-sandbox `slack` CLI 1:1 for full parity. See
  * KORTIX-206.
  */
+import { config } from '../config';
 import type { ConnectorAuth } from './call';
 import type { ActionBinding, NormalizedAction, Risk } from './types';
 
@@ -25,6 +26,7 @@ import type { ActionBinding, NormalizedAction, Risk } from './types';
 export const SLACK_CHANNEL_CONNECTOR_SLUG = 'kortix_slack';
 export const TEAMS_CHANNEL_CONNECTOR_SLUG = 'kortix_teams';
 export const EMAIL_CHANNEL_CONNECTOR_SLUG = 'kortix_email';
+export const TELEGRAM_CHANNEL_CONNECTOR_SLUG = 'kortix_telegram';
 
 export function channelDefaultSlug(platform: string): string {
   switch (platform) {
@@ -34,6 +36,8 @@ export function channelDefaultSlug(platform: string): string {
       return TEAMS_CHANNEL_CONNECTOR_SLUG;
     case 'email':
       return EMAIL_CHANNEL_CONNECTOR_SLUG;
+    case 'telegram':
+      return TELEGRAM_CHANNEL_CONNECTOR_SLUG;
     default:
       return platform;
   }
@@ -43,6 +47,8 @@ export function channelDefaultSlug(platform: string): string {
  * Per-platform credential placement.
  */
 export function channelAuth(platform: string): ConnectorAuth {
+  // Telegram's Bot API takes the token as the first path segment: /bot<token>/<method>.
+  if (platform === 'telegram') return { type: 'custom', in: 'path', name: null, prefix: 'bot' };
   return { type: 'bearer', in: 'header', name: null, prefix: null };
 }
 
@@ -60,6 +66,8 @@ export function channelApiBase(platform: string): string {
       return 'https://graph.microsoft.com/v1.0';
     case 'email':
       return 'https://api.agentmail.to/v0';
+    case 'telegram':
+      return config.TELEGRAM_API_URL;
     default:
       return '';
   }
@@ -74,6 +82,8 @@ export function channelLabel(platform: string): string {
       return 'Microsoft Teams';
     case 'email':
       return 'Email';
+    case 'telegram':
+      return 'Telegram';
     default:
       return platform;
   }
@@ -143,7 +153,7 @@ const SLACK_ACTIONS: ChannelActionDef[] = [
     verb: 'POST',
     name: 'Send message',
     description:
-      'Post a message to a Slack channel or thread. Provide `channel` plus `text` and/or Block Kit `blocks`; set `thread_ts` to reply in a thread. From a session, the thread is bound to that session, so human replies in it come back to it; `thread_binding` in the result reports whether the bind held.',
+      'Post a message to a Slack channel or thread. Provide `channel` plus `text` and/or Block Kit `blocks`; set `thread_ts` to reply in a thread. From a session, the thread is bound to that session, so a human reply in it comes back to it when it @mentions the bot (any reply in a DM); `thread_binding` in the result reports whether the bind held.',
     risk: 'write',
     properties: {
       channel: { type: 'string', description: 'Channel ID (e.g. C0123) or user ID for a DM.' },
@@ -637,6 +647,98 @@ const TEAMS_ACTIONS: ChannelActionDef[] = [
   },
 ];
 
+/**
+ * The Telegram catalog — Bot API methods, all `POST` with a JSON body. The bot
+ * token is the first path segment (channelAuth), resolved server-side.
+ */
+const TELEGRAM_CHAT_ID = {
+  type: 'string',
+  description: 'Chat id (from the incoming message) or @channel_username.',
+} as const;
+
+const TELEGRAM_ACTIONS: ChannelActionDef[] = [
+  {
+    path: 'send_message',
+    method: 'sendMessage',
+    verb: 'POST',
+    name: 'Send message',
+    description:
+      'Send a text message to a Telegram chat, at most 4096 characters; split longer answers. Set `reply_parameters.message_id` to reply to a message and `message_thread_id` to post in a forum topic. `parse_mode: "HTML"` enables <b>, <i>, <code>, <pre> and <a href>.',
+    risk: 'write',
+    properties: {
+      chat_id: TELEGRAM_CHAT_ID,
+      text: { type: 'string', description: 'Message text, 1-4096 characters.' },
+      reply_parameters: { type: 'object', description: 'Optional `{ "message_id": <id> }` to reply to.' },
+      message_thread_id: { type: 'integer', description: 'Optional forum topic id.' },
+      parse_mode: { type: 'string', description: 'Optional `HTML` or `MarkdownV2`.' },
+      reply_markup: { type: 'object', description: 'Optional inline keyboard `{ "inline_keyboard": [[{ "text", "url" }]] }`.' },
+    },
+    required: ['chat_id', 'text'],
+  },
+  {
+    path: 'edit_message_text',
+    method: 'editMessageText',
+    verb: 'POST',
+    name: 'Edit message',
+    description: 'Replace the text of a message the bot sent. Requires `chat_id`, `message_id` and `text`.',
+    risk: 'write',
+    properties: {
+      chat_id: TELEGRAM_CHAT_ID,
+      message_id: { type: 'integer', description: 'Id of the message to edit.' },
+      text: { type: 'string', description: 'New text, 1-4096 characters.' },
+      parse_mode: { type: 'string', description: 'Optional `HTML` or `MarkdownV2`.' },
+    },
+    required: ['chat_id', 'message_id', 'text'],
+  },
+  {
+    path: 'delete_message',
+    method: 'deleteMessage',
+    verb: 'POST',
+    name: 'Delete message',
+    description: 'Delete a message the bot sent, less than 48 hours old.',
+    risk: 'destructive',
+    properties: {
+      chat_id: TELEGRAM_CHAT_ID,
+      message_id: { type: 'integer', description: 'Id of the message to delete.' },
+    },
+    required: ['chat_id', 'message_id'],
+  },
+  {
+    path: 'send_chat_action',
+    method: 'sendChatAction',
+    verb: 'POST',
+    name: 'Show typing',
+    description: 'Show "typing…" in a chat for about 5 seconds while you work on an answer.',
+    risk: 'read',
+    properties: {
+      chat_id: TELEGRAM_CHAT_ID,
+      action: { type: 'string', description: 'Use `typing`.' },
+    },
+    required: ['chat_id', 'action'],
+    defaults: { action: 'typing' },
+  },
+  {
+    path: 'get_chat',
+    method: 'getChat',
+    verb: 'POST',
+    name: 'Get chat',
+    description: 'Fetch a chat: its type, title or username.',
+    risk: 'read',
+    properties: { chat_id: TELEGRAM_CHAT_ID },
+    required: ['chat_id'],
+  },
+  {
+    path: 'get_me',
+    method: 'getMe',
+    verb: 'POST',
+    name: 'Get bot',
+    description: 'Fetch the bot itself: its id and username.',
+    risk: 'read',
+    properties: {},
+    required: [],
+  },
+];
+
 /** The fixed catalog for a channel platform (empty for an unknown platform). */
 /**
  * Merge a Slack action's curated defaults under the caller's args. Read live at
@@ -647,8 +749,8 @@ export function withChannelDefaults(
   actionPath: string,
   args: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (platform !== 'slack') return args;
-  const defaults = SLACK_ACTIONS.find((a) => a.path === actionPath)?.defaults;
+  const actions = platform === 'slack' ? SLACK_ACTIONS : platform === 'telegram' ? TELEGRAM_ACTIONS : null;
+  const defaults = actions?.find((a) => a.path === actionPath)?.defaults;
   return defaults ? { ...defaults, ...args } : args;
 }
 
@@ -660,6 +762,8 @@ export function channelCatalog(platform: string): NormalizedAction[] {
       return TEAMS_ACTIONS.map(toAction);
     case 'email':
       return EMAIL_ACTIONS.map(toAction);
+    case 'telegram':
+      return TELEGRAM_ACTIONS.map(toAction);
     default:
       return [];
   }

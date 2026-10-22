@@ -8,14 +8,15 @@
  * the DB on first read for a project) or directly via the UI/CRUD API.
  *
  * Provider-agnostic: each template carries the provider of its most recent
- * successful build; the matching Daytona, Platinum, or E2B adapter is resolved
+ * successful build; the matching Platinum or Daytona adapter is resolved
  * through the shared provider registry.
  */
 
-import { and, eq, isNull, ne, or } from 'drizzle-orm';
+import { and, eq, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
+import { DEFAULT_CPU, DEFAULT_DISK_GB, DEFAULT_MEMORY_GB } from './build-context';
 import { isWarmBuildSlug, templateSlugFromBuildSlug } from './build-slug';
 import { metadataMerge } from '../projects/lib/metadata-merge';
 import { isReapableTemplatePredecessor } from './predecessor-reap-policy';
@@ -38,18 +39,11 @@ import {
 } from './template-runtime-fingerprint';
 export {
   currentRuntimeArtifactFingerprint,
-  currentNonAgentRuntimeFingerprint,
-  runtimeArtifactsForBootMode,
+  RUNTIME_ARTIFACTS,
 } from './template-runtime-fingerprint';
-import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
-const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
-const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
-
-function readPositiveIntEnv(name: string, fallback: number): number {
-  const raw = Number.parseInt(process.env[name] || '', 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
-}
+import { getSandboxProvider } from './providers';
+import { BoundedMap } from '../shared/bounded-map';
+import { resolveSessionSandboxRegion } from '../platform/services/sandbox-region';
 
 /** Pretty resolved view used by both the boot path and the UI. */
 export interface ResolvedTemplate {
@@ -97,7 +91,7 @@ export interface ResolvedTemplate {
  * a manifest mutation (CR merge handles its own reconciliation).
  */
 const TOML_SYNC_TTL_MS = 60_000;
-const tomlSyncCache = new Map<string, number>();
+const tomlSyncCache = new BoundedMap<string, number>(2_000);
 
 /**
  * Per-project cache of the resolved template list. Burst session-boot scenarios
@@ -107,7 +101,7 @@ const tomlSyncCache = new Map<string, number>();
  * (templates only change via CRUD which already invalidates).
  */
 const TEMPLATE_LIST_TTL_MS = 5_000;
-const templateListCache = new Map<string, { at: number; value: ResolvedTemplate[] }>();
+const templateListCache = new BoundedMap<string, { at: number; value: ResolvedTemplate[] }>(500);
 
 /** Invalidate the in-memory template list cache for a project. Called from
  *  the CRUD endpoints after a create / update / delete. */
@@ -240,25 +234,6 @@ export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
   return shared ? rowToResolved(shared) : synthesizedDefault();
 }
 
-/**
- * Fetch a single template row by (project, slug) — DB-only, no synthesis.
- * Used by CRUD operations that must operate on a concrete row.
- */
-export async function getTemplateRow(
-  projectId: string | null,
-  slug: string,
-): Promise<DbSandboxTemplate | null> {
-  const conds = [eq(sandboxTemplates.slug, slug)];
-  if (projectId === null) conds.push(isNull(sandboxTemplates.projectId));
-  else conds.push(eq(sandboxTemplates.projectId, projectId));
-  const [row] = await db
-    .select()
-    .from(sandboxTemplates)
-    .where(and(...conds))
-    .limit(1);
-  return row ?? null;
-}
-
 export async function getTemplateById(templateId: string): Promise<DbSandboxTemplate | null> {
   const [row] = await db
     .select()
@@ -294,7 +269,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
       name: input.name || input.slug,
       isShared: false,
       source: input.source ?? 'ui',
-      provider: 'daytona',
+      provider: config.getDefaultProvider(),
       image: input.image ?? null,
       dockerfilePath: input.dockerfilePath ?? null,
       entrypoint: input.entrypoint ?? null,
@@ -401,9 +376,35 @@ export async function refreshTemplateState(
  * snapshot name from (Dockerfile bytes or FROM image, runtime fingerprint,
  * spec). Used by builder.ts to know what to ask the provider for.
  */
+/**
+ * The region a project's own image is built in: the region its sessions boot
+ * in (`us_region`, see platform/services/sandbox-region.ts), or undefined for
+ * the provider's home region. The shared default is never regional. One image
+ * serves every project, so it is built at home and copied where it is needed.
+ *
+ * The region is part of the image identity, not only a build parameter.
+ * Platinum boots an image only from its own region's object store, and the
+ * copy runs one way: the home control plane holds no credentials for a
+ * regional bucket (prod, 2026-10-17), so an image built in us-east can never
+ * boot in eu-west. With the region in the name, two projects with the same
+ * Dockerfile in different regions get different images (a content-addressed
+ * name would make the second adopt the first's), and a project that changes
+ * region rebuilds there instead of booting an image its new region cannot read.
+ */
+export async function projectImageRegion(projectId: string): Promise<string | undefined> {
+  if (!projectId) return undefined;
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return resolveSessionSandboxRegion(row?.metadata ?? null);
+}
+
 export async function computeTemplateIdentity(
   project: GitBackedProject,
   template: ResolvedTemplate,
+  deps: { imageRegion?: (projectId: string) => Promise<string | undefined> } = {},
 ): Promise<{
   snapshotName: string;
   contentHash: string;
@@ -412,6 +413,8 @@ export async function computeTemplateIdentity(
   userDockerfile: string;
   /** Commit the Dockerfile was read from; null for default/image templates. */
   builtFromCommit: string | null;
+  /** Provider region the image is built in; undefined for the home region. */
+  region?: string;
   /**
    * Identity of everything the agent-swap does NOT touch: user image + spec +
    * NON-agent runtime layer (contentHash with the non-agent runtime fingerprint
@@ -423,11 +426,17 @@ export async function computeTemplateIdentity(
 }> {
   const runtimeFingerprint = await currentRuntimeArtifactFingerprint();
   const { dockerfile: userDockerfile, commit } = await resolveUserDockerfile(project, template);
+  const region = template.isShared
+    ? undefined
+    : await (deps.imageRegion ?? projectImageRegion)(project.projectId);
   const hashInputs = {
     dockerfile: userDockerfile,
     contextTreeOid: template.isShared ? 'platform-default' : `template:${template.slug}`,
     spec: { cpu: template.cpu, memory: template.memoryGb, disk: template.diskGb },
     containerRuntime: template.containerRuntime,
+    // In swapKey too: an agent swap patches its predecessor in the
+    // predecessor's region, so a region change must rebuild instead.
+    region,
   };
   const hash = computeSnapshotHash({ ...hashInputs, runtimeFingerprint });
   // swapKey identifies EVERYTHING the agent-swap does NOT touch: the user image,
@@ -447,6 +456,7 @@ export async function computeTemplateIdentity(
     runtimeFingerprint,
     userDockerfile,
     builtFromCommit: commit,
+    region,
     swapKey,
   };
 }
@@ -511,8 +521,30 @@ export async function recordTemplateBuilt(
   // lazy, pressure-gated GC eventually notices.
   const oldName = prev?.providerSnapshotName ?? null;
   if (oldName && oldName !== args.snapshotName) {
-    await reapPredecessorSnapshot(templateId, oldName, args.provider ?? prev?.provider ?? 'daytona');
+    // Off the caller's path: the first session after every deploy lands here
+    // (the release gate builds the new image unpublished), and the reap is a
+    // provider lookup + delete that session never needed. It is best-effort by
+    // construction (reapPredecessorSnapshot catches and logs everything; quota
+    // GC collects whatever it leaves), so a session must not wait on it.
+    const reap = reapPredecessorSnapshot(
+      templateId,
+      oldName,
+      args.provider ?? prev?.provider ?? 'daytona',
+    );
+    pendingPredecessorReaps.add(reap);
+    void reap.finally(() => pendingPredecessorReaps.delete(reap));
   }
+}
+
+// replica-local: only reaps this process started, kept so a test can await
+// them. The reaps themselves are best-effort background deletes (quota GC
+// collects whatever is left), so nothing needs to survive a restart or be
+// visible to another replica.
+const pendingPredecessorReaps = new Set<Promise<void>>();
+
+/** Test hook: settle every predecessor reap kicked by recordTemplateBuilt. */
+export async function settlePredecessorReapsForTests(): Promise<void> {
+  while (pendingPredecessorReaps.size > 0) await Promise.all([...pendingPredecessorReaps]);
 }
 
 /**
@@ -581,7 +613,7 @@ function synthesizedDefault(): ResolvedTemplate {
     name: tpl.name ?? 'Default',
     isShared: true,
     source: 'platform',
-    provider: 'daytona',
+    provider: config.getDefaultProvider(),
     image: null,
     dockerfilePath: null,
     entrypoint: null,
@@ -640,7 +672,7 @@ async function syncManifestTemplatesForProject(project: GitBackedProject): Promi
           name: tpl.name ?? tpl.slug,
           isShared: false,
           source: 'toml',
-          provider: 'daytona',
+          provider: config.getDefaultProvider(),
           image: tpl.image ?? null,
           dockerfilePath: tpl.dockerfile ?? null,
           entrypoint: null,

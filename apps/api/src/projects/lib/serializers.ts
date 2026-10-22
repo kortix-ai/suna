@@ -6,6 +6,7 @@ import type {
   SecretDeliveryBlockedReason,
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
+import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -15,12 +16,14 @@ import {
   type projects,
 } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
-import type { Context } from 'hono';
 import { sessionInitiatorLabel } from './session-initiator';
+import { sessionRestoreUntil } from '../session-log-purge';
 import { type SandboxProviderName, config } from '../../config';
 import { mayManageSessionSharing, type SecretGrant, visibilityToIntent } from '../../connectors/share';
 import { buildFeatureFlagCatalog, resolveFeatureFlags } from '../../feature-flags/registry';
-import { requestClientIp } from '../../shared/client-ip';
+// The request reader `requestAuditContext` lives in `middleware/request-audit.ts`.
+// Re-exported here so every importer and mock keeps working.
+export { requestAuditContext } from '../../middleware/request-audit';
 import { normalizeJsonObject } from '../../shared/json';
 import { db } from '../../shared/db';
 import type { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
@@ -37,6 +40,8 @@ import { parseGitHubRepoUrl } from './git';
 import { isPlaceholderOpencodeTitle, runtimeRootTitleFromSnapshot } from './opencode-title';
 import { normalizeProjectGlyph } from './project-glyph';
 import { normalizeProjectIcon } from './project-icon';
+import { probeProjectSecret } from '../secrets/envelope';
+import { isDeprecatedProvider } from '../../platform/providers/deprecated';
 
 export const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 
@@ -69,7 +74,7 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  * server at create/branch/trigger time and no client — web, mobile, SDK or the
  * whitelabel demo — ever reads them back off a session (verified 2026-08-26 by
  * an exhaustive read-side sweep of apps/web, apps/mobile, packages/sdk and
- * apps/whitelabel-demo). They are also the heavy ones: on a real 60-session
+ * apps/white-label/lumen). They are also the heavy ones: on a real 60-session
  * project they are 57% of the whole list body (`initial_prompt` alone is 36%),
  * which the sidebar re-fetches several times per session open.
  *
@@ -82,6 +87,9 @@ export const PROJECT_GIT_AUTH_SECRET_NAME = 'KORTIX_GIT_AUTH_TOKEN';
  */
 export const LIST_OMITTED_SESSION_METADATA_KEYS = [
   'initial_prompt',
+  // Same class as `initial_prompt`: a heavy write-only blob no client reads
+  // off the list (verified 2026-10-08 across apps/web, apps/mobile, packages/sdk).
+  'initial_context',
   'payload_summary',
   'session_start_timeline',
   'audit_v2',
@@ -105,6 +113,8 @@ export function serializeSession(
   ctx?: {
     /** The grants on this session (for restricted visibility). */
     grants?: SecretGrant[];
+    /** Model selected by the durable conversation log, not the creation pin. */
+    conversationModel?: string | null;
     /** The viewing user, to compute is_owner / can_manage_*. */
     viewerId?: string;
     /** Viewer can manage the project (account owner/admin, or a project manager). */
@@ -131,6 +141,8 @@ export function serializeSession(
     runtimeStatus?: 'provisioning' | 'active' | 'stopped' | 'error' | 'archived' | null;
     /** Server-managed soft-deletion audit fields. */
     deletedAt?: string | null;
+    /** The viewing person's pin and archive. Absent: the fields are omitted. */
+    userState?: { pinnedAt: Date | null; archivedAt: Date | null };
     deletedBy?: string | null;
     /**
      * Drop the write-only heavy metadata keys (see
@@ -145,10 +157,9 @@ export function serializeSession(
   // the metadata object alone would still have leaked the OpenCode-synced title
   // (which summarises the conversation) and the conversation-tree snapshot.
   const canAccess = ctx?.canAccess ?? true;
-  const opencodeSessions =
-    canAccess && Array.isArray(row.metadata?.opencode_sessions)
-      ? row.metadata.opencode_sessions
-      : [];
+  const opencodeSessions = canAccess
+    ? normalizeRuntimeSessionSnapshots(row.metadata?.opencode_sessions)
+    : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
   // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
   // over the auto title (metadata.name) mirrored from OpenCode server-side
@@ -169,12 +180,18 @@ export function serializeSession(
   // live, but never a user rename.
   const runtimeTitle = runtimeRootTitleFromSnapshot(opencodeSessions, row.runtimeSessionId);
   return {
+    model: canAccess
+      ? (ctx?.conversationModel ?? (typeof row.metadata?.opencode_model === 'string'
+        ? row.metadata.opencode_model.trim() || null
+        : null))
+      : null,
     session_id: row.sessionId,
     account_id: row.accountId,
     project_id: row.projectId,
     branch_name: row.branchName,
     base_ref: row.baseRef,
-    sandbox_provider: row.sandboxProvider,
+    // A legacy `e2b` row passes through as stored: E2B support is discontinued.
+    sandbox_provider: row.sandboxProvider as ProjectSession['sandbox_provider'],
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     runtime_session_id: row.runtimeSessionId,
@@ -183,6 +200,9 @@ export function serializeSession(
     custom_name: customName,
     labels: canAccess ? (row.labels ?? []) : [],
     agent_name: row.agentName,
+    // Lifecycle reads report the stored state. The visible inventory hides
+    // unused warm sessions; masking a ready runtime as provisioning leaves
+    // manager and CLI reads permanently showing Starting.
     status: row.status,
     error: row.error,
     // Inventory filters inaccessible rows. Keep this boundary fail-closed for
@@ -237,6 +257,13 @@ export function serializeSession(
     runtime_status: ctx?.runtimeStatus ?? null,
     deleted_at: ctx?.deletedAt ?? null,
     deleted_by: ctx?.deletedBy ?? null,
+    restore_until: ctx?.deletedAt ? (sessionRestoreUntil(ctx.deletedAt)?.toISOString() ?? null) : null,
+    ...(ctx?.userState
+      ? {
+          pinned_at: ctx.userState.pinnedAt?.toISOString() ?? null,
+          archived_at: ctx.userState.archivedAt?.toISOString() ?? null,
+        }
+      : {}),
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };
@@ -295,7 +322,13 @@ export function serializeProject(
     // on/off map; `experimental_features` is the self-describing catalog the UI
     // renders from. Both wire names are historical and STABLE; do not rename
     // them. SoT = ../../feature-flags/registry.
-    experimental: resolveFeatureFlags(row.metadata),
+    // `apps` graduated (registry.ts) but stays here as `true`: CLIs before
+    // v0.14.0 refuse every `kortix apps` command unless it reads true.
+    // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
+    // and SDKs from before then read false as the removed native model mode.
+    // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
+    // and mobile builds read false as "serve the v1 transcript".
+    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true, session_log: true },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
@@ -310,6 +343,7 @@ export function serializeProject(
         ?.default_sandbox_provider;
       if (
         typeof pin !== 'string' ||
+        isDeprecatedProvider(pin) ||
         !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(pin)
       ) {
         return null;
@@ -318,8 +352,8 @@ export function serializeProject(
       const provider = pin as SandboxProviderName;
       return config.isProviderEnabled(provider) ? provider : null;
     })(),
-    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter((p) =>
-      config.isProviderEnabled(p),
+    available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter(
+      (p) => config.isProviderEnabled(p) && !isDeprecatedProvider(p),
     ),
   };
 }
@@ -380,15 +414,6 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
   };
 }
 
-export function requestAuditContext(c: Context): RequestAuditContext {
-  return {
-    method: c.req.method,
-    path: c.req.path,
-    ip: requestClientIp(c),
-    userAgent: c.req.header('user-agent') || null,
-  };
-}
-
 export type SecretRow = typeof projectSecrets.$inferSelect;
 
 /**
@@ -426,9 +451,11 @@ function grantAdmits(list: string[], identifier: string): boolean {
  *                  rescue it — grants come only from manifest specs.
  *   `declarative`, agents non-empty — the manifest parsed and its declarations
  *                  are the complete grant set. CERTAIN either way.
- *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached by
- *                  a manifest that FAILED to parse (specs empty, errors present)
- *                  or one whose agents are all disabled. Report null.
+ *   `declarative`, agents EMPTY — the only ambiguous state, and it is reached
+ *                  by a manifest that FAILED to parse (specs empty, errors
+ *                  present). Report null. (Disabled agents stay listed with
+ *                  `enabled: false` and are skipped below, so an all-disabled
+ *                  manifest reports `no_agent_grant`, not the ambiguous null.)
  *
  * Getting this backwards would be worse than useless in both directions: silent
  * on the commonest broken setup (no `agents:` block), and crying wolf on a
@@ -447,7 +474,10 @@ export function secretDeliveryBlockedReason(
   if (config.agent_discovery !== 'declarative') return null;
   const agents = config.agents;
   if (!Array.isArray(agents) || agents.length === 0) return null;
+  // The summary lists disabled agents too (enabled: false); only an agent a
+  // session could actually launch makes "granted somewhere" certain.
   const granted = agents.some((agent) => {
+    if (agent.enabled === false) return false;
     const env = agent.scope?.env;
     return Array.isArray(env) && grantAdmits(env, identifier);
   });
@@ -541,9 +571,14 @@ export function buildSecretView(input: {
     managed_by: isGitAuth ? 'project_secret' : null,
     // Is a shared project value set at all.
     configured: Boolean(shared),
-    // MY private override (value never returned), and whether I'm using it.
+    // MY private override (value never returned), whether I'm using it, and
+    // whether the server can decrypt it: an active one is what my sessions read.
     mine: personal
-      ? { active: personal.active, updated_at: personal.updatedAt.toISOString() }
+      ? {
+          active: personal.active,
+          updated_at: personal.updatedAt.toISOString(),
+          status: probeProjectSecret(personal.projectId, personal.valueEnc),
+        }
       : null,
     // What actually gets injected into my sessions for this identifier.
     effective_source: effectiveSource,
@@ -561,6 +596,15 @@ export function buildSecretView(input: {
     // grant, because the CLI, the SDK and the web chip all key off that meaning.
     // The grant axis is per-project and lives here.
     delivery_blocked_reason: secretDeliveryBlockedReason(identifier, strategy, input.agentGrants),
+    agents: strategy === 'denied' ? []
+      : !input.agentGrants ? null
+      : input.agentGrants.agent_discovery === 'opencode' ? (strategy === 'runtime' ? 'all' : [])
+      : input.agentGrants.agent_discovery !== 'declarative' || !input.agentGrants.agents.length ? null
+      : input.agentGrants.agents.filter((agent) => {
+          if (agent.enabled === false) return false;
+          const env = agent.scope?.env;
+          return Array.isArray(env) ? grantAdmits(env, identifier) : strategy === 'runtime';
+        }).map((agent) => agent.name),
     // Always true since the exposure/usage model: one mechanism serves every
     // provider, so there is no deployment where egress-enforced delivery is missing. Kept on
     // the wire because published SDK and CLI versions still read it — an absent
@@ -570,6 +614,9 @@ export function buildSecretView(input: {
     strategy_locked: deliveryRow?.strategyLocked ?? false,
     last_rotated_at: deliveryRow?.rotatedAt?.toISOString() ?? null,
     requires_rotation: requiresRotation,
+    // One decrypt of the SHARED value, the one a shared write replaces; the
+    // plaintext is discarded. No shared value, no status: `mine.status` says it.
+    status: shared ? probeProjectSecret(shared.projectId, shared.valueEnc) : undefined,
   };
 }
 
@@ -815,14 +862,6 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     ready: t.ready,
     ...(t.providerCoverage ? { provider_coverage: t.providerCoverage } : {}),
   };
-}
-
-const PROJECT_ROLES = ['manager', 'member'] as const;
-
-export type ProjectGroupGrantRole = (typeof PROJECT_ROLES)[number];
-
-export function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
-  return typeof v === 'string' && (PROJECT_ROLES as readonly string[]).includes(v);
 }
 
 /**

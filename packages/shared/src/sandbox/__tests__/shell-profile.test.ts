@@ -13,8 +13,11 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { afterAll, describe, expect, test } from 'bun:test';
+// Relative: @kortix/shared does not depend on the contract package. This file
+// is import-free, and kortixd bundles the same one.
+import { AGENT_ENV_FILE } from '../../../../api-contract/src/sandbox-layout';
 import {
   KORTIX_AGENT_ENV_FILE,
   KORTIX_SHELL_PROFILE_PATH,
@@ -103,12 +106,7 @@ describe('the shell profile hook restores the Kortix tool directories', () => {
   });
 
   test('reads the same agent env file the daemon writes', () => {
-    const daemonSource = readFileSync(
-      resolve(import.meta.dir, '../../../../../apps/kortix-sandbox-agent-server/src/harness/shared/agent-env-file.ts'),
-      'utf8',
-    );
-    const dir = /export const AGENT_ENV_DIR = '([^']+)'/.exec(daemonSource)?.[1];
-    expect(`${dir}/agent-env.sh`).toBe(KORTIX_AGENT_ENV_FILE);
+    expect(KORTIX_AGENT_ENV_FILE).toBe(AGENT_ENV_FILE);
   });
 });
 

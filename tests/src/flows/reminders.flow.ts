@@ -9,9 +9,13 @@
  * apps/api/src/__tests__/integration-session-reminders.test.ts. These flows pin
  * the HTTP and CLI contract.
  */
+import { isKe2eRetryableError } from '../core/client';
 import { flow } from '../core/flow';
+import { waitFor } from '../core/poll';
 import type { FlowContext } from '../core/types';
 import { AgentPrincipalsWorld } from '../fixtures/agent-principals';
+import { subscribe } from '../fixtures/billing';
+import type { Transcript } from '../fixtures/session-run';
 import { CliSandbox } from '../fixtures/cli';
 
 const ROUTES = {
@@ -19,6 +23,7 @@ const ROUTES = {
   create: 'POST /v1/projects/:projectId/sessions/:sessionId/reminders',
   update: 'PATCH /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId',
   remove: 'DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId',
+  run: 'POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run',
 };
 const REMINDERS = '/v1/projects/:projectId/sessions/:sessionId/reminders';
 const REMINDER = '/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId';
@@ -31,7 +36,6 @@ async function openWorld(ctx: FlowContext) {
   const team = await ctx.fixtures.team();
   const project = await team.project({ managedGit: true });
   const world = await AgentPrincipalsWorld.open(ctx, { accountId: team.id, projectId: project.id });
-  await world.setFeature('agent_principal', true);
   await world.setFeature('reminders', true);
   await world.writeManifest(MANIFEST, 'ke2e: reminders agent');
   return { team, project, world };
@@ -155,33 +159,57 @@ flow(
         }
       });
 
-      await ctx.step('the same credential on a sibling session → 403, nothing stored there', async () => {
+      await ctx.step('the same credential on a private sibling session it cannot open → 404, nothing stored there', async () => {
         const sibling = { projectId: project.id, sessionId: other.sessionId };
-        (await own.client.post(REMINDERS, { prompt: 'x', in: '1h' }, { params: sibling })).status(403);
-        (await own.client.get(REMINDERS, { params: sibling })).status(403);
+        (await own.client.post(REMINDERS, { prompt: 'x', in: '1h' }, { params: sibling })).status(404);
+        (await own.client.get(REMINDERS, { params: sibling })).status(404);
         (await ctx.client.as(ctx.P.OWNER).get(REMINDERS, { params: sibling })).status(200).body().has('$.reminders', []);
       });
 
+      const cliEnv = {
+        KORTIX_TOKEN: own.secret,
+        KORTIX_API_URL: ctx.env.apiUrl,
+        KORTIX_PROJECT_ID: project.id,
+        KORTIX_SESSION_ID: own.sessionId,
+      };
+
       await ctx.step('real CLI inside the session: `kortix remind … --in 2h --json` exits 0 and the API reads it back', async () => {
-        const env = {
-          KORTIX_TOKEN: own.secret,
-          KORTIX_API_URL: ctx.env.apiUrl,
-          KORTIX_PROJECT_ID: project.id,
-          KORTIX_SESSION_ID: own.sessionId,
-        };
-        const created = await sandbox.run(['remind', 'Did the vendor email arrive?', '--in', '2h', '--json'], { env });
+        const created = await sandbox.run(['remind', 'Did the vendor email arrive?', '--in', '2h', '--json'], { env: cliEnv });
         if (created.exitCode !== 0) throw new Error(`remind exit ${created.exitCode}: ${created.all.slice(0, 600)}`);
         const reminder = JSON.parse(created.stdout.trim()) as Reminder;
         if (reminder.state !== 'active' || reminder.every !== null) throw new Error(`unexpected ${created.stdout}`);
-        const listed = await sandbox.run(['reminders', 'ls', '--json'], { env });
+        const listed = await sandbox.run(['reminders', 'ls', '--json'], { env: cliEnv });
         if (!listed.stdout.includes(reminder.id)) throw new Error(`ls lacks ${reminder.id}: ${listed.all.slice(0, 600)}`);
-        const removed = await sandbox.run(['reminders', 'rm', reminder.id], { env });
+        const removed = await sandbox.run(['reminders', 'rm', reminder.id], { env: cliEnv });
         if (removed.exitCode !== 0) throw new Error(`rm exit ${removed.exitCode}: ${removed.all.slice(0, 600)}`);
         const after = (await own.client.get(REMINDERS, { params })).json<{ reminders: Reminder[] }>().reminders;
         if (after.some((r) => r.id === reminder.id)) throw new Error('rm did not delete the reminder');
       });
 
-      await ctx.step('another human setting a reminder on a shared session clears on_behalf_of, like a prompt', async () => {
+      await ctx.step('real CLI: a named reminder lists its prompt in TEXT and its name in NAME (dogfood regression)', async () => {
+        const created = await sandbox.run(['remind', 'Say pong again', '--in', '2h', '--name', 'pong-check', '--json'], { env: cliEnv });
+        if (created.exitCode !== 0) throw new Error(`remind exit ${created.exitCode}: ${created.all.slice(0, 600)}`);
+        let named: Reminder | undefined;
+        let rmFailed: string | undefined;
+        try {
+          const parsed = JSON.parse(created.stdout.trim()) as Reminder;
+          named = parsed;
+          const listed = await sandbox.run(['reminders', 'ls'], { env: cliEnv });
+          if (listed.exitCode !== 0) throw new Error(`ls exit ${listed.exitCode}: ${listed.all.slice(0, 600)}`);
+          const row = listed.stdout.split('\n').find((l) => l.includes(parsed.id)) ?? '';
+          if (!row.includes('pong-check') || !row.includes('Say pong again')) {
+            throw new Error(`ls row for a named reminder lacks the prompt or the name: ${row.slice(0, 300)}`);
+          }
+        } finally {
+          if (named) {
+            const removed = await sandbox.run(['reminders', 'rm', named.id], { env: cliEnv });
+            if (removed.exitCode !== 0) rmFailed = `rm exit ${removed.exitCode}: ${removed.all.slice(0, 600)}`;
+          }
+        }
+        if (rmFailed) throw new Error(rmFailed);
+      });
+
+      await ctx.step('another human setting a reminder on a shared session → 201; on_behalf_of stays the launcher until the fire is delivered', async () => {
         const shared = await world.mintAgentSession({ agent: 'kortix', launcher: ctx.P.OWNER, visibility: 'project' });
         const member = await team.addMember('member');
         await team.grantProjectRole(project.id, member.userId!, 'member');
@@ -189,8 +217,11 @@ flow(
         (await ctx.client.as(member).post(REMINDERS, { prompt: 'x', in: '1h' }, {
           params: { projectId: project.id, sessionId: shared.sessionId },
         })).status(201);
-        if (shared.onBehalfOfColumn && (await world.readOnBehalfOf(shared.sessionId)) !== null) {
-          throw new Error('a second human set a reminder and on_behalf_of survived');
+        // The reminder is this member's deferred prompt: its delivery binds the
+        // turn to them (trigger-fire.ts). Creating it must not touch the
+        // launcher's running turn.
+        if (shared.onBehalfOfColumn && (await world.readOnBehalfOf(shared.sessionId)) !== ctx.P.OWNER.userId) {
+          throw new Error('creating a reminder changed on_behalf_of before the reminder fired');
         }
       });
     } finally {
@@ -331,5 +362,154 @@ flow(
     } finally {
       await world.close();
     }
+  },
+);
+
+flow(
+  'REM-5',
+  {
+    domain: 'reminders',
+    requires: ['database'],
+    timeoutMs: 180_000,
+    routes: [ROUTES.create, ROUTES.run],
+  },
+  async (ctx) => {
+    const { team, project, world } = await openWorld(ctx);
+    const RUN = `${REMINDER}/run`;
+    const sandbox = new CliSandbox('rem5');
+    // The prompts a reminder queued: who each acts as, and whether the turn binds to them.
+    const queuedRuns = async (sessionId: string) =>
+      (await world.db.query(
+        `SELECT actor_user_id, payload->>'bindTurnIdentity' AS bind FROM kortix.session_lifecycle_commands
+          WHERE session_id = $1 AND source = 'trigger:reminder' ORDER BY created_at`,
+        [sessionId],
+      )).rows as Array<{ actor_user_id: string; bind: string | null }>;
+    try {
+      // An admin's private session: the account owner may not open it, so a
+      // reminder delivered as the owner was refused on every attempt.
+      const admin = await team.addMember('admin');
+      await team.grantProjectRole(project.id, admin.userId!, 'member');
+      await world.grantRun('kortix', admin);
+      const session = await world.mintAgentSession({ agent: 'kortix', launcher: admin });
+      const params = { projectId: project.id, sessionId: session.sessionId };
+      const cliEnv = {
+        KORTIX_TOKEN: session.secret,
+        KORTIX_API_URL: ctx.env.apiUrl,
+        KORTIX_PROJECT_ID: project.id,
+        KORTIX_SESSION_ID: session.sessionId,
+      };
+      let id = '';
+
+      await ctx.step("real CLI inside the session: the agent's `kortix reminders run <id> --json` exits 0 and queues the prompt as the session's creator, unbound", async () => {
+        const created = await sandbox.run(['remind', 'Check the worker', '--in', '24h', '--every', '1d', '--json'], { env: cliEnv });
+        if (created.exitCode !== 0) throw new Error(`remind exit ${created.exitCode}: ${created.all.slice(0, 600)}`);
+        id = (JSON.parse(created.stdout.trim()) as Reminder).id;
+        const ran = await sandbox.run(['reminders', 'run', id, '--json'], { env: cliEnv });
+        if (ran.exitCode !== 0) throw new Error(`run exit ${ran.exitCode}: ${ran.all.slice(0, 600)}`);
+        if ((JSON.parse(ran.stdout.trim()) as Reminder).id !== id) throw new Error(`unexpected ${ran.stdout}`);
+        const runs = await queuedRuns(session.sessionId);
+        if (runs.length !== 1 || runs[0]!.actor_user_id !== admin.userId || runs[0]!.bind !== null) {
+          throw new Error(`expected one unbound run as the session creator, got ${JSON.stringify(runs)}`);
+        }
+      });
+
+      await ctx.step('Retry of a failed run by a person → 202 as them, bound; the failure clears and the schedule does not move', async () => {
+        const before = (await ctx.client.as(admin).get(REMINDERS, { params })).json<{ reminders: Reminder[] }>().reminders[0]!;
+        await world.db.query(
+          `UPDATE kortix.project_trigger_runtime SET last_status = 'failed', last_error = 'delivery failed' WHERE slug = $1`,
+          [id],
+        );
+        const r = await ctx.client.as(admin).post(RUN, {}, { params: { ...params, reminderId: id } });
+        r.status(202).body().has('$.id', id).has('$.last_error', null).has('$.next_fire_at', before.next_fire_at);
+        if (!r.json<{ last_fired_at: string | null }>().last_fired_at) throw new Error('a run left last_fired_at empty');
+        const last = (await queuedRuns(session.sessionId)).at(-1);
+        if (!last || last.actor_user_id !== admin.userId || last.bind !== 'true') {
+          throw new Error(`expected a run bound to the person, got ${JSON.stringify(last)}`);
+        }
+      });
+
+      await ctx.step('an unknown reminder → 404; anonymous → 401; a member who cannot see the private session → 404, nothing queued', async () => {
+        (await ctx.client.as(admin).post(RUN, {}, { params: { ...params, reminderId: 'reminder.000000000000' } })).status(404);
+        (await ctx.client.as(ctx.P.ANON).post(RUN, {}, { params: { ...params, reminderId: id } })).status(401);
+        const member = await team.addMember('member');
+        await team.grantProjectRole(project.id, member.userId!, 'member');
+        await world.grantRun('kortix', member);
+        (await ctx.client.as(member).post(RUN, {}, { params: { ...params, reminderId: id } })).status(404);
+        if ((await queuedRuns(session.sessionId)).length !== 2) throw new Error('a refused run queued a prompt');
+      });
+    } finally {
+      sandbox.dispose();
+      await world.close();
+    }
+  },
+);
+
+/**
+ * REM-6 — the incident, end to end on a real box: an agent sets a reminder on
+ * an admin's private session, and the scheduler delivers it.
+ *
+ * An agent's reminder has no author. It was delivered as the account owner,
+ * whom the sandbox proxy refuses on another member's private session, so every
+ * fire dead-lettered as "the session's machine could not be reached after 3
+ * attempts". It must reach the session as the session's creator. Needs a
+ * booted sandbox and the trigger scheduler, so it runs against a deployed target.
+ */
+flow(
+  'REM-6',
+  {
+    domain: 'reminders',
+    requires: ['sandbox', 'funded'],
+    // A cold image build can take ~7 min; the fire lands within ~2 min of its time.
+    timeoutMs: 1_200_000,
+    routes: ['POST /v1/projects/:projectId/sessions', 'GET /v1/projects/:projectId/sessions/:sessionId/transcript'],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    await ctx.step('fund the team account', async () => {
+      await subscribe(ctx.env, ctx.client.as(ctx.P.OWNER), team.id);
+    });
+    const admin = await team.addMember('admin');
+    const project = await team.project({ seed: true });
+    const nonce = `rem6-${Date.now().toString(36)}`;
+    const fired = new RegExp(`^\\W*${nonce}-fired\\W*$`);
+    const asAdmin = ctx.client.as(admin);
+    let sessionId = '';
+
+    await ctx.step("an admin's private session; its agent sets a one-minute reminder with the real CLI", async () => {
+      const created = await asAdmin.post(
+        '/v1/projects/:projectId/sessions',
+        {
+          initial_prompt:
+            `Run this shell command: kortix remind "Reply with exactly ${nonce}-fired and nothing else." --in 1m ` +
+            '— then reply with exactly one word: set',
+        },
+        { params: { projectId: project.id } },
+      );
+      created.status([201, 202]);
+      const body = created.json<{ session_id?: string; id?: string }>();
+      sessionId = body.session_id ?? body.id ?? '';
+      if (!sessionId) throw new Error(`session create returned no id: ${created.text().slice(0, 300)}`);
+    });
+
+    await ctx.step('the fire reaches the session and the agent answers it', async () => {
+      await waitFor(
+        async () => {
+          const r = await asAdmin.get('/v1/projects/:projectId/sessions/:sessionId/transcript', {
+            params: { projectId: project.id, sessionId },
+            query: { limit: '200' },
+          });
+          r.status(200);
+          return r.json<Transcript>();
+        },
+        {
+          // The whole reply, so an echo of the command text cannot pass.
+          until: (t) => (t.messages ?? []).some((m) => m.role === 'assistant' && fired.test(m.text)),
+          timeoutMs: 900_000,
+          intervalMs: 10_000,
+          description: `the agent's "${nonce}-fired" reply to its own reminder in session ${sessionId}`,
+          retryOnError: isKe2eRetryableError,
+        },
+      );
+    });
   },
 );

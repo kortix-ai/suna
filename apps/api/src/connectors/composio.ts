@@ -5,7 +5,7 @@ import {
   type ToolkitConnectionsDetails,
 } from '@composio/core';
 import { HTTPException } from 'hono/http-exception';
-import type { ExecResult } from './call';
+import { type ExecResult, parseRetryAfter } from './call';
 import {
   composioHiddenToolkits,
   NATIVE_TOOLKITS,
@@ -45,6 +45,9 @@ export interface ComposioRuntime {
           logo?: string | null;
           description?: string | null;
           categories?: Array<{ slug: string; name: string }>;
+          /** `@composio/core` camel-cases the API's `triggers_count`; the raw key survives the meta spread. */
+          triggersCount?: number;
+          triggers_count?: number;
         };
       }>
     >;
@@ -52,6 +55,27 @@ export interface ComposioRuntime {
   /** Read one connected account. Only the non-secret `displayName` is used. */
   connectedAccounts?: {
     get(id: string): Promise<{ state?: { val?: Record<string, unknown> } | null } | null | undefined>;
+  };
+  /** App-event trigger instances and their catalog (`@composio/core` `Triggers`). */
+  triggers?: {
+    listTypes(query?: { cursor?: string; limit?: number | null; toolkits?: string[] | null }): Promise<{
+      items: Array<{
+        slug: string;
+        name: string;
+        description: string;
+        type?: string;
+        toolkit: { slug: string; name: string; logo?: string };
+        payload: Record<string, unknown>;
+        config: Record<string, unknown>;
+      }>;
+      nextCursor?: string | null;
+    }>;
+    create(
+      userId: string,
+      slug: string,
+      body?: { connectedAccountId?: string; triggerConfig?: Record<string, unknown> },
+    ): Promise<{ triggerId: string }>;
+    delete(triggerId: string): Promise<{ triggerId: string }>;
   };
 }
 
@@ -696,7 +720,22 @@ export async function executeComposio(
   // binding, and the state check above proves it is the expected account. Passing
   // `options.account` again opts into Composio's multi-account selector, which is
   // rejected (code 4300) on ordinary single-account projects.
-  const response = await session.execute(input.toolSlug, input.args);
+  let response: Awaited<ReturnType<ComposioSessionLike['execute']>>;
+  try {
+    response = await session.execute(input.toolSlug, input.args);
+  } catch (error) {
+    // Composio's own rate limit (`RateLimitError`, HTTP 429) is a retry-later
+    // answer, not a fault: the gateway turns it into a 429 with Retry-After.
+    const limited = error as { status?: unknown; headers?: { get?: (name: string) => string | null } };
+    if (limited?.status !== 429) throw error;
+    const retryAfterSeconds = parseRetryAfter(limited.headers?.get?.('retry-after'));
+    return {
+      ok: false,
+      status: 429,
+      data: `composio_rate_limited: ${error instanceof Error ? error.message : String(error)}`,
+      ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
+    };
+  }
   const logId = typeof response.logId === 'string' ? response.logId.trim() : '';
   if (!logId) throw new Error('composio execution returned no log id');
 
@@ -711,10 +750,15 @@ export async function executeComposio(
   // Linear rejects malformed GraphQL from the caller, not from an unavailable provider.
   const callerError = input.toolkit === 'linear' && input.toolSlug === 'LINEAR_RUN_QUERY_OR_MUTATION' &&
     typeof response.error === 'string' && /\bCode: (?:GRAPHQL_VALIDATION_FAILED|INPUT_ERROR)\b/.test(response.error);
+  // A provider's rate limit arrives inside Composio's error text.
+  // ponytail: text match, no structured provider status in the execute response; read it when Composio exposes one.
+  const rateLimited = typeof response.error === 'string' && COMPOSIO_RATE_LIMIT.test(response.error);
   return response.error
-    ? { ok: false, status: callerError ? 400 : 502, data }
+    ? { ok: false, status: callerError ? 400 : rateLimited ? 429 : 502, data }
     : { ok: true, status: 200, data };
 }
+
+const COMPOSIO_RATE_LIMIT = /\b429\b|rate[ _-]?limit|too many requests/i;
 
 /** Composio's `ConnectedAccount_BadRequest` for a reused alias. */
 function isAliasConflict(error: unknown): boolean {

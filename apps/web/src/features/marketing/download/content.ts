@@ -15,15 +15,15 @@
  *     terminal block says "macOS & Linux · WSL on Windows".
  *  4. There is no Chrome extension in this repo — no manifest, no app. The page
  *     must not advertise one, not even as "coming soon".
- *  5. NEITHER mobile app is publicly installable. iOS is on TestFlight and
- *     Android is on a Play internal track, so both store URLs are dead ends for
- *     the public. The rows carry a status instead of a link — see MOBILE_ROWS.
+ *  5. Both mobile apps are public: iOS on the App Store, Android on Google
+ *     Play. The rows link the store listings — see MOBILE_ROWS.
  */
 
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 import type { DesktopOs, MobileOs } from './detect-os';
+import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@kortix/ui/internal/lib/mobile-store-urls';
 
 export const hero = {
   title: 'Download Kortix',
@@ -32,8 +32,6 @@ export const hero = {
 
 export type CardCopy = { title: string; description: string };
 export type RowCopy = { label: string; hint: string; href: string };
-/** A platform with no public build yet, so there is nothing to link to. */
-export type ComingSoonRowCopy = { label: string; hint: string };
 
 export const DESKTOP_CARD: CardCopy = {
   title: 'Desktop app',
@@ -57,21 +55,18 @@ export const DESKTOP_ROWS: Record<DesktopOs, RowCopy> = {
   linux: { label: 'Linux', hint: 'AppImage · x86_64', href: '/download/linux' },
 };
 
-/** The chip both mobile rows carry in place of a Download button. */
-export const MOBILE_STATUS = 'Coming soon';
-
-/**
- * NO `href`. Both store listings exist, but neither is public: iOS ships to
- * TestFlight and Android to a Play internal track. Linking them sends a visitor
- * to a page they cannot install from, which is worse than saying "not yet".
- *
- * `hint` still names the store each build will land in, so the row stays useful
- * as a statement of intent. Restore the links only when both listings are
- * publicly downloadable — and then the type change is the reminder.
- */
-export const MOBILE_ROWS: Record<MobileOs, ComingSoonRowCopy> = {
-  ios: { label: 'iPhone and iPad', hint: 'App Store' },
-  android: { label: 'Android', hint: 'Google Play' },
+/** Store URLs live in `mobile-store-urls.ts`. */
+export const MOBILE_ROWS: Record<MobileOs, RowCopy> = {
+  ios: {
+    label: 'iPhone and iPad',
+    hint: 'App Store',
+    href: APP_STORE_URL,
+  },
+  android: {
+    label: 'Android',
+    hint: 'Google Play',
+    href: GOOGLE_PLAY_URL,
+  },
 };
 
 export const TERMINAL = {
@@ -88,7 +83,6 @@ export function localizedDownloadContent(tI18nComplete: UiTranslator) {
       mobileCard: MOBILE_CARD,
       desktopRows: DESKTOP_ROWS,
       mobileRows: MOBILE_ROWS,
-      mobileStatus: MOBILE_STATUS,
       terminal: TERMINAL,
     },
     tI18nComplete,

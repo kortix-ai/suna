@@ -1,11 +1,11 @@
 /**
- * The indexed search and the children index must return exactly what the old
- * per-keystroke scans returned: same entries, same order. The old
- * implementations are copied here verbatim as the reference.
+ * The indexed search must return exactly what the old per-keystroke scan
+ * returned: same entries, same order. The old implementation is copied here
+ * verbatim as the reference.
  */
 import { describe, expect, test } from 'bun:test';
 
-import { indexChildren, searchFileTree, type TreeSearchEntry, type TreeSearchResult } from './tree-search';
+import { searchFileTree, type TreeSearchEntry, type TreeSearchResult } from './tree-search';
 
 // ─── Reference: `searchFileTree` before the index ────────────────────────────
 const refBasename = (path: string) => {
@@ -59,22 +59,6 @@ function refSearchFileTree(entries: readonly TreeSearchEntry[], query: string): 
     return a.result.path.localeCompare(b.result.path);
   });
   return ranked.map((r) => r.result);
-}
-
-// ─── Reference: `childrenOf` from FilesNavPage before the index ──────────────
-function refChildrenOf<T extends { path: string }>(entries: T[], dir: string): { dirs: string[]; files: T[] } {
-  const prefix = dir ? `${dir}/` : '';
-  const dirSet = new Set<string>();
-  const files: T[] = [];
-  for (const e of entries) {
-    if (dir && !e.path.startsWith(prefix)) continue;
-    const rest = e.path.slice(prefix.length);
-    if (!rest) continue;
-    const slash = rest.indexOf('/');
-    if (slash === -1) files.push(e);
-    else dirSet.add(rest.slice(0, slash));
-  }
-  return { dirs: [...dirSet], files };
 }
 
 // ─── A synthetic tree of ~5,000 paths ────────────────────────────────────────
@@ -154,30 +138,5 @@ describe('searchFileTree matches the reference implementation', () => {
   test('a new entries array is indexed again, not served from the old index', () => {
     const smaller = TREE.slice(0, 100);
     expect(searchFileTree(smaller, 'a')).toEqual(refSearchFileTree(smaller, 'a'));
-  });
-});
-
-describe('indexChildren matches the reference childrenOf', () => {
-  const index = indexChildren(TREE);
-  const lookup = (dir: string) => index.get(dir) ?? { dirs: [], files: [] };
-
-  test('every folder in the tree, and the root', () => {
-    const dirs = new Set<string>(['']);
-    for (const e of TREE) {
-      for (let i = e.path.indexOf('/'); i !== -1; i = e.path.indexOf('/', i + 1)) dirs.add(e.path.slice(0, i));
-    }
-    expect(dirs.size).toBeGreaterThan(500);
-    for (const dir of dirs) expect({ dir, ...lookup(dir) }).toEqual({ dir, ...refChildrenOf(TREE, dir) });
-  });
-
-  test('a folder that does not exist has no children', () => {
-    for (const dir of ['nope', 'src/nope', 'src/', '/', 'a/', 'a//b.ts']) {
-      expect({ dir, ...lookup(dir) }).toEqual({ dir, ...refChildrenOf(TREE, dir) });
-    }
-  });
-
-  test('files keep their entry objects', () => {
-    const root = lookup('');
-    expect(root.files.every((f) => TREE.includes(f))).toBe(true);
   });
 });

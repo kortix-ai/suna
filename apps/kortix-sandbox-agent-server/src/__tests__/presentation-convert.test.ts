@@ -29,7 +29,6 @@ function baseConfig(workspace: string): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
-    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -110,6 +109,13 @@ describe('presentation convert router', () => {
   it('403 for a path outside the allowed roots', async () => {
     const app = createPresentationRouter(baseConfig(workspace), { resolveScriptsDir: scriptsPresent })
     const res = await post(app, 'pdf', '/etc/secret-deck')
+    expect(res.status).toBe(403)
+  })
+
+  it('403 for a workspace symlink that points outside the allowed roots', async () => {
+    await fs.symlink('/', path.join(workspace, 'escape'))
+    const app = createPresentationRouter(baseConfig(workspace), { resolveScriptsDir: scriptsPresent })
+    const res = await post(app, 'pdf', `${workspace}/escape/etc`)
     expect(res.status).toBe(403)
   })
 

@@ -100,3 +100,25 @@ test('a noReply prompt says so; every other prompt says false', () => {
   expect(serializePrompt(row({ text: 'Which region?', noReply: true })).no_reply).toBe(true);
   expect(serializePrompt(row({ text: 'hi' })).no_reply).toBe(false);
 });
+
+describe('serializePrompt delivery (R10)', () => {
+  test('a stored delivery is served as is, with its fallback reason', () => {
+    expect(serializePrompt(row({ text: 'x', delivery: 'steer', placement: 'composer' }))).toMatchObject({
+      delivery: 'steer',
+      steer_fallback: null,
+    });
+    expect(
+      serializePrompt(row({ text: 'x', delivery: 'queue', placement: 'composer', steerFallback: 'not_prompter' })),
+    ).toMatchObject({ delivery: 'queue', steer_fallback: 'not_prompter' });
+  });
+
+  test('a row from before steering derives it from placement', () => {
+    expect(serializePrompt(row({ text: 'x', placement: 'transcript' })).delivery).toBe('interrupt');
+    expect(serializePrompt(row({ text: 'x', placement: 'composer' })).delivery).toBe('queue');
+    expect(serializePrompt(row({ text: 'x' })).delivery).toBe('queue');
+    expect(serializePrompt(row({ text: 'x', delivery: 'bogus', steerFallback: 'bogus' }))).toMatchObject({
+      delivery: 'queue',
+      steer_fallback: null,
+    });
+  });
+});

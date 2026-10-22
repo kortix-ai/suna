@@ -30,6 +30,8 @@ export function markdownPalette(isDark: boolean) {
     orderedMarker: withAlpha(t.mutedForeground, 0.8),
     /** `thead bg-muted`. */
     tableHeader: t.muted,
+    /** Table body fill, so its edge fades start from an opaque colour. */
+    tableBody: t.background,
     /** Code block frame: `bg-card dark:bg-muted`; body: `bg-popover`. */
     codeFrame: isDark ? t.muted : t.card,
     codeBody: t.popover,

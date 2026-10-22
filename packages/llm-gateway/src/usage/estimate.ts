@@ -14,7 +14,11 @@
  *   - output: the characters the provider streamed (content, reasoning, tool
  *     call arguments) at ~4 characters per token.
  *
- * The estimate prices the whole prompt as uncached input. It is recorded with
+ * The estimate prices the prompt as uncached input, unless the request marks
+ * its prefix for caching (`cache_control` / `prompt_cache_key`). Then the stable
+ * prefix is priced as cache reads: see `estimateCachedPromptTokens`. Without
+ * that, a Stop on a warm 150k-token agent prompt bills ~4.9x the real cost.
+ * It is recorded with
  * `usageEstimated: true` on the usage row, so it is always distinguishable
  * from provider-reported usage.
  */
@@ -76,6 +80,36 @@ export function estimatePromptTokens(body: Record<string, unknown>): number {
     if (key in body) visit(body[key], 0);
   }
   return Math.ceil(chars / CHARS_PER_TOKEN) + images * IMAGE_PART_TOKENS;
+}
+
+/** Share of a cache-marked prompt that a follow-up turn serves from the cache. */
+export const CACHE_MARKED_PROMPT_SHARE = 0.9;
+
+function hasCacheMarker(value: unknown, depth: number): boolean {
+  if (depth > 3 || value == null || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return value.some((item) => hasCacheMarker(item, depth + 1));
+  const record = value as Record<string, unknown>;
+  if ('cache_control' in record || 'prompt_cache_key' in record) return true;
+  return hasCacheMarker(record.content, depth + 1);
+}
+
+/**
+ * Prompt tokens to price as cache reads when a stream ends before its usage
+ * frame. A request that marks its prefix for caching (an agent harness sets
+ * `cache_control` on every turn) is a warm turn: `CACHE_MARKED_PROMPT_SHARE`
+ * of the prompt is a cache hit. An unmarked request has no evidence of
+ * caching and is priced as plain input (0).
+ */
+export function estimateCachedPromptTokens(
+  body: Record<string, unknown>,
+  promptTokens: number,
+): number {
+  const marked =
+    'prompt_cache_key' in body ||
+    'cache_control' in body ||
+    (Array.isArray(body.messages) && body.messages.some((m) => hasCacheMarker(m, 0))) ||
+    hasCacheMarker(body.system, 0);
+  return marked ? Math.floor(promptTokens * CACHE_MARKED_PROMPT_SHARE) : 0;
 }
 
 /** Estimated output tokens from the number of streamed output characters. */

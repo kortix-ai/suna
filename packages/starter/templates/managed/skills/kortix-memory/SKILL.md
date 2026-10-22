@@ -26,6 +26,7 @@ prior context, then `view` the sub-files (`overview.md`,
 `connections.md`, etc.) the index points at when they're relevant.
 Record anything durable as you go — your context window may reset at
 any time, so what isn't written to `memory/` is lost.
+A project whose `kortix.yaml` `tools:` does not list `memory` has no `memory` tool: read and edit the files under `memory/` with the file tools, and `memory: kortix:memory` under `tools:` brings the tool back.
 
 Memory is **continuously CRUD'd**:
 
@@ -103,7 +104,9 @@ there's enough depth to warrant a click.
 
 ### What NOT to remember (DROP)
 
-- One user's personal preferences — those are not project memory.
+- One user's personal preferences — those are not project memory. They
+  go in that user's own memory, `/drives/me/Memory` (the
+  `kortix-user-memory` skill).
 - Facts derivable from the repo layout, file names, or `git log`.
 - One-off task state that won't matter next week.
 - Anything that's already in `kortix.yaml`, `AGENTS.md`, or a SKILL.md.

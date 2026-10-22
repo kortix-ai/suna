@@ -1,4 +1,4 @@
-import { canonicalManagedModelId, isRuntimeManagedModelId } from '../models/managed-models';
+import { canonicalManagedModelId } from '../models/managed-models';
 
 // One definition of how a default model/agent is chosen across scopes. Keeping
 // the precedence here means Slack, the web picker, and the gateway agree.
@@ -39,8 +39,9 @@ export function toOpencodeModelRef(model: string): string {
   return `${KORTIX_PREFIX}${toWireModel(model)}`;
 }
 
+/** A bare wire id is a Kortix managed model: BYOK and codex refs always carry a `provider/`. */
 function isManagedRef(ref: string): boolean {
-  return isRuntimeManagedModelId(toWireModel(ref));
+  return !toWireModel(ref).includes('/');
 }
 
 /**
@@ -49,8 +50,8 @@ function isManagedRef(ref: string): boolean {
  *   per-agent default → project default → account default → platform default.
  *
  * The MOST-SPECIFIC present layer wins; the free-tier managed-drop then applies
- * to that single chosen candidate (dropping to the platform default rather than
- * silently downgrading to a less-specific layer — see choose-default-model.test).
+ * to that single chosen candidate (dropping to no model rather than silently
+ * downgrading to a less-specific layer — see choose-default-model.test).
  */
 export function chooseEffectiveModel(params: {
   agentDefault?: string | null;
@@ -71,8 +72,9 @@ export function chooseEffectiveModel(params: {
     source = 'account';
   }
   if (!candidate) return { model: null, source: 'platform' };
-  // Free tier cannot use managed Kortix models; the chosen candidate is dropped
-  // to the platform default rather than falling through to a broader layer.
+  // An account without the managed-models entitlement never gets a managed
+  // model. The chosen candidate is dropped rather than falling through to a
+  // broader layer (see choose-default-model.test).
   if (params.freeModelsOnly && isManagedRef(candidate)) return { model: null, source: 'platform' };
   return { model: candidate, source };
 }

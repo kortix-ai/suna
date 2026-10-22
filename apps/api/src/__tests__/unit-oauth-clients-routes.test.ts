@@ -23,7 +23,7 @@ mock.module('../iam', () => ({
   },
 }));
 mock.module('../iam/actor', () => ({ actorOf: async () => ({ userId: USER_ID, accountId: ACCOUNT_ID }) }));
-mock.module('../accounts/iam/helpers', () => ({
+mock.module('../accounts/iam/http-helpers', () => ({
   auditIam: async (_c: unknown, args: Record<string, unknown>) => {
     audits.push(args);
   },
@@ -77,7 +77,7 @@ mock.module('../repositories/oauth-clients', () => {
 });
 
 const { iamRouter } = await import('../accounts/iam/app');
-await import('../accounts/iam/oauth-clients');
+(await import('../accounts/iam/oauth-clients')).registerIamOauthClientsRoutes();
 
 function createApp() {
   const app = new Hono();
@@ -187,7 +187,7 @@ describe('OAuth client registry routes', () => {
     expect((await app.request(base)).status).toBe(403);
     expect((await app.request(base, jsonReq('POST', { name: 'x', redirect_uris: ['https://a.example/cb'] }))).status).toBe(403);
     expect(store).toHaveLength(0);
-    expect(asserted).toEqual(['token.read', 'token.create']);
+    expect(asserted).toEqual(['token.create', 'token.create']);
   });
 
   test('a malformed client id is a 404, not a database error', async () => {

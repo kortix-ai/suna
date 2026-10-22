@@ -7,12 +7,12 @@ commit: 97b81a45d1
 *Incident (2026-08-26, SampleCo).* Two sessions could only be recovered by a
 human pressing Restart.
 
-- Session `e06ad0c4` answered `POST …/start` with `stage:"failed"` in **47 ms**,
+- One session answered `POST …/start` with `stage:"failed"` in **47 ms**,
   making **no provider call**. A wake had exceeded the FIXED
   `RUNTIME_WAKE_LEASE_MS = 240_000`, and maintenance stamped
   `stopReason:"runtime_wake_failed"`. The box was startable: the manual restart
   reached ready in **10 s**.
-- Session `9c8749ac` (box `i67m4fhw2t3nesssgl4yf`) replayed
+- Another session (on an E2B box) replayed
   `{"stage":"failed","retriable":false,…"stopReason":"runtime_boot_failed",
   "healthStatus":"unknown","lastInitError":null}` on **every open for 10+
   hours** from a stamp written at 03:37Z. Four fields from four different
@@ -51,8 +51,8 @@ consumed by a `/start` branch that returned before any provider call. Only
    flapping provider.
 7. **The observer that DEFERS a park owns the confirmation.** A mid-turn
    `stopped` read that waits for a second observation must schedule that second
-   read itself, not assume someone polls again. Session `29861dfa` /
-   `inqwpv4a1cc1kynlg46k8` read `running` for 5+ minutes while the provider said
+   read itself, not assume someone polls again. A third session and its
+   E2B box read `running` for 5+ minutes while the provider said
    `not running (status: stopped)`, and the queued prompt burned against it.
 
 *Automation:* `apps/api/src/projects/routes/stopped-wake-result.test.ts` (the

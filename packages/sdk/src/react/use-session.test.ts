@@ -26,7 +26,7 @@ let sessionPromptImpl: (args: unknown) => Promise<{
 }> = async () => ({ data: {} });
 
 class RuntimeNotReadyError extends Error {
-  constructor(message = '[opencode-sdk] Server URL not ready — sandbox is still loading') {
+  constructor(message = '[kortix-runtime] Server URL not ready — sandbox is still loading') {
     super(message);
     this.name = 'RuntimeNotReadyError';
   }
@@ -71,6 +71,7 @@ import {
   hasStartGivenUp,
   markDispatchedForPartIds,
   nextInconclusiveSince,
+  presenceReturnReopensSession,
   rejectQuestion,
   resolveSendOptions,
   resolveSessionRuntimeUrl,
@@ -271,11 +272,91 @@ describe('answerPermission', () => {
     });
     expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
   });
+
+  // KRTX-2190 (prod 2026-10-12): two reply affordances raced for one request;
+  // the runtime answered the first and answered the second with 404
+  // `Permission request not found: per_<id>`, which reached the browser as an
+  // unhandled promise rejection and paged Sentry. The request is gone — the
+  // pending entry must drop and the reply must NOT throw.
+  test('a 404 permission-request-not-found reply resolves and drops the pending entry', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: { message: 'Permission request not found: per_x' },
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'once')).resolves.toBeUndefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('a lowercase permission-request-not-found 404 (pi harness wording) resolves too', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: 'permission request not found',
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'reject')).resolves.toBeUndefined();
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('a 404 that is not an already-answered reply still throws', async () => {
+    seedPermission('p1');
+    permissionReplyImpl = async () => ({
+      error: { message: 'no such route' },
+      response: new Response(null, { status: 404 }),
+    });
+
+    await expect(answerPermission('p1', 'always')).rejects.toMatchObject({
+      kind: 'runtime-error',
+    });
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeDefined();
+  });
+
+  test('a second concurrent reply for the same request joins the first instead of double-sending', async () => {
+    seedPermission('p1');
+    let calls = 0;
+    permissionReplyImpl = async () => {
+      calls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      return { data: {} };
+    };
+
+    // The composer card and the tool-card inline prompt (or the allow-everything
+    // flow and the auto-approve backstop) both funnel into the same reply verb;
+    // racing them must not POST twice for one request id.
+    await Promise.all([answerPermission('p1', 'once'), answerPermission('p1', 'always')]);
+
+    expect(calls).toBe(1);
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
+
+  test('after a reply settles, a later reply for the same request sends again (the in-flight entry cleared)', async () => {
+    seedPermission('p1');
+    let calls = 0;
+    permissionReplyImpl = async () => {
+      calls += 1;
+      if (calls === 1) return { data: {} };
+      return {
+        error: { message: 'Permission request not found: per_x' },
+        response: new Response(null, { status: 404 }),
+      };
+    };
+
+    await answerPermission('p1', 'once');
+    // A stale caller retries the same request after the first reply settled;
+    // the runtime answers it with the already-answered 404, which resolves.
+    seedPermission('p1');
+    await expect(answerPermission('p1', 'always')).resolves.toBeUndefined();
+
+    expect(calls).toBe(2);
+    expect(useRuntimePendingStore.getState().permissions['p1']).toBeUndefined();
+  });
 });
 
 describe('classifySendError', () => {
   test('classifies a runtime-not-ready error from getClient()', () => {
-    const err = new Error('[opencode-sdk] Server URL not ready — sandbox is still loading');
+    const err = new Error('[kortix-runtime] Server URL not ready — sandbox is still loading');
     expect(classifySendError(err).kind).toBe('runtime-not-ready');
   });
 
@@ -1262,7 +1343,7 @@ describe('classifySendError — connector refusals', () => {
 // file read, anything below the hook's own actions) had to rebuild it. These
 // pin the resolution, including the part the raw field cannot be used for:
 // `runtime_url` is a RELATIVE path (`/p/<ext>/8000`, see
-// `apps/api/src/projects/routes/shared.ts:526`), never an absolute URL.
+// `apps/api/src/projects/session-open/index.ts:526`), never an absolute URL.
 
 describe('resolveSessionRuntimeUrl', () => {
   const sandbox = (externalId: string | null) =>
@@ -1415,5 +1496,27 @@ describe('resolveSendOptions', () => {
     expect(resolveSendOptions(none, { directory: '/workspace/x' })).toEqual({
       directory: '/workspace/x',
     });
+  });
+});
+
+describe('presenceReturnReopensSession', () => {
+  test("a returning human releases this tab's own stop hold", () => {
+    expect(presenceReturnReopensSession(true, 'stopped')).toBe(true);
+    expect(presenceReturnReopensSession(true, null)).toBe(true);
+  });
+
+  test('a returning human re-opens a poll that died on a dormant answer', () => {
+    // The idle reaper and a Stop from any other host land here: the cached
+    // terminal-`stopped` answer stopped the poll, and without this the only
+    // ways back were an explicit Restart or a page remount.
+    expect(presenceReturnReopensSession(false, 'stopped')).toBe(true);
+  });
+
+  test('a live, waking or failed session is untouched by a return', () => {
+    expect(presenceReturnReopensSession(false, 'ready')).toBe(false);
+    expect(presenceReturnReopensSession(false, 'starting')).toBe(false);
+    expect(presenceReturnReopensSession(false, 'failed')).toBe(false);
+    expect(presenceReturnReopensSession(false, null)).toBe(false);
+    expect(presenceReturnReopensSession(false, undefined)).toBe(false);
   });
 });

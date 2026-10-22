@@ -31,4 +31,4 @@ goes red when either side drifts).
 **Deployment trap:** the daemon ships inside the sandbox image, so this fix
 reaches only sandboxes created from a NEW snapshot. Existing sessions keep the
 10s bound; the web-side classifier is what covers them.
-*Incident:* session `9f6b0d87`.
+*Incident:* one session, 2026-08-14.

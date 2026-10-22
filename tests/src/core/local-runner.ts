@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { type ShardTarget, listSpecFiles, loadDurations, planBrowserShard } from './browser-shard';
+import { parseShardBounds } from './shard';
 import { LOCAL_AUTH_EMAIL_HOOK_SECRET, localWebUrl } from './local-profile';
 import {
   type LocalStackHandle,
@@ -11,8 +13,9 @@ import {
   ensureLocalWeb,
   readLocalSupabaseEnvironment,
   resolveLocalTopology,
+  waitUntilReady,
 } from './local-stack';
-import { assertTargetSmokeHealth, resolveTargetSmokeConfig } from './target-smoke';
+import { resolveTargetSmokeConfig, waitForTargetSha } from './target-smoke';
 
 export interface LocalTestLane {
   name: string;
@@ -34,6 +37,7 @@ export interface LocalTestPlan {
     | 'target-api-full'
     | 'target-browser-full'
     | 'latency'
+    | 'agentic'
     | 'full';
   lanes: LocalTestLane[];
   stages: LocalTestLane[][];
@@ -69,6 +73,17 @@ function deployedFlowTimeoutMs(): string {
   return override === undefined || override === '' ? DEPLOYED_FLOW_TIMEOUT_MS : override;
 }
 
+/**
+ * The flow tag the deployed API lanes (`--target-api-full`, `--target-full`)
+ * select. The `Tests` lanes already ran every flow on the same tree, so a
+ * deployed run proves only what a deployment can break: auth against the real
+ * Supabase, real sandbox boot and wake, the runtime proxy and SSE through the
+ * edge, the LLM gateway, Stripe, object storage, managed git push, email,
+ * health and SHA, CORS and domains. The seam-to-flow table is in
+ * tests/README.md ("Release gate"). `--require-all` applies to this set.
+ */
+export const DEPLOYED_FLOW_TAG = 'deployed';
+
 const flowFilterFlags = new Set(['--domain', '--id', '--tag', '--smoke']);
 
 function hasFlowFilter(args: string[]): boolean {
@@ -79,25 +94,36 @@ function hasFlowFilter(args: string[]): boolean {
 }
 
 function assertShardValue(value: string | undefined, flag: string): void {
-  const match = value?.match(/^(\d+)\/(\d+)$/);
-  const current = Number(match?.[1]);
-  const total = Number(match?.[2]);
-  if (!match || current < 1 || total < 2 || current > total) {
+  const parsed = parseShardBounds(value ?? '', 2);
+  if (!parsed.matched || !parsed.inBounds) {
     throw new Error(`${flag} must use CURRENT/TOTAL with 1 <= CURRENT <= TOTAL`);
   }
 }
 
+/** Playwright args for `--browser-shard=N/M`: the duration-balanced spec files (core/browser-shard.ts). */
+function browserShardPlaywrightArgs(shard: string | undefined, target: ShardTarget): string[] {
+  if (!shard) return [];
+  const [current, total] = shard.split('/').map(Number) as [number, number];
+  const files = planBrowserShard({
+    specs: listSpecFiles(),
+    durations: loadDurations(target),
+    current,
+    total,
+  });
+  return ['--', ...files];
+}
+
 export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const full = args.includes('--full');
-  const flowsOnly = args.includes('--flows-only') || hasFlowFilter(args);
+  const flowsOnly = args.includes('--flows-only') || (!args.includes('--agentic-only') && hasFlowFilter(args));
   const sdkOnly = args.includes('--sdk-only');
   const dbOnly = args.includes('--db-only');
   const browserOnly = args.includes('--browser-only');
   const packagesOnly = args.includes('--packages-only');
   const targetSmoke = args.includes('--target-smoke');
   const targetFull = args.includes('--target-full');
-  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs, each
-  // sharded, so `max(api, browser)` replaces a contended sum on one 2-vCPU
+  // The release gate runs the two deployed lanes as SEPARATE GitHub jobs (the
+  // browser lane sharded), so `max(api, browser)` replaces a contended sum on one 2-vCPU
   // runner. `--target-full` still runs both lanes in one process for
   // deploy-preview (one sandbox origin, one job by construction) and local use.
   const targetApiFullOnly = args.includes('--target-api-full');
@@ -109,8 +135,17 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   // preview or staging tomorrow). tests/bin/latency-bench.ts owns its own
   // minimal target validation and health probe instead.
   const latencyOnly = args.includes('--latency');
+  const agenticOnly = args.includes('--agentic-only');
+  // The core run without package quality: CI's `packages-*` lanes run it.
+  const noPackages = args.includes('--no-packages');
   const browserShardArgs = args.filter((arg) => arg.startsWith('--browser-shard='));
   const apiShardArgs = args.filter((arg) => arg.startsWith('--api-shard='));
+  // `--package-group=api|cli|kortixd|rest`: one slice of package quality
+  // (tests/bin/package-quality.ts), so CI runs the slices on parallel runners.
+  const packageGroupArgs = args.filter((arg) => arg.startsWith('--package-group='));
+  // `--core-group=flows|db`: one half of the core run without package quality,
+  // so CI runs the REST/CLI flows and the DB suites on parallel runners.
+  const coreGroupArgs = args.filter((arg) => arg.startsWith('--core-group='));
   const modes = [
     full,
     flowsOnly,
@@ -123,17 +158,39 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     targetApiFullOnly,
     targetBrowserFullOnly,
     latencyOnly,
+    agenticOnly,
   ].filter(Boolean).length;
   if (modes > 1) {
     throw new Error(
-      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, --target-browser-full, or --latency',
+      'choose only one of --full, --flows-only, --sdk-only, --db-only, --browser-only, --packages-only, --target-smoke, --target-full, --target-api-full, --target-browser-full, --latency, or --agentic-only',
     );
+  }
+  if (noPackages && modes > 0) {
+    throw new Error('--no-packages applies only to the default core run');
   }
   if (browserShardArgs.length > 1) {
     throw new Error('choose only one --browser-shard value');
   }
   if (apiShardArgs.length > 1) {
     throw new Error('choose only one --api-shard value');
+  }
+  if (packageGroupArgs.length > 1) {
+    throw new Error('choose only one --package-group value');
+  }
+  if (coreGroupArgs.length > 1) {
+    throw new Error('choose only one --core-group value');
+  }
+  const coreGroup = coreGroupArgs[0]?.slice('--core-group='.length);
+  if (coreGroupArgs.length === 1) {
+    if (coreGroup !== 'flows' && coreGroup !== 'db') throw new Error('--core-group must be flows or db');
+    if (modes > 0) throw new Error('--core-group applies only to the default core run');
+  }
+  const packageGroup = packageGroupArgs[0]?.slice('--package-group='.length);
+  if (packageGroupArgs.length === 1) {
+    if (!['api', 'cli', 'kortixd', 'rest'].includes(packageGroup ?? '')) {
+      throw new Error('--package-group must be api, cli, kortixd or rest');
+    }
+    if (!packagesOnly) throw new Error('--package-group requires --packages-only');
   }
   const browserShard = browserShardArgs[0]?.slice('--browser-shard='.length);
   if (browserShardArgs.length === 1) {
@@ -162,6 +219,9 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       arg !== '--target-full' &&
       arg !== '--target-api-full' &&
       arg !== '--target-browser-full' &&
+      arg !== '--no-packages' &&
+      !arg.startsWith('--package-group=') &&
+      !arg.startsWith('--core-group=') &&
       !arg.startsWith('--browser-shard=') &&
       !arg.startsWith('--api-shard='),
   );
@@ -172,6 +232,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
   const sdk: LocalTestLane = {
     name: 'sdk',
     command: ['pnpm', '--filter', '@kortix/sdk', 'test'],
+    // The root runner already applied its own Mac gate (refusesSuiteRun).
+    env: { KORTIX_FULL_TEST: '1' },
   };
   // Every PostgreSQL-backed test file, one process and one fresh database per
   // file (src/core/db-suites.ts). Needs local Supabase; the runner starts it
@@ -199,13 +261,14 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'bun',
       'run',
       'test:browser',
-      ...(browserShard ? ['--', `--shard=${browserShard}`] : []),
+      ...browserShardPlaywrightArgs(browserShard, 'local'),
     ],
     cwd: 'tests',
   };
   const packageQuality: LocalTestLane = {
     name: 'package-quality',
     command: ['bun', 'tests/bin/package-quality.ts'],
+    ...(packageGroup ? { env: { KORTIX_PACKAGE_GROUP: packageGroup } } : {}),
   };
   // Everything except the mode flag itself passes straight through, so
   // `--target <origin>`, `--iterations N`, etc. reach the binary untouched —
@@ -233,6 +296,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      DEPLOYED_FLOW_TAG,
       ...(apiShard ? ['--shard', apiShard] : []),
     ],
     // KE2E_API_WORKERS was 3. `provision.ts`'s global KE2E_PROVISION_CONCURRENCY
@@ -240,8 +305,8 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
     // measured parallelism at 1.43x. 6 is the paired half of raising provision
     // concurrency to 4; raising either alone does almost nothing. Sandbox
     // workers stay at 3 because those boot real cloud sandboxes.
-    // The release gate's shards override BOTH so the fleet total stays bounded
-    // — see the arithmetic in tests-release.yml.
+    // The release gate's API job overrides BOTH so the fleet total stays
+    // bounded — see the arithmetic in tests-release.yml.
     env: {
       KE2E_API_WORKERS: process.env.KE2E_API_WORKERS ?? '6',
       KE2E_SANDBOX_WORKERS: process.env.KE2E_SANDBOX_WORKERS ?? '3',
@@ -254,22 +319,23 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       'bun',
       'run',
       'test:browser',
-      ...(browserShard ? ['--', `--shard=${browserShard}`] : []),
+      ...browserShardPlaywrightArgs(browserShard, 'deployed'),
     ],
     cwd: 'tests',
     env: {
       E2E_BROWSER_WORKERS: process.env.E2E_BROWSER_WORKERS ?? '2',
-      E2E_ENABLE_SDK_ONLY_SESSION: '1',
-      E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-      E2E_OAUTH_PROVIDER_INITIATION: process.env.KE2E_TARGET === 'preview' ? '0' : '1',
       E2E_ENABLE_BILLING_JOURNEY: '1',
       E2E_REQUIRE_ALL_BROWSER: '1',
-      ...(process.env.KE2E_TARGET === 'preview'
-        ? { E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1' }
-        : {}),
     },
   };
 
+  if (agenticOnly) {
+    const agentic: LocalTestLane = {
+      name: 'agentic',
+      command: ['bun', 'tests/bin/agentic.ts', ...args.filter((arg) => arg !== '--agentic-only' && arg !== '--')],
+    };
+    return { mode: 'agentic', lanes: [agentic], stages: [[agentic]] };
+  }
   if (flowsOnly) return { mode: 'flows', lanes: [flows], stages: [[flows]] };
   if (sdkOnly) return { mode: 'sdk', lanes: [sdk], stages: [[sdk]] };
   if (dbOnly) return { mode: 'db', lanes: [dbSuites], stages: [[dbSuites]] };
@@ -330,24 +396,42 @@ export function buildLocalTestPlan(args: string[]): LocalTestPlan {
       fullBrowser,
       fullPackageQuality,
     ];
+    // The SDK lane owns the gate's only wall-clock assertions (the ReDoS
+    // guards in packages/sdk, 100 ms and 1000 ms bounds). Inside the heavy
+    // start burst they measured 1272 ms against the 1000 ms bound on a
+    // 6-core box (PR #9266 saw the same at load 57), while the lane alone
+    // passes at ~370 ms and CI runs every lane in an isolated job. Give the
+    // SDK a stage of its own so no lane can steal its clock.
+    const fullStage = [fullFlows, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
     return {
       mode: 'full',
       lanes,
       // Four REST workers and four browsers contend for the same local API and
       // database. Keep browser verification after REST. Package quality stays
       // exclusive because concurrent package workers double both lane times.
-      stages: [
-        [fullFlows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit],
-        [fullBrowser],
-        [fullPackageQuality],
-      ],
+      stages: [fullStage, [sdk], [fullBrowser], [fullPackageQuality]],
     };
   }
-  const lanes = [flows, sdk, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
+  const coreStage = [flows, dbSuites, runnerUnit, routeCoverage, worktreeUnit];
+  const lanes = [...coreStage, sdk];
+  // `pnpm test` is the whole suite minus the browser journeys, so it also runs
+  // package quality after the core stage. The SDK runs once, as its own lane.
+  const corePackageQuality: LocalTestLane = {
+    ...packageQuality,
+    env: { KORTIX_PACKAGE_SKIP_SDK_TESTS: '1' },
+  };
+  // The two core groups partition `--no-packages`: the flows on one runner,
+  // everything else on the other.
+  if (coreGroup === 'flows') return { mode: 'core', lanes: [flows], stages: [[flows]] };
+  if (coreGroup === 'db') {
+    const dbStage = coreStage.filter((lane) => lane !== flows);
+    return { mode: 'core', lanes: [...dbStage, sdk], stages: [dbStage, [sdk]] };
+  }
+  if (noPackages) return { mode: 'core', lanes, stages: [coreStage, [sdk]] };
   return {
     mode: 'core',
-    lanes,
-    stages: [lanes],
+    lanes: [...lanes, corePackageQuality],
+    stages: [coreStage, [sdk], [corePackageQuality]],
   };
 }
 
@@ -367,22 +451,110 @@ export async function waitForLocalWeb(
   } = {},
 ): Promise<void> {
   const checkedWebUrl = assertLoopbackHttpUrl(webUrl, 'local web').toString();
-  const timeoutMs = options.timeoutMs ?? 60_000;
-  const deadline = performance.now() + timeoutMs;
   const probe =
     options.probe ?? ((url: string) => fetch(url, { signal: AbortSignal.timeout(5_000) }));
-  const sleep = options.sleep ?? Bun.sleep;
-  do {
-    try {
-      const response = await probe(checkedWebUrl);
-      if (response.ok) return;
-    } catch {
-      // The dev server can accept connections before its first route compiles.
-    }
-    await sleep(250);
-  } while (performance.now() < deadline);
-  throw new Error(`local web is not ready at ${webUrl} after ${timeoutMs}ms`);
+  await waitUntilReady({
+    probe: async () => (await probe(checkedWebUrl)).ok,
+    describe: `local web is not ready at ${webUrl}`,
+    timeoutMs: options.timeoutMs ?? 60_000,
+    clock: () => performance.now(),
+    sleep: options.sleep,
+  });
 }
+
+/**
+ * The local browser lane's env: wait for the local web to be ready, then hand
+ * the flows the whole local stack's coordinates (API, Supabase, Mailpit, the
+ * capture store).
+ */
+async function prepareBrowserEnv(
+  root: string,
+  env: Record<string, string | undefined>,
+): Promise<Record<string, string | undefined>> {
+  const topology = resolveLocalTopology(root);
+  const supabase = await readLocalSupabaseEnvironment(topology);
+  const webPort = topology.marker?.ports.web ?? 3000;
+  const webUrl = localWebUrl(webPort);
+  await waitForLocalWeb(webUrl);
+  if (
+    !supabase.API_URL ||
+    !supabase.DB_URL ||
+    !supabase.ANON_KEY ||
+    !supabase.SERVICE_ROLE_KEY
+  ) {
+    throw new Error('local Supabase environment is incomplete');
+  }
+  return {
+    ...env,
+    E2E_BASE_URL: webUrl,
+    E2E_API_URL: topology.apiUrl,
+    E2E_SUPABASE_URL: supabase.API_URL,
+    E2E_MAILPIT_URL: supabase.MAILPIT_URL ?? '',
+    E2E_DATABASE_URL: supabase.DB_URL,
+    KE2E_DATABASE_URL: supabase.DB_URL,
+    DATABASE_URL: supabase.DB_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: supabase.ANON_KEY,
+    SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
+    // The capture store (Supabase Storage S3): journeys write a device's day with it.
+    E2E_CAPTURE_S3_ENDPOINT: `${supabase.API_URL.replace(/\/+$/, '')}/storage/v1/s3`,
+    E2E_CAPTURE_S3_ACCESS_KEY_ID: supabase.S3_PROTOCOL_ACCESS_KEY_ID ?? '',
+    E2E_CAPTURE_S3_SECRET_ACCESS_KEY: supabase.S3_PROTOCOL_ACCESS_KEY_SECRET ?? '',
+  };
+}
+
+/** The deployed browser lane's env: demand the target's credentials up front. */
+function prepareTargetBrowserFullEnv(
+  _root: string,
+  env: Record<string, string | undefined>,
+): Promise<Record<string, string | undefined>> {
+  const required = [
+    'KE2E_API_URL',
+    'KE2E_SUPABASE_URL',
+    'KE2E_SUPABASE_ANON_KEY',
+    'KE2E_SUPABASE_SERVICE_ROLE_KEY',
+    'KE2E_DATABASE_URL',
+    'KE2E_STRIPE_SECRET_KEY',
+    'KE2E_STRIPE_WEBHOOK_SECRET',
+  ] as const;
+  const missing = required.filter((name) => !process.env[name]?.trim());
+  if (
+    !process.env.E2E_AGENTMAIL_API_KEY?.trim() &&
+    !process.env.E2E_MAILPIT_URL?.trim()
+  ) {
+    missing.push('E2E_AGENTMAIL_API_KEY or E2E_MAILPIT_URL' as never);
+  }
+  if (missing.length > 0) {
+    throw new Error(`deployed browser suite requires ${missing.join(', ')}`);
+  }
+  const targetApiUrl = process.env.KE2E_API_URL ?? '';
+  const targetSupabaseUrl = process.env.KE2E_SUPABASE_URL ?? '';
+  const targetDatabaseUrl = process.env.KE2E_DATABASE_URL ?? '';
+  const targetSupabaseAnonKey = process.env.KE2E_SUPABASE_ANON_KEY ?? '';
+  const targetSupabaseServiceRoleKey = process.env.KE2E_SUPABASE_SERVICE_ROLE_KEY ?? '';
+  return Promise.resolve({
+    ...env,
+    E2E_API_URL: targetApiUrl,
+    E2E_SUPABASE_URL: targetSupabaseUrl,
+    E2E_DATABASE_URL: targetDatabaseUrl,
+    DATABASE_URL: targetDatabaseUrl,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: targetSupabaseAnonKey,
+    SUPABASE_SERVICE_ROLE_KEY: targetSupabaseServiceRoleKey,
+  });
+}
+
+/**
+ * The lanes that assemble their own env before spawn, by lane name: runLane
+ * calls the entry instead of inlining each branch. `browser` waits for the
+ * local web and hands the flows the local stack's coordinates;
+ * `target-browser-full` demands the deployed target's credentials up front.
+ */
+const LANE_PREPARE_ENV: Record<
+  string,
+  (root: string, env: Record<string, string | undefined>) => Promise<Record<string, string | undefined>>
+> = {
+  browser: prepareBrowserEnv,
+  'target-browser-full': prepareTargetBrowserFullEnv,
+};
 
 async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   const startedAt = performance.now();
@@ -411,67 +583,8 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
         : { KE2E_AUTH_EMAIL_HOOK_SECRET: LOCAL_AUTH_EMAIL_HOOK_SECRET }),
       ...(lane.env ?? {}),
     };
-    if (lane.name === 'browser') {
-      const topology = resolveLocalTopology(root);
-      const supabase = await readLocalSupabaseEnvironment(topology);
-      const webPort = topology.marker?.ports.web ?? 3000;
-      const webUrl = localWebUrl(webPort);
-      await waitForLocalWeb(webUrl);
-      if (
-        !supabase.API_URL ||
-        !supabase.DB_URL ||
-        !supabase.ANON_KEY ||
-        !supabase.SERVICE_ROLE_KEY
-      ) {
-        throw new Error('local Supabase environment is incomplete');
-      }
-      env = {
-        ...env,
-        E2E_BASE_URL: webUrl,
-        E2E_API_URL: topology.apiUrl,
-        E2E_SUPABASE_URL: supabase.API_URL,
-        E2E_MAILPIT_URL: supabase.MAILPIT_URL ?? '',
-        E2E_DATABASE_URL: supabase.DB_URL,
-        KE2E_DATABASE_URL: supabase.DB_URL,
-        DATABASE_URL: supabase.DB_URL,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: supabase.ANON_KEY,
-        SUPABASE_SERVICE_ROLE_KEY: supabase.SERVICE_ROLE_KEY,
-      };
-    } else if (lane.name === 'target-browser-full') {
-      const required = [
-        'KE2E_API_URL',
-        'KE2E_SUPABASE_URL',
-        'KE2E_SUPABASE_ANON_KEY',
-        'KE2E_SUPABASE_SERVICE_ROLE_KEY',
-        'KE2E_DATABASE_URL',
-        'KE2E_STRIPE_SECRET_KEY',
-        'KE2E_STRIPE_WEBHOOK_SECRET',
-      ] as const;
-      const missing = required.filter((name) => !process.env[name]?.trim());
-      if (
-        !process.env.E2E_AGENTMAIL_API_KEY?.trim() &&
-        !process.env.E2E_MAILPIT_URL?.trim()
-      ) {
-        missing.push('E2E_AGENTMAIL_API_KEY or E2E_MAILPIT_URL' as never);
-      }
-      if (missing.length > 0) {
-        throw new Error(`deployed browser suite requires ${missing.join(', ')}`);
-      }
-      const targetApiUrl = process.env.KE2E_API_URL ?? '';
-      const targetSupabaseUrl = process.env.KE2E_SUPABASE_URL ?? '';
-      const targetDatabaseUrl = process.env.KE2E_DATABASE_URL ?? '';
-      const targetSupabaseAnonKey = process.env.KE2E_SUPABASE_ANON_KEY ?? '';
-      const targetSupabaseServiceRoleKey = process.env.KE2E_SUPABASE_SERVICE_ROLE_KEY ?? '';
-      env = {
-        ...env,
-        E2E_API_URL: targetApiUrl,
-        E2E_SUPABASE_URL: targetSupabaseUrl,
-        E2E_DATABASE_URL: targetDatabaseUrl,
-        DATABASE_URL: targetDatabaseUrl,
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: targetSupabaseAnonKey,
-        SUPABASE_SERVICE_ROLE_KEY: targetSupabaseServiceRoleKey,
-      };
-    }
+    const prepareEnv = LANE_PREPARE_ENV[lane.name];
+    if (prepareEnv) env = await prepareEnv(root, env);
     const child = Bun.spawn(lane.command, {
       cwd: lane.cwd ? resolve(root, lane.cwd) : root,
       env,
@@ -494,8 +607,54 @@ async function runLane(root: string, lane: LocalTestLane): Promise<LaneResult> {
   }
 }
 
+/** Lanes that start the local Supabase, so they need Docker. */
+const DOCKER_LANES = new Set(['api-cli-flows', 'db-suites']);
+
+function dockerAvailable(): boolean {
+  try {
+    return Bun.spawnSync(['docker', 'info'], { stdout: 'ignore', stderr: 'ignore' }).exitCode === 0;
+  } catch {
+    return false; // no docker binary at all (a factory sandbox)
+  }
+}
+
+/**
+ * A suite-wide run on a developer Mac: the default `pnpm test`, `--full`,
+ * `--packages-only`, `--browser-only`, or `--db-only` with no path filter.
+ * These run in CI and on Linux boxes only. 2026-10-16: five agent sessions ran
+ * the suite at once on one laptop (load average 112, 16.5 of 17.4 GB swap).
+ * `KORTIX_FULL_TEST=1` overrides.
+ */
+export function refusesSuiteRun(plan: LocalTestPlan, platform: string, env: Record<string, string | undefined>): boolean {
+  if (platform !== 'darwin' || env.KORTIX_FULL_TEST === '1') return false;
+  if (plan.mode === 'db') return plan.lanes[0]!.command.length <= 2;
+  return plan.mode === 'core' || plan.mode === 'full' || plan.mode === 'packages' || plan.mode === 'browser';
+}
+
 export async function runLocalTests(root: string, args: string[]): Promise<number> {
   const plan = buildLocalTestPlan(args);
+  if (refusesSuiteRun(plan, process.platform, process.env)) {
+    console.error(
+      [
+        `[test] REFUSED: mode=${plan.mode} runs a whole suite. A Mac runs targeted tests only; the suite runs in CI.`,
+        '  One flow:        pnpm test -- --id <ID>   (or --domain <d>)',
+        '  DB suites:       pnpm test -- --db-only <path-filter>',
+        '  SDK:             pnpm test -- --sdk-only',
+        '  One package:     pnpm --filter <pkg> test <file>',
+        '  The whole suite: add the `test` label to the PR (CI), or KORTIX_FULL_TEST=1 pnpm test',
+      ].join('\n'),
+    );
+    return 2;
+  }
+  if (plan.mode !== 'full' && plan.lanes.some((lane) => DOCKER_LANES.has(lane.name)) && !dockerAvailable()) {
+    // No Docker (a factory sandbox): the DB lanes cannot run. A skip is not a pass.
+    for (const lane of plan.lanes) {
+      if (DOCKER_LANES.has(lane.name)) console.log(`[test] SKIP ${lane.name} (no Docker, not a pass)`);
+    }
+    plan.lanes = plan.lanes.filter((l) => !DOCKER_LANES.has(l.name));
+    plan.stages = plan.stages.map((stage) => stage.filter((l) => !DOCKER_LANES.has(l.name)));
+    if (plan.lanes.length === 0) return 1;
+  }
   const startedAt = performance.now();
   let localSupabase: LocalSupabaseHandle | null = null;
   let localStack: LocalStackHandle | null = null;
@@ -505,7 +664,7 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   try {
     if (DEPLOYED_TARGET_MODES.has(plan.mode)) {
       const target = resolveTargetSmokeConfig();
-      await assertTargetSmokeHealth(target);
+      await waitForTargetSha(target);
       console.log(
         `[test] deployed-target api=${target.apiUrl} web=${target.webUrl} sha=${target.expectedSha}`,
       );
@@ -555,6 +714,19 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
     if (localSupabase?.started) await localSupabase.stop();
   }
   const durationMs = performance.now() - startedAt;
+  const benchmarkPath = await writeBenchmark(root, results, plan, durationMs);
+  printResults(results, plan, durationMs, benchmarkPath);
+  const failed = results.filter((result) => result.exitCode !== 0);
+  return failed.length === 0 ? 0 : 1;
+}
+
+/** Build and write the benchmark JSON for one local run; returns its path. */
+async function writeBenchmark(
+  root: string,
+  results: LaneResult[],
+  plan: LocalTestPlan,
+  durationMs: number,
+): Promise<string> {
   const failed = results.filter((result) => result.exitCode !== 0);
   const benchmark = {
     gitSha: (await Bun.$`git rev-parse --short=10 HEAD`.cwd(root).quiet().text()).trim(),
@@ -568,7 +740,17 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
   await mkdir(outputDir, { recursive: true });
   const outputPath = resolve(outputDir, `benchmark-${Date.now()}.json`);
   await writeFile(outputPath, `${JSON.stringify(benchmark, null, 2)}\n`);
+  return outputPath;
+}
 
+/** Print the run verdict, one line per lane, and where the benchmark landed. */
+function printResults(
+  results: LaneResult[],
+  plan: LocalTestPlan,
+  durationMs: number,
+  benchmarkPath: string,
+): void {
+  const failed = results.filter((result) => result.exitCode !== 0);
   console.log(
     `\n[test] ${failed.length === 0 ? 'PASS' : 'FAIL'} ${plan.mode} ${(durationMs / 1000).toFixed(1)}s`,
   );
@@ -577,6 +759,5 @@ export async function runLocalTests(root: string, args: string[]): Promise<numbe
       `[test] ${result.exitCode === 0 ? 'PASS' : 'FAIL'} ${result.name} ${(result.durationMs / 1000).toFixed(1)}s`,
     );
   }
-  console.log(`[test] benchmark ${outputPath}`);
-  return failed.length === 0 ? 0 : 1;
+  console.log(`[test] benchmark ${benchmarkPath}`);
 }

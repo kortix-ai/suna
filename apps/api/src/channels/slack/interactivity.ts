@@ -5,7 +5,7 @@ import { db } from '../../shared/db';
 import { config } from '../../config';
 import { loadSlackTokenForProject } from '../install-store';
 import { openModal, updateMessage } from '../slack-api';
-import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { dispatchSlackEvent, spawnAgentTurn } from './dispatch';
 import { backfillSlackBindingLabel } from './binding-label';
 import { notifyAdminsOfAccessRequest } from './identity';
 import { chatUser, createChatAccessRequest, resolveChatActor } from '../core/identity';
@@ -26,7 +26,7 @@ import {
 import { SLACK_STOP_ACTION, stopSlackTurn } from './stop';
 import { isAdaptedId } from '../../projects/review-adapters';
 import { decideSlackThreadJoin } from './participants';
-import { attachPendingSlackAuthResponseUrl } from './auth-resume';
+import { attachPendingSlackAuthResponseUrl, consumePendingSlackPickerMessage } from './auth-resume';
 import { buildSlackLoginUrl, verifyLoginState } from './login';
 import { escapeMrkdwn, respondViaUrl, sessionWebUrl } from './util';
 import { handleSlashCommand } from './commands';
@@ -502,11 +502,11 @@ async function handleRequestAccess(
   const result = await createChatAccessRequest(chatUser('slack', teamId, slackUserId), projectId);
   const message =
     result.status === 'created'
-      ? "Access requested ✓ — an admin will review it. Once you're approved, send your message again and I'll get on it."
+      ? "Access requested ✓ — an admin will review it. Once you're approved, mention me again and I'll get on it."
       : result.status === 'pending'
         ? "You've already requested access — it's pending an admin's review."
         : result.status === 'already-member'
-          ? 'You already have access — send your message again and I’ll get on it.'
+          ? 'You already have access — mention me again and I’ll get on it.'
           : result.status === 'no-project'
             ? 'That project isn’t connected to this Slack workspace.'
             : 'I couldn’t request access — connect your Kortix account first, then try again.';
@@ -941,9 +941,6 @@ export async function handleBlockAction(
     );
   }
 
-  const pending = pendingPickers.get(pickerId);
-  if (pending) {
-    pendingPickers.delete(pickerId);
-    await dispatchSlackEvent(projectId, pending.envelope, turnScope(inbound));
-  }
+  const pending = await consumePendingSlackPickerMessage({ pendingId: pickerId, teamId, channelId });
+  if (pending) await dispatchSlackEvent(projectId, pending, turnScope(inbound));
 }

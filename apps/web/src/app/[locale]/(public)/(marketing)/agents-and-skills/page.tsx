@@ -1,6 +1,6 @@
 import { Reveal } from '@/components/home/reveal';
 import { Button } from '@/components/ui/marketing/button';
-import { Separator } from '@/components/ui/separator';
+import { SectionDivider } from '@/features/marketing/component/public-route-helpers';
 import { CodePanel } from '@/features/marketing/agent-computer/code-panel';
 import { getLocalizedAgentsAndSkillsContent } from '@/features/marketing/agents-and-skills/content';
 import { AgentsAndSkillsHeroVisual } from '@/features/marketing/agents-and-skills/hero-visual';
@@ -8,7 +8,7 @@ import { MdPanel } from '@/features/marketing/agents-and-skills/md-panel';
 import { RepoTree } from '@/features/marketing/agents-and-skills/repo-tree';
 import { CapabilityHero } from '@/features/marketing/component/capability-hero';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { getTranslations } from '@/i18n/get-translations';
 import Link from '@/components/site-link';
 import type { ReactNode } from 'react';
@@ -26,13 +26,6 @@ const GRID_4_RULES = [
   'border-t sm:border-l lg:border-t-0',
 ] as const;
 
-function SectionDivider(): ReactNode {
-  return (
-    <div className="mx-auto max-w-7xl px-6">
-      <Separator />
-    </div>
-  );
-}
 
 /**
  * `/agents-and-skills` — the part of the product that compounds.

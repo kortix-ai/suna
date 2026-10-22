@@ -1,7 +1,17 @@
 import { readFileSync } from 'node:fs';
+import type {
+  AgentConfigBlock,
+  AgentConfigResponse,
+  AgentGrantSetV2,
+  ModelDefaultsResponse,
+  ProjectConfigSummary,
+  ProjectDetail,
+} from '@kortix/sdk';
+import { splitHelp } from '../command-argv.ts';
 
 import {
   emitJson,
+  missing,
   resolveProjectContext,
   surfaceApiError,
   takeFlagBool,
@@ -9,73 +19,6 @@ import {
   takeFlagValues,
 } from '../command-helpers.ts';
 import { C, help, pad, status } from '../style.ts';
-
-// Mirrors GET /projects/:id/model-defaults (apps/api/src/projects/routes/models.ts).
-interface ModelDefaults {
-  platformDefault: string | null;
-  accountDefault: string | null;
-  projectDefault: string | null;
-  agentDefaults: Record<string, string>;
-  resolvedForCaller: string | null;
-}
-
-/** One entry of `GET /projects/:id/detail` → `config.agents`. */
-interface DeclaredAgent {
-  name: string;
-  path: string;
-  description: string | null;
-  mode: string | null;
-  enabled?: boolean;
-  sandbox?: string | null;
-  scope?: {
-    env: string[] | 'all';
-    connectors: string[] | 'all';
-    kortix_permissions?: string[] | 'all';
-    /** @deprecated Same value as `kortix_permissions`. */
-    kortix_cli: string[] | 'all';
-  };
-}
-
-interface ProjectDetail {
-  project_id: string;
-  config: { agents?: DeclaredAgent[]; default_agent?: string | null };
-}
-
-/** `'all'` | `'none'` | an explicit list — AgentGrantSetV2 in the SDK. */
-type GrantSet = 'all' | 'none' | string[];
-
-/**
- * The full agent block on the wire — `AgentConfigBlock`
- * (the SDK agent-config module). `behavior`
- * is the agent's `.md` half, merged in by the API. `opencode` is its pre-W4
- * name: the API answers both and accepts either.
- */
-interface AgentConfigBlock {
-  enabled?: boolean;
-  sandbox?: string;
-  connectors?: GrantSet;
-  connectors_required?: string[];
-  secrets?: GrantSet;
-  skills?: GrantSet;
-  /** Kortix App slugs this agent may open when the App is restricted or
-   *  private. Deny by default, like `connectors`. */
-  apps?: GrantSet;
-  kortix_permissions?: GrantSet;
-  /** @deprecated Pre-rename name of `kortix_permissions`. */
-  kortix_cli?: GrantSet;
-  workspace?: 'runtime' | 'read' | 'branch';
-  behavior?: Record<string, unknown>;
-  /** @deprecated Pre-W4 name of `behavior`. */
-  opencode?: Record<string, unknown>;
-}
-
-interface AgentConfigResponse {
-  agent: string;
-  schema_version: number;
-  editable?: boolean;
-  default_agent: string | null;
-  block: AgentConfigBlock | null;
-}
 
 /** PUT /projects/:id/agents/:name/scope response (agent-scope.ts:166). */
 interface AgentScopeResponse {
@@ -90,6 +33,8 @@ interface AgentScopeResponse {
 
 type ProjectCtx = NonNullable<Awaited<ReturnType<typeof resolveProjectContext>>>;
 
+type DetailAgent = ProjectConfigSummary['agents'][number];
+
 const HELP = help`Usage: kortix agents <subcommand> [options]
 
 Per-agent settings on the linked Kortix project — the CLI half of Customize →
@@ -99,8 +44,8 @@ instantly, with no kortix.yaml commit; \`default\` and \`config\` commit to
 kortix.yaml on the project's default branch.
 
 Subcommands:
-  ls [--json]                     Show every agent's pinned model + the fallback
-                                  default. (Alias: \`models\`.)
+  ls [--json]                     List the project's agents (name, source file,
+                                  model) + the fallback default. (Alias: \`models\`.)
   model <agent> <model-id>        Pin an agent to a plain model id (e.g. deepseek-v4.1-flash).
   model <agent> --clear           Clear the pin — the agent follows the default again.
   default <agent>                 Make this the project's default agent.
@@ -117,7 +62,7 @@ Scope options (all replace, none merge):
   --apps all|none|a,b             Which Kortix Apps it may open by slug, when
                                   the App is restricted or private. The agent
                                   also needs project.app.read in its Kortix
-                                  permissions. Needs a v2 kortix.yaml manifest.
+                                  permissions. Needs kortix.yaml (kortix_version 2 or 3).
   --require-connector <slug>      Repeatable. Deprecated and no longer enforced:
                                   a session is never refused for an unconnected
                                   connector. A call picks its account instead —
@@ -136,27 +81,16 @@ Global:
   --json             Machine-readable output.
   -h, --help         Show this help.
 
-\`scope\` needs \`project.agent.write\`; \`default\` and \`config\` need
-\`project.customize.write\`. Model pins live in the gateway, not in the repo —
+\`scope\`, \`default\` and \`config\` need \`project.agent.write\`; model pins
+need \`project.model.write\`. Model pins live in the gateway, not in the repo —
 the declarative one is kortix.yaml's \`[[agents]].model\`.
 `;
 
 export async function runAgents(argv: string[]): Promise<number> {
-  if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
-    process.stdout.write(HELP);
-    return argv.length === 0 ? 2 : 0;
-  }
-
+  const helpCode = splitHelp(argv, HELP);
+  if (helpCode !== null) return helpCode;
   const sub = argv[0];
   const rest = argv.slice(1);
-  // The root help promises `kortix <cmd> <subcommand> --help`. None of the
-  // subcommands below own dedicated help text, so without this a bare
-  // `--help` falls through as an ordinary positional arg and the command
-  // runs (or fails on auth) instead of printing usage.
-  if (rest.includes('-h') || rest.includes('--help')) {
-    process.stdout.write(HELP);
-    return 0;
-  }
   let json = false;
   let clear = false;
   let show = false;
@@ -188,61 +122,15 @@ export async function runAgents(argv: string[]): Promise<number> {
 
   const ctx = await resolveProjectContext({ projectArg: projectFlag, hostArg: hostFlag });
   if (!ctx) return 1;
-  const base = `/projects/${ctx.projectId}/model-defaults`;
 
   try {
     switch (sub) {
       case 'models':
       case 'ls':
-      case 'list': {
-        const d = await ctx.client.get<ModelDefaults>(base);
-        if (json) {
-          emitJson(d);
-          return 0;
-        }
-        const fallback =
-          d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
-        const entries = Object.entries(d.agentDefaults ?? {});
-        process.stdout.write('\n');
-        process.stdout.write(
-          `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
-        );
-        if (entries.length === 0) {
-          process.stdout.write(
-            `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
-              `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
-          );
-          return 0;
-        }
-        const w = Math.max(...entries.map(([n]) => n.length), 5);
-        for (const [name, model] of entries.sort((a, b) => a[0].localeCompare(b[0]))) {
-          process.stdout.write(`  ${pad(name, w)}   ${C.cyan}${model}${C.reset}\n`);
-        }
-        process.stdout.write(
-          `\n  ${C.dim}${entries.length} pinned · the rest follow the default${C.reset}\n\n`,
-        );
-        return 0;
-      }
-      case 'model': {
-        const agent = positional[0];
-        if (!agent) return missing('an agent name');
-        if (clear) {
-          await ctx.client.delete(
-            `${base}?scope=agent&agentName=${encodeURIComponent(agent)}`,
-          );
-          process.stdout.write(
-            `${status.ok(`${C.bold}${agent}${C.reset} follows the default model again`)}\n`,
-          );
-          return 0;
-        }
-        const model = positional[1];
-        if (!model) return missing('a plain model id (e.g. glm-5.3-flash) — or --clear');
-        await ctx.client.put(base, { scope: 'agent', agentName: agent, model });
-        process.stdout.write(
-          `${status.ok(`${C.bold}${agent}${C.reset} → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,
-        );
-        return 0;
-      }
+      case 'list':
+        return await agentsLs(ctx, json);
+      case 'model':
+        return await agentsModel(ctx, positional[0], positional[1], clear);
       case 'default':
         return await agentsDefault(ctx, positional[0], { show, json });
       case 'scope':
@@ -265,6 +153,153 @@ export async function runAgents(argv: string[]): Promise<number> {
   }
 }
 
+// ── model defaults ──────────────────────────────────────────────────────────
+
+/** The model an agent runs on: the gateway pin when one exists, else the
+ *  manifest's `model:` frontmatter with its provider prefix stripped — the
+ *  same bare id the web Agents card shows. Null = follows the default. */
+function agentModel(agent: DetailAgent, pin: string | undefined): string | null {
+  if (pin) return pin;
+  const model = agent.model;
+  if (!model) return null;
+  return model.slice(model.lastIndexOf('/') + 1) || model;
+}
+
+function renderAgent(
+  agent: DetailAgent,
+  pins: Record<string, string>,
+  defaultAgent: string | null,
+  width: number,
+): string {
+  const pin = pins[agent.name];
+  const model = agentModel(agent, pin);
+  const modelText = model ? `${C.cyan}${model}${C.reset}` : `${C.dim}model default${C.reset}`;
+  // The web Agents card's badges: the default-agent star, the mode (omitted
+  // for the implicit primary) and disabled.
+  const markers: string[] = [];
+  if (agent.name === defaultAgent) markers.push('default agent');
+  if (pin) markers.push('pin');
+  const mode = agent.mode?.toLowerCase();
+  if (mode && mode !== 'primary') markers.push(mode);
+  if (agent.enabled === false) markers.push('disabled');
+  const tail = markers.length > 0 ? ` ${C.dim}· ${markers.join(' · ')}${C.reset}` : '';
+  return `  ${pad(agent.name, width)}   ${C.dim}${agent.path}${C.reset}   ${modelText}${tail}\n`;
+}
+
+async function agentsLs(ctx: ProjectCtx, json: boolean): Promise<number> {
+  const d = await ctx.client.get<ModelDefaultsResponse>(
+    `/projects/${ctx.projectId}/model-defaults`,
+  );
+  // The agents live on the same /detail the web Agents page reads, so the two
+  // cannot disagree about what a project declares. When /detail is unavailable
+  // the command fails open to its pre-detail output: the model-defaults chain
+  // and the pins, with no claim about which agents exist.
+  let agents: DetailAgent[] | null = null;
+  let defaultAgent: string | null = null;
+  try {
+    const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
+    agents = detail.config?.agents ?? [];
+    defaultAgent = detail.config?.default_agent ?? null;
+  } catch {
+    // fail open
+  }
+  const pins = d.agentDefaults ?? {};
+
+  if (json) {
+    emitJson(
+      agents === null
+        ? d
+        : {
+            ...d,
+            agents: agents.map((agent) => ({
+              name: agent.name,
+              path: agent.path,
+              model: agentModel(agent, pins[agent.name]),
+            })),
+          },
+    );
+    return 0;
+  }
+
+  const fallback = d.projectDefault ?? d.accountDefault ?? d.platformDefault ?? 'unavailable';
+  process.stdout.write('\n');
+  process.stdout.write(
+    `  ${C.dim}Default (project → account → platform): ${C.reset}${C.bold}${fallback}${C.reset}\n\n`,
+  );
+  if (agents === null) {
+    const entries = Object.entries(pins).sort((a, b) => a[0].localeCompare(b[0]));
+    if (entries.length === 0) {
+      process.stdout.write(
+        `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
+          `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
+      );
+      return 0;
+    }
+    const width = Math.max(...entries.map(([name]) => name.length), 5);
+    for (const [name, model] of entries) {
+      process.stdout.write(`  ${pad(name, width)}   ${C.cyan}${model}${C.reset}\n`);
+    }
+    process.stdout.write(
+      `\n  ${C.dim}${entries.length} pinned · the rest follow the default${C.reset}\n\n`,
+    );
+    return 0;
+  }
+  if (agents.length === 0) {
+    process.stdout.write(`  ${C.dim}No agents declared in this project.${C.reset}\n\n`);
+  } else {
+    process.stdout.write(`  ${C.dim}Agents (${agents.length})${C.reset}\n`);
+    const width = Math.max(...agents.map((agent) => agent.name.length));
+    for (const agent of agents) {
+      process.stdout.write(renderAgent(agent, pins, defaultAgent, width));
+    }
+    process.stdout.write('\n');
+  }
+
+  const declared = new Set(agents.map((agent) => agent.name));
+  const orphans = Object.entries(pins)
+    .filter(([name]) => !declared.has(name))
+    .sort((a, b) => a[0].localeCompare(b[0]));
+  if (orphans.length > 0) {
+    const width = Math.max(...orphans.map(([name]) => name.length));
+    process.stdout.write(`  ${C.dim}Pins without an agent${C.reset}\n`);
+    for (const [name, model] of orphans) {
+      process.stdout.write(`  ${pad(name, width)}   ${C.cyan}${model}${C.reset}\n`);
+    }
+    process.stdout.write(
+      `  ${C.dim}Clear one: ${C.reset}${C.cyan}kortix agents model <agent> --clear${C.reset}\n\n`,
+    );
+  } else if (Object.keys(pins).length === 0) {
+    process.stdout.write(
+      `  ${C.dim}No per-agent model pins — every agent follows the default.${C.reset}\n` +
+        `  ${C.dim}Pin one: ${C.reset}${C.cyan}kortix agents model <agent> <model-id>${C.reset}\n\n`,
+    );
+  }
+  return 0;
+}
+
+async function agentsModel(
+  ctx: ProjectCtx,
+  agent: string | undefined,
+  model: string | undefined,
+  clear: boolean,
+): Promise<number> {
+  if (!agent) return missing('an agent name');
+  const base = `/projects/${ctx.projectId}/model-defaults`;
+  if (clear) {
+    await ctx.client.delete(`${base}?scope=agent&agentName=${encodeURIComponent(agent)}`);
+    process.stdout.write(
+      `${status.ok(`${C.bold}${agent}${C.reset} follows the default model again`)}\n`,
+    );
+    return 0;
+  }
+  if (!model) return missing('a plain model id (e.g. glm-5.3-flash) — or --clear');
+  await ctx.client.put(base, { scope: 'agent', agentName: agent, model });
+  process.stdout.write(
+    `${status.ok(`${C.bold}${agent}${C.reset} → ${C.cyan}${model}${C.reset}`)} ${C.dim}(applies to new sessions)${C.reset}\n`,
+  );
+  return 0;
+}
+
 // ── default agent ───────────────────────────────────────────────────────────
 
 async function agentsDefault(
@@ -276,7 +311,10 @@ async function agentsDefault(
     const detail = await ctx.client.get<ProjectDetail>(`/projects/${ctx.projectId}/detail`);
     const current = detail.config?.default_agent ?? null;
     if (opts.json) {
-      emitJson({ default_agent: current, agents: (detail.config?.agents ?? []).map((a) => a.name) });
+      emitJson({
+        default_agent: current,
+        agents: (detail.config?.agents ?? []).map((a) => a.name),
+      });
       return 0;
     }
     if (!agent && !opts.show) {
@@ -326,7 +364,7 @@ function parseGrantSet(raw: string): 'all' | string[] {
     .filter(Boolean);
 }
 
-function renderGrantSet(value: GrantSet | undefined, fallback: string): string {
+function renderGrantSet(value: AgentGrantSetV2 | undefined, fallback: string): string {
   if (value === undefined) return fallback;
   if (value === 'all') return 'all';
   if (value === 'none') return 'none';
@@ -397,7 +435,10 @@ async function agentsScope(
   if (opts.apps !== undefined) body.apps = parseGrantSet(opts.apps);
   if (opts.required.length > 0) {
     body.connectors_required = opts.required.flatMap((v) =>
-      v.split(',').map((s) => s.trim()).filter(Boolean),
+      v
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
     );
   }
 
@@ -420,6 +461,21 @@ async function agentsScope(
 }
 
 // ── config ──────────────────────────────────────────────────────────────────
+
+/** The other file a saved config commits: v2 the agent's `.md`, v3 its `prompt_file` (an inline prompt stays in kortix.yaml). */
+function savedPromptFile(resp: { schema_version?: number; block: AgentConfigBlock }, sent: AgentConfigBlock): string {
+  if (!(sent.behavior ?? sent.opencode)) return '';
+  if ((resp.schema_version ?? 2) >= 3) return resp.block?.file ? ` + ${resp.block.file}` : '';
+  return ' + the agent .md';
+}
+
+/** The keys `PUT /projects/:id/agents/:name/config` accepts (AgentBlockSchema
+ *  in apps/api/src/projects/routes/agent-config.ts, a strict schema). */
+const AGENT_CONFIG_PUT_KEYS = new Set([
+  'enabled', 'tools', 'sandbox', 'connectors', 'connectors_required', 'connectors_personal',
+  'secrets', 'skills', 'apps', 'kortix_permissions', 'subagents', 'commands', 'extensions',
+  'codemode', 'kortix_cli', 'repository_access', 'workspace', 'file', 'behavior', 'opencode',
+]);
 
 /** `a.b.c=value` → set `a.b.c`. The value is JSON when it parses, else a
  *  string, so `enabled=false` and `sandbox=node22` both do the obvious thing. */
@@ -464,7 +520,7 @@ async function agentsConfig(
     }
     if (!cfg.editable) {
       process.stdout.write(
-        `  ${C.yellow}!${C.reset}  ${C.dim}kortix_version ${cfg.schema_version} manifest — this block is read-only. Upgrade to kortix.yaml v2 to edit it.${C.reset}\n`,
+        `  ${C.yellow}!${C.reset}  ${C.dim}kortix_version ${cfg.schema_version} manifest — this block is read-only. Run \`kortix projects upgrade\` to move it to kortix.yaml.${C.reset}\n`,
       );
     }
     process.stdout.write(`${JSON.stringify(cfg.block ?? {}, null, 2)}\n`);
@@ -485,8 +541,12 @@ async function agentsConfig(
     // and deletes every known `.md` frontmatter key the body omits
     // (mergeFrontmatter, agent-config.ts:128). So --set has to read the current
     // block first and send it back whole, or it silently wipes everything else.
+    // The GET also serves keys the strict PUT schema refuses (`network_egress`),
+    // so only the keys it accepts go back; a key the user --sets still goes out.
     const current = await ctx.client.get<AgentConfigResponse>(path);
-    block = (current.block ?? {}) as AgentConfigBlock;
+    block = Object.fromEntries(
+      Object.entries(current.block ?? {}).filter(([key]) => AGENT_CONFIG_PUT_KEYS.has(key)),
+    ) as AgentConfigBlock;
   }
 
   for (const assignment of opts.sets) {
@@ -497,7 +557,7 @@ async function agentsConfig(
     }
   }
 
-  const resp = await ctx.client.put<{ ok: boolean; agent: string; block: AgentConfigBlock }>(
+  const resp = await ctx.client.put<{ ok: boolean; agent: string; schema_version?: number; block: AgentConfigBlock }>(
     path,
     block,
   );
@@ -506,12 +566,7 @@ async function agentsConfig(
     return 0;
   }
   process.stdout.write(
-    `${status.ok(`${C.bold}${resp.agent}${C.reset} config saved`)} ${C.dim}(committed to kortix.yaml${(block.behavior ?? block.opencode) ? ' + the agent .md' : ''})${C.reset}\n`,
+    `${status.ok(`${C.bold}${resp.agent}${C.reset} config saved`)} ${C.dim}(committed to kortix.yaml${savedPromptFile(resp, block)})${C.reset}\n`,
   );
   return 0;
-}
-
-function missing(what: string): number {
-  process.stderr.write(`${status.err(`Pass ${what}.`)}\n`);
-  return 2;
 }

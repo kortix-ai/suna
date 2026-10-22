@@ -8,6 +8,7 @@ import {
 } from '@kortix/shared';
 import { parseStagedPromptDataUrl } from '../session-lifecycle/prompt-attachment-materializer';
 import { stableSessionAttachmentId } from './session-attachment-identity';
+import { isRecord } from '@kortix/shared/guards';
 
 type Part = Record<string, unknown>;
 type Message = { info: Record<string, unknown>; parts: Part[] };
@@ -156,9 +157,6 @@ async function saveRecovered(
 const SHOWN_TOOLS = new Set(['show', 'show_user']);
 const normalizeToolName = (name: unknown) =>
   (typeof name === 'string' ? name : '').replace(/^oc-/, '').replace(/-/g, '_');
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
 
 /** Stored with the bytes, so a download names itself correctly. */
 const SHOW_MIME_BY_EXTENSION: Record<string, string> = {

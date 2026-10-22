@@ -7,7 +7,7 @@
  *
  * Allowed writers:
  *   - connectors/sync.ts       — THE connector materializer (manifest → DB)
- *   - __tests__/*             — fixtures / seeds
+ *   - __tests__/* and *.test.ts — fixtures / seeds, wherever a test lives
  */
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -38,7 +38,7 @@ function offenders(table: string, allow: (rel: string) => boolean): string[] {
   const re = insertOf(table);
   for (const file of tsFiles(SRC)) {
     const rel = file.slice(SRC.length + 1);
-    if (rel.startsWith('__tests__/')) continue;
+    if (rel.startsWith('__tests__/') || /\.test\.tsx?$/.test(rel)) continue;
     if (allow(rel)) continue;
     if (re.test(readFileSync(file, 'utf8'))) hits.push(rel);
   }

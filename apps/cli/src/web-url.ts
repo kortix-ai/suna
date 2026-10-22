@@ -17,7 +17,8 @@
  *      baked into every serialized project (see {@link projectWebUrl}).
  *   2. `KORTIX_FRONTEND_URL` — injected into every sandbox right next to
  *      `KORTIX_API_URL` (the server's `config.FRONTEND_URL`, verbatim). Also
- *      settable locally.
+ *      settable locally. When KORTIX_API_URL is present, environment overrides
+ *      apply only to that API deployment, never another selected host.
  *   3. `KORTIX_DASHBOARD_URL` — legacy local override, kept for back-compat.
  *   4. Derive from the API host (handles `api.`, `api-<env>.`, `<env>-api.`,
  *      localhost) — a best-effort fallback for old servers/hosts that carry
@@ -28,6 +29,7 @@
  *      it, which is why a `Host` should carry `dashboard_url`.
  *   5. https://kortix.com.
  */
+import { sdkBackendUrl } from '@kortix/shared/host-config';
 import { sandboxEnvValue } from './api/sandbox-env.ts';
 
 function stripTrailingSlash(s: string): string {
@@ -44,13 +46,17 @@ function stripTrailingSlash(s: string): string {
  */
 export function webDashboardUrl(apiBase: string, dashboardUrl?: string | null): string {
   if (dashboardUrl && dashboardUrl.trim()) return stripTrailingSlash(dashboardUrl.trim());
-  const explicit = sandboxEnvValue('KORTIX_FRONTEND_URL') || process.env.KORTIX_DASHBOARD_URL;
+  const environmentApi = sandboxEnvValue('KORTIX_API_URL');
+  const environmentMatches = !environmentApi || sdkBackendUrl(environmentApi) === sdkBackendUrl(apiBase);
+  const explicit = environmentMatches
+    ? sandboxEnvValue('KORTIX_FRONTEND_URL') || process.env.KORTIX_DASHBOARD_URL
+    : undefined;
   if (explicit && explicit.trim()) return stripTrailingSlash(explicit.trim());
   return stripTrailingSlash(deriveFrontendFromApiBase(apiBase));
 }
 
 /** Best-effort map of an API host to its frontend host (fallback only). */
-function deriveFrontendFromApiBase(apiBase: string): string {
+export function deriveFrontendFromApiBase(apiBase: string): string {
   try {
     const url = new URL(apiBase);
     const host = url.hostname;

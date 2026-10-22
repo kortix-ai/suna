@@ -41,10 +41,15 @@ export interface ProjectConfigSummary {
     path: string;
     description: string | null;
     mode: string | null;
+    /** Internal automation remains registered but is not offered by agent pickers. */
+    hidden?: boolean;
     /** The agent's `model:` frontmatter (`provider/model`), null when it
      *  follows the project default. */
     model?: string | null;
     source: 'opencode' | 'kortix.yaml';
+    /** True for a platform-owned agent the API injects (the Meta coordinator),
+     *  not one declared in `kortix.yaml`. Hosts render it read-only. */
+    platform?: boolean;
     enabled?: boolean;
     sandbox?: string | null;
     /** Per-agent governance from the manifest's `agents` declarations (v2
@@ -143,17 +148,16 @@ export interface GetFileHistoryOptions {
   skip?: number;
 }
 
-export interface GetFileAtRefResult {
-  content: string;
-  found: boolean;
-}
-
 export interface BranchDiffSummary {
   files: GitCommitFile[];
   files_changed: number;
   additions: number;
   deletions: number;
   patch: string;
+  /** True when the patch command itself failed (output over runGit's exec
+   *  cap, or the git timeout) — `patch` is then empty while `files` still
+   *  lists what changed, and the UI must say so instead of drawing blanks. */
+  patch_truncated: boolean;
   base_sha: string;
   head_sha: string;
   merge_base: string | null;

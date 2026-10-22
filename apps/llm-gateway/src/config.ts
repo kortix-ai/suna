@@ -31,7 +31,11 @@ function requiredApiToken(): string {
 export const config = {
   port: optionalInt('PORT', 8090),
   apiUrl: required('KORTIX_API_URL'),
+  // The API inside the VPC (plaintext, e.g. http://api.<stack>.internal:8008).
+  // Unset = every call uses KORTIX_API_URL. See createApiClient.
+  apiInternalUrl: process.env.KORTIX_API_INTERNAL_URL || undefined,
   apiToken: requiredApiToken(),
+  internalEdgeKey: process.env.KORTIX_INTERNAL_EDGE_KEY || undefined,
   langfuse: {
     publicKey: process.env.LANGFUSE_PUBLIC_KEY,
     secretKey: process.env.LANGFUSE_SECRET_KEY,

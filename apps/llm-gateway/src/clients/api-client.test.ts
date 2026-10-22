@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { GatewayResolutionError } from '@kortix/llm-gateway';
 
 import { ApiUnavailableError, type FetchLike, createApiClient } from './api-client';
@@ -35,6 +35,17 @@ describe('ApiClient', () => {
     };
     await client(fetchImpl).authenticate('tok');
     expect(seenAuth).toBe('Bearer secret');
+  });
+
+  test('sends the edge key header only when configured', async () => {
+    const seen: Array<string | undefined> = [];
+    const fetchImpl: FetchLike = async (_url, init) => {
+      seen.push((init.headers as Record<string, string>)['x-kortix-internal-edge-key']);
+      return jsonResponse({ principal });
+    };
+    await createApiClient({ baseUrl: 'https://api.test', token: 's', edgeKey: 'k1', fetchImpl }).authenticate('t');
+    await client(fetchImpl).authenticate('t');
+    expect(seen).toEqual(['k1', undefined]);
   });
 
   test('resolveUpstream returns candidates', async () => {
@@ -278,5 +289,223 @@ describe('ApiClient', () => {
       expect(result.status).toBe(402);
       expect(result.errorCode).toBe('budget_exceeded');
     }
+  });
+});
+
+describe('ApiClient.admit', () => {
+  const input = { requestedModel: 'm', requires: { imageInput: false } };
+
+  test('maps one /admit answer to the separate hook results', async () => {
+    const paths: string[] = [];
+    const api = client(async (url) => {
+      paths.push(new URL(url).pathname);
+      return jsonResponse({
+        admission: { ok: true, principal },
+        route: { policyId: 'r', primaryModel: 'p' },
+        candidates: [],
+        resolutionError: { code: 'provider_not_connected', message: 'Connect it', suggestion: 'Connect' },
+        billing: { active: false, reason: 'insufficient_credits', message: 'Add credits' },
+      });
+    });
+    const result = await api.admit('tok', input);
+    expect(paths).toEqual(['/internal/gateway/admit']);
+    expect(result?.admission).toEqual({ ok: true, principal });
+    expect(result?.route?.primaryModel).toBe('p');
+    expect(result?.upstream).toBeInstanceOf(GatewayResolutionError);
+    expect((result?.billing as Error & { reason?: string }).reason).toBe('insufficient_credits');
+  });
+
+  test('leaves out what the API did not answer', async () => {
+    const result = await client(async () => jsonResponse({ admission: { ok: true, principal }, route: null })).admit('tok', input);
+    expect(result).toEqual({ admission: { ok: true, principal }, route: null });
+  });
+
+  test('an API without /admit answers null once, without retries, and is not asked again for a minute', async () => {
+    let calls = 0;
+    const api = client(async () => { calls += 1; return jsonResponse({ error: 'not found' }, 404); });
+    expect(await api.admit('tok', input)).toBeNull();
+    expect(await api.admit('tok', input)).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  // /admit can debit the admission hold as its last step. A repeat after a
+  // silent attempt would debit again, and only the last hold reaches the
+  // gateway. A timeout therefore answers null once, and the handler uses the
+  // separate calls.
+  test('a timed-out /admit is not repeated and answers null', async () => {
+    let calls = 0;
+    const api = createApiClient({
+      baseUrl: 'https://api.test',
+      token: 'secret',
+      admitTimeoutMs: 20,
+      fetchImpl: async () => { calls += 1; return new Promise<Response>(() => {}); },
+    });
+    expect(await api.admit('tok', input)).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  // /admit debits the hold before it answers. A reset connection or an edge
+  // 502/504 can arrive after that debit, so no failure of /admit is repeated:
+  // it answers null once, and the handler uses the separate calls.
+  test('a reset connection on /admit is not repeated and answers null', async () => {
+    let calls = 0;
+    const api = client(async () => { calls += 1; throw new TypeError('socket hang up'); });
+    expect(await api.admit('tok', input)).toBeNull();
+    expect(calls).toBe(1);
+  });
+
+  for (const status of [500, 502, 503, 504]) {
+    test(`a ${status} on /admit is not repeated and answers null`, async () => {
+      let calls = 0;
+      const api = client(async () => { calls += 1; return jsonResponse({ error: 'upstream' }, status); });
+      expect(await api.admit('tok', input)).toBeNull();
+      expect(calls).toBe(1);
+    });
+  }
+
+  // /admit does four steps in one call, so it gets its own budget, not the
+  // per-step budget of the separate calls.
+  test('/admit waits for its own timeout, longer than the per-call one', async () => {
+    const api = createApiClient({
+      baseUrl: 'https://api.test',
+      token: 'secret',
+      timeoutMs: 20,
+      admitTimeoutMs: 500,
+      fetchImpl: async () => {
+        await Bun.sleep(60);
+        return jsonResponse({ admission: { ok: true, principal } });
+      },
+    });
+    expect(await api.admit('tok', input)).toEqual({ admission: { ok: true, principal } });
+  });
+
+  test('a 404 on any other internal call is still retried', async () => {
+    let calls = 0;
+    const api = client(async () => {
+      calls += 1;
+      return calls === 1 ? jsonResponse({ error: 'not found' }, 404) : jsonResponse({ ok: true, principal });
+    });
+    expect(await api.authorize('tok')).toEqual({ ok: true, principal });
+    expect(calls).toBe(2);
+  });
+});
+
+// KORTIX_API_INTERNAL_URL: the gateway reaches the API inside the VPC and
+// keeps the public URL as the fallback for a private path that does not answer.
+describe('ApiClient private path', () => {
+  const input = { requestedModel: 'm', requires: { imageInput: false } };
+
+  function privateClient(fetchImpl: FetchLike) {
+    return createApiClient({
+      baseUrl: 'https://api.test',
+      internalBaseUrl: 'http://api.internal:8008/',
+      token: 'secret',
+      fetchImpl,
+    });
+  }
+
+  afterEach(() => setSystemTime());
+
+  test('sends control-plane calls and the ping to the private URL, with the same auth', async () => {
+    const seen: string[] = [];
+    const api = privateClient(async (url, init) => {
+      seen.push(`${url} ${(init.headers as Record<string, string> | undefined)?.authorization ?? ''}`);
+      return jsonResponse({ principal });
+    });
+    await api.authenticate('tok');
+    await api.ping();
+    expect(seen).toEqual([
+      'http://api.internal:8008/internal/gateway/authenticate Bearer secret',
+      'http://api.internal:8008/health ',
+    ]);
+  });
+
+  test('a refused private connection retries on the public URL and stays public for a minute', async () => {
+    setSystemTime(new Date('2026-10-20T00:00:00Z'));
+    const seen: string[] = [];
+    const api = privateClient(async (url) => {
+      seen.push(url);
+      if (url.startsWith('http://api.internal')) throw new TypeError('ECONNREFUSED');
+      return jsonResponse({ principal });
+    });
+    expect(await api.authenticate('tok')).toEqual(principal);
+    expect(await api.authenticate('tok')).toEqual(principal);
+    setSystemTime(new Date('2026-10-20T00:01:01Z'));
+    await api.authenticate('tok');
+    expect(seen).toEqual([
+      'http://api.internal:8008/internal/gateway/authenticate',
+      'https://api.test/internal/gateway/authenticate',
+      'https://api.test/internal/gateway/authenticate',
+      'http://api.internal:8008/internal/gateway/authenticate',
+      'https://api.test/internal/gateway/authenticate',
+    ]);
+  });
+
+  test('a refused private ping answers from the public URL at once', async () => {
+    const seen: string[] = [];
+    const api = privateClient(async (url) => {
+      seen.push(url);
+      if (url.startsWith('http://api.internal')) throw new TypeError('ECONNREFUSED');
+      return jsonResponse({ status: 'ok' });
+    });
+    expect((await api.ping()).ok).toBe(true);
+    expect(seen).toEqual(['http://api.internal:8008/health', 'https://api.test/health']);
+  });
+
+  // A private path that drops packets: no error, the request hangs until its
+  // signal aborts. Real fetch also rejects at once on an aborted signal, so
+  // the public retry needs a signal of its own.
+  test('a hanging private ping answers from the public URL on a fresh signal', async () => {
+    const seen: string[] = [];
+    const api = privateClient((url, init) => {
+      seen.push(url);
+      const signal = init.signal as AbortSignal;
+      if (signal.aborted) return Promise.reject(signal.reason);
+      if (url.startsWith('http://api.internal')) {
+        return new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason)));
+      }
+      return Promise.resolve(jsonResponse({ status: 'ok' }));
+    });
+    const result = await api.ping();
+    expect(result.ok).toBe(true);
+    // The private attempt has a short budget: a blackholed path costs ~1 s, not 3 s.
+    expect(result.latencyMs).toBeLessThan(2_000);
+    expect(seen).toEqual(['http://api.internal:8008/health', 'https://api.test/health']);
+    // The trip holds: the next ping goes straight to the public URL.
+    await api.ping();
+    expect(seen.at(-1)).toBe('https://api.test/health');
+    expect(seen).toHaveLength(3);
+  });
+
+  // /admit may have debited the hold before the connection broke, so it is
+  // still never repeated: it answers null, and the next call goes public.
+  test('a reset private /admit is not repeated, and the next call uses the public URL', async () => {
+    const seen: string[] = [];
+    const api = privateClient(async (url) => {
+      seen.push(url);
+      if (url.startsWith('http://api.internal')) throw new TypeError('socket hang up');
+      return jsonResponse({ principal });
+    });
+    expect(await api.admit('tok', input)).toBeNull();
+    await api.authenticate('tok');
+    expect(seen).toEqual([
+      'http://api.internal:8008/internal/gateway/admit',
+      'https://api.test/internal/gateway/authenticate',
+    ]);
+  });
+
+  test('a 5xx from the private URL is the API answering: retried on the private URL', async () => {
+    const seen: string[] = [];
+    let calls = 0;
+    const api = privateClient(async (url) => {
+      seen.push(url);
+      calls += 1;
+      return calls === 1 ? jsonResponse({}, 503) : jsonResponse({ principal });
+    });
+    await api.authenticate('tok');
+    expect(seen).toEqual([
+      'http://api.internal:8008/internal/gateway/authenticate',
+      'http://api.internal:8008/internal/gateway/authenticate',
+    ]);
   });
 });

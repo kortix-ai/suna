@@ -2,7 +2,7 @@
 #
 # Purpose: enforce peer review of changes (SOC 2 CC8.1, change management).
 # When a PR touches a path below, the listed owner is automatically requested
-# for review. Combined with branch protection on `main` (and `production`),
+# for review. Combined with branch protection on `dev` (and `production`),
 # this ensures no code reaches a protected branch without review.
 #
 # Syntax: <path pattern>  <@owner ...>  (last matching rule wins)

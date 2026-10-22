@@ -1,9 +1,16 @@
 import { eq } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
+import {
+  COMPILED_AGENT_CONFIG_ENV,
+  COMPILED_AGENT_CONFIG_GZ_CAPABILITY,
+  fitsInEnvString,
+} from '@kortix/api-contract/compiled-agent-config-env';
 import { db } from '../../shared/db';
 import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
-import type { ProviderName } from '../../platform/providers';
+// Aliased: every push below binds a local `config` from the sandbox row, which
+// would shadow the app config import inside those function bodies.
+import { config as appConfig } from '../../config';
+import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import {
   agentConfigEtag,
   resolveCompiledAgentConfigForSession,
@@ -12,12 +19,7 @@ import {
 import { repositoryAccessFromSessionMetadata } from './session-sandbox-metadata';
 import { hasConfigReleaseCapability } from './session-config-release';
 import { resolveSandboxEnvSnapshot } from './sandbox-env-snapshot';
-import {
-  SANDBOX_SERVICE_PORT,
-  llmGatewayBaseUrlForProvider,
-  markSandboxLlmGatewayMode,
-  postEnvToDaemon,
-} from './sandbox-env-push';
+import { SANDBOX_SERVICE_PORT, postEnvToDaemon } from './sandbox-env-transport';
 
 /**
  * A push target that exists but is not `active` is a control-plane DIVERGENCE,
@@ -28,7 +30,7 @@ import {
  * `stopped` while its VM was genuinely running — serving prompts the whole time
  * — therefore received no secret, model or scope push for HOURS, and the only
  * visible symptom was an agent that could not see a secret the UI insisted it
- * had (prod 2026-08-27, session b3848cf5). `backend.ts` deliberately refuses to
+ * had (a prod session, 2026-08-27). `backend.ts` deliberately refuses to
  * heal a row whose deadline has expired, so nothing else reconciles this and
  * nothing else reports it.
  *
@@ -59,11 +61,11 @@ function nonActiveSandboxSkip(
  *
  * This reads the box's STATE (`config.release_id`), not the binary's
  * `config.release.v1` capability. The capability is compiled in and is present
- * whatever the project chose, so gating on it withheld the push from every box
- * that runs NO release — `config_releases` off for the project, or a release
- * chain that stepped down to the image default. Those boxes are exactly the
- * pre-release case the push exists for. `releaseGovernanceActive` is the same
- * `running.release_id !== null` the daemon applies on its own side.
+ * on every current daemon, so gating on it withheld the push from every box
+ * that runs NO release — one that reverted to its workspace config, or a
+ * release chain that stepped down to the image default. Those boxes are
+ * exactly the pre-release case the push exists for. `releaseGovernanceActive`
+ * is the same `running.release_id !== null` the daemon applies on its own side.
  */
 export async function daemonHasConfigReleases(
   baseUrl: string,
@@ -81,6 +83,28 @@ export async function daemonHasConfigReleases(
     if (!hasConfigReleaseCapability(body.capabilities)) return false;
     const config = (body.config ?? null) as { release_id?: unknown } | null;
     return typeof config?.release_id === 'string' && config.release_id.length > 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Does the daemon list `capability` in `/kortix/health`? `true`, `false`, or
+ * `null` when health did not answer.
+ */
+async function daemonListsCapability(
+  baseUrl: string,
+  headers: Record<string, string>,
+  capability: string,
+): Promise<boolean | null> {
+  try {
+    const res = await fetch(`${baseUrl.replace(/\/$/, '')}/kortix/health`, {
+      headers,
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { capabilities?: unknown };
+    return Array.isArray(body.capabilities) && body.capabilities.includes(capability);
   } catch {
     return null;
   }
@@ -155,7 +179,7 @@ export async function pushSessionAgentConfigToSandbox(input: {
     // filtered form returned a bare 'no active sandbox' and the caller logged
     // nothing, so a session whose row said `stopped` while its VM was genuinely
     // running — serving prompts the whole time — silently received no secret or
-    // config push for HOURS. Prod 2026-08-27, session b3848cf5: every push
+    // config push for HOURS. A prod session, 2026-08-27: every push
     // since the secret was created was skipped this way, and the only visible
     // symptom was an agent that could not see a secret the UI said it had.
     const [row] = await db
@@ -184,10 +208,11 @@ export async function pushSessionAgentConfigToSandbox(input: {
     });
     // Capability gate. A daemon with config releases gets governance from its
     // release; `null` (health did not answer) is not permission to push.
-    const releases = await daemonHasConfigReleases(url, {
+    const daemonHeaders = {
       ...(headers as Record<string, string>),
       Authorization: `Bearer ${serviceKey}`,
-    });
+    };
+    const releases = await daemonHasConfigReleases(url, daemonHeaders);
     if (releases !== false) {
       return {
         applied: false,
@@ -195,6 +220,20 @@ export async function pushSessionAgentConfigToSandbox(input: {
           releases === true
             ? 'the daemon receives compiled governance in its config release'
             : 'could not read the daemon capabilities',
+      };
+    }
+    // The push itself is an HTTP body, with no exec limit. The daemon then
+    // keeps the value in the env that OpenCode, git and every PTY inherit. A
+    // daemon that predates the gzip form would store an oversized config raw,
+    // and every exec on the box after that would fail with E2BIG. Such a box
+    // keeps the config it booted with.
+    if (
+      !fitsInEnvString(COMPILED_AGENT_CONFIG_ENV, compiled) &&
+      (await daemonListsCapability(url, daemonHeaders, COMPILED_AGENT_CONFIG_GZ_CAPABILITY)) !== true
+    ) {
+      return {
+        applied: false,
+        reason: 'the compiled agent config exceeds one env string and the daemon cannot hold it encoded',
       };
     }
     // The daemon call blocks until its verified reload either promotes the new
@@ -335,7 +374,6 @@ export async function pushSessionScopeToSandbox(input: {
     const [row] = await db
       .select({
         externalId: sessionSandboxes.externalId,
-        provider: sessionSandboxes.provider,
         config: sessionSandboxes.config,
         status: sessionSandboxes.status,
       })
@@ -356,7 +394,6 @@ export async function pushSessionScopeToSandbox(input: {
     const snapshot = await resolveSandboxEnvSnapshot(input.projectId, input.sessionId);
     if (!snapshot) return { applied: false, reason: 'no env snapshot' };
 
-    const llmGatewayEnabled = await projectLlmGatewayEnabledById(input.projectId);
     const { url, headers } = await resolveSandboxIngress(row.externalId, {
       port: SANDBOX_SERVICE_PORT,
       transport: 'http',
@@ -371,12 +408,8 @@ export async function pushSessionScopeToSandbox(input: {
       // secrets shape it at spawn, not via the config file), so the respawn is
       // the load-bearing part — see the daemon-side gate in routes/env.ts.
       refreshModels: true,
-      llmGatewayEnabled,
-      llmGatewayBaseUrl: llmGatewayEnabled
-        ? llmGatewayBaseUrlForProvider(row.provider as ProviderName)
-        : undefined,
+      llmGatewayBaseUrl: resolveLlmGatewayBaseUrl(appConfig.KORTIX_URL),
     });
-    await markSandboxLlmGatewayMode(input.sessionId, llmGatewayEnabled);
     return { applied: true };
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join, resolve } from "path";
 
@@ -20,6 +20,8 @@ const DOCUMENTED_SURFACE = [
   "status",
   "logs",
   "logout",
+  "access",
+  "keep-awake",
   "--daemon",
   "--foreground",
 ] as const;
@@ -84,6 +86,55 @@ describe("agent tunnel service UX", () => {
     );
 
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain("--keep-awake is not supported");
+    expect(result.stderr).toContain("--keep-awake is not a flag. Run: agent-tunnel keep-awake on");
+  });
+});
+
+describe("access and keep-awake: the one way to change them on this computer", () => {
+  const run = (home: string, ...args: string[]) =>
+    spawnSync("bun", ["run", CLI_PATH, ...args], {
+      encoding: "utf8",
+      env: { ...process.env, AGENT_TUNNEL_HOME: home },
+    });
+
+  test("changes access and keep awake, prints the state, and writes access.json", () => {
+    const home = mkdtempSync(join(tmpdir(), "agent-tunnel-cli-access-"));
+    try {
+      const shown = JSON.parse(run(home, "access", "--json").stdout);
+      expect(shown).toMatchObject({ mode: "always", keepAwake: false, pendingRequest: null });
+
+      const ask = run(home, "access", "ask", "--json");
+      expect(ask.status).toBe(0);
+      expect(JSON.parse(ask.stdout).mode).toBe("ask");
+
+      const granted = JSON.parse(run(home, "access", "--allow-for", "60", "--json").stdout);
+      expect(Date.parse(granted.grantedUntil) - Date.now()).toBeGreaterThan(59 * 60_000);
+
+      expect(JSON.parse(run(home, "access", "--revoke", "--json").stdout).grantedUntil).toBeNull();
+      expect(JSON.parse(run(home, "keep-awake", "on", "--json").stdout).keepAwake).toBe(true);
+      expect(JSON.parse(readFileSync(join(home, "access.json"), "utf8"))).toMatchObject({ mode: "ask", keepAwake: true });
+
+      const status = JSON.parse(run(home, "status", "--json").stdout);
+      expect(status.access).toMatchObject({ mode: "ask", keepAwake: true, keepAwakeSupported: process.platform !== "win32" });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("refuses a wrong mode or duration with exit 1 and changes nothing", () => {
+    const home = mkdtempSync(join(tmpdir(), "agent-tunnel-cli-access-"));
+    try {
+      const mode = run(home, "access", "sometimes");
+      expect(mode.status).toBe(1);
+      expect(mode.stderr).toContain("Access is one of: ask, always, off");
+      const minutes = run(home, "access", "--allow-for", "soon");
+      expect(minutes.status).toBe(1);
+      expect(minutes.stderr).toContain("--allow-for takes minutes");
+      const awake = run(home, "keep-awake", "maybe");
+      expect(awake.status).toBe(1);
+      expect(existsSync(join(home, "access.json"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

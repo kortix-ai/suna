@@ -103,11 +103,11 @@ export type MonitorBoxAction =
   /** No live box exists and one is wanted. */
   | { kind: 'create'; reason: string }
   /** A live box exists but runs the wrong manifest, or is wedged. Tear + rebuild. */
-  | { kind: 'restart'; reason: string }
+  | { kind: 'restart'; reason: string; box: MonitorBoxSnapshot }
   /** A live box exists and is no longer wanted. */
-  | { kind: 'stop'; reason: string }
+  | { kind: 'stop'; reason: string; box: MonitorBoxSnapshot }
   /** The box is correct: observe it and stamp billing liveness. */
-  | { kind: 'observe'; reason: string };
+  | { kind: 'observe'; reason: string; box: MonitorBoxSnapshot };
 
 export interface MonitorBoxDecisionInput {
   projectActive: boolean;
@@ -136,27 +136,31 @@ export function decideMonitorBox(input: MonitorBoxDecisionInput): MonitorBoxActi
       : !input.flagEnabled
         ? 'monitors flag is off'
         : 'no enabled monitors';
-    return input.box ? { kind: 'stop', reason } : { kind: 'none', reason };
+    // The teardown variants carry the box they tear down: "restart/stop/observe
+    // ⇒ a box exists" is this function's OWN invariant, so the consumer never
+    // re-asserts it with a non-null assertion.
+    return input.box ? { kind: 'stop', reason, box: input.box } : { kind: 'none', reason };
   }
   // The budget is a HARD stop, checked before anything that could recreate a
   // box: an over-budget project must not get one back on the next tick because
   // its manifest happened to change.
   if (input.budgetExceeded) {
     const reason = 'monthly monitor compute budget exceeded';
-    return input.box ? { kind: 'stop', reason } : { kind: 'none', reason };
+    return input.box ? { kind: 'stop', reason, box: input.box } : { kind: 'none', reason };
   }
   if (!input.box) return { kind: 'create', reason: 'no live monitor box' };
-  if (input.box.status === 'error') {
-    return { kind: 'restart', reason: 'box is in error' };
+  const { box } = input;
+  if (box.status === 'error') {
+    return { kind: 'restart', reason: 'box is in error', box };
   }
-  if (!input.box.externalId) {
+  if (!box.externalId) {
     // A row that never got a provider id is a create that died mid-flight.
-    return { kind: 'restart', reason: 'box has no provider id' };
+    return { kind: 'restart', reason: 'box has no provider id', box };
   }
-  if (input.box.manifestRevision !== input.desiredRevision) {
-    return { kind: 'restart', reason: 'manifest revision drift' };
+  if (box.manifestRevision !== input.desiredRevision) {
+    return { kind: 'restart', reason: 'manifest revision drift', box };
   }
-  return { kind: 'observe', reason: 'box matches desired state' };
+  return { kind: 'observe', reason: 'box matches desired state', box };
 }
 
 export interface MonitorSelection {
@@ -387,40 +391,43 @@ export async function reconcileMonitorBoxesWithStore(
       // per-project aggregate query and a flag-off project must not pay for it.
       const budgetExceeded = wantsBox ? await store.budgetExceeded(project) : false;
 
+      const revision = monitorManifestRevision(selected);
       const decision = decideMonitorBox({
         projectActive: project.active,
         flagEnabled: project.flagEnabled,
         enabledMonitors: selected.length,
-        desiredRevision: monitorManifestRevision(selected),
+        desiredRevision: revision,
         budgetExceeded,
         box: project.box,
       });
+
+      // One cap gate for both provisioning branches: a deferred create counts
+      // and is retried next tick; a deferred restart has already stopped the
+      // box, so only its rebuild is deferred.
+      const provision = async (): Promise<boolean> => {
+        if (result.created + result.restarted >= MONITOR_CREATES_PER_PASS) {
+          result.deferred += 1;
+          return false;
+        }
+        await store.createBox(project, selected, revision);
+        return true;
+      };
 
       switch (decision.kind) {
         case 'none':
           break;
         case 'create':
-          if (result.created + result.restarted >= MONITOR_CREATES_PER_PASS) {
-            result.deferred += 1;
-            break;
-          }
-          await store.createBox(project, selected, monitorManifestRevision(selected));
-          result.created += 1;
+          if (await provision()) result.created += 1;
           break;
         case 'restart':
           // A restart's STOP is not deferred: leaving a box running the wrong
           // manifest is worse than leaving the project briefly unwatched, and
           // the next tick rebuilds it through the `create` branch above.
-          await store.stopBox(project, project.box!, decision.reason);
-          if (result.created + result.restarted >= MONITOR_CREATES_PER_PASS) {
-            result.deferred += 1;
-            break;
-          }
-          await store.createBox(project, selected, monitorManifestRevision(selected));
-          result.restarted += 1;
+          await store.stopBox(project, decision.box, decision.reason);
+          if (await provision()) result.restarted += 1;
           break;
         case 'stop':
-          await store.stopBox(project, project.box!, decision.reason);
+          await store.stopBox(project, decision.box, decision.reason);
           result.stopped += 1;
           if (budgetExceeded && selected[0]) {
             // ONE notice per project per month, on the first monitor in slug
@@ -438,7 +445,7 @@ export async function reconcileMonitorBoxesWithStore(
           }
           break;
         case 'observe':
-          await store.observeBox(project, project.box!);
+          await store.observeBox(project, decision.box);
           result.observed += 1;
           break;
       }

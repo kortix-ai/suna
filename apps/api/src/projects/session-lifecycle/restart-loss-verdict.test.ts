@@ -28,7 +28,9 @@ const actions = readFileSync(join(import.meta.dir, 'actions.ts'), 'utf8');
 function missingRuntimeBranch(): string {
   const start = actions.indexOf('if (isMissingRuntimeError(err)) {');
   expect(start).toBeGreaterThan(-1);
-  return actions.slice(start, actions.indexOf('const [failedRestart]', start));
+  const end = actions.indexOf('const failedRestart =', start);
+  expect(end).toBeGreaterThan(start);
+  return actions.slice(start, end);
 }
 
 describe('restart-in-place never declares a loss the provider did not confirm', () => {
@@ -55,8 +57,8 @@ describe('restart-in-place never declares a loss the provider did not confirm', 
 
   test('the catch-block branch asks the provider before it decides', () => {
     const branch = missingRuntimeBranch();
-    // The heuristic that got us into this branch is not evidence: it matches
-    // any error whose message merely contains "not found".
+    // The error that got us into this branch is not evidence of a loss: a
+    // provider 404 on a restart call says nothing about the box's disk.
     expect(branch).toContain('provider.getStatus(externalId)');
     expect(branch).toContain("runtimeLossVerdict(status) === 'preserve'");
   });

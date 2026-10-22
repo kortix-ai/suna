@@ -18,3 +18,19 @@
  * policy functions) without dragging in the provider registry and its config.
  */
 export type SandboxStatus = 'running' | 'stopped' | 'removed' | 'terminal' | 'unknown';
+
+/**
+ * The provider says the box (or the resource asked for) does not exist: an
+ * HTTP 404, a `not_found` code, or an SDK not-found class. Never the message
+ * text — a 500 whose body says "not found" is not a lost computer.
+ */
+export function isProviderNotFound(error: unknown): boolean {
+  const err = error as
+    | { name?: unknown; status?: unknown; statusCode?: unknown; code?: unknown }
+    | null
+    | undefined;
+  if (err?.name === 'DaytonaNotFoundError' || err?.name === 'SandboxNotFoundError') return true;
+  if (err?.status === 404 || err?.statusCode === 404 || err?.code === 404) return true;
+  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
+  return code === 'not_found' || code === 'notfound';
+}

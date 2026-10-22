@@ -14,8 +14,11 @@ import {
   parkPromptForUnreachableRuntime,
   type QueuedContinueSessionPayload,
 } from './store';
-import { admitInboxPrompt, hasLaterReleasedSibling, sessionHoldsLiveTurn } from './inbox-admission';
+import { admitInboxPrompt, boundaryWaitDecision, hasLaterReleasedSibling, sessionHoldsLiveTurn, type BoundaryTurnIdentity, type BoundaryWait } from './inbox-admission';
+import { abortRuntimeTurn } from './abort-runtime-turn';
+import { markTurnResumed, markTurnStopRequested } from '../session-turn-ledger';
 import { openUserAbove } from './forwarded-placement';
+import { type InterruptedTurn, findInterruptedTurn, interruptedTurnContinuationParts, interruptedTurnContinuationText } from './redelivery';
 import {
   armQuickQueueInterrupt,
   queuedContinueHasStagedRevert,
@@ -25,13 +28,15 @@ import { DELIVERY_FAILURE_COPY } from './types';
 import {
   remintWireMessageId,
 } from './inbox-placement';
-import { deliverQueuedContinue } from './queued-continue-delivery';
+import { deliverQueuedContinue, deliverSteer } from './queued-continue-delivery';
 import { drainSessionLifecycleQueue } from './drain';
 
 const ANSWER_CHECK_RETRY_BASE_MS = 5_000;
 const MAX_ANSWER_CHECK_FAILURES = 3;
 
-async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: ProvisionTimeline): Promise<'admitted' | 'queued' | 'failed'> {
+async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: ProvisionTimeline): Promise<'admitted' | 'queued' | 'failed' | { steerInto: string }> {
+  // The direct `continueSession` call this row replaced had no admission.
+  if ((row.payload as { directFollowUp?: unknown } | null)?.directFollowUp === true) return 'admitted';
   let admission: Awaited<ReturnType<typeof admitInboxPrompt>>;
   try {
     admission = await admitInboxPrompt(row);
@@ -43,7 +48,7 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
     });
     return 'failed';
   }
-  if (admission.admit) return 'admitted';
+  if (admission.admit) return admission.steerInto ? { steerInto: admission.steerInto } : 'admitted';
   // Arm BEFORE the requeue: the arm's result picks the requeue's clock. A
   // runtime that will not serve the interrupt cannot end the turn this row
   // waits behind — re-arming it every 2 s is the unreachable-ladder's
@@ -58,8 +63,22 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
       { retryable: false, attempts: row.attempts, sessionId: row.sessionId });
     return 'failed';
   }
+  // THE BOUNDARY FALLBACK. The interrupt above is a handshake the API cannot
+  // verify — a turn entry the relay never closed, an arm the daemon answers
+  // and never fires, a skipped arm — and each failure mode leaves the head row
+  // waiting out the WHOLE run in silence (prod 2026-10-06: three queued
+  // messages behind a ~30-minute run). If the SAME turn is still live after
+  // QUEUE_BOUNDARY_FALLBACK_MS, the control plane ends the turn itself, the
+  // terminal relay promotes this row, and the queue dispatches.
+  let boundaryWait: BoundaryWait | null = null;
+  if (admission.reason === 'turn_active' && admission.interruptAtBoundary) {
+    const decision = boundaryWaitDecision(row.result, admission.interruptAtBoundary, Date.now());
+    boundaryWait = decision.wait;
+    if (decision.abort) await endTurnForQueuedPrompt(row, admission.interruptAtBoundary);
+  }
   try {
-    await requeueForAdmission(row, admission.reason, new Date(Date.now() + admission.retryAfterMs));
+    await requeueForAdmission(row, admission.reason, new Date(Date.now() + admission.retryAfterMs),
+      boundaryWait ? { boundary_wait: boundaryWait } : undefined);
   } catch (err) {
     await markCommandFailed(row, `admission requeue failed: ${err instanceof Error ? err.message : String(err)}`, {
       retryable: true, attempts: row.attempts, sessionId: row.sessionId,
@@ -68,6 +87,34 @@ async function admitQueuedContinue(row: SessionLifecycleCommandRow, tl: Provisio
   }
   if (admission.reason === 'turn_active') await wakeAfterAdmission(row);
   return 'queued';
+}
+
+/**
+ * End the live turn a queued prompt has waited out past its boundary window.
+ *
+ * The stamp goes down BEFORE the abort: the ledger keeps a stop request only
+ * over an abort, and without it the turn closes on a bare "Aborted" frame
+ * that reads as a failure nobody asked for. Same stamp and same abort the
+ * daemon's own boundary interrupt and the Stop button use.
+ */
+async function endTurnForQueuedPrompt(row: SessionLifecycleCommandRow, turn: BoundaryTurnIdentity): Promise<void> {
+  if (!row.sessionId) return;
+  try {
+    await markTurnStopRequested(row.sessionId, 'QueueInterrupt', {
+      opencodeSessionId: turn.opencodeSessionId,
+      messageId: turn.messageId,
+    });
+  } catch (err) {
+    logger.warn('[session-lifecycle] could not stamp the queue boundary interrupt', {
+      sessionId: row.sessionId, commandId: row.commandId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  const aborted = await abortRuntimeTurn(row.sessionId);
+  logger.info('[session-lifecycle] queued prompt ended the turn its boundary interrupt never ended', {
+    sessionId: row.sessionId, commandId: row.commandId, aborted,
+    runtimeSessionId: turn.opencodeSessionId,
+  });
 }
 
 async function wakeAfterAdmission(row: SessionLifecycleCommandRow): Promise<void> {
@@ -99,6 +146,7 @@ export async function executeQueuedContinue(
   }
   const tl = new ProvisionTimeline(row.commandId, 'deliver');
   const admitted = await admitQueuedContinue(row, tl);
+  if (typeof admitted === 'object') return deliverSteer(row, payload, text, admitted.steerInto, tl);
   if (admitted !== 'admitted') return admitted;
   // A non-final prompt of a released Stop batch (KRTX-683) goes out without
   // starting a turn, and once it lands hands off to the batch's next row
@@ -125,24 +173,45 @@ export async function executeQueuedContinue(
         { status: 'skipped', reason: 'consumed_in_band' },
         row.sessionId,
       );
+      await wakeAfterAdmission(row);
       return 'succeeded';
     }
   }
 
   const placement = await placeQueuedContinue(row, payload, tl);
+  // A turn a runtime loss cut short gets its continuation, never the original
+  // prompt a second time (KRTX-1732). The row keeps its own author and picks.
+  // The continuation is harness context, not a user prompt (KRTX-2597): its
+  // part is marked `synthetic` so the transcript renders it as a notice and
+  // never as a user bubble.
+  const resume = 'outcome' in placement ? undefined : placement.resume;
   const outcome = 'outcome' in placement
     ? placement.outcome
-    : await deliverQueuedContinue(row, payload, text, placement.wireMessageId,
+    : await deliverQueuedContinue(row, resume
+      ? { ...payload, parts: interruptedTurnContinuationParts(resume) } : payload,
+      resume ? interruptedTurnContinuationText(resume) : text, placement.wireMessageId,
       placement.placedIntoLiveTurn, placement.underPlaced, tl, noReply);
+  // Only a delivery marks the turn resumed. A placement outcome posted nothing:
+  // a staged revert or an answer check closed the row (`skipped`).
+  const resumedTurn = 'outcome' in placement ? undefined : resume?.turnToken ?? payload.resumesTurn;
+  if (resumedTurn && outcome === 'succeeded') {
+    await markTurnResumed(resumedTurn);
+    logger.info('[session-lifecycle] continued a turn a runtime loss interrupted', {
+      session_id: row.sessionId, command_id: row.commandId, turn_token: resumedTurn,
+    });
+  }
   // If the batch's LAST row then fails for good, the rows already posted
   // noReply stay unanswered until the user retries it or sends again.
-  if (noReply && outcome === 'succeeded') await wakeAfterAdmission(row);
+  // A skipped placement (staged revert, already answered) posted nothing, so
+  // no turn end wakes the next row either. A failure wakes it in
+  // `markCommandFailed` when it dead-letters.
+  const skipped = 'outcome' in placement && placement.outcome === 'succeeded';
+  if (skipped || (noReply && outcome === 'succeeded')) await wakeAfterAdmission(row);
   return outcome;
 }
 
-type Placement = { outcome: 'succeeded' | 'queued' | 'failed' } | {
-  wireMessageId: string | undefined; underPlaced: boolean; placedIntoLiveTurn: boolean;
-};
+type WirePlacement = { wireMessageId: string | undefined; underPlaced: boolean; resume?: InterruptedTurn };
+type Placement = { outcome: 'succeeded' | 'queued' | 'failed' } | (WirePlacement & { placedIntoLiveTurn: boolean });
 
 async function settleStagedRevert(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload): Promise<'succeeded' | 'failed'> {
   if (payload.clientMessageId) {
@@ -159,7 +228,7 @@ async function settleStagedRevert(row: SessionLifecycleCommandRow, payload: Queu
 
 async function checkTranscript(row: SessionLifecycleCommandRow,
   transcript: Awaited<ReturnType<typeof readInboxTranscriptState>>, deliveryAttempt: number,
-  redeliveries: number): Promise<'queued' | 'succeeded' | null> {
+  redeliveries: number, deliveredIds: string[]): Promise<'queued' | 'succeeded' | { resume: InterruptedTurn } | null> {
   const alreadyPosted = deliveryAttempt > 0 || redeliveries > 0;
   const answerCheckFailures = Number(
     (row.result as { answer_check_failures?: unknown } | null)?.answer_check_failures ?? 0,
@@ -173,8 +242,21 @@ async function checkTranscript(row: SessionLifecycleCommandRow,
     return 'queued';
   }
   if (transcript.read && transcript.answered) {
+    // An answer the runtime loss cut short is not an answer. A failed ledger
+    // read drops the row as before: a missed continuation, never a second run.
+    const resumable = redeliveries > 0 &&
+      (row.payload as { resumeIfInterrupted?: unknown } | null)?.resumeIfInterrupted === true;
+    const resume = resumable
+      ? await findInterruptedTurn(row.sessionId!, deliveredIds, transcript.tip ?? []).catch((error) => {
+        logger.warn('[session-lifecycle] interrupted-turn check failed; dropping as answered', {
+          session_id: row.sessionId, command_id: row.commandId, error,
+        });
+        return null;
+      })
+      : null;
+    if (resume) return { resume };
     console.warn('[session-lifecycle] dropping delivery — the prompt was already answered', {
-      sessionId: row.sessionId, commandId: row.commandId, redeliveries,
+      sessionId: row.sessionId, commandId: row.commandId, redeliveries, resumable,
     });
     await markCommandSucceeded(row, { status: 'skipped', reason: 'already_answered' }, row.sessionId);
     return 'succeeded';
@@ -229,10 +311,11 @@ async function placeQueuedContinue(row: SessionLifecycleCommandRow, payload: Que
 async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: QueuedContinueSessionPayload,
   tl: ProvisionTimeline, stagedRevertPromise: Promise<boolean>, remintKnown: boolean,
   turnLive: boolean, deliveryAttempt: number, redeliveries: number): Promise<
-    { outcome: 'succeeded' | 'queued' | 'failed' } | { wireMessageId: string | undefined; underPlaced: boolean }
+    { outcome: 'succeeded' | 'queued' | 'failed' } | WirePlacement
   > {
   let wireMessageId = payload.wireMessageId;
   let underPlaced = false;
+  let resume: InterruptedTurn | undefined;
   if (payload.wireMessageId && (remintKnown || turnLive)) {
     const deliveredIds = [
       payload.wireMessageId,
@@ -248,8 +331,9 @@ async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: Qu
     }
     const transcript = await transcriptPromise;
     tl.mark('transcript-read');
-    const checked = await checkTranscript(row, transcript, deliveryAttempt, redeliveries);
-    if (checked) return { outcome: checked };
+    const checked = await checkTranscript(row, transcript, deliveryAttempt, redeliveries, deliveredIds);
+    if (typeof checked === 'string') return { outcome: checked };
+    resume = checked?.resume;
     // A released Stop batch row never stays under: the open user message
     // above it is the sibling posted `noReply` just before it (KRTX-683), and
     // OpenCode orders by id — kept, the batch renders out of order with its
@@ -271,5 +355,5 @@ async function inspectWirePlacement(row: SessionLifecycleCommandRow, payload: Qu
       tl.mark('remint');
     }
   }
-  return { wireMessageId, underPlaced };
+  return { wireMessageId, underPlaced, ...(resume ? { resume } : {}) };
 }

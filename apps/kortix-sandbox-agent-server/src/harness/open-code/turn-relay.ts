@@ -1,13 +1,16 @@
-import { relayTurnBegin, relayTurnEnd, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
+import { postTurnStream, relayTurnBegin, relayTurnEnd, resetTurnBeginRelaysForTests } from '../shared/turn-relay'
+import { flushSessionLogJournal } from '../shared/session-log-journal'
 import { noteOpencodeStopRequested } from './instance-guard'
 import { logger } from '@/lib/log/logger'
 import { readControlPlaneEnv, sandboxRelayContext } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { flattenOpencodeError, type OpencodeTurnError } from './events'
 import { observeIdleForRunaway } from './runaway-turn-guard'
+import { opencodeSessionInFlight } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
 import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
+import { runOnIdleHook } from '../shared/on-idle-hook'
 
 // Relay a turn ending (opencode `session.idle` / `session.error`) for the ROOT
 const relayedTurnSignatures = new Set<string>()
@@ -105,6 +108,12 @@ export async function relayTurnBeginToApi(
   }
 }
 
+let relayRetryStepMs = 1_000
+/** Tests shorten the turn-end retry backoff (1 s, 2 s, 3 s in the product). */
+export function setRelayRetryStepMsForTests(ms: number): void {
+  relayRetryStepMs = ms
+}
+
 export async function relayTurnEndToApi(
   opencodeSessionId: string,
   status: 'idle' | 'error',
@@ -164,32 +173,30 @@ export async function relayTurnEndToApi(
   // A credential the API has refused, repeatedly and without contradiction,
   if (sessionTokenPresumedDead()) return
 
-  const { projectId, sessionId, token, apiRoot } = ctx
-  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+  // The turn's messages go to the session log first (at most 3 s), as on pi.
+  await flushSessionLogJournal()
+
   // This is the ONLY signal that finalizes a turn the agent ended without
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({
-          session_id: sessionId,
-          kind: 'end',
-          status: effectiveStatus,
-          opencode_session_id: opencodeSessionId,
-          turn_message_id: turn.parentMessageId ?? undefined,
-          ...(error
-            ? {
-                error_name: error.name,
-                error_message: error.message,
-                error_status: error.statusCode,
-                error_retryable: error.isRetryable,
-                error_provider: error.providerID,
-              }
-            : {}),
-        }),
-        signal: AbortSignal.timeout(15_000),
+      // No `error_code`: Slack and Teams classify an OpenCode error from its
+      // name, status and message text, and a code would replace that heuristic.
+      const res = await postTurnStream({
+        kind: 'end',
+        status: effectiveStatus,
+        runtime_session_id: opencodeSessionId,
+        turn_message_id: turn.parentMessageId ?? undefined,
+        ...(error
+          ? {
+              error_name: error.name,
+              error_message: error.message,
+              error_status: error.statusCode,
+              error_retryable: error.isRetryable,
+              error_provider: error.providerID,
+            }
+          : {}),
       })
+      if (!res) return
       if (res.ok) {
         const data = (await res.json().catch(() => null)) as {
           ok?: boolean
@@ -220,7 +227,7 @@ export async function relayTurnEndToApi(
               error = eventError ?? turn.error
               effectiveStatus = error ? 'error' : status
             }
-            await new Promise((r) => setTimeout(r, 1_000 * attempt))
+            await new Promise((r) => setTimeout(r, relayRetryStepMs * attempt))
           }
           continue
         }
@@ -229,6 +236,7 @@ export async function relayTurnEndToApi(
         // later observation of the same completed turn is a safe no-op to skip.
         if (dedupSig) relayedTurnSignatures.add(dedupSig)
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
+        runOnIdleHook({ status: effectiveStatus, messageId: turn.parentMessageId ?? null })
         return
       }
       const bodyText = await res.text().catch(() => '')
@@ -241,9 +249,9 @@ export async function relayTurnEndToApi(
     } catch (err) {
       logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
     }
-    if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
+    if (attempt < 4) await new Promise((r) => setTimeout(r, relayRetryStepMs * attempt))
   }
-  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status: effectiveStatus })
+  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId: ctx.sessionId, status: effectiveStatus })
 }
 
 /** Settle an orphan by its own message identity even when OpenCode never stamped completion. */
@@ -340,6 +348,11 @@ export async function reconcileFinishedFirstTurn(
   // Only reconcile a turn that has actually completed; a still-running turn will
   // finalize via its own (now-subscribed) session.idle.
   if (turn.completedAt == null) return
+  // ASK, don't infer: a busy root is running a turn. After a steer the open
+  // step is parented on the steered message, so the scan above reads the step
+  // before it as a finished turn, and a reconnect inside that step ended a
+  // live turn (2026-10-10). Unreadable status keeps the transcript's answer.
+  if ((await opencodeSessionInFlight(opencode.getInternalUrl(), cfg.workspace, rootId)) === true) return
   logger.info('[opencode-events] reconciling turn that completed before subscribe', { rootId, completedAt: turn.completedAt })
   await relayTurnEndToApi(rootId, 'idle', opencode, cfg)
 }

@@ -1,3 +1,4 @@
+import { BLOCKING_TURN_VERBS } from '@kortix/api-contract/runtime-relay';
 import { classifyRuntimeRequest } from './runtime-request';
 
 // Total wall-clock budget for the preview proxy's auto-wake retry loop. Must
@@ -38,7 +39,10 @@ export const PROXY_RETRY_DELAYS_MS = [250, 1_000, 3_000] as const;
 // identical user messages, 11.0s / 11.8s / 13.7s apart.
 export function isLongTurnCompletionRequest(request: { method: string; path: string }): boolean {
   const classified = classifyRuntimeRequest(request.method, request.path);
-  return classified.kind === 'turn-start' && ['message', 'command', 'summarize'].includes(classified.verb);
+  return (
+    classified.kind === 'turn-start' &&
+    (BLOCKING_TURN_VERBS as readonly string[]).includes(classified.verb)
+  );
 }
 
 export function isUploadRequest(request: { method: string; path: string }): boolean {

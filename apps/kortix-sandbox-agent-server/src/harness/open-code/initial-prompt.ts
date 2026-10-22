@@ -1,17 +1,6 @@
-import { relayTurnAccepted } from '../shared/turn-relay'
-import { logger } from '@/lib/log/logger'
-import { hasKortixLlmGateway, type Opencode } from './lifecycle'
-import { sandboxRelayContext } from '@/lib/kortix-api/relay-context'
-import type { InitialTurnClaim } from '@/types/control-plane'
-import { getClaimedInitialTurn, setClaimedInitialTurn } from './initial-turn-claim'
+import { relayTurnAbandoned, relayTurnAccepted } from '../shared/turn-relay'
+import type { Opencode } from './lifecycle'
 import { observeOpencodeDelivery } from './opencode-turn-state'
-
-const LEGACY_OPENCODE_ZEN_FREE_MODELS = new Set([
-  'deepseek-v4-flash-free',
-  'mimo-v2.5-free',
-  'nemotron-3-ultra-free',
-  'north-mini-code-free',
-])
 
 export async function createInitialOpenCodeSession(
   opencode: Opencode,
@@ -41,93 +30,6 @@ export async function deliverInitialOpenCodePrompt(
   if (!response.ok) {
     throw new Error(`opencode prompt failed: ${response.status} ${await response.text()}`)
   }
-}
-
-/**
- * Promote only the initial-turn authority that apps/api created before the
- * sandbox existed. The daemon cannot mint a token, create a lifecycle record,
- * or revive a record removed by terminal evidence.
- */
-export async function relayInitialTurnAcceptedToApi(
-  opencodeSessionId: string,
-  messageId: string,
-  turnToken: string,
-): Promise<boolean> {
-  return relayTurnAccepted(opencodeSessionId, messageId, turnToken)
-}
-
-/** Claim the pending first turn through the session-bound Kortix credential. */
-export async function claimInitialTurnFromApi(): Promise<InitialTurnClaim | null> {
-  if (getClaimedInitialTurn()) return getClaimedInitialTurn()
-  const ctx = sandboxRelayContext()
-  if (!ctx) return null
-  const { projectId, sessionId, token, apiRoot } = ctx
-  let response: Response | null = null
-  let lastError: unknown = null
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ session_id: sessionId, kind: 'initial_turn_claim' }),
-        signal: AbortSignal.timeout(15_000),
-      })
-      if (response.ok || response.status < 500) break
-      lastError = new Error(`initial turn claim returned ${response.status}`)
-    } catch (error) {
-      lastError = error
-    }
-    if (attempt < 2) await Bun.sleep(250 * 2 ** attempt)
-  }
-  if (!response) {
-    throw new Error(`initial turn claim failed after 3 attempts: ${String(lastError)}`)
-  }
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`initial turn claim rejected: ${response.status} ${body.slice(0, 200)}`)
-  }
-  const body = (await response.json()) as {
-    initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
-  }
-  const turn = body.initial_turn
-  if (
-    !turn ||
-    typeof turn.prompt !== 'string' ||
-    typeof turn.turn_token !== 'string' ||
-    typeof turn.message_id !== 'string'
-  ) return null
-  setClaimedInitialTurn({
-    prompt: turn.prompt,
-    turnToken: turn.turn_token,
-    messageId: turn.message_id,
-  })
-  return getClaimedInitialTurn()
-}
-
-/** Remove only a pre-created initial-turn record that OpenCode never accepted. */
-export async function relayInitialTurnAbandonedToApi(turnToken: string): Promise<boolean> {
-  const ctx = sandboxRelayContext()
-  if (!ctx) throw new Error('initial turn abandonment relay context is unavailable')
-  const { projectId, sessionId, token: sandboxToken, apiRoot } = ctx
-  const response = await fetch(`${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${sandboxToken}`,
-    },
-    body: JSON.stringify({
-      session_id: sessionId,
-      kind: 'turn_abandoned',
-      turn_token: turnToken,
-    }),
-    signal: AbortSignal.timeout(15_000),
-  })
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(`initial turn abandonment rejected: ${response.status} ${body.slice(0, 200)}`)
-  }
-  const body = (await response.json().catch(() => ({}))) as { ok?: boolean }
-  return body.ok === true
 }
 
 export type InitialTurnAcceptanceReconciliation = 'accepted' | 'inactive' | 'unknown'
@@ -164,7 +66,7 @@ export async function reconcileInitialTurnAcceptanceToApi(
   )
   if (observation.inFlight === null) return 'unknown'
   if (observation.inFlight) {
-    await relayInitialTurnAcceptedToApi(opencodeSessionId, messageId, turnToken)
+    await relayTurnAccepted(opencodeSessionId, messageId, turnToken)
     return 'accepted'
   }
   // THIS boot just delivered the prompt, and OpenCode has not picked it up
@@ -174,7 +76,7 @@ export async function reconcileInitialTurnAcceptanceToApi(
   ) {
     return 'unknown'
   }
-  await relayInitialTurnAbandonedToApi(turnToken)
+  await relayTurnAbandoned(turnToken)
   return 'inactive'
 }
 
@@ -205,7 +107,11 @@ export async function reconcileInitialTurnAcceptanceToApi(
  * own impatience. The 20s outer deadline is unchanged and still bounds the whole
  * loop.
  */
-const SESSION_CREATE_ATTEMPT_TIMEOUT_MS = 10_000
+let sessionCreateAttemptTimeoutMs = 10_000
+/** Tests shorten the attempt timeout; it stays above the 1.6 s slow create they also prove. */
+export function setSessionCreateAttemptTimeoutMsForTests(ms: number): void {
+  sessionCreateAttemptTimeoutMs = ms
+}
 
 export async function waitForInitialSessionCreate(baseUrl: string, workspace: string): Promise<Response> {
   const url = `${baseUrl}/session?directory=${encodeURIComponent(workspace)}`
@@ -213,7 +119,7 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
   let lastError = 'opencode session create timed out'
   while (Date.now() < deadline) {
     // Never let one attempt outlive the outer deadline.
-    const attemptMs = Math.max(500, Math.min(SESSION_CREATE_ATTEMPT_TIMEOUT_MS, deadline - Date.now()))
+    const attemptMs = Math.max(500, Math.min(sessionCreateAttemptTimeoutMs, deadline - Date.now()))
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -238,29 +144,21 @@ export async function waitForInitialSessionCreate(baseUrl: string, workspace: st
   throw new Error(lastError)
 }
 
-
-
+/**
+ * The session model from KORTIX_OPENCODE_MODEL on the one OpenCode provider,
+ * `kortix`. The model id is the complete gateway wire ref (`codex/gpt-5.6-sol`),
+ * never split into an OpenCode provider and model.
+ */
 export function resolveOpencodeModel(): { providerID: string; modelID: string } | undefined {
   const raw = (process.env.KORTIX_OPENCODE_MODEL ?? '').trim()
-  if (!raw) return undefined
-  if (hasKortixLlmGateway(process.env)) {
-    const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
-    return modelID ? { providerID: 'kortix', modelID } : undefined
-  }
-  if (LEGACY_OPENCODE_ZEN_FREE_MODELS.has(raw)) return { providerID: 'opencode', modelID: raw }
-  // A pin stored while the gateway was ON can survive a live toggle to native
-  const ref = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
-  const slash = ref.indexOf('/')
-  if (slash <= 0 || slash === ref.length - 1) return undefined
-  const providerID = ref.slice(0, slash)
-  const modelID = ref.slice(slash + 1)
-  return { providerID, modelID }
+  const modelID = raw.startsWith('kortix/') ? raw.slice('kortix/'.length) : raw
+  return modelID ? { providerID: 'kortix', modelID } : undefined
 }
 
 /** Build the first-turn request from the session-bound runtime environment. */
-export function buildInitialPromptBody(prompt: string, claimedMessageId?: string): {
+export function buildInitialPromptBody(prompt: string, claimedMessageId?: string, context?: string): {
   messageID?: string
-  parts: Array<{ type: 'text'; text: string }>
+  parts: Array<{ type: 'text'; text: string; synthetic?: boolean }>
   model?: { providerID: string; modelID: string }
   agent?: string
 } {
@@ -270,7 +168,14 @@ export function buildInitialPromptBody(prompt: string, claimedMessageId?: string
   const messageID = claimedMessageId
   return {
     ...(messageID ? { messageID } : {}),
-    parts: [{ type: 'text', text: prompt }],
+    parts: [
+      { type: 'text', text: prompt },
+      // Harness context: a synthetic part the transcript never renders (see
+      // the create contract's `initial_context`).
+      // `as const` is load-bearing: contextual typing does not flow through the
+      // conditional spread, and without it `type` widens to `string` (TS2322).
+      ...(context ? [{ type: 'text', text: context, synthetic: true } as const] : []),
+    ],
     ...(model ? { model } : {}),
     ...(agent ? { agent } : {}),
   }

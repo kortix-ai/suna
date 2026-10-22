@@ -42,7 +42,7 @@
  * and a `CountQueuingStrategy({highWaterMark:1})` is byte-for-byte identical to
  * manual reads. See `config.ts` for the measurements.
  */
-import type { IncomingMessage } from 'node:http';
+import type { ClientRequest, IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { Readable } from 'node:stream';
 import { config } from '../config';
@@ -56,13 +56,13 @@ import {
 export const RELAY_CONNECT_TIMEOUT_MS = 10_000;
 
 /** The head of an outbound request — everything `prepareRelayHead` produced. */
-export interface RelayRequestHead {
+interface RelayRequestHead {
   url: URL;
   method: string;
   headers: Record<string, string>;
 }
 
-export interface RelayUpstreamResponse {
+interface RelayUpstreamResponse {
   /** The UPSTREAM's status. The relay's own status is a separate concern. */
   status: number;
   /**
@@ -94,7 +94,7 @@ export interface RelayTransportSeam {
   port?: number;
 }
 
-export interface OpenUpstreamOptions {
+interface OpenUpstreamOptions {
   /** The relay client's own signal (`c.req.raw.signal`) — abort propagates. */
   signal?: AbortSignal;
   /** 0 = unlimited. Defaults to `KORTIX_RELAY_MAX_REQUEST_BYTES`. */
@@ -139,35 +139,12 @@ export async function openUpstream(
   if (seam.port !== undefined) requestOptions.port = seam.port;
   if (seam.ca !== undefined) (requestOptions as { ca?: string | string[] }).ca = seam.ca;
 
-  // Framing. The guest's own `content-length` / `transfer-encoding` never reach
-  // here (both are in BLOCKED_REQUEST_HEADERS), so this is the only place the
-  // upstream leg's framing is decided:
-  //   - a Buffer body has a provably exact length → `content-length`
-  //   - a streamed body has none → `transfer-encoding: chunked`
-  // Measured: httpbin's origin, Anthropic, OpenAI, GitHub, Stripe and S3 all
-  // accepted a chunked request (no 411, no 501).
-  //
-  // EXACTLY ONE framing header is emitted. Setting both is a request-smuggling
-  // primitive under Node (which sends both) and a silent broken promise under
-  // Bun 1.3.14 (measured: with both present Bun emits ONLY
-  // `Transfer-Encoding: chunked` and drops the `Content-Length`). The route's
-  // pass-through branch sets `content-length` because on that branch the length
-  // is PROVABLY unchanged — so honour it, and enforce it in the write loop
-  // below rather than letting a mismatch reach the upstream.
   const headers = { ...(requestOptions.headers as Record<string, string>) };
   const declaredLength =
     typeof headers['content-length'] === 'string' && /^\d+$/.test(headers['content-length'])
       ? Number(headers['content-length'])
       : null;
-  if (Buffer.isBuffer(body)) {
-    headers['content-length'] = String(body.byteLength);
-    delete headers['transfer-encoding'];
-  } else if (body && declaredLength !== null) {
-    delete headers['transfer-encoding'];
-  } else if (body) {
-    delete headers['content-length'];
-    headers['transfer-encoding'] = 'chunked';
-  }
+  framingHeaders(headers, body, declaredLength);
   requestOptions.headers = headers;
 
   return await new Promise<RelayUpstreamResponse>((resolve, reject) => {
@@ -236,66 +213,6 @@ export async function openUpstream(
       // time-based control, and it is armed on the response socket below.
       request.setTimeout(0);
 
-      // Pull, don't push: the upstream is read only when the consumer reads.
-      // Reading ahead let a burst over the byte budget destroy `out` before
-      // the caller held it, and an `error` with no listener is an uncaught
-      // exception. `read()` is also the backpressure: a full buffer pauses
-      // the socket, the next read resumes it.
-      const out = new Readable({ read: () => response.resume() });
-      let responseBytes = 0;
-      let idleTimer: ReturnType<typeof setTimeout> | undefined;
-      const clearIdle = () => {
-        if (idleTimer) clearTimeout(idleTimer);
-        idleTimer = undefined;
-      };
-      const armIdle = () => {
-        if (idleTimeoutMs <= 0) return;
-        clearIdle();
-        idleTimer = setTimeout(() => {
-          response.destroy();
-          out.destroy(
-            new SecretBrokerError('upstream_timeout', 'upstream stream went idle', 504),
-          );
-        }, idleTimeoutMs);
-      };
-      armIdle();
-
-      response.on('data', (chunk: Buffer) => {
-        armIdle();
-        responseBytes += chunk.byteLength;
-        if (maxResponseBytes > 0 && responseBytes > maxResponseBytes) {
-          clearIdle();
-          response.destroy();
-          out.destroy(
-            new SecretBrokerError(
-              'relay_response_too_large',
-              `upstream response exceeds ${maxResponseBytes} bytes`,
-              502,
-            ),
-          );
-          return;
-        }
-        if (!out.push(chunk)) response.pause();
-      });
-      response.pause();
-      response.on('end', () => {
-        clearIdle();
-        out.push(null);
-      });
-      response.on('error', (error) => {
-        clearIdle();
-        out.destroy(
-          error instanceof SecretBrokerError
-            ? error
-            : new SecretBrokerError('upstream_stream_failed', 'upstream stream failed', 502),
-        );
-      });
-      out.on('close', () => {
-        clearIdle();
-        options.signal?.removeEventListener('abort', onAbort);
-        if (!response.readableEnded) response.destroy();
-      });
-
       const rawHeaders: Array<[string, string]> = [];
       for (let i = 0; i + 1 < response.rawHeaders.length; i += 2) {
         rawHeaders.push([response.rawHeaders[i]!.toLowerCase(), response.rawHeaders[i + 1]!]);
@@ -304,7 +221,7 @@ export async function openUpstream(
       resolve({
         status: response.statusCode ?? 502,
         rawHeaders,
-        body: out,
+        body: wireResponseStream(response, { maxResponseBytes, idleTimeoutMs }, options.signal, onAbort),
         destroy: () => {
           response.destroy();
           request.destroy();
@@ -312,85 +229,197 @@ export async function openUpstream(
       });
     });
 
-    // ── Write the request body, with REAL backpressure ────────────────────
-    if (Buffer.isBuffer(body)) {
-      if (maxRequestBytes > 0 && body.byteLength > maxRequestBytes) {
+    void writeRequestBody(request, body, { declaredLength, maxRequestBytes }, fail, () => settled);
+  });
+}
+
+/**
+ * Framing. The guest's own `content-length` / `transfer-encoding` never reach
+ * here (both are in BLOCKED_REQUEST_HEADERS), so this is the only place the
+ * upstream leg's framing is decided:
+ *   - a Buffer body has a provably exact length → `content-length`
+ *   - a streamed body has none → `transfer-encoding: chunked`
+ * Measured: httpbin's origin, Anthropic, OpenAI, GitHub, Stripe and S3 all
+ * accepted a chunked request (no 411, no 501).
+ *
+ * EXACTLY ONE framing header is emitted. Setting both is a request-smuggling
+ * primitive under Node (which sends both) and a silent broken promise under
+ * Bun 1.3.14 (measured: with both present Bun emits ONLY
+ * `Transfer-Encoding: chunked` and drops the `Content-Length`). The route's
+ * pass-through branch sets `content-length` because on that branch the length
+ * is PROVABLY unchanged — so honour it, and enforce it in the write loop
+ * below rather than letting a mismatch reach the upstream.
+ */
+function framingHeaders(
+  headers: Record<string, string>,
+  body: Readable | Buffer | null,
+  declaredLength: number | null,
+): void {
+  if (Buffer.isBuffer(body)) {
+    headers['content-length'] = String(body.byteLength);
+    delete headers['transfer-encoding'];
+  } else if (body && declaredLength !== null) {
+    delete headers['transfer-encoding'];
+  } else if (body) {
+    delete headers['content-length'];
+    headers['transfer-encoding'] = 'chunked';
+  }
+}
+
+/**
+ * Write the request body, with REAL backpressure.
+ */
+async function writeRequestBody(
+  request: ClientRequest,
+  body: Readable | Buffer | null,
+  limits: { declaredLength: number | null; maxRequestBytes: number },
+  fail: (error: Error) => void,
+  isSettled: () => boolean,
+): Promise<void> {
+  if (Buffer.isBuffer(body)) {
+    if (limits.maxRequestBytes > 0 && body.byteLength > limits.maxRequestBytes) {
+      fail(
+        new SecretBrokerError(
+          'relay_request_too_large',
+          `request body exceeds ${limits.maxRequestBytes} bytes`,
+          413,
+        ),
+      );
+      return;
+    }
+    request.write(body);
+    request.end();
+    return;
+  }
+  if (!body) {
+    request.end();
+    return;
+  }
+
+  let requestBytes = 0;
+  try {
+    for await (const chunk of body) {
+      if (isSettled() && request.destroyed) return;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
+      requestBytes += buffer.byteLength;
+      // A caller-declared `content-length` is a promise this leg keeps.
+      // Overrunning it would desynchronise the upstream's framing.
+      if (limits.declaredLength !== null && requestBytes > limits.declaredLength) {
         fail(
           new SecretBrokerError(
             'relay_request_too_large',
-            `request body exceeds ${maxRequestBytes} bytes`,
+            `request body exceeds its declared length of ${limits.declaredLength} bytes`,
             413,
           ),
         );
         return;
       }
-      request.write(body);
-      request.end();
-      return;
-    }
-    if (!body) {
-      request.end();
-      return;
-    }
-
-    void (async () => {
-      let requestBytes = 0;
-      try {
-        for await (const chunk of body) {
-          if (settled && request.destroyed) return;
-          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
-          requestBytes += buffer.byteLength;
-          // A caller-declared `content-length` is a promise this leg keeps.
-          // Overrunning it would desynchronise the upstream's framing.
-          if (declaredLength !== null && requestBytes > declaredLength) {
-            fail(
-              new SecretBrokerError(
-                'relay_request_too_large',
-                `request body exceeds its declared length of ${declaredLength} bytes`,
-                413,
-              ),
-            );
-            return;
-          }
-          if (maxRequestBytes > 0 && requestBytes > maxRequestBytes) {
-            fail(
-              new SecretBrokerError(
-                'relay_request_too_large',
-                `request body exceeds ${maxRequestBytes} bytes`,
-                413,
-              ),
-            );
-            return;
-          }
-          // `write()` returning false means the kernel buffer is full. Awaiting
-          // 'drain' is what stops a fast guest from being buffered in this
-          // process — the difference between a proxy and a memory sink.
-          if (!request.write(buffer)) {
-            await new Promise<void>((drained, failed) => {
-              request.once('drain', drained);
-              request.once('error', failed);
-              request.once('close', () => drained());
-            });
-          }
-        }
-        if (declaredLength !== null && requestBytes !== declaredLength) {
-          fail(
-            new SecretBrokerError(
-              'invalid_request',
-              `request body is ${requestBytes} bytes but declared ${declaredLength}`,
-              400,
-            ),
-          );
-          return;
-        }
-        request.end();
-      } catch (error) {
+      if (limits.maxRequestBytes > 0 && requestBytes > limits.maxRequestBytes) {
         fail(
-          error instanceof SecretBrokerError
-            ? error
-            : new SecretBrokerError('upstream_failed', 'request body stream failed', 502),
+          new SecretBrokerError(
+            'relay_request_too_large',
+            `request body exceeds ${limits.maxRequestBytes} bytes`,
+            413,
+          ),
         );
+        return;
       }
-    })();
+      // `write()` returning false means the kernel buffer is full. Awaiting
+      // 'drain' is what stops a fast guest from being buffered in this
+      // process — the difference between a proxy and a memory sink.
+      if (!request.write(buffer)) {
+        await new Promise<void>((drained, failed) => {
+          request.once('drain', drained);
+          request.once('error', failed);
+          request.once('close', () => drained());
+        });
+      }
+    }
+    if (limits.declaredLength !== null && requestBytes !== limits.declaredLength) {
+      fail(
+        new SecretBrokerError(
+          'invalid_request',
+          `request body is ${requestBytes} bytes but declared ${limits.declaredLength}`,
+          400,
+        ),
+      );
+      return;
+    }
+    request.end();
+  } catch (error) {
+    fail(
+      error instanceof SecretBrokerError
+        ? error
+        : new SecretBrokerError('upstream_failed', 'request body stream failed', 502),
+    );
+  }
+}
+
+/**
+ * Pull, don't push: the upstream is read only when the consumer reads.
+ * Reading ahead let a burst over the byte budget destroy `out` before
+ * the caller held it, and an `error` with no listener is an uncaught
+ * exception. `read()` is also the backpressure: a full buffer pauses
+ * the socket, the next read resumes it.
+ */
+function wireResponseStream(
+  response: IncomingMessage,
+  limits: { maxResponseBytes: number; idleTimeoutMs: number },
+  signal: AbortSignal | undefined,
+  onAbort: () => void,
+): Readable {
+  const { maxResponseBytes, idleTimeoutMs } = limits;
+  const out = new Readable({ read: () => response.resume() });
+  let responseBytes = 0;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = undefined;
+  };
+  const armIdle = () => {
+    if (idleTimeoutMs <= 0) return;
+    clearIdle();
+    idleTimer = setTimeout(() => {
+      response.destroy();
+      out.destroy(new SecretBrokerError('upstream_timeout', 'upstream stream went idle', 504));
+    }, idleTimeoutMs);
+  };
+  armIdle();
+
+  response.on('data', (chunk: Buffer) => {
+    armIdle();
+    responseBytes += chunk.byteLength;
+    if (maxResponseBytes > 0 && responseBytes > maxResponseBytes) {
+      clearIdle();
+      response.destroy();
+      out.destroy(
+        new SecretBrokerError(
+          'relay_response_too_large',
+          `upstream response exceeds ${maxResponseBytes} bytes`,
+          502,
+        ),
+      );
+      return;
+    }
+    if (!out.push(chunk)) response.pause();
   });
+  response.pause();
+  response.on('end', () => {
+    clearIdle();
+    out.push(null);
+  });
+  response.on('error', (error) => {
+    clearIdle();
+    out.destroy(
+      error instanceof SecretBrokerError
+        ? error
+        : new SecretBrokerError('upstream_stream_failed', 'upstream stream failed', 502),
+    );
+  });
+  out.on('close', () => {
+    clearIdle();
+    signal?.removeEventListener('abort', onAbort);
+    if (!response.readableEnded) response.destroy();
+  });
+  return out;
 }

@@ -7,6 +7,7 @@
 // cached per team, and are stored on the binding.
 import { chatChannelBindings } from '@kortix/db';
 import { eq } from 'drizzle-orm';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { getTeamsTeam, listTeamsTeamChannels } from '../teams-api';
 import { ensureTeamsConversationBinding } from './binding';
@@ -33,8 +34,11 @@ interface Entry<T> {
   value: Promise<T | null>;
 }
 
-// ponytail: per-replica memory, like the Slack label misses; a shared store if many replicas make the calls costly.
+// replica-local: per-replica memo of Teams team reads. A miss only costs one
+// extra Graph call per replica and the resolved label lands in the DB binding
+// row, so replicas converge; a shared store buys nothing until the calls cost.
 const teamReads = new Map<string, Entry<{ id: string; name: string }>>();
+// replica-local: same contract as teamReads above, for channel lists.
 const channelReads = new Map<string, Entry<Array<{ id: string; name: string | null }>>>();
 
 export function resetTeamsChannelLabelsForTest(): void {
@@ -116,7 +120,7 @@ export async function labelTeamsChannelBinding(input: {
       channelType: 'channel',
     });
   } catch (err) {
-    console.warn('[teams] channel label failed (non-fatal)', (err as Error)?.message);
+    logger.warn('[teams] channel label failed (non-fatal)', { error: (err as Error)?.message });
   }
 }
 
@@ -155,7 +159,7 @@ export async function backfillTeamsBindingLabel(
       .where(eq(chatChannelBindings.bindingId, binding.bindingId));
     return channelName;
   } catch (err) {
-    console.warn('[teams] binding label lookup failed (non-fatal)', (err as Error)?.message);
+    logger.warn('[teams] binding label lookup failed (non-fatal)', { error: (err as Error)?.message });
     return null;
   }
 }

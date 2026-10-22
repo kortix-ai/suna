@@ -1,6 +1,6 @@
 ---
 name: kortix-cli
-description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a reminder to check back on this task later (`kortix remind \"…\" --in 24h --every 1h`, when the project's `reminders` feature flag is on), call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
+description: "Drive Kortix itself from the terminal with the `kortix` CLI — preinstalled and pre-authenticated in every session sandbox. Use whenever a task means acting on THIS project's Kortix control plane rather than just editing files: manage secrets, list/spawn/watch/talk-to sessions, open or inspect change requests to land work on main, fire or manage triggers, set a reminder to check back on this task later (`kortix remind \"…\" --in 24h --every 1h`, when the project's `reminders` feature flag is on), search the screen, action and audio timeline Kortix Capture recorded for the person this session acts for (`kortix capture search \"…\"`, when Capture is on for the account), call connectors, connect Slack, or read project info. This is a discovery stub — the full, always-current reference is served live via `kortix skills get kortix-system` and its reference files."
 ---
 
 # kortix-cli
@@ -46,8 +46,11 @@ kortix secrets request <NAME>                   # mint a link for a human to ent
 kortix sessions status                          # every agent on the project + what it's doing now
 kortix sessions new --json --wait --prompt "…"  # spawn a subagent, get a ready session id
 kortix connectors call <connector> <action> '…' # run a configured connector action (server-side)
-kortix apps deploy . --slug <slug>               # deploy and block until the stable URL is ready
+kortix apps deploy apps/<slug> --slug <slug>     # deploy an App's folder; block until its URL is ready
+kortix tools ls                                 # the tools a session gets (kortix.yaml tools:), and removed Kortix tools
+kortix tools eject <name>                       # copy a Kortix tool to tools/<name>.ts to change it
 kortix cr open --title "…"                       # propose landing your branch on main (the user merges)
+kortix capture search "<words>"                # the Capture timeline of the person this session acts for (Capture on for the account)
 ```
 
 ## Coordinating sessions (spawn → wait → collect)
@@ -94,8 +97,12 @@ A session runs on its own branch; the **only** sanctioned path to `main` is a
 change request, and you open it — the user reviews and merges:
 
 ```bash
+kortix validate                                   # schema + repository size warnings
 git add . && git commit -m "…" && git push origin HEAD
 kortix cr open --title "…" --description "…"     # head + session auto-detected in a sandbox
 ```
 
-Never merge your own CR. Full CR lifecycle: `kortix skills get kortix-system`.
+Never commit big static assets (video, datasets, build output): every session
+downloads them, and above 512 MiB compressed a running session stops picking
+up agent config changes from the base branch. Put them in object storage
+instead. Never merge your own CR. Full CR lifecycle: `kortix skills get kortix-system`.

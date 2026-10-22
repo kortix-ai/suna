@@ -16,12 +16,12 @@ import {
   UV_SHA256_ARM64,
   UV_VERSION,
 } from '@kortix/shared';
-import { SANDBOX_VERSION, config } from '../config';
-import { snapshotEmbedsAgentForBootMode } from './compiled-runtime-fingerprint';
+import { SANDBOX_VERSION } from '../config';
 import {
   buildRuntimeArtifactFingerprint,
   cliConnectorRuntimeArtifacts,
 } from './runtime-fingerprint';
+import { KORTIXD_SHARED_SOURCES } from '@kortix/api-contract/sandbox-layout';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -44,7 +44,7 @@ const SLACK_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_SLACK_CLI_PATH
 //
 // Scope: only the files whose change can alter what the CLI does INSIDE a
 // sandbox. The single compiled `kortix` binary bakes ALL of apps/cli/src, but a
-// session only ever invokes `kortix connectors` / `kortix connectors mcp` — the rest
+// session only ever invokes `kortix connectors` — the rest
 // (`ship`, `cr`, `tunnel`, `self-host`, `accounts`, the whole `init`/scaffold
 // surface, …) is developer-facing and runs on a laptop, never in the sandbox.
 // Hashing the WHOLE tree meant every dev-only CLI edit re-minted every project's
@@ -204,10 +204,16 @@ const FINGERPRINT_EXCLUDES = ['node_modules', '.bin', 'dist', '.turbo', '.cache'
 // Without both, a cold box answered `runtime.running` with nulls until its
 // first reconcile finished — ~140 s on a preview box — and paid a full overlay
 // download plus a ~210 MB re-hash to get there.
-const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
+// v50: the entrypoint's root block repairs /etc/hosts to 0644 before the
+// privilege drop. Platinum writes it 0700 root:root at every boot, so the
+// runtime user cannot read it and `localhost` never resolves — Bun fetch to
+// an http://localhost origin dials ::1 and fails (db-suites red on every
+// fresh worker sandbox until a manual chmod; KRTX-1814).
+const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v50';
 
-// The runtime layer bakes source artifacts into every template's rootfs. Exactly
-// TWO are the kortix-agent binary; the rest (entrypoint, in-sandbox CLI surface,
+// The runtime layer bakes source artifacts into every template's rootfs. The
+// first set is the kortix-agent binary (its source, package.json and the shared
+// files it bundles); the rest (entrypoint, in-sandbox CLI surface,
 // slack-cli, SDK-backed Connector client) are the non-agent runtime. The
 // agent-swap fast path
 // replaces ONLY the agent, so the builder must prove the NON-agent runtime is
@@ -215,6 +221,8 @@ const RUNTIME_LAYER_VERSION = 'verified-runtime-artifacts-v49';
 const AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-agent-src', path: AGENT_SRC_DIR, excludeNames: FINGERPRINT_EXCLUDES },
   { label: 'kortix-agent-pkg', path: AGENT_PKG_JSON },
+  // The contract and SDK files the daemon bundles: a change there changes the binary.
+  ...KORTIXD_SHARED_SOURCES.map((path) => ({ label: `kortix-agent-shared:${path}`, path: resolve(REPO_ROOT, path) })),
 ];
 const NON_AGENT_RUNTIME_ARTIFACTS = [
   { label: 'kortix-entrypoint', path: ENTRYPOINT_PATH },
@@ -227,6 +235,9 @@ const NON_AGENT_RUNTIME_ARTIFACTS = [
   // includes @kortix/sdk because the compiled CLI owns the Connector client.
   ...cliConnectorRuntimeArtifacts(CLI_ROOT),
 ];
+
+/** Every runtime input of the snapshot: the daemon binary's sources, then the rest. */
+export const RUNTIME_ARTIFACTS = [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS];
 // Both version strings fold in the layer/opencode/browser/sandbox constants — all
 // NON-agent inputs (bumped when the layer/opencode/browser change, not the agent
 // binary), so they belong in BOTH fingerprints. The per-process cache re-walks the
@@ -274,7 +285,7 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
   runtimeFingerprintInflight = buildRuntimeArtifactFingerprint({
     sandboxVersion: sandboxVersionStr(),
     opencodeVersion: OPENCODE_VERSION,
-    artifacts: runtimeArtifactsForBootMode(config.KORTIX_COMPILED_BOOT_MODE),
+    artifacts: [...RUNTIME_ARTIFACTS],
   })
     .then((value) => {
       runtimeFingerprintCache = { key, value };
@@ -286,17 +297,6 @@ export async function currentRuntimeArtifactFingerprint(): Promise<string> {
       throw err;
     });
   return runtimeFingerprintInflight;
-}
-
-export function runtimeArtifactsForBootMode(
-  mode: 'off' | 'shadow' | 'prefer' | 'required',
-): Array<(typeof AGENT_RUNTIME_ARTIFACTS)[number] | (typeof NON_AGENT_RUNTIME_ARTIFACTS)[number]> {
-  // In prefer/required mode server.mjs carries the daemon. Daemon source is no
-  // longer an image input, so changing it must not mint an 8 GB snapshot.
-  // Shadow/off still execute the baked daemon and retain the original identity.
-  return snapshotEmbedsAgentForBootMode(mode)
-    ? [...AGENT_RUNTIME_ARTIFACTS, ...NON_AGENT_RUNTIME_ARTIFACTS]
-    : [...NON_AGENT_RUNTIME_ARTIFACTS];
 }
 
 /**

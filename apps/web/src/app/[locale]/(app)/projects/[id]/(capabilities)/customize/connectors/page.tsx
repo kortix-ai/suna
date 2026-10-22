@@ -3,18 +3,18 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ConnectorsAppReturnBar } from '@/features/workspace/capabilities/connectors/connectors-app-return-bar';
-import { ConnectorsPage } from '@/features/workspace/capabilities/connectors/connectors-page';
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
+import { ConnectorsPage } from '@kortix/ui/customize/connectors/connectors-page';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalog. See
- * `features/workspace/capabilities/connectors/connectors-page.tsx` for the
+ * `packages/ui/src/customize/connectors/connectors-page.tsx` for the
  * page body.
  *
  * The `Suspense` boundary is required, not decorative: `ConnectorsPage` reads
- * `useSearchParams()` (the `?c=` detail selection and the `?oauth2=` return
- * leg), and Next refuses to prerender a route that does so unbounded. Same
+ * `useSearchParams()` (the `?scope=` tab, `?rules=1`, and the legacy `?c=`
+ * redirect), and Next refuses to prerender a route that does so unbounded. Same
  * pattern as `app/(app)/connectors/page.tsx`. The fallback is the route
  * group's own skeleton, so the boundary cannot introduce a layout jump.
  *

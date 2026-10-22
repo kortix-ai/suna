@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { accountMembers, projectSessions, serviceAccounts, sessionSandboxes } from '@kortix/db';
+import {
+  accountGroupMembers,
+  accountMembers,
+  accounts,
+  projectSessionGrants,
+  projectSessions,
+  serviceAccounts,
+  sessionSandboxes,
+} from '@kortix/db';
 
 // PROD 76h window: 23,380 `[transcript-mirror] capture failed` (HTTP 401),
 // 72% of sessions with no saved transcript. Root cause: `computeEntry`'s
@@ -18,16 +26,73 @@ let sandboxRefRow: Record<string, unknown> | null = null;
 let accountMemberRow: Record<string, unknown> | null = null;
 let serviceAccountRow: Record<string, unknown> | null = null;
 
+// Observation points for the single-flight and read-ordering tests below.
+// A gate holds a read open so a test can look at what else has started.
+let sandboxRefReads = 0;
+let accountMemberReads = 0;
+let resolveAccountCalls = 0;
+let sandboxRefGate: Promise<void> | null = null;
+let sandboxRefFailure: Error | null = null;
+let platformAdminGate: Promise<void> | null = null;
+let platformAdmins = new Set<string>();
+let projectSessionRow: Record<string, unknown> | null = null;
+let projectSessionReads = 0;
+let projectSessionGate: Promise<void> | null = null;
+let projectSessionFailure: Error | null = null;
+let shareSubjectReads = 0;
+// The account session-oversight read, behind `canAccessSandboxSession`'s
+// second await. Holding it parks a denied check between its context write and
+// its store, which is exactly the window the concurrency test below needs.
+let oversightGate: Promise<void> | null = null;
+// The project IAM verdict (`project.read`) the preview gate asks after account membership.
+let projectReadAllowed = true;
+let projectReadAsks: Array<{ userId: string; action: string; objId: string }> = [];
+// Actions the caller's role carries besides `project.read`. The trigger-session
+// manager override asks ONE of them, so the mock must answer per action: the
+// defect under regression is WHICH action the gate asks, and a mock that
+// answers every action alike would hide a members.manage/trigger.update swap.
+let heldActions = new Set<string>();
+
+// `canAccessSandboxSession` awaits two of its reads without a `.limit()`.
+async function unlimitedRows(table: unknown): Promise<unknown[]> {
+  if (table === accountGroupMembers) {
+    shareSubjectReads += 1;
+    return [];
+  }
+  if (table === projectSessionGrants) return [];
+  throw new Error('preview-ownership.test.ts: unexpected table awaited without limit()');
+}
+
 mock.module('./db', () => ({
   db: {
     select: () => ({
       from: (table: unknown) => ({
         where: () => ({
+          then: (resolve: (rows: unknown[]) => unknown, reject: (reason: unknown) => unknown) =>
+            unlimitedRows(table).then(resolve, reject),
           limit: async () => {
-            if (table === sessionSandboxes) return sandboxRefRow ? [sandboxRefRow] : [];
-            if (table === accountMembers) return accountMemberRow ? [accountMemberRow] : [];
+            if (table === sessionSandboxes) {
+              sandboxRefReads += 1;
+              await sandboxRefGate;
+              if (sandboxRefFailure) throw sandboxRefFailure;
+              return sandboxRefRow ? [sandboxRefRow] : [];
+            }
+            if (table === accountMembers) {
+              accountMemberReads += 1;
+              return accountMemberRow ? [accountMemberRow] : [];
+            }
             if (table === serviceAccounts) return serviceAccountRow ? [serviceAccountRow] : [];
-            if (table === projectSessions) return [];
+            if (table === projectSessions) {
+              projectSessionReads += 1;
+              await projectSessionGate;
+              if (projectSessionFailure) throw projectSessionFailure;
+              return projectSessionRow ? [projectSessionRow] : [];
+            }
+            // The account session-oversight policy: off (gated, see above).
+            if (table === accounts) {
+              await oversightGate;
+              return [];
+            }
             throw new Error('preview-ownership.test.ts: unexpected table in db.select().from()');
           },
         }),
@@ -36,16 +101,62 @@ mock.module('./db', () => ({
   },
 }));
 
+const realIam = await import('../iam');
+mock.module('../iam', () => ({
+  ...realIam,
+  authorize: async (actor: { userId: string }, action: string, obj: { id: string }) => {
+    projectReadAsks.push({ userId: actor.userId, action, objId: obj.id });
+    if (action === 'project.read') {
+      return { allowed: projectReadAllowed, reason: projectReadAllowed ? 'role' : 'no_project_membership' };
+    }
+    const allowed = heldActions.has(action);
+    return { allowed, reason: allowed ? 'role' : 'project_role_insufficient' };
+  },
+}));
+
 mock.module('./resolve-account', () => ({
-  resolveAccountId: async (userId: string) => userId,
+  resolveAccountId: async (userId: string) => {
+    resolveAccountCalls += 1;
+    return userId;
+  },
 }));
 
 mock.module('./platform-roles', () => ({
-  isPlatformAdmin: async () => false,
+  isPlatformAdmin: async (accountId: string) => {
+    await platformAdminGate;
+    return platformAdmins.has(accountId);
+  },
 }));
 
-const { resolvePreviewUserContext, canAccessPreviewSandbox, clearPreviewOwnershipCache } =
-  await import('./preview-ownership');
+const { invalidateIamCacheForUser } = await import('../iam/cache-invalidation');
+const {
+  resolvePreviewUserContext,
+  canAccessPreviewSandbox,
+  canAccessSandboxSession,
+  clearPreviewOwnershipCache,
+  takeSessionAccessRefusal,
+} = await import('./preview-ownership');
+
+/** A promise and the function that settles it. */
+function gate(): { held: Promise<void>; release: () => void } {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { held, release };
+}
+
+/** Let every already-runnable continuation run; a held gate stays held. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** A private session row owned by `ownerId`: every other caller key is denied. */
+const privateSessionOf = (ownerId: string) => ({
+  visibility: 'private',
+  createdBy: ownerId,
+  origin: 'user',
+  metadata: {},
+  initiatorType: 'member',
+});
 
 beforeEach(() => {
   sandboxRefRow = {
@@ -55,6 +166,22 @@ beforeEach(() => {
   };
   accountMemberRow = null;
   serviceAccountRow = null;
+  sandboxRefReads = 0;
+  accountMemberReads = 0;
+  resolveAccountCalls = 0;
+  sandboxRefGate = null;
+  sandboxRefFailure = null;
+  platformAdminGate = null;
+  platformAdmins = new Set();
+  projectSessionRow = null;
+  projectSessionReads = 0;
+  projectSessionGate = null;
+  projectSessionFailure = null;
+  shareSubjectReads = 0;
+  oversightGate = null;
+  projectReadAllowed = true;
+  projectReadAsks = [];
+  heldActions = new Set();
   clearPreviewOwnershipCache();
 });
 
@@ -73,7 +200,7 @@ describe('resolvePreviewUserContext — service-account attributed sessions', ()
   });
 
   test('an agent service account of the SAME account gets a signed context', async () => {
-    serviceAccountRow = { serviceAccountId: 'sa-agent-1' };
+    serviceAccountRow = { serviceAccountId: 'sa-agent-1', projectId: 'proj-1' };
 
     const context = await resolvePreviewUserContext('sbx-1', 'sa-agent-1');
 
@@ -86,7 +213,7 @@ describe('resolvePreviewUserContext — service-account attributed sessions', ()
   });
 
   test('before the fix this returned null for a service-account-attributed session — now it must not', async () => {
-    serviceAccountRow = { serviceAccountId: 'sa-agent-1' };
+    serviceAccountRow = { serviceAccountId: 'sa-agent-1', projectId: 'proj-1' };
 
     expect(await resolvePreviewUserContext('sbx-1', 'sa-agent-1')).not.toBeNull();
     expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'sa-agent-1' })).toBe(
@@ -94,10 +221,387 @@ describe('resolvePreviewUserContext — service-account attributed sessions', ()
     );
   });
 
+  test('an agent service account of ANOTHER project of the account is refused', async () => {
+    serviceAccountRow = { serviceAccountId: 'sa-agent-2', projectId: 'proj-other' };
+
+    expect(await resolvePreviewUserContext('sbx-1', 'sa-agent-2')).toBeNull();
+  });
+
   test('neither a member nor a service account row (e.g. disabled, or a different account) is refused', async () => {
     accountMemberRow = null;
     serviceAccountRow = null;
 
     expect(await resolvePreviewUserContext('sbx-1', 'stranger')).toBeNull();
+  });
+});
+
+// Account membership is not project access (audit 01#8, 02#2): the proxy asks
+// the same `project.read` question the REST routes ask.
+describe('project access on the sandbox proxy', () => {
+  test('an account member with no role on the sandbox project is refused', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+    projectReadAllowed = false;
+
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'guest-of-q' })).toBe(false);
+    expect(await resolvePreviewUserContext('sbx-1', 'guest-of-q')).toBeNull();
+    expect(projectReadAsks).toEqual([{ userId: 'guest-of-q', action: 'project.read', objId: 'proj-1' }]);
+  });
+
+  test('a project member passes, asked about the sandbox project', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'proj-member' })).toBe(true);
+    expect(projectReadAsks).toEqual([{ userId: 'proj-member', action: 'project.read', objId: 'proj-1' }]);
+  });
+
+  test('a manual service account goes through IAM; a denied one is refused', async () => {
+    serviceAccountRow = { serviceAccountId: 'sa-manual', projectId: null };
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'sa-manual' })).toBe(true);
+    clearPreviewOwnershipCache();
+    projectReadAllowed = false;
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'sa-manual' })).toBe(false);
+  });
+
+  test('invalidateIamCacheForUser drops the cached verdict, so a removed member loses the proxy at once', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'leaver' })).toBe(true);
+    accountMemberRow = null;
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'leaver' })).toBe(true); // cached
+    invalidateIamCacheForUser('leaver');
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'leaver' })).toBe(false);
+  });
+
+  test('a platform admin skips the project check', async () => {
+    platformAdmins = new Set(['staff']);
+    projectReadAllowed = false;
+
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'staff' })).toBe(true);
+    expect(projectReadAsks).toEqual([]);
+  });
+});
+
+// A page load fires its proxied requests together. On a cold cache every one of
+// them used to run the whole check: 4 to 6 statements each, one after another.
+describe('cold ownership check — one check per (sandbox, user), reads in parallel', () => {
+  test('concurrent checks for one (sandbox, user) run the lookups once', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+    const { held, release } = gate();
+    sandboxRefGate = held;
+
+    const checks = [
+      resolvePreviewUserContext('sbx-1', 'user-human-1'),
+      resolvePreviewUserContext('sbx-1', 'user-human-1'),
+      canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'user-human-1' }),
+      canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'user-human-1' }),
+      resolvePreviewUserContext('sbx-1', 'user-human-1'),
+    ];
+    await settle();
+    release();
+    const [first, second, allowedA, allowedB, last] = await Promise.all(checks);
+
+    expect(sandboxRefReads).toBe(1);
+    expect(resolveAccountCalls).toBe(1);
+    expect(accountMemberReads).toBe(1);
+    expect(first).toEqual({
+      userId: 'user-human-1',
+      sandboxId: 'sbx-1',
+      sandboxRole: 'member',
+      scopes: ['*'],
+    });
+    expect(second).toEqual(first);
+    expect(last).toEqual(first);
+    expect(allowedA).toBe(true);
+    expect(allowedB).toBe(true);
+  });
+
+  test('two users on one sandbox never share a check in flight', async () => {
+    platformAdmins = new Set(['user-admin-1']);
+    const { held, release } = gate();
+    sandboxRefGate = held;
+
+    const admin = resolvePreviewUserContext('sbx-1', 'user-admin-1');
+    const stranger = resolvePreviewUserContext('sbx-1', 'stranger');
+    await settle();
+    release();
+
+    expect(await admin).toEqual({
+      userId: 'user-admin-1',
+      sandboxId: 'sbx-1',
+      sandboxRole: 'platform_admin',
+      scopes: ['*'],
+    });
+    expect(await stranger).toBeNull();
+    expect(sandboxRefReads).toBe(2);
+    expect(resolveAccountCalls).toBe(2);
+  });
+
+  test('a failed check is not kept: every waiter gets the error, the next call reads again', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+    const { held, release } = gate();
+    sandboxRefGate = held;
+    sandboxRefFailure = new Error('connection reset');
+
+    const failing = [
+      resolvePreviewUserContext('sbx-1', 'user-human-1'),
+      resolvePreviewUserContext('sbx-1', 'user-human-1'),
+    ];
+    const outcomes = Promise.allSettled(failing);
+    await settle();
+    release();
+    expect((await outcomes).map((o) => o.status)).toEqual(['rejected', 'rejected']);
+    expect(sandboxRefReads).toBe(1);
+
+    sandboxRefGate = null;
+    sandboxRefFailure = null;
+    expect(await resolvePreviewUserContext('sbx-1', 'user-human-1')).not.toBeNull();
+    expect(sandboxRefReads).toBe(2);
+  });
+
+  test('a check that was in flight when the cache was cleared is not cached', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+    const { held, release } = gate();
+    sandboxRefGate = held;
+
+    const before = resolvePreviewUserContext('sbx-1', 'user-human-1');
+    await settle();
+    clearPreviewOwnershipCache();
+    release();
+    expect(await before).not.toBeNull();
+
+    // The member was removed after the clear: the next check must read it.
+    accountMemberRow = null;
+    expect(await resolvePreviewUserContext('sbx-1', 'user-human-1')).toBeNull();
+    expect(sandboxRefReads).toBe(2);
+  });
+
+  test('the account read does not wait for the sandbox row, nor the membership read for the admin verdict', async () => {
+    accountMemberRow = { accountId: 'acct-1' };
+    const sandboxRow = gate();
+    const adminVerdict = gate();
+    sandboxRefGate = sandboxRow.held;
+    platformAdminGate = adminVerdict.held;
+
+    const check = resolvePreviewUserContext('sbx-1', 'user-human-1');
+    await settle();
+    // The sandbox row is still out; the caller's account is already resolved.
+    expect(sandboxRefReads).toBe(1);
+    expect(resolveAccountCalls).toBe(1);
+    expect(accountMemberReads).toBe(0);
+
+    sandboxRow.release();
+    await settle();
+    // The admin verdict is still out; the membership read has started.
+    expect(accountMemberReads).toBe(1);
+
+    adminVerdict.release();
+    expect(await check).toEqual({
+      userId: 'user-human-1',
+      sandboxId: 'sbx-1',
+      sandboxRole: 'member',
+      scopes: ['*'],
+    });
+  });
+
+  test('no sandbox row: the membership tables are not read and only a platform admin passes', async () => {
+    sandboxRefRow = null;
+    platformAdmins = new Set(['user-admin-1']);
+
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'stranger' })).toBe(false);
+    expect(await canAccessPreviewSandbox({ previewSandboxId: 'sbx-1', userId: 'user-admin-1' })).toBe(true);
+    expect(accountMemberReads).toBe(0);
+  });
+});
+
+// The session-visibility verdict is cached for 10 s, so it is cold on most page
+// loads, and a page load fires its daemon-port requests together.
+describe('canAccessSandboxSession — one read per caller key', () => {
+  // The verdict cache has no reset, so every test uses its own session id.
+  const access = (sessionId: string, userId: string, callerSessionId: string | null = null) =>
+    canAccessSandboxSession({
+      sessionId,
+      projectId: 'proj-1',
+      accountId: 'acct-1',
+      userId,
+      callerSessionId,
+      boundCredentialSessionId: null,
+    });
+
+  test('concurrent checks of one caller on one session read the session once', async () => {
+    projectSessionRow = privateSessionOf('user-owner');
+    const { held, release } = gate();
+    projectSessionGate = held;
+
+    const checks = Array.from({ length: 5 }, () => access('sess-flight-1', 'user-owner'));
+    await settle();
+    release();
+
+    expect(await Promise.all(checks)).toEqual([true, true, true, true, true]);
+    expect(projectSessionReads).toBe(1);
+    expect(shareSubjectReads).toBe(1);
+  });
+
+  test('two users, or two caller sessions of one user, never share a verdict in flight', async () => {
+    projectSessionRow = privateSessionOf('user-owner');
+    const { held, release } = gate();
+    projectSessionGate = held;
+
+    const owner = access('sess-flight-2', 'user-owner');
+    const other = access('sess-flight-2', 'user-other');
+    const ownerFromAnotherSession = access('sess-flight-2', 'user-owner', 'sess-caller-9');
+    await settle();
+    release();
+
+    expect(await owner).toBe(true);
+    expect(await other).toBe(false);
+    await ownerFromAnotherSession;
+    expect(projectSessionReads).toBe(3);
+  });
+
+  test('a failed read is not kept: every waiter gets the error, the next call reads again', async () => {
+    projectSessionRow = privateSessionOf('user-owner');
+    const { held, release } = gate();
+    projectSessionGate = held;
+    projectSessionFailure = new Error('connection reset');
+
+    const outcomes = Promise.allSettled([
+      access('sess-flight-3', 'user-owner'),
+      access('sess-flight-3', 'user-owner'),
+    ]);
+    await settle();
+    release();
+    expect((await outcomes).map((o) => o.status)).toEqual(['rejected', 'rejected']);
+    expect(projectSessionReads).toBe(1);
+
+    projectSessionGate = null;
+    projectSessionFailure = null;
+    expect(await access('sess-flight-3', 'user-owner')).toBe(true);
+    expect(projectSessionReads).toBe(2);
+  });
+});
+
+// The trigger-session manager override must ask the SAME action the canonical
+// session-visibility engine asks (`sessionManagerStanding`,
+// projects/lib/session-visibility.ts): `project.trigger.update`, with the
+// owner ruling (2026-09-03) that administering people (`project.members.manage`)
+// must not unlock session content. A custom project role carrying
+// members.manage but not trigger.update is denied on REST (404 via
+// loadVisibleSession) yet used to pass this proxy gate and reach the
+// session's daemon-port traffic — the divergence this file pins shut.
+describe('canAccessSandboxSession — the trigger-session manager override asks the canonical action', () => {
+  const access = (sessionId: string, userId: string) =>
+    canAccessSandboxSession({
+      sessionId,
+      projectId: 'proj-1',
+      accountId: 'acct-1',
+      userId,
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+    });
+
+  /** A private session a trigger run created: owned by the agent's service account. */
+  const triggerSessionOf = (ownerId: string) => ({
+    visibility: 'private',
+    createdBy: ownerId,
+    origin: 'user',
+    metadata: { source: 'trigger:git', trigger_kind: 'git', trigger_slug: 'nightly' },
+    initiatorType: 'trigger',
+  });
+
+  test('a members.manage-only role is refused a private trigger-run session', async () => {
+    projectSessionRow = triggerSessionOf('sa-agent-owner');
+    heldActions = new Set(['project.members.manage']);
+
+    expect(await access('sess-trig-deny', 'user-people-manager')).toBe(false);
+
+    const refusal = takeSessionAccessRefusal({
+      sessionId: 'sess-trig-deny',
+      userId: 'user-people-manager',
+      callerSessionId: null,
+      boundCredentialSessionId: null,
+    });
+    expect(refusal?.isTriggerSession).toBe(true);
+    expect(refusal?.canManageProject).toBe(false);
+    expect(refusal?.managerReason).toBe('project_role_insufficient');
+  });
+
+  test('a trigger.update holder passes the same session', async () => {
+    projectSessionRow = triggerSessionOf('sa-agent-owner');
+    heldActions = new Set(['project.trigger.update']);
+
+    expect(await access('sess-trig-allow', 'user-trigger-manager')).toBe(true);
+    // The override asked exactly the canonical action, once, for this project.
+    expect(projectReadAsks).toEqual([
+      { userId: 'user-trigger-manager', action: 'project.trigger.update', objId: 'proj-1' },
+    ]);
+  });
+
+  test('a member with neither action is refused and the gate still asks the canonical action', async () => {
+    projectSessionRow = triggerSessionOf('sa-agent-owner');
+    heldActions = new Set();
+
+    expect(await access('sess-trig-none', 'user-plain-member')).toBe(false);
+    expect(projectReadAsks).toEqual([
+      { userId: 'user-plain-member', action: 'project.trigger.update', objId: 'proj-1' },
+    ]);
+  });
+});
+
+// Two denied checks for one session run concurrently whenever two callers hit
+// the daemon port together: different caller session ids, so different
+// in-flight entries. Each key must store its OWN refusal context — the
+// module-global this file used to feed let the second caller's write win, and
+// the first key stored the second caller's context (wrong visibility, grants
+// and caller binding at the 403 site in sandbox-proxy/forward/access.ts).
+describe('concurrent refusals — each key stores its own context', () => {
+  test('two concurrent denials of one session never swap refusal contexts', async () => {
+    projectSessionRow = privateSessionOf('user-owner');
+    const rowGate = gate();
+    const oversight = gate();
+    projectSessionGate = rowGate.held;
+    oversightGate = oversight.held;
+
+    const denied = (callerSessionId: string) =>
+      canAccessSandboxSession({
+        sessionId: 'sess-race-1',
+        projectId: 'proj-1',
+        accountId: 'acct-1',
+        userId: 'user-race-stranger', // not the owner: both verdicts deny
+        callerSessionId,
+        boundCredentialSessionId: null,
+      });
+    const first = denied('caller-a');
+    const second = denied('caller-b');
+
+    await settle(); // both parked on the session row read
+    rowGate.release(); // both read the row, write their context, park on oversight
+    await settle();
+    expect(projectSessionReads).toBe(2); // distinct keys: no in-flight sharing
+
+    oversightGate = null;
+    oversight.release();
+    expect(await first).toBe(false);
+    expect(await second).toBe(false);
+
+    const refusalOf = (callerSessionId: string) =>
+      takeSessionAccessRefusal({
+        sessionId: 'sess-race-1',
+        userId: 'user-race-stranger',
+        callerSessionId,
+        boundCredentialSessionId: null,
+      });
+    expect(refusalOf('caller-a')).toEqual({
+      sessionId: 'sess-race-1',
+      projectId: 'proj-1',
+      visibility: 'private',
+      origin: 'user',
+      sessionOwnedByCaller: false,
+      isTriggerSession: false,
+      canManageProject: false,
+      managerReason: 'not_trigger_session',
+      sessionGrants: 0,
+      callerSessionId: 'caller-a',
+      boundCredentialSessionId: null,
+    });
+    expect(refusalOf('caller-b')?.callerSessionId).toBe('caller-b');
   });
 });

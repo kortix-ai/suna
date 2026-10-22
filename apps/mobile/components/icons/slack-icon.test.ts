@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
  */
 const read = (path: string) => readFileSync(`${import.meta.dir}/${path}`, 'utf8');
 const mobileMark = read('slack-icon.tsx');
-const webMark = read('../../../web/src/features/icon/icons/slack.tsx');
+const webMark = read('../../../../packages/ui/src/internal/icons/slack.tsx');
 const userMessage = read('../session/turn/user-message.tsx');
 const sessionTree = read('../session/SessionTreeParts.tsx');
 
@@ -24,7 +24,7 @@ describe('the mobile Slack mark', () => {
 
   test('the channel card draws it, and its label is not tinted pink', () => {
     expect(userMessage).not.toContain('339.6 82.2% 51.6%');
-    expect(userMessage).toMatch(/<SlackIcon size=\{webSpace\(3\.5\)\} \/>/);
+    expect(userMessage).toMatch(/platform === 'Slack'\)? (\?|return) <SlackIcon size=\{size\} \/>/);
   });
 
   test('the session starter line draws it for a Slack-started session', () => {

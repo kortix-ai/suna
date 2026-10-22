@@ -143,7 +143,7 @@ mock.module('../projects/lib/sandbox-env-sync', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/agent-scope');
+(await import('../projects/routes/agent-scope')).registerAgentScopeRoutes();
 
 function buildApp() {
   const app = new Hono<{
@@ -225,7 +225,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ agent: 'newcomer', already_granted: false });
-    expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'] });
+    expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'], workspace: { project_repository: true } });
     expect(agentsOf(commits[0]!.raw).support.secrets).toEqual(['OTHER_KEY']);
   });
 
@@ -236,7 +236,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ adopted_governance: true });
-    expect(agentsOf(commits[0]!.raw)).toEqual({ support: { secrets: ['BROKER_KEY'] } });
+    expect(agentsOf(commits[0]!.raw)).toEqual({ support: { secrets: ['BROKER_KEY'], workspace: { project_repository: true } } });
   });
 
   test('reports adopted_governance when the repo carries no manifest at all', async () => {
@@ -249,7 +249,7 @@ describe('POST /v1/projects/:projectId/secrets/:identifier/grant', () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ adopted_governance: true });
-    expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'] });
+    expect(agentsOf(commits[0]!.raw).newcomer).toEqual({ secrets: ['BROKER_KEY'], workspace: { project_repository: true } });
   });
 
   test('a second grant on an already-governed project does NOT adopt governance', async () => {

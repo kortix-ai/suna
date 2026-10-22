@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../routes/shared';
+import { RUNTIME_WAKE_CLAIM_CLEARED_KEYS } from '../session-open';
 import {
   IN_PLACE_RESTART_CLEARED_KEYS,
   RUNTIME_READINESS_CLOCK_KEYS,
@@ -8,6 +8,7 @@ import {
   runtimeBootEpochMs,
   runtimeReadyWaitPatch,
   servesThroughProbeMiss,
+  shouldWarnRuntimeUnreachable,
   staleRuntimeReadyReason,
 } from './readiness-clocks';
 import { STOPPED_SANDBOX_CLEARED_KEYS } from './status-transitions';
@@ -114,7 +115,7 @@ describe('progress-aware OpenCode boot budget (SampleCo 2026-08-25 17:23 double 
 
 // ───────────────────────────────────────────────────────────────────────────
 // The automatic cooldown rung must not inherit the previous attempt's boot
-// budget. SampleCo 2026-08-26, session 29861dfa / box inqwpv4a: attempt 1
+// budget. SampleCo 2026-08-26, one session on an E2B box: attempt 1
 // failed ~13:27; the rung re-attempted ~13:33; the daemon booted through
 // 13:34:48.8, authenticated to the gateway 13:34:48.5-49.1 and claimed its
 // initial turn at 13:34:49.216 — and `/start` parked the box at 13:34:49.202.
@@ -333,5 +334,85 @@ describe('neutral readiness keys: runtime* written, pre-W4 opencode* still read'
         expect(list as readonly string[]).toContain(preW4);
       }
     }
+  });
+});
+
+describe('shouldWarnRuntimeUnreachable — one warn per unreachable spell past its ride-out budget (KRTX-696)', () => {
+  const SPELL_START = Date.parse('2026-10-04T09:00:00.000Z');
+  const BUDGET_MS = 30_000;
+
+  function spell(startMs: number | null, warnedMs: number | null = null): Record<string, string> {
+    return {
+      ...(startMs !== null
+        ? { runtimeUnreachableWaitStartedAt: new Date(startMs).toISOString() }
+        : {}),
+      ...(warnedMs !== null ? { runtimeUnreachableWarnedAt: new Date(warnedMs).toISOString() } : {}),
+    };
+  }
+
+  test('the warn mark is a readiness clock key, so every clearing path clears it', () => {
+    for (const list of [
+      RUNTIME_READINESS_CLOCK_KEYS,
+      RUNTIME_WAKE_CLAIM_CLEARED_KEYS,
+      IN_PLACE_RESTART_CLEARED_KEYS,
+    ]) {
+      expect(list as readonly string[]).toContain('runtimeUnreachableWarnedAt');
+    }
+  });
+
+  test('a cold wake that flips transient causes inside the budget warns ZERO times', () => {
+    // THE SPIKE (2026-10-04: 816 warns in one day; consecutive-cause pairs
+    // averaging 11 s apart; 73% of spells over in under 30 s). Under the
+    // cause-change gate every flip warned. The spell clock says still-booting:
+    // the open path itself only relaunches a daemon silent past this budget.
+    const metadata = spell(SPELL_START);
+    for (const age of [3_000, 11_000, 19_000, 27_000]) {
+      expect(shouldWarnRuntimeUnreachable(metadata, SPELL_START + age, BUDGET_MS)).toBe(false);
+    }
+  });
+
+  test('the poll that crosses the budget warns, whatever the cause is doing', () => {
+    // Even mid-flip: a spell that outlives the budget is the diagnostic-worthy
+    // one, and one warn — not one per further flip.
+    expect(shouldWarnRuntimeUnreachable(spell(SPELL_START), SPELL_START + BUDGET_MS, BUDGET_MS)).toBe(
+      true,
+    );
+    expect(
+      shouldWarnRuntimeUnreachable(spell(SPELL_START), SPELL_START + BUDGET_MS - 1, BUDGET_MS),
+    ).toBe(false);
+  });
+
+  test('a spell that keeps flipping causes past the budget warns once, not per flip', () => {
+    // The exact long-spell shape the cause-change gate turned into a stream:
+    // timeout_or_network -> http_502 -> timeout_or_network …
+    const metadata = spell(SPELL_START, SPELL_START + BUDGET_MS);
+    for (const age of [BUDGET_MS + 3_000, BUDGET_MS + 60_000, BUDGET_MS + 600_000]) {
+      expect(shouldWarnRuntimeUnreachable(metadata, SPELL_START + age, BUDGET_MS)).toBe(false);
+    }
+  });
+
+  test('poll one of a spell cannot know the spell age, so it never warns', () => {
+    // The budget phase stamps `runtimeUnreachableWaitStartedAt` right AFTER
+    // the diagnostics run, so the first unreachable poll of a spell reads no
+    // spell clock. An inherited clock older than this boot's wake is not
+    // evidence about this boot either.
+    expect(shouldWarnRuntimeUnreachable({}, SPELL_START + 600_000, BUDGET_MS)).toBe(false);
+    expect(
+      shouldWarnRuntimeUnreachable(
+        {
+          runtimeUnreachableWaitStartedAt: new Date(SPELL_START - 600_000).toISOString(),
+          runtimeWakeStartedAt: new Date(SPELL_START).toISOString(),
+        },
+        SPELL_START + 3_000,
+        BUDGET_MS,
+      ),
+    ).toBe(false);
+  });
+
+  test('a warn mark from a previous spell does not mute the next spell', () => {
+    // The mark clears with the readiness clocks; this guards the row where a
+    // spell starts while a stale mark survived.
+    const metadata = spell(SPELL_START, SPELL_START - 600_000);
+    expect(shouldWarnRuntimeUnreachable(metadata, SPELL_START + BUDGET_MS, BUDGET_MS)).toBe(true);
   });
 });

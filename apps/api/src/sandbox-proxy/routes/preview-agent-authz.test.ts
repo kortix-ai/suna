@@ -86,16 +86,13 @@ mock.module('../../projects/lib/turn-start-convergence', () => ({
   // every prompt. There is no database in this file, so each call waits out the
   // driver's connect timeout — 5 s per prompt, which times these cases out.
   // This suite is about agent AUTHORIZATION, so the gate is stubbed to its no-op answer.
-  convergeBeforeTurnStart: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
+  convergeConfigIfBehind: async () => ({ decision: 'skipped', outcome: null, ms: 0 }),
   // The runtime-asset lane beside the config gate. Void, never awaited — a
   // stub is enough here, and its absence is a module LINK error, not a skip.
   scheduleAssetConvergence: () => {},
   // The model-catalog lane. AWAITED by the route — a stub that resolves
   // immediately keeps every case in this file off the network.
   convergeModelCatalogForTurnStart: async () => ({ decision: 'skipped' }),
-}));
-mock.module('../../projects/opencode-session-snapshot', () => ({
-  scheduleOpencodeSnapshotSync: () => {},
 }));
 const realTurnLifecycle = await import('../../projects/sandbox-turn-lifecycle');
 mock.module('../../projects/sandbox-turn-lifecycle', () => ({
@@ -104,7 +101,7 @@ mock.module('../../projects/sandbox-turn-lifecycle', () => ({
   acceptSandboxTurn: async () => true,
   abandonSandboxTurn: async () => true,
 }));
-mock.module('../../projects/routes/shared', () => ({
+mock.module('../../projects/session-open', () => ({
   resumeStoppedSandboxByExternalId: async () => true,
 }));
 mock.module('../backend', () => ({
@@ -264,13 +261,29 @@ test('a prompt naming an agent the project does not declare is delivered as the 
   ]);
 });
 
-test('a running session refuses an agent switch before grant remint or forwarding', async () => {
-  undeclaredAgents.add('foreign-agent');
+// KRTX-1290. A started session keeps agent switching: it is an AUTHORIZATION
+// question, not an immutability one. An authorized caller who names a declared
+// agent the session was not created with re-scopes the box env and the token
+// grant, then runs that agent; an unauthorized caller is refused before either
+// side effect.
+test('a running session runs a different declared agent once authorized', async () => {
+  const response = await prompt('nda-turnaround');
+
+  expect(response.status).toBe(200);
+  expect(authorizeCalls).toHaveLength(1);
+  expect(remintCalls).toEqual([{ requestedAgent: 'nda-turnaround' }]);
+  expect(upstreamCalls).toBe(1);
+  expect(upstreamBodies.at(-1)).toMatchObject({ agent: 'nda-turnaround' });
+});
+
+test('a running session refuses an agent the caller may not run before grant remint or forwarding', async () => {
+  authorizeAllowed = false;
 
   const response = await prompt('nda-turnaround');
 
-  expect(response.status).toBe(409);
-  expect(await response.json()).toMatchObject({ code: 'AGENT_SWITCH_NOT_ALLOWED' });
+  expect(response.status).toBe(403);
+  expect(await response.json()).toMatchObject({ code: 'AGENT_NOT_AUTHORIZED' });
   expect(remintCalls).toEqual([]);
+  expect(envSyncCalls).toEqual([]);
   expect(upstreamCalls).toBe(0);
 });

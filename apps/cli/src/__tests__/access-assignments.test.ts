@@ -402,6 +402,16 @@ describe('kortix access grant — everyone in the project, and connector account
     expect(stripAnsi(stdout)).toContain('to everyone in project');
   });
 
+  test.each([
+    ['--agent', 'support-bot'],
+    ['--connection', CONNECTION],
+  ])('--everyone with %s refuses an explicit role before any request', async (flag, objectId) => {
+    const code = await runAccess(['grant', '--everyone', flag, objectId, '--role', 'manager']);
+    expect(code).toBe(2);
+    expect(stripAnsi(stderr)).toContain('--everyone holds an agent or a connection, never a role.');
+    expect(requests).toHaveLength(0);
+  });
+
   test('--connection narrows a shared connector account to a group', async () => {
     const code = await runAccess(['grant', '--group', GROUP, '--connection', CONNECTION]);
     expect(code).toBe(0);
@@ -525,5 +535,43 @@ describe('kortix access assignments --principal', () => {
     const listed = requests.find((r) => r.method === 'GET' && r.url.includes('/iam/assignments?'));
     expect(listed!.url).toContain(`principal_id=${USER}`);
     expect(listed!.url).toContain('principal_type=user');
+  });
+
+  // KRTX-2990: a `pending` principal id is uuid5(lower(trim(email))) in the
+  // Kortix namespace (apps/api/src/iam/actor.ts pendingPrincipalId). Sending
+  // the raw email got `400 principal_id must be a UUID`. The vector below is
+  // Python's uuid.uuid5 with the same namespace, not the CLI's own code.
+  test('pending:<email> resolves to the invitee principal id', async () => {
+    const code = await runAccess(['assignments', '--all', '--principal', 'pending: Invitee@Example.test ']);
+    expect(code).toBe(0);
+    const listed = requests.find((r) => r.method === 'GET' && r.url.includes('/iam/assignments?'));
+    expect(listed!.url).toContain('principal_type=pending');
+    expect(listed!.url).toContain('principal_id=3e94e9cd-e38c-5ab2-8499-22fe13aff1ea');
+  });
+
+  test('group:<name> resolves the group name to its id', async () => {
+    const code = await runAccess(['assignments', '--all', '--principal', 'group:Engineering']);
+    expect(code).toBe(0);
+    const listed = requests.find((r) => r.method === 'GET' && r.url.includes('/iam/assignments?'));
+    expect(listed!.url).toContain(`principal_id=${GROUP}`);
+  });
+});
+
+// KRTX-2990: `kortix groups` documents `access grant --group Engineering`, but
+// the assignment route requires a group UUID.
+describe('kortix access grant --group <name>', () => {
+  const post = () => requests.find((r) => r.method === 'POST' && r.url.includes('/iam/assignments'));
+
+  test('a group name resolves to its id through the groups list', async () => {
+    const code = await runAccess(['grant', '--group', 'engineering', '--role', 'manager']);
+    expect(code).toBe(0);
+    expect(post()!.body).toMatchObject({ principal_type: 'group', principal_id: GROUP });
+  });
+
+  test('an unknown group name exits 1 with a clear error and grants nothing', async () => {
+    const code = await runAccess(['grant', '--group', 'Nope', '--role', 'manager']);
+    expect(code).toBe(1);
+    expect(stripAnsi(stderr)).toContain('No group named "Nope"');
+    expect(post()).toBeUndefined();
   });
 });

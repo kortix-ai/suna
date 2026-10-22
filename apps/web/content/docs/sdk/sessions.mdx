@@ -1,380 +1,354 @@
 ---
-title: Sessions
-description: Run a session, stream its events, and handle the errors it can throw.
+title: Sessions from code
+description: "The session handle: create, wait for readiness, send and steer prompts, stream events, read transcripts, handle errors, and start sessions from your own backend."
 ---
 
-A session is one agent run, in its own sandbox, on its own git branch.
-`kortix.session(projectId, sessionId)` returns the handle for everything a
-session does: start it, send prompts, stream events, and read status. This
-page covers the handle, the readiness handshake, streaming, and the typed
-errors an SDK call can throw.
+A session is one agent run in its own sandbox, on its own git branch. This page drives a session from TypeScript with `@kortix/sdk`, from a script or from a server that starts sessions for its own customers. For the concept, see [Sessions](/docs/work/sessions); to set up the client, see [SDK](/docs/sdk).
+
+The shortest complete run:
+
+```ts
+import { createKortix } from '@kortix/sdk';
+
+const kortix = createKortix({
+  backendUrl: 'https://api.kortix.com/v1',
+  getToken: async () => process.env.KORTIX_API_KEY!,
+});
+
+const created = await kortix.project(projectId).sessions.create({ agent_name: 'my-agent' });
+const s = kortix.session(projectId, created.session_id);
+
+const { runtimeSessionId } = await s.ensureReady();
+let finish!: () => void;
+const turnDone = new Promise<void>((resolve) => (finish = resolve));
+
+const stream = await s.stream({
+  onEvent: (event) => {
+    if (event.type === 'session.idle' && event.properties.sessionID === runtimeSessionId) finish();
+  },
+});
+
+await s.send('List the open TODO comments in this repository.');
+await turnDone;
+stream.close();
+
+const { messages } = await s.messages({ limit: 1 }); // the agent's last message: { info, parts }
+```
+
+## The session handle
 
 ```ts
 const s = kortix.session(projectId, sessionId);
+// the same handle: kortix.project(projectId).session(sessionId)
 ```
 
-`s` is the handle for everything a session does. The session ID, the sandbox
-ID, and the branch name are the same value. See
-[Sessions](/docs/work/sessions) for the concept.
+- A handle resolves only its own sandbox. It never falls back to the runtime of another session, so two handles in one process never cross.
+- The `session_id` is also the name of the session's git branch.
+- `ensureReady()` returns `sandboxId`. That is the sandbox provider's id, a different value from `session_id`.
+- Creating a handle sends no request.
 
-## Session lifecycle
-
-| Method | Wraps | What it does |
-|---|---|---|
-| `s.get(opts?)` | `GET /projects/:pid/sessions/:sid` | Reads session details |
-| `s.update(input)` | `PATCH …/sessions/:sid` | Renames the session, replaces its labels, or merges metadata keys |
-| `s.start(waitMs?)` | `POST …/sessions/:sid/start` | Provisions and boots the runtime |
-| `s.restart()` | `POST …/sessions/:sid/restart` | Restarts the runtime; keeps the same sandbox |
-| `s.configState()` | `GET …/sessions/:sid/config` | Reads config freshness (`stale`) and the config release state (`release`) |
-| `s.reloadConfig(input?)` | `POST …/sessions/:sid/reload` | Recompiles agent config and replaces the runtime after validation |
-| `s.reloadConfigStream(input, onEvent)` | `POST …/sessions/:sid/reload-stream` | Runs the same reload and emits server-confirmed progress phases |
-| `s.stop()` | `POST …/sessions/:sid/stop` | Stops the runtime; the session stays |
-| `s.delete()` | `DELETE …/sessions/:sid` | Deletes the session |
-| `s.setSharing(intent)` | `PUT …/sharing` | Sets sharing and visibility |
-| `s.participants()` | `GET …/sessions/:sid/participants` | Reads who can open the session and who sent each prompt |
-| `s.cost()` | `GET /usage/session-costs/:sid` | Reads finalized LLM and compute cost without starting the runtime |
-| `s.scope()` | `GET …/sessions/:sid/scope` | Reads stored secret narrowing and materialized connection bindings |
-| `s.rescope(input)` | `PUT …/sessions/:sid/scope` | Replaces supplied scope fields for the next prompt or tool call |
-| `s.commit(input?)` | — | Commits the agent's work |
-| `s.providerSecretPool.get(providerId)` | `GET …/provider-secret-pools/:providerId` | Reads selected account secret IDs |
-| `s.providerSecretPool.list()` | `GET …/provider-secret-pools` | Lists configured pools, including empty pools, and reports `can_edit` |
-| `s.providerSecretPool.set(providerId, secretIds)` | `PUT …/provider-secret-pools/:providerId` | Replaces the selection; `null` restores the project default |
-
-:::warning
-  `s.delete()` deletes the session and its runtime. This cannot be undone. To pause a session
-  without losing it, call `s.stop()` instead.
-:::
-
-## Labels and metadata
-
-Every session carries `labels: string[]` and a `metadata` object. Use them to
-classify sessions and to decide how your app renders one.
-
-- **Labels** are free-form: each is trimmed, 1–64 characters, at most 20 per
-  session, duplicates dropped. Matching is exact and case-sensitive.
-- **Metadata** is a free-form JSON object for your own keys, at most 16,384
-  characters of JSON per write. The server also stores its own keys there
-  (`custom_name`, `source`, …); a request that names a server-managed key is
-  refused with `400`. Prefix your keys (`app_…`) to stay clear of them.
+## Create a session
 
 ```ts
-// Set both at create.
-const project = kortix.project(projectId)
-const created = await project.sessions.create({
-  initial_prompt: 'Triage ticket T-142',
-  labels: ['support', 'tier:gold'],
-  metadata: { app_ticket: 'T-142', app_priority: 2 },
-})
-
-// Update later. `labels` replaces the list; `metadata` merges keys and a
-// `null` value removes that key.
-const s = kortix.session(projectId, created.session_id)
-await s.update({ labels: ['support', 'resolved'], metadata: { app_priority: null } })
-
-// List by label, server-side: a session must carry EVERY given label.
-const { items } = await project.sessions.listPage({ labels: ['support', 'resolved'] })
-
-// Render conditionally.
-for (const session of items) {
-  const badge = session.labels?.includes('tier:gold') ? 'Gold' : null
-  const ticket = session.metadata.app_ticket as string | undefined
-}
-```
-
-In React, pass `labels` to `useProjectSessions(projectId, { labels })`; each
-label set gets its own cache entry. Agents set the same fields from the CLI
-(`kortix sessions new --label … --meta k=v`, `kortix sessions update --label …`)
-and from the hosted MCP server (`start_session` `labels` / `metadata`,
-`list_sessions` `labels`). A runnable version is `packages/sdk/examples/12-session-labels.ts`.
-
-With `pooled_provider_secrets` and `llm_gateway` enabled, a session can select
-several available account secrets for one provider. Create a project-scoped resource through
-`kortix.accounts.secretResources.create(accountId, { project_id: projectId, ...input })`.
-Every project member can use it by default. Restrict it with
-`.setAccess(accountId, secretId, 'members', userIds)`. Reads return metadata and grants, never
-the secret value. After a provider `429` before output starts, the gateway
-tries another selected key.
-
-```ts
-await s.providerSecretPool.set('anthropic', [primarySecretId, backupSecretId]);
-const selected = await s.providerSecretPool.get('anthropic');
-await s.providerSecretPool.set('anthropic', null); // inherit project default
-```
-
-Use the streamed method when the caller displays reload progress:
-
-```ts
-await s.reloadConfigStream({ refresh_repo: false }, (event) => {
-  if (event.type === 'phase') console.log(event.phase);
+const created = await kortix.project(projectId).sessions.create({
+  agent_name: 'my-agent',
+  model: 'glm-5.3-flash',
+  initial_prompt: 'Triage the open issues labeled bug.',
+  labels: ['triage'],
+  metadata: { app_ticket: 'T-142' },
 });
+created.session_id;
 ```
 
-The phases are `checking-session`, `refreshing-workspace`, `compiling-config`,
-`applying-config`, and `confirming-config`. The server omits
-`refreshing-workspace` when `refresh_repo` is `false`. The
-`applying-config` phase includes the daemon's validated runtime replacement.
+Every field is optional. With no input, the session runs the project's default agent and model and waits for a prompt. A create starts provisioning the sandbox at once. If the session needs a new secret value or a new connector credential, write it before the create.
 
-`s.configState()` returns `release` when the API supports config releases.
-Its type is `SessionConfigRelease`. The reload results carry the same object.
-
-```ts
-const { stale, release } = await s.configState();
-if (release?.fallback_reason) {
-  // The desired config failed on the box. An earlier config runs the session.
-  console.warn(release.fallback_reason, release.running_release_id);
-} else if (stale === true) {
-  // Moves the session onto the base branch's current config AND
-  // fast-forwards its /workspace checkout. `workspace_checkout` says what
-  // happened to the checkout; `detail` words both halves.
-  const result = await s.reloadConfig();
-  console.log(result.workspace_checkout, result.detail);
-}
-```
-
-`stale` is tri-state. `null` means Kortix could not tell. Test `stale === true`,
-never `!stale`. An older API omits `release`. See
-[Config convergence](/docs/work/runtime#config-convergence).
-
-`s.participants()` returns `{ participants, total, multi_user }`. `participants`
-lists the people who can open the session now, owner first, at most 20, each
-`{ user_id, name, email, avatar_url, is_viewer }`; `total` is the full count.
-`multi_user` is `true` when two or more people can open the session. In React,
-`useSessionParticipants(projectId, sessionId)` reads the same data. Who wrote
-each message is `s.messageAuthors()`.
-
-Three more read methods round out the handle:
-
-- `s.previews()` — candidate preview ports the runtime exposes.
-- `s.publicShares.list()` / `.create(input)` / `.revoke(shareId)` — public share links.
-- `s.reminders.list()` / `.create(input)` / `.update(reminderId, { enabled })` / `.remove(reminderId)` — scheduled prompts into this session. See [Reminders](/docs/connect/reminders).
-  `.create({ transcript: true })` makes a read-only link to the conversation (one live link per session; a second call returns the same link). Read it anonymously with `getPublicSessionShareMessages(token)`; `findActiveTranscriptShare(shares)` picks the live one from `.list()`.
-- `s.audit(limit?)` — the session's audit trail of agent actions.
-- `s.attachments.upload(file, options?)` — save a private file before startup. Maximum 50 MiB. Returns a stable URL for a prompt file part.
-- `s.attachments.read(attachmentId, signal?)` — read saved bytes as a `Blob` without starting the sandbox.
-- `s.transcript(options?)` — a compact server-side transcript (text and tool calls, no tool inputs or outputs). This works with a project-scoped session token.
-- `s.transcriptSync(options?)` — the transcript the server saves at the end of every turn, as OpenCode message envelopes. Every part is kept 1:1 — text, reasoning, and each tool call with its input, output, error and metadata — except attachment bytes. It answers while the sandbox is stopped or still waking, without starting it. Pass `limit` (at most 500) for the newest window, and a window's `next_cursor` as `before` to read the one older than it. A window also stops at 1,000,000 characters of JSON: it keeps its newest messages, and `next_cursor` then names the oldest one it kept. Pass `child` (a sub-agent's `ses_…` id, the session a sub-agent row opens) to read that sub-agent's own saved transcript; every sub-agent the conversation dispatched is saved. `source` is `mirror`; `complete` is true only when the window holds every saved message and the saved copy reaches the session's first message. A session whose runtime was read completely and held no messages answers `available: true`, `complete: true`, `total: 0` and no messages. A tool call saved before 2026-09-28, when saved history dropped tool inputs and outputs, is served with the input its title or metadata proves, and a command also with its output.
-- `s.voiceTranscript(options?)` — this session's live voice-call transcript (spoken turns plus `ask_kortix`/`run_command` worker tool calls). Returns an empty list when the session has no live call, not a 404.
-
-### Files a session stored
-
-`findSessionAttachments(messages)` lists every stored file a transcript
-references, in order and each once: a user's upload, a `<file>` reference in a
-prompt, or the copy saved history keeps of a file the agent showed. It reads a
-live transcript and a saved one alike, and never throws on a malformed one.
-
-```ts
-import { findSessionAttachments } from '@kortix/sdk'
-
-const saved = await s.transcriptSync({ limit: 500 })
-for (const file of findSessionAttachments(saved.messages)) {
-  const blob = await s.attachments.read(file.attachment_id) // no sandbox needed
-  console.log(file.filename, file.role, blob.size)
-}
-```
-
-Each result is `{ url, attachment_id, filename, mime, message_id, role }`.
-`role` is `user` for an upload and `assistant` for a file the agent showed;
-`mime` is null for the latter, and the bytes carry their own type.
-
-## Who wrote each message
-
-Every message has an author. The server reads it from the credential that sent the
-prompt: a project member, or another session's agent. The runtime transcript does not
-carry it.
-
-```ts
-const { authors, initial_author } = await kortix.session(projectId, sessionId).messageAuthors()
-// getSessionMessageAuthors(projectId, sessionId) is the same call as a function.
-
-const author = authors[runtimeMessageId] // undefined when the sender is unknown
-```
-
-`authors` is keyed by runtime message id. `initial_author` is the parent session for
-the first message of a spawned session. It is `null` when the session had no first
-prompt. Each author is a `SessionMessageAuthor`:
-
-| `kind` | Fields |
+| Field | Meaning |
 | --- | --- |
-| `'member'` | `user_id`, `name`, `email` (`string \| null`) |
-| `'session'` | `session_id`, `name` (the session title), `agent` (the agent it runs, when named) |
+| `initial_prompt` | The first prompt. The server delivers it when the runtime is up, so you need no `send()`. |
+| `agent_name` | The agent to run. Default: the project's default agent. |
+| `model` | The model id (see [Models](/docs/project/models)). A model the account cannot use returns `400`. |
+| `name` | The session title. Without it, the server makes a title from the first prompt. |
+| `labels` | Up to 20 labels, each 1 to 64 characters after trimming. Duplicates drop. Matching is exact and case-sensitive. |
+| `metadata` | A JSON object of your own keys, at most 16,384 characters of JSON per write. Server-managed keys, such as `source`, `trigger_kind` and `trigger_slug`, return `400`. Prefix your keys, for example `app_`. |
+| `session_id` | A v4 UUID you generate, so you know the id before the create returns. A second create with the same id returns `409`. |
+| `base_ref` | The branch or ref the session branch starts from. Default: the project's default branch. |
+| `sandbox_slug` | The sandbox to boot, by its slug in `kortix.yaml`. Default: the agent's sandbox, then the project default, then `default`. |
+| `provider` | The sandbox provider: `platinum`, or the legacy fallback `daytona`. Default: the project's pinned provider, else the platform's choice. |
+| `runtime_context` | Non-secret values for the agent. See [Start sessions from your server](#start-sessions-from-your-server). |
+| `connector_bindings` | Pins one connector account per connector alias: `{ gmail: { connection_id } }`. |
+| `inherit_unbound` | With `connector_bindings` set, a connector you did not bind gets no account. `true` lets it use the project default. Default `false`. |
+| `secrets` | Narrows which project secrets the sandbox receives, by identifier. A personal access key or service account key only. |
+| `provider_secret_pools` | HTTP body only. Selects up to 10 account secret ids per model provider, for up to 20 providers. Needs the `pooled_provider_secrets` flag and the LLM gateway. |
 
-In React, `useSessionMessageAuthors(projectId, sessionId, messageCount)` reads the
-same data. Pass the transcript's message count. A new message is the only event that
-adds an author, so the query refetches when the count changes.
+`opencode_model` is the deprecated name of `model`; `model` wins when you send both. `require_connectors` is accepted and ignored.
 
-## Readiness is a handshake
-
-Before you send a prompt, call `ensureReady()`. It provisions the sandbox if
-needed, waits for the runtime to boot, and returns the resolved runtime.
+Update a session later:
 
 ```ts
-const { runtimeSessionId, runtimeUrl, sandboxId } = await s.ensureReady();
+await s.update({ name: 'Bug triage', labels: ['triage', 'done'], metadata: { app_priority: null } });
+const { items } = await kortix.project(projectId).sessions.listPage({ labels: ['triage', 'done'] });
 ```
 
-On a cold boot, `ensureReady()` can throw `RUNTIME_UNAVAILABLE`. See
-[Retry on a cold boot](#retry-on-a-cold-boot) for what that means and how to
-retry.
+`labels` replaces the list. `metadata` merges keys, and a `null` value removes a key. `listPage({ labels })` returns only sessions that carry every label. For a pre-booted session that is ready before the first prompt, see [Warm sessions](/docs/work/sessions#warm-sessions).
 
-`s.send()` and `s.abort()` call `ensureReady()` for you.
+## Wait until ready
 
-### Seed a server-authorized runtime session pin
+```ts
+const { runtimeSessionId, runtimeUrl, sandboxId } = await s.ensureReady({ readyTimeoutMs: 300_000 });
+```
 
-A server-rendered React host can supply the runtime session pin already persisted for
-the same Kortix session:
+`ensureReady()` provisions or resumes the sandbox and waits for its runtime.
 
-```tsx
-const session = useSession(projectId, sessionId, {
-  initialRuntimeSessionId: persistedSession.runtime_session_id ?? persistedSession.opencode_session_id,
+- It asks the API to start the session in long polls of up to 30 s, with a 1 s pause, while the answer is `provisioning` or `starting` with `retriable: true`.
+- The default deadline is 180 s. Pass `readyTimeoutMs` to wait longer.
+- It throws an `ApiError` with `code: 'RUNTIME_UNAVAILABLE'` at the deadline, or at once on a terminal `failed` or `stopped` answer.
+- Concurrent calls for one session share one start request. A second call on a ready handle returns at once.
+- Pass `session`, the session's row from `sessions.get()` or `sessions.list()`, when you already have it. A `running` row that names its sandbox and `runtime_session_id` is used as is, without a start request. Any other row, or the row of another session, changes nothing.
+
+```ts
+const row = await kortix.projects.sessions.get(projectId, sessionId);
+const { runtimeSessionId } = await s.ensureReady({ session: row });
+```
+
+Which methods ready the session for you:
+
+| Behavior | Methods |
+| --- | --- |
+| Call `ensureReady()` themselves | `send`, `abort`, `rewind`, `restoreRewind`, `stream`, `messages`, `pending`, `answerPermission`, `answerQuestion`, `compact`, every `files.*` method |
+| Throw `SessionNotReadyError` before a ready | `previewUrl`, `proxyUrl`, `sandboxPortUrl` |
+| Read only the Kortix API, never the sandbox | `get`, `update`, `cost`, `scope`, `transcript`, `transcriptSync`, `log`, `messageAuthors`, `modelUsage`, `turn`, `attachments.read` |
+
+`s.health()` never throws `SessionNotReadyError`. Before this handle has a runtime it returns `{ status: 0, ok: false }`.
+
+A failed start is a cooldown, not a final verdict. A start after the cooldown tries again. The cooldown grows from 2 to 5 to 10 minutes. After 5 consecutive failures, `ensureReady()` throws `RUNTIME_UNAVAILABLE` at once. That verdict expires 30 minutes after the last failure. `s.restart()` clears it at once.
+
+## Send prompts
+
+```ts
+await s.send('Refactor the auth module.');
+await s.send('Write the tests.', { agent: 'tester' }); // this call only
+
+s.setModel({ providerID, modelID }); // later send() calls on this handle
+s.setAgent('reviewer');
+
+await s.abort(); // end the running turn; the session stays
+```
+
+- `send()` puts the prompt in the session's durable prompt inbox, the same inbox the web app and the CLI use. It resolves when the prompt is stored, with `{ prompt_id, state, message_id }`. It does not wait for the turn. Read the reply from `stream()` or the transcript.
+- `send()` throws an `ApiError` with `code: 'PROMPT_FAILED'` when the inbox row already failed.
+- Model and agent precedence: the `send()` option, then `setModel()` / `setAgent()` on this handle, then the session's saved default.
+- `setModel()` stays on the handle. To change the session's saved model, call `changeModel()`:
+
+```ts
+const { applied_live } = await s.changeModel('glm-5.3-flash');
+```
+
+The same model-id rule applies as for `model` at create. `changeModel()` restarts the runtime when the model changes on a running session, so a running turn ends. `applied_live` is `true` when a running session took the model now, and `false` when it applies at the next start. `push_failed: true` means the model is stored, but the running runtime still uses the old one. On a `stopped`, `failed` or `completed` session it returns `409` `SESSION_NOT_RUNNING`. Only the session owner or a project manager may call it. Anyone else gets `403`.
+
+The Kortix web and mobile apps open a session on its saved model. A model set at create or with `changeModel()` is the model their next message uses, unless the person picks another model in that session. The same ranking is `sessionModelCandidates()` in the root barrel.
+
+### Steer, queue or interrupt
+
+`send()` queues: the prompt waits for the running turn to end. To choose how a prompt reaches a running turn, write it with `s.prompts.create()`:
+
+```ts
+import { mintWireMessageId } from '@kortix/sdk';
+
+const messageId = mintWireMessageId();
+await s.prompts.create({
+  clientMessageId: messageId,
+  messageId,
+  remintOnDelivery: true,
+  delivery: 'steer',
+  parts: [{ type: 'text', text: 'Use the staging database.' }],
 });
 ```
 
-The seed only hydrates cached transcript content while `/start` runs. It does
-not override the runtime identity. The pin returned by `/start` is
-authoritative and replaces a stale seed.
+| `delivery` | While a turn runs |
+| --- | --- |
+| `steer` | The running turn reads the prompt at its next step. The turn does not stop. |
+| `queue` | The prompt waits for the turn to end, then runs as its own turn. |
+| `interrupt` | The turn ends after the running tool. Then the prompt runs as its own turn. |
 
-`opencode_session_id` is the deprecated name of `runtime_session_id`. Both
-carry the same value; read the old name only as the fallback above.
+With no turn running, all three start a turn. A `steer` needs the runtime capability `session.steer` and must come from the member who started the turn. Otherwise the server delivers it as `queue`, and the inbox row shows `steer_fallback`:
 
-Do not accept this value from an untrusted tenant selector. Do not create a
-runtime session in the host. Kortix creates and persists the root session.
-Runtime query caches and transcript controllers are scoped to the sandbox
-runtime, so equal runtime session ids from different sandboxes do not share
-cache entries.
+- `unsupported`: the runtime does not list `session.steer`.
+- `not_prompter`: another member started the running turn.
+- `turn_ended`: the turn ended before the prompt reached it.
 
-Pending message retries keep their originating sandbox URL when you switch
-sessions. A `404` or `410` message response stops automatic retries without
-clearing the transcript. An explicit reconciliation can retry the read and
-restore normal synchronization after a successful response.
+The inbox lists only prompts not yet delivered:
 
-## Send a prompt
+| Method | What it does |
+| --- | --- |
+| `s.prompts.list()` | Prompts the session still owes, oldest first, with `state`, `reason` and `steer_fallback` |
+| `s.prompts.edit(promptId, text)` | Replaces the text of a waiting prompt. `409` when the prompt is already on its way to the runtime |
+| `s.prompts.interrupt(promptId)` | Turns a waiting prompt into an `interrupt` |
+| `s.prompts.retry(promptId)` | Retries a `failed` prompt |
+| `s.prompts.remove(promptId)` | Removes a prompt and returns it. `409` when the agent already reads it |
+| `s.prompts.hold(true \| false)` | Holds or releases the whole queue |
+| `s.turn()` | Running turns (`turns`, empty when idle), how the last turn ended (`last_ended`), recent failures (`recent_failures`), and whether the caller may stop the running turn (`can_stop`) |
 
-```ts
-s.setModel({ providerID, modelID }); // sticky for later send() calls
-s.setAgent('build'); // sticky for later send() calls
+### Attach files
 
-await s.send('Refactor the auth module');
-await s.send('One-off task', { model, agent }); // overrides for this call only
-await s.abort(); // stop the current run
-```
-
-`send()` puts the prompt in the session's durable prompt inbox
-(`POST .../prompts`), the path the web composer and the CLI use. It resolves
-when the prompt is stored, with the inbox row (`prompt_id`, `state`,
-`message_id`), not when the turn ends. Read the reply from `s.stream()` or the
-transcript.
-
-For OpenCode REST sessions, the first `send()` on a handle reads the model and
-agent persisted on the Kortix session. This prevents a snapshot-inherited
-OpenCode session from reusing stale snapshot defaults.
-
-Prompt choice precedence is:
-
-1. The `send()` call.
-2. The handle's `setModel()` or `setAgent()` value.
-3. The persisted Kortix session default.
-
-`setModel` only chooses what the next local `send` asks for — it never leaves the
-handle. To **persist** a new model for a running session server-side, use
-`changeModel`:
+Upload a file to the project, then send its id in a file part:
 
 ```ts
-const { applied_live } = await s.changeModel('anthropic/claude-opus-4-8');
-```
-
-Restarting the runtime is how the change takes effect, so an in-flight turn ends.
-`applied_live` is `true` when a running session took it now, `false` when it
-applies at the next start. Only the session owner, or a caller with project-manager
-permissions, may change the model; anyone else gets `403`.
-
-`send()` resolves the runtime, then prompts it. `abort()` stops the current
-run without deleting the session.
-
-## Session scope and cost
-
-Read the stored secret narrowing and materialized connection bindings.
-`secrets_allowlist: null` means the agent's secret grant applies:
-
-```ts
-const scope = await s.scope();
-scope.connector_bindings_configured; // false = inherits the project defaults
-```
-
-`connector_bindings` is the RESOLVED map, so it looks the same for a session
-that overrode its connectors and one that inherits the project defaults. Read
-`connector_bindings_configured` to tell them apart before rendering the scope or
-sending it back.
-
-Replace one or both scope fields:
-
-```ts
-await s.rescope({
-  secrets: ['DATABASE_URL'],
-  connector_bindings: {
-    github: { connection_id: connectionId },
-  },
+const file = await kortix.project(projectId).attachments.upload(blobFile);
+const fileMessageId = mintWireMessageId();
+await s.prompts.create({
+  clientMessageId: fileMessageId,
+  messageId: fileMessageId,
+  remintOnDelivery: true,
+  parts: [
+    { type: 'text', text: 'Summarize this report.' },
+    { type: 'file', attachment_id: file.attachment_id, filename: file.filename, mime: file.mime },
+  ],
 });
 ```
 
-Each supplied field replaces its complete previous value. Omit a field to leave
-it unchanged. Connection changes apply to the next tool call.
-Secret removal stops future delivery but cannot remove an already disclosed
-value from model context or an existing process.
+- Limits: 50 MiB per file, 100 MiB per message, 20 files per message. A file must not be empty.
+- An upload needs no running sandbox. Before the prompt runs, the server writes each file to `/workspace/uploads/.kortix-inbox/`.
+- An upload that no prompt uses expires after 24 hours.
+- A browser composer uses `usePromptAttachments`. See [React](/docs/sdk/react).
 
-Both axes have an explicit way back to the default. They are not the same as an
-empty value:
+## Stream events
 
 ```ts
-await s.rescope({
-  secrets: null, // inherit the agent's secret grant
-  connector_bindings: null, // drop the override; inherit the project defaults
+const stream = await s.stream({
+  onEvent: (event) => { /* one runtime event */ },
+  onGapRehydrate: (gapMs) => { /* re-read state you cache */ },
+  signal: abortController.signal,
 });
+stream.close();
 ```
 
-`secrets: []` and `connector_bindings: {}` are the opposite instruction: an
-explicit "no project secrets" and "no connectors at all", project defaults
-included. A session that sends `{}` where it meant `null` fails closed on every
-alias it did not name.
+`stream()` readies the session, then opens the session runtime's event stream through the Kortix API. It is server-sent events over a streaming `fetch`. There is no WebSocket. The same stream serves both harnesses.
 
-Read the unified cost record:
+1. Open the stream before you send, so you do not miss the first events.
+2. Send the prompt.
+3. Close the stream on `session.idle` for your runtime session id. A subagent's conversation sends its own `session.idle` with its own id.
+
+The SDK keeps the connection alive for you:
+
+- It reconnects at once (250 ms) after a healthy stream drops, else with backoff from 1 s up to 30 s plus up to 50% jitter, and resumes with `Last-Event-ID`.
+- The sandbox sends a keepalive every 20 s. After 60 s with no frame, the SDK drops the connection and reconnects.
+- `onGapRehydrate(gapMs)` runs after a reconnect when the dropped stream had delivered events, or when the gap was longer than 5 s.
+- After 8 consecutive failed connects (a stopped or deleted sandbox), the stream stops. Open a new one after the session runs again.
+- Events arrive in batches every 16 ms. Consecutive `message.part.delta` events for one part field arrive as one event: `properties.delta` holds the joined text, `id` is the last event's id, and `coalesced` lists the events it replaced. Append `delta` as for a single event.
+
+The events a chat needs:
+
+| `type` | When it fires |
+| --- | --- |
+| `message.updated` / `message.removed` | A message changed or was deleted. |
+| `message.part.updated` / `message.part.removed` | A part (text, tool call, file) changed or was removed. |
+| `message.part.delta` | Text was appended to a part field. |
+| `session.status` | A conversation's busy state changed. |
+| `session.idle` | A turn finished. |
+| `session.error` | A turn failed. The event carries the error. |
+| `permission.asked` / `permission.replied` | The agent asked for a permission, and the answer. |
+| `question.asked` / `question.replied` / `question.rejected` | The agent asked a question, and the answer. |
+| `todo.updated` | The agent's todo list changed. |
+
+Each event has `type` and `properties`, for example `event.properties.sessionID`. The stream carries more event types than these. `narrowChatEvent(event)` from `@kortix/sdk` maps the events above, except `message.part.delta`, to typed chat events, maps `server.connected` to a `connection` event, and returns `null` for every other event. It merges `question.replied` and `question.rejected` into `question.answered`.
+
+A host whose `fetch` cannot stream a response body, such as React Native, passes its own transport. The SDK keeps reconnect, resume, backoff and the keepalive check:
 
 ```ts
-const cost = await s.cost();
+import { configureKortix, type RuntimeEventTransport } from '@kortix/sdk';
+
+const transport: RuntimeEventTransport = async function* ({ url, headers, signal }) {
+  // Yield { data, id?, retry? } for each server-sent message of ONE connection.
+  // Return when the server ends it. Throw (with `status` for a non-2xx answer) when it fails.
+};
+configureKortix({ backendUrl, getToken, eventStreamTransport: transport });
 ```
 
-The record combines finalized LLM cost, billed sandbox compute cost, model
-usage, token totals, compute duration, and ledger entries. `s.cost()` does not
-call `ensureReady()`.
+A host without `visibilitychange` and `online` events calls `notifyHostSignal('visible' | 'online' | 'retry')`. The stream that `useSession` holds reconnects on it. A `stream()` handle does not listen to it.
 
-## Runtime status and previews
+A React app uses `useSession` instead of `stream()`. See [React](/docs/sdk/react).
 
-| Method                      | Returns                        | Use                                          |
-| --------------------------- | ------------------------------ | -------------------------------------------- |
-| `s.health(init?)`           | `{ status, ok, health, body }` | Check whether the runtime is alive           |
-| `s.previewUrl(port, path?)` | `string`                       | Get a proxy URL for a port the agent exposed |
-| `s.proxyUrl(url?)`          | `string \| undefined`          | Rewrite a localhost URL the agent printed    |
+## Read the conversation
+
+| Method | Returns | Wakes the sandbox |
+| --- | --- | --- |
+| `s.messages({ limit?, before?, conversationId? })` | A page of messages, oldest first, as `{ info, parts }` (`kortix.transcript.v1`), and `hasMore`. `conversationId` reads a subagent's conversation. | Yes |
+| `s.transcriptSync({ limit?, before?, child? })` | Deprecated: read `s.log()`. The v1 copy of the conversation: every part, with tool inputs and outputs. `limit` at most 500. Pass `next_cursor` as `before` for the older window. `child` reads a subagent's saved transcript. | No |
+| `s.log({ thread?, before_seq?, limit? })` | One page of the stored session log (`kortix.session/2`, `SessionLogPage`): the session record, every thread head, and the thread's newest `limit` messages (default 40, at most 500) by `seq`. `thread` defaults to the root thread; pass the first message's `seq` as `before_seq` for older ones. `null` when the session has no stored log yet (it is journaled at each turn end), or no such thread. | No |
+| `s.transcript({ limit?, chars? })` | Deprecated: read `s.log()`. A short digest: text and tool calls without inputs and outputs. `limit` 1 to 500 (default 40), `chars` 80 to 5,000 per message (default 700). | No |
+| `s.get()` | The session record: status, agent, model, labels, metadata. | No |
+| `s.messageAuthors()` | The member or session that sent each message, keyed by message id, and the member who stopped each stopped turn (`stops`). | No |
+| `s.modelUsage()` | The model that answered each turn, and `fallback_from` when a fallback model answered. | No |
+
+A `transcriptSync` window also stops at 1,000,000 characters of JSON. It keeps its newest messages, and `next_cursor` then names the oldest one it kept.
+
+### Answer the agent
 
 ```ts
-const { ok, health } = await s.health();
-const url = s.previewUrl(3000, '/docs');
+const { statuses, permissions, questions } = await s.pending();
+await s.answerPermission(permissions[0].id, 'once'); // 'once' | 'always' | 'reject'
+await s.answerQuestion(questions[0].id, [['Yes']]); // one answer list per question; null dismisses
 ```
 
-`s.health()` never throws. Call it any time, even before the session has a
-runtime. `s.previewUrl()` and `s.proxyUrl()` need a resolved runtime — call
-`s.ensureReady()` first, or they throw `SessionNotReadyError`. See
-[Session readiness errors](#session-readiness-errors).
+### Control the session
 
-### What the runtime supports
+| Method | What it does |
+| --- | --- |
+| `s.abort()` | Ends the running turn. |
+| `s.rewind(messageId)` / `s.restoreRewind()` | Rolls the conversation back to a user message, and undoes that before the next prompt. Needs `session.rewind`. |
+| `s.compact(model?)` | Summarizes the conversation into a shorter context. Needs `session.compact`. |
+| `s.stop()` | Stops the sandbox. The disk, the branch and the conversation stay. |
+| `s.restart()` | Stops and starts the sandbox in place. Clears a failed-start verdict. |
+| `s.delete()` | Deletes the session and its sandbox. Resolves to `{ ok, restore_until }`: the session is restorable until then (30 days), and its branch is kept. |
+| `s.restore()` | Restores a deleted session before `restore_until`. Its next start boots a new sandbox from the branch. A refusal throws an `ApiError` with `code` `session_not_deleted`, `session_sandbox_removal_pending` (retry in a minute) or `session_purged`. See [Restore a deleted session](/docs/work/sessions#restore-a-deleted-session). |
+| `s.recover()` | Continues a lost session (the provider removed its sandbox) on a new sandbox. Its next start boots from the branch and loads the saved conversation back into the agent. A refusal throws an `ApiError` with `code` `session_not_lost`, `session_transcript_missing` (nothing changed), `session_sandbox_removal_pending` (retry in a minute) or `session_log_restore_off`. See [Continue a lost session](/docs/work/sessions#continue-a-lost-session). |
+| `s.configState()` / `s.reloadConfig({ force? })` | Reads whether the session runs the current config from the base branch, and loads that config into the running session. The reload restarts the runtime. While a turn runs it returns `409` `SESSION_BUSY`; `force: true` ends the turn. |
+| `s.setSharing(intent)` | Sets who can open the session. See [Who can open a session](/docs/work/sessions#who-can-open-a-session). |
+| `s.publicShares.create({ transcript: true })` | Makes one read-only link to the conversation. See [Public links](/docs/work/sessions#public-links). |
+| `s.reminders.create(input)` | Schedules a prompt into this session. See [Triggers & reminders](/docs/connect/triggers). |
 
-`health.capabilities` lists the session features the runtime serves. Read one
-with `runtimeSupports(capabilities, capability)` and hide the control when it
-returns `false`. An OpenCode session serves all ten; a pi session serves
-`session.subagents` only and answers the others with `501 feature_not_supported`
-(`404` for the config document). [Harnesses](/docs/work/harnesses) has the
-full OpenCode and pi matrix.
+The full method list is in [SDK reference](/docs/sdk/reference).
+
+## Files and previews
+
+`s.files` reads and writes the session's live sandbox. Every call readies the session first.
+
+| Method | What it does |
+| --- | --- |
+| `list(dir)`, `read(path)`, `readBlob(path)` | Lists a directory and reads a file as text or as a `Blob`. |
+| `status()` | The git status of changed files. |
+| `findFiles(query, { type?, limit? })`, `findText(pattern)` | Finds files by name and by content. |
+| `write(path, blob)` | Writes a file and overwrites it in place. |
+| `upload(file, targetPath?, filename?)` | Writes a new file. It never overwrites: a taken name gets a unique name. |
+| `create`, `copy`, `remove`, `mkdir`, `rename` | Edits the file tree. |
+
+Previews need a ready handle:
+
+```ts
+await s.ensureReady();
+const url = s.previewUrl(3000, '/docs'); // a URL a browser tab opens
+const fixed = s.proxyUrl('http://localhost:3000/'); // rewrite a localhost URL the agent printed
+const direct = s.sandboxPortUrl(3000); // the authenticated API proxy URL, for a bearer-token client
+const ports = await s.previews(); // ports the runtime exposes
+```
+
+See [Ports and previews](/docs/work/runtime#ports-and-previews).
+
+## Runtime capabilities
+
+A session runs on one of two harnesses, OpenCode or pi. `s.health()` lists what the runtime supports in `health.capabilities`. Hide a control when its capability is absent:
+
+```ts
+import { runtimeSupports } from '@kortix/sdk';
+
+await s.ensureReady();
+const { health } = await s.health();
+if (!runtimeSupports(health?.capabilities, 'session.compact')) hideCompactButton();
+```
 
 | Capability | Feature |
 | --- | --- |
-| `session.rewind` | Revert to a message, and restore it |
+| `session.rewind` | Roll back to a message, and restore it |
 | `session.compact` | Summarize the conversation on demand |
 | `session.commands` | Project slash commands |
 | `session.fork` | Fork a session at a message |
@@ -383,500 +357,217 @@ full OpenCode and pi matrix.
 | `session.todo` | The runtime's todo list |
 | `session.shell` | A shell command run as a turn |
 | `session.attach` | Attach the harness's own terminal client |
-| `session.config` | A runtime config document (`/global/config`); agents and models come from the project either way |
+| `session.config` | A runtime config document a client reads and patches |
+| `session.steer` | A prompt read by the running turn at its next step |
+| `session.log.v2` | The runtime event stream serves the session log as `log.*` frames (`?schema=v2`) |
+
+- OpenCode lists all 12. It lists `session.steer` only on OpenCode 1.18.15 or later.
+- pi lists `session.subagents`, `session.compact`, `session.commands`, `session.steer` and `session.log.v2`.
+- A route for an unlisted feature answers `501 feature_not_supported`.
+- `runtimeSupports` returns `true` before a health answer arrives, and for a runtime that lists no `session.*` capability.
+
+See [Harnesses: OpenCode and pi](/docs/project/agents#harnesses-opencode-and-pi).
+
+## Start sessions from your server
+
+Your server holds one Kortix credential and starts sessions for its own customers. Your customers never sign in to Kortix.
+
+1. Get a credential. A personal access key (`kortix_pat_…`) acts as you. A service account key (`kortix_sa_…`) acts as itself and needs a project role first. See [API keys and tokens](/docs/accounts/identity#api-keys-and-tokens).
+2. Create the client with `createScopedKortix` from `@kortix/sdk/server`. It never writes the process-wide config, so one request never reads another request's config or sandbox. See [Servers that act for many users](/docs/sdk/auth#servers-that-act-for-many-users).
+
+Both credentials give the session the origin `backend`. The request body cannot set the origin. A token from inside a session sandbox is never `backend`.
 
 ```ts
-import { runtimeSupports } from '@kortix/sdk';
+import { createScopedKortix } from '@kortix/sdk/server';
 
-const { health } = await s.health();
-if (!runtimeSupports(health?.capabilities, 'session.compact')) hideCompact();
-```
-
-`runtimeSupports` returns `true` before a health answer arrives, and for a
-runtime that lists no `session.*` capability: a daemon built before capabilities
-existed runs OpenCode, which serves every feature. In React, use
-[`useRuntimeSupports`](/docs/sdk/react).
-
-## Status words
-
-Every host reads one vocabulary, so one state has one word on every screen.
-
-| Export                                     | Use                                                                                          |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
-| `sessionListStatus(session, reviewCount?)` | A session in a list: `needs-you`, `starting`, `running`, `done`, `stopped`, `failed`, `legacy` |
-| `SESSION_LIST_STATUS[status]`              | `{ label, tone, description }` for that status                                               |
-| `sessionConnectionLabel(connection)`       | A short label for the session's computer, or `null` for `unknown` and `live`                  |
-| `SESSION_NOTICE`                           | The composer's sentence while the computer is not ready                                      |
-| `turnRetryLabel(secondsLeft)`              | `Retrying in 5s`, `Retrying now`, or `Waiting to retry` when no countdown is known           |
-
-Tones are `actionable`, `live`, `progress`, `muted`, and `danger`. Green is for
-`live` and `actionable` only; a finished session is `muted`. A status that a newer
-API sends and this build does not know reads `stopped`, never `failed`.
-
-## Streaming
-
-Use `s.stream()` to receive live events in a script or server. In a React
-app, use [`useSession`](/docs/sdk/react) instead — it manages the whole
-session lifecycle for you.
-
-`s.stream()` is the OpenCode REST compatibility event stream. The Kortix API
-proxies it from the sandbox. There is no separate WebSocket endpoint. The
-transport is `fetch` with a streaming response body, read through
-`ReadableStream` and `TextDecoderStream`. The SDK handles reconnection,
-backoff, and a heartbeat check.
-
-Stream a session:
-
-1. Call `ensureReady()` first. The runtime does not exist until the sandbox
-   starts.
-2. Open the stream before you send a message, so you do not miss early
-   events.
-3. Send the message.
-4. Close the stream when you see `session.idle`.
-
-```ts
-const session = kortix.session(projectId, sessionId);
-const { runtimeSessionId } = await session.ensureReady();
-
-const stream = await session.stream({
-  onEvent: (event) => {
-    if (event.type === 'session.idle' && event.properties.sessionID === runtimeSessionId) {
-      onTurnDone();
-      stream.close();
-    }
-  },
+const kortix = createScopedKortix({
+  backendUrl: process.env.KORTIX_API_URL!,
+  getToken: async () => process.env.KORTIX_API_KEY!,
 });
 
-await session.send('Refactor the auth module');
+const created = await kortix.project(projectId).sessions.create({
+  agent_name: 'support',
+  initial_prompt: 'Answer ticket ' + ticket.id + '.',
+  labels: ['support', 'customer:' + customer.id],
+  metadata: { app_customer_id: customer.id, app_ticket_id: ticket.id },
+  runtime_context: { customer_id: customer.id, plan_tier: customer.tier },
+  connector_bindings: { gmail: { connection_id: supportInboxConnectionId } },
+  secrets: ['HELPDESK_API_KEY'],
+});
 ```
 
-Streaming needs `fetch` with a real `ReadableStream` body and
-`TextDecoderStream`. Browsers, Node 18 and later, Bun, and Cloudflare Workers
-all support it.
+On a scoped client, `kortix.runtime()` throws. Reach a session through `kortix.session(projectId, sessionId)`.
 
-A host whose `fetch` cannot stream supplies its own transport. The SDK calls it
-once per connection and keeps reconnect, `Last-Event-ID` resume, backoff and
-heartbeat itself:
+The same kind of create over HTTP, with an idempotency key:
+
+```bash
+curl -X POST "https://api.kortix.com/v1/projects/<project_id>/sessions" \
+  -H "Authorization: Bearer kortix_pat_…" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: my-app:ticket-123:reply" \
+  -d '{
+    "agent_name": "support",
+    "initial_prompt": "Answer ticket 123.",
+    "runtime_context": { "customer_id": "c-42" },
+    "secrets": ["HELPDESK_API_KEY"]
+  }'
+```
+
+The API answers `201` with the session. The full route reference is at https://api.kortix.com/v1/docs.
+
+### Retry a create safely
+
+- Send one `Idempotency-Key` per logical create: 1 to 255 characters of `A-Z a-z 0-9 . _ : + / = -`. A replay with the same key returns the same session.
+- A key is unique across all of Kortix. A key that another project or account already used returns `409` `IDEMPOTENCY_KEY_CONFLICT`. Put your own unique ids in the key.
+- A replay while the first create still runs answers `202` with `status` and `session_id`.
+- A replay with different `connector_bindings`, `provider_secret_pools`, `secrets` or `runtime_context` returns `409` `IDEMPOTENCY_BINDING_CONFLICT`, `IDEMPOTENCY_PROVIDER_POOL_CONFLICT`, `IDEMPOTENCY_SECRETS_CONFLICT` or `IDEMPOTENCY_CONTEXT_CONFLICT`.
+- A key whose session was deleted returns `409` `IDEMPOTENCY_KEY_SESSION_DELETED`. Use a new key.
+- `sessions.create()` in the SDK sends no `Idempotency-Key`. To retry an SDK create, generate `session_id` yourself. A retry that answers `409` `session_already_exists` means the first create succeeded.
+
+### Pass context, accounts and secrets
+
+`runtime_context` gives the agent non-secret values, such as your customer id.
+
+- Values are strings (at most 4,096 characters), numbers, booleans or `null`.
+- Keys are 1 to 64 characters: a lowercase letter, then lowercase letters, digits, `.`, `_` or `-`. A key with a segment such as `token`, `secret`, `password`, `credential`, `api_key`, `private_key`, `authorization` or `cookie` is rejected.
+- At most 64 keys and 16 KiB of JSON.
+- The sandbox receives the object as JSON in the environment variable `KORTIX_SESSION_CONTEXT`.
+- You set it at create. Scope changes do not touch it.
+
+`connector_bindings` pins the connector account each alias uses, as `{ alias: { connection_id } }`, at most 64 entries.
+
+- When you set it, an alias you did not bind gets no account. Pass `inherit_unbound: true` to let unbound aliases use the project default.
+- A shared (`project`) account works for a personal access key and a service account key.
+- A private (`member`) account works only for its owner, and only in a private session. A new session is private. Binding a private account to a shared session returns `409`. A service account never uses a private account.
+- The credential never enters the sandbox. Kortix resolves it on every connector call. See [Connectors, connections and accounts](/docs/connect/connectors#connectors-connections-and-accounts).
+
+`secrets` narrows the project secrets the sandbox receives, from the agent's grant down to the identifiers you list. It never widens the grant. `[]` delivers no project secrets. Only a `backend`-origin caller may set it; any other caller gets `403` `origin_override_forbidden`. See [Secrets](/docs/project/secrets).
+
+Tag each session with your own ids in `labels` and `metadata`. Find a customer's sessions with `listPage({ labels: ['customer:c-42'] })`.
+
+## Scope and cost
+
+Read and change a running session's secrets and connector accounts:
 
 ```ts
-import { configureKortix, notifyHostSignal, type RuntimeEventTransport } from '@kortix/sdk';
+const scope = await s.scope();
+scope.secrets_allowlist; // null: the agent's grant applies
+scope.connector_bindings_configured; // false: the session uses the project defaults
 
-const transport: RuntimeEventTransport = async function* ({ url, headers, signal }) {
-  // Yield { data, id?, retry? } for each server-sent message of ONE connection.
-  // Return when the server ends it. Throw (with `status` for a non-2xx answer)
-  // when it fails.
-};
-
-configureKortix({ backendUrl, getToken, eventStreamTransport: transport });
-
-// A host without `visibilitychange` / `online` events reports them itself.
-notifyHostSignal('visible'); // the app is back in the foreground
-notifyHostSignal('online');  // the network is back
-notifyHostSignal('retry');   // a person asked to reconnect now
+const next = await s.rescope({
+  secrets: ['HELPDESK_API_KEY'],
+  connector_bindings: { gmail: { connection_id: otherConnectionId } },
+});
+next.applied_live; // true when the sandbox took the new secrets now
 ```
 
-React Native has no streaming `fetch` by default. The Kortix mobile app uses
-this seam with `react-native-sse`. `createHttpSessionSyncController` remains
-available for a host that only needs bounded history and status
-synchronization.
+Each field you send replaces its whole previous value. A field you leave out stays as it is.
 
-The controller loads the newest 10 messages first. `loadOlder()` follows the
-server cursor. `loadHttpSessionHistory()` follows every cursor for explicit
-exports.
+| Value | `secrets` | `connector_bindings` |
+| --- | --- | --- |
+| `null` | Use the agent's secret grant | Remove the override and use the project defaults |
+| `[]` / `{}` | No project secrets | No connector account at all, project defaults included |
+| A list / a map | Exactly these secrets, inside the agent's grant | Exactly these accounts |
 
-### Event types
+- Sending `{}` where you meant `null` blocks every connector.
+- A connector change applies on the next connector call.
+- A secret change restarts the runtime when the delivered set changes. `applied_live` says whether it applied now or applies at the next start. `push_failed: true` means the change is stored, but the running runtime still has the old secrets.
+- A removed secret stops reaching the sandbox. It cannot leave a model context or a process that already read it. Rotate the secret when that matters.
+- A rescope cannot widen past the agent's grant.
+- Only the session owner or a project manager may change the scope.
 
-Each event has a `type` and a `properties` object that holds its data, for
-example `event.properties.sessionID`.
-
-| `type`                                          | When it fires                                       |
-| ----------------------------------------------- | --------------------------------------------------- |
-| `message.updated` / `message.removed`           | A message changed or was deleted.                   |
-| `message.part.updated` / `message.part.removed` | A part (text, tool call, file) grew or was removed. |
-| `session.status`                                | The session's busy state changed.                   |
-| `session.idle`                                  | The turn finished.                                  |
-| `session.error`                                 | The turn failed. The event carries the error.       |
-| `question.asked`                                | The agent asked for input.                          |
-| `question.replied` / `question.rejected`        | The answer to a question arrived.                   |
-
-Turn raw messages and parts into renderable output with `classifyTurn`. See
-[SDK reference](/docs/sdk/reference).
-
-## Retry on a cold boot
-
-`ensureReady()` polls the session's `/start` endpoint — each call long-polls up
-to 30 s — until the runtime reaches a terminal `ready`/`failed`/`stopped` stage
-or its deadline (`readyTimeoutMs`, default ~180 s) elapses. On a warm session
-the first poll resolves `ready` immediately. On a cold boot it keeps polling
-while the sandbox reports `retriable: true`, so a slow start just takes longer
-rather than throwing. It only throws an `ApiError` with `code:
-'RUNTIME_UNAVAILABLE'` if the runtime is still not `ready` when the deadline
-expires.
-
-`ensureReady()` is idempotent, so concurrent calls for the same session share
-one `/start` request instead of sending several. The `retryUntilReady` helper
-below is now optional — `ensureReady()` already retries internally — but stays
-useful if you want a longer total budget than the default `readyTimeoutMs`.
+Read usage without waking the sandbox:
 
 ```ts
-async function retryUntilReady<T>(ensure: () => Promise<T>): Promise<T> {
-  const deadline = Date.now() + 300_000;
-  for (;;) {
-    try {
-      return await ensure();
-    } catch (error) {
-      const provisioning = error instanceof ApiError && error.code === 'RUNTIME_UNAVAILABLE';
-      if (!provisioning || Date.now() > deadline) throw error;
-      await new Promise((r) => setTimeout(r, 3_000));
-    }
-  }
-}
+const record = await s.cost(); // LLM and compute totals, tokens, model usage, compute time, ledger entries
+
+const page = await kortix.billing.sessionCosts.list({ accountId, projectId, from, to, limit: 25 });
 ```
 
-See [Error classes](#error-classes) for the full `ApiError` shape. In React,
-[`useSession`](/docs/sdk/react) retries `/start` for you, so you do not need
-this pattern.
+`sessionCosts.list` covers every session of the account in a half-open UTC window `[from, to)`. The default window is the last 30 days. Filter by `projectId` or `ownerId`. See [Track usage](/docs/credits#track-usage).
 
-## What `/start` tells you
+## Session errors
 
-Every `/start` answer describes **that call**, not the row's accumulated
-history. Four fields carry it.
+A session create returns these errors. The `code` field of the JSON body holds the code.
 
-| Field | Meaning |
-| --- | --- |
-| `observed_at` | One clock for the whole answer. |
-| `action` | What the server did: `inspected`, `checked_provider`, `resumed`, `provisioned`, `restored`, `reconciled`, `awaited_wake`, `cooling_down`. |
-| `observation` | What the server checked. `known: false` means **not checked on this call** — never "checked and found nothing". |
-| `boot` | `phase` (`provisioning` / `resuming` / `booting` / `ready` / `parked` / `failed`), `since`, and `actively_starting`. |
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `400` | `INVALID_SESSION_MODEL` | The model id is malformed or the account cannot use the model. |
+| `400` | `INVALID_SESSION_CONNECTOR_BINDINGS` | The binding map is malformed. |
+| `400` | `INVALID_SESSION_RUNTIME_CONTEXT` | The runtime context breaks a key, value, entry or size rule. |
+| `400` | `INVALID_SESSION_SECRETS` | The secrets list is malformed or has more than 128 identifiers. |
+| `400` | `INVALID_IDEMPOTENCY_KEY` | The Idempotency-Key header is longer than 255 characters or has a character outside the allowed set. |
+| `400` | `UNKNOWN_SANDBOX_TEMPLATE` | The sandbox slug names no sandbox in the project. |
+| `402` | `subscription_required` / `insufficient_credits` | The account cannot start a session. |
+| `403` | `origin_override_forbidden` | A caller that is not a backend origin sent a secrets list. |
+| `403` | `CONNECTOR_NOT_ASSIGNED` | The agent is not granted a connector you bound. |
+| `404` | `CONNECTOR_CONNECTION_NOT_FOUND` | The account does not exist for that connector in this project, or the caller may not use it. |
+| `404` | `SECRET_IDENTIFIER_NOT_FOUND` | The secrets list names an unknown project secret. |
+| `409` | `CONNECTOR_CONNECTION_INACTIVE` | The account or its connector is inactive, disabled or not connected. |
+| `409` | `PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION` | A private account is bound to a session that is not private. |
+| `409` | `SECRET_IDENTIFIER_KEY_COLLISION` | Two listed secrets set the same environment variable. |
+| `409` | `session_already_exists` | A session with this session id exists. |
+| `409` | `IDEMPOTENCY_*_CONFLICT` | Another create already holds the key, or this key was used before with a different body. |
+| `409` | `IDEMPOTENCY_KEY_SESSION_DELETED` | The key belongs to a deleted session. |
+| `500` | `SESSION_CREATE_FAILED` | The create failed. The body has retry set to true: retry it. |
+| `503` | `SESSION_MODEL_RESOLUTION_FAILED` | The server could not resolve the default model. Retry it. |
 
-`boot.actively_starting` answers "is a provider operation running for this
-session right now?". A `starting` payload with `actively_starting: false` means
-the server is waiting out a retry cooldown, not that a box is booting.
+`s.rescope()` returns these errors:
 
-```jsonc
-{
-  "stage": "starting",
-  "retriable": true,
-  "reason": "runtime_wake_cooldown",
-  "observed_at": "2026-08-26T14:00:00.000Z",
-  "action": "cooling_down",
-  "boot": { "phase": "resuming", "since": "2026-08-26T13:58:00.000Z", "actively_starting": false },
-  "observation": {
-    "provider": { "known": false, "status": null, "checked_at": null },
-    "runtime": { "known": false, "state": null, "boot_phase": null, "checked_at": null }
-  },
-  "failure": {
-    "category": "sandbox-provider",
-    "message": "The runtime did not start (attempt 2). Retrying automatically.",
-    "retryable": true,
-    "evidence": {
-      "check": "provider_not_running",
-      "observed_at": "2026-08-26T13:58:00.000Z",
-      "error": null,
-      "attempts": 2,
-      "next_retry_at": "2026-08-26T14:03:00.000Z"
-    }
-  }
-}
-```
+| Status | Code | Meaning |
+| --- | --- | --- |
+| `400` | `INVALID_SESSION_SCOPE` | The body is malformed, or it has neither field. |
+| `403` | `NOT_IN_AGENT_GRANT` | A secret is outside the agent's grant. |
+| `403` | `NOT_GRANTED_CONNECTOR` | A connector is outside the agent's grant. |
+| `403` | `SECRET_IDENTIFIER_NOT_AVAILABLE` | A secret does not exist or the session may not use it. |
+| `403` | `CONNECTOR_CONNECTION_NOT_FOUND` / `CONNECTOR_CONNECTION_INACTIVE` | The account is unknown, unusable or inactive. |
+| `409` | `AGENT_GRANT_UNRESOLVED` | The server could not read the agent's grant. Retry it. |
+| `409` | `SECRET_IDENTIFIER_KEY_COLLISION` | Two listed secrets set the same environment variable. |
+| `409` | `PERSONAL_CONNECTOR_CONNECTION_REQUIRES_PRIVATE_SESSION` | A private account is bound to a session that is not private. |
 
-### A failed start is retried for you
+A rescope by anyone other than the session owner or a project manager returns `403` with no code.
 
-A start that fails stamps a **cooldown**, not a permanent verdict. The next
-`/start` after the cooldown re-attempts the wake by itself. The cooldown grows
-with consecutive failures (2 min, 5 min, 10 min). After five consecutive
-failures `/start` answers `stage: "failed"` with the attempt count in
-`failure.message`; that verdict expires 30 minutes after the last failure, and
-`POST …/restart` clears it immediately.
+## Errors and retries
 
-`retriable` is derived on every call. A state the server can still re-attempt
-never carries `retriable: false`.
-
-`failure.evidence` names the check that produced the negative, when it ran, and
-when the server retries. Every `/start` failure carries it.
-
-## Prompt attachments
-
-Upload local files when users add them to a composer. Private uploads belong to
-the project and do not require a running session.
-
-```tsx
-import { usePromptAttachments } from '@kortix/sdk/react';
-
-const uploads = usePromptAttachments(projectId);
-// File picker, paste, and drop handlers call uploads.add(file) or uploads.addMany(files).
-// Render uploads.attachments. Refuse Send only while an attachment is `error` or `aborted`.
-
-async function submit() {
-  const ids = uploads.attachments.map((item) => item.id);
-  uploads.submit(ids); // Send never waits: the composer clears and uploads continue.
-  paintMessage(text, ids);
-  try {
-    const parts = await uploads.whenReady(ids);
-    await kortix.session(projectId, sessionId).prompts.create({
-      clientMessageId,
-      messageId,
-      parts: [{ type: 'text', text }, ...parts],
-    });
-    uploads.forget(ids);
-  } catch {
-    uploads.reclaim(ids);
-  }
-}
-```
-
-`whenReady(ids, { signal })` resolves once every upload is ready, in `ids` order.
-It rejects when an upload fails, is aborted or removed, or `signal` aborts.
-`submit(ids)` hands the entries to that send: they leave `attachments`, stop
-counting toward the limits, and keep uploading after the composer unmounts.
-Call `forget(ids)` after the POST succeeds, or `reclaim(ids)` to return them to
-the composer after a failed send.
-The resolved file part contains `attachment_id`, `filename`, and `mime`.
-It contains no URL or file bytes. The server binds and materializes the upload.
-Every file reaches the session's computer, images and PDFs included: before the
-prompt runs, the server writes it to `/workspace/uploads/.kortix-inbox/` and the
-prompt references it by path. No file bytes ride in the prompt itself. With
-saved history on, the server also keeps a copy for the transcript. A failed copy
-never keeps a file from the computer. A file the server cannot write holds the
-prompt, which retries.
-Use these parts on platform session creation, warm-session start, or prompt inbox
-routes. Do not pass private handles directly to OpenCode runtime `sendParts`.
-Legacy platform file parts with `url` still work.
-
-Each item has a stable `id`, the original `file` reference, `receivedBytes`, and
-a status: `pending`, `uploading`, `processing`, `ready`, `error`, or `aborted`.
-Bytes sent determine progress. The controller publishes a progress snapshot only
-for a whole-percent change, at most ten per second per upload. `processing` can
-remain at 100% until the server completes the upload. Limits are 50 MiB per
-file, 100 MiB per message, and 20 files. Files must be nonempty. Two files
-upload concurrently by default.
-
-`retry(id)` resumes the same handle. After `attachment_size_mismatch` or
-`attachment_failed` the server keeps no usable handle, so `retry(id)` uploads the
-File again as a new attachment. An expired upload cannot retry: `retry(id)`
-throws, and the item error carries code `attachment_expired`. `abort(id)` cancels
-unfinished work.
-`remove(id)` removes the entry, aborts its upload, and resolves at once. The
-server DELETE is best-effort and never rejects; an upload it cannot delete
-expires after 24 hours.
-`forget(ids)` releases entries without deleting server objects.
-The hook aborts listed work on unmount or project change and deletes its uploads
-best-effort: no send holds them, and drafts keep no handle. Handed-off uploads
-continue.
-
-Selections live in memory only. Never persist File objects, blob URLs, signed
-URLs, or upload handles in a draft. Abandoned uploads expire after 24 hours.
-
-Framework-free hosts use `kortix.project(projectId).attachments.createController()`
-with the same methods. Subscribe through `subscribe(listener)` and read
-`getSnapshot()`. Call `dispose()` when the composer closes.
-Direct callers can use `attachments.upload(file, { signal, onProgress, onUpload,
-resume })` and `attachments.delete(attachmentId)`.
-Retain `onUpload` metadata for manual same-ID resumption.
-
-The server selects the transport in the handle's `upload` field:
-
-- `kind: 'direct'` is the default. The SDK sends the whole file in one `PUT` to
-  `upload.url` with `upload.headers` and no Authorization header. With
-  `XMLHttpRequest` (browsers, React Native), progress reports sent bytes. With
-  `fetch`, progress reports 0 and then the full size. An expired URL, or one that
-  Storage refuses with 400, 401, or 403, is re-signed once for the same
-  `attachment_id`. A `409` from Storage means an earlier attempt stored the file.
-- `kind: 'chunked'` sends sequential authenticated `PUT`s of `upload.chunk_size`
-  bytes. The SDK accepts any positive `chunk_size`. Only a deployment whose edge
-  drops large request bodies selects this mode.
-
-Completion verifies the stored size and SHA-256. If completion answers `409
-attachment_not_uploaded`, `onUpload` reports the direct handle with
-`received_bytes: 0`, so `retry(id)` or a resume sends the file again.
-Initiation, the upload, and completion retry timeouts, network errors, 429, and
-5xx with jittered exponential backoff. The budget is 60 seconds from the first
-failure, so a long upload that fails late still retries. Completion also retries
-`attachment_processing`, with a five-minute budget. Initiation never retries 402
-(a `BillingError`: the account cannot run) or 429 `attachment_budget_exceeded` (40
-unfinished uploads or 500 MiB of unsent uploads for the user; unused uploads
-expire within 24 hours). The server answers or refuses one completion within 105
-seconds. Each completion request allows 120 seconds. Caller aborts never retry.
-
-A sent attachment's reference is released 1 hour after its prompt is delivered,
-and when its session or project is deleted. The next maintenance sweep then
-removes the file, and its `attachment_id` can no longer be sent.
-
-## Files
-
-`s.files` reads and writes the session's sandbox: `list`, `read`, `readBlob`,
-`status`, `findFiles`, `findText`, `upload`, `create`, `copy`, `remove`,
-`mkdir`, `rename`. Every call resolves the runtime first, and always targets
-this session's own sandbox. See the [SDK reference](/docs/sdk/reference) for
-the full method list.
-
-## Session verbs
-
-The handle reads and answers the runtime for you. Each verb provisions the
-session first and targets this session's own sandbox, whichever harness runs it.
+Every SDK call rejects with an `Error` subclass. Check `instanceof`, then branch on `status` or `code`:
 
 ```ts
-// A page of the transcript, oldest first: { info, parts } messages (kortix.transcript.v1).
-const { messages, hasMore } = await s.messages({ limit: 50 });
-// What the agent waits on.
-const { statuses, permissions, questions } = await s.pending();
-await s.answerPermission(permissions[0].id, 'once'); // 'once' | 'always' | 'reject'
-await s.answerQuestion(questions[0].id, [['Yes']]); // null dismisses the question
-// Summarize the conversation. Needs the `session.compact` capability (see health()).
-await s.compact();
-```
-
-`s.runtime`, the raw REST compatibility client, is deprecated. Use the verbs
-above with `send`, `abort`, `rewind` and `stream`.
-
-## Warm a project session
-
-Call `ensureWarm()` when a project landing page needs one runtime ready before
-the first prompt.
-
-```ts
-const project = kortix.project(projectId);
-const warm = await project.sessions.ensureWarm();
-
-// An ORDINARY session. Prompt it like any other.
-await kortix.session(projectId, warm.session.session_id).send("Build me a widget");
-```
-
-`ensureWarm()` creates, or returns, one unused session for the current user. It
-is the same create `sessions.create()` runs, with the project's defaults: same
-billing gate, same concurrent-session cap, same connector requirements. The only
-difference is `metadata.warm`, which hides the session from
-`sessions.list()` until its first prompt lands.
-
-Treat it as speculative. A `409 WARM_SESSION_UNAVAILABLE` means the account has
-no concurrent-session headroom to spare or the project cannot be warmed right
-now — fall through to `sessions.create()`, which reports the real reason.
-
-The warm session carries the project's DEFAULT agent and sandbox. If the user
-picks a different one, abandon it and call `sessions.create()`: an unused warm
-session is hidden and reaped on its own.
-
-:::warning
-`claimWarm()` is deprecated. A warm session is an ordinary session, so there is
-nothing to claim — navigate to it and prompt it. The call still works for
-consumers pinned to the older shape and is removed in the next major.
-:::
-
-## Handling errors
-
-Every call through `createKortix` rejects with a typed `Error` subclass,
-never a plain object. Catch the error, check `instanceof`, and branch on
-`.status` or `.code`.
-
-```ts
-import { ApiError, BillingError } from '@kortix/sdk';
+import { ApiError, BillingError, SessionNotReadyError, formatBillingErrorForUI } from '@kortix/sdk';
 
 try {
-  await kortix.project(projectId).sessions.create();
+  await kortix.project(projectId).sessions.create({ agent_name: 'my-agent' });
 } catch (err) {
   if (err instanceof BillingError) {
-    // 402 — out of credits or over a plan limit
+    const ui = formatBillingErrorForUI(err); // { alertTitle, alertSubtitle }
   } else if (err instanceof ApiError) {
-    // any other failed request — err.status, err.code, err.detail
+    console.error(err.status, err.code, err.detail);
   } else {
     throw err;
   }
 }
 ```
 
-### Error classes
+| Class | When it throws | Key fields |
+| --- | --- | --- |
+| `ApiError` | Any failed request: an error status, a network failure, a timeout or an abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
+| `AuthError` (extends `ApiError`) | `getToken()` returned `null`. No request was sent | `code` is `NO_SESSION` |
+| `BillingError` (extends `ApiError`) | Every `402` | `code`, for example `insufficient_credits`; `detail.message` |
+| `RequestTooLargeError` (extends `ApiError`) | A `431`, usually too many files in one request | `detail.suggestion` |
+| `SessionNotReadyError` | A preview method ran before `ensureReady()` | `name` is `SessionNotReadyError` |
 
-| Class                  | Extends    | When it throws                                                                 | Key fields                                                           |
-| ---------------------- | ---------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
-| `ApiError`             | `Error`    | Default for any failed request: bad status, network failure, timeout, or abort | `status`, `code`, `detail`, `response`, `url`, `endpoint`, `timeout` |
-| `AuthError`            | `ApiError` | `getToken` returned `null`. Kortix never sent the request                      | `code` is always `'NO_SESSION'`                                      |
-| `BillingError`         | `ApiError` | HTTP `402`. The only billing error class                                       | `status` (`402`), `code`, `detail.message`                           |
-| `RequestTooLargeError` | `ApiError` | HTTP `431`. Usually too many files in one request                              | `detail.suggestion`                                                  |
-| `SessionNotReadyError` | `Error`    | A runtime accessor ran before `ensureReady()`                                  | `name` is `'SessionNotReadyError'`                                   |
+- `code` is the API's error code, or the status as a string.
+- An aborted request has `name: 'AbortError'` and `code: 'ABORTED'`. It is not a failure.
+- A request that passes its own timeout has `code: 'TIMEOUT'`. The default timeout is 30 s per request.
+- `formatBillingErrorForUI(err)` returns `null` for any error that is not a billing error.
+- `isSandboxNotReadyError(err)` and `isRuntimeStartingError(err)` are true while the sandbox is starting, stopped or parked. Show a waiting state and retry.
+- A `401` is sent once more with a fresh token from `getToken()`. See [getToken and 401 recovery](/docs/sdk/auth#gettoken-and-401-recovery).
 
-`ApiError.name` is `'ApiError'` by default. Two cases override it:
+The SDK retries some requests before your code sees an error:
 
-- `name: 'AbortError'`, `code: 'ABORTED'` — the request was cancelled, for example by navigation. This is not a failure. Ignore it.
-- `code: 'TIMEOUT'` — the request's own timeout elapsed. `url`, `endpoint`, and `timeout` show what timed out.
+| Method | Retried | Never retried |
+| --- | --- | --- |
+| `GET`, `HEAD` | Up to 2 times, after 250 ms and 500 ms, on `502`, `503`, `504` or a network failure | A `500` or any other status |
+| `DELETE` | Up to 2 times on a network failure with no response | Any received status |
+| `POST`, `PUT`, `PATCH` | Never | — |
 
-For any other failure, `status` holds the HTTP status code. `code` comes from the backend's `error_code`, or falls back to the status as a string. `message` is an enumerable own property on `ApiError`, so it survives `JSON.stringify` and object spread.
-
-Kortix sends a request that receives `401` once more with a fresh token from `getToken()`, when that token differs from the one it sent. A request with a one-shot stream body is not resent.
-
-Kortix retries some requests before your code sees an error. If a `GET` or `HEAD` request returns `502`, `503`, or `504`, Kortix retries it up to 2 times, with a 250ms then 500ms delay. A transient transport failure on a `GET` or `HEAD` — a network error, not a status code — is retried the same way. A retry that succeeds never reaches `onError`. Kortix never retries `POST`, `PUT`, `PATCH`, or `DELETE` requests, or a `500` response.
-
-Kortix throws `AuthError` on the client, before it sends a request, when `getToken()` returns `null`. `AuthError` extends `ApiError`, so `err instanceof ApiError` still matches. Check `err instanceof AuthError`, or `err.code === 'NO_SESSION'`, to treat "not signed in" as a separate case from a backend failure.
-
-Kortix throws `BillingError` for every HTTP `402` response: out of credits, over a plan limit, or another billing gate. `detail.message` holds the reason from the backend, and `code` holds the backend's machine code (for example `app_budget_exceeded`). `BillingError` extends `ApiError`, so check `BillingError` first when you handle both.
-
-Kortix throws `RequestTooLargeError` for HTTP `431`. This usually means the request carried too many files. `detail.suggestion` holds a ready-to-show hint for the user.
-
-### Session readiness errors
-
-Two errors mean the session's sandbox is not ready yet. Handle each one differently.
-
-`SessionNotReadyError` throws synchronously when you call a runtime accessor — `session.previewUrl()` or `session.proxyUrl()` — before this session handle has resolved its sandbox. A session handle only resolves its own sandbox; it never falls back to another session's sandbox.
-
-```ts
-import { SessionNotReadyError } from '@kortix/sdk';
-
-const s = kortix.session(projectId, sessionId);
-try {
-  const url = s.previewUrl(3000); // throws: not resolved yet
-} catch (err) {
-  if (err instanceof SessionNotReadyError) {
-    await s.ensureReady();
-  }
-}
-```
-
-Call `await session.ensureReady()` first, or call `send()`, which readies the session internally. `session.health()` is the one accessor that never throws this error, so you can poll it before the session boots.
-
-`RUNTIME_UNAVAILABLE` is the second error — it means `ensureReady()` itself timed out waiting for a cold boot. See [Retry on a cold boot](#retry-on-a-cold-boot) for the full pattern. In React, `useSession` retries this for you and exposes it through the `phase` value instead of throwing.
-
-### Helpers
-
-| Helper                           | Signature                           | What it does                                                                                                  |
-| -------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `parseBillingError(error)`       | `(error) => Error`                  | Wraps a `402` response into a `BillingError`. Returns other errors unchanged                                  |
-| `isBillingError(error)`          | `(error) => boolean`                | Returns `error instanceof BillingError`                                                                       |
-| `formatBillingErrorForUI(error)` | `(error) => BillingErrorUI \| null` | Returns `null` for non-billing errors. Otherwise returns `{ alertTitle, alertSubtitle }` for an upgrade modal |
-| `isRuntimeNotReadyResponse(error)` | `(error) => boolean` | True for the sandbox daemon's `503` while the session runtime cannot take a request yet. The request was not forwarded, so a retry is safe. Same answer on OpenCode and pi |
-| `isSandboxNotReadyError(error)` | `(error) => boolean` | True for the answer above and for a sandbox that is stopped, starting or parked. Render it as "waking" and keep polling |
-| `isRuntimeStartingError(error)` | `(error) => boolean` | True for both answers above and for a runtime URL that is not pinned yet. An error boundary retries on it instead of showing a crash |
-
-```ts
-import { formatBillingErrorForUI } from '@kortix/sdk';
-
-try {
-  await kortix.session(projectId, sessionId).start();
-} catch (err) {
-  const ui = formatBillingErrorForUI(err);
-  if (ui) showUpgradeModal(ui.alertTitle, ui.alertSubtitle);
-}
-```
-
-### In `@kortix/sdk/react`
-
-`@kortix/sdk/react` re-exports `BillingError`, `RequestTooLargeError`, `parseBillingError`, `isBillingError`, and `formatBillingErrorForUI`. It does not re-export `ApiError` or `AuthError` — import those from `@kortix/sdk`.
-
-`useSession` classifies every `send`, `answerQuestion`, `answerPermission`, and `rejectQuestion` failure into one `sendError` object, so you do not need to write `instanceof` checks by hand:
-
-```ts
-interface KortixSendError {
-  kind: 'billing' | 'runtime-not-ready' | 'runtime-error';
-  message: string;
-  billing?: BillingError; // set when kind is 'billing'
-  cause: unknown;
-}
-```
-
-```tsx
-const s = useSession(projectId, sessionId);
-
-if (s.sendError?.kind === 'billing') {
-  const ui = formatBillingErrorForUI(s.sendError.billing);
-}
-```
-
-See [React hooks](/docs/sdk/react) for the rest of `useSession`.
+To make a create retry-safe, see [Retry a create safely](#retry-a-create-safely).

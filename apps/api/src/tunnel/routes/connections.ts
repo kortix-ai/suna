@@ -3,17 +3,20 @@
  *
  * GET    /connections                      — machines the caller owns (+ owner-less team machines for managers)
  * GET    /connections/:tunnelId            — get one machine
- * PATCH  /connections/:tunnelId            — rename a machine
+ * PATCH  /connections/:tunnelId            — rename a machine, or change what Kortix may use on it
  * DELETE /connections/:tunnelId            — unpair: delete the machine, revoke its computer accounts
  * POST   /connections/:tunnelId/rotate-token — rotate the setup token
+ * POST   /connections/:tunnelId/access — change access on the machine (it confirms a widening itself)
  *
- * Pairing is device auth only (`device-auth.ts`). Capabilities are fixed at
- * pairing; re-pair to change them.
+ * Pairing is device auth only (`device-auth.ts`); it approves every
+ * capability. The owner narrows or widens them later with PATCH. Every call
+ * reads the approved list from the database (`rpc-core.ts`), so a change
+ * applies to the next call.
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
-import { connectorConnections, connectors, tunnelConnections } from '@kortix/db';
+import { eq, and, desc, isNull, ne } from 'drizzle-orm';
+import { connectorConnections, tunnelConnections } from '@kortix/db';
 import { db } from '../../shared/db';
 import { tunnelRelay } from '../core/relay';
 import {
@@ -22,7 +25,7 @@ import {
   isTunnelToken,
   verifySecretKey,
 } from '../../shared/crypto';
-import { requestClientKey } from '../../shared/client-ip';
+import { requestClientKey } from '../../middleware/client-ip';
 import { isUuid } from '../../shared/validate';
 import { tunnelRateLimiter } from '../core/rate-limiter';
 import type { AppEnv } from '../../types';
@@ -30,9 +33,13 @@ import { makeOpenApiApp, json, errors } from '../../openapi';
 import { getTunnelOwnerContext, getTunnelReadContext } from './auth';
 import { isTunnelConnectionLive } from '../core/cluster-forwarder';
 import { effectiveMachineCapabilities } from '../core/rpc-core';
-import { retryOnDeadlock } from '../../shared/error-cause';
 import { readJsonObject } from '../../shared/http-body';
 import { uniqueComputerLabel } from '../../connectors/computers';
+import { bearerToken } from '../../shared/bearer-token';
+import { unpairMachine } from '../registrations';
+import { changeComputerAccess, computerAccessView, parseAccessChange } from '../access-control';
+import { isTunnelCapability } from 'agent-tunnel';
+import { effectiveRegisteredCapabilities } from '../relay-persistence';
 
 /** Permissive connection row shape, as persisted + serialized. */
 const ConnectionSchema = z.record(z.string(), z.any());
@@ -68,6 +75,7 @@ function serializeConnection(conn: Omit<typeof tunnelConnections.$inferSelect, '
     capabilities: effectiveMachineCapabilities(conn),
     status: isLive ? 'online' : 'offline',
     isLive,
+    access: computerAccessView(conn.machineInfo),
   };
 }
 
@@ -100,126 +108,6 @@ async function relabelComputerAccounts(tx: Tx, tunnelId: string, name: string): 
       .set({ label, updatedAt: new Date() })
       .where(eq(connectorConnections.connectionId, account.connectionId));
   }
-}
-
-/**
- * Unpair one machine: revoke its computer accounts (and drop their default
- * pin) so no resolver picks an account that reaches nothing, delete it (the
- * foreign key then sets their tunnel_id NULL), and drop its live socket.
- * False when no machine matches `tunnelId` and `where`.
- *
- * Lock order: connector rows, then the machine row, the order
- * `attachComputerConnection` uses. The delete's SET NULL update re-checks each
- * account's connector with a key-share lock, so taking it last, behind the
- * machine row, deadlocked (40P01) against an attach that holds the connector
- * and waits for the machine. The connectors are locked first, sorted, in the
- * same statement the delete would lock them. A connector that gains an account
- * for this machine after the read is the one case left: the retry covers it.
- */
-export async function unpairMachine(tunnelId: string, where?: SQL): Promise<boolean> {
-  const deleted = await retryOnDeadlock(() =>
-    db.transaction(async (tx) => {
-      const held = await tx
-        .selectDistinct({ connectorId: connectorConnections.connectorId })
-        .from(connectorConnections)
-        .where(eq(connectorConnections.tunnelId, tunnelId));
-      if (held.length > 0) {
-        await tx
-          .select({ connectorId: connectors.connectorId })
-          .from(connectors)
-          .where(inArray(connectors.connectorId, held.map((row) => row.connectorId)))
-          .orderBy(connectors.connectorId)
-          .for('key share');
-      }
-      const [machine] = await tx
-        .select({ tunnelId: tunnelConnections.tunnelId })
-        .from(tunnelConnections)
-        .where(and(eq(tunnelConnections.tunnelId, tunnelId), where))
-        .for('update');
-      if (!machine) return false;
-      await tx
-        .update(connectorConnections)
-        .set({ status: 'revoked', isDefault: false, updatedAt: new Date() })
-        .where(eq(connectorConnections.tunnelId, tunnelId));
-      await tx.delete(tunnelConnections).where(eq(tunnelConnections.tunnelId, tunnelId));
-      return true;
-    }),
-  );
-  if (deleted) tunnelRelay.disconnectAgent(tunnelId, 4003, 'tunnel deleted');
-  return deleted;
-}
-
-/**
- * One machine, one registration per person. Once a registration reports a
- * hardware id (at approval, or in its first heartbeat that carries one), the
- * owner's other registrations of the same hardware are superseded: each is
- * unpaired with its accounts. Only offline ones: two agents running on one
- * machine at once never cut each other off, and the next heartbeat after one
- * stops retires it. Another person's registration is never touched. Returns
- * the retired tunnel ids.
- */
-export async function retireSupersededRegistrations(tunnelId: string, machineId: string): Promise<string[]> {
-  const [self] = await db
-    .select({ ownerUserId: tunnelConnections.ownerUserId })
-    .from(tunnelConnections)
-    .where(eq(tunnelConnections.tunnelId, tunnelId))
-    .limit(1);
-  if (!self?.ownerUserId) return [];
-  const others = await db
-    .select({
-      tunnelId: tunnelConnections.tunnelId,
-      status: tunnelConnections.status,
-      lastHeartbeatAt: tunnelConnections.lastHeartbeatAt,
-      relayOwnerId: tunnelConnections.relayOwnerId,
-      relayOwnerHeartbeatAt: tunnelConnections.relayOwnerHeartbeatAt,
-    })
-    .from(tunnelConnections)
-    .where(
-      and(
-        eq(tunnelConnections.ownerUserId, self.ownerUserId),
-        sql`${tunnelConnections.machineInfo}->>'machineId' = ${machineId}`,
-        ne(tunnelConnections.tunnelId, tunnelId),
-      ),
-    );
-  const retired: string[] = [];
-  for (const other of others) {
-    if (isTunnelConnectionLive(other)) continue;
-    if (await unpairMachine(other.tunnelId)) retired.push(other.tunnelId);
-  }
-  return retired;
-}
-
-/** A registration without a hardware id is removed after this long without a sign of life. */
-export const UNIDENTIFIED_RETENTION_DAYS = 30;
-
-/**
- * Registrations made by agents older than hardware ids cannot be matched to a
- * computer. Once one has shown no sign of life for 30 days (no heartbeat, no
- * update, no relay ownership), it is unpaired with its accounts. A computer
- * that comes back pairs again; its agent says how. Runs on the tunnel cleanup
- * tick, at most `limit` per run. Returns the removed tunnel ids.
- */
-export async function retireStaleUnidentifiedRegistrations(limit = 100): Promise<string[]> {
-  const stale = await db
-    .select({ tunnelId: tunnelConnections.tunnelId })
-    .from(tunnelConnections)
-    .where(
-      and(
-        sql`${tunnelConnections.machineInfo}->>'machineId' is null`,
-        sql`greatest(
-          ${tunnelConnections.lastHeartbeatAt},
-          ${tunnelConnections.relayOwnerHeartbeatAt},
-          ${tunnelConnections.updatedAt},
-          ${tunnelConnections.createdAt}
-        ) < now() - make_interval(days => ${UNIDENTIFIED_RETENTION_DAYS})`,
-      ),
-    )
-    .limit(limit);
-  const retired: string[] = [];
-  for (const { tunnelId } of stale) {
-    if (await unpairMachine(tunnelId)) retired.push(tunnelId);
-  }
-  return retired;
 }
 
 export function createConnectionsRouter() {
@@ -289,14 +177,19 @@ export function createConnectionsRouter() {
       method: 'patch',
       path: '/{tunnelId}',
       tags: ['tunnel'],
-      summary: 'Rename a paired machine',
+      summary: 'Rename a paired machine, or change what Kortix may use on it',
+      description:
+        'Give `name`, `capabilities`, or both. `capabilities` is the full approved list, a subset of `filesystem`, `shell`, `desktop`. It applies to the next call.',
       security: [{ bearerAuth: [] }],
       request: {
         params: z.object({ tunnelId: z.string() }),
         body: {
           content: {
             'application/json': {
-              schema: z.object({ name: z.string() }),
+              schema: z.object({
+                name: z.string().optional(),
+                capabilities: z.array(z.enum(['filesystem', 'shell', 'desktop'])).optional(),
+              }),
             },
           },
         },
@@ -310,21 +203,47 @@ export function createConnectionsRouter() {
       const { ownerClause } = await getTunnelOwnerContext(c);
       const tunnelId = c.req.param('tunnelId');
       const body = await readJsonObject(c);
-      const name = typeof body.name === 'string' ? body.name.trim() : '';
-      if (!name || name.length > 255) {
-        return c.json({ error: 'name must be a non-empty string of at most 255 characters' }, 400);
+      const set: { name?: string; capabilities?: string[] } = {};
+      if (body.name !== undefined) {
+        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        if (!name || name.length > 255) {
+          return c.json({ error: 'name must be a non-empty string of at most 255 characters' }, 400);
+        }
+        set.name = name;
+      }
+      if (body.capabilities !== undefined) {
+        const capabilities = body.capabilities;
+        if (
+          !Array.isArray(capabilities) ||
+          new Set(capabilities).size !== capabilities.length ||
+          !capabilities.every((cap) => typeof cap === 'string' && isTunnelCapability(cap))
+        ) {
+          return c.json({ error: 'capabilities must list distinct values of filesystem, shell, desktop' }, 400);
+        }
+        set.capabilities = capabilities;
+      }
+      if (set.name === undefined && set.capabilities === undefined) {
+        return c.json({ error: 'Give name, capabilities, or both.' }, 400);
       }
 
       const updated = await db.transaction(async (tx) => {
         const [row] = await tx
           .update(tunnelConnections)
-          .set({ name, updatedAt: new Date() })
+          .set({ ...set, updatedAt: new Date() })
           .where(and(eq(tunnelConnections.tunnelId, tunnelId), ownerClause))
           .returning(SAFE_CONNECTION_COLUMNS);
-        if (row) await relabelComputerAccounts(tx, tunnelId, name);
+        if (row && set.name !== undefined) await relabelComputerAccounts(tx, tunnelId, set.name);
         return row;
       });
       if (!updated) return c.json({ error: 'Tunnel connection not found' }, 404);
+      if (set.capabilities !== undefined) {
+        // The relay's own gate, on the replica that holds the agent. Another
+        // replica catches up on the agent's next heartbeat.
+        const registered = (updated.machineInfo as Record<string, unknown> | null)
+          ?.registeredCapabilities;
+        const live = effectiveRegisteredCapabilities(registered ?? [], set.capabilities);
+        if (live) tunnelRelay.updateAgentMetadata(tunnelId, { capabilities: live, approvedCapabilities: set.capabilities });
+      }
       return c.json(serializeConnection(updated));
     },
   );
@@ -374,6 +293,51 @@ export function createConnectionsRouter() {
       tunnelRelay.disconnectAgent(tunnelId, 4003, 'setup token rotated');
 
       return c.json({ tunnelId, setupToken: newToken });
+    },
+  );
+
+  router.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{tunnelId}/access',
+      tags: ['tunnel'],
+      summary: 'Change when Kortix may use a paired machine',
+      description:
+        'Relays the owner\'s change to the machine, which applies it. A narrowing (Ask each time, Off, revoke, deny, keep awake) applies at once. A widening (Always, a longer grant) waits up to 20 s for the owner to confirm in the Kortix app on that machine, and fails with `computer_access_unconfirmed` otherwise. User credentials only.',
+      security: [{ bearerAuth: [] }],
+      request: {
+        params: z.object({ tunnelId: z.string() }),
+        body: {
+          content: {
+            'application/json': {
+              schema: z.object({
+                mode: z.enum(['ask', 'always', 'off']).optional(),
+                grantMinutes: z.number().positive().max(1440).optional(),
+                revoke: z.boolean().optional(),
+                deny: z.boolean().optional(),
+                keepAwake: z.boolean().optional(),
+              }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(ConnectionSchema, 'The machine\'s access after the change'),
+        ...errors(400, 401, 403, 404, 409, 502, 504),
+      },
+    }),
+    async (c) => {
+      const { ownerClause } = await getTunnelOwnerContext(c);
+      const change = parseAccessChange(await readJsonObject(c));
+      if (!change) {
+        return c.json(
+          { error: 'Give at least one of mode (ask, always, off), grantMinutes (1–1440), revoke, deny, keepAwake, and nothing else.' },
+          400,
+        );
+      }
+      const result = await changeComputerAccess(c.req.param('tunnelId'), ownerClause, change);
+      if (!result.ok) return c.json({ error: result.message, code: result.kind }, result.status);
+      return c.json(result.access);
     },
   );
 
@@ -437,7 +401,7 @@ export function createTunnelSelfRouter() {
       }
       const tunnelId = c.req.header('x-tunnel-id') ?? '';
       const header = c.req.header('authorization') ?? '';
-      const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+      const token = bearerToken(header)?.trim() ?? '';
       if (!isUuid(tunnelId)) return c.json({ error: 'X-Tunnel-Id must be a UUID' }, 400);
       // Look the machine up before the costly verifier, as the WS handshake does.
       const [machine] = isTunnelToken(token)

@@ -2,7 +2,7 @@ import type { Connection } from '@kortix/sdk';
 import { describe, expect, test } from 'bun:test';
 
 import type { TunnelConnection } from '@/hooks/tunnel/use-tunnel';
-import type { DesktopComputerStatus } from '@/lib/desktop';
+import type { DesktopComputerStatus } from '@kortix/ui/internal/lib/desktop';
 import {
   computerDisplayName,
   computerState,
@@ -10,8 +10,8 @@ import {
   platformName,
   projectComputerAccounts,
   yourComputerMenu,
-} from './computer-connect';
-import { activeGrant, capabilitiesNeedingSetup } from './local-computer-modal';
+} from '@kortix/ui/internal/tunnel/computer-connect';
+import { activeGrant, capabilitiesNeedingSetup, setupMissing } from './local-computer-modal';
 
 const ME = '00000000-0000-4000-8000-000000000001';
 const OTHER = '00000000-0000-4000-8000-000000000002';
@@ -185,6 +185,32 @@ test('capabilitiesNeedingSetup: a capability waits on the macOS grants it needs'
     'filesystem',
     'desktop',
   ]);
+});
+
+describe('setupMissing: the agent process is the truth for Accessibility and Screen Recording', () => {
+  const machine = (desktopPermissions: { accessibility: boolean; screenRecording: boolean } | null, capabilities = ['filesystem', 'desktop']) => ({
+    capabilities,
+    access: { mode: 'ask' as const, grantedUntil: null, controllable: true, desktopPermissions },
+  });
+
+  test('without an agent report, the desktop app decides', () => {
+    expect(setupMissing(['files', 'screenRecording'], undefined)).toEqual(['files', 'screenRecording']);
+    expect(setupMissing(['accessibility'], machine(null))).toEqual(['accessibility']);
+    expect(setupMissing(undefined, undefined)).toEqual([]);
+  });
+
+  test('a grant the app holds but the agent lacks is still missing (the stale-process case)', () => {
+    expect(setupMissing([], machine({ accessibility: false, screenRecording: true }))).toEqual(['accessibility']);
+    expect(setupMissing(['files'], machine({ accessibility: true, screenRecording: false }))).toEqual(['files', 'screenRecording']);
+  });
+
+  test('the agent holding both grants clears them; files stay the app’s answer', () => {
+    expect(setupMissing(['files', 'accessibility', 'screenRecording'], machine({ accessibility: true, screenRecording: true }))).toEqual(['files']);
+  });
+
+  test('a machine without Computer Use never needs the desktop grants', () => {
+    expect(setupMissing([], machine({ accessibility: false, screenRecording: false }, ['filesystem']))).toEqual([]);
+  });
 });
 
 describe('groupOwnedComputers', () => {

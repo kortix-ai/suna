@@ -20,37 +20,31 @@
  */
 
 import type { KortixAccount, KortixProject } from '@/lib/projects/projects-client';
-import { classifyStartFailure } from '@/lib/projects/start-failure';
 
 export type LandingResolution =
   | { kind: 'project'; projectId: string; accountId: string }
   | { kind: 'empty' };
 
-function canCreateIn(account: KortixAccount): boolean {
-  return account.account_role === 'owner' || account.account_role === 'admin';
-}
+/** Per account id: the `project.create` verdict. Absent = not answered = no. */
+export type CreateVerdicts = Readonly<Record<string, boolean | undefined>>;
 
 /**
- * The accounts a project can be created in: owner or admin, in the given
- * order. Web's `filterCreatableAccounts` (`features/workspace/new`).
+ * The accounts a project can be created in: those whose `project.create`
+ * probe said yes, in the given order. Web's `filterCreatableAccounts`
+ * (`features/workspace/new`). Never a role label.
  */
-export function creatableAccounts(accounts: KortixAccount[]): KortixAccount[] {
-  return accounts.filter(canCreateIn);
+export function creatableAccounts(accounts: KortixAccount[], verdicts: CreateVerdicts): KortixAccount[] {
+  return accounts.filter((account) => verdicts[account.account_id] === true);
 }
 
-/**
- * Accounts in the order they are searched: the selected account, then the
- * accounts the user owns or administers, then member-only accounts.
- */
+/** Accounts in the order they are searched: the selected account, then the rest. */
 export function orderLandingAccounts(
   accounts: KortixAccount[],
   selectedAccountId: string | null
 ): KortixAccount[] {
   const selected = accounts.find((account) => account.account_id === selectedAccountId);
   const rest = accounts.filter((account) => account !== selected);
-  const owned = rest.filter(canCreateIn);
-  const memberOnly = rest.filter((account) => !canCreateIn(account));
-  return selected ? [selected, ...owned, ...memberOnly] : [...owned, ...memberOnly];
+  return selected ? [selected, ...rest] : rest;
 }
 
 /**
@@ -117,8 +111,9 @@ export async function checkLastProject(input: {
 
 /**
  * A fresh answer, or the one this device kept (the persisted query cache,
- * lib/query) when the request fails. Never the kept one for an ended login
- * (401/403): signing in again is the only way on, and the start screen says so.
+ * lib/query) when the request fails. Never the kept one when the server
+ * rejected the token or denied the request (401 / 403): the kept copy would
+ * open what the server just refused.
  */
 export async function freshOrCached<T>(
   fetch: () => Promise<T>,
@@ -127,7 +122,8 @@ export async function freshOrCached<T>(
   try {
     return await fetch();
   } catch (error) {
-    const kept = classifyStartFailure(error) === 'session' ? undefined : cached();
+    const status = (error as { status?: unknown } | null | undefined)?.status;
+    const kept = status === 401 || status === 403 ? undefined : cached();
     if (kept !== undefined) return kept;
     throw error;
   }

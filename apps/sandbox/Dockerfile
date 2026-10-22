@@ -30,7 +30,7 @@
 
 # ─── Stage 1: build the agent binary ────────────────────────────────────
 
-FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f AS builder
+FROM oven/bun:1.4.3-debian@sha256:923bedb355f7746666659f71e724998159a5c8c54bd1cb1030e1975a0698415b AS builder
 
 ARG TARGETARCH
 
@@ -47,6 +47,7 @@ WORKDIR /repo/apps/kortix-sandbox-agent-server
 COPY apps/kortix-sandbox-agent-server/package.json apps/kortix-sandbox-agent-server/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY packages/api-contract /repo/packages/api-contract
+COPY packages/sdk/src/core/session/wire-message-id.ts /repo/packages/sdk/src/core/session/wire-message-id.ts
 COPY apps/kortix-sandbox-agent-server/ ./
 RUN case "${TARGETARCH:-}" in \
         amd64) export BUN_COMPILE_TARGET=bun-linux-x64 ;; \
@@ -64,7 +65,7 @@ RUN case "${TARGETARCH:-}" in \
 # same shape as kortix-agent. We assemble a throwaway workspace root so bun
 # can resolve the `@kortix/*` names to their source, then compile.
 
-FROM oven/bun:1.3.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f AS cli-builder
+FROM oven/bun:1.4.3-debian@sha256:923bedb355f7746666659f71e724998159a5c8c54bd1cb1030e1975a0698415b AS cli-builder
 
 ARG TARGETARCH
 
@@ -176,6 +177,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_EXECUTABLE_PATH=/home/kortix/.local/bin/chromium \
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage \
     PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=1800000
+# The non-root sandbox user has passwordless sudo by design (sudoers above);
+# playwright --with-deps installs apt packages as root.
+# hadolint ignore=DL3004
 RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').agentBrowser)")" \
     && PLAYWRIGHT_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').playwright)")" \
     && pnpm add -g --allow-build=agent-browser "agent-browser@${AGENT_BROWSER_VERSION}" \
@@ -194,6 +198,8 @@ RUN AGENT_BROWSER_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-v
     && chromium --version \
     && env -u AGENT_BROWSER_EXECUTABLE_PATH agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
+# The opencode-kortix link lives in root-owned /usr/local/bin.
+# hadolint ignore=DL3004
 RUN OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
     && pnpm add -g --allow-build=opencode-ai "opencode-ai@${OPENCODE_VERSION}" \
     && command -v opencode \
@@ -233,7 +239,7 @@ RUN ANYDOC_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions
 RUN mkdir -p /opt/kortix/opencode-config-deps \
     && cd /opt/kortix/opencode-config-deps \
     && OPENCODE_VERSION="$(node -e "console.log(require('/tmp/kortix-runtime-versions.json').opencode)")" \
-    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"%s","@tavily/core":"^0.7.3","replicate":"^1.4.0"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' "${OPENCODE_VERSION}" > package.json \
+    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@opencode-ai/plugin":"%s","@tavily/core":"^0.7.3","bun-pty":"0.4.11","replicate":"^1.4.0","zod":"4.1.8"},"overrides":{"axios":"1.18.0","form-data":"4.0.6"}}' "${OPENCODE_VERSION}" > package.json \
     && bun install \
     && bun build node_modules/axios/lib/utils.js node_modules/form-data/lib/form_data.js --target=bun --outdir=/tmp/opencode-deps-bundle-check \
     && rm -rf /tmp/opencode-deps-bundle-check

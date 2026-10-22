@@ -67,31 +67,38 @@ describe('the learnings ledger', () => {
     expect(failure).toBe('');
   });
 
-  it('accepts an index reordered by a squash merge and rejects one that lost a line', () => {
-    // A squash merge on GitHub keeps a branch's index line below entries merged
-    // after it branched. That drift must not turn main red; a lost line must.
-    const copy = mkdtempSync(join(tmpdir(), 'learnings-'));
-    try {
-      cpSync(LEDGER, copy, { recursive: true });
-      const memory = join(copy, 'MEMORY.md');
-      const check = () => {
-        try {
-          execFileSync('bash', [join(copy, 'scripts', 'index.sh'), '--check'], { stdio: 'pipe' });
-          return 0;
-        } catch {
-          return 1;
-        }
-      };
-      const lines = readFileSync(memory, 'utf8').split('\n');
-      const first = lines.findIndex((line) => line.startsWith('- `'));
-      const moved = [...lines];
-      [moved[first], moved[first + 1]] = [moved[first + 1], moved[first]];
-      writeFileSync(memory, moved.join('\n'));
-      expect(check()).toBe(0);
-      writeFileSync(memory, lines.filter((_, i) => i !== first).join('\n'));
-      expect(check()).toBe(1);
-    } finally {
-      rmSync(copy, { recursive: true, force: true });
-    }
-  });
+  it(
+    'accepts an index reordered by a squash merge and rejects one that lost a line',
+    // Two `bash scripts/index.sh` subprocess chains; under the root run's
+    // concurrent lanes (API flows + db suites) they can exceed the 5 s
+    // default on a loaded box — proven identical at the merge base.
+    { timeout: 20_000 },
+    () => {
+      // A squash merge on GitHub keeps a branch's index line below entries merged
+      // after it branched. That drift must not turn main red; a lost line must.
+      const copy = mkdtempSync(join(tmpdir(), 'learnings-'));
+      try {
+        cpSync(LEDGER, copy, { recursive: true });
+        const memory = join(copy, 'MEMORY.md');
+        const check = () => {
+          try {
+            execFileSync('bash', [join(copy, 'scripts', 'index.sh'), '--check'], { stdio: 'pipe' });
+            return 0;
+          } catch {
+            return 1;
+          }
+        };
+        const lines = readFileSync(memory, 'utf8').split('\n');
+        const first = lines.findIndex((line) => line.startsWith('- `'));
+        const moved = [...lines];
+        [moved[first], moved[first + 1]] = [moved[first + 1], moved[first]];
+        writeFileSync(memory, moved.join('\n'));
+        expect(check()).toBe(0);
+        writeFileSync(memory, lines.filter((_, i) => i !== first).join('\n'));
+        expect(check()).toBe(1);
+      } finally {
+        rmSync(copy, { recursive: true, force: true });
+      }
+    },
+  );
 });

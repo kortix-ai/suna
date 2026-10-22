@@ -1,5 +1,5 @@
 /**
- * ReviewPage — the project's review inbox (web parity: customize/review).
+ * ReviewPage — the project's review inbox (web parity: /projects/<id>/review).
  *
  * One queue of everything that waits for a person: Change Requests, connector
  * calls that need approval, agent outputs, decisions and batches. Three
@@ -19,13 +19,22 @@
  * the tabs. Three tabs fill the capsule's width on a 360pt phone, so the `+`
  * lives in the header. The list is one `SettingsGroup` of `SettingsRow`s, the
  * app's list (Jay, 2026-09-23).
+ *
+ * The `+` shows only for a viewer who holds project.write + project.gitops.push,
+ * the leaves `POST /change-requests` asserts (KRTX-1720), from one `useCans`
+ * probe. `ReviewDetailSheet` gates each verdict on the same probe.
  */
+import { HEADER_BUTTON_SIZE, HEADER_ICON_SIZE } from '@/components/kortix/header-button';
 import * as React from 'react';
 import { RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
 import { BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import { useCans } from '@kortix/sdk/react';
 import { useColorScheme } from 'nativewind';
 import {
+  REVIEW_CONTROL_ACTIONS,
+  changeRequestControlsFrom,
   reviewSegmentForStatus,
   type ReviewItem,
   type ReviewSegment,
@@ -43,7 +52,8 @@ import {
   KortixBottomSheetModal,
 } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
-import { OpenCRSheet, shortRef } from '@/components/review/OpenCRSheet';
+import { OpenCRSheet } from '@/components/review/OpenCRSheet';
+import { shortRef } from '@/lib/review/review-detail';
 import { ReviewDetailSheet } from '@/components/review/ReviewDetailSheet';
 import { REVIEW_KIND_ICONS } from '@/components/review/review-icons';
 import { Button } from '@/components/ui/button';
@@ -83,9 +93,6 @@ interface ReviewPageProps {
   projectId: string;
   onOpenSession: (sessionId: string) => void;
   onOpenDrawer?: () => void;
-  onOpenRightDrawer?: () => void;
-  isDrawerOpen?: boolean;
-  isRightDrawerOpen?: boolean;
 }
 
 const EMPTY_TITLE: Record<ReviewSegment, string> = {
@@ -99,11 +106,9 @@ export function ReviewPage({
   projectId,
   onOpenSession,
   onOpenDrawer,
-  onOpenRightDrawer,
-  isDrawerOpen,
-  isRightDrawerOpen,
 }: ReviewPageProps) {
   const insets = useSafeAreaInsets();
+  const { t } = useTranslation();
   const sheetRef = React.useRef<SheetRef>(null);
   const createSheetRef = React.useRef<BottomSheetModal>(null);
   const queryClient = useQueryClient();
@@ -119,6 +124,9 @@ export function ReviewPage({
   const [versionsOpened, setVersionsOpened] = React.useState(false);
   const branchesQuery = useProjectBranches(projectId, versionsOpened);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const canOpenChange = changeRequestControlsFrom(
+    useCans({ projectId }, REVIEW_CONTROL_ACTIONS),
+  ).canOpen;
 
   // Session titles name the thread a connector approval came from.
   const sessionsQuery = useProjectSessions(projectId, { poll: false });
@@ -130,9 +138,18 @@ export function ReviewPage({
     return labels;
   }, [sessionsQuery.data]);
 
-  const { data, isLoading, isError, error, refetch } = useReviewItems(projectId, {
-    sessionLabels,
-  });
+  // One segment, a page at a time: the server filters it (KRTX-2316).
+  const reviewQuery = React.useMemo(() => ({ segment }), [segment]);
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useReviewItems(projectId, { sessionLabels, query: reviewQuery });
   // Only a pull shows the refresh spinner. The 8 s poll refetches silently:
   // `isRefetching` would show the spinner and push the list down on every poll.
   const [pulling, setPulling] = React.useState(false);
@@ -140,8 +157,9 @@ export function ReviewPage({
     setPulling(true);
     void refetch().finally(() => setPulling(false));
   }, [refetch]);
-  const items = data ?? [];
+  const items = React.useMemo(() => data ?? [], [data]);
 
+  // A verdict made here moves its item out of the segment at the tap.
   const visible = React.useMemo(
     () => items.filter((item) => reviewSegmentForStatus(item.status) === segment),
     [items, segment],
@@ -154,10 +172,17 @@ export function ReviewPage({
     [isDark],
   );
   // Read from the live list, so a verdict made elsewhere updates the open sheet.
-  const selected = React.useMemo<ReviewItem | null>(
+  // The list holds one segment: a verdict moves the item out of it on the next
+  // read, so the sheet keeps the last copy it showed.
+  const found = React.useMemo<ReviewItem | null>(
     () => items.find((item) => item.id === selectedId) ?? null,
     [items, selectedId],
   );
+  const [lastShown, setLastShown] = React.useState<ReviewItem | null>(null);
+  React.useEffect(() => {
+    if (found) setLastShown(found);
+  }, [found]);
+  const selected = found ?? (lastShown?.id === selectedId ? lastShown : null);
 
   const openItem = React.useCallback((id: string) => {
     haptics.tap();
@@ -170,18 +195,19 @@ export function ReviewPage({
       <PageHeader
         title={page.label}
         onOpenDrawer={onOpenDrawer}
-        onOpenRightDrawer={onOpenRightDrawer}
-        isDrawerOpen={isDrawerOpen}
-        isRightDrawerOpen={isRightDrawerOpen}
-        onAdd={() => {
-          haptics.tap();
-          createSheetRef.current?.present();
-        }}
+        onAdd={
+          canOpenChange
+            ? () => {
+                haptics.tap();
+                createSheetRef.current?.present();
+              }
+            : undefined
+        }
         addLabel="Open a change request"
         rightActions={
           <Button
             variant="ghost"
-            size="icon"
+            size={HEADER_BUTTON_SIZE}
             className="rounded-full"
             onPress={() => {
               haptics.tap();
@@ -190,7 +216,7 @@ export function ReviewPage({
             }}
             accessibilityLabel="Versions"
             accessibilityHint="Opens the project's versions">
-            <Icon as={ClockCounterClockwiseIcon} size={20} className="text-foreground" />
+            <Icon as={ClockCounterClockwiseIcon} size={HEADER_ICON_SIZE} className="text-foreground" />
           </Button>
         }
       />
@@ -218,7 +244,7 @@ export function ReviewPage({
                   <Text>Try again</Text>
                 </Button>
               </View>
-            ) : visible.length === 0 ? (
+            ) : visible.length === 0 && !hasNextPage ? (
               <View className="items-center px-6 pt-16">
                 <Text variant="muted">{EMPTY_TITLE[segment]}</Text>
               </View>
@@ -226,26 +252,38 @@ export function ReviewPage({
               // Settings rows in a group (Jay, 2026-09-23): the app's list, as on
               // Agents, Skills and Schedules — not `ListRow`.
               <View className="px-4 pt-1">
-                <SettingsGroup>
-                  {visible.map((item) => {
-                    const meta = [item.agent, formatReviewAge(item.createdAt)].filter(Boolean).join(' · ');
-                    return (
-                      <SettingsRow
-                        key={item.id}
-                        leading={
-                          <Icon
-                            as={REVIEW_KIND_ICONS[item.kind]}
-                            size={20}
-                            color={toneColor(reviewItemTone(item.kind, item.status))}
-                          />
-                        }
-                        label={item.title}
-                        description={item.summary ? `${item.summary} · ${meta}` : meta}
-                        onPress={() => openItem(item.id)}
-                      />
-                    );
-                  })}
-                </SettingsGroup>
+                {visible.length > 0 ? (
+                  <SettingsGroup>
+                    {visible.map((item) => {
+                      const meta = [item.agent, formatReviewAge(item.createdAt)].filter(Boolean).join(' · ');
+                      return (
+                        <SettingsRow
+                          key={item.id}
+                          leading={
+                            <Icon
+                              as={REVIEW_KIND_ICONS[item.kind]}
+                              size={20}
+                              color={toneColor(reviewItemTone(item.kind, item.status))}
+                            />
+                          }
+                          label={item.title}
+                          description={item.summary ? `${item.summary} · ${meta}` : meta}
+                          onPress={() => openItem(item.id)}
+                        />
+                      );
+                    })}
+                  </SettingsGroup>
+                ) : null}
+                {hasNextPage ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="mt-3 self-center rounded-full"
+                    disabled={isFetchingNextPage}
+                    onPress={() => void fetchNextPage()}>
+                    <Text>{t('common.loadMore')}</Text>
+                  </Button>
+                ) : null}
               </View>
             )}
           </ScrollView>
@@ -254,6 +292,7 @@ export function ReviewPage({
               the page — the same bar as the switcher sheet's. */}
           <PinnedBar controlHeight={FLOATING_BAR_HEIGHT} background={pageBackground} className="justify-center px-4">
             <FloatingTabCapsule
+              glass
               items={SEGMENT_TABS}
               activeIndex={REVIEW_SEGMENTS.findIndex(({ key }) => key === segment)}
               onSelect={(index) => {

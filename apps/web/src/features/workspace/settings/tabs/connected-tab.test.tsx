@@ -1,4 +1,4 @@
-import { hubTarget } from '@/stores/account-panel-store';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -83,8 +83,8 @@ describe('ConnectedAccountsTabView', () => {
    * a project level anyhow." The ChatGPT row was project-scoped
    * (`useChatGptSubscriptionConnected(projectId, …)`, `'unavailable'` with no
    * project open) on an account-scoped pane, and its connect flow already had a
-   * project-scoped home — the sidebar's "Connect GPT subscription" modal
-   * (`project-sidebar.tsx:245`). This pins the deletion: neither the row nor
+   * project-scoped home — Models → Providers (`provider-connect.tsx`) and the
+   * model selector. This pins the deletion: neither the row nor
    * any of its copy may come back to this pane.
    */
   test('carries no ChatGPT row and no workspace-scoped copy', () => {

@@ -15,7 +15,6 @@
 
 import { config } from '../config';
 import { SESSION_DATA_PORTS } from '../sandbox-proxy/session-data-ports';
-import { isOpencodePort } from '../shared/opencode-ports';
 import { positiveEnvInt } from './reaper-constants';
 
 /**
@@ -26,6 +25,14 @@ import { positiveEnvInt } from './reaper-constants';
  * until that evidence becomes terminal or unreadable past its deadline.
  */
 export const NON_TURN_DEADLINE_CAP_MS = 24 * 3_600_000;
+
+/**
+ * How long a person's presence alone keeps a box after its run's latest turn,
+ * or after the run started (KRTX-1729). A client that reports "present" for
+ * every visible tab, as clients before the input check do, cannot keep a box
+ * past this; a prompt or a turn can.
+ */
+export const PRESENCE_ONLY_CAP_MS = 2 * 3_600_000;
 
 /**
  * Granted on every OBSERVED turn start.
@@ -129,7 +136,7 @@ export function turnNoBeginRelayMaxMs(): number {
  * record and its daemon ANSWERS the probe without saying anything about that
  * turn.
  *
- * Incident 2026-08-17T20:40:03Z (session 0fc6897a, Daytona f468056d): the box's
+ * Incident 2026-08-17T20:40:03Z (a prod session on Daytona): the box's
  * `deadlineGrant` never left `boot_floor`. The daemon on that warm snapshot
  * answered the turn probe with neither `true` nor `false`, so
  * `observeSandboxTurn` returned `unknown` on every pass,
@@ -262,6 +269,26 @@ export function warmPoolGrantMs(): number {
  */
 export function idleGraceMs(): number {
   return Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15) * 60_000;
+}
+
+/**
+ * How long a turn that waits on a person — an open permission ask or question —
+ * keeps its box, from the first reaper pass that sees the wait (KRTX-1739).
+ * A waiting turn does no work.
+ *
+ * A cron, schedule, trigger or system run gets 30 minutes: nobody receives its
+ * ask, and 30 minutes clears the daemon's 15-minute state rebuild
+ * (RUNTIME_STATE_FLOOR_MS), so an ask answered while its `replied` frame was
+ * lost cannot end a working turn. Any other session gets two hours
+ * (`KORTIX_SANDBOX_TURN_WAITING_MINUTES`), capped at half the turn grant so a
+ * held deadline always reads shorter than a renewed one (`holdWaitingTurn`).
+ */
+export function turnWaitingMaxMs(unattended: boolean): number {
+  if (unattended) return 30 * 60_000;
+  return Math.min(
+    positiveEnvInt('KORTIX_SANDBOX_TURN_WAITING_MINUTES', 120) * 60_000,
+    turnGrantMs() / 2,
+  );
 }
 
 /**

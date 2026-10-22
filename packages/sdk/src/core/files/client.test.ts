@@ -275,6 +275,8 @@ test('an unknown-size body still gets a usable deadline', () => {
 
 test('a ready-session upload crosses the sandbox edge in bounded chunks and reports progress', async () => {
   const landedPath = '/workspace/uploads/report-2.pdf';
+  // Mirrors SANDBOX_UPLOAD_CHUNK_BYTES in client.ts (internal, not public API).
+  const chunk = 8 * 1024 * 1024;
   const chunkSizes: number[] = [];
   const offsets: number[] = [];
   const progress: Array<{ loadedBytes: number; totalBytes: number }> = [];
@@ -289,16 +291,16 @@ test('a ready-session upload crosses the sandbox edge in bounded chunks and repo
     }
     if (url.endsWith('/file/append')) {
       const form = init.body as FormData;
-      const chunk = form.get('file') as File;
-      chunkSizes.push(chunk.size);
+      const part = form.get('file') as File;
+      chunkSizes.push(part.size);
       offsets.push(Number(form.get('offset')));
-      cumulative += chunk.size;
+      cumulative += part.size;
       return jsonOk({ path: landedPath, size: cumulative });
     }
     return undefined;
   });
 
-  const bytes = 150 * 1024;
+  const bytes = 2 * chunk + 22 * 1024;
   const result = await F.uploadFile(
     new Blob([new Uint8Array(bytes)], { type: 'application/pdf' }),
     '/workspace/uploads',
@@ -307,15 +309,54 @@ test('a ready-session upload crosses the sandbox edge in bounded chunks and repo
   );
 
   expect(result).toEqual([{ path: landedPath, size: bytes }]);
-  expect(chunkSizes).toEqual([64 * 1024, 64 * 1024, 22 * 1024]);
-  expect(offsets).toEqual([0, 64 * 1024, 128 * 1024]);
+  expect(chunkSizes).toEqual([chunk, chunk, 22 * 1024]);
+  expect(offsets).toEqual([0, chunk, 2 * chunk]);
   expect(progress).toEqual([
-    { loadedBytes: 64 * 1024, totalBytes: bytes },
-    { loadedBytes: 128 * 1024, totalBytes: bytes },
+    { loadedBytes: chunk, totalBytes: bytes },
+    { loadedBytes: 2 * chunk, totalBytes: bytes },
     { loadedBytes: bytes, totalBytes: bytes },
   ]);
   expect(calls.filter((call) => call.url.endsWith('/file/upload'))).toHaveLength(1);
   expect(calls.filter((call) => call.url.endsWith('/file/append'))).toHaveLength(3);
+});
+
+// 2026-10-02: 64 KiB chunks made a 1 MiB upload 17 sequential proxied requests
+// (17-19 s). The edge now carries 16 MiB bodies intact, so a 1 MiB file is ONE request.
+test('a 1 MiB upload is a single request, not a chunk train', async () => {
+  const landedPath = '/workspace/uploads/one.bin';
+  routeDaemon((url, init) => {
+    if (url.endsWith('/file/upload')) {
+      const file = (init.body as FormData).get('file') as File;
+      return jsonOk([{ path: landedPath, size: file.size }]);
+    }
+    return undefined;
+  });
+  const bytes = 1024 * 1024;
+  const result = await F.uploadFile(new Blob([new Uint8Array(bytes)]), '/workspace/uploads', 'one.bin');
+  expect(result).toEqual([{ path: landedPath, size: bytes }]);
+  expect(calls).toHaveLength(1);
+  expect(calls.filter((call) => call.url.endsWith('/file/append'))).toHaveLength(0);
+});
+
+test('an empty file uploads: 0 of 0 bytes is not a truncated body', async () => {
+  routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/empty.txt', size: 0 }]) : undefined));
+  const result = await F.uploadFile(new Blob([]), '/workspace', 'empty.txt');
+  expect(result).toEqual([{ path: '/workspace/empty.txt', size: 0 }]);
+});
+
+// A host can hand over a Blob whose length it did not know up front (a pipe-backed
+// file reports 0). Landing MORE than the claimed size is not truncation.
+test('a body that lands more bytes than its claimed size is not refused', async () => {
+  routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/piped.txt', size: 11 }]) : undefined));
+  const result = await F.uploadFile(new Blob([]), '/workspace', 'piped.txt');
+  expect(result).toEqual([{ path: '/workspace/piped.txt', size: 11 }]);
+});
+
+test('a single-request upload whose landed size disagrees fails instead of reporting success', async () => {
+  routeDaemon((url) => (url.endsWith('/file/upload') ? jsonOk([{ path: '/workspace/cut.bin', size: 1000 }]) : undefined));
+  const err = await F.uploadFile(new Blob([new Uint8Array(4096)]), '/workspace', 'cut.bin').catch((e) => e);
+  expect(err).toBeInstanceOf(ApiError);
+  expect((err as ApiError).code).toBe('UPLOAD_SIZE_MISMATCH');
 });
 
 // ── the runtime must be resolved before any byte leaves the client ───────────
@@ -789,4 +830,73 @@ test('createFile in a folder that does not exist yet creates it', async () => {
 
   expect(await F.createFile('/workspace/new/a.md')).toEqual([{ path: '/workspace/new/a.md', size: 0 }]);
   expect(calls.some((c) => c.url === 'http://sbx.test/file/mkdir')).toBe(true);
+});
+
+test('concurrent readBlob calls keep the raw reads in flight bounded', async () => {
+  // One web transcript shows hundreds of binary file cards, and the turn-end /
+  // file.edited invalidation refetches every mounted card at once. Unbounded,
+  // that fan-out saturated one box's dial path (649 GETs in one minute, route
+  // p95 20 s) and drove reads into the proxy's 15 s connect-timeout cap. The
+  // SDK's read funnel must keep the concurrent reads bounded instead of firing
+  // all of them at the box simultaneously.
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let releaseAll: () => void = () => {};
+  const hold = new Promise<void>((release) => {
+    releaseAll = release;
+  });
+  globalThis.fetch = mock(async () => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await hold;
+    inFlight--;
+    return new Response(JSON.stringify({ bytes: 'raw' }), {
+      status: 200,
+      headers: { 'content-type': 'application/octet-stream' },
+    });
+  }) as unknown as typeof fetch;
+
+  const reads = Array.from({ length: 30 }, (_, i) => F.readBlob(`/workspace/card-${i}.png`));
+  // Let every read reach the funnel: exactly the 8 slots fetch and hold; the
+  // rest wait in the queue (a broken limiter that never fetches cannot pass —
+  // maxInFlight would stay 0).
+  await Bun.sleep(20);
+  expect(maxInFlight).toBe(8);
+  releaseAll();
+  const blobs = await Promise.all(reads);
+  expect(blobs).toHaveLength(30);
+  expect(maxInFlight).toBe(8);
+  expect(inFlight).toBe(0);
+});
+
+// ── uploadNativeFile: a React Native `{ uri }` part, sent through the transport ──
+
+test('uploadNativeFile posts the target path and the file part to /file/upload with the bearer', async () => {
+  const results = await F.uploadNativeFile(
+    { uri: 'file:///cache/photo.png', name: 'photo.png', type: 'image/png' },
+    '/workspace/inbox',
+    'http://sbx.test',
+  );
+  expect(results).toEqual([]);
+  expect(last().url).toBe('http://sbx.test/file/upload');
+  expect(last().method).toBe('POST');
+  const form = last().raw as FormData;
+  expect(form.get('path')).toBe('/workspace/inbox');
+  expect(form.has('file')).toBe(true);
+});
+
+test('uploadNativeFile throws an ApiError carrying the status on a daemon failure', async () => {
+  mockFailStatus = 400;
+  const error = await F.uploadNativeFile({ uri: 'file:///x', name: 'x' }, '/workspace', 'http://sbx.test').catch(
+    (e: unknown) => e,
+  );
+  expect(error).toBeInstanceOf(ApiError);
+  expect((error as ApiError).status).toBe(400);
+});
+
+test('fileDownloadRequest names /file/raw for the daemon path with the bearer', async () => {
+  const request = await F.fileDownloadRequest('/workspace/docs/a b.pdf', 'http://sbx.test/p/ext-1/8000');
+  expect(request.url).toBe('http://sbx.test/p/ext-1/8000/file/raw?path=docs%2Fa%20b.pdf');
+  expect(request.headers.authorization).toBe('Bearer tok');
+  expect(calls).toHaveLength(0);
 });

@@ -62,6 +62,12 @@ interface SandboxConnectionStore {
 	 * keep the stall clock off; keeping it lets every surface tell them apart.
 	 */
 	parked: boolean;
+	/**
+	 * A session stream (`GET .../events`) feeds this store from the server's
+	 * `kortix.runtime.status` / `kortix.runtime.health` frames (R5.3). While
+	 * true, `useRuntimeReconnect` sends no `/kortix/health` probe.
+	 */
+	streamDriven: boolean;
 }
 
 // ── Persist wasConnected across hard refreshes via sessionStorage ──
@@ -127,7 +133,14 @@ export const useSandboxConnectionStore = create<SandboxConnectionStore>(() => ({
 	lastRuntimeEvidenceAt: null,
 	bootingSinceAt: null,
 	parked: false,
+	streamDriven: false,
 }));
+
+/** A session stream now feeds (or stopped feeding) this store. See `streamDriven`. */
+export function setConnectionStreamDriven(streamDriven: boolean) {
+	if (useSandboxConnectionStore.getState().streamDriven === streamDriven) return;
+	useSandboxConnectionStore.setState({ streamDriven });
+}
 
 /** Record the health probe's `capabilities`; an unchanged list keeps the same array. */
 export function setRuntimeCapabilities(capabilities: readonly string[] | null) {
@@ -139,6 +152,23 @@ export function setRuntimeCapabilities(capabilities: readonly string[] | null) {
 			current.length === capabilities.length &&
 			current.every((entry, index) => entry === capabilities[index]));
 	if (!same) useSandboxConnectionStore.setState({ runtimeCapabilities: capabilities });
+}
+
+/**
+ * `/start` answered `ready`: the API reached the daemon, so the runtime is
+ * proven healthy server-side. Claim it, seed connected + healthy, and record
+ * what it serves when the answer lists it (`SessionStartResult.capabilities`).
+ * Without the list the capabilities stay unknown until the health probe
+ * answers, and every capability is assumed until then.
+ */
+export function seedConnectionFromReadyStart(
+	serverUrl: string,
+	capabilities?: readonly string[] | null,
+) {
+	resetForServerSwitch(serverUrl);
+	setSandboxStatus("connected");
+	setRuntimeHealth(true);
+	if (capabilities) setRuntimeCapabilities(capabilities);
 }
 
 export function requestRuntimeReconnect() {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { gatewayBudgets, gatewayRequestLogs } from '@kortix/db';
+import { gatewayBudgets, gatewayRequestLogs, gatewaySpendPendingDays } from '@kortix/db';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -14,7 +14,7 @@ import * as realAccess from '../lib/access';
  *      from shared/llm-spend.ts, deprecated aliases).
  *   3. one spend total — `GET /gateway/overview` aggregates and maps
  *      `total_cost` / `kortix_cost` / `provider_cost`.
- *   4. route registration — all 19 `/gateway/*` routes stay registered on
+ *   4. route registration — all 20 `/gateway/*` routes stay registered on
  *      `projectsApp` after importing `./gateway` (the side-effect entry).
  *
  * The handlers are `projectsApp.openapi(...)` registrations with no per-route
@@ -38,7 +38,10 @@ const databaseMock = {
     from: (table: unknown) => ({
       where: (_w: unknown) => {
         if (table === gatewayBudgets) return Promise.resolve(exhaustedBudget ? [{ scope: 'project', action: 'block', period: 'month', limitUsd: '1' }] : []);
-        if (table === gatewayRequestLogs && cols && 'cost' in cols) return Promise.resolve([{ cost: 1 }]);
+        // No pending day: `budgetSpends` reads the running total.
+        if (table === gatewaySpendPendingDays) return { limit: () => Promise.resolve([]) };
+        // `budgetSpends` selects one `b<index>` sum per budget.
+        if (cols && 'b0' in cols) return Promise.resolve([{ b0: 1 }]);
         // `GET /gateway/overview`'s aggregate select ends at `.where()`.
         if (cols && 'totalCost' in cols) return Promise.resolve(aggRow ? [aggRow] : []);
         return {
@@ -76,8 +79,17 @@ mock.module('../lib/access', () => ({
   assertProjectCapability: async () => {},
 }));
 
+mock.module('../../llm-gateway/resolution/resolve-candidates', () => ({
+  resolveCandidates: async () => [],
+}));
+
+// The caller is a manager: the read view filters nothing.
+mock.module('../lib/project-read-view', () => ({
+  projectReadView: async () => ({ full: true, where: () => undefined, allows: async () => true }),
+}));
+
 const { projectsApp } = await import('../lib/app');
-await import('./gateway');
+(await import('./gateway')).registerGatewayRoutes();
 
 function buildApp() {
   const app = new Hono<{
@@ -140,6 +152,16 @@ test('playground returns a typed 402 before dispatch when the project budget is 
   });
   expect(res.status).toBe(402);
   expect(await res.json()).toMatchObject({ code: 'budget_exceeded' });
+});
+
+test('playground reports the public gateway URL even when a model is unavailable', async () => {
+  const res = await buildApp().request(`/v1/projects/${PROJECT_ID}/gateway/playground`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ prompt: 'pong', models: ['synthetic-unavailable-model'] }),
+  });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({ gateway_url: null, results: [{ ok: false }] });
 });
 
 describe('GET /gateway/logs pagination (characterization)', () => {
@@ -246,6 +268,7 @@ describe('route registration (characterization)', () => {
     ['get', '/:projectId/gateway/overview'],
     ['get', '/:projectId/gateway/series'],
     ['get', '/:projectId/gateway/sessions'],
+    ['get', '/:projectId/gateway/sources'],
     ['get', '/:projectId/gateway/breakdown'],
     ['get', '/:projectId/gateway/budgets'],
     ['put', '/:projectId/gateway/budgets'],
@@ -262,7 +285,7 @@ describe('route registration (characterization)', () => {
     ['post', '/:projectId/gateway/routing-policy/preview'],
   ];
 
-  test('importing ./gateway registers all 19 gateway routes on projectsApp', () => {
+  test('importing ./gateway registers all 20 gateway routes on projectsApp', () => {
     const registered = new Set(
       (projectsApp.routes as Array<{ method: string; path: string }>)
         .filter((r) => r.path.includes('/gateway/'))
@@ -271,7 +294,7 @@ describe('route registration (characterization)', () => {
     for (const [method, path] of GATEWAY_ROUTES) {
       expect(registered.has(`${method} ${path}`)).toBe(true);
     }
-    // Nothing extra: exactly the 19 pinned registrations, no ghost route.
+    // Nothing extra: exactly the 20 pinned registrations, no ghost route.
     expect(registered.size).toBe(GATEWAY_ROUTES.length);
   });
 });

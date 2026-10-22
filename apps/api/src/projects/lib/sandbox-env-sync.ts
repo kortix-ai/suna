@@ -8,11 +8,12 @@ export {
 } from './sandbox-env-snapshot';
 export {
   ENV_SYNC_BACKGROUND_REFRESH_STALE_MS,
+  PROMPT_MODEL_SIGNATURE_CACHE_MAX,
   __resetBackgroundEnvRefreshForTests,
   __pendingBackgroundEnvRefreshesForTests,
+  __backgroundRefreshBackoffForTests,
+  __pendingEnvChecksForTests,
   __resetPromptModelSignatureCacheForTests,
-  llmGatewayBaseUrlForProvider,
-  propagateLlmGatewayModeToActiveSandboxes,
   syncSandboxEnvForPrompt,
 } from './sandbox-env-push';
 export {

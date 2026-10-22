@@ -52,8 +52,8 @@ const MATERIALIZING_ENTRY_POINTS = [
   'convergeConfigRelease',
   // catalog — the live managed-lineup fetch this spec's failure #1 is about.
   'startManagedModelsPrefetch',
-  // catalog's repair half — writes the overlay and restarts opencode onto it.
-  'writeManagedOverlayCatalogFile',
+  // catalog's repair half — writes the overlay and reloads opencode's config onto it.
+  'applyCatalogIfIdle',
 ] as const
 
 describe('runtime-truth tick tripwire (Rule 3: no new boot-only convergence)', () => {

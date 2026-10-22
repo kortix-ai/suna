@@ -1,7 +1,7 @@
 // "This computer" in the desktop app: the kortix:invoke computer_* commands,
 // the in-app approval window, the access prompt, and the tray / menu-bar item.
 // Rules and parsing live in computer.js (unit-tested); this file is the
-// Electron side effects.
+// Electron side effects. Every change to the agent goes through its CLI.
 
 const {
   app,
@@ -28,7 +28,7 @@ const STATE_POLL_MS = 5_000;
 const REPAIR_EVERY_MS = 5 * 60_000;
 /** The approval page polls every 2 s; closing it right after Approve must not cancel the pairing. */
 const APPROVAL_CLOSE_GRACE_MS = 10_000;
-/** Files in the agent home that change what the tray and the web show. */
+/** Agent files whose change means "read `status --json` again". This app never parses them. */
 const WATCHED_FILES = ['state.json', 'config.json', 'access.json', 'access-request.json'];
 
 /**
@@ -131,13 +131,11 @@ function setupComputer(deps) {
   /* ─── Status ─────────────────────────────────────────────────────────── */
 
   let status = null;
-  let access = computer.readAccess(null);
   let refreshing = null;
 
   async function readStatus() {
     try {
       const { home } = await context();
-      access = computer.readAccess(home);
       return await computer.computerStatus({ cli: cli(), home });
     } catch (error) {
       return computer.unavailable(error instanceof Error ? error.message : String(error));
@@ -150,6 +148,7 @@ function setupComputer(deps) {
         status = next;
         renderTraySafely();
         if (next?.needsRepair) void repairService();
+        followPrompt(next);
         return next;
       })
       .finally(() => {
@@ -225,12 +224,12 @@ function setupComputer(deps) {
     }
     if (!changed) return;
     void refresh();
-    void maybePrompt();
   }
 
   /* ─── Access prompt (A4) ─────────────────────────────────────────────── */
 
-  let promptingFor = null;
+  /** @type {{ id: string, controller: AbortController } | null} */
+  let prompting = null;
 
   function machineName() {
     return os.hostname().replace(/\.local$/i, '');
@@ -259,73 +258,51 @@ function setupComputer(deps) {
     }
   }
 
-  async function maybePrompt() {
-    if (!ctx || promptingFor) return;
-    const { home } = ctx;
-    const request = computer.freshRequest(home);
-    if (!request) return;
-    // Decided already (a grant, a denial, or another mode): the agent needs no
-    // answer, and a second prompt could undo the first one.
-    if (computer.decideAccess(computer.readAccess(home)) !== 'ask') return computer.clearAccessRequest(home, request.id);
-    promptingFor = request.id;
+  /**
+   * After every status read: close a prompt whose request was answered
+   * elsewhere (the terminal, Kortix, another prompt) or expired, and open one
+   * for a new request.
+   */
+  function followPrompt(next) {
+    const request = computer.requestToPrompt(next?.access);
+    if (prompting && prompting.id !== request?.id) prompting.controller.abort();
+    if (request && !prompting) void prompt(request);
+  }
+
+  async function prompt(request) {
+    const controller = new AbortController();
+    prompting = { id: request.id, controller };
+    // Read the files often while the owner decides, and the status every 5 s,
+    // so an answer from elsewhere or an expired request closes this prompt.
+    const watch = setInterval(checkFiles, 500);
+    const reread = setInterval(() => void refresh(), 5_000);
     try {
-      const prompt = computer.accessPrompt(request, machineName());
-      const focused = BrowserWindow.getFocusedWindow();
-      if (!focused && Notification.isSupported()) {
-        new Notification({ title: prompt.title, body: prompt.detail }).show();
+      const options = request.change
+        ? computer.widenPrompt(request.change, machineName())
+        : computer.accessPrompt(request, machineName());
+      if (!BrowserWindow.getFocusedWindow() && Notification.isSupported()) {
+        new Notification({ title: options.title, body: options.detail }).show();
       }
-      // Answered elsewhere (the page, the tray, another prompt) or expired:
-      // close this prompt without recording its cancel as a Deny.
-      const controller = new AbortController();
-      const watch = setInterval(() => {
-        const current = computer.freshRequest(home);
-        const pending = current?.id === request.id && computer.decideAccess(computer.readAccess(home)) === 'ask';
-        if (!pending) controller.abort();
-      }, 500);
-      let response;
-      try {
-        ({ response } = await showOnTop({ ...prompt, signal: controller.signal }));
-      } finally {
-        clearInterval(watch);
-      }
+      const { response } = await showOnTop({ ...options, signal: controller.signal });
+      // Answered elsewhere: this prompt's cancel is not a Deny.
       if (controller.signal.aborted) return;
-      const answeredAt = Date.now();
-      computer.writeAccess(home, computer.answerAccess(computer.readAccess(home), response, answeredAt));
-      computer.clearAccessRequestsUntil(home, answeredAt);
+      const result = await run(computer.answerArgs(request, response));
+      if (result.code !== 0) throw new Error((result.stderr || result.stdout).trim().slice(-500));
     } catch (error) {
       console.warn(`[kortix] access prompt failed: ${error}`);
     } finally {
-      promptingFor = null;
+      clearInterval(watch);
+      clearInterval(reread);
+      prompting = null;
       void refresh();
     }
   }
 
-  /** Tray menu clicks: the owner's own hand, applied as given. */
-  async function setAccess(input) {
-    const { home } = await context();
-    computer.writeAccess(home, computer.nextAccess(computer.readAccess(home), input));
+  /** Tray clicks: the owner's own hand, applied by the CLI as given. */
+  async function setAccess(change) {
+    const result = await run(computer.accessArgs(change));
     void refresh();
-    return computer.accessView(home);
-  }
-
-  /**
-   * `computer_access_set` from the page. The page is remote content, so it may
-   * narrow access at once but never widen it: `always`, or a longer grant,
-   * applies only after the owner confirms in a native dialog (§A).
-   */
-  async function setAccessFromPage(input) {
-    const { home } = await context();
-    const current = computer.readAccess(home);
-    const next = computer.nextAccess(current, input);
-    if (computer.accessWidens(current, next)) {
-      const { response } = await showOnTop(computer.widenPrompt(next, machineName()));
-      if (response !== 0) return computer.accessView(home);
-    }
-    computer.writeAccess(home, computer.nextAccess(computer.readAccess(home), input));
-    // A grant or a denial from the page answers the pending request too.
-    if (input?.grantMinutes !== undefined || input?.deny === true) computer.clearAccessRequestsUntil(home);
-    void refresh();
-    return computer.accessView(home);
+    if (result.code !== 0) throw new Error((result.stderr || result.stdout || 'The access change failed.').trim().slice(-500));
   }
 
   /* ─── Tray ───────────────────────────────────────────────────────────── */
@@ -363,7 +340,7 @@ function setupComputer(deps) {
     resume: () => void resume().then(reportFailure('resume computer access')),
     setMode: (mode) => void setAccess({ mode }).catch((e) => dialog.showErrorBox('Kortix', String(e))),
     revoke: () => void setAccess({ revoke: true }).catch((e) => dialog.showErrorBox('Kortix', String(e))),
-    toggleKeepAwake: () => void setAccess({ keepAwake: !access.keepAwake }).catch((e) => dialog.showErrorBox('Kortix', String(e))),
+    toggleKeepAwake: () => void setAccess({ keepAwake: !status?.access?.keepAwake }).catch((e) => dialog.showErrorBox('Kortix', String(e))),
     logs: () => void openLogs().catch((e) => dialog.showErrorBox('Kortix', String(e))),
     toggleLogin: () => {
       app.setLoginItemSettings({ openAtLogin: !app.getLoginItemSettings().openAtLogin });
@@ -407,11 +384,9 @@ function setupComputer(deps) {
       Menu.buildFromTemplate(
         computer.trayMenuTemplate(
           status,
-          access,
           {
             openAtLogin: app.getLoginItemSettings().openAtLogin,
             loginItemSupported: process.platform === 'darwin' || process.platform === 'win32',
-            keepAwakeSupported: computer.keepAwakeSupported(process.platform),
           },
           actions,
         ),
@@ -469,13 +444,13 @@ function setupComputer(deps) {
    */
   async function grants() {
     if (process.platform !== 'darwin') return null;
-    const { home } = await context();
+    const { capabilities } = status ?? (await refresh());
     const current = {
       accessibility: systemPreferences.isTrustedAccessibilityClient(false),
       screenRecording: systemPreferences.getMediaAccessStatus('screen') === 'granted',
       files: filesGrant(),
     };
-    return { ...current, missing: computer.computerSetupMissing(home, current) };
+    return { ...current, missing: computer.computerSetupMissing(capabilities, current) };
   }
 
   let grantWatch = null;
@@ -484,8 +459,10 @@ function setupComputer(deps) {
    * time, while the person is looking at the setup screen. Each prompt names
    * Kortix. Once Accessibility and Screen Recording hold, the agent restarts:
    * macOS applies them only to a process launched after the grant.
+   * `restartAgent`: the agent reports a grant missing that macOS gives this
+   * app, so the agent process predates the grant; it restarts now.
    */
-  async function requestGrants() {
+  async function requestGrants({ restartAgent = false } = {}) {
     const before = await grants();
     if (!before) return null;
     if (before.missing.includes('files')) {
@@ -499,15 +476,17 @@ function setupComputer(deps) {
     }
     if (before.missing.includes('accessibility')) systemPreferences.isTrustedAccessibilityClient(true);
     if (before.missing.includes('screenRecording')) {
-      // The first capture attempt adds Kortix to Screen Recording and shows the
-      // prompt. After a "Don't Allow", only System Settings can grant it.
-      if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
-        await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
-      } else {
+      // A capture attempt is what adds Kortix to the Screen Recording list (and
+      // shows the prompt the first time). Always try it: macOS 11+ reports a
+      // never-asked app as denied, never as undetermined, so skipping the
+      // attempt opened System Settings on a list without Kortix in it.
+      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 0, height: 0 } }).catch(() => []);
+      if (systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
         void shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
       }
     }
     const needsRestart = before.missing.includes('accessibility') || before.missing.includes('screenRecording');
+    if (restartAgent === true && !needsRestart) await serviceVerb('restart', (next) => next.serviceActive === true);
     if (needsRestart && !grantWatch) {
       const until = Date.now() + 10 * 60_000;
       grantWatch = setInterval(async () => {
@@ -741,14 +720,10 @@ function setupComputer(deps) {
         await context();
         await openLogs();
         return null;
-      case 'computer_access_get':
-        return computer.accessView((await context()).home);
-      case 'computer_access_set':
-        return setAccessFromPage(args);
       case 'computer_grants':
         return grants();
       case 'computer_grants_request':
-        return requestGrants();
+        return requestGrants({ restartAgent: args?.restartAgent === true });
       default:
         throw new Error(`Unknown command: ${cmd}`);
     }

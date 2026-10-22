@@ -73,7 +73,6 @@ type PublicAppStatus =
   | PublicDeploymentStatus
   | 'waiting'
   | 'starting'
-  | 'budget'
   | 'unfunded'
   | 'capacity';
 
@@ -110,7 +109,7 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
   },
   provisioning: {
     title: 'Provisioning your App',
-    message: 'Kortix is creating the serverless runtime.',
+    message: 'Kortix is creating the machine for this App.',
     code: 'app_deployment_provisioning',
     progress: true,
   },
@@ -128,16 +127,9 @@ const PUBLIC_STATUS_COPY: Record<PublicAppStatus, {
   },
   starting: {
     title: 'Starting your App',
-    message: 'Kortix is resuming the serverless runtime. This page will continue automatically.',
+    message: 'The machine was asleep and wakes on the first visit. This page continues on its own.',
     code: 'app_starting',
     progress: true,
-  },
-  budget: {
-    title: 'App paused',
-    message: 'This App reached its monthly compute limit. The owner can increase the limit in Kortix Apps.',
-    code: 'app_budget_exceeded',
-    progress: false,
-    httpStatus: 402,
   },
   unfunded: {
     title: 'App paused',
@@ -213,8 +205,6 @@ export function appPublicStatusResponse(
     return Response.json({
       error: status === 'waiting'
         ? 'App is waiting for its first deployment'
-        : status === 'budget'
-          ? 'App compute budget reached'
         : `App deployment is ${status === 'checking' ? 'checking readiness' : status}`,
       code: copy.code,
       status,
@@ -269,15 +259,6 @@ export function appColdStartUpstreamResponse(
  * A provider edge answers for a sandbox it can still see, so a dead runtime
  * arrives as an ORDINARY RESPONSE rather than as a connection error — which is
  * why this check exists at all, and why the shape of it matters per provider.
- *
- * E2B was missing. A sandbox whose service has gone answers
- * `502 {"message":"The sandbox is running but port is not open","port":8080}`,
- * and because the only recovery paths were a thrown fetch and a Daytona 400,
- * nothing recovered it: every request was proxied to a runtime the control
- * plane still believed was `running`, and the App served that 502 — or an empty
- * 200 through the outer proxy — until a human rolled back to force a new
- * runtime. An App can sit dead for hours that way, with `desired_state:
- * running` and a `ready` deployment the whole time.
  */
 export function appProviderStoppedResponse(
   provider: SandboxProviderName,
@@ -289,20 +270,5 @@ export function appProviderStoppedResponse(
       body.includes('no IP address found') || body.includes('failed to get runner info')
     );
   }
-  if (provider === 'e2b') {
-    // 502 is the edge reporting the sandbox is up but nothing is listening;
-    // 503/504 is it being unable to reach the sandbox at all. Both mean the
-    // runtime needs replacing, not that the App returned an error.
-    if (status !== 502 && status !== 503 && status !== 504) return false;
-    return /port is not open|connection refused|sandbox (?:is )?(?:not found|stopped|paused)/i
-      .test(body);
-  }
   return false;
-}
-
-export function appPublicBudgetResponse(
-  request: Request,
-  app: { name: string },
-): Response {
-  return appPublicStatusResponse(request, app, { status: 'budget' });
 }

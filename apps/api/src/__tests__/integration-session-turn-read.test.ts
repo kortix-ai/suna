@@ -39,7 +39,7 @@ mock.module('../projects/lib/access', () => ({
 }));
 
 const { projectsApp } = await import('../projects/lib/app');
-await import('../projects/routes/session-runtime');
+(await import('../projects/routes/session-runtime')).registerSessionRuntimeRoutes();
 
 const app = new Hono<{ Variables: { userId: string; authType: string } }>();
 app.use('*', async (c, next) => {
@@ -134,6 +134,20 @@ afterAll(async () => {
 });
 
 describe('GET .../turn against real Postgres', () => {
+  test('batch working reads share turn authority and ignore stale stopped and ledger turns', async () => {
+    const { readSessionsWorking } = await import('../projects/lib/session-working-read');
+    const absent = crypto.randomUUID();
+    await setAuthority('active', [{ token: t('batch'), state: 'active', startedAtMs: Date.parse('2026-08-17T00:00:00Z') }]);
+    const active = await readSessionsWorking([SESSION_ID, absent]);
+    expect(active.get(SESSION_ID)).toMatchObject({ state: 'working', turn_token: t('batch'), pending_delivery: false });
+    expect(active.get(absent)?.state).toBe('idle');
+    expect(active.size).toBe(2);
+    await setAuthority('stopped', [{ token: t('batch'), state: 'active' }]);
+    await insertTurn({ token: t('stale-batch'), state: 'active', startedAt: '2026-08-17T00:00:00Z' });
+    expect((await readSessionsWorking([SESSION_ID])).get(SESSION_ID)?.state).toBe('idle');
+    expect((await readSessionsWorking([absent])).has(SESSION_ID)).toBe(false);
+  });
+
   test('a session with no box and no ledger row is idle and has no history', async () => {
     const body = await getTurn();
     expect(body.turns).toEqual([]);

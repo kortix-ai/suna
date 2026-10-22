@@ -20,6 +20,7 @@ export function startPiBackground(runtime: () => PiRuntime | null, cfg: Config):
     runtimePid: () => process.pid,
     runtimeState: () => runtime()?.getState() ?? 'down',
     diskPaths: [cfg.workspace, '/opt/kortix', '/tmp'],
+    diskCleanup: { workspaceRoot: cfg.workspace },
     guard: {
       guardPct: Number(process.env.KORTIX_MEMORY_GUARD_PCT) || undefined,
       turnInFlight: async () => runtime()?.busy() ?? null,

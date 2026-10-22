@@ -28,11 +28,8 @@ function Progress({
 
 export { Progress };
 
-const Indicator = Platform.select({
-  web: WebIndicator,
-  native: NativeIndicator,
-  default: NullIndicator,
-});
+// iOS and Android render the spring indicator; a web build never loads this module.
+const Indicator = Platform.OS === 'web' ? WebIndicator : NativeIndicator;
 
 type IndicatorProps = {
   value: number | undefined | null;
@@ -40,10 +37,6 @@ type IndicatorProps = {
 };
 
 function WebIndicator({ value, className }: IndicatorProps) {
-  if (Platform.OS !== 'web') {
-    return null;
-  }
-
   return (
     <View
       className={cn('bg-primary h-full w-full flex-1 transition-all', className)}
@@ -65,10 +58,6 @@ function NativeIndicator({ value, className }: IndicatorProps) {
     };
   }, [value]);
 
-  if (Platform.OS === 'web') {
-    return null;
-  }
-
   return (
     <ProgressPrimitive.Indicator asChild>
       <Animated.View style={indicator} className={cn('bg-foreground h-full', className)} />
@@ -76,6 +65,3 @@ function NativeIndicator({ value, className }: IndicatorProps) {
   );
 }
 
-function NullIndicator(_props: IndicatorProps) {
-  return null;
-}

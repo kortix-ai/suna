@@ -9,6 +9,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
 
 import { db } from '../../shared/db';
+import { accountMemberExistsSql } from '../../iam/membership-read';
 import { logger } from '../../lib/logger';
 import { candidateSecretKeyHashesAsync } from '../../shared/token-hash';
 
@@ -44,15 +45,26 @@ const HEAL_REVOKED_BEFORE = '2026-10-01T00:00:00Z';
  * deleted, the row's `config.serviceKey` is that token, it was revoked before
  * `HEAL_REVOKED_BEFORE`, and its user is a live, unbanned member of the account.
  *
+ * `preloadedSandboxRow` hands in a session_sandboxes row the caller read
+ * moments before (`startSession`'s joined session+sandbox read). The heal used
+ * to probe the row for its `config` and `openSession` re-read the same row
+ * milliseconds later; the shared read drops that second statement from every
+ * `/start`. Callers without a row in hand omit it and the heal reads its own.
+ *
  * NEVER THROWS and never logs the key. Returns the reactivated token id.
  */
-export async function healSupersededSessionToken(sessionId: string): Promise<string | null> {
+export async function healSupersededSessionToken(
+  sessionId: string,
+  preloadedSandboxRow?: typeof sessionSandboxes.$inferSelect,
+): Promise<string | null> {
   try {
-    const [box] = await db
-      .select({ config: sessionSandboxes.config })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sessionId, sessionId))
-      .limit(1);
+    const [box] = preloadedSandboxRow
+      ? [{ config: preloadedSandboxRow.config }]
+      : await db
+          .select({ config: sessionSandboxes.config })
+          .from(sessionSandboxes)
+          .where(eq(sessionSandboxes.sessionId, sessionId))
+          .limit(1);
     const key = (box?.config as Record<string, unknown> | null)?.serviceKey;
     if (typeof key !== 'string' || !isPlausibleServiceKey(key)) return null;
     const hashes = sql.join((await candidateSecretKeyHashesAsync(key)).map((h) => sql`${h}`), sql`, `);
@@ -72,8 +84,7 @@ export async function healSupersededSessionToken(sessionId: string): Promise<str
          and exists (select 1 from auth.users u
                       where u.id = t.user_id and u.deleted_at is null
                         and (u.banned_until is null or u.banned_until <= now()))
-         and exists (select 1 from kortix.account_members m
-                      where m.user_id = t.user_id and m.account_id = t.account_id)
+         and ${accountMemberExistsSql(sql`t.user_id`, sql`t.account_id`)}
       returning t.token_id, t.account_id, t.user_id`);
     const [healed] = ((result as { rows?: unknown[] }).rows ?? result) as Array<{
       token_id: string;

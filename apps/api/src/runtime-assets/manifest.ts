@@ -13,11 +13,13 @@
  * (apps/api/Dockerfile:234), so the manifest describes that too and a box can
  * converge the daemon itself — not only what the daemon manages.
  *
- * All digests are computed once and memoized. No input can change for the
- * lifetime of a process: the binaries are baked into immutable image layers, and
- * the templates are a compiled-in package. The one exception is `policy`, which
- * is read live from the env on every call so a kill switch never waits on a
- * deploy — see agentSelfUpdateEnabled().
+ * Digests are computed once per binary generation and memoized. A deployed
+ * image never changes its binaries, but a checkout that rebuilds them under a
+ * running API does: the memo is keyed by each binary's stat (see
+ * binariesFingerprint), so the manifest never advertises a digest for bytes the
+ * payload routes no longer serve. The one input read live on every call is
+ * `policy`, so a kill switch never waits on a deploy — see
+ * agentSelfUpdateEnabled().
  */
 
 import { createHash } from 'node:crypto';
@@ -31,7 +33,7 @@ import {
   managedSkillOverlayHash,
   type ManagedSkillOverlayFile,
 } from './managed-skills';
-import { RUNTIME_MANAGED_MODELS } from '../llm-gateway/models/managed-models';
+import { managedLineup } from '../llm-gateway/models/managed-models';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../..');
@@ -212,11 +214,11 @@ export interface RuntimeComponents {
    * added for the incident this closes: a box's `kortix` provider map is
    * learned once, at OpenCode process start, and nothing before this made
    * "the managed lineup moved" a fact the control plane could read per box.
-   * `ids` is `RUNTIME_MANAGED_MODELS`' current id list — config-derived
-   * (`LLM_GATEWAY_MANAGED_MODELS`), fixed for the life of this process, so it
-   * belongs beside the binary digests rather than beside `policy`. Empty on a
-   * self-host deploy with the managed provider off; `runningAssetsVerdict`
-   * then has nothing to converge a box on, same as an unbuilt CLI.
+   * `ids` is the managed lineup's current id list — what Platinum Inference
+   * offers, refreshed while the process runs, so it is read per call like
+   * `policy`. Empty on a self-host deploy with the managed provider off;
+   * `runningAssetsVerdict` then has nothing to converge a box on, same as an
+   * unbuilt CLI.
    */
   'managed-catalog': { ids: readonly string[] };
 }
@@ -259,13 +261,43 @@ export interface RuntimeAssetsManifest {
 }
 
 /**
- * Everything in the manifest that costs a hash or a stat. Memoized; the inputs
- * cannot change for the lifetime of a process (immutable image layers).
- * `policy` is deliberately NOT in here — see agentSelfUpdateEnabled().
+ * Everything in the manifest that costs a hash. Memoized per binary generation
+ * (binariesFingerprint). `policy` is deliberately NOT in here — see
+ * agentSelfUpdateEnabled().
  */
 type RuntimeAssetsDigests = Omit<RuntimeAssetsManifest, 'policy'>;
 
-let manifestPromise: Promise<RuntimeAssetsDigests> | null = null;
+let manifestMemo: { fingerprint: string; promise: Promise<RuntimeAssetsDigests> } | null = null;
+
+/**
+ * Which bytes the payload routes would serve right now: path, size, mtime and
+ * inode of every hashed file. Three stats per manifest read, against a ~200 MB
+ * re-hash.
+ *
+ * The routes stream the file at the path, not the bytes that were hashed. A
+ * memo that outlived a rebuild (a local checkout recompiling the daemon under a
+ * running API) advertised the old digest while `/agent` served the new bytes,
+ * so every box's download failed its digest check: the box was judged stale,
+ * the repair re-downloaded, failed the same check, and the session open waited
+ * on that repair for minutes.
+ */
+async function binariesFingerprint(paths: readonly string[]): Promise<string> {
+  const parts = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        const s = await stat(path);
+        return `${path}:${s.size}:${s.mtimeMs}:${s.ino}`;
+      } catch {
+        return `${path}:absent`;
+      }
+    }),
+  );
+  return parts.join('|');
+}
+
+function hashedBinaryPaths(): string[] {
+  return [runtimeCliBinaryPath(), `${runtimeCliBinaryPath()}.version`, runtimeAgentBinaryPath(), runtimeEntrypointPath()];
+}
 let overlayCache: { files: ManagedSkillOverlayFile[]; hash: string } | null = null;
 
 export function managedSkillOverlay(): { files: ManagedSkillOverlayFile[]; hash: string } {
@@ -323,7 +355,7 @@ async function computeManifest(): Promise<RuntimeAssetsDigests> {
   const components: RuntimeComponents = {
     opencode: { version: OPENCODE_VERSION, source: 'npm' },
     'managed-skills': { hash: overlay.hash, count: overlay.files.length },
-    'managed-catalog': { ids: RUNTIME_MANAGED_MODELS.map((model) => model.id) },
+    'managed-catalog': { ids: [] },
   };
   if (agent) {
     components.agent = {
@@ -364,23 +396,37 @@ async function computeManifest(): Promise<RuntimeAssetsDigests> {
   };
 }
 
-function runtimeAssetsDigests(): Promise<RuntimeAssetsDigests> {
-  if (!manifestPromise) {
+async function runtimeAssetsDigests(): Promise<RuntimeAssetsDigests> {
+  const fingerprint = await binariesFingerprint(hashedBinaryPaths());
+  if (!manifestMemo || manifestMemo.fingerprint !== fingerprint) {
     // Store the promise, not the value: two concurrent first requests must not
     // both hash a 100 MB binary.
-    manifestPromise = computeManifest().catch((error) => {
-      manifestPromise = null;
-      throw error;
-    });
+    const memo: { fingerprint: string; promise: Promise<RuntimeAssetsDigests> } = {
+      fingerprint,
+      promise: computeManifest().catch((error) => {
+        if (manifestMemo === memo) manifestMemo = null;
+        throw error;
+      }),
+    };
+    manifestMemo = memo;
   }
-  return manifestPromise;
+  return manifestMemo.promise;
 }
+
+/** The managed lineup's ids, read live: it refreshes from Platinum while the process runs. */
+const liveManagedIds = (): string[] => managedLineup().map((model) => model.id);
 
 export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
   // Assembled per call so `policy` is read live: the kill switch must never
   // cost an extra deploy. Everything expensive comes from the memo, so the
   // marginal cost of a call is one object spread.
-  return { ...(await runtimeAssetsDigests()), policy: { agent_self_update: agentSelfUpdateEnabled() } };
+  // The managed lineup is read live for the same reason: it refreshes from Platinum.
+  const digests = await runtimeAssetsDigests();
+  return {
+    ...digests,
+    components: { ...digests.components, 'managed-catalog': { ids: liveManagedIds() } },
+    policy: { agent_self_update: agentSelfUpdateEnabled() },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -393,8 +439,8 @@ export async function runtimeAssetsManifest(): Promise<RuntimeAssetsManifest> {
 // `KORTIX_CLI_VERSION` share 100 of 102 chunks (98.0%), and the CLI and the
 // daemon share 89 of 102 (87.3%) — but ONLY when both were compiled by the
 // same Bun. The shipped API image uses two (`SANDBOX_AGENT_BUN_VERSION=1.3.11`
-// for the daemon, `BUN_VERSION=1.2` for the CLI), and measured against a
-// deployed preview those two share 0 of 111 chunks. Same-artifact reuse, which
+// for the daemon, `BUN_VERSION` (1.4.3) for the CLI). With the CLI on 1.2,
+// measured against a deployed preview, those two shared 0 of 111 chunks. Same-artifact reuse, which
 // is what a CLI update actually is, is unaffected.
 //
 // FIXED-SIZE, and content-defined chunking is NOT the next increment. The
@@ -440,7 +486,7 @@ interface ChunkIndex {
   sources: Map<string, ChunkSource>;
 }
 
-let chunkIndexPromise: Promise<ChunkIndex> | null = null;
+let chunkIndexMemo: { fingerprint: string; promise: Promise<ChunkIndex> } | null = null;
 
 /**
  * Hash one binary chunk by chunk without ever holding it in memory.
@@ -486,11 +532,14 @@ async function indexBinary(
   }
 }
 
-function chunkIndex(): Promise<ChunkIndex> {
-  if (!chunkIndexPromise) {
-    // Same memo discipline as the digest manifest: store the PROMISE, so a
-    // post-deploy burst of converging boxes hashes ~210 MB once, not N times.
-    chunkIndexPromise = (async () => {
+async function chunkIndex(): Promise<ChunkIndex> {
+  // Same memo discipline as the digest manifest: store the PROMISE, so a
+  // post-deploy burst of converging boxes hashes ~210 MB once, not N times,
+  // and key it by the binaries' stat so a rebuild is re-indexed.
+  const fingerprint = await binariesFingerprint([runtimeCliBinaryPath(), runtimeAgentBinaryPath()]);
+  if (!chunkIndexMemo || chunkIndexMemo.fingerprint !== fingerprint) {
+    const memo: { fingerprint: string; promise: Promise<ChunkIndex> } = { fingerprint, promise: null as never };
+    memo.promise = (async () => {
       const sources = new Map<string, ChunkSource>();
       // Sequential, not concurrent: each pass holds one 1 MiB buffer and this
       // is a cold-start cost paid once per process.
@@ -501,11 +550,12 @@ function chunkIndex(): Promise<ChunkIndex> {
       if (agent) manifests.agent = agent;
       return { manifests, sources };
     })().catch((error) => {
-      chunkIndexPromise = null;
+      if (chunkIndexMemo === memo) chunkIndexMemo = null;
       throw error;
     });
+    chunkIndexMemo = memo;
   }
-  return chunkIndexPromise;
+  return chunkIndexMemo.promise;
 }
 
 /** The chunk manifest for one component, or null when the image carries no such binary. */
@@ -575,21 +625,20 @@ export async function runtimeChunkBytes(sha256: string): Promise<Buffer | null> 
 
 /** Test-only: drop both memos so a case can recompute against a mutated fixture. */
 export function _resetRuntimeAssetsCache(): void {
-  manifestPromise = null;
+  manifestMemo = null;
   overlayCache = null;
-  chunkIndexPromise = null;
+  chunkIndexMemo = null;
 }
 
 // ---------------------------------------------------------------------------
 // "Is this box running what this deploy serves?"
 //
-// THE ASYMMETRY THAT DECIDES THIS WHOLE LANE, stated once where every later
-// reader will find it: CONFIG blocks the turn, because config changes what the
-// agent IS — `convergeBeforeTurnStart` awaits, and a stale box pays
-// 10,287-10,907 ms. BINARIES MUST NOT BLOCK. A box one turn behind on the CLI
-// is the state that already exists today; a box that makes the user wait for
-// ~100 MB is a regression. So everything below DETECTS and SCHEDULES. It never
-// applies and it is never awaited on the send path.
+// THE RULE THAT DECIDES THIS WHOLE LANE: BINARIES MUST NOT BLOCK A TURN (and
+// since 2026-10-13 config does not either: `convergeConfigIfBehind` runs after
+// a turn ends). A box one turn behind on the CLI is the state that already
+// exists today; a box that makes the user wait for ~100 MB is a regression. So
+// everything below DETECTS and SCHEDULES. It never applies and it is never
+// awaited on the send path.
 // ---------------------------------------------------------------------------
 
 /** What a daemon says it is running, from the health `runtime.running` block. */
@@ -658,7 +707,7 @@ export async function manifestFingerprint(): Promise<string> {
     c['managed-skills'].hash,
     c.opencode.version,
     c.entrypoint?.sha256 ?? '',
-    c['managed-catalog'].ids.length > 0 ? managedCatalogFingerprint(c['managed-catalog'].ids) : '',
+    liveManagedIds().length > 0 ? managedCatalogFingerprint(liveManagedIds()) : '',
     // Not a digest — the comparison's SHAPE. See above.
     agentSelfUpdateEnabled() ? 'agent-update:on' : 'agent-update:off',
   ].join('|');
@@ -697,7 +746,7 @@ export async function manifestFingerprint(): Promise<string> {
  * does not mean "an older daemon with no such field" the way it does for a
  * missing sha — every daemon in the field reports this key once this ships.
  * It means UNCONFIRMED: no live fetch has ever succeeded, so the box is
- * running the baked/bundled managed set with no proof it matches this
+ * running the baked catalog with no proof it matches this
  * deploy's lineup. Reading that as `unknown` (skip) is exactly the silent
  * staleness a real dev box hit 2026-09-26 — woken, healthy, cli/skills/
  * opencode all current, and STILL serving a month-old managed lineup because
@@ -716,7 +765,7 @@ export async function runningAssetsVerdict(
     compared += 1;
     return want !== have;
   };
-  const managedCatalogIds = components['managed-catalog'].ids;
+  const managedCatalogIds = liveManagedIds();
   const managedCatalogDiffers = ((): boolean | null => {
     if (managedCatalogIds.length === 0) return null; // nothing to converge on
     if (running.managed_model_ids == null) {

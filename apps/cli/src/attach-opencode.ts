@@ -2,7 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 
 import { runtimeSupports } from '@kortix/sdk';
 
-import type { Auth } from './api/auth.ts';
+import { type Auth, currentTokenFor } from './api/auth.ts';
 import { clientFromAuth } from './api/client.ts';
 import {
   type RunningSandboxPortProxy,
@@ -199,6 +199,7 @@ export async function attachOpenCodeSession(
     proxy = startProxy({
       runtimeUrl: runtime.runtimeUrl,
       token: runtime.auth.token,
+      getToken: () => currentTokenFor(runtime.auth),
       port: options.proxyPort ?? 0,
     });
   } catch (err) {

@@ -161,3 +161,17 @@ export function ttlMemo<A extends unknown[], T>(opts: {
   };
   return fn;
 }
+
+/**
+ * Insert-or-refresh `key` in `map` and evict the oldest-inserted entries past
+ * `max`. Map preserves insertion order, so the first key is the oldest.
+ */
+export function bumpBounded<K, V>(map: Map<K, V>, key: K, value: V, max: number): void {
+  map.delete(key);
+  map.set(key, value);
+  while (map.size > max) {
+    const oldest = map.keys().next();
+    if (oldest.done) return;
+    map.delete(oldest.value);
+  }
+}

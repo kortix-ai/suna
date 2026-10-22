@@ -34,7 +34,9 @@ function hasCredentialCheck(source: string): boolean {
   return (
     /authorizeControl\s*\(/.test(source) ||
     /verifyKortixUserContext\s*\(/.test(source) ||
-    /[=!]==\s*cfg\.sandboxToken\b/.test(source)
+    /[=!]==\s*cfg\.sandboxToken\b/.test(source) ||
+    // The constant-time compare (control-auth.ts) that replaced `!== cfg.sandboxToken`.
+    (/bearerMatches\s*\(/.test(source) && /cfg\.sandboxToken\b/.test(source))
   )
 }
 

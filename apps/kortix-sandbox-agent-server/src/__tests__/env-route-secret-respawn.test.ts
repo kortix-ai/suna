@@ -27,6 +27,8 @@ import { createEnvRouter } from '@/routes/kortix/env'
 import { createOpenCodeControlService } from '@/harness/open-code/control'
 import { resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
 import { createOpenCodeQuickQueueInterrupt } from '@/harness/open-code/background'
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
+import { MAX_ENV_STRING_BYTES, envStringBytes } from '@kortix/api-contract/compiled-agent-config-env'
 import {
   __resetRuntimeProjectionRelayForTests,
   registerRuntimeStateReader,
@@ -80,7 +82,6 @@ function baseConfig(): Config {
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
     cloneFilter: '',
-    compiledBootMode: 'off',
     cloneDepth: 1,
     workload: '',
     monitorsJson: '',
@@ -237,64 +238,23 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(calls[0]!.mustRespawn).toBe(false)
   })
 
-  it('enabling the connectors MCP face mid-session takes the dispose path', async () => {
-    // Pins CURRENT behaviour, which is not obviously the intended one.
-    // `KORTIX_CONNECTORS_MCP_ENABLED` shapes `out.mcp` inside the config file,
-    // so it follows the config-file rule and disposes rather than respawns —
-    // consistent with RESPAWN_REQUIRED_ENV_NAMES (lifecycle.ts).
-    //
-    // But routes/env.ts:21 claims this variable "must restart OpenCode because
-    // MCP servers are registered only at spawn". If that claim is right, the
-    // email channel's mid-session enable (channels/email/session.ts:123, 208)
-    // silently does nothing and this expectation should flip to `true`. Nobody
-    // has measured which is true against the pinned opencode — see the note on
-    // RESPAWN_REQUIRED_ENV_NAMES in opencode.ts.
-    const { opencode, calls } = fakeOpencode()
-    const store = createProjectEnvStore({
-      KORTIX_PROJECT_SECRETS_REVISION: 'rev-1',
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
-      API_KEY: 'v1',
-    } as NodeJS.ProcessEnv)
-    const app = buildTestApp(opencode, store)
+  it('an older API pushing the retired KORTIX_CONNECTORS_MCP_ENABLED changes nothing', async () => {
+    // The in-sandbox connectors MCP is gone. An API built before its removal
+    // still sends this name on email follow-ups; the allowlist drops it.
+    const { opencode } = fakeOpencode()
+    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
 
-    const { status } = await postEnv(app, {
-      revision: 'rev-1',
-      env: { API_KEY: 'v1' },
-      names: ['API_KEY'],
+    const { status, json } = await postEnv(app, {
+      revision: 'rev-email-mcp',
+      env: {},
+      names: [],
       refreshModels: true,
       opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
     })
 
     expect(status).toBe(200)
-    expect(calls).toHaveLength(1)
-    expect(calls[0]!.mustRespawn).toBe(false)
-  })
-
-  it('a connectors-MCP push reloads once and sets the env; re-pushing the SAME value reloads nothing', async () => {
-    // The fleet default sets this at boot, so every caller that includes it
-    // re-sends it. The route compares against process.env before marking the
-    // name changed: an identical value produces no reload at all.
-    const { opencode, calls } = fakeOpencode()
-    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
-    const push = () =>
-      postEnv(app, {
-        revision: 'rev-email-mcp',
-        env: {},
-        names: [],
-        refreshModels: true,
-        opencodeEnv: { KORTIX_CONNECTORS_MCP_ENABLED: '1' },
-      })
-
-    const first = await push()
-    expect(first.status).toBe(200)
-    expect(first.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_CONNECTORS_MCP_ENABLED'] })
-    expect(process.env.KORTIX_CONNECTORS_MCP_ENABLED as string | undefined).toBe('1')
-    expect(calls).toHaveLength(1)
-
-    const replay = await push()
-    expect(replay.status).toBe(200)
-    expect(replay.json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
-    expect(calls).toHaveLength(1)
+    expect(json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
+    expect(process.env.KORTIX_CONNECTORS_MCP_ENABLED as string | undefined).toBeUndefined()
   })
 
   it('a runtime env value sets process.env and reloads; null deletes it and reloads again', async () => {
@@ -322,6 +282,24 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(off.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_LLM_BASE_URL'] })
     expect(process.env.KORTIX_LLM_BASE_URL).toBeUndefined()
     expect(calls).toEqual([{ mustRespawn: false }, { mustRespawn: false }])
+  })
+
+  it('llmGatewayEnabled=false from an older API keeps the gateway env', async () => {
+    const { opencode } = fakeOpencode()
+    process.env.KORTIX_LLM_BASE_URL = 'https://api.kortix.test/v1/llm'
+    const app = buildTestApp(opencode, createProjectEnvStore({} as NodeJS.ProcessEnv))
+
+    const { status, json } = await postEnv(app, {
+      revision: 'rev-gateway-false',
+      env: {},
+      names: [],
+      refreshModels: true,
+      llmGatewayEnabled: false,
+    })
+
+    expect(status).toBe(200)
+    expect(json).toMatchObject({ opencode_env_changed: false, opencode_env_names: [] })
+    expect(process.env.KORTIX_LLM_BASE_URL as string | undefined).toBe('https://api.kortix.test/v1/llm')
   })
 
   it('the compiled agent config is live-updatable; an unknown KORTIX_* name is ignored', async () => {
@@ -360,6 +338,42 @@ describe('env route — project-secret delta forces respawn, not dispose', () =>
     expect(applied.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_COMPILED_AGENT_CONFIG'] })
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG as string | undefined).toBe(compiled)
     expect(calls).toHaveLength(1)
+  })
+
+  it('an oversized compiled agent config is kept gzip-encoded, never raw in the env every child inherits', async () => {
+    // Over 128 KiB, a raw value in process.env makes every later exec fail
+    // with E2BIG: the OpenCode respawn this push asks for, git, every PTY.
+    const { opencode, calls } = fakeOpencode()
+    delete process.env.KORTIX_COMPILED_AGENT_CONFIG
+    const app = buildTestApp(
+      opencode,
+      createProjectEnvStore({ KORTIX_PROJECT_SECRETS_REVISION: 'rev-1' } as NodeJS.ProcessEnv),
+    )
+    const pushConfig = (config: string) =>
+      postEnv(app, { revision: 'rev-1', env: {}, names: [], refreshModels: true, opencodeEnv: { KORTIX_COMPILED_AGENT_CONFIG: config } })
+    const configNames = () => Object.keys(process.env).filter((name) => name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ')).sort()
+    const oversized = JSON.stringify({ agent: { support: { mode: 'primary', prompt: 'Answer the ticket. '.repeat(14_000) } } })
+    expect(envStringBytes('KORTIX_COMPILED_AGENT_CONFIG', oversized)).toBeGreaterThan(MAX_ENV_STRING_BYTES)
+
+    const applied = await pushConfig(oversized)
+    expect(applied.json).toMatchObject({ opencode_env_changed: true, opencode_env_names: ['KORTIX_COMPILED_AGENT_CONFIG'] })
+    expect(calls).toHaveLength(1)
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBeUndefined()
+    expect(configNames()).toEqual(['KORTIX_COMPILED_AGENT_CONFIG_GZ_0', 'KORTIX_COMPILED_AGENT_CONFIG_GZ_PARTS'])
+    for (const name of configNames()) {
+      expect(envStringBytes(name, process.env[name]!), name).toBeLessThanOrEqual(MAX_ENV_STRING_BYTES)
+    }
+    expect(compiledAgentConfigFromEnv(process.env)).toBe(oversized)
+
+    // The same config again is no change, so no second reload.
+    expect((await pushConfig(oversized)).json).toMatchObject({ opencode_env_changed: false })
+    expect(calls).toHaveLength(1)
+
+    // A config that fits goes back to the raw form, with no part left behind.
+    const small = JSON.stringify({ agent: { support: { mode: 'primary' } } })
+    expect((await pushConfig(small)).json).toMatchObject({ opencode_env_changed: true })
+    expect(process.env.KORTIX_COMPILED_AGENT_CONFIG as string | undefined).toBe(small)
+    expect(configNames()).toEqual([])
   })
 
   it('a byte-identical push (no change at all) does not reload opencode', async () => {

@@ -1,0 +1,209 @@
+{
+  "next_prompts": {
+    "ses_ede5a9216ffe9YJll63DDa8zSS": "Anything else?",
+    "ses_ede5a8f04ffehgjPY0X7feqgTN": "Anything else?"
+  },
+  "views": {
+    "ses_ede5a9216ffe9YJll63DDa8zSS": [
+      {
+        "role": "summary",
+        "text": "SUMMARY-L: the user created hello.txt containing hi, checked an image, and ran false."
+      },
+      {
+        "role": "user",
+        "text": [
+          "Read hello.txt and look at this image",
+          "Called the Read tool with the following input: {\"filePath\":\"/work/proto/harness/opencode/runs/live/ws/dot.png\"}"
+        ],
+        "images": [
+          "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+        ]
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv181vac5",
+            "name": "read",
+            "input": {
+              "filePath": "hello.txt"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv181vac5",
+        "content": "<path>/work/proto/harness/opencode/runs/live/ws/hello.txt</path>\n<type>file</type>\n<content>\n1: hi\n\n(End of file - total 1 lines)\n</content>",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "It says hi. The image is a single pixel."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Run the command `false` and report the result."
+        ],
+        "images": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Try again."
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv181vbda",
+            "name": "bash",
+            "input": {
+              "command": "false",
+              "description": "Run false"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv181vbda",
+        "content": "(no output)",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv181vbsc",
+            "name": "read",
+            "input": {
+              "filePath": "missing.txt"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv181vbsc",
+        "content": "File not found: /work/proto/harness/opencode/runs/live/ws/missing.txt",
+        "is_error": true
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "The command failed with exit code 1."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Spawn a helper to list the files"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv181vcpg",
+            "name": "task",
+            "input": {
+              "description": "list files",
+              "prompt": "List the files in the workspace",
+              "subagent_type": "general"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv181vcpg",
+        "content": "<task id=\"ses_ede5a8f04ffehgjPY0X7feqgTN\" state=\"completed\">\n<task_result>\nFound hello.txt\n</task_result>\n</task>",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "The helper found hello.txt."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "What is in hello.txt? Answer in one word."
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "hi"
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Anything else?"
+        ],
+        "images": []
+      }
+    ],
+    "ses_ede5a8f04ffehgjPY0X7feqgTN": [
+      {
+        "role": "user",
+        "text": [
+          "List the files in the workspace"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv181vd8i",
+            "name": "bash",
+            "input": {
+              "command": "ls",
+              "description": "List files"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv181vd8i",
+        "content": "README.md\ndot.png\nhello.txt",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "Found hello.txt"
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Anything else?"
+        ],
+        "images": []
+      }
+    ]
+  }
+}

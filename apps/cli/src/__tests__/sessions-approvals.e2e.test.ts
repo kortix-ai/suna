@@ -26,6 +26,7 @@ let permissionReplies: Array<{ id: string; body: unknown }> = [];
 let questionReplies: Array<{ id: string; body: unknown; kind: 'reply' | 'reject' }> = [];
 let pendingPermissions: unknown[] = [];
 let pendingQuestions: unknown[] = [];
+let auditActions: unknown[] = [];
 let stdoutChunks: string[] = [];
 let stderrChunks: string[] = [];
 const savedEnv: Record<string, string | undefined> = {};
@@ -62,6 +63,7 @@ describe('sessions pending/approve/answer', () => {
     questionReplies = [];
     pendingPermissions = [];
     pendingQuestions = [];
+    auditActions = [];
     stdoutChunks = [];
     stderrChunks = [];
 
@@ -95,6 +97,12 @@ describe('sessions pending/approve/answer', () => {
         }
         if (req.method === 'GET' && url.pathname === `/v1/p/${PROXY_ID}/8000/question`) {
           return Response.json(pendingQuestions);
+        }
+        if (
+          req.method === 'GET' &&
+          url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/audit`
+        ) {
+          return Response.json({ actions: auditActions });
         }
         const permReply = url.pathname.match(
           new RegExp(`^/v1/p/${PROXY_ID}/8000/permission/([^/]+)/reply$`),
@@ -326,5 +334,63 @@ describe('sessions pending/approve/answer', () => {
 
     expect(code).toBe(2);
     expect(questionReplies).toEqual([]);
+  });
+
+  // The audit API returns `action` already prefixed with the connector slug
+  // (`<connector>.<action>`, connectorCalls.action_path) — see
+  // apps/api/src/projects/lib/session-audit-read.ts.
+  function auditAction(overrides: Record<string, unknown> = {}) {
+    return {
+      execution_id: 'exec_1',
+      action: 'dogfood-mcp.fetch_url',
+      connector_id: 'conn_1',
+      connector: 'dogfood-mcp',
+      status: 'pending_approval',
+      risk: 'write',
+      acted_by: null,
+      acted_by_email: null,
+      resolved_by: null,
+      resolved_by_email: null,
+      result_summary: { args_preview: { url: 'https://example.test' } },
+      at: '2026-01-01T00:00:00.000Z',
+      resolved_at: null,
+      approval_url: null,
+      ...overrides,
+    };
+  }
+
+  test('approvals ls renders the same action id as --json (no doubled connector prefix)', async () => {
+    auditActions.push(auditAction());
+
+    const plain = await runSessions(['approvals', SESSION_ID, 'ls', '--project', PROJECT_ID]);
+    expect(plain).toBe(0);
+    const plainOut = stdoutChunks.join('');
+    expect(plainOut).toContain('dogfood-mcp.fetch_url');
+    expect(plainOut).not.toContain('dogfood-mcp.dogfood-mcp');
+
+    stdoutChunks = [];
+    const json = await runSessions([
+      'approvals',
+      SESSION_ID,
+      'ls',
+      '--project',
+      PROJECT_ID,
+      '--json',
+    ]);
+    expect(json).toBe(0);
+    const payload = JSON.parse(stdoutChunks.join(''));
+    expect(payload[0].action).toBe('dogfood-mcp.fetch_url');
+    expect(plainOut).toContain(payload[0].action);
+  });
+
+  test('approvals ls renders a row without a connector slug verbatim', async () => {
+    auditActions.push(
+      auditAction({ action: 'legacy_action', connector: null, connector_id: null }),
+    );
+
+    const code = await runSessions(['approvals', SESSION_ID, 'ls', '--project', PROJECT_ID]);
+
+    expect(code).toBe(0);
+    expect(stdoutChunks.join('')).toContain('legacy_action');
   });
 });

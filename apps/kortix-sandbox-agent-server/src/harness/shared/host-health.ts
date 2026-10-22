@@ -13,9 +13,16 @@ import { runtimeTruthReport } from '@/services/runtime-assets/runtime-truth'
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
+const PT_ENV_PATH = '/etc/pt-env'
+
+/** The env file THIS read consults. `KORTIX_PT_ENV_PATH` is read at call time so
+ *  a test can pin it after this module has loaded: a Kortix box's own
+ *  /etc/pt-env would otherwise answer for a rig that has no session env file. */
+const ptEnvPath = () => process.env.KORTIX_PT_ENV_PATH || PT_ENV_PATH
+
 function wantedSessionBranch(): string {
   try {
-    const m = readFileSync('/etc/pt-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    const m = readFileSync(ptEnvPath(), 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]
   } catch { /* no env file (local dev) */ }
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
@@ -33,7 +40,7 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync(ptEnvPath(), 'utf8'))
   } catch {
     return false
   }
@@ -73,8 +80,6 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
     repo: repoInfo?.remoteUrl ?? null,
     branch: repoInfo?.branch ?? null,
     commit_sha: repoInfo?.commit ?? null,
-    compiled_boot_mode: cfg.compiledBootMode,
-    compiled_checkout: existsSync(join(cfg.projectTarget, '.git', 'kortix-compiled-checkout.json')),
     // The content hash of the compiled agent config the runtime spawned
     // with. Not derivable from commit_sha: a warm-workspace refresh advances
     // the commit while deliberately skipping the restart, so a box can report
@@ -94,13 +99,14 @@ export async function readHostHealth(context: HarnessDiagnosticsContext, catalog
     // the two; this is only the box's own answer. A pure read — never
     // triggers a reconcile attempt, so polling health cannot itself cause work.
     runtime_truth: await runtimeTruthReport(),
-    // Which config provider delivered the project this boot (git | s3), the
-    // expected vs actual SHA, and — when S3 was attempted and Git delivered
-    // instead — the classified reason. A successful fallback keeps the S3
-    // failure visible here; the same facts go to the boot timeline relay.
-    config_provider: bootState.configProvider ?? null,
-    // In-container boot timeline (ms since process start) so the dashboard can
-    // attribute the post-create boot latency (clone vs runtime vs proxy).
+    // The `/workspace` checkout, reported on its own: which transport
+    // delivered it (git | s3), the expected vs actual SHA, per-stage timings,
+    // and — when S3 was attempted and Git delivered instead — the classified
+    // reason. The workspace is not config: none of this is in `boot_timeline`.
+    workspace_provider: bootState.workspaceProvider ?? null,
+    // In-container boot timeline (ms since process start): the daemon, the
+    // config release the runtime boots from (`config-release-*`), and the
+    // runtime. No workspace step is in it; `workspace_provider` has those.
     boot_timeline: bootState.timeline,
     // Visible auth posture so misconfiguration doesn't silently downgrade.
     auth: cfg.sandboxToken ? 'configured' : 'unconfigured',

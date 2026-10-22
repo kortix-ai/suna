@@ -5,7 +5,7 @@ export const engineering: RoleContent = {
   slug: 'engineering',
   name: 'Engineering',
   navDescription: 'Reproduce it, patch it, open the change request',
-  seoTitle: 'Kortix for engineering teams',
+  seoTitle: 'AI agents for engineering teams',
   seoDescription:
     'Every Kortix session gets its own cloud computer and its own branch. The agent reproduces the bug, writes the patch, runs the tests, and opens a change request. Merge is default-deny for agents.',
 

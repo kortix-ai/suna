@@ -7,11 +7,23 @@ import {
   createSession,
   resolveProjectAutomationActor,
 } from '../projects/session-lifecycle';
-import { loadTelegramWebhookSecretForProject } from './install-store';
+import { readSecret } from './install-store';
+import { resolveFeatureFlag } from '../feature-flags/registry';
+import { emitIntegrationEvent } from '../integrations/event-inbox';
+import { loadTelegramInstall } from './telegram/installs';
+import { telegramMessageEvent } from './telegram/session';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import { bindIntegrationPrincipal } from '../shared/audit-scope';
 
 export const telegramWebhookApp = makeOpenApiApp();
+
+const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
+
+async function loadTelegramWebhookSecretForProject(
+  projectId: string,
+): Promise<string | null> {
+  return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
+}
 
 telegramWebhookApp.openapi(
   createRoute({
@@ -50,6 +62,15 @@ telegramWebhookApp.openapi(
     return c.json({ error: 'Invalid JSON' }, 400);
   }
 
+  // connectors_v2: store the update in the event inbox and ack only after the
+  // store, so a crash after the ack loses nothing (channels/telegram/session.ts).
+  const v2BotId = await connectorsV2BotId(projectId);
+  if (v2BotId) {
+    const event = telegramMessageEvent(projectId, v2BotId, update);
+    if (event) await emitIntegrationEvent(event, { maxAttempts: 4 });
+    return c.json({ ok: true });
+  }
+
   const message = update.message ?? update.edited_message;
   if (!message || !message.chat) return c.json({ ok: true });
 
@@ -59,6 +80,17 @@ telegramWebhookApp.openapi(
   return c.json({ ok: true });
 },
 );
+
+/** The bot id when the project runs the connectors_v2 Telegram path, else null (legacy path). */
+async function connectorsV2BotId(projectId: string): Promise<string | null> {
+  const [project] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  if (!project || !resolveFeatureFlag(project.metadata, 'connectors_v2')) return null;
+  return (await loadTelegramInstall(projectId))?.botId ?? null;
+}
 
 // Gate for the Telegram equivalent of Slack's SLACK_REQUIRE_USER_IDENTITY: the
 // webhook otherwise runs every agent turn AS THE ACCOUNT OWNER for whoever can
@@ -135,7 +167,6 @@ async function spawnAgentTurn(
       // Title from the user's actual words, not the scaffolded envelope.
       title_source: message.text ?? message.caption ?? null,
     },
-    enforceAccountCap: false,
     queuePolicy: 'on_backpressure',
     idempotencyKey: `telegram:${projectId}:${update.update_id}`,
     // Channel sessions are team-facing — project-visible, not private to the

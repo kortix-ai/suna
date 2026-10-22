@@ -8,6 +8,7 @@ import {
   takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
+import { sandboxEnvValue } from '../api/sandbox-env.ts';
 import { C, help, pad, status } from '../style.ts';
 
 // `kortix review` — the CLI face of the Review Center, the per-project
@@ -82,7 +83,8 @@ Where a verdict lands, by item id:
               note back to the agent that opened it (--message required).
   call:<id>   approve = let the tool call run, reject = deny it. A connector
               approval takes no other verdict — read its arguments first with
-              \`kortix review show\`.
+              \`kortix review show\`. --message reaches the agent with the
+              decision.
   otherwise   the native act endpoint, which takes every verdict.
 
 \`bulk\` acts on native ids only. A connector approval needs its own parameter
@@ -96,8 +98,9 @@ Submit options:
   --risk <r>         ${RISKS.join(' | ')} (default: none).
   --detail <json>    Structured payload, a JSON object.
   --agent <name>     Which agent produced it.
-  --session <id>     Originating session. Ignored when it is not this
-                     project's session.
+  --session <id>     Originating session; it must be one of this
+                     project's sessions. Inside a session it defaults to
+                     $KORTIX_SESSION_ID when that session is in this project.
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
@@ -164,10 +167,7 @@ export async function runReview(argv: string[]): Promise<number> {
 
 // ── subcommands ────────────────────────────────────────────────────────────
 
-async function reviewLs(
-  f: Record<string, string | undefined>,
-  json: boolean,
-): Promise<number> {
+async function reviewLs(f: Record<string, string | undefined>, json: boolean): Promise<number> {
   if (f.segment && !(SEGMENTS as readonly string[]).includes(f.segment)) {
     return fail(`--segment must be one of ${SEGMENTS.join(', ')}`);
   }
@@ -177,25 +177,41 @@ async function reviewLs(
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
 
-  const query = new URLSearchParams();
-  if (f.segment) query.set('segment', f.segment);
-  if (f.kind) query.set('kind', f.kind);
-  const qs = query.toString();
-
-  let resp: { review_items: ReviewItem[] };
+  // The inbox is paged (KRTX-2316): follow `next_cursor`, 200 a page after the
+  // first. The first request sends no `limit`, so an older API, which returned
+  // the whole inbox, still answers in full. The walk is not a snapshot: an item
+  // decided between two pages moves to a later segment and comes back, so the
+  // later copy (the newer status) replaces the earlier one.
+  const byId = new Map<string, ReviewItem>();
   try {
-    resp = await ctx.client.get<{ review_items: ReviewItem[] }>(
-      `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
-    );
+    let cursor: string | null | undefined;
+    do {
+      const query = new URLSearchParams();
+      if (f.segment) query.set('segment', f.segment);
+      if (f.kind) query.set('kind', f.kind);
+      if (cursor) {
+        query.set('limit', '200');
+        query.set('cursor', cursor);
+      }
+      const qs = query.toString();
+      const page = await ctx.client.get<{ review_items: ReviewItem[]; next_cursor?: string | null }>(
+        `/projects/${ctx.projectId}/review/items${qs ? `?${qs}` : ''}`,
+      );
+      for (const item of page.review_items) {
+        byId.delete(item.review_item_id);
+        byId.set(item.review_item_id, item);
+      }
+      cursor = page.next_cursor;
+    } while (cursor);
   } catch (err) {
     return surfaceApiError(err);
   }
+  const items = [...byId.values()];
 
   if (json) {
-    emitJson(resp);
+    emitJson({ review_items: items });
     return 0;
   }
-  const items = resp.review_items;
   if (items.length === 0) {
     process.stdout.write(
       `  ${C.dim}Nothing in the inbox${f.segment ? ` for ${f.segment}` : ''}${f.kind ? ` (kind ${f.kind})` : ''}.${C.reset}\n`,
@@ -231,26 +247,28 @@ async function reviewShow(
 
   let item: ReviewItem | null = null;
   try {
-    if (adaptedSource(id)) {
-      // A `cr:` / `call:` row has its source of truth in another table; the
-      // per-item GET only reads native rows and would 404. The list endpoint is
-      // where the adapters fold them in, so read it from there.
+    // The per-item GET reads `cr:` and `call:` rows too (KRTX-2316), so an
+    // item is found off every page of the inbox.
+    const resp = await ctx.client.get<{ review_item: ReviewItem }>(
+      `/projects/${ctx.projectId}/review/items/${encodeURIComponent(id)}`,
+    );
+    item = resp.review_item;
+  } catch (err) {
+    if (!adaptedSource(id)) return surfaceApiError(err);
+    // An older API reads only native rows by id: the list is where its
+    // adapters fold the others in, and it returned the whole inbox.
+    try {
       const { review_items } = await ctx.client.get<{ review_items: ReviewItem[] }>(
         `/projects/${ctx.projectId}/review/items`,
       );
       item = review_items.find((row) => row.review_item_id === id) ?? null;
-      if (!item) {
-        process.stderr.write(`${status.err(`No review item "${id}" in the inbox.`)}\n`);
-        return 1;
-      }
-    } else {
-      const resp = await ctx.client.get<{ review_item: ReviewItem }>(
-        `/projects/${ctx.projectId}/review/items/${encodeURIComponent(id)}`,
-      );
-      item = resp.review_item;
+    } catch (listErr) {
+      return surfaceApiError(listErr);
     }
-  } catch (err) {
-    return surfaceApiError(err);
+    if (!item) {
+      process.stderr.write(`${status.err(`No review item "${id}" in the inbox.`)}\n`);
+      return 1;
+    }
   }
 
   if (json) {
@@ -267,7 +285,8 @@ async function reviewShow(
     ['session', item.origin_session_id ?? '—'],
     ['created', item.created_at],
   ];
-  if (item.acted_at) rows.push(['acted', `${item.acted_at}${item.acted_by ? ` by ${item.acted_by}` : ''}`]);
+  if (item.acted_at)
+    rows.push(['acted', `${item.acted_at}${item.acted_by ? ` by ${item.acted_by}` : ''}`]);
   if (item.feedback) rows.push(['feedback', item.feedback]);
   const labelW = Math.max(...rows.map(([label]) => label.length)) + 1;
 
@@ -286,7 +305,9 @@ async function reviewShow(
         .join('\n')}\n`,
     );
   }
-  process.stdout.write(`\n  ${C.dim}Decide it: ${C.reset}${C.cyan}kortix review act ${item.review_item_id} approve${C.reset}\n\n`);
+  process.stdout.write(
+    `\n  ${C.dim}Decide it: ${C.reset}${C.cyan}kortix review act ${item.review_item_id} approve${C.reset}\n\n`,
+  );
   return 0;
 }
 
@@ -319,9 +340,11 @@ async function reviewAct(
         return 2;
       }
       const decision = verdict === 'approve' ? 'approve' : 'deny';
+      // `note` rides into the agent's resume prompt, so a deny can steer.
+      const note = f.message?.trim();
       const resp = await ctx.client.post<Record<string, unknown>>(
         `${base}/approvals/${encodeURIComponent(executionId)}`,
-        { decision },
+        { decision, ...(note ? { note } : {}) },
       );
       if (json) {
         emitJson({ id, decision, ...resp });
@@ -464,10 +487,7 @@ async function reviewBulk(
   return plan.native.length === 0 ? 1 : 0;
 }
 
-async function reviewSubmit(
-  f: Record<string, string | undefined>,
-  json: boolean,
-): Promise<number> {
+async function reviewSubmit(f: Record<string, string | undefined>, json: boolean): Promise<number> {
   if (!f.kind) return missing(`--kind ${SUBMIT_KINDS.join('|')}`);
   if (!(SUBMIT_KINDS as readonly string[]).includes(f.kind)) {
     return fail(`--kind must be one of ${SUBMIT_KINDS.join(', ')}`);
@@ -492,8 +512,21 @@ async function reviewSubmit(
   const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
   if (!ctx) return 1;
 
-  // Inside a sandbox the agent already knows which session it runs in.
-  const sessionId = f.session ?? process.env.KORTIX_SESSION_ID;
+  // Inside a sandbox the agent already knows which session it runs in. That
+  // session belongs to the sandbox's own project: for an item in another
+  // project (another host, or --project) it is not an origin the API can
+  // find, so it is dropped with a notice instead of failing the submit
+  // with "Session not found" (KRTX-2864).
+  let sessionId = f.session;
+  const ambientSession = process.env.KORTIX_SESSION_ID;
+  if (!sessionId && ambientSession) {
+    const ambientProject = sandboxEnvValue('KORTIX_PROJECT_ID');
+    if (!ambientProject || ambientProject === ctx.projectId) sessionId = ambientSession;
+    else
+      process.stderr.write(
+        `  ${C.dim}$KORTIX_SESSION_ID is a session of another project; submitting without an origin session. Pass --session <id> to link one.${C.reset}\n`,
+      );
+  }
 
   let item: ReviewItem;
   try {
@@ -521,20 +554,20 @@ async function reviewSubmit(
   return 0;
 }
 
-// ── id routing (mirrors apps/web/src/features/review-center/review-actions.ts) ─
+// ── id routing (mirrors packages/ui/src/workspace/review/review-actions.ts) ─
 
 /** Strip a namespace prefix, or null when `id` does not carry it. */
 function strip(id: string, prefix: string): string | null {
   return id.startsWith(prefix) ? id.slice(prefix.length) : null;
 }
 
-export function adaptedSource(id: string): 'cr' | 'call' | null {
+function adaptedSource(id: string): 'cr' | 'call' | null {
   if (id.startsWith(CR_PREFIX)) return 'cr';
   if (id.startsWith(CALL_PREFIX)) return 'call';
   return null;
 }
 
-export interface BulkPlan {
+interface BulkPlan {
   /** Ids the bulk endpoint can act on. */
   native: string[];
   /** Connector approvals — each needs its own parameter review. */
@@ -543,7 +576,7 @@ export interface BulkPlan {
   unsupported: string[];
 }
 
-export function planBulk(ids: Iterable<string>): BulkPlan {
+function planBulk(ids: Iterable<string>): BulkPlan {
   const native: string[] = [];
   const resolvable: string[] = [];
   const unsupported: string[] = [];

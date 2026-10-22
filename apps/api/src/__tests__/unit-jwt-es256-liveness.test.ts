@@ -1,15 +1,13 @@
-import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, describe, expect, setSystemTime, spyOn, test } from 'bun:test';
 
 /**
- * ES256 (JWKS) access tokens must pass the same GoTrue liveness check as HS256.
+ * ES256 (JWKS) access tokens must pass the same liveness check as HS256.
  *
  * Staging and prod publish ES256 keys. The JWKS verifier checked signature,
  * `exp` and `sub` only, so a token whose session was logged out, banned or
  * deleted stayed valid until `exp` (~1 h) on every route without the account
  * session gate (for example `GET /v1/accounts/me`).
  */
-
-process.env.SUPABASE_JWT_LIVENESS_TTL_MS = '30000';
 
 const USER = '00000000-0000-4000-8000-00000000a001';
 const KID = 'synthetic-es256-kid';
@@ -19,10 +17,12 @@ const jwk = { ...(await crypto.subtle.exportKey('jwk', keys.publicKey)), kid: KI
 
 // Serve the test JWKS before `jwt-verify` loads it on import.
 const realFetch = globalThis.fetch;
-globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
-  String(input).endsWith('/.well-known/jwks.json')
-    ? Response.json({ keys: [jwk] })
-    : realFetch(input, init)) as typeof fetch;
+let jwksFetches = 0;
+globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  if (!String(input).endsWith('/.well-known/jwks.json')) return realFetch(input, init);
+  jwksFetches += 1;
+  return Response.json({ keys: [jwk] });
+}) as typeof fetch;
 
 type Verify = typeof import('../shared/jwt-verify').verifySupabaseJwt;
 type Liveness = typeof import('../shared/jwt-liveness');
@@ -37,13 +37,16 @@ beforeAll(async () => {
   ({ isInconclusiveVerifyFailure: isInconclusive } = await import('../shared/jwt-verify-outcome'));
 });
 
-afterEach(() => liveness.__setJwtLivenessLoaderForTests(null));
+afterEach(() => {
+  liveness.__setJwtLivenessLoaderForTests(null);
+  liveness.__setSessionLivenessLoaderForTests(null);
+});
 
 const b64 = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const inAnHour = () => Math.floor(Date.now() / 1000) + 3600;
 
-async function sign(payload: Record<string, unknown>): Promise<string> {
-  const head = `${b64({ alg: 'ES256', typ: 'JWT', kid: KID })}.${b64(payload)}`;
+async function sign(payload: Record<string, unknown>, kid = KID): Promise<string> {
+  const head = `${b64({ alg: 'ES256', typ: 'JWT', kid })}.${b64(payload)}`;
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, keys.privateKey, new TextEncoder().encode(head));
   return `${head}.${Buffer.from(sig).toString('base64url')}`;
 }
@@ -58,12 +61,22 @@ function loader(answer: () => Promise<{ id: string; email: string } | null>) {
 }
 
 describe('ES256 tokens', () => {
-  test('a live token verifies, and GoTrue is asked once per TTL', async () => {
+  test('forged unknown kids refetch the JWKS at most once a minute', async () => {
+    const before = jwksFetches;
+    for (const kid of ['forged-kid-1', 'forged-kid-2', 'forged-kid-3']) {
+      const result = await verifySupabaseJwt(await sign({ sub: USER, exp: inAnHour() }, kid));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.reason).toBe('no-key-for-kid');
+    }
+    expect(jwksFetches - before).toBe(1);
+  });
+
+  test('a live token verifies, and every check asks again (no cache)', async () => {
     const calls = loader(async () => ({ id: USER, email: 'synthetic@example.test' }));
     const token = await sign({ sub: USER, exp: inAnHour() });
     const results = await Promise.all([verifySupabaseJwt(token), verifySupabaseJwt(token), verifySupabaseJwt(token)]);
     for (const result of results) expect(result.ok).toBe(true);
-    expect(calls.length).toBe(1);
+    expect(calls.length).toBe(3);
   });
 
   test('a token whose session GoTrue revoked is a definitive rejection', async () => {
@@ -81,14 +94,46 @@ describe('ES256 tokens', () => {
     expect(result.ok).toBe(false);
   });
 
-  test('logout drops the cached verdict so the next request asks GoTrue again', async () => {
+  test('a token with session_id is decided by the session lookup, not GoTrue', async () => {
+    const goTrue = loader(async () => ({ id: USER, email: '' }));
+    const SESSION = '00000000-0000-4000-8000-00000000c003';
     let live = true;
-    loader(async () => (live ? { id: USER, email: '' } : null));
-    const token = await sign({ sub: USER, exp: inAnHour() });
+    const lookups: string[] = [];
+    liveness.__setSessionLivenessLoaderForTests(async (userId, sessionId) => {
+      lookups.push(`${userId}/${sessionId}`);
+      return live ? { id: userId, email: '' } : null;
+    });
+    const token = await sign({ sub: USER, session_id: SESSION, exp: inAnHour() });
     expect((await verifySupabaseJwt(token)).ok).toBe(true);
     live = false;
-    liveness.forgetJwtLiveness(token);
-    expect((await verifySupabaseJwt(token)).ok).toBe(false);
+    const refused = await verifySupabaseJwt(token);
+    expect(refused).toEqual({ ok: false, reason: 'session-not-live' });
+    expect(lookups).toEqual([`${USER}/${SESSION}`, `${USER}/${SESSION}`]);
+    expect(goTrue.length).toBe(0);
+  });
+
+  test('a failed session lookup falls back to GoTrue', async () => {
+    const goTrue = loader(async () => ({ id: USER, email: '' }));
+    liveness.__setSessionLivenessLoaderForTests(async () => {
+      throw new Error('db down');
+    });
+    const { logger } = await import('../lib/logger');
+    const warn = spyOn(logger, 'warn').mockImplementation(() => {});
+    try {
+      setSystemTime(new Date('2026-10-20T12:00:00Z'));
+      const token = await sign({ sub: USER, session_id: '00000000-0000-4000-8000-00000000c003', exp: inAnHour() });
+      for (let i = 0; i < 3; i += 1) expect((await verifySupabaseJwt(token)).ok).toBe(true);
+      expect(goTrue.length).toBe(3);
+      // Visible, but one line a minute, not one per request.
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain('auth.sessions lookup failed');
+      setSystemTime(new Date('2026-10-20T12:01:01Z'));
+      expect((await verifySupabaseJwt(token)).ok).toBe(true);
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      setSystemTime();
+      warn.mockRestore();
+    }
   });
 
   test('GoTrue unreachable is inconclusive, so the caller falls back to the network path', async () => {

@@ -11,6 +11,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { compiledSetV3 } from '@/lib/config/manifest-v3'
 
 export const SKILLS_DIR = 'skills'
 /** Default OpenCode config dir when the manifest names none. */
@@ -21,9 +22,11 @@ export const LEGACY_OPENCODE_CONFIG_DIR = '.kortix/opencode'
 /**
  * The repo paths a config release is built from, for the session notice: the
  * legacy config dir holds the agents and skills too; the root layout keeps
- * them beside it. `configDir` null = the default.
+ * them beside it. `configDir` null = the default. A kortix.yaml v3 project
+ * (`governance` is its compiled set) has only `kortix.yaml`.
  */
-export function releaseSourcePaths(configDir: string | null): string[] {
+export function releaseSourcePaths(configDir: string | null, governance: string | null = null): string[] {
+  if (compiledSetV3(governance)) return ['kortix.yaml']
   const dir = configDir ?? OPENCODE_CONFIG_DIR
   return dir === LEGACY_OPENCODE_CONFIG_DIR ? [dir] : ['agents', SKILLS_DIR, dir]
 }
@@ -54,4 +57,16 @@ export function managedOverlayRoot(dir: string, projectRoot?: string): string {
   if (!projectRoot || !dir.startsWith(`${projectRoot}/`)) return dir
   const rootKeepsSkills = !existsSync(join(dir, SKILLS_DIR)) && existsSync(join(projectRoot, SKILLS_DIR))
   return rootKeepsSkills ? projectRoot : dir
+}
+
+/**
+ * OpenCode's config dir inside a release, as `resolveOpencodeConfigDir` finds
+ * it in `/workspace`: the manifest's dir when it holds an `opencode.json[c]`.
+ * Null when the repository has none; OpenCode then runs the image default, as
+ * it does on the working tree.
+ */
+export function releaseConfigDir(releaseRoot: string, configDir: string | null): string | null {
+  if (!configDir) return null
+  const dir = join(releaseRoot, configDir)
+  return existsSync(join(dir, 'opencode.jsonc')) || existsSync(join(dir, 'opencode.json')) ? dir : null
 }

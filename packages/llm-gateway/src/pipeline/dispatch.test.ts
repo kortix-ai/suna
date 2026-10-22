@@ -155,16 +155,28 @@ describe('dispatch: one attempt plan', () => {
     expect(cooldowns).toEqual([['a', 40], ['b', 6]]);
   });
 
-  test('a failover chain skips candidates that did not opt in', async () => {
-    const chain = [
-      upstream('first', { failover: true }),
-      upstream('no-opt-in'),
-      upstream('third', { failover: true }),
+  // A prod ChatGPT account hit its weekly plan limit (resets in ~4.8 days) and
+  // rested 30 s at a time, so every later request paid one more refused call.
+  test('a ChatGPT usage limit rests the account until its reset; the client retry stays within a minute', async () => {
+    const key = { ...base, apiKey: 'a', poolSecretId: 'a', billingMode: 'none' as const, markup: 0 };
+    const limit = (fields: Record<string, unknown>) =>
+      JSON.stringify({ error: { type: 'usage_limit_reached', message: 'The usage limit has been reached', ...fields } });
+    const cases: Array<[Record<string, unknown>, number]> = [
+      [{ resets_in_seconds: 414374, limit_window_minutes: 10080 }, 414374],
+      [{ resets_at: Math.floor(Date.now() / 1000) + 7200 }, 7200],
+      [{ resets_in_seconds: 99_999_999 }, 8 * 24 * 60 * 60],
     ];
-    const { run, sent } = harness((s) => (s.host === 'third' ? ok() : status(500)));
-    const outcome = await run({ model: 'm', candidates: chain });
-    expect(sent.map((s) => s.host)).toEqual(['first', 'third']);
-    expect(outcome.attemptFailures.map((f) => [f.provider, f.status])).toEqual([['first', 500]]);
+    for (const [fields, expected] of cases) {
+      const body = limit(fields);
+      const { run, cooldowns } = harness(() => new Response(body, { status: 429 }));
+      const outcome = await run({ model: 'm', candidates: [key] });
+      expect(outcome.response?.status).toBe(429);
+      expect(Number(outcome.response?.headers.get('retry-after'))).toBeLessThanOrEqual(60);
+      expect(await outcome.response?.text()).toBe(body);
+      expect(cooldowns).toHaveLength(1);
+      expect(cooldowns[0]![0]).toBe('a');
+      expect(Math.abs(cooldowns[0]![1] - expected)).toBeLessThanOrEqual(2);
+    }
   });
 
   test('fallback models are resolved lazily, deduplicated, and capped at eight', async () => {
@@ -323,12 +335,12 @@ describe('dispatch: one attempt plan', () => {
     );
     const outcome = await run({
       model: 'm',
-      candidates: [upstream('first', { failover: true }), upstream('second', { failover: true })],
+      candidates: [upstream('first')],
       fallbackModels: ['f'],
       fallbackOn: 'any-error',
     });
     // Dispatch itself stops: callUpstream's own pre-check would also hold the
-    // fetch count at 1, but only dispatch's stop keeps the second candidate
+    // fetch count at 1, but only dispatch's stop keeps the fallback model
     // from being attempted.
     expect(outcome.attempts).toBe(1);
     expect(outcome.candidatesTried).toHaveLength(1);
@@ -337,16 +349,20 @@ describe('dispatch: one attempt plan', () => {
   });
 
   test('a publicly named candidate records a classified failure, never the upstream text', async () => {
-    const managed = (provider: string) => upstream(provider, { failover: true, publicProvider: 'kortix' });
     const { run } = harness((s) =>
       s.host === 'upstream-a' ? new Response('upstream-a key rejected', { status: 401 }) : ok(),
     );
-    const outcome = await run({ model: 'm', candidates: [managed('upstream-a'), managed('upstream-b')] });
-    expect(outcome.attemptFailures).toEqual([
+    const outcome = await run({
+      model: 'm',
+      candidates: [upstream('upstream-a', { publicProvider: 'kortix' })],
+      fallbackModels: ['f'],
+      fallbackOn: 'any-error',
+    });
+    expect(outcome.attemptFailures[0]).toEqual(
       expect.objectContaining({ provider: 'kortix', resolvedModel: 'm', code: 'model_unavailable', status: 401 }),
-    ]);
+    );
     expect(JSON.stringify(outcome.attemptFailures)).not.toContain('upstream-a');
-    expect(outcome.candidatesTried).toEqual(['kortix', 'kortix']);
+    expect(outcome.candidatesTried[0]).toBe('kortix');
   });
 });
 

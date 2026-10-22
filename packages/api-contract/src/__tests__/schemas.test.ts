@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SessionWorking,
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
-  EXPERIMENTAL_FEATURE_KEYS,
   FEATURE_FLAG_KEYS,
   FeatureFlagStabilitySchema,
   ErrorEnvelopeSchema,
@@ -136,19 +136,23 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       marketplace: false,
       connectors_api_discover: false,
       agentmail_email: false,
-      llm_gateway: true,
       meta_agent: false,
-      apps: false,
       monitors: false,
       reminders: false,
       warm_sessions: false,
       secrets_egress: false,
-      pi_worker: false,
       pooled_provider_secrets: false,
       pi_harness: false,
-      config_releases: true,
-      agent_principal: false,
+      genui: false,
       us_region: false,
+      event_triggers: false,
+      notification_center: false,
+      volumes: false,
+      drives: false,
+      session_log_restore: false,
+      connectors_v2: false,
+      agent_rooms: false,
+      goals: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -228,6 +232,7 @@ function triggerFixture(overrides: Record<string, unknown> = {}) {
     mode: null,
     interval_seconds: null,
     expect_event_within_seconds: null,
+    event: null,
     prompt_template: 'Summarize yesterday.',
     session_mode: 'fresh',
     session_id: null,
@@ -287,12 +292,12 @@ describe('ProjectSchema', () => {
     expect(parsed.project_role).toBeNull();
   });
 
-  test('accepts E2B and rejects retired sandbox providers in project pin fields', () => {
+  test('accepts Platinum and Daytona and rejects retired sandbox providers in project pin fields', () => {
     expect(() =>
       ProjectSchema.parse(
         projectFixture({
-          default_sandbox_provider: 'e2b',
-          available_sandbox_providers: ['daytona', 'platinum', 'e2b'],
+          default_sandbox_provider: 'platinum',
+          available_sandbox_providers: ['platinum', 'daytona'],
         }),
       ),
     ).not.toThrow();
@@ -303,7 +308,8 @@ describe('ProjectSchema', () => {
         }),
       ),
     ).toThrow();
-    const retiredProviders = [['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
+    // E2B support is discontinued: `e2b` is a retired provider too.
+    const retiredProviders = ['e2b', ['local', 'docker'].join('_'), ['local', 'docker'].join('-')];
     for (const retiredProvider of retiredProviders) {
       expect(() =>
         ProjectSchema.parse(
@@ -321,11 +327,25 @@ describe('ProjectSchema', () => {
   });
 
   test('rejects an experimental map missing a registered key', () => {
-    const { llm_gateway: _dropped, ...partial } = projectFixture().experimental as Record<
+    const { meta_agent: _dropped, ...partial } = projectFixture().experimental as Record<
       string,
       boolean
     >;
     expect(() => ProjectSchema.parse(projectFixture({ experimental: partial }))).toThrow();
+  });
+
+  test('experimental carries the graduated llm_gateway key only as a constant true', () => {
+    // Wire compat: the API still sends `llm_gateway: true` for older SDK and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: true } })).experimental.llm_gateway).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated session_log key only as a constant true', () => {
+    // Wire compat: the API still sends `session_log: true` for older SDK, CLI and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: true } })).experimental.session_log).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -358,6 +378,15 @@ describe('ProjectSchema.icon_glyph', () => {
 });
 
 describe('ProjectSessionSchema', () => {
+  test('working is additive and survives parsing independently of lifecycle status', () => {
+    const working: SessionWorking = { state: 'idle', since: null, turn_token: null, pending_delivery: false };
+    const parsed = ProjectSessionSchema.parse(sessionFixture({ working }));
+    expect(parsed.working).toEqual(working);
+    expect(String(parsed.status)).toBe(sessionFixture().status);
+    expect(ProjectSessionSchema.parse(sessionFixture()).working).toBeUndefined();
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ working: { ...working, state: 'running' } })).success).toBe(false);
+  });
+
   test('accepts a full serialized session', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
@@ -508,7 +537,7 @@ describe('pending session prompt contract', () => {
 
 describe('ProjectSessionSandboxSchema', () => {
   test('accepts every provider the platform can emit', () => {
-    for (const provider of ['daytona', 'platinum', 'e2b']) {
+    for (const provider of ['platinum', 'daytona']) {
       expect(() =>
         ProjectSessionSandboxSchema.strict().parse(sandboxFixture({ provider })),
       ).not.toThrow();
@@ -517,6 +546,14 @@ describe('ProjectSessionSandboxSchema', () => {
 });
 
 describe('TriggerSchema', () => {
+  test('keeps exact cron time distinct from jittered execution and accepts older APIs', () => {
+    const parsed = TriggerSchema.strict().parse(triggerFixture({
+      next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
+    }));
+    expect(parsed.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
+    expect(parsed.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
+    expect(TriggerSchema.strict().parse(triggerFixture()).next_cron_at).toBeUndefined();
+  });
   test('accepts a cron trigger and a webhook trigger', () => {
     expect(() => TriggerSchema.strict().parse(triggerFixture())).not.toThrow();
     expect(() =>
@@ -529,6 +566,43 @@ describe('TriggerSchema', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  test('filter: a value or exactly one operator per path (KRTX-1721)', () => {
+    const filter = {
+      'body.type': 'push',
+      'body.sender.login': { not: ['kortix-bot'] },
+      'body.action': { in: ['opened'] },
+      'body.pull_request': { exists: true },
+      'body.base': { prefix: ['release/'] },
+      'body.ref': { not_prefix: ['refs/heads/kortix/'] },
+    };
+    expect(() => TriggerSchema.strict().parse(triggerFixture({ filter }))).not.toThrow();
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { in: ['a'], not: ['b'] } } })).success).toBe(false);
+    expect(TriggerSchema.safeParse(triggerFixture({ filter: { 'body.ref': { nott: ['a'] } } })).success).toBe(false);
+  });
+
+  test('accepts an event trigger with its subscription state', () => {
+    const event = {
+      connector: 'github',
+      account: 'acme-bot',
+      connected_as: 'bot@example.test',
+      type: 'GITHUB_PULL_REQUEST_EVENT',
+      config: { owner: 'acme' },
+      source: 'composio',
+      provider: 'composio',
+      app: 'github',
+      status: 'needs_connection',
+      error: 'Connect a shared GitHub account to activate this trigger.',
+      last_event_at: null,
+    };
+    const trigger = triggerFixture({ type: 'event', cron: null, event });
+    expect(() => TriggerSchema.strict().parse(trigger)).not.toThrow();
+    expect(
+      TriggerSchema.safeParse(triggerFixture({ type: 'event', event: { ...event, status: 'bogus' } })).success,
+    ).toBe(false);
+    // `account` is null for the connector default and `connected_as` null when no account feeds it.
+    expect(TriggerSchema.safeParse(triggerFixture({ type: 'event', event: { ...event, account: null, connected_as: null } })).success).toBe(true);
   });
 
   // `monitor` is the third trigger type:
@@ -602,6 +676,25 @@ describe('SecretSchema', () => {
         }),
       ),
     ).not.toThrow();
+  });
+
+  test('status is ok or undecryptable, and optional for older servers', () => {
+    for (const status of ['ok', 'undecryptable'] as const) {
+      expect(SecretSchema.strict().parse(secretFixture({ status })).status).toBe(status);
+    }
+    expect(SecretSchema.strict().parse(secretFixture()).status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ status: 'missing' })).success).toBe(false);
+  });
+
+  test("mine.status reports the caller's override apart from the shared status", () => {
+    const mine = { active: true, updated_at: NOW, status: 'undecryptable' };
+    const parsed = SecretSchema.strict().parse(
+      secretFixture({ status: 'ok', effective_source: 'mine', mine }),
+    );
+    expect(parsed.status).toBe('ok');
+    expect(parsed.mine?.status).toBe('undecryptable');
+    expect(SecretSchema.parse(secretFixture({ mine: { active: true, updated_at: NOW } })).mine?.status).toBeUndefined();
+    expect(SecretSchema.safeParse(secretFixture({ mine: { ...mine, status: 'missing' } })).success).toBe(false);
   });
 
   test('accepts the system git-auth secret shape', () => {
@@ -711,28 +804,30 @@ describe('envelopes', () => {
   });
 
   test('feature flag keys stay in sync with the map schema', () => {
-    expect(FEATURE_FLAG_KEYS).toEqual([
+    // The static tuple order of a zod `keyof()` follows union order, which tsgo
+    // (TypeScript 7) sorts differently from tsc 5; the runtime order is the contract.
+    expect(FEATURE_FLAG_KEYS as readonly string[]).toEqual([
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
-      'llm_gateway',
       'meta_agent',
-      'apps',
       'monitors',
       'reminders',
       'warm_sessions',
       'secrets_egress',
-      'pi_worker',
       'pooled_provider_secrets',
       'pi_harness',
-      'config_releases',
-      'agent_principal',
+      'genui',
       'us_region',
+      'event_triggers',
+      'notification_center',
+      'volumes',
+      'drives',
+      'session_log_restore',
+      'connectors_v2',
+      'agent_rooms',
+      'goals',
     ]);
-  });
-
-  test('EXPERIMENTAL_FEATURE_KEYS is a deprecated alias of the same list', () => {
-    expect(EXPERIMENTAL_FEATURE_KEYS).toBe(FEATURE_FLAG_KEYS);
   });
 
   test('stability admits stable — a settled feature can still ship behind a flag', () => {
@@ -743,6 +838,32 @@ describe('envelopes', () => {
   test('sharing intent normalizes readonly member lists', () => {
     const parsed = SharingIntentSchema.parse({ mode: 'members', memberIds: ['u1'] });
     expect(parsed).toEqual({ mode: 'members', memberIds: ['u1'] });
+  });
+});
+
+test('SessionCreateInputSchema still accepts the withdrawn persistent_machine field (inert)', () => {
+  expect(SessionCreateInputSchema.strict().parse({ persistent_machine: true })).toMatchObject({ persistent_machine: true });
+});
+
+describe('SessionCreateInputSchema initial_context', () => {
+  test('accepts a bounded context beside the prompt and drops it when absent', () => {
+    const parsed = SessionCreateInputSchema.parse({
+      initial_prompt: 'Reply with the single word pong',
+      initial_context: '--- session contract ---\nDo not spawn other sessions.',
+    });
+    expect(parsed.initial_context).toMatch(/Do not spawn other sessions/);
+    expect(SessionCreateInputSchema.parse({ initial_prompt: 'hi' }).initial_context).toBeUndefined();
+    expect(SessionCreateInputSchema.parse({}).initial_context).toBeUndefined();
+  });
+
+  test('rejects an empty or oversized context', () => {
+    expect(SessionCreateInputSchema.safeParse({ initial_context: '' }).success).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ initial_context: 'x'.repeat(8_193) }).success,
+    ).toBe(false);
+    expect(
+      SessionCreateInputSchema.safeParse({ initial_context: 'x'.repeat(8_192) }).success,
+    ).toBe(true);
   });
 });
 

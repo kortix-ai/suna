@@ -9,9 +9,11 @@ import {
   applyBulk,
   applyCell,
   applyLeaf,
+  areaLabel,
   buildAreaTable,
   expandFold,
   foldSelection,
+  permissionLabel,
   unmappedLeaves,
 } from './role-capability-matrix';
 
@@ -29,13 +31,18 @@ import {
 const MIGRATIONS_DIR = join(import.meta.dir, '../../../../../packages/db/migrations');
 
 /** Every `INSERT INTO kortix.permissions (...) VALUES ...` row in the migration
- *  tree, in file order. Handles both column orders in use. */
+ *  tree, in file order, minus the leaves a later
+ *  `DELETE FROM kortix.permissions WHERE action IN (...)` retires. Handles both
+ *  column orders in use. */
 function seededCatalog(): Permission[] {
   const out = new Map<string, Permission>();
   for (const file of readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort()) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    for (const retired of sql.matchAll(/DELETE FROM kortix\.permissions WHERE action IN \(([^)]*)\)/gi)) {
+      for (const action of splitValues(retired[1])) out.delete(unquote(action));
+    }
     const inserts = sql.matchAll(
       /INSERT INTO kortix\.permissions\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
     );
@@ -112,7 +119,30 @@ function parseArray(raw: string): string[] {
   return splitValues(array[1]).map(unquote).filter(Boolean);
 }
 
-const CATALOG = seededCatalog();
+/**
+ * Leaves a later migration retired and split (20261003235127508). Their rows
+ * stay in `kortix.permissions` until a contract migration, but the API's
+ * catalog loader drops actions the code no longer knows, the same migration
+ * rewrites every `implies` array that named them, and every role that held
+ * one was granted its replacements. The fixture applies the same three rules.
+ */
+const RETIRED: Record<string, readonly string[]> = {
+  'project.customize.write': [
+    'project.settings.write',
+    'project.sandbox.write',
+    'project.model.read',
+    'project.model.write',
+    'project.agent.write',
+  ],
+  'project.customize.read': ['project.model.read'],
+};
+const expandRetired = (actions: readonly string[]): string[] => [
+  ...new Set(actions.flatMap((a) => RETIRED[a] ?? [a])),
+];
+
+const CATALOG = seededCatalog()
+  .filter((p) => !(p.action in RETIRED))
+  .map((p) => ({ ...p, implies: expandRetired(p.implies).filter((a) => a !== p.action) }));
 const PROJECT_LEAVES = CATALOG.filter((p) => p.scope_type === 'project').map((p) => p.action);
 const ACCOUNT_LEAVES = CATALOG.filter((p) => p.scope_type === 'account').map((p) => p.action);
 
@@ -144,11 +174,39 @@ function seededRolePermissions(): Map<string, string[]> {
       const key = `${one[2]}:${one[3]}`;
       out.set(key, [...(out.get(key) ?? []), one[1]]);
     }
+    // The removal shape (20261013172952181: the member role loses
+    // `member.read` and `group.read`).
+    for (const gone of sql.matchAll(
+      /DELETE FROM kortix\.role_permissions rp[\s\S]*?r\.key = '([^']+)'[\s\S]*?r\.scope_type = '([^']+)'[\s\S]*?rp\.action IN \(([^)]*)\)/gi,
+    )) {
+      const key = `${gone[1]}:${gone[2]}`;
+      const removed = [...gone[3].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+      out.set(key, (out.get(key) ?? []).filter((action) => !removed.includes(action)));
+    }
   }
   return out;
 }
 
-const SEEDED_ROLES = seededRolePermissions();
+/**
+ * Grants a later migration copies from an Apps leaf with INSERT ... SELECT
+ * (20261009115640000: every role holding project.app.write also gets
+ * project.app.admin). The parser above reads only literal rows, so the
+ * fixture applies the same copy rule.
+ */
+const MIRRORED: Record<string, string> = {
+  'project.app.write': 'project.app.admin',
+};
+const withMirrored = (actions: readonly string[]): string[] => [
+  ...actions,
+  ...actions.flatMap((a) => (MIRRORED[a] ? [MIRRORED[a]] : [])),
+];
+
+const SEEDED_ROLES = new Map(
+  [...seededRolePermissions()].map(([key, actions]) => [
+    key,
+    [...new Set(withMirrored(expandRetired(actions)))],
+  ]),
+);
 const roleActions = (key: string, scope: CapabilityScope) => {
   const actions = SEEDED_ROLES.get(`${key}:${scope}`);
   if (!actions || actions.length === 0) throw new Error(`no seeded actions for ${key}:${scope}`);
@@ -172,10 +230,20 @@ function sorted(set: Iterable<string>): string[] {
 
 // ─── The mapping itself ─────────────────────────────────────────────────────
 
+describe('the built-in member role reads no directory', () => {
+  test('the fixture applies the removal migration', () => {
+    expect(roleActions('member', 'account')).not.toContain('member.read');
+    expect(roleActions('member', 'account')).not.toContain('group.read');
+    expect(roleActions('admin', 'account')).toContain('member.read');
+  });
+});
+
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(46);
-    expect(ACCOUNT_LEAVES.length).toBe(29);
+    // 51 since rooms' `project.room.read` and `project.room.write` (20261020130102200).
+    expect(PROJECT_LEAVES.length).toBe(51);
+    // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261015003000001).
+    expect(ACCOUNT_LEAVES.length).toBe(31);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
     // cataloged, validated, in no role and asserted by no route.
@@ -241,14 +309,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(46);
+    expect(fold.totalCount).toBe(51);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(46);
+    expect(fold.selectedCount).toBe(51);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );
@@ -328,9 +396,9 @@ describe('applyCell — Edit implies View', () => {
     expect(sorted(next)).toEqual(['project.file.read', 'project.file.write']);
   });
 
-  test('checking Edit on Customize pulls in all six reads', () => {
+  test('checking Edit on Customize pulls in its reads', () => {
     const next = applyCell('project', new Set(), 'customize', 'edit', true, CATALOG);
-    expect(next.has('project.customize.read')).toBe(true);
+    expect(next.has('project.model.read')).toBe(true);
     expect(next.has('project.agent.read')).toBe(true);
     expect(next.has('project.secret.read')).toBe(true);
     expect(next.size).toBe(13);
@@ -385,7 +453,9 @@ describe('applyCell — a push rewrites Files, Customize and Triggers', () => {
     const next = applyCell('project', new Set(), 'git', 'edit', true, CATALOG);
     for (const leaf of [
       'project.file.write',
-      'project.customize.write',
+      'project.settings.write',
+      'project.sandbox.write',
+      'project.model.write',
       'project.agent.write',
       'project.skill.write',
       'project.connector.write',
@@ -423,7 +493,7 @@ describe('applyCell — a push rewrites Files, Customize and Triggers', () => {
     const off = applyCell('project', on, 'customize', 'edit', false, CATALOG);
     expect(off.has('project.gitops.push')).toBe(false);
     expect(off.has('project.gitops.merge')).toBe(false);
-    expect(off.has('project.customize.read')).toBe(true);
+    expect(off.has('project.model.read')).toBe(true);
   });
 
   test('the Git row carries the note that explains it', () => {
@@ -440,7 +510,7 @@ describe('applyBulk', () => {
   test('View everything grants exactly the view leaves', () => {
     const next = applyBulk('project', new Set(), 'view-all', CATALOG);
     expect(next.has('project.read')).toBe(true);
-    expect(next.has('project.customize.read')).toBe(true);
+    expect(next.has('project.model.read')).toBe(true);
     expect(next.has('project.write')).toBe(false);
     const fold = foldSelection('project', CATALOG, next);
     expect(fold.areas.every((a) => a.view.state === 'on' && a.edit.state === 'off')).toBe(true);
@@ -473,6 +543,90 @@ describe('applyBulk', () => {
 });
 
 // ─── Catalog-awareness ──────────────────────────────────────────────────────
+
+// ─── Synthetic catalogs: implication edges the seeded catalog lacks ────────
+
+/** A tiny hand-built catalog for implication-graph cases the seeded catalog
+ *  does not contain: cycles, gaps, unknown leaves and areas without copy. */
+function catalog(entries: Array<Partial<Permission> & { action: string }>): Permission[] {
+  return entries.map((e) => ({
+    action: e.action,
+    scope_type: e.scope_type ?? 'project',
+    resource_type: e.resource_type ?? 'project',
+    delegable: e.delegable ?? true,
+    description: e.description ?? '',
+    area: e.area ?? 'synthetic',
+    level: e.level ?? 'edit',
+    implies: e.implies ?? [],
+  }));
+}
+
+describe('implication closure on synthetic graphs', () => {
+  test('a cyclic implication graph terminates and grants the whole cycle', () => {
+    const cycle = catalog([
+      { action: 'x.a.grant', implies: ['x.b.grant'] },
+      { action: 'x.b.grant', implies: ['x.a.grant'] },
+    ]);
+    const next = applyLeaf('project', new Set(), 'x.a.grant', true, cycle);
+    expect(sorted(next)).toEqual(['x.a.grant', 'x.b.grant']);
+  });
+
+  test('an implied leaf the catalog does not publish is not granted', () => {
+    const gap = catalog([{ action: 'x.a.grant', implies: ['x.ghost.leaf'] }]);
+    const next = applyLeaf('project', new Set(), 'x.a.grant', true, gap);
+    expect([...next]).toEqual(['x.a.grant']);
+  });
+
+  test('an implied leaf missing from the catalog but already selected is kept', () => {
+    const gap = catalog([{ action: 'x.a.grant', implies: ['x.ghost.leaf'] }]);
+    const next = applyLeaf('project', new Set(['x.ghost.leaf']), 'x.a.grant', true, gap);
+    expect(sorted(next)).toEqual(['x.a.grant', 'x.ghost.leaf']);
+  });
+
+  test('a selected leaf outside the catalog stays reachable and selectable', () => {
+    // An unknown action prefix defaults to the project scope, so the grant is
+    // kept and offered in Advanced instead of being silently stripped on save.
+    const fold = foldSelection('project', CATALOG, new Set(['x.unknown.leaf']));
+    const ghost = fold.unmapped.find((leaf) => leaf.action === 'x.unknown.leaf');
+    expect(ghost?.selected).toBe(true);
+    expect(ghost?.label).toBe('X · Unknown · Leaf');
+    expect(sorted(expandFold(fold))).toEqual(['x.unknown.leaf']);
+  });
+});
+
+describe('label fallbacks', () => {
+  test('an area without display copy renders a humanized key and no hint', () => {
+    const table = buildAreaTable(
+      'project',
+      catalog([
+        { action: 'x.brand_new_area.read', level: 'view', area: 'brand_new_area' },
+        { action: 'x.brand_new_area.write', level: 'edit', area: 'brand_new_area' },
+      ]),
+    );
+    expect(table).toEqual([
+      {
+        key: 'brand_new_area',
+        label: 'Brand New Area',
+        view: ['x.brand_new_area.read'],
+        edit: ['x.brand_new_area.write'],
+      },
+    ]);
+  });
+
+  test('areaLabel: catalog copy when it exists, humanized key when it does not', () => {
+    expect(areaLabel('git')).toBe('Git & Reviews');
+    expect(areaLabel('brand_new_area')).toBe('Brand New Area');
+  });
+
+  test('permissionLabel: description first, humanized action otherwise', () => {
+    expect(permissionLabel({ action: 'x.a.b', description: 'Catalog words' })).toBe(
+      'Catalog words',
+    );
+    expect(permissionLabel({ action: 'x.a_b.c', description: '' })).toBe('X · A b · C');
+    // Whitespace-only copy counts as absent — the humanized action renders.
+    expect(permissionLabel({ action: 'x.a.b', description: '  ' })).toBe('X · A · B');
+  });
+});
 
 describe('an incomplete catalog never invents a grant', () => {
   const trimmed = CATALOG.filter((a) => a.action !== 'project.file.write');

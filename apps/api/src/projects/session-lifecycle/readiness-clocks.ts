@@ -37,6 +37,10 @@ export const RUNTIME_READINESS_CLOCK_KEYS = [
   'runtimeWakeProviderStatus',
   'runtimeWakeError',
   'runtimeWakeFailedAt',
+  // Whether this open already warned about the CURRENT unreachable spell
+  // (shouldWarnRuntimeUnreachable). Cleared with the rest so the next spell
+  // gets its own warn.
+  'runtimeUnreachableWarnedAt',
   ...(Object.keys(PRE_W4_READINESS_KEYS) as RuntimeReadinessKey[]),
   ...Object.values(PRE_W4_READINESS_KEYS),
 ] as const;
@@ -144,7 +148,7 @@ export function inPlaceRestartWakePatch(now = new Date()): RuntimeReadinessMetad
  * A readiness clock older than this was written by a previous attempt on the
  * same row and is not evidence about this one.
  *
- * *Incident (2026-08-26, SampleCo, session 29861dfa / box inqwpv4a).* Attempt 1
+ * *Incident (2026-08-26, a SampleCo session on an E2B box).* Attempt 1
  * failed during a post-roll build storm at ~13:27. The automatic cooldown rung
  * re-attempted at ~13:33: the resume launched the entrypoint, the daemon booted
  * through 13:34:48.8, authenticated to the gateway at 13:34:48.5–49.1 and
@@ -214,6 +218,41 @@ function clockForThisBoot(clockMs: number | null, bootEpochMs: number | null): n
   return clockMs;
 }
 
+/**
+ * One warn per unreachable spell, and only once the spell has outlasted the
+ * ride-out budget the open path already enforces (30 s: a daemon silent past
+ * it gets relaunched, not waited on).
+ *
+ * The cause-change gate this replaces (2026-09-29: one warn per CHANGED
+ * cause, down from one warn per poll) still emitted one warn per TRANSIENT
+ * flip: a cold wake fails its first session-list probes with
+ * `timeout_or_network`, then the provider edge's `http_502` for the
+ * not-yet-bound port, then back — each flip a "new" cause, each flip a warn.
+ * Measured 2026-10-04: 816 warns in one day, consecutive-cause pairs 11 s
+ * apart, 73% of spells over in under 30 s. A spell the budget itself calls
+ * still-booting is not a fault; a spell that outlives the budget is, and it
+ * warns once. The durable row stamp keeps recording every cause change —
+ * that write is the diagnostic; this is only the page.
+ */
+export function shouldWarnRuntimeUnreachable(
+  metadata: RuntimeReadinessMetadata,
+  nowMs: number,
+  budgetMs: number,
+): boolean {
+  const spellStartMs = clockForThisBoot(
+    parseTimestampMs(readinessValue(metadata, 'runtimeUnreachableWaitStartedAt')),
+    runtimeBootEpochMs(metadata),
+  );
+  // No spell clock: this open stamps it in its budget phase, right after the
+  // diagnostics — the spell is younger than one poll. Never warn on poll one.
+  if (spellStartMs === null) return false;
+  if (nowMs - spellStartMs < budgetMs) return false;
+  const warnedMs = parseTimestampMs(metadata.runtimeUnreachableWarnedAt);
+  // The mark clears with the readiness clocks; a mark older than the spell
+  // belongs to a previous spell and does not mute this one.
+  return warnedMs === null || warnedMs < spellStartMs;
+}
+
 export function staleRuntimeReadyReason(
   metadata: RuntimeReadinessMetadata,
   reason: string,
@@ -281,7 +320,7 @@ export function runtimeReadyWaitPatch(
   const bootEpochMs = runtimeBootEpochMs(metadata);
   // A clock stamped before this boot attempt began belongs to the previous one.
   // Treat it as absent so the patch re-baselines it, instead of leaving the row
-  // carrying a budget it has already half spent (session 29861dfa).
+  // carrying a budget it has already half spent (the 2026-08-26 SampleCo incident).
   const storedFirstSeen = readinessValue(metadata, 'runtimeBootWaitFirstSeenAt');
   const firstSeenMs = parseTimestampMs(storedFirstSeen);
   // INHERITED, not merely absent: the key exists and predates this attempt.

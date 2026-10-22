@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { TurnErrorDisplay } from './session-error-banner';
+import { TurnErrorDisplay } from '@kortix/ui/session';
 
 const render = (props: Parameters<typeof TurnErrorDisplay>[0]) =>
   renderToStaticMarkup(
-    <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
-      <TurnErrorDisplay {...props} />
-    </NextIntlClientProvider>,
+    // The out-of-credits card reads the account's billing permission.
+    <QueryClientProvider client={new QueryClient()}>
+      <NextIntlClientProvider locale="en" messages={{}} onError={() => {}}>
+        <TurnErrorDisplay {...props} />
+      </NextIntlClientProvider>
+    </QueryClientProvider>,
   );
 
 describe('a transport failure is never swallowed as an interruption', () => {

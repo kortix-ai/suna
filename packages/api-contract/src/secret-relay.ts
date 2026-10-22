@@ -330,3 +330,25 @@ export function decodeRelayStatus(encoded: string): SecretRelayStatus {
     ...(typeof eos === 'string' ? { eos } : {}),
   };
 }
+
+/**
+ * FRAMING / hop-by-hop request headers the broker rejects with a 400
+ * (`request header is managed by Kortix: <name>`). The shim drops them before
+ * relaying. `accept-encoding`, `authorization` and `cookie` are deliberately
+ * absent: the shim forces `accept-encoding: identity` and the broker drops it,
+ * and the other two carry the handle the broker swaps for the real credential.
+ * A hand copy of this list drifted once and broke every deployed daemon (the
+ * accept-encoding incident), so both sides import this one.
+ */
+export const BLOCKED_REQUEST_HEADERS: ReadonlySet<string> = new Set([
+  'connection',
+  'content-length',
+  'host',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]);

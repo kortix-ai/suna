@@ -1,11 +1,11 @@
 ---
 name: contributing
-description: "The pull request loop for this repo: branch → commit → verify in your own box (local tests + local stack) → PR into main → demo video recorded with agent-browser on the local stack → `gh --attach` → self-merge → verify on dev. A PR into main runs no CI unless a person adds the `test` or `preview` label (one run each). Load when opening, updating, or finishing a pull request; when writing a PR body; when asking what CI runs where; when adding or explaining PR labels or the per-PR preview environment; or when attaching an image or video to a PR, issue, or comment."
+description: "The pull request loop for this repo: branch → commit → verify in your own box (local tests + local stack) → PR into dev → demo video recorded with agent-browser on the local stack → `gh --attach` → self-merge → verify on dev. A PR into dev runs no CI unless a person adds the `test` or `preview` label (one run each). Load when opening, updating, or finishing a pull request; when asking what CI runs where; when adding or explaining PR labels or the per-PR preview environment; or when attaching an image or video to a PR, issue, or comment. The PR title and body are the create-pr skill."
 ---
 
 # Contributing: the pull request loop
 
-Every change reaches `main` through a pull request. A pull request into `main` runs **no**
+Every change reaches `dev` through a pull request. A pull request into `dev` runs **no**
 GitHub Actions job: your development machine runs every test, the stack, and the demo before
 the PR opens, and the PR is mergeable at once. Each PR carries a demo video of the change,
 recorded with **agent-browser** against your local stack. The video is uploaded with `gh --attach` and appears
@@ -42,20 +42,29 @@ Done when `git branch --show-current` prints the canonical branch inside its wor
 - Use the Conventional Commits subject style that `git log` shows:
   `fix(sandbox): …`, `feat(web): …`, `refactor(api): …`, `docs(repo): …`.
 - `pnpm install` arms `.githooks`. The hooks encrypt staged `.env` files, block plaintext
-  secrets, and refuse blocked customer terms. When a hook fires, fix the content and commit
-  again. Keep the hooks on every commit (never `--no-verify`).
+  secrets, refuse blocked customer terms, and refuse a crash dump or a file over 20 MB. When a
+  hook fires, fix the content and commit again. Keep the hooks on every commit (never
+  `--no-verify`).
+- Stage files by name: `git add <path> <path>`. Never `git add -A`, `git add .`, or
+  `git commit -a` outside one named directory. A blanket add once committed a worker's core
+  dump, and a core dump holds every secret in the process environment.
 - Ship the tests with the behaviour change (the **testing** skill).
 
 Done when the commit exists and the hooks passed.
 
 ### 3. Verify in your box
 
-Run the narrowest relevant test first, then `pnpm test` (the **testing** skill). Then run
+Run T0 (`tsc` and lint for the packages you touched) and the one test you wrote or changed
+(the **testing** skill). On a Mac, suite-wide `pnpm test` modes exit `2`: the suite runs in
+CI. A diff that no test reads (docs, a skill, a standalone script) needs no run. Then run
 the changed behaviour on your worktree's stack: `pnpm worktree start <slug>` prints the web
 and API ports. Exercise the real surface: the HTTP route with `curl`, the real CLI process,
 or the page with agent-browser. No CI lane runs these for you before the merge.
+No hook or merge gate requires a test run on a PR into `dev`. If a merge of `origin/dev`
+conflicts on a leftover `tests/attestations/` or `tests/test-attestation.json` file, delete it:
+the attestation system was removed on 2026-10-16.
 
-Done when the commands you will list under "How was this tested?" passed, with output
+Done when the commands you will list under "Verification" passed, with output
 captured.
 
 ### 4. Record the demo video on the local stack
@@ -74,11 +83,15 @@ ab() { agent-browser --session "$SESSION" "$@"; }
 # Sign in before recording, so the video never shows an auth form.
 .agents/skills/contributing/scripts/preview-sign-in.sh "$S" "$SESSION"   # prints the synthetic email
 
-mkdir -p output/pr
+# Absolute paths only: the agent-browser daemon is shared by every session on
+# the machine and resolves a relative path against the cwd of whichever
+# session started it, which can be another worktree.
+OUT="$PWD/output/pr"
+mkdir -p "$OUT"
 ab set viewport 1440 900
 ab open "$S/<changed route>"
 ab wait --load networkidle          # record a rendered page, not a hydrating one
-ab record start output/pr/demo.mp4 --cursor
+ab record start "$OUT/demo.mp4" --cursor
 #   Drive the change: `ab snapshot -i`, then `ab click @eN`, `ab fill @eN …`.
 #   Put `ab wait 800` between actions so a person can follow.
 ab record stop
@@ -117,12 +130,14 @@ Done when the frames show the change from start to result, with only synthetic d
 
 ```bash
 git push -u origin HEAD
-gh pr create --base main \
-  --title "<type>(<scope>): <what changed>" --body-file output/pr/body.md \
+gh pr create --base dev \
+  --title "<type>(<scope>): <outcome a user notices>" --body-file output/pr/body.md \
   --attach ./output/pr/demo.mp4
 ```
 
-- Build `body.md` from `.github/pull_request_template.md`, with every section filled. The
+- Write the title and `body.md` with the **create-pr** skill. It owns the PR text: English
+  only, written for a reviewer who decides "merge or iterate" without the diff, in the
+  section order of `.github/pull_request_template.md`. The
   line `![Demo](./output/pr/demo.mp4)` holds the video; `--attach` uploads it and rewrites
   the path in one step, so skip step 6.
 - Put `body.md` and the recordings in the gitignored `output/pr/` directory. Keep them out
@@ -155,13 +170,11 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 ### 7. Keep it current
 
 - Keep the PR mergeable: `gh pr view <pr> --json mergeable` must not say `CONFLICTING`.
-  Merge `main` into the branch and push.
+  Merge `origin/dev` into the branch and push.
 - When the behaviour in the video changes, record the video again and repeat step 6.
-- Edit the body after an upload from the live copy:
-  `gh pr view <pr> --json body --jq .body > output/pr/body.md`. The old local file still holds
-  `./output/pr/demo.mp4`. `--body-file` without `--attach` would publish that path as a broken
-  link.
-- Merge `main` into the branch daily. Git's rename detection carries `main`'s edits
+- Edit the body after an upload from the live copy (**create-pr** → "Update an existing
+  PR").
+- Merge `origin/dev` into the branch daily. Git's rename detection carries `dev`'s edits
   through moved files. GitHub's conflict check does not, so push the merge.
 
 ### 8. Merge and hand off
@@ -169,9 +182,10 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 - Self-merge when the change is verified (`AGENTS.md` → "Default delivery", rule 5): the
   local checks passed and the PR is mergeable. Do not wait for the user's approval, and do
   not wait for a CI check: none runs. `gh pr merge <pr> --squash`.
-- After the merge, follow **Deploy Dev** to the "Live on dev" comment and verify the change
-  on dev. The same push runs the `Tests` lanes on `main`. They block nothing; a red run
-  comments on your commit, and fixing it is yours.
+- A push to `dev` does not deploy dev and does not run `Tests`. Deploy deliberately:
+  `gh workflow run deploy-dev.yml -f surface=changed` (`changed` ships every merge since
+  dev's live SHA; `all` forces every surface; `frontend` builds the web app only). Follow the
+  run to the "Live on dev" comment, then verify the change on dev.
 - Report the PR URL, the merge SHA, the local test commands and their results, the dev
   verification, and anything still unverified.
 - Merging into `staging` or `prod`, and every release step, still needs the user's explicit
@@ -181,22 +195,27 @@ gh pr view <pr> --json body --jq .body | grep -cE '\]\(\./output/'              
 
 | Event | Workflows | Blocks? |
 | --- | --- | --- |
-| PR into `main` | none. Adding `test` runs the six `Tests` lanes once (~9 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
-| Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `drata`, `Desktop`, `deploy-api-router-dev`, `Terraform Apply Global` | no: post-merge safety net |
-| PR into `staging` | the six `Tests` lanes, `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata` | release discipline |
-| PR into `prod` | the same scanners plus `tests-release.yml`; its `full suite + quality gates` check is the only required check in the repo | yes |
+| PR into `dev` | none. Adding `test` runs the `Tests` lanes once (~20 min); adding `preview` deploys once (~7 min), with no tests. A push re-runs neither. | no |
+| Push to `dev` (the merge) | no `Tests` lane. `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `i18n-catalogs`, `deploy-api-router-dev`, `Terraform Apply Global`. | no |
+| Dispatch / schedule on `dev` | `Deploy Dev` and `Desktop`: dispatch only. `Tests`: nightly (a red night comments on the commit). `drata`: daily. `CI`, `CodeQL`: weekly. | no |
+| PR into `staging` | none: Promote to Production opens and merges it | no |
+| PR into `prod` (release PR) | the release suite, once: `tests-release.yml` (contract lanes, deployed API smoke, browser journeys against staging) plus `CI`, `CodeQL`, `secret-scan`, `secrets-guard`, path-gated `DB Migrations`, `Terraform CI`, `Security Scan`, `i18n-catalogs`, `drata`. `full suite + quality gates` requires every one green and is the only required check in the repo. | **yes, the only gate** |
 
 `tests/unit/sandbox-workflow.test.ts` fails when a workflow other than the label-gated
-`tests.yml` and `deploy-preview.yml` triggers on a pull request into `main`. Move a new check to `push: main` or to the release
-PRs, never to PRs into `main`.
+`tests.yml` and `deploy-preview.yml` triggers on a pull request into `dev`. Put a new check in the release suite on the PR into `prod`
+(one run per release tree), a schedule, or a dispatch. Never on PRs into `dev`, and never on the push to
+`dev` unless it is a seconds-long guard. GitHub-hosted runners are
+free on this public repo; the limit is the organization's concurrent-job cap, so a
+new `push: dev` workflow must queue (`cancel-in-progress: false` per ref), never run
+once per merge in parallel.
 
 ## Labels
 
 | Label | Effect | Who can add it |
 | --- | --- | --- |
-| `test` | Runs the six `Tests` lanes (~9 min) once, on the head SHA when the label is added. A push does not re-run it; remove and re-add the label to run again. | Triage access. |
+| `test` | Runs the `Tests` lanes (~20 min) once, on the head SHA when the label is added. A push does not re-run it; remove and re-add the label to run again. | Triage access. |
 | `preview` | Builds one self-host environment for the branch on Platinum (~7 min), once, and runs no tests. A push does not redeploy; re-add the label. Removing the label tears it down. `gh workflow run deploy-preview.yml -f pr_number=<N>` redeploys and runs `pnpm test -- --target-full` (40–80 min). See [references/preview-environments.md](references/preview-environments.md). | Needs write access, and a PR from a branch of this repo (not a fork). |
-| `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json` on a release PR. On `main`, the same reorder needs `I18N_REORDER=1` past `.githooks/pre-commit` and the commit trailer `I18n-Reorder: intentional`. | Triage access. |
+| `i18n-reorder` | Lets `i18n-catalogs.yml` accept an intentional key reorder in `apps/web/translations/*.json` on a release PR. On `dev`, the same reorder needs `I18N_REORDER=1` past `.githooks/pre-commit` and the commit trailer `I18n-Reorder: intentional`. | Triage access. |
 
 Both labels are explicit, rare requests. Never add one by default, from a template, or from
 automation.

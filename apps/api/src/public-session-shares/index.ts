@@ -38,13 +38,14 @@
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { errors, json, makeOpenApiApp } from '../openapi';
-import { createPublicSessionShareRateLimitMiddleware } from '../shared/rate-limit';
+import { createPublicSessionShareRateLimitMiddleware } from '../middleware/rate-limit';
 import {
   publicShareToken,
   resolvePublicShare,
   shareIdFromPublicRef,
 } from '../shared/session-public-shares';
 import { getPublicSessionInfo, getPublicSessionMessages } from '../shared/public-session-share-view';
+import { readStoredTranscriptWindow } from '../projects/surface';
 
 export const publicSessionSharesApp = makeOpenApiApp();
 
@@ -117,7 +118,7 @@ publicSessionSharesApp.openapi(
       sessionId: resolved.row.sessionId,
       externalId: resolved.row.externalId,
       sandboxStatus: resolved.row.sandboxStatus,
-    });
+    }, { readMirror: (sessionId, limit) => readStoredTranscriptWindow({ sessionId, limit }) });
     if (!result.ok) return c.json({ error: result.error }, result.status as any);
     return c.json(result.transcript);
   },

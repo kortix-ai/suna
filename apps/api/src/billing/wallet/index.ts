@@ -57,7 +57,7 @@
  */
 import { creditAccounts, creditLedger } from '@kortix/db';
 import { eq, sql } from 'drizzle-orm';
-import { InsufficientCreditsError } from '../../errors';
+import { InsufficientCreditsError, WalletUnavailableError } from '../../errors';
 import { db } from '../../shared/db';
 import { isDuplicateCreditGrantError } from './duplicate-error';
 import { assertRpcDebitLedgerType } from '../ledger-type-honesty';
@@ -94,6 +94,7 @@ export interface SettleInput extends DebitInput {
 }
 
 export interface ResetInput extends WalletWrite {
+  expiresAt?: string | null;
   key: { readonly event: string };
 }
 
@@ -192,8 +193,11 @@ async function debit(input: DebitInput): Promise<DebitResult> {
       p_idempotency_key => ${requestId(input.key)}::text
     )`);
   } catch (error) {
+    // A transport or SQL fault is not a refusal. Do not read the balance back
+    // through the pool that just failed, and do not tell a funded account it
+    // has no credit.
     console.error('[Wallet] debit failed:', error);
-    throw new InsufficientCreditsError(await currentBalance(input.accountId), input.amount, 'Deduction error');
+    throw new WalletUnavailableError();
   }
 
   if (!result.success) {
@@ -280,7 +284,8 @@ async function reset(input: ResetInput): Promise<void> {
       p_account_id => ${input.accountId}::uuid,
       p_new_credits => ${input.amount}::numeric,
       p_description => ${input.description}::text,
-      p_stripe_event_id => ${input.key.event}::text
+      p_stripe_event_id => ${input.key.event}::text,
+      p_expires_at => ${input.expiresAt ?? null}::timestamptz
     )`);
   } catch (error) {
     // The same reset arriving twice is the key doing its job. Not a fault: no

@@ -5,26 +5,25 @@ import {
   hostFromRepoUrl,
   refreshMirror,
   runGit,
+  runGitBuffer,
   runGitCapture,
 } from './mirror';
 import { authGitPush } from './commit-writer';
-import { decodeStatusChar, resolveBranchTip } from './commits';
+import { parseGitFileChanges, resolveBranchTip } from './commits';
 import type {
   BranchDiffSummary,
   GitBackedProject,
-  GitCommitFile,
   MergeOptions,
   MergePreview,
   MergeResult,
 } from './types';
 
-export async function diffStat(project: GitBackedProject, branchName: string, baseRef?: string) {
-  const repoPath = await refreshMirror(project);
-  const base = baseRef || project.defaultBranch;
-  const result = await runGit(['diff', '--stat', `refs/heads/${base}...refs/heads/${branchName}`], repoPath, false)
-    .catch(() => ({ stdout: '', stderr: '' }));
-  return { text: result.stdout };
-}
+/** Capture bound for a change-request's full `git diff` patch. The file list
+ *  and the per-file counts stay tiny, but the unified diff itself scales with
+ *  the change — runGit's 10 MiB default killed the patch command on large CRs
+ *  while the swallow below kept serving the (empty) patch as if valid, so the
+ *  review page listed files whose bodies could never render (KRTX-2010). */
+const DIFF_PATCH_MAX_BUFFER_BYTES = 32 * 1024 * 1024;
 
 /** Returns the merge-base SHA between two branches, or null if there is none. */
 export async function getMergeBase(
@@ -117,72 +116,40 @@ async function computeDiffByRange(
 
   const range = `${baseRevish}...${headRevish}`;
 
-  const [nameStatus, numstat, patch] = await Promise.all([
+  // The file-list commands stay small (one short record per file) and are
+  // allowed to fail into empty output; the PATCH command is the one that can
+  // exceed runGit's 10 MiB exec cap on a big change (ERR_CHILD_PROCESS_STDIO_MAXBUFFER,
+  // or the 30 s timeout). A patch in the 10–32 MiB band is captured with the
+  // larger bound so the review page renders its real contents; only a patch
+  // over the 32 MiB bound fails, and that failure is flagged (`patch_truncated`)
+  // instead of silently empty — the review page then shows an explicit per-file
+  // state (KRTX-2010).
+  const [nameStatus, numstat, patchResult] = await Promise.all([
     runGit(['diff', '--name-status', '-z', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
     runGit(['diff', '--numstat', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
-    runGit(['diff', '--no-color', '-M', range], repoPath, false).catch(() => ({ stdout: '', stderr: '' })),
+    runGitBuffer(
+      ['diff', '--no-color', '-M', range],
+      repoPath,
+      false,
+      null,
+      undefined,
+      'github.com',
+      undefined,
+      undefined,
+      DIFF_PATCH_MAX_BUFFER_BYTES,
+    )
+      .then((r) => ({ stdout: r.stdout.toString(), truncated: false }))
+      .catch(() => ({ stdout: '', truncated: true })),
   ]);
 
-  const files = new Map<string, GitCommitFile>();
-  const tokens = nameStatus.stdout.split('\0');
-  for (let i = 0; i < tokens.length; i += 1) {
-    const code = tokens[i];
-    if (!code) continue;
-    if (code.startsWith('R') || code.startsWith('C')) {
-      const oldPath = tokens[i + 1];
-      const newPath = tokens[i + 2];
-      if (!oldPath || !newPath) break;
-      files.set(newPath, {
-        path: newPath,
-        old_path: oldPath,
-        status: decodeStatusChar(code),
-        additions: 0,
-        deletions: 0,
-      });
-      i += 2;
-    } else {
-      const path = tokens[i + 1];
-      if (!path) break;
-      files.set(path, {
-        path,
-        old_path: null,
-        status: decodeStatusChar(code),
-        additions: 0,
-        deletions: 0,
-      });
-      i += 1;
-    }
-  }
-
-  let totalAdditions = 0;
-  let totalDeletions = 0;
-  for (const line of numstat.stdout.split('\n')) {
-    if (!line.trim()) continue;
-    const parts = line.split('\t');
-    if (parts.length < 3) continue;
-    const [addStr, delStr, rawPath] = parts;
-    const destMatch = rawPath.match(/\{[^}]*=>\s*([^}]+)\}/);
-    const path = destMatch
-      ? rawPath.replace(/\{[^}]*=>\s*([^}]+)\}/, '$1')
-      : rawPath;
-    const additions = addStr === '-' ? 0 : Number(addStr) || 0;
-    const deletions = delStr === '-' ? 0 : Number(delStr) || 0;
-    totalAdditions += additions;
-    totalDeletions += deletions;
-    const existing = files.get(path);
-    if (existing) {
-      existing.additions = additions;
-      existing.deletions = deletions;
-    }
-  }
-
-  const fileList = Array.from(files.values());
+  const { files, additions, deletions } = parseGitFileChanges(nameStatus.stdout, numstat.stdout);
   return {
-    files: fileList,
-    files_changed: fileList.length,
-    additions: totalAdditions,
-    deletions: totalDeletions,
-    patch: patch.stdout,
+    files,
+    files_changed: files.length,
+    additions,
+    deletions,
+    patch: patchResult.stdout,
+    patch_truncated: patchResult.truncated,
     base_sha: baseSha,
     head_sha: headSha,
     merge_base: mergeBase,

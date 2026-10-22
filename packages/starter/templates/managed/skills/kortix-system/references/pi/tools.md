@@ -1,7 +1,9 @@
 # pi tools
 
-A pi session has thirteen built-in tools. A project file is not necessary for
-any of them. A pi extension or a pi package can add more (`extensions.md`).
+A pi session has eight harness tools and up to five Kortix tools, then the
+project's own tools (`kortix.yaml` `tools:`, `../kortix/tools.md`). A project
+file is not necessary for the harness tools. A pi extension or a pi package
+can add more (`extensions.md`).
 
 | Tool | What it does | Permission key |
 | --- | --- | --- |
@@ -19,13 +21,20 @@ any of them. A pi extension or a pi package can add more (`extensions.md`).
 | `memory` | Reads and writes the project brain in `memory/`. | `edit` (`read` for the `view` command) |
 | `show` | Shows a file, an image, a URL or inline content to the user. | `show` |
 
-`web_search`, `image_search`, `scrape_webpage`, `memory` and `show` have the
-same names, arguments and output as the OpenCode tools in
-`harnesses/opencode/tools/`. A skill that names one of them works on both
-harnesses.
+`web_search`, `image_search`, `scrape_webpage`, `memory` and `show` are the
+Kortix tools: the Kortix runtime runs one implementation of each on every
+harness, so a skill that names one of them works on both. With no `tools:`
+key in `kortix.yaml`, a session has all five; with one, only the ones it
+lists as `<name>: kortix:<name>`. A Kortix tool the project does not list is
+not offered, and a call to it fails with `Tool <name> not found`.
+`kortix tools ls` lists what a session gets. A project tool is a
+harness-neutral module the runtime runs the same way; prefer it over a pi
+extension when the tool only needs arguments in and text out.
+`agents.<name>.tools` in `kortix.yaml` decides which tools an agent sees.
 
-A subagent gets every tool except `question` and `task`. The built-in
-`explore` subagent gets `bash`, `read`, `glob` and `grep`.
+A subagent gets every tool except `question` and `task`, limited by its own
+`agents.<name>.tools` and the session agent's. The built-in `explore`
+subagent gets `bash`, `read`, `glob` and `grep`.
 
 ## Tools pi does not have
 

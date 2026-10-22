@@ -113,19 +113,10 @@ export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | 
 export function lintManifest(
   data: Record<string, unknown>,
   format: ManifestFormat = 'toml',
+  projectIssues: ManifestIssue[] = [],
 ): ManifestIssues {
   const { issues } = validateManifest(data, format);
-  return classifyIssues(issues);
-}
-
-/**
- * Validate a manifest from raw text. Returns a syntax-error issue when it
- * doesn't parse; otherwise runs the canonical schema. Pass the `format` so a
- * `kortix.yaml` is parsed as YAML (defaults to TOML for back-compat).
- */
-export function lintManifestText(raw: string, format: ManifestFormat = 'toml'): ManifestIssues {
-  const { issues } = validateManifest(raw, format);
-  return classifyIssues(issues);
+  return classifyIssues([...issues, ...projectIssues]);
 }
 
 function classifyIssues(issues: ManifestIssue[]): ManifestIssues {

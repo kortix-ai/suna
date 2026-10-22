@@ -190,7 +190,7 @@ describe.skipIf(!dockerAvailable)('atomic_use_credits overdraft guard — real P
   });
 
   afterAll(() => {
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
   test('refuses a debit larger than the balance and reports what was available', () => {

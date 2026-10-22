@@ -1,7 +1,6 @@
 import {
   type accountGithubInstallations,
   projectGitConnections,
-  projectGitCredentials,
   projects,
 } from '@kortix/db';
 
@@ -9,11 +8,11 @@ import { invalidateIamCacheForUser } from '../../iam/cache-invalidation';
 import { grantProjectRole } from './access';
 import { db } from '../../shared/db';
 import type { GitHubRepo } from '../github';
-import { encryptProjectSecret } from '../secrets';
 import {
   type ProjectGitWriteAuth,
   buildProjectGitConnectionValues,
   buildProjectGitMetadata,
+  upsertProjectGitCredential,
 } from './project-git-write';
 import { type ProjectRow, clampProjectName, deriveProjectName } from './serializers';
 
@@ -72,29 +71,13 @@ async function registerLinkedProject(input: RegistrationInput): Promise<ProjectR
 
     let credentialRef: string | null = null;
     if (input.auth.kind === 'project_credential') {
-      const valueEnc = encryptProjectSecret(project.projectId, input.auth.token);
-      const [credential] = await tx
-        .insert(projectGitCredentials)
-        .values({
-          accountId: input.accountId,
-          projectId: project.projectId,
-          provider: 'github',
-          authMethod: 'token',
-          valueEnc,
-          createdBy: input.userId,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [projectGitCredentials.projectId, projectGitCredentials.provider],
-          set: {
-            valueEnc,
-            createdBy: input.userId,
-            updatedAt: now,
-          },
-        })
-        .returning();
-      if (!credential) throw new Error('Project Git credential was not persisted');
-      credentialRef = credential.credentialId;
+      credentialRef = await upsertProjectGitCredential(tx, {
+        accountId: input.accountId,
+        projectId: project.projectId,
+        token: input.auth.token,
+        createdBy: input.userId,
+        now,
+      });
     }
 
     const connectionValues = buildProjectGitConnectionValues(input.repo, auth, {

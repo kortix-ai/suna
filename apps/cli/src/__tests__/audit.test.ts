@@ -15,13 +15,9 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import {
-  auditEventTitle,
-  buildAuditQuery,
-  exportBodyText,
-  resolveInstant,
-  truncate,
-} from '../commands/audit.ts';
+import { auditEventTitle } from '../commands/audit-render.ts';
+import { trim } from '../style.ts';
+import { buildAuditQuery, resolveInstant } from '../commands/audit.ts';
 
 const NOW = new Date('2026-08-05T12:00:00.000Z');
 
@@ -31,6 +27,7 @@ describe('resolveInstant', () => {
     ['24h', '2026-08-04T12:00:00.000Z'],
     ['7d', '2026-07-29T12:00:00.000Z'],
     ['2w', '2026-07-22T12:00:00.000Z'],
+    ['3y', '2023-08-06T12:00:00.000Z'],
   ])('%s resolves relative to now', (input, expected) => {
     expect(resolveInstant(input, NOW)).toBe(expected);
   });
@@ -47,7 +44,6 @@ describe('resolveInstant', () => {
   test.each([
     ['empty', ''],
     ['nonsense', 'yesterday'],
-    ['unknown unit', '5y'],
     ['zero span', '0h'],
     ['negative', '-3d'],
   ])('%s is rejected, never coerced to now', (_label, input) => {
@@ -148,6 +144,11 @@ describe('audit CLI process', () => {
     expect(stdout).toContain('session <session-id>');
     expect(stdout).toContain('--cursor <c>');
     expect(stdout).toContain('--phase <p>');
+    // KRTX-2992: the webhook PATCH (enable AND disable) checks `auditAccess`;
+    // only DELETE skips it (apps/api/src/accounts/audit.ts).
+    const flat = stdout.replace(/\s+/g, ' ');
+    expect(flat).toContain('add, enable and disable also need the Enterprise entitlement');
+    expect(flat).not.toContain('disable and delete never do');
   });
 
   test('executes filtered account, project, session, and resumable export reads', async () => {
@@ -206,7 +207,9 @@ describe('audit CLI process', () => {
             ? 'project'
             : 'account';
         return Response.json({
-          events: [event(`${scope}-${cursor ? '2' : '1'}`, `${scope}.${cursor ? 'second' : 'first'}`)],
+          events: [
+            event(`${scope}-${cursor ? '2' : '1'}`, `${scope}.${cursor ? 'second' : 'first'}`),
+          ],
           next_cursor: cursor ? null : `${scope}-cursor-2`,
         });
       },
@@ -332,7 +335,8 @@ describe('audit CLI process', () => {
       );
 
       const accountRequests = requests.filter(
-        (url) => url.pathname.endsWith('/accounts/account-1/audit') && !url.pathname.endsWith('/export'),
+        (url) =>
+          url.pathname.endsWith('/accounts/account-1/audit') && !url.pathname.endsWith('/export'),
       );
       expect(accountRequests).toHaveLength(2);
       expect(accountRequests[0]!.searchParams.get('action')).toBe('session.');
@@ -345,8 +349,8 @@ describe('audit CLI process', () => {
       expect(accountRequests[0]!.searchParams.get('since')).toMatch(/^2026-/);
       expect(accountRequests[1]!.searchParams.get('cursor')).toBe('account-cursor-2');
 
-      const projectRequests = requests.filter(
-        (url) => url.pathname.endsWith('/projects/project-1/audit'),
+      const projectRequests = requests.filter((url) =>
+        url.pathname.endsWith('/projects/project-1/audit'),
       );
       expect(projectRequests.map((url) => url.searchParams.get('cursor'))).toEqual([
         null,
@@ -369,44 +373,199 @@ describe('audit CLI process', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
-});
-
-/**
- * The JSONL export came back as the string "{}" the first time it ran against
- * dev. The shared HTTP client parses `application/json`, passes `text/*`
- * through, and returns a **Blob** for anything else — and the export is
- * `application/x-ndjson`, which matches neither. `JSON.stringify(blob)` is
- * `"{}"`, so the command printed an empty object where the export belonged.
- * CSV was fine throughout (`text/csv`), which is what made it easy to miss.
- */
-describe('exportBodyText', () => {
-  test('a Blob body is read as text, not stringified', async () => {
-    const blob = new Blob(['{"event_id":"a"}\n{"event_id":"b"}\n'], {
-      type: 'application/x-ndjson',
+  test('an empty session timeline exits 0 quietly; a missing project id is an arg error', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-audit-empty-'));
+    const cliEntry = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
+    const requests: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        requests.push(request.url);
+        return Response.json({ events: [], next_cursor: null });
+      },
     });
-    const text = await exportBodyText(blob);
-    expect(text).toContain('"event_id":"a"');
-    expect(text.trim().split('\n')).toHaveLength(2);
-    expect(text).not.toBe('{}');
-  });
-
-  test('a string body passes through untouched', async () => {
-    expect(await exportBodyText('event_id,occurred_at\n1,2026-01-01\n')).toBe(
-      'event_id,occurred_at\n1,2026-01-01\n',
+    const configFile = join(root, 'config.json');
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: `http://127.0.0.1:${server.port}`,
+            token: 'kortix_pat_audit_test',
+            user_id: 'user-1',
+            user_email: 'audit@example.test',
+            account_id: 'account-1',
+            logged_in_at: '2026-08-07T00:00:00.000Z',
+          },
+        },
+      }),
     );
+    async function run(args: string[]) {
+      const env: Record<string, string | undefined> = {
+        ...process.env,
+        KORTIX_CONFIG_FILE: configFile,
+        KORTIX_NO_UPDATE_CHECK: '1',
+        KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+        NO_COLOR: '1',
+        FORCE_COLOR: '0',
+      };
+      for (const key of [
+        'KORTIX_API_URL',
+        'KORTIX_TOKEN',
+        'KORTIX_FRONTEND_URL',
+        'KORTIX_PROJECT_ID',
+      ]) {
+        delete env[key];
+      }
+      const child = Bun.spawn({
+        cmd: [process.execPath, cliEntry, ...args],
+        cwd: root,
+        env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ]);
+      return { code, stdout, stderr };
+    }
+    try {
+      // The session footer stays quiet on an empty timeline: the table's own
+      // closing blank line is the last thing printed — no count, no extra newline.
+      const empty = await run(['audit', 'session', 'sess-1', '--project', 'project-1']);
+      expect(empty.code).toBe(0);
+      expect(empty.stdout).toContain('No audit events match.');
+      expect(empty.stdout.endsWith('\n\n')).toBe(true);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatch(/\/sessions\/sess-1\/audit/);
+
+      // `project` without an id refuses before any HTTP call.
+      const noProject = await run(['audit', 'project']);
+      expect(noProject.code).toBe(2);
+      expect(noProject.stderr).toContain('Missing a project id.');
+      expect(requests).toHaveLength(1);
+    } finally {
+      server.stop(true);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
-describe('truncate', () => {
+// KRTX-2991: on an account without the Enterprise `auditAccess` entitlement the
+// session route answers `events: []` and puts the pending approvals in
+// `actions` (project-audit.ts). The CLI read only `events`.
+describe('audit session without the Enterprise trail', () => {
+  const ACTION = {
+    execution_id: 'e7300000-0000-4000-a000-000000000001',
+    action: 'gmail.send_email',
+    connector_id: 'c1',
+    connector: 'gmail',
+    status: 'pending_approval',
+    risk: 'write',
+    acted_by: 'user-1',
+    acted_by_email: 'audit@example.test',
+    resolved_by: null,
+    resolved_by_email: null,
+    result_summary: null,
+    at: '2026-10-20T09:15:00.000Z',
+    resolved_at: null,
+    approval_url: 'https://app.example.test/approvals/e7300000',
+    can_resolve: true,
+    resolvers: null,
+  };
+
+  async function runSession(args: string[]) {
+    const root = mkdtempSync(join(tmpdir(), 'kortix-audit-actions-'));
+    const cliEntry = join(resolve(import.meta.dir, '..', '..'), 'src', 'index.ts');
+    const server = Bun.serve({
+      port: 0,
+      fetch: () =>
+        Response.json({
+          session_id: 'sess-1',
+          agent: 'default',
+          audit_access: false,
+          count: 1,
+          events: [],
+          next_cursor: null,
+          actions: [ACTION],
+        }),
+    });
+    const configFile = join(root, 'config.json');
+    writeFileSync(
+      configFile,
+      JSON.stringify({
+        active: 'test',
+        hosts: {
+          test: {
+            url: `http://127.0.0.1:${server.port}`,
+            token: 'kortix_pat_audit_test',
+            user_id: 'user-1',
+            user_email: 'audit@example.test',
+            account_id: 'account-1',
+            logged_in_at: '2026-10-20T00:00:00.000Z',
+          },
+        },
+      }),
+    );
+    const env: Record<string, string | undefined> = {
+      ...process.env,
+      KORTIX_CONFIG_FILE: configFile,
+      KORTIX_NO_UPDATE_CHECK: '1',
+      KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+      NO_COLOR: '1',
+      FORCE_COLOR: '0',
+    };
+    for (const key of ['KORTIX_API_URL', 'KORTIX_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID']) {
+      delete env[key];
+    }
+    try {
+      const child = Bun.spawn({
+        cmd: [process.execPath, cliEntry, 'audit', 'session', 'sess-1', '--project', 'project-1', ...args],
+        cwd: root,
+        env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      });
+      const [code, stdout] = await Promise.all([child.exited, new Response(child.stdout).text()]);
+      return { code, stdout };
+    } finally {
+      server.stop(true);
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  test('prints the pending approvals from `actions`', async () => {
+    const r = await runSession([]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('gmail.send_email');
+    expect(r.stdout).toContain('pending_approval');
+    expect(r.stdout).toContain('https://app.example.test/approvals/e7300000');
+    expect(r.stdout).toContain('Enterprise');
+  });
+
+  test('--json keeps `actions` and `audit_access`', async () => {
+    const r = await runSession(['--json']);
+    expect(r.code).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.actions).toEqual([ACTION]);
+    expect(parsed.audit_access).toBe(false);
+    expect(parsed.events).toEqual([]);
+  });
+});
+
+describe('trim (style.ts)', () => {
   test('leaves a short action alone', () => {
-    expect(truncate('auth.login.success', 52)).toBe('auth.login.success');
+    expect(trim('auth.login.success', 52)).toBe('auth.login.success');
   });
 
   test('caps a long action so the table keeps its shape', () => {
     // Audit actions are raw HTTP lines carrying UUIDs; uncapped, RESOURCE ended
     // up off the right edge of the terminal.
     const long = `GET /v1/accounts/${'a'.repeat(60)}`;
-    const out = truncate(long, 52);
+    const out = trim(long, 52);
     expect(out).toHaveLength(52);
     expect(out.endsWith('…')).toBe(true);
   });
@@ -479,7 +638,12 @@ describe('audit ls table', () => {
         NO_COLOR: '1',
         FORCE_COLOR: '0',
       };
-      for (const key of ['KORTIX_API_URL', 'KORTIX_TOKEN', 'KORTIX_FRONTEND_URL', 'KORTIX_PROJECT_ID']) {
+      for (const key of [
+        'KORTIX_API_URL',
+        'KORTIX_TOKEN',
+        'KORTIX_FRONTEND_URL',
+        'KORTIX_PROJECT_ID',
+      ]) {
         delete env[key];
       }
       const child = Bun.spawn({
@@ -500,4 +664,14 @@ describe('audit ls table', () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+});
+
+test('activityStrip draws one character per UTC day, taller for more active hours', async () => {
+  const { activityStrip } = await import('../commands/audit.ts');
+  expect(
+    activityStrip('2026-10-30', '2026-11-02', [
+      { day: '2026-10-31', active_hours: 1 },
+      { day: '2026-11-02', active_hours: 24 },
+    ]),
+  ).toBe('·▁·█');
 });

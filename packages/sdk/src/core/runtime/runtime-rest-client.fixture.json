@@ -322,6 +322,22 @@
       "body": null
     }
   },
+  "session.fork": {
+    "params": {
+      "sessionID": "id sessionID/x",
+      "directory": "v directory&=",
+      "workspace": "v workspace&=",
+      "messageID": {
+        "sample": "messageID"
+      }
+    },
+    "request": {
+      "method": "POST",
+      "url": "http://runtime.test/p/sbx%201/8000/session/id%20sessionID%2Fx/fork?directory=v%20directory%26%3D&workspace=v%20workspace%26%3D",
+      "contentType": "application/json",
+      "body": "{\"messageID\":{\"sample\":\"messageID\"}}"
+    }
+  },
   "session.unshare": {
     "params": {
       "sessionID": "id sessionID/x",

@@ -1,12 +1,55 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, mock, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { QueryClient } from '@tanstack/react-query';
+import type { KeyValueStorage } from '@kortix/sdk';
 
 import {
   PERSISTED_QUERY_GC_TIME_MS,
+  QUERY_CACHE_OPTIONS,
   applyPersistedQueryDefaults,
   isPersistedQueryKey,
   keepFirstSessionPage,
 } from './persisted-queries';
+import { createQueryCacheBinder } from './query-cache-binder';
+
+// The keys below come from the app's own `projectKeys` (lib/projects/hooks.ts).
+// Its React Native imports cannot load under `bun test`: every module it
+// imports is replaced, except the ones its key builders run on.
+const PROJECTS_DIR = join(import.meta.dir, '../projects');
+const hooksSource = readFileSync(join(PROJECTS_DIR, 'hooks.ts'), 'utf8');
+const realModules = new Set([
+  'react',
+  '@tanstack/react-query',
+  '@kortix/sdk',
+  '@kortix/sdk/react',
+  '@/lib/session/session-pages',
+  '@/lib/session/session-cache-write',
+  '@/lib/session/session-tree',
+  './poll-policy',
+]);
+for (const [, names, name] of hooksSource.matchAll(/import\s*\{([^}]+)\}\s*from\s*['"]([^'"]+)['"]/gs)) {
+  if (realModules.has(name)) continue;
+  const values: Record<string, unknown> = {};
+  for (const item of names.split(',')) {
+    const key = item.trim().replace(/^type\s+/, '').split(/\s+as\s+/)[0];
+    if (key) values[key] = () => null;
+  }
+  mock.module(name.startsWith('./') ? join(PROJECTS_DIR, name) : name, () => values);
+}
+const { projectKeys } = await import('@/lib/projects/hooks');
+
+/** The drawer's three sections (components/session/ProjectLeftDrawer.tsx). */
+const DRAWER_MINE = projectKeys.projectSessionsPaged('p-1', { parent: 'root', startedBy: 'me' });
+const DRAWER_SHARED = projectKeys.projectSessionsPaged('p-1', { parent: 'root', startedBy: 'others' });
+const DRAWER_AUTOMATED = projectKeys.projectSessionsPaged('p-1', {
+  parent: 'root',
+  startedBy: 'automated',
+});
+/** The Sessions page's "All" scope (components/session/ProjectSessionsPage.tsx). */
+const SESSIONS_PAGE_ALL = projectKeys.projectSessionsPaged('p-1', { parent: 'root' });
+/** A search: the user's text, never stored. */
+const SEARCH = projectKeys.projectSessionsPaged('p-1', { parent: 'root', q: 'x' });
 
 describe('isPersistedQueryKey: what a user navigates by, nothing large or sensitive', () => {
   test.each([
@@ -36,6 +79,35 @@ describe('isPersistedQueryKey: what a user navigates by, nothing large or sensit
     [['project-sessions', null, 'paged']],
     [['accounts', 'extra']],
     [[]],
+  ])('does not keep %j', (key) => {
+    expect(isPersistedQueryKey(key)).toBe(false);
+  });
+
+  // Since #8258 the drawer and the Sessions page read filtered keys. A restart
+  // showed a loader until the network answered: none of them was kept.
+  test.each([
+    ['the drawer’s Sessions', DRAWER_MINE],
+    ['the drawer’s Shared', DRAWER_SHARED],
+    ['the drawer’s Automated', DRAWER_AUTOMATED],
+    ['the Sessions page’s All', SESSIONS_PAGE_ALL],
+  ])('keeps %s list', (_name, key) => {
+    expect(key).toHaveLength(4);
+    expect(isPersistedQueryKey(key)).toBe(true);
+  });
+
+  test('never keeps a search: its text is the user’s', () => {
+    expect(SEARCH).toHaveLength(4);
+    expect(isPersistedQueryKey(SEARCH)).toBe(false);
+  });
+
+  test.each([
+    [['project-sessions', 'p-1', 'paged', null]],
+    [['project-sessions', 'p-1', 'paged', 'root']],
+    [['project-sessions', 'p-1', 'paged', { parent: 'root' }, 'extra']],
+    [['project-sessions', null, 'paged', { parent: 'root' }]],
+    // One parent's children and one session's row, under the same family.
+    [projectKeys.sessionChildren('p-1', 's-1')],
+    [projectKeys.projectSession('p-1', 's-1')],
   ])('does not keep %j', (key) => {
     expect(isPersistedQueryKey(key)).toBe(false);
   });
@@ -119,5 +191,91 @@ describe('keepFirstSessionPage: a restored list refetches one page, not every pa
     expect(client.getQueryData(PAGED) as unknown).toBe(onePage);
     expect(client.getQueryData(['project-sessions', 'p-1']) as unknown).toBe(flat);
     client.clear();
+  });
+
+  test('the drawer’s and the Sessions page’s filtered lists keep page one too', () => {
+    const client = new QueryClient();
+    const threePages = {
+      pages: [page('a', 'c1'), page('b', 'c2'), page('c', null)],
+      pageParams: [null, 'c1', 'c2'],
+    };
+    for (const key of [DRAWER_MINE, DRAWER_SHARED, SESSIONS_PAGE_ALL]) {
+      client.setQueryData(key, threePages, { updatedAt: 1_000 });
+    }
+
+    keepFirstSessionPage(client);
+
+    for (const key of [DRAWER_MINE, DRAWER_SHARED, SESSIONS_PAGE_ALL]) {
+      expect(client.getQueryData(key) as unknown).toEqual({ pages: [page('a', 'c1')], pageParams: [null] });
+      expect(client.getQueryState(key)?.dataUpdatedAt).toBe(1_000);
+    }
+    client.clear();
+  });
+});
+
+describe('an app restart renders the drawer from the stored lists', () => {
+  const T0 = Date.parse('2026-10-14T12:00:00Z');
+  const twoPages = (prefix: string) => ({
+    pages: [
+      { items: [{ session_id: `${prefix}-1` }], next_cursor: 'c1' },
+      { items: [{ session_id: `${prefix}-2` }], next_cursor: null },
+    ],
+    pageParams: [null, 'c1'],
+  });
+
+  function memoryStorage(): KeyValueStorage {
+    const data = new Map<string, string>();
+    return {
+      getItem: async (key) => data.get(key) ?? null,
+      setItem: async (key, value) => {
+        data.set(key, value);
+      },
+      removeItem: async (key) => {
+        data.delete(key);
+      },
+    };
+  }
+
+  /** The app's binder (lib/query/query-cache.ts), over a test store. */
+  const appBinder = (storage: KeyValueStorage) =>
+    createQueryCacheBinder({ ...QUERY_CACHE_OPTIONS, storage, throttleMs: 0, now: () => T0 });
+
+  test('a persisted, then restored, client holds each drawer section’s first page and no later page', async () => {
+    const storage = memoryStorage();
+    // The previous run: the drawer walked two pages of each section, and a search.
+    const previous = appBinder(storage);
+    const before = new QueryClient();
+    applyPersistedQueryDefaults(before);
+    await previous.bind(before, 'user-a');
+    for (const [key, prefix] of [
+      [DRAWER_MINE, 'mine'],
+      [DRAWER_SHARED, 'shared'],
+      [DRAWER_AUTOMATED, 'automated'],
+      [SEARCH, 'search'],
+    ] as const) {
+      before.setQueryData(key, twoPages(prefix), { updatedAt: T0 - 60_000 });
+    }
+    await previous.flush();
+
+    // The restart: a new client, restored before the first frame.
+    const after = new QueryClient();
+    applyPersistedQueryDefaults(after);
+    await appBinder(storage).bind(after, 'user-a');
+
+    for (const [key, prefix] of [
+      [DRAWER_MINE, 'mine'],
+      [DRAWER_SHARED, 'shared'],
+      [DRAWER_AUTOMATED, 'automated'],
+    ] as const) {
+      expect(after.getQueryData(key) as unknown).toEqual({
+        pages: [twoPages(prefix).pages[0]],
+        pageParams: [null],
+      });
+      // At its original age: the drawer refetches it on mount.
+      expect(after.getQueryState(key)?.dataUpdatedAt).toBe(T0 - 60_000);
+    }
+    expect(after.getQueryData(SEARCH)).toBeUndefined();
+    before.clear();
+    after.clear();
   });
 });
