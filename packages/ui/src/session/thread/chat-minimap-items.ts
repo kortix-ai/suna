@@ -14,15 +14,15 @@ import {
   stripSystemPtyText,
 } from './message-parsing';
 
-export type MinimapMentionKind = 'agent' | 'file';
+type MinimapMentionKind = 'agent' | 'file';
 
-export interface MinimapSegment {
+interface MinimapSegment {
   /** For a mention this is the bare name — the `@` is drawn as an icon. */
   text: string;
   mention?: MinimapMentionKind;
 }
 
-export interface MinimapAttachment {
+interface MinimapAttachment {
   key: string;
   name: string;
 }
@@ -36,7 +36,7 @@ export interface MinimapItem {
   attachments: MinimapAttachment[];
 }
 
-export interface MinimapDash {
+interface MinimapDash {
   item: MinimapItem;
   index: number;
 }

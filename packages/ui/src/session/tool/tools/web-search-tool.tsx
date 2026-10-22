@@ -9,6 +9,7 @@ import {
   ToolOutputFallback,
   partRawOutput,
 } from '../shared/infrastructure';
+import { JsonFailureOutputCard } from '../shared/infrastructure-output';
 import { ToolRegistry } from '../shared/registry';
 import { ToolResultCard } from '../shared/result-card';
 import type { ToolProps } from '../shared/types';
@@ -18,9 +19,16 @@ import { useMemo } from 'react';
 
 import { humanizeSearchQuery } from '@kortix/sdk';
 import {
+  parseJsonFailure,
   parseWebSearchOutput,
   type WebSearchQueryResult,
 } from '@kortix/sdk';
+
+/** A failed query's error as the shared failure card reads it: a nested JSON
+ *  message (a provider's "over plan quota") becomes its own line. */
+function queryFailure(error: string) {
+  return parseJsonFailure(JSON.stringify({ success: false, error })) ?? { errorSummary: error };
+}
 
 /**
  * Every source, flat, inside one bordered card.
@@ -40,17 +48,44 @@ import {
  * get a muted one-line query caption between segments — a caption, not a
  * control. No accordions, no "show more" button.
  */
+/** The one error every query of a batch failed with, or null. A provider
+ *  limit fails them all alike, and five copies of it read as five problems. */
+function sharedFailure(queryResults: WebSearchQueryResult[]): string | null {
+  const first = queryResults[0]?.error;
+  if (queryResults.length < 2 || !first) return null;
+  return queryResults.every((qr) => qr.error === first && qr.sources.length === 0) ? first : null;
+}
+
+function QueryCaption({ query }: { query: string }) {
+  return (
+    <div className="text-muted-foreground flex items-center gap-2 px-2 pt-2 pb-1 text-xs">
+      <Search className="size-3 shrink-0" />
+      <span className="truncate">{humanizeSearchQuery(query)}</span>
+    </div>
+  );
+}
+
 function FlatSourceList({ queryResults }: { queryResults: WebSearchQueryResult[] }) {
+  const shared = sharedFailure(queryResults);
+  if (shared) {
+    // The failure once, then the searches it stopped (KRTX-3022).
+    return (
+      <ToolResultCard>
+        <JsonFailureOutputCard failure={queryFailure(shared)} />
+        {queryResults.map((qr, qi) => (
+          <QueryCaption key={qi} query={qr.query} />
+        ))}
+      </ToolResultCard>
+    );
+  }
   return (
     <ToolResultCard>
       {queryResults.map((qr, qi) => (
         <div key={qi}>
-          {queryResults.length > 1 && qr.sources.length > 0 && (
-            <div className="text-muted-foreground/70 flex items-center gap-2 px-2 pt-2 pb-1 text-xs">
-              <Search className="size-3 shrink-0" />
-              <span className="truncate">{humanizeSearchQuery(qr.query)}</span>
-            </div>
-          )}
+          {queryResults.length > 1 && (qr.sources.length > 0 || qr.error) && <QueryCaption query={qr.query} />}
+          {/* A failed query of a batch says why: without it a quota-limited
+              batch rendered an empty card (KRTX-3016). */}
+          {qr.error && <JsonFailureOutputCard failure={queryFailure(qr.error)} />}
           {qr.sources.map((src) => (
             <WebSourceRow key={src.url} url={src.url} title={src.title || src.url} />
           ))}
@@ -108,7 +143,7 @@ export function WebSearchTool({ call, defaultOpen, forceOpen, locked }: ToolProp
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="text-foreground min-w-0 truncate text-sm">{triggerLabel}</span>
           {triggerBadge && (
-            <span className="text-muted-foreground/70 ml-auto shrink-0 text-sm whitespace-nowrap">
+            <span className="text-muted-foreground ml-auto shrink-0 text-sm whitespace-nowrap">
               {triggerBadge}
             </span>
           )}

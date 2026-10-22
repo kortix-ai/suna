@@ -318,7 +318,7 @@ function AuthCardForm({
   // SSO interstitial state: the IdP redirect URL from the signInWithSSO probe,
   // plus what the existence check said the escape hatches should do.
   const [ssoUrl, setSsoUrl] = useState<string | null>(null);
-  const [ssoFallbackMode, setSsoFallbackMode] = useState<EmailFlowMode>('unknown');
+  const ssoFallbackMode = useRef<EmailFlowMode>('unknown');
   // Which button kicked off the in-flight request — every action button
   // disables while anything is pending, but only the clicked one spins.
   const [pendingAction, setPendingAction] = useState<
@@ -330,7 +330,7 @@ function AuthCardForm({
   const submitInFlight = useRef(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(callbackError ? tI18nComplete.raw('text301fe0058472') : null);
   const [code, setCode] = useState('');
-  const [emailCodeReturnUrl, setEmailCodeReturnUrl] = useState<string | null>(null);
+  const emailCodeReturnUrl = useRef<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [sentEmail, setSentEmail] = useState<string | null>(null);
   // The flow mode the send action resolved — which email GoTrue minted: the
@@ -431,7 +431,7 @@ function AuthCardForm({
     setSentEmail(null);
     setCode('');
     setSsoUrl(null);
-    setSsoFallbackMode('unknown');
+    ssoFallbackMode.current = 'unknown';
     setStep('entry');
   };
 
@@ -530,11 +530,9 @@ function AuthCardForm({
 
       if (result.success) {
         setCode('');
-        setEmailCodeReturnUrl(
-          result.redirectTo
-            ? sanitizeAuthReturnUrl(result.redirectTo)
-            : resolveNewAccountReturnUrl(returnUrl),
-        );
+        emailCodeReturnUrl.current = result.redirectTo
+          ? sanitizeAuthReturnUrl(result.redirectTo)
+          : resolveNewAccountReturnUrl(returnUrl);
         setSentEmail(result.email || target);
         setLinkMode(result.mode ?? 'unknown');
         setResendIn(RESEND_COOLDOWN_SECONDS);
@@ -606,7 +604,7 @@ function AuthCardForm({
           window.location.href = data.url;
           return 'handled';
         }
-        setSsoFallbackMode(resolved);
+        ssoFallbackMode.current = resolved;
         setSsoUrl(data.url);
         setStep('sso');
         return 'handled';
@@ -929,7 +927,7 @@ function AuthCardForm({
       await establishSessionAndRedirect({
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token,
-        redirectTo: emailCodeReturnUrl ?? resolveNewAccountReturnUrl(returnUrl),
+        redirectTo: emailCodeReturnUrl.current ?? resolveNewAccountReturnUrl(returnUrl),
         mobileHandoffUrl: mobileCallbackState
           ? buildMobileSessionHandoffUrl({
               origin: window.location.origin,
@@ -955,14 +953,15 @@ function AuthCardForm({
   // Password escape off the SSO interstitial. The existence check already ran
   // when the interstitial opened, so this is a synchronous relabel + step move.
   const usePasswordFromSso = () => {
-    if (ssoFallbackMode === 'closed') {
+    const fallbackMode = ssoFallbackMode.current;
+    if (fallbackMode === 'closed') {
       failWith(t('errors.signupsClosed'));
       return;
     }
     rememberAuthMethod('password');
     clearNotices();
     setCredMode(
-      ssoFallbackMode === 'signin' || ssoFallbackMode === 'signup' ? ssoFallbackMode : 'unknown',
+      fallbackMode === 'signin' || fallbackMode === 'signup' ? fallbackMode : 'unknown',
     );
     setStep('credentials');
   };

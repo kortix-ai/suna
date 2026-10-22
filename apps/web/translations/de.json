@@ -906,6 +906,9 @@
       "iconDescription": "Wird neben dem Namen des Projekts angezeigt.",
       "name": "Name des Projekts",
       "nameDescription": "Wird im Projektswechsler und überall angezeigt, wo dieser Projekt aufgeführt ist.",
+      "defaultEffort": "Standard-Denkleistung",
+      "defaultEffortDescription": "Gilt für neue Prompts ohne eigene Anstrengungsauswahl, wenn das Modell der Sitzung es unterstützt.",
+      "defaultEffortAutomatic": "Automatisch",
       "saving": "Speichern…",
       "archived": "Projekt archiviert",
       "archiveFailed": "Projekt konnte nicht archiviert werden",
@@ -925,7 +928,19 @@
         "access": "Den Zugriff für das gesamte Team — niemand kann diesen Projekt erneut öffnen"
       },
       "reassurance": "Selbst verbundene Git-Repositories werden nicht gelöscht. Bereits übertragener Code bleibt erhalten.",
-      "keepWorkspace": "Projekt behalten"
+      "keepWorkspace": "Projekt behalten",
+      "transferWorkspace": "Projekt übertragen",
+      "transferDescription": "Dieses Projekt — Sitzungen, Dateien, Einstellungen und Mitgliederzugriff — in eine andere Organisation verschieben.",
+      "transferTitle": "Projekt übertragen",
+      "transferDialog": "Sitzungen, Dateien und Einstellungen folgen dem Projekt. Systemrollen folgen; Gruppen, ausstehende Einladungen und benutzerdefinierte Rollen müssen in der Zielorganisation neu vergeben werden. Erfasste Nutzung bleibt auf der bisherigen Rechnung.",
+      "transferTargetLabel": "Zielorganisation",
+      "transferTargetPlaceholder": "Organisation auswählen",
+      "transferLoadingTargets": "Organisationen werden geladen…",
+      "transferNoTargets": "Sie sind kein Mitglied einer anderen Organisation.",
+      "transferMove": "Projekt verschieben",
+      "transferMoveTo": "Nach {name} verschieben",
+      "transferSuccess": "Projekt übertragen",
+      "transferFailed": "Übertragung fehlgeschlagen"
     },
     "sandbox": {
       "states": {
@@ -1256,10 +1271,6 @@
           "name": "Drive",
           "description": "Geteilte Ordner, die mit Sitzungen synchron bleiben: dein eigenes Drive, eines pro Agent und Firmen-Drives, die ein Admin dem Projekt zuweist. Neue Sitzungen sehen sie unter /drives."
         },
-        "session_log": {
-          "name": "Session-Log v2",
-          "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
-        },
         "session_log_restore": {
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
@@ -1490,6 +1501,7 @@
   },
   "sidebar": {
     "rooms": "Räume",
+    "goals": "Ziele",
     "referAndEarn": "Empfehlen",
     "referralShareTitle": "Freunde empfehlen",
     "referralShareSubtitle": "Erhalte 400 Credits",
@@ -5109,7 +5121,14 @@
       "youHaveBeenInvitedToAProject": "Du wurdest zu einem Projekt eingeladen.",
       "joinProjectDescription": "Du trittst {projectName} als {roleLabel} bei.",
       "roleManager": "Manager",
-      "signOutAndContinue": "Abmelden und fortfahren"
+      "signOutAndContinue": "Abmelden und fortfahren",
+      "ssoTitle": "Mit Single Sign-On anmelden",
+      "ssoDescription": "Das Verzeichnis deiner Organisation hat dich zu diesem Konto hinzugefügt. Melde dich mit dem Single Sign-On deiner Organisation an, um beizutreten. Wenn das nicht geht, bitte einen Kontoadmin, die Einladung erneut zu senden.",
+      "ssoContinue": "Weiter mit Single Sign-On",
+      "askAdminTitle": "Admin um erneutes Senden bitten",
+      "askAdminDescription": "Das Verzeichnis deiner Organisation hat dich zu diesem Konto hinzugefügt, und diese Instanz kann deine E-Mail-Adresse nicht bestätigen. Bitte einen Kontoadmin, die Einladung erneut zu senden, und öffne diesen Link dann noch einmal.",
+      "ssoDomainUnverified": "Dein Single-Sign-On-Anbieter hat die Domain dieser E-Mail-Adresse nicht verifiziert. Melde dich ab und mit deiner E-Mail-Adresse wieder an, um diese Einladung zu nutzen.",
+      "ssoUnavailable": "Single Sign-On ist gerade nicht verfügbar. Bitte einen Kontoadmin, die Einladung erneut zu senden."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das Open-Source-AI Operating System",
@@ -10637,7 +10656,7 @@
       "text1458e20a1642": "Optional. Kortix löscht das lokale Token beim Trennen ebenfalls.",
       "text1459df2e344c": "Ein Linux-Computer startet aus dem Sandbox-Image, das Ihr Projekt deklariert. Er ist ein eigener isolierter Computer: eigenes Dateisystem, eigene Prozesstabelle, eigenes Netzwerk. Mit keiner anderen Sitzung wird etwas geteilt.",
       "text14683b379324": "Token widerrufen",
-      "text146b38e7fa80": "Wenn der Standard fehlschlägt",
+      "text146b38e7fa80": "Wenn ein Modell ausfällt",
       "text146cd06d5026": "Umgebung:",
       "text146fd497badf": "E-Mail übersprungen — kopiere den Einladungslink, um ihn manuell zu teilen",
       "text147251df4759": "Dies dauert normalerweise nur wenige Sekunden",
@@ -14734,7 +14753,7 @@
       "text8bb2b50055b6": "Ein Konnektor gehört zum Projekt, nicht zu einem Laptop oder Login. Fügen Sie ihn einmal hinzu, und jede Sitzung, die in diesem Projekt gestartet wird, kann ihn erreichen – ohne weitere Einrichtung und ohne dass ein Schlüssel per DM weitergegeben werden muss.",
       "text8bbecc2acd82": "IdP-Metadaten festlegen",
       "text8bc1d53cc57c": "Eingehend",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Inhalt der .pem-Datei einfügen",
       "text8bd901c25ba7": "F&E — Plattform",
       "text8bf73992ff9b": "Es gibt keinen separaten Bereitstellungsschritt und keine Konsole zum Durchklicken. Ein Befehl startet den Stack. Ein weiterer legt fest, mit welchem Kortix Ihre CLI kommuniziert.",
       "text8bf926d1ef32": "SSO einrichten",
@@ -15611,6 +15630,8 @@
       "texta4f264c3ab5f": "Admin-Freigabe",
       "texta4f6c318a669": "Diese App löschen?",
       "texta4fc39798651": "Änderungsanfrage #{number}",
+      "textddcd87c21894": "Ersetzt durch #{number}",
+      "texta8ef31fa7d25": "#{number} ansehen",
       "texta505da26f529": "Profilbild konnte nicht entfernt werden",
       "texta514a684676a": "Zugriff bearbeiten",
       "texta515cf580dd9": "Berechtigungen der IAM-Rolle aktualisiert",
@@ -16005,7 +16026,7 @@
       "textafb32719ca9e": "Bot-Client-Secret",
       "textafb5023c3c05": "Änderungen angewendet",
       "textafb837ec251a": "Okta überträgt Änderungen sofort (Zuweisungen, Profilaktualisierungen, Gruppenübertragungen) – eine Ruhephase bedeutet lediglich, dass sich nichts geändert hat.",
-      "textafb9890f7c72": "Wohin eine Anfrage geht, wenn der Projektstandard sie nicht verarbeiten kann.",
+      "textafb9890f7c72": "Wohin eine Anfrage geht, wenn ihr Modell sie nicht verarbeiten kann.",
       "textafc19f1734c1": "Prinzipal",
       "textafc8e3a5d5db": "Er gruppiert Anfragen danach, was die Menschen tatsächlich wollen, statt nach ihren verwendeten Worten, zählt die verschiedenen Konten, die jede Anfrage gestellt haben, und fügt die Zitate hinzu. Wenn jemand fragt „Wer wollte das?“, steht die Antwort im Dokument.",
       "textafdc7d79dccb": "Automatische Bereitstellung aus OneLogin",
@@ -16250,6 +16271,11 @@
       "textb6bb289a7a2c": "Konten Teams Organisationen wechseln verwalten",
       "textb6bcbb175d23": "Regulär · 400",
       "textb6c70926c1aa": "Nur Administratoren",
+      "textf19611c61ca5": "Voller Zugriff",
+      "text15589a542412": "{count, plural, =0 {Keine Connectoren} one {# Connector} other {# Connectoren}}",
+      "texte96d99ad9896": "{count, plural, =0 {Keine Geheimnisse} one {# Geheimnis} other {# Geheimnisse}}",
+      "text70b8d7e10749": "Alle Kortix-Aktionen",
+      "text2d3f4433505a": "{count, plural, =0 {Keine Kortix-Aktionen} one {# Kortix-Aktion} other {# Kortix-Aktionen}}",
       "textb6cde9030cef": "Schlüssel erstellen",
       "textb6d85433a7ee": "Sitzungen konnten nicht geladen werden",
       "textb6daf93376cc": "finance.weekly wird geladen",
@@ -16713,7 +16739,7 @@
       "textc3d2e79ebdd0": "Konnektoren",
       "textc3e3a6edeaa5": "Allgemeine Geschäftsbedingungen",
       "textc3e58a73609d": "Destruktiv",
-      "textc3ecd3cd791b": "Nach dem Projektstandard in dieser Reihenfolge versucht.",
+      "textc3ecd3cd791b": "Nach dem angeforderten Modell in dieser Reihenfolge versucht.",
       "textc3f282c05f3f": "Richtlinien Genehmigung blockieren require_approval Regeln Tools Konnektor-Sicherungen",
       "textc3f348ffaf7a": "Mit Projekt verknüpfen",
       "textc3f7bdf537c4": "Anfragen",
@@ -20046,6 +20072,7 @@
       "texta37dd5ef6ef2": "Seitenleiste anpassen",
       "text8c712bd7c1ec": "seitenleiste anpassen sortieren ausblenden anzeigen navigation sidebar",
       "text2313fe21ea84": "{name} bearbeiten",
+      "text2b2c3ec032a6": "Projekt in ein anderes Konto übertragen",
       "text44f9fff8bdae": "Credits-Plan geändert",
       "text3fa17bba73e1": "Dein Konto hat noch keinen Plan. Wähle einen monatlichen Credit-Betrag, um Sitzungen auszuführen. Alle Mitglieder teilen sich einen Pool.",
       "text6821e42be2c1": "Dein Guthaben ist leer, daher können Sitzungen nicht laufen. Lade auf, damit Rechenleistung und die neuesten KI-Modelle weiterlaufen – dein Plan bleibt unberührt.",
@@ -20303,7 +20330,12 @@
       "text57f57edb6f16": "Änderungsanfrage #{number} ist bereit zur Prüfung.",
       "texta8597db6f24b": "Skill entfernen",
       "text5f6ba69d66d1": "Skill entfernt",
-      "textcb8d6b0c94c9": " und alle Dateien darin, einschließlich Änderungen, und entfernt den Skill aus jedem Agenten, der ihn verwendet. Ein Commit auf dem Standard-Branch."
+      "textcb8d6b0c94c9": " und alle Dateien darin, einschließlich Änderungen, und entfernt den Skill aus jedem Agenten, der ihn verwendet. Ein Commit auf dem Standard-Branch.",
+      "cliDeviceTitle": "Kortix CLI autorisieren",
+      "cliDeviceWarning": "Genehmige nur eine Anmeldung, die du selbst gestartet hast. Gib den Code ein, den dein Terminal anzeigt.",
+      "cliDeviceCode": "Anmeldecode",
+      "cliDeviceApproved": "Anmeldung genehmigt. Kehre zu deinem Terminal zurück.",
+      "cliDeviceAction": "CLI autorisieren"
     },
     "publicShareConfirm": {
       "title": "Öffentlichen Link erstellen?",
@@ -20319,18 +20351,6 @@
       "cancel": "Abbrechen",
       "expiryNever": "Nie",
       "expiryDays": "{count, plural, one {# Tag} other {# Tagen}}"
-    },
-    "publicTranscriptShare": {
-      "sectionTitle": "Öffentlicher Link",
-      "sectionDescription": "Jeder mit dem Link kann diese Unterhaltung ohne Anmeldung lesen.",
-      "create": "Öffentlichen Link erstellen",
-      "revokeDescription": "Die Unterhaltung lädt für niemanden mit dem Link mehr. Du kannst danach einen neuen Link erstellen.",
-      "rowMeta": "Schreibgeschützte Unterhaltung",
-      "unavailable": "Diese Unterhaltung ist vorübergehend nicht verfügbar.",
-      "unavailableDescription": "Die Unterhaltung kann gerade nicht gelesen werden. Versuche es gleich noch einmal.",
-      "loadFailedDescription": "Die Unterhaltung konnte nicht geladen werden.",
-      "empty": "Noch keine Nachrichten",
-      "savedCopy": "Gespeicherte Kopie vom {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service}-Konto",
@@ -20448,6 +20468,12 @@
       "title": "Gespeichert, aber {agent} kann es noch nicht lesen",
       "grant": "{names} {count, plural, one {gehört} other {gehören}} nicht zu den Geheimnissen des Agenten {agent}. Öffne Anpassen → Agenten → {agent} → Geheimnisse und aktiviere {count, plural, one {es} other {sie}}.",
       "allowlist": "{names} {count, plural, one {liegt} other {liegen}} außerhalb der Geheimnisse dieser Sitzung. Starte eine neue Sitzung, um {count, plural, one {es} other {sie}} zu verwenden."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Einbetten",
+      "sectionDescription": "Nur für Seiten derselben Website. Betrachter müssen bereits angemeldet sein und Zugriff auf diese Sitzung haben; die Anmeldung innerhalb eines websiteübergreifenden iframes wird nicht unterstützt.",
+      "copy": "Einbettungscode kopieren",
+      "copied": "Einbettungscode kopiert"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Zustellung: Runtime – der echte Wert wird in die Sandbox-Umgebung geladen. Agent-Code kann ihn lesen.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Zustellung: Connector – nur serverseitig. Der Wert gelangt nie in die Sandbox-Umgebung.",
@@ -21130,6 +21156,8 @@
     "timeZone": "Zeitzone",
     "lastRun": "Letzter Lauf",
     "lastRunFailed": "Letzter Lauf fehlgeschlagen",
+    "runQueued": "Erinnerung an die Sitzung gesendet",
+    "runFailed": "Die Erinnerung konnte nicht ausgeführt werden",
     "neverRun": "Noch nicht gelaufen",
     "searchPlaceholder": "Erinnerungen suchen",
     "statusAll": "Alle",
@@ -21972,6 +22000,41 @@
         "exceptTitle": "Nie aufnehmen, auch wenn eingeschlossen",
         "memberInclusions": "Personen können eigene Apps und Websites einschließen",
         "memberInclusionsHint": "Aus: Computer nehmen nur die hier aufgeführten Apps und Websites auf. Personen können weiterhin Apps und Websites zum Überspringen hinzufügen."
+      },
+      "localHours": "On the computer",
+      "localHoursHint": "Wie lange jeder Computer lokale Kopien behält, bevor er sie löscht. Bei 0 bleibt lokal nichts gespeichert.",
+      "hours": "hours",
+      "storage": {
+        "title": "Speicher",
+        "hint": "Wo dieses Konto seine Aufnahmen speichert. Ein Wechsel verschiebt bereits gespeicherte Aufnahmen nicht – sie bleiben, wo sie sind.",
+        "kortix": "Von Kortix verwaltet",
+        "kortixHint": "Kortix speichert und indexiert die Aufnahmen. Keine Einrichtung nötig.",
+        "s3": "Ihr eigener S3-Bucket",
+        "s3Hint": "Kortix liest, indexiert und signiert Aufnahmen in einem Bucket, der Ihnen gehört.",
+        "endpoint": "Endpunkt",
+        "endpointHint": "Für AWS leer lassen. Für MinIO oder einen anderen S3-kompatiblen Speicher die vollständige URL.",
+        "region": "Region",
+        "bucket": "Bucket",
+        "pathStyle": "URLs im Pfadstil",
+        "pathStyleHint": "Für MinIO und die meisten selbst gehosteten Speicher an, für AWS aus.",
+        "credsTitle": "Zugriff",
+        "credsHint": "Geben Sie eine Art von Zugangsdaten an: eine IAM-Rolle, die Kortix übernimmt, oder ein statisches Zugriffsschlüsselpaar.",
+        "credRole": "IAM-Rolle (STS)",
+        "credKeys": "Zugriffsschlüssel",
+        "roleArn": "Rollen-ARN",
+        "roleArnHint": "Kortix übernimmt diese Rolle. Empfohlen: Jeder Computer erhält Zugangsdaten, die auf seinen eigenen Ordner beschränkt sind.",
+        "accessKeyId": "Zugriffsschlüssel-ID",
+        "secretAccessKey": "Geheimer Zugriffsschlüssel",
+        "secretSet": "Ein Geheimnis ist gespeichert. Geben Sie ein neues ein, um es zu ersetzen, oder lassen Sie das Feld leer, um es zu behalten.",
+        "staticWarning": "Statische Schlüssel lassen sich nicht pro Computer beschränken: Jeder Computer erhält kontoweiten Zugriff auf den Bucket. Verwenden Sie besser eine Rolle.",
+        "indexingNote": "Kortix liest den Bucket, um Aufnahmen zu indexieren und zu durchsuchen. Clientseitige Verschlüsselung ist mit der Indexierung nicht vereinbar – wählen Sie eines von beiden.",
+        "save": "Speicher sichern",
+        "saved": "Speicher aktualisiert",
+        "probeFailed": "In den Bucket konnte nicht geschrieben werden: {error}",
+        "saveFailed": "Die Speicherkonfiguration konnte nicht gesichert werden",
+        "currentManaged": "Aufnahmen werden im von Kortix verwalteten Speicher aufbewahrt.",
+        "currentOwn": "Aufnahmen werden in Ihrem Bucket {bucket} aufbewahrt.",
+        "loadFailed": "Die Speicherkonfiguration konnte nicht geladen werden"
       }
     },
     "area": {
@@ -22252,5 +22315,95 @@
     "join": "Beitreten",
     "openRoom": "Öffnen",
     "gateDescription": "Aktiviere Räume, damit Agentensitzungen und Personen dieses Projekts in benannten Chaträumen schreiben können."
+  },
+  "goals": {
+    "title": "Ziele",
+    "gateDescription": "Agenten verfolgen ein Ziel, bis es nachweislich erreicht ist: Das Ziel liegt in Dateien, ein täglicher Heartbeat weckt es, der Agent fragt Personen nach dem, was er braucht, und eine unabhängige Prüfung schließt es ab.",
+    "empty": "Noch keine Ziele",
+    "emptyHint": "Starte eines in einer Sitzung: Beschreibe das Ergebnis, zum Beispiel \"stell sicher, dass unser altes Bankkonto geschlossen ist\". Der Agent legt das Ziel an, und es erscheint hier.",
+    "loadError": "Ziele konnten nicht geladen werden. Versuche es erneut.",
+    "retry": "Erneut versuchen",
+    "needsYou": "Braucht dich",
+    "open": "Offen",
+    "closed": "Abgeschlossen",
+    "waitingFor": "Wartet auf: {title}",
+    "criteria": "{met}/{total} Kriterien",
+    "nextWake": "Nächster Weckruf {time}",
+    "noWake": "Kein Weckruf geplant",
+    "heartbeat": "Heartbeat",
+    "heartbeatPaused": "Pausiert",
+    "lastWakeLabel": "Letzter Weckruf",
+    "progress": "Fortschritt",
+    "scope": {
+      "company": "Unternehmen",
+      "personal": "Nur du"
+    },
+    "status": {
+      "draft": "Entwurf",
+      "active": "Aktiv",
+      "waiting_on_user": "Wartet auf dich",
+      "waiting_external": "Wartet",
+      "verifying": "Wird geprüft",
+      "done": "Erledigt",
+      "abandoned": "Aufgegeben"
+    },
+    "health": {
+      "healthy": "Läuft",
+      "attention": "Braucht Aufmerksamkeit",
+      "closed": "Abgeschlossen"
+    },
+    "issue": {
+      "no_heartbeat": "Nichts weckt dieses Ziel: Die Heartbeat-Erinnerung fehlt.",
+      "heartbeat_paused": "Die Heartbeat-Erinnerung ist pausiert.",
+      "heartbeat_failed": "Der letzte Weckruf ist fehlgeschlagen: {error}",
+      "missed_wake": "Der letzte Weckruf ist überfällig.",
+      "ask_overdue": "Eine Anfrage ist überfällig.",
+      "verification_stalled": "Die Prüfung läuft seit mehr als 24 Stunden.",
+      "unreadable": "goal.json fehlt oder ist kein gültiges JSON."
+    },
+    "sessionChip": "Ziel",
+    "sessionRole": {
+      "coordinator": "Diese Sitzung führt dieses Ziel.",
+      "worker": "Diese Sitzung arbeitet an diesem Ziel.",
+      "verifier": "Diese Sitzung prüft dieses Ziel."
+    },
+    "openGoal": "Ziel öffnen",
+    "openSession": "Hauptsitzung öffnen",
+    "openFolder": "Ordner öffnen",
+    "back": "Alle Ziele",
+    "healthTitle": "Zustand",
+    "successCriteria": "Erfolgskriterien",
+    "met": "Erfüllt",
+    "notMet": "Nicht erfüllt",
+    "items": "Punkte",
+    "noItems": "Noch keine Punkte.",
+    "noCriteria": "Noch keine Kriterien: Der Agent schreibt sie, bevor das Ziel aktiv wird.",
+    "kind": {
+      "task": "Aufgabe",
+      "ask": "Anfrage",
+      "wait": "Warten"
+    },
+    "itemStatus": {
+      "open": "offen",
+      "doing": "in Arbeit",
+      "done": "erledigt",
+      "dropped": "verworfen"
+    },
+    "due": "Fällig {time}",
+    "sessions": "Sitzungen",
+    "role": {
+      "coordinator": "Hauptsitzung",
+      "worker": "Mitarbeiter",
+      "verifier": "Prüfer"
+    },
+    "timeline": "Verlauf",
+    "verification": "Prüfung",
+    "notes": "Notizen",
+    "log": "Protokoll",
+    "notFound": "Dieses Ziel existiert nicht mehr."
+  },
+  "agentEditor": {
+    "manage": "Verwalten",
+    "overviewTitle": "Übersicht"
   }
 }

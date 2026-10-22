@@ -5,16 +5,17 @@
  * the web makes) and paints it into its session store, so the thread that opens
  * next starts from the same messages.
  *
- * - The project flag `session_log` off: the v1 copy (`useSessionSync` paints
- *   it). The SDK holds the copy for the open: the thread downloads the window
- *   no second time.
- * - On: the session log's newest page (`GET …/log`), never the v1 copy. A
- *   sub-agent's thread loads from the heads that page names
- *   (`useSessionLogThread`). Nothing is read until the flag answers.
+ * - The session log first: its newest page (`GET …/log`). A sub-agent's thread
+ *   loads from the heads that page names (`useSessionLogThread`).
+ * - Only when the log answers 404 (a server older than the log): the v1 copy
+ *   (`useSessionSync` paints it). The SDK holds the copy for the open: the
+ *   thread downloads the window no second time.
+ *
+ * No project flag is read.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { readSavedSessionCopy, sessionLogOfV1Rows, type SavedSessionCopy, type SessionLogThread } from '@kortix/sdk';
-import { useFeatureFlag, useSessionLogThread, useSessionStateStore, useSessionSync } from '@kortix/sdk/react';
+import { useSessionLogRecord, useSessionLogThread, useSessionStateStore, useSessionSync } from '@kortix/sdk/react';
 
 export interface SavedCopyTarget {
   projectId: string;
@@ -30,22 +31,16 @@ export function useSavedCopy(target: SavedCopyTarget | null): {
   thread: SessionLogThread | undefined;
   empty: boolean;
 } {
-  const flag = useFeatureFlag(target?.projectId ?? null, 'session_log');
-  const sessionLog = flag.enabled;
-  const key =
-    target && !flag.isLoading
-      ? `${target.projectId}/${target.sessionId}/${target.rootId}/${target.child ? 'child' : 'root'}/${sessionLog ? 'log' : 'v1'}`
-      : null;
+  const key = target ? `${target.projectId}/${target.sessionId}/${target.rootId}/${target.child ? 'child' : 'root'}` : null;
   const [read, setRead] = useState<({ key: string } & SavedSessionCopy) | null>(null);
   useEffect(() => {
-    // On v1 a sub-agent's window is read by `useSessionSync` below (`child=`).
-    if (!target || !key || (target.child && !sessionLog)) return;
+    // A sub-agent: `useSessionSync` below reads it (the log first, else its v1 window by `child=`).
+    if (!target || !key || target.child) return;
     let current = true;
     void readSavedSessionCopy({
       projectId: target.projectId,
       sessionId: target.sessionId,
       runtimeSessionId: target.rootId,
-      sessionLog,
     }).then((result) => {
       if (!current) return;
       // The SDK's session store holds the page, as `useSession` will.
@@ -59,18 +54,19 @@ export function useSavedCopy(target: SavedCopyTarget | null): {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   const mine = read && read.key === key ? read : null;
+  // The store holds the session's log: the page above, or the one `useSessionSync` read for a sub-agent.
+  const onLog = useSessionLogRecord({ sessionId: target?.sessionId ?? '' }) !== null;
 
   const sync = useSessionSync(target?.rootId ?? '', {
     kortixSessionScope: target ? `${target.projectId}/${target.sessionId}` : undefined,
     // The computer is not up yet: only the saved copies paint.
     networkEnabled: false,
-    // The root: the copy read above, `null` until it answers (the copy this
-    // device kept paints first, and the server's reconciles into it). A
-    // sub-agent: `undefined`, so the SDK reads its own window.
+    // The root: the v1 copy read above (only when the log answered 404), `null`
+    // until it answers. A sub-agent: `undefined`, so the SDK reads its own copy.
     mirror: target?.child ? undefined : (mine?.envelope ?? null),
     savedChild: target?.child ?? false,
-    // No v1 copy while the flag is unknown, nor with it on.
-    sessionLog: !key || sessionLog,
+    // The root: no v1 copy until the read answers that the session has no log.
+    sessionLog: !target?.child && (!mine || !!mine.log),
   });
 
   const rows = target && sync.messages.length > 0 ? sync.messages : null;
@@ -83,6 +79,6 @@ export function useSavedCopy(target: SavedCopyTarget | null): {
     [target?.projectId, target?.sessionId, target?.rootId],
   );
   const logThread = useSessionLogThread(source, target?.child ? target.rootId : undefined);
-  const thread = !sessionLog ? v1Thread : target && logThread?.messages.length ? logThread : undefined;
+  const thread = !onLog ? v1Thread : target && logThread?.messages.length ? logThread : undefined;
   return { thread, empty: mine?.empty ?? false };
 }

@@ -168,10 +168,18 @@ export function createRuntimeVerbs(input: RuntimeVerbsInput) {
           status: 409,
         });
       }
-      unwrap(
-        await client.session.summarize({ sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID }),
-        'Compacting the session failed',
-      );
+      const result = await client.session.summarize({
+        sessionID: input.rootId, providerID: chosen.providerID, modelID: chosen.modelID,
+      });
+      // A turn that started after the status read can outlast the proxy. Say so
+      // without the proxy's internal diagnostic, and never resubmit.
+      if (result.error && typeof result.error === 'object' && 'code' in result.error
+        && result.error.code === 'LONG_TURN_PROXY_TIMEOUT') {
+        throw new ApiError('Compaction has not finished. Check the session status before trying again.', {
+          code: 'LONG_TURN_PROXY_TIMEOUT', status: result.response?.status,
+        });
+      }
+      unwrap(result, 'Compacting the session failed');
       return chosen;
     },
   };

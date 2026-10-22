@@ -1,4 +1,4 @@
-import { whenQueryClientReady } from '@kortix/ui/internal/lib/query-client-singleton';
+import { onEachQueryClient } from '@kortix/ui/internal/lib/query-client-singleton';
 import { registerDisposableFamily } from '@kortix/ui/internal/lib/storage/managed-storage';
 import {
   browserKeyValueStorage,
@@ -159,11 +159,13 @@ export function adoptDeviceCaches(userId: string): void {
     window.addEventListener('pagehide', flush);
     document.addEventListener('visibilitychange', flushWhenHidden);
     let stopPersisting = () => {};
+    let stopFollowing = () => {};
     const record = {
       userId,
       queries,
       copies,
       detach: () => {
+        stopFollowing();
         stopPersisting();
         window.removeEventListener('pagehide', flush);
         document.removeEventListener('visibilitychange', flushWhenHidden);
@@ -171,12 +173,15 @@ export function adoptDeviceCaches(userId: string): void {
     };
     adopted = record;
     // Restoring and persisting the query cache is the only part that needs the
-    // shared client. Schedule it for when the client registers rather than
-    // dropping the whole adopt on an early return.
-    whenQueryClientReady((client) => {
+    // shared client. It runs when the client registers, and again for every
+    // client that replaces it: React can discard the render that registered
+    // the first one, and the app then reads a second, empty client (journey 34:
+    // a reload with every read held stayed on "Opening your project").
+    stopFollowing = onEachQueryClient((client) => {
       // A sign-out or a user switch before the client registered supersedes
       // this record; the newer adopt owns the client then.
       if (adopted !== record) return;
+      stopPersisting();
       // The SDK marks each restored entry invalidated: it refetches the first
       // time something reads it, even when younger than its staleTime.
       queries.restore(client);

@@ -45,6 +45,11 @@ export function enforcedContentSecurityPolicy(): string {
   return ["frame-ancestors 'self'", "object-src 'none'", "base-uri 'self'"].join('; ') + ';';
 }
 
+/** Session embeds reuse authentication and allow only Kortix-owned same-site hosts. */
+export function embedContentSecurityPolicy(): string {
+  return ["frame-ancestors 'self' https://kortix.com https://*.kortix.com", "object-src 'none'", "base-uri 'self'"].join('; ') + ';';
+}
+
 export function reportOnlyContentSecurityPolicy(): string {
   const scriptSrc = [
     "'self'",

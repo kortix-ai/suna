@@ -18,7 +18,7 @@ import { SessionStartResultSchema, SessionTurnStatusSchema, projectsApp } from '
 import {
   sessionUsesCurrentRepository,
 } from '../lib/repository-generation';
-import { backfillSessionTranscriptMirrorOnWake } from '../lib/session-transcript-capture';
+import { captureJournallessSessionLogOnWake } from '../lib/session-transcript-capture';
 import { isUuid } from '../../shared/validate';
 import { restartSession, startSession, stopSession } from '../session-lifecycle';
 import { START_AWAIT_MAX_MS } from '../session-lifecycle/await-stage';
@@ -173,17 +173,12 @@ export function registerSessionRuntimeRoutes(): void {
         signal: c.req.raw.signal,
       });
       stl.mark(`open-session:${result.start.stage}`);
-      // THE RUNTIME IS UP — mirror what is already in it, once.
-      //
-      // Capture otherwise runs only at turn end, so a session nobody prompted
-      // since saved history shipped stayed blank on open until somebody sent it
-      // another message. Opening the session is exactly when the user waits and
-      // the feature is supposed to pay off, so that is where the backfill belongs.
-      //
-      // Fire-and-forget and self-limiting: at most one attempt per session per
-      // process, skipped entirely when the mirror already proves it holds the
-      // session's first message. It cannot fail or delay this response.
-      if (result.start.stage === 'ready') void backfillSessionTranscriptMirrorOnWake(sessionId);
+      // THE RUNTIME IS UP. A box without a journal gets what is already in it
+      // into the session log, once: capture otherwise runs only at turn end.
+      // Fire-and-forget and self-limiting (at most 3 attempts per session per
+      // process, none for a session with a journal). It cannot fail or delay
+      // this response.
+      if (result.start.stage === 'ready') void captureJournallessSessionLogOnWake(sessionId);
       stl.log({
         waitMs,
         repositoryMode: usesCurrentRepository ? 'current' : 'previous',

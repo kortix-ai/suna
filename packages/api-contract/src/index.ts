@@ -66,7 +66,6 @@ export const FeatureFlagMapSchema = z.object({
   notification_center: z.boolean(),
   volumes: z.boolean(),
   drives: z.boolean(),
-  session_log: z.boolean(),
   session_log_restore: z.boolean(),
   connectors_v2: z.boolean(),
   agent_rooms: z.boolean(),
@@ -187,11 +186,18 @@ export const ProjectSchema = z.object({
     apps: z.literal(true).optional(),
     /** Not a flag (the gateway is the only model path); always `true` for older SDK and mobile clients. */
     llm_gateway: z.literal(true).optional(),
+    /** Not a flag (the session log is every session's saved history); always `true` for older SDK, CLI and mobile clients. */
+    session_log: z.literal(true).optional(),
   }),
   experimental_features: z.array(FeatureFlagViewSchema),
   /** Per-project provider pin, surfaced only while still usable. */
   default_sandbox_provider: SandboxProviderSchema.nullable(),
   available_sandbox_providers: z.array(SandboxProviderSchema),
+  /** Per-project default reasoning effort (a models.dev effort label such as
+   *  `low`/`high`/`xhigh`), or null for automatic. Delivery injects it as the
+   *  prompt's `variant` whenever the prompt carries none; re-validated on read
+   *  so a value the catalog never published never reaches a client. */
+  default_reasoning_effort: z.string().nullable(),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
@@ -1989,6 +1995,8 @@ export const SessionSnapshotSchema = z.object({
     agent_name: z.string().nullable(),
     /** @deprecated Always true: the LLM gateway is the only model path. Kept for older clients. */
     llm_gateway_enabled: z.boolean(),
+    /** The project's default reasoning effort, or null for automatic. */
+    default_reasoning_effort: z.string().nullable(),
   }),
   models: z.union([
     z.object({
@@ -2068,6 +2076,9 @@ export const ChangeRequestSchema = z.object({
   merge_commit_sha: z.string().nullable(),
   closed_at: z.string().nullable(),
   closed_by: z.string().nullable(),
+  /** A closed request's replacement: the next request opened for the same
+   *  branch, when the caller may read it. Null otherwise (KRTX-3031). */
+  superseded_by: z.object({ cr_id: z.string(), number: z.number() }).nullable(),
   metadata: JsonObjectSchema,
   created_at: z.string(),
   updated_at: z.string(),

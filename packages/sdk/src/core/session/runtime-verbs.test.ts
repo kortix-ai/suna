@@ -157,6 +157,21 @@ describe('session runtime verbs', () => {
     expect(requests.map((request) => request.path)).toEqual(['/session/status']);
   });
 
+  test('compact() translates a raced turn timeout without replaying the summary', async () => {
+    const { fetch, requests } = fakeRuntime({
+      'GET /session/status': { body: {} },
+      'POST /session/ses_root/summarize': {
+        status: 504,
+        body: { code: 'LONG_TURN_PROXY_TIMEOUT', error: 'internal ALB prompt_async SSE diagnostic' },
+      },
+    });
+    const verbs = createRuntimeVerbs({ runtimeUrl: RUNTIME, rootId: 'ses_root', fetch });
+    await expect(verbs.compact({ providerID: 'kortix', modelID: 'model' })).rejects.toThrow(
+      'Compaction has not finished. Check the session status before trying again.',
+    );
+    expect(requests.filter((r) => r.method === 'POST')).toHaveLength(1);
+  });
+
   test('compact() summarizes the root with the given model, else the runtime default model', async () => {
     const { fetch, requests } = fakeRuntime({
       'GET /session/status': { body: { ses_root: { type: 'idle' }, ses_child: { type: 'busy' } } },

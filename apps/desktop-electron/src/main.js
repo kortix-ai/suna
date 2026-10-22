@@ -23,6 +23,7 @@ const { setupAutoUpdates, checkForUpdatesInteractive } = require('./updater');
 const basicAuth = require('./basic-auth');
 const { needsMainWindow, revealMainWindow, shouldAllowPreventedUnload } = require('./lifecycle-rules');
 const { menuContextForUrl, copyableUrl } = require('./menu-state');
+const { PANEL_TOGGLE_COMMAND, forwardsPanelToggle } = require('./panel-shortcut');
 const { decidePopup, isAllowedPopupNavigation } = require('./popup-rules');
 const { backgroundForTheme, normalizeChoice, normalizeTheme } = require('./theme-state');
 const { MIN_HEIGHT, MIN_WIDTH, restoreWindowState } = require('./window-state');
@@ -390,6 +391,10 @@ function createMainWindow() {
   // opens the application menu under the title bar instead, as Alt does in
   // every Windows app with a menu bar.
   if (isWindows) watchAltForAppMenu(mainWindow);
+
+  // ⌘I from inside a cross-origin iframe (the session's Browser preview)
+  // never reaches the page, so the shell forwards it (KRTX-2944).
+  watchPanelToggleInFrames(mainWindow);
 
   // Right-click: the menu every browser and text field has (KRTX-2555).
   attachContextMenu(mainWindow.webContents, { Menu, shell, clipboard, getWindow: () => mainWindow });
@@ -1021,6 +1026,15 @@ function watchAltForAppMenu(win) {
   });
   win.on('blur', () => {
     altAlone = false;
+  });
+}
+
+/** ⌘I / Ctrl+I in a subframe: the page's own handler cannot see it (panel-shortcut.js). */
+function watchPanelToggleInFrames(win) {
+  win.webContents.on('before-input-event', (event, input) => {
+    if (!forwardsPanelToggle(input, win.webContents.focusedFrame)) return;
+    event.preventDefault();
+    sendDesktopCommand(PANEL_TOGGLE_COMMAND);
   });
 }
 

@@ -152,6 +152,7 @@ export {
   type TriggerRunsQueryOptions,
 } from './use-project-triggers';
 export { useProjectReminders, useSessionReminders } from './use-reminders';
+export { useProjectGoalFiles, useProjectGoals, useSessionGoal } from './use-goals';
 export { useRoom, useRoomConversations, useRoomMessages, useRoomThread, useRooms } from './use-rooms';
 export {
   useApproveCaptureDevice,
@@ -164,6 +165,7 @@ export {
   useCaptureEnrollmentTokens,
   useCapturePolicy,
   useCaptureSearch,
+  useCaptureStorage,
   useCaptureTimeline,
   useCaptureTimelineItems,
   useCaptureWorkspace,
@@ -175,6 +177,7 @@ export {
   useRevokeCaptureEnrollmentToken,
   useSetCaptureEnabled,
   useSetCapturePolicy,
+  useSetCaptureStorage,
 } from './use-capture';
 export { useSessionMessageAuthors } from './use-session-message-authors';
 export { useSessionModelUsage } from './use-session-model-usage';

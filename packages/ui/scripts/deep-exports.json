@@ -248,6 +248,7 @@
     "./session/composer/queue-projection",
     "./session/composer/session-chat-input",
     "./session/models/model-grouping",
+    "./session/models/model-search-empty",
     "./session/models/model-selector",
     "./session/panel/audit/audit-credential-label",
     "./session/panel/easy/detail-view",

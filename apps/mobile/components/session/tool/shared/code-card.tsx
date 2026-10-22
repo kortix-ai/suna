@@ -1,3 +1,4 @@
+import { useTone } from '@/lib/utils/tone';
 /**
  * Code and markdown payloads under a tool row.
  *
@@ -53,9 +54,8 @@ export const HighlightedCode = memo(function HighlightedCode({
   color?: string;
   typeStyle?: { fontSize: number; lineHeight: number };
 }) {
-  const { colorScheme } = useColorScheme();
   const palette = useTurnPalette();
-  const scheme = colorScheme === 'dark' ? 'dark' : 'light';
+  const scheme = useTone();
   const { lines } = useCodeTokens(code, normalizeLanguage(language || 'text'), scheme);
 
   return (

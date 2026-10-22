@@ -14,6 +14,7 @@
  * (the repo's `--isolate` runner guarantees that).
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -65,6 +66,25 @@ const confirmed: string[] = [];
 const steerLookups: string[] = [];
 let steerTargets: Record<string, string> = {};
 let confirmOutcome: 'confirmed' | 'pending_delivery' | 'no_prompt' = 'confirmed';
+let failDaemonBootWrite = false;
+
+/** True when a drizzle `SQL` fragment's literal text names `key`. */
+function sqlMentions(fragment: unknown, key: string): boolean {
+  if (!(fragment instanceof SQL)) return false;
+  return fragment.queryChunks.some((chunk) => {
+    const value = (chunk as { value?: unknown }).value;
+    return Array.isArray(value) && value.join('').includes(key);
+  });
+}
+
+/** The numbers bound into a drizzle `SQL` fragment. */
+function boundNumbers(fragment: unknown): number[] {
+  if (!(fragment instanceof SQL)) return [];
+  return fragment.queryChunks.filter((chunk): chunk is number => typeof chunk === 'number');
+}
+
+/** The `session_sandboxes.config` writes that record a daemon boot for env sync. */
+const daemonBootWrites = () => updateSets.filter((set) => sqlMentions(set.config, 'envSyncDaemonBootAtMs'));
 
 const databaseMock = {
   select: (projection: Record<string, unknown> = {}) => ({
@@ -84,6 +104,9 @@ const databaseMock = {
   update: (_table: unknown) => ({
     set: (values: Record<string, unknown>) => {
       updateSets.push(values);
+      if (failDaemonBootWrite && sqlMentions(values.config, 'envSyncDaemonBootAtMs')) {
+        return { where: () => Promise.reject(new Error('connection terminated')) };
+      }
       return {
         where: () => ({ returning: async () => updateRows }),
       };
@@ -184,7 +207,7 @@ mock.module('../session-lifecycle/forwarded-strand-reconcile', () => ({
 }));
 
 mock.module('../lib/session-transcript-capture', () => ({
-  captureSessionTranscriptMirror: () => {
+  captureJournallessSessionLog: () => {
     order.push('mirror');
   },
 }));
@@ -315,6 +338,7 @@ beforeEach(() => {
   steerLookups.length = 0;
   steerTargets = {};
   confirmOutcome = 'confirmed';
+  failDaemonBootWrite = false;
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
@@ -374,6 +398,8 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: 'initial_turn_claim requires a sandbox token' });
+    // A PAT is not the daemon: it cannot tell the API that a daemon booted.
+    expect(daemonBootWrites()).toEqual([]);
   });
 
   test('turn_abandoned requires a sandbox token', async () => {
@@ -436,6 +462,33 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () => {
+  // Every daemon process claims once, at boot. A new process seeds its env
+  // store from the BOOT env, so every env push applied to the previous process
+  // is gone. The claim records the boot before it answers, so no API replica
+  // trusts a push the new process never received (2026-10-16, KRTX-2517).
+  test('records the daemon boot for env sync before it answers', async () => {
+    const before = Date.now();
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    const writes = daemonBootWrites();
+    expect(writes).toHaveLength(1);
+    const [bootAtMs] = boundNumbers(writes[0]!.config);
+    expect(bootAtMs).toBeGreaterThanOrEqual(before);
+    expect(bootAtMs).toBeLessThanOrEqual(Date.now());
+  });
+
+  test('a failed boot record fails the claim with 503: the daemon retries before it serves a prompt', async () => {
+    failDaemonBootWrite = true;
+    sessionRow = session({ initial_prompt: 'build it' });
+    ownedRow = {
+      sessionId: SESSION_ID,
+      metadata: { activeTurns: { 'turn-token-1': { state: 'delivering', messageId: 'msg_1' } } },
+    };
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'could not record the daemon boot; retry the claim' });
+  });
+
   test('answers initial_turn: null when no prompt is pending', async () => {
     sessionRow = session({});
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);

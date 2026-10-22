@@ -94,9 +94,6 @@ export function draftFromOverrides(
   return draft;
 }
 
-export type OverridesPatchResult =
-  { ok: true; patch: AdminEntitlementOverridePatch } | { ok: false; error: string };
-
 /**
  * The merge patch for one save: every row whose draft differs from what the
  * account carries, and nothing else.
@@ -109,7 +106,7 @@ export type OverridesPatchResult =
 export function overridesPatch(
   draft: OverridesDraft,
   stored: AdminEntitlementOverrides | null | undefined,
-): OverridesPatchResult {
+): AdminEntitlementOverridePatch {
   const base = draftFromOverrides(stored);
   const patch: AdminEntitlementOverridePatch = {};
 
@@ -119,7 +116,7 @@ export function overridesPatch(
     patch[key] = next === 'inherit' ? null : { value: next === 'on' };
   }
 
-  return { ok: true, patch };
+  return patch;
 }
 
 /** Nothing to save — the Save button's disabled state, in one place. */

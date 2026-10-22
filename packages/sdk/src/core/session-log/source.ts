@@ -1,12 +1,11 @@
 /**
  * Where the v2 session log comes from, and when a client reads it.
  *
- * NEGOTIATION. A session reads `kortix.session/2` only when both hold:
- *  - the project flag `session_log` is exactly `true`. An API that predates the session
- *    log does not serve the flag, so an SDK newer than its API keeps v1;
- *  - this SDK has a page loader. An SDK published before the API route keeps v1.
- * Otherwise the session reads v1, exactly as before the session log existed. The runtime
- * is not asked: the stored log is the API's (a stopped box reads it too), and the session
+ * NEGOTIATION. A session reads `kortix.session/2` first, always: the first read of an open is
+ * `GET …/log`. The project flag `session_log` is not read (the API deletes it). A 404 coded
+ * `session_log_missing` (a session with no stored log yet) keeps the session on the log with
+ * nothing in it. A 404 without that code or an invalid page (an API that predates the session
+ * log) falls back to v1, exactly as before the session log existed. The runtime is not asked: the stored log is the API's (a stopped box reads it too), and the session
  * stream serves `schema=v2` for every daemon (it converts the v1 frames of a daemon that
  * does not list `session.log.v2`).
  *
@@ -74,8 +73,30 @@ export const SESSION_LOG_OLDER_PAGE_LIMIT = 100;
 
 export type SessionLogDialect = 'v1' | 'v2';
 
-export function negotiateSessionLog(input: { flag: boolean | undefined; loader: LoadSessionLogPage | null }): SessionLogDialect {
-  return input.flag === true && input.loader !== null ? 'v2' : 'v1';
+/** `useSessionLogSync`'s answer: a dialect, or `'missing'` (v2, and the API holds no log for the session yet). */
+export type SessionLogSyncState = SessionLogDialect | 'missing';
+
+/** The code of the API's 404 for a session with no stored log yet. An API without the route answers 404 with no code. */
+const SESSION_LOG_MISSING_CODE = 'session_log_missing';
+
+/**
+ * One page, validated. `'missing'`: the API serves the session log and this session has none
+ * yet (a new session): a client stays on the log and reads no v1 copy. Null on any other
+ * failure (an API older than the log, an invalid page, the network); never throws.
+ */
+export async function readSessionLogAnswer(
+  load: LoadSessionLogPage,
+  projectId: string,
+  sessionId: string,
+  query: SessionLogPageQuery,
+  signal?: AbortSignal,
+): Promise<SessionLogPage | 'missing' | null> {
+  try {
+    const page = await load(projectId, sessionId, query, signal);
+    return isSessionLogPage(page) ? page : null;
+  } catch (error) {
+    return (error as { code?: unknown } | null)?.code === SESSION_LOG_MISSING_CODE ? 'missing' : null;
+  }
 }
 
 /** One page, validated. Null on any failure; never throws. */
@@ -86,20 +107,27 @@ export async function fetchSessionLogPage(
   query: SessionLogPageQuery,
   signal?: AbortSignal,
 ): Promise<SessionLogPage | null> {
-  try {
-    const page = await load(projectId, sessionId, query, signal);
-    return isSessionLogPage(page) ? page : null;
-  } catch {
-    return null;
-  }
+  const answer = await readSessionLogAnswer(load, projectId, sessionId, query, signal);
+  return answer === 'missing' ? null : answer;
+}
+
+/** The newest page of the root thread, or `'missing'`, as {@link readSessionLogAnswer} answers. */
+export function readFirstSessionLogAnswer(
+  load: LoadSessionLogPage,
+  projectId: string,
+  sessionId: string,
+  signal?: AbortSignal,
+): Promise<SessionLogPage | 'missing' | null> {
+  return readSessionLogAnswer(load, projectId, sessionId, { limit: SESSION_LOG_FIRST_PAGE_LIMIT }, signal);
 }
 
 /** The newest page of the root thread, validated. Null on any failure; never throws. */
-export function fetchFirstSessionLogPage(
+export async function fetchFirstSessionLogPage(
   load: LoadSessionLogPage,
   projectId: string,
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<SessionLogPage | null> {
-  return fetchSessionLogPage(load, projectId, sessionId, { limit: SESSION_LOG_FIRST_PAGE_LIMIT }, signal);
+  const answer = await readFirstSessionLogAnswer(load, projectId, sessionId, signal);
+  return answer === 'missing' ? null : answer;
 }

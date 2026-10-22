@@ -68,7 +68,7 @@ jobs:
       - if: steps.gate.outputs.skip != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: steps.gate.outputs.skip != 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - if: steps.gate.outputs.skip != 'true'
@@ -115,8 +115,14 @@ jobs:
   # deliberate gaps listed in packages/db/scripts/verify-live-schema-waivers.ts).
   # The deploy-prod verify-schema gate was removed (it never gated the roll),
   # so this is the only prod schema check; it catches drift introduced out-of-band BETWEEN deploys.
+  #
+  # Runs only from the `prod` branch (dispatch with `--ref prod`): the prod blob is
+  # readable only through the prod role, which needs `environment: prod`. The
+  # nightly schedule runs on `dev` and so skips this job.
   prod-presence:
     name: Prod has every object the migrations define
+    if: github.ref == 'refs/heads/prod'
+    environment: prod
     runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     services:
       postgres:
@@ -143,6 +149,7 @@ jobs:
       - name: Read credentials from AWS Secrets Manager
         uses: ./.aws-env/.github/actions/aws-env
         with:
+          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy-prod
           keys: |
             LIVE_DB_URL=kortix-prod-env:DATABASE_URL
       - name: Skip if prod is not configured
@@ -155,7 +162,7 @@ jobs:
       - if: steps.gate.outputs.skip != 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - if: steps.gate.outputs.skip != 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - if: steps.gate.outputs.skip != 'true'

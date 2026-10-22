@@ -906,6 +906,9 @@
       "iconDescription": "Приказује се поред назива пројекта.",
       "name": "Назив пројекта",
       "nameDescription": "Приказује се у бирачу и свуда где је овај пројекат наведен.",
+      "defaultEffort": "Подразумевани напор закључивања",
+      "defaultEffortDescription": "Примењује се на нове захтеве без експлицитног избора напора, када модел сесије то подржава.",
+      "defaultEffortAutomatic": "Аутоматски",
       "saving": "Чување…",
       "archived": "Пројекат је архивиран",
       "archiveFailed": "Пројекат није могао да се архивира",
@@ -925,7 +928,19 @@
         "access": "Приступ за цео тим — нико више не може да приступи овом пројекту"
       },
       "reassurance": "Git складишта која сте сами повезали се не бришу. Сав већ послат код остаје на свом месту.",
-      "keepWorkspace": "Задржи пројекат"
+      "keepWorkspace": "Задржи пројекат",
+      "transferWorkspace": "Пренеси пројекат",
+      "transferDescription": "Премести овај пројекат — сесије, датотеке, подешавања и приступ чланова — у другу организацију.",
+      "transferTitle": "Пренеси пројекат",
+      "transferDialog": "Сесије, датотеке, подешавања и системске улоге прате пројекат. Групе, позивнице на чекању и прилагођене улоге морају поново да се доделе у циљној организацији. Забележена потрошња остаје на старом рачуну.",
+      "transferTargetLabel": "Циљна организација",
+      "transferTargetPlaceholder": "Изабери организацију",
+      "transferLoadingTargets": "Учитавање организација…",
+      "transferNoTargets": "Нисте члан ниједне друге организације.",
+      "transferMove": "Премести пројекат",
+      "transferMoveTo": "Премести у {name}",
+      "transferSuccess": "Пројекат је пренесен",
+      "transferFailed": "Пренос није успео"
     },
     "sandbox": {
       "states": {
@@ -1256,10 +1271,6 @@
           "name": "Drive",
           "description": "Deljeni folderi koji ostaju usklađeni sa sesijama: tvoj drive, po jedan za svakog agenta i drive-ovi kompanije koje administrator dodeli projektu. Nove sesije ih vide pod /drives."
         },
-        "session_log": {
-          "name": "Log sesije v2",
-          "description": "Čita sesiju preko loga sesije v2 umesto transkripta v1. Kortix ga uključuje po projektu."
-        },
         "session_log_restore": {
           "name": "Vraćanje iz loga sesije",
           "description": "Ponovo gradi sesiju iz njenog sačuvanog loga sesije kada je njen računar izgubio razgovor. Kortix ga uključuje po projektu."
@@ -1490,6 +1501,7 @@
   },
   "sidebar": {
     "rooms": "Sobe",
+    "goals": "Ciljevi",
     "referAndEarn": "Препоручи и заради",
     "referralShareTitle": "Препоручите пријатеље",
     "referralShareSubtitle": "Освојите 400 кредита",
@@ -5109,7 +5121,14 @@
       "youHaveBeenInvitedToAProject": "Позвани сте у пројекат.",
       "joinProjectDescription": "Придружићете се пројекту {projectName} као {roleLabel}.",
       "roleManager": "менаџер",
-      "signOutAndContinue": "Одјавите се и наставите"
+      "signOutAndContinue": "Одјавите се и наставите",
+      "ssoTitle": "Prijavi se jedinstvenom prijavom",
+      "ssoDescription": "Direktorijum tvoje organizacije te je dodao na ovaj nalog. Prijavi se jedinstvenom prijavom (SSO) svoje organizacije da se pridružiš. Ako ne možeš, zamoli administratora naloga da ponovo pošalje pozivnicu.",
+      "ssoContinue": "Nastavi jedinstvenom prijavom",
+      "askAdminTitle": "Zamoli administratora da je ponovo pošalje",
+      "askAdminDescription": "Direktorijum tvoje organizacije te je dodao na ovaj nalog, a ova instanca ne može da potvrdi tvoju adresu e-pošte. Zamoli administratora naloga da ponovo pošalje pozivnicu, pa ponovo otvori ovaj link.",
+      "ssoDomainUnverified": "Tvoj provajder jedinstvene prijave nije verifikovao domen ove adrese e-pošte. Odjavi se i ponovo se prijavi svojom adresom e-pošte da bi iskoristio ovu pozivnicu.",
+      "ssoUnavailable": "Jedinstvena prijava trenutno nije dostupna. Zamoli administratora naloga da ponovo pošalje pozivnicu."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – AI Operating System отвореног кода",
@@ -10637,7 +10656,7 @@
       "text1458e20a1642": "Опционо. Kortix такође брише локални токен приликом прекида везе.",
       "text1459df2e344c": "Linux рачунар се покреће из sandbox слике коју ваш пројекат наводи. То је засебан изоловани рачунар: сопствени систем датотека, сопствена табела процеса и сопствена мрежа. Ништа се не дели са другом сесијом.",
       "text14683b379324": "Опозови токен",
-      "text146b38e7fa80": "Када подразумевано не успе",
+      "text146b38e7fa80": "Када модел не успе",
       "text146cd06d5026": "Окружење:",
       "text146fd497badf": "Имејл је прескочен — копирајте линк позива да бисте га поделили ручно",
       "text147251df4759": "Ово обично траје неколико секунди",
@@ -14734,7 +14753,7 @@
       "text8bb2b50055b6": "Конектор припада пројекту, а не лаптопу или пријави. Додајте га једном и свака сесија коју тај пројекат покрене може да му приступи — без другог подешавања и без дељења кључа у директној поруци.",
       "text8bbecc2acd82": "Подесите метаподатке добављача идентитета",
       "text8bc1d53cc57c": "Улаз",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Налепите садржај .pem датотеке",
       "text8bd901c25ba7": "Истраживање и развој — платформа",
       "text8bf73992ff9b": "Нема посебног корака за обезбеђивање нити конзоле кроз коју треба кликати. Једна команда покреће стек. Друга одређује са којим Kortix-ом ваш CLI комуницира.",
       "text8bf926d1ef32": "Подесите SSO",
@@ -15611,6 +15630,8 @@
       "texta4f264c3ab5f": "Администраторска додела",
       "texta4f6c318a669": "Обрисати ову апликацију?",
       "texta4fc39798651": "Захтев за измену #{number}",
+      "textddcd87c21894": "Замењено са #{number}",
+      "texta8ef31fa7d25": "Прикажи #{number}",
       "texta505da26f529": "Није могуће уклонити слику профила",
       "texta514a684676a": "Измени приступ",
       "texta515cf580dd9": "Дозволе IAM улоге ажуриране",
@@ -16005,7 +16026,7 @@
       "textafb32719ca9e": "Тајна клијента bot-а",
       "textafb5023c3c05": "Промене су примењене",
       "textafb837ec251a": "Okta шаље промене чим се догоде (доделе, ажурирања профила, слање група) — период без активности само значи да се ништа није променило.",
-      "textafb9890f7c72": "Куда иде захтев када подразумевани пројектни модел не може да га обради.",
+      "textafb9890f7c72": "Куда иде захтев када његов модел не може да га обради.",
       "textafc19f1734c1": "Субјект",
       "textafc8e3a5d5db": "Групише захтеве према ономе што људи заиста желе, а не према употребљеним речима, броји колико их је различитих налога поднело и прилаже цитате. Када неко пита „ко је ово тражио“, одговор је у документу.",
       "textafdc7d79dccb": "Аутоматско provisioning из OneLogin-а",
@@ -16250,6 +16271,11 @@
       "textb6bb289a7a2c": "налози тимови организације пребаци управљај",
       "textb6bcbb175d23": "Регуларна · 400",
       "textb6c70926c1aa": "Само администратори",
+      "textf19611c61ca5": "Пун приступ",
+      "text15589a542412": "{count, plural, =0 {Нема конектора} one {# конектор} few {# конектора} other {# конектора}}",
+      "texte96d99ad9896": "{count, plural, =0 {Нема тајни} one {# тајна} few {# тајне} other {# тајни}}",
+      "text70b8d7e10749": "Све Kortix радње",
+      "text2d3f4433505a": "{count, plural, =0 {Нема Kortix радњи} one {# Kortix радња} few {# Kortix радње} other {# Kortix радњи}}",
       "textb6cde9030cef": "Креирај кључ",
       "textb6d85433a7ee": "Сесије није могуће учитати",
       "textb6daf93376cc": "Учитавање finance.weekly",
@@ -16713,7 +16739,7 @@
       "textc3d2e79ebdd0": "Конектори",
       "textc3e3a6edeaa5": "Услови коришћења",
       "textc3e58a73609d": "Деструктивно",
-      "textc3ecd3cd791b": "Испробавају се редом након подразумеваног модела пројекта.",
+      "textc3ecd3cd791b": "Испробавају се редом након затраженог модела.",
       "textc3f282c05f3f": "политике одобрење блокирај require_approval правила алати конектор guardrails",
       "textc3f348ffaf7a": "Повежи са пројектом",
       "textc3f7bdf537c4": "захт.",
@@ -20046,6 +20072,7 @@
       "texta37dd5ef6ef2": "Prilagodi bočnu traku",
       "text8c712bd7c1ec": "bočna traka prilagodi redosled sakrij prikaži navigacija sidebar",
       "text2313fe21ea84": "Измени {name}",
+      "text2b2c3ec032a6": "Пројекат је пренесен на други налог",
       "text44f9fff8bdae": "Промењен је план кредита",
       "text3fa17bba73e1": "Ваш налог још нема план. Изаберите месечни износ кредита да бисте покретали сесије. Сви чланови деле један фонд.",
       "text6821e42be2c1": "Ваш новчаник је празан, па сесије не могу да раде. Допуните га да би рачунарска снага и најновији AI модели наставили да раде — ваш план није погођен.",
@@ -20303,7 +20330,12 @@
       "text57f57edb6f16": "Zahtev za izmenu #{number} je spreman za pregled.",
       "texta8597db6f24b": "Уклони вештину",
       "text5f6ba69d66d1": "Вештина је уклоњена",
-      "textcb8d6b0c94c9": " и све датотеке у њој, укључујући измене, и уклања вештину из сваког агента који је користи. Један commit на подразумеваној грани."
+      "textcb8d6b0c94c9": " и све датотеке у њој, укључујући измене, и уклања вештину из сваког агента који је користи. Један commit на подразумеваној грани.",
+      "cliDeviceTitle": "Ovlasti Kortix CLI",
+      "cliDeviceWarning": "Odobrite samo prijavu koju ste sami pokrenuli. Unesite kod koji prikazuje vaš terminal.",
+      "cliDeviceCode": "Kod za prijavu",
+      "cliDeviceApproved": "Prijava je odobrena. Vratite se u terminal.",
+      "cliDeviceAction": "Ovlasti CLI"
     },
     "publicShareConfirm": {
       "title": "Направити јавни линк?",
@@ -20319,18 +20351,6 @@
       "cancel": "Откажи",
       "expiryNever": "Никад",
       "expiryDays": "{count, plural, one {# дан} few {# дана} other {# дана}}"
-    },
-    "publicTranscriptShare": {
-      "sectionTitle": "Јавни линк",
-      "sectionDescription": "Свако ко има линк може да чита овај разговор без пријаве.",
-      "create": "Направи јавни линк",
-      "revokeDescription": "Разговор престаје да се учитава за свакога ко има линк. Након тога можеш да направиш нови линк.",
-      "rowMeta": "Разговор само за читање",
-      "unavailable": "Овај разговор је привремено недоступан.",
-      "unavailableDescription": "Разговор тренутно не може да се прочита. Покушај поново за тренутак.",
-      "loadFailedDescription": "Разговор није могао да се учита.",
-      "empty": "Још нема порука",
-      "savedCopy": "Сачувана копија од {date}"
     },
     "chatIdentityConnect": {
       "chatAccount": "{service} налог",
@@ -20448,6 +20468,12 @@
       "title": "Сачувано, али {agent} још не може да га прочита",
       "grant": "{names} {count, plural, one {није} other {нису}} међу тајнама агента {agent}. Отвори Прилагоди → Агенти → {agent} → Тајне и {count, plural, one {укључи је} other {укључи их}}.",
       "allowlist": "{names} {count, plural, one {је} other {су}} ван тајни ове сесије. Покрени нову сесију да {count, plural, one {би је користио} other {би их користио}}."
+    },
+    "sessionEmbed": {
+      "sectionTitle": "Ugradi",
+      "sectionDescription": "Samo za stranice istog sajta. Posjetioci moraju već biti prijavljeni i imati pristup ovoj sesiji; prijavljivanje unutar iframe-a na drugom sajtu nije podržano.",
+      "copy": "Kopiraj kod za ugrađivanje",
+      "copied": "Kod za ugrađivanje je kopiran"
     },
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryRuntime1760e931": "Испорука: runtime — стварна вредност се учитава у sandbox окружење. Код агента може да ја прочита.",
     "autoComponentsSetupLinksSecretIntakeFormJsxTextDeliveryConnectorb21e2055": "Испорука: connector — само на серверу. Вредност никада не улази у sandbox окружење.",
@@ -21130,6 +21156,8 @@
     "timeZone": "Временска зона",
     "lastRun": "Последње покретање",
     "lastRunFailed": "Последње покретање није успело",
+    "runQueued": "Подсетник је послат сесији",
+    "runFailed": "Подсетник није могао да се покрене",
     "neverRun": "Још није покренут",
     "searchPlaceholder": "Претражи подсетнике",
     "statusAll": "Сви",
@@ -21972,6 +22000,41 @@
         "exceptTitle": "Nikad ne snimaj, čak i ako su uključeni",
         "memberInclusions": "Ljudi mogu uključiti svoje aplikacije i veb-sajtove",
         "memberInclusionsHint": "Isključeno: računari snimaju samo ovde navedene aplikacije i veb-sajtove. Ljudi i dalje mogu dodati aplikacije i veb-sajtove koje treba preskočiti."
+      },
+      "localHours": "On the computer",
+      "localHoursHint": "Колико дуго сваки рачунар чува локалне копије пре него што их обрише. Са 0 ништа се не чува локално.",
+      "hours": "hours",
+      "storage": {
+        "title": "Складиште",
+        "hint": "Где овај налог чува снимке. Промена не премешта већ сачуване снимке — они остају где су били.",
+        "kortix": "Којим управља Kortix",
+        "kortixHint": "Kortix чува и индексира снимке. Ништа не треба подешавати.",
+        "s3": "Ваш S3 бакет",
+        "s3Hint": "Kortix чита, индексира и потписује снимке у бакету који је ваш.",
+        "endpoint": "Крајња тачка",
+        "endpointHint": "Оставите празно за AWS. За MinIO или друго складиште компатибилно са S3, пун URL.",
+        "region": "Регион",
+        "bucket": "Бакет",
+        "pathStyle": "URL адресе у стилу путање",
+        "pathStyleHint": "Укључено за MinIO и већину самостално хостованих складишта; искључено за AWS.",
+        "credsTitle": "Приступ",
+        "credsHint": "Наведите једну врсту акредитива: IAM улогу коју Kortix преузима или пар статичких приступних кључева.",
+        "credRole": "IAM улога (STS)",
+        "credKeys": "Приступни кључ",
+        "roleArn": "ARN улоге",
+        "roleArnHint": "Kortix преузима ову улогу. Препорука: сваки рачунар добија акредитиве ограничене на сопствену фасциклу.",
+        "accessKeyId": "ID приступног кључа",
+        "secretAccessKey": "Тајни приступни кључ",
+        "secretSet": "Тајна је сачувана. Унесите нову да бисте је заменили или оставите празно да бисте је задржали.",
+        "staticWarning": "Статички кључеви не могу да се ограниче по рачунару: сваки рачунар добија приступ бакету на нивоу целог налога. Боље користите улогу.",
+        "indexingNote": "Kortix чита бакет да би индексирао и претраживао снимке. Шифровање на страни клијента није компатибилно са индексирањем — изаберите једно.",
+        "save": "Сачувај складиште",
+        "saved": "Складиште је ажурирано",
+        "probeFailed": "Није могуће писати у бакет: {error}",
+        "saveFailed": "Није могуће сачувати конфигурацију складишта",
+        "currentManaged": "Снимци се чувају у складишту којим управља Kortix.",
+        "currentOwn": "Снимци се чувају у вашем бакету {bucket}.",
+        "loadFailed": "Није могуће учитати конфигурацију складишта"
       }
     },
     "area": {
@@ -22252,5 +22315,95 @@
     "join": "Pridruži se",
     "openRoom": "Otvori",
     "gateDescription": "Uključite Sobe da bi sesije agenata i ljudi ovog projekta razgovarali u imenovanim sobama za ćaskanje."
+  },
+  "goals": {
+    "title": "Ciljevi",
+    "gateDescription": "Agenti preuzimaju cilj dok ne bude proverljivo ostvaren: cilj živi u Fajlovima, dnevni otkucaj ga budi, agent traži od ljudi ono što mu treba, a nezavisna provera ga zatvara.",
+    "empty": "Još nema ciljeva",
+    "emptyHint": "Pokreni jedan u sesiji: opiši ishod, na primer \"pobrini se da naš stari bankovni račun bude zatvoren\". Agent pravi cilj i on se pojavljuje ovde.",
+    "loadError": "Ciljevi nisu mogli da se učitaju. Pokušaj ponovo.",
+    "retry": "Pokušaj ponovo",
+    "needsYou": "Čeka tebe",
+    "open": "Otvoreni",
+    "closed": "Zatvoreni",
+    "waitingFor": "Čeka: {title}",
+    "criteria": "{met}/{total} kriterijuma",
+    "nextWake": "Sledeće buđenje {time}",
+    "noWake": "Nema zakazanog buđenja",
+    "heartbeat": "Otkucaj",
+    "heartbeatPaused": "Pauzirano",
+    "lastWakeLabel": "Poslednje buđenje",
+    "progress": "Napredak",
+    "scope": {
+      "company": "Kompanija",
+      "personal": "Samo ti"
+    },
+    "status": {
+      "draft": "Nacrt",
+      "active": "Aktivan",
+      "waiting_on_user": "Čeka tebe",
+      "waiting_external": "Čeka",
+      "verifying": "Provera",
+      "done": "Završen",
+      "abandoned": "Napušten"
+    },
+    "health": {
+      "healthy": "Radi",
+      "attention": "Zahteva pažnju",
+      "closed": "Zatvoren"
+    },
+    "issue": {
+      "no_heartbeat": "Ništa neće probuditi ovaj cilj: nedostaje podsetnik za otkucaj.",
+      "heartbeat_paused": "Podsetnik za otkucaj je pauziran.",
+      "heartbeat_failed": "Poslednje buđenje nije uspelo: {error}",
+      "missed_wake": "Poslednje buđenje kasni.",
+      "ask_overdue": "Zahtevu je istekao rok.",
+      "verification_stalled": "Provera je počela pre više od 24 sata.",
+      "unreadable": "goal.json nedostaje ili nije ispravan JSON."
+    },
+    "sessionChip": "Cilj",
+    "sessionRole": {
+      "coordinator": "Ova sesija vodi ovaj cilj.",
+      "worker": "Ova sesija radi na ovom cilju.",
+      "verifier": "Ova sesija proverava ovaj cilj."
+    },
+    "openGoal": "Otvori cilj",
+    "openSession": "Otvori glavnu sesiju",
+    "openFolder": "Otvori folder",
+    "back": "Svi ciljevi",
+    "healthTitle": "Stanje",
+    "successCriteria": "Kriterijumi uspeha",
+    "met": "Ispunjen",
+    "notMet": "Nije ispunjen",
+    "items": "Stavke",
+    "noItems": "Još nema stavki.",
+    "noCriteria": "Još nema kriterijuma: agent ih piše pre nego što cilj postane aktivan.",
+    "kind": {
+      "task": "Zadatak",
+      "ask": "Zahtev",
+      "wait": "Čekanje"
+    },
+    "itemStatus": {
+      "open": "otvoreno",
+      "doing": "u toku",
+      "done": "gotovo",
+      "dropped": "odbačeno"
+    },
+    "due": "Rok {time}",
+    "sessions": "Sesije",
+    "role": {
+      "coordinator": "Glavna sesija",
+      "worker": "Izvršilac",
+      "verifier": "Proveravač"
+    },
+    "timeline": "Vremenska linija",
+    "verification": "Provera",
+    "notes": "Beleške",
+    "log": "Dnevnik",
+    "notFound": "Ovaj cilj više ne postoji."
+  },
+  "agentEditor": {
+    "manage": "Upravljaj",
+    "overviewTitle": "Pregled"
   }
 }

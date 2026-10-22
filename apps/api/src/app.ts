@@ -89,6 +89,8 @@ registerCaptureStoreProxy(app);
 // Capture routes live under /v1/accounts/:accountId/capture.
 import { createCaptureRouter } from './capture/device-routes';
 app.route('/v1/capture', createCaptureRouter());
+import { createCliDeviceRouter } from './cli/device-routes';
+app.route('/v1/cli/device', createCliDeviceRouter());
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
@@ -286,14 +288,7 @@ import { approvalLinksApp } from './setup-links/approval-app';
 app.use('/v1/approval-links/*', supabaseAuth);
 app.route('/v1/approval-links', approvalLinksApp); // GET /v1/approval-links/:token
 
-// Public session shares — PUBLIC, share-id-gated. Anonymous, read-only
-// session title + sanitized transcript for a valid session public-share
-// (any resource type SESS-13's CRUD creates); exposed through the SDK's
-// `getPublicSessionShare` / `getPublicSessionShareMessages`. The web app has
-// no page for it. No auth, no client-side sandbox access — the API reads the
-// sandbox's OpenCode daemon server-side.
-import { publicSessionSharesApp } from './public-session-shares';
-app.route('/v1/public/session-shares', publicSessionSharesApp); // /v1/public/session-shares/:shareId[/messages]
+
 
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin

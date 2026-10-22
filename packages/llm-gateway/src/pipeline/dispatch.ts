@@ -11,6 +11,7 @@ import { noteBedrockOpenAiRejectsReasoningEffort } from '../transports/ai-sdk/re
 import { resolveTransportKind } from '../transports/route-kind';
 import { MAX_RELAYED_RETRY_AFTER_SECONDS, clampRetryAfterSeconds, providerClientErrorBody } from './error-response';
 import { applyGenerationDefaults } from './generation-defaults';
+import { type CircuitBreakers, breakerKey, tripsBreaker, upstreamBreakers } from './circuit-breaker';
 import { publicUpstreamError, shownModel, shownProvider } from './public-identity';
 
 /**
@@ -77,6 +78,8 @@ export interface DispatchContext {
    * Without it, a BYOK request never reaches a Kortix-billed model.
    */
   admitCharge?: () => Promise<boolean>;
+  /** Upstream circuit breakers; the gateway process's own by default. */
+  breakers?: CircuitBreakers;
 }
 
 interface DispatchProgress {
@@ -526,14 +529,48 @@ export async function dispatch(
     };
   };
 
+  const breakers = ctx.breakers ?? upstreamBreakers;
   let attempt = first;
   for (;;) {
+    const key = breakerKey(attempt.descriptor, attempt.model);
+    if (!breakers.allow(key)) {
+      // The circuit is open: skip this upstream without an attempt, as a
+      // rate limit would (pool peers and fallback models take over). With
+      // nothing else to try, it is tried anyway.
+      const skipped: Failure = { attempt, status: 429, error: new Error('upstream circuit open') };
+      const next = await nextAttempt(skipped);
+      if (next) {
+        candidatesTried.push(`${label(attempt)}:circuit_open`);
+        attemptFailures.push({
+          attempt: attemptFailures.length + 1,
+          provider: shownProvider(attempt.descriptor),
+          routeModel: attempt.model,
+          resolvedModel: shownModel(attempt.descriptor, attempt.model),
+          stage: 'dispatch',
+          code: 'circuit_open',
+          message: 'Skipped: the upstream failed repeatedly and is cooling down.',
+        });
+        logger.warn(`[gateway] ${requestId}: ${attempt.descriptor.provider} circuit open for ${attempt.descriptor.resolvedModel ?? attempt.model}; trying ${label(next)}`);
+        attempt = next;
+        continue;
+      }
+    }
     const result = await run(attempt);
     if (result instanceof Response) {
+      breakers.success(key);
       const { descriptor, model: servedModel } = attempt;
       return { descriptor, model: servedModel, attempts, candidatesTried, attemptFailures, response: result };
     }
     if (result.error instanceof ClientAbortError || ctx.signal?.aborted) return finish(result);
+    if (tripsBreaker(result.status)) {
+      const state = breakers.failure(key, {
+        provider: attempt.descriptor.provider,
+        model: attempt.descriptor.resolvedModel ?? attempt.model,
+        reason: result.status === undefined ? 'network_error' : String(result.status),
+        publicListing: attempt.descriptor.billingMode !== 'none',
+      });
+      if (state === 'open') logger.warn(`[gateway] ${requestId}: ${attempt.descriptor.provider} circuit OPEN for ${attempt.descriptor.resolvedModel ?? attempt.model} (${result.status ?? 'network error'})`);
+    }
     await notePoolRateLimit(result);
     const next = await nextAttempt(result);
     if (!next) return finish(result);

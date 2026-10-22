@@ -149,7 +149,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       notification_center: false,
       volumes: false,
       drives: false,
-      session_log: false,
       session_log_restore: false,
       connectors_v2: false,
       agent_rooms: false,
@@ -157,6 +156,7 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
     },
     experimental_features: [],
     default_sandbox_provider: null,
+    default_reasoning_effort: null,
     available_sandbox_providers: ['daytona', 'platinum'],
     ...overrides,
   };
@@ -340,6 +340,13 @@ describe('ProjectSchema', () => {
     const experimental = projectFixture().experimental as Record<string, boolean>;
     expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: true } })).experimental.llm_gateway).toBe(true);
     expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated session_log key only as a constant true', () => {
+    // Wire compat: the API still sends `session_log: true` for older SDK, CLI and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: true } })).experimental.session_log).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -817,7 +824,6 @@ describe('envelopes', () => {
       'notification_center',
       'volumes',
       'drives',
-      'session_log',
       'session_log_restore',
       'connectors_v2',
       'agent_rooms',

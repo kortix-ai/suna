@@ -7,6 +7,7 @@ import type {
   SecretDeliveryStrategy,
 } from '@kortix/api-contract';
 import { normalizeRuntimeSessionSnapshots } from './runtime-session-snapshot';
+import { normalizeDefaultReasoningEffort } from './effort-default';
 import {
   type accountGithubInstallations,
   type projectGitConnections,
@@ -326,7 +327,9 @@ export function serializeProject(
     // v0.14.0 refuse every `kortix apps` command unless it reads true.
     // `llm_gateway` graduated on 2026-10-20 and stays `true` too: mobile builds
     // and SDKs from before then read false as the removed native model mode.
-    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true },
+    // `session_log` graduated on 2026-10-22 and stays `true` too: older SDKs, CLIs
+    // and mobile builds read false as "serve the v1 transcript".
+    experimental: { ...resolveFeatureFlags(row.metadata), apps: true, llm_gateway: true, session_log: true },
     experimental_features: buildFeatureFlagCatalog(row.metadata),
     // Per-project sandbox-provider override (Customize → Settings). `default_sandbox_provider`
     // is the current pin (null = follow the platform default/distribution);
@@ -352,6 +355,13 @@ export function serializeProject(
     })(),
     available_sandbox_providers: config.ALLOWED_SANDBOX_PROVIDERS.filter(
       (p) => config.isProviderEnabled(p) && !isDeprecatedProvider(p),
+    ),
+    // Per-project default reasoning effort (Settings → General). Re-validated
+    // on read so a value written before the validator existed, or written
+    // directly to the DB, can never reach the UI unchecked (same mechanism as
+    // the icon fields above).
+    default_reasoning_effort: normalizeDefaultReasoningEffort(
+      (row.metadata as Record<string, unknown> | null | undefined)?.default_reasoning_effort,
     ),
   };
 }

@@ -47,13 +47,13 @@ import { useTranslations } from '../../../../i18n';
  *
  * | Capability | Where it is now |
  * | --- | --- |
- * | Inherit / custom / no fallback | "When the default fails" row (primary) |
+ * | Inherit / custom / no fallback | "When a model fails" row (primary) |
  * | Ordered default chain, reorder + remove, max 8 | Chain row — one line per step (primary) |
  * | Fallback condition (transient / any error) | "Retry on" line, inside the chain it belongs to |
  * | Per-model override rules, max 20 | "Per-model overrides" — one row per rule, promoted second (primary) |
  * | Vision (image-input) override | "Vision model" row, inside Advanced |
  * | Per-model generation defaults | "Generation defaults" section, inside Advanced |
- * | Provider-availability preview | `AvailabilityBadge`, unchanged, now also on the primary |
+ * | Provider-availability preview | `AvailabilityBadge`, on every chain step and override |
  * | Reset / dirty / validation / save | Header action + sticky footer, unchanged |
  *
  * The data contract is untouched: same props in, same `routing.set` /
@@ -552,26 +552,26 @@ export function GatewayRouting({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
-  const hydratedPolicySignature = useRef<string | null>(null);
+  const [hydratedPolicySignature, setHydratedPolicySignature] = useState<string | null>(null);
   const previewRequestId = useRef(0);
 
-  useEffect(() => {
-    if (!routing.data?.project) return;
-    const signature = editablePolicySignature(routing.data.project);
-    // Effective routing also changes when the header's project default changes.
-    // Keep an in-progress fallback draft intact unless the persisted project
-    // policy itself changed (save, reset, or an external editor update).
-    if (hydratedPolicySignature.current === signature) return;
-    hydratedPolicySignature.current = signature;
-    setDraft(clonePolicy(routing.data.project));
-    setFallbackMode(fallbackModeForPolicy(routing.data.project.defaultFallback));
-    setAdvancedOpen((current) => current || hasAdvancedRoutingConfig(routing.data!.project));
-  }, [routing.data]);
+  // Effective routing also changes when the header's project default changes.
+  // Keep an in-progress fallback draft intact unless the persisted project
+  // policy itself changed (save, reset, or an external editor update).
+  const persistedProject = routing.data?.project;
+  const persistedSignature = persistedProject ? editablePolicySignature(persistedProject) : null;
+  if (persistedProject && persistedSignature !== hydratedPolicySignature) {
+    setHydratedPolicySignature(persistedSignature);
+    setDraft(clonePolicy(persistedProject));
+    setFallbackMode(fallbackModeForPolicy(persistedProject.defaultFallback));
+    setAdvancedOpen((current) => current || hasAdvancedRoutingConfig(persistedProject));
+  }
+
+  const previewRoute = routing.preview.mutateAsync;
 
   // Debounced availability preview: whenever the draft's referenced models
   // change, ask the gateway which of them currently have a connected
   // provider so the chain editor can flag a dead fallback before save.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: routing.preview's mutateAsync is a stable handle from useGatewayRoutingPolicy and shouldn't retrigger this debounce.
   useEffect(() => {
     if (!draft || !routing.data) {
       setAvailability({});
@@ -591,7 +591,7 @@ export function GatewayRouting({
       Promise.all(
         targets.map(async (model) => {
           try {
-            const result = await routing.preview.mutateAsync({
+            const result = await previewRoute({
               requestedModel: model,
               imageInput: false,
             });
@@ -610,7 +610,7 @@ export function GatewayRouting({
       });
     }, 400);
     return () => clearTimeout(timer);
-  }, [draft, routing.data, modelDefaults.projectDefault]);
+  }, [draft, routing.data, modelDefaults.projectDefault, previewRoute]);
 
   const models = useMemo(() => {
     const byWire = new Map<string, RoutingModel>();
@@ -710,9 +710,9 @@ export function GatewayRouting({
       const inherited = routing.data.effective.defaultFallback.models.filter(
         (model) => model !== primaryModel,
       );
-      const preferred =
-        models.find((model) => modelKeyToWire(model) === 'deepseek-v4.1-flash') ??
-        models.find((model) => modelKeyToWire(model) !== primaryModel);
+      // No model id is hardcoded: the platform fallback already follows the
+      // served lineup (`inherited`); otherwise take the first other model.
+      const preferred = models.find((model) => modelKeyToWire(model) !== primaryModel);
       return {
         ...current,
         defaultFallback: {
@@ -782,11 +782,10 @@ export function GatewayRouting({
             {fallbackMode === 'custom' && draft.defaultFallback ? (
               <RoutingRow
                 align="start"
-                label={<span className="truncate font-mono text-xs">{primaryModel}</span>}
+                label={tI18nComplete.raw('texte75d99a42dba')}
                 hint={tI18nComplete.raw('textc3ecd3cd791b')}
               >
                 <div className="space-y-1.5">
-                  <AvailabilityBadge available={availability[primaryModel]} />
                   <ChainRows
                     primary={primaryModel}
                     chain={draft.defaultFallback}

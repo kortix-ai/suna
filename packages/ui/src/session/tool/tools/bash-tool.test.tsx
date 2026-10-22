@@ -1,5 +1,5 @@
-import { toolCallBlock } from '@kortix/sdk';
-import { ToolRunningContext } from '../shared/infrastructure';
+import { toolCallBlock, type ToolCallBlock } from '@kortix/sdk';
+import { RecoveredCallsContext, ToolRunningContext } from '../shared/infrastructure';
 import { ToolSurfaceContext } from '../shared/surface';
 import type { ToolPart } from '../../../internal/session-types';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -289,6 +289,47 @@ describe('BashTool reports whether the command actually worked', () => {
     );
 
     expect(html).not.toContain('Exit code');
+  });
+
+  // KRTX-3021: a pi command carries its code in `result.exit_code`, not in an
+  // `<exit_code>` tag. It is the same command block as OpenCode's.
+  test('an exit code recorded beside the output reads the same as a tagged one', () => {
+    const call: ToolCallBlock = {
+      id: 'blk_pi_bash',
+      type: 'tool_call',
+      call_id: 'call_pi_bash',
+      name: 'bash',
+      kind: 'shell',
+      input: { command: 'ls -la /workspace/research' },
+      status: 'complete',
+      result: {
+        content: [{ type: 'text', text: 'ls: cannot access /workspace/research: No such file or directory' }],
+        is_error: false,
+        exit_code: 2,
+      },
+    };
+    const html = renderToStaticMarkup(withProviders(<BashTool call={call} defaultOpen />));
+
+    expect(html).toContain('Command failed');
+    expect(html).toContain('Exit code 2');
+    expect(html).toContain('No such file or directory');
+  });
+
+  test('a failure the agent moved past keeps its verdict in the muted ink, never red', () => {
+    const call = toolCallBlock(makePart('ls missing', 'ls: missing\n<exit_code>2</exit_code>'));
+    const alarm = renderToStaticMarkup(withProviders(<BashTool call={call} defaultOpen />));
+    const recovered = renderToStaticMarkup(
+      withProviders(
+        <RecoveredCallsContext.Provider value={new Set([call.id])}>
+          <BashTool call={call} defaultOpen />
+        </RecoveredCallsContext.Provider>,
+      ),
+    );
+
+    expect(alarm).toContain('text-kortix-red');
+    expect(recovered).toContain('Command failed');
+    expect(recovered).toContain('Exit code 2');
+    expect(recovered).not.toContain('text-kortix-red');
   });
 });
 

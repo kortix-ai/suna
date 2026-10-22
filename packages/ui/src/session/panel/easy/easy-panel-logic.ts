@@ -285,5 +285,5 @@ export function shouldAutoOpenPayoff(args: {
 }
 
 export { aspectChangedWidth, fitSplitPercent, resolveSideSize } from '../session-panel-sizing';
-export { PREVIEW_MAX_WAIT_MS, PREVIEW_PROBE_INTERVAL_MS, PREVIEW_UNREACHABLE_WINDOW_MS, previewErrorReason, previewLoadSuccessState, previewLoadVerdict, runtimeSandboxHealth, shouldArmLoadTimeout, shouldKeepProbingPort } from './preview-load';
+export { PREVIEW_MAX_WAIT_MS, PREVIEW_PROBE_INTERVAL_MS, PREVIEW_SLOW_MS, PREVIEW_UNREACHABLE_WINDOW_MS, previewErrorReason, previewLoadSuccessState, previewLoadVerdict, previewSlowReason, runtimeSandboxHealth, shouldArmLoadTimeout, shouldKeepProbingPort } from './preview-load';
 export type { PreviewProbe, SandboxHealth } from './preview-load';

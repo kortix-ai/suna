@@ -177,6 +177,7 @@ kortix gateway routing reset
 - `--fallback` is the chain the gateway tries in order when the model fails. It takes up to 8 models.
 - `--fallback-on transient` moves on after a network error, a timeout, any 5xx, or a `402`, `403`, `404` or `429`. `any-error` moves on after every failure.
 - The project's chain also runs when every key or ChatGPT account that the request may use is paused after a rate limit. With `--fallback-on any-error`, it also runs when the login needs reconnection.
+- The chain covers every model in the project: the project default, an agent's default, and a model that a session or trigger pins. A per-model override (`rules` in `set --file`, or **Per-model overrides** in Customize → Models → Routing) replaces the chain for one exact model.
 - `--vision-model` takes a request that carries images when the default model accepts only text.
 - `set` changes only the flags you pass. The rest of the policy, the generation defaults included, stays as stored. `set --file policy.json` replaces the whole policy; a file without `modelGenerationConfig` keeps the stored generation defaults.
 

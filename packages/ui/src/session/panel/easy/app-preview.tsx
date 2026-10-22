@@ -51,10 +51,12 @@ import { BrowserLanding } from '../../../browser/browser-landing';
 import { CloseButton, DetailSidebarToggle } from './detail-view';
 import {
   PREVIEW_MAX_WAIT_MS,
+  PREVIEW_SLOW_MS,
   PREVIEW_PROBE_INTERVAL_MS,
   type PreviewProbe,
   type SandboxHealth,
   previewErrorReason,
+  previewSlowReason,
   previewLoadSuccessState,
   previewLoadVerdict,
   runtimeSandboxHealth,
@@ -153,6 +155,8 @@ export function AppPreview({
   const [refreshKey, setRefreshKey] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
+  // Still loading past PREVIEW_SLOW_MS: the overlay says so and offers Reload.
+  const [slow, setSlow] = useState(false);
 
   const addressRef = useRef<HTMLInputElement>(null);
 
@@ -248,6 +252,11 @@ export function AppPreview({
     const deadline = setTimeout(() => {
       if (alive) decide('unknown', PREVIEW_MAX_WAIT_MS);
     }, PREVIEW_MAX_WAIT_MS);
+    // A stalled request fires no onLoad and the probe cannot see it: say so
+    // instead of spinning silently until the deadline (KRTX-3015).
+    const slowTimer = setTimeout(() => {
+      if (alive) setSlow(true);
+    }, PREVIEW_SLOW_MS);
 
     void tick();
 
@@ -255,7 +264,9 @@ export function AppPreview({
       alive = false;
       controller.abort();
       clearTimeout(deadline);
+      clearTimeout(slowTimer);
       if (timer) clearTimeout(timer);
+      setSlow(false);
     };
   }, [isLoading, refreshKey, noApp, hasPreview, previewUrl]);
 
@@ -356,7 +367,17 @@ export function AppPreview({
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {isLoading && hasPreview && !noApp && (
-          <PreviewLoadingOverlay label={tI18nComplete.raw('textc4cf2b2ccb5d')} />
+          <PreviewLoadingOverlay
+            label={tI18nComplete.raw('textc4cf2b2ccb5d')}
+            detail={slow ? previewSlowReason({ port }) : undefined}
+            action={
+              slow ? (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={reload}>
+                  {tI18nComplete.raw('textbdc090ec61e3')}
+                </Button>
+              ) : undefined
+            }
+          />
         )}
 
         {(hasError || hostPreview.failed) && !noApp && (

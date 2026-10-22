@@ -237,6 +237,7 @@ export const FRESHNESS = {
   /** A timeline grows while its devices upload; no mutation of ours announces it. */
   captureTimeline: 'inventory',
   capturePolicy: 'config',
+  captureStorage: 'config',
   captureWorkspace: 'config',
   /** Changed only through this UI, which invalidates on success. */
   captureEnrollmentTokens: 'config',

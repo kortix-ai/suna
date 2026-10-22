@@ -1128,12 +1128,14 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', down);
   }, [handleOpenTerminal]);
 
-  useEffect(() => {
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
     if (!open) {
       setQuery('');
       setPage('root');
     }
-  }, [open]);
+  }
 
   useEffect(() => {
     const openFileSearch = () => {
@@ -1220,6 +1222,7 @@ export function CommandPalette() {
         'proj-repo': customizeTabs.split(' ').includes('files'),
       },
     };
+    const customizeTabSet = new Set(customizeTabs.split(' '));
     const result: MenuItemDef[] = [];
     for (const sourceItem of getItemsForSurface('commandPalette')) {
       const item = translateMenuItem(sourceItem, tI18nComplete);
@@ -1249,7 +1252,7 @@ export function CommandPalette() {
         // A Customize tab is offered only when `capabilityAccess()` lists it:
         // the same rule the sidebar row and the tab bar follow.
         const tab = activeCapabilityTab(href.split('?')[0]);
-        if (tab && !customizeTabs.split(' ').includes(tab)) continue;
+        if (tab && !customizeTabSet.has(tab)) continue;
       }
       if (href?.includes('{accountId}')) {
         if (!selectedAccountId) continue;
@@ -1440,7 +1443,7 @@ export function CommandPalette() {
       })
       .catch(() => errorToast(tHardcodedUi.raw('i18nComplete.textb6f7df17e0a2')))
       .finally(() => setIsCreating(false));
-  }, [isCreating, projectId, newSession, createSession, openProjectTab, close, tHardcodedUi]);
+  }, [isCreating, projectId, newSession, createSession, close, tHardcodedUi]);
 
   const setSelectedAccountId = useCurrentAccountStore((s) => s.setSelectedAccountId);
 

@@ -3,43 +3,38 @@
 import { uiRoutes } from '../../lib/routes';
 import { useTranslations as useI18nTranslations } from '../../i18n';
 /**
- * The agent editor's Access pages — Skills, Connectors, Secrets — built from
- * the SAME cards and the SAME modals as the project-wide tabs of the same
- * name (Marko, 2026-09-03: "hardcore reuse same components as much as
- * possible & same modals/dialogues"). A card here is a `CatalogCard` in
- * select mode: its checkbox says whether the agent is granted the thing, its
- * body opens the thing itself — `EntityDetailModal` for a skill,
- * `ConnectorModal` for a connector, `ProjectSecretDialog` for a secret.
+ * The agent editor's Access pages — Skills, Connectors, Secrets, Apps. Each
+ * opens the SAME modal as the project-wide tab of the same name:
+ * `EntityDetailModal` for a skill, `ConnectorModal` for a connector,
+ * `ProjectSecretDialog` for a secret.
  *
- * The grant itself is still the All · Pick · None machine from
- * `grant-mode-field.tsx`; the catalog stays on screen in every mode so All
- * reads as "every card checked" and None as "every card unchecked".
+ * Layout is the Settings page's: the pane title, one All · Pick · None row
+ * (`grant-mode-field.tsx`), then the catalog as one bordered list. The list
+ * stays on screen in every mode, so a person can still open any entry.
  */
 
 import { Badge } from '../../primitives/badge';
 import { Button } from '../../primitives/button';
+import { Checkbox } from '../../primitives/checkbox';
+import { Skeleton } from '../../primitives/skeleton';
 import { EmptyState } from '../../primitives/empty-state';
 import { ErrorState } from '../../primitives/error-state';
 import { connectorDisplayName } from '../connectors/connector-filter';
 import {
   ConnectorAppIcon,
-  ConnectorConnectedMark,
   ConnectorStatusBadge,
 } from '../connectors/connector-identity';
 import { ConnectorModal } from '../connectors/detail/connector-modal';
 import { providerLabel } from '../connectors/provider-label';
-import { CatalogCard } from '../shared/catalog/catalog-card';
-import { CatalogGridSkeleton } from '../shared/catalog/catalog-grid';
 import { detailSelection } from '../shared/detail-selection';
 import { EntityDetailModal } from '../shared/entity/entity-modal';
-import { connectorSetupStatus } from '../sections/connector-connection-form';
 import type { AgentDraft } from '../sections/view/agent-editor';
 import {
-  GrantHeaderTrailing,
+  ManageButton,
   RequiredConnectorToggle,
 } from '../sections/view/agent-editor-access-fields';
-import { EditorSection } from '../sections/view/agent-editor-primitives';
-import { GrantModeField } from '../sections/view/grant-mode-field';
+import { EditorList, EditorSection } from '../sections/view/agent-editor-primitives';
+import { type GrantMode, GrantModeField } from '../sections/view/grant-mode-field';
 import {
   buildRows,
   ProjectSecretDialog,
@@ -47,6 +42,7 @@ import {
 } from '../sections/view/secrets-view';
 import { toArray } from '../shared/utils';
 import { PROJECT_ACTIONS } from '../../internal/lib/project-actions';
+import { cn } from '../../internal/lib/utils';
 import { useProjectCan } from '../../internal/lib/use-project-can';
 import {
   type AgentGrantSetV2,
@@ -60,28 +56,36 @@ import {
   useProjectAccountId,
   useProjectApps,
 } from '@kortix/sdk/react';
-import { GlobeIcon, KeyIcon, PlusIcon, SparkleIcon } from '@phosphor-icons/react';
+import { PlusIcon } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { appGrantRows } from './agent-apps-grant';
 
 // ─── The shared catalog ──────────────────────────────────────────────────
 
 interface GrantCatalogItem {
   id: string;
-  card: Omit<Parameters<typeof CatalogCard>[0], 'select' | 'onClick' | 'href'>;
+  /** A real logo only (a connector's app icon). A glyph that repeats on every
+   *  row names nothing, so skills, secrets and Apps pass none. */
+  leading?: ReactNode;
+  title: ReactNode;
+  description?: ReactNode;
+  /** Exceptions only, as `Badge`s at the row's right edge: Needs setup, Not
+   *  set. The normal state carries no mark. */
+  status?: ReactNode;
   onOpen?: () => void;
 }
 
 /**
- * All · Pick · None over a grid of selectable cards. `items` is the project's
- * catalog; a granted id the catalog no longer has still renders, flagged, so
- * a stale grant is visible rather than silently dropped.
+ * All · Pick · None over the project's catalog, as one bordered list. The
+ * checkbox exists only in Pick mode, where it is the control; in All and
+ * None the mode row above already answers for every row. A granted id the
+ * catalog no longer has still renders, flagged, so a stale grant is visible
+ * rather than silently dropped.
  */
 function GrantCatalog({
   value,
   onChange,
-  allLabel,
   items,
   isLoading,
   isError,
@@ -91,13 +95,12 @@ function GrantCatalog({
 }: {
   value: AgentGrantSetV2 | undefined;
   onChange: (v: AgentGrantSetV2) => void;
-  allLabel: string;
   items: GrantCatalogItem[];
   isLoading?: boolean;
   isError?: boolean;
   onRetry?: () => void;
   empty: ReactNode;
-  /** A control beside a GRANTED card in Pick mode — the connectors page's
+  /** A control beside a GRANTED row in Pick mode — the connectors page's
    *  Required toggle. */
   trailingFor?: (id: string) => ReactNode;
 }) {
@@ -106,12 +109,20 @@ function GrantCatalog({
     <GrantModeField
       value={value}
       onChange={onChange}
-      allLabel={allLabel}
-      noneLabel={tI18nComplete.raw('text765b240c2900')}
       alwaysRender
     >
       {({ selected, toggle, mode }) => {
-        if (isLoading) return <CatalogGridSkeleton />;
+        if (isLoading) {
+          return (
+            <EditorList>
+              {[0, 1, 2].map((i) => (
+                <li key={i} className="flex items-center gap-3 px-4 py-3">
+                  <Skeleton className="h-4 w-40 rounded-sm" />
+                </li>
+              ))}
+            </EditorList>
+          );
+        }
         if (isError) {
           return (
             <ErrorState
@@ -128,52 +139,98 @@ function GrantCatalog({
           );
         }
         const known = new Set(items.map((i) => i.id));
-        const orphans = [...selected].filter((id) => !known.has(id));
+        const orphans: GrantCatalogItem[] = [...selected]
+          .filter((id) => !known.has(id))
+          .map((id) => ({
+            id,
+            title: <span className="font-mono">{id}</span>,
+            description: tI18nComplete.raw('textfecc36d012be'),
+            status: (
+              <Badge variant="destructive" size="xs">
+                {tI18nComplete.raw('text6be36ca49ee8')}
+              </Badge>
+            ),
+          }));
         if (items.length === 0 && orphans.length === 0) return <>{empty}</>;
-        const checked = (id: string) => mode === 'all' || (mode === 'pick' && selected.has(id));
         return (
-          <div className="grid gap-2">
-            {items.map((item) => (
-              <CatalogCard
+          <EditorList>
+            {[...items, ...orphans].map((item) => (
+              <GrantRow
                 key={item.id}
-                {...item.card}
-                trailing={
-                  <span className="flex items-center gap-1.5">
-                    {item.card.trailing}
-                    {mode === 'pick' && selected.has(item.id) ? trailingFor?.(item.id) : null}
-                  </span>
-                }
-                onClick={item.onOpen}
-                select={{
-                  checked: checked(item.id),
-                  onCheckedChange: () => toggle(item.id),
-                  disabled: mode !== 'pick',
-                  label: tI18nComplete('textd4170e74c3b0', { value0: item.id }),
-                }}
+                item={item}
+                mode={mode}
+                checked={selected.has(item.id)}
+                onToggle={() => toggle(item.id)}
+                checkLabel={tI18nComplete('textd4170e74c3b0', { value0: item.id })}
+                trailing={mode === 'pick' && selected.has(item.id) ? trailingFor?.(item.id) : null}
               />
             ))}
-            {orphans.map((id) => (
-              <CatalogCard
-                key={id}
-                title={<span className="font-mono">{id}</span>}
-                description={tI18nComplete.raw('textfecc36d012be')}
-                badges={
-                  <Badge variant="destructive" size="xs">
-                    {tI18nComplete.raw('text6be36ca49ee8')}
-                  </Badge>
-                }
-                select={{
-                  checked: true,
-                  onCheckedChange: () => toggle(id),
-                  disabled: mode !== 'pick',
-                  label: tI18nComplete('textd4170e74c3b0', { value0: id }),
-                }}
-              />
-            ))}
-          </div>
+          </EditorList>
         );
       }}
     </GrantModeField>
+  );
+}
+
+/**
+ * One catalog row. The checkbox and the body are two sibling controls, never
+ * one nested in the other: the checkbox grants, the body opens the entity.
+ */
+function GrantRow({
+  item,
+  mode,
+  checked,
+  onToggle,
+  checkLabel,
+  trailing,
+}: {
+  item: GrantCatalogItem;
+  mode: GrantMode;
+  checked: boolean;
+  onToggle: () => void;
+  checkLabel: string;
+  trailing?: ReactNode;
+}) {
+  const body = (
+    <>
+      {item.leading}
+      <span className="min-w-0 flex-1">
+        <span className="text-foreground block truncate text-sm font-medium">{item.title}</span>
+        {item.description ? (
+          <span className="text-muted-foreground block truncate text-xs">{item.description}</span>
+        ) : null}
+      </span>
+    </>
+  );
+  return (
+    <li
+      className={cn(
+        'flex min-h-13 items-center gap-3 px-4 py-2 transition-colors duration-fast',
+        item.onOpen && 'hover:bg-hover',
+        mode === 'none' && 'opacity-60',
+      )}
+    >
+      {mode === 'pick' ? (
+        <Checkbox variant="black" checked={checked} onCheckedChange={onToggle} aria-label={checkLabel} />
+      ) : null}
+      {item.onOpen ? (
+        <button
+          type="button"
+          onClick={item.onOpen}
+          className="focus-visible:ring-ring/50 flex min-w-0 flex-1 items-center gap-3 rounded-sm text-left focus-visible:ring-2 focus-visible:outline-none"
+        >
+          {body}
+        </button>
+      ) : (
+        <span className="flex min-w-0 flex-1 items-center gap-3">{body}</span>
+      )}
+      {item.status || trailing ? (
+        <span className="flex shrink-0 items-center gap-2">
+          {item.status}
+          {trailing}
+        </span>
+      ) : null}
+    </li>
   );
 }
 
@@ -201,34 +258,27 @@ export function SkillsGrantPage({
       <EditorSection
         title={tI18nComplete.raw('text66d0f523a379')}
         description={tI18nComplete.raw('text836cd8e8a791')}
-        trailing={
-          <GrantHeaderTrailing
-            value={editor.draft.skills}
-            tab="skills"
-            label={tI18nComplete.raw('text78abcbbfb830')}
-          />
-        }
+        trailing={<ManageButton tab="skills" />}
+        lead
+        bare
       >
-        <div className="py-4">
           <GrantCatalog
             value={editor.draft.skills}
             onChange={(v) => editor.set('skills', v)}
-            allLabel={tI18nComplete.raw('textf059c2dbe260')}
             items={skills.map((skill) => ({
               id: skill.name,
-              card: { title: skill.name, description: skill.description },
+              title: skill.name,
+              description: skill.description,
               onOpen: () => setSelectedPath(skill.path),
             }))}
             empty={
               <EmptyState
-                icon={SparkleIcon}
                 size="sm"
                 title={tI18nComplete.raw('text32ae9b80f832')}
                 description={tI18nComplete.raw('text62d220bbfcc8')}
               />
             }
           />
-        </div>
       </EditorSection>
       <EntityDetailModal
         projectId={projectId}
@@ -271,9 +321,7 @@ export function ConnectorsGrantPage({
     record: connectors.find((c) => c.slug === detailSlug),
     isSuccess: connectorsQuery.isSuccess,
   });
-  useEffect(() => {
-    if (detail.isMissing) setDetailSlug(null);
-  }, [detail.isMissing]);
+  if (detail.isMissing) setDetailSlug(null);
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: qk.project.connectors(projectId) });
 
@@ -283,46 +331,36 @@ export function ConnectorsGrantPage({
       <EditorSection
         title={tI18nComplete.raw('textc3d2e79ebdd0')}
         description={tI18nComplete.raw('textc174fc077197')}
-        trailing={
-          <GrantHeaderTrailing
-            value={draft.connectors}
-            tab="connectors"
-            label={tI18nComplete.raw('textd83250185d41')}
-          />
-        }
+        trailing={<ManageButton tab="connectors" />}
+        lead
+        bare
       >
-        <div className="space-y-2 py-4">
+        <div className="space-y-3">
           <GrantCatalog
             value={draft.connectors}
             onChange={(v) => {
               set('connectors', v);
               const required = draft.connectors_required ?? [];
+              const picked = new Set(Array.isArray(v) ? v : []);
               const kept =
                 v === 'all' || v === 'none' || !Array.isArray(v)
                   ? []
-                  : required.filter((slug) => v.includes(slug));
+                  : required.filter((slug) => picked.has(slug));
               if (kept.length !== required.length) {
                 set('connectors_required', kept.length ? kept : undefined);
               }
             }}
-            allLabel={tI18nComplete.raw('text35e54cea7f41')}
             isLoading={connectorsQuery.isLoading}
             isError={connectorsQuery.isError}
             onRetry={() => void connectorsQuery.refetch()}
             items={connectors.map((connector) => ({
               id: connector.slug,
-              card: {
-                leading: <ConnectorAppIcon connector={connector} size="lg" />,
-                title: connectorDisplayName(connector),
-                description: `${providerLabel(connector.provider)} · ${connector.actions.length} ${
-                  connector.actions.length === 1 ? 'action' : 'actions'
-                }`,
-                badges: <ConnectorStatusBadge connector={connector} />,
-                trailing:
-                  connectorSetupStatus(connector) === 'connected' ? (
-                    <ConnectorConnectedMark />
-                  ) : undefined,
-              },
+              leading: <ConnectorAppIcon connector={connector} size="sm" />,
+              title: connectorDisplayName(connector),
+              description: `${providerLabel(connector.provider)} · ${connector.actions.length} ${
+                connector.actions.length === 1 ? 'action' : 'actions'
+              }`,
+              status: <ConnectorStatusBadge connector={connector} />,
               onOpen: () => setDetailSlug(connector.slug),
             }))}
             trailingFor={(slug) => (
@@ -394,46 +432,34 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
         title={tI18nComplete.raw('textd8707d411d99')}
         description={tI18nComplete.raw('textbb74cc7dce98')}
         trailing={
-          <span className="flex items-center gap-2">
-            <GrantHeaderTrailing
-              value={editor.draft.secrets}
-              tab="secrets"
-              label={tI18nComplete.raw('text0b38e3daeb93')}
-            />
-            {canWrite ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                className="gap-1.5"
-                onClick={() => setDialog({ open: true, row: null })}
-              >
-                <PlusIcon className="size-4" />
-                {tI18nComplete.raw('text18fdd549b2ed')}
-              </Button>
-            ) : null}
-          </span>
+          canWrite ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setDialog({ open: true, row: null })}
+            >
+              <PlusIcon className="size-4" />
+              {tI18nComplete.raw('text18fdd549b2ed')}
+            </Button>
+          ) : undefined
         }
+        lead
+        bare
       >
-        <div className="py-4">
           <GrantCatalog
             value={editor.draft.secrets}
             onChange={(v) => editor.set('secrets', v)}
-            allLabel={tI18nComplete.raw('text86fdc0c950d5')}
             isLoading={secretsQuery.isLoading}
             isError={secretsQuery.isError}
             onRetry={() => void secretsQuery.refetch()}
             items={rows.map((row) => ({
               id: row.identifier,
-              card: {
-                leading: (
-                  <span className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-md">
-                    <KeyIcon className="size-4" />
-                  </span>
-                ),
-                title: <span className="font-mono">{row.identifier}</span>,
-                description:
-                  row.purpose ?? (row.key !== row.identifier ? `Env var ${row.key}` : null),
-                badges: (
+              title: <span className="font-mono">{row.identifier}</span>,
+              description:
+                row.purpose ?? (row.key !== row.identifier ? `Env var ${row.key}` : null),
+              status:
+                !row.configured || row.system ? (
                   <>
                     {!row.configured ? (
                       <Badge variant="destructive" size="xs">
@@ -446,13 +472,11 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
                       </Badge>
                     ) : null}
                   </>
-                ),
-              },
+                ) : undefined,
               onOpen: () => setDialog({ open: true, row }),
             }))}
             empty={
               <EmptyState
-                icon={KeyIcon}
                 size="sm"
                 title={tI18nComplete.raw('text5aa40906d187')}
                 description={tI18nComplete.raw('textfc7605717e58')}
@@ -472,7 +496,6 @@ export function SecretsGrantPage({ projectId, editor }: { projectId: string; edi
               />
             }
           />
-        </div>
       </EditorSection>
       <ProjectSecretDialog
         projectId={projectId}
@@ -508,53 +531,37 @@ export function AppsGrantPage({ projectId, editor }: { projectId: string; editor
     <EditorSection
       title={t('title')}
       description={t('description')}
-      trailing={
-        <GrantHeaderTrailing
-          value={editor.draft.apps}
-          href={(id) => uiRoutes().apps(id)}
-          label={t('manageApps')}
-        />
-      }
+      trailing={<ManageButton href={(id) => uiRoutes().apps(id)} />}
+      lead
+      bare
     >
-      <div className="space-y-3 py-4" data-testid="agent-apps-grant">
+      <div className="space-y-3" data-testid="agent-apps-grant">
         <GrantCatalog
           value={editor.draft.apps}
           onChange={(v) => editor.set('apps', v)}
-          allLabel={t('allLabel')}
           isLoading={appsQuery.isLoading}
           isError={appsQuery.isError}
           onRetry={() => void appsQuery.refetch()}
           items={rows.map((row) => ({
             id: row.id,
-            card: {
-              leading: (
-                <span className="bg-muted text-muted-foreground flex size-9 items-center justify-center rounded-md">
-                  <GlobeIcon className="size-4" />
-                </span>
-              ),
-              title: <span className="font-mono">{row.id}</span>,
-              description: row.name === row.id ? null : row.name,
-              badges: row.needsGrant ? (
-                <Badge variant="outline" size="xs">
-                  {t('needsGrant')}
-                </Badge>
-              ) : (
-                <Badge variant="muted" size="xs">
-                  {t('openWithoutGrant')}
-                </Badge>
-              ),
-            },
+            title: <span className="font-mono">{row.id}</span>,
+            description: row.name === row.id ? null : row.name,
+            // The grant decides admission for a restricted or private App, the
+            // normal case. Only an App that admits agents without it is flagged.
+            status: row.needsGrant ? undefined : (
+              <Badge variant="muted" size="xs">
+                {t('openWithoutGrant')}
+              </Badge>
+            ),
           }))}
           empty={
             <EmptyState
-              icon={GlobeIcon}
               size="sm"
               title={t('emptyTitle')}
               description={t('emptyDescription')}
             />
           }
         />
-        <p className="text-muted-foreground text-xs text-pretty">{t('grantNote')}</p>
       </div>
     </EditorSection>
   );

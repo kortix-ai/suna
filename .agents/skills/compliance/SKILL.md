@@ -26,10 +26,8 @@ customer reaches with their own key is not one.
 3. Merge to `dev`. The row ships with the next prod release.
 4. Send the vendor no customer data before the row's effective date
    (`addedOn` + 37 days). The page shows it as "From <date>". Managed-model
-   inference reaches its vendors through Kortix Platinum inference: set the
-   same date on the vendor in Platinum's model registry
-   (kortix-ai/platinum, `apps/api/src/inferenceModels.ts`), which holds the
-   vendor back until then.
+   inference is served by Platinum Inference: give the Platinum team the same
+   date, and Platinum Inference holds the change back until then.
 
 A change to an existing row (purpose, location) needs no `addedOn` and sends
 no email. Removing a vendor needs no notice: delete the row.
@@ -110,7 +108,7 @@ tokens and account ids.
 |---|---|---|---|
 | 1 | BOLA: `GET /v1/billing/account-state` returned the billing state on membership alone (Medium, CVSS 5.3) | Fixed 2026-10-21 | The route returns the money fields only when `authorize` grants `billing.read`. Every other caller gets the gating view (`can_run`, plan, entitlements). Flow `BILL-21`. Since 2026-08-19 every built-in account role holds `billing.read`, so a plain member reading the state is intended. |
 | 2 | Account name accepts HTML (Informational) | Fixed 2026-10-21 | `accountNameError` refuses `<`, `>` and control characters on create and rename. Every email template escapes the name (`escapeHtml`). Flow `ACCT-4`. |
-| 3 | JWTs signed with HS256 (Informational) | Fixed on dev and staging; prod to confirm | Dev and staging GoTrue sign ES256 (checked 2026-10-21 by decoding a fresh token's header). The API verifies asymmetric tokens against JWKS (`apps/api/src/shared/jwt-verify.ts`). Prod: confirm the current key in the Supabase dashboard (Settings → JWT Keys), then revoke the legacy secret and drop `SUPABASE_JWT_SECRET`. |
+| 3 | JWTs signed with HS256 (Informational) | Staging fixed 2026-10-21; prod after the next release | Every hosted project signs user tokens with ES256 since 2026-08-21. 2026-10-21: dev, staging and prod moved to `sb_publishable_` / `sb_secret_` keys with zero downtime (325 probe checks, 0 failures), and the API stopped trusting the legacy secret itself (random `SUPABASE_JWT_SECRET` in every hosted env). Staging: legacy API keys disabled and the HS256 secret revoked; a token forged with the old secret for a real session gets 403 from Supabase and 401 from the API. Prod and dev wait for the mobile app to ship the publishable key. Procedure: `references/supabase-legacy-key-retirement.md`. |
 | 4 | Concurrent logins allowed (Informational) | Accepted | Users run the web app, desktop, CLI and mobile at once; a one-session rule breaks that. Controls: account MFA enforcement, SSO enforcement, admins list and revoke any member session (`GET /v1/accounts/:accountId/iam/sessions`, `POST …/iam/sessions/:sessionId/revoke`). |
 | 5 | Session cookie without `Secure` (Informational) | Fixed | `apps/web/src/lib/supabase/client.ts` and `server.ts` set `Secure` on HTTPS. HSTS is on at the edge. |
 | 6 | Session cookie without `HttpOnly` (Informational) | Accepted | The Supabase browser client reads the session from JavaScript (`client.ts` comment). Controls: React output encoding, server-side input validation (#2), `SameSite=Lax`, short-lived access tokens. Removing it means a server-only session, a separate project. |

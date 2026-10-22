@@ -8,7 +8,7 @@ import Link from '@/components/site-link';
 
 import { Button } from '@kortix/ui/button';
 
-export interface NotFoundAction {
+interface NotFoundAction {
   href: string;
   label: string;
   icon?: React.ReactNode;

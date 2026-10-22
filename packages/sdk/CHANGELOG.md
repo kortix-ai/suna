@@ -5,6 +5,15 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed (the session log is the only saved history, P8.2)
+- `FeatureFlagKey` `'session_log'` is no longer a flag: absent from `FEATURE_FLAG_KEYS` and from
+  the feature-flag catalog. The API sends `experimental.session_log: true` for every project, so
+  `useFeatureFlag(id, 'session_log')` reports `true` once the project detail loads, as before.
+  `KortixProject.experimental.session_log` is optional in the type.
+- `GET …/sessions/:id/log` answers `503` `{ code: 'session_log_converting' }` with `Retry-After: 60`
+  for an old session whose history is still only in the v1 mirror and over the conversion size cap;
+  retry after the delay.
+
 ### Added (custom LLM providers)
 - `listCustomLlmProviders(projectId)`, `putCustomLlmProvider(projectId, providerId, input)` and
   `deleteCustomLlmProvider(projectId, providerId)` (types `CustomLlmProvider`,
@@ -74,6 +83,18 @@ follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `missing[].kind` includes `'message'`: the log was over the API's restore cap
   (`SESSION_LOG_RESTORE_MAX_BYTES`), so the agent got none of those earlier
   messages; the transcript keeps them.
+
+### Deprecated (public transcript shares removed)
+The API removed public transcript sharing (KRTX-2358): no `/v1/public/session-shares/**`
+route is served and `createSessionPublicShare` with `{ transcript: true }` answers 400.
+- `getPublicSessionShare`, `getPublicSessionShareMessages`, `findActiveTranscriptShare`,
+  `PublicSessionShareError`, `PublicSessionShareMeta`, `PublicSessionTranscript`,
+  `PublicSessionTranscriptMessage` and `PublicSessionTranscriptToolCall` are `@deprecated`
+  (every call answers 404). Removed in the next major.
+- `CreateSessionPublicShareInput.transcript` is `@deprecated`; the field is still sent until
+  the next major, and a current server answers 400.
+- File and preview shares are unaffected: mint/list/revoke and the `/share/session/:token`
+  viewer keep working.
 
 ### Changed (Enterprise is a feature layer; trials removed)
 - `AccountState.enterprise` (`AccountEnterprise`, additive): `{ state: 'off' | 'demo' | 'licensed' }`.

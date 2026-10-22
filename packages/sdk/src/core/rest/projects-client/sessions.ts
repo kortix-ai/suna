@@ -567,8 +567,9 @@ export interface SessionPublicShare {
   share_id: string;
   session_id: string;
   project_id: string;
-  /** `transcript` names the session conversation; its `public_url` is the
-   *  web viewer (`/share/session/<public_token>`). */
+  /** `transcript` named the session conversation. Public transcript sharing
+   *  was removed (KRTX-2358): no server mints that kind any more and every
+   *  legacy row is revoked. The name stays in the union for legacy rows. */
   resource_type: 'preview' | 'file' | 'transcript' | string;
   label: string;
   port: number | null;
@@ -595,12 +596,11 @@ export interface SessionPublicShare {
 
 export interface CreateSessionPublicShareInput {
   /**
-   * `true` shares the session conversation as a read-only, sanitized
-   * transcript. A session has at most one live transcript share: minting
-   * again returns the live one as-is (HTTP 200) instead of a new link, and
-   * the `label` and `expires_at` of that second call are ignored. Revoke it
-   * first to mint a link with new values. Cannot be combined with `preview`,
-   * `preview_id`, or `file`. Deleting the session revokes it.
+   * Deprecated: public transcript sharing was removed (KRTX-2358). A server
+   * that ships the removal answers 400
+   * (`Transcript sharing is no longer available`).
+   *
+   * @deprecated Removed in the next major.
    */
   transcript?: boolean;
   preview_id?: string;
@@ -651,6 +651,12 @@ export function resolvePublicShareUrl(
  * The live transcript share among a session's shares (newest first), or null.
  * Live means not revoked and not expired at `now`. Pure: pass the `shares`
  * from `listSessionPublicShares`.
+ *
+ * Public transcript sharing was removed (KRTX-2358): servers that ship the
+ * removal never mint transcript shares, so this returns null there. It still
+ * reports a legacy row a server older than the removal hands out.
+ *
+ * @deprecated Removed in the next major.
  */
 export function findActiveTranscriptShare(
   shares: readonly SessionPublicShare[],
@@ -683,9 +689,9 @@ export async function listSessionPublicShares(projectId: string, sessionId: stri
 }
 
 /**
- * Mint a public share link. With `{ transcript: true }` this is idempotent:
- * an existing live transcript share is returned as-is (its label and expiry
- * unchanged; the ones passed are ignored).
+ * Mint a public share link for a preview or a workspace file. A server that
+ * ships the transcript-share removal (KRTX-2358) answers 400 to a
+ * `{ transcript: true }` body instead of minting.
  */
 export async function createSessionPublicShare(
   projectId: string,
@@ -893,11 +899,13 @@ export async function getSessionAudit(
   );
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptToolCall {
   tool: string;
   status: string | null;
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptMessage {
   role: string;
   created: string | null;
@@ -917,12 +925,17 @@ export interface SessionTranscriptMessage {
  * STOPPED or waking session answer at all. `none` is the honest "nothing could
  * answer" and is the only value that accompanies `available: false`. The two
  * sources are never merged — this field says which one you got.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
 
 /** Compact server-side transcript read — text + tool calls, stripped of tool
  *  inputs/outputs, for project automation (callable with project-scoped
- *  session tokens, unlike the raw sandbox proxy). */
+ *  session tokens, unlike the raw sandbox proxy).
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
@@ -942,7 +955,10 @@ export interface SessionTranscript {
 
 /** One mirrored message in the shape the session sync store hydrates from:
  *  OpenCode's own envelope, with the parts array stripped of tool
- *  inputs/outputs and file urls. */
+ *  inputs/outputs and file urls.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscriptSyncMessage {
   info: Record<string, unknown>;
   parts: Array<Record<string, unknown>>;
@@ -954,6 +970,8 @@ export interface SessionTranscriptSyncMessage {
  * `source` is `mirror` or `none` — never `live`. A client whose sandbox is up
  * reads the runtime directly, so this endpoint deliberately does not re-proxy
  * it.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export interface SessionTranscriptSyncEnvelope {
   available: boolean;
@@ -982,6 +1000,7 @@ export interface SessionTranscriptSyncEnvelope {
   messages: SessionTranscriptSyncMessage[];
 }
 
+/** @deprecated Reads the v1 transcript (`GET …/transcript`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export async function getSessionTranscript(
   projectId: string,
   sessionId: string,
@@ -1008,6 +1027,8 @@ export async function getSessionTranscript(
  * Messages carry OpenCode's real ids, so a client hydrates them provisionally
  * (`hydrate(..., { source: 'cache' })`) and the live runtime read SETTLES them
  * by id rather than duplicating them.
+ *
+ * @deprecated Reads the v1 transcript (`GET …/transcript?shape=sync`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export async function getSessionTranscriptSync(
   projectId: string,
@@ -1206,6 +1227,10 @@ export interface SessionOpenBundleConfig {
   agent_name: string | null;
   /** @deprecated Always true: the LLM gateway is the only model path. Removed in the next major. */
   llm_gateway_enabled: boolean;
+  /** The project's default reasoning effort (a models.dev effort label), or
+   *  null for automatic — what delivery injects as the prompt's `variant`
+   *  when the session pick names none. */
+  default_reasoning_effort?: string | null;
 }
 
 /** = `GET /projects/:id/model-defaults`. `known: false` when that read failed. */

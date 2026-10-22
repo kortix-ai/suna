@@ -10,7 +10,6 @@ mock.module('./audit', () => ({
 const rate = await import('../middleware/rate-limit');
 const { config } = await import('../config');
 const { RATE_LIMIT_EXCEEDED_ACTION } = await import('./rate-limit-audit');
-const shareId = '11111111-1111-4111-8111-111111111111';
 const cases = [
   {
     factory: rate.createInviteAcceptRateLimitMiddleware,
@@ -32,17 +31,6 @@ const cases = [
     resource: 'sandbox_proxy',
     id: 'sandbox-a',
     limiter: 'sandbox_proxy',
-    ipKey: false,
-  },
-  {
-    factory: rate.createPublicSessionShareRateLimitMiddleware,
-    setting: 'KORTIX_PUBLIC_SESSION_SHARE_REQS_PER_MIN',
-    path: '/:shareId',
-    url: `/${shareId}`,
-    other: '/22222222-2222-4222-8222-222222222222',
-    resource: 'public_session_share',
-    id: shareId,
-    limiter: 'public_session_share',
     ipKey: false,
   },
   {

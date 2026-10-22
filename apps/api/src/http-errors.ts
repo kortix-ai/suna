@@ -27,7 +27,7 @@ import {
   CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
   isComposioTransientProviderError,
 } from './shared/composio-transient';
-import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { isPlatinumSandboxNotRunningError, PlatinumExecOutcomeUnknownError } from './shared/platinum';
 
 // The typed branch handlers keep every ladder branch verbatim (comment,
 // predicate, body); the dispatcher below calls them in the original ladder
@@ -529,6 +529,11 @@ function handleUnhandledError(err: Error, c: Context): Response {
   }
   const abort = handleSandboxProxyAbort(err, c, errName, path);
   if (abort) return abort;
+  if (err instanceof PlatinumExecOutcomeUnknownError) {
+    // Preserve ambiguity without a retry hint: the provider may have executed the write.
+    appLogger.warn('Sandbox exec outcome unknown after provider timeout', { method, path, status: 504 });
+    return c.json({ error: true, code: 'sandbox_exec_outcome_unknown', message: err.message, status: 504 }, 504);
+  }
   const platinum = handlePlatinumSandboxNotRunning(err, c, method, path);
   if (platinum) return platinum;
   const daytonaRateLimited = handleDaytonaRateLimit(err, c, method, path);

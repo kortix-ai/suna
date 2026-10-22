@@ -75,7 +75,9 @@ afterAll(async () => {
 });
 
 describe('repointRetiredSessionModel', () => {
-  test('a retired id with a servable declared successor is re-pointed to it, durably and audibly', async () => {
+  // No successor is hardcoded (#10652): a retired id moves to the project
+  // default (here glm-5.3-flash), else the platform default.
+  test('a retired id is re-pointed to the project default, durably and audibly', async () => {
     const sessionId = await seedSessionWithModel('kortix/deepseek-v4-flash-0731');
 
     const nextRef = await repointRetiredSessionModel('kortix/deepseek-v4-flash-0731', {
@@ -87,7 +89,7 @@ describe('repointRetiredSessionModel', () => {
       freeModelsOnly: false,
       metadata: { opencode_model: 'kortix/deepseek-v4-flash-0731' },
     });
-    expect(nextRef).toBe('kortix/deepseek-v4.1-flash');
+    expect(nextRef).toBe('kortix/glm-5.3-flash');
 
     const [row] = await db
       .select()
@@ -95,7 +97,7 @@ describe('repointRetiredSessionModel', () => {
       .where(eq(projectSessions.sessionId, sessionId))
       .limit(1);
     const metadata = (row?.metadata ?? {}) as Record<string, unknown>;
-    expect(metadata.opencode_model).toBe('kortix/deepseek-v4.1-flash');
+    expect(metadata.opencode_model).toBe('kortix/glm-5.3-flash');
     expect(metadata.opencode_model_source).toBe('repointed');
     expect(metadata.opencode_model_repointed_from).toBe('deepseek-v4-flash-0731');
 
@@ -105,7 +107,7 @@ describe('repointRetiredSessionModel', () => {
       .where(and(eq(auditEvents.sessionId, sessionId), eq(auditEvents.action, 'SESSION_MODEL_REPOINTED')))
       .limit(1);
     expect(audit).toBeDefined();
-    expect((audit?.metadata as Record<string, unknown> | null)?.reason).toBe('successor');
+    expect((audit?.metadata as Record<string, unknown> | null)?.reason).toBe('project_default');
   });
 
   test('a retired id with NO declared successor falls back to the project default', async () => {
@@ -222,6 +224,6 @@ describe('buildSessionSandboxEnvVars — session open re-points a retired pin be
       opencodeModel: 'kortix/deepseek-v4-flash-0731',
     });
 
-    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/deepseek-v4.1-flash');
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('kortix/glm-5.3-flash');
   });
 });

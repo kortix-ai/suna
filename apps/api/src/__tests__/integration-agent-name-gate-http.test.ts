@@ -24,6 +24,12 @@ import { describe, expect, test, afterAll } from 'bun:test';
 process.env.PLATINUM_INFERENCE_API_KEY = 'not-a-real-platinum-key-agent-name-gate';
 const { db } = await import('../shared/db');
 const { app } = await import('../index');
+// The managed lineup is what Platinum Inference lists; tests never call
+// Platinum, so seed the synthetic lineup (fixtures/managed-lineup.ts).
+const { __setManagedLineupForTest } = await import('../llm-gateway/models/managed-models');
+const { TEST_MANAGED_LINEUP } = await import('./fixtures/managed-lineup');
+__setManagedLineupForTest(TEST_MANAGED_LINEUP);
+
 const { eq, sql } = await import('drizzle-orm');
 const {
   accounts,

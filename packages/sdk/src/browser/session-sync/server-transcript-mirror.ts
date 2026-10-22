@@ -136,6 +136,8 @@ export function parseKortixSessionScope(
  * flight or just answered, else the route. `useSession` passes its answer in,
  * so for a session it owns this never runs. A sub-agent's window is read here,
  * by `child`: the snapshot carries only the conversation's.
+ *
+ * @deprecated Reads the v1 saved copy. `useSessionSync` reads the session log first and calls this only when the log answers 404. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export async function loadSessionTranscriptMirror(input: {
 	kortixSessionScope: string | undefined;
@@ -173,6 +175,8 @@ export async function loadSessionTranscriptMirror(input: {
  * Never throws, for the same reason the first window does not: paging further
  * back is an accelerator, and its absence costs only the page the user cannot
  * see yet.
+ *
+ * @deprecated Reads the v1 saved copy. Older log pages: `useSessionLogOlder` (`GET …/log?before_seq=`). Removed in the next major.
  */
 export async function loadOlderSessionTranscriptMirror(input: {
 	kortixSessionScope: string | undefined;
@@ -204,6 +208,8 @@ const SAVED_EXPORT_WINDOW = 500;
  * newest, until the server leaves no cursor. For an export, which needs the
  * whole conversation while the computer cannot answer. Unlike the reads above
  * it throws on a failed read: a partial export must not pass for a whole one.
+ *
+ * @deprecated Reads the v1 saved copy. `loadSessionExportMessages` reads the session log first. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export async function loadSavedSessionTranscriptMessages(
 	scope: { projectId: string; sessionId: string },

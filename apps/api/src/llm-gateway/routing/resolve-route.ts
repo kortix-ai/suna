@@ -26,6 +26,12 @@ export interface GatewayRouteResolverOptions {
   supportsImage: (model: string) => boolean;
   getProjectPolicy?: (projectId: string) => Promise<ResolvedProjectRoutingPolicy | null>;
   /**
+   * The principal's account/project/agent default, for a principal that did
+   * not carry one (gateway admission leaves it unresolved). Called only when
+   * the route depends on it: an image request or a project default fallback.
+   */
+  resolveDefaultModel?: (principal: AuthedPrincipal) => Promise<string | undefined>;
+  /**
    * Resolve `model`'s live catalog capability record (reasoning_options,
    * temperature, limit.output, ...) — used ONLY to clamp a project's
    * configured generation defaults before they're injected into a request
@@ -79,7 +85,14 @@ export function createGatewayRouteResolver(
     const projectPolicy = principal.projectId && options.getProjectPolicy
       ? await options.getProjectPolicy(principal.projectId)
       : null;
-    const concreteDefault = principal.defaultModel || valueOf(options.defaultModel);
+    // The default decides only an image reroute (the project chain covers
+    // every model); a text request never reads it.
+    const defaultMatters = input.requires.imageInput;
+    const principalDefault = principal.defaultModel
+      ?? (defaultMatters && options.resolveDefaultModel
+        ? await options.resolveDefaultModel(principal).catch(() => undefined)
+        : undefined);
+    const concreteDefault = principalDefault || valueOf(options.defaultModel);
     const isDefaultRequest = input.requestedModel === concreteDefault;
     let primaryModel = input.requestedModel;
 
@@ -111,7 +124,12 @@ export function createGatewayRouteResolver(
       };
     }
 
-    if (isDefaultRequest && projectPolicy?.defaultFallback) {
+    // The project's chain is a catch-all: it covers every model that has no
+    // exact rule. It never depends on `isDefaultRequest`, because the
+    // principal's default is one model. An agent with its own default, or a
+    // default with every account paused, would otherwise take a request for
+    // the project's own model out of the chain.
+    if (projectPolicy?.defaultFallback) {
       return {
         policyId: 'project:default',
         primaryModel,

@@ -544,6 +544,7 @@ function PDFViewerFileActionsMenu({
         ref={inputRef}
         type="file"
         accept="application/pdf,.pdf"
+        aria-label={tI18nComplete.raw('text865e89de78d9')}
         className="sr-only"
         tabIndex={-1}
         onChange={(event) => {

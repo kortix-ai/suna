@@ -40,12 +40,15 @@ export function PastedTextCopy({ text }: { text: string }) {
   );
 }
 
+const graphemeSegmenter =
+  typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter() : null;
+
 /** Word and character counts for the header. Characters are what the user sees: graphemes, else code points. */
 export function pastedTextCounts(text: string) {
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   let chars = 0;
-  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
-    for (const _segment of new Intl.Segmenter().segment(text)) chars++;
+  if (graphemeSegmenter) {
+    for (const _segment of graphemeSegmenter.segment(text)) chars++;
   } else chars = Array.from(text).length;
   return { words, chars };
 }
