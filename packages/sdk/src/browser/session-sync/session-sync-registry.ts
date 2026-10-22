@@ -12,7 +12,8 @@ import {
 import { getCurrentRuntimeSandboxId, getCurrentRuntimeUrl } from '../../core/session/current-runtime';
 import { useSyncStore } from '../stores/sync-store';
 import { getSessionLogPage } from '../../core/rest/projects-client/sessions';
-import { applySessionLogPage, type SessionLogState } from '../../core/session-log/store';
+import { EMPTY_SESSION_LOG_STATE, applySessionLogPage, type SessionLogState } from '../../core/session-log/store';
+import { fetchSessionLogPage, loadSessionLogPage } from '../../core/session-log/source';
 import { sessionLogRowsFor, sessionLogThreadIdOf } from '../../core/session-log/v1-view';
 import { loadSavedSessionTranscriptMessages, parseKortixSessionScope } from './server-transcript-mirror';
 
@@ -427,6 +428,7 @@ export async function loadSessionRuntimeStatus(
   return result.data[sessionId] ?? ({ type: 'idle' } as SessionStatus);
 }
 
+/** @deprecated Reads the runtime's v1 messages. Use `loadSessionExportMessages` (the session log first) or `getSessionLogPage`. Removed in the next major. */
 export function loadSessionTranscriptMessages(
   sessionId: string,
 ): Promise<SessionSyncPage['messages']> {
@@ -465,19 +467,25 @@ async function loadSessionLogExportRows(
 }
 
 /**
- * Every message of a session for an export, oldest first. A session that reads its session log
- * (v2: the store holds the log of `kortixSessionScope`) exports the log's thread of `sessionId`,
- * every page of it, and reads nothing else. Otherwise, while the computer runs: the runtime's whole history. When the runtime
- * cannot answer (asleep, stopped, failed) or answers empty, the saved copy, every window of it:
- * the conversation the page shows meanwhile. `kortixSessionScope` (`projectId/sessionId`)
- * names the session; without it a runtime failure throws.
+ * Every message of a session for an export, oldest first. The session log first: the log the
+ * store holds for `kortixSessionScope` (v2), else the log's newest page read from the API. The
+ * export is then the log's thread of `sessionId`, every page of it, and nothing else is read.
+ * Only when the log answers 404 or an invalid page (a server older than the log, a session with
+ * no stored log yet) does it read v1: while the computer runs, the runtime's whole history;
+ * when the runtime cannot answer (asleep, stopped, failed) or answers empty, the v1 saved copy
+ * (deprecated), every window of it. `kortixSessionScope` (`projectId/sessionId`) names the
+ * session; without it only the runtime is read, and a runtime failure throws.
  */
 export async function loadSessionExportMessages(
   sessionId: string,
   kortixSessionScope?: string,
 ): Promise<SessionSyncPage['messages']> {
   const saved = parseKortixSessionScope(kortixSessionScope);
-  const log = saved ? useSyncStore.getState().sessionLogs[saved.sessionId] : undefined;
+  let log = saved ? useSyncStore.getState().sessionLogs[saved.sessionId] : undefined;
+  if (saved && !log && loadSessionLogPage) {
+    const page = await fetchSessionLogPage(loadSessionLogPage, saved.projectId, saved.sessionId, { limit: SESSION_LOG_EXPORT_PAGE_LIMIT });
+    if (page) log = applySessionLogPage(EMPTY_SESSION_LOG_STATE, page);
+  }
   if (saved && log) return loadSessionLogExportRows(saved.projectId, saved.sessionId, sessionId, log);
   let live: SessionSyncPage['messages'] = [];
   try {

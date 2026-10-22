@@ -1380,12 +1380,13 @@ export function useSession(projectId: string, sessionId: string, options: UseSes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, sessionId]);
 
-  // 1a'. The session log (v2) when negotiated (`use-session-log.ts`). Also without
+  // 1a'. The session log (v2), read first on every open (`use-session-log.ts`). Also without
   // the chat engine: a host that reads its own transcript renders the log's threads
-  // (`useSessionLogThread`). With the chat engine, the log OWNS the history from the moment
-  // the `session_log` flag is known on: the open asks the snapshot for no transcript window,
-  // no saved copy is read (`useSessionSync` `sessionLog`), and older pages come from
-  // `GET …/log`. A session the log refuses (no stored log yet) reads v1 as before.
+  // (`useSessionLogThread`). With the chat engine, the log OWNS the history from the first
+  // render: the open asks the snapshot for no transcript window, no saved copy is read
+  // (`useSessionSync` `sessionLog`), and older pages come from `GET …/log`. No project flag is
+  // read. A session the log refuses (404: a server older than the log, or no stored log yet)
+  // reads v1 as before.
   const logDialect = useSessionLogSync(projectId, sessionId, { enabled: startEnabled });
   const logOwned = chatEngine && logDialect === 'v2';
   const logRootRuntimeId = useSyncStore((state) => (logOwned ? (sessionLogRoot(state.sessionLogs[sessionId])?.runtimeSessionId ?? null) : null));
