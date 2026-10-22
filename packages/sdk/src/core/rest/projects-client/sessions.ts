@@ -3,7 +3,7 @@
 import { type ApiClientOptions, ApiError, backendApi } from '../../http/api-client';
 import { markSessionFresh } from '../../http/fresh-sessions';
 import { currentSavedCopyStore } from '../../session-sync/saved-copy-store';
-import { noteSessionStopped } from '../../http/session-stopped';
+import { noteSessionDeleted, noteSessionStopped } from '../../http/session-stopped';
 import { isSessionLogPage } from '../../session-log/guard';
 import { loadSessionLogPage, type SessionLogPage, type SessionLogPageQuery } from '../../session-log/source';
 import type { AuditEvent } from './audit';
@@ -65,6 +65,8 @@ export interface ProjectSessionInitiator {
 }
 
 export interface ProjectSession {
+  /** Conversation model from the durable log; creation pin until one is recorded. Absent on older APIs. */
+  model?: string | null;
   session_id: string;
   account_id: string;
   project_id: string;
@@ -98,6 +100,13 @@ export interface ProjectSession {
   labels?: string[];
   agent_name: string | null;
   status: ProjectSessionStatus;
+  /** Canonical work activity, independent of computer lifecycle. Absent on older servers. */
+  working?: {
+    state: 'working' | 'idle';
+    since: string | null;
+    turn_token: string | null;
+    pending_delivery: boolean;
+  };
   error: string | null;
   metadata: ProjectSessionMetadata;
   /** The runtime's conversation tree. Served by APIs since W4. */
@@ -167,8 +176,8 @@ export interface ProjectSession {
  *
  * Three hosts hand-rolled the identical `typeof meta.spawned_by_session ===
  * 'string'` cast over an `unknown` bag
- * (`apps/web/src/components/projects/session-label.ts:61`,
- * `apps/web/src/features/workspace/project-sidebar/project-session-list-helpers.ts:359`,
+ * (`packages/ui/src/session/actions/session-label.ts:61`,
+ * `packages/ui/src/session/actions/project-session-list-helpers.ts:359`,
  * `apps/tui/src/lib/session-groups.ts:145`). `metadata` is jsonb, so a
  * malformed row is possible and a non-string must never escape as a session
  * id. A self-referential link is rejected too: a session that is its own
@@ -229,6 +238,8 @@ export interface PendingSessionPrompt {
  * The later `/start` call is an idempotent readiness/resume operation.
  */
 export interface CreateProjectSessionInput {
+  /** Authorized platform session whose saved conversation is copied before boot. */
+  fork_from_session_id?: string;
   base_ref?: string;
   agent_name?: string;
   /** Slug of the sandbox template to boot from. Defaults to "default". */
@@ -314,6 +325,8 @@ export interface ClaimWarmProjectSessionInput {
 /** One conversation in the session runtime's tree (the root and its subagent children). */
 export interface ProjectRuntimeSession {
   id: string;
+  /** Explicit server-registered fork provenance, never inferred from titles. */
+  fork_source_id?: string;
   title: string | null;
   parent_id: string | null;
   project_id: string | null;
@@ -717,7 +730,7 @@ export async function createProjectSession(projectId: string, input?: CreateProj
   // `session_id` is exactly the route param those navigations land on.
   // Skip when an initial_prompt is set: those sessions get a server-side reply,
   // so they must mount the real chat to stream it (the shell would hold it back).
-  if (!input?.initial_prompt) {
+  if (!input?.initial_prompt && !input?.fork_from_session_id) {
     markSessionFresh((session as ProjectSession | undefined)?.session_id);
   }
   return session;
@@ -880,11 +893,13 @@ export async function getSessionAudit(
   );
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptToolCall {
   tool: string;
   status: string | null;
 }
 
+/** @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export interface SessionTranscriptMessage {
   role: string;
   created: string | null;
@@ -904,12 +919,17 @@ export interface SessionTranscriptMessage {
  * STOPPED or waking session answer at all. `none` is the honest "nothing could
  * answer" and is the only value that accompanies `available: false`. The two
  * sources are never merged — this field says which one you got.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export type SessionTranscriptSource = 'live' | 'mirror' | 'none';
 
 /** Compact server-side transcript read — text + tool calls, stripped of tool
  *  inputs/outputs, for project automation (callable with project-scoped
- *  session tokens, unlike the raw sandbox proxy). */
+ *  session tokens, unlike the raw sandbox proxy).
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscript {
   available: boolean;
   reason: string | null;
@@ -929,7 +949,10 @@ export interface SessionTranscript {
 
 /** One mirrored message in the shape the session sync store hydrates from:
  *  OpenCode's own envelope, with the parts array stripped of tool
- *  inputs/outputs and file urls. */
+ *  inputs/outputs and file urls.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
+ */
 export interface SessionTranscriptSyncMessage {
   info: Record<string, unknown>;
   parts: Array<Record<string, unknown>>;
@@ -941,6 +964,8 @@ export interface SessionTranscriptSyncMessage {
  * `source` is `mirror` or `none` — never `live`. A client whose sandbox is up
  * reads the runtime directly, so this endpoint deliberately does not re-proxy
  * it.
+ *
+ * @deprecated The v1 transcript. Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export interface SessionTranscriptSyncEnvelope {
   available: boolean;
@@ -969,6 +994,7 @@ export interface SessionTranscriptSyncEnvelope {
   messages: SessionTranscriptSyncMessage[];
 }
 
+/** @deprecated Reads the v1 transcript (`GET …/transcript`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major. */
 export async function getSessionTranscript(
   projectId: string,
   sessionId: string,
@@ -995,6 +1021,8 @@ export async function getSessionTranscript(
  * Messages carry OpenCode's real ids, so a client hydrates them provisionally
  * (`hydrate(..., { source: 'cache' })`) and the live runtime read SETTLES them
  * by id rather than duplicating them.
+ *
+ * @deprecated Reads the v1 transcript (`GET …/transcript?shape=sync`). Read the session log instead: `getSessionLogPage` (`kortix.session(p, s).log(query)`, `GET …/log`). Removed in the next major.
  */
 export async function getSessionTranscriptSync(
   projectId: string,
@@ -1191,11 +1219,11 @@ export interface SessionOpenBundleConfig {
   known: true;
   base_ref: string | null;
   agent_name: string | null;
+  /** @deprecated Always true: the LLM gateway is the only model path. Removed in the next major. */
   llm_gateway_enabled: boolean;
 }
 
-/** = `GET /projects/:id/model-defaults`. `known: false` with
- *  `reason: 'llm_gateway_disabled'` mirrors that route's own 404. */
+/** = `GET /projects/:id/model-defaults`. `known: false` when that read failed. */
 export type SessionOpenBundleModels =
   | {
       known: true;
@@ -1706,6 +1734,7 @@ export async function deleteProjectSession(projectId: string, sessionId: string)
   );
   // The device's saved copy of a deleted session would only take space.
   void currentSavedCopyStore()?.remove(projectId, sessionId);
+  noteSessionDeleted(sessionId);
   return result;
 }
 

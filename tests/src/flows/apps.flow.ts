@@ -356,6 +356,27 @@ flow(
     );
 
     await ctx.step(
+      "a deployment that names the deprecated daytona provider → 400 sandbox_provider_deprecated",
+      async () => {
+        const response = await owner.post(
+          "/v1/projects/:projectId/apps/:appId/deployments",
+          {
+            artifact_id: artifactId,
+            provider: "daytona",
+            source: {
+              kind: "oci_image",
+              image: "docker.io/library/caddy:alpine",
+              command: ["caddy", "file-server"],
+              port: 80,
+            },
+          },
+          { params: appParams },
+        );
+        response.status(400).body().has("$.code", "sandbox_provider_deprecated");
+      },
+    );
+
+    await ctx.step(
       "deployment reads expose empty state and unknown boundaries",
       async () => {
         const list = await owner.get(

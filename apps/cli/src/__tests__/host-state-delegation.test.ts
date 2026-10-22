@@ -223,6 +223,7 @@ test('projects info --host resolves the named host own default, not the ambient 
   expect(JSON.parse(result.stdout).id).toBe('proj_other');
   expect(other.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
     'GET /v1/projects/proj_other',
+    'GET /v1/projects/proj_other/git/connection',
   ]);
 });
 
@@ -244,7 +245,9 @@ test('access assignments --host resolves the named host project, not the ambient
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual({ assignments: otherAssignments });
   expect(other.requests.map((r) => `${r.method} ${r.path}${r.query}`)).toEqual([
-    'GET /v1/projects/proj_other?account_id=account_other',
+    // The project read takes its account from the project row, not a query
+    // string; the IAM list is read under the project's own account.
+    'GET /v1/projects/proj_other',
     'GET /v1/accounts/account_other/iam/assignments?scope_type=project&scope_id=proj_other&account_id=account_other',
   ]);
 });
@@ -273,7 +276,7 @@ test('without --host the ambient session project still resolves (guard)', async 
   const result = await run(['projects', 'info', '--json']);
   expect(result.code).toBe(0);
   expect(JSON.parse(result.stdout).id).toBe('proj_env');
-  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/projects/proj_env']);
+  expect(delegated.requests.map((r) => r.path)).toEqual(['/v1/projects/proj_env', '/v1/projects/proj_env/git/connection']);
 });
 
 // ── resolveProjectId unit contract (the shared resolver the four project

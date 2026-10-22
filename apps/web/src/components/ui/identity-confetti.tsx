@@ -43,7 +43,7 @@
  *
  * The production host renders this INSIDE a Radix dialog, and a `fixed`
  * element does not reliably escape one. `ModalContent`
- * (`components/ui/modal.tsx:124-125`) is `fixed ... overflow-y-auto` and, from
+ * (`packages/ui/src/primitives/modal.tsx:124-125`) is `fixed ... overflow-y-auto` and, from
  * the `lg` breakpoint up, `-translate-x-1/2 -translate-y-1/2`. A transform
  * makes an element the containing block for every fixed descendant, so above
  * `lg` an inline canvas is pinned to the modal panel and cropped by its
@@ -52,7 +52,7 @@
  *
  * `z-50` does not survive the trip either: `modal.tsx:278` sets the content's
  * z-index from `dialogContentZ(depth)`, which is 9999 at depth 1
- * (`lib/z-stack.tsx:25`). `floatingZ(useDialogDepth())` is the value that layer
+ * (`packages/ui/src/lib/z-stack.tsx:25`). `floatingZ(useDialogDepth())` is the value that layer
  * already reserves for things drawn ABOVE a dialog, and it accounts for nested
  * dialogs — the wizard opens `DemoQualifierModal` over itself.
  */
@@ -61,8 +61,8 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
 
 import { Confetti, type ConfettiRef } from '@/components/magicui/confetti';
-import { glyphFace as glyphDrawing } from '@/components/ui/glyph-face';
-import { glyphForeground } from '@/components/ui/glyph-tint';
+import { glyphFace as glyphDrawing } from '@kortix/ui/glyph-face';
+import { glyphForeground } from '@kortix/ui/glyph-tint';
 import { resolveConfettiFace, type ConfettiIdentity } from '@/lib/confetti-identity';
 import {
   IDENTITY_SCALAR,
@@ -70,8 +70,7 @@ import {
   glyphConfettiShape,
   initialConfettiShape,
 } from '@/lib/confetti-shapes';
-import { DEFAULT_ICON_WEIGHT } from '@/lib/icons/icon-config';
-import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import { DEFAULT_ICON_WEIGHT, floatingZ, useDialogDepth } from '@kortix/ui';
 import { chalkColors } from '@kortix/shared';
 import type confetti from 'canvas-confetti';
 
@@ -89,8 +88,7 @@ import type confetti from 'canvas-confetti';
  * "Are we on the client yet?", without a `setState` in an effect.
  *
  * `useSyncExternalStore` with a no-op subscribe is this repo's shape for a
- * client-only value (`features/workspace/project-layout/home/
- * setup-checklist.tsx`): the server snapshot is `false`, so hydration matches,
+ * client-only value: the server snapshot is `false`, so hydration matches,
  * and the client snapshot is `true`. The alternative — `useState(false)` plus
  * an effect that sets it — trips `react-hooks/set-state-in-effect` and costs an
  * extra render for the same answer.

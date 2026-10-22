@@ -75,7 +75,7 @@ export interface IamAuditEvent extends AuditEvent {
   actor_user_id: string | null;
   actor_type: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous' | null;
   source: string | null;
-  outcome: 'success' | 'failure' | 'denied' | 'pending' | null;
+  outcome: 'success' | 'failure' | 'denied' | 'pending' | 'expired' | null;
   action: string;
   resource_type: string;
   resource_id: string | null;
@@ -105,7 +105,7 @@ export interface ListAuditFilter {
   /** Credential class the API authenticated, e.g. `oauth_app`. */
   credential_kind?: string;
   phase?: string;
-  outcome?: 'success' | 'failure' | 'denied' | 'pending';
+  outcome?: 'success' | 'failure' | 'denied' | 'pending' | 'expired';
   request_id?: string;
   correlation_id?: string;
   /** Prefix match on resource_type (e.g. "project_session"). */

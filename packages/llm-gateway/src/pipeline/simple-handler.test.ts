@@ -858,138 +858,12 @@ describe('simple gateway pipeline', () => {
   });
 });
 
-const isMorph = (url: string): boolean => new URL(url).host === 'morph.example';
-
-describe('provider failover (descriptor.failover)', () => {
-  const morph: UpstreamDescriptor = {
-    ...primary, provider: 'morph', baseUrl: 'https://morph.example/v1', apiKey: 'morph-key',
-    resolvedModel: 'morph-model', failover: true,
-  };
-  const openrouter: UpstreamDescriptor = {
-    ...primary, provider: 'openrouter', baseUrl: 'https://openrouter.example/v1', apiKey: 'or-key',
-    resolvedModel: 'vendor/model', failover: true, bodyExtras: { provider: { only: ['a', 'b'] } },
-  };
-  const ok = () => new Response(JSON.stringify({
-    choices: [{ message: { content: 'ok' } }], usage: { prompt_tokens: 10, completion_tokens: 5 },
-  }), { status: 200, headers: { 'content-type': 'application/json' } });
-
-  async function run(
-    candidates: UpstreamDescriptor[],
-    respond: (url: string, attempt: number) => Response | Promise<Response>,
-    requestBody: Record<string, unknown> = { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] },
-  ) {
-    const usage: UsageEvent[] = [];
-    const traces: GatewayTrace[] = [];
-    const calls: Array<{ url: string; body: Record<string, unknown> }> = [];
-    const response = await handleChatCompletions({
-      hooks: { ...hooks(usage, traces), resolveUpstream: async () => candidates },
-      logger: { info() {}, warn() {}, error() {} },
-      fetchImpl: async (url, init) => {
-        calls.push({ url, body: JSON.parse(String(init.body)) });
-        return respond(url, calls.length);
-      },
-    }, { authorization: 'Bearer token', rawBody: JSON.stringify(requestBody) });
-    return { response, usage, traces, calls };
-  }
-
-  for (const status of [429, 401]) {
-    test(`a ${status} from the primary moves the request to the next provider`, async () => {
-      const { response, usage, traces, calls } = await run([morph, openrouter], (url) =>
-        isMorph(url) ? new Response('primary failed', { status }) : ok());
-      expect(response.status).toBe(200);
-      expect(calls.map((c) => c.url)).toEqual([
-        'https://morph.example/v1/chat/completions',
-        'https://openrouter.example/v1/chat/completions',
-      ]);
-      expect(usage.map((u) => [u.provider, u.model])).toEqual([['openrouter', 'vendor/model']]);
-      expect(traces.at(-1)?.candidatesTried).toEqual(['morph', 'openrouter']);
-      expect(traces.at(-1)?.attempts).toBe(2);
-      expect(traces.at(-1)?.attemptFailures?.map((f) => [f.provider, f.code])).toEqual([['morph', status]]);
-    });
-  }
-
-  test('a network error from the primary moves the request to the next provider', async () => {
-    const { response, calls } = await run([morph, openrouter], (url) => {
-      if (isMorph(url)) throw new TypeError('fetch failed');
-      return ok();
-    });
-    expect(response.status).toBe(200);
-    expect(calls).toHaveLength(2);
-  });
-
-  test('the fallback receives the full request with its own model and body extras', async () => {
-    const { calls } = await run([morph, openrouter], (url) =>
-      isMorph(url) ? new Response('limited', { status: 429 }) : ok());
-    expect(calls[0].body).toMatchObject({ model: 'morph-model', messages: [{ role: 'user', content: 'hi' }] });
-    expect(calls[0].body.provider).toBeUndefined();
-    expect(calls[1].body).toMatchObject({
-      model: 'vendor/model', messages: [{ role: 'user', content: 'hi' }], provider: { only: ['a', 'b'] },
-    });
-  });
-
-  test('an upstream pin in body extras overrides the same field sent by the client', async () => {
-    const { calls } = await run(
-      [morph, openrouter],
-      (url) => (isMorph(url) ? new Response('limited', { status: 429 }) : ok()),
-      { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }], provider: { sort: 'price' } },
-    );
-    expect(calls[1].body.provider).toEqual({ only: ['a', 'b'] });
-  });
-
-  test('a successful primary never calls the fallback', async () => {
-    const { response, usage, calls } = await run([morph, openrouter], () => ok());
-    expect(response.status).toBe(200);
-    expect(calls).toHaveLength(1);
-    expect(usage.map((u) => u.provider)).toEqual(['morph']);
-  });
-
-  test('when every provider fails, the last provider error reaches the client', async () => {
-    const { response, calls } = await run([morph, openrouter], (url) =>
-      isMorph(url)
-        ? new Response('primary down', { status: 503 })
-        : new Response('{"error":{"message":"fallback limited"}}', { status: 429 }));
-    expect(response.status).toBe(429);
-    expect(await response.text()).toContain('fallback limited');
-    expect(calls).toHaveLength(2);
-  });
-
-  test('a streamed success is relayed from the fallback provider', async () => {
-    const { response, calls } = await run([morph, openrouter], (url) =>
-      isMorph(url)
-        ? new Response('limited', { status: 429 })
-        : new Response('data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n', {
-            status: 200, headers: { 'content-type': 'text/event-stream' },
-          }),
-      { model: 'requested-model', stream: true, messages: [] });
-    expect(response.status).toBe(200);
-    expect(await response.text()).toContain('hello');
-    expect(calls).toHaveLength(2);
-    expect(calls[1].body.stream_options).toEqual({ include_usage: true });
-  });
-
-  test('candidates without the failover flag keep single-upstream behavior', async () => {
-    const byokA: UpstreamDescriptor = { ...primary, provider: 'openai', apiKey: 'a', billingMode: 'none', markup: 0 };
-    const byokB: UpstreamDescriptor = { ...byokA, apiKey: 'b' };
-    const { response, calls } = await run([byokA, byokB], () => new Response('limited', { status: 429 }));
-    expect(response.status).toBe(429);
-    expect(calls).toHaveLength(1);
-  });
-
-  test('a failover candidate is never reached from a non-failover primary', async () => {
-    const byok: UpstreamDescriptor = { ...primary, provider: 'openai', billingMode: 'none', markup: 0 };
-    const { response, calls } = await run([byok, openrouter], () => new Response('down', { status: 503 }));
-    expect(response.status).toBe(503);
-    expect(calls).toHaveLength(1);
-  });
-});
-
 describe('managed models present as Kortix (descriptor.publicProvider)', () => {
-  const managed = (provider: string, baseUrl: string, resolvedModel: string): UpstreamDescriptor => ({
-    ...primary, provider, baseUrl, apiKey: `${provider}-key`, resolvedModel, failover: true, publicProvider: 'kortix',
-  });
-  const morph = managed('morph', 'https://morph.example/v1', 'morph-model');
-  const openrouter = managed('openrouter', 'https://openrouter.example/v1', 'vendor/model');
-  const LEAK = /openrouter|morph|coreweave|wafer|vendor\/model|morph-model|provider_name/i;
+  const platinum: UpstreamDescriptor = {
+    ...primary, provider: 'platinum', baseUrl: 'https://platinum.example/v1', apiKey: 'platinum-key',
+    resolvedModel: 'vendor/model', publicProvider: 'kortix',
+  };
+  const LEAK = /platinum|openrouter|coreweave|wafer|vendor\/model|provider_name/i;
   const coreweave429 = JSON.stringify({ error: {
     message: 'Provider returned error', code: 429,
     metadata: { raw: 'vendor/model is temporarily rate-limited upstream. https://openrouter.ai/settings/integrations', provider_name: 'CoreWeave' },
@@ -998,7 +872,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
   async function run(
     respond: (url: string) => Response | Promise<Response>,
     requestBody: Record<string, unknown> = { model: 'requested-model', messages: [{ role: 'user', content: 'hi' }] },
-    candidates: UpstreamDescriptor[] = [morph, openrouter],
+    candidates: UpstreamDescriptor[] = [platinum],
   ) {
     const usage: UsageEvent[] = [];
     const traces: GatewayTrace[] = [];
@@ -1039,9 +913,9 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     const trace = customerVisible;
     expect(JSON.stringify(customerVisible)).not.toMatch(LEAK);
     // Staff-only: server logs and telemetry keep the real upstream.
-    expect(upstream).toEqual({ provider: 'openrouter', model: 'vendor/model' });
+    expect(upstream).toEqual({ provider: 'platinum', model: 'vendor/model' });
     expect(trace.provider).toBe('kortix');
-    expect(trace.candidatesTried).toEqual(['kortix', 'kortix']);
+    expect(trace.candidatesTried).toEqual(['kortix']);
   });
 
   test.each([
@@ -1064,21 +938,19 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
   // Prod 2026-09-30: a long GLM session reached OpenRouter's Decart endpoint,
   // which answered 200 and then an in-band 400. OpenCode read that frame as an
   // UnknownError, so it never compacted and every later turn failed the same
-  // way. Morph rejects the same request with a bare "Invalid request".
+  // way.
   test('a context overflow reported in-band before output reaches the client as HTTP 400 context_length_exceeded', async () => {
     const overflow =
       'data: {"id":"gen-1","model":"vendor/model","provider":"Decart","choices":[],"error":{"code":400,' +
       '"message":"Upstream error from Decart: Requested token count exceeds the model\'s maximum context length of 1048576 tokens."}}\n\n';
     const { response, text, calls } = await runManaged(
-      (url) =>
-        new URL(url).hostname === 'morph.example'
-          ? new Response('{"error":{"message":"Invalid request","type":"invalid_request_error"}}', { status: 400 })
-          : new Response(`: OPENROUTER PROCESSING\n\n${overflow}data: [DONE]\n\n`, {
-              status: 200, headers: { 'content-type': 'text/event-stream' },
-            }),
+      () =>
+        new Response(`: OPENROUTER PROCESSING\n\n${overflow}data: [DONE]\n\n`, {
+          status: 200, headers: { 'content-type': 'text/event-stream' },
+        }),
       { model: 'requested-model', stream: true, messages: [{ role: 'user', content: 'hi' }] },
     );
-    expect(calls).toEqual(['https://morph.example/v1/chat/completions', 'https://openrouter.example/v1/chat/completions']);
+    expect(calls).toEqual(['https://platinum.example/v1/chat/completions']);
     expect(response.status).toBe(400);
     expect(response.headers.get('content-type')).toBe('application/json');
     const body = JSON.parse(text);
@@ -1109,7 +981,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
     expect(body.choices[0].message.content).toBe('ok');
     expect(text).not.toMatch(LEAK);
     expect(usage.map((u) => [u.provider, u.model, u.upstream])).toEqual([
-      ['kortix', 'primary-model', { provider: 'morph', model: 'morph-model' }],
+      ['kortix', 'primary-model', { provider: 'platinum', model: 'vendor/model' }],
     ]);
     expect(traces.at(-1)).toMatchObject({ provider: 'kortix', resolvedModel: 'primary-model' });
   });
@@ -1153,7 +1025,7 @@ describe('managed models present as Kortix (descriptor.publicProvider)', () => {
         controller.close();
       },
     }), { status: 200, headers: { 'content-type': 'text/event-stream' } }),
-    { model: 'requested-model', stream: true, messages: [] }, [openrouter]);
+    { model: 'requested-model', stream: true, messages: [] });
 
     expect(response.status).toBe(200);
     const events = text.trim().split(/\r?\n\r?\n/);
@@ -1388,6 +1260,8 @@ describe('model fallback chains (route.fallbackModels)', () => {
       routeModel: 'primary-model',
       code,
       status: code === 'provider_pool_rate_limited' ? 429 : 401,
+      // The route hold this failure took: the pool's reset (42 s here), else 60 s.
+      holdSeconds: code === 'provider_pool_rate_limited' ? 42 : 60,
     })]);
   });
 
@@ -1882,6 +1756,32 @@ describe('one-call admission (hooks.admit)', () => {
     expect(dispatchedModel).toBe('primary-model');
     // The hold the admit call took is settled with the request.
     expect(usage.at(-1)?.billingHoldUsd).toBe(0.01);
+  });
+
+  test("the host's admission steps land in the trace with the gateway<->API network share", async () => {
+    const traces: GatewayTrace[] = [];
+    const response = await handleChatCompletions({
+      hooks: {
+        ...hooks([], traces),
+        admit: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          return {
+            admission: { ok: true, principal },
+            route: { policyId: 'route', primaryModel: 'primary-model', fallbackModels: [] },
+            upstream: [primary],
+            timing: { principal: 2, tier: 0, budget: 1, authorize: 3, route: 1, resolve: 4, total: 8 },
+          };
+        },
+      },
+      logger,
+      fetchImpl: async () => ok(),
+    }, { authorization: 'Bearer token', rawBody: JSON.stringify({ model: 'requested-model', messages: [] }) });
+    expect(response.status).toBe(200);
+    await response.text();
+    const timing = traces.at(-1)!.metadata.timing as Record<string, number>;
+    expect(timing).toMatchObject({ admit_api_principal_ms: 2, admit_api_resolve_ms: 4, admit_api_total_ms: 8 });
+    expect(timing.admit_net_ms).toBe(timing.admit_ms! - 8);
+    expect(timing.admit_net_ms).toBeGreaterThanOrEqual(20);
   });
 
   test('a null admit answer falls back to the separate hooks', async () => {

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // apps/web has one toast surface: @kortix/ui's toast
-// (packages/ui/src/components/ui/toast.tsx; apps/web/src/components/ui/toast.tsx
+// (packages/ui/src/primitives/toast.tsx; packages/ui/src/primitives/toast.tsx
 // re-exports it). A second
 // wrapper (`src/lib/toast.ts`) re-exported sonner's stock `toast.success/error`,
 // so every caller of it rendered the old, unbranded toast. Only the surface
@@ -13,9 +13,9 @@ import { describe, expect, it } from 'vitest';
 
 const REPO_ROOT = join(import.meta.dirname, '..', '..');
 const WEB = 'apps/web/src';
-const SCOPES = [WEB, 'packages/ui/src', 'apps/whitelabel-demo/src'];
+const SCOPES = [WEB, 'packages/ui/src', 'apps/white-label/lumen/src', 'apps/white-label/reskin/src'];
 const SONNER_ALLOWED = new Set([
-  'packages/ui/src/components/ui/toast.tsx',
+  'packages/ui/src/primitives/toast.tsx',
   'apps/web/src/app/[locale]/layout.tsx',
 ]);
 const BANNED_IMPORT = /from\s+['"](sonner|@\/lib\/toast)['"]/;

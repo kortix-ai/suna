@@ -1,7 +1,7 @@
 'use client';
 
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 // SCIM provisioning card on the Settings tab. Two things:
 //   1. Surface the per-account SCIM base URL the IdP needs to configure.
@@ -11,10 +11,10 @@ import { useTranslations } from '@/i18n/use-translations';
 // the public prefix. There is no "regenerate" — you revoke and mint a new
 // one, which matches how Okta/Azure AD admins expect to operate.
 
-import { errorToast, successToast } from '@/components/ui/toast';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { getEnv } from '@/lib/env-config';
 import { buildScimBaseUrl, isAbsoluteHttpUrl } from '@/lib/scim-url';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { listAccountMembers } from '@kortix/sdk';
 import {
   CheckIcon as Check,
@@ -29,15 +29,15 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import { Disclosure, DisclosureContent, DisclosureTrigger } from '@kortix/ui/disclosure';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -46,12 +46,12 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import { SCIM_PROVIDER_GUIDES } from '@/features/sso-setup/guides';
-import { CopyRow, formatRelative } from '@/features/workspace/shared/access';
+import { CopyRow, formatRelative } from '@kortix/ui/access/access/index';
 import {
   type CreatedScimToken,
   type ScimToken,

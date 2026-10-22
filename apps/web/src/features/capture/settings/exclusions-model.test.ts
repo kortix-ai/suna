@@ -17,21 +17,21 @@ const PRIVACY: CapturePolicy['privacy'] = {
 describe('the organization policy', () => {
   test('every category and the mandatory lists, nothing locked', () => {
     const view = fromPolicy(PRIVACY, LABEL);
-    expect(view.groups.map((group) => [group.id, group.enabled, group.locked])).toEqual([
-      ['password_managers', true, false],
-      ['messaging', false, false],
-      ['banking', false, false],
+    expect(view.groups.map((group) => [group.id, group.enabled])).toEqual([
+      ['password_managers', true],
+      ['messaging', false],
+      ['banking', false],
     ]);
     expect(view.groups[0]?.name).toBe('name:password_managers');
     const apps = exclusionLists(view, 'apps', '');
     expect(apps.categories).toHaveLength(3);
     expect(apps.excluded).toEqual([
-      { id: 'com.example.hr', name: 'com.example.hr', locked: false },
+      { id: 'com.example.hr', name: 'com.example.hr' },
     ]);
     expect(exclusionLists(view, 'websites', '').excluded.map((row) => row.id)).toEqual([
       'payroll.example',
     ]);
-    expect(view.privateBrowsing).toEqual({ excluded: true, locked: false });
+    expect(view.privateBrowsing).toEqual({ excluded: true });
   });
 
   test('applyToPrivacy adds and removes each kind without duplicates or mutation', () => {
@@ -74,8 +74,8 @@ describe('the organization policy', () => {
     });
     expect(includedView(withSite)).toEqual({
       on: true,
-      apps: [{ id: 'com.tinyspeck.slackmacgap', name: 'com.tinyspeck.slackmacgap', locked: false }],
-      domains: [{ id: 'github.com', name: 'github.com', locked: false }],
+      apps: [{ id: 'com.tinyspeck.slackmacgap', name: 'com.tinyspeck.slackmacgap' }],
+      domains: [{ id: 'github.com', name: 'github.com' }],
     });
     expect(
       applyToPrivacy(withSite, { kind: 'include-domain', id: 'github.com', on: false })

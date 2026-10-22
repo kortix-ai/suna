@@ -289,12 +289,12 @@ Kortix stops a sandbox when nothing keeps it awake. Each event below keeps the s
 | The agent makes an LLM call through the gateway | 4 hours |
 | A person uses a preview port | 30 minutes after the last request |
 | A turn waits on a person | 2 hours. 30 minutes for `trigger`, `schedule`, and `system` sessions. |
-| A person has the session page open | 15 minutes, renewed while the tab is visible and the person clicked, typed, scrolled, or touched it in the last 10 minutes. At most 2 hours after the last turn. |
+| A person has the session page open | No extra time. The sandbox stops 15 minutes after the last turn whether a page is open or not. The page holds the sandbox to that window when a shorter deadline was set (after a failed turn, say), and its presence routes notifications. |
 
 - The stop check runs about every 5 minutes. An idle session stops about 15 to 20 minutes after its last turn.
-- An open page counts only for a person who may start sessions in the project. A read-only viewer's tab never keeps a sandbox awake.
-- Above the composer, a line shows how much longer the open page can keep the sandbox awake. Within 15 minutes of the 2-hour page limit, the line shows when the sandbox stops instead. The line is hidden while a turn runs. It is also hidden while another event in the table, such as preview port use, keeps the sandbox awake past the page limit.
-- A new message starts a turn and resets the 2-hour page limit.
+- Above the composer, a line shows when the sandbox stops: 15 minutes after the last turn, unless another event in the table keeps it awake longer. The line is hidden while a turn runs.
+- A new message starts a turn and moves that window to the new turn.
+- An open page counts only for a person who may start sessions in the project. A read-only viewer's tab never keeps a sandbox awake. An open page never keeps the sandbox past the window: the next interaction resumes it in place instead.
 - Other requests a sandbox makes itself, with its own token or its own `kortix` CLI, never keep it awake. Only its LLM calls through the gateway count.
 
 Self-hosted operators change these times. See [Self-hosting](/docs/host#operate-and-tune).
@@ -428,7 +428,7 @@ A warm session is a pre-booted session that waits for your first prompt, so the 
 
 - A warm session waits at most 60 minutes.
 - It uses compute while it waits.
-- The per-project `warm_sessions` flag controls it. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
+- The per-project `warm_sessions` flag is off by default. Turn it on only if you want to spend idle compute for faster starts. Run `kortix projects features ls` to see its state, and change it in **Customize → Settings → Feature flags**.
 
 ```bash
 kortix sessions warm                        # create or reuse your warm session

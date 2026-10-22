@@ -10,6 +10,7 @@ import { opencodeSessionInFlight } from './opencode-turn-state'
 import { readOpenCodeSessionPin } from './runtime-state'
 import type { OpenCodeConfig as Config } from './config'
 import type { Opencode } from './lifecycle'
+import { runOnIdleHook } from '../shared/on-idle-hook'
 
 // Relay a turn ending (opencode `session.idle` / `session.error`) for the ROOT
 const relayedTurnSignatures = new Set<string>()
@@ -235,6 +236,7 @@ export async function relayTurnEndToApi(
         // later observation of the same completed turn is a safe no-op to skip.
         if (dedupSig) relayedTurnSignatures.add(dedupSig)
         if (data?.ok) logger.info('[opencode-events] turn end relayed', { status: effectiveStatus, errorName: error?.name, opencodeSessionId, attempt })
+        runOnIdleHook({ status: effectiveStatus, messageId: turn.parentMessageId ?? null })
         return
       }
       const bodyText = await res.text().catch(() => '')

@@ -1,3 +1,4 @@
+import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from './shared/repository-health';
 import type { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { OpenAPIHono } from '@hono/zod-openapi';
@@ -26,7 +27,7 @@ import {
   CONNECTORS_PROVIDER_UNAVAILABLE_CODE,
   isComposioTransientProviderError,
 } from './shared/composio-transient';
-import { isPlatinumSandboxNotRunningError } from './shared/platinum';
+import { isPlatinumSandboxNotRunningError, PlatinumExecOutcomeUnknownError } from './shared/platinum';
 
 // The typed branch handlers keep every ladder branch verbatim (comment,
 // predicate, body); the dispatcher below calls them in the original ladder
@@ -479,6 +480,19 @@ function handleSecretUndecryptable(err: Error, c: Context, method: string, path:
   return c.json({ error: err.message, code: 'SECRET_UNDECRYPTABLE' }, 409);
 }
 
+function handleRepositoryDisconnected(err: Error, c: Context): Response | null {
+  // The project's GitHub repository cannot be reached until a person acts
+  // (reinstall the App, re-grant the repo): a 409 with the cause and the fix,
+  // never the transient 503 a failed clone would become. No log line here: the
+  // state change was logged once where it was classified (KRTX-2952..2955).
+  let cause: unknown = err;
+  for (let depth = 0; cause && depth < 5; depth++) {
+    if (isRepositoryDisconnectedError(cause)) return c.json(repositoryDisconnectedBody(cause), 409);
+    cause = (cause as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
 // The dispatcher keeps the original head of the onError callback; each branch
 // below it was extracted whole into the typed handler above it.
 function handleUnhandledError(err: Error, c: Context): Response {
@@ -515,10 +529,17 @@ function handleUnhandledError(err: Error, c: Context): Response {
   }
   const abort = handleSandboxProxyAbort(err, c, errName, path);
   if (abort) return abort;
+  if (err instanceof PlatinumExecOutcomeUnknownError) {
+    // Preserve ambiguity without a retry hint: the provider may have executed the write.
+    appLogger.warn('Sandbox exec outcome unknown after provider timeout', { method, path, status: 504 });
+    return c.json({ error: true, code: 'sandbox_exec_outcome_unknown', message: err.message, status: 504 }, 504);
+  }
   const platinum = handlePlatinumSandboxNotRunning(err, c, method, path);
   if (platinum) return platinum;
   const daytonaRateLimited = handleDaytonaRateLimit(err, c, method, path);
   if (daytonaRateLimited) return daytonaRateLimited;
+  const disconnected = handleRepositoryDisconnected(err, c);
+  if (disconnected) return disconnected;
   const gitUnavailable = handleTransientGitMirrorFailure(err, c, method, path);
   if (gitUnavailable) return gitUnavailable;
   const pushRejected = handlePushPolicyRejection(err, c, method);

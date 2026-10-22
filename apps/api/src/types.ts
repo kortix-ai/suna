@@ -163,11 +163,16 @@ export interface AccountAccessGrace {
 }
 
 export interface AccountStateResponse {
+  /** Account entitlement, not project readiness: BYOK still requires a connected key. */
+  model_access: { managed: boolean; requires_provider_key: boolean };
   credits: {
     total: number;
     daily: number;
     monthly: number;
+    /** Next scheduled reset of the expiring credit bucket. */
+    expires_at?: string | null;
     extra: number;
+    /** Wallet admission only. Project model availability is resolved by /model-picker. */
     can_run: boolean;
     /** Lifetime rollups derived from credit_ledger (see the
      *  apply_credit_ledger_lifetime_rollup trigger). Reporting figures only —

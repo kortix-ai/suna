@@ -318,6 +318,9 @@ async function handleUpstreamFailureStatus(
           `${PROXY_HOP_HEADER}, ${PROXY_UPSTREAM_STATUS_HEADER}`,
         );
       }
+      // The answer is built from the clone; release the original, or its
+      // unread body pins the upstream connection until GC (KRTX-2803).
+      await upstream.body?.cancel().catch(() => {});
       return new Response(bodyText, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -342,6 +345,7 @@ async function handleUpstreamFailureStatus(
         `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
       );
       invalidatePreviewLink(sandboxId, port);
+      await upstream.body?.cancel().catch(() => {});
       await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
       return 'retry';
     }
@@ -351,6 +355,7 @@ async function handleUpstreamFailureStatus(
     if (!nonReplayableWrite && isBrowserNavigation(incomingHeaders)) {
       void markSandboxUsed(sandboxId);
       ptl.log({ path: remainingPath, port, upstream_status: upstream.status });
+      await upstream.body?.cancel().catch(() => {});
       return portUnreachableResponse({
         port,
         status: upstream.status,

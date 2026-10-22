@@ -27,6 +27,17 @@ account buys, and which features it may use.
 6. **Never lock people out.** When a license ends, SSO and SCIM stay on for a
    14-day grace.
 
+## Billing request budget
+
+After account membership and `billing.write` authorization, interactive billing
+operations share a per-account token bucket: five requests per minute per API
+process, including portal/setup requests. Plan previews use a separate
+per-account bucket with the same limit, so browsing upgrade amounts cannot
+consume the confirmation budget. Excess requests
+return HTTP 429 with `Retry-After` before calling Stripe. Billing reads and
+signed webhooks are not charged to this budget. This bounds runaway callers;
+it is not a fleet-wide quota and does not retry failed money operations.
+
 ## Billing plan
 
 | | Free | Credits |
@@ -41,6 +52,19 @@ resolve to `credits`). Stripe owns it. `tier='enterprise'` no longer exists.
 
 Compute is billed at Platinum's list rates at 1× on every plan
 (`platform/providers/compute-rates.ts`).
+
+Members are unlimited and share the account credit pool. The Plan and account
+hub billing panes show the existing account member count alongside an unlimited
+allowance; there is no paid-seat denominator.
+
+## Wallet warning
+
+The sidebar warns while an account can run when its USD wallet falls below
+the smaller of $5 and 10% of its positive recurring monthly grant. The
+account-state API exposes that grant in USD as `tier.monthly_credits`.
+Responses without a positive recurring grant use the existing lifetime-funded
+threshold (20% of grants plus purchases, capped at $5); absent funding uses $5. Blocked wallets
+continue to use `billing_state`, independently of this soft warning.
 
 ## Enterprise
 
@@ -149,3 +173,28 @@ trial: null; // deprecated: trials are removed
 ```
 
 Every timestamp is ISO 8601. `plan` is the billing plan.
+
+## Subscription reconciliation
+
+`POST /v1/billing/sync-subscription` returns 404 when the stored subscription
+is absent from the current Stripe account. It leaves the local plan, credits,
+and subscription mapping unchanged. A missing remote object does not prove
+that the account lost its paid entitlement. Transient Stripe failures propagate.
+
+### Credit reset visibility
+
+Account state exposes `credits.expires_at`, the scheduled `next_credit_grant`
+reset timestamp, or null for an unknown legacy schedule. Balance cards show
+that date beside remaining plan credits. The ledger shows each grant's own
+`expires_at` when recorded, never a current account schedule substituted for
+a historical grant. New free welcome grants record their scheduled reset date.
+
+## Wallet admission and model access
+
+`credits.can_run` and `billing_state` describe wallet admission, not model
+readiness. A funded Free account can pay for compute while it uses BYOK.
+`model_access.managed` reports resolved managed-model access;
+`model_access.requires_provider_key` is true when that access is absent.
+The project/principal-scoped `/model-picker` catalog is the source of truth
+for executable models. A gateway trigger with no enabled model returns
+`402 no_usable_model`; credits alone never unlock managed inference.

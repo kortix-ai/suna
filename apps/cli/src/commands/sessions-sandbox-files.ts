@@ -118,7 +118,7 @@ export async function runSessionsFiles(argv: string[]): Promise<number> {
 
   const opts: CtxOpts = { projectArg, hostArg };
   const resolved = await loadSessionForChat(sessionId, opts, 'sessions files', {
-    requireRunning: false,
+    onNotRunning: 'ignore',
   });
   if (!resolved) return 1;
   const auth: Auth = resolved.auth;

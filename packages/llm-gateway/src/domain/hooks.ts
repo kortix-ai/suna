@@ -32,6 +32,8 @@ export interface AdmitResult {
   route?: ModelRoutePlan | null;
   upstream?: UpstreamDescriptor[] | Error;
   billing?: { holdUsd?: number } | Error;
+  /** Milliseconds the host spent per admission step (internal latency split). */
+  timing?: Record<string, number>;
 }
 
 export interface GatewayHooks {

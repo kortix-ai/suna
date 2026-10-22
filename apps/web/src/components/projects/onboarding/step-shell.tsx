@@ -4,7 +4,6 @@
  * The shared shapes onboarding is allowed to draw.
  *
  * Every step renders inside `StepShell`. Survey choices use `SelectionRow`.
- * Actions use `ActionRow`.
  *
  * Adding an eighth step must never require inventing new chrome.
  */
@@ -12,9 +11,9 @@
 import { useTranslations } from '@/i18n/use-translations';
 import { createContext, useContext, useId, type ReactNode } from 'react';
 
-import { Button } from '@/components/ui/button';
-import { RadioGroupItem } from '@/components/ui/radio-group';
-import { cn } from '@/lib/utils';
+import { Button } from '@kortix/ui/button';
+import { RadioGroupItem } from '@kortix/ui/radio-group';
+import { cn } from '@kortix/ui';
 
 const StepIdentityContext = createContext<string | null>(null);
 
@@ -195,54 +194,5 @@ export function SelectionRow({
       </span>
       <RadioGroupItem id={id} value={value} disabled={disabled} />
     </label>
-  );
-}
-
-export function ActionRow({
-  label,
-  description,
-  leading,
-  trailing,
-  active,
-  disabled,
-  onSelect,
-  onPreload,
-  'aria-label': ariaLabel,
-  'aria-describedby': ariaDescribedBy,
-  className,
-}: {
-  label: string;
-  description?: string;
-  leading?: ReactNode;
-  trailing?: ReactNode;
-  active?: boolean;
-  disabled?: boolean;
-  onSelect: () => void;
-  onPreload?: () => void;
-  'aria-label'?: string;
-  'aria-describedby'?: string;
-  className?: string;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      aria-pressed={active === undefined ? undefined : active}
-      aria-label={ariaLabel}
-      aria-describedby={ariaDescribedBy}
-      onClick={onSelect}
-      onPointerEnter={onPreload}
-      onFocus={onPreload}
-      className={cn(rowClassName, active && 'border-primary/40 bg-primary/[0.05]', className)}
-    >
-      <span className="flex size-5 shrink-0 items-center justify-center">{leading}</span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-medium">{label}</span>
-        {description && (
-          <span className="text-muted-foreground block text-xs text-pretty">{description}</span>
-        )}
-      </span>
-      {trailing && <span className="shrink-0">{trailing}</span>}
-    </button>
   );
 }

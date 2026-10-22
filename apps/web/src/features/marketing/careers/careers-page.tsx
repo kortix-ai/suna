@@ -6,11 +6,11 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-} from '@/components/ui/accordion';
+} from '@kortix/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
 import { ArrowRightIcon } from '@/features/icon/arrow-right';
 import SectionHeader from '@/features/marketing/component/section-header';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { useState, type ReactNode } from 'react';

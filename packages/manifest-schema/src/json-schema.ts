@@ -501,6 +501,8 @@ function triggerSchema(version: 1 | 2): JsonSchemaFragment {
       // in a UTC day (KRTX-1721).
       max_runs_per_hour: { type: 'integer', minimum: 1 },
       max_runs_per_day: { type: 'integer', minimum: 1 },
+      // Fresh session mode only: skip holds a fire while the previous run is active (KRTX-1721).
+      overlap: { type: 'string', enum: ['skip', 'allow'] },
       secret_env: { type: 'string', pattern: ENV_NAME_PATTERN },
       secretEnv: { type: 'string', pattern: ENV_NAME_PATTERN },
       // `type: monitor` only — the repo command the platform supervises 24/7,
@@ -1281,6 +1283,17 @@ export function buildManifestV3Schema(): JsonSchemaFragment {
       },
       policy: { type: 'object' },
       policies: { type: 'array' },
+      approvals: {
+        type: 'object',
+        properties: {
+          ttl: {
+            type: 'string',
+            pattern: '^[0-9]+[mhd]$',
+            description: 'How long a held connector call waits for a decision: `30m`, `4h`, `7d`. Clamped to 5m..30d. Default 24h.',
+          },
+        },
+        additionalProperties: false,
+      },
       agents: {
         type: 'object',
         minProperties: 1,

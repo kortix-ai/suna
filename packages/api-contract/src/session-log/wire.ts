@@ -26,9 +26,12 @@
  *
  * Read (P4.2): `GET /v1/projects/:p/sessions/:s/log?thread=<thread_id>&before_seq=<n>&limit=<n>`,
  * the caller's session read permission, the transcript route's gate (a session-bound token included).
- * It reads Postgres only, never the box, and is served whether or not the `session_log` flag is
- * on. 200 `SessionLogPage`: one page of one thread. 404 when the session has no stored log, or when
- * `thread` is not one of its threads.
+ * It reads Postgres only, never the box. 200 `SessionLogPage`: one page of one thread. 404 `{ error,
+ * code: 'session_log_missing' }` when the session has no stored log yet (a client stays on the log;
+ * an API without this route answers 404 with no code), and 404 when `thread` is not one of its threads. A session whose history is
+ * only in the old v1 mirror is converted to the log first (P8.2); 503 `{ error, code:
+ * 'session_log_converting' }` with `Retry-After: 60` when that history is over the conversion size
+ * cap and the backfill has not converted it yet.
  *
  * Restore (P6.1): `POST /v1/projects/:p/sessions/:s/log/restore`, sandbox token only, no body.
  * The daemon of a fresh box calls it once, before its harness starts. It claims the session:
@@ -175,8 +178,8 @@ export const SessionLogSwitchPreflightSchema = z.object({
   to: SessionLogHarnessSchema,
   /** False when the switch cannot happen; `reason` says why. */
   available: z.boolean(),
-  /** `same_harness`: the log already runs on `to`. `llm_gateway_off`: pi needs the project's `llm_gateway` flag. */
-  reason: z.enum(['same_harness', 'llm_gateway_off']).nullable(),
+  /** `same_harness`: the log already runs on `to`. */
+  reason: z.enum(['same_harness']).nullable(),
   /** The new box restores the log (`session_log_restore` on, the log under the restore cap). False: it starts without the conversation (`losses` begins with `history`). */
   restores: z.boolean(),
   /** What the session uses that `to` handles worse, with counts. */

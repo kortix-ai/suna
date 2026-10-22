@@ -1,8 +1,8 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import { AppleCursor } from '@/features/icon/icons/apple-cursor';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 import { CheckCircleIcon, CheckIcon, GitPullRequestIcon, XCircleIcon } from '@phosphor-icons/react';
 import { AnimatePresence, m, useReducedMotion, type Transition } from 'motion/react';
 import { useTranslations } from '@/i18n/use-translations';

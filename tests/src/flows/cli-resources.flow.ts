@@ -413,6 +413,85 @@ flow(
 );
 
 /**
+ * CLI-SESS-RM — `kortix sessions rm <id>` WITHOUT `--project` (KRTX-2818). The
+ * CLI has no linked project, so it locates the session by scanning every
+ * account's projects. The contract: it deletes exactly the named session, or
+ * fails with no side effect. A sibling session in the same project, and one in
+ * a team project, are read back after every step. Local profile: database
+ * sessions, no sandbox.
+ */
+flow(
+  'CLI-SESS-RM',
+  {
+    domain: 'cli',
+    requires: ['database'],
+    routes: [
+      'GET /v1/accounts/me',
+      'GET /v1/projects',
+      'GET /v1/projects/:projectId/sessions/:sessionId',
+      'DELETE /v1/projects/:projectId/sessions/:sessionId',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const team = await ctx.fixtures.team();
+    const teamProject = await team.project();
+    if (!project.accountId || !teamProject.accountId) throw new Error('CLI-SESS-RM fixture project is missing accountId');
+    const session = (target: { id: string; accountId?: string }) =>
+      createDatabaseSession(ctx.env, { projectId: target.id, accountId: target.accountId!, userId: ctx.P.OWNER.userId! });
+    const named = await session(project);
+    const sibling = await session(project);
+    const teamSession = await session(teamProject);
+    ctx.track('session', named, { projectId: project.id });
+    ctx.track('session', sibling, { projectId: project.id });
+    ctx.track('session', teamSession, { projectId: teamProject.id });
+    const status = async (projectId: string, sessionId: string) =>
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/sessions/:sessionId', { params: { projectId, sessionId } })).statusCode;
+    const requireLive = async (label: string, projectId: string, sessionId: string) => {
+      const code = await status(projectId, sessionId);
+      if (code !== 200) throw new Error(`${label} ${sessionId} read back ${code}, expected 200`);
+    };
+    const sandbox = await authenticatedCli(ctx, 'sessions-rm');
+    try {
+      await ctx.step('rm <unknown id> exits 1 naming the id; no session is deleted', async () => {
+        const unknown = crypto.randomUUID();
+        const result = await sandbox.run(['sessions', 'rm', unknown], { timeoutMs: 120_000 });
+        requireExit(result, 1, 'kortix sessions rm <unknown id>');
+        if (!result.stderr.includes(`Session ${unknown} not found`)) throw new Error(`rm <unknown id> stderr: ${result.stderr}`);
+        await requireLive('the named session', project.id, named);
+        await requireLive('the sibling session', project.id, sibling);
+        await requireLive('the team session', teamProject.id, teamSession);
+      });
+
+      await ctx.step('rm <id> with no project linked finds the session and deletes exactly it', async () => {
+        const result = await sandbox.run(['sessions', 'rm', named, '--json'], { timeoutMs: 120_000 });
+        const [row] = parseJson<Array<{ session_id: string; project_id: string; deleted: boolean }>>(result, 'kortix sessions rm <id>');
+        if (row?.session_id !== named || row.project_id !== project.id || !row.deleted) {
+          throw new Error(`rm <id> --json: ${result.stdout}`);
+        }
+        const gone = await status(project.id, named);
+        if (gone !== 404) throw new Error(`the named session read back ${gone} after rm, expected 404`);
+        await requireLive('the sibling session', project.id, sibling);
+        await requireLive('the team session', teamProject.id, teamSession);
+      });
+
+      await ctx.step('rm <id> of a team-account session found by the cross-account scan deletes exactly it', async () => {
+        const result = await sandbox.run(['sessions', 'rm', teamSession, '--json'], { timeoutMs: 120_000 });
+        const [row] = parseJson<Array<{ session_id: string; project_id: string; deleted: boolean }>>(result, 'kortix sessions rm <team id>');
+        if (row?.session_id !== teamSession || row.project_id !== teamProject.id || !row.deleted) {
+          throw new Error(`rm <team id> --json: ${result.stdout}`);
+        }
+        const gone = await status(teamProject.id, teamSession);
+        if (gone !== 404) throw new Error(`the team session read back ${gone} after rm, expected 404`);
+        await requireLive('the sibling session', project.id, sibling);
+      });
+    } finally {
+      sandbox.dispose();
+    }
+  },
+);
+
+/**
  * CLI-SESS-RECOVER — `kortix sessions recover` through the real CLI process
  * (KRTX-2419). The session is lost: its sandbox row is `stopped` with
  * `runtimeIdentityState: 'unavailable'`, and the provider removal is a row
@@ -624,3 +703,58 @@ flow(
     }
   },
 );
+
+flow('CLI-ROLE-CHANGE', { domain: 'cli', routes: [
+  'POST /v1/accounts/:accountId/iam/assignments', 'GET /v1/projects/:projectId/access',
+] }, async (ctx) => {
+  const team = await ctx.fixtures.team();
+  const project = await team.project();
+  const member = await team.addMember('member');
+  const sandbox = await authenticatedCli(ctx, 'role-change');
+  if (!member.userId) throw new Error('fixture member has no user identity');
+  const userId = member.userId;
+  try {
+    for (const role of ['manager', 'member']) {
+      await ctx.step(`grant --user ${role} replaces the previous project role`, async () => {
+        requireExit(await sandbox.run(['access', 'grant', '--user', userId,
+          '--role', role, '--project', project.id, '--json']), 0, 'access grant');
+        const listing = parseJson<{ members: Array<{ user_id: string; effective_project_role: string }> }>(
+          await sandbox.run(['access', 'ls', '--project', project.id, '--json']), 'access ls');
+        if (listing.members.find((item) => item.user_id === member.userId)?.effective_project_role !== role) {
+          throw new Error('effective project role did not match the successful grant');
+        }
+      });
+    }
+  } finally { sandbox.dispose(); }
+});
+
+flow('CLI-MODEL-CATALOG', {
+  domain: 'cli',
+  routes: ['GET /v1/projects/:projectId/model-picker'],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project();
+  const sandbox = await authenticatedCli(ctx, 'model-catalog');
+  try {
+    await ctx.step('a fresh project discovers unavailable ids through JSON and terminal output', async () => {
+      const args = ['models', 'ls', '--project', project.id];
+      const payload = parseJson<{
+        models: Record<string, unknown>;
+        catalog: Record<string, { availability: string }>;
+      }>(await sandbox.run([...args, '--json']), 'models ls --json');
+      const entries = Object.entries(payload.catalog);
+      if (!entries.length) throw new Error('fresh project has no discoverable catalog ids');
+      const output = await sandbox.run(args);
+      requireExit(output, 0, 'models ls');
+      for (const [id, metadata] of entries) {
+        if (id in payload.models) throw new Error('unavailable id leaked into runnable picker');
+        if (!['plan', 'login', 'provider'].includes(metadata.availability)) {
+          throw new Error(`missing availability for ${id}`);
+        }
+        if (!output.stdout.includes(id)) throw new Error(`terminal omitted catalog id ${id}`);
+      }
+      if (!output.stdout.includes('Unavailable catalog ids')) throw new Error('availability section missing');
+    });
+  } finally {
+    sandbox.dispose();
+  }
+});

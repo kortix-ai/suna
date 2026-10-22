@@ -1252,6 +1252,9 @@
     "expiredBody": "Demandez à la personne qui vous a invité d'en envoyer une nouvelle.",
     "wrongAccountTitle": "Changer de compte",
     "wrongAccountBody": "Cette invitation est adressée à un autre compte. Vous êtes connecté en tant que {{email}}.",
+    "directoryTitle": "Se connecter avec l'authentification unique",
+    "directoryBody": "L'annuaire de votre organisation vous a ajouté à ce compte. Ouvrez cette invitation dans un navigateur et connectez-vous avec l'authentification unique de votre organisation, ou demandez à un administrateur du compte de renvoyer l'invitation.",
+    "ssoDomainUnverifiedBody": "Votre fournisseur d'authentification unique n'a pas vérifié le domaine de cette adresse e-mail. Déconnectez-vous et reconnectez-vous avec votre adresse e-mail pour utiliser cette invitation.",
     "signOutAndContinue": "Se déconnecter et continuer",
     "backToProjects": "Retour aux projets"
   },

@@ -1,4 +1,4 @@
-/* Kortix kit: the @/components/ui primitives as plain CSS classes, for HTML outside apps/web
+/* Kortix kit: the @kortix/ui primitives as plain CSS classes, for HTML outside apps/web
    (Kortix Apps, internal dashboards, debug pages). Hand-written. Every value is a tokens.css variable.
    Load order: fonts.css (Kortix-owned surfaces only), tokens.css, kit.css.
    Class names start with `k-`. Each block names the component it mirrors.

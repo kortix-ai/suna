@@ -3,37 +3,46 @@ title: Kortix UI
 description: "@kortix/ui: the Kortix React components and the session chat, themed by CSS variables, for your own app."
 ---
 
-`@kortix/ui` is the React component library that the Kortix web app renders. The same package serves Kortix Apps, white-label hosts and your own app, so a button, a modal or a chat thread looks and behaves the same everywhere. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them by overriding the variables, never by copying a component.
-
-<Callout type="warning">
-`@kortix/ui` is not on npm yet. Today it is a workspace package of the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository: inside that repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies. This page describes the package as it ships there.
-</Callout>
+`@kortix/ui` is the React component library that the Kortix web app renders, and the whole Kortix session experience as modules: the session workspace (thread plus side panel), the composer, files and the file viewer, the terminal, the project home and the session list. The same package serves Kortix Apps, white-label hosts and your own app, so a button, a chat thread or a session screen looks and behaves the same everywhere. Components are Tailwind CSS v4 class strings that read CSS variables. You re-theme them with a typed theme (`@kortix/ui/theme`) or by overriding the variables, never by copying a component.
 
 ## Install
 
+```bash
+npm i @kortix/ui @kortix/sdk
+```
+
+`@kortix/ui` and `@kortix/sdk` carry the Kortix release version. Install the same version of each. The module entries (`@kortix/ui/session`, `/workspace`, `/theme` and the others in [Modules](#modules)) ship from 0.14.4. 0.14.3 has the root, the component subpaths and the stylesheets. Inside the [kortix-ai/suna](https://github.com/kortix-ai/suna) repository, add `"@kortix/ui": "workspace:*"` to your package's dependencies instead.
+
 | Import | Holds |
 | --- | --- |
-| `@kortix/ui` | The light core: `cn`, `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `defaultChatStrings`, `useIsDark`, and the primitives `Button`, `Badge`, `Card`, `Input`, `Textarea`, `Label`, `Checkbox`, `Switch`, `Select`, `Modal`, `Hint`, `Popover`, `DropdownMenu`, `Tabs`, `Separator`, `Skeleton`, `Bubble`, `Message`, `Marker` with their parts, plus `FilterBar` / `FilterBarItem` (the pill row of `tabs`). It also exports `Dialog` and `Tooltip`, the primitives `Modal` and `Hint` build on; they are marked `@deprecated` for feature code. |
+| `@kortix/ui` | The light core: `cn`, `UiProvider`, `useUiStrings`, `useUiLink`, `useUiBrand`, `defaultUiStrings`, `useIsDark`, and the primitives `Button`, `Badge`, `Card`, `Input`, `Textarea`, `Label`, `Checkbox`, `Switch`, `Select`, `Modal`, `Hint`, `Popover`, `DropdownMenu`, `Tabs`, `Separator`, `Skeleton`, `Bubble`, `Message`, `Marker` with their parts, plus `FilterBar` / `FilterBarItem` (the pill row of `tabs`). It also exports `Dialog` and `Tooltip`, the primitives `Modal` and `Hint` build on; they are marked `@deprecated` for feature code. |
 | `@kortix/ui/<component>` | One component file, for example `@kortix/ui/modal` or `@kortix/ui/dot-matrix/session-dot-matrix`. Heavy components (charts, maps, data grids, diagrams, the emoji picker) load only from their own subpath. |
-| `@kortix/ui/chat` | The session chat: `SessionThread` and its parts. It needs `@kortix/sdk` and its React peers. |
-| `@kortix/ui/lib/<name>`, `/hooks/<name>`, `/icons/<name>` | The helpers the components use, such as `@kortix/ui/lib/utils` and `@kortix/ui/hooks/use-mobile`. |
+| `@kortix/ui/session` | The session thread: `SessionThread`, its building blocks, `ModelSelector` and `AgentSelector`. It needs `@kortix/sdk` and its React peers. |
+| `@kortix/ui/<module>` | One curated entry per module: `workspace`, `composer`, `session-panel`, `files`, `file-viewer`, `markdown`, `genui`, `diff`, `changes`, `terminal`, `browser`, `apps`, `access`, `customize`, `icons`, `i18n`. See [Modules](#modules). |
+| `@kortix/ui/theme` | The typed theme: `KortixTheme`, `themeToCss`, `themeToCssVars`, `ThemeScope`. See [Theming](#theming). |
+| `@kortix/ui` (helpers) | The helpers the components use come from the root too: `cn`, `useIsMobile`, `useDebounce`, `lazyClient`, `setUiTelemetry`, `setUiHostEnv`, `setUiRoutes` (the URL of every page the components link to; see [Routes](#routes)). |
 | `@kortix/ui/tailwind.css`, `/tokens.css`, `/theme.css`, `/styles.css`, `/fonts.css` | The stylesheets. Load them as the next section says. |
 
-`react` and `react-dom` 18 or later are peer dependencies. Install the rest by what you use:
+`react` and `react-dom` 19 are peer dependencies (the PowerPoint preview needs React 19.2.7 or later). Install the rest by what you use:
 
 | You use | Also install |
 | --- | --- |
 | `@kortix/ui/tailwind.css` (a Tailwind v4 host) | `tw-animate-css`, `tailwind-scrollbar`, `tailwind-scrollbar-hide` (optional peers: a host without Tailwind never installs Tailwind) |
-| `@kortix/ui/chat`, any part of it | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
+| `@kortix/ui/session`, or any module entry that renders project or session data | `@kortix/sdk` and `@tanstack/react-query` 5, plus one `QueryClientProvider` ([React setup of the SDK](/docs/sdk/react#set-up)). Without `@tanstack/react-query`, the bundler fails on an import inside `@kortix/sdk/react`. |
+| The session thread (it renders [generative UI](/docs/sdk/genui) blocks) | `@openuidev/lang-core@0.3.1` and `zod`, the optional `@kortix/sdk` peers of `@kortix/sdk/genui`. Without them, `vite build` fails with `Missing export` in `@kortix/sdk/dist/genui`. |
 
-After the first npm release:
+The full install for a session host:
 
 ```bash
-npm i @kortix/ui @kortix/sdk @tanstack/react-query
+npm i @kortix/ui @kortix/sdk @tanstack/react-query @openuidev/lang-core@0.3.1 zod @phosphor-icons/react@2.1.10 react@19 react-dom@19
 ```
 
 <Callout type="info">
-With React 19, npm prints `ERESOLVE overriding peer dependency` warnings for `cmdk@0.2.1`, which declares a React 18 peer. The install succeeds and `Command` works on React 19. A host with `strict-peer-dependencies` must allow `cmdk`'s React peer.
+Name `react@19 react-dom@19` in the install. `@phosphor-icons/react@2.1.10` is the icon set the samples below import: pin the version `@kortix/ui` uses, so the host and the components share one copy and `IconProvider` reaches your icons too. Under pnpm a transitive copy does not resolve from your code. An unversioned `react` lets npm pick React 18 for `cmdk@0.2.1`'s React 18 peer, and the install then does not finish. `Command` works on React 19. A host with `strict-peer-dependencies` must allow `cmdk`'s React peer.
+</Callout>
+
+<Callout type="info">
+Server rendering: the entries that render sessions or files (`session`, `composer`, `session-panel`, `workspace`, `files`, `file-viewer`, `markdown`, `genui`, `customize`) import CSS (KaTeX and others) from JS, so plain Node cannot evaluate them (`ERR_UNKNOWN_FILE_EXTENSION ".css"`). A Vite SSR host adds `ssr: { noExternal: ['@kortix/ui'] }`. A Next.js host lists `@kortix/ui` in `transpilePackages`. Or load those blocks on the client only (`lazyClient`). The root, `theme`, `i18n`, `icons`, `diff`, `changes`, `terminal`, `browser`, `apps` and `access` entries evaluate in Node.
 </Callout>
 
 ## Add the styles
@@ -91,8 +100,8 @@ import { IconProvider } from '@kortix/ui/icon-provider';
 import { Toaster } from '@kortix/ui/toast';
 import { Link } from 'react-router-dom';
 
-// Any router: `UiProvider` passes anchor props with `href`.
-const RouterLink: UiLinkComponent = ({ href = '', ...props }) => <Link to={href} {...props} />;
+// Any router: `UiProvider` passes anchor props with `href` and a Next.js-style `prefetch` hint.
+const RouterLink: UiLinkComponent = ({ href, prefetch: _prefetch, ...props }) => <Link to={href} {...props} />;
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -108,43 +117,130 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
 | Provider | What it does | Without it |
 | --- | --- | --- |
-| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription`, and `chat` for every string of `@kortix/ui/chat` (`defaultChatStrings` lists the keys and their English values). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. | English copy, a plain `<a>` and the Kortix logo. |
+| `UiProvider` | `strings`: the copy the components render when you pass no label, for translation: `confirm`, `cancel`, `close` (the screen-reader label of the dialog and sheet close button), `commandPaletteTitle`, `commandPaletteDescription` (the session UI reads `i18n`). Pass only the keys you translate. `link`: the link component of your router, called with `href`. `useBrand`: a hook that returns your organization's logo URLs for `KortixLogo`. `image`: your image component. `navigation`: your router as four hooks (`useRouter`, `usePathname`, `useSearchParams`, `useParams`; a Next.js app passes the `next/navigation` hooks), plus `observesHistory: true` when the router observes `history.pushState` (Next.js does; React Router does not). With it, a session tab or a query param the UI changes is written to history with no navigation; without it, the change goes through `useRouter`. `i18n`: your translation hooks (`useTranslations`, `useLocale`, the next-intl signatures) or `locale` + `messages`. `useViewerId`: a hook that returns the signed-in Kortix user's id. Without it, a one-person session names no sender and a stopped turn never says "Stopped by"; a session several people write in needs it. `components`: the app features the session UI opens but does not own (`ShareSessionModal`, which `@kortix/ui/workspace` exports; `HomeAnnouncement`, `ProjectProviderModal`, `ProviderAccountsModal`, `ConnectorConnectModal`, `Wallpaper`). `config`: `managedModelsEnabled` for a deployment that serves its model lineup, `connectorsEnabled`. `config.terminalEnabled` (default true): false hides the Terminal, for a host whose proxy cannot upgrade a WebSocket. `config.cliConnectEnabled` (default true): false hides the Terminal's "Connect from your machine" bar, for a host that serves no `<origin>/install` installer and ships no Kortix CLI. `config.publicSharesEnabled` (default true): false hides every public-link control, for a host that serves no page at `share.public_path` (`/share/session/<token>`). `config.commandPaletteShortcut` and `config.settingsShortcut` (default false): true when the host opens a command palette on ⌘K or settings on ⌘,; only then does the composer hint at them. `config.providerIconBaseUrl`: where the host serves provider logos (`<base>/<icon>.svg`); without it they load from models.dev, and the Kortix provider draws `useBrand`'s icon. `config.accountApiEnabled` (default true): false for a host that fronts one operator key and blocks the account routes; then no IAM probe, billing or session-oversight request runs, billing state stays empty, and every permission gate shows its control (the server enforces each route). `resolvePreviewUrl`: an async function of the request (it returns a Promise) that resolves to the URL the session browser frames, with the host's own scoped credentials (for a host whose origin is not the Kortix backend, or whose browser must not hold a Kortix token); a `null` result or no function keeps the SDK preview URL. Billing is the SDK flag `billingEnabled` of `createKortix({ backendUrl, getToken, billingEnabled })`, which every billing gate reads. It is for Kortix's own app: its upgrade actions open the Kortix plan dialog that apps/web mounts. A custom host leaves it off, so no upgrade control renders. `UiProvider` also loads the animation features: without it, expanded rows stay closed. | English copy, a plain `<a>` and `<img>`, the Kortix logo, full page loads, no route params, the bundled English catalog of `@kortix/ui/i18n`, no viewer, billing off, no managed model lineup, no slots: a control that opens a missing slot is hidden. |
+| `SessionIdsProvider` | `projectId` and `sessionId` of the view it wraps. The session UI reads them with `useSessionIds`, never from your route. `SessionThread`, `SessionWorkspace` and `ProjectHome` mount it themselves, with the SDK's project scope. Around any other block, mount it inside `KortixProjectProvider` from `@kortix/sdk/react`. | Both ids are `undefined`: components that need them render nothing. |
+| `setUiTelemetry` from `@kortix/ui/lib/telemetry` | Not a provider: call it once at module load with `track`, `captureException`, `captureMessage`, `addBreadcrumb`. Declare `UiTelemetryRegister { event: YourEvents }` to make `tsc` check event names. | `track` does nothing; `captureException` logs to the console. |
 | `IconProvider` | Gives every Phosphor icon the Kortix weight and size. | Phosphor's defaults. |
 | `<Toaster />` from `@kortix/ui/toast` | Renders the toasts that `successToast`, `errorToast` and the other helpers in `@kortix/ui/toast` raise. | No toast appears. |
 
-## Theme it for your brand
+## Routes
 
-Every color, radius and font is a CSS variable from `tokens.css`. To white-label, override the variables after the import, in your own `:root` for light and `.dark` for dark. These variables carry the brand:
+Every URL the components link to comes from one route table, `setUiRoutes` (`@kortix/ui`), called once at module load. The defaults are Kortix's own paths: `project` `/projects/<id>`, `session` `/projects/<id>/sessions/<sessionId>`, `sessions` `/projects/<id>/sessions` (`?view=archived|deleted`), `files` `/projects/<id>/files`, `drive` `/projects/<id>/drive`, `apps` `/projects/<id>/apps`, `members` `/projects/<id>/members`, `sandboxSettings` `/projects/<id>/config?section=sandbox`, `customize` `/projects/<id>/customize/<page>` (agents, skills, connectors, triggers, reminders, models, secrets, review, settings). Return your own path for a page you serve elsewhere. Return `null` for a page you do not serve: every link to it is hidden. `project` and `session` cannot be null.
 
-| Variable | Default | What follows it |
-| --- | --- | --- |
-| `--kortix-blue` | Kortix blue | The accent: a checked `Switch`, `Checkbox` and `RadioGroup`, the `brand` and `blue` `Button` variants, the info `Badge`, `InfoBanner`, `Alert` and status tone. |
-| `--ring` | Kortix blue | Focus rings and the focused composer border. `--kortix-base`, the sidebar focus ring (`--sidebar-ring`) and the sidebar selection (`--sidebar-primary`) follow it. |
-| `--foreground`, `--background` | Ink on white | Text, the page, and the default `Button` (`bg-foreground text-background`). |
-| `--primary`, `--primary-foreground` | Ink | `Progress`, `Slider`, the `Calendar` selection, the menu row highlight tint and the default text selection. |
-| `--kortix-green`, `--kortix-orange`, `--destructive` | Green, orange, red | The success, warning and error tones. Keep their meaning. |
-| `--radius`, `--font-sans-system` | | Corner radius and the font stack. |
+```ts
+import { setUiRoutes } from '@kortix/ui';
 
-```css title="brand.css"
-:root {
-  --kortix-blue: oklch(0.585 0.22 277);
-  --ring: oklch(0.585 0.22 277);
-  --radius: 0.5rem;
-  --font-sans-system: 'Inter', ui-sans-serif, sans-serif;
-}
-.dark {
-  --kortix-blue: oklch(0.62 0.2 277);
-  --ring: oklch(0.62 0.2 277);
-}
+setUiRoutes({
+  session: (projectId, sessionId) => `/w/${projectId}/chat/${sessionId}`,
+  drive: () => null,
+  customize: () => null,
+});
 ```
 
-After this override, a checked `Switch` and the `brand` `Button` render indigo, and focus rings follow. The default `Button` stays ink until you change `--foreground` and `--background`. The white-label demo (`apps/whitelabel-demo/src/app/globals.css`) is the reference.
+## Theming
 
-A host without Tailwind can also skip `tokens.css` and set every variable itself. The rules:
+Every value a host is expected to vary is a CSS variable: colors in light and dark, the radius scale, border width, fonts, the type scale, spacing density, shadows and motion. Limits lists the few values that stay fixed. `@kortix/ui/theme` turns a typed theme object into those variables. Every field is optional. An unset field keeps the Kortix default, and a `dark` color falls back to the Kortix dark default, never to your `light` value.
 
-- Override variables. Never fork or restyle a component: a forked copy stops receiving fixes.
+### Bring your company brand in 10 lines
+
+```tsx title="app/layout.tsx"
+import { themeToCss, type KortixTheme } from '@kortix/ui/theme';
+
+const brand: KortixTheme = {
+  light: { blue: '#4f46e5', ring: '#4f46e5', border: '#e0e7ff' },
+  dark: { blue: '#818cf8', ring: '#818cf8', border: '#312e81' },
+  radius: '0.25rem',
+  fonts: { sans: 'Inter, system-ui, sans-serif' },
+};
+
+// <html><head><style>{themeToCss(brand)}</style></head>…
+```
+
+`themeToCss` is a pure function, so it runs on the server and the first paint is already on brand. Its blocks out-rank `tokens.css`, so the `<style>` can sit anywhere in the page. The white-label demo does exactly this: `apps/white-label/lumen/src/config/theme.ts` is its whole re-skin.
+
+### The API
+
+| Export | Signature | Use |
+| --- | --- | --- |
+| `KortixTheme` | `{ light?, dark?, radius?, spacing?, borderWidth?, fonts?, text?, lineHeights?, shadows?, durations?, easing?, vars? }` | The theme. `light` and `dark` take the color keys below plus any `--custom` variable. `vars` sets any other variable in both modes. An unknown field, color or step is a type error and throws at runtime. |
+| `themeToCss` | `(theme: KortixTheme, selector = ':root') => string` | A stylesheet: light outside `.dark`, dark on or inside `.dark`. Pass a selector to theme one element. It throws on a value that contains `;`, `{`, `}`, `<`, `>`, `\` or a comment, and on a variable name other than `--[A-Za-z0-9_-]+`, so a theme built from tenant data cannot add CSS rules. |
+| `themeToCssVars` | `(theme: KortixTheme) => { light: Record<string, string>; dark: Record<string, string> }` | The same variables as data, for a host that writes its own CSS or sets them from JavaScript. Mode-independent values appear in both. |
+| `ThemeScope` | `<ThemeScope theme={…} className? {...divProps}>` | Themes one subtree: an embedded widget, a customer preview, a settings pane. Dialogs, popovers, menus, tooltips, selects, sheets and drawers opened inside it portal into a host at the end of `<body>` that carries the scope's theme, so they wear it too. |
+
+```tsx title="A themed subtree"
+import { ThemeScope } from '@kortix/ui/theme';
+
+<ThemeScope theme={{ light: { primary: '#0f766e' }, radius: '1rem' }} className="bg-background">
+  <SessionThread … />
+</ThemeScope>
+```
+
+`ThemeScope` sets `font-family` and `color` on its element, because both inherit as computed values and would otherwise ignore the override. It paints no background; add `bg-background` when it should. Put `className="dark"` on it to force dark for the subtree. The scope element holds only your children: its `<style>` renders as the sibling just before it, and the overlay host lives in `<body>`. So `flex gap-*`, `grid`, `space-y-*` and `first:` / `last:` on its children behave as they would without the scope. Overlays are not clipped or offset by a `transform`, `filter`, `backdrop-filter`, `contain` or `overflow: hidden` ancestor of the scope, and a nested scope's overlays carry both themes.
+
+Toasts do not portal: `<Toaster>` renders where it is mounted. To theme toasts, mount `<Toaster />` inside the `ThemeScope`, at its top level, not inside a transformed panel.
+
+### Tokens
+
+Colors take any CSS color. Defaults are the Kortix values (light / dark).
+
+| Key | Variable | Controls | Default light / dark |
+| --- | --- | --- | --- |
+| `background` | `--background` | The page | `#ffffff` / `#0b0b0b` |
+| `pane`, `surface` | `--pane`, `--surface` | Base and raised panes | `#ffffff` / `#0c0c0c`, `#fcfcfc` / `#141414` |
+| `foreground` | `--foreground` | Text | `#1f1f1f` / `#ffffff` |
+| `action`, `actionForeground` | `--action`, `--action-foreground` | The default `Button` fill and its text (primary actions, Send) | follow `foreground` / `background` |
+| `foregroundStrong`, `foregroundWeak` | `--foreground-strong`, `--foreground-weak` | Emphasised and quiet text | follow `foreground` / `mutedForeground` |
+| `card`, `cardForeground` | `--card`, `--card-foreground` | `Card`, chat tool cards and questions | `#f4f4f4` / `#141414`, ink |
+| `popover`, `popoverForeground` | `--popover`, `--popover-foreground` | Menus, popovers, inputs | `#ffffff` / `#141414`, ink |
+| `primary`, `primaryForeground` | `--primary`, `--primary-foreground` | `Progress`, `Slider`, `Calendar` selection, menu highlight, default selection | `#1f1f1f` / `#ffffff`, inverse |
+| `secondary`, `secondaryForeground` | `--secondary`, `--secondary-foreground` | Secondary buttons, liquid glass | `#ededed` / `#1c1c1c`, ink |
+| `muted`, `mutedForeground` | `--muted`, `--muted-foreground` | Quiet fills, the chat user bubble, code blocks, captions | `#ededed` / `#1c1c1c`, `#666666` / `#999999` |
+| `accent`, `accentForeground` | `--accent`, `--accent-foreground` | Hovered rows | `#f4f4f4` / `#141414`, ink |
+| `destructive`, `destructiveForeground` | `--destructive`, `--destructive-foreground` | Errors, destructive buttons | `#e7000b` / `#ff6467`, `#fafafa` |
+| `border` | `--border` | Every hairline and default border color | `#e2e2e2` / `#262626` |
+| `input` | `--input` | Input fills | `#ededed` / `#1c1c1c` |
+| `ring` | `--ring` | Focus rings, the focused composer | `#0099ff` |
+| `focusRing` | `--focus-ring` | Card focus ring | follows `ring` |
+| `hover`, `active` | `--hover`, `--active` | Translucent hover and pressed tints | ink 4.5% / 7.5%, white 6% / 10% |
+| `selection`, `selectionForeground` | `--selection`, `--selection-foreground` | Text selection | `primary` at 72%, `primaryForeground` |
+| `sidebar…` (`sidebar`, `sidebarForeground`, `sidebarPrimary`, `sidebarPrimaryForeground`, `sidebarAccent`, `sidebarAccentForeground`, `sidebarRow`, `sidebarRowControl`, `sidebarBorder`, `sidebarRing`) | `--sidebar-*` | The sidebar; `sidebar` also fills `Dialog`, `AlertDialog`, `Modal` and `Sheet` | surface-1, ink, `ring` |
+| `blue` | `--kortix-blue` | The accent: a checked `Switch` / `Checkbox` / `RadioGroup`, `brand` and `blue` `Button` variants, info `Badge`, `InfoBanner`, info status | `#2b91f7` |
+| `green`, `orange`, `yellow`, `red`, `purple` | `--kortix-*` | Status tones. Keep their meaning. | `#199338`, `#d18b19`, `#cca300`, `#f14b4c`, `#ab80d6` |
+| `brand` | `--kortix-base` | Kortix base accent | follows `ring` |
+| `chart1` … `chart5` | `--chart-1` … `--chart-5` | Chart series | amber ramp |
+| `terminalSurface`, `terminalForeground`, `terminalBorder` | `--terminal-*` | The terminal pane (always dark) | `#0f0f0f`, `#e5e5e5`, white 10% |
+
+Shared values apply in both modes:
+
+| Key | Variable | Controls | Default |
+| --- | --- | --- | --- |
+| `borderWidth` | `--border-width` | Every `border`, `border-t` / `-x` / `-y` / … and `divide-*` line with no explicit width. The heavier 1.5× strokes (`Checkbox`, `Sheet`, the dashed chart legend) scale with it | `1px` |
+| `radius` | `--radius` | Every corner. `rounded` = −6px, `-sm` −4px, `-md` −2px, `-lg` =, `-xl` +4px, `-2xl` +6px | `0.625rem` (10px) |
+| `spacing` | `--spacing` | Density: every `p-*`, `m-*`, `gap-*`, `size-*` is a multiple | `0.23rem` |
+| `fonts.sans` | `--font-family-sans` | Body text, headings, every `font-sans` (there is no separate heading face) | system stack (Roobert on Kortix surfaces) |
+| `fonts.mono` | `--font-family-mono` | Code, ids, `Badge` | system mono stack |
+| `text.xs` … `text['8xl']` | `--text-<step>` | Font size of each `text-*` step | `0.8125rem`, `0.875rem`, `0.9rem`, `1rem`, `1.125rem` … `6rem` |
+| `lineHeights.<step>` | `--text-<step>--line-height` | Line height of each `text-*` step | the Kortix ratio per step |
+| `shadows['2xs']` … `shadows['2xl']` | `--shadow-<step>` | Elevation of each `shadow-*` step. `0 0 #0000` flattens one; `none` would also drop a `ring-*` on that element | Tailwind's shadow ramp |
+| `durations.fast` … `durations.slower` | `--duration-<step>` | `duration-fast` … `duration-slower` | `100ms`, `150ms`, `200ms`, `300ms`, `500ms` |
+| `easing.default`, `in`, `out`, `inOut` | `--ease-*` | `ease-*` curves | the Kortix curves |
+| `vars` | any `--name` | Anything else, for example `--liquid-glass-blur` | — |
+
+### Limits
+
+- An explicit width class (`border-2`, `border-[3px]`) stays fixed. Only bare `border*` and `divide-*` follow `borderWidth`.
+- Font sizes with no step stay fixed: 10px, 11px and 12px captions (the card meta line, the attachment tile, code-block chrome) and the `0.8rem` inline code chip.
+- Durations with no step stay fixed: `duration-80`, `duration-0`, the sidebar slide (`200` / `240` / `260ms` on `cubic-bezier(0.32, 0.72, 0, 1)`), the command palette (`140` / `180ms`) and the enter / exit keyframes (`200` / `250ms`). Every `duration-100` / `150` / `200` / `300` / `500` reads `duration-fast` … `duration-slower`.
+- A `ThemeScope` can force dark inside a light page, not light inside a dark one: no `.light` reset exists, so `.dark` on `<html>` reaches the scope.
+- Chat surfaces read the semantic tokens above: `muted` for the user bubble and code blocks, `card` and `border` for tool cards and questions, `mutedForeground` for captions. They have no tokens of their own.
+- A few decorative values stay fixed: the dialog scrims (black at 20–85%), the `inverse` `Button` variant, the `Tag` status palette, the loader and dot-matrix gradients, and chart legend swatches.
+
+### Rules
+
+- Theme through tokens. Never fork or restyle a component: a forked copy stops receiving fixes.
 - Pass your logo through `UiProvider useBrand`, so `KortixLogo` renders your marks.
-- Do not load `fonts.css`. Set your font in `--font-sans-system`.
+- Do not load `fonts.css`: Roobert is for Kortix surfaces. Set `fonts.sans`.
+- Plain CSS works too, after the `@kortix/ui` import. Put light values in `:root:not(.dark)` and dark values in `.dark`. A bare `:root` rule also matches `<html class="dark">` and, coming later than `tokens.css`, overrides the dark value. `themeToCss` writes these selectors for you.
 
 ## Components
 
@@ -165,49 +261,460 @@ Each component is one subpath, `@kortix/ui/<file>`. The live catalog at [kortix.
 
 Compose before you create. Use `Modal` for a dialog, `Hint` for a tooltip, `Loading` for a spinner, `Badge` for a chip and `ConfirmDialog` before a destructive action. Never call `sonner`'s `toast()` directly, and never use an icon with `animate-spin` as a spinner. Icons come from `@phosphor-icons/react`.
 
-## Add a chat
+## Modules
 
-`SessionThread` renders the whole chat of one session from one [`useSession`](/docs/sdk/react#usesession) result: the transcript, the streaming turn, tool calls, the runtime state, permission and question prompts, the typed send error, and the composer with slash commands, the model and agent pickers and Stop.
+Every part of a Kortix session is a module with one entry. Each entry is a curated list of names: that list is the public API, under semver. Every piece needs `UiProvider` and a `QueryClientProvider` at the root.
+
+| Entry | What it is | Minimal mount |
+| --- | --- | --- |
+| `@kortix/ui/workspace` | Composed project screens: `SessionWorkspace` (thread plus resizable side panel), `ProjectHome` (the new-session composer; it sends by itself), `ProjectSessionList`, `ProjectSessionsView`, `ProjectFilesView`, `ProjectSidebar`, `ShareSessionModal` | `<SessionWorkspace session={useSession(projectId, sessionId)} />`, `<ProjectHome projectId={projectId} />`; `ProjectSessionList` inside a `SidebarProvider` |
+| `@kortix/ui/session` | The conversation: `SessionThread`, turns, tool rows and `ToolRegistry`, prompts, status, `ModelSelector`, `AgentSelector` | `<SessionThread session={useSession(projectId, sessionId)} />` |
+| `@kortix/ui/composer` | The message composer: `ComposerChatInput`, `SessionChatInput`, its chrome, the editor parts, the send pipeline | `<ComposerChatInput projectId={projectId} onSend={…} />` in the project scope |
+| `@kortix/ui/session-panel` | The side panel: `SessionPanelProvider`, `ActionPanel`, `SessionFiles`, `SessionChanges`, `SessionAudit`, `openSessionQuickView` | `SessionPanelProvider` (runtime `sessionId`, `projectId`, `projectSessionId`) |
+| `@kortix/ui/files` | Project files (the git-backed repo: `ProjectFilesProvider`, `FileExplorerPage`, `DriveExplorer`), sandbox files (`SandboxFileExplorer`), `FilePreviewHost`, drive and change-request hooks | `ProjectFilesView` from `workspace` (it fills its parent: the parent sets the height); `<FilePreviewHost />` once on a page without a side panel |
+| `@kortix/ui/file-viewer` | `FileViewer` and `FileContentRenderer` for any file kind (pdf, docx, xlsx, csv, pptx, zip, images, code), `FilePreviewModal`, `FileSourceProvider` | `<FileViewer content={text} fileName="notes.md" />` |
+| `@kortix/ui/terminal`, `@kortix/ui/browser` | `SessionTerminal`; `SessionBrowser`, `BrowserLanding` | the runtime ids of a mounted `useSession` |
+| `@kortix/ui/markdown`, `@kortix/ui/genui` | `UnifiedMarkdown`, `MarkdownWithFrontmatter`, `HighlightedCode`; typed UI blocks in assistant text | `<UnifiedMarkdown content={text} trust="agent" />` |
+| `@kortix/ui/diff`, `@kortix/ui/changes` | `DiffView`; `ChangeList` with its vocabulary | `<DiffView before={…} after={…} />` |
+| `@kortix/ui/apps` | `AppPreview`, the frame pool, the App view model | none |
+| `@kortix/ui/access`, `@kortix/ui/customize` | Sharing and roles (`AccessDialog`, `RoleSelect`, `PrincipalPicker`); the project configuration pages (`ConnectorsPage`, `AgentsPage`, `TriggersPage`, `SecretsPage`, `ModelsPage`, `SkillsPage`, `ProjectSettingsPage`) | `<ConnectorsPage projectId={projectId} />` |
+| `@kortix/ui/theme`, `@kortix/ui/i18n`, `@kortix/ui/icons` | The typed theme; `useTranslations`, `useLocale` (next-intl signatures); the library's glyphs | none |
+
+The package skill lists every name of every entry, its props and one example that compiles: `skills/kortix-ui/references/modules.md`.
+
+### Deep paths have no semver
+
+The entries and the primitive subpaths (`@kortix/ui/<component>`) are the public API. A few deep paths also resolve: `@kortix/ui/internal/*` and `@kortix/ui/<module>/<path>`, such as `@kortix/ui/session/thread/session-chat`. They exist only for Kortix's own apps (the list is `scripts/deep-exports.json`), and they can change or disappear in any release. Import the entry. If an entry lacks a name you need, ask for it to be added to the entry.
+
+## Add a session
+
+`SessionWorkspace` (`@kortix/ui/workspace`) renders the whole session screen of the Kortix web app from one [`useSession`](/docs/sdk/react#usesession) result: the thread, and the resizable side panel its actions open (files, the file viewer, the browser, the terminal, changes). On a phone the panel is a sheet.
+
+```tsx title="session.tsx"
+import { useSession } from '@kortix/sdk/react';
+import { SessionWorkspace } from '@kortix/ui/workspace';
+
+export function Session({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+  return <SessionWorkspace session={useSession(projectId, sessionId)} />;
+}
+```
+
+`SessionWorkspace` takes `session`, `children` (your own column in place of the thread), `hideHeader`, `readOnly` and `className`. The parent sets the size.
+
+### The thread alone
+
+`SessionThread` renders the whole chat of one session from one [`useSession`](/docs/sdk/react#usesession) result. It is the thread the Kortix web app renders: the transcript, the streaming turn, tool rows, permission and question prompts, the send error, and the composer with attachments, slash commands, the model and agent pickers and Stop.
 
 ```tsx title="chat.tsx"
 import { useSession } from '@kortix/sdk/react';
-import { SessionThread } from '@kortix/ui/chat';
-import { errorToast } from '@kortix/ui/toast';
+import { SessionThread } from '@kortix/ui/session';
 
 export function Chat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const session = useSession(projectId, sessionId);
   return (
-    <div className="h-dvh">
-      <SessionThread session={session} onError={(message) => errorToast(message)} />
+    <div className="flex h-dvh flex-col">
+      <SessionThread session={session} hideHeader />
     </div>
   );
 }
 ```
 
-The parent sets the height, and the thread fills it. Everything reads off `session`: there is no second chat hook and no transport to write.
+The parent sets the height, and the thread fills it. Everything reads off `session`: there is no second chat hook and no transport to write. The host mounts `QueryClientProvider`, `UiProvider` and one `<Toaster />`. A control whose host feature is missing (a `UiProvider` `components` slot) is hidden, never dead. With no side panel on the page, a file or preview the thread opens shows in a dialog.
 
 | Prop | What it does |
 | --- | --- |
 | `session` | The `useSession(projectId, sessionId)` result. Required. |
-| `composerToolbar` | Replaces the composer's control row. Default: `SessionPickers`, the model and agent pickers. |
-| `composerFooter` | Renders under the composer card. |
-| `emptyState` | Shows when the thread has no messages. Default: `DefaultEmptyState`. |
-| `renderTool` | `(tool) => ReactNode \| undefined`. Replaces the card of one tool call. Return `undefined` to keep the default `ToolCall`. |
-| `renderers` | Overrides the renderer of any part kind (`text`, `reasoning`, `tool`, `file` and the rest). |
-| `onError` | `(message, error) => void`. Reports a failed permission reply, question reply or slash command, for a toast. Without it, the error shows inline. A refused slash command also puts the typed line back into the composer. |
-| `providerLabel` | `(model) => string`. The provider line of a model row in the model picker. A white-label returns its own name for Kortix-managed models (`model.providerID === 'kortix'`). `ModelPicker` takes the same prop. |
+| `hideHeader` | Hides the thread's title row. Use it when your page has its own header. |
+| `readOnly` | Hides the composer: a transcript to read. |
+| `className` | Classes on the thread's root. |
 
-The thread follows the transcript rules of the Kortix web app. When a provider error interrupts a turn, the harness resumes it with its own `[auto-recovery]` prompt: the thread shows no bubble for that prompt and no error row for the failure it continued. If the chain still ends in failure, one error row shows, with how many automatic retries ran. The composer shows the `/ for commands` hint only when the session has a command. In the model picker, ArrowUp and ArrowDown move the highlight and Enter picks it.
+`@kortix/ui/session` also exports `ModelSelector` and `AgentSelector`, the composer's pickers. They are controlled (`models` or `agents`, the selection, `onSelect`), so a form outside a session, such as a new-session form, uses them too.
 
-For a layout of your own, compose the parts from the same `useSession` result: `MessageList`, `MessageView`, `Composer`, `PermissionPrompt`, `QuestionPrompt`, `ModelPicker` and `AgentPicker`, all from `@kortix/ui/chat`. `Markdown` renders a streaming message and holds back half-written code fences and tables, so the text does not flicker.
+### Replace one tool row
+
+Every built-in tool row registers when `@kortix/ui/session` loads. Register your own row for a tool name to replace it. The row gets `ToolProps`: `call` is the session-log tool call (`name`, `input`, `status`, `result`). `BasicTool` draws the standard row; `GenericTool` is the default row.
+
+```tsx title="src/shell-row.tsx"
+import { BasicTool, ToolRegistry, type ToolProps } from '@kortix/ui/session';
+import { TerminalWindowIcon } from '@phosphor-icons/react';
+
+// Replaces the built-in row of the `bash` tool. A later register() for the same
+// name wins; @kortix/ui/session registers its rows on import.
+function ShellRow({ call }: ToolProps) {
+  const command = (call.input as { command?: string } | null)?.command ?? '';
+  const output = (call.result?.content ?? [])
+    .map((part) => (part.type === 'text' ? part.text : ''))
+    .join('');
+  return (
+    <BasicTool icon={<TerminalWindowIcon />} trigger={{ title: 'Shell', subtitle: command }}>
+      <pre data-testid="acme-shell-output" className="bg-muted overflow-x-auto rounded-md p-3 font-mono text-xs">
+        {output || 'No output yet'}
+      </pre>
+    </BasicTool>
+  );
+}
+
+ToolRegistry.register('bash', ShellRow);
+```
+
+Import the file once at your entry (`import './shell-row'`). `call.status` is `pending`, `running`, `complete` or `error`; `call.result.content` holds the text and attachment parts.
+
+### Compose a custom workspace
+
+The modules compose at any depth. Pick the level you need:
+
+| You want | Use |
+| --- | --- |
+| Kortix's session screen in your chrome | `SessionWorkspace` |
+| Your own conversation column beside Kortix's side panel | `<SessionWorkspace session={session}>{yourColumn}</SessionWorkspace>` |
+| The thread, no panel | `SessionThread`; a page with neither mounts `<FilePreviewHost />` from `@kortix/ui/files` once |
+| Your own panel | `SessionPanelProvider` + `ActionPanel` from `@kortix/ui/session-panel`, or `SessionTerminal` from `@kortix/ui/terminal` |
+| Single blocks | `UserMessage`, `ThrottledMarkdown`, `ToolPartRenderer`, `ModelSelector`, `AgentSelector`, `SessionPermissionPrompt`, `QuestionPrompt` from `@kortix/ui/session`; `ComposerChatInput` from `@kortix/ui/composer` |
+
+A block outside `SessionThread`, `SessionWorkspace` and `ProjectHome` needs the two scopes those screens mount for you:
+
+```tsx title="ask.tsx"
+import { KortixProjectProvider } from '@kortix/sdk/react';
+import { SessionIdsProvider } from '@kortix/ui';
+import { ComposerChatInput } from '@kortix/ui/composer';
+
+// The composer alone, before a session exists: you decide what a send does.
+// Outside SessionThread / SessionWorkspace / ProjectHome, mount the two scopes
+// they mount for you: the SDK's project (model catalog) and the UI's ids.
+export function Ask({ projectId, onAsk }: { projectId: string; onAsk: (text: string) => void }) {
+  return (
+    <KortixProjectProvider projectId={projectId}>
+      <SessionIdsProvider projectId={projectId}>
+        <ComposerChatInput projectId={projectId} onSend={(text) => onAsk(text)} />
+      </SessionIdsProvider>
+    </KortixProjectProvider>
+  );
+}
+```
 
 ### Render the transcript yourself
 
-To draw every part with your own components, skip `@kortix/ui/chat` and use the headless kit in `@kortix/sdk/react`: `useChatTurns` and `renderParts`. `renderParts` requires one renderer per part kind, so a new kind fails your build, not your UI. See [Build a chat UI](/docs/sdk/react#build-a-chat-ui).
+To draw every part with your own components, skip `@kortix/ui/session` and use the headless kit in `@kortix/sdk/react`: `useChatTurns` and `renderParts`. `renderParts` requires one renderer per part kind, so a new kind fails your build, not your UI. See [Build a chat UI](/docs/sdk/react#build-a-chat-ui).
+
+## Build a dashboard
+
+A dashboard is your chrome around the composed screens: Kortix's session list in your sidebar, `ProjectHome` to start a session, `SessionWorkspace` to work in one, `ProjectFilesView` for the project's files. The steps below are files of one Vite + React 19 + react-router app that installed both packages from their packed tarballs. It passed `tsc --noEmit` and `vite build` and ran against a live Kortix API: a prompt from the home opened the session, the tool rows (the custom one included) and the reply rendered, a file opened in the side panel and on the Files page, with 0 console errors.
+
+<Steps>
+<Step title="Create the client">
+Create it once, at module scope. `getToken` runs on every call, so a key never sits in the bundle.
+
+```ts title="src/kortix.ts"
+import { createKortix } from '@kortix/sdk';
+
+const TOKEN_KEY = 'kortix_token';
+
+export function readToken(): string | null {
+  try {
+    return sessionStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function saveToken(token: string): void {
+  sessionStorage.setItem(TOKEN_KEY, token.trim());
+}
+
+// One client per host, created once at module scope. Every @kortix/sdk/react
+// hook and every @kortix/ui/session component reads it.
+export const kortix = createKortix({
+  backendUrl: import.meta.env.VITE_KORTIX_API_URL ?? 'https://api.kortix.com/v1',
+  getToken: async () => readToken(),
+});
+```
+
+The browser origin must be in the API's CORS list. In local development, proxy `/v1` through your dev server and point `backendUrl` at it. Inside a [Kortix App](/docs/apps), the client acts as the viewer: run `kortix apps access <app> --viewer api`, then `createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() })`.
+</Step>
+<Step title="Connect your router and theme">
+```ts title="src/theme.ts"
+import type { KortixTheme } from '@kortix/ui/theme';
+
+// The company brand. Every field is optional: an unset one keeps the Kortix value.
+export const acmeTheme: KortixTheme = {
+  light: { blue: '#0f766e', ring: '#0f766e', border: '#cbd5e1', muted: '#f1f5f9' },
+  dark: { blue: '#2dd4bf', ring: '#2dd4bf', border: '#334155', muted: '#1e293b' },
+  radius: '0.375rem',
+  fonts: { sans: 'Georgia, "Times New Roman", serif' },
+};
+```
+
+```tsx title="src/router-adapters.tsx"
+import type { UiLinkComponent, UiNavigation, UiRouter } from '@kortix/ui';
+import { useMemo } from 'react';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+
+// @kortix/ui links and router calls go through your router, not full page loads.
+export const RouterLink: UiLinkComponent = ({ href, prefetch: _prefetch, ...props }) => (
+  <Link to={href} {...props} />
+);
+
+function useUiRouterAdapter(): UiRouter {
+  const navigate = useNavigate();
+  return useMemo(
+    () => ({
+      push: (href) => navigate(href),
+      replace: (href) => navigate(href, { replace: true }),
+      prefetch: () => {},
+      back: () => navigate(-1),
+    }),
+    [navigate],
+  );
+}
+
+export const navigation: UiNavigation = {
+  useRouter: useUiRouterAdapter,
+  usePathname: () => useLocation().pathname,
+  useSearchParams: () => useSearchParams()[0],
+  useParams: () => useParams(),
+};
+```
+
+```tsx title="src/providers.tsx"
+import { UiProvider } from '@kortix/ui';
+import { IconProvider } from '@kortix/ui/icon-provider';
+import { themeToCss } from '@kortix/ui/theme';
+import { Toaster } from '@kortix/ui/toast';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState, type ReactNode } from 'react';
+
+import './kortix';
+import { navigation, RouterLink } from './router-adapters';
+import { acmeTheme } from './theme';
+
+const themeCss = themeToCss(acmeTheme);
+// The deployment serves its managed model lineup: the model picker lists it.
+const config = { managedModelsEnabled: true };
+
+// Mount inside the router: `navigation` calls its hooks.
+export function Providers({ children }: { children: ReactNode }) {
+  const [queryClient] = useState(() => new QueryClient());
+  return (
+    <QueryClientProvider client={queryClient}>
+      <UiProvider link={RouterLink} navigation={navigation} config={config}>
+        <IconProvider>
+          <style href="acme-theme" precedence="default">{themeCss}</style>
+          {children}
+          <Toaster />
+        </IconProvider>
+      </UiProvider>
+    </QueryClientProvider>
+  );
+}
+```
+
+React 19 hoists `<style href precedence>` into `<head>`. A Next.js host passes `next/link` and the `next/navigation` hooks unchanged.
+</Step>
+<Step title="Put the session list in your sidebar">
+The list links through [the route table](#routes). This app serves the project home, its files and a session, so it maps the other pages to `null`.
+
+```tsx title="src/project-shell.tsx"
+import { SessionIdsProvider } from '@kortix/ui';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+} from '@kortix/ui/sidebar';
+import { ProjectSessionList } from '@kortix/ui/workspace';
+import { FolderSimpleIcon, NavigationArrowIcon, SquaresFourIcon } from '@phosphor-icons/react';
+import { Link, Outlet, useLocation, useParams } from 'react-router-dom';
+
+// Every project page: your sidebar chrome around Kortix's session list.
+export function ProjectShell() {
+  const { projectId = '', sessionId } = useParams();
+  const { pathname } = useLocation();
+  const nav = [
+    { to: `/projects/${projectId}`, label: 'New session', icon: NavigationArrowIcon },
+    { to: `/projects/${projectId}/files`, label: 'Files', icon: FolderSimpleIcon },
+    { to: '/', label: 'All projects', icon: SquaresFourIcon },
+  ];
+  return (
+    <SessionIdsProvider projectId={projectId} sessionId={sessionId}>
+      <SidebarProvider>
+        <Sidebar collapsible="offcanvas" variant="inset">
+          <SidebarHeader className="px-3 py-2 text-sm font-medium">Acme Agents</SidebarHeader>
+          <SidebarContent className="min-h-0">
+            <SidebarGroup className="py-0">
+              <SidebarMenu>
+                {nav.map(({ to, label, icon: Icon }) => (
+                  <SidebarMenuItem key={to}>
+                    <SidebarMenuButton asChild isActive={pathname === to}>
+                      <Link to={to}>
+                        <Icon />
+                        <span>{label}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroup>
+            {/* Kortix's session list: sections, status, rename, delete, live poll. */}
+            <SidebarGroup className="min-h-0 flex-1 flex-col py-0">
+              <ProjectSessionList projectId={projectId} />
+            </SidebarGroup>
+          </SidebarContent>
+          <SidebarRail />
+        </Sidebar>
+        <SidebarInset className="h-dvh min-h-0 overflow-hidden">
+          <Outlet />
+        </SidebarInset>
+      </SidebarProvider>
+    </SessionIdsProvider>
+  );
+}
+```
+</Step>
+<Step title="Add the pages and routes">
+```tsx title="src/pages.tsx"
+import { useProjects, useSession } from '@kortix/sdk/react';
+import { Card, CardContent, CardHeader, CardTitle } from '@kortix/ui';
+import Loading from '@kortix/ui/loading';
+import { ProjectFilesView, ProjectHome, SessionWorkspace } from '@kortix/ui/workspace';
+import { Link, useParams } from 'react-router-dom';
+
+export function ProjectsPage() {
+  const projects = useProjects();
+  return (
+    <main className="mx-auto flex max-w-xl flex-col gap-4 p-8">
+      <h1 className="text-lg font-medium">Acme Agents</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>Projects</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-1">
+          {projects.isLoading && <Loading />}
+          {projects.data?.map((project) => (
+            <Link key={project.project_id} to={`/projects/${project.project_id}`} className="hover:bg-accent rounded-md px-2 py-1.5">
+              {project.name}
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
+    </main>
+  );
+}
+
+// The project home: Kortix's composer. Sending creates the session and opens it.
+export function HomePage() {
+  const { projectId = '' } = useParams();
+  return <ProjectHome projectId={projectId} />;
+}
+
+// The session: the thread plus the resizable side panel (files, viewer, terminal, browser).
+export function SessionPage() {
+  const { projectId = '', sessionId = '' } = useParams();
+  const session = useSession(projectId, sessionId);
+  return <SessionWorkspace key={sessionId} session={session} />;
+}
+
+// The project's git-backed files: a browser, and a viewer for any file kind.
+export function FilesPage() {
+  const { projectId = '' } = useParams();
+  return <ProjectFilesView projectId={projectId} />;
+}
+```
+
+```tsx title="src/main.tsx"
+import { Button, Input, Label, setUiRoutes } from '@kortix/ui';
+import { StrictMode, useState } from 'react';
+import { createRoot } from 'react-dom/client';
+import { createBrowserRouter, Outlet, RouterProvider } from 'react-router-dom';
+
+import './app.css';
+import './shell-row';
+import { readToken, saveToken } from './kortix';
+import { FilesPage, HomePage, ProjectsPage, SessionPage } from './pages';
+import { ProjectShell } from './project-shell';
+import { Providers } from './providers';
+
+function SignIn() {
+  const [token, setToken] = useState(readToken());
+  const [draft, setDraft] = useState('');
+  if (token) return <Outlet />;
+  return (
+    <form
+      className="mx-auto flex max-w-sm flex-col gap-3 p-8"
+      onSubmit={(event) => {
+        event.preventDefault();
+        saveToken(draft);
+        setToken(draft.trim());
+      }}
+    >
+      <Label htmlFor="token">Kortix API key</Label>
+      <Input id="token" type="password" value={draft} onChange={(event) => setDraft(event.target.value)} />
+      <Button type="submit" disabled={!draft.trim()}>
+        Open dashboard
+      </Button>
+    </form>
+  );
+}
+
+// This router serves the default paths of `project`, `files` and `session`. Every link to
+// another page is hidden.
+setUiRoutes({
+  sessions: () => null,
+  drive: () => null,
+  apps: () => null,
+  members: () => null,
+  sandboxSettings: () => null,
+  customize: () => null,
+});
+
+const router = createBrowserRouter([
+  {
+    element: (
+      <Providers>
+        <SignIn />
+      </Providers>
+    ),
+    children: [
+      { path: '/', element: <ProjectsPage /> },
+      {
+        path: '/projects/:projectId',
+        element: <ProjectShell />,
+        children: [
+          { index: true, element: <HomePage /> },
+          { path: 'files', element: <FilesPage /> },
+          { path: 'sessions/:sessionId', element: <SessionPage /> },
+        ],
+      },
+    ],
+  },
+]);
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <RouterProvider router={router} />
+  </StrictMode>,
+);
+```
+
+`ProjectHome` creates the session with the prompt and navigates to it; `beforeSend` gates the send, `onSend` replaces it. `./shell-row` is the custom tool row of [Replace one tool row](#replace-one-tool-row).
+</Step>
+</Steps>
+
+- `useProjectSessions`, `useProjectApps`, `useProjectTriggers`, `useChangeRequests`, `useGatewayOverview` and `useCan` add more data ([Hooks](/docs/sdk/react#hooks)).
+- Never `fetch` the Kortix API yourself. If the SDK lacks a call you need, that is an SDK gap to report.
+- Three white-label examples are built this way ([overview](https://github.com/kortix-ai/suna/tree/dev/apps/white-label)):
+  - [Lumen Workspace](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/reskin) (reskin): the Kortix workspace UI under its own theme, with the browser on a Kortix API key (direct mode) or behind its own server (wrapper mode).
+  - [Team Console](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/team-console) (internal tool): a static Kortix App over one account, signed in as the viewer.
+  - [Lumen](https://github.com/kortix-ai/suna/tree/dev/apps/white-label/lumen) (your own SaaS): a legal AI product with its own users, data and billing, and Kortix as the agent backend.
 
 ## For agents
 
-The package ships a skill at `packages/ui/skills/kortix-ui/SKILL.md`, and every Kortix session loads it as the `kortix-ui` skill. It tells an agent how to set up the package, which component to compose, which primitives are banned, and how to verify a page. Point your own coding agent at it before it writes UI with `@kortix/ui`.
+The package ships a skill at `packages/ui/skills/kortix-ui/SKILL.md`, and every Kortix session loads it as the `kortix-ui` skill. It tells an agent how to set up the package, which component to compose, which primitives are banned, and how to verify a page. Its references are `custom-dashboard.md` (this page's dashboard as one checklist: install, client, router adapters, theme, sidebar, pages, a custom tool row, an App's sign-in, verify), `modules.md` (every entry with its props and an example) and `theming.md` (every theme key). In a Kortix session, an agent reads it with `kortix system-skills file kortix-ui references/custom-dashboard.md`. Point your own coding agent at both files before it writes UI with `@kortix/ui`.
 
 ## Next steps
 

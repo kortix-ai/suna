@@ -1,13 +1,10 @@
 'use client';
 
 import {
-  CaretRightIcon,
   CursorClickIcon,
-  DotsThreeIcon,
   FolderIcon,
   HandPalmIcon,
   MonitorIcon,
-  PlusIcon,
   ScrollIcon,
   WarningIcon,
   type Icon,
@@ -16,23 +13,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -41,13 +27,13 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsListCompact, TabsTriggerCompact } from '@/components/ui/tabs';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { connectorHref } from '@/features/workspace/capabilities/connectors/connector-routes';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
+} from '@kortix/ui/modal';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { Switch } from '@kortix/ui/switch';
+import { Tabs, TabsListCompact, TabsTriggerCompact } from '@kortix/ui/tabs';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { connectorHref } from '@kortix/ui/customize/connectors/connector-routes';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   useDeleteTunnelConnection,
@@ -66,23 +52,21 @@ import {
   desktopComputerPause,
   desktopComputerRequestGrants,
   desktopComputerResume,
-} from '@/lib/desktop';
-import { relativeTime } from '@/lib/relative-time';
-import { cn } from '@/lib/utils';
+} from '@kortix/ui/internal/lib/desktop';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
+import { cn } from '@kortix/ui';
 import {
   ComputerCapabilities,
   computerDisplayName,
   ComputerGlyph,
   ComputerStateDot,
   DESKTOP_STATUS_KEY,
-  groupOwnedComputers,
   platformName,
   useConnectDesktopComputer,
-  useOwnsPairedComputer,
   useProjectComputerAccounts,
   useThisComputerState,
   type ComputerState,
-} from './computer-connect';
+} from '@kortix/ui/internal/tunnel/computer-connect';
 
 const DESKTOP_GRANTS_KEY = ['desktop-computer-grants'] as const;
 
@@ -818,278 +802,5 @@ function AccessSection({
       </p>
       {unavailable ? <p className="text-muted-foreground text-xs text-pretty">{unavailable}</p> : null}
     </section>
-  );
-}
-
-/**
- * "Your computer" where this machine cannot pair in one click (a browser, or a
- * desktop build without the agent): every machine the caller paired, with its
- * live status. `onConnectAnother` opens the connect dialog.
- */
-export function YourComputersModal({
-  projectId,
-  open,
-  onOpenChange,
-  onConnectAnother,
-}: {
-  projectId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onConnectAnother: () => void;
-}) {
-  return (
-    <Modal open={open} onOpenChange={onOpenChange}>
-      {/* No initial focus: the first control in the list is "Disconnect…". */}
-      <ModalContent
-        className="flex flex-col lg:max-w-lg"
-        onOpenAutoFocus={(event) => event.preventDefault()}
-      >
-        {open ? (
-          <YourComputersContent
-            projectId={projectId}
-            onClose={() => onOpenChange(false)}
-            onConnectAnother={onConnectAnother}
-          />
-        ) : null}
-      </ModalContent>
-    </Modal>
-  );
-}
-
-function YourComputersContent({
-  projectId,
-  onClose,
-  onConnectAnother,
-}: {
-  projectId: string;
-  onClose: () => void;
-  onConnectAnother: () => void;
-}) {
-  const t = useTranslations('computers');
-  const { user } = useAuth();
-  const { owned } = useOwnsPairedComputer();
-  // Live status while the dialog is open: the same query, polled.
-  useTunnelConnections({ refetchInterval: 10_000 });
-  // In the desktop app, the machine this window runs on.
-  const { tunnelId: thisTunnelId } = useThisComputerState();
-  const { connectorAlias } = useProjectComputerAccounts(projectId);
-  const deleteMachine = useDeleteTunnelConnection();
-  const queryClient = useQueryClient();
-  const [target, setTarget] = useState<TunnelConnection | null>(null);
-  const [confirmOlder, setConfirmOlder] = useState(false);
-  const { computers, older } = groupOwnedComputers(owned);
-
-  const afterRemoval = () => {
-    // Its accounts leave every project's connector list too.
-    void queryClient.invalidateQueries({ queryKey: ['connections'] });
-    successToast(t('disconnected'));
-  };
-  const removeOlder = useMutation({
-    retry: false,
-    // One by one: each removal revokes that registration's accounts.
-    mutationFn: async (machines: readonly TunnelConnection[]) => {
-      for (const machine of machines) await deleteMachine.mutateAsync(machine.tunnelId);
-    },
-    onSuccess: () => {
-      setConfirmOlder(false);
-      afterRemoval();
-    },
-    onError: (error: Error) => errorToast(error.message || t('disconnectFailed')),
-  });
-
-  return (
-    <>
-      <ModalHeader>
-        <ModalTitle>{t('yourComputersTitle')}</ModalTitle>
-        {user?.email ? (
-          <ModalDescription>{t('pairedWith', { email: user.email })}</ModalDescription>
-        ) : null}
-      </ModalHeader>
-      <ModalBody className="min-h-0 space-y-4 overflow-y-auto">
-        {computers.length > 0 ? (
-          <ul className="divide-border divide-y">
-            {computers.map((machine) => (
-              <ComputerListRow
-                key={machine.tunnelId}
-                machine={machine}
-                isThisComputer={machine.tunnelId === thisTunnelId}
-                onDisconnect={() => setTarget(machine)}
-              />
-            ))}
-          </ul>
-        ) : (
-          <p className="text-muted-foreground text-sm">{t('notConnected')}</p>
-        )}
-        {older.length > 0 ? (
-          <Collapsible className="rounded-md border">
-            <div className="flex items-center gap-2 px-3 py-2">
-              <CollapsibleTrigger asChild>
-                <Button size="sm" variant="ghost" className="group -ml-2 gap-1.5">
-                  <CaretRightIcon className="size-3.5 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-                  {t('older.title')}
-                  <span className="text-muted-foreground tabular-nums">{older.length}</span>
-                </Button>
-              </CollapsibleTrigger>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-kortix-red hover:bg-kortix-red/15 hover:text-kortix-red ml-auto"
-                onClick={() => setConfirmOlder(true)}
-              >
-                {t('older.removeAll')}
-              </Button>
-            </div>
-            <p className="text-muted-foreground px-3 pb-3 text-xs text-pretty">{t('older.hint')}</p>
-            <CollapsibleContent>
-              <ul className="divide-border divide-y border-t px-3">
-                {older.map((machine) => (
-                  <ComputerListRow
-                    key={machine.tunnelId}
-                    machine={machine}
-                    isThisComputer={false}
-                    onDisconnect={() => setTarget(machine)}
-                  />
-                ))}
-              </ul>
-            </CollapsibleContent>
-          </Collapsible>
-        ) : null}
-      </ModalBody>
-      <ModalFooter className="border-t py-3 sm:justify-between">
-        <Button size="sm" variant="ghost" asChild>
-          <Link
-            href={`/projects/${projectId}/customize/connectors?c=${encodeURIComponent(connectorAlias)}`}
-            onClick={onClose}
-          >
-            {t('manageInProject')}
-          </Link>
-        </Button>
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={onConnectAnother}>
-          <PlusIcon className="size-3.5 shrink-0" />
-          {computers.length > 0 ? t('connectAnother') : t('connectYourComputer')}
-        </Button>
-      </ModalFooter>
-
-      <ConfirmDialog
-        open={target !== null}
-        onOpenChange={(next) => {
-          if (!next) setTarget(null);
-        }}
-        title={t('disconnectConfirmTitle')}
-        description={t('unpairDescription')}
-        confirmLabel={t('disconnect')}
-        confirmVariant="destructive"
-        isPending={deleteMachine.isPending && !removeOlder.isPending}
-        onConfirm={() => {
-          if (!target) return;
-          deleteMachine.mutate(target.tunnelId, {
-            onSuccess: () => {
-              setTarget(null);
-              afterRemoval();
-            },
-            onError: (error: Error) => errorToast(error.message || t('disconnectFailed')),
-          });
-        }}
-      />
-      <ConfirmDialog
-        open={confirmOlder}
-        onOpenChange={setConfirmOlder}
-        title={t('older.confirmTitle')}
-        description={t('older.confirmDescription')}
-        confirmLabel={t('older.removeAll')}
-        confirmVariant="destructive"
-        isPending={removeOlder.isPending}
-        onConfirm={() => removeOlder.mutate(older)}
-      />
-    </>
-  );
-}
-
-/** One paired machine: name, live status, and what Kortix may use on it. */
-function ComputerListRow({
-  machine,
-  isThisComputer,
-  onDisconnect,
-}: {
-  machine: TunnelConnection;
-  isThisComputer: boolean;
-  onDisconnect: () => void;
-}) {
-  const t = useTranslations('computers');
-  const locale = useLocale();
-  const setAccess = useSetComputerAccess();
-  const access = machine.access;
-  const canChange = Boolean(machine.isLive && access?.controllable) && !setAccess.isPending;
-  const state: ComputerState = machine.isLive ? 'online' : 'offline';
-  const lastSeen =
-    !machine.isLive && machine.lastHeartbeatAt ? relativeTime(machine.lastHeartbeatAt, locale) : '';
-  const platform = platformName(machine.machineInfo?.platform);
-  const granted = REQUEST_CAPABILITIES.filter((key) => machine.capabilities.includes(key))
-    .map((key) => t(`capability.${key}`))
-    .join(' · ');
-  const name = computerDisplayName(machine.name, machine.machineInfo) || t('thisComputer');
-  return (
-    <li className="flex items-center gap-3 py-3">
-      <ComputerGlyph />
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <p className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-sm font-medium">{name}</span>
-          {isThisComputer ? (
-            <Badge variant="outline" size="xs">
-              {t('thisComputerBadge')}
-            </Badge>
-          ) : null}
-        </p>
-        <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-          <StatusText state={state} />
-          {lastSeen ? <span>· {t('lastSeen', { time: lastSeen })}</span> : null}
-          {platform ? <span>· {platform}</span> : null}
-        </p>
-        {granted ? <p className="text-muted-foreground truncate text-xs">{granted}</p> : null}
-        {access ? (
-          <p className="text-muted-foreground truncate text-xs">
-            {t('access.title')}: {t(`access.${access.mode}`)}
-          </p>
-        ) : null}
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-8 shrink-0"
-            aria-label={t('actionsFor', { name })}
-          >
-            <DotsThreeIcon className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {access ? (
-            <>
-              <DropdownMenuLabel>{t('access.title')}</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={access.mode}
-                onValueChange={(mode) =>
-                  setAccess.mutate(
-                    { tunnelId: machine.tunnelId, mode: mode as AccessMode },
-                    { onError: (error: Error) => errorToast(error.message || t('actionFailed')) },
-                  )
-                }
-              >
-                {ACCESS_MODES.map((mode) => (
-                  <DropdownMenuRadioItem key={mode} value={mode} disabled={!canChange}>
-                    {t(`access.${mode}`)}
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-            </>
-          ) : null}
-          <DropdownMenuItem variant="destructive" onSelect={onDisconnect}>
-            {t('disconnectEllipsis')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </li>
   );
 }

@@ -29,11 +29,39 @@
  *   4. Another hand-written copy in that package's projects.test.ts
  *   5. An entry below, DECLARING its enforcement mode
  *   6. One `useFeatureFlag` call + one map entry in
- *      apps/web/src/lib/use-project-feature-flags.ts (and move the trailing
+ *      packages/ui/src/internal/lib/use-project-feature-flags.ts (and move the trailing
  *      `isLoading:` to the newly-last hook)
  *
  * Then gate its routes with `requireFeatureFlag` (enforcement: 'routes'), or
  * its runtime behavior on `resolveFeatureFlag` (enforcement: 'behavioral').
+ *
+ * ## A flag gates EVERY surface
+ *
+ * Off, nothing of the feature exists in the project except the fact that its
+ * flag is off. On, everything shows and loads. Each surface has one mechanism:
+ *
+ *   • API — `requireFeatureFlag` on its routes (403 `feature_disabled`).
+ *   • Session box — the API lists the enabled flags in KORTIX_FEATURE_FLAGS
+ *     (projects/lib/feature-flag-env.ts). Boot-only; a change retires warm
+ *     sessions (toggle-effects.ts) and reaches the next new box.
+ *   • Managed skill — put the feature's agent docs in their own skill under
+ *     packages/starter/templates/managed/skills, with `metadata:
+ *     kortix-feature-flag: <key>` in its frontmatter. kortixd withholds it from a
+ *     box without the flag; the project's skill list hides it. Never describe a
+ *     flagged feature inside an unflagged skill (kortix-system, kortix-cli).
+ *   • CLI command — `featureFlag: '<key>'` on its apps/cli/src/command-table.ts
+ *     entry: listed and run only where the flag is known on — the box's list,
+ *     or outside a box the linked project's flags from the API. Never suggested
+ *     for a typo. `kortix system-skills` follows the same rule for a skill.
+ *   • IAM — `iamActions` on the entry: the account permission catalog leaves
+ *     them out until a project of the account has the flag on.
+ *   • Notification kind — the preferences API lists it in `hidden_kinds` while
+ *     it cannot reach the person, and the settings screens drop its row.
+ *   • Web — `useFeatureFlag` hides every entry point (sidebar row, More menu,
+ *     palette via `requiresFlag`, permission group via `featureFlag` in
+ *     agent-editor-catalog.ts); a page a deep link still reaches renders
+ *     `FeatureGateScreen` and loads no data. Public docs describe a feature
+ *     once it is on by default; until then its reference lives in its skill.
  *
  * FOUR separate tests guard those six sites, each in its own package, so each
  * one fails only when that package's suite runs — they surface one CI round at
@@ -77,8 +105,8 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves INTERNAL-ONLY surfaces (`session_log`,
- * `session_log_restore`): not offered in Settings, enabled per project by a
+ * The same state also serves INTERNAL-ONLY surfaces (`session_log_restore`):
+ * not offered in Settings, enabled per project by a
  * Kortix operator on request. Their 403 says "contact Kortix" instead of
  * naming a toggle the caller cannot see (gate.ts).
  */
@@ -131,6 +159,12 @@ export interface FeatureFlagDef {
    * toggle.
    */
   derivedFrom?: 'volumes';
+  /**
+   * IAM actions that exist only with this flag. The account permission catalog
+   * (`GET /accounts/:id/iam/permissions`) leaves them out until a project of the
+   * account has the flag on ({@link hiddenIamActions}).
+   */
+  iamActions?: readonly string[];
 }
 
 /**
@@ -173,31 +207,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => false,
     enforcement: 'routes',
   },
-  {
-    key: 'llm_gateway',
-    name: 'LLM Gateway',
-    description:
-      'Route this project through the managed Kortix LLM gateway (managed models, metering, budgets). Off, the sandbox runs native OpenCode model management: your provider API keys are injected as ordinary env vars and models are native provider/model refs. Toggling refreshes active sandboxes either way.',
-    stability: 'experimental',
-    // Master kill switch: when off, the feature disappears and every project
-    // falls back to native OpenCode provider behavior.
-    available: () => config.LLM_GATEWAY_ENABLED,
-    // Fleet rollout switch, default ON (config.ts LLM_GATEWAY_DEFAULT_ENABLED).
-    // Turning the flag OFF per project is the first-class native path — the
-    // deliberate lever for deployments (e.g. SampleCo) that bring their own
-    // keys end to end. Explicit project overrides always win, and the master
-    // availability gate above remains the emergency kill switch.
-    platformDefault: () => config.LLM_GATEWAY_DEFAULT_ENABLED,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'Enablement forks the whole model path: KORTIX_LLM_* env injection at ' +
-      'sandbox provision, provider-key secret delivery (withheld when on, ' +
-      'plaintext env when off — projects/secrets.ts materializeSecretDelivery), ' +
-      'gateway model validation vs native provider/model refs, the gated ' +
-      'llm-catalog/model-picker/model-defaults routes, and gateway title ' +
-      'generation. Toggling propagates to active sandboxes via ' +
-      'propagateLlmGatewayModeToActiveSandboxes.',
-  },
+  // `llm_gateway` graduated (2026-10-20): the LLM gateway is the only model
+  // path for every project. No flag, no native OpenCode provider mode, no
+  // operator lever. A stored `experimental.llm_gateway` override is inert.
   {
     key: 'meta_agent',
     name: 'Meta Agent',
@@ -236,8 +248,8 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'Let agents and people schedule check-ins on a session — "in 24 hours, check whether the vendor replied", once or on repeat. Each fire re-prompts that session. Adds the Reminders page, the session reminder chip, and `kortix remind` in the CLI.',
     stability: 'beta',
     available: () => true,
-    // Per-project opt-in while the surface settles.
-    platformDefault: () => false,
+    // On by default (2026-10-19): goals wake on a heartbeat reminder (kortix-goals).
+    platformDefault: () => true,
     // Routes 403 `feature_disabled`; the scheduler also skips reminder rows of
     // a project with the flag off (trigger-execution-store claimDueScheduleSlots).
     enforcement: 'routes',
@@ -247,18 +259,11 @@ const FLAGS: readonly FeatureFlagDef[] = [
     name: 'Warm Sessions',
     description:
       'Keep one sandbox booted and waiting while you have a project open, so a new session starts instantly instead of waiting for a cold boot. A warm sandbox is billed compute even when idle, until you use it or it expires. Turn this off to trade instant starts for lower cost.',
-    // The surface is small and server-owned, but the cost tradeoff is real and
-    // the presence model is new. `beta` says "we intend this on for everyone,
-    // and we expect to tune the grant".
     stability: 'beta',
     available: () => true,
-    // On by default: an instant session start is the point of the product, and
-    // the cost is bounded per project by `findWarmProjectSession` (one live
-    // warm session per user per project, matched by query, not by a unique
-    // index — see projects/routes/warm-sessions.ts) plus the sandbox deadline.
-    // A replenish also excludes the session the caller just took
-    // (`exclude_session_id`), so it never hands that same session back.
-    platformDefault: () => true,
+    // Idle compute requires explicit opt-in. Opening a project or sending its
+    // first prompt must not create an unused replacement sandbox by default.
+    platformDefault: () => false,
     // NOT 'ui-only'. A flag that only hid client surface would let any other
     // caller keep booting billed sandboxes, which defeats the reason someone
     // turns this off.
@@ -299,14 +304,17 @@ const FLAGS: readonly FeatureFlagDef[] = [
     key: 'pi_harness',
     name: 'Pi Harness (in-sandbox)',
     description:
-      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On ⇒ every new or restarted session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. pi calls models only through the LLM gateway: with `llm_gateway` off, sessions boot OpenCode.',
+      'Run sessions on the pi agent harness inside the ordinary session sandbox instead of OpenCode (KORTIX_HARNESS=pi in kortixd). Same repo layout, same agents and skills, same wire to the UI; pi starts in-process in ~100 ms after the checkout. On by default. On ⇒ every new session of this project boots pi. Off ⇒ the manifest decides: `runtime: pi` still boots pi, anything else boots OpenCode. An existing session keeps its sandbox and so its harness.',
     stability: 'experimental',
     available: () => true,
-    platformDefault: () => false,
+    // On by default (2026-10-20). PI_HARNESS_DEFAULT_ENABLED=false turns the default off for a deployment.
+    platformDefault: () => config.PI_HARNESS_DEFAULT_ENABLED,
     enforcement: 'behavioral',
     enforcementNote:
       'Read at session provisioning (projects/lib/sessions.ts buildSessionSandboxEnvVars → ' +
-      'selectSessionHarness). A running session keeps its harness until it is restarted or resumed.',
+      'selectSessionHarness). An established session keeps its sandbox (runtime-identity.ts), and a ' +
+      'restart reuses that sandbox and its env, so it keeps its harness. Only a lost or restored session ' +
+      'gets a new sandbox, and that one restores its history from the session log in either harness.',
   },
   {
     key: 'genui',
@@ -320,7 +328,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     platformDefault: () => true,
     enforcement: 'behavioral',
     enforcementNote:
-      'Read at session provisioning (projects/lib/genui-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its skill list until a new session starts. kortixd hides the kortix-genui skill while the flag is off (OpenCode: kortixd does not write the skill files, and removes a copy a reused config release still holds, because the `"*": "allow"` of a project config outranks any skill deny; pi: the skill is dropped from its list); the catalog is never in the system prompt. A flag change deletes every unclaimed warm session of the project (pre-created by the web client before the user types, projects/lib/warm-sessions.ts; feature-flags/toggle-effects.ts → retireWarmProjectSessions), so the next prompt starts a session with the new value. The deletion runs in the background after the change is saved: a warm session claimed before it runs keeps the old value. The API kill switch GENUI_ENABLED=false forces it off for every project; it is read at API boot, and a warm session provisioned before an API restart keeps its old value until it is used or idles out.',
+      'Read at session provisioning (projects/lib/feature-flag-env.ts → KORTIX_GENUI). An in-place restart keeps the sandbox env, so a running or restarted session keeps its skill list until a new session starts. kortixd hides the kortix-genui skill while the flag is off (OpenCode: kortixd does not write the skill files, and removes a copy a reused config release still holds, because the `"*": "allow"` of a project config outranks any skill deny; pi: the skill is dropped from its list); the catalog is never in the system prompt. A flag change deletes every unclaimed warm session of the project (pre-created by the web client before the user types, projects/lib/warm-sessions.ts; feature-flags/toggle-effects.ts → retireWarmProjectSessions), so the next prompt starts a session with the new value. The deletion runs in the background after the change is saved: a warm session claimed before it runs keeps the old value. The API kill switch GENUI_ENABLED=false forces it off for every project; it is read at API boot, and a warm session provisioned before an API restart keeps its old value until it is used or idles out.',
   },
   {
     key: 'us_region',
@@ -388,6 +396,7 @@ const FLAGS: readonly FeatureFlagDef[] = [
     stability: 'experimental',
     // Every volume is a Platinum volume.
     available: () => Boolean(config.PLATINUM_API_KEY),
+    // Explicit opt-in. A project with `goals` needs it on.
     platformDefault: () => false,
     enforcement: 'behavioral',
     enforcementNote:
@@ -416,24 +425,26 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'folder when off (drives/service.ts sessionVolumeMounts).',
   },
   {
-    key: 'session_log',
-    name: 'Session log v2',
+    key: 'goals',
+    name: 'Goals',
     description:
-      'Read a session through the v2 session log instead of the v1 transcript. Off by default and not offered in Settings: Kortix enables it per project. Prod rollout: internal projects first, then 10% of projects, then every project. It becomes the default in the release that ships v2 to everyone and is deleted in the next release.',
+      'Give an agent an objective and it owns the outcome until an independent check confirms it, for days or weeks: it plans, works, waits, chases people for what only they can give, and keeps its state in a Goals folder in Files. Needs Volumes and Reminders on.',
     stability: 'experimental',
-    available: () => true,
+    // A goal keeps its state in Files, and every drive is a Platinum volume.
+    available: () => Boolean(config.PLATINUM_API_KEY),
     platformDefault: () => false,
-    // Internal-only (2026-10-11): not offered in Settings.
-    // A Kortix operator enables it per project.
-    catalogHidden: true,
-    enforcement: 'behavioral',
+    enforcement: 'ui-only',
     enforcementNote:
-      'BEHAVIORAL only. On, the API serves the stored v1 transcript reads ' +
-      '(transcript shape=sync and the compact fallback, the open bundle, the ' +
-      'public share, MCP read_session) from the session log, and the open ' +
-      'bundle carries a `log` leg (P4.2). With the flag on, the SDK reads the ' +
-      'history from the session log (P8.0a): pages, sub-agent threads, no v1 saved copy.',
+      'BOX: off, a session box has no kortix-goals skill and its CLI hides and refuses `kortix goals` ' +
+      '(KORTIX_FEATURE_FLAGS → kortixd, apps/cli/src/command-table.ts) and kortixd runs no after-turn goal ' +
+      'check (harness/shared/on-idle-hook.ts), so a goal that already exists stops ' +
+      'being worked when the flag is turned off; its folder in Files stays. `kortix goals new` also checks the ' +
+      'flag through the API outside a box (apps/cli/src/commands/goals.ts). The server parts goals use ' +
+      '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
   },
+  // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
+  // saved history and the v1 transcript mirror is no longer read. No flag and no
+  // operator lever. A stored `experimental.session_log` override is inert.
   {
     key: 'session_log_restore',
     name: 'Session log restore',
@@ -474,6 +485,19 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'catalog while on (connectors/routes/catalogues.ts). The `mcp` app-event source exists only ' +
       'while on (projects/trigger-events/registry.ts); turning it off moves those triggers to error ' +
       'and drops their poll streams (feature-flags/toggle-effects.ts).',
+  },
+  {
+    key: 'agent_rooms',
+    name: 'Rooms',
+    iamActions: ['project.room.read', 'project.room.write'],
+    description:
+      'Named chat rooms per goal or topic where agent sessions and people post (`kortix rooms`, `kortix peers`). Every message is stored in its room. A member session gets a message addressed to it (an @-mention, a reply in its thread) between its steps; other room traffic arrives as one batched notice when its turn ends; a thread reply reaches only the thread participants. A stopped session wakes. A member person gets every message as unread and, with the notification center on, a notification for one addressed to them.',
+    stability: 'experimental',
+    available: () => true,
+    platformDefault: () => false,
+    enforcement: 'routes',
+    enforcementNote:
+      'Off ⇒ nothing of Rooms exists in the project. ROUTES: every /projects/:id/rooms* route and POST /projects/:id/sessions/:sid/idle-notice answer 403 `feature_disabled` (projects/routes/rooms.ts); a post fans out only to members whose own project still has the flag on (projects/rooms/service.ts); room notifications leave the inbox (notifications/inbox-read.ts). BOX: absent from KORTIX_FEATURE_FLAGS (projects/lib/feature-flag-env.ts), so kortixd withholds the kortix-rooms skill and the CLI hides and refuses `kortix rooms` / `kortix peers`; a change reaches the next new box, and retires warm sessions (feature-flags/toggle-effects.ts). CLI outside a box: hidden and refused unless the linked project has the flag on. IAM: project.room.* leave the account permission catalog until a project of the account has it on. NOTIFICATIONS: the `message` kind is in `hidden_kinds` (no settings row) unless the person is in a room of a flag-on project. WEB: no sidebar row, no More entry, no Rooms permission group; a deep link shows the flag-off screen. DOCS: the reference is the kortix-rooms skill (references/rooms.md), not the public docs.',
   },
 ];
 
@@ -523,6 +547,19 @@ export function resolveFeatureFlag(metadata: unknown, key: FeatureFlagKey): bool
 /** Is this flag derived from another flag (and so not a project choice)? */
 export function isDerivedFeatureFlag(key: FeatureFlagKey): boolean {
   return Boolean(FLAG_BY_KEY[key]?.derivedFrom);
+}
+
+/**
+ * The IAM actions of every flag that is off in all of `projectMetadatas` (an
+ * account's projects): a permission catalog leaves them out.
+ */
+export function hiddenIamActions(projectMetadatas: readonly unknown[]): Set<string> {
+  const hidden = new Set<string>();
+  for (const flag of FLAGS) {
+    if (!flag.iamActions || projectMetadatas.some((metadata) => resolveFeatureFlag(metadata, flag.key))) continue;
+    for (const action of flag.iamActions) hidden.add(action);
+  }
+  return hidden;
 }
 
 /** Effective enablement for every flag, keyed by flag id. */

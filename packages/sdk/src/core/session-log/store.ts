@@ -35,6 +35,7 @@
  * Every record is validated (`guard.ts`) before it is stored; an invalid one is dropped.
  */
 import { isSessionLogMessage, isSessionLogThreadHead } from './guard';
+import { normalizeShellExits } from './shell-exit';
 import type { SessionLogPage } from './source';
 import type { SessionLog, SessionLogMessage, SessionLogThread } from './types';
 
@@ -83,8 +84,13 @@ function without(state: SessionLogState, id: string): Record<string, SessionLogM
   return { ...state.messages, [thread]: state.messages[thread]!.filter((m) => m.message_id !== id) };
 }
 
-/** `message` in its thread, by `seq`, replacing any copy of the same id. */
-function put(messages: Record<string, SessionLogMessage[]>, message: SessionLogMessage): Record<string, SessionLogMessage[]> {
+/**
+ * `message` in its thread, by `seq`, replacing any copy of the same id. Every message enters
+ * here, from a page or a frame: a shell command that exited non-zero is stored as one
+ * (`normalizeShellExits`, KRTX-3021).
+ */
+function put(messages: Record<string, SessionLogMessage[]>, received: SessionLogMessage): Record<string, SessionLogMessage[]> {
+  const message = normalizeShellExits(received);
   const list = (messages[message.thread_id] ?? []).filter((m) => m.message_id !== message.message_id);
   let at = list.length;
   while (at > 0 && list[at - 1]!.seq > message.seq) at--;
@@ -184,15 +190,29 @@ export function applySessionLogPage(state: SessionLogState, page: SessionLogPage
 }
 
 const logs = new WeakMap<SessionLogState, SessionLog | null>();
+/** The thread built from a head and its message list: a frame that touches neither keeps the thread object. */
+const joined = new WeakMap<SessionLogThreadHead, { messages: SessionLogMessage[] | undefined; thread: SessionLogThread }>();
 
-/** The whole record: threads in arrival order, each with its messages. Null before the session record is known. */
+function threadOf(head: SessionLogThreadHead, messages: SessionLogMessage[] | undefined): SessionLogThread {
+  const cached = joined.get(head);
+  if (cached && cached.messages === messages) return cached.thread;
+  const thread = { ...head, messages: messages ?? [] };
+  joined.set(head, { messages, thread });
+  return thread;
+}
+
+/**
+ * The whole record: threads in arrival order, each with its messages. Null before the session record is known.
+ * A thread keeps its identity while its head and its message list are unchanged, so a delta to one
+ * thread re-renders no consumer of another.
+ */
 export function selectSessionLog(state: SessionLogState): SessionLog | null {
   const cached = logs.get(state);
   if (cached !== undefined) return cached;
   const session = state.session.session_id === undefined ? null : (state.session as SessionLogSessionRecord);
   const log = session && {
     ...session,
-    threads: Object.values(state.threads).map((head) => ({ ...head, messages: state.messages[head.thread_id] ?? [] })),
+    threads: Object.values(state.threads).map((head) => threadOf(head, state.messages[head.thread_id])),
   };
   logs.set(state, log);
   return log;

@@ -19,6 +19,8 @@ import { createHash } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import type { Context } from 'hono';
 import { db } from '../shared/db';
+import { isTransientDatabaseError } from '../shared/database-errors';
+import { logger } from '../lib/logger';
 import { makeOpenApiApp, json, errors } from '../openapi';
 import type { AppEnv } from '../types';
 import { TokenBucketRateLimiter } from '../shared/rate-limit';
@@ -425,7 +427,14 @@ headlessAuthRouter.openapi(
         VALUES (${digest}, now() + interval '90 days')
         ON CONFLICT DO NOTHING RETURNING token_hash
       `);
-    } catch {
+    } catch (error) {
+      // Only a connection-level failure clears on its own. A missing table or a
+      // permission error (a self-host whose migration did not run) is a fault:
+      // the global handler logs its SQLSTATE and answers 500 (KRTX-2977).
+      if (!isTransientDatabaseError(error)) throw error;
+      logger.warn('[auth] refresh-token ledger unavailable', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return c.json({ error: 'auth_unavailable', error_description: 'Refresh temporarily unavailable' }, 503);
     }
     if (!claimed.length) return c.json({ error: 'invalid_grant', error_description: 'Refresh token already used' }, 400);

@@ -1,14 +1,14 @@
-import { connectorCalls, projectSecrets, projectSessions, sessionSandboxes, sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
+import { connectorCalls, projectSecrets, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, count, eq, isNull, max } from 'drizzle-orm';
+import { approvalNotExpired } from '../../connectors/approval-expiry';
 import { db } from '../../shared/db';
 import { runtimeWakeInProgress } from '../session-lifecycle/runtime-wake-fence';
 import { wakeLadderBudgetOf } from '../session-lifecycle/attended-wake-ladder';
-import { sessionLogEnabled } from '../session-log-read';
 
 export interface RuntimeControlState {
   known: true;
   /** The sandbox row's status, or null when the session has no sandbox row. */
-  sandbox_status: string | null;
+  sandbox_status: typeof sessionSandboxes.$inferSelect.status | null;
   external_id: string | null;
   provider: string | null;
   /** A wake is DRIVING this box right now (the fence's own verdict). */
@@ -80,71 +80,6 @@ function stringOrNull(value: unknown): string | null {
   return typeof value === 'string' && value ? value : null;
 }
 
-export interface MirrorWatermark {
-  known: true;
-  /** `false` when nothing has ever been mirrored for this session. */
-  present: boolean;
-  captured_at: string | null;
-  /** TRUE only when a capture PROVED it saw the session's first message. */
-  head_complete: boolean;
-  opencode_session_id: string | null;
-  message_count: number;
-  newest_message_at: string | null;
-}
-
-/**
- * How far the durable transcript copy has caught up.
- *
- * Two aggregate reads on the mirror's own index — never the message BODIES.
- * The watermark is what a client needs to decide whether to ask for an older
- * page; shipping the rows here would re-create the 7-19 MB transcript payloads
- * the mirror exists to prevent. Null with the project flag `session_log` on: the
- * mirror is not read and the frame is not sent.
- */
-export async function readMirrorWatermark(sessionId: string): Promise<MirrorWatermark | null> {
-  // P8: with the project flag `session_log` on the session log is the transcript, and no client reads this frame.
-  if (await sessionLogEnabled(sessionId)) return null;
-  const [mirror] = await db
-    .select({
-      capturedAt: sessionTranscriptMirrors.capturedAt,
-      headComplete: sessionTranscriptMirrors.headComplete,
-      opencodeSessionId: sessionTranscriptMirrors.runtimeSessionId,
-    })
-    .from(sessionTranscriptMirrors)
-    .where(eq(sessionTranscriptMirrors.sessionId, sessionId))
-    .limit(1);
-
-  if (!mirror) {
-    return {
-      known: true,
-      present: false,
-      captured_at: null,
-      head_complete: false,
-      opencode_session_id: null,
-      message_count: 0,
-      newest_message_at: null,
-    };
-  }
-
-  const [stats] = await db
-    .select({
-      messages: count(),
-      newest: max(sessionTranscriptMessages.messageCreatedAt),
-    })
-    .from(sessionTranscriptMessages)
-    .where(eq(sessionTranscriptMessages.sessionId, sessionId));
-
-  return {
-    known: true,
-    present: true,
-    captured_at: mirror.capturedAt ? mirror.capturedAt.toISOString() : null,
-    head_complete: mirror.headComplete,
-    opencode_session_id: mirror.opencodeSessionId ?? null,
-    message_count: stats?.messages ?? 0,
-    newest_message_at: stats?.newest ? new Date(stats.newest).toISOString() : null,
-  };
-}
-
 export interface AuditWatermark {
   known: true;
   /** Unresolved connector-gated approvals awaiting a human decision. This is
@@ -195,6 +130,7 @@ export async function readSessionAuditWatermark(
         eq(connectorCalls.sessionId, sessionId),
         eq(connectorCalls.status, 'pending_approval'),
         isNull(connectorCalls.resolvedAt),
+        approvalNotExpired,
       ),
     );
   const [stamps] = await db
@@ -225,6 +161,10 @@ export interface SessionControlState {
    * provider list on change instead of polling. Never a name or a value.
    */
   secrets_rev: string;
+  /** The session's model pin, its source and the fallback switch time. It
+   *  changes when a fallback takes the session over, records a newer failure,
+   *  or hands it back, so a client re-reads the session row. */
+  model_rev: string;
 }
 
 /**
@@ -254,5 +194,6 @@ export async function readSessionControlState(sessionId: string): Promise<Sessio
     known: true,
     title: named(metadata.custom_name) ?? named(metadata.name),
     secrets_rev: secretsRev,
+    model_rev: `${String(metadata.opencode_model ?? '')}:${String(metadata.opencode_model_source ?? '')}:${String(metadata.opencode_model_fallback_at ?? '')}`,
   };
 }
