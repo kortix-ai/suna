@@ -2,6 +2,7 @@ import { type Kortix, type KortixPlatformConfig, createKortix } from '@kortix/sd
 import { runWithKortix } from '@kortix/sdk/server';
 
 import type { Auth } from './auth.ts';
+import { openKortixWebSocket } from './kortix-socket.ts';
 import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 export { sdkBackendUrl } from '@kortix/shared/host-config';
@@ -18,8 +19,9 @@ export function sdkConfigFromAuth(auth: Auth): KortixPlatformConfig {
   return {
     backendUrl: sdkBackendUrl(auth.api_base),
     getToken: async () => token || null,
-    // Baked by the release build (`--define`); unset in a local `bun run`.
-    clientVersion: process.env.KORTIX_CLI_VERSION ? `cli/${process.env.KORTIX_CLI_VERSION}` : undefined,
+    // Baked by the release build (`--define`); `dev` in a local `bun run`. The
+    // API names a CLI-created session's source from it (KRTX-2914).
+    clientVersion: `cli/${process.env.KORTIX_CLI_VERSION ?? 'dev'}`,
   };
 }
 
@@ -115,7 +117,7 @@ export function startSandboxPortProxy(opts: StartSandboxPortProxyOpts): RunningS
         ws.data.ready = false;
         let upstream: WebSocket;
         try {
-          upstream = new WebSocket(ws.data.upstreamUrl);
+          upstream = openKortixWebSocket(ws.data.upstreamUrl);
         } catch {
           try {
             ws.close(1011, 'upstream connect failed');
@@ -216,4 +218,15 @@ function sanitizeCloseCode(code: number | undefined): number {
   if (code === 1000) return 1000;
   if (code >= 3000 && code <= 4999) return code;
   return 1000;
+}
+
+/** Public device bootstrap cannot use the authenticated SDK transport: there
+ * is deliberately no credential until approval. Keep it in the transport seam. */
+export async function cliDeviceRequest<T>(apiBase: string, path: 'start' | 'poll', body: unknown, signal: AbortSignal): Promise<T> {
+  const response = await fetch(`${sdkBackendUrl(apiBase)}/cli/device/${path}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Kortix-Client-Version': 'cli/dev' },
+    body: JSON.stringify(body), signal,
+  });
+  if (!response.ok) throw new Error(`Device login failed (HTTP ${response.status}). Retry or use kortix login --token <key>.`);
+  return await response.json() as T;
 }

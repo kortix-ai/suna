@@ -7,7 +7,7 @@ delete process.env.KORTIX_APPS_BASE_DOMAIN;
 delete process.env.KORTIX_APPS_LOCAL;
 
 const { config } = await import('../config');
-const { appPublicUrl, appsBaseDomain, resolveAppHost } = await import('./hostnames');
+const { appPublicUrl, appServiceUrl, appsBaseDomain, resolveAppHost } = await import('./hostnames');
 
 const ROW = { slug: 'store', routeKey: 'aaaaaaaaaaaaaaaa' };
 const originalUrl = config.KORTIX_URL;
@@ -43,7 +43,7 @@ describe('App hostnames', () => {
 
     // ...and it accepts inbound traffic on that same domain, and only there.
     expect(resolveAppHost('dev-store-aaaaaaaaaaaaaaaa.apps.acme.com')).toEqual({
-      routeKey: 'aaaaaaaaaaaaaaaa', local: false,
+      routeKey: 'aaaaaaaaaaaaaaaa', local: false, service: 'http',
     });
     expect(resolveAppHost('dev-store-aaaaaaaaaaaaaaaa.apps.kortix.com')).toBeNull();
   });
@@ -54,7 +54,7 @@ describe('App hostnames', () => {
     expect(appsBaseDomain()).toBe('serve.acme.io');
     expect(appPublicUrl(ROW)).toBe('https://dev-store-aaaaaaaaaaaaaaaa.serve.acme.io');
     expect(resolveAppHost('dev-store-aaaaaaaaaaaaaaaa.serve.acme.io')).toEqual({
-      routeKey: 'aaaaaaaaaaaaaaaa', local: false,
+      routeKey: 'aaaaaaaaaaaaaaaa', local: false, service: 'http',
     });
   });
 
@@ -64,7 +64,7 @@ describe('App hostnames', () => {
     for (const origin of ['https://api.kortix.com', 'https://api.acme.com', 'https://kortix.example']) {
       setApiOrigin(origin);
       const url = new URL(appPublicUrl(ROW));
-      expect(resolveAppHost(url.hostname)).toEqual({ routeKey: ROW.routeKey, local: false });
+      expect(resolveAppHost(url.hostname)).toEqual({ routeKey: ROW.routeKey, local: false, service: 'http' });
     }
   });
 
@@ -72,7 +72,7 @@ describe('App hostnames', () => {
     process.env.KORTIX_APPS_LOCAL = 'true';
     expect(appPublicUrl(ROW)).toContain('http://aaaaaaaaaaaaaaaa.apps.localhost:');
     expect(resolveAppHost('aaaaaaaaaaaaaaaa.apps.localhost')).toEqual({
-      routeKey: 'aaaaaaaaaaaaaaaa', local: true,
+      routeKey: 'aaaaaaaaaaaaaaaa', local: true, service: 'http',
     });
   });
 
@@ -90,5 +90,19 @@ describe('App hostnames', () => {
     expect(resolveAppHost('a.dev-store-aaaaaaaaaaaaaaaa.apps.acme.com')).toBeNull();
     expect(resolveAppHost('dev-store-nothex.apps.acme.com')).toBeNull();
     expect(resolveAppHost('anything.example.com')).toBeNull();
+  });
+
+  test('a named service answers on `--<service>` after the route key; the primary keeps the App host', () => {
+    const prev = process.env.KORTIX_APPS_LOCAL;
+    process.env.KORTIX_APPS_LOCAL = 'true';
+    try {
+      expect(resolveAppHost('aaaaaaaaaaaaaaaa--site.apps.localhost')).toEqual({ routeKey: 'aaaaaaaaaaaaaaaa', local: true, service: 'site' });
+      expect(resolveAppHost('aaaaaaaaaaaaaaaa.apps.localhost')).toEqual({ routeKey: 'aaaaaaaaaaaaaaaa', local: true, service: 'http' });
+      expect(resolveAppHost('aaaaaaaaaaaaaaaa--9site.apps.localhost')).toBeNull();
+      expect(appServiceUrl({ slug: 'crm', routeKey: 'aaaaaaaaaaaaaaaa' }, 'site')).toContain('aaaaaaaaaaaaaaaa--site.apps.localhost');
+    } finally {
+      if (prev === undefined) delete process.env.KORTIX_APPS_LOCAL;
+      else process.env.KORTIX_APPS_LOCAL = prev;
+    }
   });
 });

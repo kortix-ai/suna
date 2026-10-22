@@ -24,8 +24,11 @@ import {
   renderMonitorLifecyclePrompt,
 } from './monitor-events';
 import { renderPromptTemplate, triggerFilterMatches } from './trigger-payload';
-import { fireGitTrigger } from './trigger-fire';
-import { triggersPausedForProject } from './trigger-scheduler-state';
+import { fireGitTrigger, markGitTriggerAttemptFailed, markGitTriggerFired } from './trigger-fire';
+import { takeThrottledRunSlot } from './trigger-run-caps';
+import { raiseTriggerAlert } from './trigger-alerts';
+import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
+import { automaticFirePauseReason } from './trigger-scheduler-state';
 
 /** Attempts after which an event dead-letters as `failed`. Mirrors the
  *  execution queue's ceiling so both queues fail the same way. */
@@ -123,8 +126,10 @@ export async function processMonitorEvent(
   }
   // A monitor fire is project automation, so the project-wide pause switch
   // stops it exactly like it stops a cron fire.
-  if (triggersPausedForProject(project.metadata)) {
-    return skip('project triggers are paused');
+  // The project's pause, or the account's Pause all automations (KRTX-1721).
+  const pausedReason = await automaticFirePauseReason(project);
+  if (pausedReason) {
+    return skip(pausedReason);
   }
   // Behavioral half of the flag (spec §"Feature flag"): turning `monitors` off
   // stops firing even if the ingest route were somehow bypassed.
@@ -189,21 +194,42 @@ export async function processMonitorEvent(
       idempotencyKey,
     });
     if (result.status === 'fired' || result.status === 'queued') {
+      // One event is one run (KRTX-1743); a failed attempt is recorded only
+      // when it dead-letters (failMonitorEvent).
+      await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'monitor', spec, payload, ...triggerRunFromFire(result), now });
       await markMonitorEvent(row.eventId, 'fired', now, { sessionId: result.sessionId ?? null });
       await touchMonitorLastEvent(row.projectId, row.slug, row.emittedAt, now);
+      // The trigger's last_fired_at / last_status, as every other source stamps
+      // them; it also clears a failed fire recorded below. Display state only:
+      // a failed stamp must not send this fired event back to `pending`.
+      await markGitTriggerFired(row.projectId, row.slug, now, result.status).catch(() => {});
       return 'fired';
     }
-    return await failMonitorEvent(row, now, result.error ?? result.reason ?? 'monitor fire failed');
+    // A run cap held it (KRTX-1721): one skipped run, and no retry.
+    if (result.status === 'skipped') {
+      if (takeThrottledRunSlot(row.projectId, row.slug, now)) {
+        await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'monitor', spec, payload, ...triggerRunFromFire(result), now });
+      }
+      return await skip(result.reason ?? 'skipped');
+    }
+    return await failMonitorEvent(row, now, result.error ?? result.reason ?? 'monitor fire failed', { spec, payload });
   } catch (error) {
-    return await failMonitorEvent(row, now, error instanceof Error ? error.message : String(error));
+    return await failMonitorEvent(row, now, error instanceof Error ? error.message : String(error), { spec, payload });
   }
 }
 
 /**
  * A failed attempt stays `pending` so the next tick retries it, until the
- * attempt ceiling turns it into a dead-lettered `failed` row.
+ * attempt ceiling turns it into a dead-lettered `failed` row. The trigger
+ * records every failed attempt, like a failed cron fire (KRTX-1743); the dead
+ * letter alerts its watchers (KRTX-1742).
  */
-async function failMonitorEvent(row: MonitorEventRow, now: Date, error: string): Promise<'failed'> {
+async function failMonitorEvent(
+  row: MonitorEventRow,
+  now: Date,
+  error: string,
+  run: { spec: GitTriggerSpec; payload: Record<string, unknown> },
+): Promise<'failed'> {
   const terminal = row.attempts >= MONITOR_EVENT_MAX_ATTEMPTS;
   await db
     .update(projectMonitorEvents)
@@ -212,6 +238,11 @@ async function failMonitorEvent(row: MonitorEventRow, now: Date, error: string):
       lastError: error.slice(0, 2_000),
     })
     .where(eq(projectMonitorEvents.eventId, row.eventId));
+  await markGitTriggerAttemptFailed(row.projectId, row.slug, now, error).catch(() => {});
+  if (terminal) {
+    await recordTriggerRun({ projectId: row.projectId, slug: row.slug, source: 'monitor', ...run, status: 'failed', error, now });
+    await raiseTriggerAlert({ projectId: row.projectId, slug: row.slug, source: 'fire', error });
+  }
   return 'failed';
 }
 

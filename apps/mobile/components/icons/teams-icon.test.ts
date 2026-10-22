@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
  */
 const read = (path: string) => readFileSync(`${import.meta.dir}/${path}`, 'utf8');
 const mobileMark = read('teams-icon.tsx');
-const webMark = read('../../../web/src/features/icon/icons/microsoft-teams.tsx');
+const webMark = read('../../../../packages/ui/src/internal/icons/microsoft-teams.tsx');
 const userMessage = read('../session/turn/user-message.tsx');
 
 /** Every drawing attribute of the mark, in order, with ids normalised. */
@@ -39,8 +39,9 @@ describe('the mobile channel card', () => {
   });
 
   test("draws each platform's own mark, and names Teams in full", () => {
-    expect(userMessage).toMatch(/platform === 'Teams' \? <TeamsIcon size=\{size\} \/>/);
-    expect(userMessage).toMatch(/platform === 'Slack' \? <SlackIcon size=\{size\} \/>/);
+    // `ChannelMark` returns each platform's mark (#9369 made the ternary ifs).
+    expect(userMessage).toMatch(/platform === 'Teams'\)? (\?|return) <TeamsIcon size=\{size\} \/>/);
+    expect(userMessage).toMatch(/platform === 'Slack'\)? (\?|return) <SlackIcon size=\{size\} \/>/);
     expect(userMessage).toContain("Teams: 'Microsoft Teams'");
   });
 });

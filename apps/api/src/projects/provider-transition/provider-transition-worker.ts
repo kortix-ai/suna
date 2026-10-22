@@ -45,8 +45,3 @@ export async function runProviderTransitionTick(): Promise<{ resumed: number }> 
   if (resumed > 0) logger.info('[provider-transition-worker] resumed transitions', { count: resumed });
   return { resumed };
 }
-
-export {
-  startProviderTransitionWorker,
-  stopProviderTransitionWorker,
-} from '../../workers/provider-transition-worker';

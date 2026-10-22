@@ -113,33 +113,45 @@ describe('X6: the backend comes from the instance, not from the page', () => {
   });
 });
 
-describe('access control on the machine (A1, A4, A5, X5)', () => {
-  const now = Date.parse('2030-01-01T12:00:00.000Z');
-
-  test('reads access.json like the agent: missing = always, damaged = ask', () => {
-    const home = tempDir();
-    expect(computer.readAccess(home)).toEqual({ mode: 'always', grantedUntil: null, deniedUntil: null, keepAwake: false });
-    fs.writeFileSync(path.join(home, 'access.json'), '{');
-    expect(computer.readAccess(home).mode).toBe('ask');
+describe('access control: the agent CLI applies it, this app asks (A1, A4, A5, X5)', () => {
+  test('keeps no copy of the access rules and never writes an agent file', () => {
+    for (const name of ['readAccess', 'writeAccess', 'nextAccess', 'decideAccess', 'accessWidens', 'accessView', 'readAgentState']) {
+      expect(computer[name]).toBeUndefined();
+    }
+    const source = fs.readFileSync(path.join(__dirname, 'computer.js'), 'utf8') + fs.readFileSync(path.join(__dirname, 'computer-tray.js'), 'utf8');
+    expect(source).not.toMatch(/writePrivateJson\([^)]*'access(-request)?\.json'/);
+    expect(source).not.toMatch(/readFileSync\([^)]*'(access|access-request|state)\.json'/);
   });
 
-  test('access_set grants (max 24 h), revokes, switches mode and keep-awake, and writes privately', () => {
-    const home = tempDir();
-    const base = computer.readAccess(home);
-    expect(computer.nextAccess(base, { grantMinutes: 60 }, now)).toMatchObject({
-      grantedUntil: '2030-01-01T13:00:00.000Z',
-      deniedUntil: null,
-    });
-    expect(computer.nextAccess(base, { grantMinutes: 10_000 }, now).grantedUntil).toBe('2030-01-02T12:00:00.000Z');
-    expect(computer.nextAccess({ ...base, grantedUntil: 'x' }, { revoke: true }, now).grantedUntil).toBeNull();
-    expect(computer.nextAccess(base, { mode: 'off', keepAwake: true }, now)).toMatchObject({ mode: 'off', keepAwake: true });
-    expect(() => computer.nextAccess(base, { mode: 'sometimes' }, now)).toThrow(/mode/);
-    computer.writeAccess(home, computer.nextAccess(base, { mode: 'ask' }, now));
-    expect(computer.readAccess(home).mode).toBe('ask');
-    // A mode change drops the old grant and denial: back to "Ask each time" asks again.
-    const granted = { mode: 'off', grantedUntil: '2030-01-01T20:00:00.000Z', deniedUntil: '2030-01-01T12:05:00.000Z', keepAwake: false };
-    expect(computer.nextAccess(granted, { mode: 'ask' }, now)).toMatchObject({ mode: 'ask', grantedUntil: null, deniedUntil: null });
-    expect(fs.statSync(path.join(home, 'access.json')).mode & 0o077).toBe(0);
+  test('every access change is one CLI command', () => {
+    expect(computer.accessArgs({ mode: 'always' })).toEqual(['access', 'always', '--json']);
+    expect(computer.accessArgs({ grantMinutes: 60 })).toEqual(['access', '--allow-for', '60', '--json']);
+    expect(computer.accessArgs({ revoke: true })).toEqual(['access', '--revoke', '--json']);
+    expect(computer.accessArgs({ deny: true })).toEqual(['access', '--deny', '--json']);
+    expect(computer.accessArgs({ keepAwake: true })).toEqual(['keep-awake', 'on', '--json']);
+    expect(computer.accessArgs({ keepAwake: false })).toEqual(['keep-awake', 'off', '--json']);
+  });
+
+  test('each prompt answer becomes the CLI command for it; cancelling a relayed change declines it', () => {
+    const call = { id: 'r1', capability: 'shell' };
+    expect(computer.answerArgs(call, 0)).toEqual(['access', '--allow-for', '1440', '--json']);
+    expect(computer.answerArgs(call, 1)).toEqual(['access', '--allow-for', '60', '--json']);
+    expect(computer.answerArgs(call, 2)).toEqual(['access', '--deny', '--json']);
+    const change = { id: 'r2', capability: 'access', change: { mode: 'always' } };
+    expect(computer.answerArgs(change, 0)).toEqual(['access', 'always', '--json']);
+    expect(computer.answerArgs(change, 1)).toEqual(['access', '--deny', '--json']);
+  });
+
+  test('a call request needs a prompt only while access is undecided; a relayed change always does', () => {
+    const request = { id: 'r1', capability: 'filesystem', requestedAt: '2030-01-01T12:00:00.000Z' };
+    const ask = { mode: 'ask', grantedUntil: null, deniedUntil: null, pendingRequest: request };
+    expect(computer.requestToPrompt(ask)).toBe(request);
+    expect(computer.requestToPrompt({ ...ask, grantedUntil: '2030-01-01T13:00:00.000Z' })).toBeNull();
+    expect(computer.requestToPrompt({ ...ask, mode: 'off' })).toBeNull();
+    expect(computer.requestToPrompt({ ...ask, pendingRequest: null })).toBeNull();
+    expect(computer.requestToPrompt(null)).toBeNull();
+    const change = { ...request, change: { mode: 'always' } };
+    expect(computer.requestToPrompt({ ...ask, mode: 'always', pendingRequest: change })).toBe(change);
   });
 
   test('the prompt names the machine, what the agent wants, and the whole scope of a grant; 1 hour is the default', () => {
@@ -157,62 +169,31 @@ describe('access control on the machine (A1, A4, A5, X5)', () => {
     expect(computer.accessPrompt({ capability: 'desktop' }, 'Studio').detail).toContain('the screen and keyboard');
   });
 
-  test('the page may narrow access at once; widening needs the owner (computer_access_set)', () => {
-    const ask = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false };
-    const widens = (current, input) => computer.accessWidens(current, computer.nextAccess(current, input, now), now);
-    expect(widens(ask, { mode: 'always' })).toBe(true);
-    expect(widens(ask, { grantMinutes: 1440 })).toBe(true);
-    expect(widens({ ...ask, mode: 'off' }, { mode: 'ask' })).toBe(false);
-    expect(widens({ ...ask, mode: 'always' }, { mode: 'ask' })).toBe(false);
-    expect(widens(ask, { mode: 'off' })).toBe(false);
-    expect(widens({ ...ask, grantedUntil: '2030-01-01T13:00:00.000Z' }, { revoke: true })).toBe(false);
-    expect(widens(ask, { keepAwake: true })).toBe(false);
-    // "Deny" from the page's request banner: narrows, same 10 minutes as the native prompt.
-    expect(computer.nextAccess({ ...ask, grantedUntil: '2030-01-01T13:00:00.000Z' }, { deny: true }, now)).toMatchObject({
-      grantedUntil: null,
-      deniedUntil: '2030-01-01T12:10:00.000Z',
-    });
-    expect(widens(ask, { deny: true })).toBe(false);
-    expect(computer.widenPrompt({ mode: 'always' }, 'Studio')).toMatchObject({ buttons: ['Allow', 'Cancel'], defaultId: 1, cancelId: 1 });
+  test('a wider access asked for through Kortix names what it allows; Cancel is the default', () => {
+    const always = computer.widenPrompt({ mode: 'always' }, 'Studio');
+    expect(always).toMatchObject({ title: 'Allow Kortix to use Studio?', buttons: ['Allow', 'Cancel'], defaultId: 1, cancelId: 1 });
+    expect(always.detail).toContain('every agent call without asking you first');
+    expect(always.detail).toContain('Allow it only if that was you');
+    expect(computer.widenPrompt({ grantMinutes: 60 }, 'Studio').detail).toContain('for the next 1 hour');
+    expect(computer.widenPrompt({ grantMinutes: 1440 }, 'Studio').detail).toContain('for the next 24 hours');
+    expect(computer.widenPrompt({ grantMinutes: 30 }, 'Studio').detail).toContain('for the next 30 minutes');
   });
 
-  test('a decided request needs no prompt; an answer clears every request asked before it', () => {
-    const ask = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false };
-    expect(computer.decideAccess(ask, now)).toBe('ask');
-    expect(computer.decideAccess({ ...ask, grantedUntil: '2030-01-01T13:00:00.000Z' }, now)).toBe('run');
-    expect(computer.decideAccess({ ...ask, deniedUntil: '2030-01-01T12:05:00.000Z' }, now)).toBe('denied');
+  test('the real agent CLI applies what this app sends and reports it in status --json', async () => {
     const home = tempDir();
-    const request = (id, at) => fs.writeFileSync(path.join(home, 'access-request.json'), JSON.stringify({ id, capability: 'filesystem', requestedAt: new Date(at).toISOString() }));
-    request('r3', now - 1_000);
-    computer.clearAccessRequestsUntil(home, now);
-    expect(fs.existsSync(path.join(home, 'access-request.json'))).toBe(false);
-    request('r4', now + 1_000);
-    computer.clearAccessRequestsUntil(home, now);
-    expect(fs.existsSync(path.join(home, 'access-request.json'))).toBe(true);
-  });
-
-  test('each answer becomes the right access.json change; deny blocks for 10 minutes', () => {
-    const base = { mode: 'ask', grantedUntil: null, deniedUntil: '2029-01-01T00:00:00.000Z', keepAwake: false };
-    expect(computer.answerAccess(base, 0, now)).toMatchObject({ grantedUntil: '2030-01-02T12:00:00.000Z', deniedUntil: null });
-    expect(computer.answerAccess(base, 1, now)).toMatchObject({ grantedUntil: '2030-01-01T13:00:00.000Z', deniedUntil: null });
-    expect(computer.answerAccess(base, 2, now)).toMatchObject({ grantedUntil: null, deniedUntil: '2030-01-01T12:10:00.000Z' });
-  });
-
-  test('access_get reports the pending request only while it is fresh', () => {
-    const home = tempDir();
-    const fresh = { id: 'r1', capability: 'filesystem', method: 'fs.list', requestedAt: new Date(now - 5_000).toISOString() };
-    fs.writeFileSync(path.join(home, 'access-request.json'), JSON.stringify(fresh));
-    expect(computer.accessView(home, 'darwin', now)).toEqual({
-      mode: 'always',
-      grantedUntil: null,
-      deniedUntil: null,
-      keepAwake: false,
-      keepAwakeSupported: true,
-      pendingRequest: { id: 'r1', capability: 'filesystem', requestedAt: fresh.requestedAt },
-    });
-    expect(computer.accessView(home, 'darwin', now + 120_000).pendingRequest).toBeNull();
-    expect(computer.accessView(home, 'win32', now).keepAwakeSupported).toBe(false);
-  });
+    // The app runs its bundled agent-cli.js with its own binary; bun runs the source here.
+    const cli = path.join(__dirname, '..', '..', '..', 'packages', 'agent-tunnel', 'src', 'agent', 'cli.ts');
+    const run = (args) => computer.runAgent(args, { cli, home, execPath: process.execPath });
+    for (const args of [computer.accessArgs({ mode: 'ask' }), computer.accessArgs({ keepAwake: true }), computer.answerArgs({ id: 'r', capability: 'shell' }, 1)]) {
+      const result = await run(args);
+      expect(result.code).toBe(0);
+    }
+    const status = await computer.computerStatus({ cli, home, execPath: process.execPath });
+    expect(status).toMatchObject({ available: true, paired: false, access: { mode: 'ask', keepAwake: true, pendingRequest: null } });
+    expect(Date.parse(status.access.grantedUntil) - Date.now()).toBeGreaterThan(59 * 60_000);
+    const refused = await run(['access', 'sometimes', '--json']);
+    expect(refused.code).toBe(1);
+  }, 30_000);
 
   test('records how the agent can start this app (dev runs electron with the app path)', () => {
     expect(
@@ -254,26 +235,19 @@ describe('agent output and state', () => {
     expect(events).toEqual([{ event: 'challenge', deviceCode: 'ABCD-1234' }, { event: 'approved' }]);
   });
 
-  test('reports a state.json whose writer died as offline', () => {
-    const home = tempDir();
-    const write = (state) => fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify(state));
-    write({ tunnelId: 't1', status: 'online', pid: process.pid });
-    expect(computer.readAgentState(home).status).toBe('online');
-    write({ tunnelId: 't1', status: 'online', pid: 2 ** 22 + 12345 });
-    expect(computer.readAgentState(home).status).toBe('offline');
-    fs.writeFileSync(path.join(home, 'state.json'), '{');
-    expect(computer.readAgentState(home)).toBeNull();
-  });
-
-  test('computer_status combines the service view with the live state (X5)', () => {
-    const service = {
+  test('computer_status is the CLI status report, read once (X5)', () => {
+    const access = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false, keepAwakeSupported: true, pendingRequest: null };
+    const report = (state, service = { installed: true, active: true, enabled: true, upToDate: true }) => ({
       paired: true,
       tunnelId: 't1',
       apiUrl: 'http://localhost:32908/v1/tunnel',
       version: '0.1.3',
-      service: { installed: true, active: true, enabled: true, upToDate: true },
-    };
-    expect(computer.computerStatusFrom(service, { tunnelId: 't1', status: 'online', agentVersion: '0.1.3' })).toEqual({
+      capabilities: ['filesystem', 'desktop'],
+      service,
+      state,
+      access,
+    });
+    expect(computer.computerStatusFrom(report({ tunnelId: 't1', status: 'online', agentVersion: '0.1.3' }))).toEqual({
       available: true,
       paired: true,
       tunnelId: 't1',
@@ -284,38 +258,39 @@ describe('agent output and state', () => {
       serviceInstalled: true,
       serviceActive: true,
       needsRepair: false,
+      capabilities: ['filesystem', 'desktop'],
+      access,
     });
-    expect(computer.computerStatusFrom(service, { tunnelId: 't1', status: 'rejected', agentVersion: '0.1.3' }).state).toBe('rejected');
+    expect(computer.computerStatusFrom(report({ tunnelId: 't1', status: 'rejected', agentVersion: '0.1.3' })).state).toBe('rejected');
     // A state file from a previous pairing says nothing about this one.
-    expect(computer.computerStatusFrom(service, { tunnelId: 'old', status: 'online' }).state).toBe('offline');
-    const paused = { ...service, service: { installed: true, active: false, enabled: false, upToDate: true } };
-    expect(computer.computerStatusFrom(paused, null)).toMatchObject({ paused: true, needsRepair: false });
-    expect(
-      computer.computerStatusFrom({ paired: false, service: { installed: false, active: null } }, null),
-    ).toEqual({ available: true, paired: false, paused: false, serviceInstalled: false, serviceActive: false, needsRepair: false });
+    expect(computer.computerStatusFrom(report({ tunnelId: 'old', status: 'online' })).state).toBe('offline');
+    expect(computer.computerStatusFrom(report(null, { installed: true, active: false, enabled: false, upToDate: true }))).toMatchObject({ paused: true, needsRepair: false });
+    expect(computer.computerStatusFrom({ paired: false, service: { installed: false, active: null } })).toEqual({
+      available: true,
+      paired: false,
+      paused: false,
+      serviceInstalled: false,
+      serviceActive: false,
+      needsRepair: false,
+      capabilities: [],
+      access: null,
+    });
   });
 
   test('R5: a paired, unpaused service is repaired when missing, stopped, stale, or running an older agent', () => {
-    const base = {
-      paired: true,
-      tunnelId: 't1',
-      version: '0.1.3',
-      service: { installed: true, active: true, enabled: true, upToDate: true },
-    };
     const state = { tunnelId: 't1', status: 'online', agentVersion: '0.1.3' };
-    expect(computer.computerStatusFrom(base, state).needsRepair).toBe(false);
-    expect(computer.computerStatusFrom({ ...base, service: { ...base.service, installed: false } }, state).needsRepair).toBe(true);
-    // Stopped with nothing holding the tunnel (readAgentState reports a dead writer as offline).
-    expect(computer.computerStatusFrom({ ...base, service: { ...base.service, active: false } }, { ...state, status: 'offline' }).needsRepair).toBe(true);
-    expect(computer.computerStatusFrom({ ...base, service: { ...base.service, upToDate: false } }, state).needsRepair).toBe(true);
-    expect(computer.computerStatusFrom(base, { ...state, agentVersion: '0.1.2' }).needsRepair).toBe(true);
+    const service = { installed: true, active: true, enabled: true, upToDate: true };
+    const status = (patch = {}, live = state) => computer.computerStatusFrom({ paired: true, tunnelId: 't1', version: '0.1.3', service: { ...service, ...patch }, state: live });
+    expect(status().needsRepair).toBe(false);
+    expect(status({ installed: false }).needsRepair).toBe(true);
+    // Stopped with nothing holding the tunnel (the CLI reports a dead writer as offline).
+    expect(status({ active: false }, { ...state, status: 'offline' }).needsRepair).toBe(true);
+    expect(status({ upToDate: false }).needsRepair).toBe(true);
+    expect(status({}, { ...state, agentVersion: '0.1.2' }).needsRepair).toBe(true);
     // Paused means paused: never restarted behind the owner's back.
-    expect(
-      computer.computerStatusFrom({ ...base, service: { installed: true, active: false, enabled: false, upToDate: false } }, state).needsRepair,
-    ).toBe(false);
+    expect(status({ active: false, enabled: false, upToDate: false }).needsRepair).toBe(false);
     // A foreground `agent-tunnel connect` holds the tunnel: starting the service would displace it.
-    const stopped = { ...base, service: { ...base.service, active: false } };
-    expect(computer.computerStatusFrom(stopped, { ...state, pid: process.pid })).toMatchObject({ paused: false, needsRepair: false });
+    expect(status({ active: false })).toMatchObject({ paused: false, needsRepair: false });
     expect(computer.statusLabel({ paired: true, paused: false, serviceActive: false, state: 'offline' })).toBe('Computer service stopped');
   });
 });
@@ -323,12 +298,12 @@ describe('agent output and state', () => {
 describe('tray', () => {
   const noop = () => {};
   const actions = new Proxy({}, { get: () => noop });
-  const online = { paired: true, tunnelId: 't1', status: 'online', state: 'online', paused: false, serviceInstalled: true, serviceActive: true };
-  const access = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false };
-  const opts = { openAtLogin: true, loginItemSupported: true, keepAwakeSupported: true, now: Date.parse('2030-01-01T12:00:00.000Z') };
+  const access = { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false, keepAwakeSupported: true };
+  const online = { paired: true, tunnelId: 't1', status: 'online', state: 'online', paused: false, serviceInstalled: true, serviceActive: true, access };
+  const opts = { openAtLogin: true, loginItemSupported: true, now: Date.parse('2030-01-01T12:00:00.000Z') };
 
   test('lists the computer and access controls in order (A5)', () => {
-    const items = computer.trayMenuTemplate(online, access, opts, actions);
+    const items = computer.trayMenuTemplate(online, opts, actions);
     expect(items.filter((item) => item.id).map((item) => item.label)).toEqual([
       'Computer connected',
       'Open Kortix',
@@ -350,17 +325,17 @@ describe('tray', () => {
   });
 
   test('an active grant shows its end and a Revoke now item', () => {
-    const granted = { ...access, grantedUntil: '2030-01-01T14:32:00.000Z' };
-    const items = computer.trayMenuTemplate(online, granted, opts, actions);
+    const granted = { ...online, access: { ...access, grantedUntil: '2030-01-01T14:32:00.000Z' } };
+    const items = computer.trayMenuTemplate(granted, opts, actions);
     const grant = items.find((item) => item.id === 'grant');
     expect(grant.label).toMatch(/^Allowed until /);
     expect(items.find((item) => item.id === 'revoke').label).toBe('Revoke now');
-    expect(computer.trayMenuTemplate(online, access, opts, actions).find((item) => item.id === 'revoke')).toBeUndefined();
+    expect(computer.trayMenuTemplate(online, opts, actions).find((item) => item.id === 'revoke')).toBeUndefined();
   });
 
   test('a paused computer offers Resume; Linux has no login item; Windows says keep-awake is unavailable', () => {
-    const paused = { ...online, paused: true, serviceActive: false, status: 'offline', state: 'offline' };
-    const items = computer.trayMenuTemplate(paused, access, { ...opts, loginItemSupported: false, keepAwakeSupported: false }, actions);
+    const paused = { ...online, paused: true, serviceActive: false, status: 'offline', state: 'offline', access: { ...access, keepAwakeSupported: false } };
+    const items = computer.trayMenuTemplate(paused, { ...opts, loginItemSupported: false }, actions);
     expect(items[0].label).toBe('Computer access paused');
     expect(items.find((item) => item.id === 'pause').label).toBe('Resume computer access');
     expect(items.find((item) => item.id === 'login')).toBeUndefined();
@@ -485,9 +460,13 @@ describe('desktop wiring', () => {
     // R3: pause is the agent's durable `stop`; R5: repair on launch.
     expect(tray).toContain("serviceVerb('stop'");
     expect(tray).toContain("run(['install-service'])");
-    // X5 access IPC.
-    expect(tray).toContain("case 'computer_access_get':");
-    expect(tray).toContain("case 'computer_access_set':");
+    // Access is changed through Kortix (the API relays it to the agent) or
+    // from the tray; the page has no local access command.
+    expect(tray).not.toContain("case 'computer_access_get':");
+    expect(tray).not.toContain("case 'computer_access_set':");
+    // Every tray change and prompt answer runs the CLI.
+    expect(tray).toContain('run(computer.accessArgs(change))');
+    expect(tray).toContain('run(computer.answerArgs(request, response))');
   });
 
   test('closing the last window keeps a paired computer in the tray', () => {
@@ -514,24 +493,15 @@ describe('desktop wiring', () => {
 
 describe('computer setup (the macOS grants the approved access needs)', () => {
   test('files need the protected folders; Computer Use needs Accessibility and Screen Recording', () => {
-    const home = tempDir();
-    const config = (capabilities) =>
-      fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ enabledCapabilities: capabilities }));
     const none = { accessibility: false, screenRecording: false, files: null };
-
-    expect(computer.computerSetupMissing(home, none)).toEqual([]); // not paired
-    config(['shell']);
-    expect(computer.computerSetupMissing(home, none)).toEqual([]);
-    config(['filesystem', 'shell', 'desktop']);
-    expect(computer.computerSetupMissing(home, none)).toEqual(['files', 'accessibility', 'screenRecording']);
-    expect(
-      computer.computerSetupMissing(home, { accessibility: true, screenRecording: false, files: true }),
-    ).toEqual(['screenRecording']);
+    expect(computer.computerSetupMissing(undefined, none)).toEqual([]); // not paired
+    expect(computer.computerSetupMissing(['shell'], none)).toEqual([]);
+    expect(computer.computerSetupMissing(['filesystem', 'shell', 'desktop'], none)).toEqual(['files', 'accessibility', 'screenRecording']);
+    expect(computer.computerSetupMissing(['filesystem', 'desktop'], { accessibility: true, screenRecording: false, files: true })).toEqual(['screenRecording']);
     // A folder the person refused stays missing: setup sends them to System Settings.
-    config(['filesystem']);
-    expect(computer.computerSetupMissing(home, { ...none, files: false })).toEqual(['files']);
-    expect(computer.computerSetupMissing(home, { accessibility: true, screenRecording: true, files: true })).toEqual([]);
-    expect(computer.computerSetupMissing(home, null)).toEqual([]); // not macOS
+    expect(computer.computerSetupMissing(['filesystem'], { ...none, files: false })).toEqual(['files']);
+    expect(computer.computerSetupMissing(['filesystem'], { accessibility: true, screenRecording: true, files: true })).toEqual([]);
+    expect(computer.computerSetupMissing(['desktop'], null)).toEqual([]); // not macOS
   });
 
   test('Allow all always attempts a capture, so Kortix is listed under Screen Recording', () => {

@@ -1,17 +1,21 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { sessionSandboxes } from '@kortix/db';
+import { and, eq, isNotNull, isNull } from 'drizzle-orm';
+import { accountTokens } from '@kortix/db';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { resolveSandboxIngress } from '../../sandbox-proxy/backend';
 import { config } from '../../config';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { resolveLlmGatewayBaseUrl } from '../../llm-gateway/sandbox-base-url';
 import type { ProviderName } from '../../platform/providers';
-import { SANDBOX_SERVICE_PORT, postEnvToDaemon } from './sandbox-env-transport';
+import { postEnvToDaemon } from './sandbox-env-transport';
 import { waitForDaemonRuntimeReady } from './sandbox-daemon-ready';
 import { resolveSessionNetworkBoundary } from './network-secret-boundary';
 import { loadSessionSecretContext } from './session-secret-context';
 import { decideEnvSyncAction, type EnvSyncMemoryState } from './env-sync-skip-decision';
-import { loadEnvSyncDurableState, persistEnvSyncDurableState } from './env-sync-durable-state';
+import {
+  type EnvSyncDurableRecord,
+  loadEnvSyncDurableState,
+  persistEnvSyncDurableState,
+} from './env-sync-durable-state';
+import { isBoxUnreachableError } from './sandbox-env-transport';
 import {
   PROMPT_BOUNDARY_ARM_WAIT_MS,
   armedNetworkBoundaries,
@@ -36,7 +40,7 @@ export const FANOUT_CONCURRENCY = 6;
  *
  * INCIDENT (2026-09-27): this memo is in-PROCESS, and the API runs at more
  * than one replica (`desired_count = 2` on dev; see
- * `infra/terraform/environments/dev/main.tf`). A load balancer round-robins
+ * `infra/terraform/environments/dev-us-east-2/main.tf`). A load balancer round-robins
  * requests, so a session's consecutive turns routinely land on DIFFERENT
  * replicas — each one's memo is cold for a sandbox it has never personally
  * pushed to, so it re-posted `/kortix/env` and re-triggered a full OpenCode
@@ -49,20 +53,30 @@ export const FANOUT_CONCURRENCY = 6;
  * correctness boundary is `env-sync-durable-state.ts`, persisted on
  * `session_sandboxes.config` — readable by every replica. See
  * `env-sync-skip-decision.ts` for the full three-way decision this memo feeds
- * into (push / skip / skip-and-background-refresh) and why memory always
- * wins over the durable record when both are present.
+ * into (push / skip / skip-and-background-refresh).
+ *
+ * INCIDENT (2026-10-16): the memo is trusted only while the durable record
+ * still names its signature (`memoConfirmedBy`). A kortixd restart inside a
+ * live box (an agent swap exits 75) seeds the new process from the BOOT env,
+ * and another replica's push moves the box too. Neither touches this memo, so
+ * a prompt inside the trusted window ran on an env the box no longer held: in
+ * a private session, the creator's personal secret for another person's turn
+ * (KRTX-2517). Both move the durable record (the daemon's boot claim fences
+ * it), so a memo it no longer confirms is dropped.
  *
  * replica-local: by design — the durable half above is the cross-replica
  * correctness boundary, so each replica's copy of this memo may miss what
  * another replica confirmed.
  */
-const lastPromptModelSignature = new Map<string, EnvSyncMemoryState>();
+/** `person` = the session token's `on_behalf_of` when the env was confirmed:
+ *  whose personal secrets the box holds. */
+const lastPromptModelSignature = new Map<string, EnvSyncMemoryState & { agent: string; person: string | null }>();
 /**
  * How stale a CONFIRMED-current record (memory or durable) may get before a
  * skip also fires a detached background re-push. This is not a correctness
- * TTL — the daemon's own store does not drift on its own — it is a bounded
- * self-heal for drift THIS process did not cause (the daemon's process
- * restarting and losing its applied env, a provider-side reset). Same
+ * TTL — the daemon's own store does not drift on its own, and a daemon process
+ * restart is fenced at its boot claim (`recordDaemonBootForEnvSync`) — it is a
+ * bounded self-heal for drift nothing reports (a provider-side reset). Same
  * reasoning, and the same order of magnitude, as this file's
  * `BOUNDARY_ARM_TTL_MS`. Exported so the benchmark script and tests don't
  * hardcode the number.
@@ -90,13 +104,50 @@ export function __resetPromptModelSignatureCacheForTests(): void {
  */
 const inFlightBackgroundEnvRefresh = new Map<string, Promise<void>>();
 
+/**
+ * `externalId` → the earliest ms the NEXT background refresh for that sandbox
+ * may fire, set when a refresh found the box UNREACHABLE (`isBoxUnreachableError`).
+ *
+ * KRTX-2590 (prod, 2026-10-16/17): a failed refresh updates neither the memo
+ * nor the durable record — by design, so the next prompt re-decides from the
+ * last KNOWN-good state — and for a box that is GONE that next decision is
+ * `skip + scheduleBackgroundRefresh` again, on every prompt. One
+ * cron-prompted dead session produced a steady ~16 failed pushes/hour
+ * (351 in 26 h) that could not succeed until the box came back — which its
+ * own boot-time env sync handles without this machinery. The backoff stops
+ * the re-scheduling for the same window the staleness self-heal already uses
+ * (`ENV_SYNC_BACKGROUND_REFRESH_STALE_MS` — one number, no new knob); a
+ * successful push anywhere clears it, so a box that came back is re-probed on
+ * the next stale-skip opportunity.
+ *
+ * replica-local: by design, like the memo — each replica learns on its own,
+ * and a fresh replica's first probe costs one POST per window, not one per
+ * prompt. Bounded like the memo (entries ~40 bytes, cleared on success and
+ * logically expired by timestamp; eviction on capacity, oldest-first).
+ */
+const backgroundRefreshBackoffUntil = new Map<string, number>();
+
 /** Test seam: let a suite wait for a scheduled background refresh instead of
  *  racing it, and start each case from a clean slate. */
 export function __pendingBackgroundEnvRefreshesForTests(): Promise<void>[] {
   return [...inFlightBackgroundEnvRefresh.values()];
 }
+/** Test seam: read (and, to simulate time passing, rewrite) the unreachable
+ *  backoff window. Production code never touches the map except through the
+ *  one writer below. */
+export function __backgroundRefreshBackoffForTests(): Map<string, number> {
+  return backgroundRefreshBackoffUntil;
+}
 export function __resetBackgroundEnvRefreshForTests(): void {
   inFlightBackgroundEnvRefresh.clear();
+  backgroundRefreshBackoffUntil.clear();
+}
+/** The detached checks of trusted prompts (`syncSandboxEnvForPrompt`). */
+// replica-local: in-flight work of this process only.
+const inFlightEnvChecks = new Set<Promise<void>>();
+/** Test seam: let a suite wait for the background checks instead of racing them. */
+export function __pendingEnvChecksForTests(): Promise<void>[] {
+  return [...inFlightEnvChecks];
 }
 
 /**
@@ -114,10 +165,9 @@ export function __resetBackgroundEnvRefreshForTests(): void {
  *     would silently stop propagating an unrelated secret rotation.
  *   - `snapshot.capabilitiesJson` — pushed as `KORTIX_SECRET_CAPABILITIES`,
  *     which is on the daemon's `RESPAWN_REQUIRED_ENV_NAMES` list.
- *   - the LLM-gateway mode and base URL.
+ *   - the LLM gateway base URL.
  *   - `args.opencodeEnv` — an explicit runtime-env push a caller asked this
- *     same call to carry (e.g. a channel follow-up's `KORTIX_CONNECTORS_MCP_ENABLED`,
- *     see `continueSession`/continue-session.ts). Omitting it would silently drop that
+ *     same call to carry (see `continueSession`/continue-session.ts). Omitting it would silently drop that
  *     caller's request to apply its own change.
  *
  * Keys of `opencodeEnv` are sorted so caller-side object literal order never
@@ -126,8 +176,7 @@ export function __resetBackgroundEnvRefreshForTests(): void {
 function promptModelSignature(input: {
   revision: string;
   capabilitiesJson: string;
-  llmGatewayEnabled: boolean;
-  llmGatewayBaseUrl?: string;
+  llmGatewayBaseUrl: string;
   opencodeEnv?: Record<string, string | null>;
 }): string {
   const opencodeEnvEntries = Object.entries(input.opencodeEnv ?? {}).sort(([a], [b]) =>
@@ -136,8 +185,7 @@ function promptModelSignature(input: {
   return JSON.stringify([
     input.revision,
     input.capabilitiesJson,
-    input.llmGatewayEnabled,
-    input.llmGatewayBaseUrl ?? '',
+    input.llmGatewayBaseUrl,
     opencodeEnvEntries,
   ]);
 }
@@ -151,13 +199,54 @@ function rememberPromptModelSignature(
   externalId: string,
   signature: string,
   appliedAtMs: number,
+  agent: string,
+  person: string | null,
 ): void {
   lastPromptModelSignature.delete(externalId);
   if (lastPromptModelSignature.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
     const oldest = lastPromptModelSignature.keys().next();
     if (!oldest.done) lastPromptModelSignature.delete(oldest.value);
   }
-  lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs });
+  lastPromptModelSignature.set(externalId, { signature, pushedAtMs: appliedAtMs, agent, person });
+}
+
+/**
+ * This box's memo, kept only while the durable record still names the same
+ * signature. The memo is per replica and the box is one: a daemon restart (the
+ * boot fence in env-sync-durable-state.ts) or another replica's push moves the
+ * durable record and not this memo. A memo the record no longer confirms
+ * describes an env the box may not hold, so it is dropped.
+ */
+function memoConfirmedBy(
+  externalId: string,
+  persisted: EnvSyncDurableRecord | null,
+): (EnvSyncMemoryState & { agent: string; person: string | null }) | null {
+  const memo = lastPromptModelSignature.get(externalId);
+  if (!memo) return null;
+  if (persisted?.signature === memo.signature) return memo;
+  lastPromptModelSignature.delete(externalId);
+  return null;
+}
+
+/**
+ * The human the session's live token acts for (`on_behalf_of`), or null. A
+ * private session's personal secrets are theirs; it changes when another person
+ * prompts (projects/lib/on-behalf-of.ts). One indexed read.
+ */
+async function sessionTokenPerson(sessionId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ onBehalfOf: accountTokens.onBehalfOfUserId })
+    .from(accountTokens)
+    .where(
+      and(
+        eq(accountTokens.sessionId, sessionId),
+        eq(accountTokens.status, 'active'),
+        isNull(accountTokens.revokedAt),
+        isNotNull(accountTokens.serviceAccountId),
+      ),
+    )
+    .limit(1);
+  return row?.onBehalfOf ?? null;
 }
 
 /**
@@ -188,11 +277,18 @@ function scheduleBackgroundEnvRefresh(args: {
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
   opencodeEnv?: Record<string, string | null>;
-  llmGatewayEnabled: boolean;
-  llmGatewayBaseUrl?: string;
+  llmGatewayBaseUrl: string;
   signature: string;
-}): void {
-  if (inFlightBackgroundEnvRefresh.has(args.externalId)) return;
+  agent: string;
+  person: string | null;
+}): boolean {
+  if (inFlightBackgroundEnvRefresh.has(args.externalId)) return false;
+  const backoffUntil = backgroundRefreshBackoffUntil.get(args.externalId);
+  if (backoffUntil !== undefined && Date.now() < backoffUntil) return false;
+  if (backgroundRefreshBackoffUntil.size >= PROMPT_MODEL_SIGNATURE_CACHE_MAX) {
+    const oldest = backgroundRefreshBackoffUntil.keys().next();
+    if (!oldest.done) backgroundRefreshBackoffUntil.delete(oldest.value);
+  }
   const run = (async () => {
     try {
       await postEnvToDaemon({
@@ -202,19 +298,28 @@ function scheduleBackgroundEnvRefresh(args: {
         snapshot: args.snapshot,
         refreshModels: true,
         opencodeEnv: args.opencodeEnv,
-        llmGatewayEnabled: args.llmGatewayEnabled,
         llmGatewayBaseUrl: args.llmGatewayBaseUrl,
       });
       const appliedAtMs = Date.now();
-      rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs);
+      rememberPromptModelSignature(args.externalId, args.signature, appliedAtMs, args.agent, args.person);
       await persistEnvSyncDurableState(args.sessionId, args.signature, appliedAtMs);
+      backgroundRefreshBackoffUntil.delete(args.externalId);
       console.log(
         `[env-sync] background refresh confirmed current sandbox=${args.externalId} session=${args.sessionId}`,
       );
     } catch (err) {
       // Not remembered — same rule as a failed synchronous push. The next
       // prompt (synchronous or another background pass) re-decides from the
-      // last KNOWN-good state and retries.
+      // last KNOWN-good state and retries. The ONE exception is a box that
+      // cannot serve the push at all: re-deciding on the next prompt would
+      // re-fire a doomed push at prompt rate (the KRTX-2590 leak above), so
+      // that verdict backs the refresh off for the self-heal window instead.
+      if (isBoxUnreachableError(err)) {
+        backgroundRefreshBackoffUntil.set(
+          args.externalId,
+          Date.now() + ENV_SYNC_BACKGROUND_REFRESH_STALE_MS,
+        );
+      }
       console.warn(
         `[env-sync] background refresh failed sandbox=${args.externalId} session=${args.sessionId}: ` +
           `${err instanceof Error ? err.message : String(err)}`,
@@ -224,9 +329,10 @@ function scheduleBackgroundEnvRefresh(args: {
     }
   })();
   inFlightBackgroundEnvRefresh.set(args.externalId, run);
+  return true;
 }
 
-export async function syncSandboxEnvForPrompt(args: {
+interface PromptEnvSyncArgs {
   projectId: string;
   sessionId: string;
   externalId: string;
@@ -243,8 +349,68 @@ export async function syncSandboxEnvForPrompt(args: {
   requestedAgent?: string | null;
   /** Runtime env the daemon applies before the prompt reaches OpenCode. */
   opencodeEnv?: Record<string, string | null>;
-}): Promise<void> {
+}
+
+/**
+ * Bring the box's env onto what this prompt's agent may read, before the prompt
+ * is forwarded.
+ *
+ * TRUSTED FAST PATH (2026-10-13). Resolving the env costs every prompt the
+ * session, project, grant, owner and secret reads plus a manifest read: 430 ms
+ * median on prod (p90 2.3 s, 2026-10-12), and 90% of those prompts then found
+ * nothing to push. When THIS process confirmed the box's env for the same agent
+ * inside `ENV_SYNC_BACKGROUND_REFRESH_STALE_MS`, the prompt is forwarded at
+ * once and the same resolve runs detached. A change it finds drops the memo, so
+ * the NEXT prompt pushes it synchronously. So a secret, grant or gateway change
+ * the write path did not already push reaches the box one turn later. Secret
+ * writes push to running boxes themselves (`propagateProjectSecretsToActiveSandboxes`),
+ * the token's grant is still re-minted before every turn (`remintGrantForAgentSwitch`),
+ * and a broker-held secret is checked against the grant on every use.
+ *
+ * Never trusted: a different agent (its grant is resolved and pushed before it
+ * runs), a different person (the session token now acts for someone else: the
+ * box may hold the previous person's personal secrets), a caller's explicit
+ * `opencodeEnv`, a process that has not confirmed this box itself, and a memo
+ * the durable record no longer confirms (the box's daemon restarted, or
+ * another replica pushed a different env — `memoConfirmedBy`).
+ */
+export async function syncSandboxEnvForPrompt(args: PromptEnvSyncArgs): Promise<void> {
   if (!args.serviceKey) return;
+  const known = lastPromptModelSignature.get(args.externalId);
+  const candidate =
+    known &&
+    !args.opencodeEnv &&
+    known.agent === (args.requestedAgent ?? '') &&
+    Date.now() - known.pushedAtMs < ENV_SYNC_BACKGROUND_REFRESH_STALE_MS
+      ? known
+      : null;
+  // Two indexed reads in parallel. The durable record is read only when the
+  // memo could be trusted: the sync path below reads it after its resolve.
+  const [person, persisted] = await Promise.all([
+    sessionTokenPerson(args.sessionId),
+    candidate ? loadEnvSyncDurableState(args.sessionId) : null,
+  ]);
+  if (candidate && candidate.person === person && memoConfirmedBy(args.externalId, persisted)) {
+    const check = resolveAndSyncEnv(args, 'check', person)
+      .catch((err) => {
+        lastPromptModelSignature.delete(args.externalId);
+        logger.warn('[env-sync] background check failed; the next prompt syncs synchronously', {
+          sandbox: args.externalId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => inFlightEnvChecks.delete(check));
+    inFlightEnvChecks.add(check);
+    logger.info('[env-sync] push=trusted', { sandbox: args.externalId });
+    return;
+  }
+  await resolveAndSyncEnv(args, 'sync', person);
+}
+
+/** `check`: resolve and compare only — a difference drops the memo, nothing is pushed. */
+async function resolveAndSyncEnv(args: PromptEnvSyncArgs, mode: 'sync' | 'check', person: string | null): Promise<void> {
+  if (!args.serviceKey) return;
+  const agent = args.requestedAgent ?? '';
   const t0 = performance.now();
   const timing: Record<string, number> = {};
   const lap = (label: string) => {
@@ -265,9 +431,7 @@ export async function syncSandboxEnvForPrompt(args: {
     args.requestedAgent,
     secretContext,
   );
-  const gatewayRead = projectLlmGatewayEnabledById(args.projectId);
   boundaryRead.catch(() => undefined);
-  gatewayRead.catch(() => undefined);
   const snapshot = await resolveSandboxEnvSnapshot(
     args.projectId,
     args.sessionId,
@@ -351,9 +515,7 @@ export async function syncSandboxEnvForPrompt(args: {
     );
   }
   lap('arm');
-  const llmGatewayEnabled = await gatewayRead;
-  lap('gateway-flag');
-  const llmGatewayBaseUrl = llmGatewayEnabled ? resolveLlmGatewayBaseUrl(config.KORTIX_URL) : undefined;
+  const llmGatewayBaseUrl = resolveLlmGatewayBaseUrl(config.KORTIX_URL);
   // Only ask the daemon to reload when something that could move ITS
   // `result.changed || opencodeEnvChanged` gate has actually changed since the
   // last CONFIRMED-applied signature for this sandbox. "Confirmed" is checked
@@ -369,17 +531,22 @@ export async function syncSandboxEnvForPrompt(args: {
   const signature = promptModelSignature({
     revision: snapshot.revision,
     capabilitiesJson: snapshot.capabilitiesJson,
-    llmGatewayEnabled,
     llmGatewayBaseUrl,
     opencodeEnv: args.opencodeEnv,
   });
-  const memory = lastPromptModelSignature.get(args.externalId) ?? null;
-  // Pay for the durable read only when THIS process's own memo cannot already
-  // answer — memory is always at least as fresh (see the note on
-  // `decideEnvSyncAction`), so a matching memo makes the read pure overhead.
-  const persisted =
-    memory?.signature === signature ? null : await loadEnvSyncDurableState(args.sessionId);
+  if (mode === 'check') {
+    if (lastPromptModelSignature.get(args.externalId)?.signature !== signature) {
+      lastPromptModelSignature.delete(args.externalId);
+      logger.info('[env-sync] background check found a change; the next prompt pushes it', { sandbox: args.externalId });
+    }
+    return;
+  }
+  // Read AFTER the resolve, and even when the memo matches: a daemon boot or
+  // another replica's push recorded while the env resolved must still turn
+  // this prompt into a push (`memoConfirmedBy`).
+  const persisted = await loadEnvSyncDurableState(args.sessionId);
   lap('durable-read');
+  const memory = memoConfirmedBy(args.externalId, persisted);
   const decision = decideEnvSyncAction({
     signature,
     memory,
@@ -393,11 +560,15 @@ export async function syncSandboxEnvForPrompt(args: {
     // turn pays only the proxy hop, never the daemon RTT or a respawn wait.
     // Same single writer as a push, so the capacity bound holds here too and
     // the confirmed-at time stays exactly what the durable record said.
-    rememberPromptModelSignature(args.externalId, signature, decision.appliedAtMs);
+    rememberPromptModelSignature(args.externalId, signature, decision.appliedAtMs, agent, person);
+    let backgroundRefreshScheduled = false;
     if (decision.scheduleBackgroundRefresh) {
       // Self-heal for drift THIS process did not cause. Detached: never
-      // awaited here, and a failure inside it never touches this turn.
-      scheduleBackgroundEnvRefresh({
+      // awaited here, and a failure inside it never touches this turn. The
+      // return says whether a refresh actually fired — a backoff (the box was
+      // unreachable at its last attempt) or an in-flight refresh keeps the
+      // log honest instead of promising a push that will not happen.
+      backgroundRefreshScheduled = scheduleBackgroundEnvRefresh({
         externalId: args.externalId,
         sessionId: args.sessionId,
         previewUrl: args.previewUrl,
@@ -405,17 +576,15 @@ export async function syncSandboxEnvForPrompt(args: {
         serviceKey: args.serviceKey,
         snapshot,
         opencodeEnv: args.opencodeEnv,
-        llmGatewayEnabled,
         llmGatewayBaseUrl,
         signature,
+        agent,
+        person,
       });
     }
-    // Bookkeeping, and on this path the stored flag already matches in the
-    // steady state: the turn does not wait for a write that changes nothing.
-    void markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled).catch(() => undefined);
     console.log(
       `[env-sync] timing sandbox=${args.externalId} push=skipped ` +
-        `background_refresh=${decision.scheduleBackgroundRefresh} ${JSON.stringify(timing)}`,
+        `background_refresh=${backgroundRefreshScheduled} ${JSON.stringify(timing)}`,
     );
     return;
   }
@@ -429,7 +598,6 @@ export async function syncSandboxEnvForPrompt(args: {
     snapshot,
     refreshModels: true,
     opencodeEnv: args.opencodeEnv,
-    llmGatewayEnabled,
     llmGatewayBaseUrl,
   });
   // Remember only AFTER a successful push — in-process AND durably. A throw
@@ -437,8 +605,11 @@ export async function syncSandboxEnvForPrompt(args: {
   // this replica or any other, retries with a real push again instead of
   // assuming the failed attempt landed.
   const appliedAtMs = Date.now();
-  rememberPromptModelSignature(args.externalId, signature, appliedAtMs);
+  rememberPromptModelSignature(args.externalId, signature, appliedAtMs, agent, person);
   await persistEnvSyncDurableState(args.sessionId, signature, appliedAtMs);
+  // The box just served a real push — any unreachable backoff it was under is
+  // stale by observation.
+  backgroundRefreshBackoffUntil.delete(args.externalId);
   lap('push');
   // A model-affecting change just restarted opencode (state !== 'ok'). The prompt
   // is forwarded the instant this returns, so block until opencode is serving —
@@ -456,97 +627,7 @@ export async function syncSandboxEnvForPrompt(args: {
         `(ready=${ready}) session=${args.sessionId}`,
     );
   }
-  await markSandboxLlmGatewayMode(args.sessionId, llmGatewayEnabled);
-  lap('mark');
   console.log(`[env-sync] timing sandbox=${args.externalId} push=sent refreshModels=true ${JSON.stringify(timing)}`);
-}
-
-export async function propagateLlmGatewayModeToActiveSandboxes(
-  projectId: string,
-  enabled: boolean,
-): Promise<void> {
-  try {
-    const rows = await db
-      .select({
-        externalId: sessionSandboxes.externalId,
-        sessionId: sessionSandboxes.sessionId,
-        config: sessionSandboxes.config,
-      })
-      .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), eq(sessionSandboxes.status, 'active')));
-
-    const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
-    if (targets.length === 0) return;
-
-    await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
-      const rowConfig = (row.config || {}) as Record<string, unknown>;
-      const serviceKey = typeof rowConfig.serviceKey === 'string' ? rowConfig.serviceKey : null;
-      if (!serviceKey) return;
-      try {
-        const snapshot =
-          (await resolveSandboxEnvSnapshot(projectId, row.sessionId)) ??
-          emptySandboxEnvSnapshot(`llm-gateway-${enabled ? 'on' : 'off'}`);
-        const { url, headers } = await resolveSandboxIngress(row.externalId, { port: SANDBOX_SERVICE_PORT, transport: 'http' });
-        await postEnvToDaemon({
-          previewUrl: url,
-          providerHeaders: headers,
-          serviceKey,
-          snapshot,
-          refreshModels: true,
-          llmGatewayEnabled: enabled,
-          llmGatewayBaseUrl: enabled ? resolveLlmGatewayBaseUrl(config.KORTIX_URL) : undefined,
-        });
-        await markSandboxLlmGatewayMode(row.sessionId, enabled);
-      } catch (err) {
-        console.warn(
-          `[env-sync] LLM gateway mode push failed for sandbox ${row.externalId}:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    });
-  } catch (err) {
-    console.warn(
-      `[env-sync] LLM gateway mode fan-out failed for project ${projectId}:`,
-      err instanceof Error ? err.message : err,
-    );
-  }
-}
-
-/**
- * Record which model route this box is on. ONE conditional statement: the flag
- * is merged into `config` in the database, and the row is only touched when the
- * stored value actually differs. This ran as a read plus an unconditional
- * rewrite of the identical value on EVERY prompt — two round trips to change
- * nothing in the steady state. `updated_at` still moves per prompt through the
- * turn-ledger writes, so nothing that watches the row for activity loses a
- * signal.
- */
-export async function markSandboxLlmGatewayMode(
-  sessionId: string,
-  enabled: boolean,
-): Promise<void> {
-  await db
-    .update(sessionSandboxes)
-    .set({
-      config: sql`COALESCE(${sessionSandboxes.config}, '{}'::jsonb) || jsonb_build_object('llmGatewayEnabled', ${enabled}::boolean)`,
-      updatedAt: new Date(),
-    })
-    .where(
-      and(
-        eq(sessionSandboxes.sessionId, sessionId),
-        sql`(${sessionSandboxes.config}->>'llmGatewayEnabled') IS DISTINCT FROM ${String(enabled)}`,
-      ),
-    );
-}
-
-function emptySandboxEnvSnapshot(reason: string): SandboxEnvSnapshot {
-  return {
-    env: {},
-    names: [],
-    revision: `${reason}-${Date.now()}`,
-    scope: 'inherit',
-    capabilitiesJson: '{"version":1,"capabilities":[]}',
-  };
 }
 
 export async function runBounded<T>(

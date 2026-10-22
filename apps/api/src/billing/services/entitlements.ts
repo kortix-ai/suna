@@ -7,10 +7,9 @@
 //
 // Every function here is now a thin projection of ONE answer:
 // `resolveAccountBilling` (billing-cache.ts) → `resolveBillingFromRow`
-// (resolve-billing.ts). The trial overlay, the per-seat self-heal, the
-// `enterprise_entitled` / `demo_enterprise` overlays, and the tri-state
-// `managed_models_override` are all applied there, once, so no two surfaces can
-// derive a different answer from the same row.
+// (resolve-billing.ts). The trial overlay, the SSO/SCIM grace and the
+// per-feature overrides are applied there, once, so no two surfaces can derive
+// a different answer from the same row.
 //
 // An account with no credit row resolves to plan 'none' (all entitlements
 // false) — fail-closed, so an unprovisioned account can never reach an
@@ -42,15 +41,15 @@ function enterpriseLicenseGates(): TierEntitlements {
 
 /**
  * Resolve the plan key backing an account ('none' if no billing row).
- * This is the EFFECTIVE plan: an active admin-issued trial and the per-seat
- * self-heal overlay the stored `credit_accounts.tier`. Uncached — callers that
+ * This is the EFFECTIVE plan: an active admin-issued trial overlays the stored
+ * `credit_accounts.tier`. Uncached — callers that
  * want the hot-path cache use `getCachedAccountTier`.
  *
  * A stored tier that is not in the catalog normalizes to 'none' (fail-closed),
  * which is what `getTier()` already did to it at every downstream use.
  */
 export async function getAccountTier(accountId: string): Promise<string> {
-  return (await resolveAccountBilling(accountId, { fresh: true })).plan.key;
+  return (await resolveAccountBilling(accountId, { fresh: true })).features.key;
 }
 
 /**
@@ -71,7 +70,7 @@ export async function getCachedAccountTier(
   accountId: string,
   now: number = Date.now(),
 ): Promise<string> {
-  return (await resolveAccountBilling(accountId, { now })).plan.key;
+  return (await resolveAccountBilling(accountId, { now })).features.key;
 }
 
 /**
@@ -80,7 +79,7 @@ export async function getCachedAccountTier(
  * hot path, resolveCandidates' managed gate, the Slack/Teams channel model
  * gate, the sandbox-provision gateway mount, and every model-picker/catalog
  * narrowing consult this instead of deriving it from a tier string themselves,
- * so the operator `managed_models_override` and the trial overlay cannot skew
+ * so a per-feature override and the trial overlay cannot skew
  * between surfaces. Shares the billing cache (same TTL, same invalidation).
  */
 export async function accountMayUseManagedModels(
@@ -111,19 +110,11 @@ export function invalidateCachedAccountTier(accountId?: string): void {
  *      Enterprise license unlocks every enterprise entitlement platform-wide,
  *      regardless of billing tier (self-host has no Stripe-backed tier to
  *      assign 'enterprise' to). An ENV fact, not a row fact, so it stays here.
- *   2. `enterprise_entitled` — the real-contract flag an operator sets when an
- *      account signs an Enterprise agreement. Grants the full set regardless of
- *      `tier`, so a deal that is BOTH Enterprise (entitlements) AND per-seat
- *      (billing) holds both at once; without it the per-seat webhook
- *      reconciliation clobbers `tier` and strips entitlements on every ordinary
- *      subscription update.
- *   3. `demo_enterprise` — the self-serve demo of the enterprise surface. A
- *      preview, NOT a real Enterprise plan.
- *   4. the effective plan — so a trial of an entitled tier grants its feature
- *      set for exactly the trial window and lapses on expiry with no cron.
+ *   2. the resolved plan — the stored plan or an active trial, plus the SSO/SCIM
+ *      grace after an Enterprise trial ends and the per-feature overrides.
  *
- * Reads fresh, not cached: an admin flipping one of these flags must be visible
- * on the next request, and these gates are not on a hot path.
+ * Reads fresh, not cached: an operator's change must be visible on the next
+ * request, and these gates are not on a hot path.
  */
 export async function getAccountEntitlements(
   accountId: string,

@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/llm-catalog/lite';
 import type { ProviderListResponse } from '../runtime/runtime-types';
 
 import type {
@@ -7,20 +6,19 @@ import type {
   ProjectLlmCatalogResponse,
 } from '../rest/projects-client';
 import type { ModelDefaultsResponse } from '../rest/projects-client/model-defaults';
-import { resolveComposerModel, resolveModelDefault } from './composer-model';
-import type { FlatModel } from './model-flatten';
-import { createModelVisibility, hasUsableModel, modelInDefaultView } from './model-visibility';
-import { PLATFORM_DEFAULT_MODEL_ID } from '@kortix/llm-catalog/lite';
 import {
-  LLM_PROVIDER_CREDENTIALS,
-  filterToNativeProviders,
-  mergeNativeProviderLists,
-  mergeProjectSecretConnectedProviders,
-  nativeProviderListFromCatalog,
-  normalizeProviderList,
-  pickerProviderList,
-  projectLlmCatalogToProviderList,
-} from './provider-selection';
+  latestPromptModel,
+  resolveComposerModel,
+  resolveModelDefault,
+  sessionModelCandidates,
+  sessionModelFallback,
+  sessionPickStands,
+} from './composer-model';
+import { flattenModels, isOfferedModel, type FlatModel } from './model-flatten';
+import { createModelVisibility, hasUsableModel, isDefaultVisible, modelInDefaultView } from './model-visibility';
+// A Kortix managed model id: whatever Platinum Inference lists; no static list exists.
+const MANAGED_ID = 'deepseek-v4.1-flash';
+import { pickerProviderList, projectLlmCatalogToProviderList } from './provider-selection';
 
 /**
  * The composer's model list, framework-free. `useRuntimeProviders` (web) and
@@ -78,7 +76,7 @@ const SECRETS = new Set(['ANTHROPIC_API_KEY']);
 
 describe('pickerProviderList', () => {
   test('gateway: the /model-picker catalog is the list (auto dropped, enablement kept)', () => {
-    const list = pickerProviderList({ gatewayEnabled: true, modelPicker: MODEL_PICKER });
+    const list = pickerProviderList({ modelPicker: MODEL_PICKER });
     expect(list).toEqual(projectLlmCatalogToProviderList(MODEL_PICKER));
     expect(list?.connected).toEqual(['kortix']);
     expect(Object.keys(list?.all?.[0]?.models ?? {})).toEqual([
@@ -88,55 +86,22 @@ describe('pickerProviderList', () => {
   });
 
   test('gateway without the picker response is not loaded yet', () => {
-    expect(pickerProviderList({ gatewayEnabled: true })).toBeUndefined();
+    expect(pickerProviderList({})).toBeUndefined();
   });
 
-  test('native, pre-boot: the catalog synthesis gated on project secrets', () => {
+  test('the gateway is the only source: deprecated native inputs change nothing', () => {
     const list = pickerProviderList({
       gatewayEnabled: false,
-      llmCatalogProviders: LLM_CATALOG_PROVIDERS,
-      secretNames: SECRETS,
-    });
-    expect(list).toEqual(nativeProviderListFromCatalog(LLM_CATALOG_PROVIDERS, SECRETS));
-    expect(list?.connected).toEqual(['anthropic']);
-  });
-
-  test('native, booted: runtime merged over the catalog; kortix never leaks in', () => {
-    const list = pickerProviderList({
-      gatewayEnabled: false,
+      modelPicker: MODEL_PICKER,
       runtimeProviders: RUNTIME_PROVIDERS,
       llmCatalogProviders: LLM_CATALOG_PROVIDERS,
       secretNames: SECRETS,
     });
-    const runtime = filterToNativeProviders(
-      mergeProjectSecretConnectedProviders(
-        normalizeProviderList(RUNTIME_PROVIDERS),
-        SECRETS,
-        LLM_PROVIDER_CREDENTIALS,
-      ),
-    );
-    expect(list).toEqual(
-      mergeNativeProviderLists(
-        nativeProviderListFromCatalog(LLM_CATALOG_PROVIDERS, SECRETS),
-        runtime,
-      ),
-    );
-    expect(list?.all?.map((p) => p.id)).toEqual(['anthropic', 'opencode']);
-    expect(list?.connected).not.toContain('kortix');
-    // The runtime object wins for a shared provider.
-    expect(list?.all?.[0]?.models['claude-opus-4-8']?.name).toBe('Claude Opus 4.8 (runtime)');
-  });
-
-  test('native: a model-less runtime answer (sandbox still wiring) is ignored', () => {
-    const empty = { all: [], connected: [], default: {} } as unknown as ProviderListResponse;
+    expect(list).toEqual(projectLlmCatalogToProviderList(MODEL_PICKER));
+    expect(pickerProviderList({ modelPicker: MODEL_PICKER })).toEqual(list);
     expect(
-      pickerProviderList({
-        gatewayEnabled: false,
-        runtimeProviders: empty,
-        llmCatalogProviders: LLM_CATALOG_PROVIDERS,
-        secretNames: SECRETS,
-      }),
-    ).toEqual(nativeProviderListFromCatalog(LLM_CATALOG_PROVIDERS, SECRETS));
+      pickerProviderList({ runtimeProviders: RUNTIME_PROVIDERS, llmCatalogProviders: LLM_CATALOG_PROVIDERS }),
+    ).toBeUndefined();
   });
 });
 
@@ -149,15 +114,25 @@ describe('createModelVisibility', () => {
     flat('openrouter', 'acme/fast-2', { family: 'fast', releaseDate: recent }),
     flat('openrouter', 'acme/fast-1', { family: 'fast', releaseDate: old }),
     flat('openrouter', 'acme/undated'),
-    flat('openrouter', MANAGED_FLAGSHIP_MODEL_ID),
+    flat('openrouter', MANAGED_ID),
   ];
 
-  test('native: newest per family shows, older versions hide, undated shows only the flagship', () => {
+  // There is no static managed flagship any more: an undated NATIVE model is
+  // opt-in whatever its id, and the managed models (bare ids under the gateway
+  // provider) are the ones shown by default.
+  test('native: newest per family shows, older versions hide, undated is opt-in', () => {
     const isVisible = createModelVisibility({ catalogModels: catalog });
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/fast-2' })).toBe(true);
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/fast-1' })).toBe(false);
     expect(isVisible({ providerID: 'openrouter', modelID: 'acme/undated' })).toBe(false);
-    expect(isVisible({ providerID: 'openrouter', modelID: MANAGED_FLAGSHIP_MODEL_ID })).toBe(true);
+    expect(isVisible({ providerID: 'openrouter', modelID: MANAGED_ID })).toBe(false);
+  });
+
+  test('isDefaultVisible: a bare id under the gateway provider is a managed model; nothing else is', () => {
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'any-model-platinum-adds' })).toBe(true);
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'anthropic/claude-opus-4-8' })).toBe(false);
+    expect(isDefaultVisible({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' })).toBe(false);
+    expect(isDefaultVisible({ providerID: 'openrouter', modelID: MANAGED_ID })).toBe(false);
   });
 
   test('user pins override the default: show reveals, hide hides', () => {
@@ -192,17 +167,17 @@ describe('createModelVisibility', () => {
     ).toBe(false);
   });
 
-  test('gateway: the platform default shows on free tier too (KRTX-1067)', () => {
-    const gateway = [flat('kortix', PLATFORM_DEFAULT_MODEL_ID), flat('kortix', 'glm-5.3-flash')];
+  test('gateway: free tier sees no managed model, the platform default included', () => {
+    const gateway = [flat('kortix', MANAGED_ID), flat('kortix', 'glm-5.3-flash')];
     const free = createModelVisibility({ catalogModels: gateway, freeTier: true });
-    expect(free({ providerID: 'kortix', modelID: PLATFORM_DEFAULT_MODEL_ID })).toBe(true);
+    expect(free({ providerID: 'kortix', modelID: MANAGED_ID })).toBe(false);
     expect(free({ providerID: 'kortix', modelID: 'glm-5.3-flash' })).toBe(false);
   });
 
-  test('hasUsableModel: the platform default alone counts as usable on free tier (KRTX-1067)', () => {
+  test('hasUsableModel: no managed model counts as usable on free tier', () => {
     expect(
-      hasUsableModel([flat('kortix', PLATFORM_DEFAULT_MODEL_ID)], { freeTier: true }),
-    ).toBe(true);
+      hasUsableModel([flat('kortix', MANAGED_ID)], { freeTier: true }),
+    ).toBe(false);
     expect(hasUsableModel([flat('kortix', 'glm-5.3-flash')], { freeTier: true })).toBe(false);
   });
 });
@@ -263,16 +238,14 @@ describe('resolveModelDefault', () => {
     });
   });
 
-  test('a free-tier account resolves the platform default (KRTX-1067)', () => {
-    // The gateway serves the platform default to every tier (KRTX-1067), so
-    // the client resolves it instead of leaving a fresh free account with no
-    // model and a disabled Send.
+  test('a free-tier account never resolves the platform default', () => {
+    // The gateway refuses every managed model to free tier.
     expect(
       resolveModelDefault(
         { ...data, projectDefault: null, freeTier: true } as ModelDefaultsResponse,
         undefined,
       ),
-    ).toEqual({ providerID: 'kortix', modelID: 'kimi-k3' });
+    ).toBeUndefined();
   });
 
   test('a null platform default resolves to nothing, not a crash', () => {
@@ -357,17 +330,216 @@ describe('resolveComposerModel', () => {
     ).toEqual(key('anthropic', 'claude-opus-4-8'));
     expect(resolveComposerModel({ models: [] }).model).toBeUndefined();
   });
+});
 
-  test('a bare Bedrock id heals to its inference-profile twin', () => {
-    const bedrock = [
-      flat('amazon-bedrock', 'anthropic.claude-opus-5'),
-      flat('amazon-bedrock', 'global.anthropic.claude-opus-5'),
+describe('sessionModelCandidates', () => {
+  const kortix = (modelID: string) => ({ providerID: 'kortix', modelID });
+  const session = (pin?: string, source?: string) => ({
+    metadata: {
+      ...(pin ? { opencode_model: pin } : {}),
+      ...(source ? { opencode_model_source: source } : {}),
+    },
+  });
+
+  test('a pin someone chose (CLI, SDK, Slack, PUT /model) ranks before the last prompt', () => {
+    expect(
+      sessionModelCandidates({
+        session: session('kortix/model-b', 'explicit'),
+        lastPromptModel: kortix('model-c'),
+      }),
+    ).toEqual([kortix('model-b'), kortix('model-c')]);
+  });
+
+  test('a pin the platform re-pointed off a retired model ranks like a chosen one', () => {
+    expect(
+      sessionModelCandidates({
+        session: session('kortix/model-b', 'repointed'),
+        lastPromptModel: kortix('model-retired'),
+      }),
+    ).toEqual([kortix('model-b'), kortix('model-retired')]);
+  });
+
+  test('a default pin ranks after the model the session last ran on', () => {
+    for (const source of ['account', 'project', 'agent', 'platform', undefined]) {
+      expect(
+        sessionModelCandidates({
+          session: session('kortix/model-b', source),
+          lastPromptModel: kortix('model-c'),
+          }),
+      ).toEqual([kortix('model-c'), kortix('model-b')]);
+    }
+  });
+
+  test('a session with no pin and no prompt has no model of its own', () => {
+    expect(sessionModelCandidates({ session: session() })).toEqual([]);
+    expect(sessionModelCandidates({ session: null })).toEqual([]);
+    expect(
+      sessionModelCandidates({ lastPromptModel: kortix('model-c') }),
+    ).toEqual([kortix('model-c')]);
+  });
+
+  test('a provider/model pin is a gateway wire id; the deprecated gatewayEnabled changes nothing', () => {
+    const expected = [{ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-6' }];
+    expect(
+      sessionModelCandidates({ session: session('anthropic/claude-sonnet-4-6', 'explicit'), gatewayEnabled: false }),
+    ).toEqual(expected);
+    expect(sessionModelCandidates({ session: session('anthropic/claude-sonnet-4-6', 'explicit') })).toEqual(expected);
+  });
+});
+
+describe('sessionModelFallback', () => {
+  const fallbackSession = (extra: Record<string, unknown> = {}) => ({
+    metadata: {
+      opencode_model: 'kortix/deepseek-v4.1-flash',
+      opencode_model_source: 'fallback',
+      opencode_model_fallback_from: 'kortix/codex/gpt-6.1-sol',
+      opencode_model_fallback_reason: 'provider_pool_rate_limited',
+      opencode_model_fallback_at: 1_000,
+      ...extra,
+    },
+  });
+
+  test('a session a fallback took over names the fallback, the model it stood in for, why and when', () => {
+    expect(sessionModelFallback(fallbackSession())).toEqual({
+      model: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+      from: { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' },
+      reason: 'provider_pool_rate_limited',
+      atMs: 1_000,
+    });
+  });
+
+  test('any other source, or a half-written record, is no fallback', () => {
+    expect(sessionModelFallback(fallbackSession({ opencode_model_source: 'explicit' }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_from: undefined }))).toBeUndefined();
+    expect(sessionModelFallback(fallbackSession({ opencode_model_fallback_at: 'soon' }))).toBeUndefined();
+    expect(sessionModelFallback(null)).toBeUndefined();
+  });
+
+  test('a fallback pin ranks before the last prompt, like a chosen one', () => {
+    expect(
+      sessionModelCandidates({
+        session: fallbackSession(),
+        lastPromptModel: { providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' },
+        gatewayEnabled: true,
+      })[0],
+    ).toEqual({ providerID: 'kortix', modelID: 'deepseek-v4.1-flash' });
+  });
+
+  test('a pin moved back off a fallback ranks before the fallback prompts, whatever its source', () => {
+    for (const source of ['project', 'account', 'platform', undefined]) {
+      expect(
+        sessionModelCandidates({
+          session: {
+            metadata: {
+              opencode_model: 'kortix/codex/gpt-6.1-sol',
+              ...(source ? { opencode_model_source: source } : {}),
+              opencode_model_restored: true,
+            },
+          },
+          lastPromptModel: { providerID: 'kortix', modelID: 'deepseek-v4.1-flash' },
+          gatewayEnabled: true,
+        })[0],
+      ).toEqual({ providerID: 'kortix', modelID: 'codex/gpt-6.1-sol' });
+    }
+  });
+
+  test("this browser's pick stands only when it was made against this switch, whatever the browser clock says", () => {
+    const fallback = sessionModelFallback(fallbackSession());
+    // Made before any switch (or a seed): it records no switch, so it loses.
+    expect(sessionPickStands(undefined, fallback)).toBe(false);
+    // Made while an OLDER switch was shown: a newer switch outranks it.
+    expect(sessionPickStands(500, fallback)).toBe(false);
+    // Made while this switch was shown ('Use Sol', or any pick): it stands,
+    // even when the browser clock runs minutes behind the API's.
+    expect(sessionPickStands(1_000, fallback)).toBe(true);
+    expect(sessionPickStands(undefined, undefined)).toBe(true);
+  });
+});
+
+describe('latestPromptModel', () => {
+  test('reads the newest user message that records a model', () => {
+    expect(
+      latestPromptModel([
+        { role: 'user', model: { provider: 'kortix', model: 'model-b' } },
+        { role: 'user', model: { provider: 'kortix', model: 'model-c' } },
+        { role: 'assistant', model: { provider: 'kortix', model: 'model-x' } },
+        // A row with no model recorded says nothing about the session's model.
+        { role: 'user', model: null },
+      ]),
+    ).toEqual({ providerID: 'kortix', modelID: 'model-c' });
+  });
+
+  test('a transcript with no user model has none', () => {
+    expect(latestPromptModel([])).toBeUndefined();
+    expect(latestPromptModel(undefined)).toBeUndefined();
+    expect(
+      latestPromptModel([{ role: 'assistant', model: { provider: 'kortix', model: 'model-x' } }]),
+    ).toBeUndefined();
+  });
+});
+
+// ── KRTX-3011: a configured model the caller cannot run ─────────────────────
+//
+// An account default of a ChatGPT model stayed in the picker with no ChatGPT
+// login, read as runnable, was preselected, and failed only after Send
+// ("Connect Codex to use this model."). `/model-picker` now stamps such a
+// model `available: false`; nothing may choose it on the person's behalf.
+
+describe('unavailable models (KRTX-3011)', () => {
+  const key = (providerID: string, modelID: string) => ({ providerID, modelID });
+
+  test('flattenModels carries available and availability from the picker payload', () => {
+    const list = pickerProviderList({
+      modelPicker: {
+        models: {
+          'glm-5.3-flash': { name: 'GLM 5.3 Flash', enabled: true },
+          'codex/gpt-6-astra': { name: 'GPT-6 Astra', enabled: true, available: false, availability: 'login' },
+        },
+      } as unknown as ProjectLlmCatalogResponse,
+    });
+    const astra = flattenModels(list).find((m) => m.modelID === 'codex/gpt-6-astra');
+    expect(astra?.available).toBe(false);
+    expect(astra?.availability).toBe('login');
+    const glm = flattenModels(list).find((m) => m.modelID === 'glm-5.3-flash');
+    expect(glm?.available).toBeUndefined();
+  });
+
+  test('isOfferedModel refuses an unavailable model, even when enabled', () => {
+    const models = [flat('kortix', 'codex/gpt-6-astra', { enabled: true, available: false })];
+    expect(isOfferedModel(models, key('kortix', 'codex/gpt-6-astra'))).toBe(false);
+  });
+
+  test('the composer skips an unavailable default and a stored pick of it', () => {
+    const models = [
+      flat('kortix', 'codex/gpt-6-astra', { enabled: true, available: false }),
+      flat('kortix', 'deepseek-v4.1-flash', { enabled: true }),
     ];
     const resolved = resolveComposerModel({
-      models: bedrock,
-      picks: [key('amazon-bedrock', 'anthropic.claude-opus-5')],
+      models,
+      picks: [key('kortix', 'codex/gpt-6-astra')],
+      serverDefault: key('kortix', 'codex/gpt-6-astra'),
+      globalDefault: key('kortix', 'deepseek-v4.1-flash'),
     });
-    expect(resolved.explicit).toEqual(key('amazon-bedrock', 'anthropic.claude-opus-5'));
-    expect(resolved.model).toEqual(key('amazon-bedrock', 'global.anthropic.claude-opus-5'));
+    expect(resolved.explicit).toBeUndefined();
+    expect(resolved.model).toEqual(key('kortix', 'deepseek-v4.1-flash'));
+  });
+
+  test('resolveModelDefault follows the server\'s resolvedForCaller, which skips an unservable default', () => {
+    const data = {
+      agentDefaults: { support: 'anthropic/claude-opus-4-8' },
+      projectDefault: null,
+      accountDefault: 'codex/gpt-6-astra',
+      platformDefault: 'deepseek-v4.1-flash',
+      resolvedForCaller: 'deepseek-v4.1-flash',
+      resolvedSource: 'platform',
+      freeTier: false,
+    } as unknown as ModelDefaultsResponse;
+    expect(resolveModelDefault(data, 'kortix')).toEqual(key('kortix', 'deepseek-v4.1-flash'));
+    // An agent's own default still wins; the composer validates it like any candidate.
+    expect(resolveModelDefault(data, 'support')).toEqual(key('kortix', 'anthropic/claude-opus-4-8'));
+    // Nothing servable for the caller: no server default, not the raw account default.
+    expect(
+      resolveModelDefault({ ...data, resolvedForCaller: null } as unknown as ModelDefaultsResponse, 'kortix'),
+    ).toBeUndefined();
   });
 });

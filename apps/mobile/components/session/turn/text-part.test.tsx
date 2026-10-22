@@ -30,7 +30,11 @@ if (process.env[PROBE_ENV] === '1') {
   const rows: RowProps[] = [];
   let done = 0;
 
-  mock.module('react-native', () => ({ View: ({ children }: any) => children }));
+  mock.module('react-native', () => ({
+    View: ({ children }: any) => children,
+    // The stream pacer reads it (a backgrounded app shows its text at once).
+    AppState: { currentState: 'active' },
+  }));
   mock.module('@/components/kortix/selectable-markdown', () => ({
     SelectableMarkdownText: ({ children }: any) => children,
   }));

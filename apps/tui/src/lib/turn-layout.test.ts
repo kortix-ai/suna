@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import type { ClassifiedPart, ClassifiedToolPart, MessageWithParts } from '@kortix/sdk';
+import { type ClassifiedPart, type ClassifiedToolPart, type SessionLogMessage, type SessionLogThread, sessionLogTurns } from '@kortix/sdk';
 
 import {
   clip,
@@ -194,18 +194,14 @@ describe('toUnifiedDiff', () => {
 describe('findToolCall / formatArguments', () => {
   const messages = [
     {
-      info: { id: 'm1', role: 'assistant' },
-      parts: [
-        {
-          id: 'p1',
-          type: 'tool',
-          tool: 'bash',
-          callID: 'c1',
-          state: { status: 'pending', input: { command: 'rm -rf /workspace/tmp' } },
-        },
+      message_id: 'm1',
+      role: 'assistant',
+      blocks: [
+        { type: 'text', id: 't1', text: 'Cleaning up.' },
+        { type: 'tool_call', id: 'p1', call_id: 'c1', name: 'bash', kind: 'shell', status: 'pending', input: { command: 'rm -rf /workspace/tmp' } },
       ],
     },
-  ] as unknown as MessageWithParts[];
+  ] as unknown as SessionLogMessage[];
 
   test('resolves the gated call by messageID + callID', () => {
     expect(findToolCall(messages, { messageID: 'm1', callID: 'c1' })).toEqual({
@@ -216,6 +212,7 @@ describe('findToolCall / formatArguments', () => {
 
   test('returns null for an unknown call or no tool reference', () => {
     expect(findToolCall(messages, { messageID: 'm1', callID: 'c9' })).toBeNull();
+    expect(findToolCall(messages, { messageID: 'm9', callID: 'c1' })).toBeNull();
     expect(findToolCall(messages, undefined)).toBeNull();
   });
 
@@ -231,12 +228,17 @@ describe('findToolCall / formatArguments', () => {
 });
 
 describe('orderedMessages', () => {
-  test('flattens turns back to user-then-assistants order', () => {
-    const user = { info: { id: 'u1', role: 'user' }, parts: [] } as unknown as MessageWithParts;
-    const a1 = { info: { id: 'a1', role: 'assistant' }, parts: [] } as unknown as MessageWithParts;
-    const a2 = { info: { id: 'a2', role: 'assistant' }, parts: [] } as unknown as MessageWithParts;
-    expect(
-      orderedMessages([{ userMessage: user, assistantMessages: [a1, a2] }]).map((m) => m.info.id),
-    ).toEqual(['u1', 'a1', 'a2']);
+  const record = (message_id: string, role: 'user' | 'assistant', reply_to?: string) =>
+    ({ schema: 'kortix.session/2', v: 1, message_id, thread_id: 't', seq: 0, role, kind: 'turn', status: 'complete', in_context: true, model: null, usage: null, finish: null, error: null, created_at: '', completed_at: null, producer: { harness: 'opencode', harness_version: '1', adapter_version: '1' }, blocks: [{ type: 'text', id: `${message_id}-t`, text: message_id }], ...(reply_to && { reply_to }) }) as SessionLogMessage;
+  const thread = (messages: SessionLogMessage[]) => ({ schema: 'kortix.session/2', v: 1, thread_id: 't', parent_thread_id: null, spawned_by: null, agent: null, title: null, created_at: '', messages }) as SessionLogThread;
+
+  test('flattens block turns back to user-then-assistants order', () => {
+    const turns = sessionLogTurns(thread([record('u1', 'user'), record('a1', 'assistant', 'u1'), record('a2', 'assistant', 'u1')]));
+    expect(orderedMessages(turns).map((m) => m.message_id)).toEqual(['u1', 'a1', 'a2']);
+  });
+
+  test('a reply whose prompt is not loaded shows without a stand-in prompt', () => {
+    const turns = sessionLogTurns(thread([record('a0', 'assistant', 'gone'), record('u1', 'user'), record('a1', 'assistant', 'u1')]));
+    expect(orderedMessages(turns).map((m) => m.message_id)).toEqual(['a0', 'u1', 'a1']);
   });
 });

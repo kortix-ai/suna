@@ -15,19 +15,17 @@ import {
 import { sandboxRuntimeRequestHeaders } from '../sandbox-fetch';
 import type { ProjectSessionRow } from './serializers';
 import {
-  type CompactMessage,
-  type CompactToolCall,
   compactMessage,
   normalizeMessageList,
 } from './session-transcript-compact';
 import {
   boundMirrorWindow,
   MIRROR_WINDOW_MAX_CHARS,
-  type MirrorMessage,
   type MirrorSnapshot,
-  readSessionTranscriptMirror,
   UnknownTranscriptCursorError,
 } from './session-transcript-mirror';
+import { readStoredTranscriptWindow } from '../session-log-read';
+import { SessionLogConvertingError } from '../session-log-backfill';
 
 const WORKSPACE_DIRECTORY = '/workspace';
 
@@ -54,30 +52,6 @@ const TRANSCRIPT_ENDPOINT_BUDGET_MS = 8_000;
  */
 const DEGRADE_LOG_INTERVAL_MS = 60_000;
 let lastDegradeLogAt = 0;
-
-export type { CompactMessage, CompactToolCall };
-
-/**
- * Which source answered.
- *
- * A NEGATIVE IS A CLAIM, so this is never inferred from an empty array. `live`
- * is the sandbox's own runtime endpoint; `mirror` is the durable server-side
- * copy written at turn end (`session-transcript-mirror.ts`); `none` is the
- * honest "nothing could answer", and it is the only value that ever accompanies
- * `available: false`. Mirror and live are NEVER merged — the field says which
- * one you got.
- *
- * The wire shapes live in `@kortix/api-contract`: `SessionTranscript` is the
- * compact digest, `SessionTranscriptSyncEnvelope` the sync-store window (the
- * runtime's message envelopes verbatim, every part 1:1 except attachment bytes,
- * see `sanitizeParts`; mirror-only, at most `limit` messages and
- * MIRROR_WINDOW_MAX_CHARS of JSON, newest first to be kept).
- */
-export type {
-  SessionTranscriptSource,
-  SessionTranscript as SessionTranscriptDigest,
-  SessionTranscriptSyncEnvelope,
-} from '@kortix/api-contract';
 
 /** Seam for tests: the mirror read is the one collaborator whose absence vs
  *  presence changes which branch the digest takes, and a DB is not needed to
@@ -254,7 +228,7 @@ export async function buildSessionTranscriptDigest(
 }
 
 /**
- * The sync-store envelope. Always the mirror: a client whose sandbox is up
+ * The sync-store envelope. Always the stored copy (the session log): a client whose sandbox is up
  * reads the runtime directly, so re-proxying it here would only duplicate the
  * body this endpoint exists to avoid.
  */
@@ -318,8 +292,9 @@ export function mirrorIsComplete(mirror: MirrorSnapshot): boolean {
   return mirror.head_complete && mirror.messages.length >= mirror.total;
 }
 
-/** A mirror read must never be able to fail a transcript request: the mirror is
- *  an enrichment, and its absence is already an expressible answer. */
+/** A stored read must never be able to fail a transcript request: its absence
+ *  is already an expressible answer. The session log answers in the v1 window
+ *  shape (`readStoredTranscriptWindow`). */
 async function readMirrorSafely(
   sessionId: string,
   limit: number,
@@ -327,12 +302,14 @@ async function readMirrorSafely(
   opencodeSessionId?: string | null,
 ): Promise<MirrorSnapshot | null> {
   try {
-    return await readSessionTranscriptMirror({ sessionId, limit, before, opencodeSessionId });
+    return await readStoredTranscriptWindow({ sessionId, limit, before, opencodeSessionId });
   } catch (err) {
     // A cursor the caller supplied is the caller's error, not a mirror
     // failure, and swallowing it here would answer "nothing was captured" for
     // a session that holds a full history.
     if (err instanceof UnknownTranscriptCursorError) throw err;
+    // A history the backfill converts (over the size cap): nothing to serve yet, and expected.
+    if (err instanceof SessionLogConvertingError) return null;
     console.warn(
       `[transcript-mirror] read failed for session ${sessionId}:`,
       err instanceof Error ? err.message : err,

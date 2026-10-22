@@ -15,7 +15,7 @@
 // Runs in the `db-suites` lane of `pnpm test` (one throwaway database per
 // file). It writes and deletes rows with fixed ids.
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from './helpers/pg-client';
 import { interleave } from './helpers/interleave';
 
 const SANDBOX_ID = '00000000-0000-4000-a000-00000000e9a1';
@@ -31,7 +31,7 @@ const RESTART_CLAIM = {
   runtimeWakeStartedAt: '2026-09-22T10:00:00.000Z',
 };
 
-let admin: pg.Client;
+let admin: PgClient;
 
 /**
  * The identity-immutability trigger refuses to delete a row that carries an
@@ -84,7 +84,7 @@ describe('session_sandboxes.metadata writers merge atomically (real PostgreSQL)'
   beforeAll(async () => {
     // The modules under test read `config.DATABASE_URL` at import time.
     process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-    admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+    admin = new PgClient({ connectionString: process.env.TEST_DATABASE_URL });
     await admin.connect();
     await ensureParents();
   });

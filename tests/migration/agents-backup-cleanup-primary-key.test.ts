@@ -131,7 +131,7 @@ suite('agents_backup_cleanup_20250729 primary key (throwaway Postgres)', () => {
   let colsBefore: string[] = [];
 
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -184,7 +184,7 @@ suite('agents_backup_cleanup_20250729 primary key (throwaway Postgres)', () => {
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('the seeded legacy shape reproduces the advisor finding (red before the fix)', () => {

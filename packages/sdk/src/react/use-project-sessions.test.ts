@@ -1,6 +1,16 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import React from 'react';
+import { act, create } from 'react-test-renderer';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { configureKortix } from '../core/http/config';
 import { qk } from './query-keys';
-import { projectSessionsPageParam, flattenProjectSessionPages } from './use-project-sessions';
+import {
+  EMPTY_SESSION_PAGE_SCAN_LIMIT,
+  flattenProjectSessionPages,
+  projectSessionsPageParam,
+  shouldScanPastEmptySessionPages,
+  useProjectSessions,
+} from './use-project-sessions';
 import type { ProjectSessionPage } from '../core/rest/projects-client/sessions';
 
 describe('paged session-list query key', () => {
@@ -97,5 +107,112 @@ describe('filtered session-list query keys (KRTX-639)', () => {
     expect(a).not.toEqual([...qk.project.sessionChildren('P1', 'S2')] as never);
     expect(a).not.toEqual([...qk.project.sessionChildren('P1', 'S1', 'q')] as never);
     expect(a.slice(0, qk.project.sessionsScope('P1').length)).toEqual([...qk.project.sessionsScope('P1')]);
+  });
+});
+
+// KRTX-1727: the server drops sessions the viewer may not see (and deleted
+// ones) after a bounded scan, so a page can be empty and still carry a cursor.
+// Page one empty was rendered as "No sessions yet" and hid the Shared section.
+describe('shouldScanPastEmptySessionPages', () => {
+  const empty = (cursor: string | null): ProjectSessionPage => ({ items: [], next_cursor: cursor });
+  const pages = (...p: ProjectSessionPage[]) => ({ pages: p, pageParams: p.map(() => null) });
+
+  test('an empty page with a cursor is not the end: scan the next page', () => {
+    expect(shouldScanPastEmptySessionPages(pages(empty('C1')), true)).toBe(true);
+  });
+
+  test('no cursor, no data, or any loaded session: stop', () => {
+    expect(shouldScanPastEmptySessionPages(pages(empty(null)), false)).toBe(false);
+    expect(shouldScanPastEmptySessionPages(undefined, true)).toBe(false);
+    const one = { items: [{ session_id: 's1' }], next_cursor: 'C2' } as unknown as ProjectSessionPage;
+    expect(shouldScanPastEmptySessionPages(pages(empty('C1'), one), true)).toBe(false);
+  });
+
+  test('stops after the scan limit, so a viewer who sees nothing is not scanned forever', () => {
+    const limit = Array.from({ length: EMPTY_SESSION_PAGE_SCAN_LIMIT }, () => empty('C'));
+    expect(shouldScanPastEmptySessionPages(pages(...limit.slice(1)), true)).toBe(true);
+    expect(shouldScanPastEmptySessionPages(pages(...limit), true)).toBe(false);
+  });
+});
+
+// The hook's own scan, mounted against a stubbed `fetch`. The stub answers at
+// once: a page can land before React renders the fetch that asked for it.
+describe('useProjectSessions reads past empty pages (KRTX-1727)', () => {
+  // Page N answers cursor `C<N>` (page 0 the first read); 'fail' answers 500.
+  let pages: Array<{ ids: string[]; next: string | null } | 'fail'> = [];
+  const cursors: Array<string | null> = [];
+  // A network that answers after React rendered the fetch (ms); 0 answers at once.
+  let latency = 0;
+  let root: ReturnType<typeof create> | undefined;
+  let list: ReturnType<typeof useProjectSessions>;
+
+  beforeEach(() => {
+    (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    configureKortix({ backendUrl: 'http://test.local', getToken: async () => 'token' });
+    cursors.length = 0;
+    latency = 0;
+    globalThis.fetch = mock(async (url: unknown) => {
+      const cursor = new URL(String(url)).searchParams.get('cursor');
+      cursors.push(cursor);
+      if (latency) await new Promise((resolve) => setTimeout(resolve, latency));
+      const page = pages[cursor ? Number(cursor.slice(1)) : 0];
+      if (!page || page === 'fail') return Response.json({ error: 'unavailable' }, { status: 500 });
+      return Response.json(
+        page.ids.map((id) => ({ session_id: id })),
+        { headers: page.next ? { 'x-next-cursor': page.next } : {} },
+      );
+    }) as unknown as typeof fetch;
+  });
+  afterEach(async () => {
+    if (root) await act(async () => root!.unmount());
+    root = undefined;
+  });
+
+  const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
+  async function mount() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    function Probe() {
+      list = useProjectSessions('P1', { scope: 'project', q: 'deploy', limit: 20 });
+      return null;
+    }
+    await act(async () => {
+      root = create(React.createElement(QueryClientProvider, { client }, React.createElement(Probe)));
+    });
+    for (let i = 0; i < 15; i++) await settle();
+  }
+
+  test('reads empty pages with a cursor until a row shows', async () => {
+    pages = [
+      { ids: [], next: 'C1' },
+      { ids: [], next: 'C2' },
+      { ids: ['S-old'], next: null },
+    ];
+    await mount();
+    expect(cursors).toEqual([null, 'C1', 'C2']);
+    expect(list.sessions.map((s) => s.session_id)).toEqual(['S-old']);
+    expect(list.isScanning).toBe(false);
+  });
+
+  test('a failed page ends the scan: no retry loop, the next page stays offered', async () => {
+    pages = [{ ids: [], next: 'C1' }, 'fail'];
+    latency = 5;
+    await mount();
+    expect(cursors).toEqual([null, 'C1']);
+    expect(list.isScanning).toBe(false);
+    expect(list.hasNextPage).toBe(true);
+    expect(list.isFetching).toBe(false);
+  });
+
+  test('a refetch after a failed page resumes the scan', async () => {
+    pages = [{ ids: [], next: 'C1' }, 'fail'];
+    latency = 5;
+    await mount();
+    pages[1] = { ids: ['S-old'], next: null };
+    await act(async () => {
+      await list.refetch();
+    });
+    for (let i = 0; i < 15; i++) await settle();
+    expect(cursors).toEqual([null, 'C1', null, 'C1']);
+    expect(list.sessions.map((s) => s.session_id)).toEqual(['S-old']);
   });
 });

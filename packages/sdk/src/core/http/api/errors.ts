@@ -5,7 +5,7 @@
  * `BillingError` (HTTP 402) and `RequestTooLargeError` (HTTP 431) are
  * subclasses, so `err instanceof ApiError` covers them all and `.status` /
  * `.code` read the same way on each. A 402 body carries a machine `code`
- * (e.g. `app_budget_exceeded`) and fields such as `billing_state` and
+ * (e.g. `app_account_unfunded`) and fields such as `billing_state` and
  * `balance`; `BillingError.code` is that code and `BillingError.detail` the
  * body.
  */
@@ -220,6 +220,51 @@ export function featureDisabledKey(error: unknown): string | null {
   const fromError = (error as { feature?: unknown }).feature;
   if (typeof fromError === 'string') return fromError;
   return typeof body.feature === 'string' ? body.feature : null;
+}
+
+// ============================================================================
+// Repository disconnected
+// ============================================================================
+
+/**
+ * The `code` the API answers (HTTP 409) when the GitHub App can no longer
+ * reach a project's repository: the App was uninstalled or suspended on the
+ * GitHub owner, or the repository was deleted, renamed, or removed from the
+ * App. The error message names the cause and the fix. Mirrors
+ * `REPOSITORY_DISCONNECTED_CODE` in `apps/api/src/shared/repository-health.ts`.
+ */
+export const REPOSITORY_DISCONNECTED_CODE = 'repository_disconnected' as const;
+
+/** Why a repository is disconnected. A GitHub owner fixes each one on GitHub. */
+export type RepositoryDisconnectedReason = 'app_uninstalled' | 'app_suspended' | 'repo_not_accessible';
+
+const REPOSITORY_DISCONNECTED_REASONS: ReadonlySet<string> = new Set<RepositoryDisconnectedReason>([
+  'app_uninstalled',
+  'app_suspended',
+  'repo_not_accessible',
+]);
+
+/**
+ * True when `error` carries the `repository_disconnected` code: an
+ * {@link ApiError}, a `SessionStartError`, or any error a host built from the
+ * same body. Read by `code`, never by message.
+ */
+export function isRepositoryDisconnectedError(error: unknown): boolean {
+  return !!error && typeof error === 'object' && (error as { code?: unknown }).code === REPOSITORY_DISCONNECTED_CODE;
+}
+
+/**
+ * The disconnect reason stored on a project's git connection
+ * (`ProjectDetail.git_connection`: `status: 'error'` and `last_error_code`),
+ * or `null` when the connection is healthy or failed for another reason.
+ * `last_error_message` on the same connection is the sentence to show.
+ */
+export function repositoryDisconnectedReason(
+  connection: { status?: string | null; last_error_code?: string | null } | null | undefined,
+): RepositoryDisconnectedReason | null {
+  if (connection?.status !== 'error') return null;
+  const code = connection.last_error_code;
+  return code && REPOSITORY_DISCONNECTED_REASONS.has(code) ? (code as RepositoryDisconnectedReason) : null;
 }
 
 // ============================================================================

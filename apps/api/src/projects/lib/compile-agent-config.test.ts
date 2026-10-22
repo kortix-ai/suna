@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { parseManifestText } from '@kortix/manifest-schema';
+import { KORTIX_SKILL_NAMES, parseManifestText } from '@kortix/manifest-schema';
 
 // compile-agent-config.ts's I/O half imports the real ../git module, which
 // shells out to git + pulls in config/db — none of that runs in a bun:test
@@ -61,6 +61,7 @@ const {
   agentMarkdownPath,
   compileAgentConfig,
   compileSelectedAgentConfig,
+  manifestPiCodemode,
   manifestPiPackageLists,
   manifestPiPackages,
   manifestRuntime,
@@ -530,25 +531,18 @@ agents:
 
 describe('selectSessionHarness — flag OR manifest', () => {
   test('pi when the project flag is on, whatever the manifest says', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode', llmGateway: true })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: true })).toBe('pi');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'opencode' })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi' })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null })).toBe('pi');
   });
 
   test('pi when the manifest says runtime: pi, even with the flag off', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: true })).toBe('pi');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi' })).toBe('pi');
   });
 
   test('opencode in every other case', () => {
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode', llmGateway: true })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null, llmGateway: true })).toBe('opencode');
-  });
-
-  // W1 B7: pi calls models only through the gateway; without it the box would never start.
-  test('opencode when the LLM gateway is off, even when the flag or the manifest asks for pi', () => {
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: 'pi', llmGateway: false })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'pi', llmGateway: false })).toBe('opencode');
-    expect(selectSessionHarness({ piHarnessFlag: true, runtime: null, llmGateway: false })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: 'opencode' })).toBe('opencode');
+    expect(selectSessionHarness({ piHarnessFlag: false, runtime: null })).toBe('opencode');
   });
 });
 
@@ -620,6 +614,26 @@ describe('manifestPiPackages — the project pi packages a manifest declares', (
     expect(manifestPiPackages(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toEqual([]);
     expect(manifestPiPackages(parseYaml('kortix_version: 2\nharnesses:\n  pi:\n    packages: npm:a@1.0.0\n'))).toEqual([]);
     expect(manifestPiPackages(null)).toEqual([]);
+  });
+});
+
+describe('manifestPiCodemode — harnesses.pi.codemode for the session agent', () => {
+  const RAW = parseYaml(
+    'kortix_version: 2\ndefault_agent: builder\nharnesses:\n  pi:\n    codemode: only\nagents:\n  builder: {}\n  quiet:\n    harnesses:\n      pi:\n        codemode: off\n',
+  );
+
+  test('an agent value replaces the top-level one; no agent named means the default agent', () => {
+    expect(manifestPiCodemode(RAW, 'quiet')).toBe('off');
+    expect(manifestPiCodemode(RAW, 'builder')).toBe('only');
+    expect(manifestPiCodemode(RAW)).toBe('only');
+    expect(manifestPiCodemode(RAW, 'default')).toBe('only');
+  });
+
+  test('null when nothing sets it, for a v1 manifest, or for a value outside off, on, only', () => {
+    expect(manifestPiCodemode(parseYaml('kortix_version: 2\nagents:\n  a: {}\n'))).toBeNull();
+    expect(manifestPiCodemode(parseYaml('harnesses:\n  pi:\n    codemode: off\n'))).toBeNull();
+    expect(manifestPiCodemode(parseYaml('kortix_version: 2\nharnesses:\n  pi:\n    codemode: yes\n'))).toBeNull();
+    expect(manifestPiCodemode(null)).toBeNull();
   });
 });
 
@@ -892,8 +906,8 @@ agents:
     expect(JSON.parse(result!).agent.reader.prompt).toBe('Read only.');
     expect(readRepoFileCalls).toEqual(['agents/reader.md']);
     expect(manifestRuntime(parseYaml(manifestFile.content))).toBe('pi');
-    const selected = await resolveSelectedAgentConfigForSession(PROJECT, 'reader', 'feature/yaml');
-    expect(Object.keys(JSON.parse(selected).agent)).toEqual(['reader']);
+    const selected = JSON.parse(await resolveSelectedAgentConfigForSession(PROJECT, 'reader', 'feature/yaml'));
+    expect(Object.keys(selected.agent).filter((name) => !selected.agent[name].disable)).toEqual(['reader']);
   });
 
   test('a missing prompt file never produces a partial agent configuration', async () => {
@@ -912,10 +926,40 @@ agents:
     expect(compiled?.agent.writer?.permission).toMatchObject({ skill: { '*': 'deny', review: 'allow' } });
     expect(compiled?.agent.reader?.prompt).toBe('Read only.');
     const selected = compileSelectedAgentConfig(manifest, 'reader', 'opencode', files);
-    expect(Object.keys(selected.agent)).toEqual(['reader']);
+    expect(Object.keys(selected.agent).filter((name) => !selected.agent[name]!.disable)).toEqual(['reader']);
     expect(selected.agent.reader?.prompt).toBe('Read only.');
     expect(() => compileAgentConfig(manifest, 'opencode')).toThrow('prompt_file');
     expect(() => compileAgentConfig({ ...manifest, agents: { writer: { prompt_file: '../secret.md' } } }, 'opencode', { '../secret.md': 'wrong' })).toThrow('prompt_file');
+  });
+});
+
+// Prod 2026-10-14: a project whose declared agents held ~270 KB of prompts never
+// booted (one env string over 128 KiB). A v3 project declares them in kortix.yaml.
+describe('a compiled config over 128 KiB', () => {
+  test('17 declared agents with ~300 KB of prompts reach the sandbox env, every string within the exec limit', async () => {
+    const { buildSessionRuntimeEnv } = await import('./session-runtime-env');
+    const { MAX_ENV_STRING_BYTES, envStringBytes, readCompiledAgentConfigEnv } = await import('@kortix/api-contract/compiled-agent-config-env');
+    const words = 'read the evidence pack then cite each page and the quoted line before any claim about the class'.split(' ');
+    const prose = (seed: number) => Array.from({ length: 3_600 }, (_, i) => words[(seed * 7 + i * i) % words.length]).join(' ');
+    const agents: Record<string, unknown> = { lead: { mode: 'primary', prompt: 'Lead.' }, admin: { mode: 'primary', prompt: 'Admin.' } };
+    const files: Record<string, string> = {};
+    for (let i = 0; i < 15; i++) {
+      agents[`worker-${i}`] = { mode: 'subagent', model: 'kortix/test-model', variant: 'high', permission: 'allow', prompt_file: `agents/worker-${i}.md` };
+      files[`agents/worker-${i}.md`] = prose(i);
+    }
+    const compiled = JSON.stringify(compileAgentConfig({ kortix_version: 3, default_agent: 'lead', agents }, 'opencode', files));
+    expect(Buffer.byteLength(compiled)).toBeGreaterThan(280_000);
+
+    const env = buildSessionRuntimeEnv({ projectId: 'p', sessionId: 's', compiledAgentConfig: compiled } as Parameters<typeof buildSessionRuntimeEnv>[0]);
+    for (const [name, value] of Object.entries(env)) {
+      if (value !== undefined) expect({ name, fits: envStringBytes(name, value) <= MAX_ENV_STRING_BYTES }).toEqual({ name, fits: true });
+    }
+    const delivered = JSON.parse(readCompiledAgentConfigEnv(env)!);
+    // v3 also compiles OpenCode's build/plan/general/explore as `disable: true` entries.
+    expect(Object.keys(delivered.agent).filter((name) => !delivered.agent[name].disable)).toHaveLength(17);
+    expect(delivered.agent['worker-14']).toMatchObject({ mode: 'subagent', model: 'kortix/test-model', variant: 'high', prompt: prose(14) });
+    // `permission: allow` compiles to explicit rules; the omitted skills and subagents grants deny skill and task.
+    expect(delivered.agent['worker-14'].permission).toMatchObject({ bash: 'allow', edit: 'allow', skill: 'deny', task: 'deny' });
   });
 });
 
@@ -924,6 +968,81 @@ describe('v2 agent tool toggles', () => {
     const config = compileAgentConfig({ kortix_version: 2, default_agent: 'worker', agents: { worker: { tools: { bash: false, read: true } }, other: {} } });
     expect(config?.agent.worker.tools).toEqual({ bash: false, read: true });
     expect(config?.agent.other.tools).toBeUndefined();
+  });
+
+  test('all, none, a list and exclude compile to the map a harness reads', () => {
+    const config = compileAgentConfig({
+      kortix_version: 2,
+      default_agent: 'everything',
+      agents: {
+        everything: { tools: 'all' },
+        nothing: { tools: 'none' },
+        researcher: { tools: ['read', 'web_search', 'lookup_order'] },
+        no_shell: { tools: { exclude: ['bash', 'edit'] } },
+      },
+    });
+    expect(config?.agent.everything.tools).toBeUndefined();
+    expect(config?.agent.nothing.tools).toEqual({ '*': false });
+    expect(config?.agent.researcher.tools).toEqual({ '*': false, read: true, web_search: true, lookup_order: true });
+    expect(config?.agent.no_shell.tools).toEqual({ bash: false, edit: false });
+  });
+
+  test('kortix_version 3 compiles tools on the inline agent', () => {
+    const config = compileAgentConfig({ kortix_version: 3, default_agent: 'writer', agents: { writer: { prompt: 'Write.', tools: ['read'] } } });
+    expect(config?.agent.writer.tools).toEqual({ '*': false, read: true });
+  });
+});
+
+describe('project tools', () => {
+  test('the valid top-level tools reach the compiled set as project_tools', () => {
+    const manifest = {
+      kortix_version: 2,
+      default_agent: 'worker',
+      tools: { lookup_order: 'tools/lookup_order.ts', note: 'integrations/crm/note.mjs', bash: 'tools/bash.ts', up: '../x.ts' },
+      agents: { worker: {} },
+    };
+    const expected = { lookup_order: 'tools/lookup_order.ts', note: 'integrations/crm/note.mjs' };
+    expect(compileAgentConfig(manifest)?.project_tools).toEqual(expected);
+    expect(compileSelectedAgentConfig(manifest, 'worker').project_tools).toEqual(expected);
+    expect(compileAgentConfig({ ...manifest, tools: undefined })?.project_tools).toBeUndefined();
+  });
+
+  const v2 = (tools?: unknown) => ({ kortix_version: 2, default_agent: 'worker', agents: { worker: {} }, ...(tools === undefined ? {} : { tools }) });
+  const v3 = (tools?: unknown) => ({ kortix_version: 3, default_agent: 'worker', agents: { worker: { prompt: 'Work.' } }, ...(tools === undefined ? {} : { tools }) });
+
+  test('without a tools key, kortix_tools is absent: the daemon loads every Kortix tool', () => {
+    for (const manifest of [v2(), v3()]) {
+      expect(compileAgentConfig(manifest)).not.toHaveProperty('kortix_tools');
+      expect(compileSelectedAgentConfig(manifest, 'worker')).not.toHaveProperty('kortix_tools');
+    }
+  });
+
+  test('with a tools key, kortix_tools lists the kortix:<name> entries; project_tools keeps module paths only', () => {
+    const tools = {
+      web_search: 'kortix:web_search',
+      show: 'kortix:show',
+      memory: 'tools/memory.ts',
+      lookup_order: 'tools/lookup_order.ts',
+      image_search: 'kortix:scrape_webpage',
+      stray: 'kortix:web_search',
+    };
+    for (const manifest of [v2(tools)]) {
+      for (const compiled of [compileAgentConfig(manifest)!, compileSelectedAgentConfig(manifest, 'worker')]) {
+        expect(compiled.kortix_tools).toEqual(['web_search', 'show']);
+        expect(compiled.project_tools).toEqual({ memory: 'tools/memory.ts', lookup_order: 'tools/lookup_order.ts' });
+        expect(Object.values(compiled.project_tools ?? {}).some((path) => path.startsWith('kortix:'))).toBe(false);
+      }
+    }
+  });
+
+  test('an empty tools key (a map, or every line deleted) compiles to an empty kortix_tools list', () => {
+    for (const tools of [{}, null]) {
+      for (const manifest of [v2(tools)]) {
+        expect(compileAgentConfig(manifest)?.kortix_tools).toEqual([]);
+        expect(compileSelectedAgentConfig(manifest, 'worker').kortix_tools).toEqual([]);
+        expect(compileAgentConfig(manifest)).not.toHaveProperty('project_tools');
+      }
+    }
   });
 });
 
@@ -953,5 +1072,215 @@ describe('compileAgentConfig — a denied bash/edit also denies the tools that d
     const permission = compileNoEdit('permission:\n  bash: deny\n  pty_list: allow');
     expect(permission.pty_list).toBe('allow');
     expect(permission.pty_spawn).toBe('deny');
+  });
+});
+
+describe('v3: the project registers, each agent enables', () => {
+  const MANIFEST = `kortix_version: 3
+default_agent: lead
+skills:
+  pdf: skills/pdf
+  triage: support/skills/triage
+tools:
+  lookup_order: tools/lookup_order.ts
+commands:
+  weekly:
+    description: Weekly report.
+    prompt_file: commands/weekly.md
+  summarize:
+    prompt: Summarize $ARGUMENTS.
+extensions:
+  audit:
+    opencode: extensions/audit.opencode.ts
+    pi: extensions/audit.pi.ts
+  web:
+    pi: npm:pi-web-access@0.30.0
+  adapter:
+    pi:
+      source: extensions/adapter
+      extensions: ["*.ts"]
+agents:
+  lead:
+    mode: primary
+    prompt: Lead.
+    skills: all
+    subagents: all
+    commands: [weekly, summarize]
+    extensions: all
+    codemode: only
+  researcher:
+    mode: subagent
+    prompt_file: prompts/researcher.md
+    permission:
+      edit: deny
+    skills: [triage, kortix-system]
+    commands: [summarize]
+    extensions: [web]
+  quiet:
+    mode: subagent
+    prompt: Quiet.
+    permission: deny
+  off:
+    mode: subagent
+    prompt: Off.
+    enabled: false
+`;
+  const FILES = { 'commands/weekly.md': 'Write the weekly report for $1.', 'prompts/researcher.md': 'Research.' };
+  const compile = () => compileAgentConfig(parseYaml(MANIFEST), 'opencode', FILES)!;
+
+  test('marks the set v3 and passes the registries through', () => {
+    const set = compile();
+    expect(set.schema).toBe(3);
+    expect(set.skills).toEqual({ pdf: 'skills/pdf', triage: 'support/skills/triage' });
+    expect(set.project_tools).toEqual({ lookup_order: 'tools/lookup_order.ts' });
+    expect(set.kortix_tools).toBeUndefined();
+    expect(set.extensions).toEqual({
+      audit: { opencode: 'extensions/audit.opencode.ts', pi: 'extensions/audit.pi.ts' },
+      web: { pi: 'npm:pi-web-access@0.30.0' },
+      adapter: { pi: { source: 'extensions/adapter', extensions: ['*.ts'] } },
+    });
+  });
+
+  test('a command carries its template and the agents that enable it', () => {
+    expect(compile().commands).toEqual({
+      weekly: { description: 'Weekly report.', template: 'Write the weekly report for $1.', agents: ['lead'] },
+      summarize: { template: 'Summarize $ARGUMENTS.', agents: ['lead', 'researcher'] },
+    });
+  });
+
+  test('permission defaults to allow, and the skills and subagents grants own skill and task', () => {
+    const { lead, researcher, quiet } = compile().agent;
+    const allSkills = Object.fromEntries([...KORTIX_SKILL_NAMES, 'pdf', 'triage'].map((name) => [name, 'allow']));
+    expect(lead!.permission).toMatchObject({
+      read: 'allow',
+      bash: 'allow',
+      external_directory: 'allow',
+      skill: { ...allSkills, '*': 'deny' },
+      task: { researcher: 'allow', quiet: 'allow', '*': 'deny' },
+    });
+    expect(researcher!.permission).toEqual({ edit: 'deny', memory: 'deny', skill: { triage: 'allow', 'kortix-system': 'allow', '*': 'deny' }, task: 'deny' });
+    expect((quiet!.permission as Record<string, unknown>).bash).toBe('deny');
+    expect((quiet!.permission as Record<string, unknown>).skill).toBe('deny');
+  });
+
+  test('extensions and codemode compile per agent', () => {
+    const { lead, researcher, quiet } = compile().agent;
+    expect(lead!.extensions).toEqual(['audit', 'web', 'adapter']);
+    expect(lead!.codemode).toBe('only');
+    expect(researcher!.extensions).toEqual(['web']);
+    expect(quiet!.extensions).toBeUndefined();
+  });
+
+  test('only declared agents run: OpenCode built-ins are disabled, enabled: false disables', () => {
+    const { agent } = compile();
+    for (const name of ['build', 'plan', 'general', 'explore']) expect(agent[name]).toEqual({ disable: true });
+    expect(agent.off!.disable).toBe(true);
+    const declared = compileAgentConfig(parseYaml(MANIFEST.replace('  quiet:\n', '  general:\n')), 'opencode', FILES)!;
+    expect(declared.agent.general!.prompt).toBe('Quiet.');
+  });
+
+  test('a selected agent keeps its subagents and only the commands they run', () => {
+    const selected = compileSelectedAgentConfig(parseYaml(MANIFEST), 'researcher', 'opencode', FILES);
+    expect(Object.keys(selected.agent).filter((name) => !selected.agent[name]!.disable).sort()).toEqual(['researcher']);
+    expect(selected.commands).toEqual({ summarize: { template: 'Summarize $ARGUMENTS.', agents: ['researcher'] } });
+    const lead = compileSelectedAgentConfig(parseYaml(MANIFEST), 'lead', 'opencode', FILES);
+    expect(Object.keys(lead.agent).filter((name) => !lead.agent[name]!.disable).sort()).toEqual(['lead', 'quiet', 'researcher']);
+  });
+
+  test('pi packages and codemode come from the session agent', () => {
+    const raw = parseYaml(MANIFEST);
+    expect(manifestPiPackages(raw, 'lead')).toEqual([
+      './extensions/audit.pi.ts',
+      'npm:pi-web-access@0.30.0',
+      { source: './extensions/adapter', extensions: ['*.ts'] },
+    ]);
+    expect(manifestPiPackages(raw, 'researcher')).toEqual(['npm:pi-web-access@0.30.0']);
+    expect(manifestPiPackages(raw, null)).toEqual(manifestPiPackages(raw, 'lead'));
+    expect(manifestPiCodemode(raw, 'lead')).toBe('only');
+    expect(manifestPiCodemode(raw, 'researcher')).toBeNull();
+    expect(manifestPiPackageLists(raw)).toHaveLength(2);
+  });
+});
+
+describe('v3: the session resolvers read every prompt file at the session ref', () => {
+  const MANIFEST = 'kortix_version: 3\ndefault_agent: lead\ncommands:\n  weekly:\n    prompt_file: commands/weekly.md\nagents:\n  lead:\n    mode: primary\n    prompt_file: prompts/lead.md\n    commands: all\n';
+
+  test('agent and command prompt files compile into the session config', async () => {
+    manifestFile = { path: 'kortix.yaml', content: MANIFEST };
+    mdFileContent = { 'prompts/lead.md': 'Lead.', 'commands/weekly.md': 'Weekly for $1.' };
+    readRepoFileCalls = [];
+    for (const read of [() => resolveCompiledAgentConfigForSession(PROJECT, 'main'), () => resolveSelectedAgentConfigForSession(PROJECT, 'lead', 'main')]) {
+      const compiled = JSON.parse((await read())!);
+      expect(compiled.agent.lead.prompt).toBe('Lead.');
+      expect(compiled.commands.weekly).toEqual({ template: 'Weekly for $1.', agents: ['lead'] });
+    }
+    expect([...new Set(readRepoFileCalls)].sort()).toEqual(['commands/weekly.md', 'prompts/lead.md']);
+  });
+
+  test('an invalid v3 manifest fails the session instead of compiling partially', async () => {
+    manifestFile = { path: 'kortix.yaml', content: MANIFEST.replace('commands: all', 'commands: [nope]') };
+    await expect(resolveCompiledAgentConfigForSession(PROJECT, 'main')).rejects.toThrow('not registered under `commands`');
+  });
+});
+
+describe('allowlist rules put * first: OpenCode applies the last matching rule', () => {
+  // `{ worker: allow, '*': deny }` resolves every name to deny on OpenCode, which then drops the tool.
+  test('v3 subagents and skills allowlists start with *', () => {
+    const set = compileAgentConfig({ kortix_version: 3, default_agent: 'lead', skills: { probe: 'skills/probe' }, agents: { lead: { mode: 'primary', prompt: 'x', skills: ['probe'], subagents: ['worker'] }, worker: { mode: 'subagent', prompt: 'y' } } })!;
+    const permission = set.agent.lead!.permission as Record<string, Record<string, string>>;
+    expect(Object.entries(permission.task!)).toEqual([['*', 'deny'], ['worker', 'allow']]);
+    expect(Object.entries(permission.skill!)).toEqual([['*', 'deny'], ['probe', 'allow']]);
+  });
+
+  test('v2 skills allowlist starts with *', () => {
+    const set = compileAgentConfig({ kortix_version: 2, default_agent: 'a', agents: { a: { skills: ['probe'] } } })!;
+    expect(Object.entries((set.agent.a!.permission as Record<string, Record<string, string>>).skill!)).toEqual([['*', 'deny'], ['probe', 'allow']]);
+  });
+});
+
+/**
+ * OpenCode 1.18.23 (permission/index.ts `fromConfig` + `evaluate`): every
+ * (key, pattern) rule in key order, the LAST match wins. `toEqual` ignores key
+ * order, so only an evaluation like this one sees the order bug.
+ */
+function openCodeAction(permission: unknown, name: string, subject: string): string | undefined {
+  const glob = (value: string, pattern: string) => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.').replace(/ \.\*$/, '( .*)?')}$`, 's').test(value);
+  const block = typeof permission === 'string' ? { '*': permission } : (permission as Record<string, unknown>);
+  const rules = Object.entries(block).flatMap(([key, rule]) =>
+    typeof rule === 'string' ? [[key, '*', rule]] : Object.entries(rule as Record<string, string>).map(([pattern, action]) => [key, pattern, action]),
+  );
+  return rules.filter(([key, pattern]) => glob(name, key!) && glob(subject, pattern!)).at(-1)?.[2];
+}
+
+describe('compileAgentConfig — the most specific rule wins on OpenCode, whatever the authored order', () => {
+  const wire = (set: unknown) => JSON.parse(JSON.stringify(set)) as CompiledAgents;
+
+  test('v2: a skills list allows each listed skill and denies the rest (the prod failure shape)', () => {
+    const set = wire(compileAgentConfig({ kortix_version: 2, default_agent: 'a', agents: { a: { skills: ['aie-os', 'probe'] } } }));
+    const permission = set.agent.a!.permission;
+    expect(openCodeAction(permission, 'skill', 'aie-os')).toBe('allow');
+    expect(openCodeAction(permission, 'skill', 'probe')).toBe('allow');
+    expect(openCodeAction(permission, 'skill', 'other')).toBe('deny');
+  });
+
+  test('v2: an agent file bash map with `*` last keeps its specific rule', () => {
+    const set = wire(
+      compileAgentConfig({ kortix_version: 2, default_agent: 'a', agents: { a: { skills: ['probe'] } } }, 'opencode', {
+        'agents/a.md': supportMd(['permission:', '  bash:', '    "git push *": ask', '    "*": allow'].join('\n'), 'Body.'),
+      }),
+    );
+    const permission = set.agent.a!.permission;
+    expect(openCodeAction(permission, 'bash', 'git push origin main')).toBe('ask');
+    expect(openCodeAction(permission, 'bash', 'ls')).toBe('allow');
+  });
+
+  test('v3: a tool key outranks a `*` written after it', () => {
+    const set = wire(
+      compileAgentConfig(parseYaml('kortix_version: 3\ndefault_agent: a\nagents:\n  a:\n    prompt: Hi.\n    permission:\n      bash: ask\n      edit:\n        "*.env": deny\n        "*": allow\n      "*": allow\n')),
+    );
+    const permission = set.agent.a!.permission;
+    expect(openCodeAction(permission, 'bash', 'ls')).toBe('ask');
+    expect(openCodeAction(permission, 'edit', 'apps/api/.env')).toBe('deny');
+    expect(openCodeAction(permission, 'read', 'x')).toBe('allow');
   });
 });

@@ -45,6 +45,8 @@ const QUERY_TIMEOUT_MS = 10_000;
 const DEMOTE_AFTER_MS = TTL_MS - 10_000;
 // Independent of the tick chain: a hung tick must not be able to hide an expired lease.
 const WATCHDOG_MS = 5_000;
+// An onAcquire that waited this long for an onRelease drain logs a warning.
+const ACQUIRE_WAIT_WARN_MS = 30_000;
 
 export interface LeaderElectionHandlers {
   /** Called once when this node becomes leader (start singleton workers). */
@@ -90,7 +92,7 @@ export function shouldDemote(
  * DEAD-WEIGHT leader — holding it, renewing it, running nothing — silently
  * starving the cron scheduler fleet-wide with no error and no churn. That is what
  * left an EKS API-only pod able to freeze every cron in the 2026-06-21 outage. A
- * pod is an owner unless ALL five worker flags are explicitly "false"; default
+ * pod is an owner unless ALL four worker flags are explicitly "false"; default
  * (unset) = owner, so single-node / self-host is unaffected.
  */
 export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -100,8 +102,7 @@ export function runsSingletonWorkers(env: NodeJS.ProcessEnv = process.env): bool
     on(env.KORTIX_TRIGGER_SCHEDULER_ENABLED) ||
     on(env.KORTIX_PROJECT_MAINTENANCE_ENABLED) ||
     on(env.KORTIX_ACTIVE_TURN_RENEWAL_ENABLED) ||
-    on(env.KORTIX_LEGACY_MIGRATION_WORKER_ENABLED) ||
-    on(env.KORTIX_SUNA_MIGRATION_WORKER_ENABLED)
+    on(env.KORTIX_LEGACY_MIGRATION_WORKER_ENABLED)
   );
 }
 
@@ -140,6 +141,24 @@ let lastRenewStartedMono = 0;
 let watchdog: ReturnType<typeof setTimeout> | null = null;
 let handlers: LeaderElectionHandlers | null = null;
 let tableReady = false;
+// The last onAcquire/onRelease call. The watchdog demotes beside the lease tick, so a re-acquire
+// can come while onRelease still awaits. An onAcquire that ran then found the workers' guards
+// still up and started nothing, and the rest of onRelease then stopped them for the whole term
+// (2026-10-16 prod: the backfill worker stopped after a lease flap, cron kept running).
+let handlerChain: Promise<void> = Promise.resolve();
+let handlersPending = 0;
+// Moves on every promote and demote: a failed onAcquire steps down only if no newer change came.
+let term = 0;
+
+/** Run `fn` after every earlier handler call settled, in call order. */
+function serially(fn: () => Promise<void>): Promise<void> {
+  handlersPending += 1;
+  const next = handlerChain.then(fn).finally(() => {
+    handlersPending -= 1;
+  });
+  handlerChain = next.catch(() => undefined);
+  return next;
+}
 
 /**
  * True while this node holds a lease it can still trust. A singleton writer
@@ -197,7 +216,22 @@ async function acquireOrRenew(): Promise<boolean> {
 async function promote(): Promise<void> {
   if (leader) return;
   leader = true;
+  const myTerm = ++term;
   logger.info('[leader] acquired background-worker leadership', { ownerId });
+  const queuedAt = performance.now();
+  const behindRelease = handlersPending > 0;
+  // Not awaited: the lease tick must not wait for an onRelease still in flight before it renews.
+  void serially(async () => {
+    if (behindRelease) {
+      const ms = Math.round(performance.now() - queuedAt);
+      if (ms > ACQUIRE_WAIT_WARN_MS) logger.warn('[leader] onAcquire waited for onRelease', { ms });
+      else logger.info('[leader] onAcquire waited for onRelease', { ms });
+    }
+    await acquireHandlers(myTerm);
+  });
+}
+
+async function acquireHandlers(myTerm: number): Promise<void> {
   try {
     await handlers?.onAcquire();
   } catch (err) {
@@ -209,7 +243,7 @@ async function promote(): Promise<void> {
     logger.error('[leader] onAcquire failed — stepping down to retry next tick', {
       error: err instanceof Error ? err.message : String(err),
     });
-    leader = false;
+    if (term === myTerm) leader = false;
     try {
       await handlers?.onRelease();
     } catch (releaseErr) {
@@ -223,12 +257,15 @@ async function promote(): Promise<void> {
 async function demote(reason: string): Promise<void> {
   if (!leader) return;
   leader = false;
+  term += 1;
   logger.warn('[leader] released background-worker leadership', { ownerId, reason });
-  try {
-    await handlers?.onRelease();
-  } catch (err) {
-    logger.error('[leader] onRelease failed', { error: err instanceof Error ? err.message : String(err) });
-  }
+  await serially(async () => {
+    try {
+      await handlers?.onRelease();
+    } catch (err) {
+      logger.error('[leader] onRelease failed', { error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 }
 
 async function tick(): Promise<void> {

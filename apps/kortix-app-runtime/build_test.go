@@ -23,10 +23,10 @@ func TestBuildPinsPatchedCaddyRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		"github.com/caddyserver/caddy/v2 v2.11.4",
-		"golang.org/x/crypto v0.55.0",
-		"golang.org/x/text v0.41.0",
-		"google.golang.org/grpc v1.82.1",
+		"github.com/caddyserver/caddy/v2 v2.11.7",
+		"golang.org/x/crypto v0.57.0",
+		"golang.org/x/text v0.42.0",
+		"google.golang.org/grpc v1.83.2",
 	} {
 		if !strings.Contains(string(caddyModule), required) {
 			t.Fatalf("caddy/go.mod must contain %q", required)

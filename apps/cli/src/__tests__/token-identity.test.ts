@@ -13,6 +13,7 @@ import {
   tokenKindLabel,
 } from '../api/token-identity.ts';
 import {
+  denialDetailFromBody,
   printPermissionDenialIdentity,
   recordPermissionDenial,
   resetPermissionDenial,
@@ -262,6 +263,20 @@ describe('permission-denial identity footer', () => {
     // would send the agent to a fix that cannot work.
     const out = await footerFor({ code: 'agent_session_forbidden' });
     expect(out).toMatch(/a person with project access must do this/i);
+    expect(out).not.toContain('kortix_permissions');
+  });
+
+  test('session_repository_access_denied names the workspace layer, not the token grant', async () => {
+    const out = await footerFor({ code: 'session_repository_access_denied' });
+    expect(out).toContain('workspace repository access denied');
+    expect(out).toContain('(not the cause)');
+    expect(out).toMatch(/start a session with repository access/);
+    expect(out).not.toContain('kortix_permissions');
+  });
+
+  test('an older server\'s bare workspace message gets the same remedy', async () => {
+    const out = await footerFor(denialDetailFromBody({ error: true, message: 'session workspace does not allow repository access', status: 403 }));
+    expect(out).toContain('workspace repository access denied');
     expect(out).not.toContain('kortix_permissions');
   });
 

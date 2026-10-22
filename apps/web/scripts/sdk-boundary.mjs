@@ -20,17 +20,45 @@ const TEST_FILE = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
  *  - `@kortix/sdk/internal/*` — three browser-only internal modules apps/web
  *                            must share with the SDK. None of them can be
  *                            re-exported from the isomorphic root:
- *      - `idb-sync-cache`    sign-out clears the per-user cached session
- *                            transcripts out of IndexedDB.
+ *      - `idb-sync-cache`    the device keeps saved session copies in
+ *                            IndexedDB (`lib/device-caches.ts`), and
+ *                            sign-out clears them (`reset-client-state.ts`).
  *      - `diagnostics-store` the SDK event stream writes LSP diagnostics into
  *                            this zustand store; the file viewer reads it
- *                            through the `@/stores/diagnostics-store` shim.
- *      - `managed-storage`   the SDK registers its disposable caches here;
- *                            quota reclaim and the boot prune go through the
- *                            `@/lib/storage/managed-storage` shim.
- *                            Each is imported in exactly one file, with an
- *                            inline eslint disable. The other four zustand
+ *                            through the `@kortix/ui/internal/stores/diagnostics-store` shim.
+ *      - `managed-storage`   disposable caches register here; quota
+ *                            reclaim and the boot prune go through the
+ *                            `@kortix/ui/internal/lib/storage/managed-storage` shim.
+ *                            Each import carries an inline eslint disable. The other four zustand
  *                            stores under `internal/` stay forbidden.
+ *  - `@kortix/sdk/genui/fence` — OpenUI fence detection for the markdown
+ *                            renderers (`components/markdown/code/
+ *                            genui-fence.ts`). It never loads `@openuidev/*`
+ *                            or `zod`, which the `./genui` barrel does at
+ *                            module load. The import carries an inline eslint
+ *                            disable (the `@kortix/sdk/*` gitignore pattern
+ *                            cannot re-include a path under `genui/`).
+ *  - `@kortix/sdk/genui/react` — the generative UI renderer. One import, in
+ *                            `packages/ui/src/markdown/genui/sdk.ts`, a feature that
+ *                            `markdown-code.tsx` reaches only through `lazy()`,
+ *                            so `@openuidev/*` and `zod` stay out of the main
+ *                            bundle. The import carries an inline eslint disable.
+ *  - `@kortix/sdk/genui`   — the framework-free generative UI barrel. Two static
+ *                            imports, `genuiA11yText` in
+ *                            `packages/ui/src/markdown/genui/components/charts.tsx` and
+ *                            `packages/ui/src/markdown/genui/components/map.tsx`, modules
+ *                            that `components/index.tsx` loads through `lazy()`
+ *                            inside the already-lazy genui feature, which has
+ *                            loaded `@openuidev/*` and `zod` through
+ *                            `genui/react` by then. The import carries an
+ *                            inline eslint disable.
+ *
+ * The `@kortix/sdk/genui` barrel loads `@openuidev/*` and `zod` at module load,
+ * so a static import of it belongs only in lazily loaded genui code. Copy and
+ * transcript export (in the main session chunk) reach it through the dynamic
+ * `import()` in `packages/ui/src/markdown/genui/to-markdown.ts`, which runs only for text that
+ * contains "openui", and so does a block's error fallback (`genuiBlockText`).
+ * Neither this scan nor the eslint rule inspects `import()`.
  */
 const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk',
@@ -40,6 +68,9 @@ const CANONICAL_SDK_ENTRIES = new Set([
   '@kortix/sdk/internal/idb-sync-cache',
   '@kortix/sdk/internal/diagnostics-store',
   '@kortix/sdk/internal/managed-storage',
+  '@kortix/sdk/genui',
+  '@kortix/sdk/genui/fence',
+  '@kortix/sdk/genui/react',
 ]);
 
 const FORBIDDEN_IMPORTS = [

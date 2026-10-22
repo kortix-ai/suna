@@ -43,7 +43,7 @@ describe('connector and connection terminology cutover', () => {
   test('connectors help owns connector, connection, call, and MCP behavior', async () => {
     const result = await runCli(['connectors', '--help']);
     expect(result.code).toBe(0);
-    for (const command of ['ls', 'show', 'discover', 'call', 'connections', 'mcp']) {
+    for (const command of ['ls', 'show', 'discover', 'call', 'connections']) {
       expect(result.stdout).toMatch(new RegExp(`^\\s*${command}(?:\\s|$)`, 'm'));
     }
     expect(result.stdout).not.toMatch(/^\s*(?:link|finalize|describe)\s/m);

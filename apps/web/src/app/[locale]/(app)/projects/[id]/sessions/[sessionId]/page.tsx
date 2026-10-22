@@ -1,42 +1,57 @@
 'use client';
 
+import { useTranscriptPresence } from './use-transcript-presence';
+
 import { useTranslations } from '@/i18n/use-translations';
 
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ComponentProps, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { AppErrorCard, ClientErrorBoundary } from '@/components/common/error-boundary';
-import { isLegacyMigratedSession, sessionDisplayLabel } from '@/components/projects/session-label';
-import { Button } from '@/components/ui/button';
-import Loading from '@/components/ui/loading';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { ErrorState } from '@/features/layout/section/error-state';
+import {
+  isLegacyMigratedSession,
+  sessionDisplayLabel,
+  ProviderFailureRecovery,
+  SandboxLoadingBoundary,
+  SessionChat,
+  SessionConnectingBanner,
+  SessionStartingLoader,
+  SessionNoticeBanner,
+  SessionDeleteModal,
+} from '@kortix/ui/session';
+import { Button } from '@kortix/ui/button';
+import Loading from '@kortix/ui/loading';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { ErrorState } from '@kortix/ui/error-state';
+import { useNotificationCenter } from '@kortix/ui/internal/hooks/use-notification-center';
+import { useOpenSessionRead } from '@/features/notifications/use-open-session-read';
 import { useAuth } from '@/features/providers/auth-provider';
-import { InstantSessionShell } from '@/features/session/instant-session-shell';
-import { resolvePinnedRootSessionId } from '@/features/session/pinned-root-session';
+import { MissingSessionBoundary } from '@/features/session/missing-session-boundary';
+import {
+  InstantSessionShell,
+  SavedSessionSkeleton,
+  SessionLayout,
+  SidebarToggle,
+} from '@kortix/ui/workspace';
+import { resolvePinnedRootSessionId } from '@kortix/ui/session/thread/pinned-root-session';
 import {
   PreviousRepositoryNoticeProvider,
   sessionUsesPreviousRepository,
-} from '@/features/session/previous-repository-session';
-import { ProviderFailureRecovery } from '@/features/session/provider-failure-recovery';
+} from '@kortix/ui/session/status/previous-repository-session';
 import {
   pendingSessionPromptForRecovery,
   provisioningFailurePresentation,
-} from '@/features/session/provisioning-failure';
-import { isFirstPromptRow } from '@/features/session/queue-projection';
-import { SandboxLoadingBoundary } from '@/features/session/sandbox-loading-boundary';
+} from '@kortix/ui/session/status/provisioning-failure';
+import { isFirstPromptRow } from '@kortix/ui/session/composer/queue-projection';
 import {
   deleteRuntimeSessionParam,
   readRuntimeSessionParam,
-} from '@/features/session/tool/tools/session-spawn-urls';
-import { SavedSessionSkeleton } from '@/features/session/saved-session-skeleton';
-import { useSessionAudit } from '@/features/session/session-audit-shared';
-import { SessionChat } from '@/features/session/session-chat';
-import '@/features/session/tool/tools/register';
-import { SessionLayout } from '@/features/session/session-layout';
+} from '@kortix/ui/session/tool/tools/session-spawn-urls';
+import { useSessionAudit } from '@kortix/ui/session-panel';
+import '@kortix/ui/session/tool/tools/register';
 import {
   canMountSessionChat,
   findInitialSessionPin,
@@ -44,7 +59,7 @@ import {
   gatedRuntimeError,
   runtimeErrorPresentation,
   sessionErrorSurfaceReady,
-} from '@/features/session/session-load-state';
+} from '@kortix/ui/session/status/session-load-state';
 import {
   AUTO_RESUME_WINDOW_MS,
   isAutoResuming,
@@ -52,17 +67,12 @@ import {
   isSandboxResumable,
   isWakeClassFailure,
   sessionWakeProgress,
-} from '@/features/session/session-resume';
-import { canPollSessionStart } from '@/features/session/session-start-gate';
-import {
-  SessionConnectingBanner,
-  SessionStartingLoader,
-} from '@/features/session/session-starting-loader';
+} from '@kortix/ui/session/status/session-resume';
+import { canPollSessionStart } from '@kortix/ui/session/status/session-start-gate';
 import {
   SessionNotice,
-  SessionNoticeBanner,
   type SessionNoticeProps,
-} from '@/features/session/session-notice-banner';
+} from '@kortix/ui/session/status/session-notice-banner';
 import {
   hasOrExpectsTranscript,
   resolveBootPresentation,
@@ -70,40 +80,44 @@ import {
   resolveSessionOverlay,
   shouldForgetNewSessionHint,
   shouldMountSessionChat,
-} from '@/features/session/session-surface';
+} from '@kortix/ui/session/status/session-surface';
 import {
   canRenderCachedTranscriptWhileSandboxDown,
   isDormantSessionWithoutRuntime,
   isUnmaterializedSessionFailure,
-} from '@/features/session/session-terminal-state';
+} from '@kortix/ui/session/status/session-terminal-state';
 import {
   shouldPaintFatalCard,
   shouldPaintTerminalCard,
-} from '@/features/session/terminal-card-gate';
-import { SidebarToggle } from '@/features/workspace/project-layout/sidebar-toggle';
-import { SessionDeleteModal } from '@/features/workspace/project-sidebar/modal/session-delete-modal';
-import { useAccountState } from '@/hooks/billing';
+} from '@kortix/ui/terminal';
+import { useAccountState } from '@kortix/ui/internal/billing/index';
+import { ReconnectGitHubButton, useRepositoryDisconnect } from '@kortix/ui/workspace/repository-disconnected';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
-import { useRestartProjectSession } from '@/hooks/projects/use-restart-project-session';
+import {
+  useRecoverLostSession,
+  useRestartProjectSession,
+} from '@kortix/ui/internal/hooks/projects/use-restart-project-session';
 import {
   billingDialogArgs,
   billingGateCopy,
   billingStateAllowsRun,
   resolveBillingState,
-} from '@/lib/billing/billing-gate-state';
+} from '@kortix/ui/internal/lib/billing/billing-gate-state';
 import { isBillingEnabled } from '@/lib/config';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
-import { cn } from '@/lib/utils';
-import { useFirstPromptPreviewStore } from '@/stores/session-composer-handoff-store';
+import { cn } from '@kortix/ui';
+import { useFirstPromptPreviewStore, useSessionComposerPrefillStore } from '@kortix/ui/composer';
 import {
   shouldShowSessionSwitchLoading,
   useSessionSwitchStore,
-} from '@/stores/session-switch-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+} from '@kortix/ui/internal/stores/session-switch-store';
+import { useUpgradeDialogStore } from '@kortix/ui/internal/stores/upgrade-dialog-store';
+import { useWebNotificationStore } from '@kortix/ui/internal/stores/web-notification-store';
 import {
   clearSessionFresh,
   formatRuntimeError,
   getProjectDetail,
+  isRepositoryDisconnectedError,
   isSessionFresh,
   sessionStartKey,
   setActiveInstanceCookie,
@@ -121,6 +135,7 @@ import {
   useProjectSession,
   useSession,
   useSessionPrompts,
+  useSessionStreamConnected,
   useWakeEscalation,
 } from '@kortix/sdk/react';
 
@@ -148,13 +163,29 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
  */
 export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
+  const tSessionPage = useTranslations('sessionPage');
   if (!projectId || !sessionId) return null;
   return (
-    <ProjectSessionView
+    <MissingSessionBoundary
       key={`${projectId}/${sessionId}`}
       projectId={projectId}
       sessionId={sessionId}
-    />
+      fallback={
+        <InlineSessionError
+          title={tSessionPage('missing.title')}
+          message={tSessionPage('missing.message')}
+          action={
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/projects/${projectId}`} prefetch>
+                {tSessionPage('backToProject')}
+              </Link>
+            </Button>
+          }
+        />
+      }
+    >
+      <ProjectSessionView projectId={projectId} sessionId={sessionId} />
+    </MissingSessionBoundary>
   );
 }
 
@@ -180,6 +211,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   useSessionAudit(projectId, sessionId, { poll: true, silent: true, limit: 100 });
   const tI18nHardcoded = useTranslations('hardcodedUi');
   const tSessionPage = useTranslations('sessionPage');
+  const tRepository = useTranslations('repositoryDisconnected');
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -206,11 +238,11 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const accountLoaded = !!accountState;
   // ONE resolver for "what is this account's billing situation" (see
-  // lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
-  // `noPlan` with a "Subscribe to Team plan" pitch — which told a Team account
-  // on an ACTIVE $40/mo subscription with a $0.0099 wallet that it had no plan,
-  // while the modal that CTA opened correctly said "Out of credits — your Team
-  // plan and seats are unaffected". `can_run: false` means blocked, not unplanned.
+  // packages/ui/src/internal/lib/billing/billing-gate-state.ts). This used to be `!can_run`, rendered as
+  // `noPlan` with a subscribe pitch — which told an account on an ACTIVE
+  // subscription with a $0.0099 wallet that it had no plan, while the modal
+  // that CTA opened correctly said "Out of credits — your plan is unaffected".
+  // `can_run: false` means blocked, not unplanned.
   const billingState = isBillingEnabled() ? resolveBillingState(accountState) : null;
   const billingBlocked =
     isBillingEnabled() && accountLoaded && !billingStateAllowsRun(billingState);
@@ -237,8 +269,18 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // replayStartStash:false — the web has its own pending-prompt hand-off (below).
   // The default chat engine stays enabled. This hook owns message sync and the
   // question and permission recovery pollers for the root session.
+  // With the project's `notification_center` flag on (KRTX-1742), a tab that
+  // shows its own OS notification tells the server so, and the server then
+  // holds back the phone push and Web Push for this session; closing the page
+  // ends the presence lease at once. With the flag off, presence is as before.
+  const notificationCenter = useNotificationCenter(projectId);
+  const browserNotificationsOn = useWebNotificationStore((s) => s.preferences.enabled);
+  const notificationPermission = useWebNotificationStore((s) => s.permission);
   const session = useSession(projectId, sessionId, {
     browserPresence: !!user,
+    presenceAlerts:
+      notificationCenter && browserNotificationsOn && notificationPermission === 'granted',
+    presencePageExit: notificationCenter,
     enabled: canPollSessionStart({ hasUser: !!user, billingBlocked }),
     replayStartStash: false,
     initialRuntimeSessionId,
@@ -247,6 +289,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // re-renders the transcript only, not this whole page.
     subscribeMessages: false,
   });
+  // The presence write marks this session's notifications read on the server;
+  // this clears them from the bell at once. Flag off: there is no bell.
+  useOpenSessionRead(notificationCenter ? user?.id : null, sessionId);
   // `/start` no longer refuses a session created before a repository
   // replacement, so there is no error to detect and no mode to flip into: the
   // session starts, gets the project's current config release, and converges
@@ -294,6 +339,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // ONE restart behavior for every card on this route: optimistic exit from the
   // terminal state, a real pending state, and a SURFACED failure.
   const restart = useRestartProjectSession(projectId, sessionId);
+  // A lost session continues on a new computer only when a person asks (KRTX-2419).
+  const recover = useRecoverLostSession(projectId, sessionId);
   // A manual restart re-arms auto-resume: the box the user just asked us to
   // reboot deserves the same wake attempts a fresh open would get.
   const handleRestart = () => {
@@ -406,6 +453,10 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // own ref, so a rebuilt closure here cannot re-run its decision effect and
     // fire one rung twice.
     onRestart: handleRestart,
+    // While the session stream is up the server runs this ladder (R5.2) and
+    // the hook only reports it.
+    projectId,
+    sessionId,
   });
   // THE progress-aware budget. Every consumer below reads time-since-CHANGE,
   // never time-since-wake-started — the fixed clock this replaces expired
@@ -418,9 +469,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // than one second could then never elapse, silently ending the resume loop
   // after its first immediate attempt.
   const wakeShowingProgress = wakeSilentMs < AUTO_RESUME_WINDOW_MS;
+  // With the session stream up, every change of the box row re-reads `/start`
+  // (R5.3), so only the first, waking attempt is needed here.
+  const sessionStreamConnected = useSessionStreamConnected(projectId, sessionId);
   useEffect(() => {
     if (!sandboxResumable) return;
     if (!wakeShowingProgress) return;
+    if (sessionStreamConnected && resumeAttempts > 0) return;
     // First attempt fires immediately (match the refresh); back off after that,
     // and keep re-asking for as long as the wake is still showing progress.
     const t = setTimeout(
@@ -431,7 +486,7 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       resumeAttempts === 0 ? 0 : Math.min(1500 * 2 ** Math.min(resumeAttempts - 1, 3), 8000),
     );
     return () => clearTimeout(t);
-  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, projectId, sessionId, queryClient]);
+  }, [sandboxResumable, resumeAttempts, wakeShowingProgress, sessionStreamConnected, projectId, sessionId, queryClient]);
   // While a resumable box is still SHOWING PROGRESS it is "waking", not "dead"
   // — render the boot loader, never the dead-end card.
   const autoResuming = isAutoResuming(sandbox, { elapsedMs: wakeSilentMs });
@@ -524,9 +579,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: !!user && !chatReady && !handoff.newSessionHint && !restoredFirstPrompt,
   });
   const hasPendingFirstPrompt = restoreInbox.prompts.some(isFirstPromptRow);
-  useEffect(() => {
-    if (hasPendingFirstPrompt && session.messages.length === 0) setRestoredFirstPrompt(true);
-  }, [hasPendingFirstPrompt, session.messages.length]);
+  if (hasPendingFirstPrompt && session.messages.length === 0 && !restoredFirstPrompt) {
+    setRestoredFirstPrompt(true);
+  }
   // "The shell is painting this session's first prompt right now." TWO producers
   // put a prompt on that surface and only one of them is a send made here:
   //
@@ -565,11 +620,8 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
   // server's) WITHOUT waiting for the sandbox, so it lands while a hibernated
   // box is still waking and without the chat having mounted. Latched: the store only ever grows for a live session,
   // but a transient empty read must never resurrect the shell.
-  const [sawTranscript, setSawTranscript] = useState(false);
-  useEffect(() => {
-    if (session.messages.length > 0) setSawTranscript(true);
-  }, [session.messages.length]);
-  const hasTranscript = session.messages.length > 0 || sawTranscript;
+  const hasTranscript = useTranscriptPresence(session.savedTranscript);
+  const repositoryDisconnect = useRepositoryDisconnect(projectId);
   // A session whose clone predates a repository replacement still has its
   // transcript. Do not replace a readable conversation with a failure card.
   const previousRepositoryHistoryAvailable = hasTranscript && usesPreviousRepository;
@@ -831,15 +883,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (sessionSwitchLoading) {
       if (resumeOverlay === 'saved-skeleton') return resumeSkeleton;
       return (
-        <HeaderlessSessionSurface>
-          <SessionStartingLoader
-            stage={switchingToSessionId === sessionId ? startStage : 'starting'}
-            projectId={projectId}
-            sessionId={switchingToSessionId ?? sessionId}
-            reason={switchingToSessionId === sessionId ? session.reason : null}
-            failure={switchingToSessionId === sessionId ? session.failure : null}
-          />
-        </HeaderlessSessionSurface>
+        <SessionBootSurface
+          stage={switchingToSessionId === sessionId ? startStage : 'starting'}
+          projectId={projectId}
+          sessionId={switchingToSessionId ?? sessionId}
+          reason={switchingToSessionId === sessionId ? session.reason : null}
+          failure={switchingToSessionId === sessionId ? session.failure : null}
+        />
       );
     }
 
@@ -907,6 +957,23 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     // nothing to read.
     let notice: SessionNoticeProps | null = null;
 
+    // The project's GitHub repository cannot be reached (KRTX-2955): the
+    // start failed with the cause, and no retry can help until GitHub is
+    // reconnected. Say that, with the one fix, instead of a machine failure.
+    if (session.startError && isRepositoryDisconnectedError(session.startError)) {
+      const message = repositoryDisconnect
+        ? tRepository(`reasons.${repositoryDisconnect.reason}`, {
+            owner: repositoryDisconnect.owner,
+            repository: repositoryDisconnect.repository,
+          })
+        : session.startError.message;
+      const action = <ReconnectGitHubButton projectId={projectId} />;
+      if (!hasTranscript) {
+        return <InlineSessionError title={tRepository('title')} message={message} action={action} />;
+      }
+      notice = { tone: 'warning', title: tRepository('title'), message, action };
+    }
+
     // The wake ladder is still working: a session with rungs left is not a dead
     // end, and painting one is the exact defect this replaces — the card fired
     // while the box was seconds from ready. The transcript mirror keeps
@@ -915,19 +982,17 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (wakeLadderHolding) {
       if (!showCachedTranscriptWhileDown) {
         return (
-          <HeaderlessSessionSurface>
-            <SessionStartingLoader
-              stage="starting"
-              projectId={projectId}
-              sessionId={sessionId}
-              note={wake.note}
-              reason={session.reason}
-              failure={session.failure}
-            />
-          </HeaderlessSessionSurface>
+          <SessionBootSurface
+            stage="starting"
+            projectId={projectId}
+            sessionId={sessionId}
+            note={wake.note}
+            reason={session.reason}
+            failure={session.failure}
+          />
         );
       }
-    } else if (recoverableFailure) {
+    } else if (recoverableFailure && !notice) {
       // A dead end that cannot say what was already attempted invites the
       // user to repeat it by hand. `wake.summary` names every rung the ladder
       // used before giving up. It rides in the MESSAGE, not in `detail`: that
@@ -1005,25 +1070,29 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           />
         );
       } else {
-        notice = {
-          title: tSessionPage('stopped.title'),
-          message: restart.errorMessage ?? tSessionPage('stopped.message'),
-          action: <RestartSessionButton restart={restart} onRestart={handleRestart} />,
-        };
+        // A deliberate stop with a readable transcript is not a dead end. The
+        // conversation stays, the composer stays live (a sent message wakes the
+        // box and is delivered — `deliver` carries the wake intent), and the
+        // composer's own notice says the computer is asleep. A human who left
+        // and came back re-opens the box themselves (`useSession` releases the
+        // stop hold on the next presence return), so no explicit Restart
+        // button is needed here — a `notice` would only freeze the composer
+        // (`readOnly`) and replace it with a terminal card.
       }
     }
 
-    // The provider lost this session's computer. THIS MUST NEVER HAPPEN, and
-    // when it does the only honest UI is a hard stop: nothing here is
-    // restartable (`/start` answers `retriable: false`, `POST /restart` answers
-    // 409 forever), and this session cannot be reconstructed.
+    // The provider lost this session's computer. THIS MUST NEVER HAPPEN. The
+    // box is not restartable (`/start` answers `retriable: false`, `POST
+    // /restart` answers 409 forever).
     //
     // It must NOT fall through to the generic stopped card below, which offers
     // a Restart button whose only possible outcome is that 409 — the loop a prod
-    // session hit on 2026-08-13. It must also NEVER silently continue
-    // into a fresh session: the server deliberately preserved this identity
-    // instead of attaching a replacement box, and the UI must not undo that.
-    // Say what happened, name the id, and stop.
+    // session hit on 2026-08-13. It must also NEVER silently continue into a
+    // fresh session: the server deliberately preserved this identity instead of
+    // attaching a replacement box. With a saved conversation, a person may ask
+    // for that: Continue (`POST /recover`, KRTX-2419) boots a new computer from
+    // the session branch that restores the conversation. Without one, say what
+    // happened, name the id, and stop.
     if (!notice && runtimeIdentityUnavailable && !previousRepositoryHistoryAvailable) {
       const deleteAction = (
         <Button variant="outline" size="sm" onClick={() => setDeleteOpen(true)}>
@@ -1040,13 +1109,22 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           />
         );
       }
-      // The conversation stays readable: nothing can continue it, but nothing
-      // about losing the computer made its history untrue.
+      // The conversation stays readable, and it can continue on a new
+      // computer. A refusal (no saved log, the old box still being removed)
+      // keeps this banner and names the reason.
       notice = {
         tone: 'destructive',
         title: tSessionPage('lost.title'),
-        message: tSessionPage('lost.message'),
-        action: deleteAction,
+        message: recover.errorMessage ?? tSessionPage('lost.continueMessage'),
+        action: (
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={recover.isPending} onClick={() => recover.recover()}>
+              {recover.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
+              {tSessionPage('lost.continue')}
+            </Button>
+            {deleteAction}
+          </div>
+        ),
       };
     }
 
@@ -1060,16 +1138,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {
         return (
-          <HeaderlessSessionSurface>
-            <SessionStartingLoader
-              stage="starting"
-              projectId={projectId}
-              sessionId={sessionId}
-              note={wake.note}
-              reason={session.reason}
-              failure={session.failure}
-            />
-          </HeaderlessSessionSurface>
+          <SessionBootSurface
+            stage="starting"
+            projectId={projectId}
+            sessionId={sessionId}
+            note={wake.note}
+            reason={session.reason}
+            failure={session.failure}
+          />
         );
       }
       // Auto-resume exhausted (or genuinely un-resumable): give an in-place
@@ -1126,21 +1202,26 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             inert={!overlayDismissed}
           >
             <ProjectSessionRuntimeConnection>
-              {mountChat && (
-                <ActiveSessionChat
-                  projectId={projectId}
-                  sessionId={sessionId}
-                  sessionState={session}
-                  boundAgentName={boundAgentName}
-                  chatReady={chatReady}
-                  onChatReady={handleChatReady}
-                  // A terminal state under a banner: the banner names the reason
-                  // and the one action. A composer beside it would promise that
-                  // the next message wakes a computer that cannot come back.
-                  readOnly={!!notice}
-                  inputReplacement={notice ? <SessionNotice {...notice} /> : undefined}
-                />
-              )}
+              {/* Its own boundary: a runtime-not-ready throw in the chat empties
+                  only this layer, under the overlay, and never the overlay with
+                  it (KRTX-2931). The outer one still covers the overlay. */}
+              <SandboxLoadingBoundary>
+                {mountChat && (
+                  <ActiveSessionChat
+                    projectId={projectId}
+                    sessionId={sessionId}
+                    sessionState={session}
+                    boundAgentName={boundAgentName}
+                    chatReady={chatReady}
+                    onChatReady={handleChatReady}
+                    // A terminal state under a banner: the banner names the reason
+                    // and the one action. A composer beside it would promise that
+                    // the next message wakes a computer that cannot come back.
+                    readOnly={!!notice}
+                    inputReplacement={notice ? <SessionNotice {...notice} /> : undefined}
+                  />
+                )}
+              </SandboxLoadingBoundary>
             </ProjectSessionRuntimeConnection>
           </div>
         )}
@@ -1170,24 +1251,22 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
                 stage={authLoading || !user ? 'provisioning' : startStage}
                 boundAgentName={boundAgentName}
                 onSubmit={() => setSubmittedOnShell(true)}
-                // The chat underneath owns the prompt from here; the shell's
-                // copy would otherwise dissolve over it for the whole fade.
+                // The chat underneath owns the queued rows from here. The
+                // first prompt's bubble stays: see the prop.
                 hasTranscript={hasTranscript}
                 draftActive={!overlayDismissed}
               />
             ) : resumeOverlay === 'saved-skeleton' ? (
               resumeSkeleton
             ) : (
-              <HeaderlessSessionSurface>
-                <SessionStartingLoader
-                  stage={authLoading || !user ? 'provisioning' : startStage}
-                  projectId={projectId}
-                  sessionId={sessionId}
-                  note={wake.note}
-                  reason={session.reason}
-                  failure={session.failure}
-                />
-              </HeaderlessSessionSurface>
+              <SessionBootSurface
+                stage={authLoading || !user ? 'provisioning' : startStage}
+                projectId={projectId}
+                sessionId={sessionId}
+                note={wake.note}
+                reason={session.reason}
+                failure={session.failure}
+              />
             )}
           </div>
         )}
@@ -1195,21 +1274,26 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         {/* Boot status ABOVE the conversation, never in front of it. Mounted
             only in the `banner` presentation — i.e. only when there is a
             transcript underneath worth reading — and held until the runtime is
-            actually reachable, so the strip does not disappear the instant the
-            chat paints while the box is still coming up. What SENDING will do
-            during the wake is the composer's own notice; this says only which
-            phase the boot is in. */}
+            actually reachable. A routine wake renders nothing: the computer
+            comes up in the background and a send goes out once it is up. The
+            banner speaks only for an escalation, a retry, or a stuck wake. */}
         {notice && !canMountChat ? <SessionNoticeBanner {...notice} /> : null}
-        {!notice && bootPresentation === 'banner' && (startStage !== 'ready' || !chatReady) && (
-          <SessionConnectingBanner
-            stage={authLoading || !user ? 'provisioning' : startStage}
-            projectId={projectId}
-            sessionId={sessionId}
-            note={wake.note}
-            reason={session.reason}
-            failure={session.failure}
-          />
-        )}
+        {/* Dormant with a transcript paints no boot strip: nothing is booting
+            until a message or a returning human wakes the box, and the
+            composer's asleep notice is the honest state. Once the wake is
+            claimed the sandbox row reappears and this banner mounts for real. */}
+        {!notice &&
+          !dormantWithoutRuntime &&
+          bootPresentation === 'banner' &&
+          (startStage !== 'ready' || !chatReady) && (
+            <SessionConnectingBanner
+              projectId={projectId}
+              sessionId={sessionId}
+              note={wake.note}
+              reason={session.reason}
+              failure={session.failure}
+            />
+          )}
       </div>
     );
   })();
@@ -1321,6 +1405,29 @@ function HeaderlessSessionSurface({ children }: { children: ReactNode }) {
       <SidebarToggle placement="floating" />
       {children}
     </div>
+  );
+}
+
+/**
+ * A session with nothing saved to read yet: its frame (header and composer
+ * outline) while the computer wakes in the background. The frame speaks only
+ * when the wake needs attention (`SessionStartingLoader`).
+ */
+function SessionBootSurface({
+  stage,
+  ...wake
+}: ComponentProps<typeof SessionStartingLoader> & {
+  projectId: string;
+  sessionId: string;
+  stage: ComponentProps<typeof SavedSessionSkeleton>['stage'];
+}) {
+  return (
+    <SavedSessionSkeleton
+      projectId={wake.projectId}
+      sessionId={wake.sessionId}
+      stage={stage}
+      status={<SessionStartingLoader {...wake} />}
+    />
   );
 }
 
@@ -1478,6 +1585,16 @@ function ActiveSessionChat({
     // route id — which never changes, so there is nothing to adopt.
   }, [sessionId, chatSessionId]);
 
+  // A desktop Quick Entry prompt for this session lands under the route id
+  // (the only id the producer knows); SessionChat reads prefills by
+  // `chatSessionId`. Keyed on the waiting prefill too: a second prompt while
+  // this page is open lands after the chat resolved, and must move as well.
+  const routePrefillId = useSessionComposerPrefillStore((s) => s.prefillBySession[sessionId]?.id);
+  useEffect(() => {
+    if (!chatSessionId || routePrefillId === undefined) return;
+    useSessionComposerPrefillStore.getState().movePrefill(sessionId, chatSessionId);
+  }, [sessionId, chatSessionId, routePrefillId]);
+
   // ── Readiness benchmarking marks ───────────────────────────────────────
   useEffect(() => {
     if (runtimeReady) sessionMark(sessionId, 'runtime-ready');
@@ -1524,7 +1641,7 @@ function ActiveSessionChat({
     // route. Next patches `replaceState` and updates its own canonical URL, so
     // `useSearchParams` still reports the stripped URL and this effect settles
     // on its next run. Same mechanism as `openTabAndNavigate` in
-    // `stores/tab-store.ts`.
+    // `packages/ui/src/internal/stores/tab-store.ts`.
     window.history.replaceState(
       null,
       '',

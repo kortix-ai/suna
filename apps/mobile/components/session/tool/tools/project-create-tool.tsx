@@ -14,18 +14,18 @@ import { ToolRegistry } from '../shared/registry';
 import type { ToolProps } from '../shared/types';
 import { useOpenProjectHandler } from './project-select-tool';
 
-export function ProjectCreateTool({ part, defaultOpen, forceOpen }: ToolProps) {
-  const input = partInput(part);
-  const output = partOutput(part);
+export function ProjectCreateTool({ call, defaultOpen, forceOpen }: ToolProps) {
+  const input = partInput(call);
+  const output = partOutput(call);
   // `isErrorOutput` trims the whole output and runs `JSON.parse` over it.
   const errored = useMemo(() => isErrorOutput(output), [output]);
   const trigger = useMemo(() => projectCreateTrigger(input, output, errored), [input, output, errored]);
-  const openProject = useOpenProjectHandler(part);
+  const openProject = useOpenProjectHandler(call);
 
   if (errored) {
     return (
       <BasicTool
-        disclosureId={disclosureKey('tool', part.id)}
+        disclosureId={disclosureKey('tool', call.id)}
         icon={PlusIcon}
         trigger={trigger}
         defaultOpen={defaultOpen}
@@ -38,7 +38,7 @@ export function ProjectCreateTool({ part, defaultOpen, forceOpen }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={PlusIcon}
       trigger={trigger}
       onClick={openProject}

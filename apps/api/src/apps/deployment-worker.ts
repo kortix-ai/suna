@@ -10,7 +10,6 @@ import {
   apps,
 } from '@kortix/db';
 import { and, asc, desc, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
-import { pauseComputeSession, startComputeSession } from '../billing/services/compute-metering';
 import { config, SANDBOX_VERSION, type SandboxProviderName } from '../config';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
@@ -19,14 +18,34 @@ import { auditDeploymentOutcome, type DeploymentAuditRef } from './deployment-au
 import { listResolvedProjectSecrets } from '../projects/secrets';
 import { downloadAppArtifact, extractAppArchive } from './artifacts';
 import { resolveAppRuntimeEnvironment } from './environment';
-import { APP_VIEWER_SECRET_ENV, appViewerSecret } from './viewer';
+import { createBuildLog } from './build-log';
 import { AppHostingProvider } from './hosting';
 import { normalizeAppBuild, type AppSourceSpec } from './spec';
-import { AppBudgetExceededError } from './budget';
+import { publishStaticSite, staticHostingEnabled } from './static-site';
+import { retireSupersededDeployments } from './retention';
+import {
+  abandonRelease,
+  reconcileAppMachines,
+  releaseEnvironment,
+  releaseInstances,
+  rollOutRelease,
+  runReleaseCommand,
+  type ReleaseEnvironment,
+} from './machines';
+import { releaseConfigOf } from './release-config';
 import { AppAccountUnfundedError, AppLimitError, assertAppComputeAllowed } from './limits';
 import { appRuntimeArtifactDigest } from './runtime-artifacts';
 import { appDeploymentFailureDisposition } from './deployment-failures';
-import { appDeploymentSnapshotName } from '../snapshots/quota-gc-select';
+import {
+  AppImageQuotaExceededError,
+  appImageName,
+  buildWithImageQuotaGuard,
+  claimAppImage,
+  markAppImageReady,
+  pinnedOciReference,
+  reclaimAppDeploymentImages,
+  teardownAppRuntimes,
+} from './images';
 import { exponentialBackoffMs } from '../shared/backoff';
 
 export const APP_RUNTIME_VERSION =
@@ -35,6 +54,12 @@ export const APP_RUNTIME_VERSION =
 const LEASE_MS = 2 * 60_000;
 const HEARTBEAT_MS = 30_000;
 const MAX_ATTEMPTS = 3;
+/** Lines of release command output kept as deployment events. */
+const RELEASE_LOG_LINES = 500;
+/** How often a deployment asks again while another one builds the same image. */
+const IMAGE_WAIT_POLL_MS = 5_000;
+/** Longest wait for another deployment's build of the same image; then the attempt retries. */
+const IMAGE_WAIT_MAX_MS = 45 * 60_000;
 const LIVE_DEPLOYMENT_STATUSES = [
   'queued',
   'validating',
@@ -46,15 +71,55 @@ const LIVE_DEPLOYMENT_STATUSES = [
 type ClaimedDeployment = typeof appDeployments.$inferSelect;
 
 /**
+ * The part of a runtime version that changes the App image: the supervisor
+ * digest (`appd-<digest>`, which covers appd and caddy). The `SANDBOX_VERSION`
+ * prefix changes on every API release and changes nothing in the image, so it
+ * never triggers a refresh. A change to what `stageAppBuildContext` layers
+ * into the image must change this key too.
+ */
+export function appRuntimeImageKey(runtimeVersion: string | null): string {
+  if (!runtimeVersion) return '';
+  const at = runtimeVersion.indexOf('appd-');
+  return at >= 0 ? runtimeVersion.slice(at) : runtimeVersion;
+}
+
+/**
+ * Failures a rebuild of the same artifact on the same image key repeats
+ * exactly. Any other failure (provider, quota, timeout, an
+ * entitlement or concurrency refusal) may pass on a later try.
+ */
+const DETERMINISTIC_REFRESH_FAILURES = new Set([
+  'invalid_site', 'invalid_spec', 'invalid_environment', 'artifact_missing', 'artifact_not_uploaded',
+  'artifact_kind', 'digest_mismatch', 'size_mismatch', 'dockerfile_build_failed',
+  'runtime_artifact_missing', 'source_access_failed',
+]);
+/** A refresh that failed for a reason that may pass is retried at most once per hour. */
+export const REFRESH_RETRY_AFTER_MS = 60 * 60_000;
+
+/**
  * Queue one immutable rebuild when a cold runtime uses an older App supervisor.
  * The current deployment keeps serving while the replacement builds. The normal
  * activation transaction moves traffic only after the replacement is ready.
+ *
+ * A refresh that failed is not queued again for the same artifact and image
+ * key: never after a deterministic failure, and not within
+ * `REFRESH_RETRY_AFTER_MS` after any other. Before this, every cold start and
+ * every keep-alive pass queued another doomed build.
  */
 export async function enqueueCurrentAppRuntime(
   app: typeof apps.$inferSelect,
   deployment: typeof appDeployments.$inferSelect,
+  now = new Date(),
 ): Promise<boolean> {
-  if (deployment.runtimeVersion === APP_RUNTIME_VERSION) return false;
+  // A static App still running in a sandbox moves to static hosting the same
+  // way a stale supervisor is replaced: one queued redeploy of the same
+  // artifact, activated only once it is ready.
+  const toStatic = staticHostingEnabled() && deployment.sourceKind === 'static' && deployment.hostingType === 'sandbox';
+  // A deployment with no artifact (a historic record) has no runtime to refresh.
+  const artifactId = deployment.artifactId;
+  if (!artifactId) return false;
+  const imageKey = appRuntimeImageKey(APP_RUNTIME_VERSION);
+  if (appRuntimeImageKey(deployment.runtimeVersion) === imageKey && !toStatic) return false;
   const inserted = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${app.appId}))`);
     const [existing] = await tx.select({ deploymentId: appDeployments.deploymentId })
@@ -66,6 +131,27 @@ export async function enqueueCurrentAppRuntime(
       ))
       .limit(1);
     if (existing) return false;
+    const [lastRefresh] = await tx.select({
+      status: appDeployments.status,
+      errorCode: appDeployments.errorCode,
+      failedAt: appDeployments.failedAt,
+      runtimeVersion: appDeployments.runtimeVersion,
+    })
+      .from(appDeployments)
+      .where(and(
+        eq(appDeployments.appId, app.appId),
+        eq(appDeployments.artifactId, artifactId),
+        eq(appDeployments.actorType, 'system'),
+      ))
+      .orderBy(desc(appDeployments.version))
+      .limit(1);
+    if (
+      lastRefresh?.status === 'failed' &&
+      appRuntimeImageKey(lastRefresh.runtimeVersion) === imageKey &&
+      (DETERMINISTIC_REFRESH_FAILURES.has(lastRefresh.errorCode ?? '') ||
+        !lastRefresh.failedAt ||
+        now.getTime() - lastRefresh.failedAt.getTime() < REFRESH_RETRY_AFTER_MS)
+    ) return false;
     const [latest] = await tx.select({ version: appDeployments.version })
       .from(appDeployments)
       .where(eq(appDeployments.appId, app.appId))
@@ -81,6 +167,8 @@ export async function enqueueCurrentAppRuntime(
       hostingProvider: deployment.hostingProvider,
       runtimeSpec: {},
       buildSpec: deployment.buildSpec,
+      config: deployment.config,
+      strategy: deployment.strategy,
       runtimeVersion: APP_RUNTIME_VERSION,
       createdBy: deployment.createdBy,
       sourceSessionId: null,
@@ -133,6 +221,15 @@ async function event(
   });
 }
 
+/**
+ * `KORTIX_APPS_WORKER_ENABLED=static`: drive only static deployments, which
+ * need no sandbox provider. For an operator who hosts static Apps without one,
+ * and for the local test profile, whose providers are unreachable on purpose.
+ */
+function staticOnlyWorker(): boolean {
+  return config.KORTIX_APPS_WORKER_ENABLED === 'static';
+}
+
 export async function claimAppDeployment(
   owner: string,
   now = new Date(),
@@ -143,6 +240,7 @@ export async function claimAppDeployment(
     .where(
       and(
         inArray(appDeployments.status, [...LIVE_DEPLOYMENT_STATUSES]),
+        staticOnlyWorker() ? eq(appDeployments.sourceKind, 'static') : undefined,
         or(isNull(appDeployments.nextAttemptAt), lte(appDeployments.nextAttemptAt, now)),
         or(isNull(appDeployments.leaseExpiresAt), lt(appDeployments.leaseExpiresAt, now)),
       ),
@@ -222,6 +320,7 @@ async function deploymentContext(deploymentId: string) {
   if (!deployment) throw new PermanentAppDeploymentError('Deployment no longer exists', 'not_found');
   const [app] = await db.select().from(apps).where(eq(apps.appId, deployment.appId)).limit(1);
   if (!app || app.deletedAt) throw new PermanentAppDeploymentError('App no longer exists', 'not_found');
+  if (!deployment.artifactId) throw new PermanentAppDeploymentError('Deployment has no artifact', 'artifact_missing');
   const [artifact] = await db
     .select()
     .from(appArtifacts)
@@ -231,13 +330,14 @@ async function deploymentContext(deploymentId: string) {
   return { deployment, app, artifact };
 }
 
+/** Mark the release ready and point the App's traffic at it. Returns the release that served before. */
 async function activateDeployment(input: {
   appId: string;
   deploymentId: string;
-  runtimeId: string;
   owner: string;
 }): Promise<string | null> {
   return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${input.appId}))`);
     const [current] = await tx
       .select({ activeDeploymentId: apps.activeDeploymentId })
       .from(apps)
@@ -265,40 +365,11 @@ async function activateDeployment(input: {
       .returning({ deploymentId: appDeployments.deploymentId });
     if (updated.length === 0) throw new Error(`lost deployment lease ${input.deploymentId}`);
     await tx
-      .update(appRuntimes)
-      .set({ status: 'running', startedAt: now, updatedAt: now })
-      .where(eq(appRuntimes.runtimeId, input.runtimeId));
-    await tx
       .update(apps)
       .set({ activeDeploymentId: input.deploymentId, desiredState: 'running', updatedAt: now })
       .where(eq(apps.appId, input.appId));
     return previous;
   });
-}
-
-async function stopPreviousRuntime(
-  hosting: AppHostingProvider,
-  previousDeploymentId: string | null,
-): Promise<void> {
-  if (!previousDeploymentId) return;
-  const [runtime] = await db
-    .select()
-    .from(appRuntimes)
-    .where(
-      and(
-        eq(appRuntimes.deploymentId, previousDeploymentId),
-        inArray(appRuntimes.status, ['provisioning', 'starting', 'running']),
-      ),
-    )
-    .limit(1);
-  if (!runtime) return;
-  await hosting.stop(runtime.provider as SandboxProviderName, runtime.externalId);
-  const now = new Date();
-  await db
-    .update(appRuntimes)
-    .set({ status: 'stopped', stoppedAt: now, updatedAt: now })
-    .where(eq(appRuntimes.runtimeId, runtime.runtimeId));
-  await pauseComputeSession(runtime.runtimeId, now);
 }
 
 /** The audit reference for a deployment whose context never loaded. */
@@ -327,15 +398,11 @@ async function deploymentAuditRefFor(claimed: ClaimedDeployment): Promise<Deploy
  * read it, so every step records a resource the moment it exists.
  */
 interface DeploymentDriveState {
-  runtimeId: string | null;
-  runtimeExternalId: string | null;
-  runtimeProvider: SandboxProviderName | null;
   temporaryRoot: string | null;
   auditRef: DeploymentAuditRef | null;
 }
 
 type DeploymentContext = Awaited<ReturnType<typeof deploymentContext>>;
-type RequestedMachine = { cpuCores: number; memoryGb: number; diskGb: number };
 
 export async function driveAppDeployment(
   claimed: ClaimedDeployment,
@@ -351,31 +418,12 @@ export async function driveAppDeployment(
     });
   }, HEARTBEAT_MS);
   const state: DeploymentDriveState = {
-    runtimeId: null,
-    runtimeExternalId: null,
-    runtimeProvider: null,
     temporaryRoot: null,
     auditRef: null,
   };
   try {
     if (attemptsExhausted(claimed.attemptCount)) {
-      // The dead attempt may have left a live runtime; the failure path below
-      // closes its compute window and removes it.
-      const [orphan] = await db
-        .select()
-        .from(appRuntimes)
-        .where(
-          and(
-            eq(appRuntimes.deploymentId, claimed.deploymentId),
-            inArray(appRuntimes.status, ['provisioning', 'starting', 'running']),
-          ),
-        )
-        .limit(1);
-      if (orphan) {
-        state.runtimeId = orphan.runtimeId;
-        state.runtimeExternalId = orphan.externalId;
-        state.runtimeProvider = orphan.provider as SandboxProviderName;
-      }
+      // The dead attempt may have left machines; the failure path abandons them.
       throw new PermanentAppDeploymentError(
         `The deployment worker stopped ${MAX_ATTEMPTS} times while driving this deployment`,
         'attempts_exhausted',
@@ -390,8 +438,11 @@ export async function driveAppDeployment(
       createdBy: claimed.createdBy,
     };
     state.auditRef = auditRef;
+    if (staticHostingEnabled() && (context.deployment.buildSpec as { source?: { kind?: string } }).source?.kind === 'static') {
+      await driveStaticDeployment({ claimed, owner, hosting, context, auditRef, state });
+      return;
+    }
     const provider = selectedProvider(context.deployment.hostingProvider);
-    state.runtimeProvider = provider;
     await setDeploymentStatus(claimed.deploymentId, owner, 'validating', {
       hostingProvider: provider,
       error: null,
@@ -399,10 +450,10 @@ export async function driveAppDeployment(
     });
     await event(claimed.deploymentId, 'validation_started', 'Validating App artifact');
 
-    const sourceDir = await prepareDeploymentSource(context, state);
-    const { rawBuildSpec, source, normalized, runtimeEnvironment } = await resolveDeploymentBuild(context, sourceDir);
+    const { sourceDir, artifactDigest } = await prepareDeploymentSource(context, state);
+    const { rawBuildSpec, source, normalized } = await resolveDeploymentBuild(context, sourceDir);
     await assertDeploymentComputeAllowed(context);
-    const { snapshotName, requestedMachine } = await buildDeploymentImage({
+    await buildDeploymentImage({
       claimed,
       owner,
       hosting,
@@ -411,47 +462,19 @@ export async function driveAppDeployment(
       rawBuildSpec,
       source,
       normalized,
+      artifactDigest,
     });
 
     // A build takes minutes; the App can be deleted meanwhile. Never start a
     // runtime (and its compute meter) for a deleted App. Its image is
     // reclaimed by project maintenance (`reclaimAppDeploymentImages`).
-    const [stillLive] = await db.select({ appId: apps.appId }).from(apps)
+    const [stillLive] = await db.select().from(apps)
       .where(and(eq(apps.appId, context.app.appId), isNull(apps.deletedAt)))
       .limit(1);
     if (!stillLive) throw new PermanentAppDeploymentError('App was deleted during the build', 'not_found');
 
     await setDeploymentStatus(claimed.deploymentId, owner, 'provisioning');
-    const { runtimeId, runtimeExternalId, runtimeProvider } = await provisionDeploymentRuntime({
-      claimed,
-      hosting,
-      context,
-      provider,
-      snapshotName,
-      requestedMachine,
-      runtimeEnvironment,
-      state,
-    });
-
-    await setDeploymentStatus(claimed.deploymentId, owner, 'checking');
-    await hosting.waitUntilReady(runtimeProvider, runtimeExternalId, runtimeId);
-    const previous = await activateDeployment({
-      appId: context.app.appId,
-      deploymentId: claimed.deploymentId,
-      runtimeId,
-      owner,
-    });
-    await event(claimed.deploymentId, 'deployment_activated', 'Deployment is serving traffic', {
-      runtimeId,
-      data: { previousDeploymentId: previous },
-    });
-    await auditDeploymentOutcome(auditRef, { outcome: 'activated', previousDeploymentId: previous });
-    await stopPreviousRuntime(hosting, previous).catch((error) => {
-      logger.error('[apps] previous runtime stop failed', {
-        deploymentId: previous,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    });
+    await rollOutDeployment({ claimed, owner, hosting, app: stillLive, auditRef });
   } catch (error) {
     await recordDeploymentFailure({ claimed, owner, hosting, state, error });
   } finally {
@@ -460,12 +483,105 @@ export async function driveAppDeployment(
   }
 }
 
+/**
+ * A static deployment: validate and unpack the archive, publish its files to
+ * content-addressed storage, then activate. No image, no runtime, no compute.
+ */
+async function driveStaticDeployment(input: {
+  claimed: ClaimedDeployment;
+  owner: string;
+  hosting: AppHostingProvider;
+  context: DeploymentContext;
+  auditRef: DeploymentAuditRef;
+  state: DeploymentDriveState;
+}): Promise<void> {
+  const { claimed, owner, hosting, context, auditRef, state } = input;
+  await setDeploymentStatus(claimed.deploymentId, owner, 'validating', {
+    hostingType: 'static',
+    hostingProvider: null,
+    error: null,
+    errorCode: null,
+  });
+  await event(claimed.deploymentId, 'validation_started', 'Validating App artifact');
+  const { sourceDir } = await prepareDeploymentSource(context, state);
+  const { rawBuildSpec, source, normalized, runtimeEnvironment } = await resolveDeploymentBuild(context, sourceDir);
+  if (Object.keys(runtimeEnvironment.env).length > 0) {
+    await event(
+      claimed.deploymentId,
+      'environment_ignored',
+      'A static App runs no server: its environment variables and secrets are not used',
+      { level: 'warn' },
+    );
+  }
+  await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
+    sourceKind: normalized.sourceKind,
+    runtimeSpec: normalized.runtimeSpec,
+    buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
+    providerBuildId: null,
+  });
+  await event(claimed.deploymentId, 'site_publish_started', 'Publishing static files');
+  const root = String((normalized.buildSpec as { root?: string }).root ?? '.');
+  let published;
+  try {
+    published = await publishStaticSite({
+      deploymentId: claimed.deploymentId,
+      accountId: context.app.accountId,
+      sourceDir: sourceDir!,
+      root,
+    });
+  } catch (error) {
+    // A file or layout problem in the artifact never fixes itself on retry.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/static root|holds no files|at most|exceeds/.test(message)) {
+      throw new PermanentAppDeploymentError(message, 'invalid_site');
+    }
+    throw error;
+  }
+  await event(
+    claimed.deploymentId,
+    'site_published',
+    `Published ${published.files} files (${published.uploadedBlobs} new, ${published.reusedBlobs} unchanged)` +
+      (published.skippedFiles ? `; left out ${published.skippedFiles} entries (.git, .env*, .DS_Store)` : ''),
+    { data: { ...published } },
+  );
+  const [stillLive] = await db.select({ appId: apps.appId }).from(apps)
+    .where(and(eq(apps.appId, context.app.appId), isNull(apps.deletedAt)))
+    .limit(1);
+  if (!stillLive) throw new PermanentAppDeploymentError('App was deleted during the build', 'not_found');
+  await setDeploymentStatus(claimed.deploymentId, owner, 'checking');
+  const previous = await activateDeployment({
+    appId: context.app.appId,
+    deploymentId: claimed.deploymentId,
+    owner,
+  });
+  await event(claimed.deploymentId, 'deployment_activated', 'Deployment is serving traffic', {
+    data: { previousDeploymentId: previous, hosting: 'static' },
+  });
+  await auditDeploymentOutcome(auditRef, { outcome: 'activated', previousDeploymentId: previous });
+  // The machines of a release this one replaced: a static App runs none.
+  if (previous) {
+    await teardownAppRuntimes(await releaseInstances(previous)).catch((error) => {
+      logger.error('[apps] previous machines removal failed', {
+        deploymentId: previous,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  }
+  await retireSupersededDeployments(context.app.appId).catch((error) => {
+    logger.error('[apps] deployment retention failed', {
+      appId: context.app.appId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
+
 /** Download, verify and unpack an archive artifact. Returns its source directory (none for an OCI image). */
 async function prepareDeploymentSource(
   context: DeploymentContext,
   state: DeploymentDriveState,
-): Promise<string | undefined> {
+): Promise<{ sourceDir: string | undefined; artifactDigest: string | null }> {
   let sourceDir: string | undefined;
+  let artifactDigest: string | null = null;
   if (context.artifact.kind === 'archive') {
     if (context.artifact.status !== 'uploaded' && context.artifact.status !== 'ready') {
       throw new PermanentAppDeploymentError(
@@ -485,6 +601,7 @@ async function prepareDeploymentSource(
     if (context.artifact.sizeBytes && downloaded.sizeBytes !== context.artifact.sizeBytes) {
       throw new PermanentAppDeploymentError('Artifact size does not match finalization', 'size_mismatch');
     }
+    artifactDigest = `sha256:${downloaded.sha256}`;
     sourceDir = join(state.temporaryRoot, 'source');
     const inspection = await extractAppArchive(archivePath, sourceDir);
     await db
@@ -497,10 +614,12 @@ async function prepareDeploymentSource(
         updatedAt: new Date(),
       })
       .where(eq(appArtifacts.artifactId, context.artifact.artifactId));
-  } else if (context.artifact.kind !== 'oci_image') {
+  } else if (context.artifact.kind === 'oci_image') {
+    artifactDigest = pinnedOciReference(context.artifact.imageReference);
+  } else {
     throw new PermanentAppDeploymentError(`Unsupported artifact kind ${context.artifact.kind}`, 'artifact_kind');
   }
-  return sourceDir;
+  return { sourceDir, artifactDigest };
 }
 
 /** Normalize the build spec against the source and resolve the runtime environment. */
@@ -541,16 +660,13 @@ async function resolveDeploymentBuild(context: DeploymentContext, sourceDir: str
 }
 
 async function assertDeploymentComputeAllowed(context: DeploymentContext): Promise<void> {
-  // Entitlement, concurrency and budget, before a build burns provider time.
-  // A refusal here is permanent: the operator must fund the account, stop an
-  // App, or raise the budget and then deploy again. Retrying three times on a
-  // 30s backoff would only restate the same answer.
+  // Entitlement and concurrency, before a build burns provider time. A
+  // refusal here is permanent: the operator must fund the account or stop an
+  // App and then deploy again.
+  // Retrying three times on a 30s backoff would only restate the same answer.
   try {
     await assertAppComputeAllowed(context.app);
   } catch (error) {
-    if (error instanceof AppBudgetExceededError) {
-      throw new PermanentAppDeploymentError(error.message, 'app_budget_exceeded');
-    }
     if (error instanceof AppAccountUnfundedError) {
       throw new PermanentAppDeploymentError(error.message, 'account_unfunded');
     }
@@ -561,6 +677,11 @@ async function assertDeploymentComputeAllowed(context: DeploymentContext): Promi
   }
 }
 
+/**
+ * Build the deployment's image, or reuse the shared image an earlier
+ * deployment built from the same inputs (`apps/images.ts`). While another
+ * deployment builds the same image, wait for it instead of building twice.
+ */
 async function buildDeploymentImage(input: {
   claimed: ClaimedDeployment;
   owner: string;
@@ -570,147 +691,189 @@ async function buildDeploymentImage(input: {
   rawBuildSpec: Record<string, unknown>;
   source: AppSourceSpec;
   normalized: Awaited<ReturnType<typeof normalizeAppBuild>>;
-}): Promise<{ snapshotName: string; requestedMachine: RequestedMachine }> {
-  const { claimed, owner, hosting, context, provider, rawBuildSpec, source, normalized } = input;
-  const snapshotName = appDeploymentSnapshotName(claimed.deploymentId);
-  await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
-    sourceKind: normalized.sourceKind,
-    runtimeSpec: normalized.runtimeSpec,
-    buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
-    providerBuildId: snapshotName,
-  });
-  await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {
-    data: { provider },
-  });
+  artifactDigest: string | null;
+}): Promise<{ snapshotName: string }> {
+  const { claimed, owner, hosting, context, provider, rawBuildSpec, source, normalized, artifactDigest } = input;
   const requestedMachine = {
     cpuCores: context.app.cpuCores,
     memoryGb: context.app.memoryGb,
     diskGb: context.app.diskGb,
   };
-  await hosting.buildImage({
+  const snapshotName = appImageName({
+    environment: `${config.INTERNAL_KORTIX_ENV}:${config.KORTIX_URL ?? ''}`,
+    accountId: context.app.accountId,
     provider,
-    snapshotName,
-    slug: context.app.slug,
-    sourceDir: normalized.sourceDir,
+    artifactDigest,
+    deploymentId: claimed.deploymentId,
+    source,
     dockerfile: normalized.dockerfile,
     runtimeSpec: normalized.runtimeSpec,
-    machine: requestedMachine,
-    logTap: {
-      onLine: (line) => {
-        void event(claimed.deploymentId, 'build_log', line.slice(0, 4_000), { level: 'debug' });
-      },
-    },
+    // Platinum sizes each machine at create: a resize never rebuilds the image.
+    ...(provider === 'platinum' ? {} : { machine: requestedMachine }),
+    runtimeImageKey: appRuntimeImageKey(APP_RUNTIME_VERSION),
   });
-  await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider } });
-  return { snapshotName, requestedMachine };
+  await setDeploymentStatus(claimed.deploymentId, owner, 'building', {
+    sourceKind: normalized.sourceKind,
+    runtimeSpec: normalized.runtimeSpec,
+    buildSpec: { ...rawBuildSpec, source, normalized: normalized.buildSpec },
+  });
+
+  const waitUntil = Date.now() + IMAGE_WAIT_MAX_MS;
+  let waiting = false;
+  for (;;) {
+    const claim = await claimAppImage({
+      imageName: snapshotName,
+      provider,
+      deploymentId: claimed.deploymentId,
+      leaseOwner: owner,
+    });
+    if (claim === 'reuse') {
+      await event(claimed.deploymentId, 'build_reused', `Reusing ${snapshotName}: an earlier deployment built the same image`, {
+        data: { provider, image: snapshotName },
+      });
+      return { snapshotName };
+    }
+    if (claim === 'build') break;
+    if (!waiting) {
+      waiting = true;
+      await event(claimed.deploymentId, 'build_waiting', `Waiting: another deployment is building ${snapshotName}`, {
+        data: { provider, image: snapshotName },
+      });
+    }
+    if (Date.now() > waitUntil) {
+      throw new Error(`Timed out waiting for another deployment to build ${snapshotName}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, IMAGE_WAIT_POLL_MS));
+  }
+
+  await event(claimed.deploymentId, 'build_started', `Building ${snapshotName}`, {
+    data: { provider, image: snapshotName },
+  });
+  const build = async () => {
+    const buildLog = createBuildLog(claimed.deploymentId);
+    try {
+      await hosting.buildImage({
+        provider,
+        snapshotName,
+        slug: context.app.slug,
+        sourceDir: normalized.sourceDir,
+        dockerfile: normalized.dockerfile,
+        runtimeSpec: normalized.runtimeSpec,
+        machine: requestedMachine,
+        logTap: { onLine: (line) => buildLog.line(line) },
+      });
+    } finally {
+      // A failed build's last lines are the ones that say why: write them either way.
+      await buildLog.close();
+    }
+  };
+  try {
+    await buildWithImageQuotaGuard({
+      provider,
+      build,
+      reclaim: () => reclaimAppDeploymentImages(),
+      onReclaim: (providerMessage) => event(
+        claimed.deploymentId,
+        'build_quota_reclaim',
+        `The ${provider} template quota is full; reclaiming unused App images and building once more`,
+        { level: 'warn', data: { provider, providerMessage: providerMessage.slice(0, 500) } },
+      ),
+    });
+  } catch (error) {
+    if (error instanceof AppImageQuotaExceededError) {
+      throw new PermanentAppDeploymentError(error.message, error.code);
+    }
+    throw error;
+  }
+  await markAppImageReady(snapshotName, provider);
+  await event(claimed.deploymentId, 'build_ready', 'App image is ready', { data: { provider, image: snapshotName } });
+  return { snapshotName };
 }
 
-/** Restart the deployment's live runtime, or create one and open its compute window. */
-async function provisionDeploymentRuntime(input: {
+/**
+ * Run the release command, then roll the release out on its strategy (see
+ * `machines.ts`), move traffic, retire what it replaced and scale to
+ * `apps.scale`.
+ */
+async function rollOutDeployment(input: {
   claimed: ClaimedDeployment;
+  owner: string;
   hosting: AppHostingProvider;
-  context: DeploymentContext;
-  provider: SandboxProviderName;
-  snapshotName: string;
-  requestedMachine: RequestedMachine;
-  runtimeEnvironment: ReturnType<typeof resolveAppRuntimeEnvironment>;
-  state: DeploymentDriveState;
-}): Promise<{ runtimeId: string; runtimeExternalId: string; runtimeProvider: SandboxProviderName }> {
-  const { claimed, hosting, context, provider, snapshotName, requestedMachine, runtimeEnvironment, state } = input;
-  const [existingRuntime] = await db
-    .select()
-    .from(appRuntimes)
-    .where(
-      and(
-        eq(appRuntimes.deploymentId, claimed.deploymentId),
-        inArray(appRuntimes.status, ['provisioning', 'starting', 'running']),
-      ),
-    )
-    .limit(1);
-  if (existingRuntime) {
-    state.runtimeId = existingRuntime.runtimeId;
-    state.runtimeExternalId = existingRuntime.externalId;
-    state.runtimeProvider = existingRuntime.provider as SandboxProviderName;
-    await hosting.start(state.runtimeProvider, state.runtimeExternalId);
-    return {
-      runtimeId: state.runtimeId,
-      runtimeExternalId: state.runtimeExternalId,
-      runtimeProvider: state.runtimeProvider,
-    };
+  app: typeof apps.$inferSelect;
+  auditRef: DeploymentAuditRef;
+}): Promise<void> {
+  const { claimed, owner, hosting, app, auditRef } = input;
+  const [release] = await db.select().from(appDeployments).where(eq(appDeployments.deploymentId, claimed.deploymentId)).limit(1);
+  if (!release) throw new PermanentAppDeploymentError('Deployment no longer exists', 'not_found');
+  const config = releaseConfigOf(release, app);
+  let env: ReleaseEnvironment;
+  try {
+    env = await releaseEnvironment(app, release);
+  } catch (error) {
+    throw new PermanentAppDeploymentError(error instanceof Error ? error.message : String(error), 'invalid_environment');
   }
-  const runtimeId = randomUUID();
-  state.runtimeId = runtimeId;
-  const handle = await hosting.createRuntime({
-    provider,
-    runtimeId,
-    accountId: context.app.accountId,
-    userId: context.deployment.createdBy,
-    name: `app-${context.app.routeKey}-v${context.deployment.version}`,
-    snapshotName,
-    machine: requestedMachine,
-    // The App verifies `x-kortix-app-viewer` with this. Derived per App, so
-    // it is not the platform secret and rotating the platform secret rotates
-    // every App's. `KORTIX_*` is reserved from user-supplied env, so this
-    // cannot be shadowed by a manifest value.
-    envVars: {
-      ...runtimeEnvironment.env,
-      [APP_VIEWER_SECRET_ENV]: appViewerSecret(context.app.appId),
+  if (config.deploy.release_command) {
+    await runReleaseStep({ claimed, owner, hosting, app, release, config, env, command: config.deploy.release_command });
+  }
+  await setDeploymentStatus(claimed.deploymentId, owner, 'checking', { strategy: config.deploy.strategy });
+  let previous: string | null = null;
+  const rollout = await rollOutRelease({
+    hosting,
+    app,
+    deployment: release,
+    config,
+    env,
+    activate: async () => {
+      previous = await activateDeployment({ appId: app.appId, deploymentId: claimed.deploymentId, owner });
     },
   });
-  state.runtimeExternalId = handle.externalId;
-  const now = new Date();
-  await db.insert(appRuntimes).values({
-    runtimeId,
-    deploymentId: claimed.deploymentId,
-    accountId: context.app.accountId,
-    provider,
-    externalId: handle.externalId,
-    status: 'starting',
-    controlTokenHash: handle.controlTokenHash,
-    idleDeadlineAt: new Date(now.getTime() + context.app.idleTimeoutSeconds * 1000),
-    startedAt: now,
-    metadata: {
-      ...handle.metadata,
-      secretIdentifiers: runtimeEnvironment.secretIdentifiers,
-      environmentKeys: Object.keys(runtimeEnvironment.env).sort(),
-    },
+  const previousDeploymentId = previous === claimed.deploymentId ? rollout.previousDeploymentId : previous;
+  await event(claimed.deploymentId, 'deployment_activated', 'Deployment is serving traffic', {
+    data: { previousDeploymentId, strategy: config.deploy.strategy },
   });
-  // Meter what the provider actually allocates. E2B has no disk parameter,
-  // so charging this App's disk_gb there would bill storage nobody
-  // provisioned. Tell the operator when the two differ instead of silently
-  // accepting a specification the provider ignored.
-  const effectiveMachine = hosting.effectiveMachine(provider, requestedMachine);
-  if (
-    effectiveMachine.cpuCores !== requestedMachine.cpuCores
-    || effectiveMachine.memoryGb !== requestedMachine.memoryGb
-    || effectiveMachine.diskGb !== requestedMachine.diskGb
-  ) {
-    await event(
-      claimed.deploymentId,
-      'machine_provider_adjusted',
-      `${provider} does not enforce the full machine specification; billing meters what it allocates`,
-      {
-        runtimeId,
-        level: 'warn',
-        data: { requested: requestedMachine, effective: effectiveMachine },
-      },
-    );
+  await auditDeploymentOutcome(auditRef, { outcome: 'activated', previousDeploymentId });
+  await reconcileAppMachines(app.appId, { hosting }).catch((error) => {
+    logger.error('[apps] machine reconcile after deploy failed', { appId: app.appId, error: String(error) });
+  });
+  await retireSupersededDeployments(app.appId).catch((error) => {
+    logger.error('[apps] deployment retention failed', {
+      appId: app.appId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+}
+
+/** The release command: a non-zero exit fails the release before any machine changes. */
+async function runReleaseStep(input: {
+  claimed: ClaimedDeployment;
+  owner: string;
+  hosting: AppHostingProvider;
+  app: typeof apps.$inferSelect;
+  release: typeof appDeployments.$inferSelect;
+  config: ReturnType<typeof releaseConfigOf>;
+  env: ReleaseEnvironment;
+  command: string;
+}): Promise<void> {
+  const { claimed, owner, hosting, app, release, config, env, command } = input;
+  await setDeploymentStatus(claimed.deploymentId, owner, 'provisioning', { releaseCommandStatus: 'running' });
+  await event(claimed.deploymentId, 'release_command_started', `Running the release command: ${command.slice(0, 200)}`);
+  const result = await runReleaseCommand({ hosting, app, deployment: release, config, env, command });
+  const lines = result.output.split('\n').slice(-RELEASE_LOG_LINES);
+  if (lines.length > 0 && result.output) {
+    await db.insert(appDeploymentEvents).values(lines.map((line) => ({
+      deploymentId: claimed.deploymentId,
+      level: 'info' as const,
+      type: 'release_command_log',
+      message: line.slice(0, 4_000),
+      data: {},
+    })));
   }
-  await startComputeSession({
-    sandboxId: runtimeId,
-    accountId: context.app.accountId,
-    actorUserId: context.deployment.createdBy,
-    provider,
-    spec: { ...effectiveMachine, gpuCount: 0 },
-    workloadType: 'app',
-    appRuntimeId: runtimeId,
-    metadata: { deploymentId: claimed.deploymentId, appId: context.app.appId },
-  });
-  await event(claimed.deploymentId, 'runtime_created', 'App runtime created', {
-    runtimeId,
-    data: { provider, externalId: handle.externalId },
-  });
-  return { runtimeId, runtimeExternalId: handle.externalId, runtimeProvider: provider };
+  const succeeded = result.exitCode === 0;
+  await setDeploymentStatus(claimed.deploymentId, owner, 'provisioning', { releaseCommandStatus: succeeded ? 'succeeded' : 'failed' });
+  if (!succeeded) {
+    throw new PermanentAppDeploymentError(`The release command exited ${result.exitCode}; nothing changed`, 'release_command_failed');
+  }
+  await event(claimed.deploymentId, 'release_command_succeeded', 'The release command succeeded');
 }
 
 /** Release what the drive created, then requeue the deployment or fail it for good. */
@@ -722,7 +885,7 @@ async function recordDeploymentFailure(input: {
   error: unknown;
 }): Promise<void> {
   const { claimed, owner, hosting, state, error } = input;
-  const { runtimeId, runtimeExternalId, runtimeProvider, auditRef } = state;
+  const { auditRef } = state;
   const message = error instanceof Error ? error.message : String(error);
   const disposition = appDeploymentFailureDisposition(message);
   const permanent = error instanceof PermanentAppDeploymentError || disposition.permanent;
@@ -737,21 +900,12 @@ async function recordDeploymentFailure(input: {
     logger.error('[apps] failed-deploy cleanup step failed', {
       step,
       deploymentId: claimed.deploymentId,
-      runtimeId,
       error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
     });
   };
-  if (runtimeId) {
-    await db
-      .update(appRuntimes)
-      .set({ status: 'error', stoppedAt: new Date(), updatedAt: new Date() })
-      .where(eq(appRuntimes.runtimeId, runtimeId))
-      .catch(cleanupFailed('mark_runtime_error'));
-    await pauseComputeSession(runtimeId).catch(cleanupFailed('close_compute_window'));
-  }
-  if (runtimeProvider && runtimeExternalId) {
-    await hosting.remove(runtimeProvider, runtimeExternalId).catch(cleanupFailed('remove_runtime'));
-  }
+  // The release's machines go, traffic returns to the release before it, and
+  // that release gets back any machine this one replaced.
+  await abandonRelease(claimed.appId, claimed.deploymentId, hosting).catch(cleanupFailed('abandon_release'));
   const terminal = permanent || attempt >= MAX_ATTEMPTS;
   await db
     .update(appDeployments)
@@ -773,7 +927,6 @@ async function recordDeploymentFailure(input: {
     );
   await event(claimed.deploymentId, terminal ? 'deployment_failed' : 'deployment_retry', message, {
     level: 'error',
-    runtimeId: runtimeId ?? undefined,
     data: { attempt, terminal },
   }).catch(cleanupFailed('record_event'));
   if (terminal) {
@@ -832,5 +985,3 @@ export async function runAppDeploymentTick(): Promise<{ processed: number }> {
     if (workerRerunRequested) scheduleTriggeredTick();
   }
 }
-
-export { startAppDeploymentWorker, stopAppDeploymentWorker } from '../workers/app-deployment-worker';

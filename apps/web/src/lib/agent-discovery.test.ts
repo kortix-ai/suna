@@ -9,9 +9,8 @@ import { GET as getOauthServer } from '@/app/(public)/.well-known/oauth-authoriz
 import { GET as getProtectedResource } from '@/app/(public)/.well-known/oauth-protected-resource/route';
 import { GET as getAuthMd } from '@/app/(public)/auth.md/route';
 import { GET as getNegotiatedMarkdown } from '@/app/(public)/markdown-negotiation/route';
-import { registerWebMcpTools } from '@/components/agent-discovery/webmcp-tools';
-import { testUiTranslator } from '@/i18n/test-translator';
-import { handlePublicContentMcp } from '@/lib/mcp/public-content-server';
+import { GET as getAiCatalog } from '@/app/(public)/.well-known/ai-catalog.json/route';
+import { GET as getMcpServerCard } from '@/app/(public)/mcp/server-card/route';
 import { renderRobotsTxt } from '@/lib/seo/robots';
 import { middleware } from '@/middleware';
 import { NextRequest } from 'next/server';
@@ -74,64 +73,29 @@ describe('agent discovery documents', () => {
     );
   });
 
-  test('publishes an MCP discovery card for the real public endpoint', async () => {
+  test('every MCP discovery document names the one Kortix MCP server: the API', async () => {
     const card = (await getMcpCard().json()) as any;
-    expect(card.serverInfo.name).toBe('kortix-public-content');
+    expect(card.serverInfo.name).toBe('kortix');
     expect(card.transport).toEqual({
       type: 'streamable-http',
-      endpoint: 'https://kortix.com/mcp',
+      endpoint: 'https://api.kortix.com/v1/mcp',
     });
-    expect(card.capabilities.tools).toBe(true);
-    expect(card.capabilities.resources).toBe(true);
-  });
+    expect(card.endpoint).toBe('https://api.kortix.com/v1/mcp');
 
-  test('serves MCP initialize, list, and call responses', () => {
-    const initialize = handlePublicContentMcp({
-      jsonrpc: '2.0',
-      id: 1,
-      method: 'initialize',
-      params: {},
-    }) as any;
-    expect(initialize.result.serverInfo.name).toBe('kortix-public-content');
-    expect(initialize.result.capabilities.tools.listChanged).toBe(false);
-
-    const list = handlePublicContentMcp({
-      jsonrpc: '2.0',
-      id: 2,
-      method: 'tools/list',
-      params: {},
-    }) as any;
-    expect(list.result.tools.map((tool: any) => tool.name)).toEqual([
-      'list_public_content',
-      'get_public_markdown',
-    ]);
-
-    const call = handlePublicContentMcp({
-      jsonrpc: '2.0',
-      id: 3,
-      method: 'tools/call',
-      params: { name: 'get_public_markdown', arguments: { path: '/' } },
-    }) as any;
-    expect(call.result.isError).not.toBe(true);
-    expect(call.result.content[0].text).toContain('# Kortix');
-  });
-
-  test('registers two read-only WebMCP tools with abort-controlled lifetimes', async () => {
-    const registered: Array<{ tool: any; options: { signal?: AbortSignal } | undefined }> = [];
-    const modelContext = {
-      registerTool: async (tool: any, options?: { signal?: AbortSignal }) => {
-        registered.push({ tool, options });
+    const serverCard = (await getMcpServerCard().json()) as any;
+    expect(serverCard.remotes).toEqual([
+      {
+        type: 'streamable-http',
+        url: 'https://api.kortix.com/v1/mcp',
+        supportedProtocolVersions: ['2025-11-25', '2025-06-18', '2025-03-26'],
       },
-    };
-    const controller = new AbortController();
-    await registerWebMcpTools(modelContext, controller.signal, testUiTranslator);
-    expect(registered.map(({ tool }) => tool.name)).toEqual([
-      'search_kortix_public_content',
-      'read_kortix_public_page',
     ]);
-    expect(registered.every(({ tool }) => tool.inputSchema.type === 'object')).toBe(true);
-    expect(registered.every(({ options }) => options?.signal === controller.signal)).toBe(true);
-    expect(registered.every(({ tool }) => typeof tool.execute === 'function')).toBe(true);
+
+    const catalog = (await getAiCatalog().json()) as any;
+    expect(catalog.entries.map((entry: any) => entry.url)).toEqual(['https://kortix.com/mcp/server-card']);
+    const skill = await getAgentSkill().text();
+    expect(skill).toContain('https://api.kortix.com/v1/mcp');
+    expect(skill).not.toContain('https://kortix.com/mcp ');
   });
 
   test('negotiates the homepage to a Markdown route before auth middleware', async () => {

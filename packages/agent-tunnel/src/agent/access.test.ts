@@ -5,7 +5,17 @@ import { join } from 'node:path';
 
 import {
   ACCESS_HOLD_MS,
+  accessAfterPairing,
+  accessCommand,
   accessFilePath,
+  accessView,
+  accessWidens,
+  applyAccess,
+  nextAccess,
+  parseAccessChange,
+  readAccessRequest,
+  type AccessChange,
+  type AccessState,
   accessRequestPath,
   decideAccess,
   keepAwakeCommand,
@@ -160,5 +170,105 @@ describe('keep awake', () => {
       args: ['--what=sleep', '--who=Kortix', '--why=Keep this computer reachable', '--mode=block', 'tail', '--pid=42', '-f', '/dev/null'],
     });
     expect(keepAwakeCommand('win32', 42)).toBeNull();
+  });
+});
+
+describe('the access rules (one copy: the CLI, the agent, and the desktop app all use these)', () => {
+  const now = Date.parse('2030-01-01T12:00:00.000Z');
+  const ask = { mode: 'ask' as const, grantedUntil: null, deniedUntil: null, keepAwake: false };
+
+  test('grants (max 24 h), revokes, denies for 10 minutes, switches mode and keep awake', () => {
+    expect(nextAccess(ask, { grantMinutes: 60 }, now)).toMatchObject({ grantedUntil: '2030-01-01T13:00:00.000Z', deniedUntil: null });
+    expect(nextAccess(ask, { grantMinutes: 10_000 }, now).grantedUntil).toBe('2030-01-02T12:00:00.000Z');
+    expect(nextAccess({ ...ask, grantedUntil: 'x' }, { revoke: true }, now).grantedUntil).toBeNull();
+    expect(nextAccess(ask, { deny: true }, now)).toMatchObject({ grantedUntil: null, deniedUntil: '2030-01-01T12:10:00.000Z' });
+    expect(nextAccess(ask, { mode: 'off', keepAwake: true }, now)).toMatchObject({ mode: 'off', keepAwake: true });
+    expect(() => nextAccess(ask, { mode: 'sometimes' as never }, now)).toThrow(/mode/);
+    expect(() => nextAccess(ask, { grantMinutes: 0 }, now)).toThrow(/grantMinutes/);
+    // A mode change drops the old grant and denial: back to "Ask each time" asks again.
+    const granted = { mode: 'off' as const, grantedUntil: '2030-01-01T20:00:00.000Z', deniedUntil: '2030-01-01T12:05:00.000Z', keepAwake: false };
+    expect(nextAccess(granted, { mode: 'ask' }, now)).toMatchObject({ mode: 'ask', grantedUntil: null, deniedUntil: null });
+  });
+
+  test('only `always` and a longer grant widen access; everything else narrows', () => {
+    const widens = (current: typeof ask | AccessState, change: AccessChange) => accessWidens(current, nextAccess(current, change, now), now);
+    expect(widens(ask, { mode: 'always' })).toBe(true);
+    expect(widens(ask, { grantMinutes: 1440 })).toBe(true);
+    expect(widens({ ...ask, grantedUntil: '2030-01-01T18:00:00.000Z' }, { grantMinutes: 60 })).toBe(false);
+    expect(widens({ ...ask, mode: 'off' }, { mode: 'ask' })).toBe(false);
+    expect(widens({ ...ask, mode: 'always' }, { mode: 'ask' })).toBe(false);
+    expect(widens(ask, { mode: 'off' })).toBe(false);
+    expect(widens({ ...ask, grantedUntil: '2030-01-01T13:00:00.000Z' }, { revoke: true })).toBe(false);
+    expect(widens(ask, { keepAwake: true })).toBe(false);
+    expect(widens(ask, { deny: true })).toBe(false);
+  });
+
+  test('a relayed change keeps only known fields with their types', () => {
+    expect(parseAccessChange({ mode: 'off', keepAwake: false, extra: 1 })).toEqual({ mode: 'off', keepAwake: false });
+    expect(() => parseAccessChange({ mode: 'sometimes' })).toThrow(/mode/);
+    expect(() => parseAccessChange({ grantMinutes: '60' })).toThrow(/grantMinutes/);
+    expect(() => parseAccessChange({ revoke: 'yes' })).toThrow(/revoke/);
+    expect(() => parseAccessChange({})).toThrow(/No access change/);
+    expect(() => parseAccessChange(null)).toThrow(/No access change/);
+  });
+
+  test('names the terminal command for a change', () => {
+    expect(accessCommand({ mode: 'always' })).toBe('npx @kortix/agent-tunnel@latest access always');
+    expect(accessCommand({ grantMinutes: 60 })).toBe('npx @kortix/agent-tunnel@latest access --allow-for 60');
+    expect(accessCommand({ keepAwake: true })).toBe('npx @kortix/agent-tunnel@latest keep-awake on');
+  });
+
+  test('the view shows a pending request while it is fresh, and no lapsed grant or denial', () => {
+    const home = tempHome();
+    writeAccess({ ...ask, grantedUntil: '2030-01-01T11:00:00.000Z', deniedUntil: '2030-01-01T11:30:00.000Z' }, home);
+    const fresh = { id: 'r1', capability: 'filesystem', method: 'fs.list', requestedAt: new Date(now - 5_000).toISOString() };
+    writeFileSync(accessRequestPath(home), JSON.stringify(fresh));
+    expect(accessView(home, 'darwin', now)).toEqual({
+      ...ask,
+      keepAwakeSupported: true,
+      pendingRequest: { id: 'r1', capability: 'filesystem', requestedAt: fresh.requestedAt },
+    });
+    expect(accessView(home, 'darwin', now + 120_000).pendingRequest).toBeNull();
+    expect(accessView(home, 'win32', now).keepAwakeSupported).toBe(false);
+  });
+
+  test('applying a change answers the request asked before it; deny on a relayed change only declines it', () => {
+    const home = tempHome();
+    writeAccess(ask, home);
+    writeAccessRequest({ capability: 'filesystem', method: 'fs.list' }, home);
+    expect(applyAccess({ keepAwake: true }, home).pendingRequest).not.toBeNull();
+    expect(applyAccess({ grantMinutes: 60 }, home)).toMatchObject({ pendingRequest: null, keepAwake: true });
+    expect(readAccess(home).grantedUntil).not.toBeNull();
+
+    writeAccessRequest({ capability: 'access', method: 'tunnel.access.set', change: { mode: 'always' } }, home);
+    const declined = applyAccess({ deny: true }, home);
+    expect(declined.pendingRequest).toBeNull();
+    // Declining a change is not a denial of calls: the grant stays.
+    expect(declined.deniedUntil).toBeNull();
+    expect(declined.grantedUntil).not.toBeNull();
+
+    writeAccessRequest({ capability: 'shell', method: 'shell.exec' }, home);
+    expect(applyAccess({ deny: true }, home)).toMatchObject({ pendingRequest: null, grantedUntil: null });
+    expect(readAccess(home).deniedUntil).not.toBeNull();
+  });
+});
+
+describe('access after pairing', () => {
+  test('a re-pair keeps the owner mode and keep awake, and drops the old grant or denial', () => {
+    const home = tempHome();
+    writeFileSync(
+      accessFilePath(home),
+      JSON.stringify({ mode: 'always', grantedUntil: null, deniedUntil: '2099-01-01T00:00:00.000Z', keepAwake: true }),
+    );
+    expect(accessAfterPairing(home, true)).toEqual({ mode: 'always', grantedUntil: null, deniedUntil: null, keepAwake: true });
+    writeFileSync(accessFilePath(home), JSON.stringify({ mode: 'off', grantedUntil: null, deniedUntil: null, keepAwake: false }));
+    expect(accessAfterPairing(home, false).mode).toBe('off');
+    writeFileSync(accessFilePath(home), JSON.stringify({ mode: 'ask', grantedUntil: '2099-01-01T00:00:00.000Z', deniedUntil: null, keepAwake: false }));
+    expect(accessAfterPairing(home, false)).toEqual({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false });
+  });
+
+  test('a first pairing asks when the desktop app can answer, else always', () => {
+    expect(accessAfterPairing(tempHome(), true).mode).toBe('ask');
+    expect(accessAfterPairing(tempHome(), false).mode).toBe('always');
   });
 });

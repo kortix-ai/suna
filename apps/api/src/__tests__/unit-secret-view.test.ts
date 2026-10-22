@@ -7,6 +7,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { buildSecretView } from '../projects/lib/serializers';
+import { encryptProjectSecret } from '../projects/secrets/envelope';
 
 const OTHER = 'u-other';
 
@@ -98,7 +99,7 @@ describe('buildSecretView — identifier model', () => {
       personal: personalRow(),
       canManageShared: false,
     });
-    expect(v.mine).toEqual({ active: true, updated_at: '2026-01-01T00:00:00.000Z' });
+    expect(v.mine).toMatchObject({ active: true, updated_at: '2026-01-01T00:00:00.000Z' });
     expect(v.effective_source).toBe('mine');
   });
 
@@ -122,5 +123,74 @@ describe('buildSecretView — identifier model', () => {
     });
     expect(v.system).toBe(true);
     expect(v.can_manage_shared).toBe(false);
+  });
+});
+
+describe('buildSecretView — status (KRTX-1719)', () => {
+  const PROJECT = '55555555-5555-4555-8555-555555555555';
+  const BROKEN = 'v1:broken:envelope:row';
+
+  test('a value this server decrypts is ok; the view never carries it', () => {
+    const v = buildSecretView({
+      identifier: 'STRIPE_KEY',
+      name: 'STRIPE_KEY',
+      shared: sharedRow({ projectId: PROJECT, valueEnc: encryptProjectSecret(PROJECT, 'synthetic-value') }),
+      canManageShared: true,
+    });
+    expect(v.status).toBe('ok');
+    expect(JSON.stringify(v)).not.toContain('synthetic-value');
+  });
+
+  test('a value this server cannot decrypt is undecryptable, not missing', () => {
+    const v = buildSecretView({
+      identifier: 'STRIPE_KEY',
+      name: 'STRIPE_KEY',
+      shared: sharedRow({ projectId: PROJECT, valueEnc: BROKEN }),
+      canManageShared: true,
+    });
+    expect(v.status).toBe('undecryptable');
+    expect(v.configured).toBe(true);
+  });
+
+  // Session start reads the active override, so the list reports it on its
+  // own: `status` is the shared value, `mine.status` the caller's override.
+  const both = (personal: Record<string, unknown>) =>
+    buildSecretView({
+      identifier: 'OPENAI_API_KEY',
+      name: 'OPENAI_API_KEY',
+      shared: sharedRow({
+        projectId: PROJECT,
+        identifier: 'OPENAI_API_KEY',
+        name: 'OPENAI_API_KEY',
+        valueEnc: encryptProjectSecret(PROJECT, 'synthetic-shared'),
+      }),
+      personal: personalRow({ projectId: PROJECT, identifier: 'OPENAI_API_KEY', name: 'OPENAI_API_KEY', ...personal }),
+      canManageShared: true,
+    });
+
+  test('a broken active override is reported on mine, not hidden behind an ok shared value', () => {
+    const v = both({ valueEnc: BROKEN });
+    expect(v.effective_source).toBe('mine');
+    expect(v.status).toBe('ok');
+    expect(v.mine?.status).toBe('undecryptable');
+  });
+
+  test('a decryptable override is ok; an inactive broken one still reports its own status', () => {
+    expect(both({ valueEnc: encryptProjectSecret(PROJECT, 'synthetic-mine') }).mine?.status).toBe('ok');
+    const inactive = both({ valueEnc: BROKEN, active: false });
+    expect(inactive.effective_source).toBe('shared');
+    expect(inactive.mine).toMatchObject({ active: false, status: 'undecryptable' });
+  });
+
+  test('a personal-only row has no shared status; its override carries the state', () => {
+    const v = buildSecretView({
+      identifier: 'CODEX_AUTH_JSON',
+      name: 'CODEX_AUTH_JSON',
+      personal: personalRow({ projectId: PROJECT, valueEnc: BROKEN }),
+      canManageShared: true,
+    });
+    expect(v.configured).toBe(false);
+    expect(v.status).toBeUndefined();
+    expect(v.mine?.status).toBe('undecryptable');
   });
 });

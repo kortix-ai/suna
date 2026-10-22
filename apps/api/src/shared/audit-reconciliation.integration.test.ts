@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import pg from 'pg';
+import { PgClient } from '../__tests__/helpers/pg-client';
 import { reconcileAuditEvents } from './audit-reconciliation';
 import { runAuditReconciliationPage } from './audit-reconciliation-worker';
 
@@ -14,7 +14,7 @@ const SESSION = 'b7300000-0000-4000-a000-000000000001';
 const ACTOR = 'b7400000-0000-4000-a000-000000000001';
 const TUNNEL = 'b7500000-0000-4000-a000-000000000001';
 
-let client: pg.Client | null = null;
+let client: PgClient | null = null;
 
 async function cursorImmediatelyBefore(accountId: string): Promise<string | null> {
   const result = await client!.query<{ account_id: string }>(
@@ -30,7 +30,7 @@ async function cursorImmediatelyBefore(accountId: string): Promise<string | null
 
 describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', () => {
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: fixtureUrl });
+    client = new PgClient({ connectionString: fixtureUrl });
     await client.connect();
     // These append-only source ledgers intentionally have no account FK.
     // Remove fixtures from an interrupted previous test run before reseeding.
@@ -311,5 +311,56 @@ describe.skipIf(!databaseUrl)('audit reconciliation — migrated PostgreSQL', ()
       complete: true,
       by_source: { provider_events: 1 },
     });
+  });
+
+  test('an expired approval projects outcome expired once, from the trigger or from reconciliation', async () => {
+    // Trigger path: pending, then the expiry worker's status flip.
+    const live = await client!.query<{ execution_id: string }>(
+      `INSERT INTO kortix.connector_calls (account_id, project_id, action_path, session_id, status)
+       VALUES ($1, $2, 'gmail.send_email', $3, 'pending_approval') RETURNING execution_id`,
+      [ACCOUNT, PROJECT, SESSION],
+    );
+    const liveId = live.rows[0]!.execution_id;
+    await client!.query(
+      `UPDATE kortix.connector_calls SET status = 'expired', resolved_at = now() WHERE execution_id = $1`,
+      [liveId],
+    );
+    // Reconciliation path: an expired row the trigger never saw.
+    await client!.query(`SET session_replication_role = 'replica'`);
+    let missedId = '';
+    try {
+      const missed = await client!.query<{ execution_id: string }>(
+        `INSERT INTO kortix.connector_calls (account_id, project_id, action_path, session_id, status, resolved_at)
+         VALUES ($1, $2, 'gmail.send_email', $3, 'expired', now()) RETURNING execution_id`,
+        [ACCOUNT, PROJECT, SESSION],
+      );
+      missedId = missed.rows[0]!.execution_id;
+    } finally {
+      await client!.query(`SET session_replication_role = 'origin'`);
+    }
+
+    await client!.query('DELETE FROM kortix.audit_reconciliation_state WHERE account_id = $1', [ACCOUNT]);
+    let fromConnectorCalls = 0;
+    for (let page = 0, complete = false; page < 6 && !complete; page += 1) {
+      const result = await reconcileAuditEvents(ACCOUNT, 10);
+      complete = result.complete;
+      fromConnectorCalls += result.by_source.connector_calls ?? 0;
+    }
+    // Only the row the trigger missed; the trigger's expired row is not duplicated.
+    expect(fromConnectorCalls).toBe(1);
+
+    const events = await client!.query<{ id: string; phase: string; outcome: string }>(
+      `SELECT source_record_id AS id, phase, outcome FROM kortix.audit_events
+        WHERE source_ledger = 'connector_calls' AND source_record_id = ANY($1::text[])
+        ORDER BY source_record_id, phase`,
+      [[liveId, missedId]],
+    );
+    expect(events.rows).toEqual(
+      [
+        { id: liveId, phase: 'expired', outcome: 'expired' },
+        { id: liveId, phase: 'pending', outcome: 'pending' },
+        { id: missedId, phase: 'expired', outcome: 'expired' },
+      ].sort((a, b) => (a.id === b.id ? a.phase.localeCompare(b.phase) : a.id.localeCompare(b.id))),
+    );
   });
 });

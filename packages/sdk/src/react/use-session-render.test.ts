@@ -6,6 +6,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useSyncStore } from '../browser/stores/sync-store';
 import { useRuntimeMessages, useSession, useSessionMessages } from './opencode';
+import { qk } from './query-keys';
 
 /**
  * Render cost of `useSession` while a turn streams.
@@ -408,5 +409,45 @@ describe('useSessionMessages({ throttleMs }) — paced transcript delivery', () 
     const before = transcriptRenders;
     streamDeltas(streamingMessageId, streamingPartId, 20);
     expect(transcriptRenders - before).toBe(20);
+  });
+});
+
+describe('useSession says whether this viewer may stop the running turn', () => {
+  // In a shared session only the member who started the run, the session owner
+  // or a project manager may stop it. The server answers per caller on `/turn`
+  // (`can_stop`); the hook reads the cache entry it already keeps and adds no
+  // request. An answer without the field is an older server: Stop stays.
+  test('canStop is false only while the latest /turn answer says can_stop: false', async () => {
+    const seen: boolean[] = [];
+    function Host() {
+      seen.push(
+        useSession(PROJECT_ID, SESSION_ID, {
+          enabled: false,
+          replayStartStash: false,
+          initialOpenCodeSessionId: OC_ID,
+        }).canStop,
+      );
+      return null;
+    }
+    mount(createElement(Host));
+    expect(seen.at(-1)).toBe(true);
+
+    const key = qk.project.sessionTurn(PROJECT_ID, SESSION_ID);
+    const running = [{ turn_token: 'tt-other', state: 'active', message_id: 'msg_other' }];
+    const write = async (entry: Record<string, unknown>) => {
+      await act(async () => {
+        queryClient.setQueryData(key, entry);
+        await Bun.sleep(10);
+      });
+    };
+
+    await write({ turns: running, can_stop: false, atMs: 1 });
+    expect(seen.at(-1)).toBe(false);
+    await write({ turns: running, can_stop: true, atMs: 2 });
+    expect(seen.at(-1)).toBe(true);
+    await write({ turns: running, can_stop: false, atMs: 3 });
+    expect(seen.at(-1)).toBe(false);
+    await write({ turns: running, atMs: 4 });
+    expect(seen.at(-1)).toBe(true);
   });
 });

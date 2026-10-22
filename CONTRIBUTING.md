@@ -26,24 +26,26 @@ Tools every contributor needs:
 
 ## The pull request loop
 
-A pull request into `main` runs **no** CI job by itself. Your development machine runs the
+A pull request into `dev` runs **no** CI job by itself. Your development machine runs the
 tests, the stack, and the demo before the PR opens, and the PR is mergeable at once. In the
 rare case you want CI before the merge, add the `test` or `preview` label (one run each).
 
 1. **Branch.** One canonical branch per objective, in its own worktree.
 2. **Commit.** Conventional subjects (`fix(api): …`, `feat(web): …`). The hooks must pass.
    Never use `--no-verify`.
-3. **Test in your box.** Run the narrowest relevant test, then `pnpm test`. Run the changed
-   behaviour on the worktree's local stack (`pnpm worktree start <slug>`).
+3. **Test in your box.** Run the tests that cover the change, narrowest first. A diff that no
+   test reads (docs, a skill, a script) needs no run. Run the changed behaviour on the
+   worktree's local stack (`pnpm worktree start <slug>`).
 4. **Record a demo video** of the change with agent-browser, on the local stack.
-5. **Open the PR against `main`** with every section of `.github/pull_request_template.md`
-   filled, and attach the video:
-   `gh pr create --base main --body-file output/pr/body.md --attach ./output/pr/demo.mp4`.
-6. **Merge.** Squash-merge it to `main` when it is verified: the local checks passed and the
-   PR has no conflict. No approval and no CI check is needed for `main`. `main` deploys to
-   dev for the whole team, so verify the change on dev after the merge. The push runs the
-   `Tests` lanes as a non-blocking safety net. Merging into `staging` or `prod`, and every
-   release step, still needs explicit approval.
+5. **Open the PR against `dev`.** Write the title and body for a human reviewer who decides
+   "merge or iterate" without reading the diff: English only, in the section order of
+   `.github/pull_request_template.md` (the **create-pr** skill). Attach the video:
+   `gh pr create --base dev --body-file output/pr/body.md --attach ./output/pr/demo.mp4`.
+6. **Merge.** Squash-merge it to `dev` when it is verified: the local checks passed and the
+   PR has no conflict. No approval and no CI check is needed for `dev`. The merge does not
+   deploy: run `gh workflow run deploy-dev.yml -f surface=changed`, then verify the change on
+   dev. Merging into `staging` or `prod`, and every release step, still needs explicit
+   approval.
 
 The skill covers each step with its commands and completion check.
 
@@ -51,7 +53,7 @@ The skill covers each step with its commands and completion check.
 
 | Label | Effect |
 | --- | --- |
-| `test` | Runs the six `Tests` lanes once, on the head SHA when the label is added. A push does not re-run it. |
+| `test` | Runs the `Tests` lanes once, on the head SHA when the label is added. A push does not re-run it. |
 | `preview` | Deploys a self-host environment for the branch on Platinum (~7 min), once, and runs no tests. A push does not redeploy. Removing the label or deleting the branch tears it down. Closing the PR does not. |
 | `i18n-reorder` | Allows an intentional key reorder in the translation catalogs on a release PR. |
 
@@ -164,8 +166,8 @@ Nothing at runtime reads that order, but every merge and review diff does.
   `git checkout -m apps/web/translations/<locale>.json` and `git add` it.
 - **CI checks it.** `i18n-catalogs.yml` runs on every pull request that touches a catalog: each
   one must be canonical and keep the base branch's key order. The same check, locally:
-  `node apps/web/scripts/i18n-catalogs.mjs check --base=origin/main`. Repair a reorder without
-  changing a value: `node apps/web/scripts/i18n-catalogs.mjs restore-order --from=origin/main`.
+  `node apps/web/scripts/i18n-catalogs.mjs check --base=origin/dev`. Repair a reorder without
+  changing a value: `node apps/web/scripts/i18n-catalogs.mjs restore-order --from=origin/dev`.
   An intentional reorder takes the `i18n-reorder` label.
 
 ## Testing
@@ -213,7 +215,8 @@ ordinary development stack before either command.
 
 | Event | Runs |
 | --- | --- |
-| Pull request into `main` | nothing, unless a person adds `test` (six lanes, once) or `preview` (~7 min deploy, once) |
-| Push to `main` (the merge) | `Deploy Dev`, the six `Tests` lanes, `ci.yml`, `CodeQL`, secret scans, path-gated migration / i18n / compliance checks. None blocks: a red `Tests` run comments the failing lanes on the commit. |
-| Pull request into `staging` | the six `Tests` lanes, `ci.yml`, `CodeQL`, security, compliance, and migration checks |
-| Pull request into `prod` | the same checks + `tests-release.yml` against deployed staging. Its `full suite + quality gates` check is the only required check. |
+| Pull request into `dev` | nothing, unless a person adds `test` (the `Tests` lanes, once) or `preview` (~7 min deploy, once) |
+| Push to `dev` (the merge) | only seconds-long guards: `secret-scan`, `secrets-guard`, and path-gated `DB Migrations`, `i18n-catalogs`, `Terraform Apply Global`, `deploy-api-router-dev`. No `Tests` lane and no deploy. |
+| Nightly on `dev` | the `Tests` lanes. A red night comments the failing lanes on the commit. |
+| Pull request into `staging` | nothing: Promote to Production opens and merges it |
+| Pull request into `prod` | the release suite, once: `tests-release.yml` (contract lanes, deployed smoke, browser journeys against staging) plus `CI`, `CodeQL`, security and compliance checks. Its `full suite + quality gates` check is the only required check. |

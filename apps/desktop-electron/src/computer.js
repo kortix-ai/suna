@@ -2,8 +2,10 @@
 // run with this app's own binary as Node (ELECTRON_RUN_AS_NODE=1). No Electron
 // imports here, so every rule below is unit-tested with plain bun.
 //
-// The CLI owns pairing, credentials, the OS service, and state.json. This
-// module only spawns it, parses its NDJSON events, and reads its files.
+// The CLI is the one control surface of this computer: pairing, credentials,
+// the OS service, access, keep awake, and the status this app shows. This
+// module only spawns it, parses its JSON, and builds its arguments. It reads
+// no agent file except config.json's relay, to pick the agent home (X6).
 
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const crypto = require('node:crypto');
@@ -73,27 +75,30 @@ function effectiveHome(home) {
   return home || path.join(os.homedir(), '.agent-tunnel');
 }
 
+/** This app's own files (the backend cache, desktop-app.json): atomic and private. */
+function writePrivateJson(home, name, value) {
+  const dir = effectiveHome(home);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = path.join(dir, name);
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
 /**
  * The macOS grants this machine's approved access still needs, in the order
  * setup asks for them. Files (`filesystem`) need the protected folders
  * (Desktop, Documents, Downloads); Computer Use (`desktop`) needs
  * Accessibility and Screen Recording. All of them belong to Kortix: the agent
  * runs as this app's binary and the bundled driver runs embedded under it.
- * `grants` is null off macOS.
+ * `capabilities` come from `status --json`; `grants` is null off macOS.
  *
- * @param {string | null} home
+ * @param {string[] | undefined} capabilities
  * @param {{ accessibility: boolean, screenRecording: boolean, files: boolean | null } | null} grants
  * @returns {('files' | 'accessibility' | 'screenRecording')[]}
  */
-function computerSetupMissing(home, grants) {
-  if (!grants) return [];
-  let capabilities = [];
-  try {
-    capabilities = JSON.parse(fs.readFileSync(path.join(effectiveHome(home), 'config.json'), 'utf8')).enabledCapabilities ?? [];
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(capabilities)) return [];
+function computerSetupMissing(capabilities, grants) {
+  if (!grants || !Array.isArray(capabilities)) return [];
   const missing = [];
   if (capabilities.includes('filesystem') && grants.files !== true) missing.push('files');
   if (capabilities.includes('desktop')) {
@@ -180,155 +185,44 @@ function ndjsonParser(onEvent) {
   };
 }
 
-function isAlive(pid) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return error.code === 'EPERM';
+/* ─── Access (contract v2 §A) ───────────────────────────────────────────
+   The CLI applies every change (`access`, `keep-awake`) with the agent's own
+   rules. This app builds the arguments and shows the native prompts. */
+
+/** CLI arguments for one access change (agent-tunnel `AccessChange`). */
+function accessArgs(change = {}) {
+  if (change.keepAwake !== undefined && Object.keys(change).length === 1) {
+    return ['keep-awake', change.keepAwake ? 'on' : 'off', '--json'];
   }
-}
-
-/** state.json, with a dead writer reported as offline. */
-function readAgentState(home) {
-  try {
-    const state = JSON.parse(fs.readFileSync(path.join(effectiveHome(home), 'state.json'), 'utf8'));
-    if (!state || typeof state.status !== 'string') return null;
-    return state.status !== 'offline' && !isAlive(state.pid) ? { ...state, status: 'offline' } : state;
-  } catch {
-    return null;
-  }
-}
-
-/* ─── Access control (contract v2 §A) ───────────────────────────────────
-   Same file and rules as packages/agent-tunnel/src/agent/access.ts: the app
-   writes the owner's answers, the agent enforces them. */
-
-const ACCESS_MODES = ['ask', 'always', 'off'];
-const MAX_GRANT_MINUTES = 24 * 60;
-const DENY_MS = 10 * 60_000;
-/** A request older than this is stale: its call has long returned. */
-const REQUEST_FRESH_MS = 60_000;
-const isoOrNull = (value) => (typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null);
-
-function readAccess(home) {
-  let raw;
-  try {
-    raw = fs.readFileSync(path.join(effectiveHome(home), 'access.json'), 'utf8');
-  } catch {
-    return { mode: 'always', grantedUntil: null, deniedUntil: null, keepAwake: false };
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    return {
-      mode: ACCESS_MODES.includes(parsed.mode) ? parsed.mode : 'ask',
-      grantedUntil: isoOrNull(parsed.grantedUntil),
-      deniedUntil: isoOrNull(parsed.deniedUntil),
-      keepAwake: parsed.keepAwake === true,
-    };
-  } catch {
-    return { mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false };
-  }
-}
-
-function writePrivateJson(home, name, value) {
-  const dir = effectiveHome(home);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const file = path.join(dir, name);
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  fs.renameSync(tmp, file);
-}
-
-const writeAccess = (home, state) => writePrivateJson(home, 'access.json', state);
-
-/** `computer_access_set` input applied to the current state. Throws on bad input. */
-function nextAccess(current, input = {}, now = Date.now()) {
-  const next = { ...current };
-  if (input.mode !== undefined) {
-    if (!ACCESS_MODES.includes(input.mode)) throw new Error(`mode must be one of ${ACCESS_MODES.join(', ')}`);
-    // A grant or denial belongs to the mode it was given in: switching back
-    // to "Ask each time" must ask again.
-    if (input.mode !== current.mode) {
-      next.grantedUntil = null;
-      next.deniedUntil = null;
-    }
-    next.mode = input.mode;
-  }
-  if (input.grantMinutes !== undefined) {
-    const minutes = Number(input.grantMinutes);
-    if (!Number.isFinite(minutes) || minutes <= 0) throw new Error('grantMinutes must be a positive number');
-    next.grantedUntil = new Date(now + Math.min(minutes, MAX_GRANT_MINUTES) * 60_000).toISOString();
-    next.deniedUntil = null;
-  }
-  if (input.revoke === true) next.grantedUntil = null;
-  // The page's answer to a pending request: the native prompt's "Deny".
-  if (input.deny === true) {
-    next.grantedUntil = null;
-    next.deniedUntil = new Date(now + DENY_MS).toISOString();
-  }
-  if (input.keepAwake !== undefined) next.keepAwake = input.keepAwake === true;
-  return next;
-}
-
-/** Same rule as the agent's decideAccess: 'run', 'off', 'denied', or 'ask'. */
-function decideAccess(state, now = Date.now()) {
-  if (state.mode === 'always') return 'run';
-  if (state.mode === 'off') return 'off';
-  if (state.deniedUntil && Date.parse(state.deniedUntil) > now) return 'denied';
-  const granted = state.grantedUntil ? Date.parse(state.grantedUntil) : 0;
-  return granted > now && granted - now <= MAX_GRANT_MINUTES * 60_000 ? 'run' : 'ask';
+  const args = ['access'];
+  if (change.mode) args.push(change.mode);
+  if (change.grantMinutes !== undefined) args.push('--allow-for', String(change.grantMinutes));
+  if (change.revoke) args.push('--revoke');
+  if (change.deny) args.push('--deny');
+  return [...args, '--json'];
 }
 
 /**
- * True when `next` lets calls run that `current` does not: `always` from
- * another mode, or a grant that reaches further. Only the owner may do that,
- * in a native dialog; the page may only narrow access.
+ * The owner's answer to the pending request, as CLI arguments. A call
+ * request: 0 = 24 h, 1 = 1 h, 2 = deny. A change asked for through Kortix:
+ * 0 = make it, anything else = decline it.
  */
-function accessWidens(current, next, now = Date.now()) {
-  if (next.mode === 'always') return current.mode !== 'always';
-  if (next.mode !== 'ask') return false;
-  const reach = (state) => (state.mode === 'ask' && decideAccess(state, now) === 'run' ? Date.parse(state.grantedUntil) : 0);
-  return reach(next) > reach(current);
+function answerArgs(request, response) {
+  if (request.change) return response === 0 ? accessArgs(request.change) : accessArgs({ deny: true });
+  if (response === 0) return accessArgs({ grantMinutes: 24 * 60 });
+  if (response === 1) return accessArgs({ grantMinutes: 60 });
+  return accessArgs({ deny: true });
 }
 
-function readAccessRequest(home) {
-  try {
-    const request = JSON.parse(fs.readFileSync(path.join(effectiveHome(home), 'access-request.json'), 'utf8'));
-    return typeof request?.id === 'string' ? request : null;
-  } catch {
-    return null;
-  }
-}
-
-function freshRequest(home, now = Date.now()) {
-  const request = readAccessRequest(home);
-  return request && now - Date.parse(request.requestedAt) < REQUEST_FRESH_MS ? request : null;
-}
-
-function clearAccessRequest(home, id) {
-  if (readAccessRequest(home)?.id === id) fs.rmSync(path.join(effectiveHome(home), 'access-request.json'), { force: true });
-}
-
-/** An answer covers every call that asked before it, not only the prompted one. */
-function clearAccessRequestsUntil(home, answeredAt = Date.now()) {
-  const request = readAccessRequest(home);
-  if (request && !(Date.parse(request.requestedAt) > answeredAt)) {
-    fs.rmSync(path.join(effectiveHome(home), 'access-request.json'), { force: true });
-  }
-}
-
-const keepAwakeSupported = (platform) => platform === 'darwin' || platform === 'linux';
-
-/** X5 `computer_access_get`. */
-function accessView(home, platform = process.platform, now = Date.now()) {
-  const request = freshRequest(home, now);
-  return {
-    ...readAccess(home),
-    keepAwakeSupported: keepAwakeSupported(platform),
-    pendingRequest: request ? { id: request.id, capability: request.capability, requestedAt: request.requestedAt } : null,
-  };
+/**
+ * The request the owner must answer now, or null. A call request needs an
+ * answer only while access is undecided: no grant, no denial, `ask`.
+ */
+function requestToPrompt(access) {
+  const request = access?.pendingRequest;
+  if (!request) return null;
+  if (request.change) return request;
+  return access.mode === 'ask' && !access.grantedUntil && !access.deniedUntil ? request : null;
 }
 
 const CAPABILITY_WORDS = { filesystem: 'files', shell: 'the shell', desktop: 'the screen and keyboard' };
@@ -355,27 +249,22 @@ function accessPrompt(request, machineName) {
   };
 }
 
-/** The owner's confirmation when the page asks to widen access (computer_access_set). */
-function widenPrompt(next, machineName) {
+/** The owner's confirmation of a wider access asked for through Kortix (a relayed change). */
+function widenPrompt(change, machineName) {
+  const minutes = change.grantMinutes;
   const what =
-    next.mode === 'always'
+    change.mode === 'always'
       ? 'every agent call without asking you first'
-      : `every agent call until ${clock(next.grantedUntil)} without asking you first`;
+      : `every agent call for the next ${minutes >= 60 ? `${Math.round(minutes / 60)} hour${minutes >= 120 ? 's' : ''}` : `${minutes} minutes`} without asking you first`;
   return {
     type: 'warning',
     title: `Allow Kortix to use ${machineName}?`,
     message: `Allow Kortix to use ${machineName}?`,
-    detail: `This allows ${what}: files, the shell, and the screen and keyboard. You can revoke access at any time from the menu bar.`,
+    detail: `Someone signed in to Kortix as you asked to allow ${what}: files, the shell, and the screen and keyboard. Allow it only if that was you. You can revoke access at any time from the menu bar.`,
     buttons: ['Allow', 'Cancel'],
     defaultId: 1,
     cancelId: 1,
   };
-}
-
-function answerAccess(current, response, now = Date.now()) {
-  if (response === 0) return nextAccess(current, { grantMinutes: MAX_GRANT_MINUTES }, now);
-  if (response === 1) return nextAccess(current, { grantMinutes: 60 }, now);
-  return { ...current, grantedUntil: null, deniedUntil: new Date(now + DENY_MS).toISOString() };
 }
 
 /** `<home>/desktop-app.json`: how the agent starts this app to show a prompt (A3). */
@@ -394,17 +283,19 @@ function desktopAppRecord({ execPath, defaultApp, argv, env, pid, cwd = process.
 }
 
 /**
- * The `computer_status` answer (X5), from `service-status --json` plus
- * state.json. `needsRepair` (R5): paired, not paused, and the service is
- * missing, stopped, stale, or runs another agent version than this app bundles.
+ * The `computer_status` answer (X5), from `status --json`. `needsRepair`
+ * (R5): paired, not paused, and the service is missing, stopped, stale, or
+ * runs another agent version than this app bundles. `access` and
+ * `capabilities` are the CLI's own view; the tray and the prompts use them.
  */
-function computerStatusFrom(serviceStatus, state) {
-  const paired = serviceStatus?.paired === true;
-  const service = serviceStatus?.service || {};
+function computerStatusFrom(report) {
+  const paired = report?.paired === true;
+  const service = report?.service || {};
+  const state = report?.state;
   // Paused = disabled in the supervisor. Installed, enabled and not running is
   // "stopped", which repair fixes.
   const paused = service.installed === true && service.enabled === false;
-  const live = paired && state && state.tunnelId === serviceStatus.tunnelId ? state : null;
+  const live = paired && state && state.tunnelId === report.tunnelId ? state : null;
   const current = paired ? (live ? live.status : 'offline') : undefined;
   // A live agent while the service is not running is a foreground
   // `agent-tunnel connect`: starting the service would displace it (4004).
@@ -416,15 +307,17 @@ function computerStatusFrom(serviceStatus, state) {
     (service.installed !== true ||
       service.active !== true ||
       service.upToDate === false ||
-      Boolean(live?.agentVersion && serviceStatus.version && live.agentVersion !== serviceStatus.version));
+      Boolean(live?.agentVersion && report.version && live.agentVersion !== report.version));
   return {
     available: true,
     paired,
-    ...(paired ? { tunnelId: serviceStatus.tunnelId, apiUrl: serviceStatus.apiUrl, status: current, state: current } : {}),
+    ...(paired ? { tunnelId: report.tunnelId, apiUrl: report.apiUrl, status: current, state: current } : {}),
     paused,
     serviceInstalled: service.installed === true,
     serviceActive: service.active === true,
     needsRepair,
+    capabilities: Array.isArray(report?.capabilities) ? report.capabilities : [],
+    access: report?.access ?? null,
   };
 }
 
@@ -434,7 +327,7 @@ function runAgent(args, { cli, home, execPath = process.execPath, timeoutMs = 30
     execFile(
       execPath,
       [cli, ...args],
-      { env: agentEnv(home), timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
+      { env: agentEnv(home), timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, windowsHide: true },
       (error, stdout, stderr) => {
         resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout, stderr });
       },
@@ -443,9 +336,9 @@ function runAgent(args, { cli, home, execPath = process.execPath, timeoutMs = 30
 }
 
 async function computerStatus(options) {
-  const result = await runAgent(['service-status', '--json'], options);
+  const result = await runAgent(['status', '--json'], options);
   try {
-    return computerStatusFrom(JSON.parse(result.stdout), readAgentState(options.home));
+    return computerStatusFrom(JSON.parse(result.stdout));
   } catch {
     return unavailable((result.stderr || result.stdout || 'agent status failed').trim().slice(-500));
   }
@@ -453,7 +346,7 @@ async function computerStatus(options) {
 
 /** One shape for every computer_status answer, so callers never branch on it. */
 function unavailable(error) {
-  return { available: false, paired: false, paused: false, serviceInstalled: false, serviceActive: false, needsRepair: false, error };
+  return { available: false, paired: false, paused: false, serviceInstalled: false, serviceActive: false, needsRepair: false, capabilities: [], access: null, error };
 }
 
 /**
@@ -467,7 +360,7 @@ function connectComputer({ cli, home, apiUrl, projectId, reauth, onChallenge, on
     const args = [cli, 'connect', '--json', '--daemon', '--api-url', apiUrl];
     if (projectId) args.push('--project-id', projectId);
     if (reauth) args.push('--reauth');
-    const child = spawn(execPath, args, { env: agentEnv(home), stdio: ['ignore', 'pipe', 'pipe'], signal });
+    const child = spawn(execPath, args, { env: agentEnv(home), stdio: ['ignore', 'pipe', 'pipe'], signal, windowsHide: true });
     let settled = false;
     let approved = null;
     let stderr = '';
@@ -530,7 +423,9 @@ function clock(iso) {
  * Tray menu (A5). `actions` are the click handlers; this stays a plain
  * template so the item list is tested without Electron.
  */
-function trayMenuTemplate(status, access, { openAtLogin, loginItemSupported, keepAwakeSupported: canKeepAwake, now = Date.now() }, actions) {
+function trayMenuTemplate(status, { openAtLogin, loginItemSupported, now = Date.now() }, actions) {
+  const access = status?.access ?? { mode: 'always', grantedUntil: null, keepAwake: false, keepAwakeSupported: false };
+  const canKeepAwake = access.keepAwakeSupported === true;
   const paused = Boolean(status?.paired && status.paused);
   const granted = access.mode === 'ask' && access.grantedUntil && Date.parse(access.grantedUntil) > now;
   const mode = (id, label) => ({ label, type: 'radio', checked: access.mode === id, click: () => actions.setMode(id) });
@@ -580,39 +475,30 @@ function keepRunningInTray(status) {
 }
 
 module.exports = {
-  computerSetupMissing,
+  accessArgs,
   accessPrompt,
-  accessView,
   agentCliPath,
   agentEnv,
   agentHome,
-  answerAccess,
+  answerArgs,
   backendFromRuntimeConfig,
   checkPageApiUrl,
-  accessWidens,
-  clearAccessRequest,
-  clearAccessRequestsUntil,
+  computerSetupMissing,
   computerStatus,
   computerStatusFrom,
   connectComputer,
-  decideAccess,
   desktopAppRecord,
   effectiveHome,
   ensureDevAgentCli,
-  freshRequest,
   isProjectId,
-  keepAwakeSupported,
   keepRunningInTray,
   ndjsonParser,
-  nextAccess,
-  readAccess,
-  readAgentState,
+  requestToPrompt,
   runAgent,
   sha8,
   statusLabel,
   trayMenuTemplate,
   unavailable,
   widenPrompt,
-  writeAccess,
   writePrivateJson,
 };

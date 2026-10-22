@@ -1,4 +1,3 @@
-import { sessionAttachmentStore } from '../lib/session-attachments';
 import { pauseComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { logger } from '../../lib/logger';
@@ -15,7 +14,7 @@ import {
 } from '../legacy-migration-rehydrate';
 import { withProjectGitAuth } from '../lib/git';
 import { scheduleSessionConfigConvergence } from '../lib/session-config-convergence';
-import { refreshSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
+import { refreshResumedSandboxRuntimeAssets } from '../lib/sandbox-runtime-refresh';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import {
   projectImageAllowedForSession,
@@ -27,9 +26,8 @@ import {
   sandboxCallbackDeadTunnelReason,
   sandboxCallbackUnreachableReason,
 } from '../lib/sessions';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { isMissingRuntimeError } from '../session-open';
-import { invalidateProviderCache } from '../../sandbox-proxy';
+import { invalidateSandbox } from '../../sandbox-proxy/backend';
 import {
   claimInPlaceRuntimeRecovery,
   markInPlaceRuntimeRecoveryAccepted,
@@ -41,8 +39,11 @@ import {
   RUNTIME_IDENTITY_UNAVAILABLE,
 } from '../runtime-identity';
 import { inspectSandboxRuntime } from '../runtime-inspection';
+import { WARM_SESSION_METADATA_KEY } from '../lib/warm-sessions';
 import { prepareInitialSandboxTurn } from '../session-turn-ledger';
+import { sessionRestoreUntil } from '../session-log-purge';
 import { claimInPlaceRestart } from './runtime-restart-claim';
+import { DELETED_DURING_CREATE_KEY } from './restore-session';
 import { transitionSandbox, transitionSession } from './status-transitions';
 import {
   DELETED_SESSION_CLEARED_KEYS,
@@ -53,6 +54,10 @@ import {
   RUNTIME_RESTART_LEASE_MS,
   restartClaimIsActive,
 } from './runtime-restart-fence';
+
+/** Warm (pre-created, never prompted) and not tombstoned. See ../lib/warm-sessions.ts. */
+const UNCLAIMED_WARM_SESSION = sql`${projectSessions.metadata}->>${WARM_SESSION_METADATA_KEY}::text = 'true'
+  AND coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''`;
 
 /** The in-place restart claim. The restart finalize and failure writes drop it. */
 const RESTART_CLAIM_KEYS = [
@@ -67,8 +72,10 @@ export async function deleteSession(input: {
   sessionId: string;
   accountId: string;
   userId: string;
-}): Promise<{ ok: true } | { error: string; status: number }> {
-  const { projectId, sessionId, accountId, userId } = input;
+  /** Delete only a still-warm, untombstoned session: the tombstone CAS loses to a claim. */
+  warmOnly?: boolean;
+}): Promise<{ ok: true; restore_until: string } | { error: string; status: number }> {
+  const { projectId, sessionId, accountId, userId, warmOnly } = input;
   const [sandbox] = await db
     .select()
     .from(sessionSandboxes)
@@ -84,27 +91,32 @@ export async function deleteSession(input: {
   // Release the session's prompt attachments before the tombstone, so a failed
   // release fails a delete that can still be retried. The cleanup sweep then
   // removes each unreferenced object before its metadata.
-  const { releasePromptAttachmentsForSession } = await import('../prompt-attachments');
-  await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
+  // A warm session holds no prompt yet. Skipped there, because a claim that wins
+  // the race below inserts its prompt first, and this release would drop it.
+  if (!warmOnly) {
+    const { releasePromptAttachmentsForSession } = await import('../prompt-attachments');
+    await releasePromptAttachmentsForSession({ sessionId, projectId, accountId });
+  }
 
   const deletedAt = new Date();
   // Merged in SQL: the tombstone must not write back a metadata object read
   // earlier, which would erase any key a concurrent writer added since.
   const tombstone = { deletedAt: deletedAt.toISOString(), deletedBy: userId };
+  // The transition keeps `updated_at`: the session keeps its list position.
   const deleted = await transitionSession('delete', sessionId, {
-    at: deletedAt,
     metadata: tombstone,
     guard: and(
       eq(projectSessions.projectId, projectId),
       eq(projectSessions.accountId, accountId),
+      warmOnly ? UNCLAIMED_WARM_SESSION : undefined,
     ),
   });
 
   if (!deleted) return { error: 'Not found', status: 404 };
 
-  await Promise.resolve().then(() => sessionAttachmentStore().removeSession(projectId, sessionId)).catch((error) => {
-    console.error('[session-attachments] cleanup failed', { projectId, sessionId, error });
-  });
+  // The session's stored files stay: a restore inside the window gets them
+  // back, and the retention purge deletes them 7 days after the window
+  // (session-log-purge.ts). Every read of a deleted session's files is refused.
 
   // Public links end with the session. `resolvePublicShare` already refuses a
   // tombstoned session (410); this makes the owner's share list say so too.
@@ -132,6 +144,10 @@ export async function deleteSession(input: {
         ? {}
         : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
       ...(removable ? { [PROVIDER_REMOVAL_PENDING_KEY]: deletedAt.toISOString() } : {}),
+      // provider.create may still return a box onto this row: a restore waits for it.
+      ...(sandbox.status === 'provisioning' && !sandbox.externalId
+        ? { [DELETED_DURING_CREATE_KEY]: deletedAt.toISOString() }
+        : {}),
     };
     const archived = await transitionSandbox('archive', sandbox.sandboxId, {
       metadata: { strip: DELETED_SESSION_CLEARED_KEYS, merge: archivePatch },
@@ -192,7 +208,34 @@ export async function deleteSession(input: {
     );
   });
 
-  return { ok: true };
+  return { ok: true, restore_until: sessionRestoreUntil(tombstone.deletedAt)!.toISOString() };
+}
+
+/**
+ * Delete every unclaimed warm session of a project, all users. A warm box boots
+ * with the project's env of that moment (KORTIX_GENUI is boot-only), so a flag
+ * change must not let a box provisioned before it be adopted. Deleting also
+ * removes the box, so it stops billing.
+ *
+ * The tombstone keeps the `warm` marker, so the row stays out of every list, and
+ * both adoption CASes (claim, `/start`) refuse a tombstoned row. A claim that
+ * commits first keeps its session and the old value.
+ */
+export async function retireWarmProjectSessions(projectId: string): Promise<void> {
+  const rows = await db
+    .select({ sessionId: projectSessions.sessionId, accountId: projectSessions.accountId })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.projectId, projectId), UNCLAIMED_WARM_SESSION));
+  for (const row of rows) {
+    await deleteSession({
+      projectId,
+      sessionId: row.sessionId,
+      accountId: row.accountId,
+      // No user deleted it. The tombstone is hidden from every list anyway.
+      userId: 'system',
+      warmOnly: true,
+    });
+  }
 }
 
 type RestartSessionInput = {
@@ -335,7 +378,6 @@ async function provisionReplacementRuntime(
         opencodeModel,
         defaultBranch: loaded.row.defaultBranch,
         manifestPath: loaded.row.manifestPath,
-        llmGatewayEnabled: projectLlmGatewayEnabled(loaded.row.metadata),
         // A restarted meta coordinator must keep its meta runtime: without
         // this the rebuilt env loses KORTIX_PROJECT_AUTO_CLONE=0 and the
         // meta agent config, so the daemon clones the project over the meta
@@ -546,7 +588,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'before_stop'))) return;
   await provider.stop(externalId).catch(() => {});
   if (!(await ownsRestart(restart, 'after_stop'))) return;
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   await db
     .update(sessionSandboxes)
     .set({
@@ -580,7 +622,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   if (!(await ownsRestart(restart, 'after_start'))) return;
   // Provider ingress credentials can change on every stop/start cycle.
   // Remove any link resolved while the sandbox was stopped.
-  invalidateProviderCache(externalId);
+  invalidateSandbox(externalId);
   // A provider may acknowledge start before discovering that the backing
   // runtime is gone. A confirmed `removed` status starts recovery.
   // `unknown` remains non-terminal because it does not prove runtime loss.
@@ -698,7 +740,7 @@ async function restartProviderBox(restart: InPlaceRestart): Promise<void> {
   // instant, and the runtime-asset refresh's write had not landed yet.
   // Awaiting closes that race — the file is current before anything
   // that reads it from disk gets a chance to spawn.
-  await refreshSandboxRuntimeAssets(sessionId).catch(() => 'unreachable' as const);
+  await refreshResumedSandboxRuntimeAssets(sessionId).catch(() => 'unreachable' as const);
   scheduleSessionConfigConvergence(sessionId, 'restart');
 }
 

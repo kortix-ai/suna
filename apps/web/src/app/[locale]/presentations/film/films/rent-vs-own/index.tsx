@@ -1,5 +1,5 @@
-import { KortixLogo } from '@/components/ui/kortix-logo';
-import { cn } from '@/lib/utils';
+import { KortixLogo } from '@kortix/ui/kortix-logo';
+import { cn } from '@kortix/ui';
 import { Shot, useFrame, type Cue, type FilmDef } from '../../engine/film';
 import { bars, ease, interp, rise } from '../../engine/time';
 import { Headline } from '../launch/parts';

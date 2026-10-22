@@ -284,7 +284,6 @@ describe('buildConfigRelease', () => {
     const mirror = await refreshMirror(project);
     const tree = run('git', ['rev-parse', `${sha}^{tree}`], mirror);
 
-    expect(release.format).toBe('config-release-v2');
     expect(release.source_commit).toBe(sha);
     expect(release.config_dir).toBe('.kortix/opencode');
     expect(release.config_tree_id).toBe(tree);
@@ -385,6 +384,40 @@ describe('buildConfigRelease', () => {
     expect(again.equals(archive)).toBe(true);
   });
 
+  // KRTX-1728: the too-large reason, the docs and `kortix validate` tell an
+  // owner to mark big paths export-ignore. The release used to ship them
+  // anyway, so the remedy changed nothing and the repository stayed over the cap.
+  test('a path the repository marks export-ignore is left out of the release, outside the config dir', async () => {
+    seed();
+    const sha = commit(
+      {
+        '.gitattributes': 'assets/** export-ignore\nfixtures export-ignore\n',
+        // Random bytes do not compress: each stays over the 32 KiB test cap.
+        'assets/hero.bin': randomBytes(48 * 1024),
+        'assets/deep/clip.bin': randomBytes(48 * 1024),
+        'fixtures/big.json': randomBytes(48 * 1024),
+        // The config dir is exempt: what it marks export-ignore still ships verbatim.
+        '.kortix/opencode/.gitattributes': 'secret-notes.md export-ignore\n',
+        '.kortix/opencode/secret-notes.md': 'kept verbatim\n',
+      },
+      'export-ignored assets',
+    );
+    const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
+    expect(release.reason ?? null).toBeNull();
+    expect(release.release_id).not.toBeNull();
+
+    const paths = release.files!.map(([path]) => path);
+    expect(paths.filter((path) => path.startsWith('assets/') || path.startsWith('fixtures/'))).toEqual([]);
+    expect(paths).toEqual(expect.arrayContaining(['.gitattributes', 'src/app.ts', '.kortix/opencode/secret-notes.md']));
+
+    const dir = extract(store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!))!);
+    expect(existsSync(join(dir, 'assets'))).toBe(false);
+    expect(existsSync(join(dir, 'fixtures'))).toBe(false);
+    expect(readFileSync(join(dir, '.kortix/opencode/secret-notes.md'), 'utf8')).toBe('kept verbatim\n');
+    // On-box blob verification: every listed file is in the archive, byte for byte.
+    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
+  });
+
   test('a code-only commit and a governance-only commit each move the release', async () => {
     const first = seed();
     const a = await buildConfigRelease(project, first, 'project', { store });
@@ -402,16 +435,99 @@ describe('buildConfigRelease', () => {
     expect(store.objects.size).toBe(3);
   });
 
-  test('the agent variant compiles one agent and shares the archive', async () => {
+  test('the agent variant compiles one agent and, with no project tool, ships no tree', async () => {
     const sha = seed();
     const whole = await buildConfigRelease(project, sha, 'project', { store });
     const one = await buildConfigRelease(project, sha, 'agent:reviewer', { store });
-    expect(one.config_tree_id).toBe(whole.config_tree_id);
-    expect(one.archive).toEqual(whole.archive);
+    expect(one.config_tree_id).toBeNull();
+    expect(one.files).toBeNull();
+    expect(one.archive).toBeNull();
+    expect(one.release_id).toBe(configReleaseId(null, one.compiled_governance_etag));
     expect(one.compiled_governance_etag).not.toBe(whole.compiled_governance_etag);
     const agents = Object.keys(JSON.parse(one.compiled_governance!).agent ?? {});
     expect(agents).toContain('reviewer');
     expect(agents).not.toContain('kortix');
+  });
+
+  // A customer's locked-down agent (no repository access) declared project
+  // tools, and the box logged "this session has no project checkout to load it from".
+  test('the agent variant ships exactly the modules of the project tools its agent may call', async () => {
+    const sha = commit(
+      {
+        'kortix.yaml': [
+          'kortix_version: 2',
+          'project:',
+          '  name: builder-test',
+          'default_agent: kortix',
+          'tools:',
+          '  web_search: kortix:web_search',
+          '  lookup_order: tools/lookup_order.ts',
+          '  refund_order: tools/refund_order.ts',
+          '  hidden_tool: tools/hidden.ts',
+          'agents:',
+          '  kortix: {}',
+          '  support:',
+          '    workspace:',
+          '      project_repository: false',
+          '    tools:',
+          '      exclude: [hidden_tool]',
+          '',
+        ].join('\n'),
+        'agents/kortix.md': AGENT,
+        'agents/support.md': '---\ndescription: support\n---\nHelp.\n',
+        // A relative import without an extension, a `./x.js` that names `x.ts`,
+        // a `../` import, a JSON import, a type-only import, and a package import.
+        'tools/lookup_order.ts': [
+          "import { client } from './lib/client'",
+          "import type { Order } from './lib/types'",
+          "import data from '../data/regions.json'",
+          "import zod from 'zod'",
+          'export default { description: "d", parameters: { type: "object" }, execute: () => client(data) }',
+          '',
+        ].join('\n'),
+        'tools/refund_order.ts': "import { client } from './lib/client.js'\nexport default { description: 'r', parameters: { type: 'object' }, execute: () => client() }\n",
+        'tools/lib/client.ts': "import { sign } from './sign/index'\nexport const client = (x?: unknown) => sign(x)\n",
+        'tools/lib/sign/index.ts': 'export const sign = (x: unknown) => x\n',
+        'tools/lib/types.ts': 'export type Order = { id: string }\n',
+        'tools/lib/unused.ts': 'export const secret = 1\n',
+        'tools/hidden.ts': 'export default {}\n',
+        'data/regions.json': '["eu"]\n',
+        'src/app.ts': 'console.log(1)\n',
+      },
+      'tools',
+    );
+    const release = await buildConfigRelease(project, sha, 'agent:support', { store });
+    expect(release.reason).toBeNull();
+    expect(release.tools_only).toBe(true);
+    expect(release.config_dir).toBeNull();
+    expect(release.files?.map(([path]) => path)).toEqual([
+      'data/regions.json',
+      'tools/lib/client.ts',
+      'tools/lib/sign/index.ts',
+      'tools/lookup_order.ts',
+      'tools/refund_order.ts',
+    ]);
+    expect(release.archive?.url).toBe(
+      `/v1/projects/${project.projectId}/config-archives/${release.config_tree_id}?commit=${sha}&agent=support`,
+    );
+    const archive = store.objects.get(configArchiveKey(project.projectId, release.config_tree_id!));
+    const dir = extract(archive!);
+    expect(run('find', ['.', '-type', 'f'], dir).split('\n').map((path) => path.slice(2)).sort()).toEqual(release.files!.map(([path]) => path));
+    for (const [path, , blob] of release.files!) expect(blobOf(join(dir, path))).toBe(blob);
+
+    const descriptor = toDescriptor(release, { repositoryAccess: false });
+    expect(descriptor.files).toEqual(release.files);
+    expect(descriptor.archive).toEqual(release.archive);
+    expect(descriptor.config_tree_id).toBe(release.config_tree_id);
+    expect(descriptor.release_id).toBe(configReleaseId(release.config_tree_id, release.compiled_governance_etag));
+    expect(descriptor.reason).toBeNull();
+    expect('tools_only' in descriptor).toBe(false);
+
+    // A change to a module the agent loads moves the release; any other file does not.
+    const moved = await buildConfigRelease(project, commit({ 'tools/lib/client.ts': 'export const client = () => 2\n' }, 'client'), 'agent:support', { store });
+    expect(moved.release_id).not.toBe(release.release_id);
+    const still = await buildConfigRelease(project, commit({ 'src/app.ts': 'console.log(2)\n' }, 'app'), 'agent:support', { store });
+    expect(still.release_id).toBe(moved.release_id);
   });
 
   test('an unknown selected agent produces no release and names the reason', async () => {
@@ -460,7 +576,7 @@ describe('buildConfigRelease', () => {
     expect((await buildConfigRelease(project, moved, 'meta', { store })).release_id).toBe(first.release_id);
   });
 
-  test('a repository over the archive limit produces no release', async () => {
+  test('a repository over the archive limit keeps its release; only the archive is withheld', async () => {
     const sha = commit(
       {
         'kortix.yaml': MANIFEST('first'),
@@ -471,19 +587,52 @@ describe('buildConfigRelease', () => {
       'huge',
     );
     const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
-    expect(release.release_id).toBeNull();
-    expect(release.config_tree_id).toMatch(/^[0-9a-f]{40}$/);
-    expect(release.reason).toContain(`exceeds the ${32 * 1024}-byte config archive limit`);
-    expect(release.reason).toContain('`kortix validate` lists the largest files');
+    const mirror = await refreshMirror(project);
+    const tree = run('git', ['rev-parse', `${sha}^{tree}`], mirror);
+    expect(release.config_tree_id).toBe(tree);
+    expect(release.release_id).toBe(configReleaseId(tree, release.compiled_governance_etag));
+    expect(release.archive).toBeNull();
+    expect(release.reason).toBeNull();
+    expect(release.files!.map(([path]) => path)).toContain('.kortix/opencode/blob.bin');
+    expect(release.archive_reason).toContain(`exceeds the ${32 * 1024}-byte config archive limit`);
+    expect(release.archive_reason).toContain('`kortix validate` lists the largest files');
     expect(store.objects.size).toBe(0);
     // The answer is a fact of the commit: every box's descriptor request (one
     // per minute per box) must not rebuild and gzip the whole tree again.
     expect(await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 })).toBe(release);
 
-    const mirror = await refreshMirror(project);
+    // v3: the release, no archive. v2: no release and the reason, because a v2
+    // daemon reads `archive: null` as governance only.
+    const v3 = toDescriptor(release, { repositoryAccess: true, format: 'config-release-v3' });
+    expect(v3).toMatchObject({ format: 'config-release-v3', release_id: release.release_id, archive: null, reason: null });
+    expect(v3.files).toEqual(release.files);
+    expect('archive_reason' in v3).toBe(false);
+    const v2 = toDescriptor(release, { repositoryAccess: true, format: 'config-release-v2' });
+    expect(v2).toMatchObject({ format: 'config-release-v2', release_id: null, files: null, archive: null });
+    expect(v2.reason).toBe(release.archive_reason!);
+
     await expect(buildConfigArchive(mirror, release.config_tree_id!, 1024)).rejects.toBeInstanceOf(
       ConfigArchiveTooLargeError,
     );
+  });
+
+  test('an agent variant over the archive limit lists its composed tree', async () => {
+    const sha = commit(
+      {
+        'kortix.yaml': MANIFEST('first'),
+        '.kortix/opencode/opencode.json': '{}\n',
+        '.kortix/opencode/blob.bin': randomBytes(64 * 1024),
+        '.gitattributes': 'assets/** export-ignore\n',
+        'assets/skip.bin': randomBytes(1024),
+      },
+      'huge composed',
+    );
+    const release = await buildConfigRelease(project, sha, 'project', { store, archiveLimit: 32 * 1024 });
+    const paths = release.files!.map(([path]) => path);
+    expect(release.archive).toBeNull();
+    expect(paths).toContain('.kortix/opencode/blob.bin');
+    expect(paths.some((path) => path.startsWith('assets/'))).toBe(false);
+    expect(release.release_id).toBe(configReleaseId(release.config_tree_id!, release.compiled_governance_etag));
   });
 
   test('a store failure still returns a complete descriptor', async () => {
@@ -518,7 +667,7 @@ describe('buildConfigRelease', () => {
     expect(descriptor.compiled_governance).toBe(release.compiled_governance);
   });
 
-  test('a session without repository access gets governance and no archive', async () => {
+  test('a session without repository access and no project tool gets governance and no archive', async () => {
     const sha = seed();
     const release = await buildConfigRelease(project, sha, 'agent:reviewer', { store });
     const descriptor = toDescriptor(release, { repositoryAccess: false });
@@ -526,10 +675,19 @@ describe('buildConfigRelease', () => {
     expect(descriptor.files).toBeNull();
     expect(descriptor.config_tree_id).toBeNull();
     expect(descriptor.release_id).toBe(configReleaseId(null, release.compiled_governance_etag));
-    expect(descriptor.release_id).not.toBe(release.release_id);
     expect(descriptor.reason).toBe('repository access withheld');
     expect(descriptor.compiled_governance).toBe(release.compiled_governance);
     expect(descriptor.compiled_governance_etag).toBe(release.compiled_governance_etag);
+  });
+
+  test('a whole-tree release given to a session without repository access loses its files', async () => {
+    const sha = seed();
+    const release = await buildConfigRelease(project, sha, 'project', { store });
+    const descriptor = toDescriptor(release, { repositoryAccess: false });
+    expect(descriptor.files).toBeNull();
+    expect(descriptor.archive).toBeNull();
+    expect(descriptor.config_tree_id).toBeNull();
+    expect(descriptor.release_id).toBe(configReleaseId(null, release.compiled_governance_etag));
   });
 });
 

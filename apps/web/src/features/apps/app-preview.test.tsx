@@ -28,6 +28,7 @@ import {
   previewScale,
   scheduleSlowPreview,
 } from './apps-view';
+import { framePlacement } from '@kortix/ui/apps';
 
 const renderAppMarkup = (node: ReactNode) =>
   renderRaw(
@@ -63,7 +64,6 @@ const APP: App = {
   active_deployment_id: 'dep-1',
   machine: { cpu: 1, memory_gb: 2, disk_gb: 10 },
   idle_timeout_seconds: 300,
-  monthly_budget_usd: 5,
   last_request_at: null,
   viewer_can_access: true,
   created_at: '2026-01-01T00:00:00.000Z',
@@ -76,25 +76,14 @@ describe('AppPreview — first paint', () => {
   test('mounts with no spinner at all: the overlay is not in the initial markup', () => {
     // `renderToStaticMarkup` runs render and skips effects, which is exactly
     // the moment under test — t=0, before the delay timer could ever fire.
+    // The frame itself arrives from the pool in a layout effect (app-preview-pool.ts).
     const html = renderAppMarkup(
       <AppPreview app={APP} url={URL} accessError={false} interactive />,
     );
 
-    expect(html).toContain('data-testid="app-live-preview"');
+    expect(html).toContain('class="absolute inset-0"');
     expect(stripTags(html)).not.toContain('Loading preview');
     expect(html).not.toContain('backdrop-blur-sm');
-  });
-
-  test('the modal frame fetches eagerly, the card thumbnail stays lazy', () => {
-    const modal = renderAppMarkup(
-      <AppPreview app={APP} url={URL} accessError={false} interactive />,
-    );
-    const card = renderAppMarkup(
-      <AppPreview app={APP} url={URL} accessError={false} interactive={false} />,
-    );
-
-    expect(modal).toContain('loading="eager"');
-    expect(card).toContain('loading="lazy"');
   });
 
   test('the frame area stays on its calm surface — no overlay to hide it', () => {
@@ -252,34 +241,23 @@ describe('previewScale', () => {
 
 describe('AppPreview — the card renders a desktop viewport', () => {
   test('the card frame is sized to the desktop viewport, not to the tile', () => {
-    const html = renderAppMarkup(
-      <AppPreview app={APP} url={URL} accessError={false} interactive={false} />,
-    );
-
-    expect(html).toContain(`width:${PREVIEW_VIEWPORT_WIDTH}px`);
-    expect(html).toContain(`height:${PREVIEW_VIEWPORT_HEIGHT}px`);
-    expect(html).toContain('origin-top-left');
+    const card = framePlacement(false, 0.25);
+    expect(card.style).toMatchObject({ width: `${PREVIEW_VIEWPORT_WIDTH}px`, height: `${PREVIEW_VIEWPORT_HEIGHT}px`, transform: 'scale(0.25)' });
+    expect(card.className).toContain('origin-top-left');
+    expect(card.interactive).toBe(false);
   });
 
   test('it stays hidden until measured, rather than flashing an unscaled corner', () => {
-    // `renderToStaticMarkup` skips effects, which is exactly the pre-measure
-    // state: no layout has happened, so there is no honest scale to apply yet.
-    const html = renderAppMarkup(
-      <AppPreview app={APP} url={URL} accessError={false} interactive={false} />,
-    );
-
-    expect(html).toContain('visibility:hidden');
-    expect(html).not.toContain('transform:scale');
+    const card = framePlacement(false, null);
+    expect(card.style.visibility).toBe('hidden');
+    expect(card.style.transform).toBeUndefined();
   });
 
-  test('the modal frame is untouched — it fills the dialog at its real size', () => {
-    const html = renderAppMarkup(
-      <AppPreview app={APP} url={URL} accessError={false} interactive />,
-    );
-
-    expect(html).not.toContain(`width:${PREVIEW_VIEWPORT_WIDTH}px`);
-    expect(html).not.toContain('visibility:hidden');
-    expect(html).toContain('size-full');
+  test('the modal frame is untouched — it fills the dialog at its real size and takes input', () => {
+    const modal = framePlacement(true, 0.25);
+    expect(modal.style).toEqual({});
+    expect(modal.className).toContain('size-full');
+    expect(modal.interactive).toBe(true);
   });
 });
 
@@ -545,12 +523,9 @@ describe('AppPreview — access and deployment characterization', () => {
     expect(denied).not.toContain('<iframe');
   });
 
-  test('a suspended deployment still renders its wake URL with the sandbox boundary', () => {
+  test('a suspended deployment still renders its slot: the pooled frame loads its wake URL', () => {
     const html = renderAppMarkup(<AppPreview app={{ ...APP, desired_state: 'stopped' }} url={URL} accessError={false} interactive={false} />);
-    expect(html).toContain('app-live-preview');
-    expect(html).toContain('sandbox=');
-    expect(html).toContain('tabindex="-1"');
-    expect(html).toContain('aria-hidden="true"');
-    expect(html).toContain('__kortix_access=tok');
+    expect(html).toContain('class="absolute inset-0"');
+    expect(html).not.toContain('app-preview-empty');
   });
 });

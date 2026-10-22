@@ -18,6 +18,7 @@ import {
 } from './events'
 import { createOpencodeLifecycle, type Opencode, type OpencodeLifecycleOptions } from './lifecycle'
 import { createInstanceGuard, type InstanceGuard } from './instance-guard'
+import { stopSessionLogJournal } from '../shared/session-log-journal'
 
 /** Native reload semantics remain explicit; these are not universal promises. */
 export type OpenCodeConfigurationService = Pick<
@@ -93,7 +94,17 @@ export function composeOpenCodeHarnessService(cfg: Config, lifecycle: Opencode):
     }),
     // Keep the method owner: restart/reload/reconfigure call sibling methods
     // through `this`. Copying unbound methods into separate objects breaks it.
-    lifecycle,
+    // Only the host's stop goes through the wrapper: the journal reads the
+    // store, so its last flush runs first. A restart (`this.stop()`) keeps it.
+    lifecycle: {
+      start: () => lifecycle.start(),
+      async stop(signal) {
+        await stopSessionLogJournal()
+        await lifecycle.stop(signal)
+      },
+      restart: (opts) => lifecycle.restart(opts),
+      getState: () => lifecycle.getState(),
+    },
     configuration: lifecycle,
     native: lifecycle,
     instanceGuard,

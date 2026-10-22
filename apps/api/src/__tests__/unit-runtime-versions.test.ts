@@ -64,7 +64,7 @@ describe('runtime version drift guards', () => {
     expect(dockerfile).toContain('bunSha256Arm64');
     expect(
       dockerfile.match(
-        /FROM oven\/bun:1\.3\.14-debian@sha256:9dba1a1b43ce28c9d7931bfc4eb00feb63b0114720a0277a8f939ae4dfc9db6f/g,
+        /FROM oven\/bun:1\.4\.3-debian@sha256:923bedb355f7746666659f71e724998159a5c8c54bd1cb1030e1975a0698415b/g,
       ),
     ).toHaveLength(2);
     expect(dockerfile).not.toContain('FROM oven/bun:1-debian');

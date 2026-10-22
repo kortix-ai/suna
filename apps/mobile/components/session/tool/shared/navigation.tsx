@@ -16,8 +16,8 @@
  *   Browser page tab, which replaces the session and loses the reader's place
  *   (KRTX-602). The explicit "open in the full browser" control still opens the
  *   Browser page tab (`page:browser`);
- * - an EXTERNAL link opens with `openLink` (http/https only): kortix.com in
- *   the in-app browser, any other site in the system browser.
+ * - an EXTERNAL link opens with `openLink` (http/https only) in the in-app
+ *   browser (KRTX-2104).
  *
  * Mobile has no iframe, so `ServicePreviewViewport` is a tappable card: its tap
  * opens the in-session sheet instead of an embedded page.
@@ -180,8 +180,9 @@ export function useServicePreview(url: string, label?: string, _sessionId?: stri
   }, [displayLabel, navigationEnabled, openExternal, openPreview, previewUrl, proxy]);
 
   // The explicit "open in the full browser" control. A sandbox proxy URL needs
-  // the app's auth, which the system browser does not carry, so it opens in the
-  // in-app Browser page tab; a public URL opens externally.
+  // the app's auth, which the in-app browser (Safari View Controller / Custom
+  // Tab) does not carry, so it opens in the Browser page tab; a public URL
+  // opens with `openLink`.
   const openInBrowser = useCallback(() => {
     if (!navigationEnabled || !previewUrl) return;
     if (!proxy) {

@@ -21,6 +21,14 @@ TARGET_GROUP_METRICS = {
 # covered by elb-5xx, unhealthy-hosts, and zero-healthy-hosts regardless.
 RETIRED_ALARM_SUFFIXES = ("-target-response-time",)
 
+# Suffixes only this Lambda creates. Terraform owns elb-5xx, unhealthy-hosts and
+# target-response-time per load balancer and removes them with the load
+# balancer; nothing else removes a zero-healthy-hosts alarm, so one whose name
+# is not desired (its load balancer or target group is gone) is stale.
+# ponytail: a per-target-group unhealthy-hosts alarm (multi-target-group ALB)
+# shares Terraform's suffix and is not pruned; add a name check if one lingers.
+LAMBDA_ONLY_SUFFIXES = ("-zero-healthy-hosts",)
+
 # Hand-made ALB alarms from the 2026-07-27 compliance evidence pass. They
 # duplicate the kortix-alb-* set on the same load balancers and are not in
 # Terraform. Only alarms in the ALB namespace match; compliance-*-cpu-high
@@ -204,13 +212,15 @@ def _alarms_with_prefix(cloudwatch: Any, prefix: str) -> list[dict[str, Any]]:
 def _stale_alarm_names(cloudwatch: Any, desired_names: set[str]) -> list[str]:
     """Alarms this reconciler owns that no longer belong in the account.
 
-    Two families qualify:
+    Three families qualify:
 
     - kortix-alb-* alarms whose suffix is never a desired name as written. The
       desired target-response-time alarm is per load balancer; the
       per-target-group variants (kortix-alb-<lb>-<tg>-target-response-time)
       were created by this function alone in the retired 2 s-threshold era, so
       only this function can remove them.
+    - kortix-alb-* alarms with a LAMBDA_ONLY_SUFFIXES suffix that are not
+      desired: their load balancer or target group no longer exists.
     - compliance-* alarms in the ALB namespace. They are unmanaged duplicates
       of the kortix-alb-* coverage.
 
@@ -221,7 +231,7 @@ def _stale_alarm_names(cloudwatch: Any, desired_names: set[str]) -> list[str]:
         name = alarm["AlarmName"]
         if name in desired_names:
             continue
-        if name.endswith(RETIRED_ALARM_SUFFIXES):
+        if name.endswith(RETIRED_ALARM_SUFFIXES + LAMBDA_ONLY_SUFFIXES):
             stale.add(name)
     for alarm in _alarms_with_prefix(cloudwatch, LEGACY_ALARM_PREFIX):
         if alarm.get("Namespace") == ALARM_NAMESPACE:

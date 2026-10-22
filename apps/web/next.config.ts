@@ -7,8 +7,9 @@ import { PHASE_PRODUCTION_BUILD } from 'next/constants';
 import createNextIntlPlugin from 'next-intl/plugin';
 import path from 'path';
 import { buildBlumeDocs, getBlumeDocsOutputPaths } from './scripts/blume-docs.mjs';
+import { BLOG_ORIGIN } from './src/config/blog-origin';
 import { locales } from './src/i18n/catalog.mjs';
-import { SHIPPED_ICON_WEIGHTS } from './src/lib/icons/icon-config';
+import { SHIPPED_ICON_WEIGHTS } from '@kortix/ui/lib/icon-config';
 import {
   enforcedContentSecurityPolicy,
   reportOnlyContentSecurityPolicy,
@@ -16,7 +17,6 @@ import {
 import { refreshContentTimestamps } from './scripts/build-content-timestamps.mjs';
 import { copyEmojibaseData, getEmojibaseDataOutputPaths } from './scripts/emojibase-data.mjs';
 import { copyViewerWasm, getViewerWasmOutputPaths } from './scripts/viewer-wasm.mjs';
-import { writeDevCatalogs, writePublicCatalogs } from './scripts/i18n-public-catalogs.mjs';
 
 // --- Content timestamps manifest -----------------------------------------
 // Public AEO surfaces (/api/ai, /llms.txt) expose a `last_modified` field per
@@ -178,12 +178,6 @@ function resolveKortixVersion(): string {
   return base;
 }
 const KORTIX_VERSION = resolveKortixVersion();
-// Writes public/i18n/<locale>.<hash>.json (see the script for why) and returns
-// the hashes the browser uses to build each catalog URL. `next dev` writes
-// unhashed files instead and rewrites them on every catalog save, so a new key
-// shows after a reload rather than after a server restart.
-const I18N_CATALOG_VERSIONS =
-  process.env.NODE_ENV === 'development' ? writeDevCatalogs() : writePublicCatalogs();
 const KORTIX_COMMIT =
   process.env.NEXT_PUBLIC_KORTIX_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || 'unknown';
 
@@ -243,9 +237,6 @@ function resolveTurbopackFileSystemCacheForDev(): boolean {
 // (next start never reads .next/standalone) and skip ESLint.
 const IS_PREVIEW_BUILD = process.env.KORTIX_PREVIEW_BUILD === '1';
 
-// Origin of the blog deployment that /blog is served from (see rewrites()).
-const BLOG_ORIGIN = process.env.KORTIX_BLOG_ORIGIN?.replace(/\/+$/, '');
-
 // --- Cross-origin dev / preview access -----------------------------------
 // The app is frequently reached through a proxy whose hostname differs from the
 // origin the browser sends: the Kortix platform proxy (p<port>-<id>.localhost:<port>),
@@ -283,9 +274,10 @@ const ALLOWED_PROXY_ORIGINS =
       ];
 
 const nextConfig = (): NextConfig => ({
+  poweredByHeader: false,
   // The frontend data layer lives in the @kortix/sdk workspace package (TS
   // source), so Next must transpile it.
-  transpilePackages: ['@kortix/sdk'],
+  transpilePackages: ['@kortix/sdk', '@kortix/ui'],
   // Standalone bundles the app for Docker via a slow monorepo-wide file-tracing
   // pass. Vercel injects a Next adapter. Next 16.3 does not emit the whole-app
   // NFT for adapter builds, but its standalone finalizer still requires that
@@ -297,8 +289,6 @@ const nextConfig = (): NextConfig => ({
   env: {
     NEXT_PUBLIC_KORTIX_VERSION: KORTIX_VERSION,
     NEXT_PUBLIC_KORTIX_COMMIT: KORTIX_COMMIT,
-    // Content hash per locale catalog; versions the /i18n/<locale>.json URL.
-    NEXT_PUBLIC_KORTIX_I18N_VERSIONS: JSON.stringify(I18N_CATALOG_VERSIONS),
   },
   // Hide Next.js's persistent dev badge in the corner. It only ever
   // really matters when there's a build error / route compile issue —
@@ -323,7 +313,8 @@ const nextConfig = (): NextConfig => ({
   // missing config" later or wonders whether we missed the release. The only
   // knobs we set are turbopackMemoryEviction and turbopackFileSystemCacheForDev
   // (both below) — and both only as escape hatches that default to upstream's
-  // value when their env var is unset.
+  // value when their env var is unset. 16.4 adds turbopackGc (below), which we
+  // turn on: upstream defaults it off.
   //
   // Already default-ON in 16.3 — restating them here would be dead config that
   // silently diverges the day upstream changes a default:
@@ -342,7 +333,7 @@ const nextConfig = (): NextConfig => ({
   //     fail a production build.
   //     This app is immune ONLY because `typescript.ignoreBuildErrors: true`
   //     above skips the type-check step entirely (including the CLI checker).
-  //     apps/whitelabel-demo does NOT set it, and 16.3 duly failed its build on
+  //     apps/white-label/lumen does NOT set it, and 16.3 duly failed its build on
   //     a pre-existing error in tests/e2e/session-scope.test.ts. Any new app in
   //     this monorepo inherits that same trap.
   //     Not adopted here: TypeScript 7 (`typescript@^7`, the 10x native port)
@@ -457,6 +448,13 @@ const nextConfig = (): NextConfig => ({
     // aborts the dev server and takes the whole browser shard with it — the
     // full rationale is on resolveTurbopackFileSystemCacheForDev above.
     turbopackFileSystemCacheForDev: resolveTurbopackFileSystemCacheForDev(),
+    // Without GC (the default, and the only mode before 16.4) the persistent
+    // cache keeps every task it ever computed. Each `git merge origin/dev`
+    // adds a new set, so a busy worktree's .next/dev/cache/turbopack reached
+    // 20GB in 2 days and 60GB in one case. GC drops unreachable work from
+    // memory and from that cache. It is a no-op when the FS cache is off, and
+    // Turbopack skips it when turbopackMemoryEviction is false.
+    turbopackGc: true,
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       '@phosphor-icons/react',
@@ -523,6 +521,13 @@ const nextConfig = (): NextConfig => ({
         destination: '/projects/:id/customize/:tab',
         permanent: false,
       },
+      // Backends became Apps (2026-10-09), and a migrated
+      // App keeps its backend's id. The retired Backends pages and the
+      // Customize tab land on the Apps page, the one with an id opening that App.
+      ...['/projects/:id/backends', '/projects/:id/customize/backends'].flatMap((retired) => [
+        { source: `${retired}/:appId`, destination: '/projects/:id/apps?app=:appId', permanent: false },
+        { source: retired, destination: '/projects/:id/apps', permanent: false },
+      ]),
       // Decks moved from the single /presentation route to the /presentations
       // framework (index + one route per registered deck). The old paths were
       // shared in Slack and calendar invites, so they keep working.
@@ -534,6 +539,13 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/presentation/platform',
         destination: '/presentations/platform',
+        permanent: false,
+      },
+      {
+        // The docs site prefixes every absolute link with /docs (Blume `base`);
+        // its download links (Kortix Capture installers) belong to the app.
+        source: '/docs/download/:path*',
+        destination: '/download/:path*',
         permanent: false,
       },
       // The canonical self-host doc is content/docs/host/index.mdx, served at
@@ -548,6 +560,108 @@ const nextConfig = (): NextConfig => ({
       {
         source: '/docs/self-host',
         destination: '/docs/host',
+        permanent: true,
+      },
+      // The 2026-10 docs rewrite folded 45 pages into 31. Every removed page
+      // lands on the section that now owns its content.
+      {
+        source: '/docs/ai-operating-system',
+        destination: '/docs',
+        permanent: true,
+      },
+      {
+        source: '/docs/compare',
+        destination: '/docs',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/legacy-toml',
+        destination: '/docs/project/manifest#migrate-from-kortixtoml',
+        permanent: true,
+      },
+      {
+        source: '/docs/project/permissions',
+        destination: '/docs/project/agents#what-an-agent-may-do',
+        permanent: true,
+      },
+      {
+        source: '/docs/work',
+        destination: '/docs/work/sessions',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/notifications',
+        destination: '/docs/work/sessions#notifications',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/change-requests',
+        destination: '/docs/git#change-requests',
+        permanent: true,
+      },
+      {
+        source: '/docs/work/harnesses',
+        destination: '/docs/project/agents#harnesses-opencode-and-pi',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect',
+        destination: '/docs/connect/connectors',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/slack',
+        destination: '/docs/connect/channels#slack',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/teams',
+        destination: '/docs/connect/channels#microsoft-teams',
+        permanent: true,
+      },
+      {
+        source: '/docs/connect/reminders',
+        destination: '/docs/connect/triggers#reminders',
+        permanent: true,
+      },
+      {
+        source: '/docs/feature-flags',
+        destination: '/docs/project#feature-flags',
+        permanent: true,
+      },
+      {
+        source: '/docs/feature-flags/apps',
+        destination: '/docs/apps',
+        permanent: true,
+      },
+      {
+        source: '/docs/host/architecture',
+        destination: '/docs/host#what-runs-where',
+        permanent: true,
+      },
+      {
+        source: '/docs/backend',
+        destination: '/docs/sdk/sessions#start-sessions-from-your-server',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/example',
+        destination: '/docs/sdk#a-complete-script',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/sign-in',
+        destination: '/docs/sdk/auth#sign-in-with-kortix',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/apps',
+        destination: '/docs/apps#build-on-apps-from-typescript',
+        permanent: true,
+      },
+      {
+        source: '/docs/sdk/connectors',
+        destination: '/docs/connect/connectors#call-connectors-from-code',
         permanent: true,
       },
       // The help centre was a second support surface: it wore the app sidebar
@@ -706,8 +820,11 @@ const nextConfig = (): NextConfig => ({
       // so posts ship on a push to that repo, without a release of this one.
       // Every page, asset, feed and Markdown twin lives under /blog there, so
       // these two rules carry all of it. The middleware lets /blog through
-      // untouched (i18n/routing.ts NON_PAGE_PREFIXES). Unset, as in local dev
-      // and self-hosted deployments, /blog is simply not served.
+      // untouched (i18n/routing.ts NON_PAGE_PREFIXES). KORTIX_BLOG_ORIGIN is
+      // unset on dev and self-hosted deployments, so the shared resolver
+      // (src/config/blog-origin.ts) falls back to the canonical origin: /blog
+      // serves the real blog everywhere instead of 404ing under the link the
+      // footer and navbar advertise. An explicit empty value keeps it off.
       ...(BLOG_ORIGIN
         ? [
             { source: '/blog', destination: `${BLOG_ORIGIN}/blog` },
@@ -792,16 +909,6 @@ const nextConfig = (): NextConfig => ({
             : []),
         ],
       },
-      // Locale catalogs: the file name carries a content hash, so a response
-      // never changes under its URL. Production builds only.
-      ...(process.env.NODE_ENV === 'production'
-        ? [
-            {
-              source: '/i18n/:file',
-              headers: [{ key: 'Cache-Control', value: 'public, max-age=31536000, immutable' }],
-            },
-          ]
-        : []),
       {
         source: '/fonts/:path*',
         headers: [

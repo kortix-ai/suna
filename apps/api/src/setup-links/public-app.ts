@@ -26,7 +26,7 @@ import {
   withheldSecretsFix,
   type SessionWithheldSecrets,
 } from '../projects/lib/session-secret-reach';
-import { isValidSecretName, writeSharedProjectSecret } from '../projects/secrets';
+import { isValidSecretName, projectSecretsDeletedSince, writeSharedProjectSecret } from '../projects/secrets';
 import { clearSecretAudience, setSecretAudience } from '../projects/lib/secret-audience';
 import { resolveUserIdentities } from '../projects/lib/user-identity';
 import { db, withDbTransaction } from '../shared/db';
@@ -35,6 +35,7 @@ import { TokenBucketRateLimiter } from '../shared/rate-limit';
 import { enforceRateLimit } from '../middleware/rate-limit';
 import { RATE_LIMIT_EXCEEDED_ACTION } from '../shared/rate-limit-audit';
 import { resolveSetupLink } from './token';
+import { secretLinkSuperseded } from './mint-secret-link';
 import { watchConnectorCompletion } from './connector-completion-watch';
 import { composioConfigured, composioToolkitLogo } from '../connectors/composio';
 import { connectorConnectedPrompt, notifyConnectorSession } from '../connectors/notify-session';
@@ -50,10 +51,15 @@ const setupLinksPublicApp = makeOpenApiApp();
 // Unauthenticated on purpose: the token in the path IS the capability.
 const TokenParams = z.object({ token: z.string() });
 const LinkErrors = errors(400, 404, 410);
+/** Statuses a SECRET link adds to a link error: the link can also name a
+ *  secret the owner removed after the token was minted (409 — see the
+ *  tombstone check in the two secret routes). */
+const SecretLinkErrors = errors(400, 404, 409, 410);
 /** Statuses `resolveConnectorLink` adds to a link error. */
 const ConnectorLinkErrors = errors(400, 404, 409, 410, 501, 502);
 
 const SecretLinkSchema = z.object({
+  scope: z.enum(['runtime', 'connector']),
   kind: z.literal('secret'),
   project_name: z.string(),
   requester: z.object({ label: z.string().nullable() }).nullable(),
@@ -185,6 +191,18 @@ setupLinksPublicApp.use('/connectors/:token', createSetupLinkRateLimitMiddleware
 setupLinksPublicApp.use('/connectors/:token/start', createSetupLinkRateLimitMiddleware());
 setupLinksPublicApp.use('/connectors/:token/finalize', createSetupLinkRateLimitMiddleware());
 
+/**
+ * The one message a link whose target secret was removed after minting
+ * answers with, on the intake page (GET) and on the submit (POST): what
+ * happened, which secret, and the way out. 409, not 410: the link itself did
+ * not expire — the state it pointed at did, and only a fresh link fixes it.
+ */
+function deadSecretLinkMessage(names: string[]): string {
+  const list = names.join(', ');
+  const was = names.length === 1 ? 'was' : 'were';
+  return `This link is no longer valid: ${list} ${was} removed from the project after the link was issued. Ask the agent for a fresh link.`;
+}
+
 // GET /v1/setup-links/secret/:token — what fields does this link ask for?
 setupLinksPublicApp.openapi(createRoute({
   method: 'get',
@@ -192,7 +210,7 @@ setupLinksPublicApp.openapi(createRoute({
   tags: ['setup-links'],
   summary: 'Read what a secret setup link asks for',
   request: { params: TokenParams },
-  responses: { 200: json(SecretLinkSchema, 'The requested fields'), ...LinkErrors },
+  responses: { 200: json(SecretLinkSchema, 'The requested fields'), ...SecretLinkErrors },
 }), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
@@ -203,10 +221,25 @@ setupLinksPublicApp.openapi(createRoute({
   if (!project || project.status === 'archived') {
     return c.json({ error: 'This link is unavailable' }, 404);
   }
+  // A secret the owner removed after this token was minted must not look
+  // collectable: the form would take values the submit then has to refuse.
+  // Tokens minted before `iat` carry no mint time, so 0 — any deletion of a
+  // requested name kills them (an unknown mint time is the oldest possible).
+  const dead = await projectSecretsDeletedSince(
+    resolved.projectId,
+    resolved.payload.fields.map((f) => f.name),
+    resolved.payload.iat ?? 0,
+  );
+  if (dead.length > 0) return c.json({ error: deadSecretLinkMessage(dead) }, 409);
+
+  if (await secretLinkSuperseded(resolved.projectId, resolved.payload.fields.map((field) => field.name), resolved.payload.nonce)) {
+    return c.json({ error: 'This link is no longer valid — ask for the latest link' }, 409);
+  }
 
   const requester = await linkRequester(resolved.projectId, resolved.payload.uid);
   return c.json({
     kind: 'secret' as const,
+    scope: resolved.payload.scope,
     project_name: project.name,
     requester: requester ? { label: requester.label } : null,
     fields: resolved.payload.fields.map((f) => ({
@@ -231,7 +264,7 @@ setupLinksPublicApp.openapi(createRoute({
       only_requester: z.boolean().optional().openapi({ description: 'Keep the values to the member who asked.' }),
     }) } } },
   },
-  responses: { 200: json(SecretLinkSubmitSchema, 'Saved'), ...LinkErrors },
+  responses: { 200: json(SecretLinkSubmitSchema, 'Saved'), ...SecretLinkErrors },
 }), async (c) => {
   const resolved = resolveSetupLink(c.req.param('token'));
   if (!resolved.ok) return c.json({ error: resolved.error }, resolved.status);
@@ -254,6 +287,20 @@ setupLinksPublicApp.openapi(createRoute({
       .where(eq(projects.projectId, resolved.projectId)).limit(1).for('update');
     if (!project || project.status === 'archived') {
       return c.json({ error: 'This link is unavailable' }, 404);
+    }
+    // Same tombstone check as the page, now inside the write transaction and
+    // after the same project-row lock: either this submission commits before
+    // an unset deletes the row, or the unset's tombstone is already visible
+    // here and the submission is refused. A link can never re-create what the
+    // owner removed after minting it (KRTX-2056).
+    const dead = await projectSecretsDeletedSince(
+      resolved.projectId,
+      payload.fields.map((f) => f.name),
+      payload.iat ?? 0,
+    );
+    if (dead.length > 0) return c.json({ error: deadSecretLinkMessage(dead) }, 409);
+    if (await secretLinkSuperseded(resolved.projectId, payload.fields.map((field) => field.name), payload.nonce)) {
+      return c.json({ error: 'This link is no longer valid — ask for the latest link' }, 409);
     }
     // "Only the person who asked" — the one audience a link holder may choose.
     // It can only narrow: the default is everyone in the project.
@@ -437,14 +484,6 @@ async function resolveConnectorLink(c: Context): Promise<
   if (resolved.payload.kind !== 'connector') {
     return { error: c.json({ error: 'Wrong link type' }, 400) };
   }
-  if (!composioConfigured() && !pipedreamConfigured()) {
-    return {
-      error: c.json(
-        { error: 'No hosted connector authorization provider is configured on this deployment' },
-        501,
-      ),
-    };
-  }
   if (!resolved.payload.app) {
     return { error: c.json({ error: 'This connector has no provider app bound' }, 400) };
   }
@@ -465,8 +504,17 @@ async function resolveConnectorLink(c: Context): Promise<
   // handlers. This check was missed when those were opened up, so a Composio
   // connector produced a link whose own intake page then answered
   // "Connector not found" — the button worked and the modal behind it 404'd.
-  if (!connector || (connector.providerType !== 'pipedream' && connector.providerType !== 'composio')) {
+  if (!connector || !['pipedream', 'composio', 'mcp'].includes(connector.providerType)) {
     return { error: c.json({ error: 'Connector not found' }, 404) };
+  }
+  // An MCP connector signs in through Kortix itself; the others need a hosted provider.
+  if (connector.providerType !== 'mcp' && !composioConfigured() && !pipedreamConfigured()) {
+    return {
+      error: c.json(
+        { error: 'No hosted connector authorization provider is configured on this deployment' },
+        501,
+      ),
+    };
   }
   // Links minted before `owner` existed decode without it. Every one of them
   // authorized the caller's own account, so `me` is the faithful default.

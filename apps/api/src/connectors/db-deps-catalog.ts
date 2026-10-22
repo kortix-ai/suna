@@ -11,14 +11,21 @@ import { and, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { principalMayUseConnector } from './principal-access';
 import {
   canonicalConnectorAlias,
+  loadSessionConnectorResolutionData,
+  type SessionConnectorResolutionData,
   listEntitledConnectorConnections,
   listEntitledConnectorConnectionsBatch,
   resolveSessionConnectorConnectionOutcome,
 } from '../projects/lib/session-connector-bindings';
+import { config } from '../config';
 import { db } from '../shared/db';
 import { hideSupersededSlack } from './channel-rules';
+import { resolveFallbackIcons } from './connector-icon';
+import { connectorCatalogIcons } from './connector-catalog';
 import { buildAdminConnectorViews } from './connector-list';
 import {
+  connectionIdsWithCredentials,
+  connectionSignedIn,
   connectorIdsWithSharedCredentials,
   connectorIdsWithReachableMemberCredential,
 } from './credentials';
@@ -65,11 +72,13 @@ async function catalogAccountsFor(
   p: ConnectorPrincipal,
   slug: string,
   visibility: 'private' | 'project' | 'restricted',
+  preloaded: SessionConnectorResolutionData,
 ): Promise<CatalogAccount[]> {
   const entitled = await listEntitledConnectorConnections({
     accountId: p.accountId,
     projectId: p.projectId,
     alias: canonicalConnectorAlias(slug),
+    preloaded,
     actingUserId: p.userId,
     visibility,
     agentPrincipal: p.agentPrincipal ?? null,
@@ -132,12 +141,13 @@ export async function listCatalog(
       loadConnectorPoliciesForMany(connectorIds),
     ]);
 
-  // Each connector's resolution reads only: its session outcome, its accounts
-  // and its credential. They are independent (the session row is request-
-  // memoized), so they run concurrently instead of one connector at a time.
-  // Measured on dev-api 2026-09-27 with 8 connectors: 8.0-16.9 s, db n=71-80
-  // serial; prod showed db n=113 on this route. Bounded, because a project can
-  // hold dozens of connectors. `mapLimit` keeps the connector order.
+  const preloaded = await loadSessionConnectorResolutionData({
+    accountId: p.accountId, projectId: p.projectId, sessionId: p.sessionId,
+    actingUserIds: [p.userId],
+  });
+
+  // Resolution and account listing share one request-local snapshot. Concurrency
+  // only bounds channel install reads; it does not hide per-entry SQL fan-out.
   const CATALOG_RESOLVE_CONCURRENCY = 8;
   const resolved = await mapLimit(conns, CATALOG_RESOLVE_CONCURRENCY, async (row): Promise<CatalogConnector | null> => {
     // Per-agent assignment: an agent only sees connectors its grant lists —
@@ -163,6 +173,7 @@ export async function listCatalog(
       projectId: row.projectId,
       sessionId: p.sessionId,
       alias: row.slug,
+      preloaded,
       actingUserId: p.userId,
       account: null,
       agentPrincipal: p.agentPrincipal ?? null,
@@ -171,11 +182,13 @@ export async function listCatalog(
     const connection =
       outcome.kind === 'ok' && outcome.connection.status === 'active' ? outcome.connection : null;
     if (outcome.kind === 'ok' && !connection) return null;
-    const accounts = await catalogAccountsFor(p, row.slug, accountVisibility);
+    const accounts = await catalogAccountsFor(p, row.slug, accountVisibility, preloaded);
     const { hasAuth } = authOf(row);
     if (connection && hasAuth) {
-      // Always the shared credential — `per_user` was removed 2026-07-05.
-      if (!(await connectorConnected(row, null, connection))) return null;
+      if (row.providerType === 'composio') {
+        if (!(await connectorConnected(row, null, connection))) return null;
+      } else if (row.providerType !== 'channel' &&
+        !preloaded.catalogCredentialConnectionIds.has(connection.connectionId)) return null;
     }
     const connectorPolicies = policiesByConnector.get(row.connectorId) ?? [];
     const actions = actionsByConnector.get(row.connectorId) ?? [];
@@ -203,6 +216,7 @@ export async function listCatalog(
           description: a.description ?? '',
           risk: a.risk,
           inputSchema: options.includeSchemas === false ? null : (a.inputSchema ?? null),
+          ...(options.includeOutputSchemas ? { outputSchema: a.outputSchema ?? null } : {}),
         })),
       accounts,
       // What an UNNAMED call runs as: the one pinned account, or the only
@@ -388,6 +402,22 @@ export async function listConnectors(
               ),
             ),
     ]);
+  // A catalog fetched with one member's personal account
+  // (`config.catalog_source: 'member'`) is listed only to a caller with a
+  // SIGNED-IN account on the connector. Reaching an unsigned account, such as
+  // an empty "Everyone in project" row, does not count. One query.
+  const memberPublished = conns.filter(
+    (row) => (row.config as { catalog_source?: unknown } | null)?.catalog_source === 'member',
+  );
+  const credentialedEntitled = await connectionIdsWithCredentials(
+    memberPublished.flatMap((row) =>
+      (entitledByConnector.get(row.connectorId) ?? []).map((c) => c.connectionId),
+    ),
+  );
+  const catalogVisible = (connectorId: string) =>
+    (entitledByConnector.get(connectorId) ?? []).some((c) =>
+      connectionSignedIn(c.metadata, credentialedEntitled.has(c.connectionId)),
+    );
   const accountsByConnector = new Map<string, CatalogAccount[]>(
     conns.map((row) => [
       row.connectorId,
@@ -462,18 +492,35 @@ export async function listConnectors(
     }
   }
   for (const slug of authorizedComposioSlugs) connectedSlugs.add(slug);
+  const fallbackIcons = await resolveFallbackIcons(
+    conns.map((row) => ({
+      slug: row.slug,
+      name: row.name,
+      provider: row.providerType,
+      config: row.config,
+    })),
+    {
+      composioLogo: async (app) =>
+        config.COMPOSIO_API_KEY ? (await import('./composio')).composioToolkitLogo(app) : null,
+      catalogIcons: connectorCatalogIcons,
+    },
+  );
   const candidates = conns.map((row) => {
     const { auth, hasAuth } = authOf(row);
     const config = row.config as {
       icon_url?: unknown;
       sensitive?: unknown;
+      catalog_source?: unknown;
     } | null;
     return {
       slug: row.slug,
       name: row.name,
       provider: row.providerType,
       platform: channelPlatform(row.config),
-      iconUrl: typeof config?.icon_url === 'string' ? config.icon_url : null,
+      iconUrl:
+        typeof config?.icon_url === 'string' && config.icon_url
+          ? config.icon_url
+          : (fallbackIcons.get(row.slug) ?? null),
       // A composio connector whose authorization never completed reports
       // `needs_auth` rather than the stored `active`. The gateway already
       // refuses every call on such a connector, so reporting `active` made the
@@ -502,7 +549,12 @@ export async function listConnectors(
           ? ('user' as const)
           : ('project' as const),
       sensitive: config?.sensitive === true,
-      actions: (actionsByConnector.get(row.connectorId) ?? []).map((a) => ({
+      // A catalog fetched with one member's personal account is listed only to
+      // people with an account on the connector (`resolveMcpCatalogCredential`).
+      actions: (config?.catalog_source === 'member' && !catalogVisible(row.connectorId)
+        ? []
+        : (actionsByConnector.get(row.connectorId) ?? [])
+      ).map((a) => ({
         path: a.path,
         name: a.name,
         description: a.description ?? '',
@@ -527,6 +579,7 @@ export async function listConnectors(
               : ('none' as const),
       accounts: accountsByConnector.get(row.connectorId) ?? [],
       defaultAccount: accountsByConnector.get(row.connectorId)?.[0]?.label ?? null,
+      lastError: row.lastError,
     };
   });
   return buildAdminConnectorViews(candidates, connectedSlugs);

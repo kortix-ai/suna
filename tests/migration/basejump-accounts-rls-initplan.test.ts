@@ -103,7 +103,7 @@ suite('basejump.accounts RLS initplan (throwaway Postgres)', () => {
   let beforeVisibility = { a: '', b: '' };
 
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -153,7 +153,7 @@ suite('basejump.accounts RLS initplan (throwaway Postgres)', () => {
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('the seeded legacy shape reproduces the advisor finding (red before the fix)', () => {

@@ -109,8 +109,18 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { finalizeTurn, repaintLivePlan, relayTurnAnswer, relayTurnEnd, relayTurnStep, relayProvisioningFailure } =
-  await import('../channels/slack/turn');
+const {
+  finalizeTurn,
+  repaintLivePlan,
+  relayTurnAnswerDetailed,
+  relayTurnEnd,
+  relayTurnStepDetailed,
+  relayProvisioningFailure,
+} = await import('../channels/slack/turn');
+const relayTurnStep = async (...args: Parameters<typeof relayTurnStepDetailed>) =>
+  (await relayTurnStepDetailed(...args)).ok;
+const relayTurnAnswer = async (...args: Parameters<typeof relayTurnAnswerDetailed>) =>
+  (await relayTurnAnswerDetailed(...args)).ok;
 
 function liveHandle(overrides: Record<string, unknown> = {}) {
   return {
@@ -433,7 +443,7 @@ describe('relayTurnEnd', () => {
     const blocks = update.args[4] as Array<{ type: string; text?: { text: string } }>;
     const section = blocks.find((b) => b.type === 'section');
     expect(section?.text?.text.toLowerCase()).toContain('out of credits');
-    expect(section?.text?.text).toContain('$-0.06');
+    expect(section?.text?.text).toContain('-6 credits');
     expect(calls('addReaction').length).toBe(0); // ✅ is reserved for real answers
   });
 

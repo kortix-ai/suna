@@ -1,6 +1,6 @@
 import { beforeEach, expect, mock, test } from 'bun:test';
 import { ApiError } from '../core/http/api/errors';
-import type { TunnelConnection } from './use-tunnel';
+import type { ComputerAccess, TunnelConnection } from './use-tunnel';
 
 // A paired computer is an account of the project's `computer` connector. The
 // API deleted per-machine permission editing, permission requests, the tunnel
@@ -13,6 +13,7 @@ import type { TunnelConnection } from './use-tunnel';
 let requests: Array<{ method: string; path: string; body?: unknown }> = [];
 let invalidated: unknown[][] = [];
 let getOverride: { success: boolean; error?: Error; data?: unknown } | null = null;
+let postOverride: { success: boolean; error?: Error; data?: unknown } | null = null;
 
 mock.module('@tanstack/react-query', () => ({
   useQuery: (config: Record<string, unknown>) => config,
@@ -27,6 +28,7 @@ mock.module('@tanstack/react-query', () => ({
 const record = (method: string) => async (path: string, body?: unknown) => {
   requests.push({ method, path, body });
   if (method === 'GET' && getOverride) return getOverride;
+  if (method === 'POST' && postOverride) return postOverride;
   return { data: { success: true, tunnelId: 'tunnel-1', connectionId: 'connection-1' }, error: null, success: true };
 };
 const actualApiClient = await import('../core/http/api-client');
@@ -47,6 +49,7 @@ beforeEach(() => {
   requests = [];
   invalidated = [];
   getOverride = null;
+  postOverride = null;
 });
 
 type Config = {
@@ -207,4 +210,40 @@ test('useTunnelConnections polls every 5 s by default and accepts a slower inter
   expect((tunnel.useTunnelConnections() as Config).refetchInterval).toBe(5_000);
   expect((tunnel.useTunnelConnections({ refetchInterval: 60_000 }) as Config).refetchInterval).toBe(60_000);
   expect((tunnel.useTunnelConnections({ refetchInterval: false }) as Config).refetchInterval).toBe(false);
+});
+
+test('useSetComputerAccess POSTs the change to the machine and refreshes its listing', async () => {
+  const access: ComputerAccess = {
+    mode: 'off',
+    grantedUntil: null,
+    deniedUntil: null,
+    keepAwake: true,
+    keepAwakeSupported: true,
+    pendingRequest: null,
+    desktopPermissions: { accessibility: true, screenRecording: true },
+    controllable: true,
+  };
+  postOverride = { success: true, data: access };
+  const config = tunnel.useSetComputerAccess() as Config;
+  const result = await config.mutationFn!({ tunnelId: 'tunnel-1', mode: 'off', keepAwake: true });
+  expect(result).toEqual(access);
+  expect(requests).toEqual([{ method: 'POST', path: '/tunnel/connections/tunnel-1/access', body: { mode: 'off', keepAwake: true } }]);
+  config.onSuccess!(result, { tunnelId: 'tunnel-1' });
+  expect(invalidated).toContainEqual(['tunnel', 'connections']);
+  expect(invalidated).toContainEqual(['tunnel', 'connection', 'tunnel-1']);
+});
+
+test('useSetComputerAccess rejects with the API error, so its message and status reach the caller', async () => {
+  const refused = new ApiError('The owner declined on the computer.', { status: 409, code: 'computer_access_unconfirmed' });
+  postOverride = { success: false, error: refused };
+  const config = tunnel.useSetComputerAccess() as Config;
+  const error = await config.mutationFn!({ tunnelId: 'tunnel-1', mode: 'always' }).catch((e: unknown) => e);
+  expect(error).toBe(refused);
+  // The caller shows the message; a host's global mutation toast must not repeat it.
+  expect(typeof (config as { onError?: unknown }).onError).toBe('function');
+});
+
+test('a listed machine carries the access its agent reports (null before the first report)', () => {
+  const machine: Pick<TunnelConnection, 'access'> = { access: null };
+  expect(machine.access).toBeNull();
 });

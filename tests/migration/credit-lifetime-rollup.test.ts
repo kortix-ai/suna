@@ -63,7 +63,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -104,7 +104,7 @@ suite('credit_accounts lifetime_* rollup (throwaway Postgres)', () => {
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('a tier grant increments lifetime_granted, not purchased or used', () => {

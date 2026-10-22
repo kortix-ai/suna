@@ -30,6 +30,7 @@ import {
 } from './credentials';
 import {
   connectedAsOf,
+  credentialRejectedAt,
   relabelToIdentity,
   resolveConnectedAs,
   rowMetadata,
@@ -60,8 +61,12 @@ import type { ConnectorRouterDeps } from './router-contract';
 import {
   connectorCatalogSections,
   getConnectorCatalogDetail,
+  connectorCatalogDirectIds,
+  connectorCatalogDirectMcpUrls,
   listConnectorCatalog,
 } from './connector-catalog';
+import { kortixMcpCatalog, mcpAppForUrl } from './mcp-apps';
+import { oauth2ConnectionStatus, startConnectionSignIn } from './oauth2-store';
 import { discoverDraftConnectorAuth, syncProjectConnectors } from './sync';
 import {
   createComputerConnector,
@@ -80,6 +85,7 @@ import {
   connectLinkEligibility,
   loadComposioAdapter,
   loadComposioConnector,
+  loadMcpConnector,
   loadPipedreamConnector,
   mergeRequestingSession,
   readRequestingSessionId,
@@ -99,20 +105,13 @@ import { connectorConnected } from './db-deps-rows';
 export {
   composioConnectionMetadata,
   connectLinkEligibility,
-  type ConnectLinkEligibility,
-  loadComposioConnector,
-  loadPipedreamConnector,
-  readRequestingSessionId,
 } from './db-deps-connect';
 export {
-  consumeApprovedExecution,
-  isPendingApprovalExecution,
   makeDbGatewayDeps,
 } from './db-deps-gateway';
 export {
   projectSessionIdForProjectPrincipal,
   resolveTokenBoundSessionId,
-  sessionChannelConnectorSlugs,
 } from './db-deps-principal';
 export {
   composioConnectedAccountId,
@@ -368,6 +367,7 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
       owner_type: connection.ownerType,
       is_default: connection.isDefault,
       connected_as: connectedAsOf(connection.metadata),
+      credential_rejected_at: credentialRejectedAt(connection.metadata),
     }));
   },
   mintConnectorConnectLink: async ({ projectId, slug, userId, sessionId }) => {
@@ -504,6 +504,24 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         connected: result.connected,
         isNoAuth: result.isNoAuth,
       };
+    }
+    const mcp = await loadMcpConnector(projectId, slug);
+    if (mcp) {
+      // Kortix runs the sign-in itself: the link is the provider's consent page,
+      // and the OAuth callback stores the token on the connection.
+      if (!userId) return null;
+      const connectionId =
+        connectOwner === 'me'
+          ? await ensureMemberConnection({ projectId, connectorId: mcp.connectorId, userId })
+          : await ensureDefaultConnection({ projectId, connectorId: mcp.connectorId });
+      await mergeRequestingSession(connectionId, requestingSessionId);
+      const connectUrl = await startConnectionSignIn({
+        identity: { accountId: mcp.accountId, projectId, connectorId: mcp.connectorId, connectionId },
+        initiatedBy: userId,
+        redirects,
+      });
+      if (!connectUrl) return null;
+      return { provider: 'mcp', app: mcpAppForUrl(mcp.url)?.slug ?? slug, connectUrl, connectionId };
     }
     if (!pipedreamConfigured()) return null;
     const pipedream = await loadPipedreamConnector(projectId, slug);
@@ -647,6 +665,51 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
         ...(label ? { label } : {}),
       };
     }
+    const mcp = await loadMcpConnector(projectId, slug);
+    if (mcp) {
+      if (finalizeOwner === 'me' && !_userId) return null;
+      // The row `connectorConnect` started on, resolved the same way, never "the
+      // most recently touched": a start updates no row unless a session asked.
+      const connectionId =
+        selector?.connectionId ??
+        (finalizeOwner === 'me'
+          ? await ensureMemberConnection({ projectId, connectorId: mcp.connectorId, userId: _userId! })
+          : await defaultConnectionIdForConnector(mcp.connectorId));
+      if (!connectionId) return { provider: 'mcp', connected: false };
+      const [connection] = await db
+        .select({ connectionId: connectorConnections.connectionId })
+        .from(connectorConnections)
+        .where(
+          and(
+            eq(connectorConnections.connectorId, mcp.connectorId),
+            eq(connectorConnections.connectionId, connectionId),
+            finalizeOwner === 'me'
+              ? and(eq(connectorConnections.ownerType, 'member'), eq(connectorConnections.ownerId, _userId ?? ''))
+              : and(eq(connectorConnections.ownerType, 'project'), isNull(connectorConnections.ownerId)),
+          ),
+        )
+        .limit(1);
+      if (!connection) {
+        if (selector?.connectionId) throw new HTTPException(404, { message: 'connector connection not found' });
+        return { provider: 'mcp', connected: false };
+      }
+      const connected = (await oauth2ConnectionStatus(connection.connectionId)).status === 'active';
+      if (connected) {
+        // Told once: only the call that clears the waiting session notifies it.
+        const rows = (await db.execute(sql`
+          update kortix.connector_connections c
+             set metadata = c.metadata - 'requesting_session_id'
+            from (select connection_id, metadata->>'requesting_session_id' as waiting
+                    from kortix.connector_connections
+                   where connection_id = ${connection.connectionId}
+                     for update) old
+           where c.connection_id = old.connection_id and old.waiting is not null
+          returning old.waiting as waiting`)) as unknown as Array<{ waiting: string }>;
+        const waiting = rows[0]?.waiting;
+        if (waiting) void notifyConnectorSession(waiting, projectId, _userId ?? null, slug, mcpAppForUrl(mcp.url)?.slug ?? slug);
+      }
+      return { provider: 'mcp', connected, connectionId: connection.connectionId };
+    }
     if (!pipedreamConfigured()) return null;
     const pipedream = await loadPipedreamConnector(projectId, slug);
     if (!pipedream) return null;
@@ -680,9 +743,14 @@ export const dbConnectorRouterDeps: ConnectorRouterDeps = {
     return { provider: 'pipedream', connected: r.connected, accountId: r.accountId };
   },
   discoverConnectorAuth: discoverDraftConnectorAuth,
-  listDiscoverConnectors: (input) => listConnectorCatalog(input),
-  listDiscoverSections: (input) => connectorCatalogSections(input),
-  getDiscoverConnector: (id) => getConnectorCatalogDetail(id),
+  listDiscoverConnectors: ({ catalogue, ...input }) =>
+    catalogue === 'kortix' ? kortixMcpCatalog.list(input) : listConnectorCatalog(input),
+  catalogDirectIds: () => connectorCatalogDirectIds(),
+  catalogDirectMcpUrls: () => connectorCatalogDirectMcpUrls(),
+  listDiscoverSections: ({ catalogue, ...input }) =>
+    catalogue === 'kortix' ? kortixMcpCatalog.sections(input) : connectorCatalogSections(input),
+  getDiscoverConnector: (id, catalogue) =>
+    catalogue === 'kortix' ? kortixMcpCatalog.detail(id) : getConnectorCatalogDetail(id),
   getProjectPolicies: getProjectPoliciesFromManifest,
   setProjectPolicies: (projectId, accountId, policies, defaultMode) =>
     setProjectPoliciesInManifest(projectId, accountId, policies, defaultMode),

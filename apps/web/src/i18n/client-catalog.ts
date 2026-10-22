@@ -1,28 +1,10 @@
-import { catalogHref } from './catalog-href';
 import type { Locale } from './config';
 
 export type MessageTree = Record<string, unknown>;
 
-/**
- * Browser loader for full locale catalogs.
- *
- * Primary source: `/i18n/<locale>.<hash>.json`, the URL the page head
- * preloads, so this fetch reuses the in-flight or finished preload. Fallback:
- * the same JSON as a bundler chunk, if the fetch fails. The server never calls
- * this: SSR reads the catalog that the RSC layer already loaded (see
- * `messages.ts`). The `typeof window` guard is replaced at compile time, so the
- * SSR bundle drops the chunk imports.
- */
+/** Browser catalogs ship as bundler chunks alongside the app, not separate public files. */
 const loaded = new Map<Locale, MessageTree>();
 const loading = new Map<Locale, Promise<MessageTree>>();
-
-async function fetchCatalog(locale: Locale): Promise<MessageTree> {
-  // Same mode and credentials as the <link rel=preload as=fetch crossorigin>
-  // the provider emits, so the browser matches the request to the preload.
-  const response = await fetch(catalogHref(locale), { credentials: 'same-origin' });
-  if (!response.ok) throw new Error(`catalog ${locale}: HTTP ${response.status}`);
-  return (await response.json()) as MessageTree;
-}
 
 function importCatalog(locale: Locale): Promise<{ default: unknown }> {
   // Keep every import inside this branch. On the server `typeof window` is
@@ -57,11 +39,8 @@ export function loadClientCatalog(locale: Locale): Promise<MessageTree> {
   if (ready) return Promise.resolve(ready);
   let promise = loading.get(locale);
   if (!promise) {
-    promise = fetchCatalog(locale)
-      .catch((error: unknown) => {
-        console.warn(`[i18n] ${String(error)}; loading the bundled catalog`);
-        return importCatalog(locale).then((module) => module.default as MessageTree);
-      })
+    promise = importCatalog(locale)
+      .then((module) => module.default as MessageTree)
       .then(
         (messages) => {
           loaded.set(locale, messages);

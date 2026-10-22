@@ -1,14 +1,15 @@
+import { sdkBackendUrl } from '@kortix/shared/host-config';
 import {
   DEFAULT_API_BASE,
   type Host,
   activeHost,
+  activeHostEntry,
   activeHostName,
   configFilePath,
+  envTokenHost,
   getHost,
-  removeHost,
   upsertHost,
 } from './config.ts';
-import { sdkBackendUrl } from '@kortix/shared/host-config';
 
 // Backward-compatible auth surface — every existing command imports
 // `Auth`, `loadAuth`, `saveAuthForHost`, `clearAuth`, `authFileLocation` from
@@ -61,7 +62,8 @@ export function sameApiBase(left: string, right: string): boolean {
 function authToHost(auth: Auth, previous?: Host | null): Host {
   return {
     ...previous,
-    dashboard_url: previous && sameApiBase(auth.api_base, previous.url) ? previous.dashboard_url : undefined,
+    dashboard_url:
+      previous && sameApiBase(auth.api_base, previous.url) ? previous.dashboard_url : undefined,
     url: auth.api_base,
     token: auth.token,
     user_id: auth.user_id,
@@ -73,7 +75,23 @@ function authToHost(auth: Auth, previous?: Host | null): Host {
 
 /** Load the active host's auth. Honors platform-injected sandbox CLI auth. */
 export function loadAuth(): Auth | null {
+  const entry = activeHostEntry();
   const host = activeHost();
+  if (host) traceIdentity(entry.name, host, entry.envWins ? 'environment' : 'stored');
+  return host ? hostToAuth(host) : null;
+}
+
+/**
+ * The platform-injected sandbox identity, ignoring an in-sandbox `hosts use`
+ * selection (KRTX-1705). The connector data plane (CLI subcommands + the stdio
+ * MCP server) is the session's own surface — a session only ever invokes
+ * `kortix connectors`, and its routes are bound to the launching deployment's
+ * project — so a human's host selection must not redirect it. Null without a
+ * delegation env, so callers fall back to loadAuth().
+ */
+export function loadEnvAuth(): Auth | null {
+  const host = envTokenHost();
+  if (host) traceIdentity('sandbox', host, 'environment');
   return host ? hostToAuth(host) : null;
 }
 
@@ -90,6 +108,7 @@ export function currentTokenFor(auth: Auth): string | null {
 /** Load a specific named host's auth (for --host overrides). */
 export function loadAuthForHost(name: string): Auth | null {
   const host = getHost(name);
+  if (host) traceIdentity(name, host, 'stored');
   return host ? hostToAuth(host) : null;
 }
 
@@ -98,14 +117,41 @@ export function saveAuthForHost(name: string, auth: Auth, makeActive: boolean): 
   upsertHost(name, authToHost(auth, getHost(name)), makeActive);
 }
 
-/** Remove the active host (or a named one). Returns true if anything was removed. */
+/** Clear only the stored token, keeping the host registration for re-login. */
 export function clearAuth(name?: string): boolean {
   const target = name ?? activeHostName();
   if (!target) return false;
-  return removeHost(target).removed;
+  const host = getHost(target);
+  if (!host?.token) return false;
+  upsertHost(target, { ...host, token: '' });
+  return true;
 }
 
 /** Display path of the config file backing this CLI's auth state. */
 export function authFileLocation(): string {
   return configFilePath();
+}
+
+/** Only allowlisted identity metadata reaches stderr; never the credential. */
+let lastTrace = '';
+function traceIdentity(host: string, auth: Host, credential_source: string): void {
+  if (process.env.KORTIX_DEBUG !== '1') return;
+  let url: string;
+  try {
+    const parsed = new URL(auth.url);
+    url = parsed.origin + parsed.pathname;
+  } catch {
+    // A hand-edited config can carry an unparseable url; degrade the trace
+    // instead of killing a command that works without --debug.
+    url = auth.url;
+  }
+  const line = JSON.stringify({
+    host,
+    url,
+    account_id: auth.account_id || null,
+    credential_source,
+  });
+  if (line === lastTrace) return; // one identity, one line — not one per re-read
+  lastTrace = line;
+  process.stderr.write(`[kortix-debug] ${line}\n`);
 }

@@ -119,7 +119,6 @@ export function registerPolicyListRoute() {
     responses: { 200: json(z.object({ policies: z.array(Any) }), 'Policies'), ...errors(401, 403) },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_READ);
 
@@ -159,7 +158,6 @@ export function registerPolicyWriteRoutes() {
     responses: { 201: json(Any, 'Created policy'), ...errors(400, 401, 403, 404) },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');
@@ -212,7 +210,6 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(z.object({ deleted: z.boolean() }), 'Deleted'), ...errors(401, 403, 404) },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const policyId = c.req.param('policyId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
@@ -253,7 +250,6 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(z.object({ deleted: z.number() }), 'Deleted count'), ...errors(400, 401, 403) },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_DELETE);
     // No entitlement gate: bulk policy revocation is cleanup, always allowed.
@@ -284,7 +280,6 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(Any, 'Updated policy'), ...errors(400, 401, 403, 404) },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const policyId = c.req.param('policyId');
     // Editing an assignment is a create-class action — gate on POLICY_CREATE.
@@ -343,7 +338,6 @@ export function registerPolicyWriteRoutes() {
     responses: { 200: json(Any, 'Import result'), ...errors(400, 401, 403) },
   }),
   async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.POLICY_CREATE);
     const denied = await requireEntitlement(c, accountId, 'rbac');

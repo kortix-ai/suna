@@ -23,17 +23,14 @@ import { qk } from './query-keys';
 
 // Framework-free since it moved to core; re-exported so `./react` keeps it.
 export { resolveModelDefault };
-import { useProjectLlmGatewayEnabled } from './use-project-llm-gateway';
 
 export interface UseModelDefaults {
   data: ModelDefaultsResponse | undefined;
   isLoading: boolean;
   isUpdating: boolean;
   /**
-   * The project's `llm_gateway` flag. False ⇒ the model-defaults chain does
-   * not exist for this project (native OpenCode mode): `data` never loads,
-   * and UIs must hide every set/clear affordance — the write routes answer
-   * 404 llm_gateway_disabled.
+   * @deprecated True for every project: the LLM gateway is the only model
+   * path, so the model-defaults chain always exists. Removed in the next major.
    */
   llmGatewayEnabled: boolean;
   accountDefault: ModelKey | undefined;
@@ -56,14 +53,10 @@ export function useModelDefaults(
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ['model-defaults', projectId], [projectId]);
 
-  // The model-defaults chain is a GATEWAY concept: with the project's
-  // llm_gateway flag off the route answers 404 llm_gateway_disabled and
-  // OpenCode resolves the default model in the sandbox — never fetch.
-  const gateway = useProjectLlmGatewayEnabled(projectId);
   const { data, isLoading } = useQuery({
     queryKey,
     queryFn: () => getModelDefaults(projectId as string),
-    enabled: !!projectId && gateway.enabled,
+    enabled: !!projectId,
     staleTime: 30_000,
   });
 
@@ -197,7 +190,7 @@ export function useModelDefaults(
     data,
     isLoading,
     isUpdating: setMutation.isPending || clearMutation.isPending,
-    llmGatewayEnabled: gateway.enabled,
+    llmGatewayEnabled: !!projectId,
     accountDefault,
     agentDefaults,
     projectDefault,

@@ -12,8 +12,8 @@
  *
  * `kortix ship` runs the same checks before it commits, and the backend runs
  * the same schema on CR-merge. The repository size check is only ever a
- * warning: a large repository still pushes, but its agent config build fails
- * above 32 MiB compressed.
+ * warning: a large repository still pushes and its sessions still start, but
+ * above 512 MiB compressed a running session stops picking up config changes.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
@@ -39,9 +39,10 @@ const HELP = help`Usage: kortix validate [options]
 Statically validate the project's kortix.yaml against the canonical schema,
 and lint every \`sandbox.templates\` Dockerfile for the constraints the cloud
 builder enforces (no COPY from the repo, no RUN heredocs, Debian-family base).
-Warn when the files in Git are large: a session builds its agent config from
-the whole repository, and that build fails above 32 MiB compressed. Keep big
-static assets in object storage, not in Git. \`kortix ship\` runs these checks.
+Warn when the files in Git are large: every session downloads them, and above
+512 MiB compressed a running session stops picking up agent config changes
+from the base branch. Keep big static assets in object storage, not in Git.
+\`kortix ship\` runs these checks.
 
 Options:
   --file <path>          Validate this file instead of ./kortix.yaml.
@@ -54,9 +55,17 @@ Options:
 /** One line per agent: its assigned connectors + Kortix permissions. */
 function describeAgents(parsed: Record<string, unknown> | null): string {
   const agents = parsed?.agents;
-  if (!Array.isArray(agents) || agents.length === 0) return '';
   const show = (v: unknown): string =>
     v === 'all' ? 'all' : Array.isArray(v) ? v.join(', ') || 'none' : 'none (default-deny)';
+  // kortix_version 3: what each agent enables. Every grant is deny-by-default.
+  if (Number(parsed?.kortix_version) === 3 && agents && typeof agents === 'object' && !Array.isArray(agents)) {
+    const keys = ['skills', 'subagents', 'commands', 'extensions', 'connectors', 'secrets'];
+    const lines = Object.entries(agents as Record<string, Record<string, unknown> | null>).map(
+      ([name, block]) => `  ${C.cyan}${name}${C.reset}  ${keys.map((key) => `${key}=[${show(block?.[key])}]`).join('  ')}`,
+    );
+    return `\n${C.dim}What each agent enables:${C.reset}\n${lines.join('\n')}\n`;
+  }
+  if (!Array.isArray(agents) || agents.length === 0) return '';
   const lines = agents.map((a: any) => {
     const name = typeof a?.name === 'string' ? a.name : '(unnamed)';
     // `env` omitted == 'all' (the parser's default), so render it that way rather

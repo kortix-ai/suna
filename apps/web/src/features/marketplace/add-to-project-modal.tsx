@@ -2,15 +2,14 @@
 
 import { KeyIcon as KeyRound, PlugIcon as Plug, WrenchIcon as Wrench } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
+import { hubTarget, openAccountPanel } from '@kortix/ui/internal/stores/account-panel-store';
 import { useTranslations } from '@/i18n/use-translations';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
 import {
   Field,
   FieldContent,
@@ -18,9 +17,9 @@ import {
   FieldGroup,
   FieldLabel,
   FieldTitle,
-} from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/field';
+import { Input } from '@kortix/ui/input';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -28,26 +27,26 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/modal';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { errorToast } from '@/components/ui/toast';
+} from '@kortix/ui/select';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   GitHubSetupRequiredPanel,
   isAccountGitAdmin,
 } from '@/features/projects/modal/github-setup-required-panel';
 import { startTemplateSetupSession } from '@/features/projects/modal/template-setup-session';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 import { useInstallMarketplaceItemAsSession } from '@/hooks/marketplace';
 import type { MarketplaceItem, MarketplaceItemDetail } from '@/lib/marketplace-client';
-import { isManagedGitUnavailableError } from '@/lib/onboarding/provision-errors';
-import { useCurrentAccountStore } from '@/stores/current-account-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+import { isManagedGitUnavailableError } from '@kortix/ui/internal/lib/onboarding/provision-errors';
+import { useCurrentAccountStore } from '@kortix/ui/internal/stores/current-account-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 import { getManagedGitStatus, listAccounts, provisionProject } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import { capabilityCount, hasCapabilities } from './marketplace-install';
@@ -135,6 +134,39 @@ export function AddToProjectModal({
     onOpenChange(next);
   };
 
+  // The install session runs in the cloud on its own (the sandbox claims its
+  // initial prompt at boot), so the person stays on the page they were reading.
+  // The toast offers the session; the turn-done toast reports the result.
+  const announceInstall = (
+    projectId: string,
+    projectName: string,
+    sessionId: string | null | undefined,
+  ) => {
+    const sessionHref = prepareMarketplaceInstallSessionNavigation(
+      queryClient,
+      router,
+      projectId,
+      sessionId,
+    );
+    onOpenChange(false);
+    successToast(
+      tI18nComplete('text724b09397472', { name: humanizedTitle, project: projectName }),
+      {
+        description: tI18nComplete.raw('text1e007c47254d'),
+        duration: 8000,
+        actions: [
+          {
+            label: tI18nComplete.raw(sessionHref ? 'textb205bb47f81a' : 'texted077f3d8125'),
+            onClick: () => {
+              closeCustomize();
+              router.push(sessionHref ?? `/projects/${projectId}`);
+            },
+          },
+        ],
+      },
+    );
+  };
+
   const onConfirm = async () => {
     if (busy) return;
     setBusy(true);
@@ -170,29 +202,17 @@ export function AddToProjectModal({
             )
           : (await installSession.mutateAsync({ projectId: project.project_id, id: item.id }))
               .session_id;
-        const sessionHref = prepareMarketplaceInstallSessionNavigation(
-          queryClient,
-          router,
-          project.project_id,
-          sessionId,
-        );
-        onOpenChange(false);
-        closeCustomize();
-        router.replace(sessionHref ?? `/projects/${project.project_id}`);
+        announceInstall(project.project_id, project.name, sessionId);
         return;
       }
 
       const projectId = target;
       const { session_id } = await installSession.mutateAsync({ projectId, id: item.id });
-      const sessionHref = prepareMarketplaceInstallSessionNavigation(
-        queryClient,
-        router,
+      announceInstall(
         projectId,
+        projects.find((p) => p.project_id === projectId)?.name ?? '',
         session_id,
       );
-      onOpenChange(false);
-      closeCustomize();
-      router.push(sessionHref ?? `/projects/${projectId}`);
     } catch (e) {
       if (isManagedGitUnavailableError(e)) {
         const gitSettingsAccountId =
@@ -201,19 +221,18 @@ export function AddToProjectModal({
           description: tI18nComplete.raw('text0471e152d0c9'),
           ...(gitSettingsAccountId
             ? {
-                button: (
-                  <Button size="sm" asChild>
-                    {/* Still an anchor, but the destination is a modal over
-                        this page — so the click costs a render, not a
-                        navigation, and the chunk is warm from the hover. */}
-                    <HubLink
-                      to={hubTarget(gitSettingsAccountId, { tab: 'git' })}
-                      onClick={() => onOpenChange(false)}
-                    >
-                      {tI18nComplete.raw('textef2ec2a16945')}
-                    </HubLink>
-                  </Button>
-                ),
+                // The destination is a modal over this page: a render, not a navigation.
+                actions: [
+                  {
+                    label: tI18nComplete.raw('textef2ec2a16945'),
+                    onClick: () => {
+                      onOpenChange(false);
+                      requestAnimationFrame(() =>
+                        openAccountPanel(hubTarget(gitSettingsAccountId, { tab: 'git' })),
+                      );
+                    },
+                  },
+                ],
               }
             : {}),
         });

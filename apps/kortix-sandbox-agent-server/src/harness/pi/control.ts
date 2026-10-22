@@ -1,7 +1,7 @@
 /**
  * Control operations for a pi session: live environment apply, repository
  * refresh, abort. The host-level steps (project env store, agent env file,
- * egress shim, LLM gateway mode) are the same ones the OpenCode adapter runs;
+ * egress shim, LLM gateway target) are the same ones the OpenCode adapter runs;
  * the harness-specific part is trivially cheaper — pi re-reads its settings in
  * place, there is no process to restart and no turn to interrupt.
  */
@@ -11,6 +11,8 @@ import { readRepoInfo, refreshRepo, syncWorkspaceToBase } from '@/lib/git/git'
 import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-proxy'
 import { logger } from '@/lib/log/logger'
 import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
+import { compiledAgentConfigFromEnv, setCompiledAgentConfigEnv } from '@/services/config-provider/compiled-agent-config'
+import { COMPILED_AGENT_CONFIG_ENV } from '@kortix/api-contract/compiled-agent-config-env'
 import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import type { HarnessControlOperations, HarnessControlService, HarnessEnvironmentInput, HarnessRefreshInput } from '../contract/control'
 import type { PiConfigReleases } from './config-release'
@@ -24,7 +26,6 @@ const RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
   'KORTIX_LLM_PROXY_URL',
   'KORTIX_MODEL',
-  'KORTIX_CONNECTORS_MCP_ENABLED',
   'KORTIX_COMPILED_AGENT_CONFIG',
   'KORTIX_COMPILED_AGENT_CONFIG_ETAG',
   'KORTIX_SECRET_CAPABILITIES',
@@ -35,6 +36,14 @@ function setRuntimeEnv(next: Record<string, string | null>): { changed: boolean;
   for (const [rawName, value] of Object.entries(next)) {
     const name = rawName.trim().toUpperCase()
     if (!RUNTIME_ENV_NAMES.has(name)) continue
+    if (name === COMPILED_AGENT_CONFIG_ENV) {
+      // Compared and stored in whichever form fits: every child the daemon spawns inherits this env.
+      if (compiledAgentConfigFromEnv(process.env) !== (value ?? undefined)) {
+        setCompiledAgentConfigEnv(process.env, value)
+        changed.push(name)
+      }
+      continue
+    }
     if (value === null) {
       if (process.env[name] !== undefined) {
         delete process.env[name]
@@ -67,7 +76,11 @@ function applyRuntimeEnv(input: unknown, releaseOwned: boolean): { changed: bool
 function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
-  if (!enabled) return setRuntimeEnv({ KORTIX_LLM_BASE_URL: null, KORTIX_LLM_PROXY_URL: null })
+  // The gateway is the only model path; an older API can still send `false`.
+  if (!enabled) {
+    logger.info('[env] llmGatewayEnabled=false ignored; the LLM gateway is the only model path')
+    return { changed: false, names: [] }
+  }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')
   const token = process.env.KORTIX_TOKEN
   if (!token) throw new Error('KORTIX_TOKEN is unavailable; cannot enable LLM gateway in this running sandbox')

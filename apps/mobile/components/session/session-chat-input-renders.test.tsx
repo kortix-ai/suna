@@ -72,6 +72,8 @@ const KEEP_REAL = new Set([
   '@/lib/session/session-files',
   '@/lib/session/composer-config',
   '@/lib/session/model-picker',
+  './use-pasted-tiles',
+  '@kortix/shared',
 ]);
 
 // Type-only imports are erased; mocking them would hide the real module from the kept-real ones.
@@ -166,3 +168,72 @@ for (const trigger of ['@', '#']) {
     expect(suggestions?.items.map((item) => item.label)).toEqual([trigger === '@' ? 'reviewer' : 'review']);
   });
 }
+
+test('a long paste becomes a tile; Send and the queue carry it inline and clear it', async () => {
+  const paste = 'z'.repeat(1200);
+  await mount();
+  await type('hi ');
+  await act(async () => composer.onChangeText(`hi ${paste}`));
+  expect(composer.value).toBe('hi ');
+  expect(composer.pastes.map((p: any) => p.text)).toEqual([paste]);
+  const { id } = composer.pastes[0];
+  await act(async () => composer.onSubmit());
+  expect(sent).toHaveLength(1);
+  expect(sent[0][0]).toBe(`<pasted_content id="${id}" chars="1200">\n${paste}\n</pasted_content>\n\nhi`);
+  expect(composer.value).toBe('');
+  expect(composer.pastes).toEqual([]);
+});
+
+test('a paste alone queues while the agent works', async () => {
+  const queued: string[] = [];
+  await act(async () => {
+    tree = create(
+      <SessionChatInput
+        onSend={onSend}
+        isBusy
+        onEnqueue={async (text) => {
+          queued.push(text);
+        }}
+        currentSessionId="s1"
+      />,
+    );
+  });
+  await act(async () => composer.onChangeText('y'.repeat(1000)));
+  expect(composer.value).toBe('');
+  await act(async () => composer.onSubmit());
+  expect(sent).toHaveLength(0);
+  expect(queued).toHaveLength(1);
+  expect(queued[0]).toContain('y'.repeat(1000));
+  expect(composer.pastes).toEqual([]);
+});
+
+test('a paste at a selection is cut exactly at it, not by the diff', async () => {
+  await mount();
+  await type('Fix this:');
+  await act(async () => composer.onSelectionChange({ nativeEvent: { selection: { start: 0, end: 9 } } }));
+  const paste = `Fix this: ${'B'.repeat(1000)}`;
+  await act(async () => composer.onChangeText(paste));
+  expect(composer.value).toBe('');
+  expect(composer.pastes.map((p: any) => p.text)).toEqual([paste]);
+});
+
+test('onTextChange hands out the draft with its tiles inline; initialText brings the tiles back', async () => {
+  const seen: string[] = [];
+  const paste = 'w'.repeat(1000);
+  await act(async () => {
+    tree = create(<SessionChatInput onSend={onSend} onTextChange={(t) => seen.push(t)} currentSessionId="s1" />);
+  });
+  await type('note');
+  await act(async () => composer.onChangeText(`note${paste}`));
+  const { id } = composer.pastes[0];
+  const handedOut = seen[seen.length - 1];
+  expect(handedOut).toBe(`<pasted_content id="${id}" chars="1000">\n${paste}\n</pasted_content>\n\nnote`);
+
+  // The question card unmounts the composer; it comes back with the saved text.
+  await act(async () => tree?.unmount());
+  await act(async () => {
+    tree = create(<SessionChatInput onSend={onSend} initialText={handedOut} currentSessionId="s1" />);
+  });
+  expect(composer.value).toBe('note');
+  expect(composer.pastes).toEqual([{ id, text: paste }]);
+});

@@ -13,19 +13,21 @@ import {
 import Link from 'next/link';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { cn } from '@/lib/utils';
-import { floatingZ, useDialogDepth } from '@/lib/z-stack';
+import { cn, floatingZ, useDialogDepth } from '@kortix/ui';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { FileTree, FileTreeNav } from '@/components/ui/file-tree';
-import { Portal } from '@/components/ui/portal';
-import { Copy } from '@/features/icon/icons/copy';
-import { Github } from '@/features/icon/icons/github';
-import { SolidCheckIcon } from '@/features/icon/icons/solid-check-icon';
-import { EmptyState } from '@/features/layout/section/empty-state';
+import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { errorToast } from '@kortix/ui/toast';
+
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { FadedScrollArea } from '@kortix/ui/faded-scroll-area';
+import { FileTree, FileTreeNav } from '@kortix/ui/file-tree';
+import { Portal } from '@kortix/ui/portal';
+import { Copy } from '@kortix/ui/icons';
+import { Github } from '@kortix/ui/internal/icons/github';
+import { SolidCheckIcon } from '@kortix/ui/internal/icons/solid-check-icon';
+import { EmptyState } from '@kortix/ui/empty-state';
 import { useAuth } from '@/features/providers/auth-provider';
 import type {
   MarketplaceItem,
@@ -34,6 +36,7 @@ import type {
 } from '@/lib/marketplace-client';
 import { marketplaceItemHref, marketplaceSourceHref } from '@/lib/marketplace-slug';
 import { AddToProjectModal } from './add-to-project-modal';
+import { DialogCrashRecovery, useDialogCrashGuard } from './add-to-project-dialog-guard';
 import { MarketplaceAvatar } from './marketplace-avatar';
 import { displayCompanyLabel } from './marketplace-company-filter';
 import { MarketplaceExploreCard } from './marketplace-explore-card';
@@ -49,6 +52,7 @@ import {
   totalCapabilityCount,
 } from './marketplace-item-view';
 import { TypeTile, typeMeta } from './marketplace-meta';
+import { useMarketplaceListHref } from './marketplace-return';
 import { MarketplaceShell } from './marketplace-shell';
 import { useMarketplaceSurface } from './marketplace-surface';
 
@@ -254,6 +258,19 @@ function ItemActions({
   const { user, isLoading: authLoading } = useAuth();
 
   const [addOpen, setAddOpen] = useState(false);
+  // The item page is the one signed-in surface where third-party scripts load
+  // (GTM tags, see `lib/analytics/gtm.ts`), and an external DOM mutation
+  // racing the dialog's first mount crashes React's reconciler with the
+  // canonical DOM-mutation DOMException — one transient throw used to replace
+  // the whole page with the root error boundary (KRTX-1950). The guard keeps
+  // the blast radius on the dialog: one automatic remount rides out the race,
+  // a second crash closes the dialog instead of the page.
+  const guard = useDialogCrashGuard({ onOpenChange: setAddOpen });
+  const { onRetry: retryAddDialog, onGiveUp: giveUpDialog } = guard;
+  const giveUpAddDialog = useCallback(() => {
+    errorToast(tI18nComplete.raw('textf913d83d88a5'));
+    giveUpDialog();
+  }, [giveUpDialog, tI18nComplete]);
 
   const inProject = surface.variant === 'project';
 
@@ -276,17 +293,29 @@ function ItemActions({
           variant="default"
           className={cn('gap-1.5', !compact && 'flex-1')}
           disabled={authLoading}
-          onClick={() => setAddOpen(true)}
+          onClick={() => guard.handleOpenChange(true)}
         >
           {tI18nComplete.raw('text38d076d39951')}
         </Button>
       </div>
-      <AddToProjectModal
-        item={data}
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        fixedProjectId={inProject ? surface.projectId : undefined}
-      />
+      <ClientErrorBoundary
+        key={guard.mount}
+        fallback={({ error }) => (
+          <DialogCrashRecovery
+            error={error}
+            retried={guard.retried}
+            onRetry={retryAddDialog}
+            onGiveUp={giveUpAddDialog}
+          />
+        )}
+      >
+        <AddToProjectModal
+          item={data}
+          open={addOpen}
+          onOpenChange={guard.handleOpenChange}
+          fixedProjectId={inProject ? surface.projectId : undefined}
+        />
+      </ClientErrorBoundary>
     </>
   );
 }
@@ -534,6 +563,8 @@ export function MarketplaceDetail({
   nav?: DetailNav;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  // Back returns to the list as the person left it (`?source=`, `?q=`).
+  const listHref = useMarketplaceListHref();
   const onPrev = nav?.onPrev;
   const onNext = nav?.onNext;
   // ← / → step through the surrounding item list (ignored while typing).
@@ -684,7 +715,7 @@ export function MarketplaceDetail({
         { label: itemTitle },
       ]
     : [
-        { label: tI18nComplete.raw('textc608981d8d68'), href: '/marketplace' },
+        { label: tI18nComplete.raw('textc608981d8d68'), href: listHref },
         { label: companyLabel, href: marketplaceSourceHref(data.marketplaceId) },
         ...(projectCrumb ? [projectCrumb] : []),
         { label: itemTitle },
@@ -875,7 +906,7 @@ export function MarketplaceDetail({
         <div className="space-y-10">
           <header className="space-y-6">
             <Link
-              href="/marketplace"
+              href={listHref}
               className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm transition-colors duration-(--duration-normal)"
             >
               <ArrowLeft className="size-4" aria-hidden />

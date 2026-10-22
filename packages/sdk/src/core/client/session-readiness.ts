@@ -1,9 +1,14 @@
 import { type KortixPlatformConfig, platformConfig } from '../http/config';
+import type { ProjectSession } from '../rest/projects-client/sessions';
+import { projectSessionStartSeed } from '../rest/projects-client/session-sandbox';
+import { setCurrentRuntime } from '../session/current-runtime';
 import { loadPreviewUrlTemplate } from '../session/preview-config';
+import { getSandboxUrlForExternalId } from '../session/server-store/url-helpers';
 import {
   type SessionRuntimeEntry,
   clearSessionRuntime,
   getSessionRuntime,
+  setSessionRuntime,
 } from '../session/session-runtime-registry';
 import { SessionNotReadyError, inFlightSessionStarts } from './session-shared';
 import { bindSessionStart } from './session-start';
@@ -31,7 +36,15 @@ export function bindSessionReadiness(
    */
   const startRuntime = bindSessionStart(projectId, sessionId);
 
-  async function ensureReady(opts?: { readyTimeoutMs?: number }): Promise<SessionRuntimeEntry> {
+  async function ensureReady(opts?: {
+    readyTimeoutMs?: number;
+    /**
+     * This session's row, when the caller already read it. A `running` row
+     * that names its sandbox and runtime session is adopted without `/start`.
+     * Any other row, or a row of another session, changes nothing.
+     */
+    session?: ProjectSession;
+  }): Promise<SessionRuntimeEntry> {
     const cached = tryResolveReady();
     if (cached) return cached;
     const readyTimeoutMs = opts?.readyTimeoutMs ?? 180_000;
@@ -43,6 +56,23 @@ export function bindSessionReadiness(
     const previewConfig = loadPreviewUrlTemplate(
       platformConfig().backendUrl ?? config.backendUrl,
     ).catch(() => null);
+
+    const seed = opts?.session?.session_id === sessionId ? projectSessionStartSeed(opts.session) : null;
+    const seededSandbox = seed?.sandbox?.external_id;
+    const seededRuntimeSession = seed?.runtime_session_id;
+    if (seededSandbox && seededRuntimeSession) {
+      const runtimeUrl = getSandboxUrlForExternalId(seededSandbox);
+      setCurrentRuntime(runtimeUrl, seededSandbox);
+      _ready = {
+        runtimeSessionId: seededRuntimeSession,
+        opencodeSessionId: seededRuntimeSession,
+        runtimeUrl,
+        sandboxId: seededSandbox,
+      };
+      setSessionRuntime(projectId, sessionId, _ready);
+      await previewConfig;
+      return _ready;
+    }
 
     // Dedup concurrent starts for this (projectId, sessionId) — see
     // `inFlightSessionStarts`'s doc comment. If another call (this handle or

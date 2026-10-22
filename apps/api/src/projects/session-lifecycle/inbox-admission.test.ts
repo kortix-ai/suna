@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   INBOX_ORDER_BACKOFF_MS,
   INBOX_ORDER_MAX_BACKOFF_MS,
+  INBOX_STALE_ORDER_BACKOFF_MS,
+  INBOX_STALE_ORDER_REFUSALS,
   QUEUE_BOUNDARY_FALLBACK_MS,
   admissionBackoffMs,
   admitInboxPrompt,
@@ -98,7 +100,7 @@ describe('admitInboxPrompt', () => {
 
   test('the refusal counter is what makes a waiting row back off further', async () => {
     const admission = await admitInboxPrompt(
-      row({ result: { admission_reason: 'older_prompt_pending', admission_refusals: 99 } }),
+      row({ result: { admission_reason: 'older_prompt_pending', admission_refusals: 20 } }),
       {
         readSandbox: async () => null,
         hasInFlightPrompt: async () => false,
@@ -106,6 +108,54 @@ describe('admitInboxPrompt', () => {
       },
     );
     expect(admission).toEqual({
+      admit: false,
+      reason: 'older_prompt_pending',
+      retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS,
+    });
+  });
+
+  test('a row stuck behind an older prompt on a parked box re-polls once a minute, not every 2s', async () => {
+    // Prod 2026-10-20: ~200 rows queued behind heads that never delivered
+    // (failed or stopped sessions) were refused 28 times a second, ~0.6 of a
+    // database core in claims and sibling reads. Every one sat on a box that
+    // was not running.
+    const deps = (older: boolean, inFlight: boolean) => ({
+      readSandbox: async () => ({ status: 'stopped', metadata: {} }),
+      hasInFlightPrompt: async () => inFlight,
+      hasOlderPendingPrompt: async () => older,
+    });
+    const stuck = row({
+      result: { admission_reason: 'older_prompt_pending', admission_refusals: INBOX_STALE_ORDER_REFUSALS },
+    });
+    for (const [older, inFlight] of [[true, false], [false, true]] as const) {
+      expect(await admitInboxPrompt(stuck, deps(older, inFlight))).toEqual({
+        admit: false,
+        reason: 'older_prompt_pending',
+        retryAfterMs: INBOX_STALE_ORDER_BACKOFF_MS,
+      });
+    }
+    expect(INBOX_STALE_ORDER_BACKOFF_MS).toBe(60_000);
+    // A live turn still re-polls at the 2s cap however long it has waited.
+    const live = await admitInboxPrompt(
+      row({ result: { admission_reason: 'turn_active', admission_refusals: 10_000 } }),
+      { ...deps(false, false), readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }) },
+    );
+    expect(live).toMatchObject({ reason: 'turn_active', retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS });
+  });
+
+  test('a long wait on a RUNNING box keeps the 2s cap, whatever reason the refusals had', async () => {
+    // `admission_refusals` counts every reason. A row that waited 64 refusals
+    // behind a live turn must not get the minute at its first
+    // `older_prompt_pending` while the head is still moving.
+    const crossing = await admitInboxPrompt(
+      row({ result: { admission_reason: 'turn_active', admission_refusals: INBOX_STALE_ORDER_REFUSALS } }),
+      {
+        readSandbox: async () => ({ status: 'active', metadata: {} }),
+        hasInFlightPrompt: async () => true,
+        hasOlderPendingPrompt: async () => true,
+      },
+    );
+    expect(crossing).toEqual({
       admit: false,
       reason: 'older_prompt_pending',
       retryAfterMs: INBOX_ORDER_MAX_BACKOFF_MS,
@@ -189,7 +239,7 @@ describe('the boundary interrupt names the live turn', () => {
       'turn-stale': { token: 'turn-stale', state: 'active', opencodeSessionId: 'ses_old', messageId: 'msg_old', startedAtMs: 1 },
       'turn-live': { token: 'turn-live', state: 'active', opencodeSessionId: 'ses_live', messageId: 'msg_live', startedAtMs: 2 },
     };
-    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript' } }), {
+    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript', mayStopAnyTurn: true } }), {
       readSandbox: async () => ({ status: 'active', metadata: { activeTurns: turns } }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
@@ -206,7 +256,7 @@ describe('the boundary interrupt names the live turn', () => {
       'turn-legacy': { token: 'turn-legacy', state: 'active', opencodeSessionId: 'ses_old', messageId: 'msg_old' },
       'turn-live': { token: 'turn-live', state: 'active', opencodeSessionId: 'ses_live', messageId: 'msg_live', startedAtMs: 7 },
     };
-    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript' } }), {
+    const result = await admitInboxPrompt(row({ payload: { text: 'hi', placement: 'transcript', mayStopAnyTurn: true } }), {
       readSandbox: async () => ({ status: 'active', metadata: { activeTurns: turns } }),
       hasInFlightPrompt: async () => false,
       hasOlderPendingPrompt: async () => false,
@@ -214,6 +264,61 @@ describe('the boundary interrupt names the live turn', () => {
     expect(result).toMatchObject({
       interruptAtBoundary: { opencodeSessionId: 'ses_live', messageId: 'msg_live' },
     });
+  });
+});
+
+// A Quick Queue row ends the running turn, so its sender must be allowed to
+// stop that turn (`turn-stop-authority.ts`): its prompter, or the session owner
+// or a manager (`mayStopAnyTurn`, stamped at send). Any other row waits.
+describe('only a sender who may stop the turn arms its interrupt', () => {
+  const ARMED = { opencodeSessionId: 'ses_1', messageId: 'msg_1' };
+  /** A person's Quick Queue send, as `POST .../prompts` stores it. */
+  const quickQueue = (actorUserId: string, payload: Record<string, unknown> = {}) =>
+    row({ actorUserId, payload: { text: 'hi', placement: 'transcript', bindTurnIdentity: true, ...payload } });
+  function admit(target: SessionLifecycleCommandRow, prompter: string | null, asked: string[][]) {
+    return admitInboxPrompt(target, {
+      readSandbox: async () => ({ status: 'active', metadata: { activeTurns: activeTurn('t1') } }),
+      hasInFlightPrompt: async () => false,
+      hasOlderPendingPrompt: async () => false,
+      turnPrompter: async (sessionId, messageId) => {
+        asked.push([sessionId, messageId]);
+        return prompter;
+      },
+    });
+  }
+
+  test("the turn's prompter arms it; the read names the live turn", async () => {
+    const asked: string[][] = [];
+    expect(await admit(quickQueue('user-a'), 'user-a', asked)).toMatchObject({ reason: 'turn_active', interruptAtBoundary: ARMED });
+    expect(asked).toEqual([['sess-1', 'msg_1']]);
+  });
+
+  test('another member waits for the turn to end, unarmed', async () => {
+    const result = await admit(quickQueue('user-b'), 'user-a', []);
+    expect(result).toMatchObject({ admit: false, reason: 'turn_active' });
+    expect(result).not.toHaveProperty('interruptAtBoundary');
+  });
+
+  test('an owner or manager row arms it without reading the prompter', async () => {
+    const asked: string[][] = [];
+    expect(await admit(quickQueue('user-b', { mayStopAnyTurn: true }), 'user-a', asked)).toMatchObject({
+      interruptAtBoundary: ARMED,
+    });
+    expect(asked).toEqual([]);
+  });
+
+  test("an agent session's row is never the prompter, even under the prompter's user id", async () => {
+    const asked: string[][] = [];
+    const agentRow = quickQueue('user-a', { bindTurnIdentity: false, authorSessionId: 'sess-agent' });
+    expect(await admit(agentRow, 'user-a', asked)).not.toHaveProperty('interruptAtBoundary');
+    expect(asked).toEqual([]);
+  });
+
+  test('a Queue List row never reads the prompter: the read stays off the hot path', async () => {
+    const asked: string[][] = [];
+    const queueList = quickQueue('user-a', { placement: 'composer' });
+    expect(await admit(queueList, 'user-a', asked)).not.toHaveProperty('interruptAtBoundary');
+    expect(asked).toEqual([]);
   });
 });
 

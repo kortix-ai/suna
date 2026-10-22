@@ -1,6 +1,5 @@
 import { projects, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { configReleasesEnabled } from '../../config-releases/enabled';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { reloadSessionConfig, type SessionReloadResult } from './session-reload';
@@ -67,8 +66,6 @@ export interface SessionConfigConvergenceTarget {
   defaultBranch: string;
   manifestPath: string | null;
   baseRef: string | null;
-  /** The project's metadata, for the `config_releases` flag. */
-  metadata?: unknown;
 }
 
 export interface SessionConfigConvergenceDeps {
@@ -77,17 +74,6 @@ export interface SessionConfigConvergenceDeps {
     input: SessionConfigConvergenceTarget & { onlyIfStale: true; force: false; refreshRepo?: boolean },
   ) => Promise<SessionReloadResult>;
   sleep: (ms: number) => Promise<void>;
-  /** The project's `config_releases` flag, from its metadata. */
-  configReleasesEnabled: (metadata: unknown) => boolean;
-  /** The pre-config-releases restart behaviour: compile and push governance. */
-  pushGovernance: (input: {
-    projectId: string;
-    sessionId: string;
-    repoUrl: string;
-    defaultBranch: string;
-    manifestPath: string | null;
-    baseRef: string | null;
-  }) => Promise<unknown>;
 }
 
 async function loadTarget(sessionId: string): Promise<SessionConfigConvergenceTarget | null> {
@@ -99,7 +85,6 @@ async function loadTarget(sessionId: string): Promise<SessionConfigConvergenceTa
       defaultBranch: projects.defaultBranch,
       manifestPath: projects.manifestPath,
       baseRef: projectSessions.baseRef,
-      metadata: projects.metadata,
     })
     .from(projectSessions)
     .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
@@ -113,17 +98,6 @@ const defaultDeps: SessionConfigConvergenceDeps = {
   loadTarget,
   reload: (input) => reloadSessionConfig(input),
   sleep: Bun.sleep,
-  configReleasesEnabled,
-  // DYNAMIC import on purpose. `sandbox-proxy/forward/` reaches this
-  // module through the turn-start convergence gate, and a static edge to
-  // `sandbox-env-sync` drags that whole graph into every proxy unit test that
-  // partially mocks it — five of them failed with "Export named
-  // 'pushSessionAgentConfigToSandbox' not found". Same reasoning as the
-  // `./engine` import in session-lifecycle/runtime-restart-recovery.ts.
-  // Nothing needs it before this call, and only the flag-OFF restart path
-  // reaches it at all.
-  pushGovernance: async (input) =>
-    (await import('./sandbox-env-sync')).pushSessionAgentConfigToSandbox(input),
 };
 
 export type SessionConfigConvergenceOutcome =
@@ -145,17 +119,6 @@ export type SessionConfigConvergenceOutcome =
   | 'declined'
   /** The daemon predates config releases. It converges after its self-update. */
   | 'awaiting-daemon-update'
-  /**
-   * `config_releases` is off for this project (or platform-wide). No
-   * convergence runs; OpenCode keeps reading the session's workspace config
-   * dir. Spec, "Feature flag".
-   */
-  | 'disabled'
-  /**
-   * The flag is off and this was a restart: the compiled governance was
-   * pushed, the pre-config-releases behaviour of `restartSession`.
-   */
-  | 'governance-pushed'
   | 'failed';
 
 type Attempt =
@@ -218,22 +181,12 @@ export interface ConvergeSessionConfigOptions {
    * `wake` (default): the resume and restart schedule, both clocks.
    * `trigger`: one attempt plus the quick ladder for a box that is not
    * answering yet. A busy session or an old daemon ends the attempt: the next
-   * turn end or base move triggers again. Used by the base-move trigger, which
-   * fires often.
-   * `turn-start`: exactly ONE attempt and zero sleeps. A prompt is waiting on
-   * this; it must never sit behind a retry ladder. A box that could not
-   * converge now converges at the next prompt, base move or wake.
+   * turn end or base move triggers again. Used by the turn-end and base-move
+   * triggers, which fire often.
    */
-  schedule?: 'wake' | 'trigger' | 'turn-start';
+  schedule?: 'wake' | 'trigger';
   /** Pull the session branch. Default true (the wake path). Triggers pass false. */
   refreshRepo?: boolean;
-  /**
-   * With `config_releases` OFF, push the compiled governance instead of doing
-   * nothing. Set only by the restart path, which pushed it before config
-   * releases existed (`restartSession`). Resume never pushed, so it does not
-   * pass this.
-   */
-  legacyGovernancePush?: boolean;
 }
 
 export async function convergeSessionConfig(
@@ -244,26 +197,6 @@ export async function convergeSessionConfig(
   try {
     const target = await deps.loadTarget(sessionId);
     if (!target) return 'no-session';
-
-    // ── CHOKEPOINT — the `config_releases` flag for every convergence
-    // trigger. Resume,
-    // restart, turn end, an API write that moved the base branch, and a push
-    // through the git proxy ALL arrive here. Off ⇒ nothing reaches the box
-    // and no release is requested, so OpenCode keeps reading the session's
-    // workspace config dir. A restart still pushes the compiled governance,
-    // which is exactly what it did before config releases.
-    if (!deps.configReleasesEnabled(target.metadata)) {
-      if (!options.legacyGovernancePush) return 'disabled';
-      await deps.pushGovernance({
-        projectId: target.projectId,
-        sessionId: target.sessionId,
-        repoUrl: target.repoUrl,
-        defaultBranch: target.defaultBranch,
-        manifestPath: target.manifestPath,
-        baseRef: target.baseRef,
-      });
-      return 'governance-pushed';
-    }
 
     let soon = 0;
     let later = 0;
@@ -277,8 +210,6 @@ export async function convergeSessionConfig(
         }),
       );
       if ('done' in attempt) return attempt.done;
-      // One attempt, no sleeps: a prompt is waiting.
-      if (options.schedule === 'turn-start') return attempt.as;
       if (options.schedule === 'trigger' && attempt.retry === 'slow') return attempt.as;
       const delay =
         attempt.retry === 'transient' && soon < RETRY_SOON_MS.length
@@ -300,15 +231,10 @@ export async function convergeSessionConfig(
 
 /**
  * Fire-and-forget form for the restart/resume call sites. Returns immediately.
- *
- * `context` also decides the flag-OFF fallback: `restart` pushed the compiled
- * governance before config releases existed, and keeps doing so; `resume`
- * pushed nothing, and keeps pushing nothing.
+ * `context` only labels the log line.
  */
 export function scheduleSessionConfigConvergence(sessionId: string, context: string): void {
-  void convergeSessionConfig(sessionId, undefined, {
-    legacyGovernancePush: context === 'restart',
-  }).then((outcome) => {
+  void convergeSessionConfig(sessionId).then((outcome) => {
     if (outcome === 'current') return;
     logger.info('[projects] session config convergence finished', {
       session_id: sessionId,

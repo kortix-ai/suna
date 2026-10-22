@@ -31,6 +31,7 @@ let aal: {
 };
 let challengeAndVerifyResponse: { data: unknown; error: { message: string } | null };
 let aalHang: Promise<void> | null = null;
+let verifyHang: Promise<void> | null = null;
 const challengeAndVerifyCalls: Array<{ factorId: string; code: string }> = [];
 const signOutCalls: string[] = [];
 
@@ -46,6 +47,8 @@ mock.module('@/lib/supabase/client', () => ({
         },
         challengeAndVerify: async (args: { factorId: string; code: string }) => {
           challengeAndVerifyCalls.push(args);
+          if (verifyHang) await verifyHang;
+          if (challengeAndVerifyResponse.error) return challengeAndVerifyResponse;
           // The real verify mints the aal2 session BEFORE it resolves, so the
           // onSuccess refetch of the AAL answer must see aal2 here.
           aal = { data: { currentLevel: 'aal2', nextLevel: 'aal2' }, error: null };
@@ -65,26 +68,46 @@ mock.module('@/lib/auth/perform-sign-out', () => ({
 }));
 
 const COPY: Record<string, string> = {
-  text4d8f4755ac09: 'Verify it is you',
-  text3ba20a470a12: 'Enter a code from your authenticator app to verify this session.',
-  text0d1fa0dfcc9e: '6-digit code',
-  text19766ed6ccb2: 'Cancel',
-  texteea2745e2867: 'Verify',
-  text48f0d3d397d4: 'Sign out',
-  text4f7838402f37: 'Verified',
-  texte7307911656c: 'Code did not verify',
-  text669350bd2952: 'No second factor enrolled',
-  textf3a4ff3c0ae3: 'Enroll an authenticator app under Settings → Security.',
+  title: 'Verify it is you',
+  gateDescription: 'Your account has two-factor authentication on.',
+  actionDescription: 'This action needs two-factor authentication.',
+  codeLabel: '6-digit code',
+  cancel: 'Cancel',
+  verify: 'Verify',
+  signOut: 'Sign out',
+  verified: 'Verified',
+  invalidCode: 'That code did not work.',
+  noFactorTitle: 'Set up two-factor authentication',
+  noFactorDescription: 'This action needs two-factor authentication.',
+  setUp: 'Set up authenticator',
 };
 mock.module('@/i18n/use-translations', () => ({
   useTranslations: () => Object.assign((key: string) => COPY[key] ?? key, { raw: (key: string) => COPY[key] ?? key }),
 }));
 
+const routerPushes: string[] = [];
+// A click on the link records its href, standing in for the client navigation.
+mock.module('next/link', () => ({
+  default: ({ href, onClick, children }: { href: string; onClick?: () => void; children?: React.ReactNode }) =>
+    createElement(
+      'a',
+      {
+        href,
+        onClick: () => {
+          onClick?.();
+          routerPushes.push(href);
+        },
+      },
+      children,
+    ),
+}));
+
 const toasts: string[] = [];
-mock.module('@/components/ui/toast', () => ({
+const uiToastMock = () => ({
   successToast: (message: string) => toasts.push(`success:${message}`),
   errorToast: (message: string) => toasts.push(`error:${message}`),
-}));
+});
+mock.module('@kortix/ui/toast', uiToastMock);
 
 // The real Dialog reaches through Radix portals and the z-stack; these tests
 // assert the gate's decisions, not the overlay. A conditional render keeps the
@@ -93,30 +116,36 @@ const host = (tag: string) =>
   function Host({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) {
     return createElement(tag, props, children);
   };
-mock.module('@/components/ui/dialog', () => ({
+const uiDialogMock = () => ({
   Dialog: ({ open, children }: { open?: boolean; children?: React.ReactNode }) =>
     open ? createElement('div', { 'data-dialog': 'open' }, children) : null,
   DialogContent: host('section'),
   DialogDescription: host('p'),
-  DialogFooter: host('footer'),
-  DialogHeader: host('header'),
   DialogTitle: host('h2'),
-}));
-mock.module('@/components/ui/button', () => ({
+});
+const realDialog = await import('@kortix/ui/dialog');
+mock.module('@kortix/ui/dialog', () => ({ ...realDialog, ...uiDialogMock() }));
+const uiButtonMock = () => ({
   Button: ({ children, ...props }: { children?: React.ReactNode; [key: string]: unknown }) =>
     createElement('button', props, children),
-}));
-mock.module('@/components/ui/input', () => ({
-  Input: (props: Record<string, unknown>) => createElement('input', props),
-}));
-mock.module('@/components/ui/label', () => ({ Label: host('label') }));
-mock.module('@/components/ui/loading', () => ({
+});
+const realButton = await import('@kortix/ui/button');
+mock.module('@kortix/ui/button', () => ({ ...realButton, ...uiButtonMock() }));
+const uiDotMatrixSessionDotMatrixMock = () => ({
+  SessionDotMatrix: () => createElement('span', null, 'matrix'),
+});
+mock.module('@kortix/ui/dot-matrix/session-dot-matrix', uiDotMatrixSessionDotMatrixMock);
+const uiKortixLogoMock = () => ({ KortixLogo: host('svg') });
+mock.module('@kortix/ui/kortix-logo', uiKortixLogoMock);
+const uiLoadingMock = () => ({
   default: (props: Record<string, unknown>) => createElement('span', props, 'loading'),
-}));
-mock.module('@/components/ui/info-banner', () => ({
+});
+mock.module('@kortix/ui/loading', uiLoadingMock);
+const uiInfoBannerMock = () => ({
   InfoBanner: ({ children, title }: { children?: React.ReactNode; title?: React.ReactNode }) =>
     createElement('aside', null, title, children),
-}));
+});
+mock.module('@kortix/ui/info-banner', uiInfoBannerMock);
 mock.module('@phosphor-icons/react', () => ({
   ShieldCheckIcon: host('svg'),
   ShieldWarningIcon: host('svg'),
@@ -124,7 +153,7 @@ mock.module('@phosphor-icons/react', () => ({
 
 const { QueryClient, QueryClientProvider } = await import('@tanstack/react-query');
 const { MfaStepUpProvider, MfaGate, requestMfaStepUp } = await import('./mfa-step-up');
-const { clearPendingMfaAction } = await import('./mfa-pending-action');
+const { clearPendingMfaAction } = await import('@kortix/ui/internal/auth/mfa-pending-action');
 
 // ─── Render helpers ─────────────────────────────────────────────────────────
 // bun test has no `window`; the repo pattern installs a minimal shim. A fresh
@@ -204,6 +233,20 @@ async function mount(
 
 const APP = createElement('p', null, 'APP CONTENT');
 
+async function enterAndVerify(root: unknown, value: string): Promise<void> {
+  const code = input(root);
+  if (!code) throw new Error('no code input');
+  await act(async () => {
+    (code.props?.onChange as (e: { target: { value: string } }) => void)({ target: { value } });
+  });
+  const verify = buttons(root).find((b) => textOf(b.props?.children).endsWith('Verify'));
+  if (!verify) throw new Error('no Verify button');
+  await act(async () => {
+    (verify.props?.onClick as () => void)();
+  });
+  await settle();
+}
+
 const verifiedTotpAal = () => {
   session = { access_token: 't' };
   user = { created_at: '2020-01-01T00:00:00.000Z', factors: [{ id: 'f-totp', factor_type: 'totp', status: 'verified' }] };
@@ -217,9 +260,11 @@ beforeEach(() => {
   aal = { data: null, error: null };
   challengeAndVerifyResponse = { data: {}, error: null };
   aalHang = null;
+  verifyHang = null;
   challengeAndVerifyCalls.length = 0;
   signOutCalls.length = 0;
   toasts.length = 0;
+  routerPushes.length = 0;
 });
 
 // ─── MfaGate ────────────────────────────────────────────────────────────────
@@ -271,6 +316,53 @@ describe('MfaGate', () => {
     // invalidation refetched the AAL answer, which is what releases the gate.
     await settle();
     expect(serialize(root)).toContain('APP CONTENT');
+  });
+
+  // 2026-10-17: a user had to enter the code twice. A correct code showed
+  // "Verified" but left the prompt up, emptied: the gate waited for a fresh
+  // AAL read (a getUser network call), and a read that failed kept the old
+  // aal1 answer. A correct code is the aal2 answer; the gate leaves at once.
+  test('a correct code releases the gate at once, while the AAL re-read is still in flight', async () => {
+    verifiedTotpAal();
+    const root = await mount(createElement(MfaGate, null, APP));
+    aalHang = new Promise(() => {});
+    await enterAndVerify(root, '654321');
+
+    expect(toasts).toContain('success:Verified');
+    expect(serialize(root)).toContain('APP CONTENT');
+    expect(input(root)).toBeUndefined();
+  });
+
+  test('a failed AAL re-read after a correct code does not bring the prompt back', async () => {
+    verifiedTotpAal();
+    const root = await mount(createElement(MfaGate, null, APP));
+    // The next getAAL throws ("User not found"), as a failed getUser does.
+    user = null;
+    await enterAndVerify(root, '654321');
+    await settle();
+
+    expect(serialize(root)).toContain('APP CONTENT');
+    expect(input(root)).toBeUndefined();
+  });
+
+  test('Verify shows the session dot matrix while the code is checked', async () => {
+    verifiedTotpAal();
+    verifyHang = new Promise(() => {});
+    const root = await mount(createElement(MfaGate, null, APP));
+    await enterAndVerify(root, '654321');
+
+    expect(serialize(root)).toContain('matrix');
+    expect(serialize(root)).not.toContain('APP CONTENT');
+  });
+
+  test('a wrong code shows the inline error and keeps the gate up', async () => {
+    verifiedTotpAal();
+    challengeAndVerifyResponse = { data: null, error: { message: 'Invalid TOTP code entered' } };
+    const root = await mount(createElement(MfaGate, null, APP));
+    await enterAndVerify(root, '111111');
+
+    expect(serialize(root)).toContain('That code did not work.');
+    expect(serialize(root)).not.toContain('APP CONTENT');
   });
 
   test('holds the app behind the loading frame while the auth bootstrap has not resolved', async () => {
@@ -373,6 +465,60 @@ describe('MfaStepUpProvider', () => {
 
     expect(input(root)).toBeUndefined();
     expect(challengeAndVerifyCalls).toEqual([]);
+  });
+});
+
+describe('MfaStepUpProvider with no factor enrolled', () => {
+  const openNoFactor = async () => {
+    session = { access_token: 't' };
+    user = { created_at: '2020-01-01T00:00:00.000Z', factors: [] };
+    aal = { data: { currentLevel: 'aal1', nextLevel: 'aal1' }, error: null };
+    const root = await mount(createElement(MfaStepUpProvider, null, APP));
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent('kortix:mfa-required'));
+    });
+    await settle();
+    return root;
+  };
+  // The control is a <button>, or a <Button asChild> wrapping a link: press
+  // whichever carries the click handler.
+  const press = async (root: ReturnType<typeof create>, label: string) => {
+    const [button] = root.root.findAll(
+      (n) => (n.type === 'button' || n.type === 'a') && typeof n.props.onClick === 'function' && textOf(n.props.children) === label,
+    );
+    if (!button) throw new Error(`no ${label} control`);
+    await act(async () => {
+      (button.props?.onClick as () => void)();
+    });
+    await settle();
+  };
+
+  test('asks for setup instead of a code, with a set-up action next to Cancel', async () => {
+    const root = await openNoFactor();
+
+    expect(input(root)).toBeUndefined();
+    expect(textOf(root.toJSON())).toContain('Set up two-factor authentication');
+    expect(textOf(root.toJSON())).not.toContain('This action needs two-factor authentication.This action');
+    expect(buttons(root).map((b) => textOf(b))).toEqual(['Cancel', 'Set up authenticator']);
+  });
+
+  test('set-up closes the dialog and navigates to /settings/security', async () => {
+    const root = await openNoFactor();
+    await press(root, 'Set up authenticator');
+
+    expect(routerPushes).toEqual(['/settings/security']);
+    expect(serialize(root)).not.toContain('Set up authenticator');
+  });
+
+  test('set-up drops the armed action: it never runs after a later verification', async () => {
+    const ran: string[] = [];
+    const root = await openNoFactor();
+    requestMfaStepUp(true, () => ran.push('action'));
+    await settle();
+    await press(root, 'Set up authenticator');
+    window.dispatchEvent(new CustomEvent('kortix:mfa-verified'));
+
+    expect(ran).toEqual([]);
   });
 });
 

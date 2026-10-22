@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { creditGateExemptEnv } from '../router/services/credit-gate-env';
 
-// dev/preview QA exemption from the router credit gate — mirrors
-// accountIsFreeTierForModels' env carve-out (see unit-tier-model-entitlement).
+// dev/preview QA exemption from the router credit gate.
 // Regression: web_search 402'd "Insufficient credits" for every fresh dev
 // account because billing internal is intentionally enabled on dev.
 describe('creditGateExemptEnv', () => {

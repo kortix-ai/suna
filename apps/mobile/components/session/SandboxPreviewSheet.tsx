@@ -11,9 +11,9 @@
  * still exists for back/forward/address-bar browsing, but it is no longer what
  * a preview row opens.
  *
- * The WebView carries the live Supabase `Authorization` header ONLY for the
- * sandbox-proxy origin (`isTrustedProxyUrl`), exactly as `BrowserPage` does:
- * any other origin must not see the session token.
+ * The WebView carries the SDK's request headers (`authenticatedRequest`, the
+ * live session token) ONLY for the sandbox-proxy origin (`isTrustedProxyUrl`),
+ * exactly as `BrowserPage` does: any other origin must not see the token.
  */
 
 import * as React from 'react';
@@ -23,7 +23,8 @@ import type { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { API_URL, getAuthToken } from '@/api/config';
+import { authenticatedRequest } from '@kortix/sdk';
+import { API_URL } from '@/api/config';
 import { Button } from '@/components/ui/button';
 import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
@@ -80,21 +81,21 @@ function PreviewPage({ url, pageBackground, loading }: {
 }) {
   const trusted = isTrustedProxyUrl(url, API_URL);
   const [credential, setCredential] = React.useState<
-    { status: 'loading' } | { status: 'error' } | { status: 'ready'; token: string }
+    { status: 'loading' } | { status: 'error' } | { status: 'ready'; headers: Record<string, string> }
   >({ status: 'loading' });
   const [attempt, setAttempt] = React.useState(0);
 
   React.useEffect(() => {
     if (!trusted) return;
     let alive = true;
-    void getAuthToken().then(
-      (token) => {
-        if (alive) setCredential(token ? { status: 'ready', token } : { status: 'error' });
+    void authenticatedRequest(url).then(
+      ({ headers }) => {
+        if (alive) setCredential({ status: 'ready', headers });
       },
       () => { if (alive) setCredential({ status: 'error' }); },
     );
     return () => { alive = false; };
-  }, [trusted, attempt]);
+  }, [url, trusted, attempt]);
 
   if (trusted && credential.status === 'loading') return loading;
   if (trusted && credential.status === 'error') {
@@ -118,8 +119,7 @@ function PreviewPage({ url, pageBackground, loading }: {
     <WebView
       source={{
         uri: url,
-        headers: trusted && credential.status === 'ready'
-          ? { Authorization: `Bearer ${credential.token}` } : undefined,
+        headers: trusted && credential.status === 'ready' ? credential.headers : undefined,
       }}
       originWhitelist={['*']}
       onShouldStartLoadWithRequest={allowBrowserNavigation}

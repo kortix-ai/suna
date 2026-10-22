@@ -27,7 +27,6 @@ import { useToast } from '@/components/kortix/toast-provider';
 
 import { shortRef } from '@/lib/review/review-detail';
 
-export { shortRef };
 
 function BranchPills({
   options,
@@ -72,17 +71,11 @@ export function OpenCRSheet({
   onClose,
   onCreated,
   isDark,
-  initialHeadRef,
-  initialBaseRef,
-  initialTitle,
 }: {
   projectId: string;
   onClose: () => void;
   onCreated: (crId: string, number: number) => void;
   isDark: boolean;
-  initialHeadRef?: string | null;
-  initialBaseRef?: string | null;
-  initialTitle?: string;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
@@ -94,27 +87,16 @@ export function OpenCRSheet({
   const allBranches = branchesQuery.data?.branches ?? [];
   const headOptions = useMemo(() => allBranches.filter((b) => !b.is_default), [allBranches]);
 
-  const [headRef, setHeadRef] = useState<string | null>(initialHeadRef ?? null);
-  const [baseRef, setBaseRef] = useState<string | null>(initialBaseRef ?? null);
-  const [title, setTitle] = useState(initialTitle ?? '');
+  const [headRef, setHeadRef] = useState<string | null>(null);
+  const [baseRef, setBaseRef] = useState<string | null>(null);
+  const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
 
   useEffect(() => {
-    setHeadRef(initialHeadRef ?? null);
-  }, [initialHeadRef]);
-
-  useEffect(() => {
-    setTitle(initialTitle ?? '');
-    setDescription('');
-  }, [initialTitle, initialHeadRef, initialBaseRef]);
-
-  useEffect(() => {
-    if (initialBaseRef) {
-      setBaseRef(initialBaseRef);
-    } else if (!baseRef && defaultBranch) {
+    if (!baseRef && defaultBranch) {
       setBaseRef(defaultBranch);
     }
-  }, [initialBaseRef, defaultBranch, baseRef]);
+  }, [defaultBranch, baseRef]);
 
   const vdiff = useVersionDiff(projectId, headRef ?? '', baseRef ?? '', !!headRef && !!baseRef && headRef !== baseRef);
   const preview = vdiff.data;
@@ -133,7 +115,7 @@ export function OpenCRSheet({
       { title: title.trim(), description: description.trim() || undefined, head_ref: headRef, base_ref: baseRef },
       {
         onSuccess: (cr) => { haptics.success(); onCreated(cr.cr_id, cr.number); },
-        onError: (e: any) => toast.error(e?.message || 'Could not open change request.'),
+        onError: (e: unknown) => toast.error(e instanceof Error && e.message ? e.message : 'Could not open change request.'),
       },
     );
   };
@@ -168,11 +150,13 @@ export function OpenCRSheet({
                     {preview?.is_same_ref ? 'Same version — pick a different one.' : 'Nothing to merge — these versions are already in sync.'}
                   </Text>
                 ) : (
-                  <Text style={{ fontSize: 12.5, color: fg }}>
-                    {preview!.files_changed} {preview!.files_changed === 1 ? 'file' : 'files'} changed{'  '}
-                    <Text style={{ color: THEME.accent.green, fontFamily: 'Roobert-Medium' }}>+{preview!.additions}</Text>{' '}
-                    <Text style={{ color: isDark ? THEME.dark.destructive : THEME.light.destructive, fontFamily: 'Roobert-Medium' }}>−{preview!.deletions}</Text>
-                  </Text>
+                  preview && (
+                    <Text style={{ fontSize: 12.5, color: fg }}>
+                      {preview.files_changed} {preview.files_changed === 1 ? 'file' : 'files'} changed{'  '}
+                      <Text style={{ color: THEME.accent.green, fontFamily: 'Roobert-Medium' }}>+{preview.additions}</Text>{' '}
+                      <Text style={{ color: isDark ? THEME.dark.destructive : THEME.light.destructive, fontFamily: 'Roobert-Medium' }}>−{preview.deletions}</Text>
+                    </Text>
+                  )
                 )}
               </View>
             )}

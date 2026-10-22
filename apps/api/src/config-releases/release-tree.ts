@@ -11,8 +11,9 @@
 
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 import { execFileAsync, runGitCapture, spawn } from '../projects/git/mirror';
+import { LEGACY_OPENCODE_CONFIG_DIR, OPENCODE_CONFIG_DIR } from '@kortix/manifest-schema';
 import { readManifestAtSha, resolveOpencodeConfigDirAtSha } from '../projects/git/opencode-config-dir';
 import type { GitBackedProject } from '../projects/git/types';
 
@@ -169,9 +170,12 @@ async function archiveTree(
  * the working tree (`harnesses/opencode`, `skills/`, `harnesses/pi`, …), and a
  * file a config refers to by a relative path is where the repository put it.
  *
- * The one change is per-agent plugin selection (`harnesses.opencode.plugins`
- * in kortix.yaml): an agent variant drops the unselected plugin entry files
- * from `<config dir>/plugins`.
+ * The changes: per-agent plugin selection (v2 `harnesses.opencode.plugins`
+ * in kortix.yaml) drops the unselected plugin entry files from
+ * `<config dir>/plugins`; files `.gitattributes` marks `export-ignore` are left
+ * out; and a kortix_version 3 tree has no OpenCode config dir — its leftover
+ * v2 `opencode.json[c]` files are left out, and `configDir` is null. A v3
+ * session's plugins come from `extensions`, compiled per session agent.
  */
 interface ReleaseTreeSource {
   /** The OpenCode config dir inside the tree, or null when the commit has none. */
@@ -180,6 +184,8 @@ interface ReleaseTreeSource {
   rootTree: string;
   /** Selected plugins; null keeps the legacy, globally auto-discovered set. */
   plugins: string[] | null;
+  /** Files left out of the release: `export-ignore`d ones, and a v3 tree's leftover `opencode.json[c]`. */
+  exportIgnored: string[];
 }
 
 /**
@@ -188,7 +194,7 @@ interface ReleaseTreeSource {
  * archive route rebuilds it from there.
  */
 export function isComposedSource(source: ReleaseTreeSource): boolean {
-  return source.plugins !== null;
+  return source.plugins !== null || source.exportIgnored.length > 0;
 }
 
 /** `git ls-tree -z <tree>`: the tree's records, keyed by entry name. */
@@ -206,9 +212,14 @@ async function treeRecords(
   return records;
 }
 
-/** `git mktree -z` in `repo` (never the mirror). mktree sorts the entries itself. */
-async function mktree(repo: string, env: Record<string, string>, records: string[]): Promise<string> {
-  const child = spawn('git', ['mktree', '-z'], {
+/** `git <args>` in `repo` with NUL-terminated `records` on stdin. Throws on a non-zero exit. */
+async function gitWithInput(
+  repo: string,
+  env: Record<string, string>,
+  args: string[],
+  records: string[],
+): Promise<string> {
+  const child = spawn('git', args, {
     cwd: repo,
     env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...env },
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -222,12 +233,30 @@ async function mktree(repo: string, env: Record<string, string>, records: string
     child.once('close', resolveExit);
   });
   child.stdin.end(records.map((record) => `${record}\0`).join(''));
-  const code = await exit;
-  const tree = Buffer.concat(stdout).toString('utf8').trim();
-  if (code !== 0 || !HEX40.test(tree)) {
-    throw new Error(`git mktree failed: ${Buffer.concat(stderr).toString('utf8').trim()}`);
+  if ((await exit) !== 0) {
+    throw new Error(`git ${args[0]} failed: ${Buffer.concat(stderr).toString('utf8').trim()}`);
   }
+  return Buffer.concat(stdout).toString('utf8');
+}
+
+/** `git mktree -z` in `repo` (never the mirror). mktree sorts the entries itself. */
+async function mktree(repo: string, env: Record<string, string>, records: string[]): Promise<string> {
+  const tree = (await gitWithInput(repo, env, ['mktree', '-z'], records)).trim();
+  if (!HEX40.test(tree)) throw new Error(`git mktree returned no tree: ${tree}`);
   return tree;
+}
+
+/** `tree` without `paths`, through a throwaway index in `repo`. */
+async function pruneTree(repo: string, env: Record<string, string>, tree: string, paths: string[]): Promise<string> {
+  const indexEnv = { ...env, GIT_INDEX_FILE: join(repo, 'release.index') };
+  const read = await runGitCapture(['read-tree', tree], repo, null, indexEnv);
+  if (read.exitCode !== 0) throw new Error(`git read-tree ${tree} failed: ${read.stderr.trim()}`);
+  // Mode 0 removes the entry. `--index-info` needs no work tree; `--force-remove` does.
+  await gitWithInput(repo, indexEnv, ['update-index', '-z', '--index-info'], paths.map((path) => `0 ${'0'.repeat(40)}\t${path}`));
+  const written = await runGitCapture(['write-tree'], repo, null, indexEnv);
+  const pruned = written.stdout.trim();
+  if (written.exitCode !== 0 || !HEX40.test(pruned)) throw new Error(`git write-tree failed: ${written.stderr.trim()}`);
+  return pruned;
 }
 
 /** The tree record's object ID. */
@@ -267,14 +296,67 @@ async function composeReleaseTree(
   env: Record<string, string>,
   source: ReleaseTreeSource,
 ): Promise<string> {
-  if (source.plugins === null || source.configDir === null) return source.rootTree;
-  const selected = new Set(source.plugins);
-  return editTreeAt(repo, env, source.rootTree, [...source.configDir.split('/'), 'plugins'], (entries) => {
-    for (const [name, record] of entries) {
-      if (/\.[cm]?[jt]s$/.test(name) && record.split(' ')[1] === 'blob' && !selected.has(name)) entries.delete(name);
-    }
-    return entries;
-  });
+  let tree = source.rootTree;
+  if (source.plugins !== null && source.configDir !== null) {
+    const selected = new Set(source.plugins);
+    tree = await editTreeAt(repo, env, tree, [...source.configDir.split('/'), 'plugins'], (entries) => {
+      for (const [name, record] of entries) {
+        if (/\.[cm]?[jt]s$/.test(name) && record.split(' ')[1] === 'blob' && !selected.has(name)) entries.delete(name);
+      }
+      return entries;
+    });
+  }
+  if (source.exportIgnored.length > 0) tree = await pruneTree(repo, env, tree, source.exportIgnored);
+  return tree;
+}
+
+/**
+ * The files of `rootTree` its `.gitattributes` marks `export-ignore`, on the
+ * file or on one of its directories: what a plain `git archive` leaves out
+ * (KRTX-1728). Paths `exempt` keeps are never listed.
+ *
+ * Read from a throwaway index (`check-attr --cached`), in a scratch repository
+ * WITHOUT the archive's neutralising `info/attributes`. `check-attr --source`
+ * would need git 2.40; the API image runs 2.39.
+ */
+async function exportIgnoredPaths(
+  mirror: string,
+  rootTree: string,
+  exempt: (path: string) => boolean,
+): Promise<string[]> {
+  const files = await listConfigFiles(mirror, rootTree);
+  const attributeFiles = files.filter(([path]) => path === '.gitattributes' || path.endsWith('/.gitattributes'));
+  // The common case is no rule at all: no index, no scratch repository.
+  let named = false;
+  for (const [, , blob] of attributeFiles) {
+    const text = await runGitCapture(['cat-file', 'blob', blob], mirror);
+    if (text.exitCode === 0 && text.stdout.includes('export-ignore')) named = true;
+  }
+  if (!named) return [];
+
+  const candidates = files.map(([path]) => path).filter((path) => !exempt(path));
+  const ancestors = (path: string) => path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'));
+  const queried = [...new Set(candidates.flatMap((path) => [...ancestors(path), path]))];
+  const repo = await mkdtemp(join(tmpdir(), 'kortix-config-attributes-'));
+  try {
+    const init = await runGitCapture(['init', '--quiet', '--bare', repo], tmpdir());
+    if (init.exitCode !== 0) throw new Error(`git init scratch repo failed: ${init.stderr.trim()}`);
+    const objects = await runGitCapture(['rev-parse', '--git-path', 'objects'], mirror);
+    if (objects.exitCode !== 0) throw new Error(`git rev-parse --git-path objects failed: ${objects.stderr.trim()}`);
+    const env = {
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: resolve(mirror, objects.stdout.trim()),
+      GIT_INDEX_FILE: join(repo, 'attributes.index'),
+    };
+    const read = await runGitCapture(['read-tree', rootTree], repo, null, env);
+    if (read.exitCode !== 0) throw new Error(`git read-tree ${rootTree} failed: ${read.stderr.trim()}`);
+    // `-z` output: path NUL attribute NUL value NUL, per queried path.
+    const out = (await gitWithInput(repo, env, ['check-attr', '--cached', '-z', '--stdin', 'export-ignore'], queried)).split('\0');
+    const ignored = new Set<string>();
+    for (let i = 0; i + 2 < out.length; i += 3) if (out[i + 2] === 'set') ignored.add(out[i]!);
+    return candidates.filter((path) => ignored.has(path) || ancestors(path).some((dir) => ignored.has(dir)));
+  } finally {
+    await rm(repo, { recursive: true, force: true });
+  }
 }
 
 /** Compose the release tree of `source` in a scratch repository and read it there.
@@ -299,7 +381,63 @@ export async function readComposedRelease(
   });
 }
 
-/** Filename references only. The plugin implementation stays in the repository. */
+/** A tree of exactly `files`, written in a scratch repository, and its `tar.gz` when `archive` asks for one. */
+export async function readFileTree(
+  mirror: string,
+  files: readonly ConfigReleaseFile[],
+  options: { archive: boolean | ((treeId: string) => boolean); limit?: number },
+): Promise<{ treeId: string; archive: Buffer | null }> {
+  return withScratchRepo(mirror, async (repo, env) => {
+    const indexEnv = { ...env, GIT_INDEX_FILE: join(repo, 'release.index') };
+    await gitWithInput(repo, indexEnv, ['update-index', '-z', '--add', '--index-info'], files.map(([path, mode, blob]) => `${mode} ${blob}\t${path}`));
+    const written = await runGitCapture(['write-tree'], repo, null, indexEnv);
+    const treeId = written.stdout.trim();
+    if (written.exitCode !== 0 || !HEX40.test(treeId)) throw new Error(`git write-tree failed: ${written.stderr.trim()}`);
+    const wanted = typeof options.archive === 'function' ? options.archive(treeId) : options.archive;
+    return { treeId, archive: wanted ? await archiveTree(repo, env, treeId, options.limit ?? MAX_CONFIG_ARCHIVE_BYTES) : null };
+  });
+}
+
+/** What Bun tries, in order, for a relative import: the path, then each extension, then a directory index. */
+const IMPORT_SUFFIXES = ['', '.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.json'];
+
+/**
+ * The files the project tool modules `modules` load: each module and every
+ * file it imports by a relative specifier, transitively, from the root tree
+ * `rootTree`. A package import is not followed. A module that is not in the
+ * tree is left out, and the box reports it as missing.
+ */
+export async function toolModuleFiles(mirror: string, rootTree: string, modules: readonly string[]): Promise<ConfigReleaseFile[]> {
+  const tree = new Map((await listConfigFiles(mirror, rootTree)).map((file) => [file[0], file]));
+  const found = new Map<string, ConfigReleaseFile>();
+  const queue = [...modules];
+  while (queue.length > 0) {
+    const path = queue.pop()!;
+    const file = tree.get(path);
+    if (!file || found.has(path)) continue;
+    found.set(path, file);
+    if (file[1] === '120000' || path.endsWith('.json')) continue;
+    const source = await runGitCapture(['cat-file', 'blob', file[2]], mirror);
+    const loader = path.endsWith('.tsx') ? 'tsx' : path.endsWith('.jsx') ? 'jsx' : /\.[cm]?ts$/.test(path) ? 'ts' : 'js';
+    let imports: Array<{ path: string }> = [];
+    try {
+      imports = new Bun.Transpiler({ loader }).scanImports(source.stdout);
+    } catch {
+      // A syntax error: the box reports it when it imports the module.
+    }
+    for (const { path: specifier } of imports) {
+      if (!specifier.startsWith('./') && !specifier.startsWith('../')) continue;
+      const base = posix.normalize(posix.join(posix.dirname(path), specifier));
+      // `./x.js` names `x.ts` in TypeScript, and Bun resolves it so.
+      const candidates = [...IMPORT_SUFFIXES.map((suffix) => base + suffix), base.replace(/js$/, 'ts'), ...IMPORT_SUFFIXES.slice(1).map((suffix) => `${base}/index${suffix}`)];
+      const target = candidates.find((candidate) => tree.has(candidate));
+      if (target) queue.push(target);
+    }
+  }
+  return [...found.values()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+}
+
+/** v2 only: filename references, the implementation stays in the repository. v3 has no plugin variants. */
 export function selectedOpenCodePlugins(manifest: Record<string, unknown> | null, agent: string): string[] | null {
   if (manifest?.kortix_version !== 2) return null;
   const global = (manifest.harnesses as { opencode?: { plugins?: string[] } } | undefined)?.opencode?.plugins;
@@ -326,6 +464,24 @@ export async function resolveReleaseTreeSource(
   const manifest = await readManifestAtSha(mirror, project, commit);
   const configDir = await resolveOpencodeConfigDirAtSha(mirror, project, commit, manifest);
   const plugins = configDir && variant.startsWith('agent:') ? selectedOpenCodePlugins(manifest, variant.slice(6)) : null;
+  // The config dir keeps everything, as before (CFG-2): its own `.gitattributes`
+  // must not drop or rewrite what the harness loads. So does the manifest.
+  const exportIgnored = await exportIgnoredPaths(
+    mirror,
+    rootTree,
+    (path) => path === project.manifestPath || (configDir !== null && path.startsWith(`${configDir}/`)),
+  );
+  // v3 reads no harness config dir (the daemon reads only the compiled set):
+  // a leftover v2 `opencode.json[c]` would make the release look like one.
+  if (Number(manifest?.kortix_version) === 3) {
+    for (const dir of [OPENCODE_CONFIG_DIR, LEGACY_OPENCODE_CONFIG_DIR]) {
+      for (const name of ['opencode.jsonc', 'opencode.json']) {
+        const path = `${dir}/${name}`;
+        const exists = await runGitCapture(['cat-file', '-e', `${commit}:${path}`], mirror);
+        if (exists.exitCode === 0 && !exportIgnored.includes(path)) exportIgnored.push(path);
+      }
+    }
+  }
   if (configDir && plugins !== null) {
     const configTree = await resolveConfigTreeId(mirror, commit, configDir);
     const available = configTree
@@ -336,7 +492,7 @@ export async function resolveReleaseTreeSource(
     const missing = plugins.filter((name) => !available.includes(name));
     if (missing.length) throw new Error(`OpenCode plugin not found in ${configDir}/plugins: ${missing.join(', ')}`);
   }
-  return { source: { configDir, rootTree, plugins } };
+  return { source: { configDir, rootTree, plugins, exportIgnored } };
 }
 
 /**

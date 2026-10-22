@@ -1,75 +1,27 @@
 /**
- * The durable server-side transcript mirror.
+ * The v1 transcript row projections, pure.
  *
- * WHY IT EXISTS. `buildSessionTranscriptDigest` proxies the sandbox's OpenCode
- * endpoint, so it can only answer for a RUNNING session. Every other session —
- * stopped, hibernated, still waking — got `unavailable`, and the web route then
- * painted a full-screen "Connecting…" with no transcript for the whole wake
- * (measured 5-240 s) although every message existed. There was no server-side
- * copy to serve, and the browser-side IndexedDB mirror that used to cover the
- * gap was deleted because its freshness test could not observe a turn ENDING.
+ * The v1 mirror tables (`session_transcript_mirrors`, `session_transcript_messages`) were the
+ * server-side copy of a session's transcript until the session log replaced them (P8). Nothing
+ * reads or writes them through this module any more (P8.2): the conversion of an old mirror into
+ * the log is `writeSessionLogFromMirror` (`../session-log-capture.ts`). What stays here is the row
+ * shape both paths share:
  *
- * WHERE IT IS WRITTEN, AND WHY THERE. Capture runs at TURN END — the
- * `turn-stream` `end`/`turn_end` relay in `routes/turn-stream.ts`, fire-and-forget,
- * beside the `reconcileForwardedTurnsAtEnd` box read that already happens in
- * that branch. That instant is precisely the one the deleted client mirror
- * could not see, so writing the mirror BECAUSE a turn ended inverts its failure
- * mode: a mirrored thread is never a mid-turn snapshot. The box is definitionally
- * reachable (it just relayed), and both halves of the turn are final.
- *
- * Rejected write paths, and why:
- *  - Tapping the sandbox proxy's `/session/:id/message` responses is the most
- *    complete source, but it puts a parse of a body measured at 7-19 MB on the
- *    hot proxy path of every transcript read. Tapping the SSE `/event` stream
- *    instead would mean reassembling part deltas server-side — a second sync
- *    store, in a second language of bugs.
- *  - Writing at prompt-accept captures only the user half of a turn, keyed by a
- *    client-minted wire id rather than the ids the runtime finally persists.
- *
- * KNOWN GAP, stated rather than papered over: a turn whose `turn_end` never
- * arrives (the box is killed mid-turn) leaves its messages unmirrored until the
- * next successful capture. The read path reports exactly what it holds and
- * never claims a completeness it cannot prove.
- *
- * IDENTITY IS THE POINT. Rows are keyed by the OpenCode message id — the same
- * id the live sync store sees when the box answers — so a client hydrates with
- * `source: 'cache'` and the live read SETTLES each message by id instead of
- * duplicating it. A mirror without ids reproduces the ghost messages that got
- * the last one deleted.
- *
- * TURN-ENDEDNESS IS STORED, NEVER INFERRED. `info` is kept VERBATIM, so
- * `time.completed` and `error` — the only two things that end a turn — travel
- * with the message. The deleted mirror's freshness test read the transcript's
- * SHAPE (message count, part count, tail id) and a STOP moves none of them, so
- * a stopped thread cold-painted as still running with everything under it
- * dimmed to "Queued". `use-session-sync.ts` states the acceptance criterion for
- * any replacement: it must read the MESSAGE, not its shape. This does.
- *
- * EVERY PART IS KEPT 1:1, EXCEPT BYTES. Saved history is what a client renders
- * while the computer is off, and what every client (web, mobile, CLI, SDK)
- * pages through, so a row must draw exactly what the live transcript draws:
- * text, reasoning, and every tool call with its input, output, error and
- * metadata. Tool cards draw from their input (the command, the path, the
- * pattern) and most from their output; an earlier mirror dropped both and saved
- * history drew empty cards.
- *
- * ATTACHMENT BYTES NEVER ENTER TRANSCRIPT ROWS. `sanitizeParts` removes a file
- * part's `url` unless it is a private attachment reference (base64 data URLs
- * are what made those bodies 7-19 MB), the same from a tool call's
- * `attachments`, and any `data:` URL anywhere in a tool payload. Strings are
- * bounded only against pathological sizes (see MIRROR_MAX_PART_CHARS).
- *
- * THIS MODULE IS THE READ SIDE plus the pure projections. The WRITE side lives
- * in `session-transcript-capture.ts`, because it needs the session-lifecycle
- * engine's endpoint resolver and the digest must not carry that import graph.
+ * - `mirrorRowsFromOpencodePayload` / `sanitizeParts`: a box's `GET /session/:id/message` payload
+ *   as v1 rows. A message with no id is dropped, never synthesized. Every part is kept 1:1 except
+ *   attachment bytes: a file part's `url` goes unless it is a private attachment reference (base64
+ *   data URLs made transcript bodies 7-19 MB), and so does any `data:` URL in a tool payload.
+ *   Strings are bounded only against pathological sizes (`MIRROR_MAX_PART_CHARS`).
+ * - `restoreStrippedToolParts`: a tool call an old mirror row stored without its input (before
+ *   2026-09-28) gets back the input its title and metadata prove.
+ * - The sub-agent walk (`readChildTranscripts`) and the v1 window shape (`MirrorSnapshot`,
+ *   `boundMirrorWindow`, `UnknownTranscriptCursorError`) the log reads answer in.
  */
 
-import { sessionTranscriptMessages, sessionTranscriptMirrors } from '@kortix/db';
 import { parseSessionAttachmentRef } from '@kortix/shared';
-import { and, count, eq, sql } from 'drizzle-orm';
-
-import { db } from '../../shared/db';
 import { isRecord } from '@kortix/shared/guards';
+import { jsonbSafeValue } from './jsonb-safe';
+import { TranscriptReadError, isRuntimeUnavailableError } from './runtime-read-failure';
 
 /** Messages read from the box per capture. A turn adds one user message and a
  *  handful of assistant steps, so this is many turns of headroom; everything
@@ -230,8 +182,7 @@ function sanitizeShowPayload(
   return Object.keys(out).length > 0 ? out : null;
 }
 
-/** A tool call that has ended. OpenCode's schema gives both a required
- *  `input`, which is what `mirrorPartsAreStripped` relies on. */
+/** A tool call that has ended. OpenCode's schema gives both a required `input`. */
 const isSettledToolStatus = (status: unknown) => status === 'completed' || status === 'error';
 
 /** A string budget: every string is cut to the per-string cap, and `spend`
@@ -338,8 +289,7 @@ function sanitizeToolState(
     if (kept !== undefined) state[key] = kept;
   }
   // Every settled call carries an input, as OpenCode's schema requires. A
-  // settled call WITHOUT one is therefore a row the old mirror stripped, which
-  // is how `mirrorPartsAreStripped` finds the rows to capture again.
+  // settled call WITHOUT one is a row an old mirror stripped.
   if (isSettledToolStatus(state.status) && !('input' in state)) state.input = {};
   return state;
 }
@@ -373,25 +323,6 @@ export function sanitizeParts(raw: unknown): Array<Record<string, unknown>> {
     out.push(part);
   }
   return out;
-}
-
-/**
- * Pure: does this stored part array carry a settled tool call without its
- * input? Only the old mirror wrote that shape (it stripped every tool call's
- * input, output and error); `sanitizeParts` never does. Such a row is
- * complete by every other test, so without this a walk would stop on it and
- * the history would stay stripped forever.
- */
-export function mirrorPartsAreStripped(parts: unknown): boolean {
-  if (!Array.isArray(parts)) return false;
-  return parts.some(
-    (part) =>
-      isRecord(part) &&
-      part.type === 'tool' &&
-      isRecord(part.state) &&
-      isSettledToolStatus(part.state.status) &&
-      !('input' in part.state),
-  );
 }
 
 const SKILL_TITLE = 'Loaded skill: ';
@@ -450,9 +381,7 @@ const STRIPPED_CALL_INPUT = new Map<
  * `metadata.output` (shell.ts: the output's last 30,000 characters). A client
  * then draws the call with its own renderer instead of an empty row.
  *
- * Nothing is invented: a call that proves no input is served as stored. The
- * stored row is never changed, so `mirrorPartsAreStripped` still finds it and
- * a wake still captures it again 1:1.
+ * Nothing is invented: a call that proves no input is served as stored.
  */
 export function restoreStrippedToolParts(
   parts: ReadonlyArray<Record<string, unknown>>,
@@ -473,23 +402,6 @@ export function restoreStrippedToolParts(
         : {};
     return { ...part, state: { ...state, input, ...output } };
   });
-}
-
-/**
- * Pure: the index the capture's early stop reads (see `capturedPageGate`):
- * message id -> stored `message_completed_at` in epoch ms, null when stored
- * but not completed. A row in the old stripped format is left OUT, so a walk
- * reads past it and the capture writes it again, 1:1.
- */
-export function capturedMessageIndex(
-  rows: ReadonlyArray<{ messageId: string; parts: unknown; messageCompletedAt: Date | null }>,
-): Map<string, number | null> {
-  const index = new Map<string, number | null>();
-  for (const row of rows) {
-    if (mirrorPartsAreStripped(row.parts)) continue;
-    index.set(row.messageId, row.messageCompletedAt?.getTime() ?? null);
-  }
-  return index;
 }
 
 // ── Sub-agent sessions ──────────────────────────────────────────────────────
@@ -539,6 +451,13 @@ export function childSessionIdOf(part: unknown): string | undefined {
   if (SUBAGENT_TOOLS.has(tool)) {
     const fromMetadata = isRecord(state?.metadata) ? state.metadata.sessionId : undefined;
     if (typeof fromMetadata === 'string' && fromMetadata) return fromMetadata;
+    if (tool === 'task' && state?.status === 'error') {
+      // An errored task names its child only in the error text (the SDK's
+      // rule); the legacy title/output fallbacks never apply once it errored.
+      return typeof state.error === 'string'
+        ? state.error.match(/\btask_id:\s*(ses_[A-Za-z0-9]+)/)?.[1]
+        : undefined;
+    }
     if (typeof state?.title === 'string' && state.title) {
       const match = state.title.match(SESSION_ID_IN_TEXT);
       if (match) return match[0];
@@ -580,7 +499,7 @@ export function childSessionReferences(
 }
 
 /**
- * Pure: which sub-agent transcripts one capture reads, at most `limit`.
+ * Pure: which sub-agent transcripts a capture reads.
  *
  * A sub-agent whose dispatching call ended, and whose saved transcript has no
  * open message, is final: it is never read again. One that is new, still
@@ -591,33 +510,132 @@ export function childSessionsToCapture(input: {
   references: ReadonlyArray<ChildSessionReference>;
   /** Sub-agent session id -> every stored message of it has ended. */
   stored: ReadonlyMap<string, { settled: boolean }>;
-  limit: number;
 }): string[] {
   return input.references
     .filter((reference) => {
       const saved = input.stored.get(reference.id);
       return !saved || !reference.settled || !saved.settled;
     })
-    .map((reference) => reference.id)
-    .slice(0, Math.max(0, input.limit));
+    .map((reference) => reference.id);
+}
+
+/** Only an OpenCode session id may reach a URL or a row. */
+const CHILD_SESSION_ID = /^ses_[A-Za-z0-9]{1,124}$/;
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/**
+ * How one capture's sub-agent reads failed, classified.
+ *
+ * The classes are the expected states a fail-open capture tolerates — a
+ * stopped box (502/503/504 through the proxy, a transport timeout) and a
+ * runtime that no longer serves a referenced transcript (404, a box that
+ * came back without its sub-agent sessions) — plus everything else.
+ * `readInboxTranscriptState` and the capture share
+ * `isRuntimeUnavailableError` for the same distinction.
+ */
+export interface ChildReadFailures {
+  /** The runtime answers 404 for this transcript: re-reading changes nothing. */
+  missing: number;
+  /** The runtime stopped serving transcripts mid-walk. Every further read
+   *  would fail the same way, so the walk stops at the first one. */
+  unavailable: number;
+  /** Anything else — the only class a capture still warns about. */
+  other: number;
+  /** The first failure of the expected classes, for the info line. */
+  first?: string;
+  /** The first unexpected failure, for the warn line. */
+  firstOther?: string;
 }
 
 /**
- * Does this session's mirror still hold a row in the old stripped format? The
- * same question as `mirrorPartsAreStripped`, asked of the database: the wake
- * backfill reads the box again for such a history, because a mirror that
- * proved its head is otherwise left alone for good.
+ * The one log line a capture's failed sub-agent reads earn.
+ *
+ * Expected states (a stopped box, gone transcripts) log info — warning on
+ * them was a 637-line spike over four days, every line an expected fail-open
+ * degrade. Only an unexpected failure warns, with the count of unexpected
+ * ones. Null when nothing failed.
  */
-export async function mirrorHoldsStrippedRows(sessionId: string): Promise<boolean> {
-  const result = await db.execute(sql`
-    SELECT EXISTS (
-      SELECT 1 FROM kortix.session_transcript_messages
-       WHERE session_id = ${sessionId}
-         AND parts @? '$[*] ? (@.type == "tool" && (@.state.status == "completed" || @.state.status == "error") && !(exists (@.state.input)))'
-    ) AS stripped
-  `);
-  const rows = Array.isArray(result) ? result : ((result as { rows?: unknown[] }).rows ?? []);
-  return (rows[0] as { stripped?: unknown } | undefined)?.stripped === true;
+export function childReadFailureLog(
+  failures: ChildReadFailures,
+): { level: 'warn' | 'info'; message: string; context: Record<string, unknown> } | null {
+  if (failures.missing + failures.unavailable + failures.other === 0) return null;
+  if (failures.other > 0) {
+    return {
+      level: 'warn',
+      message: '[transcript-mirror] sub-agent reads failed',
+      context: { count: failures.other, first: failures.firstOther ?? failures.first },
+    };
+  }
+  return {
+    level: 'info',
+    message: '[transcript-mirror] sub-agent reads deferred',
+    context: { missing: failures.missing, unavailable: failures.unavailable, first: failures.first },
+  };
+}
+
+/**
+ * The sub-agent transcripts one capture saves, read through `read`, and whether
+ * another capture saves more.
+ *
+ * Breadth-first from `references`, following each read's own sub-agents. At most
+ * `cap` reads that return rows: a failed read and an empty one take no slot (the
+ * capture's deadline bounds them), so neither starves the sub-agents after it;
+ * only a runtime that cannot serve any transcript stops the walk early.
+ *
+ * `more`: sub-agents are left unread AND this capture read rows of one never saved
+ * before. A sub-agent that reads empty, fails, or was saved already (an unsettled
+ * one read again) is no progress, so a run of captures ends.
+ */
+export async function readChildTranscripts(input: {
+  references: ReadonlyArray<ChildSessionReference>;
+  stored: ReadonlyMap<string, { settled: boolean }>;
+  cap: number;
+  /** The root: never read as a sub-agent. */
+  root?: string;
+  read: (id: string) => Promise<{ rows: unknown[]; complete: boolean }>;
+}): Promise<{
+  children: Array<{ opencodeSessionId: string; payload: unknown[]; complete: boolean }>;
+  more: boolean;
+  failures: ChildReadFailures;
+}> {
+  const children: Array<{ opencodeSessionId: string; payload: unknown[]; complete: boolean }> = [];
+  const failures: ChildReadFailures = { missing: 0, unavailable: 0, other: 0 };
+  const seen = new Set(input.root ? [input.root] : []);
+  const queue = childSessionsToCapture(input);
+  let savedNew = false;
+  while (queue.length > 0 && children.length < input.cap) {
+    const child = queue.shift()!;
+    if (seen.has(child) || !CHILD_SESSION_ID.test(child)) continue;
+    seen.add(child);
+    try {
+      const walk = await input.read(child);
+      queue.push(...childSessionsToCapture({ references: childSessionReferences(walk.rows as Array<{ parts: unknown }>), stored: input.stored }));
+      if (mirrorRowsFromOpencodePayload(walk.rows).length === 0) continue;
+      children.push({ opencodeSessionId: child, payload: walk.rows, complete: walk.complete });
+      savedNew ||= walk.complete && !input.stored.has(child);
+    } catch (error) {
+      // 404 is its own class: re-reading a transcript the runtime no longer
+      // serves changes nothing, while a stopped box may come back.
+      const kind = error instanceof TranscriptReadError && error.status === 404
+        ? 'missing'
+        : isRuntimeUnavailableError(error)
+          ? 'unavailable'
+          : 'other';
+      failures[kind] += 1;
+      if (kind === 'other') failures.firstOther ??= messageOf(error);
+      else failures.first ??= messageOf(error);
+      // A runtime that cannot serve ANY transcript repeats the same failure
+      // for every sibling — walking on pays it per child (one prod capture
+      // failed 60 reads in a row against a dying box). Stop only for that
+      // class and let the next capture, or the unread chain, take the rest;
+      // a missing transcript 404s per child, instantly, and one gone child
+      // must not starve the siblings after it.
+      if (kind === 'unavailable') break;
+    }
+  }
+  const unread = queue.some((child) => !seen.has(child) && CHILD_SESSION_ID.test(child));
+  return { children, more: unread && savedNew, failures };
 }
 
 /**
@@ -673,70 +691,13 @@ export function mirrorRowsFromOpencodePayload(payload: unknown): MirrorMessage[]
     if (!info) continue;
     const id = typeof info.id === 'string' ? info.id.trim() : '';
     if (!id) continue;
-    rows.push({ info, parts: sanitizeParts(msg.parts) });
+    rows.push({ info: jsonbSafeValue(info), parts: jsonbSafeValue(sanitizeParts(msg.parts)) });
   }
   return rows;
 }
 
 /**
- * The head bit, decided from evidence and nothing else.
- *
- * The box was asked for the last `limit` messages. Fewer than `limit` came back
- * => that IS the whole thread and the mirror now holds its first message.
- * Exactly `limit` => there may be more above, so the previously proven value
- * stands. Nothing here guesses.
- */
-export function headCompleteAfterCapture(input: {
-  returned: number;
-  limit: number;
-  previous: boolean;
-}): boolean {
-  if (input.returned < input.limit) return true;
-  return input.previous;
-}
-
-/**
- * The "have I already got this page?" test a full-history walk stops on, or
- * `undefined` when stopping would be unsound.
- *
- * TWO CONDITIONS, both load-bearing.
- *
- * 1. THE PREVIOUS CAPTURE REACHED THE HEAD (`headComplete`). Pages run
- *    newest-first, so "I hold this page" only implies "I hold everything below
- *    it" when a previous walk actually got to the session's first message.
- *    Without the gate, a mirror that never got past page three would catch up
- *    on page three forever and the head would never be captured at all.
- * 2. THE MESSAGE IS COMPLETED, and its completion time matches what is stored.
- *    An uncompleted message can still grow, so it is never evidence of
- *    anything; `time.completed` is the field OpenCode stamps when the turn
- *    ends, which is why the mirror denormalizes it.
- */
-export function capturedPageGate(input: {
-  fullHistory: boolean;
-  headComplete: boolean;
-  /** message id -> stored `message_completed_at` in epoch ms, null when the
-   *  message is stored but not completed. */
-  completedById: ReadonlyMap<string, number | null>;
-}): ((rows: Array<{ info: Record<string, unknown> }>) => boolean) | undefined {
-  if (!input.fullHistory || !input.headComplete) return undefined;
-  return (rows) =>
-    rows.every((row) => {
-      const id = String(row.info.id);
-      if (!input.completedById.has(id)) return false;
-      const time = row.info.time;
-      const completed =
-        time && typeof time === 'object' && !Array.isArray(time)
-          ? (time as Record<string, unknown>).completed
-          : undefined;
-      if (typeof completed !== 'number' || !Number.isFinite(completed) || completed <= 0) {
-        return false;
-      }
-      return input.completedById.get(id) === completed;
-    });
-}
-
-/**
- * A `before` cursor that names no message this session has mirrored.
+ * A `before` cursor that names no message this session has stored.
  *
  * Distinct from "no mirror" on purpose. Serving the newest window instead
  * would answer a question the caller did not ask, and a client paging older
@@ -747,155 +708,4 @@ export class UnknownTranscriptCursorError extends Error {
     super('Unknown transcript cursor');
     this.name = 'UnknownTranscriptCursorError';
   }
-}
-
-/**
- * Serve the mirror. Returns null when nothing was ever captured — the caller
- * must then say "unavailable" rather than paint an empty thread as a complete
- * one. The one empty window it serves is a PROVEN one: a complete read of the
- * runtime that found no messages (`total: 0`, `head_complete: true`).
- *
- * Rows the old mirror stripped are served with what they kept
- * (`restoreStrippedToolParts`).
- *
- * `before` walks BACKWARDS by keyset on the stored order
- * (`message_created_at`, `message_id`) — the same order OpenCode's own
- * `MessageV2.page()` uses, so a mirrored page and a live read never disagree
- * about sequence. Never OFFSET: capture rewrites rows under the reader, and an
- * offset page would skip and repeat across requests.
- */
-export async function readSessionTranscriptMirror(input: {
-  sessionId: string;
-  limit: number;
-  /** A message id from a previous window's `next_cursor`. Rows STRICTLY older
-   *  than it are returned. */
-  before?: string | null;
-  /**
-   * A sub-agent's OpenCode session inside this session. Omitted: the root.
-   * A window holds ONE OpenCode session's messages: the mirror also stores
-   * the transcripts of the sub-agents the root dispatched, and a root read
-   * must never interleave them into the conversation.
-   */
-  opencodeSessionId?: string | null;
-}): Promise<MirrorSnapshot | null> {
-  return db.transaction(
-    async (tx) => {
-      const [state] = await tx
-        .select({
-          opencodeSessionId: sessionTranscriptMirrors.runtimeSessionId,
-          headComplete: sessionTranscriptMirrors.headComplete,
-          capturedAt: sessionTranscriptMirrors.capturedAt,
-        })
-        .from(sessionTranscriptMirrors)
-        .where(eq(sessionTranscriptMirrors.sessionId, input.sessionId))
-        .limit(1);
-      if (!state) return null;
-
-      const target = input.opencodeSessionId || state.opencodeSessionId;
-      const scope = target
-        ? and(
-            eq(sessionTranscriptMessages.sessionId, input.sessionId),
-            eq(sessionTranscriptMessages.runtimeSessionId, target),
-          )
-        : eq(sessionTranscriptMessages.sessionId, input.sessionId);
-
-      const [totals] = await tx
-        .select({ total: count() })
-        .from(sessionTranscriptMessages)
-        .where(scope);
-      const total = totals?.total ?? 0;
-      if (total === 0) {
-        // A complete read of the runtime that found no messages is stored as a
-        // head-complete mirror with no rows: the proof that the conversation
-        // is empty, which lets a client open it without waiting for its
-        // computer. Every other empty read is "nothing saved".
-        const provenEmpty =
-          !input.before && !input.opencodeSessionId && state.headComplete && !!state.opencodeSessionId;
-        return provenEmpty
-          ? {
-              opencode_session_id: state.opencodeSessionId,
-              root_opencode_session_id: state.opencodeSessionId,
-              captured_at: new Date(state.capturedAt).toISOString(),
-              total: 0,
-              head_complete: true,
-              next_cursor: null,
-              messages: [],
-            }
-          : null;
-      }
-
-      let anchor: { messageCreatedAt: Date | null; messageId: string } | null = null;
-      if (input.before) {
-        const [row] = await tx
-          .select({
-            messageCreatedAt: sessionTranscriptMessages.messageCreatedAt,
-            messageId: sessionTranscriptMessages.messageId,
-          })
-          .from(sessionTranscriptMessages)
-          .where(and(scope, eq(sessionTranscriptMessages.messageId, input.before)))
-          .limit(1);
-        // The cursor is a message id this session mirrored, so a miss means the
-        // row was pruned or the caller invented it. Both are the caller's to
-        // handle; neither may be answered with the newest page.
-        if (!row) throw new UnknownTranscriptCursorError(input.before);
-        anchor = row;
-      }
-
-      // Written out rather than as a row comparison `(a, b) < (c, d)`: the
-      // expanded form takes the (session_id, message_created_at, message_id)
-      // index without depending on how the driver types a Date inside a row
-      // constructor. NULL `message_created_at` sorts last under DESC NULLS
-      // LAST — i.e. oldest — so it is older than any timestamped row.
-      // `::timestamptz` on an ISO STRING, never a bound `Date`: inside a raw
-      // `sql` fragment the parameter bypasses drizzle's column typing and
-      // postgres.js rejects a Date outright ("The \"string\" argument must be of
-      // type string ... Received an instance of Date"). Caught against the real
-      // dev mirror, not by a test with an injected reader.
-      const anchorCreatedAt = anchor?.messageCreatedAt
-        ? new Date(anchor.messageCreatedAt).toISOString()
-        : null;
-      const older = anchor
-        ? anchorCreatedAt === null
-          ? sql`${sessionTranscriptMessages.messageCreatedAt} IS NULL AND ${sessionTranscriptMessages.messageId} < ${anchor.messageId}`
-          : sql`(${sessionTranscriptMessages.messageCreatedAt} IS NULL OR ${sessionTranscriptMessages.messageCreatedAt} < ${anchorCreatedAt}::timestamptz OR (${sessionTranscriptMessages.messageCreatedAt} = ${anchorCreatedAt}::timestamptz AND ${sessionTranscriptMessages.messageId} < ${anchor.messageId}))`
-        : undefined;
-
-      // `limit + 1` is the has-older probe: one extra row costs one row and
-      // answers "is there a page behind this one" without a second query.
-      const window = await tx
-        .select({
-          messageId: sessionTranscriptMessages.messageId,
-          info: sessionTranscriptMessages.info,
-          parts: sessionTranscriptMessages.parts,
-        })
-        .from(sessionTranscriptMessages)
-        .where(older ? and(scope, older) : scope)
-        .orderBy(
-          sql`${sessionTranscriptMessages.messageCreatedAt} DESC NULLS LAST`,
-          sql`${sessionTranscriptMessages.messageId} DESC`,
-        )
-        .limit(input.limit + 1);
-
-      const hasOlder = window.length > input.limit;
-      const kept = hasOlder ? window.slice(0, input.limit) : window;
-
-      return {
-        opencode_session_id: target ?? null,
-        root_opencode_session_id: state.opencodeSessionId ?? null,
-        captured_at: new Date(state.capturedAt).toISOString(),
-        total,
-        // A sub-agent's rows are written only from a read that reached its
-        // first message (see the capture), so a stored child is whole.
-        head_complete: input.opencodeSessionId ? true : state.headComplete,
-        // The oldest row IN this window, so the next request starts strictly
-        // behind it. Null when this window already reaches the oldest row.
-        next_cursor: hasOlder ? (kept.at(-1)?.messageId ?? null) : null,
-        messages: kept.reverse().map((row) => ({
-          info: (row.info ?? {}) as Record<string, unknown>,
-          parts: restoreStrippedToolParts((Array.isArray(row.parts) ? row.parts : []) as Array<Record<string, unknown>>),
-        })),
-      };
-    },
-    { isolationLevel: 'repeatable read', accessMode: 'read only' },
-  );
 }

@@ -15,12 +15,12 @@
  * are scripted per test; the projection/fence modules under test stay real.
  */
 import type { sessionSandboxes } from '@kortix/db';
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import * as realOpencodeMapping from '../opencode-mapping';
 import * as realProviders from '../../platform/providers';
 import * as realRuntimeIdentity from '../runtime-identity';
 import * as realRuntimeWakeFence from '../session-lifecycle/runtime-wake-fence';
-import * as realConfigReleases from '../../config-releases/enabled';
+import * as realAdmitRunningSandbox from '../../runtime-convergence/admit-running-sandbox';
 
 /** Scriptable statement results, shifted in program order. */
 let selectQueue: unknown[][] = [];
@@ -84,6 +84,8 @@ mock.module('../../platform/providers', () => ({
 
 let recoveryClaims: Array<Record<string, unknown>> = [];
 let recoveryAcceptedRows: Array<Record<string, unknown>> = [];
+/** Rows handed to the preserve path, for asserting what the report guard sees. */
+let preservedRows: Array<typeof sessionSandboxes.$inferSelect> = [];
 mock.module('../runtime-identity', () => ({
   ...realRuntimeIdentity,
   claimInPlaceRuntimeRecovery: async (row: Record<string, unknown>) =>
@@ -94,7 +96,10 @@ mock.module('../runtime-identity', () => ({
   ) => recoveryAcceptedRows.shift() ?? null,
   retireUnmaterializedRuntime: async () => {},
   parkEstablishedRuntime: async (row: Record<string, unknown>) => ({ ...row, status: 'stopped' }),
-  preserveEstablishedRuntime: async (row: Record<string, unknown>) => ({ ...row, status: 'stopped' }),
+  preserveEstablishedRuntime: async (row: typeof sessionSandboxes.$inferSelect) => {
+    preservedRows.push(row);
+    return { ...row, status: 'stopped' as const };
+  },
 }));
 
 /** The detached wake fence is stubbed: the resume test pins the CLAIM, not the poll. */
@@ -114,9 +119,10 @@ mock.module('../opencode-mapping', () => ({
   ensureOpencodeSessionPin: async () => pinResults.shift() ?? { pin: null, changed: false, reason: 'not_ready' },
 }));
 
-mock.module('../../config-releases/enabled', () => ({
-  ...realConfigReleases,
-  configReleasesEnabled: () => false,
+/** Runtime admission runs on every open of a running box; it admits every box here. */
+mock.module('../../runtime-convergence/admit-running-sandbox', () => ({
+  ...realAdmitRunningSandbox,
+  admitRunningSandbox: async () => ({ admitted: true }),
 }));
 
 /** The guarantee wiring pulls sandbox-proxy/backend into the module graph; never load it here. */
@@ -145,7 +151,7 @@ function row(
     sessionId: 'sess-1',
     projectId: 'proj-1',
     accountId: 'acct-1',
-    provider: 'daytona',
+    provider: 'platinum',
     externalId: 'ext-1',
     baseUrl: null,
     status,
@@ -187,6 +193,7 @@ beforeEach(() => {
   pinResults = [];
   recoveryClaims = [];
   recoveryAcceptedRows = [];
+  preservedRows = [];
   wakeStarted = 0;
   recoverInPlaceResult = 'unavailable';
 });
@@ -329,6 +336,55 @@ describe('openSession response envelope — one pin per orchestration branch', (
     expect(result.runtime_url).toBe('/p/ext-1/8000');
     expect(result.sandbox?.metadata).toEqual({ runtimeIdentityState: 'recovering' });
     expect(result.action).toBe('restored');
+  });
+
+  test('a removed box already parked as lost skips the recovery claim and answers the terminal card', async () => {
+    // The row was preserved as lost on an earlier open (its report already
+    // fired once). Re-claiming would overwrite runtimeIdentityState before the
+    // once-per-identity guard reads it — the 2026-10-16 loop (163 duplicate
+    // runtime.lost reports). The open must preserve silently instead.
+    const parkedAt = new Date(NOW_MS() - 30 * 60_000).toISOString();
+    selectQueue = [
+      [
+        row('stopped', {
+          runtimeIdentityState: 'unavailable',
+          preservedExternalId: 'ext-1',
+          runtimeUnavailableReason: 'runtime_removed',
+          runtimeUnavailableAt: parkedAt,
+          stopReason: 'provider_removed',
+          stoppedAt: parkedAt,
+        }),
+      ],
+    ];
+    providerStatuses = ['removed'];
+    // Sentinels: if the claim were attempted, these get consumed and the
+    // provider would be asked for an in-place restore again.
+    recoveryClaims = [{ row: row('stopped', { runtimeIdentityState: 'recovery_claimed' }), id: 'claim-1' }];
+    recoveryAcceptedRows = [row('provisioning', { runtimeIdentityState: 'recovering' })];
+
+    const result = await openSession(args('default', 'oc-current'));
+
+    // The same terminal lost card the FIRST open after the loss served.
+    expect(result.stage).toBe('failed');
+    expect(result.retriable).toBe(false);
+    expect(result.reason).toBe('runtime_identity_unavailable');
+    expect(result.runtime_url).toBe('/p/ext-1/8000');
+    // The claim was not attempted (the sentinels survive) and no restore was
+    // requested — the only provider contact is the status probe, consumed by
+    // the stopped-row pre-probe and reused downstream.
+    expect(recoveryClaims).toHaveLength(1);
+    expect(recoveryAcceptedRows).toHaveLength(1);
+    expect(providerStatuses).toEqual([]);
+    // The preserve path ran against the row AS PARKED, so the report guard
+    // inside the real preserveEstablishedRuntime sees 'unavailable' and stays
+    // silent — the mocked stub here receives exactly that row.
+    const [preserved] = preservedRows;
+    expect(preservedRows).toHaveLength(1);
+    expect(preserved).toBeDefined();
+    expect(preserved?.metadata).toMatchObject({
+      runtimeIdentityState: 'unavailable',
+      preservedExternalId: 'ext-1',
+    });
   });
 
   test('a provider-running box whose OpenCode is still booting answers starting/not_ready', async () => {

@@ -28,8 +28,7 @@ import { productionPlatinumClient, observeTemplates, findTemplateByName, findTem
 import type { PlatinumClient, PlatinumTemplate } from './platinum-templates';
 import { uploadWithRetry, templateInUseCount } from './platinum-upload';
 export { PlatinumTemplateListingError, PlatinumTemplateBuildFailedError, summarizePlatinumBuildFailure, findTemplateByName, waitForActive, requireExternalTemplateId } from './platinum-templates';
-export type { PlatinumClient } from './platinum-templates';
-export { uploadUrlGuardOptsFromEnv, uploadWithRetry, UploadUrlRejectedError } from './platinum-upload';
+export { uploadWithRetry } from './platinum-upload';
 import type {
   BuildableTemplate,
   BuildLogTap,
@@ -217,6 +216,14 @@ export function fromBuildKernelModules(input: Pick<BuildableTemplate, 'snapshotN
 }
 
 
+/**
+ * The `region` of a Platinum build request: `{ region }` for a regional image,
+ * `{}` for the home region, so a home build sends exactly what it always did.
+ */
+export function platinumRegionBody(region: string | undefined): { region?: string } {
+  return region ? { region } : {};
+}
+
 /** Parallel exact-name lookups per batch when ranking last-ready candidates. */
 const NAMED_LOOKUP_CONCURRENCY = 6;
 
@@ -288,9 +295,17 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
       // streams the context — so this brings the Platinum path to parity.
       // uploadWithRetry re-presigns + retries on a transient S3 408/timeout/5xx
       // (see its doc comment) — context_s3_key below is whichever attempt won.
+      //
+      // A regional image is built in its region: both phases name it, so the
+      // context lands in that region's bucket and a build host there reads it.
+      // Without a region Platinum builds where the request lands, which is the
+      // home control plane behind PLATINUM_API_URL. A us_region project's every
+      // rebuild was then copied to us-east, and its first session waited for
+      // that copy (58-66 s per rebuild on prod, 2026-10-17).
+      const region = platinumRegionBody(input.region);
       const context_s3_key = await uploadWithRetry(
         () => this.client.json<{ upload_url: string; context_s3_key: string }>(
-          '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+          '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify(region) },
         ),
         tarPath,
       );
@@ -315,12 +330,17 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
           // MAX_BUILD_SIZE_MB is Platinum's own from-build hard cap (>20 GiB-disk
           // without it 400s "size_mb too_big"). See isPlatinumSizeCapBuildFailure for
           // what happens when a ceiling this small can't fit the image.
-          size_mb: Math.min(platinumBuildSizeMb(), diskGb * MB_PER_GB, PLATINUM_MAX_BUILD_SIZE_MB),
+          // An App template carries minimal defaults: each machine passes its own
+          // cpu/ram/disk at create, so its build ceiling is not tied to a disk.
+          size_mb: input.runtimeProfile === 'app'
+            ? Math.min(platinumBuildSizeMb(), PLATINUM_MAX_BUILD_SIZE_MB)
+            : Math.min(platinumBuildSizeMb(), diskGb * MB_PER_GB, PLATINUM_MAX_BUILD_SIZE_MB),
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: diskGb,
           entrypoint: (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '),
           ...kernelModules.body,
+          ...region,
         }),
       });
       // PHASE 2 EXACT ID: from-build MUST hand back a non-empty template id. We
@@ -357,14 +377,21 @@ export class PlatinumAdapter implements SandboxProviderAdapter {
    * uses this ONLY when the user image is unchanged AND the predecessor is active
    * on Platinum — otherwise it falls back to a normal buildSnapshot.
    */
-  async swapAgent(newSnapshotName: string, sourceSnapshotName: string): Promise<BuildSnapshotResult> {
+  async swapAgent(
+    newSnapshotName: string,
+    sourceSnapshotName: string,
+    opts: { region?: string } = {},
+  ): Promise<BuildSnapshotResult> {
     observeTemplates.invalidate();
     const { gzPath, cleanup } = await stageAgentBinaryGz();
     try {
       // uploadWithRetry — streamed + retried on transient S3 failure; see buildOnce.
+      // Platinum patches in the SOURCE template's region, on a host that reads
+      // the patch file from that region's bucket, so the presign names it too.
       const context_s3_key = await uploadWithRetry(
         () => this.client.json<{ upload_url: string; context_s3_key: string }>(
-          '/v1/templates/from-build/presign', { method: 'POST', body: JSON.stringify({}) },
+          '/v1/templates/from-build/presign',
+          { method: 'POST', body: JSON.stringify(platinumRegionBody(opts.region)) },
         ),
         gzPath,
       );

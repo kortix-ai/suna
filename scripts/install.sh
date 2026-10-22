@@ -113,13 +113,42 @@ resolve_version() {
 # ─── Download the binary to a temp file ──────────────────────────────────────
 download_binary() {
   local url="https://github.com/${REPO}/releases/download/${VERSION}/${ASSET}"
+  local sums_url="https://github.com/${REPO}/releases/download/${VERSION}/SHA256SUMS"
+  local sums expected actual
+  sums="$(mktemp -t kortix-sums.XXXXXX)"
   TMP_BIN="$(mktemp -t kortix-install.XXXXXX)"
+  # Verify before anything becomes executable (same rule as the TUI downloader,
+  # apps/cli/src/tui-bin.ts): the release publishes SHA256SUMS for every asset,
+  # so refuse to install anything the manifest does not cover or that does not
+  # match. Fail closed on a missing manifest, a missing line, or a mismatch.
+  info "Fetching SHA256SUMS…"
+  if ! curl -fsSL "$sums_url" -o "$sums"; then
+    rm -f "$sums" "$TMP_BIN"
+    fatal "Release ${VERSION} publishes no SHA256SUMS. Refusing to install an unverified binary."
+  fi
+  expected="$(awk -v asset="$ASSET" '{ name=$2; sub(/^\.\//, "", name); if (name == asset) { print $1; exit } }' "$sums")"
+  if [ -z "$expected" ]; then
+    rm -f "$sums" "$TMP_BIN"
+    fatal "SHA256SUMS lists no checksum for ${ASSET}. Refusing to install an unverified binary."
+  fi
   info "Downloading ${ASSET}…"
   printf "    ${F}from ${url}${N}\n"
   if ! curl -fsSL "$url" -o "$TMP_BIN"; then
-    rm -f "$TMP_BIN"
+    rm -f "$sums" "$TMP_BIN"
     fatal "Failed to download $url. Check the release page on github.com/${REPO}/releases."
   fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "$TMP_BIN" | awk '{print $1}')"
+  else
+    # macOS ships shasum, not sha256sum.
+    actual="$(shasum -a 256 "$TMP_BIN" | awk '{print $1}')"
+  fi
+  if [ "$actual" != "$expected" ]; then
+    rm -f "$sums" "$TMP_BIN"
+    fatal "Checksum mismatch for ${ASSET}: expected ${expected}, got ${actual}. The download is corrupt or tampered with — refusing to install."
+  fi
+  rm -f "$sums"
+  ok "Checksum verified (${expected})"
   chmod +x "$TMP_BIN"
   ok "Downloaded ($(du -h "$TMP_BIN" | awk '{print $1}'))"
 }
@@ -136,11 +165,15 @@ install_binary() {
 # ─── Symlink it onto $PATH ───────────────────────────────────────────────────
 link_onto_path() {
   local target="$INSTALL_HOME/$BINARY_NAME"
-  # Preferred: /usr/local/bin (already on most PATHs).
-  if [ -d "/usr/local/bin" ] && [ -w "/usr/local/bin" ]; then
-    ln -sf "$target" "/usr/local/bin/${BINARY_NAME}"
-    ln -sf "$target" "/usr/local/bin/${BINARY_NAME}t"
-    ok "Symlinked /usr/local/bin/${BINARY_NAME} → ${target}"
+  # The bin dir defaults to /usr/local/bin, exactly as before. KORTIX_BIN_DIR
+  # exists so a test can drive this installer without touching the box's real
+  # PATH (see .agents/skills/learnings 2026-10-03: a fixture write to the real
+  # bin dir shadows the installed CLI).
+  local bin_dir="${KORTIX_BIN_DIR:-/usr/local/bin}"
+  if [ -d "$bin_dir" ] && [ -w "$bin_dir" ]; then
+    ln -sf "$target" "${bin_dir}/${BINARY_NAME}"
+    ln -sf "$target" "${bin_dir}/${BINARY_NAME}t"
+    ok "Symlinked ${bin_dir}/${BINARY_NAME} → ${target}"
     return
   fi
   # Fallback: ~/.local/bin if it exists.

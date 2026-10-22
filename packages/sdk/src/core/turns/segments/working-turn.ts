@@ -1,3 +1,5 @@
+import type { SessionPrompt } from '../../rest/projects-client/sessions';
+import type { SessionLogTurn } from '../../session-log/turns/turn';
 import { showTurnBusyIndicator } from './turn-busy-visibility';
 
 /**
@@ -44,6 +46,11 @@ interface TurnLike {
   }>;
 }
 
+/** A block turn (`sessionLogTurns`): the id and the replies are all these rules read. */
+type BlockTurnLike = Pick<SessionLogTurn, 'id' | 'assistant'>;
+const turnIdOf = (turn: TurnLike | BlockTurnLike) => ('id' in turn ? turn.id : turn.userMessage.info.id);
+const replyCountOf = (turn: TurnLike | BlockTurnLike) => ('assistant' in turn ? turn.assistant.length : turn.assistantMessages.length);
+
 const completedAt = (info: { time?: object }): number | undefined =>
   (info.time as { completed?: number } | undefined)?.completed;
 
@@ -88,12 +95,9 @@ interface DeliveringTurnInput {
 }
 
 /** The transcript's `pending` bubble rule for a turn nobody is working on. */
-function isQueuedTurn(turn: TurnLike, input: QueuedTurnInput): boolean {
-  const id = turn.userMessage.info.id;
-  return (
-    input.pendingTurnIds.has(id) ||
-    (turn.assistantMessages.length === 0 && input.pendingPromptIds.has(id))
-  );
+function isQueuedTurn(turn: TurnLike | BlockTurnLike, input: QueuedTurnInput): boolean {
+  const id = turnIdOf(turn);
+  return input.pendingTurnIds.has(id) || (replyCountOf(turn) === 0 && input.pendingPromptIds.has(id));
 }
 
 /**
@@ -105,15 +109,13 @@ function isQueuedTurn(turn: TurnLike, input: QueuedTurnInput): boolean {
  * transcript.
  */
 export function fallbackBusyRowAfterTurnId(
-  input: QueuedTurnInput & DeliveringTurnInput & { turns: ReadonlyArray<TurnLike> },
+  input: QueuedTurnInput & DeliveringTurnInput & { turns: ReadonlyArray<TurnLike | BlockTurnLike> },
 ): string | null {
-  const delivering = input.turns.find((turn) =>
-    input.deliveringPromptIds.has(turn.userMessage.info.id),
-  );
-  if (delivering) return delivering.userMessage.info.id;
+  const delivering = input.turns.find((turn) => input.deliveringPromptIds.has(turnIdOf(turn)));
+  if (delivering) return turnIdOf(delivering);
   const firstQueued = input.turns.findIndex((turn) => isQueuedTurn(turn, input));
   if (firstQueued <= 0) return null;
-  return input.turns[firstQueued - 1].userMessage.info.id;
+  return turnIdOf(input.turns[firstQueued - 1]);
 }
 
 /**
@@ -129,6 +131,39 @@ export function turnIsConfirmedActive(input: {
   pendingDelivery: boolean;
 }): boolean {
   return input.isTurnWorking && !input.pendingDelivery && input.activeTurnId === input.turnId;
+}
+
+/**
+ * Does this turn's bubble read as queued (muted text, a Sending or Queued line)?
+ *
+ * Only while something runs ahead of it. The inbox holding the row is not that
+ * fact: every send goes through the inbox, an idle one too. The turn NEXT IN
+ * LINE (the working turn, or, while no turn is working yet, the oldest
+ * unanswered one: a new session's first prompt) has nothing ahead of it, and
+ * reads as sent while the inbox delivers it. The server's own `waiting` (a live
+ * turn, an older prompt, or a Stop hold) and `failed` keep the queued look on
+ * any turn.
+ */
+export function turnRendersQueued(input: {
+  turnId: string;
+  /** `resolveWorkingTurn` for the transcript. */
+  resolution: WorkingTurnResolution;
+  /** The session is working (the composer shows Stop). */
+  sessionWorking: boolean;
+  /** `turnIsConfirmedActive` for this turn. */
+  confirmedActive: boolean;
+  /** The inbox row this turn renders, while the server still holds it. */
+  inboxPrompt?: Pick<SessionPrompt, 'state' | 'reason'> | null;
+}): boolean {
+  if (input.confirmedActive) return false;
+  const { workingTurnId, pendingTurnIds } = input.resolution;
+  const nextInLine =
+    input.sessionWorking &&
+    (workingTurnId === null ? pendingTurnIds[0] : workingTurnId) === input.turnId;
+  if (nextInLine) {
+    return input.inboxPrompt?.state === 'waiting' || input.inboxPrompt?.state === 'failed';
+  }
+  return pendingTurnIds.includes(input.turnId) || !!input.inboxPrompt;
 }
 
 /**
@@ -180,13 +215,13 @@ export function workingTurnDrawsBusyRow(input: {
  * `isSentTurn` matches the sent id OR its re-minted echo alias.
  */
 export function freshSendHint(
-  turns: ReadonlyArray<TurnLike>,
+  turns: ReadonlyArray<TurnLike | BlockTurnLike>,
   isSentTurn: (userMessageId: string) => boolean,
 ): string | null {
   for (let i = turns.length - 1; i >= 0; i--) {
-    const id = turns[i].userMessage.info.id;
+    const id = turnIdOf(turns[i]);
     if (!isSentTurn(id)) continue;
-    return turns[i].assistantMessages.length === 0 ? id : null;
+    return replyCountOf(turns[i]) === 0 ? id : null;
   }
   return null;
 }

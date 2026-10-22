@@ -9,6 +9,7 @@
 import type { TurnStreamRelayBody } from '@kortix/api-contract/runtime-relay';
 import { isTurnErrorCode } from '@kortix/api-contract/transcript';
 import { projectSessions } from '@kortix/db';
+import { genuiToMarkdown } from '@kortix/sdk/genui';
 import { and, eq } from 'drizzle-orm';
 import { type TeamsFormSpec, buildFormCard } from '../../channels/teams/cards';
 import {
@@ -17,8 +18,13 @@ import {
   relayTurnStepDetailed,
 } from '../../channels/turn-relay';
 import { notifySessionEvent, turnEndPushType } from '../../notifications/session-push';
+import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
-import { captureSessionTranscriptMirror } from '../lib/session-transcript-capture';
+import { turnEndNotificationContext } from '../lib/notification-recipients';
+import { clearOpenQuestions } from '../lib/pending-questions';
+import { refreshRuntimeProjection } from '../lib/session-runtime-projection-refresh';
+import { notifyTurnEnded } from '../lib/config-convergence-triggers';
+import { captureJournallessSessionLog } from '../lib/session-transcript-capture';
 import { recordTriggerRunEnd } from '../lib/trigger-run-outcome';
 import { childIdleGraceMs } from '../sandbox-deadline';
 import {
@@ -32,13 +38,34 @@ import { confirmInboxPromptConsumed, steerTargetAtTurnEnd } from '../session-lif
 import { reconcileForwardedTurnsAtEnd } from '../session-lifecycle/forwarded-strand-reconcile';
 import { promoteNextInboxRow } from '../session-lifecycle/store';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
+import { revertSessionModelFallback } from '../lib/session-model-fallback-revert';
 import {
   recordUnidentifiedTurnCause,
   turnCompletionAllowsQueuePromotion,
 } from '../session-turn-ledger';
+import { fireIdleWatches } from '../rooms/service';
 
 /** The relay request body, shape only — the route parses JSON into this. */
 export type TurnStreamBody = Partial<TurnStreamRelayBody>;
+
+/** Text relayed to Slack/Teams. Generative UI blocks become markdown first. */
+export function relayAnswerText(raw: string | undefined): string {
+  return genuiToMarkdown((raw ?? '').trim());
+}
+
+/**
+ * The 400 body for text that cannot be relayed, or null. A non-empty answer whose generative UI
+ * renders to nothing is refused: the raw OpenUI source must never reach Slack or Teams.
+ */
+export function relayTextRejection(
+  raw: string | undefined,
+  text: string,
+): { error: 'text is required'; reason?: 'genui_block_unrenderable' } | null {
+  if (text) return null;
+  return raw?.trim()
+    ? { error: 'text is required', reason: 'genui_block_unrenderable' }
+    : { error: 'text is required' };
+}
 
 /** The only surface these handlers use from the Hono context. */
 export interface RelayResponder {
@@ -52,7 +79,8 @@ export interface TurnEndContext {
   /** Coordinator-spawned worker: its idle tail is minutes, not the default grace. */
   childSession: boolean;
   turnStreamMetadata: Record<string, unknown>;
-  turnStreamSession: { accountId: string; createdBy: string | null };
+  /** `origin` is the session's policy class (user|trigger|schedule|backend|system). */
+  turnStreamSession: { accountId: string; createdBy: string | null; origin?: string | null };
 }
 
 /**
@@ -108,10 +136,17 @@ export function claimInitialTurn(
   if (typeof messageId !== 'string' || !messageId.trim()) {
     return c.json({ ok: true, initial_turn: null, ...pin });
   }
+  // Harness context stored beside the prompt at create (e.g. the CLI's worker
+  // contract); an older daemon ignores the field and keeps its old shape.
+  const context =
+    typeof turnStreamMetadata.initial_context === 'string'
+      ? turnStreamMetadata.initial_context
+      : undefined;
   return c.json({
     ok: true,
     initial_turn: {
       prompt,
+      ...(context ? { context } : {}),
       turn_token: turnToken,
       message_id: messageId,
     },
@@ -191,7 +226,10 @@ export async function beginTurn(
     runtimeSessionId: opencodeSessionId,
     messageId,
   });
-  return c.json({ ok: outcome === 'adopted' || outcome === 'open_turn_exists', outcome });
+  return c.json({
+    ok: outcome === 'adopted' || outcome === 'identity_bound' || outcome === 'open_turn_exists',
+    outcome,
+  });
 }
 
 /** The durable half of a turn end: settle the ledger and attach a bare cause. */
@@ -208,8 +246,8 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
           code: isTurnErrorCode(body.error_code) ? body.error_code : undefined,
         }
       : undefined;
-  // SANDBOX-REPORTED turn end. `shortenSandboxDeadline` is LEAST-only, so
-  // it is structurally incapable of EXTENDING the box's life — which is
+  // SANDBOX-REPORTED turn end. `completeSandboxTurn` pulls the deadline in
+  // with LEAST only, so it is structurally incapable of EXTENDING the box's life — which is
   // exactly why it is safe to trust a payload the sandbox authored, and
   // why it needs no auth gate of its own. This is the "die 15 minutes
   // after the last turn ended" half of the model.
@@ -219,8 +257,8 @@ async function settleTurnLedger(sessionId: string, body: TurnStreamBody, childSe
   // and pulling the deadline in to 15 minutes there killed the box mid-turn
   // on any backoff longer than that — the exact state the deleted execution
   // lease treated correctly, because it renewed on 'busy' OR 'retry'. The
-  // classifier lives with the write (shortenSandboxDeadlineOnTurnEnd) so it
-  // cannot be re-wired here without it.
+  // classifier (`isTerminalTurnEnd`) lives with the write in
+  // `completeSandboxTurn` so it cannot be re-wired here without it.
   // A 2xx acknowledges that terminal lifecycle evidence is durable. The
   // daemon retries network/5xx failures and periodically reconciles a lost
   // event. Returning before this write finished made a transient DB failure
@@ -302,22 +340,20 @@ async function promoteAfterTurnEnd(
       ),
     );
   }
-  // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL — mirror it.
+  // THE TURN ENDED, SO THE TRANSCRIPT IS FINAL. A box without a journal
+  // gets its messages into the session log now (a box with a journal keeps
+  // its own log, and the capture returns at once). The box is definitionally
+  // reachable — it just relayed. Fire-and-forget beside the reconcile above:
+  // `captureJournallessSessionLog` never throws and must never fail a
+  // turn-end report.
   //
-  // This is the one instant the deleted client-side mirror could not
-  // observe (its freshness test read the transcript's SHAPE, and a STOP
-  // moves none of that), which is why the SERVER writes the copy here
-  // rather than the browser writing it on a timer. The box is definitionally
-  // reachable — it just relayed — and both halves of the turn are settled.
-  // Fire-and-forget beside the reconcile above: a mirror write must never be
-  // able to fail a turn-end report, and `captureSessionTranscriptMirror`
-  // never throws.
-  //
-  // EVERY session, a coordinator-spawned one included: it runs in its own
-  // sandbox with its own OpenCode root, and nobody may ever open it, so this
-  // turn end is the only moment its history is saved. Skipping it served
-  // `available: false` and a loading bar to the first person who looked.
-  void captureSessionTranscriptMirror(sessionId);
+  // EVERY session, a coordinator-spawned one included: nobody may ever open
+  // it, so this turn end is the only moment its history is saved.
+  void captureJournallessSessionLog(sessionId);
+  // The session is idle: a session a fallback took over moves back to its own
+  // model when that model can serve again (never throws). Child sessions too:
+  // the switch writes them, and their prompts then send the fallback pin.
+  if (turnCompletion.outcome === 'closed') void revertSessionModelFallback(sessionId);
   // THE TURN ENDED — the session's next queued prompt is admissible NOW.
   // Await the durable promotion before acknowledging the terminal relay.
   // The targeted drain remains asynchronous and re-runs admission itself;
@@ -339,6 +375,11 @@ async function promoteAfterTurnEnd(
             error: error instanceof Error ? error.message : String(error),
           }),
         );
+      } else {
+        // Nothing was promoted, so the box is idle: converge its config now,
+        // while nobody waits, and the next turn runs it. A promoted prompt
+        // starts a turn right away; the queue's last turn end converges instead.
+        notifyTurnEnded(sessionId);
       }
     }
     console.info('[turn-stream] terminal turn settlement', {
@@ -366,11 +407,13 @@ async function publishTurnEnd(
 ): Promise<Response> {
   const { projectId, sessionId, childSession, turnStreamMetadata, turnStreamSession } = ctx;
   const { status, errorInfo, turnCompletion } = settled;
-  // Push the session creator's devices. Only an end that closed a turn in
-  // THIS call notifies (see turnEndPushType); replays and aborts do not,
-  // and a promoted queued prompt means the session is still running, so
-  // it gets no completion push. Fire-and-forget: a push must never delay
-  // or fail the relay.
+  // Tell the person who prompted the turn and the session's watchers
+  // (notifications/session-push.ts); with the project's notification_center
+  // flag off, the session creator's phones only. Only an end that closed a
+  // turn in THIS call notifies (see turnEndPushType); replays and aborts do
+  // not, and a promoted queued prompt means the session is still running, so
+  // it gets no completion. Fire-and-forget: the flag read, the prompter lookup
+  // and the delivery must never delay or fail the relay.
   const pushType = turnEndPushType({
     outcome: turnCompletion.outcome,
     status,
@@ -379,12 +422,30 @@ async function publishTurnEnd(
     promoted: promotedPromptId !== null,
   });
   if (pushType) {
-    void notifySessionEvent({ type: pushType, sessionId, projectId }).catch((err) =>
+    const turnMessageId = typeof body.turn_message_id === 'string' ? body.turn_message_id : null;
+    void notifySessionEvent(
+      { type: pushType, sessionId, projectId, turnMessageId, errorMessage: errorInfo?.message ?? null },
+      {
+        context: () =>
+          turnEndNotificationContext(
+            {
+              sessionId,
+              projectId,
+              accountId: turnStreamSession.accountId,
+              metadata: turnStreamMetadata,
+              origin: turnStreamSession.origin,
+            },
+            turnMessageId,
+          ),
+      },
+    ).catch((err) =>
       console.warn('[push] turn-end notification failed', err instanceof Error ? err.message : err),
     );
   }
-  // A trigger session's creator is the agent's service account, so the push
-  // above reaches nobody. Record the run on its trigger and tell the owner.
+  // A trigger session's creator is the agent's service account, so the turn
+  // end above reaches only a person who prompted it. Record the run on its
+  // trigger: a failed or recovered run alerts the trigger's watchers (flag
+  // off: a failed run pushes the account owner, as before KRTX-1742).
   try {
     await recordTriggerRunEnd({
       projectId,
@@ -465,8 +526,47 @@ export async function settleTurnEnd(
   ctx: TurnEndContext,
 ): Promise<Response> {
   const settled = await settleTurnLedger(ctx.sessionId, body, ctx.childSession);
+  // THE TURN ENDED, SO NOTHING WAITS ON ITS QUESTION. Only an end that closed
+  // the turn in this call: a retrying error has not ended it, and the reaper's
+  // `TurnAwaitingInput` end (and the late frame of that turn, `already_closed`)
+  // parks a question that still waits for its answer. Before the promotion, so
+  // a question the next turn asks is never the one closed.
+  if (settled.turnCompletion.outcome === 'closed') {
+    await clearOpenQuestions(ctx.sessionId).catch((err) =>
+      logger.warn('[turn-stream] open questions not closed at turn end', {
+        sessionId: ctx.sessionId,
+        err: err instanceof Error ? err.message : String(err),
+      }),
+    );
+  }
+  // THE TURN ENDED, SO "TELL ME WHEN IT IS IDLE" IS DUE (flag agent_rooms).
+  // Fire-and-forget: a notice never holds the daemon's relay, and it never throws.
+  if (settled.turnCompletion.outcome === 'closed' && !ctx.childSession) {
+    void fireIdleWatches(ctx.sessionId, settled.status, settled.errorInfo?.name ?? null);
+  }
+  // Started beside the promotion, awaited before the acknowledgement.
+  const sessionList = refreshSessionListAtTurnEnd(ctx);
   const promotedPromptId = await promoteAfterTurnEnd(ctx, body, settled);
-  return publishTurnEnd(c, ctx, body, settled, promotedPromptId);
+  const response = await publishTurnEnd(c, ctx, body, settled, promotedPromptId);
+  await sessionList;
+  return response;
+}
+
+/**
+ * THE TURN ENDED, SO ITS SUBAGENT CHILDREN EXIST — store the box's state
+ * document, which writes the session's list of runtime conversations
+ * (`writeRuntimeSessionList`). Awaited before the turn end is acknowledged:
+ * the daemon re-sends an unacknowledged turn end, so an API that stops
+ * mid-write (a deploy) gets the turn end again and writes the list then
+ * (R7.4). Never throws.
+ */
+async function refreshSessionListAtTurnEnd(ctx: TurnEndContext): Promise<void> {
+  const userId = ctx.turnStreamSession.createdBy;
+  if (!userId) return;
+  await refreshRuntimeProjection(
+    { sessionId: ctx.sessionId, projectId: ctx.projectId, accountId: ctx.turnStreamSession.accountId, userId },
+    { force: true },
+  );
 }
 
 // `runtime_session` carries the canonical runtime ROOT id the sandbox just
@@ -520,12 +620,13 @@ export async function relayContent(
   body: TurnStreamBody,
   sessionId: string,
 ): Promise<Response> {
-  const text = (body.text ?? '').trim();
-  if (!text) {
-    return c.json({ error: 'text is required' }, 400);
+  const text = relayAnswerText(body.text);
+  const rejection = relayTextRejection(body.text, text);
+  if (rejection) {
+    return c.json(rejection, 400);
   }
 
-  const detail = body.detail?.trim() || undefined;
+  const detail = relayAnswerText(body.detail) || undefined;
   const outputForPrev = body.output?.trim() || undefined;
   const sourcesForPrev = Array.isArray(body.sources)
     ? body.sources

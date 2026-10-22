@@ -10,11 +10,11 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from '@/components/ui/chart';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+} from '@kortix/ui/chart';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 
-import { formatSessionCostUsd } from '../session-cost-format';
+import { formatSessionCostCredits } from '@kortix/ui/internal/billing/session-cost-format';
 
 // Monochrome + one accent per the Kortix palette law: llm_cost and
 // compute_cost are two shades of the same warm chart ramp (--chart-1 /
@@ -29,10 +29,14 @@ function formatDay(value: string, locale = 'en-US'): string {
   return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
-export function formatAxisUsd(value: number): string {
-  if (value === 0) return '$0';
-  if (value >= 1) return `$${Math.round(value).toLocaleString('en-US')}`;
-  return formatSessionCostUsd(value);
+/** A Y-axis tick, in credits, from a USD value. Compact from 10,000 credits
+ *  up (`12K`): the axis is 48px wide and a grouped five-digit tick clips. */
+export function formatAxisCredits(usd: number, locale = 'en-US'): string {
+  const credits = usd * 100;
+  if (Math.abs(credits) >= 10_000) {
+    return credits.toLocaleString(locale, { notation: 'compact', maximumFractionDigits: 1 });
+  }
+  return formatSessionCostCredits(usd, locale);
 }
 
 export interface CostChartProps {
@@ -46,7 +50,7 @@ export function CostChart({ series, isLoading }: CostChartProps) {
   const localizedChartConfig = useLocalizedUiCatalog(chartConfig);
   if (isLoading) {
     // Skeleton only forwards `className`/`children` (see
-    // components/ui/skeleton.tsx), not arbitrary DOM props, so the label goes
+    // packages/ui/src/primitives/skeleton.tsx), not arbitrary DOM props, so the label goes
     // on a wrapping element — the same shape CostSummaryTiles' loading state
     // uses for its own aria-label.
     return (
@@ -79,7 +83,7 @@ export function CostChart({ series, isLoading }: CostChartProps) {
           axisLine={false}
           tickMargin={8}
           width={48}
-          tickFormatter={formatAxisUsd}
+          tickFormatter={(value: number) => formatAxisCredits(value, locale)}
         />
         <ChartTooltip
           content={
@@ -97,7 +101,7 @@ export function CostChart({ series, isLoading }: CostChartProps) {
                       {cfg?.label ?? name}
                     </span>
                     <span className="text-foreground font-medium tabular-nums">
-                      {formatSessionCostUsd(Number(value))}
+                      {formatSessionCostCredits(Number(value), locale)}
                     </span>
                   </span>
                 );

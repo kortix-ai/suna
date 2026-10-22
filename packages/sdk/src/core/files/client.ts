@@ -10,6 +10,7 @@
 import { getClient, RuntimeNotReadyError } from '../runtime/client';
 import { getActiveRuntimeUrl } from '../session/server-store/active';
 import { authenticatedFetch } from '../http/auth';
+import { type AuthenticatedRequest, authenticatedRequest } from '../http/authenticated-request';
 import { ApiError } from '../http/api/errors';
 import type {
   FileContent,
@@ -97,6 +98,30 @@ async function fetchDaemonJson<T>(relUrl: string, baseUrl?: string): Promise<T> 
   return response.json() as Promise<T>;
 }
 
+/** POST/DELETE a daemon JSON-write endpoint, surfacing the server's error as
+ *  `<label> failed (<status>): ...` (the labels byte-match the previous
+ *  per-function messages). */
+async function daemonWrite(
+  relUrl: string,
+  method: 'POST' | 'DELETE',
+  body: unknown,
+  label: string,
+  baseUrl?: string,
+): Promise<boolean> {
+  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}${relUrl}`, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new ApiError(`${label} failed (${res.status}): ${await errorMessage(res)}`, {
+      status: res.status,
+      response: res,
+    });
+  }
+  return res.json() as Promise<boolean>;
+}
+
 /**
  * Sandbox filesystem roots the daemon serves (mirrors DEFAULT_ALLOWED_ROOTS in
  * kortix-sandbox-agent-server). The daemon re-validates every path server-side;
@@ -153,13 +178,8 @@ export async function listFiles(dirPath: string, baseUrl?: string): Promise<File
 
 /** Read a file's content (text, or base64 for binaries). Daemon `GET /file/content`. */
 export async function readFile(filePath: string, baseUrl?: string): Promise<FileContent> {
-  const base = requireBaseUrl(baseUrl);
   const daemonPath = toDaemonPath(filePath);
-  const response = await authenticatedFetch(`${base}/file/content?path=${encodeURIComponent(daemonPath)}`);
-  if (!response.ok) {
-    throw new ApiError(await errorMessage(response), { status: response.status, response });
-  }
-  return response.json() as Promise<FileContent>;
+  return fetchDaemonJson<FileContent>(`/file/content?path=${encodeURIComponent(daemonPath)}`, baseUrl);
 }
 
 /** Raw byte read. Daemon `GET /file/raw`. Throws (so callers can fall back). */
@@ -185,20 +205,64 @@ async function readFileRaw(filePath: string, fallbackMime?: string, baseUrl?: st
   return blob;
 }
 
+// ─── Raw-read concurrency bound ─────────────────────────────────────────────
+//
+// A host transcript can show hundreds of binary file cards, and the live event
+// stream refetches every mounted card at once — `binaryBlobKeys.all` is
+// invalidated on each `file.edited` event and at turn end
+// (`use-opencode-events/handle-event.ts`). Unbounded, that fan-out saturates a
+// box's dial path: on 2026-10-10 one web client fired 649 `GET /file/raw` in one
+// minute at a single box and the route's p95 reached 20 s (Linear KRTX-471).
+// Eight concurrent reads keep every request fast and still drain a 700-card
+// refetch in seconds; the proxy's 15 s per-attempt connect cap never engages.
+const MAX_CONCURRENT_RAW_READS = 8;
+let rawReadsActive = 0;
+const rawReadWaiters: Array<() => void> = [];
+
+async function acquireRawReadSlot(): Promise<void> {
+  if (rawReadsActive < MAX_CONCURRENT_RAW_READS) {
+    rawReadsActive++;
+    return;
+  }
+  await new Promise<void>((release) => rawReadWaiters.push(release));
+  rawReadsActive++;
+}
+
+function releaseRawReadSlot(): void {
+  rawReadsActive--;
+  rawReadWaiters.shift()?.();
+}
+
+/**
+ * Daemon `GET /file/raw` as a request the host sends itself, for a host that
+ * streams the bytes to disk (React Native's `FileSystem.downloadAsync`) so a
+ * large file never enters the JS heap. The caller checks the status and treats
+ * a `text/html` body for a non-HTML file as a failure (a misrouted SPA shell).
+ */
+export function fileDownloadRequest(filePath: string, baseUrl?: string): Promise<AuthenticatedRequest> {
+  const base = requireBaseUrl(baseUrl);
+  return authenticatedRequest(`${base}/file/raw?path=${encodeURIComponent(toDaemonPath(filePath))}`);
+}
+
 /** Read a file as a Blob — prefers `/file/raw`, falls back to base64 `/file/content`. */
 export async function readBlob(filePath: string, baseUrl?: string): Promise<Blob> {
-  // Resolve BEFORE the try: an unresolved runtime must surface as
-  // `RuntimeNotReadyError`, not be swallowed into the base64 fallback path.
-  const base = requireBaseUrl(baseUrl);
+  await acquireRawReadSlot();
   try {
-    return await readFileRaw(filePath, undefined, base);
-  } catch { /* fall back to JSON content endpoint */ }
-  const result = await readFile(filePath, base);
-  if (result.encoding === 'base64' && result.content) {
-    const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
-    return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
+    // Resolve BEFORE the try: an unresolved runtime must surface as
+    // `RuntimeNotReadyError`, not be swallowed into the base64 fallback path.
+    const base = requireBaseUrl(baseUrl);
+    try {
+      return await readFileRaw(filePath, undefined, base);
+    } catch { /* fall back to JSON content endpoint */ }
+    const result = await readFile(filePath, base);
+    if (result.encoding === 'base64' && result.content) {
+      const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
+      return new Blob([bytes], { type: result.mimeType || 'application/octet-stream' });
+    }
+    return new Blob([result.content ?? ''], { type: result.mimeType || 'text/plain;charset=utf-8' });
+  } finally {
+    releaseRawReadSlot();
   }
-  return new Blob([result.content ?? ''], { type: result.mimeType || 'text/plain;charset=utf-8' });
 }
 
 /** Git file status — uncommitted changes. Daemon `GET /file/status`. */
@@ -212,7 +276,7 @@ export async function getFileStatus(baseUrl?: string): Promise<GitFileStatus[]> 
  * Throws `ApiError` on failure — like every other op in this module. This
  * USED TO swallow every failure to `[]`, which silently hid daemon/network
  * errors from callers. The only real caller of this SDK export
- * (`apps/web/src/features/files/search/workspace-search-service.ts`) already
+ * (`packages/ui/src/files/runtime/search/workspace-search-service.ts`) already
  * wraps each call in its own `.catch(() => [])`, and there are no callers
  * under `@kortix/sdk/react`, so removing the internal swallow here is
  * non-breaking — verified by grepping every `findFiles(` call site in the
@@ -451,7 +515,18 @@ export async function uploadFile(
     notifyUploadProgress(options, { loadedBytes: file.size, totalBytes: file.size });
     return result;
   }
+  return uploadFileChunked(file, targetPath, name, base, options);
+}
 
+/** The large-file path: reserve the collision-safe destination, then append
+ *  chunks under it, cleaning up the partial upload on any failure. */
+async function uploadFileChunked(
+  file: File | Blob,
+  targetPath: string | undefined,
+  name: string,
+  base: string,
+  options: UploadFileOptions | undefined,
+): Promise<UploadResult[]> {
   // Reserve the collision-safe destination with the daemon's existing upload
   // semantics. The returned path is authoritative when the requested name
   // already exists.
@@ -784,28 +859,12 @@ async function placeUpload(
 
 /** Delete a file/dir (recursive). Daemon `DELETE /file`. */
 export async function deleteFile(filePath: string, baseUrl?: string): Promise<boolean> {
-  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: filePath }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Delete failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite('/file', 'DELETE', { path: filePath }, 'Delete', baseUrl);
 }
 
 /** Create a directory (recursive, idempotent). Daemon `POST /file/mkdir`. */
 export async function mkdir(dirPath: string, baseUrl?: string): Promise<boolean> {
-  const res = await authenticatedFetch(`${requireBaseUrl(baseUrl)}/file/mkdir`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: dirPath }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Mkdir failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite('/file/mkdir', 'POST', { path: dirPath }, 'Mkdir', baseUrl);
 }
 
 /** Rename/move a file or directory. Daemon `POST /file/rename`. */
@@ -815,15 +874,13 @@ export async function renameFile(from: string, to: string, baseUrl?: string): Pr
 
 /** Daemon `POST /file/rename`. `overwrite: false` asks for create-only (409 when taken). */
 async function moveFile(from: string, to: string, base: string, overwrite: boolean): Promise<boolean> {
-  const res = await authenticatedFetch(`${base}/file/rename`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(overwrite ? { from, to } : { from, to, overwrite: false }),
-  });
-  if (!res.ok) {
-    throw new ApiError(`Rename failed (${res.status}): ${await errorMessage(res)}`, { status: res.status, response: res });
-  }
-  return res.json();
+  return daemonWrite(
+    '/file/rename',
+    'POST',
+    overwrite ? { from, to } : { from, to, overwrite: false },
+    'Rename',
+    base,
+  );
 }
 
 // ── project / health (via opencode client) ────────────────────────────────────

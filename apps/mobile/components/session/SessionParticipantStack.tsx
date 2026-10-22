@@ -21,11 +21,11 @@ import { webSpace } from '@/lib/session/user-message';
 
 /** Faces shown before the rest collapse into a count. */
 const STACK_LIMIT = 2;
-/** Web `ring-1 ring-background`: a surface-coloured cut around each face. */
-const RING = 1;
+/** Web `ring-2 ring-background`: a surface-coloured cut around each face. */
+const RING = 1.5;
 /** Web `-space-x-1.5`, measured between faces; the ring sits outside it. */
 const FACE_OVERLAP = webSpace(1.5) + 2 * RING;
-/** Web `rounded-sm` plus the ring. */
+/** Web `rounded-sm` (6) plus the ring: faces and the count are tiles, never circles. */
 const RING_RADIUS = 6 + RING;
 /** Pill height, the sub-agent chip's. */
 const STACK_HEIGHT = 32;
@@ -46,15 +46,15 @@ export function SessionParticipantStack({ participants, onPress }: SessionPartic
     )),
     ...(stack.more > 0
       ? [
-          // Web `AvatarGroupCount`: a muted tile the size of a face.
+          // Web `AvatarGroupCount`: a muted `rounded-sm` tile the height of a face.
           <View
             key="more"
             className="items-center justify-center bg-muted"
             // Grows with the count (+97), never narrower than a face.
-            style={{ minWidth: PARTICIPANT_AVATAR_SIZE, height: PARTICIPANT_AVATAR_SIZE, paddingHorizontal: 3, borderRadius: 6 }}>
+            style={{ minWidth: PARTICIPANT_AVATAR_SIZE, height: PARTICIPANT_AVATAR_SIZE, paddingHorizontal: 6, borderRadius: 6 }}>
             <Text
               className="text-muted-foreground"
-              style={{ fontFamily: 'Roobert-Medium', fontSize: 10, fontVariant: ['tabular-nums'] }}
+              style={{ fontFamily: 'Roobert-Medium', fontSize: 11, fontVariant: ['tabular-nums'] }}
               allowFontScaling={false}>
               +{stack.more}
             </Text>

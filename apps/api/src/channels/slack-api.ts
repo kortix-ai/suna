@@ -419,26 +419,6 @@ export async function startStream(
   }
 }
 
-// Returns ok:false with the Slack error so callers can recover — the critical
-// case is `message_not_streaming`: Slack auto-completed the stream after an
-// inactivity window, and every further append silently vanishes unless the
-// caller falls back to chat.update on the (now plain) message.
-export async function appendStream(
-  token: string,
-  channel: string,
-  ts: string,
-  chunks: StreamChunk[],
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const r = await slackApiCall(token, 'chat.appendStream', { channel, ts, chunks });
-    if (!r.ok) console.warn('[slack-api] chat.appendStream failed', { error: r.error });
-    return { ok: r.ok, error: r.error };
-  } catch (err) {
-    console.warn('[slack-api] chat.appendStream error', err);
-    return { ok: false, error: (err as Error).message };
-  }
-}
-
 // Finalize a stream. The closing chunks carry the last checkpoint state and the
 // answer as a `markdown_text` chunk.
 export async function stopStream(

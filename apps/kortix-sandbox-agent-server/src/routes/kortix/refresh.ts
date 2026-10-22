@@ -3,11 +3,22 @@ import type { Config } from '@/lib/config/config'
 import type { HarnessControlOperations } from '@/harness/contract/control'
 import { KORTIX_SERVICE_CALL_HEADER } from '@/lib/kortix-api/kortix-user-context'
 import { logger } from '@/lib/log/logger'
+import { runSandboxOnBoot } from '@/harness/shared/on-boot'
 import { runConvergence } from './config'
 import { authorizeControl } from './control-auth'
 import { legacyRefreshFields } from './legacy-names'
 
-export function createRefreshRouter(cfg: Config, control: HarnessControlOperations): Hono {
+interface RefreshRouterDeps {
+  runSandboxOnBoot: (cfg: Config) => void
+}
+
+const defaultDeps: RefreshRouterDeps = { runSandboxOnBoot }
+
+export function createRefreshRouter(
+  cfg: Config,
+  control: HarnessControlOperations,
+  deps: RefreshRouterDeps = defaultDeps,
+): Hono {
   const router = new Hono()
   let refreshInFlight: Promise<Response> | null = null
 
@@ -33,6 +44,9 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
     // `?restart=0` skips the opencode restart (the file watcher picks up changes
     // and keeps warm-snapshot restore fast). Default behaviour is refresh+restart.
     const syncBase = c.req.query('base') === '1'
+    const rerunOnBoot = c.req.query('on_boot') === '1'
+    const directServiceCall =
+      serviceAuthenticated && c.req.header(KORTIX_SERVICE_CALL_HEADER) === '1'
     // `base=1` force-resets the session's own branch onto the base tip
     // (`syncWorkspaceToBase` → `git checkout -B <cfg.branchName> <sha>`, and
     // branchName IS the session id), discarding every commit the session made
@@ -57,13 +71,20 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
     // Require BOTH. The header proves the hop, the bearer proves the caller, and
     // neither is sufficient alone: the header is unauthenticated on its own, and
     // the bearer is available to anything the proxy speaks to.
-    if (syncBase && !(serviceAuthenticated && c.req.header(KORTIX_SERVICE_CALL_HEADER) === '1')) {
+    if (syncBase && !directServiceCall) {
       logger.warn('[refresh] rejected base=1 from a non-service caller')
       return c.json(
         {
           error: 'base reset requires the sandbox service credential',
           code: 'BASE_RESET_FORBIDDEN',
         },
+        403,
+      )
+    }
+    if (rerunOnBoot && !directServiceCall) {
+      logger.warn('[refresh] rejected on_boot=1 from a non-service caller')
+      return c.json(
+        { error: 'boot hook requires the sandbox service credential', code: 'BOOT_HOOK_FORBIDDEN' },
         403,
       )
     }
@@ -93,7 +114,12 @@ export function createRefreshRouter(cfg: Config, control: HarnessControlOperatio
           baseSha,
           forceFail: c.req.query('verify_fail') === '1',
         })
-        return c.json({ ...result, ...legacyRefreshFields(result) })
+        if (rerunOnBoot) deps.runSandboxOnBoot(cfg)
+        return c.json({
+          ...result,
+          ...legacyRefreshFields(result),
+          on_boot: rerunOnBoot ? 'started' : undefined,
+        })
       } catch (err) {
         const message = (err as Error).message || 'refresh failed'
         logger.error('[refresh] failed', err)

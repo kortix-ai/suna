@@ -101,41 +101,6 @@ async function runCli(args: string[]) {
   return { code, stdout, stderr, payload: JSON.parse(stdout) as Record<string, unknown> };
 }
 
-async function callMcpTool(args: Record<string, unknown>) {
-  captured = [];
-  const requests = [
-    { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
-    { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'call', arguments: args } },
-  ]
-    .map((entry) => JSON.stringify(entry))
-    .join('\n');
-
-  const proc = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, 'connectors', 'mcp'],
-    cwd: CLI_ROOT,
-    env: cliEnv(),
-    stdin: new TextEncoder().encode(`${requests}\n`),
-    stdout: 'pipe',
-    stderr: 'pipe',
-  });
-  const [stdout, stderr] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-  ]);
-  await proc.exited;
-  const response = stdout
-    .split('\n')
-    .filter((line) => line.trim())
-    .map((line) => JSON.parse(line))
-    .find((entry) => entry.id === 2);
-  if (!response) throw new Error(`no tool response. stdout=${stdout} stderr=${stderr}`);
-  if (response.error) throw new Error(`JSON-RPC error instead of a result: ${stdout}`);
-  return {
-    payload: JSON.parse(response.result.content[0].text) as Record<string, unknown>,
-    isError: response.result.isError === true,
-  };
-}
-
 describe('a denied connector call carries its remedy', () => {
   test('CLI: the 403 body passes through field for field', async () => {
     respondWith = () => jsonResponse(UNKNOWN_ACCOUNT_DENIAL, 403);
@@ -211,6 +176,57 @@ describe('a denied connector call carries its remedy', () => {
     });
   });
 
+  test('CLI: a gated call prints token-free decision commands', async () => {
+    const approvalUrl = `https://app.kortix.test/approve/${'synthetic-token'.repeat(40)}`;
+    respondWith = () =>
+      jsonResponse(
+        {
+          ok: false,
+          status: 'pending_approval',
+          execution_id: 'exec-pending',
+          retryable: false,
+          approval_url: approvalUrl,
+          approval_summary: 'one synthetic write',
+          approval_instructions: 'Share approval_url with a human.',
+        },
+        202,
+      );
+
+    const result = await runCli(['connectors', 'call', 'crm.write', '--project', PROJECT_ID]);
+
+    expect(result.code).toBe(0);
+    expect(result.payload.status).toBe('pending_approval');
+    expect(result.payload.execution_id).toBe('exec-pending');
+    expect(result.payload.approval_summary).toBe('one synthetic write');
+    expect(result.payload.approval_instructions).toContain(
+      `kortix review act call:exec-pending approve --project ${PROJECT_ID}`,
+    );
+    expect(result.payload.approval_instructions).toContain(
+      `kortix review act call:exec-pending reject --project ${PROJECT_ID}`,
+    );
+    expect(result.stdout).not.toContain(approvalUrl);
+    expect(result.stdout).not.toContain('synthetic-token');
+    expect(result.payload).not.toHaveProperty('approval_url');
+    expect(captured).toHaveLength(1);
+  });
+
+  test('CLI: an older gated response without an execution id has no broken command', async () => {
+    respondWith = () =>
+      jsonResponse(
+        {
+          ok: false,
+          status: 'pending_approval',
+          approval_url: 'https://app.kortix.test/approve/synthetic-token',
+        },
+        202,
+      );
+    const result = await runCli(['connectors', 'call', 'crm.write', '--project', PROJECT_ID]);
+    expect(result.code).toBe(0);
+    expect(result.payload.approval_instructions).toContain('Review Center');
+    expect(result.stdout).not.toContain('synthetic-token');
+    expect(result.stdout).not.toContain('call:undefined');
+  });
+
   test('CLI: a valueless --account/--reason is a flag typo, never sent as a name', async () => {
     respondWith = () =>
       jsonResponse({ ok: true, status: 'ok', data: {}, account: { label: 'Work' } });
@@ -231,43 +247,15 @@ describe('a denied connector call carries its remedy', () => {
     expect(captured[0]?.body).toEqual({ connector: 'crm', action: 'whoami', args: {} });
   });
 
-  test('MCP: the denial reaches the model as the API body, not a JSON-RPC error', async () => {
-    respondWith = () => jsonResponse(UNKNOWN_ACCOUNT_DENIAL, 403);
+  test('the removed `connectors mcp` subcommand exits 2 and names the replacements', async () => {
+    const result = await runCli(['connectors', 'mcp']);
 
-    const result = await callMcpTool({
-      connector: 'crm',
-      action: 'whoami',
-      account: 'nope',
-    });
-
-    expect(result.isError).toBe(true);
-    expect(result.payload).toEqual({
-      ...UNKNOWN_ACCOUNT_DENIAL,
-      ok: false,
-      error: 'connector_not_connected',
-    });
-  });
-
-  test('MCP: a successful call passes the account echo through', async () => {
-    respondWith = () =>
-      jsonResponse({
-        ok: true,
-        status: 'ok',
-        data: { email: 'me@example.test' },
-        account: {
-          connection_id: '22222222-2222-4222-8222-222222222222',
-          label: 'Personal',
-          owner_type: 'member',
-        },
-      });
-
-    const result = await callMcpTool({ connector: 'crm', action: 'whoami' });
-
-    expect(result.isError).toBe(false);
-    expect(result.payload.account).toEqual({
-      connection_id: '22222222-2222-4222-8222-222222222222',
-      label: 'Personal',
-      owner_type: 'member',
-    });
+    expect(result.code).toBe(2);
+    expect(result.payload.ok).toBe(false);
+    expect(String(result.payload.error)).toContain('`kortix connectors mcp` was removed');
+    expect(String(result.payload.error)).toContain('/v1/mcp');
+    // `kortix mcp` itself was removed in #7881; never point people at it.
+    expect(String(result.payload.error)).not.toContain('`kortix mcp`');
+    expect(captured).toEqual([]);
   });
 });

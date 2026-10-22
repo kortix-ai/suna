@@ -162,17 +162,23 @@ export function registerGlobalMocks() {
       delete: () => ({
         where: async () => ({ rowCount: 0 }),
       }),
+      // The sweep soft-deletes the account's sessions before their boxes.
+      update: () => ({
+        set: () => ({
+          where: () => Object.assign(Promise.resolve([]), { returning: async () => [] }),
+        }),
+      }),
       transaction: async <T,>(fn: (tx: unknown) => Promise<T>): Promise<T> => fn(db),
       // The bounded chunk deletes are raw SQL; a count below the chunk size ends the loop.
-      execute: async () => [{ n: 0 }],
+      execute: async () => [],
     };
     return {
       db,
+      withDbTransaction: <T,>(action: () => Promise<T>): Promise<T> => action(),
     // Real shape is a boolean const, not a function. FALSE on purpose: these
     // billing tests drive the no-DB path, and the stub `db` above answers only
     // `select().from().where()`. Flipping this to true sends the code down real
-    // persistence branches this mock cannot serve (8 createCheckoutSession
-    // tests fail with "Stripe API error" — verified).
+    // persistence branches this mock cannot serve.
       hasDatabase: false,
     };
   });
@@ -228,7 +234,6 @@ export function registerWalletMock() {
 
   mock.module('../../billing/wallet', () => ({ wallet: fakeWallet.wallet }));
   mock.module('../../billing/services/credits', () => ({
-    calculateTokenCost: () => 0,
     getCreditSummary: () => ({ total: 0, daily: 0, monthly: 0, extra: 0 }),
   }));
 }
@@ -243,7 +248,8 @@ export function createMockCreditAccount(overrides: Record<string, any> = {}) {
     lifetimeGranted: '500.0000',
     lifetimePurchased: '100.0000',
     lifetimeUsed: '400.0000',
-    tier: 'tier_6_50',
+    tier: 'credits',
+    planMonthlyUsd: '50',
     provider: 'stripe',
     planType: 'monthly',
     stripeSubscriptionId: 'sub_test_123',
@@ -309,7 +315,7 @@ export function createMockStripeSubscription(overrides: Record<string, any> = {}
     },
     metadata: {
       account_id: 'acc_test_123',
-      tier_key: 'tier_6_50',
+      tier_key: 'credits',
     },
     ...overrides,
   };
@@ -349,7 +355,7 @@ export function createMockStripeCheckoutSession(overrides: Record<string, any> =
     payment_intent: null,
     metadata: {
       account_id: 'acc_test_123',
-      tier_key: 'tier_6_50',
+      tier_key: 'credits',
       commitment_type: 'monthly',
     },
     ...overrides,

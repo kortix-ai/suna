@@ -8,9 +8,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, or } from 'drizzle-orm';
-import { config } from '../../config';
-import { loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { loadVisibleSession, assertProjectCapability, sessionIsTombstoned } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { readJsonObject } from '../../shared/http-body';
 import { callerKortixSessionId } from '../../middleware/caller-session';
@@ -18,7 +16,6 @@ import { assertAgentScope } from '../../iam/agent-scope';
 import { mayChangeSessionModel } from '../lib/session-model-change';
 import { resolveDesiredRelease } from '../../config-releases/desired';
 import { ownerMayUseAgent } from '../../config-releases/repoint';
-import { configReleasesEnabled } from '../../config-releases/enabled';
 import { recordDaemonConfigReport } from '../../config-releases/quarantine';
 import { isReleaseStale, toSessionConfigRelease } from '../lib/session-config-release';
 import { LATEST_ETAG_BUDGET_MS } from '../lib/session-reload';
@@ -121,7 +118,7 @@ export function registerSessionConfigRoutes(): void {
       const visible = await timeConfigStage('session_access', () =>
         loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c)),
       );
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       const baseRef = visible.row.baseRef ?? loaded.row.defaultBranch;
       const project = {
@@ -131,12 +128,6 @@ export function registerSessionConfigRoutes(): void {
         manifestPath: loaded.row.manifestPath ?? 'kortix.yaml',
         gitAuthToken: null,
       };
-      // CHOKEPOINT — the `config_releases` flag for this read. Off ⇒ no `release`
-      // block, no desired release is built (so no archive is stored and no
-      // ledger row is written), and `stale` is the pre-release etag compare
-      // alone. The CLI formatter and the web header both render their
-      // pre-release text when `release` is absent.
-      const releasesEnabled = configReleasesEnabled(loaded.row.metadata);
       const [running, latest] = await Promise.all([
         timeConfigStage('sandbox_state', () => readSandboxConfigState({ sessionId })),
         timeConfigStage('latest_etag', () =>
@@ -152,10 +143,9 @@ export function registerSessionConfigRoutes(): void {
         ),
       ]);
       // The managed-model catalog's freshness, in the SAME place a config
-      // fallback is already visible — not gated on `releasesEnabled`, for the
-      // identical reason `runtime.pinned` is not: a box that could not confirm
-      // its managed lineup needs this fact regardless of which config path the
-      // project is on. `ids: null` means UNCONFIRMED (no live fetch has ever
+      // fallback is already visible, for the identical reason `runtime.pinned`
+      // is: a box that could not confirm its managed lineup needs this fact
+      // regardless of which config path the box is on. `ids: null` means UNCONFIRMED (no live fetch has ever
       // succeeded on this box — it is running the baked/bundled managed set),
       // never "no managed models exist". See `managed-assets/manifest.ts`'s
       // `runningAssetsVerdict` doc for why that box reads `behind`, not `current`.
@@ -165,7 +155,7 @@ export function registerSessionConfigRoutes(): void {
       };
 
       // ── A daemon with config releases (spec, "`GET /config`, extended") ──
-      if (releasesEnabled && running.configReleases && running.release) {
+      if (running.configReleases && running.release) {
         // Health carries `failed_release_id` and `proven`: the project
         // quarantine learns from every read, not only from reloads.
         await recordDaemonConfigReport({ projectId, sessionId, report: running.release });
@@ -228,11 +218,7 @@ export function registerSessionConfigRoutes(): void {
       // The etag cannot see a skill body, a tool or a plugin. A merge that touched
       // only those used to leave `stale: false` and the header never offered the
       // reload, so the config dir is compared as well.
-      // `releasesEnabled` guards this too: the config-dir compare shipped with
-      // config releases. With the flag off the daemon never syncs config files,
-      // so offering "update available" for them would promise a reload that
-      // cannot deliver. `stale` is then exactly the pre-release expression.
-      const filesStale = releasesEnabled && running.reachable
+      const filesStale = running.reachable
         ? await timeConfigStage('config_dir', () =>
             boundedStage(
               isSessionConfigDirStale({
@@ -292,7 +278,7 @@ export function registerSessionConfigRoutes(): void {
       );
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       // Same gate as re-scoping and changing the model: seeing a session is not
       // permission to restart the runtime underneath someone else's work.
       if (!mayChangeSessionModel(visible)) {
@@ -377,7 +363,7 @@ export function registerSessionConfigRoutes(): void {
       );
       assertAgentScope(c, PROJECT_ACTIONS.PROJECT_SESSION_STOP);
       const visible = await loadVisibleSession(loaded, sessionId, callerKortixSessionId(c), callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       if (!mayChangeSessionModel(visible)) {
         return c.json(
           { error: 'Only the session owner or a project manager can reload this session' },

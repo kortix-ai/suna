@@ -6,7 +6,7 @@ import {
   canonicalizeSecretsAllowlist,
   intersectSecretGrants,
   parseSessionSecretsAllowlist,
-  resolveGrantedSecretEnv,
+  resolveGrantedSecretSelection,
   secretKeyCollisionInAllowlist,
   secretsAllowlistPayloadConflicts,
   type ResolvedProjectSecret,
@@ -40,7 +40,7 @@ describe('intersectSecretGrants', () => {
     expect(out).not.toContain('AWS_ROOT');
   });
 
-  test('narrowing composes with resolveGrantedSecretEnv end-to-end', () => {
+  test('narrowing composes with resolveGrantedSecretSelection end-to-end', () => {
     const rows: ResolvedProjectSecret[] = [
       {
         secretId: 'secret-gmail',
@@ -57,7 +57,7 @@ describe('intersectSecretGrants', () => {
     ];
     // Agent grant 'all', session narrows to just GMAIL → only GMAIL_TOKEN injected.
     const narrowed = intersectSecretGrants('all', ['GMAIL']);
-    const { env } = resolveGrantedSecretEnv(rows, narrowed);
+    const { env } = resolveGrantedSecretSelection(rows, narrowed);
     expect(env).toEqual({ GMAIL_TOKEN: 'g' });
   });
 });

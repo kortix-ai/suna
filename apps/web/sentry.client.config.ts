@@ -8,7 +8,7 @@
 
 import { RUNTIME_NOT_READY_MARKERS } from '@kortix/sdk';
 import * as Sentry from '@sentry/nextjs';
-import { shouldIgnoreSentryNoiseEvent } from '@/lib/browser-error-noise';
+import { shouldIgnoreSentryNoiseEvent } from '@kortix/ui/internal/lib/browser-error-noise';
 
 const SENTRY_DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
@@ -33,6 +33,9 @@ if (SENTRY_DSN) {
 
     // Ignore noisy browser errors
     ignoreErrors: [
+      // Non-Error rejection noise (KRTX-2948); anchor to the SDK prefix so
+      // real Error exceptions and messages that only quote it still report.
+      /^Non-Error promise rejection captured/,
       // Browser extensions and ad-blockers
       'ResizeObserver loop',
       'ResizeObserver loop completed with undelivered notifications',
@@ -50,7 +53,7 @@ if (SENTRY_DSN) {
       // Ad-blocker blocked requests
       'ERR_BLOCKED_BY_CLIENT',
       // Transient "session runtime not ready" — `RuntimeNotReadyError`
-      // (`[opencode-sdk] Server URL not ready — sandbox is still loading`) from
+      // (`[kortix-runtime] Server URL not ready — sandbox is still loading`) from
       // `getClient()` for the ~1s window before a session's runtime URL pins.
       // Expected + self-healing on every session switch/provisioning; never an
       // error. `app/error.tsx` already suppresses the render-path case, but the

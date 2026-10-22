@@ -10,8 +10,10 @@ import { llmProxyBaseUrl, setLlmProxyToken } from '@/services/llm-proxy/llm-prox
 import { logger } from '@/lib/log/logger'
 import { convergeManagedModelCatalog, requiresRespawn, type Opencode } from './lifecycle'
 import { reconcileProjectEnv } from '@/services/sandbox-env/project-env'
+import { compiledAgentConfigFromEnv, setCompiledAgentConfigEnv } from '@/services/config-provider/compiled-agent-config'
+import { COMPILED_AGENT_CONFIG_ENV } from '@kortix/api-contract/compiled-agent-config-env'
 import { readRepoInfo, refreshRepo, syncConfigDirToBase, syncWorkspaceToBase, type ConfigDirSyncResult } from '@/lib/git/git'
-import { readBootLinkTarget } from '@/services/config-release/boot-config'
+import { readBootLinkTarget } from '@/services/config-provider/boot-config'
 import { scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import { opencodeTurnInFlight } from './opencode-turn-state'
 import {
@@ -23,9 +25,8 @@ import type { QuickQueueInterrupt } from './quick-queue-interrupt'
 
 const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_LLM_BASE_URL',
-  // The daemon-local LLM proxy URL (warm-fork boxes). Cleared on a live
-  // gateway→native toggle — hasKortixLlmGateway() treats a set proxy URL as
-  // "gateway on", so leaving it behind would pin the box in gateway mode.
+  // The daemon-local LLM proxy URL, set when a live gateway push finds a
+  // running proxy (applyLlmGatewayMode).
   'KORTIX_LLM_PROXY_URL',
   // The session's model. opencode reads this when it builds its config at spawn
   // (opencode.ts), so accepting it here + restarting is what makes a mid-session
@@ -33,9 +34,6 @@ const OPENCODE_RUNTIME_ENV_NAMES = new Set([
   'KORTIX_OPENCODE_MODEL',
   // Its harness-neutral name (D3). The API sends both for one release.
   'KORTIX_MODEL',
-  // Channel sessions can opt into the Connector MCP face after a deploy. This
-  // must restart OpenCode because MCP servers are registered only at spawn.
-  'KORTIX_CONNECTORS_MCP_ENABLED',
   // The server-compiled agent config (agents, prompts, permissions, model) —
   // apps/api's compile-agent-config.ts output.
   //
@@ -69,9 +67,13 @@ const RELEASE_OWNED_ENV_NAMES = new Set(['KORTIX_COMPILED_AGENT_CONFIG', 'KORTIX
  * would only risk racing that path for no benefit. The rest
  * (`KORTIX_SECRET_CAPABILITIES` foremost) have no such re-derivation and are
  * delivered ONLY by a live `/kortix/env` push — see `writeOpencodeRuntimeEnvSnapshot`.
+ *
+ * `KORTIX_LLM_PROXY_URL` is excluded too: it names a listener the OLD process
+ * owned. Restored, it makes boot.ts skip starting the proxy, and OpenCode then
+ * sends every model request to a closed port (prod 2026-10-01..07).
  */
 const PERSISTED_OPENCODE_ENV_NAMES = [...OPENCODE_RUNTIME_ENV_NAMES].filter(
-  (name) => !RELEASE_OWNED_ENV_NAMES.has(name),
+  (name) => !RELEASE_OWNED_ENV_NAMES.has(name) && name !== 'KORTIX_LLM_PROXY_URL',
 )
 
 /**
@@ -203,6 +205,15 @@ function applyOpencodeRuntimeEnv(input: unknown): { changed: boolean; names: str
       logger.info('[env] compiled governance push ignored; the config release owns it', { name })
       continue
     }
+    if (name === COMPILED_AGENT_CONFIG_ENV) {
+      // Compared and stored in whichever form fits: OpenCode inherits this env.
+      if (rawValue !== null && typeof rawValue !== 'string') continue
+      if (compiledAgentConfigFromEnv(process.env) !== (rawValue ?? undefined)) {
+        setCompiledAgentConfigEnv(process.env, rawValue)
+        changedNames.push(name)
+      }
+      continue
+    }
     if (rawValue === null) {
       if (process.env[name] !== undefined) {
         delete process.env[name]
@@ -242,14 +253,11 @@ function setOpencodeRuntimeEnv(next: Record<string, string | null>): { changed: 
 function applyLlmGatewayMode(enabled: unknown, baseUrl: unknown): { changed: boolean; names: string[] } {
   if (enabled === undefined) return { changed: false, names: [] }
   if (typeof enabled !== 'boolean') throw new Error('llmGatewayEnabled must be a boolean')
+  // The gateway is the only model path. An API from before that graduation
+  // can still send `false`; the box keeps its gateway env.
   if (!enabled) {
-    return setOpencodeRuntimeEnv({
-      KORTIX_LLM_BASE_URL: null,
-      // Warm-fork boxes run a localhost LLM proxy and mark it here; it also
-      // reads as "gateway on" (hasKortixLlmGateway), so a live disable must
-      // clear both or the respawned opencode keeps the kortix provider.
-      KORTIX_LLM_PROXY_URL: null,
-    })
+    logger.info('[env] llmGatewayEnabled=false ignored; the LLM gateway is the only model path')
+    return { changed: false, names: [] }
   }
   if (typeof baseUrl !== 'string' || !baseUrl.trim()) {
     throw new Error('llmGatewayBaseUrl is required when llmGatewayEnabled is true')

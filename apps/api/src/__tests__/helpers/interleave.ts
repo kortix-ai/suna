@@ -1,4 +1,4 @@
-import pg from 'pg';
+import { PgClient } from './pg-client';
 
 /**
  * Run `write` on a second connection inside an open transaction, start
@@ -9,13 +9,13 @@ import pg from 'pg';
  * statement when the lock holder commits.
  */
 export async function interleave<T>(
-  write: (tx: pg.Client) => Promise<unknown>,
+  write: (tx: PgClient) => Promise<unknown>,
   contender: () => Promise<T>,
   waitsOn: string,
 ): Promise<T> {
-  const tx = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+  const tx = new PgClient({ connectionString: process.env.TEST_DATABASE_URL });
   // Poll from outside `tx`: a transaction reads pg_stat_activity only once.
-  const probe = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+  const probe = new PgClient({ connectionString: process.env.TEST_DATABASE_URL });
   await Promise.all([tx.connect(), probe.connect()]);
   try {
     await tx.query('BEGIN');

@@ -135,11 +135,11 @@ describe('TunnelAgent auth close handling', () => {
 
 // ── v2: reliability (R1, R2, R4), access control (A2, A3) and X2 ───────────
 
-import { mkdtempSync, rmSync, existsSync as fileExists } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync as fileExists } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { reconnectDelay } from './agent';
-import { writeAccess, accessRequestPath, readAccessRequest } from './access';
+import { applyAccess, writeAccess, accessRequestPath, readAccess, readAccessRequest } from './access';
 import { signMessage } from '../shared/crypto';
 
 const SIGNING_KEY = 'test-signing-key';
@@ -527,15 +527,145 @@ describe('machine-side access control (A2, A3, X1, X2)', () => {
       writeAccess({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false }, home);
       await withOnlineAgent(home, async (relay) => {
         await until(() => relay.notifications('tunnel.access.state').length === 1);
-        expect(relay.notifications('tunnel.access.state')[0].params).toEqual({ mode: 'ask', grantedUntil: null });
+        expect(relay.notifications('tunnel.access.state')[0].params).toEqual({
+          mode: 'ask',
+          grantedUntil: null,
+          deniedUntil: null,
+          keepAwake: false,
+          keepAwakeSupported: process.platform !== 'win32',
+          pendingRequest: null,
+          desktopPermissions: null,
+        });
         expect(typeof relay.notifications('tunnel.access.state')[0]._sig).toBe('string');
         writeAccess({ mode: 'off', grantedUntil: null, deniedUntil: null, keepAwake: false }, home);
         await until(() => relay.notifications('tunnel.access.state').length === 2);
-        expect(relay.notifications('tunnel.access.state')[1].params).toEqual({ mode: 'off', grantedUntil: null });
+        expect(relay.notifications('tunnel.access.state')[1].params).toMatchObject({ mode: 'off', grantedUntil: null });
       });
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
+  });
+});
+
+describe('access changes relayed by Kortix (tunnel.access.set)', () => {
+  async function withAgent(home: string, run: (relay: FakeRelay) => Promise<void>, registry = new CapabilityRegistry()) {
+    FakeRelay.sockets = [];
+    globalThis.WebSocket = FakeRelay as unknown as typeof WebSocket;
+    const agent = new TunnelAgent(loadConfig(TEST_CONFIG), registry, {}, { home, accessHoldMs: 600, watchdogIntervalMs: 20 });
+    await quiet(async () => {
+      try {
+        agent.connect();
+        await until(() => FakeRelay.sockets[0]?.sent.some((m) => m.type === 'auth') === true);
+        await until(() => FakeRelay.sockets[0]!.notifications('tunnel.access.state').length >= 1);
+        await run(FakeRelay.sockets[0]!);
+      } finally {
+        agent.disconnect();
+        rmSync(home, { recursive: true, force: true });
+      }
+    });
+  }
+  const set = (relay: FakeRelay, id: string, params: Record<string, unknown>) =>
+    relay.deliverSigned({ jsonrpc: '2.0', id, method: 'tunnel.access.set', params });
+  /** A desktop app that is running: the agent will not launch anything. */
+  const runningApp = (home: string) =>
+    writeFileSync(join(home, 'desktop-app.json'), JSON.stringify({ command: process.execPath, args: [], pid: process.pid, env: {} }));
+
+  test('says in its handshake that it serves access changes', async () => {
+    await withAgent(mkdtempSync(join(tmpdir(), 'agent-tunnel-set-')), async (relay) => {
+      expect(relay.sent.find((m) => m.type === 'auth')).toMatchObject({ reportsAccess: true, controlsAccess: true });
+    });
+  });
+
+  test('a narrowing applies at once, even while access is off, and reports the new state', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-set-'));
+    writeAccess({ mode: 'off', grantedUntil: null, deniedUntil: null, keepAwake: false }, home);
+    await withAgent(home, async (relay) => {
+      set(relay, 's1', { mode: 'ask', keepAwake: true });
+      await until(() => relay.responses('s1').length === 1);
+      expect(relay.responses('s1')[0].result).toMatchObject({ mode: 'ask', keepAwake: true, pendingRequest: null });
+      expect(readAccess(home)).toMatchObject({ mode: 'ask', keepAwake: true });
+      await until(() => relay.notifications('tunnel.access.state').some((n) => n.params.mode === 'ask'));
+    });
+  });
+
+  test('a widening without the desktop app is refused with the command to run on the computer', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-set-'));
+    writeAccess({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false }, home);
+    await withAgent(home, async (relay) => {
+      set(relay, 's1', { mode: 'always' });
+      await until(() => relay.responses('s1').length === 1);
+      expect(relay.responses('s1')[0].error.code).toBe(-32014);
+      expect(relay.responses('s1')[0].error.message).toContain('npx @kortix/agent-tunnel@latest access always');
+      expect(readAccess(home).mode).toBe('ask');
+      expect(readAccessRequest(home)).toBeNull();
+    });
+  });
+
+  test('a widening waits for the owner on the computer: allowed there, it returns the new state', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-set-'));
+    writeAccess({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false }, home);
+    runningApp(home);
+    await withAgent(home, async (relay) => {
+      set(relay, 's1', { mode: 'always' });
+      await until(() => readAccessRequest(home)?.change?.mode === 'always');
+      // Kortix sees what the owner is asked.
+      await until(() => relay.notifications('tunnel.access.state').some((n) => n.params.pendingRequest?.change?.mode === 'always'));
+      // The desktop app runs `access always` after the owner clicks Allow.
+      applyAccess({ mode: 'always' }, home);
+      await until(() => relay.responses('s1').length === 1);
+      expect(relay.responses('s1')[0].result).toMatchObject({ mode: 'always', pendingRequest: null });
+    });
+  });
+
+  test('a widening the owner declines, or nobody answers, is refused and changes nothing', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-set-'));
+    writeAccess({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false }, home);
+    runningApp(home);
+    await withAgent(home, async (relay) => {
+      set(relay, 's1', { grantMinutes: 60 });
+      await until(() => readAccessRequest(home) !== null);
+      applyAccess({ deny: true }, home);
+      await until(() => relay.responses('s1').length === 1);
+      expect(relay.responses('s1')[0].error).toMatchObject({ code: -32014 });
+      expect(relay.responses('s1')[0].error.message).toContain('declined');
+      // Declining a change does not refuse calls.
+      expect(readAccess(home)).toMatchObject({ grantedUntil: null, deniedUntil: null });
+
+      set(relay, 's2', { mode: 'always' });
+      await until(() => relay.responses('s2').length === 1, 3_000);
+      expect(relay.responses('s2')[0].error.message).toContain('Nobody confirmed');
+      expect(readAccessRequest(home)).toBeNull();
+      expect(readAccess(home).mode).toBe('ask');
+    });
+  });
+
+  test('bad input is refused without touching access.json', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'agent-tunnel-set-'));
+    writeAccess({ mode: 'ask', grantedUntil: null, deniedUntil: null, keepAwake: false }, home);
+    await withAgent(home, async (relay) => {
+      set(relay, 's1', { mode: 'sometimes' });
+      await until(() => relay.responses('s1').length === 1);
+      expect(relay.responses('s1')[0].error.message).toContain('mode');
+      expect(readAccess(home).mode).toBe('ask');
+    });
+  });
+
+  test('reports the macOS permissions as this process holds them', async () => {
+    const registry = new CapabilityRegistry();
+    registry.register({
+      name: 'desktop',
+      methods: new Map([
+        ['desktop.cua.call', async (params: Record<string, unknown>) => {
+          expect(params).toMatchObject({ tool: 'check_permissions', __permission: { capability: 'desktop' } });
+          return { accessibility: true, screen_recording: false };
+        }],
+      ]),
+    });
+    await withAgent(mkdtempSync(join(tmpdir(), 'agent-tunnel-probe-')), async (relay) => {
+      await until(() => relay.notifications('tunnel.access.state').some((n) => n.params.desktopPermissions));
+      const last = relay.notifications('tunnel.access.state').at(-1)!;
+      expect(last.params.desktopPermissions).toEqual({ accessibility: true, screenRecording: false });
+    }, registry);
   });
 });
 
@@ -624,9 +754,9 @@ describe('contract v2 review fixes', () => {
       try {
         agent.connect();
         await until(() => FakeRelay.sockets[0]?.notifications('tunnel.access.state').length === 1);
-        expect(FakeRelay.sockets[0]!.notifications('tunnel.access.state')[0].params).toEqual({ mode: 'ask', grantedUntil: grant });
+        expect(FakeRelay.sockets[0]!.notifications('tunnel.access.state')[0].params).toMatchObject({ mode: 'ask', grantedUntil: grant });
         await until(() => FakeRelay.sockets[0]!.notifications('tunnel.access.state').length === 2, 2_000);
-        expect(FakeRelay.sockets[0]!.notifications('tunnel.access.state')[1].params).toEqual({ mode: 'ask', grantedUntil: null });
+        expect(FakeRelay.sockets[0]!.notifications('tunnel.access.state')[1].params).toMatchObject({ mode: 'ask', grantedUntil: null });
       } finally {
         agent.disconnect();
         rmSync(home, { recursive: true, force: true });

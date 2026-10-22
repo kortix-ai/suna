@@ -62,6 +62,28 @@ describe('session-token-health', () => {
     expect(sessionTokenPresumedDead()).toBe(false);
   });
 
+  test('a new session token clears the breaker at once: the next call carries it (KRTX-2545)', () => {
+    // A wake can rotate the box's credential right after calls with the old
+    // one were refused. Waiting out the probe window kept journal posts and
+    // turn relays silent for up to 5 minutes with a working token in hand.
+    const before = process.env.KORTIX_TOKEN;
+    process.env.KORTIX_TOKEN = 'token-before-wake';
+    try {
+      for (let i = 0; i < SESSION_TOKEN_DEAD_TRIP_THRESHOLD; i++) {
+        noteControlPlaneResponse(401, 'Session token is not active');
+      }
+      expect(sessionTokenPresumedDead()).toBe(true);
+      expect(sessionTokenPresumedDead()).toBe(true); // the same token stays refused
+
+      process.env.KORTIX_TOKEN = 'token-after-wake';
+      expect(sessionTokenPresumedDead()).toBe(false);
+      expect(sessionTokenPresumedDead()).toBe(false); // cleared, not one probe
+    } finally {
+      if (before === undefined) delete process.env.KORTIX_TOKEN;
+      else process.env.KORTIX_TOKEN = before;
+    }
+  });
+
   test('while tripped, one call per probe window goes through, so an idle box can see a rotation', () => {
     setSystemTime(new Date('2026-09-28T00:00:00Z'));
     try {

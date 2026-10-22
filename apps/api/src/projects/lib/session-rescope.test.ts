@@ -166,7 +166,7 @@ describe('rescopeSessionBindings — SET semantics', () => {
 
 describe('the docs match the contract', () => {
   const REPO = join(import.meta.dir, '..', '..', '..', '..', '..');
-  const DOCS = [join(REPO, 'apps', 'web', 'content', 'docs', 'backend.mdx')];
+  const DOCS = [join(REPO, 'apps', 'web', 'content', 'docs', 'sdk', 'sessions.mdx')];
 
   test('no doc still calls secrets or connector_bindings create-only', () => {
     // These three said "create-only" for as long as the refusal existed. When the

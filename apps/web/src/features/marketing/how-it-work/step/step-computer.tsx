@@ -1,9 +1,9 @@
 'use client';
 
-import { UnifiedMarkdown } from '@/components/markdown';
-import { ActivityBurst } from '@/features/session/turn/activity-burst';
+import { UnifiedMarkdown } from '@kortix/ui/markdown';
+import { ActivityBurst } from '@kortix/ui/session';
 import { useTranslations } from '@/i18n/use-translations';
-import type { Part } from '@/ui';
+import type { ToolCallBlock } from '@kortix/sdk';
 import { m, useReducedMotion, type Transition } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useStepShowcaseStart } from '../use-step-showcase';
@@ -55,7 +55,7 @@ const PATCH_MD = [
  * ────────────────────────────────────────────────────────────────────────── */
 
 /**
- * Two mock `ToolPart`s, fed to the REAL `ActivityBurst`.
+ * Two mock `ToolCallBlock`s, fed to the REAL `ActivityBurst`.
  *
  * Not a lookalike this time. `ActivityBurst` is the component the product draws
  * a run of tool calls with, and everything downstream of it is the real thing
@@ -83,69 +83,76 @@ const PATCH_MD = [
  * as the app. If it ever moves under an `(app)` group, this panel throws on the
  * landing page.
  *
- * `satisfies Part[]`, never `as Part[]`. A cast on mock data is a promise the
- * compiler stops checking: the SDK owns this shape, `ToolStateCompleted`
- * requires all six of `status/input/output/title/metadata/time`, and the day a
- * field is added a cast would keep compiling and hand `undefined` to a renderer
- * at runtime. `satisfies` makes that a build error instead, which is the entire
- * value of typing fixtures at all.
+ * `satisfies ToolCallBlock[]`, never `as ToolCallBlock[]`. A cast on mock data
+ * is a promise the compiler stops checking: the SDK owns this shape, and the
+ * day a field is added a cast would keep compiling and hand `undefined` to a
+ * renderer at runtime. `satisfies` makes that a build error instead, which is
+ * the entire value of typing fixtures at all.
+ *
+ * `started_at` / `ended_at` are what `ToolDurationContext` reads to print a
+ * row's duration, so the two spans below are the "120ms" and "6.2s" a reader
+ * sees, not filler.
  */
-const MESSAGE_ID = 'msg_marketing_turn';
-
-/** `ToolStateCompleted` is `{ status, input, output, title, metadata, time }` —
- *  every field required. `time` is what `ToolDurationContext` reads to print a
- *  row's duration, so the two spans below are the "12ms" and "6.2s" a reader
- *  sees, not filler. */
-const TOOL_PARTS = [
+const TOOL_CALLS = [
   {
+    type: 'tool_call',
     id: 'prt_marketing_grep',
-    sessionID: SESSION,
-    messageID: MESSAGE_ID,
-    type: 'tool',
-    tool: 'grep',
-    callID: 'call_marketing_grep',
-    state: {
-      status: 'completed',
-      metadata: {},
-      time: { start: 0, end: 120 },
-      input: { pattern: 'MAX_ATTEMPTS', path: 'apps/api/src/billing' },
-      output: [
-        'apps/api/src/billing/webhook-retry.ts:12:const MAX_ATTEMPTS = 5;',
-        'apps/api/src/billing/webhook-retry.ts:31:  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {',
-        'apps/api/src/billing/webhook-retry.test.ts:8:  it("gives up after MAX_ATTEMPTS", () => {',
-      ].join('\n'),
-      title: 'MAX_ATTEMPTS',
+    call_id: 'call_marketing_grep',
+    name: 'grep',
+    kind: 'grep',
+    status: 'complete',
+    started_at: new Date(0).toISOString(),
+    ended_at: new Date(120).toISOString(),
+    input: { pattern: 'MAX_ATTEMPTS', path: 'apps/api/src/billing' },
+    title: 'MAX_ATTEMPTS',
+    result: {
+      is_error: false,
+      content: [
+        {
+          type: 'text',
+          text: [
+            'apps/api/src/billing/webhook-retry.ts:12:const MAX_ATTEMPTS = 5;',
+            'apps/api/src/billing/webhook-retry.ts:31:  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {',
+            'apps/api/src/billing/webhook-retry.test.ts:8:  it("gives up after MAX_ATTEMPTS", () => {',
+          ].join('\n'),
+        },
+      ],
     },
   },
   {
+    type: 'tool_call',
     id: 'prt_marketing_bash',
-    sessionID: SESSION,
-    messageID: MESSAGE_ID,
-    type: 'tool',
-    tool: 'bash',
-    callID: 'call_marketing_bash',
-    state: {
-      status: 'completed',
-      metadata: {},
-      time: { start: 120, end: 6320 },
-      input: {
-        command: 'bun test apps/api/src/billing',
-        description: 'Run the billing suite',
-      },
-      output: [
-        'bun test v1.2.4',
-        '',
-        'apps/api/src/billing/webhook-retry.test.ts:',
-        '  (pass) retries a 5xx with exponential backoff [12.40ms]',
-        '  (pass) gives up after the 5th attempt [8.11ms]',
-        '  (pass) does not retry a 4xx [3.02ms]',
-        '',
-        ' 3 pass, 0 fail, 7 expect() calls',
-      ].join('\n'),
-      title: 'bun test apps/api/src/billing',
+    call_id: 'call_marketing_bash',
+    name: 'bash',
+    kind: 'shell',
+    status: 'complete',
+    started_at: new Date(120).toISOString(),
+    ended_at: new Date(6320).toISOString(),
+    input: {
+      command: 'bun test apps/api/src/billing',
+      description: 'Run the billing suite',
+    },
+    title: 'bun test apps/api/src/billing',
+    result: {
+      is_error: false,
+      content: [
+        {
+          type: 'text',
+          text: [
+            'bun test v1.2.4',
+            '',
+            'apps/api/src/billing/webhook-retry.test.ts:',
+            '  (pass) retries a 5xx with exponential backoff [12.40ms]',
+            '  (pass) gives up after the 5th attempt [8.11ms]',
+            '  (pass) does not retry a 4xx [3.02ms]',
+            '',
+            ' 3 pass, 0 fail, 7 expect() calls',
+          ].join('\n'),
+        },
+      ],
     },
   },
-] satisfies Part[];
+] satisfies ToolCallBlock[];
 
 /* ──────────────────────────────────────────────────────────────────────────
  * The reveal
@@ -266,7 +273,7 @@ function Block({ children, className }: { children: ReactNode; className?: strin
  * The user's turn.
  *
  * Surface and text scale copied from `UserMessageBubble` in
- * `features/session/turn/user-message.tsx` (its `BUBBLE_SURFACE` /
+ * `packages/ui/src/session/turn/user-message.tsx` (its `BUBBLE_SURFACE` /
  * `BUBBLE_TEXT` constants) rather than imported: that module is the real chat
  * turn — XML parsers, attachment tiles, the image lightbox, two zustand stores
  * — and importing it would ship all of it to the landing page to reuse two
@@ -308,25 +315,16 @@ function UserTurn(): ReactNode {
  */
 function AgentTurn({ beat }: { beat: number }): ReactNode {
   const t = useTranslations('hardcodedUi.i18nComplete');
-  const toolParts = useMemo(
+  const toolBlocks = useMemo(
     () =>
-      TOOL_PARTS.map((part) =>
-        part.tool === 'bash'
-          ? {
-              ...part,
-              state: {
-                ...part.state,
-                input: {
-                  ...part.state.input,
-                  description: t.raw('textfd11491690d6'),
-                },
-              },
-            }
-          : part,
-      ) satisfies Part[],
+      TOOL_CALLS.map((call) =>
+        call.name === 'bash'
+          ? { ...call, input: { ...call.input, description: t.raw('textfd11491690d6') } }
+          : call,
+      ) satisfies ToolCallBlock[],
     [t],
   );
-  const toolsShown = Math.max(0, Math.min(beat - 2, TOOL_PARTS.length));
+  const toolsShown = Math.max(0, Math.min(beat - 2, TOOL_CALLS.length));
 
   return (
     <div className="mx-auto flex min-h-0 w-[92%] flex-1 flex-col mask-b-from-50%">
@@ -337,7 +335,7 @@ function AgentTurn({ beat }: { beat: number }): ReactNode {
                 burst of a working turn: it is what holds the disclosure open
                 across the gaps between calls instead of blinking it shut. */}
             <ActivityBurst
-              parts={toolParts.slice(0, toolsShown)}
+              blocks={toolBlocks.slice(0, toolsShown)}
               sessionId={SESSION}
               working
               isTrailing

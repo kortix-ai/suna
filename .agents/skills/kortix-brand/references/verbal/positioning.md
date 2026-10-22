@@ -59,7 +59,7 @@ Kortix is the open-source AI Operating System: your agents, their skills, your c
 | Docs landing | Meta description: Short. Body lead: Standard | Docs title is "Overview" or "Kortix docs", never "Kortix - Kortix". |
 | About page: hero and meta description, `llms.txt` About entry | Mission, word for word (section 3) | The one place the mission is a description. Do not repeat the tagline there (Q41). |
 
-**Rule.** Write each page's meta description as one sentence that names the mechanism or the offer, in 155 characters or fewer. — *Why:* The live home description is 277 characters. `/pricing` and `/enterprise` carry generic lines. A reader and a search crawler both need the concrete thing. — *Where:* marketing | docs. — *When silent:* "{Who} can {do what} with {mechanism}." Example: "Free to start, $40 per seat per month for teams, custom for Enterprise. Any model, your keys."
+**Rule.** Write each page's meta description as one sentence that names the mechanism or the offer, in 155 characters or fewer. — *Why:* The live home description is 277 characters. `/pricing` and `/enterprise` carry generic lines. A reader and a search crawler both need the concrete thing. — *Where:* marketing | docs. — *When silent:* "{Who} can {do what} with {mechanism}." Example: "Free to start, credits from $20 a month for teams, custom for Enterprise. Any model, your keys."
 
 ## 2. What it is, the problem, why now
 
@@ -152,6 +152,6 @@ Each pitch runs: who, pain, promise, mechanism, sanctioned phrases, what not to 
 
 ## 6. Business model (context, not external copy)
 
-Open source and self-hostable underneath. A cloud that charges for seats and compute: Free is $0 with 200 credits per month and 1 project; the team plan is $40 per seat per month with 2,500 credits per month per seat, pooled (`apps/web/src/features/billing/pricing-plans.ts`, verified 2026-10-01). Single-tenant deployments for teams that must self-run. A marketplace of agents, skills and importable projects. Platinum.dev, the compute floor (CPU/GPU sandboxes, inference, training). The platform proves itself by running Kortix's own companies in public.
+Open source and self-hostable underneath. A cloud that charges in credits: Free is $0 with 500 credits per month, managed models and 1 project; the paid plan runs in tiers from $50 to $50,000 a month at 100 credits per dollar, with unlimited members sharing one pool (`apps/web/src/features/billing/pricing-plans.ts`, verified 2026-10-17). Single-tenant deployments for teams that must self-run. A marketplace of agents, skills and importable projects. Platinum.dev, the compute floor (CPU/GPU sandboxes, inference, training). The platform proves itself by running Kortix's own companies in public.
 
 **Rule.** Quote no price, credit count, discount, trial length or usage rate that is not in `pricing-plans.ts`. — *Why:* A landing line once said $20 and was wrong by 2x. — *Where:* marketing | deck | store listing | email. — *When silent:* link to `/pricing` and state no number.

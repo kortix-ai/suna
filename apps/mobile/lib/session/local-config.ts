@@ -12,6 +12,7 @@ import {
   resolveComposerAgent,
   resolveComposerModel,
   resolveModelDefault,
+  sessionModelCandidates,
   type ModelDefaultsResponse,
 } from '@kortix/sdk';
 import type { Agent, FlatModel, ProviderListResponse } from './runtime-data';
@@ -108,9 +109,12 @@ export interface ResolvedConfig {
  * Agent: this thread's pick, else the agent of its latest assistant turn, else
  * the session's bound agent, else the project default, else the first. The
  * pick lives for this screen only; after a reload the latest turn carries it.
- * Model: the persisted per-agent pick, else `/model-defaults` (agent →
- * project → account → platform), else the legacy global default, else the
- * agent's own model, the runtime config model, and the provider default.
+ * Model: a pick made in this thread, else the model the session already runs
+ * (`sessionModelCandidates`: its pin, its last prompt), else the persisted
+ * per-agent pick, else `/model-defaults` (agent → project → account →
+ * platform), else the legacy global default, else the agent's own model, the
+ * runtime config model, and the provider default. The per-agent pick is this
+ * phone's choice for OTHER sessions, so it never overrides a session's model.
  */
 export function useResolvedConfig(i: {
   /** The raw roster. Undefined while it loads. */
@@ -124,9 +128,21 @@ export function useResolvedConfig(i: {
   providers?: ProviderListResponse;
   modelDefaults?: ModelDefaultsResponse;
   configModel?: string;
+  /** The project session id: a model pick here belongs to this session only. */
+  sessionKey?: string | null;
+  /** The project session row. Its model pin is the model the thread opens on. */
+  session?: { metadata?: Record<string, unknown> | null } | null;
+  /** The model of the session's newest user message (`latestPromptModel` from @kortix/sdk). */
+  lastPromptModel?: { providerID: string; modelID: string };
 }): ResolvedConfig {
   const store = useLocalConfigStore();
   const [pickedAgent, setPickedAgent] = useState<string | null>(null);
+  const [pickedModel, setPickedModel] = useState<{
+    sessionKey: string | null;
+    model: { providerID: string; modelID: string };
+  } | null>(null);
+  const threadPick =
+    pickedModel && pickedModel.sessionKey === (i.sessionKey ?? null) ? pickedModel.model : undefined;
 
   const agents = useMemo(
     () => composerSelectableAgents(i.agents, { includeSubagents: true }),
@@ -144,7 +160,14 @@ export function useResolvedConfig(i: {
   const agentSlot = agentName ?? '_default';
   const { model: modelKey } = resolveComposerModel({
     models: i.models,
-    picks: [store.agentModels[agentSlot]],
+    picks: [
+      threadPick,
+      ...sessionModelCandidates({
+        session: i.session,
+        lastPromptModel: i.lastPromptModel,
+      }),
+      store.agentModels[agentSlot],
+    ],
     serverDefault: resolveModelDefault(i.modelDefaults, agentName ?? undefined),
     globalDefault: store.globalDefault ?? undefined,
     agentModel: agent?.model,
@@ -161,6 +184,7 @@ export function useResolvedConfig(i: {
   const variant = variantKey ? (store.modelVariants[variantKey] ?? null) : null;
 
   const setModel = (providerID: string, modelID: string) => {
+    setPickedModel({ sessionKey: i.sessionKey ?? null, model: { providerID, modelID } });
     store.setModelForAgent(agentSlot, { providerID, modelID });
     // An explicit pick retires the legacy setup-wizard default.
     if (store.globalDefault) store.setGlobalDefault(null);

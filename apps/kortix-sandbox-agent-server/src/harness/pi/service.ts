@@ -7,7 +7,7 @@
 import { homedir } from 'node:os'
 import type { ProjectEnvStore } from '@/services/sandbox-env/project-env'
 import type { HarnessDefinition, HarnessService, HarnessStartupOptions } from '../harness'
-import { isRepoMaterialized } from '@/lib/git/git'
+import { isRepoMaterialized } from '@/services/workspace-provider/checkout'
 import { runtimeAssetsActivity } from '@/services/runtime-assets/runtime-assets'
 import { createPiAssetsService, registerPiSkillReload } from './assets'
 import { startPiBackground } from './background'
@@ -18,6 +18,7 @@ import { createPiControlService } from './control'
 import { createPiDiagnosticsService } from './diagnostics'
 import { createPiQueryService } from './queries'
 import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { stopSessionLogJournal } from '../shared/session-log-journal'
 import { PiRuntime, type PiRuntimeHooks } from './runtime'
 import { createPiSurface } from './surface'
 import { createPiTurnService } from './turns'
@@ -71,6 +72,8 @@ export function createPiHarnessService(
         options.onStartupMark?.('pi-ready')
       },
       async stop() {
+        // The journal reads the runtime: its last flush runs before the runtime stops.
+        await stopSessionLogJournal()
         started = false
         await runtime.stop()
       },

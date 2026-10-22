@@ -10,6 +10,7 @@
  *   - useTunnelConnection(tunnelId)   — one machine
  *   - useUpdateTunnelConnection()     — rename a machine
  *   - useDeleteTunnelConnection()     — unpair a machine
+ *   - useSetComputerAccess()          — change when Kortix may use a machine
  *   - useAddComputerToProject()       — add a paired machine to a project
  *   - useDeviceAuthInfo / useApproveDeviceAuth / useDenyDeviceAuth — pairing
  *
@@ -33,7 +34,10 @@ export interface TunnelConnection {
   sandboxId: string | null;
   name: string;
   status: 'online' | 'offline' | 'connecting';
+  /** What Kortix may use now: approved by the owner AND served by the agent. */
   capabilities: string[];
+  /** What the owner approved (`useUpdateTunnelConnection` changes it). Absent on older servers. */
+  approvedCapabilities?: string[];
   machineInfo: Record<string, unknown>;
   lastHeartbeatAt: string | null;
   isLive: boolean;
@@ -42,6 +46,47 @@ export interface TunnelConnection {
   /** The human who paired the machine. `null` for a machine paired before
    *  computers became per-member accounts; absent on older servers. */
   ownerUserId?: string | null;
+  /** When Kortix may use the machine, as its agent last reported it. `null`
+   *  before the first report; absent on older servers. */
+  access?: ComputerAccess | null;
+}
+
+/**
+ * Access on a paired machine, decided on the machine itself. Fields other
+ * than `mode`, `grantedUntil`, and `controllable` are absent while the
+ * machine runs an agent older than 0.1.4.
+ */
+export interface ComputerAccess {
+  /** `ask`: each agent call waits for the owner; `always`: calls run; `off`: calls are refused. */
+  mode: 'ask' | 'always' | 'off';
+  /** In `ask`: calls run without asking until then. */
+  grantedUntil: string | null;
+  /** In `ask`: the owner denied; calls fail at once until then. */
+  deniedUntil?: string | null;
+  keepAwake?: boolean;
+  keepAwakeSupported?: boolean;
+  /** What waits for the owner's answer on the machine now: an agent call, or (`change`) a wider access asked for through Kortix. */
+  pendingRequest?: { capability: string; requestedAt: string; change?: ComputerAccessChange } | null;
+  /** The macOS permissions the machine's agent process holds. `null`: not a Mac, or no Computer Use. */
+  desktopPermissions?: { accessibility: boolean; screenRecording: boolean } | null;
+  /** The machine accepts `useSetComputerAccess`. False: update Kortix on it. */
+  controllable: boolean;
+}
+
+/**
+ * One change to a machine's access. The machine applies a narrowing at once.
+ * A widening (`mode: 'always'`, a longer grant) needs its owner to confirm in
+ * the Kortix app on that machine; the request fails with HTTP 409 otherwise.
+ */
+export interface ComputerAccessChange {
+  mode?: ComputerAccess['mode'];
+  /** Allow calls for this many minutes (1–1440). */
+  grantMinutes?: number;
+  /** End the current grant now. */
+  revoke?: boolean;
+  /** Answer the pending request with No: calls are refused for 10 minutes. */
+  deny?: boolean;
+  keepAwake?: boolean;
 }
 
 /** @deprecated Per-machine permissions are no longer a product surface. Removed in the next major. */
@@ -201,6 +246,34 @@ export function useDeleteTunnelConnection() {
       // Unpairing revokes the machine's `computer` accounts in every project.
       queryClient.invalidateQueries({ queryKey: ['connections'] });
     },
+  });
+}
+
+/**
+ * Changes when Kortix may use a paired machine (`POST /tunnel/connections/:id/access`).
+ * Rejects with the `ApiError`. Its `code` on HTTP 409: `computer_offline`,
+ * `agent_update_required`, or `computer_access_unconfirmed` (a widening nobody
+ * confirmed on the machine). Its `message` says what to do.
+ */
+export function useSetComputerAccess() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ tunnelId, ...change }: ComputerAccessChange & { tunnelId: string }) => {
+      const res = await backendApi.post<ComputerAccess>(`/tunnel/connections/${tunnelId}/access`, change, {
+        showErrors: false,
+        // A widening waits up to 20 s for the owner on the machine.
+        timeout: 60_000,
+      });
+      if (!res.success) throw res.error ?? new Error('Failed to change computer access');
+      return res.data!;
+    },
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
+      queryClient.invalidateQueries({ queryKey: tunnelKeys.connection(vars.tunnelId) });
+    },
+    // The caller shows the error: its message says what to do on the machine.
+    // Without this, a host's default mutation `onError` would show it twice.
+    onError: () => {},
   });
 }
 

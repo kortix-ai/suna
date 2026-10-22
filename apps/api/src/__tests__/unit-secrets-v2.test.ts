@@ -1,7 +1,7 @@
 /**
  * Unit tests for the secrets v2 identifier model's pure logic:
  *   - isValidIdentifier / identifierKeyConflicts (validation)
- *   - resolveGrantedSecretEnv (the whole agent-grant-by-identifier decision)
+ *   - resolveGrantedSecretSelection (the whole agent-grant-by-identifier decision)
  *
  * This is the SOLE authorization gate on agent secret access — there is no
  * resource-side agent allow-list and no per-secret member/group sharing.
@@ -11,7 +11,7 @@ import {
   AmbiguousSecretGrantError,
   identifierKeyConflicts,
   isValidIdentifier,
-  resolveGrantedSecretEnv,
+  resolveGrantedSecretSelection,
   type ResolvedProjectSecret,
 } from '../projects/secrets';
 import { agentMayUseEnv } from '../iam/agent-scope';
@@ -55,9 +55,9 @@ const row = (identifier: string, key: string, value: string): ResolvedProjectSec
   value,
 });
 
-describe('resolveGrantedSecretEnv', () => {
+describe('resolveGrantedSecretSelection', () => {
   test('undefined grant (back-compat) behaves as "all"', () => {
-    const { env, identifiers } = resolveGrantedSecretEnv(
+    const { env, identifiers } = resolveGrantedSecretSelection(
       [row('OPENAI_API_KEY', 'OPENAI_API_KEY', 'sk-1')],
       undefined,
     );
@@ -66,7 +66,7 @@ describe('resolveGrantedSecretEnv', () => {
   });
 
   test("'all' injects every identifier's key=value", () => {
-    const { env } = resolveGrantedSecretEnv(
+    const { env } = resolveGrantedSecretSelection(
       [row('OPENAI_API_KEY', 'OPENAI_API_KEY', 'sk-1'), row('STRIPE_KEY', 'STRIPE_KEY', 'sk-2')],
       'all',
     );
@@ -74,7 +74,7 @@ describe('resolveGrantedSecretEnv', () => {
   });
 
   test('explicit list narrows to only the granted identifiers (case-insensitive)', () => {
-    const { env, identifiers } = resolveGrantedSecretEnv(
+    const { env, identifiers } = resolveGrantedSecretSelection(
       [row('OPENAI_API_KEY', 'OPENAI_API_KEY', 'sk-1'), row('STRIPE_KEY', 'STRIPE_KEY', 'sk-2')],
       ['openai_api_key'],
     );
@@ -83,12 +83,12 @@ describe('resolveGrantedSecretEnv', () => {
   });
 
   test('empty explicit list grants nothing', () => {
-    const { env } = resolveGrantedSecretEnv([row('OPENAI_API_KEY', 'OPENAI_API_KEY', 'sk-1')], []);
+    const { env } = resolveGrantedSecretSelection([row('OPENAI_API_KEY', 'OPENAI_API_KEY', 'sk-1')], []);
     expect(env).toEqual({});
   });
 
   test('a granted identifier not present in the project is simply absent (no error)', () => {
-    const { env } = resolveGrantedSecretEnv(
+    const { env } = resolveGrantedSecretSelection(
       [row('OPENAI_API_KEY', 'OPENAI_API_KEY', 'sk-1')],
       ['DELETED_IDENTIFIER'],
     );
@@ -96,7 +96,7 @@ describe('resolveGrantedSecretEnv', () => {
   });
 
   test("'all': two identifiers sharing a key resolve deterministically (alphabetically-first identifier wins), never throws", () => {
-    const { env } = resolveGrantedSecretEnv(
+    const { env } = resolveGrantedSecretSelection(
       [
         row('GMAPS-primary', 'GOOGLE_MAPS_API_KEY', 'primary-val'),
         row('GMAPS-backup', 'GOOGLE_MAPS_API_KEY', 'backup-val'),
@@ -109,7 +109,7 @@ describe('resolveGrantedSecretEnv', () => {
 
   test('explicit list granting TWO identifiers that share a key is ambiguous — throws', () => {
     expect(() =>
-      resolveGrantedSecretEnv(
+      resolveGrantedSecretSelection(
         [
           row('GMAPS-primary', 'GOOGLE_MAPS_API_KEY', 'primary-val'),
           row('GMAPS-backup', 'GOOGLE_MAPS_API_KEY', 'backup-val'),
@@ -120,7 +120,7 @@ describe('resolveGrantedSecretEnv', () => {
   });
 
   test('explicit list granting ONE of two same-key identifiers is fine (the whole point of the model)', () => {
-    const { env } = resolveGrantedSecretEnv(
+    const { env } = resolveGrantedSecretSelection(
       [
         row('GMAPS-primary', 'GOOGLE_MAPS_API_KEY', 'primary-val'),
         row('GMAPS-backup', 'GOOGLE_MAPS_API_KEY', 'backup-val'),

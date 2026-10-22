@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  CRON_MIN_INTERVAL_SECONDS,
+  DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR,
+  cronIntervalError,
   validateManifest,
   formatIssues,
   ENV_NAME_RE,
@@ -350,6 +353,90 @@ describe('validateManifest — trigger edge cases', () => {
         'kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "0 25 * * *"\nprompt = "go"\ntimezone = "UTC"',
       ),
     ).toContain('triggers[0].cron');
+  });
+
+  // KRTX-1721: croner reads 6 fields as seconds-first, so `*/30 * * * * *` is
+  // every 30 SECONDS. Each fire starts or prompts a session.
+  test('a cron that fires more than once a minute is rejected and names the 60-second minimum', () => {
+    for (const cron of ['*/30 * * * * *', '*/5 * * * * *', '0,30 * * * * *', '0,1 0 * * * *']) {
+      const issue = validateManifest(
+        `kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "${cron}"\nprompt = "go"`,
+      ).issues.find((i) => i.path === 'triggers[0].cron' && i.severity === 'error');
+      expect(issue?.message).toContain('60 seconds');
+    }
+  });
+
+  test('a cron at most once a minute passes the floor', () => {
+    for (const cron of ['0 */30 * * * *', '*/30 * * * *', '0 * * * * *', '* * * * *', '0 9 * * 1-5']) {
+      expect(
+        errorPaths(`kortix_version = 1\n[[triggers]]\nslug = "d"\ntype = "cron"\ncron = "${cron}"\nprompt = "go"`),
+      ).not.toContain('triggers[0].cron');
+    }
+  });
+
+  test('cronIntervalError is null at the floor and names the minimum below it', () => {
+    expect(CRON_MIN_INTERVAL_SECONDS).toBe(60);
+    expect(cronIntervalError('0 * * * * *')).toBeNull();
+    expect(cronIntervalError('*/59 * * * * *')).toContain('60 seconds');
+  });
+
+  // KRTX-1721: a trigger starts at most `max_runs_per_hour` runs in any 60
+  // minutes (60 when unset) and at most `max_runs_per_day` in a UTC day.
+  const capTriggers = {
+    cron: 'type = "cron"\ncron = "0 * * * *"',
+    webhook: 'type = "webhook"',
+  };
+  test('max_runs_per_hour and max_runs_per_day take a positive integer on any trigger type', () => {
+    expect(DEFAULT_TRIGGER_MAX_RUNS_PER_HOUR).toBe(60);
+    for (const body of Object.values(capTriggers)) {
+      const paths = errorPaths(
+        `kortix_version = 1\n[[triggers]]\nslug = "d"\n${body}\nprompt = "go"\nmax_runs_per_hour = 2\nmax_runs_per_day = 3`,
+      );
+      expect(paths).not.toContain('triggers[0].max_runs_per_hour');
+      expect(paths).not.toContain('triggers[0].max_runs_per_day');
+    }
+  });
+
+  test('a run cap that is not a positive integer is rejected, naming the field', () => {
+    for (const field of ['max_runs_per_hour', 'max_runs_per_day']) {
+      for (const value of ['0', '-1', '1.5', '"10"']) {
+        const issue = validateManifest(
+          `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\n${field} = ${value}`,
+        ).issues.find((i) => i.path === `triggers[0].${field}` && i.severity === 'error');
+        expect({ field, value, message: issue?.message }).toEqual({ field, value, message: `${field} must be a whole number of at least 1.` });
+      }
+    }
+  });
+
+  // KRTX-1721: `overlap` is skip or allow, on any trigger type.
+  test('overlap takes skip or allow; anything else is rejected, naming the field', () => {
+    for (const value of ['"skip"', '"allow"']) {
+      const paths = errorPaths(`kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\noverlap = ${value}`);
+      expect(paths).not.toContain('triggers[0].overlap');
+    }
+    for (const value of ['"queue"', 'true', '1']) {
+      const issue = validateManifest(
+        `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.cron}\nprompt = "go"\noverlap = ${value}`,
+      ).issues.find((i) => i.path === 'triggers[0].overlap' && i.severity === 'error');
+      expect({ value, message: issue?.message }).toEqual({ value, message: 'overlap must be "skip" or "allow".' });
+    }
+  });
+
+  // KRTX-1721: `filter` takes a value (equals) or one operator per path.
+  test('a filter with equality and every operator is accepted', () => {
+    const paths = errorPaths(
+      `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.webhook}\nprompt = "go"\n` +
+        'filter = { "body.type" = "push", "body.sender.login" = { not = "kortix-bot" }, "body.action" = { in = ["opened", "reopened"] }, ' +
+        '"body.pull_request" = { exists = true }, "body.ref" = { not_prefix = "refs/heads/kortix/" }, "body.base" = { prefix = ["release/"] } }',
+    );
+    expect(paths.filter((p) => p.startsWith('triggers[0].filter'))).toEqual([]);
+  });
+
+  test('a filter with an unknown operator is rejected with the parser message', () => {
+    const issue = validateManifest(
+      `kortix_version = 1\n[[triggers]]\nslug = "d"\n${capTriggers.webhook}\nprompt = "go"\nfilter = { "body.ref" = { nott = "x" } }`,
+    ).issues.find((i) => i.path === 'triggers[0].filter' && i.severity === 'error');
+    expect(issue?.message).toBe('filter.body.ref has an unknown operator "nott"; use one of: not, in, exists, prefix, not_prefix.');
   });
 
   test('non-boolean enabled is rejected', () => {

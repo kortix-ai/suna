@@ -1,11 +1,15 @@
-# GuardDuty findings from every enabled region fan into the existing central
-# operations alert topic. Regional EventBridge rules satisfy Drata test 105
-# without requiring a separate human-confirmed SNS subscription in each region.
+# GuardDuty findings from every enabled region fan into the eu-west-2 default
+# event bus, and one eu-west-2 rule delivers them to the compliance alert topic
+# (confirmed email subscription, managed outside Terraform). us-west-2 was the
+# hub until 2026-10-12; it now forwards like every other region.
+# Regional EventBridge rules satisfy Drata test 105 without requiring a separate
+# human-confirmed SNS subscription in each region.
 # Only Medium and higher (severity >= 4) page. Low findings (for example a new
 # teammate's first console login) stay in GuardDuty for review, not email.
 
 data "aws_sns_topic" "operations_alerts" {
-  name = "suna-api-alerts"
+  provider = aws.euw2
+  name     = "kortix-compliance-alerts"
 }
 
 locals {
@@ -14,7 +18,7 @@ locals {
     "detail-type" = ["GuardDuty Finding"]
     detail        = { severity = [{ numeric = [">=", 4] }] }
   })
-  central_event_bus_arn = "arn:aws:events:us-west-2:${local.account_id}:event-bus/default"
+  central_event_bus_arn = "arn:aws:events:eu-west-2:${local.account_id}:event-bus/default"
 }
 
 resource "aws_iam_role" "guardduty_event_forwarder" {
@@ -48,16 +52,17 @@ resource "aws_iam_role_policy" "guardduty_event_forwarder" {
 }
 
 resource "aws_cloudwatch_event_rule" "guardduty_usw2" {
-  name          = "kortix-guardduty-failures"
-  description   = "Route Medium+ GuardDuty findings to the operations alert topic"
+  name          = "kortix-guardduty-findings"
+  description   = "Forward GuardDuty findings to the central operations alert bus"
   event_pattern = local.guardduty_finding_event_pattern
   state         = "ENABLED"
   tags          = local.tags
 }
 
 resource "aws_cloudwatch_event_target" "guardduty_usw2" {
-  rule = aws_cloudwatch_event_rule.guardduty_usw2.name
-  arn  = data.aws_sns_topic.operations_alerts.arn
+  rule     = aws_cloudwatch_event_rule.guardduty_usw2.name
+  arn      = local.central_event_bus_arn
+  role_arn = aws_iam_role.guardduty_event_forwarder.arn
 }
 
 resource "aws_cloudwatch_event_rule" "guardduty_use1" {
@@ -124,10 +129,12 @@ resource "aws_cloudwatch_event_target" "guardduty_euw3" {
   role_arn = aws_iam_role.guardduty_event_forwarder.arn
 }
 
+# The central delivery rule. Its name must match the topic policy's
+# `rule/kortix-*failures` publish condition (compliance-monitoring/monitoring.tf).
 resource "aws_cloudwatch_event_rule" "guardduty_euw2" {
   provider      = aws.euw2
-  name          = "kortix-guardduty-findings"
-  description   = "Forward GuardDuty findings to the central operations alert bus"
+  name          = "kortix-guardduty-failures"
+  description   = "Route Medium+ GuardDuty findings to the operations alert topic"
   event_pattern = local.guardduty_finding_event_pattern
   state         = "ENABLED"
   tags          = local.tags
@@ -136,8 +143,7 @@ resource "aws_cloudwatch_event_rule" "guardduty_euw2" {
 resource "aws_cloudwatch_event_target" "guardduty_euw2" {
   provider = aws.euw2
   rule     = aws_cloudwatch_event_rule.guardduty_euw2.name
-  arn      = local.central_event_bus_arn
-  role_arn = aws_iam_role.guardduty_event_forwarder.arn
+  arn      = data.aws_sns_topic.operations_alerts.arn
 }
 
 resource "aws_cloudwatch_event_rule" "guardduty_euw1" {

@@ -10,12 +10,64 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 
 ---
 
+## 2026-10-19
+
+### K9 `@kortix/ui`: the shared Tailwind v4 component library
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`) is the one React component library for `apps/web`, Kortix Apps and SDK hosts. Components are the `apps/web/src/components/ui` files, moved with the same Tailwind v4 class strings, under `packages/ui/src/primitives/`. `apps/web` imports `@kortix/ui/<name>` and the module entries directly; it keeps no re-export shims (`tests/unit/web-no-ui-shims.test.ts`). Styles ship as `@kortix/ui/tokens.css` (generated, `:root` and `.dark`), `@kortix/ui/theme.css` (the `@theme inline` keys, utilities and keyframes moved out of `apps/web/src/app/globals.css`), `@kortix/ui/styles.css` (prebuilt `dist/styles.css` for hosts without Tailwind) and `@kortix/ui/fonts.css` (Roobert, Kortix-owned surfaces only, D8). White-label hosts override the CSS variables and never fork a component. The kit-styled `Popover`, `OptionList`, `Select` and `FilterBar` of K8 are deleted. A host composes a filter bar from `popover` and `command`; `FilterBar` / `FilterBarItem` in `tabs` are the pill row. `kit.css` (`k-*`) stays the kit for plain HTML without React and is not part of `@kortix/ui`.
+- **Why:** two styling systems for one component set drift. One package keeps `apps/web`, the white-label demo and every SDK host on the same components.
+- **Where:** `packages/ui`, `packages/ui/README.md`, `packages/ui/skills/kortix-ui/SKILL.md` (the package skill, mirrored for Kortix sessions in `packages/starter/templates/managed/skills/kortix-ui/`), `packages/ui/src/session` (`@kortix/ui/session`), `apps/web/content/docs/sdk/ui.mdx`, `scripts/generate-tokens.ts`.
+- **Supersedes:** K8. `sync-kortix-brand` in `kortix-ai/company` copies only `visual/fonts.css`, `visual/tokens.css` and `visual/kit.css`, so no App copied the deleted K8 files.
+- **Source:** the `kortix-ui` branch.
+
+### K8 (SUPERSEDED by K9) `@kortix/ui`: the interactive components for Apps
+- **Date:** 2026-10-19
+- **Decision:** `packages/ui` (`@kortix/ui`, private) holds the interactive components that CSS cannot provide: `Popover`, `OptionList` (search, ↑/↓, Enter, Home/End), `Select` and `FilterBar` (Linear-style chips behind one Filter button). They are built on the Radix Popover that `apps/web` uses and are styled only by `kit.css` (`k-popover-panel`, `k-options`, `k-option`, `k-select-trigger`, `k-filter-bar`, `k-chip`). Kortix Apps get them through `sync-kortix-brand` in `kortix-ai/company`.
+- **Why:** the sales App rendered 8 filters as segmented controls and native selects, which took half the screen. Marko asked for proper components shared from suna.
+- **Where:** `packages/ui`, `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App filter bar in `kortix-ai/company`.
+
+### K7 `kit.css` adds the field
+- **Date:** 2026-10-19
+- **Decision:** `kit.css` adds `k-input` (input, textarea), `k-field` (label above a field) and `k-check` (checkbox row), copied from `inputSurfaceClasses` and `inputFocusClasses` in `input.tsx`.
+- **Why:** the sales App has forms, and an App without the field primitive writes its own field CSS.
+- **Where:** `visual/kit.css`.
+- **Supersedes:** none.
+- **Source:** the sales App refactor in `kortix-ai/company`.
+
+### K6 `kit.css`: the UI primitives as portable CSS classes
+- **Date:** 2026-10-19
+- **Decision:** `visual/kit.css` carries the `@/components/ui` primitives (Card, Button, Badge, status dot, banner, segmented control, table, list, stat, meter, popover, empty state) as `k-*` classes that read only `tokens.css` variables. HTML outside `apps/web` loads `fonts.css`, `tokens.css` and `kit.css` in that order and composes these classes before it writes its own CSS.
+- **Why:** every Kortix App and internal dashboard wrote its own palette and component CSS (the factory-status App shipped GitHub status hexes), so each read as a second product.
+- **Where:** `visual/kit.css`, `SKILL.md` Standalone HTML row.
+- **Supersedes:** none.
+- **Source:** the factory dashboard rebuild in `kortix-ai/company`.
+
+## 2026-10-09
+
+### D13 A backend is an App of kind `convex`
+- **Decision:** A Convex-powered backend is an App of kind `convex`, not a product of its own. The CLI, API, SDK and skills name Apps, kinds and capabilities only (`kortix apps create <slug> --kind convex`, `/apps/:appId/snapshots`, `app.capabilities`). "Backend" stays the plain-language noun for what a `convex` App is, and the label of its kind badge in the web app. Never "database", "DB", "Convex project", or "app backend".
+- **Why:** The founder decided on 2026-10-09: "technically the backends are apps as well." One noun for every deployable thing removes a second inventory, a second permission set and a second CLI group. Clients branch on capabilities, so a future kind needs no new noun.
+- **Where:** `verbal/voice-and-tone.md` section 3 (product nouns), `apps/web/content/docs/apps.mdx` (template `convex`), the `kortix-apps` system skill (`packages/starter/templates/managed/skills/kortix-apps/`), the `kortix apps` CLI help.
+- **Supersedes:** D12 (the CLI `kortix backends`, the `/backends` API routes and the Backends product area; the banned synonyms stay).
+- **Source:** branch `apps-convex` (2026-10-09).
+
+## 2026-10-06
+
+### D12 "Backend" is the noun for a project's Convex-powered service
+- **Decision:** "backend" is the canonical noun for a project's Convex-powered data-and-logic service. Plural in the product area: "Backends". Never "database", "DB", "Convex project", or "app backend".
+- **Why:** A backend holds data, server functions, realtime queries, files and schedules, not only tables. "Database" understates it. One noun across the UI, the CLI (`kortix backends`), the API (`/backends`) and the docs. The word "backend" also appears in "Kortix as a Backend" (KaaB) and "Git backend". Those name other things. A reader tells them apart by context and by the product name "Backends" for this feature.
+- **Where:** historical. D13 retired every location this decision named: the Backends docs page, the two Backends system skills, the `kortix backends` CLI group and the `/backends` API routes are deleted (branch `apps-convex`). The noun now lives where D13 says.
+- **Supersedes:** none.
+- **Source:** Kortix Backends feature, branch `kortix-backends` (2026-10-06).
+
 ## 2026-10-04
 
 ### D10 The category line is "AI Operating System"
 - **Decision:** The category is "AI Operating System", short form "AI OS". The tagline is "The open-source AI Operating System". The brand name stays "Kortix". "AI Management System" is retired. The comparative line, the manifesto line and the mission do not change. "Autonomous Company Operating System" stays retired for its word "Autonomous".
 - **Why:** The founder chose it on 2026-10-04 with the instruction to use it everywhere: git, marketing, product, CLI, email and the brand kit. An operating system is the layer that agents, skills, memory, connectors, computers, channels and triggers run on. The marketing site is rebuilt on this line in the same branch.
-- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `apps/web/src/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
+- **Where:** `verbal/positioning.md`, `verbal/voice-and-tone.md`, `verbal/concepts.md`, README, GitHub About, `packages/ui/src/internal/lib/site-metadata.ts`, the landing `content.ts`, `apps/cli/src/banner.ts`, `BRAND_FOOTER`, the Slack and Teams manifests, every `apps/web/translations/*.json`.
 - **Supersedes:** D1 (the category and tagline only; D1's retired-line list stays).
 - **Source:** founder decision, branch `webpage` (2026-10-04).
 
@@ -27,7 +79,7 @@ Ids: `D1` to `D8` and `D4a` to `D4k` come from the 2026-10-01 brand-kit build. `
 - **Where:** `verbal/claims.md` (the harness rule), the accuracy gates in `apps/web/src/features/marketing/agents-and-skills/content.ts`, `faq/content.ts`, `how-it-work/how-it-works-content.ts` and `how-it-work/step/step-harness.tsx`. 11 marketing files name OpenCode.
 - **Supersedes:** the "Why" of the harness rule in `verbal/claims.md`. The rule itself stays.
 - **Source:** OpenCode decoupling W7, task G3 (2026-10-02).
-- **Until answered:** name OpenCode and no other harness on marketing, deck and sales surfaces. Do not name pi there. The product docs are not marketing: they name both harnesses (`apps/web/content/docs/work/harnesses.mdx`). Change no marketing copy for pi before this entry has an answer. Answer it before the default harness of new projects moves to pi.
+- **Until answered:** name OpenCode and no other harness on marketing, deck and sales surfaces. Do not name pi there. The product docs are not marketing: they name both harnesses (`apps/web/content/docs/project/agents.mdx`, section Harnesses). Change no marketing copy for pi before this entry has an answer. Answer it before the default harness of new projects moves to pi.
 
 ## 2026-10-01
 

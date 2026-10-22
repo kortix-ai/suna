@@ -13,8 +13,9 @@ import { refreshMirror } from './git/mirror';
 import type { GitBackedProject } from './git/types';
 
 /**
- * The manifest permissions merging `cr` needs: `[]` when it changes none of
- * the governed sections.
+ * What merging `cr` does to the manifest: the permissions it needs (`[]` when
+ * it changes none of the governed sections) and every agent's grant before and
+ * after, for the non-escalation check (iam/agent-grant-ceiling.ts).
  *
  * Reads the manifest at the merge base and at the CR head. Both refs are
  * proved current first: the head branch is usually pushed seconds before the
@@ -25,19 +26,6 @@ import type { GitBackedProject } from './git/types';
  * Throws when a side cannot be read. The caller refuses the merge with a
  * retryable 503 (`CR_GOVERNANCE_UNVERIFIED`): it never merges a change it
  * could not classify.
- */
-export async function manifestChangeRequiredActions(
-  project: GitBackedProject,
-  cr: { baseRef: string; headRef: string },
-): Promise<string[]> {
-  return (await manifestChange(project, cr)).required;
-}
-
-/**
- * What merging `cr` does to the manifest: the permissions it needs
- * (`manifestChangeRequiredActions`) and every agent's grant before and after,
- * for the non-escalation check (iam/agent-grant-ceiling.ts). Throws like
- * `manifestChangeRequiredActions`.
  */
 export async function manifestChange(
   project: GitBackedProject,

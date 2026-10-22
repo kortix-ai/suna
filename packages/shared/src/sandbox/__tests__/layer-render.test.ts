@@ -283,10 +283,11 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
     expect(rendered).toContain(`PATH=${KORTIX_USER_PATH_DIRS}:$PATH`);
   });
 
-  test('carries ONLY the two temporary Platinum mitigations, before the privilege drop, each best-effort', () => {
+  test('carries ONLY the three temporary Platinum mitigations, before the privilege drop, each best-effort', () => {
     const dropAt = entrypoint.indexOf('setpriv --reuid kortix');
     const mitigations = [
       'mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm',
+      'chmod 644 /etc/hosts',
       'ulimit -Hn 1048576',
       'ulimit -Sn 1048576',
     ];
@@ -296,10 +297,10 @@ describe('the entrypoint survives providers that discard image USER/ENV', () => 
       expect(at).toBeLessThan(dropAt);
     }
     expect(entrypoint).toContain('chmod 1777 /dev/shm 2>/dev/null || true');
+    expect(entrypoint).toContain('chmod 644 /etc/hosts 2>/dev/null || true');
     expect(entrypoint).toContain('ulimit -Hn 1048576 2>/dev/null || true');
     expect(entrypoint).toContain('ulimit -Sn 1048576 2>/dev/null || true');
     expect(entrypoint).not.toContain('machine-id');
-    expect(entrypoint).not.toContain('/etc/hosts');
     expect(entrypoint).not.toContain('/dev/stdin');
     expect(entrypoint).not.toContain('LANG');
   });

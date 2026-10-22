@@ -16,11 +16,11 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  convergeBeforeTurnStart,
+  convergeConfigIfBehind,
   createDesiredReleaseCache,
   createDesiredReleaseInvalidation,
   type DesiredInvalidationTransport,
-  type TurnStartConvergenceDeps,
+  type ConfigGateDeps,
 } from '../turn-start-convergence';
 
 const RELEASE_BEFORE_THE_PUSH = 'a'.repeat(64);
@@ -34,7 +34,6 @@ const TARGET = {
   repoUrl: '/tmp/repo.git',
   defaultBranch: 'main',
   manifestPath: 'kortix.yaml',
-  projectMetadata: {},
   baseRef: 'main',
   agentName: 'kortix',
   sessionMetadata: {},
@@ -70,14 +69,13 @@ function pod(bus: ReturnType<typeof fakeBus>, resolves: () => string) {
     { enableInTests: true },
   );
   const invalidate = createDesiredReleaseInvalidation(cache, bus.transport());
-  const deps = (): TurnStartConvergenceDeps => ({
+  const deps = (): ConfigGateDeps => ({
     loadTarget: async () => TARGET as never,
     desiredReleaseId: (target, sessionId) => cache.get(target, sessionId),
     // This pod last SAW the box running the pre-push release.
     runningReleaseId: () => RELEASE_BEFORE_THE_PUSH,
     probeRunningRelease: async () => RELEASE_BEFORE_THE_PUSH,
     converge: async () => 'converged',
-    releasesEnabled: () => true,
     now: () => Date.now(),
   });
   return { cache, invalidate, deps, resolveCalls: () => resolveCalls };
@@ -91,8 +89,8 @@ describe('a base move invalidates the desired release in EVERY api process', () 
     const podB = pod(bus, () => tip);
 
     // Both pods are warm and both agree with the box. No network, no converge.
-    expect((await convergeBeforeTurnStart(SESSION, podA.deps())).decision).toBe('current');
-    expect((await convergeBeforeTurnStart(SESSION, podB.deps())).decision).toBe('current');
+    expect((await convergeConfigIfBehind(SESSION, podA.deps())).decision).toBe('current');
+    expect((await convergeConfigIfBehind(SESSION, podB.deps())).decision).toBe('current');
     expect(podB.resolveCalls()).toBe(1);
 
     // A push lands on pod A. Pod B never saw the request.
@@ -100,7 +98,7 @@ describe('a base move invalidates the desired release in EVERY api process', () 
     podA.invalidate(PROJECT);
 
     // Pod B must now resolve again and find the box behind.
-    const onB = await convergeBeforeTurnStart(SESSION, podB.deps());
+    const onB = await convergeConfigIfBehind(SESSION, podB.deps());
     expect(podB.resolveCalls()).toBe(2);
     expect(onB.decision).toBe('converged');
   });
@@ -109,19 +107,18 @@ describe('a base move invalidates the desired release in EVERY api process', () 
     let tip = RELEASE_BEFORE_THE_PUSH;
     const cache = createDesiredReleaseCache(async () => tip, { enableInTests: true });
     const invalidate = createDesiredReleaseInvalidation(cache, null);
-    const deps: TurnStartConvergenceDeps = {
+    const deps: ConfigGateDeps = {
       loadTarget: async () => TARGET as never,
       desiredReleaseId: (target, sessionId) => cache.get(target, sessionId),
       runningReleaseId: () => RELEASE_BEFORE_THE_PUSH,
       probeRunningRelease: async () => RELEASE_BEFORE_THE_PUSH,
       converge: async () => 'converged',
-      releasesEnabled: () => true,
       now: () => Date.now(),
     };
-    expect((await convergeBeforeTurnStart(SESSION, deps)).decision).toBe('current');
+    expect((await convergeConfigIfBehind(SESSION, deps)).decision).toBe('current');
     tip = RELEASE_AFTER_THE_PUSH;
     expect(() => invalidate(PROJECT)).not.toThrow();
-    expect((await convergeBeforeTurnStart(SESSION, deps)).decision).toBe('converged');
+    expect((await convergeConfigIfBehind(SESSION, deps)).decision).toBe('converged');
   });
 
   test('a publish that throws never fails the write that moved the branch', () => {

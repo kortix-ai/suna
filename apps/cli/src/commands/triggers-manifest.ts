@@ -3,10 +3,13 @@ import {
   MONITOR_MIN_INTERVAL_SECONDS,
   MONITOR_MODES,
   MONITOR_RUN_MAX_LENGTH,
+  TRIGGER_FILTER_OPERATORS,
+  type TriggerFilter,
   formatDurationSeconds,
   parseDurationSeconds,
+  parseTriggerFilter,
 } from '@kortix/manifest-schema';
-import { fail, missing } from '../command-helpers.ts';
+import { type CtxOpts, fail, missing } from '../command-helpers.ts';
 import {
   appendArrayBlock,
   arrayEntryExists,
@@ -14,6 +17,7 @@ import {
   setScalarInArrayBlock,
 } from '../manifest-edit.ts';
 import { C, status } from '../style.ts';
+import { checkEventConfig, quietCatalogContext } from './triggers-events.ts';
 
 // add/rm/toggle a [[triggers]] block in the LOCAL kortix.yaml (source of
 // truth). `kortix ship` applies it; the live cloud path lives in
@@ -34,6 +38,100 @@ const MONITOR_REJECTED_FLAGS: ReadonlyArray<[string, string]> = [
   ['--secret-env', 'secretEnv'],
 ];
 
+/** Flags that are schedule/monitor/webhook wiring and are rejected on an event trigger. */
+const EVENT_REJECTED_FLAGS: ReadonlyArray<[string, string]> = [
+  ['--cron', 'cron'],
+  ['--run-at', 'runAt'],
+  ['--timezone', 'timezone'],
+  ['--secret-env', 'secretEnv'],
+  ['--run', 'run'],
+  ['--mode', 'mode'],
+  ['--interval', 'interval'],
+  ['--expect-event-within', 'expectEventWithin'],
+];
+
+/** Flags that only mean something on a `--type event` add. */
+const EVENT_ONLY_FLAGS: ReadonlyArray<[string, string]> = [
+  ['--connector', 'connector'],
+  ['--account', 'account'],
+  ['--default-account', 'defaultAccount'],
+  ['--source', 'source'],
+  ['--event', 'event'],
+  ['--config / --config-json', 'eventConfig'],
+];
+
+/**
+ * Collapse repeated `--config key=value` pairs and `--config-json '{...}'` into
+ * one JSON string on `tf.eventConfig` (values from `--config` stay strings;
+ * `--config-json` carries typed values; a `--config` key overrides the JSON key).
+ */
+export function collectEventConfig(
+  pairs: readonly string[],
+  json: string | undefined,
+): string | undefined | { error: string } {
+  if (pairs.length === 0 && json === undefined) return undefined;
+  let config: Record<string, unknown> = {};
+  if (json !== undefined) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return { error: '--config-json must be a JSON object, e.g. \'{"repo":"acme/app"}\'.' };
+    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { error: '--config-json must be a JSON object, e.g. \'{"repo":"acme/app"}\'.' };
+    }
+    config = parsed as Record<string, unknown>;
+  }
+  for (const pair of pairs) {
+    const index = pair.indexOf('=');
+    if (index <= 0) return { error: `--config must look like key=value (got "${pair}").` };
+    config[pair.slice(0, index).trim()] = pair.slice(index + 1);
+  }
+  return JSON.stringify(config);
+}
+
+interface EventFields {
+  connector: string;
+  account?: string;
+  source?: string;
+  event: string;
+  config: Record<string, unknown>;
+}
+
+/** Validate the `--type event` flags; mirrors `validateEventTrigger` in `@kortix/manifest-schema`. */
+export function parseEventFlags(
+  tf: Record<string, string | undefined>,
+): EventFields | { error: string } {
+  const rejected = EVENT_REJECTED_FLAGS.find(([, key]) => tf[key] !== undefined);
+  if (rejected) {
+    return {
+      error: `${rejected[0]} is not valid on an event trigger — events are driven by the connected app.`,
+    };
+  }
+  const connector = (tf.connector ?? '').trim();
+  if (!connector) return { error: 'event triggers need --connector <slug>.' };
+  const event = (tf.event ?? '').trim();
+  if (!event) {
+    return {
+      error: 'event triggers need --event <TYPE> (list them: `kortix triggers events --connector <slug>`).',
+    };
+  }
+  if (tf.defaultAccount !== undefined) {
+    return { error: '--default-account only applies to `kortix triggers set`. On add, omit --account.' };
+  }
+  const account = (tf.account ?? '').trim();
+  const source = (tf.source ?? '').trim();
+  const config = tf.eventConfig ? (JSON.parse(tf.eventConfig) as Record<string, unknown>) : {};
+  return { connector, ...(account ? { account } : {}), ...(source ? { source } : {}), event, config };
+}
+
+/** Event flags on a non-event trigger are a hard error — the platform would never read them. */
+export function strayEventFlag(tf: Record<string, string | undefined>): string | null {
+  const stray = EVENT_ONLY_FLAGS.find(([, key]) => tf[key] !== undefined);
+  return stray ? `${stray[0]} is only valid on an event trigger (--type event).` : null;
+}
+
 interface MonitorFields {
   run: string;
   mode: string;
@@ -48,6 +146,82 @@ interface MonitorFields {
  * would reject — a manifest that only fails server-side is a worse error than
  * no manifest at all.
  */
+/**
+ * `--max-runs-per-hour` / `--max-runs-per-day` (KRTX-1721): a whole number of at
+ * least 1, any trigger type. `allowClear` (\`set\`): `none` sends null, which
+ * removes the cap.
+ */
+export function parseRunCapFlags(
+  tf: Record<string, string | undefined>,
+  allowClear: boolean,
+): { caps: Record<string, number | string | null> } | { error: string } {
+  const out: Record<string, number | string | null> = {};
+  for (const [flag, key, field] of [
+    ['--max-runs-per-hour', 'maxRunsPerHour', 'max_runs_per_hour'],
+    ['--max-runs-per-day', 'maxRunsPerDay', 'max_runs_per_day'],
+  ] as const) {
+    const raw = tf[key]?.trim();
+    if (raw === undefined) continue;
+    if (allowClear && raw === 'none') {
+      out[field] = null;
+      continue;
+    }
+    const value = Number(raw);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1) {
+      return { error: `${flag} must be a whole number of at least 1${allowClear ? ', or none to remove it' : ''} (got "${raw}").` };
+    }
+    out[field] = value;
+  }
+  // --overlap (KRTX-1721): skip | allow; on `set`, default resets it.
+  const overlap = tf.overlap?.trim();
+  if (overlap !== undefined) {
+    if (overlap === 'skip' || overlap === 'allow') out.overlap = overlap;
+    else if (allowClear && overlap === 'default') out.overlap = null;
+    else return { error: `--overlap must be skip or allow${allowClear ? ', or default to reset it' : ''} (got "${overlap}").` };
+  }
+  return { caps: out };
+}
+
+const LIST_FILTER_OPERATORS = ['not', 'in', 'prefix', 'not_prefix'];
+
+/**
+ * `--filter` flags → the payload filter (KRTX-1721). `path=value` is equality.
+ * `path:op=value` picks an operator: `not`, `in`, `prefix` and `not_prefix`
+ * take comma-separated values, `exists` takes true or false. Repeating a list
+ * operator on one path adds to its list. A colon that names no operator stays
+ * part of the path.
+ */
+export function parseFilterFlags(raw: readonly string[]): { filter: TriggerFilter | null } | { error: string } {
+  const draft: Record<string, unknown> = {};
+  for (const entry of raw) {
+    const index = entry.indexOf('=');
+    const left = index > 0 ? entry.slice(0, index).trim() : '';
+    if (!left) return { error: `--filter must look like path=value or path:operator=value (got "${entry}")` };
+    const value = entry.slice(index + 1);
+    const colon = left.lastIndexOf(':');
+    const operator = colon > 0 ? left.slice(colon + 1) : '';
+    const isOperator = (TRIGGER_FILTER_OPERATORS as readonly string[]).includes(operator);
+    const path = isOperator ? left.slice(0, colon).trim() : left;
+    const existing = draft[path];
+    const isList = LIST_FILTER_OPERATORS.includes(operator);
+    const sameList = isList && typeof existing === 'object' && existing !== null && operator in existing;
+    if (existing !== undefined && !sameList) {
+      return { error: `--filter ${path} takes one condition; repeat only a list operator (${LIST_FILTER_OPERATORS.join(', ')})` };
+    }
+    if (isList) {
+      const previous = sameList ? (existing as Record<string, string[]>)[operator] ?? [] : [];
+      draft[path] = { [operator]: [...previous, ...value.split(',').map((item) => item.trim())] };
+    } else if (isOperator) {
+      if (value !== 'true' && value !== 'false') return { error: `--filter ${path}:exists takes true or false (got "${value}")` };
+      draft[path] = { exists: value === 'true' };
+    } else {
+      draft[path] = value;
+    }
+  }
+  const parsed = parseTriggerFilter(draft);
+  return 'error' in parsed ? { error: `--filter: ${parsed.error}` } : parsed;
+}
+
 export function parseMonitorFlags(
   tf: Record<string, string | undefined>,
 ): MonitorFields | { error: string } {
@@ -126,33 +300,58 @@ function parseFlagDuration(
   return { seconds };
 }
 
-export function triggersAddLocal(
+export async function triggersAddLocal(
   slug: string | undefined,
   tf: Record<string, string | undefined>,
   disabled: boolean,
-): number {
+  opts: CtxOpts = {},
+): Promise<number> {
   if (!slug) return missing('a trigger slug');
   const type = (tf.type ?? 'cron').toLowerCase();
-  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor') {
-    return fail('--type must be cron, webhook, or monitor.');
+  if (type !== 'cron' && type !== 'webhook' && type !== 'monitor' && type !== 'event') {
+    return fail('--type must be cron, webhook, monitor, or event.');
   }
   if (!tf.prompt) return fail('--prompt is required.');
+  if (type !== 'event') {
+    const stray = strayEventFlag(tf);
+    if (stray) return fail(stray);
+  }
   if (type === 'cron' && !tf.cron) {
     return fail('cron triggers need --cron "<6-field expr>".');
   }
   // Monitor flags on a cron/webhook trigger are a hard error, not a silent
   // drop — the platform would never read them.
-  if (type !== 'monitor') {
+  if (type !== 'monitor' && type !== 'event') {
     const stray = MONITOR_ONLY_FLAGS.find(([, value]) => tf[value] !== undefined);
     if (stray) {
       return fail(`${stray[0]} is only valid on a monitor trigger (--type monitor).`);
     }
   }
+  const parsedCaps = parseRunCapFlags(tf, false);
+  if ('error' in parsedCaps) return fail(parsedCaps.error);
+  const { caps } = parsedCaps;
   let monitor: MonitorFields | null = null;
   if (type === 'monitor') {
     const parsed = parseMonitorFlags(tf);
     if ('error' in parsed) return fail(parsed.error);
     monitor = parsed;
+  }
+  let event: EventFields | null = null;
+  if (type === 'event') {
+    const parsed = parseEventFlags(tf);
+    if ('error' in parsed) return fail(parsed.error);
+    event = parsed;
+    // Online: coerce + validate against the catalog so `kortix ship` does not
+    // reject what this wrote. Offline (not logged in): write it as given.
+    const ctx = await quietCatalogContext(opts);
+    const checked = await checkEventConfig(ctx, parsed.connector, parsed.event, parsed.config);
+    if ('error' in checked) return fail(checked.error);
+    event = { ...parsed, config: checked.config };
+    if (!ctx) {
+      process.stdout.write(
+        `${C.dim}Config not checked against the event catalog (not logged in).${C.reset}\n`,
+      );
+    }
   }
   try {
     if (arrayEntryExists('triggers', 'slug', slug)) {
@@ -180,9 +379,16 @@ export function triggersAddLocal(
       if (monitor.expectEventWithinSeconds !== null) {
         fields.expect_event_within = formatDurationSeconds(monitor.expectEventWithinSeconds);
       }
+    } else if (type === 'event' && event) {
+      fields.connector = event.connector;
+      if (event.account) fields.account = event.account;
+      if (event.source) fields.source = event.source;
+      fields.event = event.event;
+      if (Object.keys(event.config).length > 0) fields.config = event.config;
     } else if (tf.secretEnv) {
       fields.secret_env = tf.secretEnv;
     }
+    Object.assign(fields, caps);
     fields.prompt = tf.prompt;
     appendArrayBlock('triggers', fields);
     process.stdout.write(

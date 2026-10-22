@@ -7,7 +7,7 @@
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import pg from 'pg';
+import { PgClient } from './helpers/pg-client';
 import {
   claimExpiredSandboxStop,
   claimManualSandboxStop,
@@ -1275,6 +1275,57 @@ describe('adoptRuntimeSandboxTurn — box-initiated turn authority', () => {
     expect(open[0]?.message_id).toBe('msg_delivered_1');
   });
 
+  // prod 2026-10-12: a Slack follow-up is delivered with no wire id, so its
+  // record had `messageId: null`. The daemon's `turn_begin` named the message,
+  // was answered `open_turn_exists`, and the id was dropped. 30 minutes later
+  // the reaper's no-messageId ceiling settled the LIVE turn `runtime_gone`, and
+  // the Slack GC then aborted the run it no longer saw.
+  test('a root-scoped delivered turn takes the message id the daemon names', async () => {
+    const token = t('slack-follow-up');
+    await beginSandboxTurn(
+      { sandboxId: SANDBOX_ID },
+      { token, runtimeSessionId: 'ses_root', messageId: null },
+    );
+    await acceptSandboxTurn({ sandboxId: SANDBOX_ID }, token);
+    const outcome = await adoptRuntimeSandboxTurn(SANDBOX_ID, {
+      runtimeSessionId: 'ses_root',
+      messageId: 'msg_follow_up',
+    });
+    expect(outcome).toBe('identity_bound');
+    const open = await readOpenBySession();
+    expect(open).toHaveLength(1);
+    expect(open[0]?.turn_token).toBe(token);
+    expect(open[0]?.message_id).toBe('msg_follow_up');
+    const turns = (
+      (await readRow()).metadata as { activeTurns?: Record<string, { messageId?: string | null }> }
+    ).activeTurns;
+    expect(turns?.[token]?.messageId).toBe('msg_follow_up');
+    // The turn's own end frame now closes it by exact message.
+    const ended = await completeSandboxTurn(
+      SESSION_ID,
+      'idle',
+      { runtimeSessionId: 'ses_root', messageId: 'msg_follow_up' },
+      undefined,
+      60_000,
+    );
+    expect(ended.outcome).toBe('closed');
+  });
+
+  test('two root-scoped open turns are ambiguous — neither takes the id', async () => {
+    for (const name of ['first', 'second']) {
+      await beginSandboxTurn(
+        { sandboxId: SANDBOX_ID },
+        { token: t(name), runtimeSessionId: 'ses_root', messageId: null },
+      );
+    }
+    const outcome = await adoptRuntimeSandboxTurn(SANDBOX_ID, {
+      runtimeSessionId: 'ses_root',
+      messageId: 'msg_follow_up',
+    });
+    expect(outcome).toBe('open_turn_exists');
+    expect((await readOpenBySession()).every((row) => row.message_id === null)).toBe(true);
+  });
+
   test('a message the ledger has EVER seen is refused — a late relay cannot resurrect a closed turn', async () => {
     await db.execute(sql`
       INSERT INTO kortix.session_turns
@@ -1755,7 +1806,7 @@ describe('terminal error session authority', () => {
 // queue on it. Observe the actual PostgreSQL lock queue, not a timed sleep.
 for (const first of ['begin', 'complete'] as const) {
   test(`overlapping authority writers: ${first} takes the session lock first`, async () => {
-    const blocker = new pg.Client({ connectionString: localTestDatabaseUrl() });
+    const blocker = new PgClient({ connectionString: localTestDatabaseUrl() });
     await blocker.connect();
     let begin: Promise<unknown> | undefined;
     let complete: Promise<unknown> | undefined;

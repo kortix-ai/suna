@@ -8,8 +8,13 @@ import { recordAuditEvent } from '../shared/audit';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 import { EMPTY_APP_IMAGE_RECLAIM_RESULT, reclaimAppDeploymentImages } from '../apps/images';
+import { sweepAppRetention } from '../apps/retention';
+import { sweepAppVolumes } from '../apps/volumes';
+import { reclaimAppSiteBlobs } from '../apps/static-site';
 import { type GitBackedProject, deleteRemoteSessionBranch } from './git';
 import { purgeExpiredMonitorEvents, reconcileMonitorBoxes } from './lib/monitor-box';
+import { purgeExpiredTriggerRuns } from './trigger-execution-store';
+import { settleTriggerRunsFromTurns } from './lib/trigger-run-outcome';
 import { mapWithConcurrency } from './lib/trigger-scheduler-state';
 import { emptyMonitorReconcileResult } from './lib/monitor-box-core';
 import { reconcileForwardedPrompts } from './session-lifecycle/consumption';
@@ -144,14 +149,15 @@ async function auditBranchDeleted(row: {
   }
 }
 
-export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
-  candidates: number;
-  deleted: number;
-  skipped: number;
-  errors: number;
-}> {
+/**
+ * The session branches the GC may delete at `now`: a terminal session idle for
+ * the retention period. A deleted session keeps `updated_at` (the delete does
+ * not move it in the list), so its branch is also kept for the retention
+ * period after the delete: a restore inside the window gets the branch back.
+ */
+export async function selectExpiredSessionBranches(now: Date) {
   const cutoff = new Date(now.getTime() - branchRetentionDays() * 24 * 60 * 60 * 1000);
-  const rows = await db
+  return db
     .select({
       sessionId: projectSessions.sessionId,
       branchName: projectSessions.branchName,
@@ -169,6 +175,8 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
       and(
         inArray(projectSessions.status, [...TERMINAL_SESSION_STATUSES]),
         lt(projectSessions.updatedAt, cutoff),
+        sql`(coalesce(${projectSessions.metadata}->>'deletedAt', '') = ''
+          OR (${projectSessions.metadata}->>'deletedAt')::timestamptz < ${cutoff.toISOString()}::timestamptz)`,
         ne(projectSessions.branchName, projects.defaultBranch),
         // Exclude the two NEVER-deletable classes at the query so they can't
         // occupy batch slots forever and starve deletable rows: a skipped row
@@ -190,6 +198,15 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
     // order can't crowd them out of the batch.
     .orderBy(asc(projectSessions.updatedAt))
     .limit(GC_BATCH_SIZE);
+}
+
+export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
+  candidates: number;
+  deleted: number;
+  skipped: number;
+  errors: number;
+}> {
+  const rows = await selectExpiredSessionBranches(now);
 
   let deleted = 0;
   let skipped = 0;
@@ -413,11 +430,38 @@ function runMaintenanceSweeps() {
     // Daytona-only quota GC above. Deletes only images whose deployment THIS
     // database holds as unservable (App deleted, deployment failed/deleted),
     // after removing any runtime that still pins one. Bounded per pass.
-    () => reclaimAppDeploymentImages().catch((err) => {
-      logger.warn('[project-maintenance] App image reclaim failed:',
-        err instanceof Error ? err.message : err);
-      return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
-    }),
+    // Then retention: retire superseded deployments first (their images become
+    // reclaimable on this pass), and free static blobs and archives nothing
+    // uses any more. One positional slot, three isolated steps.
+    async () => {
+      const retention = await sweepAppRetention().catch((err) => {
+        logger.warn('[project-maintenance] App retention failed:', err instanceof Error ? err.message : err);
+        return { apps: 0, retired: 0, siteFilesReleased: 0, failedBuildLogLines: 0, artifacts: 0, errors: 1 };
+      });
+      const images = await reclaimAppDeploymentImages().catch((err) => {
+        logger.warn('[project-maintenance] App image reclaim failed:',
+          err instanceof Error ? err.message : err);
+        return { ...EMPTY_APP_IMAGE_RECLAIM_RESULT, errors: 1 };
+      });
+      const blobs = await reclaimAppSiteBlobs().catch((err) => {
+        logger.warn('[project-maintenance] App site blob reclaim failed:', err instanceof Error ? err.message : err);
+        return { reclaimed: 0, errors: 1 };
+      });
+      // Volumes: daily snapshots, retention, and the purge of destroyed ones.
+      const volumes = await sweepAppVolumes().catch((err) => {
+        logger.warn('[project-maintenance] App volume sweep failed:', err instanceof Error ? err.message : err);
+        return { purged: 0, snapshotted: 0, untagged: 0, errors: 1 };
+      });
+      return {
+        ...images,
+        errors: images.errors + ('errors' in retention ? retention.errors : 0) + ('errors' in blobs ? blobs.errors : 0) + volumes.errors,
+        volumesSnapshotted: volumes.snapshotted,
+        volumesPurged: volumes.purged,
+        deploymentsRetired: retention.retired,
+        artifactsReclaimed: retention.artifacts,
+        siteBlobsReclaimed: blobs.reclaimed,
+      };
+    },
     // Private Connector email attachments expire after 24 hours. Successful
     // sends become non-replayable immediately, then this sweep deletes them
     // after the signed-URL ingestion grace window.
@@ -492,6 +536,17 @@ function runMaintenanceSweeps() {
       );
       return { examined: 0, activated: 0, parked: 0, lost: 0, archived: 0, errors: 1 };
     }),
+    // Trigger run history (KRTX-1743): non-cron runs 30 days, rejected runs 7.
+    () => purgeExpiredTriggerRuns().catch((err) => {
+      logger.warn('[project-maintenance] trigger-run retention failed', { error: err instanceof Error ? err.message : String(err) });
+      return 0;
+    }),
+    // A run whose turn ended on a path with no turn-end relay (reaper, stop,
+    // a box that went away) is closed from the turn ledger here.
+    () => settleTriggerRunsFromTurns().catch((err) => {
+      logger.warn('[project-maintenance] trigger-run settle failed', { error: err instanceof Error ? err.message : String(err) });
+      return 0;
+    }),
   ]);
 }
 
@@ -520,6 +575,8 @@ function logMaintenanceCycle(
     monitorEventsPurged,
     archivedRemovals,
     stuckProvisioning,
+    triggerRunsPurged,
+    triggerRunsSettled,
   ] = sweeps;
   const hadAction = Boolean(
     idle.stopped ||
@@ -544,6 +601,9 @@ function logMaintenanceCycle(
       appImages.released ||
       appImages.runtimesRemoved ||
       appImages.errors ||
+      appImages.deploymentsRetired ||
+      appImages.artifactsReclaimed ||
+      appImages.siteBlobsReclaimed ||
       connectorAttachments.deleted ||
       connectorAttachments.errors ||
       promptAttachments.deleted ||
@@ -564,7 +624,9 @@ function logMaintenanceCycle(
       archivedRemovals.removed ||
       archivedRemovals.failed ||
       stuckProvisioning.examined ||
-      stuckProvisioning.errors,
+      stuckProvisioning.errors ||
+      triggerRunsPurged ||
+      triggerRunsSettled,
   );
   if (hadAction) {
     console.log('[project-maintenance] completed', {
@@ -586,6 +648,8 @@ function logMaintenanceCycle(
       monitorEventsPurged,
       archivedRemovals,
       stuckProvisioning,
+      triggerRunsPurged,
+      triggerRunsSettled,
     });
   }
   // Unconditional heartbeat — proof-of-life independent of whether any
@@ -626,6 +690,9 @@ function logMaintenanceCycle(
     `app_images_released=${appImages.released}`,
     `app_images_pending=${appImages.pending}`,
     `app_images_deferred=${appImages.deferred}`,
+    `app_deployments_retired=${appImages.deploymentsRetired}`,
+    `app_artifacts_reclaimed=${appImages.artifactsReclaimed}`,
+    `app_site_blobs_reclaimed=${appImages.siteBlobsReclaimed}`,
     // A monitor box only stays billable while this sweep observes it, so
     // `monitor_observed` going flat while boxes exist is the signal that
     // monitor billing has silently stopped earning.
@@ -668,5 +735,3 @@ async function checkBillingInvariants(): Promise<void> {
     );
   }
 }
-
-export { startProjectMaintenance, stopProjectMaintenance } from '../workers/project-maintenance-worker';

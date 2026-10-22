@@ -21,13 +21,14 @@ import {
   iamBase,
   objectLabel,
   parsePrincipalFilter,
+  pendingPrincipalId,
   principalLabel,
   principalLabels,
+  resolveGroupId,
   resolveUserId,
   roleRefBody,
   scopeLabel,
 } from '../iam.ts';
-import { resolveProjectId } from '../project-link.ts';
 import { C, help, pad, status } from '../style.ts';
 import {
   type ProjectRole,
@@ -57,7 +58,7 @@ Kortix permissions in kortix.yaml; a session can only do what both allow.
 
 Role assignments:
   assignments [--project <id>|--account|--all]   List role assignments.
-  grant --user <id|email>|--group <id>|--service-account <id> --role <key|id>
+  grant --user <id|email>|--group <id|name>|--service-account <id> --role <key|id>
                                     Grant a role. Prints the assignment id.
   grant --user|--group|--everyone --agent <name>|--connection <id>
                                     Grant one agent, or the use of one shared
@@ -88,7 +89,8 @@ Run \`kortix roles ls\` for every role, \`kortix permissions ls\` for the catalo
 Options:
   --user <id|email>  Grant to a person. An email resolves via the account
                      member directory.
-  --group <id>       Grant to a group instead of a person.
+  --group <id|name>  Grant to a group instead of a person. A name resolves via
+                     the account's groups.
   --service-account <id>
                      Grant to a service account — an agent's identity.
   --role <key|id>    Role to grant — a system key (owner/admin/member,
@@ -102,10 +104,10 @@ Options:
                      opens it to the whole project again. Implies --role ${OBJECT_GRANT_ROLE}.
   --everyone         Grant to everyone with access to the project. Holds an
                      agent or a connection, never a role.
-  --principal <id>   Filter assignments by principal. Also
-                     user:<id> | group:<id> | service_account:<id> | pending:<email>.
+  --principal <id>   Filter assignments by principal. Also user:<id|email> |
+                     group:<id|name> | service_account:<id> | pending:<email>.
   --expires <iso>    Auto-revoke timestamp.
-  --account-id <id>  Operate on this account (default: the active account).
+  --account-id <id>  Operate on this account (default: the linked project's account, else the active account).
   --host <name>      Operate against a non-default Kortix host.
   --json             Machine-readable output.
   -h, --help         Show this help.
@@ -135,28 +137,28 @@ interface Scope {
  * The assignment routes are account-scoped even for a grant that lands on one
  * project, so a `--project` from another account has to move the whole client
  * with it — otherwise the write would be authorized against the wrong account.
+ *
+ * The project and its credential come from `resolveProjectContext`, the same
+ * resolver the project-member form uses: a `.kortix/link.json` outranks the
+ * injected KORTIX_PROJECT_ID and travels with its own host's credential.
+ * Resolving them apart paired the sandbox's project with the link host's
+ * token, and the assignment form answered "Not found" where the
+ * project-member form worked (KRTX-2825).
  */
 async function resolveScope(
   f: Record<string, string | undefined>,
   wantsProject: boolean,
 ): Promise<Scope | null> {
-  const acct = resolveAccountContext({ accountArg: f.accountId, hostArg: f.host });
-  if (!acct) return null;
-  if (!wantsProject) return { client: acct.client, accountId: acct.accountId, projectId: null };
-
-  const projectId = f.project ?? resolveProjectId();
-  if (!projectId) {
-    process.stderr.write(
-      `${status.err('No project linked.')} Pass ${C.cyan}--project <id>${C.reset} for one project, ` +
-        `or ${C.cyan}--account${C.reset} for the whole account.\n`,
-    );
-    return null;
+  if (!wantsProject) {
+    const acct = resolveAccountContext({ accountArg: f.accountId, hostArg: f.host });
+    if (!acct) return null;
+    return { client: acct.client, accountId: acct.accountId, projectId: null };
   }
-  const project = await acct.client.get<ProjectSummary>(`/projects/${projectId}`);
-  const accountId = project.account_id || acct.accountId;
-  const client =
-    accountId === acct.accountId ? acct.client : clientFromAuth(acct.auth, { accountId });
-  return { client, accountId, projectId };
+  const ctx = await resolveProjectContext({ projectArg: f.project, hostArg: f.host });
+  if (!ctx) return null;
+  const project = await ctx.client.get<ProjectSummary>(`/projects/${ctx.projectId}`);
+  const accountId = project.account_id || f.accountId || ctx.auth.account_id;
+  return { client: clientFromAuth(ctx.auth, { accountId }), accountId, projectId: ctx.projectId };
 }
 
 export async function runAccess(argv: string[]): Promise<number> {
@@ -365,11 +367,20 @@ async function listAssignments(
     // `resolveUserId` grant uses — is the difference between `--principal
     // user:someone@example.com` listing their rows and a bare
     // `HTTP 400: principal_id must be a UUID` from the server's shape check.
+    // A group name resolves the same way, and an invitee's email maps to the
+    // uuid5 the API stores for a `pending` principal.
     let principalId = parsed.id;
-    if (parsed.type === 'user' && !UUID_RE.test(principalId)) {
-      const resolved = await resolveUserId(scope.client, scope.accountId, principalId);
-      if (!resolved) return 1;
-      principalId = resolved;
+    if (!UUID_RE.test(principalId)) {
+      if (parsed.type === 'user' || parsed.type === 'group') {
+        const resolved =
+          parsed.type === 'user'
+            ? await resolveUserId(scope.client, scope.accountId, principalId)
+            : await resolveGroupId(scope.client, scope.accountId, principalId);
+        if (!resolved) return 1;
+        principalId = resolved;
+      } else if (parsed.type === 'pending') {
+        principalId = pendingPrincipalId(principalId);
+      }
     }
     query.set('principal_type', parsed.type);
     query.set('principal_id', principalId);
@@ -483,7 +494,9 @@ async function grantAssignment(
     principalId = scope.projectId;
   } else if (f.group) {
     principalType = 'group';
-    principalId = f.group;
+    const resolved = await resolveGroupId(scope.client, scope.accountId, f.group);
+    if (!resolved) return 1;
+    principalId = resolved;
   } else if (f.sa) {
     // An agent's identity IS a service account, so this is how an agent gets a
     // role. The id comes from `GET /accounts/:id/iam/service-accounts`.

@@ -9,6 +9,7 @@ import { fingerprintTunnelCredentialHash } from '../shared/crypto';
 import { db } from '../shared/db';
 import { clearTunnelRelayOwnerIfCurrent, markTunnelRelayOwner } from './core/cluster-forwarder';
 import { tunnelRelay } from './core/relay';
+import { parseAccessState } from './access-control';
 import { retireSupersededRegistrations } from './registrations';
 
 export function effectiveRegisteredCapabilities(
@@ -46,19 +47,14 @@ function mergeMachineInfo(patch: Record<string, unknown>, drop: string[] = []) {
 }
 
 /**
- * v2 X2: the agent's access mode (`tunnel.access.state`, signed), stored at
- * `machine_info.access`. Null for anything malformed; old agents never send it.
+ * Agents up to 0.1.2 still narrow a desktop grant by its legacy `features`
+ * list, and refuse every driver tool missing from their own map. Desktop is
+ * one grant, so the agent receives it without that list.
  */
-export function parseAccessState(
-  params: unknown,
-): { mode: 'ask' | 'always' | 'off'; grantedUntil: string | null } | null {
-  if (!params || typeof params !== 'object') return null;
-  const { mode, grantedUntil } = params as Record<string, unknown>;
-  if (mode !== 'ask' && mode !== 'always' && mode !== 'off') return null;
-  if (grantedUntil === null || grantedUntil === undefined) return { mode, grantedUntil: null };
-  if (typeof grantedUntil !== 'string' || grantedUntil.length > 64) return null;
-  const at = new Date(grantedUntil);
-  return Number.isNaN(at.getTime()) ? null : { mode, grantedUntil: at.toISOString() };
+function wireScope(capability: string, scope: unknown): unknown {
+  if (capability !== 'desktop' || !scope || typeof scope !== 'object') return scope;
+  const { features: _legacy, ...rest } = scope as Record<string, unknown>;
+  return rest;
 }
 
 async function syncActiveTunnelPermissions(
@@ -81,7 +77,7 @@ async function syncActiveTunnelPermissions(
       .map((permission) => ({
         permissionId: permission.permissionId,
         capability: permission.capability,
-        scope: permission.scope,
+        scope: wireScope(permission.capability, permission.scope),
         expiresAt: permission.expiresAt?.toISOString() ?? undefined,
       })),
   });
@@ -108,10 +104,14 @@ export function registerTunnelRelayPersistence(): void {
         machineInfo: mergeMachineInfo(
           {
             ...snapshot,
-            registeredCapabilities: capabilities,
+            registeredCapabilities: Array.isArray(metadata?.registeredCapabilities)
+              ? metadata.registeredCapabilities
+              : capabilities,
             ...(typeof metadata?.agentVersion === 'string'
               ? { agentVersion: metadata.agentVersion }
               : {}),
+            // Serves `tunnel.access.set` (POST /connections/:id/access).
+            controlsAccess: metadata?.controlsAccess === true,
           },
           metadata?.reportsAccess === true ? [] : ['access'],
         ) as unknown as Record<string, unknown>,
@@ -175,7 +175,7 @@ export function registerTunnelRelayPersistence(): void {
       await db
         .update(tunnelConnections)
         .set({
-          machineInfo: mergeMachineInfo({ ...reported, registeredCapabilities: capabilities }),
+          machineInfo: mergeMachineInfo({ ...reported, registeredCapabilities: params?.capabilities ?? [] }),
           status: 'online',
           updatedAt: new Date(),
         })

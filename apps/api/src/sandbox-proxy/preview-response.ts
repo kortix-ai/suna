@@ -43,13 +43,19 @@ export const STRIP_FORWARD_HEADERS = new Set([
 ]);
 
 // Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
+// A value can hold several comma-separated policies (two CSP headers, or one a
+// sandbox edge added), and the browser enforces each, so every one is cleaned.
 // Returns null if nothing meaningful remains (so the header can be dropped).
 export function stripFrameAncestors(csp: string): string | null {
-  const kept = csp
-    .split(';')
-    .map((d) => d.trim())
-    .filter((d) => d && !/^frame-ancestors(\s|$)/i.test(d));
-  return kept.length ? kept.join('; ') : null;
+  const policies = csp
+    .split(',')
+    .map((policy) => policy
+      .split(';')
+      .map((d) => d.trim())
+      .filter((d) => d && !/^frame-ancestors(\s|$)/i.test(d))
+      .join('; '))
+    .filter(Boolean);
+  return policies.length ? policies.join(', ') : null;
 }
 
 // Build the response headers we send back to the browser: clone the upstream
@@ -81,6 +87,14 @@ export function clientResponseHeaders(upstreamHeaders: Headers, origin: string):
   for (const [key, value] of Object.entries(previewCorsHeaders(origin))) {
     headers.set(key, value);
   }
+  // The attribution headers are the PROXY's voice about which hop failed
+  // (proxy-hop.ts). The request-log suppression keys on them
+  // (request-log-suppression.ts), so an upstream that shipped its own copy could
+  // name a designed-answer hop and silence a real failure from the sweep. The
+  // proxy re-sets both where it means to; a plain passthrough leaves them
+  // absent.
+  headers.delete(PROXY_HOP_HEADER);
+  headers.delete(PROXY_UPSTREAM_STATUS_HEADER);
 
   // The app inside the sandbox writes its own cookies, and they are forwarded —
   // that is what makes a cookie-session app work. What it may NOT do is widen
@@ -236,11 +250,8 @@ export function longTurnTimeoutResponse(origin: string): Response {
   const headers = new Headers({
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
+    ...previewCorsHeaders(origin),
   });
-  if (origin) {
-    headers.set('Access-Control-Allow-Origin', origin);
-    headers.set('Access-Control-Allow-Credentials', 'true');
-  }
   return new Response(
     JSON.stringify({
       error:

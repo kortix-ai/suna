@@ -22,6 +22,12 @@
 // publishable on this site." Author date can predate the merge by months when a
 // commit is rebased or cherry-picked, which would mislead recency-aware
 // retrievers.
+//
+// The committed manifest is only the fallback for builds that cannot read full
+// git history (a shallow clone). A date in it cannot be verified from the tree:
+// a squash merge stamps a new committer date on the commit that carries it.
+// `invalidContentTimestamps` therefore checks what the tree decides: the entry
+// keys equal the content sources on disk, and every value is an ISO instant.
 
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
@@ -54,6 +60,7 @@ const MARKETING_SOURCES = {
   connectors: 'apps/web/src/app/[locale]/(public)/(marketing)/connectors/page.tsx',
   security: 'apps/web/src/app/[locale]/(public)/(marketing)/security/page.tsx',
   'self-hosted': 'apps/web/src/app/[locale]/(public)/(marketing)/self-hosted/page.tsx',
+  'white-label': 'apps/web/src/app/[locale]/(public)/(marketing)/white-label/page.tsx',
   // Solutions: the hub, then one entry per role. The eight role pages share a
   // single dynamic route, so the meaningful source of each one is its own
   // content file — that is the file whose last commit dates the page.
@@ -95,17 +102,20 @@ function gitAvailable() {
   }
 }
 
-function lastCommitIso(pathRelativeToRepo) {
+function lastCommit(format, pathRelativeToRepo) {
   try {
-    const out = execFileSync('git', ['log', '-1', '--format=%cI', '--', pathRelativeToRepo], {
+    return execFileSync('git', ['log', '-1', `--format=${format}`, 'HEAD', '--', pathRelativeToRepo], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
-    });
-    const trimmed = out.trim();
-    if (trimmed) return new Date(trimmed).toISOString();
+    }).trim();
   } catch {
-    // fall through to the mtime fallback
+    return '';
   }
+}
+
+function lastCommitIso(pathRelativeToRepo) {
+  const committed = lastCommit('%cI', pathRelativeToRepo);
+  if (committed) return new Date(committed).toISOString();
   // A source file that exists on disk but has no commit touching it yet — a
   // page written on a branch and not yet committed. `git log` is silent for it,
   // which would leave its record without a `lastModified` and fail
@@ -145,25 +155,46 @@ function slugifyDocs(relativePath) {
   return normalized.replace(/\/index$/, '');
 }
 
-function collectContentTimestampManifest() {
-  const manifest = {};
-
-  // Marketing pages
+// Manifest key -> source path relative to the repo root.
+function contentSources() {
+  const sources = {};
   for (const [slug, sourceRel] of Object.entries(MARKETING_SOURCES)) {
-    const iso = lastCommitIso(sourceRel);
-    if (iso) manifest[`marketing:${slug}`] = iso;
+    sources[`marketing:${slug}`] = sourceRel;
   }
-
-  // Docs MDX files
   for (const absPath of listDocsMdx()) {
     const rel = relative(REPO_ROOT, absPath).replaceAll('\\', '/');
     const docsRel = rel.replace(/^apps\/web\/content\/docs\//, '');
-    const slug = slugifyDocs(docsRel);
-    const iso = lastCommitIso(rel);
-    if (iso) manifest[`docs:${slug}`] = iso;
+    sources[`docs:${slugifyDocs(docsRel)}`] = rel;
   }
+  return sources;
+}
 
+function collectContentTimestampManifest() {
+  const manifest = {};
+  for (const [key, rel] of Object.entries(contentSources())) {
+    const iso = lastCommitIso(rel);
+    if (iso) manifest[key] = iso;
+  }
   return manifest;
+}
+
+// Keys of `committed` that disagree with the content sources on disk: a source
+// without an entry, an entry without a source, or a value that is not an ISO
+// instant. Reads the tree only, so the result is the same on every branch.
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
+
+function invalidContentTimestamps(committed) {
+  const sources = contentSources();
+  const expected = Object.entries(sources)
+    .filter(([, rel]) => existsSync(join(REPO_ROOT, rel)))
+    .map(([key]) => key);
+  const invalid = [];
+  for (const key of new Set([...expected, ...Object.keys(committed)])) {
+    const value = committed[key];
+    const valid = expected.includes(key) && typeof value === 'string' && ISO_INSTANT.test(value) && !Number.isNaN(Date.parse(value));
+    if (!valid) invalid.push(key);
+  }
+  return invalid.sort();
 }
 
 function createContentTimestampManifest() {
@@ -200,10 +231,18 @@ function safeWrite(manifest) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    refreshContentTimestamps();
-  } catch {
+    if (process.argv.includes('--strict')) {
+      if (!gitAvailable()) throw new Error('Content timestamps require full git history');
+      const manifest = collectContentTimestampManifest();
+      mkdirSync(dirname(MANIFEST_PATH), { recursive: true });
+      writeFileSync(MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`);
+    } else {
+      refreshContentTimestamps();
+    }
+  } catch (error) {
+    if (process.argv.includes('--strict')) throw error;
     // The manifest is an optimization. Direct generation must not block a build.
   }
 }
 
-export { createContentTimestampManifest, MANIFEST_PATH, refreshContentTimestamps };
+export { createContentTimestampManifest, invalidContentTimestamps, MANIFEST_PATH, refreshContentTimestamps };

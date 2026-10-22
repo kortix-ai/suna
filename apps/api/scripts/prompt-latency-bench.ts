@@ -23,7 +23,8 @@
  * Env: BENCH_SESSIONS (6), BENCH_TURNS (3, max 3), BENCH_MODEL (kortix model id),
  * BENCH_PROVIDER (sandbox provider), BENCH_LABEL (run), BENCH_OUT
  * (<repo>/output/prompt-latency-<label>.jsonl), BENCH_API_LOG, BENCH_DB_URL,
- * BENCH_KEEP=1 (leave the sessions running, e.g. to open one in the web app).
+ * BENCH_KEEP=1 (leave the sessions running, e.g. to open one in the web app),
+ * BENCH_TURN_GAP_MS (1000, the pause after each turn).
  * Runbook and baseline: .agents/skills/testing/references/api-latency-baseline.md
  */
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
@@ -42,6 +43,8 @@ const LABEL = env.BENCH_LABEL ?? 'run';
 const OUT = env.BENCH_OUT ?? fileURLToPath(new URL(`../../../output/prompt-latency-${LABEL}.jsonl`, import.meta.url));
 const BOOT_TIMEOUT_MS = 240_000;
 const TURN_TIMEOUT_MS = 180_000;
+// Past 60 s every per-process memo on the prompt path is cold, as for a person who reads the reply first.
+const TURN_GAP_MS = Number(env.BENCH_TURN_GAP_MS ?? 1000);
 const TURNS = [
   { label: 'T1-chat', text: 'Reply with exactly one word: pong' },
   { label: 'T2-tool', text: 'Use the bash tool to run `ls -1 | wc -l` in the current directory. Then reply with only the number it printed.' },
@@ -211,7 +214,7 @@ async function runSession(round: number): Promise<Session> {
       s.turns.push(turn);
       console.error(`  ${turn.label} post=${turn.postMs}ms db=${turn.timing.db?.dur ?? '-'}ms/n=${turn.timing.db?.n ?? '-'} busy=${turn.busyMs} idle=${turn.idleMs} model=${turn.model} ${JSON.stringify(turn.text)} ${turn.error ?? ''}`);
       if (turn.error) break;
-      await sleep(1000);
+      await sleep(TURN_GAP_MS);
     }
   } catch (err) {
     s.error = err instanceof Error ? err.message : String(err);

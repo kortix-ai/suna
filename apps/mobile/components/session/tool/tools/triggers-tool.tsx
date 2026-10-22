@@ -82,10 +82,10 @@ function TriggerStatusBadge({ status }: { status: string }) {
   );
 }
 
-export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
+export function TriggersTool({ call, defaultOpen, forceOpen }: ToolProps) {
   const palette = useTurnPalette();
-  const input = partInput(part);
-  const output = partOutput(part);
+  const input = partInput(call);
+  const output = partOutput(call);
   const action = (input.action as string) || 'list';
 
   const row = useMemo(() => triggersRow(action, input, output), [action, input, output]);
@@ -98,7 +98,7 @@ export function TriggersTool({ part, defaultOpen, forceOpen }: ToolProps) {
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={TRIGGER_ICONS[row.icon]}
       trigger={{ title: row.title, subtitle: row.subtitle, args: row.args }}
       defaultOpen={defaultOpen}

@@ -1,0 +1,50 @@
+# publish-web-dns: point the isolated FE-ECS hostname of one environment at its
+# web ALB. Shared by the publish-web-ecs-dns job of deploy-dev, deploy-staging
+# and deploy-prod. The caller needs `permissions: id-token: write` and a full
+# checkout of the repository, so `./.github/actions/publish-web-dns` and
+# `infra/scripts/sync-web-dns.mjs` exist.
+name: publish-web-dns
+description: >-
+  Assume the deploy role, read CLOUDFLARE_API_TOKEN through aws-env, resolve the
+  web ALB DNS name, and run infra/scripts/sync-web-dns.mjs for the environment.
+
+inputs:
+  role-to-assume:
+    required: true
+    description: IAM role assumed through GitHub OIDC for the ALB lookup.
+  aws-region:
+    required: true
+    description: Region of the web ALB.
+  environment:
+    required: true
+    description: Argument for sync-web-dns.mjs (dev, staging or prod).
+  alb-name:
+    required: true
+    description: Name of the web ALB.
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials (OIDC)
+      uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        aws-region: ${{ inputs.aws-region }}
+    - name: Read credentials from AWS Secrets Manager
+      uses: ./.aws-env/.github/actions/aws-env
+      with:
+        role-to-assume: ''
+        keys: |
+          CLOUDFLARE_API_TOKEN
+    - name: Point the ${{ inputs.environment }} FE-ECS hostname at the web ALB
+      shell: bash
+      env:
+        ALB_NAME: ${{ inputs.alb-name }}
+        TARGET_ENV: ${{ inputs.environment }}
+      run: |
+        set -euo pipefail
+        alb="$(aws elbv2 describe-load-balancers \
+          --names "$ALB_NAME" \
+          --query 'LoadBalancers[0].DNSName' \
+          --output text)"
+        node infra/scripts/sync-web-dns.mjs "$TARGET_ENV" "$alb"

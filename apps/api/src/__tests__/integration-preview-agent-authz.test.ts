@@ -28,7 +28,6 @@ import { eq, sql } from 'drizzle-orm';
 import * as realRequestContext from '../lib/request-context';
 import * as realEnvSync from '../projects/lib/sandbox-env-sync';
 import * as realGrant from '../projects/lib/session-token-grant';
-import * as realSnapshot from '../projects/opencode-session-snapshot';
 // Spread the real modules and override only what this test must control: these
 // modules have OTHER exports the surrounding graph imports, and a bare stub
 // makes bun fail the whole file on a missing export.
@@ -81,10 +80,6 @@ mock.module('../projects/lib/session-token-grant', () => ({
     remintCalls.push(input.requestedAgent ?? '(none)');
     return { action: 'skip' };
   },
-}));
-mock.module('../projects/opencode-session-snapshot', () => ({
-  ...realSnapshot,
-  scheduleOpencodeSnapshotSync: () => {},
 }));
 mock.module('../sandbox-proxy/backend', () => ({
   ...realBackend,

@@ -1,6 +1,6 @@
 # Fix-forward traps
 
-Six failure shapes account for most of the "fix on `main`, re-promote" loop in
+Eight failure shapes account for most of the "fix on `main`, re-promote" loop in
 [SKILL.md](../SKILL.md) Step 4. Check these first before debugging a red check
 from scratch.
 
@@ -97,3 +97,36 @@ Two outcomes, never a third:
   connector. **Never dismiss an alert without that evidence in the comment** —
   "flaky" or "not a priority" is not a justification and leaves the thread
   unresolved in spirit even if GitHub shows it closed.
+
+## Checks that `pnpm test` never runs
+
+The staging PR runs jobs that no local lane covers. A dev PR that touches their
+surface runs the matching command itself:
+
+| Staging check | Surface | Local command |
+|---|---|---|
+| `fmt + validate` (`terraform-ci.yml`) | workflows, `infra/` | `python3 infra/scripts/test-ecs-preview-runtime.py`, the other `test_*.py` steps in `terraform-ci.yml`, `terraform fmt -check -recursive infra/terraform` |
+| `Self-host schema bootstrap` (`ci.yml`) | `apps/cli/scripts/self-host-e2e/`, API boot | build `kortix/kortix-api:selfhost-local`, then `bash apps/cli/scripts/self-host-e2e/schema-check.sh` |
+| `gitleaks` | every commit in the promotion range | `gitleaks git --log-opts="origin/staging..HEAD" --redact` |
+| `Trivy` | `pnpm-lock.yaml` | a HIGH advisory with a fixed version gets a root `pnpm.overrides` entry |
+
+Real example: promotion #9471 (2026-10-09). #9281 pinned the preview workflow's
+actions to SHAs but not `test-ecs-preview-runtime.py`; #9421 sent
+`$INTERNAL_SERVICE_KEY` one line before `schema-check.sh` sourced it; four
+gitleaks false positives needed reviewed `.gitleaksignore` fingerprints.
+
+## A test that only passes on a laptop
+
+A laptop has a global git identity, or a hostname git turns into an email. A CI
+runner has neither, so `git commit` inside a test dies with `unable to
+auto-detect email address`. Give every test git process an identity
+(`GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, `GIT_COMMITTER_NAME`,
+`GIT_COMMITTER_EMAIL`). Reproduce the runner locally:
+
+```bash
+GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_COUNT=1 \
+  GIT_CONFIG_KEY_0=user.useConfigOnly GIT_CONFIG_VALUE_0=true bun test <file>
+```
+
+Real example: `apps/api/src/projects/git/fast-boot-bundle.test.ts` failed 3
+tests in the `packages` lane of dev's `Tests` runs from 2026-10-08 and of #9471.

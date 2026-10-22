@@ -283,3 +283,44 @@ describe('S1 kill switch', () => {
     expect(create.headers['Idempotency-Key']).toBeUndefined();
   });
 });
+
+describe('drive volumes', () => {
+  test('a full fleet stays a capacity error, never a drive failure', async () => {
+    createSequence = [
+      {
+        error: platinumHttpError(
+          'platinum POST /v1/sandboxes?wait_for_state=running -> 503 {"error":"no capacity on a host that can mount these volumes"}',
+        ),
+      },
+    ];
+    const p = new PlatinumProvider();
+    await expect(p.create({ ...baseOpts, createAttempt: 1, volumes: { '/drives/agent': { volume: 'kd-0123456789abcdef0123' } } })).rejects.toThrow(/no capacity/);
+  });
+
+  const volumes = { '/drives/agent': { volume: 'kd-0123456789abcdef0123' } };
+
+  test('a create refused over its volumes fails with the drives message and never boots without them', async () => {
+    createSequence = [
+      {
+        error: platinumHttpError(
+          'platinum POST /v1/sandboxes?wait_for_state=running -> 409 {"error":"template has no volume support","code":"template_lacks_volume_support"}',
+        ),
+      },
+      { result: { id: 'sbx_new', state: 'running' } },
+    ];
+    const p = new PlatinumProvider();
+    await expect(p.create({ ...baseOpts, createAttempt: 1, volumes })).rejects.toThrow(/^\[drives\] /);
+    expect(createCalls()).toHaveLength(1);
+  });
+
+  test('a volume 404 on a pinned-template boot is a drive failure, not a missing template', async () => {
+    createSequence = [
+      { error: platinumHttpError('platinum POST /v1/sandboxes -> 404 {"error":"volume kd-x not found","code":"volume_not_found"}') },
+      { result: { id: 'sbx_new', state: 'running' } },
+    ];
+    const p = new PlatinumProvider();
+    await expect(p.createFromExternalId('tpl_pinned', { ...baseOpts, createAttempt: 1, volumes })).rejects.toThrow(
+      /could not be mounted/,
+    );
+  });
+});

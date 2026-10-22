@@ -7,6 +7,7 @@ import {
 } from '@kortix/sdk';
 import { supabase } from '@/api/supabase';
 import { sessionExpiry } from '@/lib/auth/session-expiry-monitor';
+import { signOutThisDevice } from '@/lib/auth/sign-out';
 
 // Backed by the `@kortix/sdk` account-lifecycle calls (/v1/account/*): deadline,
 // 401 replay and typed `ApiError` come from the SDK transport.
@@ -139,7 +140,7 @@ export function useDeleteAccountImmediately() {
 
             // Sign out locally — the server has already deleted the account
             sessionExpiry.disarm();
-            supabase.auth.signOut().catch(() => {});
+            void signOutThisDevice(supabase.auth);
 
             // Clear all cached data
             queryClient.clear();

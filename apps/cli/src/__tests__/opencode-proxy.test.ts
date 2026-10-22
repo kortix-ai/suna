@@ -189,14 +189,16 @@ describe('startSandboxPortProxy token source', () => {
 });
 
 describe('startSandboxPortProxy WebSocket', () => {
-  test('mirrors messages and appends the token as a query param upstream', async () => {
-    const seen: { token: string | null } = { token: null };
+  test('mirrors messages, appends the token, and names the CLI upstream', async () => {
+    const seen: { token: string | null; userAgent: string | null } = { token: null, userAgent: null };
     const upstream = Bun.serve<{ token: string | null }>({
       hostname: '127.0.0.1',
       port: 0,
       fetch: (req, server) => {
         const url = new URL(req.url);
         seen.token = url.searchParams.get('token');
+        // Cloudflare refuses an upgrade without a User-Agent, and Bun sends none by default.
+        seen.userAgent = req.headers.get('user-agent');
         if (server.upgrade(req, { data: { token: seen.token } })) return undefined;
         return new Response('no upgrade', { status: 400 });
       },
@@ -229,6 +231,7 @@ describe('startSandboxPortProxy WebSocket', () => {
 
     expect(echoed).toBe('echo:ping');
     expect(seen.token).toBe('tok-123');
+    expect(seen.userAgent).toStartWith('kortix-cli/');
   });
 });
 

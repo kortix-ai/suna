@@ -12,6 +12,8 @@
 
 import type { ToolPart } from '../../runtime/client';
 import { jsonTail, stripErrorPrefixes } from '../text-scan';
+import { isToolCallBlock, toolPartOf } from '../../session-log/tool-call';
+import type { ToolCallBlock } from '../../session-log/types';
 
 /** The `{success:false,error,hint?}` failure contract, parsed. */
 export interface ParsedJsonFailure {
@@ -63,13 +65,15 @@ export function isErrorOutput(output: string): boolean {
  * Every tool renderer hardcodes its own leading icon — `GlobeIcon` for scrape,
  * a favicon for web_fetch, a terminal for bash — and none of them read the
  * output, so shapes two and three kept drawing "web page" over a failure. This
- * is the one predicate they all share; see {@link ToolOutcomeContext}.
+ * is the one predicate they all share; see {@link ToolOutcomeContext}. It reads a
+ * session-log tool call block the same way as its v1 part.
  *
  * A running call is `ok`: it has no verdict yet. The shimmer already says
  * "in flight", and painting a warning on unfinished work is a worse lie than
  * the one this fixes.
  */
-export function partOutcome(part: Pick<ToolPart, 'state'>): ToolOutcome {
+export function partOutcome(call: Pick<ToolPart, 'state'> | ToolCallBlock): ToolOutcome {
+  const part = isToolCallBlock(call) ? toolPartOf(call) : call;
   const cached = OUTCOME_CACHE.get(part);
   // Guarded on `state`, not just on the part: the cache is only sound while the
   // thing it was computed from is the same object.
@@ -190,14 +194,17 @@ export function parseJsonFailure(output: string): ParsedJsonFailure | null {
     hint: typeof parsed.hint === 'string' ? parsed.hint.trim() : undefined,
   };
 
+  // A tool that fails on an HTTP answer writes `<status> Error: <body>`.
+  const leadingStatus = HTTP_ERROR_RE.exec(stripErrorPrefixes(result.errorSummary));
+  if (leadingStatus) result.status = Number(leadingStatus[1]);
+
   const nestedJson = jsonTail(result.errorSummary);
   if (nestedJson === null) return result;
 
   try {
     const nested = JSON.parse(nestedJson) as Record<string, unknown>;
-    if (typeof nested.message === 'string' && nested.message.trim()) {
-      result.nestedMessage = nested.message.trim();
-    }
+    const message = nestedMessageOf(nested);
+    if (message) result.nestedMessage = message;
     if (typeof nested.status === 'number') {
       result.status = nested.status;
     }
@@ -207,6 +214,28 @@ export function parseJsonFailure(output: string): ParsedJsonFailure | null {
   } catch {}
 
   return result;
+}
+
+const HTTP_ERROR_RE = /^([1-5]\d{2}) Error\b/;
+
+/**
+ * The readable sentence in a provider's error body. Providers nest it
+ * differently: `message`, `error.message`, Tavily's `detail.error`, or a string
+ * `detail` (KRTX-3022). A string `error` is a code (`tool_unavailable`), not a
+ * sentence, so it is not read.
+ */
+function nestedMessageOf(nested: Record<string, unknown>): string | undefined {
+  const { message, error, detail } = nested;
+  const candidates = [
+    message,
+    isJsonObject(error) ? error.message : undefined,
+    isJsonObject(detail) ? detail.error : undefined,
+    detail,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  }
+  return undefined;
 }
 
 /**
@@ -227,40 +256,18 @@ export function cleanErrorMessage(raw: string): string {
  * that returns the literal `null` is not the failure contract.
  */
 export function formatJsonFailureOutput(output: string): string | null {
-  const trimmed = output.trim();
-  if (!trimmed) return null;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return null;
-  }
-
-  if (!isJsonObject(parsed)) return null;
-
-  const success = parsed.success;
-  const error = parsed.error;
-  const hint = parsed.hint;
-
-  if (success !== false || typeof error !== 'string') return null;
+  const parsed = parseJsonFailure(output);
+  if (!parsed) return null;
 
   const lines: string[] = [];
-  lines.push(error.trim());
+  lines.push(parsed.errorSummary);
 
-  const nestedJson = jsonTail(error);
-  if (nestedJson !== null) {
-    try {
-      const nested = JSON.parse(nestedJson) as Record<string, unknown>;
-      const nestedMessage = nested.message;
-      if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
-        lines.push(`Details: ${nestedMessage.trim()}`);
-      }
-    } catch {}
+  if (parsed.nestedMessage !== undefined) {
+    lines.push(`Details: ${parsed.nestedMessage}`);
   }
 
-  if (typeof hint === 'string' && hint.trim()) {
-    lines.push(`Hint: ${hint.trim()}`);
+  if (parsed.hint) {
+    lines.push(`Hint: ${parsed.hint}`);
   }
 
   return lines.join('\n\n');

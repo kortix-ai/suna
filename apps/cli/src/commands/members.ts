@@ -98,7 +98,7 @@ Options:
                       invite: project roles are manager|member (default
                       member). Applied on accept for a pending invite. Ignored
                       by the server for an admin invite.
-  --account <id>      Operate on this account (default: the active account).
+  --account <id>      Operate on this account (default: the linked project's account, else the active account).
   --host <name>       Operate against a non-default Kortix host.
   --json              Machine-readable output (read subcommands).
   -y, --yes           Skip the confirmation prompt.

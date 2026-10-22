@@ -11,16 +11,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { UserMessage } from '@/features/session/turn/user-message';
-import type { MessageWithParts } from '@/ui';
-import type { SessionMessageAuthor } from '@kortix/sdk';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { UserMessage } from '@kortix/ui/session';
+import { sessionLogOfV1Rows, type SessionMessageAuthor } from '@kortix/sdk';
 
+/** A v1 user row, as the session-log message `UserMessage` reads (`sessionLogOfV1Rows`, flag off). */
 const message = (id: string, text: string) =>
-  ({
-    info: { id, sessionID: 'ses_dbg', role: 'user', time: { created: 1_000_000 } },
-    parts: [{ id: `${id}_p`, messageID: id, sessionID: 'ses_dbg', type: 'text', text }],
-  }) as unknown as MessageWithParts;
+  sessionLogOfV1Rows('ses_dbg', 'ses_dbg', [
+    {
+      info: { id, sessionID: 'ses_dbg', role: 'user', time: { created: 1_000_000 } },
+      parts: [{ id: `${id}_p`, messageID: id, sessionID: 'ses_dbg', type: 'text', text }],
+    } as never,
+  ]).threads[0]!.messages[0]!;
 
 const PEOPLE = [
   { kind: 'member', user_id: 'u1', name: 'Dana Gray', email: 'dana@example.com' },

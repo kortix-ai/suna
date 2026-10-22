@@ -86,7 +86,9 @@ function lastUpdateCommit(channel, platform, runtime) {
   }
   const group = groups.find((g) => g.platforms.split(/,\s*/).includes(platform));
   if (!group) return null;
-  return easJson(['update:view', group.group]).find((u) => u.platform === platform)?.gitCommitHash ?? null;
+  // update:view rejects --non-interactive ("Nonexistent flag"), so it skips easJson.
+  const updates = JSON.parse(eas(['update:view', group.group, '--json']));
+  return updates.find((u) => u.platform === platform)?.gitCommitHash ?? null;
 }
 
 /**

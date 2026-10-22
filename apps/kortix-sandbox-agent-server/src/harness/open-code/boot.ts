@@ -1,7 +1,7 @@
 import type { RuntimePermissionRequest, RuntimeQuestionRequest } from '@kortix/api-contract/transcript'
-import { retryUntilInitialSessionEstablished, maybeCreateInitialOpencodeSession, finalizeOrphanedTurn, unrequestedAbortCause, finalizeInitialSession, markSeedBakedSession } from './initial-session'
+import { retryUntilInitialSessionEstablished, maybeCreateInitialOpencodeSession, finalizeOrphanedTurn, unrequestedAbortCause, finalizeInitialSession, markSeedBakedSession, clearSeedBakedMarker } from './initial-session'
 import { reconcileInitialTurnAcceptanceToApi, createInitialOpenCodeSession, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
-export { initialSessionRetryDelayMs, finalizeInitialSession, retryUntilInitialSessionEstablished, publishInitialOpenCodeSessionAfterPrompt, finalizeOrphanedTurn, waitForOpencodeRootReadiness, resolveExistingRoot, reusedRootAlreadyDelivered, unrequestedAbortCause } from './initial-session'
+export { initialSessionRetryDelayMs, setOrphanSettleMsForTests, finalizeInitialSession, retryUntilInitialSessionEstablished, publishInitialOpenCodeSessionAfterPrompt, finalizeOrphanedTurn, waitForOpencodeRootReadiness, resolveExistingRoot, reusedRootAlreadyDelivered, unrequestedAbortCause } from './initial-session'
 export type { ExistingRootResult } from './initial-session'
 export { createInitialOpenCodeSession, deliverInitialOpenCodePrompt, reconcileInitialTurnAcceptanceToApi, waitForInitialSessionCreate, resolveOpencodeModel, buildInitialPromptBody, INITIAL_TURN_PICKUP_GRACE_MS } from './initial-prompt'
 export type { InitialTurnAcceptanceReconciliation } from './initial-prompt'
@@ -19,10 +19,6 @@ import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
-  materializeRepo,
-  materializeScaffoldSeed,
-  materializeProjectSeed,
-  scheduleHistoryBackfill,
 } from '@/lib/git/git'
 import { logger } from '@/lib/log/logger'
 import {
@@ -36,12 +32,14 @@ import {
   startManagedModelsPrefetch,
   writeManagedOverlayCatalogFile,
   waitForOpencodeReady,
+  resolveOpencodeCwd,
   type Opencode,
 } from './lifecycle'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
-import { materializeProject } from '@/services/config-provider/config-provider'
-import { registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { scheduleHistoryBackfill } from '@/services/workspace-provider/git'
+import { backfillAfterHydration, provideWorkspace } from '@/services/workspace-provider/workspace-provider'
+import { createSessionTreeWatch, registerRuntimeStateReader, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import { convergeConfigRelease } from './config-release'
 import { bootOpenCodeConfig } from './boot-config-path'
 import { OPENCODE_HOME } from './paths'
@@ -66,7 +64,6 @@ import { CATALOG_MOVING_EVENT_TYPES, runtimeStateStore } from './runtime-state-p
 import { createRuntimeAuditRelay } from '../shared/audit-relay'
 import {
   claimInitialTurn,
-  claimedRuntimeSessionPin,
   initialTurnClaim,
   relayPermission,
   relayRuntimeSession,
@@ -97,13 +94,10 @@ import {
   setLlmProxyToken,
   llmProxyReady,
   llmProxyBaseUrl,
-  startConnectorProxy,
-  setConnectorProxyToken,
-  connectorProxyReady,
-  connectorProxyBaseUrl,
 } from '@/services/llm-proxy/llm-proxy'
 import type { OpenCodeBootState as SandboxBootState } from './boot-state'
 import { createOpenCodeHarnessService, type OpenCodeHarnessService } from './service'
+import { bootOpenCodeSessionLog } from './session-log'
 import type { DaemonServer } from '../contract/server'
 import { observeOpencodeDelivery, opencodeTurnInFlight, openAssistantMessageIdOnRoot } from './opencode-turn-state'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
@@ -278,15 +272,14 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
   // long-pole, so the fetch costs no critical-path time.
   startManagedModelsPrefetch(process.env.KORTIX_LLM_BASE_URL, process.env.KORTIX_TOKEN)
 
-  // Fresh-boot acquisition goes through the config-provider coordinator
-  // (git | prefer-s3 | require-s3, see src/services/config-provider). In `git` mode this
-  // is materializeRepo's exact behaviour, split across the coordinator's warm
+  // Fresh-boot acquisition goes through the workspace provider
+  // (git | prefer-s3 | require-s3, see src/services/workspace-provider). In `git` mode this
+  // is materializeRepo's exact behaviour, split across the provider's warm
   // check and the Git transport.
   const repoMaterializePromise: Promise<string | null> = cfg.autoClone
-    ? materializeProject(cfg, {
-        bootMark,
+    ? provideWorkspace(cfg, {
         onSummary: (summary) => {
-          bootState.configProvider = summary
+          bootState.workspaceProvider = summary
         },
       })
         .then(async (result) => {
@@ -294,18 +287,8 @@ export async function runOpenCode(context: HarnessBootContext & { cfg: Config; b
           // optional history backfill waits for real readiness (see
           // runDeferredHistoryBackfill) instead of competing with the runtime
           // spawn for CPU and the proxied Git path.
-          if (result.provider === 's3') {
-            // …and after the blob-pack import has settled, so the two never
-            // write packs into the same object store at once.
-            const hydration = result.hydration ?? Promise.resolve()
-            bootState.deferredHistoryBackfill = () => {
-              void hydration.then(
-                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-                () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-              )
-            }
-          }
-          bootMark('repo-materialized')
+          // …and after the blob-pack import has settled (backfillAfterHydration).
+          if (result.provider === 's3') bootState.deferredHistoryBackfill = backfillAfterHydration(cfg, result)
           // Pin the credential helper repo-locally now the repo exists, so
           // `git push` authenticates whatever the invoking shell's HOME is.
           // Part of materialization, not a step after readiness: the agent can
@@ -506,8 +489,8 @@ function runDeferredHistoryBackfill(bootState: SandboxBootState): void {
  *   - diff the live managed set against the provider map OpenCode actually
  *     booted with;
  *   - only a genuinely MISSING managed id — the model that would answer
- *     `ModelNotFound` — buys one controlled restart. The bundled managed table
- *     ships with every release, so the common case is a no-op.
+ *     `ModelNotFound` — buys one controlled restart. A box whose baked catalog
+ *     already carries the lineup does nothing.
  *
  * Never restarts across a live turn: `opencodeTurnInFlight` treats "cannot
  * tell" as busy, and a cold box with no pin answers a definite `false` without
@@ -540,7 +523,7 @@ export async function reconcileManagedModels(
     // so it is normally already settled when this runs.
     const live = await settleManagedModelsPrefetch()
     if (!live) {
-      logger.info('[boot] managed reconcile: no live managed set; bundled managed models stand', {
+      logger.info('[boot] managed reconcile: no live managed set; the baked catalog stands', {
         ms: Date.now() - startedAt,
       })
       return
@@ -667,6 +650,18 @@ async function startSessionRuntime(
   // restart here strands nothing, and the first turn must run on a provider map
   // that has every managed model the picker offers.
   await reconcileManagedModels(opencode, cfg, bootMark)
+  // The session log (P2.6, P6.4), before the event loop and the first prompt,
+  // so the first turn's end flushes it. A restore runs here: after the workspace
+  // (`opencode import` keys sessions to the served directory), before the root
+  // is resolved. It pins the log's root, so the seed's marker must go, or the
+  // root resolution would rotate off the restored root.
+  try {
+    if (await bootOpenCodeSessionLog({ bin: opencode.getBinaryPath() ?? 'opencode', cwd: await resolveOpencodeCwd(cfg), url: opencode.getInternalUrl() })) clearSeedBakedMarker()
+  } catch (err) {
+    bootState.initialRuntimeSessionError = `session log restore failed: ${err instanceof Error ? err.message : String(err)}`
+    logger.error('[boot] session log restore failed; the session does not start', { err: bootState.initialRuntimeSessionError })
+    return
+  }
   // One relay for every harness (shared/audit-relay.ts). A spool an older
   // daemon left behind is renamed first, or loading it would fail the runtime.
   const auditSpoolPath = resolveOpenCodeAuditSpoolPath(process.env)
@@ -686,6 +681,7 @@ async function startSessionRuntime(
   }
   process.once('SIGTERM', flushAuditRelay)
   process.once('SIGINT', flushAuditRelay)
+  const sessionTreeChanged = createSessionTreeWatch()
   const onEvent = (event: { type?: string; properties?: unknown }) => {
     // Fan out BEFORE the audit relay: the sequencer and the state projection
     // are what the product reads, and neither may be starved by a relay that
@@ -696,8 +692,8 @@ async function startSessionRuntime(
       publishOpenCodeEvent(kortixEventBus(), event)
       runtimeStateStore()?.noteEvent(event)
       observeSteerRead(event)
-      // A catalog-moving frame re-pushes the projection (debounced, etag-gated).
-      if (event.type && CATALOG_MOVING_EVENT_TYPES.has(event.type)) {
+      // A catalog-moving or session-tree frame re-pushes the projection (debounced, etag-gated).
+      if (event.type && (CATALOG_MOVING_EVENT_TYPES.has(event.type) || sessionTreeChanged(event))) {
         scheduleRuntimeProjectionPush(event.type)
       }
       // A disposed instance is rebuilt lazily by its next request. Make that
@@ -946,16 +942,6 @@ async function startSessionRuntime(
 }
 
 
-/** Concrete session model from KORTIX_OPENCODE_MODEL.
- *
- * Gateway mode exposes one OpenCode provider (`kortix`). Its model ids are the
- * complete gateway wire refs, including nested refs such as
- * `codex/gpt-5.6-sol` and `anthropic/claude-sonnet-4-6`. Gateway overrides must
- * therefore keep the complete wire ref as `modelID` instead of treating its
- * first segment as an OpenCode provider.
- *
- * Gateway-disabled sessions keep the native `provider/model` split. Bare
- * legacy Zen ids remain normalized onto the native OpenCode provider. */
 /** Claim warm-seed boot before the host considers monitor or session mode. */
 export async function runOpenCodeWarmSeed(context: HarnessBootContext & { cfg: Config; bootState: SandboxBootState }): Promise<boolean> {
   if ((process.env.KORTIX_WARM_SEED ?? '').trim() !== '1') return false

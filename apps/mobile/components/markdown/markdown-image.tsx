@@ -13,7 +13,7 @@
  * - `data:` and any other source: the placeholder card.
  */
 
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -33,8 +33,7 @@ import { useToolFilePreviewStore } from '@/stores/tool-file-preview-store';
 import { ImageIcon } from '@/lib/icons';
 import { describeMarkdownImage, type MarkdownImageRef } from '@/lib/markdown/markdown-image';
 import { RADIUS } from '@/lib/markdown/markdown-layout';
-import { isSafeExternalLink } from '@/lib/markdown/safe-link';
-import { openLink } from '@/lib/utils/open-link';
+import { openExternalLink } from '@/lib/utils/open-link';
 
 export type MarkdownRemoteImages = 'load' | 'placeholder';
 
@@ -59,18 +58,22 @@ function imageSource(src: string): ImageSource {
   return { kind: 'sandbox', path: path.startsWith('/') ? path : `/workspace/${path}` };
 }
 
-function openExternalLink(href: unknown) {
-  if (!isSafeExternalLink(href)) return;
-  openLink(href).catch(() => {});
-}
-
 /**
  * Stand-in for an image that does not load here: a remote image outside the
  * agent's own text, a `data:` source, or one that failed. An http(s) source
  * opens in the browser on tap; others only show the label.
  */
-export function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; alt: unknown; isDark: boolean }) {
+function MarkdownImagePlaceholder({ src, alt, isDark, compact }: { src: unknown; alt: unknown; isDark: boolean; compact?: boolean }) {
   const { label, href } = describeMarkdownImage(src, alt);
+  if (compact) {
+    return (
+      <CompactImageButton
+        label={`Image: ${label}`}
+        role={href ? 'link' : 'img'}
+        onPress={href ? () => openExternalLink(href) : undefined}
+      />
+    );
+  }
   return (
     <Button
       variant="secondary"
@@ -95,6 +98,36 @@ export function MarkdownImagePlaceholder({ src, alt, isDark }: { src: unknown; a
 }
 
 /**
+ * Compact mode (web's `compact`): an icon-only button that fills a small thumbnail's box (40pt, 96pt), where
+ * the labelled full-width button would clip. The caller's box is the frame and the well.
+ */
+function CompactImageButton({ label, role, onPress }: { label: string; role: 'link' | 'img' | 'button'; onPress?: () => void }) {
+  return (
+    <Pressable
+      className="size-full items-center justify-center active:opacity-70"
+      disabled={!onPress}
+      onPress={onPress}
+      role={role}
+      accessibilityLabel={label}
+    >
+      <Icon as={ImageIcon} size={16} className="text-muted-foreground" />
+    </Pressable>
+  );
+}
+
+/** How a caller frames the image: fill or fit the frame, and its natural size once it loads (generative-UI cards). */
+export type MarkdownImageLook = {
+  resizeMode?: 'contain' | 'cover';
+  onSize?: (width: number, height: number) => void;
+  /** No outline or radius: the caller's tile is the frame. */
+  bare?: boolean;
+  /** A failed load calls this instead of showing the placeholder: the caller draws its own fallback. */
+  onError?: () => void;
+  /** A small thumbnail: a placeholder or tap-to-load button is icon-only and fills the box. */
+  compact?: boolean;
+};
+
+/**
  * The image in web's frame. Inline (`fixedHeight` absent) it takes the width
  * and its own aspect ratio, up to `MAX_INLINE_HEIGHT`; in a gallery it fits a
  * page of `fixedHeight`.
@@ -104,21 +137,23 @@ export function MarkdownImage({
   alt,
   isDark,
   fixedHeight,
+  look,
 }: {
   src: string;
   alt: string;
   isDark: boolean;
   fixedHeight?: number;
+  look?: MarkdownImageLook;
 }) {
   const remoteImages = useContext(MarkdownImagesContext);
   const source = imageSource(src);
   if (source.kind === 'sandbox') {
-    return <SandboxImage path={source.path} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} />;
+    return <SandboxImage path={source.path} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} look={look} />;
   }
   if (source.kind === 'remote' && remoteImages === 'load') {
-    return <RemoteImage uri={source.uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} />;
+    return <RemoteImage uri={source.uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} look={look} />;
   }
-  return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} />;
+  return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} compact={look?.compact} />;
 }
 
 /**
@@ -131,12 +166,14 @@ function RemoteImage({
   alt,
   isDark,
   fixedHeight,
+  look,
 }: {
   uri: string;
   src: string;
   alt: string;
   isDark: boolean;
   fixedHeight?: number;
+  look?: MarkdownImageLook;
 }) {
   const { confirm, dialog } = useConfirmDialog();
   const host = describeMarkdownImage(uri, '').label;
@@ -152,7 +189,7 @@ function RemoteImage({
   );
   return (
     <>
-      <FramedImage uri={uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} onPress={ask} />
+      <FramedImage uri={uri} src={src} alt={alt} isDark={isDark} fixedHeight={fixedHeight} look={look} onPress={ask} />
       {dialog}
     </>
   );
@@ -169,14 +206,24 @@ function SandboxImage({
   alt,
   isDark,
   fixedHeight,
+  look,
 }: {
   path: string;
   src: string;
   alt: string;
   isDark: boolean;
   fixedHeight?: number;
+  look?: MarkdownImageLook;
 }) {
   const image = useSandboxImage(path, true);
+  // A failed file hands its failure to the caller, as a failed remote image does (FramedImage). Once per
+  // failure: the caller's handler is a new function on every render.
+  const onError = useRef(look?.onError);
+  onError.current = look?.onError;
+  const failed = image.phase === 'error';
+  useEffect(() => {
+    if (failed) onError.current?.();
+  }, [failed]);
   if (image.phase === 'load' && image.source) {
     return (
       <FramedImage
@@ -187,12 +234,14 @@ function SandboxImage({
         alt={alt}
         isDark={isDark}
         fixedHeight={fixedHeight}
+        look={look}
         onError={image.handleError}
         onPress={() => openSandboxPreview(path)}
       />
     );
   }
   if (image.phase === 'tap-to-load') {
+    if (look?.compact) return <CompactImageButton label="Load image" role="button" onPress={image.loadAnyway} />;
     return (
       <Button variant="secondary" size="sm" className="my-1 self-start rounded-full" onPress={image.loadAnyway}>
         <Icon as={ImageIcon} size={16} />
@@ -200,20 +249,20 @@ function SandboxImage({
       </Button>
     );
   }
-  if (image.phase === 'error') return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} />;
+  if (failed) return look?.onError ? null : <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} compact={look?.compact} />;
   // Probing: hold the space an image will take, in its frame.
   return <ImageFrame isDark={isDark} height={fixedHeight ?? 200} />;
 }
 
-function ImageFrame({ isDark, height, children }: { isDark: boolean; height: number; children?: React.ReactNode }) {
+function ImageFrame({ isDark, height, bare, children }: { isDark: boolean; height: number; bare?: boolean; children?: React.ReactNode }) {
   const palette = markdownPalette(isDark);
   return (
     <View
       style={{
         width: '100%',
         height,
-        borderRadius: RADIUS.lg,
-        borderWidth: 1,
+        borderRadius: bare ? 0 : RADIUS.lg,
+        borderWidth: bare ? 0 : 1,
         borderColor: palette.imageOutline,
         overflow: 'hidden',
       }}
@@ -230,6 +279,7 @@ function FramedImage({
   alt,
   isDark,
   fixedHeight,
+  look,
   onError,
   onPress,
 }: {
@@ -239,6 +289,7 @@ function FramedImage({
   alt: string;
   isDark: boolean;
   fixedHeight?: number;
+  look?: MarkdownImageLook;
   onError?: () => void;
   onPress?: () => void;
 }) {
@@ -246,12 +297,12 @@ function FramedImage({
   const [aspect, setAspect] = useState<number | null>(null);
   const [failed, setFailed] = useState(false);
   const onLayout = useCallback((e: LayoutChangeEvent) => setWidth(e.nativeEvent.layout.width), []);
-  if (failed) return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} />;
+  if (failed) return <MarkdownImagePlaceholder src={src} alt={alt} isDark={isDark} compact={look?.compact} />;
   const height = fixedHeight ?? (width && aspect ? Math.min(width / aspect, MAX_INLINE_HEIGHT) : 200);
   return (
     // Full width: a paragraph lays its children out as a wrapping row.
     <View onLayout={onLayout} style={{ width: '100%' }}>
-      <ImageFrame isDark={isDark} height={height}>
+      <ImageFrame isDark={isDark} height={height} bare={look?.bare}>
         {/* A plain Pressable: the image itself is the target, with no button chrome. */}
         <Pressable
           onPress={onPress}
@@ -264,14 +315,18 @@ function FramedImage({
             source={{ uri, headers }}
             // Downsampled by the native loader to the frame, never decoded at full size.
             resizeMethod="resize"
-            resizeMode="contain"
+            resizeMode={look?.resizeMode ?? 'contain'}
             style={{ width: '100%', height: '100%' }}
             onLoad={(e) => {
               const { width: w, height: h } = e.nativeEvent.source;
-              if (w > 0 && h > 0) setAspect(w / h);
+              if (w > 0 && h > 0) {
+                setAspect(w / h);
+                look?.onSize?.(w, h);
+              }
             }}
             onError={() => {
-              if (onError) onError();
+              const handle = onError ?? look?.onError;
+              if (handle) handle();
               else setFailed(true);
             }}
           />

@@ -33,7 +33,6 @@ export function registerIamScimTokensRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -150,7 +149,6 @@ export function registerIamScimTokensRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     if (!isUuid(accountId)) return c.json({ error: 'Account not found' }, 404);
     const tokenId = c.req.param('tokenId');

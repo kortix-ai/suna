@@ -18,7 +18,7 @@
  *      went earlier) is reclaimed by the last live member's deletion.
  */
 import { afterAll, beforeAll, describe, expect, mock, test } from 'bun:test';
-import { accounts, accountMembers, projects } from '@kortix/db';
+import { accounts, accountMembers, creditAccounts, projects } from '@kortix/db';
 import { inArray, sql } from 'drizzle-orm';
 
 import { app } from '../index';
@@ -47,12 +47,22 @@ const P2 = crypto.randomUUID();
 const P3 = crypto.randomUUID();
 const P4 = crypto.randomUUID();
 
-// The auth user is already gone when the sweep runs; Stripe is untouched
-// (these accounts have no subscription).
+const cancelledSubscriptions: string[] = [];
+mock.module('../shared/stripe', () => ({
+  getStripe: () => ({
+    subscriptions: { cancel: async (id: string) => { cancelledSubscriptions.push(id); } },
+  }),
+}));
+
+// The auth user is already gone when the sweep runs.
 const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({
   ...realSupabase,
-  getSupabase: () => ({ auth: { admin: { deleteUser: async () => ({ error: { status: 404 } }) } } }),
+  getSupabase: () => ({
+    auth: { admin: { deleteUser: async () => ({ error: { status: 404 } }) } },
+    // Session files: an empty bucket (account erasure lists each project).
+    storage: { from: () => ({ list: async () => ({ data: [], error: null }), remove: async () => ({ error: null }) }) },
+  }),
 }));
 
 async function sweep() {
@@ -133,6 +143,7 @@ beforeAll(async () => {
 afterAll(async () => {
   // SOLO_A/DEAD_A are already gone when the fix ran (the trigger reclaimed
   // them); deleting a missing row is a no-op, so one list covers both runs.
+  await db.delete(creditAccounts).where(inArray(creditAccounts.accountId, [SOLO_A, SHARED_A, DEAD_A, NEW]));
   await db.delete(accounts).where(inArray(accounts.accountId, [SOLO_A, SHARED_A, DEAD_A, NEW]));
   await deleteFromView(
     db,
@@ -167,6 +178,11 @@ describe('deleting an auth user reclaims the accounts it would orphan', () => {
   });
 
   test('deleting the sole member reclaims the personal account and its projects; the same-address re-signup finds no 403 orphan', async () => {
+    await db.insert(creditAccounts).values({
+      accountId: SOLO_A,
+      stripeSubscriptionId: 'sub_synthetic_admin_deleted',
+      stripeSubscriptionStatus: 'active',
+    });
     await db.execute(sql`delete from auth.users where id = ${SOLO}::uuid`);
 
     // The trigger only schedules; the account survives until the sweep runs.
@@ -177,6 +193,10 @@ describe('deleting an auth user reclaims the accounts it would orphan', () => {
     expect(await accountGone(SOLO_A)).toBe(0);
     expect(await projectGone(P1)).toBe(0);
     expect(await projectGone(P2)).toBe(0);
+    expect(cancelledSubscriptions).toEqual(['sub_synthetic_admin_deleted']);
+    expect(await countRows(sql`select count(*) n from kortix.credit_accounts where account_id = ${SOLO_A}::uuid and stripe_subscription_status = 'canceled' and payment_status = 'deleted'`)).toBe(1);
+    await sweep();
+    expect(cancelledSubscriptions).toEqual(['sub_synthetic_admin_deleted']);
 
     // Re-signup with the same address: a new auth id, same email — what the
     // Supabase admin re-create does. The signup path (resolveAccountId) must
@@ -197,6 +217,7 @@ describe('deleting an auth user reclaims the accounts it would orphan', () => {
     expect(await accountGone(SHARED_A)).toBe(1);
     expect(await pendingRequests(SHARED_A)).toBe(0);
     expect(await projectGone(P3)).toBe(1);
+    expect(cancelledSubscriptions).toEqual(['sub_synthetic_admin_deleted']);
   });
 
   test('an account whose remaining members are all dead is reclaimed by its last live member', async () => {

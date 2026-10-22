@@ -35,10 +35,15 @@ function readRawEnv(): Partial<RuntimeEnv> {
       process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY ||
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
       process.env.SUPABASE_ANON_KEY,
+    // Same asymmetry as SUPABASE_URL above: the absolute `BACKEND_URL` wins
+    // server-side. In same-origin deployments the public values are
+    // root-relative (e.g. "/v1", proxied for the browser); a server-side SDK
+    // fetch with a relative URL throws `Failed to parse URL` and every caller
+    // silently falls back to empty data.
     BACKEND_URL:
+      process.env.BACKEND_URL ||
       process.env.KORTIX_PUBLIC_BACKEND_URL ||
-      process.env.NEXT_PUBLIC_BACKEND_URL ||
-      process.env.BACKEND_URL,
+      process.env.NEXT_PUBLIC_BACKEND_URL,
     WEBHOOK_BASE_URL:
       process.env.KORTIX_PUBLIC_WEBHOOK_BASE_URL ||
       process.env.NEXT_PUBLIC_WEBHOOK_BASE_URL ||

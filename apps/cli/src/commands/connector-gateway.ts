@@ -5,10 +5,10 @@ import { resolve } from 'node:path';
  * (Composio / Pipedream / MCP / OpenAPI / Postman / GraphQL / HTTP), absorbed from the old in-sandbox
  * `connector` shim into the one kortix CLI.
  *
- * Three faces over ONE core (see ../connector-gateway/gateway.ts):
- *   - this CLI        (`kortix connectors call …`, the agent's primary path)
+ * Two faces over ONE core (see ../connector-gateway/gateway.ts):
+ *   - this CLI        (`kortix connectors call …`, the agent's path)
  *   - the SDK         (`@kortix/sdk`, durable TypeScript workflows)
- *   - the MCP server  (`kortix connectors mcp`, optional compatibility face)
+ * MCP clients outside a session use the hosted Kortix MCP server (/v1/mcp).
  *
  * Thin client: it never holds a third-party credential. Every tool call goes to
  * the Kortix Connector Gateway (/v1/connectors/*), which checks sharing, resolves
@@ -39,8 +39,8 @@ import {
   parseExecArgs,
   stringValue,
 } from '../connector-gateway/io.ts';
-import { runConnectorMcpServer } from '../connector-gateway/mcp.ts';
 import { saveResult } from '../connector-gateway/result-spill.ts';
+import { resolveProjectId } from '../project-link.ts';
 
 const PROVIDERS = ['composio', 'pipedream', 'mcp', 'openapi', 'postman', 'graphql', 'http'];
 
@@ -234,6 +234,8 @@ async function show({ args, flags }: Invocation): Promise<void> {
     risk: tool.risk,
     description: tool.description,
     inputSchema: tool.inputSchema,
+    // The call's `output` shape; absent for connectors without one (Composio, Pipedream).
+    ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
   });
 }
 
@@ -279,8 +281,7 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
       throw new CliError((error as Error).message, 'BAD_ATTACHMENT');
     }
   }
-  // A gated call returns its authenticated approval URL immediately. The
-  // server sends the decision back into the session after a human acts.
+  // The server sends the decision back into the session after a human acts.
   //
   // `--account` picks WHICH connected account to run as when the connector
   // holds more than one (the project's shared account and each member's
@@ -291,6 +292,15 @@ async function call({ args, flags, repeated }: Invocation): Promise<void> {
     account: flags.account,
     approvalContext: flags.reason,
   });
+  // Keep bearer approval links on the web surface, not in terminal output or files.
+  if (result.status === 'pending_approval') {
+    result.approval_url = undefined;
+    const projectId = resolveProjectId(stringValue(flags.project));
+    const scope = projectId ? ` --project ${projectId}` : '';
+    result.approval_instructions = result.execution_id
+      ? `Have an authorized human review the call and use their personal CLI credentials to run kortix review act call:${result.execution_id} approve${scope} or kortix review act call:${result.execution_id} reject${scope}.`
+      : 'Ask a human to review the pending call in the project Review Center.';
+  }
   // `--out <file>`: the full result goes to the file, a summary to stdout
   // (bytes, the shape of `data`, the path). Large results stay out of the
   // agent's context, where OpenCode would truncate them.
@@ -423,7 +433,7 @@ const CONNECTORS_HELP = {
   commands: {
     ls: 'kortix connectors ls — list connectors + tools this session can use',
     discover: 'kortix connectors discover "<intent>" — search tools by natural language',
-    show: "kortix connectors show <connector>.<action> — show a tool's input schema",
+    show: "kortix connectors show <connector>.<action> — show a tool's input and output schema",
     call: "kortix connectors call <connector> <action> '<json-args>'|@args.json|- [--account <label|id|me|project>] [--reason <text>] [--attach <file>]... [--attach-path <dotted.path>] — run a tool or return its approval link; the result echoes the account it ran as. With several accounts and none named/pinned, denied with reason account_required — name --account or pin a default. --attach stages a file from /workspace/{output,artifacts,reports,deliverables} and appends its reference to the action's attachments array (e.g. Microsoft Graph body.message.attachments); the gateway builds the provider's attachment item. Never put base64 in args. --reason <text> tells the human approver what the call does when policy holds it (who it emails, what it says, what it deletes); always pass it for writes whose args are only ids (send_draft, delete, merge). --out <file> writes the full JSON result to <file> and prints only { saved_to, bytes, shape } — use it for list/search calls that can return more than ~16 KB, then query the file with jq or bun",
     upload:
       'kortix connectors upload <file> --connector <slug> — stage one file; prints `ref`, the value {"$kortix_attachment":"<id>"}. Put it in call args: as an attachments[] element it becomes the provider attachment item, in a string field (contentBytes, content) it becomes the base64. Single-use, expires in 24 h',
@@ -433,13 +443,12 @@ const CONNECTORS_HELP = {
       'kortix connectors accounts <connector> [--json] [--default <label|id>] — the connected accounts a call may run as, default first; each is shared with the project or private to one member (the names --account takes). --default pins one so unnamed calls use it',
     connect:
       'kortix connectors connect <connector-slug> [--owner me|project] — start the connector provider authorization and hand the URL to the human; --owner project makes the account shared with every member',
-    mcp: 'kortix connectors mcp — run the optional stdio MCP compatibility server',
   },
 };
 
 // `accounts` is NOT dispatched here. It is the one gateway read a human
 // also runs, so it lives in connectors.ts: a table by default, and the
-// same JSON payload under --json. The MCP keeps its own `accounts` tool.
+// same JSON payload under --json.
 const HANDLERS: Record<string, Handler> = {
   connectors: listConnectors,
   ls: listConnectors,
@@ -476,9 +485,14 @@ async function dispatch(
 export async function runConnector(argv: string[]): Promise<number> {
   const { command, args, flags, repeated } = parseExecArgs(argv);
 
-  // The MCP server owns stdin/stdout for JSON-RPC; run it directly.
+  // Removed 2026-10-08. Name the replacements for anyone who configured it.
   if (command === 'mcp') {
-    return runConnectorMcpServer();
+    out({
+      ok: false,
+      error:
+        '`kortix connectors mcp` was removed. In a session, run `kortix connectors`. From an MCP client, use the hosted Kortix MCP server: <api>/v1/mcp.',
+    });
+    return 2;
   }
 
   try {

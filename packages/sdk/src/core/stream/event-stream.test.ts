@@ -7,9 +7,8 @@ import {
   type RuntimeEvent,
 } from './event-stream';
 
-// Mirrors event-stream.ts's default idle-watchdog budget (raised from 15s —
-// the server emits no idle keepalives, so a 15s budget killed healthy idle
-// sessions on a timer by design; see the HEARTBEAT_MS comment there).
+// Mirrors event-stream.ts's default idle-watchdog budget: three of the sandbox
+// daemon's 20 s keepalive frames (see the HEARTBEAT_MS comment there).
 const HEARTBEAT_MS = 60_000;
 
 function sessionStatus(sessionID: string, statusType: string): RuntimeEvent {
@@ -289,6 +288,46 @@ function deltaShape(event: RuntimeEvent) {
   };
 }
 
+function blockDelta(id: string, delta: string, blockID = 'blk_1', messageID = 'msg_1'): RuntimeEvent {
+  return {
+    id,
+    type: 'log.block.delta',
+    properties: { thread_id: 'ses_1', message_id: messageID, block_id: blockID, delta },
+  } as unknown as RuntimeEvent;
+}
+
+describe('openEventStream log.block.delta coalescing (KRTX-2880)', () => {
+  test('consecutive deltas of one block dispatch as ONE event per flush window; another block or message is its own run', async () => {
+    const clock = createFakeClock();
+    const { client, channels } = createConnectableClient();
+    const dispatched: RuntimeEvent[] = [];
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers: clock });
+    await tick();
+
+    const run = Array.from({ length: 30 }, (_, i) => blockDelta(`evt_${i}`, `w${i} `));
+    for (const event of run) channels[0].push(event);
+    const other = blockDelta('evt_b', 'x', 'blk_2');
+    const otherMessage = blockDelta('evt_m', 'y', 'blk_2', 'msg_2');
+    channels[0].push(other);
+    channels[0].push(otherMessage);
+    await tick(200);
+    await clock.advance(16);
+
+    expect(dispatched.length).toBe(3);
+    expect(dispatched[0]!.type as string).toBe('log.block.delta');
+    expect(deltaShape(dispatched[0]!)).toEqual({
+      id: 'evt_29',
+      delta: run.map((e) => (e.properties as { delta: string }).delta).join(''),
+      wireIds: run.map((e) => (e as { id?: string }).id),
+    });
+    expect((dispatched[0]!.properties as { block_id: string }).block_id).toBe('blk_1');
+    expect(dispatched[1]).toBe(other);
+    expect(dispatched[2]).toBe(otherMessage);
+
+    handle.close();
+  });
+});
+
 describe('openEventStream text-delta coalescing', () => {
   test('consecutive deltas of one part field dispatch as ONE event per flush window', async () => {
     const clock = createFakeClock();
@@ -387,6 +426,40 @@ describe('openEventStream text-delta coalescing', () => {
       { id: 'evt_2', delta: 'ab', wireIds: ['evt_1', 'evt_2'] },
       { id: 'evt_3', delta: 'c', wireIds: undefined },
     ]);
+
+    handle.close();
+  });
+
+  test('a burst read while the host is busy dispatches in one batch, not one event per yield', async () => {
+    // The host renders inside every yield; here each render takes 100 ms. That
+    // wait is not reading time, so it must not spend the next 8 ms read budget.
+    // Spent, the loop yields after every event: one delta per render reaches
+    // the store, and the transcript trails the wire by seconds.
+    const clock = createFakeClock();
+    const timers: EventStreamTimers = {
+      now: clock.now,
+      setTimeout: (handler, ms = 0) => clock.setTimeout(handler, ms === 0 ? 100 : ms),
+      clearTimeout: clock.clearTimeout,
+    };
+    const { client, channels } = createConnectableClient();
+    const dispatched: RuntimeEvent[] = [];
+    const handle = openEventStream({ client, onEvent: (e) => dispatched.push(e), timers });
+    await tick();
+    await clock.advance(10);
+
+    const wire = Array.from({ length: 50 }, (_, i) => partDelta(`evt_${i}`, `w${i} `));
+    for (const event of wire) channels[0].push(event);
+    // Reading takes no clock time here: every pending microtask runs before the
+    // clock moves on.
+    for (let ms = 0; ms < 1_000; ms += 10) {
+      await tick(400);
+      await clock.advance(10);
+    }
+
+    expect(dispatched.map((e) => (e.properties as { delta: string }).delta).join('')).toBe(
+      wire.map((e) => (e.properties as { delta: string }).delta).join(''),
+    );
+    expect(dispatched.length).toBeLessThanOrEqual(2);
 
     handle.close();
   });

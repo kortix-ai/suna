@@ -12,14 +12,15 @@ import { lintDockerfile } from './dockerfile-lint.ts';
 import { lintWiring } from './wiring-lint.ts';
 
 /**
- * A session's agent config is built from every file at the base commit
- * (`git archive`). The API refuses an archive over 32 MiB gzip or 128 MiB tar
- * (`MAX_CONFIG_ARCHIVE_BYTES` / `MAX_CONFIG_TAR_BYTES` in
- * apps/api/src/config-releases/release-tree.ts), and the session then runs the
- * platform default config. The check counts raw bytes, so a repository under
- * this total always builds.
+ * A session's agent config is built from every file at the base commit. A new
+ * session takes those files from its own checkout, so no repository size stops
+ * it. A running session picks up a base-branch change through the project
+ * snapshot, which Kortix cloud builds up to 512 MiB compressed
+ * (`KORTIX_PROJECT_SNAPSHOT_MAX_ARCHIVE_BYTES` in apps/api/src/config.ts).
+ * Above that, the session keeps the config it runs until a new session. The
+ * check counts raw bytes, so a repository under this total always converges.
  */
-const REPO_WARN_BYTES = 32 * 1024 * 1024;
+const REPO_WARN_BYTES = 512 * 1024 * 1024;
 /** One file this large is a static asset that belongs outside Git. */
 const FILE_WARN_BYTES = 10 * 1024 * 1024;
 const LISTED_FILES = 5;
@@ -95,10 +96,15 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
   const paths = [...new Set(listed.split('\0').filter(Boolean))];
 
   // `check-attr -z` prints `<path>\0<attribute>\0<value>\0` per path and attribute.
+  // Directories are asked too: `fixtures export-ignore` marks the folder, and
+  // `git archive` (like the API's release) leaves out everything under it.
+  const ancestors = (path: string) =>
+    path.split('/').slice(0, -1).map((_, i, parts) => parts.slice(0, i + 1).join('/'));
+  const queried = [...new Set(paths.flatMap((path) => [...ancestors(path), path]))];
   const ignored = new Set<string>();
   const lfs = new Set<string>();
   const attrs =
-    git(root, ['check-attr', '-z', '--stdin', 'export-ignore', 'filter'], paths.join('\0'))?.split('\0') ?? [];
+    git(root, ['check-attr', '-z', '--stdin', 'export-ignore', 'filter'], queried.join('\0'))?.split('\0') ?? [];
   for (let i = 0; i + 2 < attrs.length; i += 3) {
     if (attrs[i + 1] === 'export-ignore' && attrs[i + 2] === 'set') ignored.add(attrs[i]!);
     if (attrs[i + 1] === 'filter' && attrs[i + 2] === 'lfs') lfs.add(attrs[i]!);
@@ -107,7 +113,7 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
   let total = 0;
   const files: { path: string; bytes: number }[] = [];
   for (const path of paths) {
-    if (ignored.has(path)) continue;
+    if (ignored.has(path) || ancestors(path).some((dir) => ignored.has(dir))) continue;
     let bytes: number;
     try {
       const stat = lstatSync(join(root, path));
@@ -131,8 +137,8 @@ export function lintRepoSize(dir: string): ManifestIssue[] {
     .map((f) => `${f.path} (${mib(f.bytes)})`);
   const headline =
     total > REPO_WARN_BYTES
-      ? `the files in Git total ${mib(total)}. A session builds its agent config from the whole repository, and that build fails above 32 MiB compressed: the session then runs the platform default config.`
-      : `large static files are in Git. Every session clones them, and they count toward the 32 MiB limit on the agent config a session builds from the repository.`;
+      ? `the files in Git total ${mib(total)}. A new session still runs the agent config, but above 512 MiB compressed Kortix builds no project snapshot, so a running session stops picking up agent config changes from the base branch until a new session starts.`
+      : `large static files are in Git. Every session downloads them, and so does every agent config change a running session picks up.`;
   return [
     {
       path: 'repository',

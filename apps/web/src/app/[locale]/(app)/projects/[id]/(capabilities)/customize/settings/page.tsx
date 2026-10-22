@@ -3,15 +3,15 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ProjectSettingsPage } from '@/features/workspace/capabilities/project-settings/project-settings-page';
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ProjectSettingsPage } from '@kortix/ui/customize/project-settings/project-settings-page';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**
  * /projects/[id]/config — the Customize bar's "Settings" tab: every
  * project-scoped configuration surface that used to sit in the Settings
  * overlay's `Workspace` and `Agent` rail groups, plus Feature flags and
  * Upgrades. See
- * `features/workspace/capabilities/project-settings/project-settings-page.tsx`
+ * `packages/ui/src/customize/project-settings/project-settings-page.tsx`
  * for the page body and why the move happened.
  *
  * The segment is `config`, not `settings`: `/projects/[id]/settings` is the

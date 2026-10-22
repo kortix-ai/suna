@@ -16,7 +16,8 @@
 import { strict as assert } from "node:assert";
 import { flow } from "../core/flow";
 import type { Client } from "../core/client";
-import { pair, startPairing } from "../fixtures/tunnel";
+import type { FlowContext } from "../core/types";
+import { offboardingEvent, pair, pairBothPlacements, projectComputerAccount, startPairing } from "../fixtures/tunnel";
 
 // A uuid that will never match a real machine or request row.
 const MISSING_UUID = "00000000-0000-4000-8000-000000000000";
@@ -36,6 +37,7 @@ flow(
       "PATCH /v1/tunnel/connections/:tunnelId",
       "DELETE /v1/tunnel/connections/:tunnelId",
       "POST /v1/tunnel/connections/:tunnelId/rotate-token",
+      "POST /v1/tunnel/connections/:tunnelId/access",
       "GET /v1/projects/:projectId/connections",
     ],
     serial: true,
@@ -80,6 +82,17 @@ flow(
       (await owner.patch("/v1/tunnel/connections/:tunnelId", { name: ctx.fixtures.name("renamed") }, params)).status(200);
       (await owner.patch("/v1/tunnel/connections/:tunnelId", { name: "  " }, params)).status(400);
       (await owner.post("/v1/tunnel/connections/:tunnelId/rotate-token", {}, params)).status(200).body().exists("$.setupToken");
+    });
+
+    await ctx.step("OWNER changes access through Kortix: a bad change → 400; an offline machine → 409 computer_offline", async () => {
+      const params = { params: { tunnelId: machine.tunnelId } };
+      // No agent has reported yet: the machine shows no access state.
+      (await owner.get("/v1/tunnel/connections/:tunnelId", params)).status(200).body().has("$.access", null);
+      (await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "sometimes" }, params)).status(400);
+      const offline = await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "off" }, params);
+      offline.status(409).body().has("$.code", "computer_offline");
+      assert.match(offline.json<any>().error, /npx @kortix\/agent-tunnel@latest access/);
+      (await owner.post("/v1/tunnel/connections/:tunnelId/access", { mode: "off" }, { params: { tunnelId: MISSING_UUID } })).status(404);
     });
 
     await ctx.step("unknown machine → 404", async () => {
@@ -439,4 +452,105 @@ flow(
       assert.equal(account?.tunnel_id, null);
     });
   },
+);
+
+const DEPARTED_OWNER_ROUTES = [
+  "POST /v1/tunnel/device-auth",
+  "GET /v1/tunnel/device-auth/:code/status",
+  "POST /v1/tunnel/device-auth/:code/approve",
+  "GET /v1/projects/:projectId/connections",
+  "GET /v1/accounts/:accountId/audit",
+  "GET /v1/tunnel/connections",
+  "DELETE /v1/tunnel/connections/:tunnelId",
+];
+
+/**
+ * KRTX-1722: a member's computer accounts end with their membership. The
+ * member pairs a machine in each placement, then leaves the account or is
+ * removed. Both computer accounts in the team project are revoked, an OWNER's
+ * computer account stays active, one audit event counts them, and the
+ * machines stay the member's own.
+ */
+async function departedOwnerComputers(ctx: FlowContext, exit: "removed" | "left") {
+  const team = await ctx.fixtures.team({ enterprise: true });
+  const member = await team.addMember("member");
+  const project = await team.project();
+  await team.grantProjectRole(project.id, member.userId!, "manager");
+  const anon = ctx.client.as(ctx.P.ANON);
+  const owner = ctx.client.as(ctx.P.OWNER);
+  const asMember = ctx.client.as(member);
+  let machines!: Awaited<ReturnType<typeof pairBothPlacements>>;
+  let ownerMachine = { tunnelId: "", connectionId: "", token: "" };
+
+  await ctx.step("the member pairs a private machine and one shared with the project; OWNER shares one too", async () => {
+    machines = await pairBothPlacements(anon, asMember, { projectId: project.id, name: ctx.fixtures.name });
+    ownerMachine = await pair(anon, owner, {
+      name: ctx.fixtures.name("owner-studio"),
+      projectId: project.id,
+      capabilities: ["filesystem"],
+      share: "project",
+    });
+    ctx.track("tunnelConnection", ownerMachine.tunnelId);
+    const shared = await projectComputerAccount(owner, project.id, machines.shared.connectionId);
+    assert.equal(shared?.owner_type, "project");
+    assert.equal(shared?.status, "active");
+  });
+
+  await ctx.step(exit === "removed" ? "OWNER removes the member → 200" : "the member leaves → 200", async () => {
+    const r =
+      exit === "removed"
+        ? await owner.del("/v1/accounts/:accountId/members/:userId", {
+            params: { accountId: team.id, userId: member.userId! },
+          })
+        : await asMember.post("/v1/accounts/:accountId/leave", {}, { params: { accountId: team.id } });
+    r.status(200);
+  });
+
+  await ctx.step("the shared machine's account is revoked (owner_left, no default pin); OWNER's stays active", async () => {
+    const shared = await projectComputerAccount(owner, project.id, machines.shared.connectionId);
+    assert.equal(shared?.status, "revoked");
+    assert.equal(shared?.is_default, false);
+    assert.equal(shared?.metadata?.revokedReason, "owner_left");
+    assert.equal((await projectComputerAccount(owner, project.id, ownerMachine.connectionId))?.status, "active");
+  });
+
+  await ctx.step("one member.offboarded audit event counts the accounts of both placements", async () => {
+    const event = await offboardingEvent(owner, team.id, member.userId!);
+    assert.equal(event.actor_user_id, exit === "removed" ? ctx.P.OWNER.userId : member.userId);
+    assert.equal(event.metadata?.reason, exit);
+    assert.equal(event.metadata?.computers_revoked, 2);
+    assert.equal(event.metadata?.reminders_disabled, 0);
+  });
+
+  await ctx.step("the machines stay the member's: they still list and unpair both", async () => {
+    const r = await asMember.get("/v1/tunnel/connections");
+    r.status(200);
+    const listed = r.json<any[]>().map((m) => m.tunnelId);
+    for (const machine of [machines.personal, machines.shared]) {
+      assert.ok(listed.includes(machine.tunnelId), `the member lists ${machine.tunnelId}`);
+      (await asMember.del("/v1/tunnel/connections/:tunnelId", { params: { tunnelId: machine.tunnelId } })).status(200);
+    }
+  });
+}
+
+flow(
+  "TUN-8",
+  {
+    domain: "tunnel",
+    timeoutMs: 180_000,
+    serial: true,
+    routes: [...DEPARTED_OWNER_ROUTES, "DELETE /v1/accounts/:accountId/members/:userId"],
+  },
+  (ctx) => departedOwnerComputers(ctx, "removed"),
+);
+
+flow(
+  "TUN-9",
+  {
+    domain: "tunnel",
+    timeoutMs: 180_000,
+    serial: true,
+    routes: [...DEPARTED_OWNER_ROUTES, "POST /v1/accounts/:accountId/leave"],
+  },
+  (ctx) => departedOwnerComputers(ctx, "left"),
 );

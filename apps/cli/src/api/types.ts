@@ -44,6 +44,22 @@ export interface ProjectSummary {
   dashboard_url?: string;
 }
 
+// ── Custom LLM providers (`GET /projects/:id/custom-providers`) ───────────
+
+/** An OpenAI-compatible endpoint the LLM gateway serves as `<id>/<model>`. */
+export interface CustomLlmProvider {
+  id: string;
+  name: string;
+  /** Null only when `configured` is false. */
+  base_url: string | null;
+  models: { id: string; name: string }[];
+  /** The project secret that holds the key: `CUSTOM_<ID>_API_KEY`. */
+  secret_name: string;
+  has_key: boolean;
+  /** False: a `CUSTOM_*_API_KEY` secret with no endpoint saved yet. */
+  configured: boolean;
+}
+
 // ── Secrets ───────────────────────────────────────────────────────────────
 
 export interface ProjectSecret {
@@ -77,6 +93,7 @@ export interface ProjectSecret {
   delivery_status?: 'available' | 'unavailable' | 'disabled';
   /** True when an earlier sandbox may retain the previous value. */
   requires_rotation?: boolean;
+  agents?: string[] | 'all' | null;
   /** Who can use the shared value; empty = everyone in the project. */
   shared_with?: Array<{
     grant_id: string;
@@ -87,6 +104,10 @@ export interface ProjectSecret {
   }>;
   /** False when the value is shared with specific people and the caller is not one of them. */
   usable?: boolean;
+  /** Can the server decrypt the shared value? Absent when none is set, and on older servers. */
+  status?: 'ok' | 'undecryptable';
+  /** The caller's own override; `status` says whether the server can decrypt it. */
+  mine?: { active: boolean; updated_at: string; status?: 'ok' | 'undecryptable' } | null;
 }
 
 export interface ProjectSecretsResponse {
@@ -141,6 +162,10 @@ export type OauthPollResponse =
 // ── Sessions ──────────────────────────────────────────────────────────────
 
 export interface ProjectSession {
+  /** Durable conversation model; absent on older APIs. */
+  model?: string | null;
+  /** Canonical work activity; missing on older servers. */
+  working?: import('@kortix/sdk').ProjectSession['working'];
   session_id: string;
   account_id: string;
   project_id: string;
@@ -175,6 +200,15 @@ export interface ProjectSession {
   child_count?: number;
   /** Present only with `q` + `parent=root`. */
   search_match?: 'self' | 'child';
+  /** When you pinned / archived the session in your own list; null when not.
+   *  Absent for an agent, an API key or a service account. */
+  pinned_at?: string | null;
+  archived_at?: string | null;
+  /** A deleted session (`ls --deleted`): when, by whom, and the last instant
+   *  `sessions restore` takes it back. */
+  deleted_at?: string | null;
+  deleted_by?: string | null;
+  restore_until?: string | null;
 }
 
 export interface ProjectSessionInitiator {
@@ -188,11 +222,96 @@ export interface ProjectSessionInitiator {
 /** A `type: monitor` trigger's shape. */
 export type MonitorMode = 'poll' | 'stream';
 
+/** A `type: event` trigger's source + subscription state. */
+export interface ProjectTriggerEvent {
+  connector: string;
+  /** Declared `account` label; null = the connector's default shared account. */
+  account?: string | null;
+  /** Identity (or label) of the shared account feeding the trigger; null when none. */
+  connected_as?: string | null;
+  type: string;
+  config: Record<string, unknown>;
+  /** Event source adapter: the declared `source`, else the connector's provider. */
+  source?: string | null;
+  /** The connector's own provider; differs from `source` only when a declared source mismatches. */
+  provider: string | null;
+  app: string | null;
+  status: 'active' | 'needs_connection' | 'error' | 'pending';
+  error: string | null;
+  last_event_at: string | null;
+  /** Source `mcp`: when Kortix last checked the app with success. */
+  checked_at?: string | null;
+  /** Source `mcp`: when Kortix checks the app next. */
+  next_check_at?: string | null;
+}
+
+/** One event type from `GET /projects/:id/triggers/event-types`. */
+export interface TriggerEventType {
+  type: string;
+  name: string;
+  description: string;
+  app: string;
+  delivery: 'poll' | 'push' | null;
+  /** JSON Schema of the event's `config`. */
+  config_schema: Record<string, unknown>;
+  payload_schema: Record<string, unknown> | null;
+}
+
+export interface TriggerEventTypesResponse {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
+  provider: string;
+  app: string;
+  event_types: TriggerEventType[];
+}
+
+/** One shared account of a connector. Only shared accounts can feed an event trigger. */
+export interface TriggerEventAccount {
+  label: string;
+  connected_as: string | null;
+  is_default: boolean;
+  connected: boolean;
+}
+
+/** A connector (profile) of an app, with its shared accounts. */
+export interface TriggerEventConnector {
+  slug: string;
+  name: string;
+  accounts: TriggerEventAccount[];
+}
+
+/** One app from `GET /projects/:id/triggers/event-apps`. */
+export interface TriggerEventApp {
+  /** Event source adapter id, such as `composio`. */
+  source?: string;
+  /** @deprecated Same value as `source`. */
+  provider: string;
+  app: string;
+  name: string;
+  logo: string | null;
+  event_count: number;
+  /** Slug for a new connector of this app (never reserved or taken). */
+  new_connector_slug?: string;
+  /** Slug of the project's connector for this app; null until one is added. */
+  connector: string | null;
+  /** The project has an active shared account for this app. */
+  connected: boolean;
+  /** Every connector (profile) of this app with its shared accounts. */
+  connectors?: TriggerEventConnector[];
+  /** Source `mcp`: the catalogue MCP server URL a new connector is added with. Null for other sources and for a project MCP server outside the catalogue. */
+  mcp_url?: string | null;
+}
+
+export interface TriggerEventAppsResponse {
+  apps: TriggerEventApp[];
+}
+
 export interface ProjectTrigger {
   slug: string;
   path: string;
   name: string;
-  type: 'cron' | 'webhook' | 'monitor';
+  type: 'cron' | 'webhook' | 'monitor' | 'event';
   agent: string;
   enabled: boolean;
   cron: string | null;
@@ -208,9 +327,20 @@ export interface ProjectTrigger {
   interval_seconds: number | null;
   /** monitor only — the silence watchdog in whole seconds. */
   expect_event_within_seconds: number | null;
+  /** type=event only; null for every other type. */
+  event?: ProjectTriggerEvent | null;
   prompt_template: string;
   /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
   session_mode: 'fresh' | 'reuse';
+  /** Runs it may start in any 60 minutes; null = unset (the default, 60). Older servers omit it. */
+  max_runs_per_hour?: number | null;
+  /** Runs it may start in a UTC day; null = no daily cap. Older servers omit it. */
+  max_runs_per_day?: number | null;
+  /** Fresh session mode only (KRTX-1721). Null when unset: skip for cron, allow otherwise. */
+  overlap?: 'skip' | 'allow' | null;
+  /** Set while the trigger paused itself after a sustained run-limit breach (KRTX-1721). */
+  auto_paused_at?: string | null;
+  auto_paused_reason?: string | null;
   last_fired_at: string | null;
   /** `queued`, `fired`, or `failed` (the prompt was not delivered, or its run ended with an error). */
   last_status?: string | null;
@@ -227,6 +357,8 @@ export interface ProjectTriggersResponse {
   // auto-run ANY of this project's triggers (cron sweep skips, webhooks ignored)
   // regardless of each trigger's own `enabled`. Toggle with `triggers pause/resume`.
   triggers_paused?: boolean;
+  // The account's Pause all automations: stops every project's triggers. Toggle with `triggers pause --account`.
+  account_automations_paused?: boolean;
   errors: Array<{ path: string; error: string }>;
 }
 
@@ -237,6 +369,44 @@ export interface TriggerFireResponse {
   status: 'queued' | 'fired' | 'deduped';
   reason?: string | null;
   session_id?: string | null;
+  /** The run this fire recorded (null only when the run write failed). */
+  run_id?: string | null;
+}
+
+/** `POST …/triggers/:slug/fire` with `dry_run: true` (200). Nothing is written. */
+export interface TriggerDryRunResponse {
+  dry_run: true;
+  rendered_prompt: string;
+  filter_matches: boolean;
+  session_key: string | null;
+  payload: Record<string, unknown>;
+}
+
+/** One run: one row of project_trigger_executions (api-contract `TriggerRun`). */
+export interface TriggerRun {
+  run_id: string;
+  slug: string;
+  source: string;
+  status: 'queued' | 'running' | 'fired' | 'failed' | 'skipped' | 'rejected';
+  run_status: 'running' | 'succeeded' | 'failed' | null;
+  error: string | null;
+  run_error: string | null;
+  session_id: string | null;
+  command_id: string | null;
+  replay_of: string | null;
+  payload_verified: boolean;
+  payload: unknown;
+  scheduled_for: string | null;
+  created_at: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  cost_usd: number | null;
+}
+
+export interface TriggerRunList {
+  runs: TriggerRun[];
+  next_cursor: string | null;
 }
 
 // ── Change Requests ───────────────────────────────────────────────────────
@@ -269,6 +439,9 @@ export interface ChangeRequest {
 
 export interface ChangeRequestsListResponse {
   change_requests: ChangeRequest[];
+  /** The next page's `cursor`; null on the last page. Absent on an API
+   *  older than KRTX-2316, which returned the whole list. */
+  next_cursor?: string | null;
 }
 
 export interface ChangeRequestDetailResponse {

@@ -19,10 +19,8 @@ import {
 } from '../../iam/read-models';
 import { parseAssignableProjectRole, PROJECT_ROLE_INPUT_ERROR, type ProjectRole } from '../../iam/roles';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
 import { accountGroupNames, groupInAccountRow, groupMemberAccountRows } from '../../iam/group-read';
 import { createRoute, z } from '@hono/zod-openapi';
-import { and } from 'drizzle-orm';
 import { loadProjectForUser, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { GroupGrantSchema, projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';

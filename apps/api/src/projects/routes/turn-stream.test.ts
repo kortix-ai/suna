@@ -14,7 +14,7 @@
  * (the repo's `--isolate` runner guarantees that).
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { SQL } from 'drizzle-orm';
 import { Hono } from 'hono';
 import * as realAccess from '../lib/access';
 
@@ -31,6 +31,7 @@ let ownedRow: Record<string, unknown> | null = null;
 let sessionRow: Record<string, unknown> | null = null;
 let updateRows: Array<{ sessionId: string }> = [];
 const updateSets: Array<Record<string, unknown>> = [];
+let sessionVisible = true;
 let loadedProject: { row: { accountId: string; projectId: string }; userId: string } | null = {
   row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID },
   userId: USER_ID,
@@ -65,6 +66,25 @@ const confirmed: string[] = [];
 const steerLookups: string[] = [];
 let steerTargets: Record<string, string> = {};
 let confirmOutcome: 'confirmed' | 'pending_delivery' | 'no_prompt' = 'confirmed';
+let failDaemonBootWrite = false;
+
+/** True when a drizzle `SQL` fragment's literal text names `key`. */
+function sqlMentions(fragment: unknown, key: string): boolean {
+  if (!(fragment instanceof SQL)) return false;
+  return fragment.queryChunks.some((chunk) => {
+    const value = (chunk as { value?: unknown }).value;
+    return Array.isArray(value) && value.join('').includes(key);
+  });
+}
+
+/** The numbers bound into a drizzle `SQL` fragment. */
+function boundNumbers(fragment: unknown): number[] {
+  if (!(fragment instanceof SQL)) return [];
+  return fragment.queryChunks.filter((chunk): chunk is number => typeof chunk === 'number');
+}
+
+/** The `session_sandboxes.config` writes that record a daemon boot for env sync. */
+const daemonBootWrites = () => updateSets.filter((set) => sqlMentions(set.config, 'envSyncDaemonBootAtMs'));
 
 const databaseMock = {
   select: (projection: Record<string, unknown> = {}) => ({
@@ -84,6 +104,9 @@ const databaseMock = {
   update: (_table: unknown) => ({
     set: (values: Record<string, unknown>) => {
       updateSets.push(values);
+      if (failDaemonBootWrite && sqlMentions(values.config, 'envSyncDaemonBootAtMs')) {
+        return { where: () => Promise.reject(new Error('connection terminated')) };
+      }
       return {
         where: () => ({ returning: async () => updateRows }),
       };
@@ -99,6 +122,7 @@ mock.module('../lib/access', () => ({
     loadProjectCalls.push({ projectId, action });
     return loadedProject;
   },
+  loadVisibleSession: async () => (sessionVisible ? {} : null),
   assertProjectCapability: async (
     _c: unknown,
     _userId: string,
@@ -160,6 +184,13 @@ mock.module('../session-turn-ledger', () => ({
 }));
 
 mock.module('../session-lifecycle', () => ({
+  retireWarmProjectSessions: async () => { throw new Error('retireWarmProjectSessions: not used by the turn-stream routes'); },
+  continueSession: async () => { throw new Error('continueSession: not used by the turn-stream routes'); },
+  startSession: async () => { throw new Error('startSession: not used by the turn-stream routes'); },
+  buildContinueSessionCommandValues: async () => { throw new Error('buildContinueSessionCommandValues: not used by the turn-stream routes'); },
+  resolveProjectAutomationActor: async () => { throw new Error('resolveProjectAutomationActor: not used by the turn-stream routes'); },
+  enqueueContinueSessionCommand: async () => { throw new Error('enqueueContinueSessionCommand: not used by the turn-stream routes'); },
+  createSession: async () => { throw new Error('createSession: not used by the turn-stream routes'); },
   drainSessionLifecycleQueue: async () => {
     order.push('drain');
   },
@@ -176,17 +207,38 @@ mock.module('../session-lifecycle/forwarded-strand-reconcile', () => ({
 }));
 
 mock.module('../lib/session-transcript-capture', () => ({
-  captureSessionTranscriptMirror: () => {
+  captureJournallessSessionLog: () => {
     order.push('mirror');
   },
 }));
 
 mock.module('../sandbox-deadline', () => ({ childIdleGraceMs: () => 1_000 }));
 
+// R7.4: the turn end refreshes the projection the session list follows.
+let projectionRefreshes: Array<{ target: Record<string, unknown>; options: unknown }> = [];
+let projectionOutcome: Record<string, unknown> = { refreshed: false, reason: 'not_modified' };
+let releaseProjection: (() => void) | null = null;
+mock.module('../lib/session-runtime-projection-refresh', () => ({
+  refreshRuntimeProjection: async (target: Record<string, unknown>, options: unknown) => {
+    projectionRefreshes.push({ target, options });
+    if (releaseProjection === null) return projectionOutcome;
+    await new Promise<void>((resolve) => {
+      releaseProjection = resolve;
+    });
+    order.push('projection');
+    return projectionOutcome;
+  },
+}));
+
 mock.module('../session-title-generate', () => ({
   generateSessionTitleFromFirstPrompt: async () => {
     order.push('title');
   },
+  // Other modules in this graph (sandbox-proxy/pre-prompt-env-sync, lib/session-create)
+  // import these; no prompt here carries text or a model.
+  extractPromptInfo: () => ({ text: null, model: null }),
+  TITLE_SOURCE_MAX_CHARS: 4000,
+  titleSourceForCreate: () => null,
 }));
 
 const triggerRunEnds: unknown[] = [];
@@ -198,10 +250,27 @@ mock.module('../lib/trigger-run-outcome', () => ({
   },
 }));
 
+const notified: Array<Record<string, unknown>> = [];
+// The real notifier resolves the context thunk only for a flag-on project
+// (notifications/session-push.ts); this stand-in always resolves it.
 mock.module('../../notifications/session-push', () => ({
   turnEndPushType: () => pushType,
-  notifySessionEvent: async () => {
+  notifySessionEvent: async (
+    event: Record<string, unknown>,
+    options: { context?: () => Promise<Record<string, unknown>> } = {},
+  ) => {
     order.push('notify');
+    notified.push({ ...event, ...(options.context ? await options.context() : {}) });
+  },
+}));
+
+// KRTX-1742: the turn end hands the notifier a thunk that resolves who
+// prompted the turn.
+const contextLookups: Array<{ session: Record<string, unknown>; turnMessageId: string | null }> = [];
+mock.module('../lib/notification-recipients', () => ({
+  turnEndNotificationContext: async (session: Record<string, unknown>, turnMessageId: string | null) => {
+    contextLookups.push({ session, turnMessageId });
+    return { prompterUserId: 'user-prompter', originClass: 'attended', isChild: false };
   },
 }));
 
@@ -245,6 +314,7 @@ beforeEach(() => {
   updateRows = [{ sessionId: SESSION_ID }];
   updateSets.length = 0;
   loadedProject = { row: { accountId: ACCOUNT_ID, projectId: PROJECT_ID }, userId: USER_ID };
+  sessionVisible = true;
   loadProjectCalls.length = 0;
   capabilityCalls.length = 0;
   completionResult = { outcome: 'closed', activeTurnCount: 0, closedTurnCount: 1 };
@@ -259,6 +329,8 @@ beforeEach(() => {
   adoptResult = 'adopted';
   causeResult = 'attached';
   order.length = 0;
+  notified.length = 0;
+  contextLookups.length = 0;
   triggerRunEnds.length = 0;
   completionQueue = [];
   completedMessageIds.length = 0;
@@ -266,6 +338,7 @@ beforeEach(() => {
   steerLookups.length = 0;
   steerTargets = {};
   confirmOutcome = 'confirmed';
+  failDaemonBootWrite = false;
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
@@ -303,6 +376,15 @@ describe('POST /v1/projects/:projectId/turn-stream — sleeve gates', () => {
     expect(capabilityCalls).toEqual([{ action: 'project.connector.write' }]);
   });
 
+  // Pentest M-4: `end` settles the turn and promotes queued prompts, so a
+  // member who cannot see a (private) session must not be able to send it.
+  test.each(['end', 'turn_end', 'step'])('404s %s for a member who cannot see the session', async (kind) => {
+    sessionVisible = false;
+    const response = await post({ session_id: SESSION_ID, kind, text: 'hi' });
+    expect(response.status).toBe(404);
+    expect(order).toEqual([]);
+  });
+
   test('does NOT gate the lifecycle kinds on connector.write', async () => {
     await post({ session_id: SESSION_ID, kind: 'end' });
     expect(capabilityCalls).toEqual([]);
@@ -316,6 +398,8 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' });
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({ error: 'initial_turn_claim requires a sandbox token' });
+    // A PAT is not the daemon: it cannot tell the API that a daemon booted.
+    expect(daemonBootWrites()).toEqual([]);
   });
 
   test('turn_abandoned requires a sandbox token', async () => {
@@ -378,6 +462,33 @@ describe('POST /v1/projects/:projectId/turn-stream — sandbox-credential walls'
 });
 
 describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () => {
+  // Every daemon process claims once, at boot. A new process seeds its env
+  // store from the BOOT env, so every env push applied to the previous process
+  // is gone. The claim records the boot before it answers, so no API replica
+  // trusts a push the new process never received (2026-10-16, KRTX-2517).
+  test('records the daemon boot for env sync before it answers', async () => {
+    const before = Date.now();
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    const writes = daemonBootWrites();
+    expect(writes).toHaveLength(1);
+    const [bootAtMs] = boundNumbers(writes[0]!.config);
+    expect(bootAtMs).toBeGreaterThanOrEqual(before);
+    expect(bootAtMs).toBeLessThanOrEqual(Date.now());
+  });
+
+  test('a failed boot record fails the claim with 503: the daemon retries before it serves a prompt', async () => {
+    failDaemonBootWrite = true;
+    sessionRow = session({ initial_prompt: 'build it' });
+    ownedRow = {
+      sessionId: SESSION_ID,
+      metadata: { activeTurns: { 'turn-token-1': { state: 'delivering', messageId: 'msg_1' } } },
+    };
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: 'could not record the daemon boot; retry the claim' });
+  });
+
   test('answers initial_turn: null when no prompt is pending', async () => {
     sessionRow = session({});
     const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
@@ -439,6 +550,35 @@ describe('POST /v1/projects/:projectId/turn-stream — initial_turn_claim', () =
     expect(await response.json()).toEqual({
       ok: true,
       initial_turn: null,
+      runtime_session_id: null,
+      opencode_session_id: null,
+    });
+  });
+
+  test('the claim carries the session contract as context beside the prompt', async () => {
+    sessionRow = session({
+      initial_prompt: 'build it',
+      initial_context: '--- session contract ---',
+    });
+    sandboxRow = { sandboxId: SANDBOX_ID, sessionId: SESSION_ID };
+    ownedRow = {
+      sessionId: SESSION_ID,
+      metadata: {
+        activeTurns: {
+          'turn-token-1': { state: 'delivering', messageId: 'msg_1' },
+        },
+      },
+    };
+    const response = await post({ session_id: SESSION_ID, kind: 'initial_turn_claim' }, sandboxCtx);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      ok: true,
+      initial_turn: {
+        prompt: 'build it',
+        context: '--- session contract ---',
+        turn_token: 'turn-token-1',
+        message_id: 'msg_1',
+      },
       runtime_session_id: null,
       opencode_session_id: null,
     });
@@ -678,6 +818,50 @@ describe('POST /v1/projects/:projectId/turn-stream — end / turn_end settlement
     expect(order).toEqual(['complete', 'mirror', 'notify', 'relayEnd']);
   });
 
+  // KRTX-1742: the person who prompted the ended turn is told, not only the
+  // creator. The turn end names its message; projects/ resolves the prompter
+  // and the origin class, and the event carries them to the notifier.
+  test('a closed turn end hands the notifier its message id, prompter, origin class and error', async () => {
+    sessionRow = { ...session({ source: 'ui' }), origin: 'user' };
+    pushType = 'error';
+    await post(
+      {
+        session_id: SESSION_ID,
+        kind: 'turn_end',
+        status: 'error',
+        turn_message_id: 'msg_turn',
+        error_name: 'APIError',
+        error_message: 'Payment Required: Insufficient credits.',
+      },
+      sandboxCtx,
+    );
+    expect(contextLookups).toEqual([
+      {
+        session: { sessionId: SESSION_ID, projectId: PROJECT_ID, accountId: ACCOUNT_ID, metadata: { source: 'ui' }, origin: 'user' },
+        turnMessageId: 'msg_turn',
+      },
+    ]);
+    expect(notified).toEqual([
+      {
+        type: 'error',
+        sessionId: SESSION_ID,
+        projectId: PROJECT_ID,
+        turnMessageId: 'msg_turn',
+        errorMessage: 'Payment Required: Insufficient credits.',
+        prompterUserId: 'user-prompter',
+        originClass: 'attended',
+        isChild: false,
+      },
+    ]);
+  });
+
+  test('an end that earns no notification resolves no prompter', async () => {
+    pushType = null;
+    await post({ session_id: SESSION_ID, kind: 'end', turn_message_id: 'msg_turn' }, sandboxCtx);
+    expect(contextLookups).toEqual([]);
+    expect(notified).toEqual([]);
+  });
+
   test('the end side effects fire in the pinned order, promotion awaited before the ack', async () => {
     sessionRow = session({ title_source: 'first prompt' });
     promotedId = 'prompt-9';
@@ -795,5 +979,37 @@ describe('POST /v1/projects/:projectId/turn-stream — steering (R10)', () => {
     expect(await response.json()).toMatchObject({ ok: false, turn_completion: { outcome: 'identity_mismatch' } });
     expect(completedMessageIds).toEqual(['msg_other']);
     expect(steerLookups).toEqual(['msg_other']);
+  });
+});
+
+describe('POST /v1/projects/:projectId/turn-stream — the session list at turn end (R7.4)', () => {
+  beforeEach(() => {
+    projectionRefreshes = [];
+    projectionOutcome = { refreshed: false, reason: 'not_modified' };
+    releaseProjection = null;
+  });
+
+  test('the turn end forces a projection refresh as the session creator, and is answered only after it', async () => {
+    let answered = false;
+    releaseProjection = () => {};
+    const pending = Promise.resolve(post({ session_id: SESSION_ID, kind: 'end' })).then((response) => {
+      answered = true;
+      return response;
+    });
+    for (let i = 0; i < 50 && projectionRefreshes.length === 0; i++) await Bun.sleep(2);
+    expect(projectionRefreshes).toEqual([
+      { target: { sessionId: SESSION_ID, projectId: PROJECT_ID, accountId: ACCOUNT_ID, userId: USER_ID }, options: { force: true } },
+    ]);
+    await Bun.sleep(20);
+    // The daemon re-sends an unanswered turn end: no answer while the refresh runs.
+    expect(answered).toBe(false);
+    releaseProjection!();
+    expect((await pending).status).toBe(200);
+  });
+
+  test('a session with no creator to sign the read refreshes nothing, and the turn end is still answered', async () => {
+    sessionRow = session({}, null);
+    expect((await post({ session_id: SESSION_ID, kind: 'end' })).status).toBe(200);
+    expect(projectionRefreshes).toEqual([]);
   });
 });

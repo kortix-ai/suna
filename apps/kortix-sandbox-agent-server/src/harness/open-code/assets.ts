@@ -13,7 +13,7 @@ import type {
 } from '@/services/runtime-assets/port'
 import { requireOpenCodeConfig } from './config'
 import { ensureInjectedManagedSkills } from '@/services/skills/managed-skills'
-import { isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-release/boot-config'
+import { isInReleaseStore, readBootLinkTarget, releaseRootOf } from '@/services/config-provider/boot-config'
 import { managedOverlayRoot } from './project-layout'
 import {
   captureProcessOutput,
@@ -90,7 +90,7 @@ const OPENCODE_PLUGIN_PACKAGE = '@opencode-ai/plugin'
 
 /** The version opencode itself reports. `null` when it cannot be read — which
  *  is NOT the same as "mismatched", and never converges anything. */
-async function readOpencodeVersion(baseUrl: string): Promise<string | null> {
+export async function readOpencodeVersion(baseUrl: string): Promise<string | null> {
   try {
     const res = await fetch(`${baseUrl}/global/health`, {
       signal: AbortSignal.timeout(OPENCODE_HEALTH_TIMEOUT_MS),

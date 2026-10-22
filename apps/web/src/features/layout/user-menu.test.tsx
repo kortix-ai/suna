@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { MonitorIcon, Moon, Sun } from '@phosphor-icons/react';
+import { TERMINAL_THEMES } from '@/lib/interface-themes';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
 
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
-
-import { THEME_OPTIONS } from './user-menu';
+import en from '../../../translations/en.json';
+import { INTERFACE_THEME_OPTIONS } from './interface-theme';
 
 /**
  * What is NOT covered here, and why.
@@ -17,42 +17,64 @@ import { THEME_OPTIONS } from './user-menu';
  * of that is reachable from a unit test. It is verified by driving the real
  * menu in a browser.
  *
- * What IS reachable is the contract the submenu is built from: the three theme
- * values, their labels, their order, and the icons they share with the
- * Appearance tab. That is what this file locks.
+ * What IS reachable is the contract the submenu is built from: the interface
+ * theme rows, their order and their labels, shared with the Appearance tab and
+ * the command palette. That is what this file locks.
  */
-describe('THEME_OPTIONS', () => {
-  test('offers exactly the three values next-themes accepts', () => {
-    expect(THEME_OPTIONS.map((option) => option.value)).toEqual(['light', 'dark', 'system']);
+describe('INTERFACE_THEME_OPTIONS', () => {
+  test('opens with System, then the four Kortix palettes, then one row per terminal theme', () => {
+    expect(INTERFACE_THEME_OPTIONS.slice(0, 5).map((option) => option.value)).toEqual([
+      'system',
+      'light',
+      'pure-light',
+      'dark',
+      'pure-dark',
+    ]);
+    expect(INTERFACE_THEME_OPTIONS.slice(0, 5).every((option) => option.kind === 'labelled')).toBe(
+      true,
+    );
+    // Every terminal theme follows, in the generated file's own order.
+    expect(INTERFACE_THEME_OPTIONS.slice(5).map((option) => option.value)).toEqual(
+      TERMINAL_THEMES.map((theme) => theme.id),
+    );
+  });
+
+  test('is exactly System + the four Kortix palettes + every terminal theme, no more', () => {
+    expect(INTERFACE_THEME_OPTIONS).toHaveLength(1 + 4 + TERMINAL_THEMES.length);
   });
 
   test('keeps System, so the menu can still hand the choice back to the OS', () => {
     // Dropping this row would silently pin every user to a fixed theme with no
     // way back to following the system, which is the default for a new account.
-    expect(THEME_OPTIONS.some((option) => option.value === 'system')).toBe(true);
+    expect(INTERFACE_THEME_OPTIONS.some((option) => option.value === 'system')).toBe(true);
   });
 
-  test('labels each value the way the Appearance tab labels it', () => {
-    expect(THEME_OPTIONS.map((option) => option.label)).toEqual(['Light', 'Dark', 'System']);
+  test('every Kortix row label resolves in the English catalog', () => {
+    const themes = en.settings.appearance.themes as Record<string, string>;
+    const labelled = INTERFACE_THEME_OPTIONS.filter((option) => option.kind === 'labelled');
+    expect(labelled.map((option) => themes[option.labelKey])).toEqual([
+      'System',
+      'Light',
+      'Pure light',
+      'Dark',
+      'Pure dark',
+    ]);
   });
 
-  test('draws each row with the shared icon the Appearance tab uses', () => {
-    // Identity, not resemblance: the submenu and the settings tab must render
-    // the same component, or the two surfaces drift into different glyphs for
-    // the same choice.
-    expect(THEME_OPTIONS.map((option) => option.Icon)).toEqual([Sun, Moon, MonitorIcon]);
-  });
-
-  test('pairs every value with a label and an icon', () => {
-    for (const option of THEME_OPTIONS) {
-      expect(option.label.length).toBeGreaterThan(0);
-      // Renderable, not necessarily a plain function. These moved from local
-      // SVG components to Phosphor, and a `forwardRef` component is an OBJECT
-      // carrying `$$typeof` — `typeof === 'function'` would fail every icon in
-      // the library while the component is perfectly valid.
-      expect(['function', 'object']).toContain(typeof option.Icon);
-      expect(option.Icon).toBeTruthy();
+  test('a terminal theme row shows its own proper noun, verbatim, not a translated label', () => {
+    const named = INTERFACE_THEME_OPTIONS.filter((option) => option.kind === 'named');
+    expect(named).toHaveLength(TERMINAL_THEMES.length);
+    for (const option of named) {
+      const source = TERMINAL_THEMES.find((theme) => theme.id === option.value);
+      expect({ name: option.name, family: option.family, group: option.group }).toEqual({
+        name: source?.name ?? '',
+        family: source?.family ?? '',
+        group: source?.mode ?? 'light',
+      });
     }
+    // Names like "Catppuccin Mocha" and "Rosé Pine Dawn" are not English catalog
+    // keys and must never be looked up as one.
+    expect(named.some((option) => option.name === 'Catppuccin Mocha')).toBe(true);
   });
 });
 
@@ -67,7 +89,7 @@ describe('settings store and theme compatibility contracts', () => {
   });
 
   test('the compatibility entry point shares the live theme options', async () => {
-    const shared = await import('./user-menu-shared');
-    expect(THEME_OPTIONS).toBe(shared.THEME_OPTIONS);
+    const compat = await import('./user-menu');
+    expect(compat.INTERFACE_THEME_OPTIONS).toBe(INTERFACE_THEME_OPTIONS);
   });
 });

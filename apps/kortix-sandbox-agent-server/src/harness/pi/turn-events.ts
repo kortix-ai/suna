@@ -33,7 +33,8 @@ export interface TurnEventsOptions {
   /** The user message this assistant run answers. Read once at message start. */
   parentMessageId: () => string | null
   model: () => { providerID: string; modelID: string }
-  agent: string
+  /** The agent the running turn runs on. Read once per assistant message. */
+  agent: () => string
   workspace: string
   now?: () => number
   /** Out-of-band frame sink for parts reserved outside `translate` (see `toolRef`). */
@@ -160,9 +161,9 @@ export class PiTurnEvents {
     if (!entry && tool && this.currentMessageId) {
       entry = { partId: partId(this.currentMessageId, this.partCount++), name: tool.name, input: tool.args, startedAt: this.now() }
       this.toolIndex.set(toolCallId, entry)
-      this.opts.publish?.(this.toolPart(entry.partId, entry.name, { status: 'running', input: toolInput(entry.input), time: { start: entry.startedAt } }))
+      this.opts.publish?.(this.toolPart(entry.partId, toolCallId, entry.name, { status: 'running', input: toolInput(entry.input), time: { start: entry.startedAt } }))
     }
-    return entry ? { messageID: this.currentMessageId, callID: entry.partId } : undefined
+    return entry ? { messageID: this.currentMessageId, callID: toolCallId } : undefined
   }
 
   get messageId(): string {
@@ -230,7 +231,7 @@ export class PiTurnEvents {
         const id = reserved?.partId ?? partId(this.currentMessageId, this.partCount++)
         const startedAt = reserved?.startedAt ?? this.now()
         this.toolIndex.set(event.toolCallId, { partId: id, name: event.toolName, input: event.args, startedAt })
-        return [this.toolPart(id, event.toolName, { status: 'running', input: toolInput(event.args), time: { start: startedAt } })]
+        return [this.toolPart(id, event.toolCallId, event.toolName, { status: 'running', input: toolInput(event.args), time: { start: startedAt } })]
       }
 
       case 'tool_execution_update': {
@@ -240,7 +241,7 @@ export class PiTurnEvents {
         const details = (event.partialResult as { details?: unknown } | null)?.details
         const partial = details && typeof details === 'object' && !Array.isArray(details) ? (details as Record<string, unknown>) : {}
         return [
-          this.toolPart(t.partId, t.name, {
+          this.toolPart(t.partId, event.toolCallId, t.name, {
             status: 'running',
             input: toolInput(t.input),
             metadata: { ...partial, output: toolOutputText(event.partialResult) },
@@ -260,6 +261,7 @@ export class PiTurnEvents {
         return [
           this.toolPart(
             t.partId,
+            event.toolCallId,
             t.name,
             event.isError
               ? { status: 'error', input: toolInput(t.input), error: output, time: { start: t.startedAt, end: endedAt } }
@@ -333,7 +335,7 @@ export class PiTurnEvents {
       time: { created: this.currentCreatedAt },
       modelID: model.modelID,
       providerID: model.providerID,
-      ...assistantInfoFields(assistant.usage, { agent: this.opts.agent, workspace: this.opts.workspace }),
+      ...assistantInfoFields(assistant.usage, { agent: this.opts.agent(), workspace: this.opts.workspace }),
     }
   }
 
@@ -367,14 +369,15 @@ export class PiTurnEvents {
     ]
   }
 
-  private toolPart(id: string, tool: string, state: KortixToolState): TurnEventEmission {
+  /** `callID` is pi's tool call id, the one the model sent and the session log's `call_id` (as OpenCode's). */
+  private toolPart(id: string, callID: string, tool: string, state: KortixToolState): TurnEventEmission {
     const sessionID = this.opts.sessionID
     return {
       type: 'message.part.updated',
       properties: {
         sessionID,
         time: this.now(),
-        part: { id, messageID: this.currentMessageId, sessionID, type: 'tool', tool, callID: id, state },
+        part: { id, messageID: this.currentMessageId, sessionID, type: 'tool', tool, callID, state },
       },
     }
   }

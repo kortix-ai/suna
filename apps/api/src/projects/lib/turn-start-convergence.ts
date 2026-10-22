@@ -1,65 +1,45 @@
 /**
- * C9 — a prompt on a box that is behind converges FIRST, then runs.
+ * C9 — a box that is behind converges AFTER a turn, never before one.
  *
- * THE CHOKEPOINT. `forwardToSandbox` (`sandbox-proxy/forward/`) is
- * the one funnel every turn passes through: the HTTP proxy calls it, and so
- * does the server-side prompt queue (`session-lifecycle/engine.ts`). The gate
- * is `isTurnStartRequest`, so the OpenCode ports 4096/4097 are covered too —
- * the env-sync gate beside it (`isTurnStartEnvSync`) is now the SAME predicate
- * minus `/summarize`, so the two can no longer disagree about one request. Its
- * predecessor was port-8000-only and left a hole exactly where a verified
- * reload had swapped which half is live.
+ * WHERE IT RUNS. `convergeConfigIfBehind` runs when a turn ends with no queued
+ * prompt promoted (`routes/turn-stream-handlers.ts`, `promoteAfterTurnEnd`).
+ * Nobody waits on it. The NEXT turn runs the converged config. A session that
+ * ends a turn while it is behind runs that one turn on its previous config.
+ *
+ * WHY NOT AT TURN START (2026-10-13). This gate ran awaited before every
+ * prompt. On prod it cost the median prompt 1.46 s (p90 4.3 s, 2026-10-12,
+ * n=1,023): both memos below are per process with a 60 s TTL, so a person who
+ * reads the reply before typing again paid the desired-release resolve and the
+ * health probe on almost every prompt. Of the ~280 convergences a day it ran,
+ * about 7% changed the config; the rest answered `busy` or `current`.
+ *
+ * The other triggers are unchanged: wake and restart (`session-open/`,
+ * `session-lifecycle/actions.ts`) and a base move (`config-convergence-triggers.ts`).
  *
  * WHAT IT COSTS A CURRENT BOX. Nothing, in the common case. Two memos:
  *
  *   1. the desired release per `(project, base ref, session agent, repository
- *      access)`, for `DESIRED_TTL_MS`. Without it every prompt would pay
+ *      access)`, for `DESIRED_TTL_MS`. Without it every call would pay
  *      `resolveDesiredRelease`, which calls `invalidateProjectMirror`
  *      unconditionally and then a `git rev-parse` + a manifest read.
  *   2. the release the API last SAW the box running, learned from the daemon's
  *      own reports through `recordDaemonConfigReport` — the one place the API
  *      is told what a box serves.
  *
- * When those two agree, the turn proceeds with zero network calls.
- *
- * When the API does not KNOW what the box runs — after a restart, or because
- * another API process handled the convergence — one `GET /kortix/health` says
- * so, and only a real difference costs a convergence. That probe is the
- * difference between ~200 ms and a full reload round trip: measured on a real
- * Platinum box on 2026-09-24, a convergence the daemon answered `unchanged`
- * still cost the turn 10 907 ms.
+ * When those two agree, nothing runs. When the API does not KNOW what the box
+ * runs, one `GET /kortix/health` says so, and only a real difference costs a
+ * convergence.
  *
  * WHAT IT NEVER DOES. It never ends a running turn: the convergence runs
  * `reloadSessionConfig` with `force: false` and `onlyIfStale: true`, which
  * refuses on `session is mid-turn` and on `could not confirm the session is
- * idle`. That is the hard invariant of session-config-convergence.ts, and this
- * path does not widen it.
- *
- * WHERE LOST-PROMPT RECOVERY IS WIRED, AND WHY NOT HERE.
- * This gate needs none for ITS OWN request: it runs BEFORE
- * `claimPromptDelivery` and before the first upstream fetch, so at the moment
- * OpenCode is swapped no prompt of this request has been claimed and none has
- * been delivered.
- *
- * That argument covers this request and NOTHING ELSE, and it was once written
- * here as though it covered every convergence. It does not. A convergence
- * started by the base-move trigger (`config-convergence-triggers.ts`) runs
- * while another request's prompt is in flight, and the swap retires the process
- * writing it. DEF-DEV-1: the client got `HTTP 503` and the assistant row stayed
- * `completed = null`. The repair for that lives where the swap is observed —
- * `session-reload.ts`, on the daemon's `reload.orphaned_message_id` — and it
- * reuses `recoverTurnsAfterRuntimeRestart`. Do not re-derive an invariant here
- * from "the gate holds the prompt": the gate holds ITS prompt.
- *
- * ONE ATTEMPT, NOT A LADDER. `schedule: 'turn-start'` takes exactly one
- * attempt and sleeps zero times. A prompt must not sit behind a 60-second
- * retry ladder; a box that could not converge now converges at the next
- * prompt, the next base move, or the next wake.
+ * idle`. A prompt that arrives while the swap runs is the base-move trigger's
+ * case: DEF-DEV-1 is repaired where the swap is observed — `session-reload.ts`,
+ * on the daemon's `reload.orphaned_message_id`.
  */
 
 import { projects, projectSessions } from '@kortix/db';
 import { eq } from 'drizzle-orm';
-import { configReleasesEnabled } from '../../config-releases/enabled';
 import { resolveDesiredRelease } from '../../config-releases/desired';
 import { ownerMayUseAgent } from '../../config-releases/repoint';
 import {
@@ -132,7 +112,6 @@ interface SessionTarget {
   repoUrl: string;
   defaultBranch: string;
   manifestPath: string | null;
-  projectMetadata: unknown;
   baseRef: string;
   agentName: string | null;
   sessionMetadata: unknown;
@@ -150,7 +129,6 @@ const sessionMemo = ttlMemo({
         repoUrl: projects.repoUrl,
         defaultBranch: projects.defaultBranch,
         manifestPath: projects.manifestPath,
-        projectMetadata: projects.metadata,
         baseRef: projectSessions.baseRef,
         agentName: projectSessions.agentName,
         sessionMetadata: projectSessions.metadata,
@@ -185,7 +163,7 @@ async function resolveDesiredReleaseFor(target: SessionTarget, sessionId: string
     baseRef: target.baseRef,
     sessionAgent: target.agentName,
     repositoryAccess: repositoryAccessFromSessionMetadata(target.sessionMetadata),
-    // A turn start is not an assignment. The daemon's own descriptor request
+    // A gate read is not an assignment. The daemon's own descriptor request
     // records it, and only that request persists a re-point.
     ownerMayUseAgent: (agent) => ownerMayUseAgent(subject, agent),
   });
@@ -250,7 +228,7 @@ export interface DesiredInvalidationTransport {
  *
  * Dev runs two API pods. A push arrives at one of them, and only that one used
  * to drop its memo — so the other served a release resolved before the push for
- * up to `DESIRED_TTL_MS`, and the turn-start gate answered `current` on a box
+ * up to `DESIRED_TTL_MS`, and the config gate answered `current` on a box
  * that was behind (DEF-DEV-1, R1). Shortening the TTL narrows that window and
  * never closes it; a broadcast closes it.
  *
@@ -290,24 +268,21 @@ export function useDesiredInvalidationTransport(transport: DesiredInvalidationTr
   invalidateEverywhere = createDesiredReleaseInvalidation(desiredReleases, transport);
 }
 
-export interface TurnStartConvergenceDeps {
+export interface ConfigGateDeps {
   loadTarget: (sessionId: string) => Promise<SessionTarget | null>;
   desiredReleaseId: (target: SessionTarget, sessionId: string) => Promise<string | null>;
   runningReleaseId: (sessionId: string) => string | null | undefined;
   /** One `GET /kortix/health`. Asked only when the API does not know already. */
   probeRunningRelease: (sessionId: string) => Promise<string | null | undefined>;
   converge: (sessionId: string) => Promise<SessionConfigConvergenceOutcome>;
-  releasesEnabled: (metadata: unknown) => boolean;
   now: () => number;
 }
 
 /**
- * R4 (the turn-latency spec (PR #7840) §3) — "a health probe made once by the
- * config gate then again by the catalog gate" is the shape this forbids.
- * `convergeBeforeTurnStart` and `convergeModelCatalogForTurnStart` now run
- * CONCURRENTLY (R2, `forwardToSandbox`), and both call `probeRunningRelease`
- * when their own memo is cold — which, run at the same instant, is exactly
- * the race that would otherwise dial the box twice for one turn.
+ * R4 (the turn-latency spec (PR #7840) §3) — "a health probe made twice for one
+ * turn" is the shape this forbids. The config gate, the catalog gate and the
+ * asset lane all call `probeRunningRelease` when their own memo is cold, and
+ * two of them can run at the same instant for one session.
  *
  * Single-flight per session: a second call for a session already being
  * probed joins the SAME promise instead of starting its own
@@ -403,52 +378,49 @@ async function noteAssetsFromHealth(
   }
 }
 
-const defaultDeps: TurnStartConvergenceDeps = {
+const defaultDeps: ConfigGateDeps = {
   loadTarget: (sessionId) => sessionMemo(sessionId),
   desiredReleaseId: (target, sessionId) => desiredReleases.get(target, sessionId),
   runningReleaseId: lastKnownRunningRelease,
   probeRunningRelease,
-  // DYNAMIC import on purpose. `sandbox-proxy/forward/turn-start.ts` calls this
-  // gate on every turn start, and a static edge would pull the whole reload
-  // graph — `session-reload` and `sandbox-env-sync` among them — into the
-  // proxy's module graph. Five proxy unit tests that partially mock
-  // `sandbox-env-sync` broke on exactly that. Same reasoning as the `./engine`
-  // import in session-lifecycle/runtime-restart-recovery.ts. Nothing needs it
-  // before this call: a box that is already current never reaches it.
+  // DYNAMIC import on purpose: a static edge would pull the whole reload graph
+  // — `session-reload` and `sandbox-env-sync` among them — into the proxy's
+  // module graph through the asset lane below. Five proxy unit tests that
+  // partially mock `sandbox-env-sync` broke on exactly that. A box that is
+  // already current never reaches it.
   converge: async (sessionId) =>
     (await import('./session-config-convergence')).convergeSessionConfig(sessionId, undefined, {
-      schedule: 'turn-start',
+      schedule: 'trigger',
       refreshRepo: false,
     }),
-  releasesEnabled: configReleasesEnabled,
   now: () => Date.now(),
 };
 
-export type TurnStartDecision =
-  /** The flag is off for this project, or the session is gone. Nothing ran. */
+export type ConfigGateDecision =
+  /** The session is gone, or this gate threw. Nothing ran. */
   | 'skipped'
   /** The box already runs the desired release. Nothing ran, no network call. */
   | 'current'
   /** One convergence attempt ran. `outcome` says what it did. */
   | 'converged';
 
-export interface TurnStartConvergenceResult {
-  decision: TurnStartDecision;
+export interface ConfigGateResult {
+  decision: ConfigGateDecision;
   outcome: SessionConfigConvergenceOutcome | null;
   /** Wall-clock cost this gate added to the turn. */
   ms: number;
 }
 
 /**
- * Bring a box onto the project's current config before its turn starts.
- * NEVER throws: a turn is never refused because this could not run.
+ * Bring a box onto the project's current config when it is behind.
+ * NEVER throws.
  */
-export async function convergeBeforeTurnStart(
+export async function convergeConfigIfBehind(
   sessionId: string,
-  deps: TurnStartConvergenceDeps = defaultDeps,
-): Promise<TurnStartConvergenceResult> {
+  deps: ConfigGateDeps = defaultDeps,
+): Promise<ConfigGateResult> {
   const startedAt = deps.now();
-  const done = (decision: TurnStartDecision, outcome: SessionConfigConvergenceOutcome | null) => ({
+  const done = (decision: ConfigGateDecision, outcome: SessionConfigConvergenceOutcome | null) => ({
     decision,
     outcome,
     ms: deps.now() - startedAt,
@@ -456,10 +428,6 @@ export async function convergeBeforeTurnStart(
   try {
     const target = await deps.loadTarget(sessionId);
     if (!target) return done('skipped', null);
-    // CHOKEPOINT — the `config_releases` flag on the turn path. Off ⇒ the box
-    // keeps reading its workspace config dir and no release is ever resolved,
-    // so nothing here may cost the turn a single call.
-    if (!deps.releasesEnabled(target.projectMetadata)) return done('skipped', null);
 
     const desired = await deps.desiredReleaseId(target, sessionId).catch(() => null);
     let running = deps.runningReleaseId(sessionId);
@@ -484,26 +452,19 @@ export async function convergeBeforeTurnStart(
 
 // ── The runtime-asset lane ──────────────────────────────────────────────────
 //
-// THE ONE SENTENCE EVERY LATER REVIEWER NEEDS, and the reason this file has two
-// halves that look alike and behave differently:
-//
-//   CONFIG BLOCKS THE TURN. BINARIES MUST NOT.
-//
-// Config changes what the agent IS, so `convergeBeforeTurnStart` above AWAITS,
-// and a stale box pays a measured 10,287-10,907 ms. The daemon, the CLI, the
-// managed-skill overlay and OpenCode are ~96 MB, ~104 MB, ~373 KB and ~167 MB.
-// A box one turn behind on the CLI is the state that already exists today; a box
-// that makes the user wait for those bytes is a regression. So everything below
-// DETECTS and SCHEDULES. It never applies, and it is never awaited on the send
-// path. Do not "just await it".
+// NEITHER CONFIG NOR BINARIES BLOCK A TURN. Config converges after a turn
+// (`convergeConfigIfBehind` above). The daemon, the CLI, the managed-skill
+// overlay and OpenCode are ~96 MB, ~104 MB, ~373 KB and ~167 MB; a box one turn
+// behind on them is the state that already exists today, and a box that makes
+// the user wait for those bytes is a regression. So everything below DETECTS
+// and SCHEDULES. It never applies, and it is never awaited on the send path.
+// Do not "just await it".
 //
 // WHY IT COSTS A CURRENT BOX NOTHING. Two in-process map reads and no network
-// call at all. The one and only network call in the whole lane is the health GET
-// the config gate above ALREADY makes — `probeRunningRelease` records the asset
-// verdict from the same response. When the config gate takes its memo-hit path
-// and never probes, the asset memo may be cold; a cold memo fires a probe
-// DETACHED and lets the verdict land for the NEXT send, rather than making this
-// one pay ~200 ms for it.
+// call at all. A cold memo fires `probeRunningRelease` DETACHED — the same
+// health read records the release, the asset verdict and the catalog — and
+// lets the verdict land for the NEXT send, rather than making this one pay
+// ~200 ms for it.
 
 export type AssetConvergenceDecision =
   /** The API last saw this box current for THIS manifest. Nothing ran. */
@@ -632,13 +593,11 @@ export async function convergeModelCatalogForTurnStart(
         import('../../llm-gateway/models/managed-models'),
       ]);
     return await convergeModelCatalogBeforeTurnStart(sessionId, requestedManagedModelId, {
-      isManagedModelId: isRuntimeManagedModelId,
+      isLineupModelId: isRuntimeManagedModelId,
       lastKnown: lastKnownManagedCatalog,
-      // The SAME health GET the config gate already makes when its own memo
-      // is cold — `probeRunningRelease` records the catalog too (see
-      // `noteAssetsFromHealth`). Calling it again here is a genuine second
-      // network call ONLY when the two memos' TTLs have drifted apart; the
-      // common case reads the memo `probeRunningRelease` already just wrote.
+      // The one health GET every lane shares — `probeRunningRelease` records
+      // the catalog too (see `noteAssetsFromHealth`), single-flight per
+      // session. A box the API saw inside `RUNNING_CATALOG_TTL_MS` costs none.
       probe: async (sid) => {
         await probeRunningRelease(sid);
         return lastKnownManagedCatalog(sid);

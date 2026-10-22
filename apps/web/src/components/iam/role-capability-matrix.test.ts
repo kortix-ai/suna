@@ -31,13 +31,18 @@ import {
 const MIGRATIONS_DIR = join(import.meta.dir, '../../../../../packages/db/migrations');
 
 /** Every `INSERT INTO kortix.permissions (...) VALUES ...` row in the migration
- *  tree, in file order. Handles both column orders in use. */
+ *  tree, in file order, minus the leaves a later
+ *  `DELETE FROM kortix.permissions WHERE action IN (...)` retires. Handles both
+ *  column orders in use. */
 function seededCatalog(): Permission[] {
   const out = new Map<string, Permission>();
   for (const file of readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort()) {
     const sql = readFileSync(join(MIGRATIONS_DIR, file), 'utf8');
+    for (const retired of sql.matchAll(/DELETE FROM kortix\.permissions WHERE action IN \(([^)]*)\)/gi)) {
+      for (const action of splitValues(retired[1])) out.delete(unquote(action));
+    }
     const inserts = sql.matchAll(
       /INSERT INTO kortix\.permissions\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
     );
@@ -169,12 +174,38 @@ function seededRolePermissions(): Map<string, string[]> {
       const key = `${one[2]}:${one[3]}`;
       out.set(key, [...(out.get(key) ?? []), one[1]]);
     }
+    // The removal shape (20261013172952181: the member role loses
+    // `member.read` and `group.read`).
+    for (const gone of sql.matchAll(
+      /DELETE FROM kortix\.role_permissions rp[\s\S]*?r\.key = '([^']+)'[\s\S]*?r\.scope_type = '([^']+)'[\s\S]*?rp\.action IN \(([^)]*)\)/gi,
+    )) {
+      const key = `${gone[1]}:${gone[2]}`;
+      const removed = [...gone[3].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+      out.set(key, (out.get(key) ?? []).filter((action) => !removed.includes(action)));
+    }
   }
   return out;
 }
 
+/**
+ * Grants a later migration copies from an Apps leaf with INSERT ... SELECT
+ * (20261009115640000: every role holding project.app.write also gets
+ * project.app.admin). The parser above reads only literal rows, so the
+ * fixture applies the same copy rule.
+ */
+const MIRRORED: Record<string, string> = {
+  'project.app.write': 'project.app.admin',
+};
+const withMirrored = (actions: readonly string[]): string[] => [
+  ...actions,
+  ...actions.flatMap((a) => (MIRRORED[a] ? [MIRRORED[a]] : [])),
+];
+
 const SEEDED_ROLES = new Map(
-  [...seededRolePermissions()].map(([key, actions]) => [key, expandRetired(actions)]),
+  [...seededRolePermissions()].map(([key, actions]) => [
+    key,
+    [...new Set(withMirrored(expandRetired(actions)))],
+  ]),
 );
 const roleActions = (key: string, scope: CapabilityScope) => {
   const actions = SEEDED_ROLES.get(`${key}:${scope}`);
@@ -199,10 +230,20 @@ function sorted(set: Iterable<string>): string[] {
 
 // ─── The mapping itself ─────────────────────────────────────────────────────
 
+describe('the built-in member role reads no directory', () => {
+  test('the fixture applies the removal migration', () => {
+    expect(roleActions('member', 'account')).not.toContain('member.read');
+    expect(roleActions('member', 'account')).not.toContain('group.read');
+    expect(roleActions('admin', 'account')).toContain('member.read');
+  });
+});
+
 describe('the area table covers the catalog', () => {
   test('the seeded catalog is the shape the matrix expects (drift alarm)', () => {
-    expect(PROJECT_LEAVES.length).toBe(48);
-    expect(ACCOUNT_LEAVES.length).toBe(29);
+    // 51 since rooms' `project.room.read` and `project.room.write` (20261020130102200).
+    expect(PROJECT_LEAVES.length).toBe(51);
+    // 31 since Kortix Capture's `capture.read_all` and `capture.manage` (20261015003000001).
+    expect(ACCOUNT_LEAVES.length).toBe(31);
     // The retired spellings must not come back: `project.cr.*` collapsed into
     // `project.gitops.*` (the same capability named twice), and `trigger.*` was
     // cataloged, validated, in no role and asserted by no route.
@@ -268,14 +309,14 @@ describe('foldSelection → expandFold is lossless', () => {
     const fold = foldSelection('project', CATALOG, new Set());
     expect([...expandFold(fold)]).toEqual([]);
     expect(fold.selectedCount).toBe(0);
-    expect(fold.totalCount).toBe(48);
+    expect(fold.totalCount).toBe(51);
   });
 
   test('a full project role round-trips', () => {
     const selected = new Set(PROJECT_LEAVES);
     const fold = foldSelection('project', CATALOG, selected);
     expect(sorted(expandFold(fold))).toEqual(sorted(selected));
-    expect(fold.selectedCount).toBe(48);
+    expect(fold.selectedCount).toBe(51);
     expect(fold.areas.every((a) => a.view.state !== 'partial' && a.edit.state !== 'partial')).toBe(
       true,
     );

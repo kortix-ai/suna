@@ -52,12 +52,14 @@ async function request(input: {
   ok?: boolean;
   projectId?: string;
   metadata?: Record<string, unknown>;
+  errorCode?: string | null;
 }) {
   const billed = input.cost ?? 0;
   await db.insert(gatewayRequestLogs).values({
     requestId: `req-${crypto.randomUUID()}`, accountId: ACCOUNT, projectId: input.projectId ?? PROJECT,
     sessionId: sid(input.session), requestedModel: input.requested, resolvedModel: input.resolved,
-    provider: input.provider, status: input.ok === false ? 429 : 200, ok: input.ok !== false,
+    provider: input.provider, status: input.ok === false ? (input.errorCode === 'client_aborted' ? 499 : 429) : 200, ok: input.ok !== false,
+    errorCode: input.errorCode ?? null,
     finalCost: String(billed), billingMode: billed > 0 ? 'credits' : 'none',
     metadata: input.metadata ?? {}, createdAt: at(input.at),
   });
@@ -99,7 +101,7 @@ describe('sessionModelUsage', () => {
     });
 
     expect(await usageOf('direct')).toEqual({
-      latest: { served_model: 'codex/gpt-6.1-sol', fallback_from: null, at: at(10).toISOString() },
+      latest: { served_model: 'codex/gpt-6.1-sol', fallback_from: null, at: at(10).toISOString(), outcome: 'answered' },
       billed_cost: 0,
       turns: { msg_direct_1: { served_models: ['codex/gpt-6.1-sol'], fallback_from: null, billed_cost: 0 } },
     });
@@ -124,14 +126,59 @@ describe('sessionModelUsage', () => {
     await request({ session: 'chain', at: 140, requested: 'kimi-k3', resolved: 'kimi-k3', provider: 'kortix', cost: 7, projectId: OTHER_PROJECT, metadata: { servedModel: 'kimi-k3' } });
 
     expect(await usageOf('chain')).toEqual({
-      latest: { served_model: 'deepseek-v4.1-flash', fallback_from: 'codex/gpt-6.1-sol', at: at(120).toISOString() },
+      latest: { served_model: 'deepseek-v4.1-flash', fallback_from: 'codex/gpt-6.1-sol', at: at(120).toISOString(), outcome: 'answered' },
       billed_cost: 0.875,
       turns: {
         // Most requests first.
-        msg_chain_1: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75 },
-        msg_chain_2: { served_models: ['deepseek-v4.1-flash'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.125 },
+        msg_chain_1: { served_models: ['glm-5.3-flash', 'codex/gpt-6.1-sol'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.75, fallbacks: [
+          { requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'upstream_error' },
+          { requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'upstream_error' },
+        ] },
+        msg_chain_2: { served_models: ['deepseek-v4.1-flash'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.125, fallbacks: [{ requested_model: 'codex/gpt-6.1-sol', served_model: 'deepseek-v4.1-flash', error_code: 'upstream_error' }] },
       },
     });
+  });
+
+  test('the newest request ended in a client abort: latest names it so the UI can tell a cancel from a failure', async () => {
+    // KRTX-2572: a fallback turn answered, then the user canceled the next
+    // turn. The ledger's newest row is the aborted request (ok=false,
+    // client_aborted); `latest` must surface it with its outcome instead of
+    // staying pinned to the older answered row.
+    await session('canceled');
+    await turn('canceled', 'msg_c1', 0, 30);
+    await turn('canceled', 'msg_c2', 100, 130);
+    const fallback = { servedModel: 'glm-5.3-flash', fallbackFrom: 'codex/gpt-6.1-sol' };
+    await request({ session: 'canceled', at: 20, requested: 'codex/gpt-6.1-sol', resolved: 'glm-5.3-flash', provider: 'kortix', cost: 0.25, metadata: fallback });
+    await request({ session: 'canceled', at: 120, requested: 'codex/gpt-6.1-sol', resolved: 'glm-5.3-flash', provider: 'kortix', ok: false, errorCode: 'client_aborted', metadata: { attemptFailures: [{ attempt: 1, provider: 'kortix', routeModel: 'codex/gpt-6.1-sol', resolvedModel: 'codex/gpt-6.1-sol', stage: 'dispatch', status: 429, code: 'model_busy', message: 'deepseek-v4.1-flash is at capacity right now.' }] } });
+
+    expect(await usageOf('canceled')).toEqual({
+      latest: { served_model: 'glm-5.3-flash', fallback_from: 'codex/gpt-6.1-sol', at: at(120).toISOString(), outcome: 'client_aborted' },
+      billed_cost: 0.25,
+      turns: {
+        msg_c1: { served_models: ['glm-5.3-flash'], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0.25, fallbacks: [{ requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'upstream_error' }] },
+        // The aborted request answered nothing: not a served model of its turn.
+        msg_c2: { served_models: [], fallback_from: 'codex/gpt-6.1-sol', billed_cost: 0 },
+      },
+    });
+  });
+
+  test('fallback events preserve request pairing, time order and safe reasons without leaking failures', async () => {
+    await session('evidence');
+    await turn('evidence', 'msg_evidence', 0, 30);
+    const failure = (routeModel: string, code: string | number) => ({ routeModel, code, message: 'SECRET provider credentials', stage: 'dispatch' });
+    // Insert out of time order; the popular served model is not the first fallback.
+    await request({ session: 'evidence', at: 25, requested: 'route-b', resolved: 'served-b', provider: 'kortix', metadata: { servedModel: 'served-b', fallbackFrom: 'route-b', attemptFailures: [failure('route-b', 'SECRET-token')] } });
+    await request({ session: 'evidence', at: 10, requested: 'route-a', resolved: 'served-a', provider: 'kortix', metadata: { servedModel: 'served-a', fallbackFrom: 'route-a', attemptFailures: [failure('route-a', 'provider_pool_rate_limited'), failure('intermediate', 'upstream_timeout')] } });
+    await request({ session: 'evidence', at: 20, requested: 'route-c', resolved: 'served-b', provider: 'kortix', metadata: { servedModel: 'served-b', fallbackFrom: 'route-c', attemptFailures: [failure('unrelated', 'upstream_timeout'), failure('route-c', 429)] } });
+    await request({ session: 'evidence', at: 26, requested: 'failed', resolved: 'served-b', provider: 'kortix', ok: false, metadata: { servedModel: 'served-b', fallbackFrom: 'failed', attemptFailures: [failure('failed', 401)] } });
+    await request({ session: 'evidence', at: -1, requested: 'unbound', resolved: 'served-b', provider: 'kortix', metadata: { servedModel: 'served-b', fallbackFrom: 'unbound' } });
+    const usage = await usageOf('evidence');
+    expect(usage.turns.msg_evidence?.fallbacks).toEqual([
+      { requested_model: 'route-a', served_model: 'served-a', error_code: 'provider_pool_rate_limited' },
+      { requested_model: 'route-c', served_model: 'served-b', error_code: 'rate_limit_exceeded' },
+      { requested_model: 'route-b', served_model: 'served-b', error_code: 'upstream_error' },
+    ]);
+    expect(JSON.stringify(usage)).not.toContain('SECRET');
   });
 
   test('a request logged before the serving model was recorded is read from its own columns', async () => {
@@ -148,12 +195,13 @@ describe('sessionModelUsage', () => {
     await request({ session: 'legacy', at: 14, requested: 'auto', resolved: 'deepseek-v4.1-flash', provider: 'kortix', cost: 0.25 });
 
     const usage = await usageOf('legacy');
-    expect(usage.latest).toEqual({ served_model: 'deepseek-v4.1-flash', fallback_from: null, at: at(14).toISOString() });
+    expect(usage.latest).toEqual({ served_model: 'deepseek-v4.1-flash', fallback_from: null, at: at(14).toISOString(), outcome: 'answered' });
     expect(usage.billed_cost).toBe(0.75);
     expect(usage.turns.msg_legacy_1).toEqual({
       served_models: expect.arrayContaining(['glm-5.3-flash', 'openai/gpt-5.4', 'deepseek-v4.1-flash']),
       fallback_from: 'codex/gpt-6.1-sol',
       billed_cost: 0.75,
+      fallbacks: [{ requested_model: 'codex/gpt-6.1-sol', served_model: 'glm-5.3-flash', error_code: 'upstream_error' }],
     });
     expect(usage.turns.msg_legacy_1?.served_models).toHaveLength(3);
   });

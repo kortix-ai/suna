@@ -2,7 +2,7 @@
  * SQL-side ATOMIC merge helpers for `projects.metadata` (FIX-J).
  *
  * The provider-routing pin lives in `projects.metadata` (`default_sandbox_provider`
- * + `active_sandbox_external_template_id`, see provider-transition-store.ts). The
+ * + `active_sandbox_external_template_id`, see provider-transition-routing.ts). The
  * pin's OWN writers are fenced (FOR UPDATE + generation/lease-epoch CAS), but
  * EVERY other `projects.metadata` writer used to read the whole jsonb object into
  * JS, mutate it, and `UPDATE ... SET metadata = <whole object>`. With no lock a

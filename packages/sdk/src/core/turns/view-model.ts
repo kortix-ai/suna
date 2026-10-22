@@ -41,6 +41,8 @@
  * tool call itself — there's no tool named `permission` on the wire.
  */
 
+import { stripAnsi } from './parts';
+import { editBlocks } from './edit-blocks';
 import { toolKind } from './tool-kind';
 import type { ToolView } from './classify';
 
@@ -239,22 +241,11 @@ function stripInternalTagTail(s: string): string {
   return cut === -1 ? s : s.slice(0, cut);
 }
 
-// Minimal local ANSI stripper mirroring `stripAnsi` in turns/index.ts —
-// duplicated (rather than imported) to avoid a circular import between this
-// module and the barrel file that re-exports it.
-const ANSI_RE =
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching terminal escape sequences requires literal ESC/BEL control characters
-  /\x1B\[[\d;]*[A-Za-z]|\x1B\][^\x07]{0,512}\x07|\x1B[()#][A-Z0-9]|\x1B\[?[\d;]*[hl]|\x1B[>=<]|\x1B\[[?]?\d*[A-Z]|\x1B\[\d*[JKHG]|\x1B\[\d*;\d*[Hf]|\x1b\[[0-9;]*m/g;
-
-function stripAnsiLocal(str: string): string {
-  return str.replace(ANSI_RE, '');
-}
-
 function shellViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'shell' }> {
   const command = firstString(tool.input?.command) ?? '';
   const raw = tool.output ?? '';
   const exitCode = shellExitCode(raw);
-  const cleaned = stripAnsiLocal(
+  const cleaned = stripAnsi(
     stripInternalTagTail(stripTagBlocks(raw, '<bash_metadata>', '</bash_metadata>')),
   ).trim();
   const stdout = cleaned || (tool.status === 'error' ? tool.error : undefined);
@@ -322,20 +313,6 @@ function computeLineDiff(oldStr: string, newStr: string): DiffLine[] | undefined
   for (let i = start; i < newEnd; i++) lines.push({ type: 'added', text: newLines[i] });
   for (let i = oldEnd; i < oldLines.length; i++) lines.push({ type: 'unchanged', text: oldLines[i] });
   return lines;
-}
-
-/** The replaced blocks of an edit: OpenCode's one `oldString`/`newString`, or pi's `edits[]`. */
-function editBlocks(input: Record<string, unknown> | undefined): Array<[string, string]> {
-  const oldString = firstString(input?.oldString);
-  const newString = firstString(input?.newString);
-  if (oldString !== undefined && newString !== undefined) return [[oldString, newString]];
-  const edits = Array.isArray(input?.edits) ? input.edits : [];
-  return edits.flatMap((edit) => {
-    const e = asRecord(edit);
-    const before = e && firstString(e.oldText);
-    const after = e && firstString(e.newText);
-    return before !== undefined && after !== undefined ? [[before, after] as [string, string]] : [];
-  });
 }
 
 function fileEditViewModel(tool: ToolView): Extract<ToolViewModel, { kind: 'file-edit' }> {

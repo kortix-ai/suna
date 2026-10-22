@@ -48,13 +48,13 @@ mock.module('../shared/db', () => ({
 const {
   NON_TURN_DEADLINE_CAP_MS,
   extendSandboxDeadline,
+  extendSandboxDeadlineForPresence,
   extendUnconfirmedTurnDeadline,
   grantWarmPoolLifetime,
   idleGraceMs,
   isSandboxAuthored,
   isTurnStartRequest,
   shortenSandboxDeadline,
-  shortenSandboxDeadlineOnTurnEnd,
   turnGrantMs,
   turnUnconfirmedDripMs,
 } = await import('./sandbox-deadline');
@@ -154,6 +154,54 @@ describe('extendSandboxDeadline — control-plane-observed, monotone, capped', (
     expect(executed[0]).toContain('sandbox_id');
     expect(executed[1]).toContain('session_id');
     expect(executed[2]).toContain('external_id');
+  });
+});
+
+// KRTX-1729: the composer shows how long presence keeps the computer on. The
+// renewal returns the deadline it wrote and the cap it used, from the same
+// statement, so the two values cannot disagree with the write. KRTX-2451: the
+// cap is the idle grace past the latest turn, not a separate 2 h budget.
+describe('extendSandboxDeadlineForPresence — the idle grace, capped at the idle window past the latest turn', () => {
+  test('is monotone and capped, and returns the deadline and the cap from one statement', async () => {
+    await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' });
+
+    expect(executed).toHaveLength(1);
+    // RETURNING repeats the cap: each half is asserted on its own, or a SET
+    // that lost the cap still matched 7200 and 86400 from RETURNING.
+    const parts = squish(executed[0]).split(' RETURNING ');
+    expect(parts).toHaveLength(2);
+    const [write, readBack] = parts as [string, string];
+    expect(write).toMatch(/deadline_at = GREATEST\( ?s\.deadline_at, LEAST\(/);
+    expect(write).toContain('86400'); // NON_TURN_DEADLINE_CAP_MS in seconds
+    // The cap is the idle grace (KRTX-2451): the grace seconds appear for the
+    // grant in the SET and again inside the cap the RETURNING repeats.
+    expect(write.match(new RegExp(`${idleGraceMs() / 1000}`, 'g'))).toHaveLength(2);
+    expect(write).toContain("status IN ('active', 'provisioning')");
+    expect(write).not.toMatch(/active_since\s*=/);
+    // The deadline the SET wrote, and the cap it applied.
+    expect(readBack).toMatch(/s\.deadline_at.*AS deadline_ms/);
+    expect(readBack).toMatch(new RegExp(`86400.*${idleGraceMs() / 1000}.*AS cap_ms`));
+  });
+
+  test('returns the written deadline and the cap as Dates', async () => {
+    const deadline = Date.UTC(2026, 9, 12, 10, 15);
+    const cap = Date.UTC(2026, 9, 12, 11, 40);
+    // postgres.js may return a float8 as a number or as a string.
+    executeResult = [{ deadline_ms: deadline, cap_ms: String(cap) }];
+
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toEqual({
+      deadlineAt: new Date(deadline),
+      capAt: new Date(cap),
+    });
+  });
+
+  test('returns null when no live box matched', async () => {
+    executeResult = [];
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
+    executeResult = { rows: [] };
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
+    executeResult = undefined;
+    expect(await extendSandboxDeadlineForPresence({ sessionId: 'sess-1' })).toBeNull();
   });
 });
 
@@ -330,45 +378,6 @@ describe('shortenSandboxDeadline — sandbox-reported, structurally unable to ex
     await shortenSandboxDeadline('sess-1');
 
     expect(executed[0]).toContain('900'); // 15 min in seconds
-  });
-});
-
-// ═══ THE MID-TURN KILL THIS CLOSES ═══
-// `session.error` fires while opencode is RETRYING too. Shortening the box there
-// cut it to the 15-minute idle tail WHILE THE TURN WAS STILL RUNNING, so any
-// rate-limit backoff longer than 15 minutes killed live work. The classifier
-// ships bound to the write so a future caller cannot re-wire one without the
-// other.
-describe('shortenSandboxDeadlineOnTurnEnd — a retry is not a turn end', () => {
-  test('an idle turn end shortens the box to the idle tail', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'idle');
-
-    expect(executed).toHaveLength(1);
-    expect(executed[0]).toContain('900'); // 15 min in seconds
-    expect(executed[0]).not.toContain('GREATEST'); // still LEAST-only
-  });
-
-  test('REGRESSION: a RETRYABLE error writes NOTHING — the turn is still running', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
-      isRetryable: true,
-    });
-
-    expect(executed).toEqual([]);
-  });
-
-  test('a permanent error shortens the box', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', {
-      isRetryable: false,
-    });
-
-    expect(executed).toHaveLength(1);
-  });
-
-  test('an error with no retry flag shortens — unknown is never assumed alive', async () => {
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error');
-    await shortenSandboxDeadlineOnTurnEnd('sess-1', 'error', undefined);
-
-    expect(executed).toHaveLength(2);
   });
 });
 

@@ -19,7 +19,7 @@ const BoolFlag = z.preprocess((v) => {
 }, z.boolean())
 
 /**
- * S3 config provider rollout mode (src/services/config-provider). `git` never attempts
+ * S3 workspace acquisition mode (src/services/workspace-provider). `git` never attempts
  * S3 and is the rollback mode; `prefer-s3` tries a prepared archive and falls
  * back to the Git path on acquisition failure; `require-s3` fails closed.
  */
@@ -61,6 +61,10 @@ const Schema = z.object({
   // the API at session create. Optional: absent or expired → the daemon
   // fetches one from the Git proxy with KORTIX_TOKEN.
   KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: z.string().optional(),
+  // The published config release (base64 JSON: release ID and signed store
+  // URLs), signed by the API at session create. Absent or expired → the
+  // daemon asks the config-release route.
+  KORTIX_CONFIG_RELEASE: z.string().optional(),
   KORTIX_TOKEN: z.string().optional(),
   KORTIX_GIT_USER_NAME: z.string().default('Kortix Agent'),
   KORTIX_GIT_USER_EMAIL: z.string().default('agent@kortix.ai'),
@@ -136,12 +140,14 @@ export type Config = {
   gitDeltaParentCommitBase64?: string
   /** Delta exceeds the env cap: fetch it with one GET from the API (KORTIX_GIT_DELTA_BUNDLE_REMOTE=1). */
   gitDeltaBundleRemote?: boolean
-  /** S3 config provider mode; absent/`git` = never attempt S3. Optional so hand-built test configs stay valid. */
+  /** S3 workspace acquisition mode; absent/`git` = never attempt S3. Optional so hand-built test configs stay valid. */
   projectSnapshotMode?: ProjectSnapshotMode
   /** Prepared-archive identity `<sha>:<sha256>:<bytes>`, when the API pinned one. */
   projectSnapshotPin?: string
   /** Presigned download descriptor for that pin (base64 JSON), when the API signed one at create. */
   projectSnapshotDescriptor?: string
+  /** The published config release (base64 JSON), when the API signed one at create. */
+  configRelease?: string
   /** The sandbox credential (HMAC key + sandbox-identity route bearer). NOT the
    *  session/user token — see the module doc. */
   sandboxToken: string | undefined
@@ -185,6 +191,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     KORTIX_PROJECT_SNAPSHOT_MODE: env.KORTIX_PROJECT_SNAPSHOT_MODE,
     KORTIX_PROJECT_SNAPSHOT_PIN: env.KORTIX_PROJECT_SNAPSHOT_PIN,
     KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR: env.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR,
+    KORTIX_CONFIG_RELEASE: env.KORTIX_CONFIG_RELEASE,
     KORTIX_TOKEN: env.KORTIX_TOKEN,
     KORTIX_GIT_USER_NAME: env.KORTIX_GIT_USER_NAME,
     KORTIX_GIT_USER_EMAIL: env.KORTIX_GIT_USER_EMAIL,
@@ -221,6 +228,7 @@ export function loadHostConfig(env: NodeJS.ProcessEnv = process.env): Config {
     projectSnapshotMode: parsed.KORTIX_PROJECT_SNAPSHOT_MODE,
     projectSnapshotPin: parsed.KORTIX_PROJECT_SNAPSHOT_PIN?.trim() || undefined,
     projectSnapshotDescriptor: parsed.KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR?.trim() || undefined,
+    configRelease: parsed.KORTIX_CONFIG_RELEASE?.trim() || undefined,
     sandboxToken: parsed.KORTIX_TOKEN,
     gitUserName: parsed.KORTIX_GIT_USER_NAME,
     gitUserEmail: parsed.KORTIX_GIT_USER_EMAIL,
@@ -237,8 +245,7 @@ type ManifestFormat = 'yaml' | 'toml'
 /**
  * Read the project manifest, preferring the canonical `kortix.yaml` (schema v2)
  * and falling back to the legacy `kortix.toml` (v1) — the same resolution order
- * the API and CLI use. Returns null when neither file exists. The daemon has no
- * TOML/YAML parser dependency, so callers regex the returned body per `format`.
+ * the API and CLI use. Returns null when neither file exists.
  */
 export async function readProjectManifest(
   fs: typeof import('node:fs/promises'),
@@ -282,18 +289,16 @@ export function extractNestedString(
     const value = keyMatch?.[1]?.trim()
     return value && value.length > 0 ? value : null
   }
-  // YAML: a top-level `section:` mapping whose block is the indented lines that
-  // follow, up to the next non-indented (non-blank) line or EOF.
-  const sectionMatch = body.match(
-    new RegExp(`^${section}:\\s*$([\\s\\S]*?)(?=^\\S|(?![\\s\\S]))`, 'm'),
-  )
-  const sectionBody = sectionMatch?.[1]
-  if (!sectionBody) return null
-  const keyMatch = sectionBody.match(
-    new RegExp(`^\\s+${key}\\s*:\\s*(?:['"]([^'"]+)['"]|([^\\s#][^#\\n]*?))\\s*(?:#.*)?$`, 'm'),
-  )
-  const value = (keyMatch?.[1] ?? keyMatch?.[2])?.trim()
-  return value && value.length > 0 ? value : null
+  let parsed: unknown
+  try {
+    parsed = Bun.YAML.parse(body)
+  } catch {
+    return null
+  }
+  const value = (parsed as Record<string, Record<string, unknown>> | null)?.[section]?.[key]
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
 }
 
 /**

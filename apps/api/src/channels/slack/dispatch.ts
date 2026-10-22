@@ -405,7 +405,6 @@ export async function classifyEvent(
   teamId: string,
   event: SlackEvent,
   botUserId: string | null,
-  projectId?: string,
 ): Promise<EventClass> {
   // AN app_mention MUST ACTUALLY MENTION THIS PROJECT'S BOT.
   //
@@ -480,21 +479,10 @@ export async function classifyEvent(
   // double-answers.
   if (botUserId && mentionsUser(event.text ?? '', botUserId)) return 'mention';
   if (event.channel_type === 'im') return 'dm';
-  if (event.thread_ts && (await threadIsOwned(teamId, event.thread_ts, projectId))) return 'follow_up';
+  // In a channel thread only a mention runs the agent. An untagged reply is
+  // people talking to each other, owned thread or not. The agent reads those
+  // replies on its next mention, with `slack thread`.
   return 'ignore';
-}
-
-// A thread is owned only by the project recorded on its `chat_threads` row.
-//
-// PROD 2026-09-22. `chat_threads` is keyed workspace-wide, and every Kortix app
-// in a workspace receives every `message.channels` event. Unscoped, this made a
-// plain reply in a `Kortix Company` thread a follow-up for
-// `kortix-incident-reporter` too. Incident reporter won the exactly-once claim,
-// posted an "Open session" card linking its own project to Kortix Company's
-// session, and Kortix Company's own delivery lost the claim and went silent.
-// Same two-app workspace as the 2026-08-20 and 2026-08-28 incidents above.
-async function threadIsOwned(teamId: string, threadTs: string, projectId?: string): Promise<boolean> {
-  return !!(await findChatThread({ platform: 'slack', workspaceId: teamId, threadId: threadTs }, projectId));
 }
 
 const CHANNEL_INTRO_FALLBACK = "Kortix is now connected to this channel. Mention @Kortix with a task to get started.";
@@ -520,7 +508,7 @@ async function postChannelIntro(projectId: string, channelId: string): Promise<v
       text: {
         type: 'mrkdwn',
         text: [
-          '`@`-mention Kortix with a task and an agent gets on it — working across your connected tools and replying right here in the thread. Follow-ups stay in the same conversation, with full context.',
+          '`@`-mention Kortix with a task and an agent gets on it — working across your connected tools and replying right here in the thread. Tag Kortix again in the thread to follow up — it reads the thread first.',
           projectLine,
           'Agent, model, and session policy settings are shared by this Slack channel.',
           '',
@@ -587,10 +575,11 @@ export function isOwnBotEvent(event: SlackEvent, botUserId: string | null): bool
 }
 
 // `ownThreadsOnly`: set by the per-project (BYO) webhook. Every BYO app in a
-// workspace receives every channel message, so a plain thread reply must count
-// as a follow-up only for the project whose session owns the thread. The shared
-// OAuth app leaves it off: it is one app, and a channel re-bound with
-// `/kortix use` keeps routing its older threads to their original session.
+// workspace receives every channel message, so a mention inside a thread that
+// another project's session owns is refused, not joined (`followUpRoute`,
+// `routeSlackThread`). The shared OAuth app leaves it off: it is one app, and a
+// channel re-bound with `/kortix use` keeps routing its older threads to their
+// original session.
 export async function dispatchSlackEvent(
   projectId: string,
   envelope: SlackEnvelope,
@@ -617,12 +606,7 @@ export async function dispatchSlackEvent(
 
   if (isOwnBotEvent(event, botUserId)) return;
 
-  const eventClass = await classifyEvent(
-    teamId,
-    event,
-    botUserId,
-    opts.ownThreadsOnly ? projectId : undefined,
-  );
+  const eventClass = await classifyEvent(teamId, event, botUserId);
   if (eventClass === 'ignore') return;
 
   // Exactly-once gate. ONE user message can arrive as several events (Slack

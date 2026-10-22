@@ -3,7 +3,11 @@
 # Shared Dockerfile for the Bun API
 # Build from repo root: docker build --build-arg SERVICE=apps/api -f apps/api/Dockerfile .
 
-ARG BUN_VERSION=1.2
+# The API runs on the same Bun as every test lane (`bun-version` in
+# .github/workflows/tests.yml). tests/unit/image-bun.test.ts fails when the
+# two differ: a Web API the image's Bun lacks passes every test and answers 500
+# on dev (CompressionStream on Bun 1.2, 2026-08-26 and 2026-10-13).
+ARG BUN_VERSION=1.4.3
 # Bun 1.2 silently accepts `Bun.spawn({ terminal: ... })` but closes the child
 # shell's stdin immediately in the compiled sandbox agent. The REST create then
 # returns a pid while the shell exits 0 before its WebSocket can attach, surfacing
@@ -63,6 +67,7 @@ RUN BUN_COMPILE_TARGET=${KORTIX_AGENT_BUN_TARGET} bash scripts/build.sh
 # and the runner copies it to the path the snapshot builder reads
 # (apps/cli/dist/kortix → KORTIX_SNAPSHOT_CLI_BIN_PATH).
 FROM --platform=$BUILDPLATFORM oven/bun:${BUN_VERSION}-slim AS sandbox-cli
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 WORKDIR /cli
 
@@ -148,10 +153,16 @@ RUN corepack enable pnpm && \
 # Go CVEs into every scan of the runtime image (Trivy, 2026-09-16:
 # CVE-2026-56862/56860/56859/56858/56853/46600/39821/33818/56865/56864/17106/
 # 33748/33747/71556) for code this image never executes. Drop it.
+# The tsgo typechecker (@typescript/native-preview, a root devDependency) is the
+# same case: a vendored Go binary that only `pnpm typecheck` runs, never this
+# image. It carried 15 high Go CVEs (Trivy, 2026-10-22: golang.org/x/text and
+# Go stdlib, e.g. CVE-2026-56851/111943) and has no newer build.
 RUN rm -rf node_modules/supabase \
            node_modules/@supabase/cli-* \
            node_modules/.pnpm/supabase@* \
-           node_modules/.pnpm/@supabase+cli-*
+           node_modules/.pnpm/@supabase+cli-* \
+           node_modules/@typescript/native-preview* \
+           node_modules/.pnpm/@typescript+native-preview*
 
 # Sources, after the install layer. `.dockerignore` excludes `**/node_modules`,
 # so these COPYs merge over the installed tree without clobbering what pnpm
@@ -249,6 +260,8 @@ COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
 COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
 COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
 COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+# Its node_modules holds the @kortix/shared link (the release config validator).
+COPY --from=deps /app/packages/manifest-schema/node_modules ./packages/manifest-schema/node_modules
 COPY --from=deps /app/packages/api-contract/src ./packages/api-contract/src
 COPY --from=deps /app/packages/api-contract/package.json ./packages/api-contract/package.json
 COPY --from=deps /app/packages/api-contract/tsconfig.json ./packages/api-contract/tsconfig.json
@@ -325,7 +338,7 @@ LABEL org.opencontainers.image.title="kortix-api" \
       org.opencontainers.image.vendor="Kortix"
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD bun -e "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD ["bun", "-e", "fetch('http://localhost:'+(process.env.PORT||8000)+'/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 # Non-root user (bun image ships with 'bun' user)
 USER bun

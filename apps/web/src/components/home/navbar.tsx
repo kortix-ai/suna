@@ -8,7 +8,8 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from '@/components/ui/context-menu';
+} from '@kortix/ui/context-menu';
+import Loading from '@kortix/ui/loading';
 import { Button, marketingButtonVariants } from '@/components/ui/marketing/button';
 import {
   NavigationMenu,
@@ -17,25 +18,23 @@ import {
   NavigationMenuLink,
   NavigationMenuList,
   NavigationMenuTrigger,
-} from '@/components/ui/navigation-menu';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/navigation-menu';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { useRequestDemo } from '@/features/contact/request-demo-provider';
 import { ChatGPT } from '@/features/icon/icons/chat-gpt';
-import { Claude } from '@/features/icon/icons/claude';
-import { Github } from '@/features/icon/icons/github';
+import { Claude } from '@kortix/ui/internal/icons/claude';
+import { Github } from '@kortix/ui/internal/icons/github';
 import { OpenClaw } from '@/features/icon/icons/open-claw';
-import { Viktor } from '@/features/icon/icons/viktor';
 import { Zapier } from '@/features/icon/icons/zapier';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useIsMobile } from '@/hooks/utils';
-import { useGitHubStars } from '@/hooks/utils/use-github-stars';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { useIsMobile, cn } from '@kortix/ui';
+import { useGitHubStars } from '@/hooks/use-github-stars';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { SITE_CONFIG_TRANSLATION_KEYS } from '@/i18n/site-config-translation-keys.generated';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
-import { latestProjectPath } from '@/lib/onboarding/last-project-cookie';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
+import { latestProjectPath } from '@kortix/ui/internal/lib/onboarding/last-project-cookie';
 import { type NavLink, type NavSubLink, siteConfig } from '@/lib/site-config';
-import { cn } from '@/lib/utils';
 import {
   ArrowRightIcon,
   StackIcon as Layers,
@@ -47,10 +46,7 @@ import { useTranslations } from '@/i18n/use-translations';
 import Link from '@/components/site-link';
 import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
-import { Download } from '@/features/icon/icons/download';
-
-const SCROLL_THRESHOLD_DOWN = 50;
-const SCROLL_THRESHOLD_UP = 20;
+import { Download } from '@kortix/ui/internal/icons/download';
 
 const CTA_LINK = '/auth';
 
@@ -72,7 +68,7 @@ function drawerSubLinks(item: NavLink): NavSubLink[] {
  * same frame, with no enter motion, no level pushes, no stagger. Rows keep a
  * `py` tall enough for a 40px+ hit area at this type size.
  */
-const DRAWER_ROW = 'flex items-center py-2 text-lg font-medium transition-colors';
+const DRAWER_ROW = 'flex items-center gap-2 py-2 text-lg font-medium transition-colors';
 
 interface NavbarProps {
   isAbsolute?: boolean;
@@ -81,8 +77,13 @@ interface NavbarProps {
 export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  // Drawer navigation closes the drawer when it commits, not on tap
+  // (KRTX-1591): an instant close left the old page frozen for ~2 s at mobile
+  // width with no feedback. `pendingHref` is the pathname the tapped link is
+  // navigating to; the tapped row runs the spinner until `pathname` lands on
+  // it.
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -130,7 +131,9 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         ? `/brandkit/Logo/Brandmark/SVG/Brandmark ${color}.svg`
         : `/brandkit/Logo/Logomark/SVG/Logomark ${color}.svg`;
     try {
-      const svg = await (await fetch(path)).text();
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const svg = await res.text();
       await navigator.clipboard.writeText(svg);
       successToast(tHardcodedUi.raw('i18nComplete.textc46a054cc5d2'));
     } catch {
@@ -144,8 +147,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         return <Zapier />;
       case 'openclaw':
         return <OpenClaw />;
-      case 'viktor':
-        return <Viktor />;
       case 'chatgpt':
         return <ChatGPT />;
       case 'claude':
@@ -154,22 +155,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         return null;
     }
   };
-
-  // Asymmetric thresholds: the bar compacts at 50px and only expands again below
-  // 20px, so a reader hovering around the trigger point never sees it flicker.
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      setHasScrolled((wasScrolled) =>
-        wasScrolled
-          ? currentScrollY >= SCROLL_THRESHOLD_UP
-          : currentScrollY > SCROLL_THRESHOLD_DOWN,
-      );
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   useEffect(() => {
     if (!isDrawerOpen) return;
@@ -180,10 +165,22 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     };
   }, [isDrawerOpen]);
 
-  const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
+  // The navigation commit is the close: the drawer stays up (spinner on the
+  // tapped row) until the router lands on the target.
+  useEffect(() => {
+    if (pendingHref !== null && pathname === pendingHref) setIsDrawerOpen(false);
+  }, [pathname, pendingHref]);
 
-  // Anchor links scroll in place on the home page; everything else navigates.
-  // Either way the sheet closes.
+  // Pending rows render only inside the drawer, so a mark left by a close is
+  // cleared when the drawer opens or closes by hand.
+  const toggleDrawer = () => {
+    setIsDrawerOpen((prev) => !prev);
+    setPendingHref(null);
+  };
+
+  // Anchor links scroll in place on the home page and close the drawer at
+  // once. Page links commit first: the drawer stays up — spinner on the tapped
+  // row — until the new page renders, then the effect above closes it.
   const handleDrawerNavClick = (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
     const anchor = href.startsWith('#')
       ? href.slice(1)
@@ -192,7 +189,18 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         : null;
 
     if (!anchor) {
-      setIsDrawerOpen(false);
+      // Off-site rows open a new tab; this page never commits.
+      if (href.startsWith('http')) {
+        setIsDrawerOpen(false);
+        return;
+      }
+      const target = href.split('#')[0];
+      // The page is already committed: close now, no navigation is in flight.
+      if (pathname === target) {
+        setIsDrawerOpen(false);
+        return;
+      }
+      setPendingHref(target);
       return;
     }
     e.preventDefault();
@@ -215,6 +223,10 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   );
   const groupedDrawerLinks = filteredNavLinks.filter((item) => drawerSubLinks(item).length > 0);
 
+  // A row is pending when its target is the navigation in flight. `pendingHref`
+  // is null when nothing is in flight, so the plain compare covers that too.
+  const isPending = (href: string) => href.split('#')[0] === pendingHref;
+
   return (
     <>
       <header
@@ -235,7 +247,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 <Link
                   href="/"
                   aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
-                  className="hit-area-4 group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex shrink-0 items-center"
+                  className="group-data-[state=open]/kortix-logo:bg-secondary group-data-[state=open]/kortix-logo:text-foreground flex h-16 shrink-0 items-center"
                 >
                   <KortixLogo size={15} variant="logomark" />
                 </Link>
@@ -376,13 +388,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             )}
 
             {user ? (
-              <Button size="sm" asChild>
+              <Button size="sm" asChild className="hit-area-y-3">
                 <Link href={projectsHref} prefetch>
                   {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
                 </Link>
               </Button>
             ) : (
-              <Button size="sm" asChild>
+              <Button size="sm" asChild className="hit-area-y-3">
                 <Link href={CTA_LINK} onClick={trackCtaSignup}>
                   {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
                 </Link>
@@ -393,7 +405,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               onClick={toggleDrawer}
               variant="ghost"
               size="icon-sm"
-              className="md:hidden"
+              className="size-12 md:hidden"
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
             >
               <Menu className="size-5" />
@@ -412,16 +424,17 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             <Link
               href="/"
               aria-label={tHardcodedUi.raw('i18nComplete.text7ecec93ed268')}
-              onClick={() => setIsDrawerOpen(false)}
-              className="flex items-center"
+              onClick={handleDrawerNavClick('/')}
+              className="flex h-16 items-center gap-2"
             >
               <KortixLogo size={15} variant="logomark" />
+              {isPending('/') && <Loading variant="spokes" />}
             </Link>
             <Button
               onClick={toggleDrawer}
               variant="ghost"
               size="icon"
-              className="rounded-full"
+              className="size-12 rounded-full"
               aria-label={tHardcodedUi.raw('componentsHomeNavbar.line348JsxAttrAriaLabelCloseMenu')}
             >
               <X className="size-5" />
@@ -437,12 +450,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   onClick={handleDrawerNavClick('/')}
                   className={cn(
                     DRAWER_ROW,
-                    isNavActive('/')
+                    isNavActive('/') || isPending('/')
                       ? 'text-foreground'
                       : 'text-muted-foreground active:text-foreground',
                   )}
                 >
                   {tHardcodedUi.raw('componentsHomeNavbar.home')}
+                  {isPending('/') && <Loading variant="spokes" />}
                 </Link>
               </li>
               {directDrawerLinks.map((item) => (
@@ -452,12 +466,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     onClick={handleDrawerNavClick(item.href)}
                     className={cn(
                       DRAWER_ROW,
-                      isNavActive(item.href)
+                      isNavActive(item.href) || isPending(item.href)
                         ? 'text-foreground'
                         : 'text-muted-foreground active:text-foreground',
                     )}
                   >
                     {item.name}
+                    {isPending(item.href) && <Loading variant="spokes" />}
                   </Link>
                 </li>
               ))}
@@ -476,12 +491,13 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                         {...(link.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
                         className={cn(
                           DRAWER_ROW,
-                          isNavActive(link.href)
+                          isNavActive(link.href) || isPending(link.href)
                             ? 'text-foreground'
                             : 'text-muted-foreground active:text-foreground',
                         )}
                       >
                         {link.name}
+                        {isPending(link.href) && <Loading variant="spokes" />}
                       </Link>
                     </li>
                   ))}
@@ -508,23 +524,24 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
               <Link
                 href={projectsHref}
                 prefetch
-                onClick={() => setIsDrawerOpen(false)}
+                onClick={handleDrawerNavClick(projectsHref)}
                 className="text-muted-foreground active:text-foreground flex items-center gap-1.5 text-base transition-colors"
               >
                 {tHardcodedUi.raw('i18nComplete.text04e2a9728af7')}
-                <ArrowRightIcon className="size-4" />
+                {isPending(projectsHref) ? <Loading variant="spokes" /> : <ArrowRightIcon className="size-4" />}
               </Link>
             ) : (
               <Button size="lg" className="w-full" asChild>
                 <Link
                   href={CTA_LINK}
-                  onClick={() => {
+                  onClick={(e) => {
                     trackCtaSignup();
-                    setIsDrawerOpen(false);
+                    handleDrawerNavClick(CTA_LINK)(e);
                   }}
                   className="w-full"
                 >
                   {tHardcodedUi.raw('componentsHomeNavbar.logIn')}
+                  {isPending(CTA_LINK) && <Loading variant="spokes" />}
                 </Link>
               </Button>
             )}

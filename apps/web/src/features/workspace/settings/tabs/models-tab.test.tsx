@@ -9,7 +9,8 @@ import {
   MODELS_PAGE_DESCRIPTION,
   MODELS_PAGE_TITLE,
   QUICK_LLM_TABS,
-} from '../../customize/sections/gateway-view';
+} from '@kortix/ui/customize/sections/gateway-view';
+import { uiSourcePath } from '@/test-utils/read-source';
 
 /**
  * `LlmTabStrip` is the pure, props-only half of the Models page — no hooks, so
@@ -76,19 +77,18 @@ function code(path: string): string {
     .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '');
 }
 
-const tabSource = code(join(import.meta.dir, 'models-tab.tsx'));
-const gatewaySource = code(join(import.meta.dir, '../../customize/sections/gateway-view.tsx'));
+const gatewaySource = code(uiSourcePath('customize/sections/gateway-view.tsx'));
 const gatewayAccessSource = code(
-  join(import.meta.dir, '../../customize/sections/gateway-access-tab.tsx'),
+  uiSourcePath('customize/sections/gateway-access-tab.tsx'),
 );
 const connectorsSource = code(
-  join(import.meta.dir, '../../capabilities/connectors/connectors-page.tsx'),
+  uiSourcePath('customize/connectors/connectors-page.tsx'),
 );
 const overviewSource = code(
-  join(import.meta.dir, '../../customize/sections/view/gateway/gateway-overview.tsx'),
+  uiSourcePath('customize/sections/view/gateway/gateway-overview.tsx'),
 );
 const routingSource = code(
-  join(import.meta.dir, '../../customize/sections/view/gateway/gateway-routing.tsx'),
+  uiSourcePath('customize/sections/view/gateway/gateway-routing.tsx'),
 );
 const playgroundPath = '../../customize/sections/view/gateway/gateway-playground.tsx';
 const deletedKeysTabPath = '../../customize/sections/llm-api-keys-tab.tsx';
@@ -107,20 +107,16 @@ describe('Models page chrome', () => {
   test('the page is the shared capability shell, not its own header strip', () => {
     expect(gatewaySource.indexOf('<CapabilityPageShell')).toBeGreaterThan(-1);
     expect(MODELS_PAGE_TITLE).toBe('Models');
-    expect(MODELS_PAGE_DESCRIPTION).toBe('Which providers and models this project can use.');
+    expect(MODELS_PAGE_DESCRIPTION).toBe('Choose the providers and models this project can use.');
     expect(gatewaySource).toContain('title={MODELS_PAGE_TITLE}');
     expect(gatewaySource).toContain('description={MODELS_PAGE_DESCRIPTION}');
     // Every piece of the old bespoke layout, gone for good.
     expect(gatewaySource).not.toContain('SettingsSectionHeader');
     expect(gatewaySource).not.toContain('SettingsTabHeader');
     expect(gatewaySource).not.toContain('CustomizeSectionWrapper');
-    expect(tabSource).not.toContain('CapabilityPageShell');
-    expect(tabSource).not.toContain('gatewaySlot');
   });
 
   test('the tab strip is the shell’s filters slot, in the DEFAULT pill style', () => {
-    // Multiline now: the strip takes `value`/`tabs` forked on the gateway
-    // flag (native mode shows the Providers/Custom subset).
     expect(gatewaySource).toContain('filters={');
     expect(gatewaySource).toContain('<LlmTabStrip');
     // The exact control Connectors draws: a bare `TabsList`, no `type`, no
@@ -133,22 +129,17 @@ describe('Models page chrome', () => {
     expect(gatewaySource).not.toContain('<TabsList size=');
   });
 
-  test('the project-default picker is the shell’s action slot, not a second strip', () => {
-    const actionStart = gatewaySource.indexOf('action={');
+  test('the project-default picker sits on the tab row, opposite the tabs', () => {
     const filtersStart = gatewaySource.indexOf('filters={');
-    expect(actionStart).toBeGreaterThan(-1);
-    expect(filtersStart).toBeGreaterThan(actionStart);
-    // The picker sits in `action` — not in the tab row, where a bordered
-    // dropdown reads as a second tab strip. It is a component now
-    // (`ProjectDefaultPicker`) because the quick dialog renders the same one;
-    // `<ModelSelector` itself lives inside it, higher up the file, so this
-    // asserts the SLOT's contents, not a raw file offset.
-    expect(gatewaySource.slice(actionStart, filtersStart)).toContain('<ProjectDefaultPicker');
+    expect(filtersStart).toBeGreaterThan(-1);
     const filtersSlot = gatewaySource.slice(filtersStart, gatewaySource.indexOf('<LlmSections'));
     expect(filtersSlot).toContain('<LlmTabStrip');
-    expect(filtersSlot).not.toContain('ProjectDefaultPicker');
-    expect(filtersSlot).not.toContain('ModelSelector');
+    expect(filtersSlot).toContain('<ProjectDefaultPicker');
+    expect(filtersSlot.indexOf('<LlmTabStrip')).toBeLessThan(filtersSlot.indexOf('<ProjectDefaultPicker'));
+    // A secondary button, with no "Project default" label beside it.
+    expect(gatewaySource).toContain('triggerVariant="secondary"');
   });
+
 
   /**
    * The one page-level control is one component, mounted twice: here in the
@@ -181,8 +172,8 @@ describe('Models page chrome', () => {
     expect(sections).toContain("tab === 'models'");
     expect(sections).not.toMatch(/className="[^"]*\bpx-\d/);
     expect(sections).not.toMatch(/className="[^"]*\bp-[1-9]/);
-    // `ProviderConnect` is the one section with padding of its own to cancel.
-    expect(sections).toContain('className="gap-4 p-0"');
+    // The provider list opens providers into the host's sheet.
+    expect(sections).toContain('onSelect={onSelectProvider}');
   });
 
   /**
@@ -214,21 +205,6 @@ describe('Models page chrome', () => {
     expect(gatewaySource).not.toContain('TabsContent');
     expect(gatewaySource).not.toContain('overflow-y-auto');
     expect(gatewaySource).not.toContain('h-full');
-  });
-});
-
-describe('Models tab — the mode fork', () => {
-  test('forwards the host-computed flag; native mode renders the key-intake subset, not null', () => {
-    // The flag the host threads in, NOT a second derivation. Both modes render
-    // the page now — gateway off restricts LlmManagementView to Providers +
-    // Custom (see gateway-view.tsx NATIVE_LLM_TABS) instead of blanking the
-    // route its rail row / hub card / ⌘K entry still advertise.
-    expect(tabSource).not.toContain('return null');
-    expect(tabSource).not.toContain('isLlmGatewayEnabled(');
-    expect(tabSource).not.toContain('llmGatewayAvailable');
-    expect(tabSource).toContain(
-      '<LlmManagementView projectId={projectId} llmGatewayEnabled={llmGatewayEnabled} />',
-    );
   });
 });
 
@@ -273,12 +249,15 @@ describe('Models page — the seven tabs', () => {
     expect(gatewaySource).not.toContain('ProjectProviderModal');
   });
 
-  test('Gateway is the key you hand out AND how to call it, in that order', () => {
+  test('Gateway is how to call it, then the keys you hand out', () => {
     expect(gatewaySource).toContain('<GatewayAccessTab');
+    const quickstart = gatewayAccessSource.indexOf('<GatewayQuickstartCode');
     const keys = gatewayAccessSource.indexOf('<GatewayKeys');
-    const reference = gatewayAccessSource.indexOf('<GatewayApiReference');
-    expect(keys).toBeGreaterThan(-1);
-    expect(reference).toBeGreaterThan(keys);
+    expect(quickstart).toBeGreaterThan(-1);
+    expect(keys).toBeGreaterThan(quickstart);
+    // The full-reference disclosure is gone from the tab; the key-created
+    // dialog still carries the first request.
+    expect(gatewayAccessSource).not.toContain('<GatewayApiReference');
     // The three-in-one tab is gone, file and all.
     expect(existsSync(join(import.meta.dir, deletedKeysTabPath))).toBe(false);
     expect(gatewayAccessSource).not.toContain('ProviderConnect');

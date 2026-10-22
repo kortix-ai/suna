@@ -122,6 +122,32 @@ describe('Azure AD directory-sync → authorization', () => {
     expect(await canWrite(user)).toBe(false);
   });
 
+  test('groups come from the SSO identity GoTrue wrote, never from user-writable user_metadata', async () => {
+    const user = crypto.randomUUID();
+    const email = `forger-${user}@acme-inc.com`;
+    // Any user can PUT /auth/v1/user { data: { custom_claims: ... } }; the next
+    // token carries it. That forged claim must confer nothing.
+    const forged = { ...jwt([]), user_metadata: { custom_claims: { memberOf: [AAD_CLAIM] }, memberOf: [AAD_CLAIM] } };
+    try {
+      await db.execute(sql`INSERT INTO auth.users (id, email, is_sso_user) VALUES (${user}::uuid, ${email}, true)`);
+      const out = await syncSsoMembership({ userId: user, email, jwtPayload: forged });
+      expect(out.groupsAdded ?? []).toEqual([]);
+      expect(await canWrite(user)).toBe(false);
+
+      // The SSO identity row is where GoTrue maps the SAML attributes.
+      await db.execute(sql`
+        INSERT INTO auth.identities (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+        VALUES (${email}, ${user}::uuid, ${JSON.stringify({ email, custom_claims: { memberOf: [AAD_CLAIM] } })}::jsonb,
+                ${`sso:${SUPA_SSO}`}, now(), now(), now())
+      `);
+      const out2 = await syncSsoMembership({ userId: user, email, jwtPayload: jwt([]) });
+      expect(out2.groupsAdded).toEqual([MKT_GROUP]);
+      expect(await canWrite(user)).toBe(true);
+    } finally {
+      await db.execute(sql`DELETE FROM auth.users WHERE id=${user}::uuid`);
+    }
+  });
+
   test('case-insensitive: Entra shipping a different casing still syncs the group', async () => {
     const user = crypto.randomUUID();
     const out = await syncSsoMembership({ userId: user, email: 'al@acme-inc.com', jwtPayload: jwt(['MARKETING-AAD']) });

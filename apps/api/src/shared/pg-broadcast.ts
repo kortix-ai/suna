@@ -71,6 +71,25 @@ export const LIFECYCLE_COMMAND_DUE_CHANNEL = 'kortix_lifecycle_command_due';
  */
 export const SESSION_PROMPTS_CHANGED_CHANNEL = 'kortix_session_prompts_changed';
 
+/**
+ * A sixth channel: "this session's box or title changed". Database triggers
+ * (migration 20261007140000000) send it for every writer of a client-visible
+ * `session_sandboxes` field (status, external id, live turns, wake fields) and
+ * of the session title. The payload is one session id. The control reconciler
+ * re-reads that session now, and `/events` streams waiting for a box wake; see
+ * `onSessionChanged` and `waitForSessionChange`.
+ */
+export const SESSION_CHANGED_CHANNEL = 'kortix_session_changed';
+
+/**
+ * A seventh channel: "drop this principal's or project's cached authz entries".
+ * Payload `user:<uuid>` or `project:<uuid>`. `iam/cache-invalidation.ts` sends
+ * it after every revoke-side bust, so a demotion on one replica reaches the
+ * in-memory authz memos of every other replica at once instead of after the
+ * 15 s TTL. See `publishIamCacheBust` and `onIamCacheBust`.
+ */
+export const IAM_CACHE_BUST_CHANNEL = 'kortix_iam_cache_bust';
+
 type Handler = (projectId: string) => void;
 
 let listener: postgres.Sql | null = null;
@@ -79,6 +98,9 @@ let publish: ((projectId: string) => void) | null = null;
 let tunnelForwardHandler: ((payload: string) => void) | null = null;
 let commandDueHandler: ((dueAtMs: number) => void) | null = null;
 let promptsChangedHandler: ((sessionId: string) => void) | null = null;
+// replica-local: subscribers in this process; the NOTIFY reaches every replica.
+const sessionChangedHandlers = new Set<(sessionId: string) => void>();
+let iamCacheBustHandler: ((payload: string) => void) | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 const LISTEN_RETRY_MS = 60_000;
 
@@ -142,6 +164,59 @@ function deliverPromptsChanged(payload: string): void {
   } catch {
     // A subscriber must not take the listener down.
   }
+}
+
+/** Subscribe to `kortix_session_changed`. Returns the unsubscribe. Kept across stop/start. */
+export function onSessionChanged(handler: (sessionId: string) => void): () => void {
+  sessionChangedHandlers.add(handler);
+  return () => {
+    sessionChangedHandlers.delete(handler);
+  };
+}
+
+/**
+ * Resolves when `sessionId` changes (any replica's write), after `ms`, or when
+ * `signal` aborts, whichever is first. Without the LISTEN it is a plain timer,
+ * so a caller passes its pre-NOTIFY poll interval then.
+ */
+export function waitForSessionChange(sessionId: string, ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    const finish = () => {
+      clearTimeout(timer);
+      unsubscribe();
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    const unsubscribe = onSessionChanged((changed) => {
+      if (changed === sessionId) finish();
+    });
+    const timer = setTimeout(finish, Math.max(0, ms));
+    (timer as unknown as { unref?: () => void }).unref?.();
+    signal.addEventListener('abort', finish, { once: true });
+  });
+}
+
+function deliverSessionChanged(payload: string): void {
+  // The payload is a session id and nothing else.
+  if (!isUuid(payload)) return;
+  for (const handler of [...sessionChangedHandlers]) {
+    try {
+      handler(payload);
+    } catch {
+      // A subscriber must not take the listener down.
+    }
+  }
+}
+
+/** `iam/cache-invalidation.ts` registers once, at import. Kept across stop/start. */
+export function onIamCacheBust(handler: ((payload: string) => void) | null): void {
+  iamCacheBustHandler = handler;
+}
+
+/** Tell every replica to drop an authz cache entry. Without the LISTEN it is a no-op: the TTL is the backstop. */
+export function publishIamCacheBust(payload: string): void {
+  if (listener) void listener.notify(IAM_CACHE_BUST_CHANNEL, payload).catch(() => {});
 }
 
 /** The forwarder registers once, at import. Kept across stop/start. */
@@ -218,6 +293,14 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
     await sql.listen(LIFECYCLE_COMMAND_SETTLED_CHANNEL, wakeSettleWaiters);
     await sql.listen(LIFECYCLE_COMMAND_DUE_CHANNEL, deliverCommandDue);
     await sql.listen(SESSION_PROMPTS_CHANGED_CHANNEL, deliverPromptsChanged);
+    await sql.listen(SESSION_CHANGED_CHANNEL, deliverSessionChanged);
+    await sql.listen(IAM_CACHE_BUST_CHANNEL, (payload) => {
+      try {
+        iamCacheBustHandler?.(payload);
+      } catch {
+        // A subscriber must not take the listener down.
+      }
+    });
     listener = sql;
     publish = (projectId: string) => {
       // Fire-and-forget on the LISTEN connection's own pool: it runs no other
@@ -226,7 +309,7 @@ export async function startConfigBaseMoveBroadcast(): Promise<boolean> {
       void sql.notify(BASE_MOVE_CHANNEL, projectId).catch(() => {});
     };
     console.log(
-      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}`,
+      `[config-releases] base-move broadcast listening on ${BASE_MOVE_CHANNEL}, ${TUNNEL_FORWARD_CHANNEL}, ${LIFECYCLE_COMMAND_SETTLED_CHANNEL}, ${LIFECYCLE_COMMAND_DUE_CHANNEL}, ${SESSION_PROMPTS_CHANGED_CHANNEL}, ${SESSION_CHANGED_CHANNEL}, ${IAM_CACHE_BUST_CHANNEL}`,
     );
     return true;
   } catch (error) {

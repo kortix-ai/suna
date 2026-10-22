@@ -1,5 +1,6 @@
 /**
- * The Sessions page's search, status and starter filter, per project (KRTX-250).
+ * The Sessions page's search, status and starter filter, and its Archived
+ * view, per project (KRTX-250, KRTX-2418).
  *
  * Opening a session replaces the Sessions page with the view route, which
  * unmounts it; component state would reset the filter every time the user
@@ -19,9 +20,11 @@ export interface SessionFilter {
   statuses: SessionStatusFilter[];
   /** Who started the session: the All / Mine / Shared / Automated chip (KRTX-639). */
   scope: SessionScope;
+  /** The viewer's archived sessions instead of the list (KRTX-2418). */
+  archived: boolean;
 }
 
-export const EMPTY_SESSION_FILTER: SessionFilter = { query: '', statuses: [], scope: 'all' };
+export const EMPTY_SESSION_FILTER: SessionFilter = { query: '', statuses: [], scope: 'all', archived: false };
 
 interface SessionFilterState {
   /** project id → filter. A project with no entry is unfiltered. */
@@ -29,7 +32,9 @@ interface SessionFilterState {
   setQuery: (projectId: string, query: string) => void;
   toggleStatus: (projectId: string, status: SessionStatusFilter) => void;
   setScope: (projectId: string, scope: SessionScope) => void;
-  /** The page's one Reset: search, statuses and scope. */
+  /** The Filter sheet's Archived row: the archived sessions, or the list again. */
+  toggleArchived: (projectId: string) => void;
+  /** The page's one Reset: search, statuses, scope and the Archived view. */
   resetProject: (projectId: string) => void;
   /** Sign-out: forget every project's filter. */
   reset: () => void;
@@ -56,6 +61,11 @@ export const useSessionFilterStore = create<SessionFilterState>()((set) => ({
       const current = state.byProject[projectId] ?? EMPTY_SESSION_FILTER;
       if (current.scope === scope) return state;
       return { byProject: { ...state.byProject, [projectId]: { ...current, scope } } };
+    }),
+  toggleArchived: (projectId) =>
+    set((state) => {
+      const current = state.byProject[projectId] ?? EMPTY_SESSION_FILTER;
+      return { byProject: { ...state.byProject, [projectId]: { ...current, archived: !current.archived } } };
     }),
   resetProject: (projectId) =>
     set((state) => {

@@ -55,6 +55,8 @@ export interface ManagedSkill {
   references: ManagedSkillFile[];
   /** Total bytes of body + references — what a `--full` read costs. */
   bytes: number;
+  /** The project feature flag the skill exists behind (`metadata.kortix-feature-flag`), else null. */
+  featureFlag: string | null;
 }
 
 export interface ManagedSkillSummary {
@@ -62,6 +64,7 @@ export interface ManagedSkillSummary {
   description: string;
   referenceCount: number;
   bytes: number;
+  featureFlag: string | null;
 }
 
 /**
@@ -105,9 +108,24 @@ export function buildManagedSkills(): Map<string, ManagedSkill> {
       body,
       references,
       bytes: entries.reduce((total, e) => total + e.content.length, 0),
+      featureFlag: skillFeatureFlag(body),
     });
   }
   return skills;
+}
+
+/**
+ * The flag under `metadata.kortix-feature-flag` in a SKILL.md frontmatter. kortixd reads the same
+ * key (lib/config/feature-flags.ts) and withholds the skill from a box whose flag is off.
+ */
+export function skillFeatureFlag(skillMd: string): string | null {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(skillMd)?.[1] ?? '';
+  return /^\s+kortix-feature-flag:\s*["']?([a-z0-9_]+)["']?\s*$/m.exec(frontmatter)?.[1] ?? null;
+}
+
+/** The feature flag a managed skill exists behind, or null (unflagged, or not a managed skill). */
+export function managedSkillFeatureFlag(name: string): string | null {
+  return managedSkills().get(name)?.featureFlag ?? null;
 }
 
 // The template tree is immutable for the lifetime of a deploy, so build once.
@@ -116,11 +134,6 @@ let cached: Map<string, ManagedSkill> | null = null;
 export function managedSkills(): Map<string, ManagedSkill> {
   if (!cached) cached = buildManagedSkills();
   return cached;
-}
-
-/** Test-only: drop the memo so a test can rebuild against a mutated fixture. */
-export function _resetManagedSkillsCache(): void {
-  cached = null;
 }
 
 /**
@@ -135,6 +148,7 @@ export function listManagedSkills(): ManagedSkillSummary[] {
     description: skill.description,
     referenceCount: skill.references.length,
     bytes: skill.bytes,
+    featureFlag: skill.featureFlag,
   }));
 }
 

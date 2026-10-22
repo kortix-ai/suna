@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+case "$1" in
+  remove|upgrade|deconfigure)
+    if [ -d /run/systemd/system ]; then
+      systemctl stop kortix-capture-machine.service >/dev/null 2>&1 || true
+      # The recorder in each logged-in person's session, and a service a person started for themselves.
+      for user in $(loginctl list-users --no-legend 2>/dev/null | awk '{print $2}'); do
+        systemctl --machine="$user@.host" --user stop kortix-capture.service >/dev/null 2>&1 || true
+        if [ "$1" = "remove" ]; then
+          for unit in $(systemctl --machine="$user@.host" --user list-units --all --plain --no-legend 'ai.kortix.capture.service.*' 2>/dev/null | awk '{print $1}'); do
+            systemctl --machine="$user@.host" --user disable --now "$unit" >/dev/null 2>&1 || true
+          done
+        fi
+      done
+    fi
+    pkill -x kortix-capture-engine >/dev/null 2>&1 || true
+    pkill -x kortix-backend >/dev/null 2>&1 || true
+    pkill -x kortix-capture >/dev/null 2>&1 || true
+    ;;
+esac
+exit 0

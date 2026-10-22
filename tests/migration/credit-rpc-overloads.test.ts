@@ -100,7 +100,7 @@ const suite = dockerOk ? describe : describe.skip;
 
 suite('credit RPC overload resolution (throwaway Postgres)', () => {
   beforeAll(async () => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
     const up = sh([
       'docker',
       'run',
@@ -141,7 +141,7 @@ suite('credit RPC overload resolution (throwaway Postgres)', () => {
   }, 240_000);
 
   afterAll(() => {
-    sh(['docker', 'rm', '-f', CONTAINER]);
+    sh(['docker', 'rm', '-f', '-v', CONTAINER]);
   });
 
   test('no wallet function has two overloads with overlapping callable arity', () => {
@@ -218,7 +218,7 @@ suite('credit RPC overload resolution (throwaway Postgres)', () => {
   });
   // ─── kortix_wallet storage (20260925013304428) ──────────────────────────────
 
-  test('the wallet schema holds exactly the three wallet functions, one signature each', () => {
+  test('the wallet schema holds exactly the expected signatures, including both reset overloads', () => {
     expect(
       atomicOverloads()
         .filter((row) => row.name.startsWith('kortix_wallet.'))
@@ -226,6 +226,7 @@ suite('credit RPC overload resolution (throwaway Postgres)', () => {
     ).toEqual([
       'kortix_wallet.debit_credits(p_account_id uuid, p_amount numeric, p_enforce_floor boolean, p_description text, p_ledger_type text, p_idempotency_key text)',
       'kortix_wallet.grant_credits(p_account_id uuid, p_amount numeric, p_is_expiring boolean, p_description text, p_expires_at timestamp with time zone, p_type text, p_stripe_event_id text, p_idempotency_key text)',
+      'kortix_wallet.reset_expiring_credits(p_account_id uuid, p_new_credits numeric, p_description text, p_stripe_event_id text, p_expires_at timestamp with time zone)',
       'kortix_wallet.reset_expiring_credits(p_account_id uuid, p_new_credits numeric, p_description text, p_stripe_event_id text)',
     ]);
     // Only the four compatibility wrappers remain in public; the two dead ones are gone.

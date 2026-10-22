@@ -94,3 +94,29 @@ export async function releaseChannelQuestion(input: {
   }
   return outcome;
 }
+
+/**
+ * A session a trigger started (cron, webhook, monitor, reminder) runs with
+ * nobody to answer its `question` call, so the call would block the turn until
+ * the box is parked and every later fire queues behind it (prod 2026-10-09: a
+ * keyed cron session blocked 5 days on one question). A session can also say
+ * so itself with the client metadata key `unattended` (`kortix sessions update
+ * --meta unattended=true`): a long-running owner whose answers arrive later as
+ * new messages. Keyed on the session's own metadata, like
+ * `channelOfSessionMetadata`.
+ */
+export function isUnattendedSessionMetadata(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false;
+  const m = metadata as Record<string, unknown>;
+  if (m.unattended === true || m.unattended === 'true') return true;
+  return typeof m.source === 'string' && m.source.startsWith('trigger:');
+}
+
+/** What an unattended session's agent reads as the answer to its own question. */
+export function unattendedQuestionSentinel(): string {
+  return (
+    '(This session runs unattended: nobody can answer this question now. ' +
+    'Do not ask it again. Decide yourself where that is safe; otherwise record the open decision ' +
+    'where a person will see it (the issue or ticket you are working on), then continue and finish this turn.)'
+  );
+}

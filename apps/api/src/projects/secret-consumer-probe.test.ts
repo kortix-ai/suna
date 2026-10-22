@@ -24,6 +24,7 @@ mock.module('../shared/audit', () => ({
 
 const { encryptProjectSecret, getProjectSecretValueForConsumer, getProjectSecretValuesForConsumer } =
   await import('./secrets');
+const { SecretUndecryptableError } = await import('../secrets/undecryptable');
 
 const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
 const ACCOUNT_ID = '22222222-2222-4222-8222-222222222222';
@@ -121,5 +122,48 @@ describe('missing-secret audit: probe vs real request', () => {
     });
     expect(values).toEqual({});
     expect(audits.map((a) => a.action)).toEqual(['secret.consumer.denied']);
+  });
+});
+
+describe('an undecryptable connector credential (KRTX-1719)', () => {
+  beforeEach(() => {
+    rows = [];
+    audits.length = 0;
+  });
+
+  const broken = (identifier: string) => ({
+    ...row('API_TOKEN', `sec-${identifier}`, 'lost'),
+    identifier,
+    valueEnc: 'v1:broken:envelope:row',
+  });
+  const read = (throwWhenUndecryptable?: boolean) =>
+    getProjectSecretValueForConsumer({
+      projectId: PROJECT_ID,
+      accountId: ACCOUNT_ID,
+      sessionId: 'session-1',
+      name: 'API_TOKEN',
+      consumer: 'connector',
+      throwWhenUndecryptable,
+    });
+
+  test('the connector gateway read throws SecretUndecryptableError naming the identifier', async () => {
+    rows = [broken('API_TOKEN')];
+    const error = await read(true).then(
+      () => null,
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toBeInstanceOf(SecretUndecryptableError);
+    expect((error as Error).message).toContain('Project secret API_TOKEN cannot be decrypted');
+    expect(audits.map((a) => a.action)).toEqual(['secret.consumer.invalid']);
+  });
+
+  test('every other consumer keeps reading null', async () => {
+    rows = [broken('API_TOKEN')];
+    expect(await read()).toBeNull();
+  });
+
+  test('a decryptable candidate under the same key still wins over the broken one', async () => {
+    rows = [broken('API_TOKEN'), { ...row('API_TOKEN', 'sec-backup', 'backup-value'), identifier: 'API_TOKEN-backup' }];
+    expect(await read(true)).toBe('backup-value');
   });
 });

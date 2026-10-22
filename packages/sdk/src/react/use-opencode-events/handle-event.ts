@@ -45,6 +45,12 @@ export function createEventHandler(deps: {
    *  care about the Kortix-session-mirror refetch keep compiling; production
    *  always passes it (`use-opencode-events/index.ts`). */
   projectId?: string | null;
+  /**
+   * The Kortix session of the stream this handler serves (R5.3). Its `log.*`
+   * frames go to that session's log (`applySessionLogEvent`); without it they
+   * are dropped: the frames name no session.
+   */
+  sessionId?: string | null;
 }) {
   const { queryClient, client } = deps;
   const reconcileTail =
@@ -85,6 +91,10 @@ export function createEventHandler(deps: {
     const statusBeforeEvent = sessionID
       ? useSyncStore.getState().sessionStatus[sessionID]
       : undefined;
+    if (event.type.startsWith('log.')) {
+      if (deps.sessionId) useSyncStore.getState().applySessionLogEvent(deps.sessionId, event);
+      return;
+    }
     deps.applySyncEvent(event as OpenCodeSdkEvent);
     if (event.type.startsWith('message.')) handleMessageEvent(event, ctx);
     else if (event.type.startsWith('session.') && event.type !== 'session.diff')

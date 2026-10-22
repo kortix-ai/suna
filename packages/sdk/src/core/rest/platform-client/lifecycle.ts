@@ -5,7 +5,7 @@
 
 import {
   createProjectSession,
-  deleteProjectSession,
+  getProject,
   startProjectSession,
   listProjects,
   restartProjectSession,
@@ -20,9 +20,11 @@ import type {
 import { backendApi } from '../../http/api-client';
 import {
   findProjectSessionSandbox,
+  getSessionById,
   listProjectSessionSandboxes,
   projectSessionToSandboxInfo,
   normalizeSandboxId,
+  resolveProjectSessionId,
 } from './shared';
 
 /**
@@ -85,20 +87,27 @@ export async function createSandbox(opts?: {
 }
 
 /**
- * Get a single sandbox by ID from the list.
- * Avoids fetching the full list when only one sandbox is needed.
+ * One sandbox by its session id (`session_id == sandbox_id`), or `null`.
+ * Reads the session and its project by id (`GET /v1/sessions/:id`, then
+ * `GET /v1/projects/:id`), so a session older than every list page resolves.
+ * A provider external id still resolves, but only for a session on its
+ * project's first sessions page; pass the session id.
  */
 export async function getSandboxById(sandboxId: unknown): Promise<SandboxInfo | null> {
   const normalizedSandboxId = normalizeSandboxId(sandboxId);
   if (!normalizedSandboxId) return null;
 
-  const row = await findProjectSessionSandbox(normalizedSandboxId).catch(() => null);
-  return row?.sandbox ?? null;
+  try {
+    const session = await getSessionById(normalizedSandboxId);
+    if (!session) return (await findProjectSessionSandbox(normalizedSandboxId))?.sandbox ?? null;
+    return projectSessionToSandboxInfo(await getProject(session.project_id), session, null);
+  } catch {
+    return null;
+  }
 }
 
 export async function renameSandbox(sandboxId: string, _name: string): Promise<SandboxInfo> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('Project session sandbox not found');
+  if (!(await resolveProjectSessionId(sandboxId))) throw new Error('Project session sandbox not found');
   throw new Error('Renaming project-session sandboxes is not exposed by the current API');
 }
 
@@ -130,29 +139,36 @@ export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
 /**
  * Restart a sandbox workload. For a remote instance this repairs the workload
  * container/service and only starts the host if it is currently stopped.
+ *
+ * `sandboxId` is the session id (`session_id == sandbox_id`): one read by id
+ * (`GET /v1/sessions/:id`) finds its project, however old the session is. A
+ * provider external id resolves only for a session on its project's first
+ * sessions page. With the project id at hand, call
+ * `restartProjectSession(projectId, sessionId)` (or `s.restart()`) directly.
  */
 export async function restartSandbox(sandboxId?: string): Promise<void> {
   if (!sandboxId) {
     throw new Error('No sandbox selected for workload restart');
   }
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('Project session sandbox not found');
-  await restartProjectSession(row.project.project_id, row.session.session_id);
+  const target = await resolveProjectSessionId(sandboxId);
+  if (!target) throw new Error('Project session sandbox not found');
+  await restartProjectSession(target.projectId, target.sessionId);
 }
 
 /**
  * Stop a sandbox in place — pauses the running sandbox (disk kept, resumable
- * via restart/start) without deleting the session. Pass `sandboxId` to target
- * a specific instance; omit to stop the user's active sandbox.
+ * via restart/start) without deleting the session. `sandboxId` is resolved as
+ * in `restartSandbox`. With the project id at hand, call
+ * `stopProjectSession(projectId, sessionId)` (or `s.stop()`) directly.
  *
  * Previously this called deleteProjectSession, which destroys the session
  * instead of pausing it — fixed to use the dedicated stop endpoint.
  */
 export async function stopSandbox(sandboxId?: string): Promise<void> {
   if (!sandboxId) throw new Error('No sandbox selected to stop');
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('Project session sandbox not found');
-  await stopProjectSession(row.project.project_id, row.session.session_id);
+  const target = await resolveProjectSessionId(sandboxId);
+  if (!target) throw new Error('Project session sandbox not found');
+  await stopProjectSession(target.projectId, target.sessionId);
 }
 
 /**

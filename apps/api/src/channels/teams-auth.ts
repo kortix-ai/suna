@@ -170,5 +170,3 @@ export function refreshTeamsBotToken(): Promise<boolean> {
   tokenCache.delete(`${config.MICROSOFT_APP_ID}|${config.MICROSOFT_APP_TENANT}|${BOT_CONNECTOR_SCOPE}`);
   return prewarmTeamsBotToken();
 }
-
-export { startTeamsBotTokenRefresh, stopTeamsBotTokenRefresh } from '../workers/teams-bot-token-refresh-worker';

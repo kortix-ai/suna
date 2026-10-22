@@ -2,9 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   APP_MACHINE_LIMITS,
   AppLimitError,
-  assertAppBudgetWithinLimits,
   assertAppMachineWithinLimits,
 } from './limits';
+import { appMonthlyEstimateUsd } from './cost';
+import { appRuntimeImageKey } from './deployment-worker';
 
 describe('App machine limits', () => {
   test('an App may not ask for a bigger machine than a session sandbox may', () => {
@@ -44,11 +45,25 @@ describe('App machine limits', () => {
     }
   });
 
-  test('bounds the monthly budget and accepts an unset one', () => {
-    expect(() => assertAppBudgetWithinLimits(undefined)).not.toThrow();
-    expect(() => assertAppBudgetWithinLimits(0)).not.toThrow();
-    expect(() => assertAppBudgetWithinLimits(5)).not.toThrow();
-    expect(() => assertAppBudgetWithinLimits(-1)).toThrow(AppLimitError);
-    expect(() => assertAppBudgetWithinLimits(100_001)).toThrow(AppLimitError);
+});
+
+describe('always-on cost', () => {
+  const machine = { cpuCores: 1, memoryGb: 2, diskGb: 10 };
+
+  test('the default machine costs about 40 USD for a month of 24/7 at list rates', () => {
+    // 730 h × (1 × $0.0324 + 2 × $0.0108) + 10 GB × $0.0526 per month
+    expect(appMonthlyEstimateUsd(machine)).toBe(39.95);
+    expect(appMonthlyEstimateUsd({ cpuCores: 2, memoryGb: 4, diskGb: 20 })).toBe(79.89);
+  });
+
+});
+
+describe('runtime refresh key', () => {
+  test('only the supervisor digest decides a refresh, not the API release', () => {
+    expect(appRuntimeImageKey('0.13.52:appd-0123456789abcdef')).toBe('appd-0123456789abcdef');
+    expect(appRuntimeImageKey('0.13.53:appd-0123456789abcdef')).toBe(appRuntimeImageKey('0.13.52:appd-0123456789abcdef'));
+    expect(appRuntimeImageKey('0.13.53:appd-fedcba9876543210')).not.toBe(appRuntimeImageKey('0.13.52:appd-0123456789abcdef'));
+    expect(appRuntimeImageKey('custom-override')).toBe('custom-override');
+    expect(appRuntimeImageKey(null)).toBe('');
   });
 });

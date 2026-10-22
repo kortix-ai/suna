@@ -1,8 +1,7 @@
-import type { SandboxProviderName } from '../config';
 import { withTimeout } from '../shared/with-timeout';
 import type { ProviderState, SandboxProviderAdapter } from './providers';
 
-export const SANDBOX_TEMPLATE_PROVIDERS = ['daytona', 'platinum', 'e2b'] as const;
+export const SANDBOX_TEMPLATE_PROVIDERS = ['platinum', 'daytona'] as const;
 
 export type SandboxTemplateProvider = (typeof SANDBOX_TEMPLATE_PROVIDERS)[number];
 export type SandboxTemplateProviderCoverageStatus =
@@ -120,8 +119,8 @@ type RoutedCoverage = Pick<SandboxTemplateProviderCoverage, 'provider' | 'availa
 
 /**
  * Collapse per-provider truth into the legacy single-state field without lying:
- * a pinned project follows its selected provider; Automatic is `active` only
- * when every enabled provider it may route to is launch-ready.
+ * a pinned project follows its selected provider; Automatic is `active` when
+ * an enabled provider holds the image. Per-provider coverage keeps the gaps visible.
  */
 export function resolveRoutedTemplateState(
   coverage: readonly RoutedCoverage[],
@@ -135,21 +134,12 @@ export function resolveRoutedTemplateState(
 
   const states = coverage.filter((item) => item.available).map((item) => item.state);
   if (states.length === 0) return 'missing';
-  if (states.every((state) => state === 'active')) return 'active';
+  if (states.some((state) => state === 'active')) return 'active';
   if (states.some((state) => state === 'building')) return 'building';
   if (states.some((state) => state === 'removing')) return 'removing';
   if (states.some((state) => state === 'build_failed')) return 'build_failed';
   if (states.some((state) => state === 'unknown' || state === null)) return 'unknown';
   return 'missing';
-}
-
-/** Resolve the same usable explicit pin as session creation. null is Automatic. */
-export function resolveUsableProjectProviderPin(
-  metadata: Record<string, unknown> | null | undefined,
-  isProviderEnabled: (provider: SandboxProviderName) => boolean,
-): SandboxTemplateProvider | null {
-  const provider = resolveConfiguredProjectProviderPin(metadata);
-  return provider && isProviderEnabled(provider) ? provider : null;
 }
 
 /** A valid project pin remains visible even while that provider is unavailable. */

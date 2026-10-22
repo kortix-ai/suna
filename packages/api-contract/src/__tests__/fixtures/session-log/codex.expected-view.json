@@ -1,0 +1,174 @@
+{
+  "next_prompts": {
+    "01a1216d-8106-7123-9957-cfa59fab00a3": "Anything else?",
+    "01a12171-2977-74e0-b37c-a083e2f80b37": "Anything else?"
+  },
+  "views": {
+    "01a1216d-8106-7123-9957-cfa59fab00a3": [
+      {
+        "role": "user",
+        "text": [
+          "Create hello.txt containing hi"
+        ],
+        "images": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Read hello.txt and look at this image"
+        ],
+        "images": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Run the command `false` and report the result."
+        ],
+        "images": []
+      },
+      {
+        "role": "summary",
+        "text": "SUMMARY-G: the user created hello.txt containing hi and checked an image."
+      },
+      {
+        "role": "user",
+        "text": [
+          "Continue after the summary and say Ready."
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "Ready."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Spawn a helper to list the files"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv160fp112",
+            "name": "spawn_agent",
+            "input": {
+              "message": "List the files in the workspace"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv160fp112",
+        "content": "{\"agent_id\":\"01a12171-2977-74e0-b37c-a083e2f80b37\",\"nickname\":\"Aristotle\"}",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv160fpy15",
+            "name": "wait_agent",
+            "input": {
+              "targets": [
+                "01a12171-2977-74e0-b37c-a083e2f80b37"
+              ],
+              "timeout_ms": 30000
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv160fpy15",
+        "content": "{\"status\":{\"01a12171-2977-74e0-b37c-a083e2f80b37\":{\"completed\":\"Found hello.txt\"}},\"timed_out\":false}",
+        "is_error": false
+      },
+      {
+        "role": "user",
+        "text": [
+          "<subagent_notification>\n{\"agent_path\":\"01a12171-2977-74e0-b37c-a083e2f80b37\",\"status\":{\"completed\":\"Found hello.txt\"}}\n</subagent_notification>"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "The helper found hello.txt."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "What is in hello.txt? Answer in one word."
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "hi"
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Anything else?"
+        ],
+        "images": []
+      }
+    ],
+    "01a12171-2977-74e0-b37c-a083e2f80b37": [
+      {
+        "role": "user",
+        "text": [
+          "List the files in the workspace"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv160fq018",
+            "name": "exec_command",
+            "input": {
+              "cmd": "ls"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv160fq018",
+        "content": "Chunk ID: c824a2\nWall time: 0.0020 seconds\nProcess exited with code 0\nOriginal token count: 5\nOutput:\ndot.png\nhello.txt",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "Found hello.txt"
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Anything else?"
+        ],
+        "images": []
+      }
+    ]
+  }
+}

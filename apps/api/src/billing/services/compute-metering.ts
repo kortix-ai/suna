@@ -29,12 +29,13 @@ import {
   sandboxComputeSessions,
   sessionSandboxes,
 } from '@kortix/db';
-import { and, asc, eq, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../../config';
 import {
   type ProviderName,
   type SandboxWorkloadType,
   getProvider,
+  isProviderName,
 } from '../../platform/providers';
 import { getProviderComputeRateCard } from '../../platform/providers/compute-rates';
 import { db } from '../../shared/db';
@@ -50,32 +51,11 @@ import {
 } from '../repositories/compute-sessions';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { ledgerRequestKeyExists } from '../repositories/ledger-keys';
-import { resolveAccountBilling } from './billing-cache';
 import {
   billableWindowEnd,
   computeLivenessGraceMs,
   lastAliveAtOf,
 } from './compute-liveness';
-import { wallet } from '../wallet';
-import {
-  DEFAULT_COMPUTE_RATE_MULTIPLIER,
-  clampComputeRateMultiplier,
-} from './entitlement-overrides';
-import { LEGACY_PAID_TIERS_UNMETERED, accountRowMetersCompute } from './tiers';
-
-/** Kept in lockstep with accountMetersCompute() — see tier-facts.ts. */
-const METERED_BILLING_MODELS = ['per_seat', 'credit'] as const;
-
-/**
- * SQL form of `accountRowMetersCompute()`: a metered model, or any row that is
- * not a legacy paid plan. `tier` is coalesced because `NULL NOT IN (...)` is
- * NULL, which would drop a row the TypeScript predicate meters.
- */
-const accountRowMetersComputeSql = () =>
-  or(
-    inArray(creditAccounts.billingModel, METERED_BILLING_MODELS),
-    notInArray(sql`coalesce(${creditAccounts.tier}, '')`, [...LEGACY_PAID_TIERS_UNMETERED]),
-  );
 
 // Match the project-maintenance cadence so active compute appears on Billing
 // without waiting for a stop hook or a full hour.
@@ -106,68 +86,34 @@ export interface StartComputeOpts {
 }
 
 /**
- * Compute the cost (in USD, pre-balance-deduction) for a window.
- * All supported providers use one public customer rate.
- *
- * `rateMultiplier` is the account's custom compute price
- * (`ResolvedBilling.compute.rateMultiplier`). It defaults to 1 — list price,
- * which is what every account bills at unless an operator set an override — and
- * is clamped into `[0, MAX_COMPUTE_RATE_MULTIPLIER]` here as well as at the
- * resolver, because this function is also called directly (pricing pages,
- * tests) with a number that never passed through the resolver. 0 is a
- * deliberate value: free compute.
+ * Compute the cost (in USD, pre-balance-deduction) for a window: the reserved
+ * spec times the list rates (`compute-rates.ts`). Every account pays list price.
  */
 export function calculateComputeCost(
   spec: SandboxSpec,
   durationSeconds: number,
-  provider: ProviderName = 'daytona',
-  rateMultiplier: number = DEFAULT_COMPUTE_RATE_MULTIPLIER,
+  provider: string = 'platinum',
 ): number {
   if (durationSeconds <= 0) return 0;
   const rate = getProviderComputeRateCard(provider);
   const cpuCost = spec.cpuCores * rate.cpuPerCoreSecond * durationSeconds;
   const memCost = spec.memoryGb * rate.memoryPerGbSecond * durationSeconds;
   const diskCost = spec.diskGb * rate.diskPerGbSecond * durationSeconds;
-  return (cpuCost + memCost + diskCost) * clampComputeRateMultiplier(rateMultiplier);
-}
-
-/**
- * The account's compute rate multiplier, resolved through the 30s billing
- * cache (one cached row read per account, not a query per settle).
- *
- * FAILS OPEN TO LIST PRICE. A resolver or database hiccup must never stop a
- * window from being billed, and 1.0 is what the account would have paid before
- * custom pricing existed — the safe direction is "bill normally", not "bill
- * nothing" and not "throw away the window".
- */
-async function computeRateMultiplierFor(accountId: string): Promise<number> {
-  try {
-    const resolved = await resolveAccountBilling(accountId);
-    return clampComputeRateMultiplier(resolved.compute.rateMultiplier);
-  } catch (err) {
-    console.warn(
-      `[compute-metering] could not resolve the compute rate multiplier for ${accountId}; billing at list price:`,
-      err instanceof Error ? err.message : String(err),
-    );
-    return DEFAULT_COMPUTE_RATE_MULTIPLIER;
-  }
+  return cpuCost + memCost + diskCost;
 }
 
 /**
  * Open a metering row when a sandbox transitions to `active`.
- * No-op for a legacy PAID plan only (see `accountRowMetersCompute`). Every
- * other account, free and trial included, pays for compute from its wallet.
+ * Every account with a credit row, free and trial included, pays for compute
+ * from its wallet.
  */
 export async function startComputeSession(opts: StartComputeOpts): Promise<string | null> {
-  // Hard gate: self-hosted / billing-disabled deploys never meter compute, even
-  // if a credit_accounts row has a metered billing_model (stale data).
+  // Hard gate: self-hosted / billing-disabled deploys never meter compute.
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
   const account = await getCreditAccount(opts.accountId);
-  // `accountRowMetersCompute`, NOT a check on `billing_model` alone. The column
-  // defaults to 'legacy', so a model-only gate hands free compute to every
-  // account that never completed a checkout — free accounts and admin trials.
-  // Only a legacy PAID plan is exempt. See tier-facts.ts.
-  if (!accountRowMetersCompute(account)) return null;
+  // Every account with a credit row pays for compute. No credit account →
+  // nothing to debit → not metered.
+  if (!account) return null;
 
   // If a row is already open (e.g. duplicate hook), reuse it.
   const existing = await getOpenComputeSession(opts.sandboxId);
@@ -182,7 +128,7 @@ export async function startComputeSession(opts: StartComputeOpts): Promise<strin
     sandboxId: opts.sandboxId,
     sessionId: opts.sessionId ?? null,
     actorUserId: opts.actorUserId ?? null,
-    provider: opts.provider ?? 'daytona',
+    provider: opts.provider ?? 'platinum',
     cpuCores: opts.spec.cpuCores,
     memoryGb: opts.spec.memoryGb,
     diskGb: opts.spec.diskGb,
@@ -244,17 +190,7 @@ async function settleComputeWindow(
     diskGb: row.diskGb,
     gpuCount: row.gpuCount,
   };
-  // Resolved BEFORE the CAS claim so the amount that is claimed, debited, and
-  // (on a failed debit) released is one number. Reading it after the claim
-  // would let a mid-settle override change make the release arithmetic differ
-  // from the claim.
-  const rateMultiplier = await computeRateMultiplierFor(row.accountId);
-  const windowCost = calculateComputeCost(
-    spec,
-    durationSeconds,
-    row.provider as ProviderName,
-    rateMultiplier,
-  );
+  const windowCost = calculateComputeCost(spec, durationSeconds, row.provider);
   // CLAIM BEFORE DEBITING. The order is the whole fix.
   //
   // This used to debit first and move the cursor afterwards, with the update
@@ -294,12 +230,7 @@ async function settleComputeWindow(
     await settleAndCheckAutoTopup({
       accountId: row.accountId,
       amount: windowCost,
-      // The multiplier is named in the description only when it is not list
-      // price, so a custom-priced debit is self-explaining in the ledger and an
-      // ordinary one reads exactly as it always has.
-      description: `Sandbox compute · ${sessionLabel}${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s${
-        rateMultiplier === DEFAULT_COMPUTE_RATE_MULTIPLIER ? '' : ` · ${rateMultiplier}× rate`
-      }`,
+      description: `Sandbox compute · ${sessionLabel}${row.cpuCores}vCPU/${row.memoryGb}GB/${row.diskGb}GB · ${durationSeconds.toFixed(0)}s`,
       kind: 'compute_debit',
       // Derived from WHAT is billed — this session and this window end — so a
       // retry after a lost response produces the same key and replays instead
@@ -453,7 +384,7 @@ export async function reopenComputeForSandbox(
     accountId,
     sessionId,
     actorUserId,
-    provider: (last?.provider as ProviderName | undefined) ?? provider ?? 'daytona',
+    provider: (last?.provider as ProviderName | undefined) ?? provider ?? 'platinum',
     spec,
   });
 }
@@ -488,8 +419,7 @@ export interface ReconcileMissingComputeResult {
  *
  * This sweeps every `active` sandbox with no currently-open compute row and
  * reopens one via `reopenComputeForSandbox`, which already applies the
- * `accountRowMetersCompute` gate (no-op for a legacy paid plan — never reimplemented
- * here) and reuses the sandbox's last known spec so a reconciled window bills
+ * credit-row gate in `startComputeSession` and reuses the sandbox's last known spec so a reconciled window bills
  * at the same rate the sandbox always has. Idempotent: `startComputeSession`
  * underneath is a no-op if a row already raced open between the SELECT below
  * and this call. Bounded per pass. Deliberately does NOT back-bill — the
@@ -500,13 +430,9 @@ export interface ReconcileMissingComputeResult {
 /**
  * Candidate query.
  *
- * The metered-account inner join is load-bearing, not defence-in-depth: a legacy
- * paid plan can NEVER be metered (`startComputeSession` returns early), so every
- * active box on one matches "no open window" permanently. Without this filter an
- * unordered `LIMIT` fills with those rows on every pass and the metered rows
- * this sweep exists for are never reached — a no-op that costs a round-trip per
- * row. The inner join also drops accounts with no `credit_accounts` row at all,
- * which is the same fail-closed outcome as the `accountRowMetersCompute` gate below.
+ * The inner join on `credit_accounts` drops boxes whose account has no credit
+ * row: `startComputeSession` cannot meter them, so without it an unordered
+ * `LIMIT` could fill with rows that never open a window.
  */
 function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
   return db
@@ -522,9 +448,6 @@ function selectMissingComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE) {
       creditAccounts,
       and(
         eq(creditAccounts.accountId, sessionSandboxes.accountId),
-        // Mirrors accountRowMetersCompute(). An account missing here silently
-        // stops being charged.
-        accountRowMetersComputeSql(),
       ),
     )
     .leftJoin(
@@ -573,7 +496,6 @@ function selectMissingAppComputeCandidates(limit = RECONCILE_MISSING_BATCH_SIZE)
       creditAccounts,
       and(
         eq(creditAccounts.accountId, appRuntimes.accountId),
-        accountRowMetersComputeSql(),
       ),
     )
     .leftJoin(
@@ -602,8 +524,10 @@ export async function reconcileMissingAppComputeSessions(
   let reconciled = 0;
   let errors = 0;
   for (const row of rows) {
+    // A legacy `e2b` row (E2B support is discontinued) never runs: skip it.
+    if (!isProviderName(row.provider)) continue;
     try {
-      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      const status = await getProvider(row.provider).getStatus(row.externalId);
       if (status !== 'running') continue;
       const opened = await startComputeSession({
         sandboxId: row.sandboxId,
@@ -650,8 +574,8 @@ export async function reconcileMissingComputeSessions(
       // `reconcileOrphanComputeSessions` — which settles such rows back down and
       // pages via the BILLING INVARIANT VIOLATED monitor. Only reopen for a box the
       // provider still reports as running.
-      if (!row.externalId) continue;
-      const status = await getProvider(row.provider as ProviderName).getStatus(row.externalId);
+      if (!row.externalId || !isProviderName(row.provider)) continue;
+      const status = await getProvider(row.provider).getStatus(row.externalId);
       if (status !== 'running') continue;
 
       const opened = await reopenComputeForSandbox(

@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { normalizeAppBuild } from './spec';
+import { movedImageReference, normalizeAppBuild } from './spec';
 
 const cleanup: string[] = [];
 afterEach(async () => {
@@ -76,6 +76,47 @@ describe('normalizeAppBuild', () => {
     expect(build.runtimeSpec).toMatchObject({ target_port: 4000 });
   });
 
+  test('a digest-pinned ghcr.io/get-convex image builds from ghcr.io/convex', async () => {
+    const digest = `sha256:${'d'.repeat(64)}`;
+    const oci = await normalizeAppBuild({
+      kind: 'oci_image',
+      image: `ghcr.io/get-convex/convex-backend@${digest}`,
+      command: ['./run_backend.sh'],
+      port: 3210,
+    });
+    expect(oci.dockerfile).toBe(`FROM ghcr.io/convex/convex-backend@${digest}`);
+    expect(oci.buildSpec).toEqual({ image: `ghcr.io/get-convex/convex-backend@${digest}` });
+
+    const source = await mkdtemp(join(tmpdir(), 'kortix-app-spec-'));
+    cleanup.push(source);
+    await writeFile(join(source, 'Dockerfile'), [
+      `FROM --platform=linux/amd64 ghcr.io/get-convex/convex-dashboard@${digest} AS base`,
+      `from ghcr.io/get-convex/convex-dashboard@${digest}`,
+      '# FROM ghcr.io/get-convex/convex-dashboard:latest',
+      'RUN echo ghcr.io/get-convex/kept',
+    ].join('\n'));
+    const built = await normalizeAppBuild(
+      { kind: 'dockerfile', command: ['node', 'server.js'], port: 6791 },
+      source,
+    );
+    expect(built.dockerfile).toBe([
+      `FROM --platform=linux/amd64 ghcr.io/convex/convex-dashboard@${digest} AS base`,
+      `from ghcr.io/convex/convex-dashboard@${digest}`,
+      '# FROM ghcr.io/get-convex/convex-dashboard:latest',
+      'RUN echo ghcr.io/get-convex/kept',
+    ].join('\n'));
+  });
+
+  test('only a digest-pinned ref under exactly ghcr.io/get-convex/ is rewritten', () => {
+    const digest = `sha256:${'a'.repeat(64)}`;
+    for (const kept of [
+      'ghcr.io/get-convex/convex-backend:latest',
+      `ghcr.io/convex/convex-backend@${digest}`,
+      `docker.io/get-convex/convex-backend@${digest}`,
+      `ghcr.io/get-convex-fork/convex-backend@${digest}`,
+    ]) expect(movedImageReference(kept)).toBe(kept);
+  });
+
   test('rejects traversal, reserved ports, and OCI command ambiguity', async () => {
     await expect(normalizeAppBuild({ kind: 'static', root: '../secret' }, '/tmp/source'))
       .rejects.toThrow(/safe relative path/);
@@ -85,5 +126,18 @@ describe('normalizeAppBuild', () => {
     await expect(normalizeAppBuild({
       kind: 'oci_image', image: 'nginx:latest', port: 80,
     })).rejects.toThrow(/require command/);
+  });
+
+  test('a dockerfile path through a symlink that leaves the source is refused before it is read', async () => {
+    const outside = await mkdtemp(join(tmpdir(), 'kortix-spec-outside-'));
+    const source = await mkdtemp(join(tmpdir(), 'kortix-spec-source-'));
+    cleanup.push(outside, source);
+    await mkdir(join(outside, 'etc'));
+    await writeFile(join(outside, 'etc', 'Dockerfile'), 'FROM host-secret');
+    await symlink(outside, join(source, 'link'));
+    await expect(normalizeAppBuild(
+      { kind: 'dockerfile', dockerfile: 'link/etc/Dockerfile', command: ['node'], port: 3000 },
+      source,
+    )).rejects.toThrow(/escapes the source directory/);
   });
 });

@@ -15,8 +15,8 @@
  * page, with no composer (Jay, 2026-10-02: nothing can be sent). Web parity with the dashboard's "OpenCode runtime is not ready"
  * screen (apps/web/.../sessions/[sessionId]/page.tsx InlineSessionError).
  *
- * With a SAVED COPY (`messages`: the copy this device kept, then the server's;
- * `lib/session/saved-copy.ts`) the view is the thread itself: its turns,
+ * With a SAVED COPY (`thread`: the copy this device kept, then the server's;
+ * `hooks/useSavedCopy.ts`) the view is the thread itself: its turns,
  * read-only, and a status card above the composer saying what the computer
  * is doing. The loader is gone — the conversation is the content. A failure takes
  * the composer's slot here too, so the thread stays readable, the rule the web
@@ -32,8 +32,13 @@
 
 import React from 'react';
 import { ScrollView, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { groupMessagesIntoTurns, type SessionMessageAuthors, type SessionParticipants } from '@kortix/sdk';
+import {
+  sessionLogTurns,
+  type SessionLogThread,
+  type SessionLogTurn,
+  type SessionMessageAuthors,
+  type SessionParticipants,
+} from '@kortix/sdk';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@/lib/icons';
@@ -43,29 +48,34 @@ import { Icon } from '@/components/ui/icon';
 import { COMPOSER_CARD_CLASS, Composer } from '@/components/kortix/composer';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { FLOATING_MENU_CLEARANCE } from '@/components/session/FloatingMenuButton';
+import { ComposerBottomFade, composerSafeAreaPadding } from '@/components/session/composer-bottom-fade';
 import { AttachmentTile } from '@/components/session/attachment-tile';
-import { UserMessageBubble } from '@/components/session/turn/user-message';
+import { MessageBody, UserMessageBubble } from '@/components/session/turn/user-message';
 import { SessionTurn } from '@/components/session/SessionTurn';
 import { SessionDotMatrix } from '@/components/session/dot-matrix/session-dot-matrix';
 import { ToolFilePreviewHost, useToolFilePreviewStore } from '@/components/session/tool/shared/navigation';
-import type { MessageWithParts, Turn } from '@/lib/session/types';
 import { turnTopGap } from '@/lib/session/auto-scroll';
-import { THEME, withAlpha } from '@/lib/utils/theme';
+import { THEME } from '@/lib/utils/theme';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
+import { splitPastedContent } from '@kortix/shared';
+import { openPastedText } from '@/stores/pasted-text-store';
 import { webSpace } from '@/lib/session/user-message';
 import { useSessionMessageAuthors, useSessionParticipants } from '@/lib/projects/hooks';
 import { messageAvatarPerson } from '@/lib/session/participants';
+import { turnStoppedBy } from '@/lib/session/turn-stop';
 
 export interface SessionConnectError {
   title: string;
   message: string;
   /** Raw runtime failure detail (e.g. the git clone error). Shown verbatim. */
   detail?: string;
+  /** The provider removed the box: the primary action is Continue (`recover`), not Restart. */
+  lost?: boolean;
 }
 
-/** `text-[0.9rem] leading-[22px] font-medium` — same as the thread's user bubble (turn/user-message.tsx). */
-const BUBBLE_TEXT_STYLE = { fontFamily: 'Roobert-Medium', fontSize: 14.4, lineHeight: 22 } as const;
+/** The first prompt has no session mentions yet. */
+const NO_SESSIONS: { id: string; title: string }[] = [];
 const noop = () => {};
 
 export function SessionConnecting({
@@ -76,7 +86,7 @@ export function SessionConnecting({
   onRestart,
   restarting,
   showLoader = true,
-  messages,
+  thread,
   statusLabel,
   sessionId,
   empty = false,
@@ -99,7 +109,7 @@ export function SessionConnecting({
    */
   showLoader?: boolean;
   /** The session's saved copy, shown as the thread while the computer wakes. */
-  messages?: MessageWithParts[];
+  thread?: SessionLogThread;
   /** What the computer is doing, for the status card above the composer (`sessionConnectionLabel`). */
   statusLabel?: string | null;
   /** The runtime session the saved copy belongs to; tool rows read it. */
@@ -120,12 +130,13 @@ export function SessionConnecting({
   const messageAuthors = useSessionMessageAuthors(projectId, projectSessionId).data;
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  // The floating composer area's height: the content above rests over it.
+  const [bottomHeight, setBottomHeight] = React.useState(0);
   const files = firstFiles ?? [];
-  const hasFiles = files.length > 0;
-  const turns = React.useMemo(
-    () => (messages && messages.length > 0 ? (groupMessagesIntoTurns(messages) as unknown as Turn[]) : []),
-    [messages],
-  );
+  // The home send carries pastes inline: tiles here, the typed words in the bubble.
+  const firstPrompt = React.useMemo(() => splitPastedContent(firstMessage ?? ''), [firstMessage]);
+  const hasFiles = files.length > 0 || firstPrompt.pastes.length > 0;
+  const turns = React.useMemo(() => (thread ? sessionLogTurns(thread) : []), [thread]);
 
   if (turns.length > 0) {
     return (
@@ -146,13 +157,12 @@ export function SessionConnecting({
   if (empty && !error && !hasFiles && !firstMessage) {
     return (
       <View style={{ flex: 1 }} className="bg-background">
-        <View style={{ flex: 1 }} />
-        <View style={{ paddingBottom: insets.bottom }}>
+        <FloatingComposerArea>
           {statusLabel ? <WakingStatus label={statusLabel} /> : null}
           <View className="px-4 pb-3 pt-1">
             <WakingComposer />
           </View>
-        </View>
+        </FloatingComposerArea>
       </View>
     );
   }
@@ -161,7 +171,9 @@ export function SessionConnecting({
     <View style={{ flex: 1 }} className="bg-background">
       {/* The thread's list area: the first message under the header, the
           loader (or the failure) centred in what is left. */}
-      <View style={{ flex: 1, paddingTop: insets.top + FLOATING_MENU_CLEARANCE }} className="px-4">
+      <View
+        style={{ flex: 1, paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: error ? 0 : bottomHeight }}
+        className="px-4">
         {/* The thread's user message (`turn/user-message.tsx`): one
             right-aligned column capped at 80%, files above the bubble. */}
         {hasFiles || firstMessage ? (
@@ -172,6 +184,14 @@ export function SessionConnecting({
                 showsHorizontalScrollIndicator={false}
                 className="flex-grow-0"
                 contentContainerStyle={{ gap: webSpace(2) }}>
+                {firstPrompt.pastes.map((paste) => (
+                  <AttachmentTile
+                    key={`pasted:${paste.id}`}
+                    filename="Pasted text"
+                    preview={paste.text}
+                    onPress={() => openPastedText(paste)}
+                  />
+                ))}
                 {files.map((file, index) => (
                   <AttachmentTile
                     key={`${file.uri}-${index}`}
@@ -184,9 +204,9 @@ export function SessionConnecting({
                 ))}
               </ScrollView>
             ) : null}
-            {firstMessage ? (
+            {firstPrompt.text ? (
               <UserMessageBubble isDark={isDark}>
-                <Text style={BUBBLE_TEXT_STYLE}>{firstMessage}</Text>
+                <MessageBody text={firstPrompt.text} sessions={NO_SESSIONS} />
               </UserMessageBubble>
             ) : null}
           </View>
@@ -204,19 +224,47 @@ export function SessionConnecting({
         </View>
       </View>
 
-      {/* The thread's composer, where `SessionPage` puts it (`px-4 pb-3 pt-1`
-          above the safe area). Disabled: there is no runtime to send to yet.
-          None under a failure: nothing can be sent. */}
+      {/* The thread's composer, floating where `SessionPage` puts it
+          (`px-4 pb-3 pt-1` above the safe area). Disabled: there is no
+          runtime to send to yet. None under a failure: nothing can be sent. */}
       {error ? (
         <View style={{ height: insets.bottom }} />
       ) : (
-        <View style={{ paddingBottom: insets.bottom }}>
+        <FloatingComposerArea onHeight={setBottomHeight}>
           <View className="px-4 pb-3 pt-1">
-            <Composer value="" onChangeText={noop} onSubmit={noop} disabled onAttach={noop} />
+            <WakingComposer />
           </View>
-        </View>
+        </FloatingComposerArea>
       )}
     </View>
+  );
+}
+
+/**
+ * The composer area, floating over the thread as in `SessionPage`: absolute at
+ * the bottom, over the composer fade, so the thread runs to the screen edge.
+ * Taps reach the thread everywhere but on the cards. Reports its height so the
+ * thread's end can rest above it.
+ */
+function FloatingComposerArea({ children, onHeight }: { children: React.ReactNode; onHeight?: (height: number) => void }) {
+  const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  return (
+    <>
+      <ComposerBottomFade
+        testID="waking-composer-fade"
+        background={THEME[colorScheme === 'dark' ? 'dark' : 'light'].background}
+        bottomInset={insets.bottom}
+      />
+      <View
+        testID="waking-composer-area"
+        pointerEvents="box-none"
+        // The thread's rule (KRTX-2930): the card rests on the safe-area line.
+        style={{ position: 'absolute', right: 0, bottom: 0, left: 0, paddingBottom: composerSafeAreaPadding(insets.bottom) }}
+        onLayout={onHeight ? (event) => onHeight(event.nativeEvent.layout.height) : undefined}>
+        {children}
+      </View>
+    </>
   );
 }
 
@@ -264,7 +312,7 @@ function SavedThread({
   participants,
   messageAuthors,
 }: {
-  turns: Turn[];
+  turns: SessionLogTurn[];
   participants?: SessionParticipants;
   messageAuthors?: SessionMessageAuthors;
   sessionId?: string;
@@ -276,8 +324,9 @@ function SavedThread({
 }) {
   const insets = useSafeAreaInsets();
   const scrollRef = React.useRef<ScrollView>(null);
-  const { colorScheme } = useColorScheme();
-  const background = THEME[colorScheme === 'dark' ? 'dark' : 'light'].background;
+  const viewerId = participants?.participants.find((person) => person.is_viewer)?.user_id;
+  // The floating composer area's height: the newest turn rests above it.
+  const [bottomHeight, setBottomHeight] = React.useState(0);
   // Laid out exactly as `SessionPage`'s list: no list-level side padding (each
   // turn pads itself, `px-4` in `SessionTurn`), web's `mt-12` between turns
   // (`turnTopGap`), and attachment tiles / file mentions opening the Recent
@@ -287,39 +336,26 @@ function SavedThread({
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: 12 }}
+        contentContainerStyle={{ paddingTop: insets.top + FLOATING_MENU_CLEARANCE, paddingBottom: bottomHeight + 12 }}
         onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}>
         {turns.map((turn, index) => {
           const gap = turnTopGap({ index, working: false, pending: false, previousPending: false });
           return (
-            <View key={turn.userMessage.info.id} style={gap > 0 ? { marginTop: gap } : undefined}>
+            <View key={turn.id} style={gap > 0 ? { marginTop: gap } : undefined}>
               <SessionTurn
                 turn={turn}
-                isWorkingTurn={false}
-                isBusy={false}
                 sessionId={sessionId}
                 onFileMention={openFilePreview}
                 rewindDisabled
-                sender={messageAvatarPerson(
-                  messageAuthors,
-                  participants,
-                  participants?.participants.find((person) => person.is_viewer)?.user_id,
-                  turn.userMessage.info.id,
-                )}
+                sender={messageAvatarPerson(messageAuthors, participants, viewerId, turn.id)}
+                stoppedBy={turnStoppedBy(messageAuthors, viewerId, turn.id)}
               />
             </View>
           );
         })}
       </ScrollView>
 
-      {/* The thread's fade above the input (`SessionPage`). */}
-      <LinearGradient
-        colors={[withAlpha(background, 0), withAlpha(background, 1)]}
-        style={{ height: 24, marginTop: -24, zIndex: 1 }}
-        pointerEvents="none"
-      />
-
-      <View style={{ paddingBottom: insets.bottom }}>
+      <FloatingComposerArea onHeight={setBottomHeight}>
         {error ? (
           <View className="px-4 pb-3 pt-1">
             <ConnectErrorState error={error} onCancel={onCancel} onRestart={onRestart} restarting={restarting} sessionId={sessionId} />
@@ -332,7 +368,7 @@ function SavedThread({
             </View>
           </>
         )}
-      </View>
+      </FloatingComposerArea>
 
       <ToolFilePreviewHost />
     </View>
@@ -345,7 +381,8 @@ function openFilePreview(path: string) {
 
 /**
  * The failure: the composer card's surface, the words on top, and Back to
- * project · Restart side by side, 50/50, the primary on the right. Centred in
+ * project · Restart (Continue for a lost computer) side by side, 50/50, the
+ * primary on the right. Centred in
  * the page when there is no conversation; in the composer's slot under a
  * saved copy.
  */
@@ -390,7 +427,11 @@ function ConnectErrorState({
             ) : (
               <Icon as={RotateCcw} size={15} />
             )}
-            <Text>{restarting ? 'Restarting…' : 'Restart session'}</Text>
+            <Text>
+              {error.lost
+                ? restarting ? 'Continuing…' : 'Continue session'
+                : restarting ? 'Restarting…' : 'Restart session'}
+            </Text>
           </Button>
         ) : null}
       </View>

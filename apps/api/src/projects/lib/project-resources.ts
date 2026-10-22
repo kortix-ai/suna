@@ -81,10 +81,6 @@ export function loadConfigWithFilesCached(
   return configWithFilesMemo(row);
 }
 
-export function __clearConfigWithFilesCacheForTests(): void {
-  configWithFilesMemo.clear();
-}
-
 export interface ProjectResourceItem {
   /** Stable grant key — agent name / skill slug. */
   id: string;
@@ -278,4 +274,9 @@ export async function resourceDenierForRequest(ctx: ResourceAccessContext & {
     return null;
   }
   return denierFromConfig(config, ctx);
+}
+
+/** A committed resource mutation must not leave the IAM picker on its old catalog. */
+export function invalidateProjectResourceConfig(projectId: string): void {
+  configWithFilesMemo.invalidate(projectId);
 }

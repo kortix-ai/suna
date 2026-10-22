@@ -5,7 +5,7 @@ import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
-import { chatUser, linkChatIdentity, lookupChatIdentity } from './core/identity';
+import { chatUser, linkChatIdentity } from './core/identity';
 import {
   frontendBase,
   installHandoffUrl,
@@ -192,9 +192,13 @@ export async function completeSlackOauthInstall(input: {
     }
   }
 
-  // Materialize the Slack channel connector so it appears in the Connector right
-  // after connecting (best-effort; never blocks the redirect).
-  void reconcileChannelConnectors(payload.projectId);
+  // Materialize the Slack channel connector so it appears in the Connector list
+  // the dashboard loads right after the redirect. Awaited, not fire-and-forget:
+  // the redirect races the dashboard's first connectors fetch, and losing that
+  // race is the "connected Slack never shows up" report (KRTX-2353). Never
+  // throws — reconcileChannelConnectors is best-effort by contract — so the
+  // completed install always lands.
+  await reconcileChannelConnectors(payload.projectId);
 
   return done({ success: '1' });
 }

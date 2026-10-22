@@ -38,7 +38,7 @@ import {
   type OpencodeLifecycleOptions,
 } from '@/harness/open-code/lifecycle'
 import { createOpenCodeHarnessService } from '@/harness/open-code/service'
-import { bootLinkPath } from '@/services/config-release/boot-config'
+import { bootLinkPath } from '@/services/config-provider/boot-config'
 import { restoreTestConfigRoot, serveTestConfigDir } from './helpers/boot-link'
 import { reserveOpenCodePortPair } from './helpers/open-code-harness'
 import { createProjectEnvStore, type ProjectEnvStore } from '@/services/sandbox-env/project-env'
@@ -225,13 +225,13 @@ interface Rig {
 }
 
 function rig(
-  options: OpencodeLifecycleOptions & { projectEnv?: ProjectEnvStore; binary?: string } = {},
+  options: OpencodeLifecycleOptions & { projectEnv?: ProjectEnvStore; binary?: string; ports?: [number, number] } = {},
 ): Rig {
   const workspace = join(root, 'workspace')
   mkdirSync(workspace, { recursive: true })
   const binary = options.binary ?? join(root, 'opencode')
   if (!options.binary && !options.binaryPathResolverOverride) writeFakeOpencode(binary)
-  const [primary, standby] = reserveOpenCodePortPair()
+  const [primary, standby] = options.ports ?? reserveOpenCodePortPair()
   const cfg = {
     workspace,
     projectTarget: workspace,
@@ -241,7 +241,7 @@ function rig(
     gitUserEmail: 'agent@kortix.ai',
   } as Config
   const marks: Rig['marks'] = []
-  const { projectEnv, binary: _binary, ...lifecycleOptions } = options
+  const { projectEnv, binary: _binary, ports: _ports, ...lifecycleOptions } = options
   const created = createOpencodeLifecycle(cfg, projectEnv, {
     ...(options.binaryPathResolverOverride ? {} : { binaryPathOverride: binary }),
     configPathOverride: join(root, 'runtime-config.json'),
@@ -767,13 +767,13 @@ describe('reloadConfig', () => {
   }, 30_000)
 })
 
-// ── agent .md model refs in gateway mode ─────────────────────────────────────
+// ── agent .md model refs ────────────────────────────────────────────────────
 
 /**
  * Prod 2026-09-30: an agent `.md` declared `model: codex/gpt-6-sol`. OpenCode
  * reads the `.md` AFTER the composed `OPENCODE_CONFIG` file and splits a ref
- * at its first slash, so the agent named provider `codex`, which gateway mode
- * does not have. Every Slack follow-up (a prompt that names no model) failed
+ * at its first slash, so the agent named provider `codex`, which a kortix-only
+ * config does not have. Every Slack follow-up (a prompt that names no model) failed
  * "Model not found: codex/gpt-6-sol." `OPENCODE_CONFIG_CONTENT` is the only
  * layer OpenCode merges after the config dir.
  */
@@ -792,7 +792,7 @@ describe('agent .md model refs', () => {
     process.env.KORTIX_BAKED_LLM_CATALOG_PATH = join(root, 'no-baked-catalog.json')
   }
 
-  test('gateway mode routes every .md model through kortix, after the config dir', async () => {
+  test('routes every .md model through kortix, after the config dir', async () => {
     useGateway()
     const configDir = join(root, 'config')
     writeAgent(configDir, 'agents/kortix.md', 'codex/gpt-6-sol')
@@ -809,16 +809,6 @@ describe('agent .md model refs', () => {
         'team/triage': { model: 'kortix/glm-5.3-flash' },
       },
     })
-  }, 30_000)
-
-  test('native mode leaves .md model refs to OpenCode', async () => {
-    const configDir = join(root, 'config')
-    writeAgent(configDir, 'agents/kortix.md', 'anthropic/claude-opus-4-8')
-    await serveTestConfigDir(configDir, join(root, 'boot-store'))
-    const r = rig()
-    const pid = await startReady(r)
-
-    expect(spawnEnv(pid).OPENCODE_CONFIG_CONTENT).toBeNull()
   }, 30_000)
 
   // A prompt that names no model runs on the agent's model, so no turn-start
@@ -1013,4 +1003,114 @@ describe('onUnplannedRespawn', () => {
     expect(r.lifecycle.getPid()).toBeNull()
     expect(calls).toHaveLength(0)
   }, 30_000)
+})
+
+// ── a daemon that dies hard ──────────────────────────────────────────────────
+
+describe('a daemon killed with SIGKILL', () => {
+  const LIFECYCLE_MODULE = join(import.meta.dir, '..', 'harness', 'open-code', 'lifecycle.ts')
+
+  /**
+   * A real daemon process: the production lifecycle spawns the fake OpenCode, then idles. It
+   * also starts an OpenCode on `foreignPort` in its own group, which the SIGKILL orphans
+   * exactly like the real one, so only the port filter can spare it.
+   */
+  async function startDaemonProcess(
+    binary: string,
+    primary: number,
+    standby: number,
+    foreignPort: number,
+  ): Promise<{ daemonPid: number; opencodePid: number; foreignPid: number }> {
+    const workspace = join(root, 'workspace')
+    mkdirSync(workspace, { recursive: true })
+    const script = join(root, 'daemon.ts')
+    writeFileSync(
+      script,
+      `import { createOpencodeLifecycle, waitForOpencodeReady } from ${JSON.stringify(LIFECYCLE_MODULE)}
+const workspace = ${JSON.stringify(workspace)}
+const lifecycle = createOpencodeLifecycle(
+  { workspace, projectTarget: workspace, opencodeInternalPort: ${primary}, opencodeStandbyPort: ${standby}, gitUserName: 'Kortix Agent', gitUserEmail: 'agent@kortix.ai' } as any,
+  undefined,
+  { binaryPathOverride: ${JSON.stringify(binary)}, configPathOverride: ${JSON.stringify(join(root, 'daemon-config.json'))} },
+)
+const { spawn } = await import('node:child_process')
+const foreign = spawn(${JSON.stringify(binary)}, ['serve', '--port', '${foreignPort}', '--hostname', '127.0.0.1'], { stdio: 'ignore', detached: true })
+await lifecycle.start()
+if (!(await waitForOpencodeReady(lifecycle, workspace))) process.exit(2)
+console.log('daemon-ready ' + lifecycle.getPid() + ' ' + foreign.pid)
+setInterval(() => {}, 1 << 30)
+`,
+    )
+    const daemon = Bun.spawn(['bun', script], {
+      cwd: join(import.meta.dir, '..', '..'),
+      env: { ...process.env, HOME: join(root, 'home'), KORTIX_BOOT_CONFIG_ROOT: join(root, 'boot') },
+      stdout: 'pipe',
+      stderr: 'inherit',
+    })
+    let out = ''
+    const decoder = new TextDecoder()
+    for await (const chunk of daemon.stdout) {
+      out += decoder.decode(chunk)
+      const ready = out.match(/^daemon-ready (\d+) (\d+)$/m)
+      if (ready) return { daemonPid: daemon.pid, opencodePid: Number(ready[1]), foreignPid: Number(ready[2]) }
+    }
+    throw new Error(`daemon exited before OpenCode was ready: ${out.slice(-2_000)}`)
+  }
+
+  test('the next daemon reaps the OpenCode the dead one left on its ports, and only that one', async () => {
+    const binary = join(root, 'opencode')
+    writeFakeOpencode(binary)
+    const [primary, standby] = reserveOpenCodePortPair()
+    // An OpenCode on a port outside the pair, orphaned by the same crash, must survive.
+    const [foreignPort] = reserveOpenCodePortPair()
+    const { daemonPid, opencodePid: orphan, foreignPid } = await startDaemonProcess(binary, primary, standby, foreignPort)
+    await waitFor(() => sessionAnswers(`http://127.0.0.1:${foreignPort}`))
+
+    // The crash: no shutdown path runs, so OpenCode is orphaned and keeps the port.
+    process.kill(daemonPid, 'SIGKILL')
+    await waitFor(() => !processExists(daemonPid))
+    expect(processExists(orphan)).toBe(true)
+    expect(await sessionAnswers(`http://127.0.0.1:${primary}`)).toBe(true)
+
+    try {
+      const r = rig({ binary, ports: [primary, standby] })
+      const pid = await startReady(r)
+
+      expect(pid).not.toBe(orphan)
+      expect(processExists(orphan)).toBe(false)
+      expect(await sessionAnswers(r.lifecycle.getInternalUrl())).toBe(true)
+      expect(requestLog(primary).at(-1)?.split(' ')[0]).toBe(String(pid))
+      expect(processExists(foreignPid)).toBe(true)
+      expect(await sessionAnswers(`http://127.0.0.1:${foreignPort}`)).toBe(true)
+    } finally {
+      for (const pid of [orphan, foreignPid]) {
+        try {
+          process.kill(-pid, 'SIGKILL')
+        } catch {}
+      }
+    }
+  }, 60_000)
+
+  test('a ps that never answers delays the first spawn by its timeout, then the boot goes on', async () => {
+    // `ps` blocked on a D-state process's /proc entry must not stall the boot. The stub's
+    // background child keeps stdout open after the stub itself is killed.
+    const stubBin = join(root, 'stub-bin')
+    mkdirSync(stubBin)
+    writeFileSync(join(stubBin, 'ps'), `#!/bin/sh\nsleep 30 &\necho $! > ${ctl}/ps-bg.pid\nexec sleep 30\n`)
+    chmodSync(join(stubBin, 'ps'), 0o755)
+    const savedPath = process.env.PATH
+    process.env.PATH = `${stubBin}:${savedPath}`
+    try {
+      const r = rig()
+      const started = Date.now()
+      await startReady(r)
+      expect(Date.now() - started).toBeLessThan(8_000)
+      expect(existsSync(join(ctl, 'ps-bg.pid'))).toBe(true)
+    } finally {
+      process.env.PATH = savedPath
+      try {
+        process.kill(Number(readFileSync(join(ctl, 'ps-bg.pid'), 'utf8')), 'SIGKILL')
+      } catch {}
+    }
+  }, 40_000)
 })

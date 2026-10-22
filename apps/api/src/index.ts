@@ -1,4 +1,5 @@
 // Expand the aggregate ECS secret before any module reads process.env.
+import { loadManagedLineupAtBoot } from './workers/managed-lineup-worker';
 import './environment-secret';
 
 // ─── Observability (must follow environment hydration) ───────────────────────
@@ -13,6 +14,7 @@ import { initModelPricing } from './router/config/model-pricing';
 import { runtimeModelCatalog } from './llm-gateway/models/runtime-catalog';
 import { primeDaytonaRateLimitClassifier } from './shared/daytona-rate-limit';
 import { primeDaytonaTransientClassifier } from './shared/daytona-transient';
+import { primeComposioTransientClassifier } from './shared/composio-transient';
 import { ensureSchema } from './ensure-schema';
 import { dispatchInbound } from './inbound-dispatch';
 import { bootServices, markSchemaReady, shutdown } from './bootstrap';
@@ -45,6 +47,14 @@ void primeDaytonaRateLimitClassifier();
 // it.
 void primeDaytonaTransientClassifier();
 
+// Same for the Composio client's `InternalServerError` / `APIConnectionError`
+// classes so `isComposioTransientProviderError` (global `app.onError`) has
+// its instanceof signal from the first transient Composio failure on — see
+// shared/composio-transient.ts. Fire-and-forget, never blocks startup; an
+// error thrown before this resolves classifies `false` (identical to the
+// pre-classifier behavior) and cannot occur before a Composio call has run.
+void primeComposioTransientClassifier();
+
 console.log(`
 ╔═══════════════════════════════════════════════════════════╗
 ║                  Kortix API Starting                      ║
@@ -53,7 +63,7 @@ console.log(`
 ║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Services:                                                ║
-║    /v1/router     (search, LLM, proxy)                    ║
+║    /v1/router     (Tavily/Serper/Firecrawl proxy)         ║
 ║    /v1/billing    (subscriptions, credits, webhooks)       ║
 ║    /v1/platform   (api keys, sandbox version)               ║
 ║    /v1/projects   (Git-backed projects)                    ║
@@ -76,6 +86,8 @@ if (process.env.KORTIX_MODEL_PRICING_LIVE_ENABLED !== '0') {
     console.error('[startup] Model pricing init failed (will retry in 24h):', err),
   );
 }
+// Kortix managed models come from Platinum Inference: read the lineup before serving.
+if (import.meta.main) await loadManagedLineupAtBoot();
 if (process.env.KORTIX_MODEL_CATALOG_LIVE_ENABLED !== '0') {
   runtimeModelCatalog
     .start()

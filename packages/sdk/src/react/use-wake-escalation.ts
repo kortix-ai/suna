@@ -1,6 +1,9 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
+import { qk } from './query-keys';
+import { useSessionStreamConnected } from './use-session-stream';
 import {
   advanceWakeEscalation,
   initialWakeEscalationState,
@@ -30,6 +33,47 @@ export interface UseWakeEscalationInput {
   /** `POST /restart` — the thing the human always clicks. */
   onRestart: () => void;
   limits?: WakeEscalationLimits;
+  /**
+   * The session this view shows (R5.3). While its stream is connected and the
+   * server reports its wake ladder (`kortix.control.runtime` `wake_ladder`),
+   * the SERVER runs the ladder: this hook returns its state and dispatches
+   * nothing. The client machine above is the fallback without the stream.
+   */
+  projectId?: string;
+  sessionId?: string;
+}
+
+/** The server wake ladder, as `kortix.control.runtime` carries it. */
+export interface ServerWakeLadder {
+  status: 'idle' | 'waking' | 'escalating' | 'exhausted';
+  retried: boolean;
+  restarts: number;
+  max_restarts: number;
+  silent_since: string | null;
+}
+
+/** The server ladder in the view shape hosts already render. Pure. */
+export function wakeEscalationViewFromServer(ladder: ServerWakeLadder, nowMs: number): WakeEscalationView {
+  const attempts: WakeEscalationState['attempts'] = [
+    ...(ladder.retried ? [{ step: 'retry-start' as const, atMs: 0 }] : []),
+    ...Array.from({ length: ladder.restarts }, () => ({ step: 'restart' as const, atMs: 0 })),
+  ];
+  const silentSince = ladder.silent_since ? Date.parse(ladder.silent_since) : Number.NaN;
+  const state = {
+    ...initialWakeEscalationState,
+    status: ladder.status,
+    attempts,
+    msSinceProgress: Number.isFinite(silentSince) ? Math.max(0, nowMs - silentSince) : 0,
+  } as WakeEscalationState;
+  return {
+    status: state.status,
+    attempts,
+    attemptNumber: attempts.length + 1,
+    note: wakeEscalationNote(state),
+    exhausted: state.status === 'exhausted',
+    summary: wakeEscalationAttemptSummary(state),
+    msSinceProgress: state.msSinceProgress,
+  };
 }
 
 export interface WakeEscalationView {
@@ -73,7 +117,17 @@ export function useWakeEscalation(input: UseWakeEscalationInput): WakeEscalation
     onRetryStart,
     onRestart,
     limits,
+    projectId = '',
+    sessionId = '',
   } = input;
+
+  const streamConnected = useSessionStreamConnected(projectId, sessionId);
+  const runtimeControl = useQuery<{ wake_ladder?: ServerWakeLadder } | null>({
+    queryKey: qk.project.sessionRuntimeControl(projectId, sessionId),
+    queryFn: () => null,
+    enabled: false,
+  }).data;
+  const serverLadder = streamConnected ? (runtimeControl?.wake_ladder ?? null) : null;
 
   const [state, setState] = useState<WakeEscalationState>(initialWakeEscalationState);
   const stateRef = useRef(state);
@@ -90,7 +144,9 @@ export function useWakeEscalation(input: UseWakeEscalationInput): WakeEscalation
     limitsRef.current = limits;
   });
 
-  const active = enabled && waking && !runtimeReachable;
+  const serverActive =
+    serverLadder !== null && (serverLadder.status === 'waking' || serverLadder.status === 'escalating');
+  const active = serverLadder ? serverActive : enabled && waking && !runtimeReachable;
   useEffect(() => {
     if (!active) return;
     const id = setInterval(() => setTick((value) => value + 1), WAKE_TICK_MS);
@@ -102,7 +158,8 @@ export function useWakeEscalation(input: UseWakeEscalationInput): WakeEscalation
       stateRef.current,
       {
         nowMs: Date.now(),
-        waking: enabled && waking,
+        // The server runs the ladder while it reports one: no client step.
+        waking: enabled && waking && !serverLadder,
         runtimeReachable,
         progress,
         serverGaveUp,
@@ -113,8 +170,9 @@ export function useWakeEscalation(input: UseWakeEscalationInput): WakeEscalation
     setState(next);
     if (next.dispatch === 'retry-start') actionsRef.current.onRetryStart();
     else if (next.dispatch === 'restart') actionsRef.current.onRestart();
-  }, [enabled, waking, runtimeReachable, progress, serverGaveUp, tick]);
+  }, [enabled, waking, runtimeReachable, progress, serverGaveUp, tick, serverLadder]);
 
+  if (serverLadder) return wakeEscalationViewFromServer(serverLadder, Date.now());
   return {
     status: state.status,
     attempts: state.attempts,

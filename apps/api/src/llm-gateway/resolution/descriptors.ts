@@ -1,5 +1,4 @@
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
-import { VERIFIED_US_MANAGED_ENDPOINTS } from '@kortix/llm-catalog';
 import { llmPriceMarkup } from '../../billing/services/tiers';
 import { config } from '../../config';
 import { getModelPricing } from '../../router/config/model-pricing';
@@ -150,117 +149,33 @@ export function livePricing(
   };
 }
 
-function managedPricing(managed: ManagedModel): UpstreamDescriptor['pricing'] | undefined {
-  if (managed.pricing) return managed.pricing;
-  const slash = managed.pricingRef.indexOf('/');
-  if (slash <= 0) return undefined;
-  return livePricing(managed.pricingRef.slice(0, slash), managed.pricingRef.slice(slash + 1));
-}
-
-function morphManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.MORPH_MANAGED_MODELS?.includes(managed.id) || !managed.morphModelId || !managed.morphPricing || !config.MORPH_API_KEY) return null;
-  return {
-    provider: 'morph',
+/**
+ * A managed model's one upstream: Kortix Platinum inference. Platinum owns the
+ * model's upstream chain, failover and privacy terms, and reports its price as
+ * `usage.cost`, which the gateway bills; `pricing` applies only without it.
+ */
+export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
+  // CLOUD-ONLY gate, defense-in-depth: the lineup is already empty with
+  // KORTIX_MANAGED_PROVIDER_ENABLED off (loadManagedLineup); guard here too so
+  // no managed credential is read if a future caller reaches this directly.
+  if (!config.KORTIX_MANAGED_PROVIDER_ENABLED || !config.PLATINUM_INFERENCE_API_KEY) return [];
+  return [{
+    provider: 'platinum',
     kind: 'openai-compat',
-    baseUrl: config.MORPH_API_URL,
-    apiKey: config.MORPH_API_KEY,
-    billingMode: 'credits',
-    markup: llmPriceMarkup(),
-    resolvedModel: managed.morphModelId,
-    pricing: managed.morphPricing,
-    failover: true,
-    publicProvider: 'kortix',
-  };
-}
-
-function openRouterManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.OPENROUTER_API_KEY) return null;
-  const configuredOnly = managed.openrouterProvider?.only;
-  if (!Array.isArray(configuredOnly)) return null;
-  const approved = new Set<string>(VERIFIED_US_MANAGED_ENDPOINTS);
-  const allowed = configuredOnly.filter(
-    (tag: unknown): tag is string => typeof tag === 'string' && approved.has(tag),
-  );
-  const only = allowed;
-  if (only.length === 0) return null;
-  return {
-    provider: 'openrouter',
-    kind: 'openai-compat',
-    baseUrl: config.OPENROUTER_API_URL,
-    apiKey: config.OPENROUTER_API_KEY,
-    billingMode: 'credits',
-    markup: llmPriceMarkup(),
-    resolvedModel: managed.upstreamModelId,
-    // OpenRouter reports `usage.cost` for the endpoint that served the request;
-    // the gateway bills that. This table applies only when the cost is absent.
-    pricing: managedPricing(managed),
-    bodyExtras: {
-      provider: {
-        allow_fallbacks: false,
-        ...managed.openrouterProvider,
-        only,
-        zdr: true,
-        data_collection: 'deny',
-      },
-    },
-    failover: true,
-    publicProvider: 'kortix',
-  };
-}
-
-// OpenCode Zen serves the managed ids unchanged and sends no usage.cost, so
-// the managed price table bills it. The caller adds `x-opencode-session`.
-function zenManagedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  if (!config.OPENCODE_ZEN_MANAGED_MODELS?.includes(managed.id) || !config.OPENCODE_ZEN_API_KEY) return null;
-  // Zen reports no cost, so the price table is the only price. A credit-billed
-  // route with no price would settle at $0: do not offer it.
-  const pricing = managedPricing(managed);
-  if (!pricing) return null;
-  return {
-    provider: 'opencode',
-    kind: 'openai-compat',
-    baseUrl: config.OPENCODE_ZEN_API_URL,
-    apiKey: config.OPENCODE_ZEN_API_KEY,
+    baseUrl: config.PLATINUM_INFERENCE_URL,
+    apiKey: config.PLATINUM_INFERENCE_API_KEY,
     billingMode: 'credits',
     markup: llmPriceMarkup(),
     resolvedModel: managed.id,
-    pricing,
-    strictChatSchema: true,
-    failover: true,
+    pricing: managed.pricing,
     publicProvider: 'kortix',
-  };
+  }];
 }
 
 /**
- * MORPH_MANAGED_MODELS selects direct Morph candidates per managed model.
- * OpenRouter fallback stays inside the verified US endpoint pool.
- * OPENCODE_ZEN_MANAGED_MODELS puts OpenCode Zen first; the others become its fallback.
- */
-export function managedCandidates(managed: ManagedModel): UpstreamDescriptor[] {
-  // CLOUD-ONLY gate, defense-in-depth: RUNTIME_MANAGED_MODELS is already empty
-  // on a deployment with KORTIX_MANAGED_PROVIDER_ENABLED off (managed-models.ts),
-  // so this only ever reaches a real ManagedModel when the flag is on — but
-  // guard here too so no managed credential is read if some future caller
-  // reaches this directly.
-  if (!config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
-  const morph = morphManagedDescriptor(managed);
-  const openrouter = openRouterManagedDescriptor(managed);
-  const zen = zenManagedDescriptor(managed);
-  return [zen, morph, openrouter].filter((candidate): candidate is UpstreamDescriptor => candidate !== null);
-}
-
-export function managedDescriptor(managed: ManagedModel): UpstreamDescriptor | null {
-  return managedCandidates(managed)[0] ?? null;
-}
-
-/**
- * Whether THIS deployment can actually reach `managed` — i.e. its transport's
- * credential is configured (OPENROUTER_API_KEY, or Morph when explicitly enabled) and the
- * managed provider is on.
- *
- * The served catalog reads this so a model that would fail resolution is never
- * OFFERED. Derived from `managedCandidates` rather than re-listing the env
- * vars, so the catalog and request-time resolution cannot drift.
+ * Whether THIS deployment can reach `managed`: the managed provider is on and
+ * PLATINUM_INFERENCE_API_KEY is set. The served catalog reads this so a model
+ * that would fail resolution is never OFFERED.
  */
 export function managedTransportAvailable(managed: ManagedModel): boolean {
   return managedCandidates(managed).length > 0;

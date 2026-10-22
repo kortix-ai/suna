@@ -14,7 +14,7 @@
  * lives in `app/admin/accounts/ledger-rows.ts`.
  */
 
-import { Badge } from '@/components/ui/badge';
+import { Badge } from '@kortix/ui/badge';
 import {
   Table,
   TableBody,
@@ -22,11 +22,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { APP_REGISTRY_TRANSLATION_KEYS } from '@/i18n/app-registry-translation-keys.generated';
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { cn } from '@/lib/utils';
-import { formatCredits, formatCreditsWithSign } from '@kortix/shared';
+} from '@kortix/ui/table';
+import { APP_REGISTRY_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/app-registry-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { cn } from '@kortix/ui';
+import { formatUsdAsCredits } from '@kortix/shared';
 import { useTranslations } from '@/i18n/use-translations';
 
 /** One `credit_ledger` row, normalized across the two endpoints. */
@@ -39,6 +39,7 @@ export interface CreditTransactionRow {
   description: string | null;
   /** Absent = the source does not say, and the Credit type cell stays empty. */
   isExpiring?: boolean;
+  expiresAt?: string | null;
   amount: number;
   balanceAfter: number;
 }
@@ -50,6 +51,7 @@ const TRANSACTION_BADGES: Record<string, { label: string; variant: BadgeVariant 
   free_tier_grant: { label: 'Tier Grant', variant: 'secondary' },
   purchase: { label: 'Purchase', variant: 'default' },
   auto_topup: { label: 'Auto Top-up', variant: 'default' },
+  topup_bonus: { label: 'Top-up Bonus', variant: 'secondary' },
   machine_bonus: { label: 'Machine Bonus', variant: 'secondary' },
   admin_grant: { label: 'Admin Grant', variant: 'secondary' },
   promotional: { label: 'Promotional', variant: 'secondary' },
@@ -142,6 +144,11 @@ export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[]
                 {row.isExpiring !== undefined && (
                   <span className="text-muted-foreground text-xs">
                     {row.isExpiring ? 'Expiring' : 'Permanent'}
+                    {row.isExpiring && row.expiresAt && Number.isFinite(Date.parse(row.expiresAt)) && (
+                      <time dateTime={row.expiresAt} className="block">
+                        {formatDate(row.expiresAt)}
+                      </time>
+                    )}
                   </span>
                 )}
               </TableCell>
@@ -151,10 +158,10 @@ export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[]
                   row.amount >= 0 ? 'text-kortix-green' : 'text-kortix-red',
                 )}
               >
-                {formatCreditsWithSign(row.amount, { showDecimals: true })}
+                {formatSignedCredits(row.amount)}
               </TableCell>
               <TableCell className="text-right font-mono tabular-nums">
-                {formatCredits(row.balanceAfter, { showDecimals: true })}
+                {formatUsdAsCredits(row.balanceAfter)}
               </TableCell>
             </TableRow>
           );
@@ -162,4 +169,14 @@ export function CreditTransactionsTable({ rows }: { rows: CreditTransactionRow[]
       </TableBody>
     </Table>
   );
+}
+
+/**
+ * A ledger amount in credits with its sign: `+2,500`, `-0.43`. The ledger
+ * stores USD (1 credit = $0.01); the columns are headed "Credits", so the
+ * cells convert. A zero reads `+0`, never `-0`.
+ */
+export function formatSignedCredits(usd: number): string {
+  const magnitude = formatUsdAsCredits(Math.abs(usd));
+  return `${usd < 0 && magnitude !== '0' ? '-' : '+'}${magnitude}`;
 }

@@ -1,4 +1,5 @@
 import { clientAbortTarget } from '../client-abort';
+import { NOT_TURN_PROMPTER, NOT_TURN_PROMPTER_MESSAGE } from '../../shared/turn-stop-refusal';
 import { extractTurnIdentity, markTurnStopRequested } from '../../projects/session-turn-ledger';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { agentLaunchableInProject } from '../../projects/lib/session-token-grant';
@@ -13,6 +14,7 @@ import {
 } from '../pre-prompt-env-sync';
 import { isNonIdempotentSessionWrite } from '../prompt-dedupe';
 import { canonicalProxyPath } from '../proxy-path';
+import { stripInBoxProxyPrefix } from '../runtime-request';
 import { carriesSessionData } from '../session-data-ports';
 import {
   agentSwitchRefusal,
@@ -22,6 +24,7 @@ import {
   refuseSessionOrControlAccess,
   type PreviewProxyAccess,
 } from './access';
+import { decideClientAbort } from './abort-authority';
 import { forwardWithRetry } from './retry';
 import { claimPromptDeliveryOnce, convergeTurnStartRuntime, createTurnLifecycle } from './turn-start';
 import { wakeOrRefuseInactiveSandbox } from './wake';
@@ -169,13 +172,24 @@ export async function forwardToSandbox(
   // the open turn before the abort is forwarded: the end frame that follows is
   // the same "Aborted" as an abort nobody asked for. A sandbox-authored call is
   // the agent acting, not a person, so it is left to read as what it is.
+  //
+  // Only the turn's prompter, the session owner or a project manager may stop
+  // a running turn (`abort-authority.ts`). A refusal forwards nothing and
+  // stamps nothing. `by` names the person on the stamp ("Stopped by <name>").
   const abortedOpencodeSessionId = sandboxAuthored
     ? null
     : clientAbortTarget(upstreamPort, method, remainingPath);
   if (abortedOpencodeSessionId) {
-    await markTurnStopRequested(record.sessionId, 'UserStop', {
-      opencodeSessionId: abortedOpencodeSessionId,
-    });
+    const stop = await decideClientAbort(access, record);
+    if (!stop.allowed) {
+      return jsonProxyError({ error: NOT_TURN_PROMPTER_MESSAGE, code: NOT_TURN_PROMPTER }, 403, origin);
+    }
+    await markTurnStopRequested(
+      record.sessionId,
+      'UserStop',
+      { opencodeSessionId: abortedOpencodeSessionId },
+      stop.by,
+    );
   }
 
   if (isTurnStartEnvSync(upstreamPort, method, remainingPath)) {
@@ -213,6 +227,19 @@ export async function forwardToSandbox(
     // for an unconnected connector, because the refusal was unclearable from the
     // product. The connector call denies and hands back a connect link instead.
   }
+  if (
+    record.status === 'stopped' &&
+    carriesSessionData(upstreamPort) &&
+    method === 'POST' &&
+    /^\/session\/[^/?#]+\/fork\/?(?:$|[?#])/.test(stripInBoxProxyPrefix(remainingPath))
+  ) {
+    // Fork cannot wait for the asynchronous wake. Return a non-retryable
+    // conflict so the caller displays the recovery action instead of a 503.
+    return jsonProxyError({
+      error: 'Resume the session before forking the conversation.',
+      code: 'session_stopped',
+    }, 409, origin);
+  }
   if (record.status !== 'active') {
     const woken = await wakeOrRefuseInactiveSandbox({
       record,
@@ -238,25 +265,23 @@ export async function forwardToSandbox(
   const isSseEventStreamRequest = method === 'GET' && remainingPath.endsWith('/global/event');
   // R2 (the turn-latency spec (PR #7840) §3): the first attempt's provider-ingress
   // resolve — this box's network address — has no data dependency on the
-  // config/catalog convergence gates below, so it starts alongside them
-  // instead of queuing behind both. Populated just below, inside the
+  // catalog convergence gate below, so it starts alongside it instead of
+  // queuing behind it. Populated just below, inside the
   // turn-start branch; consumed by the retry loop's attempt 0.
   let prefetchedIngress: ReturnType<typeof resolveSandboxIngress> | null = null;
 
-  // ── C9 — a prompt on a box that is behind converges FIRST, then runs ─────
+  // ── Turn-start runtime repair: the model this turn asks for ──────────────
   // THE one funnel: the HTTP proxy and the server-side prompt queue both
   // arrive here, and `isTurnStartRequest` covers the OpenCode ports (4096/
-  // 4097) as well as 8000. The env-sync gate below is now the same predicate
-  // minus `/summarize`, so the two can no longer disagree about one request.
+  // 4097) as well as 8000. The env-sync gate below is the same predicate minus
+  // `/summarize`, so the two can no longer disagree about one request.
   //
   // The position is load-bearing. This runs BEFORE `claimPromptDelivery` and
-  // before the first upstream fetch, so an OpenCode swap here cannot lose a
-  // claimed or delivered prompt, and it cannot burn an Idempotency-Key. It
-  // never ends a running turn: the convergence refuses mid-turn.
+  // before the first upstream fetch, so a catalog repair here cannot lose a
+  // claimed or delivered prompt, and it cannot burn an Idempotency-Key.
   //
-  // A box already on the project's current config costs nothing — see
-  // `convergeBeforeTurnStart`, which answers from two memos with no network
-  // call at all in that case.
+  // Config does not converge here: a box that is behind converges after its
+  // turn ends (`convergeConfigIfBehind`), and the prompt never waits for it.
   if (!sandboxAuthored && isTurnStartRequest(upstreamPort, method, remainingPath)) {
     const converged = await convergeTurnStartRuntime({
       record,
@@ -287,7 +312,7 @@ export async function forwardToSandbox(
       ? extractTurnIdentity(remainingPath, requestBody)
       : null;
 
-  return forwardWithRetry(
+  const response = await forwardWithRetry(
     {
       sandboxId,
       port,
@@ -316,4 +341,15 @@ export async function forwardToSandbox(
     },
     requestBody,
   );
+  const forkSource = carriesSessionData(upstreamPort) && method.toUpperCase() === 'POST'
+    ? /^\/?session\/([^/]+)\/fork$/.exec(remainingPath)?.[1]
+    : undefined;
+  if (forkSource && response.ok) {
+    const { registerRuntimeFork } = await import('../../projects/surface');
+    await registerRuntimeFork({
+      sessionId: record.sessionId, projectId: record.projectId, accountId: record.accountId,
+      sourceId: forkSource, fork: await response.clone().json(),
+    });
+  }
+  return response;
 }

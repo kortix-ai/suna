@@ -10,10 +10,12 @@ routes = [
 
 [vars]
 DEV_API_ORIGIN = "https://dev-api.kortix.com"
-STAGING_API_ORIGIN = "https://staging-api.kortix.com"
+STAGING_API_ORIGIN = "https://staging-api-euw2.kortix.com"
 PROD_API_ORIGIN = "https://api.kortix.com"
 PREVIEW_API_ORIGIN = "https://dev-api.kortix.com"
 
 # DEV_EDGE_SECRET, STAGING_EDGE_SECRET, PROD_EDGE_SECRET, and
 # PREVIEW_EDGE_SECRET are Worker secrets. Each value must equal
-# KORTIX_PREVIEW_EDGE_SECRET in its API environment.
+# KORTIX_PREVIEW_EDGE_SECRET in its API environment. Unset there, the API falls back to
+# API_KEY_SECRET, which then sits in Cloudflare too: set a dedicated value
+# (rotation: kortix-release skill, step 10).

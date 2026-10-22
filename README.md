@@ -30,7 +30,7 @@ Agents that deliver finished work — reports, decks, code, replies, deployed ch
 product category. Every version of it runs inside a model lab, on that lab's model, with your
 company's brain on their side of the wall.
 
-**Kortix is the one you own.** It's an open-source **[AI Operating System](https://kortix.com/docs/ai-operating-system)**: your agents, the
+**Kortix is the one you own.** It's an open-source **[AI Operating System](https://kortix.com/docs)**: your agents, the
 skills they share, your company memory, and every connector live in one git repo — versioned,
 diffable, and shared by the whole company. The agents work on real **cloud computers** — an
 isolated sandbox per session, on its own branch — and land what they produce through a **change
@@ -49,6 +49,7 @@ Any model, your own API keys, your own infrastructure or our managed cloud.
 - ✅ You want an **"AI employee"** that does the work and waits for a person's approval before it acts → [details](#an-ai-employee-that-asks-before-it-acts)
 - ✅ Your security team needs **governed agents**: per-tool rules, approval gates, an audit trail, SAML SSO, your own VPC → [details](#agents-that-survive-a-security-review)
 - ✅ You want an **AI Operating System to run a company with agents**: every agent, skill, memory file and connector in one git repo → [details](#an-ai-operating-system-for-your-company)
+- ✅ You want to **sell an agent platform under your own brand**: your logo, your structure, Kortix underneath → [details](#white-label)
 
 Kortix is probably **not** the right fit if you want a visual flowchart of fixed steps (a workflow
 builder such as n8n does that well), or only a chat window over your documents (Onyx, Open WebUI or
@@ -64,7 +65,7 @@ LibreChat).
 | **Models** | Anthropic only | GPT-5.6 only | **Any provider, your own API keys** |
 | **Where it runs** | Anthropic's cloud, or Bedrock / Google Cloud / Microsoft Foundry — no self-host | OpenAI's cloud, no self-host | **Our cloud, your VPC, or your own on-prem network** |
 | **Your configuration** | In their product | In their product | **Files in a git repo you own** |
-| **Access** | Paid plans (Pro, Max, Team, Enterprise) | Paid plans, usage-metered | **Self-host free · managed cloud $40/seat/mo + usage** |
+| **Access** | Paid plans (Pro, Max, Team, Enterprise) | Paid plans, usage-metered | **Self-host free · managed cloud from $20/mo in credits, unlimited members** |
 
 Competitor rows reflect publicly documented behavior as of July 2026.
 
@@ -205,7 +206,7 @@ SOC 2 Type II is in progress.
 One repo is the company: agents, skills, memory, connectors and triggers are files, versioned and
 reviewed like code. Thousands of agents run in parallel on one config, each on its own cloud
 computer. An agent can edit its own configuration on its session branch and propose the change. A
-person approves it. [What an AI Operating System is, part by part →](https://kortix.com/docs/ai-operating-system)
+person approves it. [What an AI Operating System is, part by part →](https://kortix.com/docs)
 
 ---
 
@@ -266,8 +267,20 @@ manager, encrypted at rest and injected at runtime · a full audit trail · merg
 for an agent · approval gates you switch on for the actions that matter · your own VPC or on-prem
 network.
 
-Isolation is per provider: the Platinum provider runs microVMs, the default runs containers.
-Ask us and we'll tell you which one you're on.
+Sessions run on Platinum, the reference sandbox provider, where each session is its own microVM.
+Daytona remains only as a legacy fallback, and its removal is scheduled.
+
+---
+
+## White-label
+
+Kortix stays open source. On top of that, a free white-label license lets you run Kortix however
+you want: your name and logo in place of ours, your own structure, and Kortix as a hosted service
+for your customers. The one requirement: use [Platinum](https://www.platinum.dev) as your exclusive
+compute provider for everything it offers (sandboxes, volumes, runners, AI compute, inference), at
+rates we commit to keep competitive. Sign online and you are licensed on the spot:
+**[WHITE-LABEL-LICENSE.md](WHITE-LABEL-LICENSE.md)**. Custom terms:
+[marko@kortix.ai](mailto:marko@kortix.ai).
 
 ---
 

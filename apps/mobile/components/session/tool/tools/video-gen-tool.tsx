@@ -77,9 +77,9 @@ function VideoPosterCard({ path, url }: { path: string | null; url: string | nul
   );
 }
 
-export function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
-  const input = partInput(part);
-  const output = partOutput(part);
+export function VideoGenTool({ call, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(call);
+  const output = partOutput(call);
   const prompt = typeof input.prompt === 'string' ? input.prompt : undefined;
   const isError = useMemo(() => isErrorOutput(output), [output]);
   const video = useMemo(() => (isError ? null : parseVideoOutput(output)), [isError, output]);
@@ -87,7 +87,7 @@ export function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps
 
   return (
     <BasicTool
-      disclosureId={disclosureKey('tool', part.id)}
+      disclosureId={disclosureKey('tool', call.id)}
       icon={CpuIcon}
       trigger={{ title: 'Video', subtitle: prompt?.slice(0, 60) }}
       defaultOpen={defaultOpen}

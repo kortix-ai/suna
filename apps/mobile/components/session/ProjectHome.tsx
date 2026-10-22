@@ -15,7 +15,8 @@
  * built by `@kortix/sdk` (`useComposerModels`); a model pick is sent as
  * `model`. A gateway project that offers no model never starts a
  * session: Send opens the connect-provider sheet and keeps the draft
- * (KRTX-251, `planComposerSend`).
+ * (KRTX-251, `planComposerSend`). A long paste is a "Pasted text" tile
+ * (`usePastedTiles`) and rides the prompt inline.
  *
  * Layout:
  * - The symbol (`ProjectHero`) is absolutely centred in the keyboard-avoiding
@@ -23,7 +24,7 @@
  *   above the keyboard, so the symbol never sits under the composer. It is
  *   large at rest and scales down with the keyboard.
  * - At rest the composer sits at the thread composer's distance from the
- *   bottom (SessionPage pads `insets.bottom`, SessionChatInput adds `pb-3`).
+ *   bottom: `max(insets.bottom, 12)`, the card on the safe-area line (KRTX-2930).
  * - The composer follows the keyboard down to KEYBOARD_GAP above it once it appears.
  *
  * The draft lives in `HomeComposer`, not here: a keystroke re-renders the
@@ -38,8 +39,14 @@ import {
   resolveModelDefault,
   type SessionPromptPart,
 } from '@kortix/sdk';
-import { newConfigPrompt } from '@kortix/shared';
-import { Keyboard, Pressable, View } from 'react-native';
+import {
+  newConfigPrompt,
+  serializePromptWithPastes,
+  splitPastedContent,
+  type PastedContent,
+} from '@kortix/shared';
+import { Keyboard, Pressable, View, type TextInput } from 'react-native';
+import { useIsFocused, useRouter } from 'expo-router';
 import {
   KeyboardAvoidingView,
   useReanimatedKeyboardAnimation,
@@ -47,20 +54,26 @@ import {
 import Reanimated, { useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Button } from '@/components/ui/button';
+import { Text } from '@/components/ui/text';
+
 import { Composer } from '@/components/kortix/composer';
 import type { SheetRef } from '@/components/kortix/sheet';
 import { useToast } from '@/components/kortix/toast-provider';
 import { FloatingMenuButton } from '@/components/session/FloatingMenuButton';
+import { NotificationsButton } from '@/components/session/NotificationsButton';
 import { ConnectProviderSheet } from '@/components/session/ConnectProviderSheet';
 import { ModelPickerSheet } from '@/components/session/ModelPickerSheet';
 import { ProjectHero } from '@/components/session/ProjectHero';
 import { AttachSheet, type AttachSheetRef } from '@/components/session/AttachSheet';
 import { useComposerAttachments } from '@/components/session/useComposerAttachments';
 import { useRecoverPendingPick } from '@/components/session/useRecoverPendingPick';
+import { usePastedTiles } from '@/components/session/use-pasted-tiles';
+import { openPastedText } from '@/stores/pasted-text-store';
 import { useComposerModels, useProjectDetail } from '@/lib/projects/hooks';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { uploadErrorMessage } from '@/lib/session/composer-uploads';
-import { takeComposerFocus } from '@/lib/onboarding/composer-handoff';
+import { subscribeComposerFocus, takeComposerFocus } from '@/lib/onboarding/composer-handoff';
 import { draftKey } from '@/lib/session/composer-draft';
 import { useComposerDraft } from '@/lib/session/use-composer-draft';
 import { isModelUnavailable, sessionModelRef, selectComposerModel } from '@/lib/session/composer-model';
@@ -102,6 +115,12 @@ export interface ProjectHomeSubmit {
   agent: string | null;
 }
 
+/**
+ * The composer focus retries after New session, in ms: past the drawer's
+ * close and the stack's pop (~350 ms on iOS), which can each drop a focus.
+ */
+const COMPOSER_FOCUS_RETRY_MS = [150, 400, 700];
+
 export interface ProjectHomeProps {
   projectId: string;
   /** A send is in flight: the composer keeps its content and locks. */
@@ -112,6 +131,12 @@ export interface ProjectHomeProps {
    */
   onSubmitNewSession: (input: ProjectHomeSubmit) => Promise<boolean>;
   onOpenDrawer: () => void;
+  /**
+   * The bell at the top right (KRTX-1742): the caller's unread count and the
+   * move to the Notifications page. Omitted while the project's
+   * `notification_center` flag is off: no bell.
+   */
+  notifications?: { unreadCount: number; onOpen: () => void };
   /**
    * Read-and-clear the draft text and files to seed the composer with, if any
    * — e.g. a project-home send the user cancelled from `SessionConnecting`
@@ -129,15 +154,48 @@ export function ProjectHome({
   sending = false,
   onSubmitNewSession,
   onOpenDrawer,
+  notifications,
   takeInitialDraft,
 }: ProjectHomeProps) {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const toast = useToast();
   // One read at mount: the text seeds the draft, the files seed the uploads.
   const [initialDraft] = React.useState(() => takeInitialDraft?.() ?? { text: '', files: [] });
-  // The first project, just created on `/new` (COR-161): open with the
-  // keyboard up. One-shot, read once at mount.
+  // The first project, just created on `/new` (COR-161), or the drawer's New
+  // session before home mounted: open with the keyboard up. One-shot, read
+  // once at mount.
   const [focusComposer] = React.useState(() => takeComposerFocus(projectId));
+  // The drawer's New session while home is mounted (under the drawer or a
+  // covering route): focus once home is the screen on top, so the keyboard
+  // never opens behind a route that is still popping. Home is "on top" from
+  // the start of the pop, and the drawer is still closing then: a focus in
+  // that window can be dropped, so it is retried until the field has it.
+  const composerInputRef = React.useRef<TextInput>(null);
+  const isScreenFocused = useIsFocused();
+  const [focusRequest, setFocusRequest] = React.useState(0);
+  const handledFocusRequest = React.useRef(0);
+  React.useEffect(
+    () =>
+      subscribeComposerFocus((requested) => {
+        if (requested === projectId && takeComposerFocus(projectId)) setFocusRequest((n) => n + 1);
+      }),
+    [projectId],
+  );
+  React.useEffect(() => {
+    if (!isScreenFocused || focusRequest === handledFocusRequest.current) return;
+    handledFocusRequest.current = focusRequest;
+    const focusUnlessFocused = () => {
+      const input = composerInputRef.current;
+      if (input && !input.isFocused()) input.focus();
+    };
+    const frame = requestAnimationFrame(focusUnlessFocused);
+    const retries = COMPOSER_FOCUS_RETRY_MS.map((ms) => setTimeout(focusUnlessFocused, ms));
+    return () => {
+      cancelAnimationFrame(frame);
+      retries.forEach(clearTimeout);
+    };
+  }, [focusRequest, isScreenFocused]);
   const attachments = useComposerAttachments(projectId, { initialFiles: initialDraft.files });
   useRecoverPendingPick(attachments.add);
   const files = attachments.files;
@@ -196,7 +254,7 @@ export function ProjectHome({
   // default is `@kortix/sdk`'s: `/model-defaults` for this agent, then the
   // provider defaults. A pick equal to the default is no pick
   // (`selectComposerModel`): the session keeps following the default.
-  const { gatewayEnabled, providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
+  const { providers, models, modelDefaults, isLoading: modelsLoading, refetchModelCount } =
     useComposerModels(projectId);
   const globalDefault = useLocalConfigStore((s) => s.globalDefault) ?? undefined;
   // The pick persists in the store the thread reads (`agentModels`, per
@@ -244,10 +302,9 @@ export function ProjectHome({
     }),
     [levels, variant, variantKey, setStoredVariant],
   );
-  // A gateway project that offers no model: the chip asks to connect one, and
-  // Send opens the connect sheet instead of starting a session (KRTX-251).
+  // A project that offers no model: the chip asks to connect one, and Send
+  // opens the connect sheet instead of starting a session (KRTX-251).
   const modelUnavailable = isModelUnavailable({
-    hasCatalog: gatewayEnabled,
     loading: modelsLoading,
     modelCount: offeredModelCount(models),
   });
@@ -275,7 +332,9 @@ export function ProjectHome({
     [defaultModel, models, setModelForAgent, agentSlot],
   );
 
-  const restingGap = insets.bottom + COMPOSER_BOTTOM_GAP;
+  // The card rests on the safe-area line, as in the thread (KRTX-2930): the
+  // inset already holds the home indicator's clearance, so the 12pt is not stacked on it.
+  const restingGap = Math.max(insets.bottom, COMPOSER_BOTTOM_GAP);
   const { progress } = useReanimatedKeyboardAnimation();
   const composerStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: progress.value * (restingGap - KEYBOARD_GAP) }],
@@ -288,8 +347,9 @@ export function ProjectHome({
   // uploads back to the composer. Web does the same (`clearOnSend={false}` on
   // the home composer).
   const isSending = sending || preparing;
-  const submitNow = React.useCallback(async (draft: string) => {
-    const text = draft.trim();
+  const submitNow = React.useCallback(async (draft: string, pastes: PastedContent[]) => {
+    // Every paste tile inline, then the text: what the session's first prompt carries.
+    const text = serializePromptWithPastes(draft.trim(), pastes);
     const plan = planComposerSend({
       text,
       fileCount: files.length,
@@ -351,10 +411,20 @@ export function ProjectHome({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Floating menu button — opens the left drawer. */}
-      {/* No header controls: the agent is picked in the model sheet's Agent
-          tab (Jay, 2026-09-23). */}
-      <FloatingMenuButton onPress={onOpenDrawer} />
+      {/* Floating menu button — opens the left drawer. The one header control
+          is the Notifications bell, top right (Jay, 2026-10-16); the agent is
+          picked in the model sheet's Agent tab (Jay, 2026-09-23). */}
+      <FloatingMenuButton onPress={onOpenDrawer}>
+        {/* Dev builds only: Metro folds `__DEV__` to false, so a release build has no button. */}
+        {__DEV__ ? (
+          <Button variant="secondary" size="sm" className="rounded-full" onPress={() => router.push('/debug')}>
+            <Text>Debug</Text>
+          </Button>
+        ) : null}
+        {notifications ? (
+          <NotificationsButton unreadCount={notifications.unreadCount} onPress={notifications.onOpen} />
+        ) : null}
+      </FloatingMenuButton>
 
       <KeyboardAvoidingView className="flex-1" behavior="padding">
         <View className="flex-1">
@@ -375,12 +445,14 @@ export function ProjectHome({
               initialText={initialDraft.text}
               onSubmit={submitNow}
               autoFocus={focusComposer}
+              inputRef={composerInputRef}
               disabled={isSending}
               sending={isSending}
               attachments={files}
               attachmentUploads={attachments.uploads}
               onAttach={openAttachSheet}
               onRemoveAttachment={attachments.remove}
+              onPasteFile={attachments.add}
               chip={chip}
               onChipPress={openModelSheet}
             />
@@ -410,19 +482,24 @@ export function ProjectHome({
 }
 
 /**
- * The home composer and its draft. The draft is state here, so a keystroke
- * re-renders this card only. `onSubmit` gets the draft as rendered.
+ * The home composer, its draft and its paste tiles. Both are state here, so a
+ * keystroke re-renders this card only. `onSubmit` gets the draft as rendered.
+ * A handed-back draft is the prompt as sent: its pastes become tiles again.
+ * An oversized paste goes to `onPasteFile` as a text file.
  */
 function HomeComposer({
   projectId,
   initialText,
   onSubmit,
+  onPasteFile,
   ...composer
 }: {
   projectId: string;
   initialText: string;
-  onSubmit: (draft: string) => Promise<void>;
+  onSubmit: (draft: string, pastes: PastedContent[]) => Promise<void>;
+  onPasteFile: (files: AttachedFile[]) => void;
   autoFocus: boolean;
+  inputRef: React.Ref<TextInput>;
   disabled: boolean;
   sending: boolean;
   attachments: AttachedFile[];
@@ -432,12 +509,25 @@ function HomeComposer({
   chip: React.ComponentProps<typeof Composer>['chip'];
   onChipPress: () => void;
 }) {
-  const [draft, setDraft] = React.useState(initialText);
+  const [initial] = React.useState(() => splitPastedContent(initialText));
+  const [draft, setDraft] = React.useState(initial.text);
+  const pasted = usePastedTiles(onPasteFile, initial.pastes);
   // Survives the OS killing the app (COR-143). ProjectScreen clears it once a
   // send starts a session.
   useComposerDraft(draftKey({ kind: 'project', projectId }), draft, setDraft);
   const draftRef = React.useRef(draft);
   draftRef.current = draft;
+  const pastesRef = React.useRef(pasted.pastes);
+  pastesRef.current = pasted.pastes;
+  const { takePaste } = pasted;
+  const handleChangeText = React.useCallback(
+    (next: string) => {
+      const kept = takePaste(draftRef.current, next);
+      draftRef.current = kept;
+      setDraft(kept);
+    },
+    [takePaste],
+  );
 
   // One submission at a time: two taps inside one frame both read the same
   // draft (the cleared text has not rendered yet), so the second would send
@@ -447,7 +537,7 @@ function HomeComposer({
     if (submittingRef.current) return;
     submittingRef.current = true;
     try {
-      await onSubmit(draftRef.current);
+      await onSubmit(draftRef.current, pastesRef.current);
     } finally {
       requestAnimationFrame(() => {
         submittingRef.current = false;
@@ -459,7 +549,11 @@ function HomeComposer({
     <Composer
       {...composer}
       value={draft}
-      onChangeText={setDraft}
+      onChangeText={handleChangeText}
+      onSelectionChange={pasted.onSelectionChange}
+      pastes={pasted.pastes}
+      onRemovePaste={pasted.remove}
+      onOpenPaste={openPastedText}
       onSubmit={handleSubmit}
       placeholder="Ask anything"
     />

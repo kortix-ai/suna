@@ -430,8 +430,8 @@ describe('buildSecretView — delivery_blocked_reason', () => {
       agentGrants: declarative([['OTHER_KEY']]),
     });
     expect(before.delivery_blocked_reason).toBeNull();
-    const { delivery_blocked_reason: _omitted, ...beforeRest } = before;
-    const { delivery_blocked_reason: _flagged, ...afterRest } = after;
+    const { delivery_blocked_reason: _omitted, agents: _unknownAgents, ...beforeRest } = before;
+    const { delivery_blocked_reason: _flagged, agents: _knownAgents, ...afterRest } = after;
     expect(beforeRest).toEqual(afterRest);
   });
 
@@ -496,4 +496,32 @@ describe('buildSecretView — consumer and availability characterization', () =>
       }
     }
   }
+});
+
+describe('secret audit agent grants', () => {
+  test('lists enabled agents granted the identifier, not another identifier sharing its key', () => {
+    const config = declarative([['audit-primary'], ['AUDIT_KEY'], [], ['all-other']]);
+    for (const agent of config.agents.slice(3)) agent.enabled = false;
+    expect(buildSecretView({
+      identifier: 'AUDIT-primary', name: 'AUDIT_KEY', shared: secretRow({ strategy: 'runtime' }),
+      canManageShared: true, agentGrants: config,
+    })).toHaveProperty('agents', ['agent-0']);
+  });
+  test('reports unrestricted runtime agents and no agents for denied delivery', () => {
+    const base = { identifier: 'AUDIT_KEY', name: 'AUDIT_KEY', canManageShared: true };
+    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'runtime' }),
+      agentGrants: { agent_discovery: 'opencode', agents: [] } })).toHaveProperty('agents', 'all');
+    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'denied' }),
+      agentGrants: declarative([['AUDIT_KEY']]) })).toHaveProperty('agents', []);
+  });
+  test('unscoped grants apply only to runtime delivery; unreadable rosters stay unknown', () => {
+    const base = { identifier: 'AUDIT_KEY', name: 'AUDIT_KEY', canManageShared: true };
+    const grants = declarative(['all', undefined, ['audit_key']]);
+    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'runtime' }), agentGrants: grants }))
+      .toHaveProperty('agents', ['agent-0', 'agent-1', 'agent-2']);
+    expect(buildSecretView({ ...base, shared: secretRow({ strategy: 'egress' }), agentGrants: grants }))
+      .toHaveProperty('agents', ['agent-2']);
+    expect(buildSecretView({ ...base, shared: secretRow(), agentGrants: declarative([]) }))
+      .toHaveProperty('agents', null);
+  });
 });

@@ -2,46 +2,33 @@
  * Pure rules behind the activity sheet — the timeline a burst's summary row
  * opens on mobile (`components/session/turn/activity-sheet.tsx`).
  *
- * One entry per thing the agent did: a thought (merged fragments), or one tool
- * call. A thought is listed as "Thinking" (Jay, 2026-09-22): the list says that
- * the agent thought, not what. A tap opens the thought's text. Same-family
- * group rows are unfolded, so every call is its own entry with its own detail
- * view. Grouping, plumbing, and the thought-running rule
- * come from `burstView` (and through it `mergeBurstSteps`), so the sheet lists
- * exactly the steps the summary row counts.
+ * One entry per tool call. Thinking never shows, so a thought is not an entry.
+ * Same-family group rows are unfolded, so every call is its own entry with its
+ * own detail view. Grouping and plumbing come from `burstView` (and through it
+ * `mergeBurstSteps`), so the sheet lists exactly the steps the summary row
+ * counts.
  *
  * No React, no React Native.
  */
 
 import {
-  isToolPart,
   narrationToolName,
   normalizeActivityToolName,
   partOutcome,
+  sessionLogOpenCall,
   stepLabel,
-  type Part,
+  type SessionLogBlock,
+  type ToolCallBlock,
 } from '@kortix/sdk';
 import { activityIconKey, type ActivityIconKey, type BurstView } from './activity';
+import { partRawOutput } from './tool-part-accessors';
 
 export type ActivitySheetEntry =
   | {
-      kind: 'thought';
-      key: string;
-      /**
-       * Always `THOUGHT_TITLE` (Jay, 2026-09-22): the list names the step and
-       * shows none of the thought. The text is `body`, the detail a tap opens.
-       */
-      title: string;
-      /** The thought as markdown: the merged fragments, paragraphs kept. */
-      body: string;
-      running: boolean;
-      /** A thought opens once it has text. */
-      openable: boolean;
-    }
-  | {
       kind: 'tool';
       key: string;
-      part: Part;
+      /** A tool call; any other block a burst keeps (a patch summary) is a bare "Used" entry. */
+      block: SessionLogBlock;
       /** SDK step label: "Read a.ts", "Running bun test". */
       title: string;
       icon: ActivityIconKey;
@@ -50,11 +37,6 @@ export type ActivitySheetEntry =
       /** The call has a body to show (`toolHasDetail`). */
       openable: boolean;
     };
-
-// ─── Thought ─────────────────────────────────────────────────────────────────
-
-/** The label of a thought in the list. */
-export const THOUGHT_TITLE = 'Thinking';
 
 // ─── Tool ────────────────────────────────────────────────────────────────────
 
@@ -67,72 +49,61 @@ function hasValue(value: unknown): boolean {
 }
 
 /** The call has something to show in a detail view: arguments, output, an error, or live progress. */
-export function toolHasDetail(part: Part): boolean {
-  if (!isToolPart(part)) return false;
-  if (NO_DETAIL_TOOLS.has(normalizeActivityToolName(part.tool).replace(/^oc[-_]/, '').replace(/-/g, '_'))) return false;
-  const state = part.state as { status: string; input?: Record<string, unknown>; output?: string; error?: string };
-  if (state.status === 'pending' || state.status === 'running') return true;
-  if (state.status === 'error') return true;
-  if (hasValue(state.output)) return true;
-  return Object.values(state.input ?? {}).some(hasValue);
+export function toolHasDetail(call: ToolCallBlock): boolean {
+  if (NO_DETAIL_TOOLS.has(normalizeActivityToolName(call.name).replace(/^oc[-_]/, '').replace(/-/g, '_'))) return false;
+  if (call.status !== 'complete') return true;
+  if (hasValue(partRawOutput(call))) return true;
+  const input = call.input;
+  return typeof input === 'object' && input !== null && Object.values(input).some(hasValue);
 }
 
-function toolRunning(part: Part, burstRunning: boolean): boolean {
-  if (!burstRunning || !isToolPart(part)) return false;
-  const status = part.state.status;
-  return status === 'pending' || status === 'running';
+const isCall = (block: SessionLogBlock): block is ToolCallBlock => block.type === 'tool_call';
+
+function toolRunning(block: SessionLogBlock, burstRunning: boolean): boolean {
+  return burstRunning && isCall(block) && (block.status === 'pending' || block.status === 'running');
 }
 
-function toolTitle(part: Part, running: boolean): string {
-  const label = stepLabel(part);
+function toolTitle(block: SessionLogBlock, running: boolean): string {
+  const label = stepLabel(block);
   const verb = running ? label.running : label.verb;
   // An unregistered tool's object is its raw identifier; name it in words.
-  const object = label.verb === 'Used' && isToolPart(part) ? narrationToolName(part.tool) : label.object;
+  const object = label.verb === 'Used' && isCall(block) ? narrationToolName(block.name) : label.object;
   return object ? `${verb} ${object}` : verb;
 }
 
-function toolEntry(part: Part, burstRunning: boolean): ActivitySheetEntry {
-  const running = toolRunning(part, burstRunning);
+function toolEntry(given: SessionLogBlock, burstRunning: boolean): ActivitySheetEntry {
+  // A call the closure rule closed reads as the open call it was, as its row does.
+  const block = isCall(given) ? sessionLogOpenCall(given) : given;
+  const running = toolRunning(block, burstRunning);
   return {
     kind: 'tool',
-    key: part.id,
-    part,
-    title: toolTitle(part, running),
-    icon: activityIconKey(part),
+    key: block.id,
+    block,
+    title: toolTitle(block, running),
+    icon: activityIconKey(block),
     running,
-    failed: isToolPart(part) && !running && partOutcome(part) !== 'ok',
-    openable: toolHasDetail(part),
+    failed: isCall(block) && !running && partOutcome(block) !== 'ok',
+    openable: isCall(block) && toolHasDetail(block),
   };
 }
 
 export function activitySheetEntries(view: Pick<BurstView, 'steps' | 'running'>): ActivitySheetEntry[] {
   return view.steps.flatMap<ActivitySheetEntry>((step) => {
-    if (step.kind === 'thought') {
-      return [
-        {
-          kind: 'thought',
-          key: step.key,
-          title: THOUGHT_TITLE,
-          body: step.texts.join('\n\n'),
-          running: view.running && step.running,
-          openable: step.texts.some((text) => text.trim().length > 0),
-        },
-      ];
-    }
-    if (step.kind === 'group') return step.step.parts.map((part) => toolEntry(part as Part, view.running));
-    return [toolEntry(step.part, view.running)];
+    if (step.kind === 'thought') return [];
+    if (step.kind === 'group') return step.blocks.map((call) => toolEntry(call, view.running));
+    return [toolEntry(step.block, view.running)];
   });
 }
 
 // ─── Ownership ───────────────────────────────────────────────────────────────
 
 /**
- * A burst row still owns the open sheet when it shares any part with it. A
- * burst re-keys when its first part leaves (a call split out for a permission
- * prompt), so part identity, not the row, decides.
+ * A burst row still owns the open sheet when it shares any block with it. A
+ * burst re-keys when its first block leaves (a call split out for a permission
+ * prompt), so block identity, not the row, decides.
  */
-export function ownsBurst(openPartIds: ReadonlyArray<string>, parts: ReadonlyArray<Pick<Part, 'id'>>): boolean {
-  return parts.some((part) => openPartIds.includes(part.id));
+export function ownsBurst(openBlockIds: ReadonlyArray<string>, blocks: ReadonlyArray<{ id: string }>): boolean {
+  return blocks.some((block) => openBlockIds.includes(block.id));
 }
 
 /** A permission prompt waits on a call the sheet showed: the sheet must get out of its way. */

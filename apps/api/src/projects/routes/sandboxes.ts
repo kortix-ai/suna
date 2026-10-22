@@ -32,6 +32,8 @@ import { createSession } from '../session-lifecycle';
 import { rebuildFailureResponse, runProviderActions } from '../../snapshots/provider-actions';
 import { templateProviderObservation } from '../lib/template-provider-observation';
 import { readJsonObject } from '../../shared/http-body';
+import { logger } from '../../lib/logger';
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 
 /**
  * Derive the ONE sandbox status every surface renders — sidebar alert, Customize
@@ -121,7 +123,7 @@ interface SandboxHealthPayload {
    */
   status: ReturnType<typeof serializeSandboxStatus> | null;
   provider_mode: 'automatic' | 'pinned';
-  selected_provider: 'daytona' | 'platinum' | 'e2b' | null;
+  selected_provider: 'platinum' | 'daytona' | null;
 }
 
 // Safe degraded payload: same shape as the happy path, surfaced when any
@@ -188,7 +190,7 @@ async function buildSandboxHealth(
  * How long one project's sandbox-health answer is reused.
  *
  * `buildSandboxHealth` is not a database read: `listSandboxTemplates` calls
- * `provider.getSnapshotState()` — a LIVE round trip to Daytona / E2B / Platinum
+ * `provider.getSnapshotState()` — a LIVE round trip to Platinum / Daytona
  * — once per template, plus a git read to hash the template directory. On the
  * SampleCo corpus (2026-08-26) that made this "cheap polling endpoint" the
  * slowest non-proxy read on the box: 559 ms mean server-side over 169 calls,
@@ -233,9 +235,6 @@ const sandboxHealthMemo = ttlMemo({
 export function invalidateSandboxHealth(projectId: string): void {
   sandboxHealthMemo.invalidate(projectId);
 }
-
-// Exported for unit coverage of the wall-clock degradation contract.
-export { SANDBOX_HEALTH_BUDGET_MS, SANDBOX_HEALTH_DEGRADED, SANDBOX_HEALTH_TTL_MS, buildSandboxHealth };
 
 export function registerSandboxesRoutes(): void {
   // ─── Sandbox templates ─────────────────────────────────────────────────────
@@ -406,7 +405,7 @@ export function registerSandboxesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -505,7 +504,7 @@ export function registerSandboxesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Capability gate: rebuilding snapshots/templates re-provisions infra. Gated on
     // project.sandbox.write so a custom role can withhold it (humans) AND the
@@ -526,7 +525,15 @@ export function registerSandboxesRoutes(): void {
       // template identity we cannot tell a live failure from a stale one, and
       // guessing in either direction is worse than saying so.
       templates = await listSandboxTemplates(await loadGitProject(loaded), observation.listOptions);
-    } catch {
+    } catch (error) {
+      // A disconnected repository needs a person to act: the global handler
+      // answers the shared 409 that names the fix (KRTX-2979). Anything else
+      // is logged, then answered as an unknown state below.
+      if (isRepositoryDisconnectedError(error) || isRepositoryDisconnectedError((error as { cause?: unknown })?.cause)) throw error;
+      logger.warn('[snapshots] fix-with-agent could not read the templates', {
+        projectId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       templatesUnavailable = true;
     }
     const { templateBuilds, status } = projectSandboxStatus({

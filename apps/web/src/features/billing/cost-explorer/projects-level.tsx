@@ -6,11 +6,11 @@ import { useState, type ReactNode } from 'react';
 import type { CostSummary, ProjectCostPage, ProjectCostSort } from '@kortix/sdk';
 import { ReceiptIcon as ReceiptText } from '@phosphor-icons/react';
 
-import { Button } from '@/components/ui/button';
-import { resolvePreset, type CostRange } from '@/components/ui/date-range-picker';
-import Hint from '@/components/ui/hint';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@kortix/ui/button';
+import { resolvePreset, type CostRange } from '@kortix/ui/date-range-picker';
+import Hint from '@kortix/ui/hint';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Skeleton } from '@kortix/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -19,15 +19,15 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { EmptyState } from '@/features/layout/section/empty-state';
+} from '@kortix/ui/table';
+import { EmptyState } from '@kortix/ui/empty-state';
 import {
   COST_PAGE_SIZE,
   useCostByProject,
   useCostSummary,
-} from '@/hooks/billing/use-cost-explorer';
+} from '@kortix/ui/internal/billing/use-cost-explorer';
 
-import { formatSessionCostUsd } from '../session-cost-format';
+import { formatSessionCostCredits } from '@kortix/ui/internal/billing/session-cost-format';
 import { CostExportButton } from './cost-export-button';
 import { CostLevelShell } from './cost-level-shell';
 import { CostSortHeader } from './cost-sort-header';
@@ -369,7 +369,7 @@ export function ProjectsLevelContent({
             <TableHead className="text-right">LLM</TableHead>
             <TableHead className="text-right">{tI18nComplete.raw('textcedc516df056')}</TableHead>
             <CostSortHeader
-              label={tI18nComplete.raw('textc9b3c38247f7')}
+              label={tI18nComplete.raw('text607d4d4de45d')}
               align="right"
               direction={projectSortDirection(sort, 'total')}
               onSort={() => onSort('total')}
@@ -402,13 +402,13 @@ export function ProjectsLevelContent({
               {sumBy(rows, (row) => row.session_count).toLocaleString('en-US')}
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
-              {formatSessionCostUsd(sumBy(rows, (row) => row.llm_cost))}
+              {formatSessionCostCredits(sumBy(rows, (row) => row.llm_cost))}
             </TableCell>
             <TableCell className="text-right font-mono tabular-nums">
-              {formatSessionCostUsd(sumBy(rows, (row) => row.compute_cost))}
+              {formatSessionCostCredits(sumBy(rows, (row) => row.compute_cost))}
             </TableCell>
             <TableCell className="text-right font-mono font-medium tabular-nums">
-              {formatSessionCostUsd(sumBy(rows, (row) => row.total_cost))}
+              {formatSessionCostCredits(sumBy(rows, (row) => row.total_cost))}
             </TableCell>
           </TableRow>
         </TableFooter>
@@ -520,13 +520,13 @@ function ProjectRow({
         {clickable ? row.session_count.toLocaleString('en-US') : '—'}
       </TableCell>
       <TableCell className="text-right font-mono tabular-nums">
-        {clickable ? formatSessionCostUsd(row.llm_cost) : '—'}
+        {clickable ? formatSessionCostCredits(row.llm_cost) : '—'}
       </TableCell>
       <TableCell className="text-right font-mono tabular-nums">
-        {clickable ? formatSessionCostUsd(row.compute_cost) : '—'}
+        {clickable ? formatSessionCostCredits(row.compute_cost) : '—'}
       </TableCell>
       <TableCell className="text-right font-mono font-medium tabular-nums">
-        {formatSessionCostUsd(row.total_cost)}
+        {formatSessionCostCredits(row.total_cost)}
       </TableCell>
     </>
   );

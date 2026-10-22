@@ -15,13 +15,21 @@ describe('content timestamp manifest', () => {
     assert.equal(typeof timestampModule.createContentTimestampManifest, 'function');
   });
 
-  it('matches the current git history when full history is available', async () => {
-    const timestampModule = await import(`${scriptUrl.href}?test=matches-git-history`);
-    const generatedManifest = timestampModule.createContentTimestampManifest();
-    if (Object.keys(generatedManifest).length === 0) return;
-
+  // Tree content only: the same result on dev, staging and every promotion
+  // branch. The dates themselves come from git history, which a squash merge
+  // rewrites, so they are not compared here.
+  it('lists exactly the content sources on disk, each with an ISO instant', async () => {
+    const timestampModule = await import(`${scriptUrl.href}?test=matches-tree`);
     const committedManifest = JSON.parse(await readFile(manifestUrl, 'utf8'));
-    assert.ok(Object.values(generatedManifest).every((value) => value.endsWith('Z')));
-    assert.deepEqual(committedManifest, generatedManifest);
+    assert.deepEqual(timestampModule.invalidContentTimestamps(committedManifest), []);
+  });
+
+  it('flags a missing source, an orphan entry and a malformed date', async () => {
+    const timestampModule = await import(`${scriptUrl.href}?test=flags-drift`);
+    const committed = JSON.parse(await readFile(manifestUrl, 'utf8'));
+    const [first, second] = Object.keys(committed);
+    const { [first]: _removed, ...rest } = committed;
+    const broken = { ...rest, [second]: 'yesterday', 'docs:no-such-page': '2026-01-01T00:00:00.000Z' };
+    assert.deepEqual(timestampModule.invalidContentTimestamps(broken), [first, 'docs:no-such-page', second].sort());
   });
 });

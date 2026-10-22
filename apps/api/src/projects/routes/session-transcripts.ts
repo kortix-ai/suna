@@ -6,7 +6,7 @@ import { PROJECT_ACTIONS } from '../../iam';
 import { resolveSessionBinding } from './lib/route-bindings';
 import { auth, errors, json } from '../../openapi';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadVisibleSession, assertProjectCapability } from '../lib/access';
+import { loadVisibleSession, assertProjectCapability, sessionIsTombstoned } from '../lib/access';
 import { callerKortixSessionId } from '../../middleware/caller-session';
 import { AnyObject, projectsApp, SessionTranscriptReadSchema } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
@@ -93,7 +93,7 @@ export function registerSessionTranscriptsRoutes(): void {
         c.get('sessionId') ?? null,
         callerKortixSessionId(c),
       );
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
 
       // The saved-history read: it serves the mirror only for the session's
       // current OpenCode root.
@@ -155,7 +155,7 @@ export function registerSessionTranscriptsRoutes(): void {
       tags: ['sessions'],
       summary: 'Read who wrote each message of a session',
       description:
-        'Returns `authors`, keyed by runtime message id: `{kind:"member", user_id, name, email}` or `{kind:"session", session_id, name, agent?}` (`agent` is the agent the sending session runs). `initial_author` is the parent session for a spawned session\'s first message, else null.',
+        'Returns `authors`, keyed by runtime message id: `{kind:"member", user_id, name, email}` or `{kind:"session", session_id, name, agent?}` (`agent` is the agent the sending session runs). `initial_author` is the parent session for a spawned session\'s first message, else null. `stops` is keyed by the runtime message id that started a turn a member stopped: the `{kind:"member", …}` who stopped it. Always present, `{}` when none.',
       ...auth,
       request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(AnyObject, 'Message authors'), ...errors(400, 403, 404) },
@@ -169,7 +169,7 @@ export function registerSessionTranscriptsRoutes(): void {
       const { loaded } = binding;
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
       const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       return c.json(await sessionMessageAuthors(visible.row));
     },
   );
@@ -182,9 +182,9 @@ export function registerSessionTranscriptsRoutes(): void {
       method: 'get',
       path: '/{projectId}/sessions/{sessionId}/model-usage',
       tags: ['sessions'],
-      summary: 'Read which model answered a session and what it cost',
+      summary: 'Read which model a session\'s requests were served by and what they cost',
       description:
-        'Returns `latest`, the newest answered model request: `{served_model, fallback_from, at}`. `served_model` is the route id of the model that answered. `fallback_from` is the model the request was routed to when a fallback model answered in its place, else null. `billed_cost` is what Kortix debited for the session\'s model calls, in USD. `turns` is keyed by the runtime message id of the prompt that started each turn: `{served_models, fallback_from, billed_cost}`.',
+        'Returns `latest`, the newest model request of any outcome: `{served_model, fallback_from, at, outcome}`. `outcome` is `answered`, `client_aborted` (the caller canceled it) or `error`; a cancel is not a model failure. `served_model` is the route id recorded for the request — the model that answered it, or on an unanswered request the model it was being served by. `fallback_from` is the routed model when the gateway rerouted after a failed attempt, whether or not the fallback answered, else null. `billed_cost` is what Kortix debited for the session\'s model calls, in USD. `turns` is keyed by the runtime message id of the prompt that started each turn: `{served_models, fallback_from, billed_cost}`.',
       ...auth,
       request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
       responses: { 200: json(AnyObject, 'Session model usage'), ...errors(400, 403, 404) },
@@ -198,7 +198,7 @@ export function registerSessionTranscriptsRoutes(): void {
       const { loaded } = binding;
       await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SESSION_READ);
       const visible = await loadVisibleSession(loaded, sessionId, c.get('sessionId') ?? null, callerKortixSessionId(c));
-      if (!visible) return c.json({ error: 'Not found' }, 404);
+      if (!visible || sessionIsTombstoned(visible.row)) return c.json({ error: 'Not found' }, 404);
       return c.json(await sessionModelUsage(visible.row));
     },
   );

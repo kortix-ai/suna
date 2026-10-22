@@ -6,6 +6,8 @@
  * authorization, and a visible, undeleted session. An agent session credential
  * may manage reminders on its OWN session only.
  */
+import type { Context } from 'hono';
+import type { AppEnv } from '../../types';
 import { createRoute, z } from '@hono/zod-openapi';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -13,10 +15,16 @@ import { assertAgentScope, isBorrowedSessionPrincipal, isProjectSessionPrincipal
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { readJsonObject } from '../../shared/http-body';
 import { isUuid } from '../../shared/validate';
-import { assertProjectCapability, loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { assertProjectCapability, loadProjectForUser, loadVisibleSession, loadVisibleSessionsForList } from '../lib/access';
 import { resolveAndAuthorizeAgent } from '../lib/agent-access';
 import { projectsApp } from '../lib/app';
 import { callerKortixSessionId } from '../../middleware/caller-session';
+import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { notificationsEnabled } from '../../notifications/enabled';
+import { triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
+import { logger } from '../../lib/logger';
+import { fireGitTrigger, markGitTriggerFired } from '../lib/trigger-fire';
+import type { GitTriggerSpec } from '../triggers';
 import { serializeSession } from '../lib/serializers';
 import { sessionIsTombstoned } from '../lib/access';
 import {
@@ -34,14 +42,14 @@ import {
   setSessionReminderEnabled,
 } from '../lib/session-reminders';
 
-const ReminderSchema = z.object({}).passthrough();
+const ReminderSchema = z.record(z.string(), z.any());
 const sessionParams = z.object({ projectId: z.string(), sessionId: z.string() });
 const reminderParams = sessionParams.extend({ reminderId: z.string() });
 
 /** Resolve the caller's right to schedule prompts into this session, or an error response. */
-async function authorizeReminderSession(c: any) {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
+async function authorizeReminderSession(c: Context<AppEnv>) {
+  const projectId = c.req.param('projectId') ?? '';
+  const sessionId = c.req.param('sessionId') ?? '';
   if (!isUuid(sessionId)) return { response: c.json({ error: 'Invalid session id' }, 400) };
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
@@ -68,15 +76,17 @@ async function authorizeReminderSession(c: any) {
   if (typeof metadata.deletedAt === 'string') {
     return { response: c.json({ error: 'Session is deleted' }, 409) };
   }
-  return { projectId, sessionId, loaded, visible, agentCaller };
+  return { response: null, projectId, sessionId, loaded, visible, agentCaller } as const;
 }
 
 export function registerSessionRemindersRoutes(): void {
   // GET /v1/projects/:projectId/reminders
   //
   // Every reminder on a session the caller can open, for the project Reminders
-  // page. Visibility is `loadVisibleSession`, once per distinct session, so the
-  // list can never show a reminder whose session the caller could not open.
+  // page. Visibility runs through `loadVisibleSessionsForList`: one batched
+  // read for every distinct session (KRTX-532), so the list can never show a
+  // reminder whose session the caller could not open — and never saturates the
+  // per-task pool doing it.
   // Pause/resume/remove go through the session-scoped routes below.
 
   projectsApp.openapi(
@@ -92,7 +102,7 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -109,13 +119,18 @@ export function registerSessionRemindersRoutes(): void {
       const rows = await listProjectReminders(projectId);
       const sessionIds = [...new Set(rows.map((row) => row.sessionId as string))];
       const names = new Map<string, string | null>();
-      await Promise.all(
-        sessionIds.map(async (sessionId) => {
-          const visible = await loadVisibleSession(loaded, sessionId, binding, binding);
-          if (!visible || sessionIsTombstoned(visible.row)) return;
-          names.set(sessionId, serializeSession(visible.row, { viewerId: loaded.userId }).name ?? null);
-        }),
-      );
+      // One batched visibility read for the whole list (KRTX-532): the
+      // per-session fan-out below used to issue the full session read — row,
+      // share subject, grants, owner probe — once per DISTINCT session, all in
+      // one Promise.all: 64 db statements measured on one request against the
+      // 5-connection per-task pool, queuing every concurrent statement behind
+      // it. loadVisibleSessionsForList answers the same verdicts with a
+      // bounded number of reads and the same security rules.
+      const visible = await loadVisibleSessionsForList(loaded, sessionIds, binding, binding);
+      for (const [sessionId, access] of visible) {
+        if (sessionIsTombstoned(access.row)) continue;
+        names.set(sessionId, serializeSession(access.row, { viewerId: loaded.userId }).name ?? null);
+      }
       return c.json({
         reminders: rows
           .filter((row) => names.has(row.sessionId as string))
@@ -139,9 +154,9 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const rows = await listSessionReminders(access.projectId, access.sessionId);
       return c.json({ reminders: rows.map(serializeSessionReminder) });
     },
@@ -173,10 +188,10 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const body = await readJsonObject(c);
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const { projectId, sessionId, loaded, visible, agentCaller } = access;
 
       const now = new Date();
@@ -212,6 +227,23 @@ export function registerSessionRemindersRoutes(): void {
         now,
       });
       if ('error' in inserted) return c.json({ error: inserted.error }, 409);
+      // The person who set the reminder hears when it fails (KRTX-1742); an
+      // agent's reminder goes to the person the agent acts for. Only with the
+      // `notification_center` flag on.
+      const watcher = notificationsEnabled(loaded.row.metadata)
+        ? triggerWatcherOf({
+            authType: c.get('authType'),
+            userId: c.get('userId'),
+            sessionId: c.get('sessionId'),
+            onBehalfOfUserId: getRequestOnBehalfOf(c),
+          })
+        : null;
+      // Best-effort: the reminder is already stored, so a failed write must not
+      // fail the route (a retry would set a second reminder).
+      if (watcher) {
+        await upsertTriggerWatcher({ accountId: loaded.row.accountId, projectId, slug: spec.slug, userId: watcher })
+          .catch((err) => logger.warn('[trigger-watchers] reminder follow failed', { projectId, slug: spec.slug, error: err instanceof Error ? err.message : String(err) }));
+      }
       return c.json(serializeSessionReminder(inserted.row), 201);
     },
   );
@@ -236,13 +268,13 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const body = await readJsonObject(c);
       if (typeof body.enabled !== 'boolean') {
         return c.json({ error: 'enabled (boolean) is required' }, 400);
       }
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const row = await getSessionReminder(access.projectId, access.sessionId, c.req.param('reminderId'));
       if (!row) return c.json({ error: 'Reminder not found' }, 404);
       if (
@@ -257,6 +289,53 @@ export function registerSessionRemindersRoutes(): void {
       }
       const updated = await setSessionReminderEnabled(row, body.enabled, new Date());
       return c.json(serializeSessionReminder(updated));
+    },
+  );
+
+  // POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run
+  //
+  // Fire the reminder once now — the Retry of a failed run. The schedule does
+  // not move. A person's run is their prompt, so it acts as them.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/sessions/{sessionId}/reminders/{reminderId}/run',
+      tags: ['sessions'],
+      summary: 'Run a session reminder now',
+      ...auth,
+      request: { params: reminderParams },
+      responses: {
+        202: json(ReminderSchema, 'The reminder, with its prompt queued for the session'),
+        ...errors(400, 403, 404, 409),
+      },
+    }),
+    async (c) => {
+      const access = await authorizeReminderSession(c);
+      if (access.response) return access.response;
+      const { projectId, loaded, visible, agentCaller } = access;
+      const row = await getSessionReminder(projectId, access.sessionId, c.req.param('reminderId'));
+      if (!row) return c.json({ error: 'Reminder not found' }, 404);
+      await resolveAndAuthorizeAgent(c, loaded, projectId, null, visible.row.agentName);
+      const spec = row.scheduleSpec as unknown as GitTriggerSpec;
+      const now = new Date();
+      const result = await fireGitTrigger({
+        spec: agentCaller ? spec : { ...spec, reminder: { ...spec.reminder!, promptAuthorUserId: loaded.userId } },
+        project: loaded.row,
+        payload: {},
+        renderedPrompt: spec.promptTemplate,
+        source: 'manual',
+        deliberate: true,
+      });
+      // `fired`: the session had failed, so a successor session started with
+      // the reminder (fireReminderSuccessor). `queued`: the prompt waits for
+      // delivery, which sets the final status — `failed` again, or cleared.
+      if (result.status !== 'queued' && result.status !== 'fired') {
+        return c.json({ error: result.error ?? result.reason ?? 'The reminder could not run' }, 409);
+      }
+      await markGitTriggerFired(projectId, row.slug, now, 'fired', { endsAlert: result.status === 'fired' });
+      const updated = await getSessionReminder(projectId, result.sessionId ?? access.sessionId, row.slug);
+      return c.json(serializeSessionReminder(updated ?? row), 202);
     },
   );
 
@@ -275,9 +354,9 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const row = await getSessionReminder(access.projectId, access.sessionId, c.req.param('reminderId'));
       if (!row) return c.json({ error: 'Reminder not found' }, 404);
       await deleteSessionReminder(access.projectId, row.slug);

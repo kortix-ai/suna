@@ -28,11 +28,13 @@
  * re-read the transcript and the model catalogue every 15 s for the life of the
  * tab. Starting is the open path's decision; claiming is everyone else's.
  *
- * WHY THE TRANSCRIPT IS A SEPARATE, ONE-SHOT STASH. The mirror is hydrated once
- * the session's OpenCode root is known, which on a cold box is 18.9-24.5 s after
- * the open (measured) — long past the share window the turn and queue legs want.
- * It is also the one leg that must never be served twice: a second hydrate over
- * a store the runtime has already filled is how a transcript grows ghosts.
+ * THE TRANSCRIPT LEG is claimed like every other leg, by the one saved-history
+ * read (`loadSavedTranscript`). That read runs at mount, keyed by the Kortix
+ * session, so it does not wait for the OpenCode root and fits the share window.
+ * A snapshot never paints over a store the runtime filled:
+ * `shouldHydrateFromMirror` refuses it. A host that read the window before the
+ * bind (`readSavedSessionCopy`, a connecting view) leaves it held: the open
+ * then asks for the pointer only, and the read answers from the held window.
  *
  * EVERY LEG IS TRI-STATE. `known: false` projects to `null`, which sends the
  * consumer to its endpoint. It must never project to the NEGATIVE answer — an
@@ -61,14 +63,63 @@ import {
  */
 export const OPEN_BUNDLE_SHARE_MS = 5_000;
 
-/** How long the one-shot transcript stash survives. Sized for the slowest
- *  measured cold box (24.5 s Platinum) with headroom, because the hydrate that
- *  consumes it cannot run until the runtime identity resolves. */
-export const OPEN_BUNDLE_TRANSCRIPT_TTL_MS = 60_000;
-
 /** The mirrored-message window an open asks for — the same span the sync
  *  controller's own first read covers. */
 export const OPEN_BUNDLE_TRANSCRIPT_LIMIT = 40;
+
+/**
+ * How long the saved window a host read before `useSession` bound the session
+ * (`readSavedSessionCopy`: a connecting view) answers that session's open. It
+ * covers one wake: up to 240 s measured, and apps/mobile gives up at 4 min.
+ * After the bind the runtime's own read outranks the window, so an older one
+ * costs only the moment until that read lands.
+ */
+export const SAVED_WINDOW_HOLD_MS = 5 * 60_000;
+
+/** How many sessions' holds live at once. A hold exists for the seconds
+ *  between a connecting view's read and that session's bind; a handful is
+ *  generous. The oldest hold gives its slot when the cap is hit, so the map
+ *  stays bounded. */
+const HELD_WINDOW_CAP = 16;
+
+// One hold per session, not one global slot: a late hold for session B (its
+// connecting view still settling) must not evict session A's hold and send
+// A's bind back to a full-window snapshot read — the window downloaded twice
+// per open, the exact thing KRTX-189 forbids.
+const heldWindows = new Map<string, { envelope: SessionTranscriptSyncEnvelope; atMs: number }>();
+
+/** Keep the saved window a host read before `useSession` binds the session. */
+export function holdSavedWindow(
+  projectId: string,
+  sessionId: string,
+  envelope: SessionTranscriptSyncEnvelope,
+  nowMs: number = Date.now(),
+): void {
+  const key = scopeKey(projectId, sessionId);
+  heldWindows.delete(key);
+  heldWindows.set(key, { envelope, atMs: nowMs });
+  while (heldWindows.size > HELD_WINDOW_CAP) {
+    const oldest = heldWindows.keys().next().value;
+    if (oldest === undefined) break;
+    heldWindows.delete(oldest);
+  }
+}
+
+/** The held saved window of this session, or null when none is held or it is
+ *  older than {@link SAVED_WINDOW_HOLD_MS}. */
+export function heldSavedWindow(
+  projectId: string,
+  sessionId: string,
+  nowMs: number = Date.now(),
+): SessionTranscriptSyncEnvelope | null {
+  const held = heldWindows.get(scopeKey(projectId, sessionId));
+  if (!held) return null;
+  if (nowMs - held.atMs > SAVED_WINDOW_HOLD_MS) {
+    heldWindows.delete(scopeKey(projectId, sessionId));
+    return null;
+  }
+  return held.envelope;
+}
 
 interface BundleEntry {
   /** Resolves to the bundle, or to `null` when the read failed. NEVER rejects:
@@ -79,35 +130,26 @@ interface BundleEntry {
    *  (always claimable) from "resolved a while ago" (claimable only inside the
    *  share window). */
   settledAtMs: number | null;
-  /** What `promise` resolved to. Unset while it is in flight. */
-  bundle?: SessionOpenBundle | null;
-}
-
-interface TranscriptStash {
-  envelope: SessionTranscriptSyncEnvelope;
-  stashedAtMs: number;
 }
 
 const entries = new Map<string, BundleEntry>();
-const transcripts = new Map<string, TranscriptStash>();
-/** When an open's bundle answered its transcript leg with NO saved copy. */
-const absentTranscripts = new Map<string, number>();
 
 function scopeKey(projectId: string, sessionId: string): string {
   return `${projectId}/${sessionId}`;
 }
 
-/** Drop everything. Tests only — a module singleton with no reset is a test
- *  that passes because of the one before it. */
+/** Drop everything: on an identity change (`resetIdentityState`), and in
+ *  tests — a module singleton with no reset is a test that passes because of
+ *  the one before it. */
 export function resetSessionOpenBundles(): void {
   entries.clear();
-  transcripts.clear();
-  absentTranscripts.clear();
+  heldWindows.clear();
 }
 
 export interface OpenSessionBundleOptions {
-  /** Mirrored messages to ask for. `0` requests the POINTER only — what a
-   *  client whose store is already warm wants. */
+  /** v1 transcript messages to ask for. Default `0`: the POINTER only. An
+   *  open reads the session log first (`GET …/log`), so no host reads the
+   *  snapshot's v1 window; a v1 fallback reads its own window. */
   transcript?: number;
   /** Injected clock, for tests. */
   now?: () => number;
@@ -137,17 +179,11 @@ export function openSessionBundle(
     startedAtMs: nowMs,
     settledAtMs: null,
     promise: getSessionOpenBundle(projectId, sessionId, {
-      transcript: options.transcript ?? OPEN_BUNDLE_TRANSCRIPT_LIMIT,
-    })
-      .then((bundle) => {
-        stashTranscript(key, bundle, now());
-        return bundle;
-      })
-      .catch(() => null),
+      transcript: options.transcript ?? 0,
+    }).catch(() => null),
   };
   entry.promise = entry.promise.then((bundle) => {
     entry.settledAtMs = now();
-    entry.bundle = bundle;
     return bundle;
   });
   entries.set(key, entry);
@@ -183,20 +219,6 @@ export function claimOpenBundle(
   return entry.promise;
 }
 
-/**
- * The bundle this session's open has ALREADY received, inside the share window.
- * `null` while it is in flight: for a reader that must not wait for the
- * snapshot. It asks its own route instead.
- */
-export function settledOpenBundle(
-  projectId: string,
-  sessionId: string,
-  nowMs: number = Date.now(),
-): SessionOpenBundle | null {
-  const entry = entries.get(scopeKey(projectId, sessionId));
-  return entry && entry.settledAtMs !== null && claimable(entry, nowMs) ? (entry.bundle ?? null) : null;
-}
-
 /** One `GET .../turn` answer plus the instant the SERVER took it. Structurally
  *  the observation `useSessionWorking` stamps for itself — the ranking rule it
  *  feeds only works if the stamp is the read's own instant, never arrival. */
@@ -204,6 +226,8 @@ export interface OpenBundleTurnObservation {
   turns: SessionTurn[];
   last_ended: SessionTurnEnded | undefined;
   recent_failures?: SessionTurnFailure[];
+  /** The caller's `can_stop` (`SessionTurnStatus`). Absent from an older server. */
+  can_stop?: boolean;
   atMs: number;
 }
 
@@ -219,6 +243,7 @@ export function openBundleTurn(bundle: SessionOpenBundle): OpenBundleTurnObserva
     turns: turn.turns ?? [],
     last_ended: turn.last_ended,
     recent_failures: turn.recent_failures,
+    ...(typeof turn.can_stop === 'boolean' ? { can_stop: turn.can_stop } : {}),
     atMs: Number.isFinite(observedAtMs) ? observedAtMs : Date.now(),
   };
 }
@@ -255,7 +280,7 @@ export function openBundleAudit(bundle: SessionOpenBundle): SessionAudit | null 
  * pointer-only, and when a saved copy's root is not the root the session row
  * names. The route decides those.
  *
- * Reads the leg, never the one-shot stash: the stash is the mirror paint's.
+ * @deprecated The snapshot's v1 window. The snapshot's `log` leg is the session log's first page. Removed in the next major.
  */
 export function openBundleHistory(bundle: SessionOpenBundle): SessionTranscriptSyncEnvelope | null {
   const transcript = bundle.transcript;
@@ -266,56 +291,4 @@ export function openBundleHistory(bundle: SessionOpenBundle): SessionTranscriptS
   const root = bundle.session?.runtime_session_id ?? bundle.session?.opencode_session_id;
   const savedRoot = envelope.runtime_session_id ?? envelope.opencode_session_id;
   return root && savedRoot === root ? envelope : null;
-}
-
-function stashTranscript(key: string, bundle: SessionOpenBundle, nowMs: number): void {
-  const transcript = bundle.transcript;
-  if (!transcript || transcript.known !== true || transcript.requested !== true) return;
-  // An unavailable mirror is not a transcript. Stashing it would let a hydrate
-  // paint an empty thread as a complete one. It IS an answer, though: the
-  // server holds no saved copy. Recorded separately, so the mirror read does
-  // not spend a second round trip asking the transcript route the same thing.
-  if (!transcript.available || transcript.messages.length === 0) {
-    absentTranscripts.set(key, nowMs);
-    return;
-  }
-  const { known: _known, requested: _requested, ...envelope } = transcript;
-  transcripts.set(key, { envelope, stashedAtMs: nowMs });
-}
-
-/**
- * Take the mirrored transcript this open fetched, ONCE.
- *
- * One-shot by design: the hydrate that consumes it is the only reader that may
- * paint a snapshot, and a second paint over a store the runtime has already
- * filled is how a transcript grows ghosts.
- */
-/**
- * Did this open's bundle answer "the server holds no saved copy"? ONCE, like
- * the stash: a later read asks the server again, since a turn may have ended
- * and written one since.
- */
-export function takeOpenBundleTranscriptAbsence(
-  projectId: string,
-  sessionId: string,
-  nowMs: number = Date.now(),
-): boolean {
-  const key = scopeKey(projectId, sessionId);
-  const answeredAtMs = absentTranscripts.get(key);
-  if (answeredAtMs === undefined) return false;
-  absentTranscripts.delete(key);
-  return nowMs - answeredAtMs <= OPEN_BUNDLE_TRANSCRIPT_TTL_MS;
-}
-
-export function takeOpenBundleTranscript(
-  projectId: string,
-  sessionId: string,
-  nowMs: number = Date.now(),
-): SessionTranscriptSyncEnvelope | null {
-  const key = scopeKey(projectId, sessionId);
-  const stash = transcripts.get(key);
-  if (!stash) return null;
-  transcripts.delete(key);
-  if (nowMs - stash.stashedAtMs > OPEN_BUNDLE_TRANSCRIPT_TTL_MS) return null;
-  return stash.envelope;
 }

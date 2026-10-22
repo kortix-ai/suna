@@ -1,7 +1,7 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
-import { Close } from '@/features/icon/icons/close';
+import { Button } from '@kortix/ui/button';
+import { Close } from '@kortix/ui/icons';
 import { useTranslations } from '@/i18n/use-translations';
 import { useRouter } from 'next/navigation';
 

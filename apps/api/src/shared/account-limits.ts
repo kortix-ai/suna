@@ -1,9 +1,7 @@
 import { config } from '../config';
-import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
 import { invalidateAccountBilling, resolveAccountBilling } from '../billing/services/billing-cache';
-import { activeTrialSeatLimit } from '../billing/services/resolve-billing';
 import { getPlanRecord } from '../billing/services/plan-catalog';
-import { getTier, isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
+import { isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 // Managed cloud is paid-only: new accounts resolve to tier 'none' and must
@@ -36,10 +34,9 @@ function positiveInt(value: unknown, fallback: number) {
  * account for up to 60s after an upgrade, downgrade, or trial change. There is
  * now one cache and one invalidation point.
  *
- * The effective plan = active trial overlay > per-seat self-heal > stored tier.
- * The self-heal keeps stale tier='free' per-seat rows from mis-gating paying
- * teams; the trial overlay lets an admin-issued trial lift project/rate
- * limits for exactly the trial window.
+ * The effective plan = active trial overlay > stored tier. The trial overlay
+ * lets an admin-issued trial lift project/rate limits for exactly the trial
+ * window.
  */
 async function resolveAccountLimitInfo(
   accountId: string,
@@ -52,7 +49,7 @@ async function resolveAccountLimitInfo(
       // has always treated an unprovisioned account as free rather than
       // fail-closing it out of its one project. Entitlement gates fail closed
       // to 'none' instead — a different question, deliberately.
-      tier: resolved.source === 'no_account' ? 'free' : resolved.plan.key,
+      tier: resolved.source === 'no_account' ? 'free' : resolved.features.key,
     };
   } catch {
     return { tier: 'free' };
@@ -118,20 +115,4 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
  */
 export function clearAccountLimitCache() {
   invalidateAccountBilling();
-}
-
-/**
- * Seat allowance for an account while an admin-issued trial is active.
- * null = no active trial or the trial is uncapped — no trial seat gate.
- * Reads uncached: member-add/invite is rare and must see a just-granted or
- * just-revoked trial immediately across API tasks.
- */
-export async function resolveTrialSeatLimit(accountId: string): Promise<number | null> {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
-  try {
-    const subscription = await getSubscriptionInfo(accountId);
-    return activeTrialSeatLimit(subscription);
-  } catch {
-    return null;
-  }
 }

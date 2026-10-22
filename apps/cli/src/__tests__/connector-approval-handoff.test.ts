@@ -57,4 +57,27 @@ describe('connector approval handoff', () => {
 
     expect(seen).toEqual([{ approvalContext: 'Sends draft d1 to a@example.com' }, {}]);
   });
+
+  test('drops `output` so the agent sees each payload once, and keeps the contract fields', async () => {
+    const connector = {
+      call: async () => ({
+        ok: true,
+        data: { provider: 'composio', result: { messages: [1] } },
+        output: { messages: [1] },
+        binding: 'composio',
+        upstream_status: 200,
+        risk: 'read',
+      }),
+    } as unknown as ConnectorClient;
+
+    const result = await callWithApprovalHandoff(connector, 'gmail', 'fetch_emails', {});
+
+    expect(result).toEqual({
+      ok: true,
+      data: { provider: 'composio', result: { messages: [1] } },
+      binding: 'composio',
+      upstream_status: 200,
+      risk: 'read',
+    } as never);
+  });
 });

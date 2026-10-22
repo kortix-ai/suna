@@ -32,7 +32,7 @@ import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { logger } from '../../lib/logger';
 import { isRetiredManagedModelId } from '../models/managed-models';
-import { SERVED_MANAGED_MODELS, platformDefaultModelId } from '../models/served-managed-models';
+import { platformDefaultModelId, servedManagedModels } from '../models/served-managed-models';
 import { resolveEffectiveModel } from './default-model';
 import { toOpencodeModelRef, toWireModel } from './effective';
 import { resolveSessionManagedModel } from './session-model';
@@ -60,43 +60,31 @@ export async function repointRetiredSessionModel(
   subject: RepointModelSubject,
 ): Promise<string> {
   // The RAW bare id, not `toWireModel`'s canonicalized wire form: `toWireModel`
-  // already applies `canonicalManagedModelId` internally, which would resolve
-  // a retired-with-successor id (e.g. deepseek-v4-flash-0731) straight past
-  // this check before it ever sees the id was retired at all — that's a
-  // FEATURE for the live gateway path (a request naming it transparently
-  // succeeds on the successor, see resolve-candidates.ts), but it must not
-  // blind this function to the fact that the STORED pin still needs its own
-  // durable, visible re-point.
+  // maps a retired id to the current lineup, which would hide from this check
+  // that the STORED pin still needs its own durable, visible re-point.
   const wire = opencodeModelRef.startsWith('kortix/') ? opencodeModelRef.slice('kortix/'.length) : opencodeModelRef;
   if (!isRetiredManagedModelId(wire)) return opencodeModelRef; // the overwhelming common case, no IO at all
 
-  let decision = resolveSessionManagedModel(wire, SERVED_MANAGED_MODELS, null);
-  if (decision.kind === 'kept') {
-    // No servable declared successor — the project's current default is the
-    // only remaining fallback (same chain PUT /model and session create use).
-    const resolved = await resolveEffectiveModel({
-      userId: subject.userId,
-      accountId: subject.accountId,
-      projectId: subject.projectId,
-      agentName: subject.agentName,
-      explicit: null,
-      freeModelsOnly: subject.freeModelsOnly,
-    }).catch(() => ({ model: null, source: 'platform' as const }));
-    // …and the PLATFORM default under that. A project that never set a default
-    // (the common case — `projects.metadata.default_model` is null for most)
-    // otherwise left this chain with nothing to return, so a retired id with no
-    // declared successor stayed pinned and every turn on it died. Measured on
-    // one real dev project, 2026-09-28: 20 of 238 sessions were pinned to a
-    // retired id with NO successor and no project default, i.e. permanently
-    // unable to complete a turn until a human changed the model by hand.
-    const projectDefault = resolved.model ? toWireModel(resolved.model) : null;
-    decision = resolveSessionManagedModel(
-      wire,
-      SERVED_MANAGED_MODELS,
-      projectDefault,
-      platformDefaultModelId(),
-    );
-  }
+  // The project's current default (same chain PUT /model and session create
+  // use), then the PLATFORM default under it. A project that never set a
+  // default (the common case) otherwise left a retired pin with nothing to move
+  // to, and every turn on it died: 20 of 238 sessions on one dev project,
+  // 2026-09-28.
+  const resolved = await resolveEffectiveModel({
+    userId: subject.userId,
+    accountId: subject.accountId,
+    projectId: subject.projectId,
+    agentName: subject.agentName,
+    explicit: null,
+    freeModelsOnly: subject.freeModelsOnly,
+  }).catch(() => ({ model: null, source: 'platform' as const }));
+  const projectDefault = resolved.model ? toWireModel(resolved.model) : null;
+  const decision = resolveSessionManagedModel(
+    wire,
+    servedManagedModels(),
+    projectDefault,
+    subject.freeModelsOnly ? null : platformDefaultModelId(),
+  );
   if (decision.kind === 'kept') return opencodeModelRef; // nothing usable to move to; the turn error names the cause
 
   const nextRef = toOpencodeModelRef(decision.to);

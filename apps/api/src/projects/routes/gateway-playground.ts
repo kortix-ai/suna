@@ -1,3 +1,5 @@
+import { config } from '../../config';
+import { publicGatewayBaseUrl } from '../../llm-gateway/public-url';
 import {
   calculateCost,
   callUpstream,
@@ -61,7 +63,9 @@ export function registerGatewayPlaygroundRoutes(): void {
         loaded.userId,
         loaded.row.accountId,
         projectId,
-        PROJECT_ACTIONS.PROJECT_GATEWAY_SPEND_READ,
+        // The playground spends credits on real model calls: a write, gated on
+        // the leaf that changes the project's models, not on a spend READ.
+        PROJECT_ACTIONS.PROJECT_MODEL_WRITE,
       );
 
       const body = await c.req.json();
@@ -118,19 +122,10 @@ export function registerGatewayPlaygroundRoutes(): void {
             if (candidates.length === 0) {
               return { model, ok: false, error: 'No upstream configured for this model' };
             }
-            // Same failover as a real turn: a managed model tries each
-            // `failover` candidate in order until one answers 2xx.
-            let descriptor = candidates[0]!;
+            const descriptor = candidates[0]!;
             const start = Date.now();
-            let res = await callUpstream(request, descriptor).catch(() => null);
+            const res = await callUpstream(request, descriptor).catch(() => null);
             const tried = [shownProvider(descriptor)];
-            for (const next of descriptor.failover ? candidates.slice(1).filter((c) => c.failover) : []) {
-              if (res?.ok) break;
-              await res?.body?.cancel().catch(() => undefined);
-              descriptor = next;
-              tried.push(shownProvider(next));
-              res = await callUpstream(request, next).catch(() => null);
-            }
             if (!res) throw new Error('Request failed');
             const latencyMs = Date.now() - start;
             const rawData = (await res.json().catch(() => null)) as any;
@@ -234,7 +229,7 @@ export function registerGatewayPlaygroundRoutes(): void {
         }),
       );
 
-      return c.json({ results });
+      return c.json({ results, gateway_url: publicGatewayBaseUrl(config.LLM_GATEWAY_BASE_URL) });
     },
   );
 }

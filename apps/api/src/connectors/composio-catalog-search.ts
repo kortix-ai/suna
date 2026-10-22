@@ -11,6 +11,8 @@ interface CatalogToolkit {
   meta: {
     logo?: string | null;
     description?: string | null;
+    /** Number of app events (triggers) the toolkit offers. */
+    triggers_count?: number;
     categories?: Array<{ id: string; name: string }>;
   };
 }
@@ -209,9 +211,13 @@ async function cachedCustomAuthConfigIds(catalogClient: ComposioCatalogClient) {
 /**
  * Toolkits Kortix provides natively, left out of every catalogue view.
  * Microsoft Teams is connected under Channels (the Kortix bot); the Composio
- * app listed beside it was a second, different "Microsoft Teams".
+ * app listed beside it was a second, different "Microsoft Teams". Slack is
+ * the same story: its Composio toolkit listed beside the Slack channel
+ * install read as Slack being "double added" (KRTX-2353) — and the pipedream
+ * catalogue already drops its Slack apps (`NATIVE_APP_SLUGS` in
+ * pipedream-catalog.ts), so the Composio path was the one gap left.
  */
-export const NATIVE_TOOLKITS: ReadonlySet<string> = new Set(['microsoft_teams']);
+export const NATIVE_TOOLKITS: ReadonlySet<string> = new Set(['microsoft_teams', 'slack']);
 
 /**
  * The toolkits every catalogue view leaves out: the native ones above, and
@@ -255,6 +261,18 @@ async function visibleCatalog(catalogClient: ComposioCatalogClient): Promise<Cat
   const catalog = await catalogSnapshot(catalogClient);
   const hidden = await hiddenToolkits(catalogClient, catalog);
   return hidden.size === 0 ? catalog : catalog.filter((item) => !hidden.has(item.slug.toLowerCase()));
+}
+
+/** Every connectable toolkit of the cached, fully paged catalogue (hidden ones left out). */
+export async function composioVisibleToolkits(
+  catalogClient: ComposioCatalogClient = composioRestClient(),
+): Promise<CatalogToolkit[]> {
+  return visibleCatalog(catalogClient);
+}
+
+/** Test seam: replace the deployment's REST client; `null` restores the real one. */
+export function setComposioRestClientForTest(next: ComposioCatalogClient | null): void {
+  client = next ?? undefined;
 }
 
 /** The public card shape. `connected` is always false: connection state is

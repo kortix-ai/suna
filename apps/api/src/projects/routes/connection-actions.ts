@@ -1,4 +1,5 @@
 /** Actions on one connector connection: rename, credential, revoke, activate, default, connect. */
+import { reconcileEventSubscriptionsFromCatalog } from '../trigger-events/subscriptions';
 import { createRoute, z } from '@hono/zod-openapi';
 import {
   RenameConnectionInputSchema,
@@ -13,10 +14,11 @@ import {
   upsertConnectionOAuth2Credential,
 } from '../../connectors/credentials';
 import { validateConnectionLabel } from '../../connectors/connection-identity';
-import { revokeConnectionOAuth2 } from '../../connectors/oauth2-store';
+import { oauth2ConnectionStatus, revokeConnectionOAuth2, startConnectionSignIn } from '../../connectors/oauth2-store';
 import { composioConfigured } from '../../connectors/composio';
 import { pipedreamConfigured } from '../../connectors/pipedream';
 import { rematerializeCatalogAfterCredentialUpdate } from '../../connectors/sync';
+import { SecretUndecryptableError } from '../../secrets/undecryptable';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { isUniqueViolation } from '../../shared/postgres-errors';
@@ -28,8 +30,11 @@ import { actorOf } from '../../iam/actor';
 import { requireUserCredential } from '../../tunnel/routes/auth';
 import { assignRole } from '../../iam/assignments';
 import {
-  startComposioConnect, finalizeComposioConnect,
-  startPipedreamConnect, finalizePipedreamConnect,
+  startComposioConnect,
+  finalizeComposioConnect,
+  startPipedreamConnect,
+  finalizePipedreamConnect,
+  parseRedirects,
 } from '../lib/connection-hosted-connect';
 
 const ShareConnectionInput = z
@@ -91,11 +96,26 @@ async function renameConnectionHandler(c: any) {
       .where(eq(connectorConnections.connectionId, connectionId));
   } catch (error) {
     if (isUniqueViolation(error)) {
-      return c.json({ error: `Another account of this connector is already named "${label}"` }, 409);
+      return c.json(
+        { error: `Another account of this connector is already named "${label}"` },
+        409,
+      );
     }
     throw error;
   }
   return c.json(serializeConnection({ ...connection, label }), 200);
+}
+
+/** The credential a catalog re-sync starts from. One the server cannot decrypt
+ *  seeds nothing: the sync resolves it again and records the error on the
+ *  connector, so the action itself still succeeds. */
+async function catalogCredentialOf(input: { connectorId: string; connectionId: string }) {
+  try {
+    return await resolveConnectionCredentialValue(input);
+  } catch (error) {
+    if (error instanceof SecretUndecryptableError) return null;
+    throw error;
+  }
 }
 
 export function registerConnectionActionsRoutes(): void {
@@ -127,7 +147,10 @@ export function registerConnectionActionsRoutes(): void {
       const parsed = ShareConnectionInput.safeParse(await readJsonObject(c));
       if (!parsed.success) {
         return c.json(
-          { error: 'principals must be a list of { principal_type: user | group | project, principal_id }' },
+          {
+            error:
+              'principals must be a list of { principal_type: user | group | project, principal_id }',
+          },
           400,
         );
       }
@@ -137,7 +160,10 @@ export function registerConnectionActionsRoutes(): void {
       const { loaded, connection } = mutable;
       if (connection.ownerType === 'project') {
         return c.json(
-          { error: 'This account is already shared. Change who can use it with its Share dialog or the grants API.' },
+          {
+            error:
+              'This account is already shared. Change who can use it with its Share dialog or the grants API.',
+          },
           409,
         );
       }
@@ -151,9 +177,15 @@ export function registerConnectionActionsRoutes(): void {
       if (connection.providerType === 'computer') {
         requireUserCredential(c);
         const [machine] = await db
-          .select({ accountId: tunnelConnections.accountId, ownerUserId: tunnelConnections.ownerUserId })
+          .select({
+            accountId: tunnelConnections.accountId,
+            ownerUserId: tunnelConnections.ownerUserId,
+          })
           .from(connectorConnections)
-          .innerJoin(tunnelConnections, eq(tunnelConnections.tunnelId, connectorConnections.tunnelId))
+          .innerJoin(
+            tunnelConnections,
+            eq(tunnelConnections.tunnelId, connectorConnections.tunnelId),
+          )
           .where(eq(connectorConnections.connectionId, connectionId))
           .limit(1);
         if (
@@ -176,13 +208,10 @@ export function registerConnectionActionsRoutes(): void {
           403,
         );
       }
-      const label = connection.label;
-      const clashes = (other: { label: string }) =>
-        c.json(
-          { error: `A shared account of this connector is already named "${other.label}". Rename one first.` },
-          409,
-        );
-      const [clash] = await db
+      // Shared accounts of one connector need distinct names. Sharing never
+      // asks for a rename: a taken name gets the next free one ("Miro 2"),
+      // the way Add account names a second account.
+      const sharedLabels = await db
         .select({ label: connectorConnections.label })
         .from(connectorConnections)
         .where(
@@ -190,11 +219,17 @@ export function registerConnectionActionsRoutes(): void {
             eq(connectorConnections.connectorId, connection.connectorId),
             eq(connectorConnections.ownerType, 'project'),
             isNull(connectorConnections.ownerId),
-            sql`lower(btrim(${connectorConnections.label})) = ${label.trim().toLowerCase()}`,
           ),
-        )
-        .limit(1);
-      if (clash) return clashes({ label });
+        );
+      const label = freeAccountLabel(
+        connection.label,
+        sharedLabels.map((row) => row.label),
+      );
+      const clashes = () =>
+        c.json(
+          { error: 'Another shared account took that name at the same moment. Try again.' },
+          409,
+        );
 
       // Grants first, on the still-private row, which ignores them. Each goes
       // through assignRole: principal checks, audit, cache invalidation.
@@ -215,7 +250,7 @@ export function registerConnectionActionsRoutes(): void {
       try {
         updated = await db
           .update(connectorConnections)
-          .set({ ownerType: 'project', ownerId: null, isDefault: false })
+          .set({ ownerType: 'project', ownerId: null, isDefault: false, label })
           .where(
             and(
               eq(connectorConnections.connectionId, connectionId),
@@ -225,14 +260,20 @@ export function registerConnectionActionsRoutes(): void {
           )
           .returning({ connectionId: connectorConnections.connectionId });
       } catch (error) {
-        if (isUniqueViolation(error)) return clashes({ label });
+        if (isUniqueViolation(error)) return clashes();
         throw error;
       }
       if (updated.length === 0) {
         return c.json({ error: 'The account changed while it was being shared. Try again.' }, 409);
       }
       return c.json(
-        serializeConnection({ ...connection, ownerType: 'project', ownerId: null, isDefault: false }),
+        serializeConnection({
+          ...connection,
+          label,
+          ownerType: 'project',
+          ownerId: null,
+          isDefault: false,
+        }),
         200,
       );
     },
@@ -330,7 +371,10 @@ export function registerConnectionActionsRoutes(): void {
               });
             }
           } catch (error) {
-            return c.json({ error: (error as Error).message || 'credential validation failed' }, 400);
+            return c.json(
+              { error: (error as Error).message || 'credential validation failed' },
+              400,
+            );
           }
           // INVARIANT (2026-09-16, account_required rule): `connection.isDefault`
           // is the raw (possibly unpinned) row flag; the project-wide catalog
@@ -353,7 +397,7 @@ export function registerConnectionActionsRoutes(): void {
               connection.providerType === 'mcp' &&
               connection.ownerType === 'project' &&
               isEffectiveDefault
-                ? await resolveConnectionCredentialValue({
+                ? await catalogCredentialOf({
                     connectorId: connection.connectorId,
                     connectionId,
                   })
@@ -390,7 +434,7 @@ export function registerConnectionActionsRoutes(): void {
             connectorId: connection.connectorId,
             credential:
               connection.providerType === 'mcp' && connection.ownerType === 'project'
-                ? await resolveConnectionCredentialValue({
+                ? await catalogCredentialOf({
                     connectorId: connection.connectorId,
                     connectionId,
                   })
@@ -400,9 +444,16 @@ export function registerConnectionActionsRoutes(): void {
           if (operation === 'revoke') await revokeConnectionOAuth2(connectionId);
           await db
             .update(connectorConnections)
-            .set({ status: operation === 'revoke' ? 'revoked' : 'active', updatedAt: new Date() })
+            .set(
+              operation === 'revoke'
+                ? { status: 'revoked', updatedAt: new Date() }
+                : // Offboarding's revokedReason (connectors/computers.ts) no longer holds.
+                  { status: 'active', metadata: sql`${connectorConnections.metadata} - 'revokedReason'`, updatedAt: new Date() },
+            )
             .where(eq(connectorConnections.connectionId, connectionId));
         }
+        // The default shared account may have changed: activate or park pending event triggers.
+        await reconcileEventSubscriptionsFromCatalog(projectId, loaded.row.accountId);
         return c.json({ ok: true });
       },
     );
@@ -463,6 +514,20 @@ export function registerConnectionActionsRoutes(): void {
             409,
           );
         }
+        // An MCP server signs in through Kortix's own OAuth flow, with no hosted
+        // provider: the link is the provider's consent page.
+        if (connection.providerType === 'mcp') {
+          if (operation === 'connect') {
+            const connectUrl = await startConnectionSignIn({
+              identity: { accountId: loaded.row.accountId, projectId, connectorId: connection.connectorId, connectionId },
+              initiatedBy: loaded.userId,
+              redirects: parseRedirects(await readJsonObject(c)),
+            });
+            if (!connectUrl) return c.json({ error: 'This MCP server has no one-click sign-in' }, 409);
+            return c.json({ app: connection.connectorAlias, connectUrl });
+          }
+          return c.json({ connected: (await oauth2ConnectionStatus(connectionId)).status === 'active' });
+        }
         // Provider-neutral, like the connector-scoped route and the connect-link
         // intake. This was Pipedream-only, so a Composio connector's labelled
         // (non-default) connection answered "not a pipedream connector" — the
@@ -477,7 +542,15 @@ export function registerConnectionActionsRoutes(): void {
         if (connection.providerType === 'composio') {
           if (!composioConfigured()) return c.json({ error: 'composio not configured' }, 501);
           if (operation === 'connect') {
-            return c.json(await startComposioConnect(projectId, connectionId, connection, app, await readJsonObject(c)));
+            return c.json(
+              await startComposioConnect(
+                projectId,
+                connectionId,
+                connection,
+                app,
+                await readJsonObject(c),
+              ),
+            );
           }
           return c.json(await finalizeComposioConnect(projectId, connectionId, connection, app));
         }
@@ -488,10 +561,38 @@ export function registerConnectionActionsRoutes(): void {
           return c.json({ error: 'not a pipedream connector' }, 404);
         }
         if (operation === 'connect') {
-          return c.json(await startPipedreamConnect(projectId, connectionId, connection, app, await readJsonObject(c)));
+          return c.json(
+            await startPipedreamConnect(
+              projectId,
+              connectionId,
+              connection,
+              app,
+              await readJsonObject(c),
+            ),
+          );
         }
-        return c.json(await finalizePipedreamConnect(projectId, connectionId, connection, app, loaded.userId));
+        return c.json(
+          await finalizePipedreamConnect(projectId, connectionId, connection, app, loaded.userId),
+        );
       },
     );
+  }
+}
+
+/** Longest account label the column holds (`connector_connections.label`). */
+const MAX_LABEL = 255;
+
+/**
+ * `name`, or `name 2`, `name 3`… : the first one no label in `taken` uses,
+ * trimmed so the suffix still fits the label column.
+ */
+export function freeAccountLabel(name: string, taken: readonly string[]): string {
+  const used = new Set(taken.map((label) => label.trim().toLowerCase()));
+  const base = name.trim().slice(0, MAX_LABEL);
+  if (!used.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n += 1) {
+    const suffix = ` ${n}`;
+    const candidate = `${base.slice(0, MAX_LABEL - suffix.length).trimEnd()}${suffix}`;
+    if (!used.has(candidate.toLowerCase())) return candidate;
   }
 }

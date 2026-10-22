@@ -18,8 +18,9 @@ import { wireMessageIdMatches } from './wire-id-match';
  * ONE QUEUED MESSAGE RUNS AT A TIME, IN ORDER, AND EACH GETS ITS OWN ANSWER.
  * A prompt sits in `session_lifecycle_commands` until the session's turn is
  * over AND every older prompt has left the delivery path. The first Quick
- * Queue prompt may end that turn after its current tool call finishes. Queue
- * List prompts wait for natural turn completion.
+ * Queue prompt may end that turn after its current tool call finishes, when
+ * its sender may stop that turn (`rowMayEndTurn`). Queue List prompts wait for
+ * natural turn completion.
  *
  * ONE EXCEPTION (KRTX-683): prompts released from a Stop hold. The release
  * stamps them with one `releasedBatchId`, and they share ONE answer. They are
@@ -59,14 +60,33 @@ import { wireMessageIdMatches } from './wire-id-match';
 export const INBOX_ORDER_BACKOFF_MS = 300;
 /**
  * The ceiling is LOW on purpose. A refused row is not polling for a whole cold
- * boot any more: accepted delivery calls `promoteNextInboxRow` and makes the
- * session's next queued row due NOW, then kicks a targeted drain. The terminal
- * relay and reaper repeat that wake for recovery. This backoff only covers the
+ * boot any more: a reply delivery opens a turn, and that turn's end calls
+ * `promoteNextInboxRow`, which makes the session's next queued row due NOW and
+ * drains it. A `noReply` delivery opens no turn, so it makes that call itself
+ * (`queued-continue.ts`). The reaper repeats the wake for recovery. This backoff only covers the
  * gap a lost kick would leave. 30s here was the entire "queue does not send
  * between turns" experience: three quick messages compounded to 27s / 45s /
  * 75s of dead air behind ~1s deliveries.
  */
 export const INBOX_ORDER_MAX_BACKOFF_MS = 2_000;
+/**
+ * A row refused this many times (~2 min at the 2s cap) behind an older prompt
+ * on a box that is NOT running waits on a parked head: a failed or stopped
+ * session whose head sits out the runtime-unreachable ladder. It re-polls once
+ * a minute instead. Prod 2026-10-20: ~200 such rows, every one on a stopped
+ * box, were refused 28 times a second.
+ *
+ * The box gate is what makes this safe. `admission_refusals` counts every
+ * reason, `turn_active` included, so a row that waited out a long live turn
+ * crosses 64 while its head still moves; on a running box it keeps the 2s cap.
+ * The minute is a fallback, not the wake. These exits make the next row due at
+ * once (`promoteNextInboxRow`): turn end, the reaper, forwarded-strand
+ * reconcile, a `noReply` delivery, a dead-lettered head (`markCommandFailed`),
+ * a removed head (`deleteInboxPrompt`), and a head closed without a post
+ * (`executeQueuedContinue`: consumed in band, skipped).
+ */
+export const INBOX_STALE_ORDER_REFUSALS = 64;
+export const INBOX_STALE_ORDER_BACKOFF_MS = 60_000;
 const INBOX_BACKOFF_FREE_REFUSALS = 4;
 
 /** `base * 2^(refusals - free)`, capped. Pure, so the curve is testable. */
@@ -147,6 +167,10 @@ export interface InboxAdmissionDeps {
   /** Is another prompt of this session ALREADY CLAIMED and mid-delivery?
    *  Separate from the ordering read because it binds even a promoted row. */
   hasInFlightPrompt: (sessionId: string, exceptCommandId: string) => Promise<boolean>;
+  /** The person who prompted the turn behind `messageId` (`turnPrompterOf`).
+   *  Read only for a head Quick Queue row while a turn runs. Absent: no row is
+   *  its prompter, so only a `mayStopAnyTurn` row arms the interrupt. */
+  turnPrompter?: (sessionId: string, messageId: string) => Promise<string | null>;
   /** The reads a `steer` row needs. Absent: a steer row is admitted as a queue row. */
   steer?: SteerAdmissionDeps;
 }
@@ -249,6 +273,9 @@ const STEER_CAPABILITY: RuntimeCapability = 'session.steer';
 
 export const liveInboxAdmissionDeps: InboxAdmissionDeps = {
   reconcileTurn: reconcileInboxTurn,
+  // Dynamic: `turn-stop-authority.ts` imports this module.
+  turnPrompter: async (sessionId, messageId) =>
+    (await import('./turn-stop-authority')).turnPrompterOf(sessionId, messageId),
   async readSandbox(sessionId) {
     const [box] = await db
       .select({
@@ -386,6 +413,29 @@ async function admitSteer(
   return { admit: true, steerInto: active.messageId };
 }
 
+/**
+ * May this Quick Queue row end the running turn behind `messageId`? Only when
+ * its sender may stop that turn (`turn-stop-authority.ts`): they prompted it,
+ * or they were the session owner or a project manager when they sent the row
+ * (`mayStopAnyTurn`). An agent session's row is never the prompter. Any other
+ * row waits for the turn to end, like a Queue List row.
+ */
+async function rowMayEndTurn(
+  row: SessionLifecycleCommandRow,
+  messageId: string,
+  deps: InboxAdmissionDeps,
+): Promise<boolean> {
+  const payload = (row.payload ?? {}) as {
+    mayStopAnyTurn?: unknown;
+    bindTurnIdentity?: unknown;
+    authorSessionId?: unknown;
+  };
+  if (payload.mayStopAnyTurn === true) return true;
+  const sentByPerson = payload.bindTurnIdentity === true && payload.authorSessionId == null;
+  if (!row.actorUserId || !sentByPerson || !deps.turnPrompter) return false;
+  return (await deps.turnPrompter(row.sessionId!, messageId)) === row.actorUserId;
+}
+
 export async function admitInboxPrompt(
   row: SessionLifecycleCommandRow,
   deps: InboxAdmissionDeps = liveInboxAdmissionDeps,
@@ -400,7 +450,6 @@ export async function admitInboxPrompt(
     INBOX_ORDER_MAX_BACKOFF_MS,
     refusals,
   );
-
   // THE THREE READS THIS GATE ASKS FOR ARE INDEPENDENT, so they go out
   // together. Awaiting them one at a time cost three sequential round trips on
   // every delivery, and the API does not share a region with its database
@@ -446,11 +495,14 @@ export async function admitInboxPrompt(
     if (sessionHoldsTurnAuthority(sandbox)) {
       const turns = storedSandboxTurns(sandbox?.metadata);
       const active = newestStoredTurn(turns);
+      // The sender check reads the database, so it runs last: only for the
+      // head Quick Queue row while a turn is active.
       const interruptAtBoundary =
         isHead &&
         (row.payload as { placement?: unknown } | null)?.placement === 'transcript' &&
         active?.state === 'active' &&
-        active.messageId
+        active.messageId &&
+        (await rowMayEndTurn(row, active.messageId, deps))
           ? { opencodeSessionId: active.runtimeSessionId, messageId: active.messageId }
           : undefined;
       return {
@@ -462,6 +514,10 @@ export async function admitInboxPrompt(
     }
   }
 
+  const parked = !(sandbox && RUNNING_SANDBOX_STATUSES.has(sandbox.status));
+  const waitBackoffMs =
+    parked && refusals >= INBOX_STALE_ORDER_REFUSALS ? INBOX_STALE_ORDER_BACKOFF_MS : orderBackoffMs;
+
   // ONE PROMPT OF A SESSION ON THE WIRE AT A TIME, and this check binds even a
   // promoted row. A claimed row spends up to READY_DEADLINE_MS (5 min) inside
   // `continueSession` waiting for a cold box, with no message written for any
@@ -469,7 +525,7 @@ export async function admitInboxPrompt(
   // one session, and OpenCode orders what it receives by ARRIVAL — so the loser
   // of that race is the message the user typed FIRST.
   if (await inFlightRead) {
-    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
+    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
   }
 
   // "Send now"/retry stamps `promoted`: the user pointed at ONE row and asked
@@ -478,7 +534,7 @@ export async function admitInboxPrompt(
   // about which message goes first.
   const promoted = (row.result as { promoted?: unknown } | null)?.promoted === true;
   if (!promoted && (await olderRead)) {
-    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: orderBackoffMs };
+    return { admit: false, reason: 'older_prompt_pending', retryAfterMs: waitBackoffMs };
   }
 
   return { admit: true };

@@ -10,6 +10,10 @@
  * the handler now answers first and the write lands behind it — the same rule
  * the audit-pool learning fixed for POST /internal/gateway/trace (KRTX-609).
  *
+ * Restored (KRTX-470 re-verification): the original test added in 58555ae was
+ * deleted by the #10058 testing reset while the fix itself is live on the
+ * trunk. This is the enforcer that keeps the stamp OFF the response path.
+ *
  * The test drives the REAL handler with the write's promise unresolved: the
  * response must settle while the write is still pending, and the write must
  * still be issued with both columns set. `mock.module` is process-global in
@@ -46,7 +50,7 @@ let releaseWrite: (() => void) | null = null;
 let rejectWrite = false;
 
 mock.module('../../shared/db', () => ({
-  hasDatabase: () => true,
+  hasDatabase: true,
   db: {
     update: () => ({
       set: (values: Record<string, unknown>) => {

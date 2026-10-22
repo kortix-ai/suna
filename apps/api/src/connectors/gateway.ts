@@ -1,4 +1,11 @@
 import { logger } from '../lib/logger';
+import {
+  APPROVAL_ENRICHERS,
+  type ApprovalEnricher,
+  enricherKey,
+  type ResolvedPreview,
+  resolveApprovalPreview,
+} from './approval-enrichers';
 import { buildArgsPreviewDetails, summarizeArgsPreview } from './args-preview';
 import {
   emailChannelAttachmentArgs,
@@ -21,8 +28,10 @@ import {
   type ConnectorAuth,
   type FetchImpl,
   executeCall,
+  mcpJsonRpcError,
   paramHintsFromSchema,
 } from './call';
+import { configuredTimeoutMs, withTimeout } from '../shared/with-timeout';
 /**
  * Connector gateway — the chokepoint every tool call goes through. Resolves the
  * connector + action, resolves the credential SERVER-SIDE, runs the call,
@@ -46,6 +55,7 @@ import { connectorRequestDigest } from './request-digest';
 import type { ShareSubject } from './share';
 import type { ActionBinding, Risk } from './types';
 import type { ConnectionOwnerType } from '../projects/lib/connection-access';
+import { SecretUndecryptableError } from '../secrets/undecryptable';
 
 export interface GatewayConnector {
   connectorId: string;
@@ -178,7 +188,10 @@ export interface GatewayDeps {
     slug: string,
     selector: unknown,
   ): Promise<GatewayConnector | null | 'not_computer'>;
-  loadAction(connectorId: string, relPath: string): Promise<GatewayAction | null>;
+  /** `providerType` — the loaded connector's provider, when the caller has it
+   *  in hand (the call path does), so the store skips its duplicate read of
+   *  the `connectors` row. */
+  loadAction(connectorId: string, relPath: string, providerType: string): Promise<GatewayAction | null>;
   /**
    * Resolve the credential value/binding for a connector. `userId=null` = shared;
    * set = that member's own. Receives the loaded connector so the resolver can
@@ -239,6 +252,13 @@ export interface GatewayDeps {
   loadDefaultMode?(projectId: string): Promise<DefaultMode>;
   /** Records the audit row; returns the new execution id used in the approval URL. */
   recordExecution(rec: ExecutionRecord): Promise<string | null>;
+  /** Set (`true`) or clear (`false`) `metadata.credential_rejected_at` on a
+   *  connection: the upstream answered 401 to its stored credential. Optional:
+   *  absent = the mark is never written. */
+  markCredentialRejected?(connectionId: string, rejected: boolean): Promise<void>;
+  /** `connection_credentials.kind` of the connection's stored credential, or
+   *  null when it has none. Read only after an upstream 401, to name the fix. */
+  credentialKind?(connectionId: string): Promise<string | null>;
   /** Approval carry-over: atomically claim a recent human approval for this
    *  exact request. The callback asks the session to continue, and its next
    *  attempt consumes the approval once instead of creating another gate. */
@@ -248,7 +268,13 @@ export interface GatewayDeps {
     connectorId: string;
     actionPath: string;
     requestDigest: string;
-  }): Promise<boolean>;
+    /** An object when claimed: `resolvedDigest` is the approved row's
+     *  `result_summary.resolved_digest`, the content the human saw;
+     *  `resolvedError` is true when that content could not be read. */
+  }): Promise<boolean | { resolvedDigest: string | null; resolvedError?: boolean }>;
+  /** Approval enrichers by `enricherKey` (approval-enrichers.ts). Absent =
+   *  the production registry. */
+  approvalEnrichers?: Readonly<Record<string, ApprovalEnricher>>;
   /** Reuse a legacy client's pending row only when it identifies this exact
    *  session-bound request. Prevents a caller from relabeling another approval. */
   isPendingApprovalExecution?(input: {
@@ -269,7 +295,7 @@ export interface GatewayDeps {
     projectId: string;
     executionId: string;
     sessionId: string | null;
-  }): string | null;
+  }): string | null | Promise<string | null>;
   /**
    * Post an approval card into the chat thread of the session that made a
    * gated call (Slack). Resolves `posted: false` for sessions with no thread.
@@ -333,6 +359,8 @@ export interface GatewayDeps {
   }): Promise<ComputerCallOutcome>;
   /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
   enforcePolicies?: boolean;
+  /** Upstream deadline per call. Default: KORTIX_CONNECTOR_CALL_TIMEOUT_MS (60 s). */
+  callTimeoutMs?: number;
 }
 
 /** Result of a `computer` connector call (gateway maps it onto a CallResult). */
@@ -340,17 +368,22 @@ export type ComputerCallOutcome =
   | { ok: true; data: unknown }
   | {
       ok: false;
-      /** `computer_unpaired` | `computer_offline` | `computer_capability_not_approved`,
+      /** `computer_unpaired` | `computer_owner_left` (its owner left the account) |
+       *  `computer_offline` | `computer_capability_not_approved`,
        *  an access refusal on the machine (`computer_access_pending` |
-       *  `computer_access_denied` | `computer_access_off`), or `error` for a
+       *  `computer_access_denied` | `computer_access_off`),
+       *  `computer_desktop_permission_missing` (macOS has not given Kortix
+       *  Accessibility or Screen Recording), or `error` for a
        *  failure on the machine or in the relay. */
       kind:
         | 'computer_unpaired'
+        | 'computer_owner_left'
         | 'computer_offline'
         | 'computer_capability_not_approved'
         | 'computer_access_pending'
         | 'computer_access_denied'
         | 'computer_access_off'
+        | 'computer_desktop_permission_missing'
         | 'error';
       message: string;
     };
@@ -384,8 +417,23 @@ export interface CallResultAccount {
   owner_type: string;
 }
 
+/** The kind of binding that ran a call: `openapi`, `http`, `mcp`, `graphql`, `composio`, `pipedream`, … */
+export type CallBinding = ActionBinding['kind'];
+
 export type CallResult =
-  | { status: 'ok'; data: unknown; risk: Risk; account?: CallResultAccount }
+  | {
+      status: 'ok';
+      data: unknown;
+      risk: Risk;
+      account?: CallResultAccount;
+      binding: CallBinding;
+      /** The payload without the binding's envelope (see `callOutput`). */
+      output: unknown;
+      /** The upstream HTTP status. Null when no HTTP upstream answered (a computer). */
+      upstreamStatus: number | null;
+      /** A failure the upstream reported inside a 2xx answer (MCP `isError`, GraphQL `errors`). */
+      upstreamError?: string;
+    }
   /** `message`: the sentence the agent reads, for a denial whose fix is not in `reason` alone. */
   | { status: 'denied'; reason: string; message?: string }
   | {
@@ -407,7 +455,86 @@ export type CallResult =
       /** Agent instruction for the asynchronous handoff. */
       approvalInstructions?: string | null;
     }
-  | { status: 'error'; reason: string };
+  | {
+      status: 'error';
+      reason: string;
+      /** Set once the action resolved. */
+      binding?: CallBinding;
+      /** The upstream HTTP status when an upstream answered. */
+      upstreamStatus?: number;
+      /** The upstream's Retry-After, in seconds, when it sent one. */
+      retryAfterSeconds?: number;
+    };
+
+/**
+ * The largest upstream answer a call reads. The body is held as text, parsed,
+ * and serialized again into the `/call` response, so the API holds several
+ * copies of it at once.
+ */
+const MAX_UPSTREAM_RESPONSE_BYTES = 64 * 1024 * 1024;
+
+/** Reason prefix of a call that hit the upstream deadline. */
+export const UPSTREAM_TIMEOUT = 'upstream_timeout';
+
+/**
+ * The upstream deadline: below Cloudflare's 100 s proxy timeout, so the
+ * caller always gets the gateway's answer. A client timeout must exceed it.
+ */
+function callTimeoutMs(deps: GatewayDeps): number {
+  return deps.callTimeoutMs ?? configuredTimeoutMs('KORTIX_CONNECTOR_CALL_TIMEOUT_MS', 60_000, 1_000);
+}
+
+function isTimeout(error: unknown): boolean {
+  // Ours (withTimeout) and the fetch abort (AbortSignal.timeout) share the name.
+  return (error as { name?: unknown } | null)?.name === 'TimeoutError';
+}
+
+/**
+ * The payload of a successful call without its binding's envelope:
+ *   - composio: `data.result`;
+ *   - mcp: `result.structuredContent ?? result.content`;
+ *   - graphql: `data.data`;
+ *   - every other binding: `data` itself.
+ * `upstreamError` names a failure the upstream reported inside a 2xx answer:
+ * an MCP JSON-RPC error or `isError` tool result, or GraphQL `errors` with no
+ * data. `data` keeps the raw answer either way.
+ */
+export function callOutput(
+  binding: CallBinding,
+  data: unknown,
+  secret?: string | null,
+): { output: unknown; upstreamError?: string } {
+  const body = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  if (binding === 'composio') return { output: body ? (body.result ?? null) : data };
+  if (binding === 'mcp') {
+    const rpcError = mcpJsonRpcError(data, secret);
+    if (rpcError) return { output: null, upstreamError: `JSON-RPC ${rpcError}` };
+    const result = body?.result && typeof body.result === 'object' ? (body.result as Record<string, unknown>) : null;
+    if (!result) return { output: data };
+    const output = result.structuredContent ?? result.content ?? null;
+    if (result.isError !== true) return { output };
+    const text = Array.isArray(result.content)
+      ? result.content
+          .map((item) => (item && typeof item === 'object' ? (item as { text?: unknown }).text : null))
+          .filter((t): t is string => typeof t === 'string')
+          .join('\n')
+      : '';
+    return { output, upstreamError: (text || 'MCP tool returned isError').slice(0, 2000) };
+  }
+  if (binding === 'graphql') {
+    const output = body ? (body.data ?? null) : data;
+    const errors = Array.isArray(body?.errors) ? (body.errors as unknown[]) : [];
+    const noData =
+      output == null ||
+      (typeof output === 'object' && Object.values(output as Record<string, unknown>).every((v) => v == null));
+    if (errors.length === 0 || !noData) return { output };
+    const messages = errors
+      .map((e) => (e && typeof e === 'object' ? (e as { message?: unknown }).message : null))
+      .filter((m): m is string => typeof m === 'string');
+    return { output, upstreamError: (messages.join('; ') || 'GraphQL errors').slice(0, 2000) };
+  }
+  return { output: data };
+}
 
 const MAX_APPROVAL_CONTEXT = 4_000;
 const CARD_POST_BUDGET_MS = 5_000;
@@ -666,7 +793,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     return { status: 'denied', reason };
   }
 
-  const action = await deps.loadAction(connector.connectorId, input.actionPath);
+  const action = await deps.loadAction(connector.connectorId, input.actionPath, connector.provider);
   if (!action) {
     await audit(deps, input, connector, 'denied', null, {
       reason: 'action_not_found',
@@ -702,6 +829,10 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     if (error instanceof CredentialNotSharedError) {
       await audit(deps, input, connector, 'denied', action.risk, { reason: error.reason });
       return { status: 'denied', reason: error.reason, message: error.message };
+    }
+    if (error instanceof SecretUndecryptableError) {
+      await audit(deps, input, connector, 'denied', action.risk, { reason: 'credential_undecryptable' });
+      return { status: 'denied', reason: 'credential_undecryptable', message: error.message };
     }
     const reason = (error as Error).message || 'credential_resolution_failed';
     await audit(deps, input, connector, 'error', action.risk, {
@@ -811,10 +942,10 @@ async function enforceCallPolicies(
   // Keys are OMITTED when empty rather than set to null: the pending_approval
   // result is a wire shape other code compares against, and a key that carries
   // no information shouldn't change it.
-  const approvalExtras = (executionId: string | null | undefined) => {
+  const approvalExtras = async (executionId: string | null | undefined) => {
     const url =
       executionId && deps.mintApprovalLink
-        ? deps.mintApprovalLink({
+        ? await deps.mintApprovalLink({
             projectId: input.projectId,
             executionId,
             sessionId: input.sessionId ?? null,
@@ -895,7 +1026,31 @@ async function enforceCallPolicies(
           requestDigest,
         })
       : false;
-    if (carriedOver) {
+    // Content binding: an approval given for enriched content (a draft's
+    // recipients and body) covers that content only. Re-read it; a change or
+    // a failed read asks again instead of running. An approval given while the
+    // content could not be read is re-read too: content that is now readable
+    // asks again so a human sees it; still unreadable, the approver's informed
+    // decision stands. The claim above already consumed the approval.
+    const enricher = (deps.approvalEnrichers ?? APPROVAL_ENRICHERS)[
+      enricherKey(connector, action.binding, input.actionPath)
+    ] as ApprovalEnricher | undefined;
+    const enrich = async (): Promise<ResolvedPreview | null> =>
+      enricher
+        ? resolveApprovalPreview(enricher, { deps, input, connector, binding: action.binding, args: executionArgs })
+        : null;
+    const approved = typeof carriedOver === 'object' ? carriedOver : null;
+    let resolved: ResolvedPreview | null = null;
+    let contentChanged = false;
+    if (approved?.resolvedDigest) {
+      resolved = await enrich();
+      contentChanged =
+        !resolved || !('resolved_digest' in resolved) || resolved.resolved_digest !== approved.resolvedDigest;
+    } else if (approved?.resolvedError && enricher) {
+      resolved = await enrich();
+      contentChanged = resolved !== null && 'resolved_digest' in resolved;
+    }
+    if (carriedOver && !contentChanged) {
       await audit(deps, input, connector, 'ok', action.risk, {
         reason: 'approval_carryover',
         policy_source: decision.source,
@@ -904,8 +1059,9 @@ async function enforceCallPolicies(
       // Older clients can pass an existing id. Preserve that row instead of
       // stacking another one, but never poll it. New clients make one request
       // and wait for the server-side session callback.
+      const reason = contentChanged ? 'content_changed' : 'policy_require_approval';
       const reuseExisting =
-        input.approvalExecutionId && deps.isPendingApprovalExecution
+        !contentChanged && input.approvalExecutionId && deps.isPendingApprovalExecution
           ? await deps.isPendingApprovalExecution({
               executionId: input.approvalExecutionId,
               projectId: input.projectId,
@@ -916,6 +1072,10 @@ async function enforceCallPolicies(
               requestDigest,
             })
           : false;
+      // Only a new row reads the content. Never blocks or fails the hold: a
+      // slow or failed read is recorded as `resolved_error`. Only an action
+      // with an enricher carries these keys.
+      if (!reuseExisting) resolved ??= await enrich();
       const executionId =
         (reuseExisting ? input.approvalExecutionId : null) ??
         (await audit(
@@ -925,7 +1085,7 @@ async function enforceCallPolicies(
           'pending_approval',
           action.risk,
           {
-            reason: 'policy_require_approval',
+            reason,
             policy_source: decision.source,
             args_preview_complete: argsPreviewDetails.complete,
             // WITHOUT THIS the approval prompt can name the tool but not its
@@ -936,10 +1096,11 @@ async function enforceCallPolicies(
             // Reference args (`{draft_id}`) name a target without showing it,
             // so the agent may describe the effect. Unverified by design.
             ...(approvalContext ? { approval_context: approvalContext } : {}),
+            ...resolved,
           },
           requestDigest,
         ));
-      const extras = approvalExtras(executionId);
+      const extras = await approvalExtras(executionId);
       const cardPosted =
         !reuseExisting && executionId && input.sessionId && deps.postApprovalCard
           ? await postCardWithin(CARD_POST_BUDGET_MS, () =>
@@ -953,6 +1114,7 @@ async function enforceCallPolicies(
                   args_preview: argsPreview,
                   args_preview_complete: argsPreviewDetails.complete,
                   ...(approvalContext ? { approval_context: approvalContext } : {}),
+                  ...resolved,
                 },
                 approvalUrl: extras.approvalUrl ?? null,
               }),
@@ -960,7 +1122,7 @@ async function enforceCallPolicies(
           : false;
       return {
         status: 'pending_approval',
-        reason: 'policy_require_approval',
+        reason,
         executionId,
         retryable: false,
         ...extras,
@@ -1016,11 +1178,18 @@ async function runConnectorAction(
       return await runComputerCall(deps, input, connector, action, executionArgs, fullPath);
     }
 
+    // One deadline for the upstream request. The race answers the caller;
+    // the signal also closes the socket of an http-family request.
+    const deadline = callTimeoutMs(deps);
+    const signal = AbortSignal.timeout(deadline);
+    const withDeadline = <T>(work: Promise<T>) => withTimeout(work, deadline, UPSTREAM_TIMEOUT);
     let result: ExecResult;
     if (connector.provider === 'pipedream') {
-      result = await runPipedreamAction(deps, input, connector, action.binding, executionSecret, executionArgs);
+      result = await withDeadline(
+        runPipedreamAction(deps, input, connector, action.binding, executionSecret, executionArgs),
+      );
     } else if (connector.provider === 'composio') {
-      result = await runComposioAction(deps, input, connector, action.binding, executionArgs);
+      result = await withDeadline(runComposioAction(deps, input, connector, action.binding, executionArgs));
     } else {
       let providerArgs =
         connector.provider === 'channel'
@@ -1066,17 +1235,20 @@ async function runConnectorAction(
           claim.files,
         );
       }
-      result = await executeCall({
-        binding: action.binding,
-        baseUrl: connector.baseUrl,
-        auth: connector.auth,
-        headers: connector.headers,
-        secret: executionSecret,
-        args: providerArgs,
-        paramHints: paramHintsFromSchema(action.inputSchema),
-        appAuthorization: await appAuthorizationForCall(deps, input, connector, action.binding),
-        fetchImpl: deps.fetchImpl,
-      });
+      const appAuthorization = await appAuthorizationForCall(deps, input, connector, action.binding);
+      result = await withDeadline(
+        executeCall({
+          binding: action.binding,
+          baseUrl: connector.baseUrl,
+          auth: connector.auth,
+          headers: connector.headers,
+          secret: executionSecret,
+          args: providerArgs,
+          paramHints: paramHintsFromSchema(action.inputSchema),
+          appAuthorization,
+          fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal, maxResponseBytes: MAX_UPSTREAM_RESPONSE_BYTES }),
+        }),
+      );
       // Channel platforms (Slack) reply HTTP 200 with an `{ ok:false, error }`
       // envelope on failure. Surface that as a real error so the agent gets the
       // cause (matching the in-sandbox CLI, which throws on `!ok`).
@@ -1100,15 +1272,15 @@ async function runConnectorAction(
       const misfire = result.ok && channelWrite ? channelWrite.misfire(result.data) : null;
       if (misfire) {
         const undone = misfire.undo
-          ? await executeCall({
+          ? await withDeadline(executeCall({
               binding: { kind: 'http', method: 'POST', path: misfire.undo.path },
               baseUrl: connector.baseUrl,
               auth: connector.auth,
               headers: connector.headers,
               secret: executionSecret,
               args: misfire.undo.args,
-              fetchImpl: deps.fetchImpl,
-            })
+              fetchImpl: (url, init) => deps.fetchImpl(url, { ...init, signal }),
+            }))
               .then((undo) => mapChannelEnvelope(undo).ok)
               .catch(() => false)
           : false;
@@ -1117,6 +1289,11 @@ async function runConnectorAction(
         await audit(deps, input, connector, 'denied', action.risk, { reason, message, removed: undone });
         return { status: 'denied', reason, message };
       }
+    }
+    const markedRejected = Boolean(connector.connectionMetadata?.credential_rejected_at);
+    const credentialRejected = await rejectedCredentialAccount(deps, connector, result, markedRejected);
+    if (connector.connectionId && (credentialRejected ? !markedRejected : markedRejected && result.ok)) {
+      await deps.markCredentialRejected?.(connector.connectionId, Boolean(credentialRejected)).catch(() => {});
     }
     if (result.ok) {
       if (attachmentClaim?.claimToken) {
@@ -1137,7 +1314,15 @@ async function runConnectorAction(
       });
       const named = await withSlackAuthorNames(deps, input, connector, executionSecret, result.data);
       const data = await withSlackThreadBinding(deps, input, connector, executionArgs, named);
-      return { status: 'ok', data, risk: action.risk, account: gatewayConnectorAccount(connector) };
+      return {
+        status: 'ok',
+        data,
+        risk: action.risk,
+        account: gatewayConnectorAccount(connector),
+        binding: action.binding.kind,
+        upstreamStatus: result.status,
+        ...callOutput(action.binding.kind, data, executionSecret),
+      };
     }
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
@@ -1147,29 +1332,40 @@ async function runConnectorAction(
     // An upstream that echoes the rejected body would echo the file's base64.
     const upstream = upstreamReason(result);
     const reason =
+      credentialRejected +
       teamsReadConsentHint(connector, result) +
       (attachmentRefs.length > 0 ? redactInlineBytes(upstream) : upstream) +
       fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       http_status: result.status,
+      ...(credentialRejected ? { error_code: CREDENTIAL_REJECTED } : {}),
       reason: reason.slice(0, 500),
     });
     const message = `[connector] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`;
     if (connector.provider === 'composio' && result.status === 400) logger.debug(message);
     else logger.warn(message);
-    return { status: 'error', reason };
+    return {
+      status: 'error',
+      reason,
+      binding: action.binding.kind,
+      upstreamStatus: result.status,
+      ...(result.retryAfterSeconds === undefined ? {} : { retryAfterSeconds: result.retryAfterSeconds }),
+    };
   } catch (e) {
     if (attachmentClaim?.claimToken) {
       await deps.attachmentStore
         ?.releaseClaim(attachmentClaim.claimToken, attachmentClaim.attachmentIds)
         .catch(() => {});
     }
-    const reason = (e as Error).message + fallbackHint(connector, action.binding);
+    const reason = isTimeout(e)
+      ? `${UPSTREAM_TIMEOUT}: ${fullPath} did not answer within ${callTimeoutMs(deps) / 1000} s. ` +
+        'The call may still have run upstream: check its effect before you repeat a write.'
+      : (e as Error).message + fallbackHint(connector, action.binding);
     await audit(deps, input, connector, 'error', action.risk, {
       reason: reason.slice(0, 500),
     });
     logger.warn(`[connector] ${fullPath} threw: ${reason.slice(0, 500)}`);
-    return { status: 'error', reason };
+    return { status: 'error', reason, binding: action.binding.kind };
   }
 }
 
@@ -1205,17 +1401,25 @@ async function runComputerCall(
     await audit(deps, input, connector, 'ok', action.risk, {
       method: action.binding.method,
     });
-    return { status: 'ok', data: outcome.data, risk: action.risk, account: gatewayConnectorAccount(connector) };
+    return {
+      status: 'ok',
+      data: outcome.data,
+      risk: action.risk,
+      account: gatewayConnectorAccount(connector),
+      binding: 'tunnel',
+      output: outcome.data,
+      upstreamStatus: null,
+    };
   }
   await audit(deps, input, connector, 'error', action.risk, {
     reason: outcome.kind,
     message: outcome.message.slice(0, 500),
   });
   if (outcome.kind !== 'error') {
-    return { status: 'error', reason: `${outcome.kind}: ${outcome.message}` };
+    return { status: 'error', reason: `${outcome.kind}: ${outcome.message}`, binding: 'tunnel' };
   }
   logger.warn(`[connector] ${fullPath} computer call failed: ${outcome.message.slice(0, 500)}`);
-  return { status: 'error', reason: outcome.message };
+  return { status: 'error', reason: outcome.message, binding: 'tunnel' };
 }
 
 /** A Pipedream action or proxy call on the connected account `secret`. */
@@ -1264,7 +1468,7 @@ async function runPipedreamAction(
 }
 
 /** A Composio tool call on the connection's server-owned account and session. */
-async function runComposioAction(
+export async function runComposioAction(
   deps: GatewayDeps,
   input: CallInput,
   connector: GatewayConnector,
@@ -1430,6 +1634,50 @@ function upstreamReason(result: ExecResult): string {
     }
   }
   return `upstream_${result.status}`;
+}
+
+const CREDENTIAL_REJECTED = 'credential_rejected';
+
+/**
+ * An upstream 401 to the credential Kortix stored for this account: the key
+ * expired, was revoked, or is wrong. The bare upstream body (`api_key_expired`)
+ * reads like a Kortix auth failure, so name the account and the fix. Empty
+ * for any other result, and for a channel: it sends the platform install
+ * token, not an account credential. A later ok call clears the mark, so one
+ * stray 401 does not leave a working account flagged.
+ */
+async function rejectedCredentialAccount(
+  deps: GatewayDeps,
+  connector: GatewayConnector,
+  result: ExecResult,
+  markedRejected: boolean,
+): Promise<string> {
+  if (result.status !== 401 || !connector.hasAuth || !connector.connectionId || connector.provider === 'channel') {
+    return '';
+  }
+  const label = connector.connectionLabel || connector.connectionId;
+  const kind = await deps.credentialKind?.(connector.connectionId).catch(() => null);
+  let fix: string;
+  if (kind === 'secret') {
+    fix =
+      'A project member replaces it in Connectors, or runs ' +
+      `\`kortix connectors connections credential ${connector.connectionId} -\` with the new value on stdin.`;
+  } else if (!kind && connector.authSecret) {
+    fix = `A project member replaces the value of the project secret ${connector.authSecret} in Secrets.`;
+  } else if (kind?.startsWith('oauth2_')) {
+    // OAuth refreshes the token before expiry, so its 401 means the grant was revoked.
+    fix = `A project member signs in to account "${label}" again in Connectors.`;
+  } else if (connector.provider === 'pipedream') {
+    fix = `A project member reconnects it: \`kortix connectors connect ${connector.slug}\`.`;
+  } else {
+    fix = 'A project member replaces or reconnects it in Connectors.';
+  }
+  return (
+    `${CREDENTIAL_REJECTED}: ${connector.slug} rejected the credential stored in account "${label}" (HTTP 401): ` +
+    `it expired, was revoked, or is wrong. ${fix} ` +
+    (markedRejected ? 'Retrying returns this error until the credential is replaced. ' : '') +
+    'Upstream: '
+  );
 }
 
 /**

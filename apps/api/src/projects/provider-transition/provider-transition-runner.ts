@@ -36,9 +36,9 @@ import {
   type ImageReadiness,
   type PrepIdentity,
 } from './provider-transition-core';
+import { activateWithCas, writeTransitionMarker } from './provider-transition-activate';
 import {
   acquireLease,
-  activateWithCas,
   failTransition,
   getTransition,
   heartbeat,
@@ -48,7 +48,6 @@ import {
   releaseForWaiting,
   reserveSwitchTransition,
   updateTransition,
-  writeTransitionMarker,
   type ProviderTransitionRow,
 } from './provider-transition-store';
 import { emitProviderTransitionEvent } from './provider-transition-metrics';
@@ -414,7 +413,7 @@ export async function driveProviderTransition(
     };
     const prepared = await prepareTargetImage(drive, heartbeatCb);
     if ('outcome' in prepared) return prepared.outcome;
-    const { builtExternalTemplateId } = prepared;
+    const { builtExternalTemplateId, buildSeconds } = prepared;
 
     // Record the exact external template id + mark ready.
     // FIX-B: consume the id the FRESH build proved (threaded from the provider
@@ -436,6 +435,10 @@ export async function driveProviderTransition(
       attempts: 0,
     }, myEpoch));
     const timeToReadySeconds = (deps.now().getTime() - leased.requestedAt.getTime()) / 1000;
+    // The ONE build_succeeded milestone per drive (provider_transitions_total
+    // counts transitions, so a second emission after the post-build confirm in
+    // prepareTargetImage double-counted every fresh build). Fresh builds ride
+    // their buildSeconds on it; image-reuse drives have none.
     emitProviderTransitionEvent('build_succeeded', {
       target: leased.targetProvider,
       projectId: leased.projectId,
@@ -443,6 +446,7 @@ export async function driveProviderTransition(
       snapshotName,
       externalTemplateId,
       timeToReadySeconds,
+      buildSeconds,
     });
 
     // ── Prebuild rests at ready (invisible to routing until adopted) ─────────
@@ -483,12 +487,16 @@ interface LeasedDrive {
 
 /**
  * Build or adopt the target image. Returns the external template id a fresh
- * build proved, or the drive's outcome when the image is not ready yet.
+ * build proved (plus its wall-clock `buildSeconds`, absent on the reuse path),
+ * or the drive's outcome when the image is not ready yet. Emits NO
+ * build_succeeded itself — the drive emits that ONCE at the ready milestone.
  */
 async function prepareTargetImage(
   { deps, transitionId, leased, myEpoch, project, provider, snapshotName }: LeasedDrive,
   heartbeatCb: () => Promise<void>,
-): Promise<{ outcome: DriveOutcome } | { builtExternalTemplateId: string | null }> {
+): Promise<
+  { outcome: DriveOutcome } | { builtExternalTemplateId: string | null; buildSeconds?: number }
+> {
   // FIX-B: the EXACT external template id a FRESH build proved, threaded from
   // the provider build (Platinum's requireExternalTemplateId) through
   // ensureWarmImage. Stays null on the existing-image-reuse path (no build ran)
@@ -521,6 +529,8 @@ async function prepareTargetImage(
   }
 
   const buildStartedAt = leased.startedAt ?? deps.now();
+  // Wall-clock of the fresh build — undefined when the image was reused.
+  let buildSeconds: number | undefined;
   if (readiness !== 'ready') {
     // Persist intent BEFORE the external build call; the content-addressed
     // snapshot_name is the idempotency key the builder re-checks internally.
@@ -552,7 +562,7 @@ async function prepareTargetImage(
       if (err instanceof LeaseLostError) throw err;
       return { outcome: await recordFailure(deps, leased, err, myEpoch) };
     }
-    const buildSeconds = (deps.now().getTime() - buildStart) / 1000;
+    buildSeconds = (deps.now().getTime() - buildStart) / 1000;
     // Confirm the provider actually has it now (never trust the builder's word
     // alone — GET the truth).
     readiness = interpretImageReadiness(await provider.getSnapshotState(snapshotName));
@@ -582,13 +592,8 @@ async function prepareTargetImage(
         ),
       };
     }
-    emitProviderTransitionEvent('build_succeeded', {
-      target: leased.targetProvider,
-      projectId: leased.projectId,
-      transitionId,
-      snapshotName,
-      buildSeconds,
-    });
+    // No build_succeeded here: the drive emits the ONE milestone at its ready
+    // mark (with this buildSeconds) — emitting both places double-counted.
   } else {
     // Image already active on the provider → no rebuild (scenario 2).
     emitProviderTransitionEvent('existing_image_reused', {
@@ -598,7 +603,7 @@ async function prepareTargetImage(
       snapshotName,
     });
   }
-  return { builtExternalTemplateId };
+  return { builtExternalTemplateId, buildSeconds };
 }
 
 /** Re-read the world, then activate the verified image or settle why it cannot be. */

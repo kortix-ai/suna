@@ -26,6 +26,7 @@ import {
 } from '@kortix/sdk';
 import { useStreamHealthStore } from '@/lib/session/live-updates';
 import { recordRuntimeCapabilities } from '@/lib/session/runtime-capabilities';
+import { useRuntimeConnectionStore } from '@kortix/sdk/react';
 
 const POLL_INTERVAL_MS = 10_000;
 const INITIAL_GRACE_MS = 3_000;
@@ -124,6 +125,14 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
     };
 
     const probe = async () => {
+      // R5.3: the session stream feeds the SDK connection store from the
+      // server's own health frames. While it does, read that, not the box.
+      const store = useRuntimeConnectionStore.getState();
+      if (store.streamDriven) {
+        recordRuntimeCapabilities(sandboxUrl, store.runtimeCapabilities);
+        apply(store.healthy ? 'live' : store.parked ? 'waking' : 'connecting');
+        return;
+      }
       const observed = await probeSandboxConnection(sandboxUrl);
       apply(streamIsOpen() ? 'live' : observed);
     };
@@ -164,8 +173,8 @@ export function useSandboxReachability(sandboxUrl: string | undefined): SandboxR
 
 /**
  * Human-readable elapsed seconds/minutes since `since` (ms epoch), updated
- * every second. Returns null when `since` is null. Matches web's
- * `useElapsedTime` output format so the pill reads identically.
+ * every second. Returns null when `since` is null. Same seconds/minutes
+ * format web's health pill uses, so both read identically.
  */
 export function useElapsedSince(since: number | null): string | null {
   const [now, setNow] = useState(() => Date.now());

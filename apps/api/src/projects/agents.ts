@@ -31,7 +31,7 @@
  * them in `errors` so the UI can render them next to the good ones.
  */
 
-export { GRANTABLE_KORTIX_PERMISSIONS, extractAgents, loadProjectAgents } from './agents/parse';
+export { GRANTABLE_KORTIX_PERMISSIONS, extractAgents, loadProjectAgents, agentNotDeclaredError } from './agents/parse';
 export {
   DEFAULT_AGENT_SENTINEL,
   OPENCODE_BUILTIN_AGENT_NAMES,
@@ -42,12 +42,11 @@ export {
   legacyReadWorkspaceFromLoadedAgents,
   projectRequiresDeclaredAgents,
   repositoryAccessFromLoadedAgents,
-  requiredConnectorsForAgent,
   resolveAgentGrant,
   resolveGovernedAgentGrant,
   sandboxFromLoadedAgents,
   type AgentNotDeclaredError,
   type GovernedAgentGrantResult,
 } from './agents/grants';
-export { agentSpecToTomlEntry, applyAgentScope, manifestHashForAgent } from './agents/crud';
+export { applyAgentScope } from './agents/crud';
 export type { AgentParseError, AgentSpec, GrantSet, LoadedAgents } from './agents/types';

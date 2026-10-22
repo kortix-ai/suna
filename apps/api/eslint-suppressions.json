@@ -32,7 +32,7 @@
   },
   "src/accounts/core/members.ts": {
     "no-console": {
-      "count": 4
+      "count": 2
     },
     "no-restricted-syntax": {
       "count": 4
@@ -70,11 +70,6 @@
     },
     "no-restricted-syntax": {
       "count": 9
-    }
-  },
-  "src/accounts/iam/enterprise-demo.ts": {
-    "no-restricted-syntax": {
-      "count": 2
     }
   },
   "src/accounts/iam/groups.ts": {
@@ -169,7 +164,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 27
+      "count": 22
     }
   },
   "src/admin/queries.ts": {
@@ -178,9 +173,6 @@
     }
   },
   "src/app.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 1
     }
@@ -240,7 +232,7 @@
   },
   "src/apps/routes.ts": {
     "kortix-api/projects-surface": {
-      "count": 2
+      "count": 1
     },
     "no-console": {
       "count": 2
@@ -249,7 +241,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 21
+      "count": 20
     }
   },
   "src/apps/runtime-artifacts.ts": {
@@ -298,19 +290,11 @@
   "src/billing/routes/account-state.ts": {
     "no-console": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/billing/routes/payments.ts": {
     "no-restricted-syntax": {
       "count": 2
-    }
-  },
-  "src/billing/routes/subscriptions.ts": {
-    "no-restricted-syntax": {
-      "count": 3
     }
   },
   "src/billing/routes/webhooks.ts": {
@@ -351,17 +335,12 @@
   },
   "src/billing/services/compute-metering.ts": {
     "no-console": {
-      "count": 8
+      "count": 7
     }
   },
   "src/billing/services/free-tier-rotation.ts": {
     "no-console": {
       "count": 2
-    }
-  },
-  "src/billing/services/legacy-account-migration.ts": {
-    "no-console": {
-      "count": 7
     }
   },
   "src/billing/services/legacy-stripe-sync.ts": {
@@ -376,35 +355,27 @@
   },
   "src/billing/services/revenuecat-webhooks.ts": {
     "no-console": {
-      "count": 17
-    }
-  },
-  "src/billing/services/seat-management.ts": {
-    "no-console": {
-      "count": 8
+      "count": 15
     }
   },
   "src/billing/services/stripe-checkout-webhooks.ts": {
     "no-console": {
-      "count": 3
+      "count": 1
     }
   },
   "src/billing/services/subscriptions.ts": {
     "no-console": {
-      "count": 17
+      "count": 5
     }
   },
   "src/billing/services/tiers.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
-    },
     "no-restricted-properties": {
       "count": 1
     }
   },
   "src/billing/services/webhooks.ts": {
     "no-console": {
-      "count": 35
+      "count": 25
     }
   },
   "src/billing/services/yearly-rotation.ts": {
@@ -506,7 +477,7 @@
   },
   "src/channels/slack-api.ts": {
     "no-console": {
-      "count": 34
+      "count": 32
     }
   },
   "src/channels/slack-oauth.ts": {
@@ -588,11 +559,6 @@
   "src/channels/slack/login.ts": {
     "no-restricted-properties": {
       "count": 2
-    }
-  },
-  "src/channels/slack/model-choice.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
     }
   },
   "src/channels/slack/participants.ts": {
@@ -726,6 +692,11 @@
       "count": 3
     }
   },
+  "src/channels/teams/installs.ts": {
+    "kortix-api/projects-surface": {
+      "count": 1
+    }
+  },
   "src/channels/teams/interactivity.ts": {
     "kortix-api/projects-surface": {
       "count": 2
@@ -736,11 +707,6 @@
   },
   "src/channels/teams/jwt.ts": {
     "no-console": {
-      "count": 1
-    }
-  },
-  "src/channels/teams/model-choice.ts": {
-    "kortix-api/projects-surface": {
       "count": 1
     }
   },
@@ -824,7 +790,7 @@
   },
   "src/config-releases/desired.ts": {
     "kortix-api/projects-surface": {
-      "count": 4
+      "count": 2
     },
     "no-console": {
       "count": 2
@@ -987,11 +953,6 @@
       "count": 2
     }
   },
-  "src/connectors/normalize.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    }
-  },
   "src/connectors/notify-session.ts": {
     "kortix-api/projects-surface": {
       "count": 1
@@ -1072,9 +1033,6 @@
     }
   },
   "src/feature-flags/toggle-effects.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
     "no-console": {
       "count": 1
     }
@@ -1298,11 +1256,6 @@
       "count": 1
     }
   },
-  "src/llm-gateway/models/picker.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    }
-  },
   "src/llm-gateway/models/runtime-catalog.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -1398,11 +1351,6 @@
   "src/middleware/auth.ts": {
     "no-console": {
       "count": 2
-    }
-  },
-  "src/middleware/compress.ts": {
-    "no-console": {
-      "count": 1
     }
   },
   "src/middleware/impersonation.ts": {
@@ -1510,14 +1458,6 @@
       "count": 1
     }
   },
-  "src/platform/providers/e2b.ts": {
-    "kortix-api/replica-local": {
-      "count": 6
-    },
-    "no-console": {
-      "count": 2
-    }
-  },
   "src/platform/providers/index.ts": {
     "kortix-api/replica-local": {
       "count": 1
@@ -1606,14 +1546,9 @@
       "count": 1
     }
   },
-  "src/platform/services/provision-timeline.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/platform/services/session-sandbox.ts": {
     "kortix-api/projects-surface": {
-      "count": 14
+      "count": 13
     },
     "no-console": {
       "count": 20
@@ -1745,7 +1680,7 @@
       "count": 1
     },
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/lib/legacy-runtime-bootstrap-wiring.ts": {
@@ -1799,7 +1734,7 @@
       "count": 1
     },
     "no-console": {
-      "count": 9
+      "count": 7
     }
   },
   "src/projects/lib/sandbox-env-snapshot.ts": {
@@ -1815,11 +1750,6 @@
   "src/projects/lib/sandbox-session-push.ts": {
     "no-console": {
       "count": 4
-    }
-  },
-  "src/projects/lib/session-control-reconciler.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
     }
   },
   "src/projects/lib/session-create.ts": {
@@ -1895,11 +1825,6 @@
       "count": 3
     }
   },
-  "src/projects/lib/trigger-fire.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/projects/lib/trigger-manifest.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -1934,11 +1859,6 @@
     },
     "no-console": {
       "count": 4
-    }
-  },
-  "src/projects/opencode-session-snapshot.ts": {
-    "kortix-api/replica-local": {
-      "count": 1
     }
   },
   "src/projects/prompt-attachment-cleanup.ts": {
@@ -2030,7 +1950,7 @@
   },
   "src/projects/reaping/stop-box.ts": {
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/reaping/stuck-provisioning.ts": {
@@ -2182,7 +2102,7 @@
       "count": 2
     },
     "no-restricted-syntax": {
-      "count": 7
+      "count": 6
     }
   },
   "src/projects/routes/git-backend.ts": {
@@ -2204,9 +2124,6 @@
     }
   },
   "src/projects/routes/group-grants.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 4
     }
@@ -2312,9 +2229,6 @@
     }
   },
   "src/projects/routes/project-settings.ts": {
-    "no-console": {
-      "count": 1
-    },
     "no-restricted-imports": {
       "count": 2
     },
@@ -2371,17 +2285,11 @@
     "no-console": {
       "count": 2
     },
-    "no-restricted-imports": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 3
     }
   },
   "src/projects/routes/review-items.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 5
     }
@@ -2453,9 +2361,6 @@
     }
   },
   "src/projects/routes/session-config.ts": {
-    "no-restricted-imports": {
-      "count": 1
-    },
     "no-restricted-syntax": {
       "count": 3
     }
@@ -2463,16 +2368,6 @@
   "src/projects/routes/session-open-bundle.ts": {
     "no-console": {
       "count": 1
-    }
-  },
-  "src/projects/routes/session-presence.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
-  "src/projects/routes/session-reminders.ts": {
-    "no-restricted-syntax": {
-      "count": 6
     }
   },
   "src/projects/routes/session-scope-decide.ts": {
@@ -2579,7 +2474,7 @@
   },
   "src/projects/session-lifecycle/actions.ts": {
     "no-console": {
-      "count": 7
+      "count": 6
     }
   },
   "src/projects/session-lifecycle/actor.ts": {
@@ -2716,19 +2611,6 @@
       "count": 3
     }
   },
-  "src/projects/suna-migration/suna-migration-routes.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 3
-    }
-  },
-  "src/projects/suna-migration/suna-migration-worker.ts": {
-    "no-restricted-properties": {
-      "count": 1
-    }
-  },
   "src/projects/trigger-entry.ts": {
     "no-restricted-properties": {
       "count": 1
@@ -2772,19 +2654,9 @@
       "count": 5
     }
   },
-  "src/router/routes/generation.ts": {
-    "no-restricted-imports": {
-      "count": 2
-    }
-  },
-  "src/router/routes/llm.ts": {
-    "no-console": {
-      "count": 2
-    }
-  },
   "src/router/routes/proxy/handlers.ts": {
     "no-console": {
-      "count": 12
+      "count": 5
     },
     "no-restricted-syntax": {
       "count": 5
@@ -2798,16 +2670,6 @@
       "count": 3
     }
   },
-  "src/router/routes/search-image.ts": {
-    "no-console": {
-      "count": 3
-    }
-  },
-  "src/router/routes/search-web.ts": {
-    "no-console": {
-      "count": 3
-    }
-  },
   "src/router/routes/usage.ts": {
     "kortix-api/projects-surface": {
       "count": 1
@@ -2818,30 +2680,10 @@
   },
   "src/router/services/billing.ts": {
     "no-console": {
-      "count": 6
-    }
-  },
-  "src/router/services/llm-reservation.ts": {
-    "no-console": {
-      "count": 4
-    }
-  },
-  "src/router/services/llm.ts": {
-    "no-console": {
-      "count": 6
+      "count": 3
     }
   },
   "src/router/services/reservation.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/router/services/serper.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
-  "src/router/services/tavily.ts": {
     "no-console": {
       "count": 1
     }
@@ -2851,7 +2693,7 @@
       "count": 1
     },
     "no-restricted-syntax": {
-      "count": 5
+      "count": 4
     }
   },
   "src/routes/system.ts": {
@@ -2862,7 +2704,7 @@
       "count": 4
     },
     "no-restricted-syntax": {
-      "count": 4
+      "count": 3
     }
   },
   "src/runtime-assets/index.ts": {
@@ -2936,10 +2778,10 @@
   },
   "src/sandbox-proxy/forward/turn-start.ts": {
     "kortix-api/projects-surface": {
-      "count": 10
+      "count": 9
     },
     "no-console": {
-      "count": 6
+      "count": 5
     }
   },
   "src/sandbox-proxy/forward/upstream.ts": {
@@ -2958,14 +2800,9 @@
       "count": 1
     }
   },
-  "src/sandbox-proxy/index.ts": {
-    "no-console": {
-      "count": 1
-    }
-  },
   "src/sandbox-proxy/pre-prompt-env-sync.ts": {
     "kortix-api/projects-surface": {
-      "count": 7
+      "count": 6
     },
     "no-console": {
       "count": 3
@@ -2986,6 +2823,11 @@
   },
   "src/sandbox-proxy/prompt-wire-id-repair.ts": {
     "kortix-api/projects-surface": {
+      "count": 1
+    }
+  },
+  "src/sandbox-proxy/provider.ts": {
+    "no-console": {
       "count": 1
     }
   },
@@ -3034,7 +2876,7 @@
   },
   "src/scim/users.ts": {
     "no-console": {
-      "count": 3
+      "count": 1
     },
     "no-restricted-syntax": {
       "count": 6
@@ -3056,11 +2898,6 @@
     },
     "no-console": {
       "count": 1
-    }
-  },
-  "src/setup-links/approval-app.ts": {
-    "kortix-api/projects-surface": {
-      "count": 2
     }
   },
   "src/setup-links/connector-completion-watch.ts": {
@@ -3091,9 +2928,6 @@
     "no-console": {
       "count": 6
     },
-    "no-restricted-properties": {
-      "count": 2
-    },
     "no-restricted-syntax": {
       "count": 9
     }
@@ -3108,7 +2942,7 @@
   },
   "src/shared/account-limits.ts": {
     "kortix-api/layers": {
-      "count": 5
+      "count": 3
     }
   },
   "src/shared/actor-context.ts": {
@@ -3185,11 +3019,6 @@
   "src/shared/instance.ts": {
     "no-restricted-properties": {
       "count": 1
-    }
-  },
-  "src/shared/jwt-liveness.ts": {
-    "kortix-api/replica-local": {
-      "count": 2
     }
   },
   "src/shared/jwt-verify.ts": {
@@ -3317,7 +3146,7 @@
       "count": 2
     },
     "no-restricted-properties": {
-      "count": 12
+      "count": 11
     }
   },
   "src/snapshots/builder-log.ts": {
@@ -3342,14 +3171,6 @@
     },
     "no-console": {
       "count": 3
-    }
-  },
-  "src/snapshots/providers/e2b.ts": {
-    "no-console": {
-      "count": 2
-    },
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/snapshots/providers/index.ts": {
@@ -3415,9 +3236,6 @@
     },
     "no-console": {
       "count": 3
-    },
-    "no-restricted-properties": {
-      "count": 1
     }
   },
   "src/snapshots/tmp-reaper.ts": {
@@ -3573,14 +3391,6 @@
   "src/workers/slack-turn-gc-worker.ts": {
     "no-console": {
       "count": 1
-    }
-  },
-  "src/workers/suna-migration-worker.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
-    "no-restricted-properties": {
-      "count": 2
     }
   },
   "src/workers/teams-turn-gc-worker.ts": {

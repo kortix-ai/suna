@@ -1,16 +1,30 @@
 /** Project triggers: list, create, update, activate, delete, and manual fire. */
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { projectTriggerRuntime, projects } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
 import { mutateManifestWithRetry } from '../../connectors/manifest-mutation';
+import { featureDisabledBody, requireFeatureFlag } from '../../feature-flags/gate';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
+import { loadProjectAgents } from '../agents';
 import { assertMayRunAgent } from '../lib/agent-access';
 import { PROJECT_ACTIONS } from '../../iam';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
-import { OkSchema, TriggerFireResultSchema, TriggerListSchema, projectsApp } from '../lib/app';
+import {
+  OkSchema,
+  TriggerDryRunResultSchema,
+  TriggerFireRequestSchema,
+  TriggerFireResultSchema,
+  TriggerListSchema,
+  TriggerReplayRequestSchema,
+  TriggerRunListSchema,
+  projectsApp,
+} from '../lib/app';
 import { guardSession } from '../lib/http-session-access';
 import { withProjectGitAuth } from '../lib/git';
+import { resolveSessionAgentName } from '../lib/session-create';
 import { metadataMerge } from '../lib/metadata-merge';
 import { requestAuditContext } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
@@ -19,14 +33,44 @@ import {
   fireGitTrigger,
   loadTriggersForResponse,
   markGitTriggerFired,
+  mergeTriggerPayload,
   parseTriggerDraft,
   removeTriggerFromManifest,
   renderPromptTemplate,
+  renderSessionKey,
   specToBody,
+  triggerFilterMatches,
+  type TriggerFireSource,
   upsertTriggerInManifest,
 } from '../lib/triggers';
+import { clearTriggerAutoPause } from '../lib/trigger-run-caps';
+// From the leaf, not the barrel: suites that stub '../lib/triggers' by listing
+// its exports would otherwise lose this name.
+import { ACCOUNT_STATE_FIRE_CODES, markGitTriggerAttemptFailed } from '../lib/trigger-fire';
+import { raiseTriggerAlert } from '../lib/trigger-alerts';
+import { recordTriggerRun, triggerRunFromFire } from '../trigger-execution-store';
+import {
+  TRIGGER_RUN_STATUSES,
+  type TriggerRunApiStatus,
+  decodeTriggerRunCursor,
+  listVisibleTriggerRuns,
+  triggerRunApiStatus,
+  loadTriggerRunForReplay,
+} from '../trigger-runs';
+import { MONITOR_PROMPT_PREAMBLE } from '../lib/monitor-events';
+import { callerKortixSessionId } from '../../middleware/caller-session';
+import { annotateAuditEvent } from '../../shared/audit-scope';
+import { deleteTriggerWatchers, triggerWatcherOf, upsertTriggerWatcher } from '../lib/trigger-watchers';
+import { getRequestOnBehalfOf } from '../../middleware/on-behalf-of';
+import { notificationsEnabled } from '../../notifications/enabled';
+import { logger } from '../../lib/logger';
+import type { AppEnv } from '../../types';
 import { validateWebhookSecretConfiguration } from '../lib/webhook-secret-policy';
 import { reconcileProjectTriggerRuntime } from '../trigger-runtime-catalog';
+import { connectorInfo, eventPayload, eventPromptPreamble } from '../trigger-events/deliver';
+import { unknownSourceMessage } from '../trigger-events/registry';
+import { listAppEventTypes, listConnectorEventTypes, listEventApps, validateEventTrigger } from '../trigger-events/catalog';
+import { reconcileEventSubscriptions } from '../trigger-events/subscriptions';
 import {
   PRIVATE_TRIGGER_SESSION_ACCESS,
   parseTriggerSessionAccess,
@@ -34,10 +78,44 @@ import {
   validateTriggerSessionAccessPrincipals,
 } from '../trigger-session-access';
 import {
+  type GitTriggerSpec,
   type ParsedManifest,
   extractTriggers,
   findProjectTriggerBySlug,
 } from '../triggers';
+
+/**
+ * The person who created or edited a trigger follows its alerts (KRTX-1742).
+ * Never an API key or a service account: they name no person. Only with the
+ * project's `notification_center` flag on.
+ */
+async function followTrigger(
+  c: Context<AppEnv>,
+  project: { accountId: string; metadata: unknown },
+  projectId: string,
+  slug: string,
+): Promise<void> {
+  if (!notificationsEnabled(project.metadata)) return;
+  const userId = triggerWatcherOf({
+    authType: c.get('authType'),
+    userId: c.get('userId'),
+    sessionId: c.get('sessionId'),
+    onBehalfOfUserId: getRequestOnBehalfOf(c),
+  });
+  if (!userId) return;
+  // Best-effort: the manifest is already committed, so a failed write must not fail the route.
+  await upsertTriggerWatcher({ accountId: project.accountId, projectId, slug, userId }).catch((err) =>
+    logger.warn('[trigger-watchers] follow failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
+}
+
+/** Body keys that change which event a trigger subscribes to. */
+const EVENT_BODY_KEYS = ['connector', 'event_account', 'event_source', 'event', 'event_config'];
+
+/** Merge-body keys owned by one trigger type, dropped when a PATCH changes the type. */
+const TYPE_SPECIFIC_BODY_KEYS = [
+  'cron', 'run_at', 'timezone', 'secret_env', 'run', 'mode', 'interval',
+  'expect_event_within', 'connector', 'event_account', 'event_source', 'event', 'event_config',
+] as const;
 
 // Body keys that change the trigger's *repo manifest* (committed to git). A PATCH
 // whose body touches none of these has nothing to commit, so we skip git entirely
@@ -64,6 +142,16 @@ const TRIGGER_MANIFEST_KEYS = [
   'session_key',
   'sessionKey',
   'filter',
+  // A PATCH of only these must still write the manifest (KRTX-1721, KRTX-1743).
+  'max_runs_per_hour',
+  'max_runs_per_day',
+  'max_lateness',
+  'overlap',
+  'connector',
+  'event_account',
+  'event_source',
+  'event',
+  'event_config',
 ] as const;
 
 export function registerTriggersRoutes(): void {
@@ -107,6 +195,170 @@ export function registerTriggersRoutes(): void {
     },
   );
 
+  // GET /v1/projects/:projectId/triggers/event-apps
+  //
+  // ⚠️ Keep registered BEFORE the `…/triggers/{slug}` routes (see `activation` below).
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/triggers/event-apps',
+      tags: ['triggers'],
+      summary: 'List the apps that can trigger an event',
+      description:
+        'Apps that can trigger an event, with the project connector for each and whether a project-shared account is connected. Source `composio`: apps with at least one event type. Source `mcp` (projects with connectors_v2): every catalog app with sign-in, with `mcp_url` to install it (`event_count` 0 until it is connected and its tools are read), and every project MCP server (`event_count` 0 when none of its tools lists or searches).',
+      ...auth,
+      request: { params: z.object({ projectId: z.string() }) },
+      responses: {
+        200: json(
+          z.object({
+            apps: z.array(z.object({
+              source: z.string().openapi({ description: 'Event source adapter id, such as composio. The trigger `event_source` value.' }),
+              provider: z.string().openapi({ deprecated: true, description: 'Deprecated alias of `source`.' }),
+              app: z.string(),
+              name: z.string(),
+              logo: z.string().nullable(),
+              event_count: z.number(),
+              new_connector_slug: z.string(),
+              mcp_url: z.string().nullable().openapi({ description: 'Source `mcp`: the MCP server to install for this app (Customize → Connectors). Null for other sources and for a project MCP server outside the catalog.' }),
+              connector: z.string().nullable().openapi({ description: 'Slug of the project connector for this app, or null.' }),
+              connected: z.boolean().openapi({ description: 'The project has an active shared account for this app.' }),
+              connectors: z.array(z.object({
+                slug: z.string(),
+                name: z.string(),
+                accounts: z.array(z.object({
+                  label: z.string().openapi({ description: 'Account label, unique per connector. The trigger `account` value.' }),
+                  connected_as: z.string().nullable().openapi({ description: 'Identity the account was authorized as.' }),
+                  is_default: z.boolean().openapi({ description: 'Used when a trigger names no account.' }),
+                  connected: z.boolean().openapi({ description: 'Authorization finished.' }),
+                })),
+              })).openapi({ description: 'Every connector (profile) of this app with its shared accounts: project-owned, active, open to the whole project.' }),
+            })),
+          }),
+          'Event-capable apps',
+        ),
+        ...errors(403, 404),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+      );
+      const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+      if (disabled) return disabled;
+      const apps = await listEventApps(projectId, loaded.row.accountId);
+      return c.json({
+        apps: apps.map((a) => ({
+          source: a.provider,
+          provider: a.provider,
+          app: a.app,
+          name: a.name,
+          logo: a.logo,
+          event_count: a.eventCount,
+          new_connector_slug: a.newConnectorSlug,
+          mcp_url: a.mcpUrl,
+          connector: a.connector,
+          connected: a.connected,
+          connectors: a.connectors.map((k) => ({
+            slug: k.slug,
+            name: k.name,
+            accounts: k.accounts.map((x) => ({ label: x.label, connected_as: x.connectedAs, is_default: x.isDefault, connected: x.connected })),
+          })),
+        })),
+      }, 200);
+    },
+  );
+
+  // GET /v1/projects/:projectId/triggers/event-types?connector=<slug>  |  ?app=<app>[&source=<adapter>]
+  //
+  // ⚠️ Keep registered BEFORE the `…/triggers/{slug}` routes (see `activation` below).
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/triggers/event-types',
+      tags: ['triggers'],
+      summary: 'List the app events a connector or an app can trigger on',
+      description: 'Send `connector` (a project connector slug) or `app` (an app of an event source, no connector needed) with an optional `source`, not both.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({
+          connector: z.string().min(1).optional().openapi({ description: 'Connector slug. Exclusive with `app`.' }),
+          app: z.string().min(1).optional().openapi({ description: 'App slug of an event source, such as `github`. Exclusive with `connector`.' }),
+          source: z.string().min(1).optional().openapi({ description: 'Event source adapter id for `app`. Default `composio`.' }),
+        }),
+      },
+      responses: {
+        200: json(
+          z.object({
+            source: z.string().openapi({ description: 'Event source adapter id, such as composio.' }),
+            provider: z.string().openapi({ deprecated: true, description: 'Deprecated alias of `source`.' }),
+            app: z.string(),
+            event_types: z.array(z.object({
+              type: z.string(),
+              name: z.string(),
+              description: z.string(),
+              app: z.string(),
+              delivery: z.enum(['poll', 'push']).nullable(),
+              config_schema: z.record(z.string(), z.any()),
+              payload_schema: z.record(z.string(), z.any()).nullable(),
+            })),
+          }),
+          'Event types of the connector app',
+        ),
+        ...errors(400, 403, 404, 409, 502),
+      },
+    }),
+    async (c) => {
+      const projectId = c.req.param('projectId');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
+      if (!loaded) return c.json({ error: 'Not found' }, 404);
+      await assertProjectCapability(
+        c,
+        loaded.userId,
+        loaded.row.accountId,
+        projectId,
+        PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
+      );
+      const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+      if (disabled) return disabled;
+      const slug = c.req.query('connector')?.trim();
+      const app = c.req.query('app')?.trim();
+      if (!slug === !app) return c.json({ error: 'Send exactly one of connector or app' }, 400);
+      const source = c.req.query('source')?.trim() || 'composio';
+      const metadata = loaded.row.metadata;
+      const unknownSource = app ? unknownSourceMessage(source, metadata) : null;
+      if (unknownSource) return c.json({ error: unknownSource }, 400);
+      const catalog = app
+        ? await listAppEventTypes(source, app, { projectId, metadata })
+        : await listConnectorEventTypes(projectId, slug as string, null, metadata);
+      if (catalog.kind === 'connector_not_found') return c.json({ error: `Connector "${slug}" not found` }, 404);
+      if (catalog.kind === 'app_not_found') return c.json({ error: 'app_not_found' }, 404);
+      if (catalog.kind === 'unavailable') return c.json({ error: 'event_source_unavailable' }, 409);
+      if (catalog.kind === 'provider_error') return c.json({ error: `Could not list events: ${catalog.message}` }, 502);
+      return c.json({
+        source: catalog.provider,
+        provider: catalog.provider,
+        app: catalog.app,
+        event_types: catalog.items.map((t) => ({
+          type: t.type,
+          name: t.name,
+          description: t.description,
+          app: t.app,
+          delivery: t.delivery,
+          config_schema: t.configSchema,
+          payload_schema: t.payloadSchema,
+        })),
+      }, 200);
+    },
+  );
+
   projectsApp.openapi(
     createRoute({
       method: 'post',
@@ -120,7 +372,7 @@ export function registerTriggersRoutes(): void {
         params: z.object({ projectId: z.string() }),
         body: { content: { 'application/json': { schema: lenientBody({
             name: z.string().openapi({ description: 'Trigger name. The slug derives from it.' }),
-            type: z.enum(['cron', 'webhook', 'monitor']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command.' }),
+            type: z.enum(['cron', 'webhook', 'monitor', 'event']).openapi({ description: 'cron runs on a schedule, webhook runs on an HTTP call, monitor supervises a command, event runs when an app event happens on a connector.' }),
             prompt_template: z.string().openapi({ description: 'Prompt the agent receives on each fire. Webhook payload templates like {{ body.x }} are allowed.' }),
             slug: z.string().optional().openapi({ description: 'Explicit slug (a-z, 0-9, _, -). Defaults to a slug of name.' }),
             agent: z.string().optional().openapi({ description: 'Agent to run. Default "default".' }),
@@ -130,6 +382,11 @@ export function registerTriggersRoutes(): void {
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off cron trigger.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone for cron. Default UTC.' }),
             secret_env: z.string().optional().openapi({ description: 'Project secret holding the webhook signing secret. Required for a webhook trigger.' }),
+            connector: z.string().optional().openapi({ description: 'Connector slug the event happens on. Required for an event trigger.' }),
+            event_account: z.string().nullish().openapi({ description: 'Label of one shared account of the connector. Omit or null for the connector default. Event triggers only.' }),
+            event_source: z.string().nullish().openapi({ description: 'Event source adapter id, such as composio. Omit for the connector provider. Event triggers only.' }),
+            event: z.string().optional().openapi({ description: 'The adapter event type id, such as GITHUB_PULL_REQUEST_EVENT. Required for an event trigger.' }),
+            event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config. Event triggers only.' }),
             run: z.string().optional().openapi({ description: 'Repo-relative command a monitor supervises. Required for a monitor.' }),
             mode: z.enum(['poll', 'stream']).optional().openapi({ description: 'Monitor mode. Required for a monitor.' }),
             interval: z.string().optional().openapi({ description: 'Poll period such as 5m. Monitors with mode poll only.' }),
@@ -137,19 +394,22 @@ export function registerTriggersRoutes(): void {
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Whether each fire starts a new session, reuses one, pins one, or keys by session_key.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin when session_mode is pinned.' }),
             session_key: z.string().optional().openapi({ description: 'Template deriving one session per key when session_mode is keyed.' }),
-            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to expected value; a delivery fires only if all match.' }),
+            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload path to a value (equals) or one operator: {"not":[…]}, {"in":[…]}, {"exists":true|false}, {"prefix":[…]}, {"not_prefix":[…]}. A delivery fires only if every path matches.' }),
+            max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in any 60 minutes. Omit for the default, 60. A fire past it is a skipped run.' }),
+            max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs the trigger may start in a UTC day. Omit for no daily cap.' }),
+            overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'Fresh session mode only: skip holds a fire while the previous run is still active. Omit for the default: skip for cron, allow for the other types.' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates. Default private.' }),
           }) } } },
       },
       responses: {
         201: json(TriggerListSchema, 'Every trigger after the create'),
-        ...errors(400, 404, 409, 502),
+        ...errors(400, 403, 404, 409, 502),
       },
     }),
     async (c) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       // Specific IAM gate so the audit trail records the precise action.
       // assertProjectCapability (not bare assertAuthorized) so the acting token is
@@ -162,8 +422,16 @@ export function registerTriggersRoutes(): void {
         PROJECT_ACTIONS.PROJECT_TRIGGER_CREATE,
       );
 
+      if (body.type === 'event') {
+        const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+        if (disabled) return disabled;
+      }
       const draft = parseTriggerDraft(body, { existingSlug: null });
       if ('error' in draft) return c.json({ error: draft.error }, 400);
+      if (draft.event) {
+        const problem = await validateEventTrigger(projectId, draft.event);
+        if (problem) return c.json({ error: problem }, 400);
+      }
       if (draft.type === 'webhook' && draft.secretEnv) {
         const configurationError = await validateWebhookSecretConfiguration({
           projectId,
@@ -217,7 +485,9 @@ export function registerTriggersRoutes(): void {
         return c.json({ error: result.error }, result.status as 400 | 409 | 502);
       }
       if (!committedManifest) throw new Error('trigger create completed without a manifest');
-      await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+      const createdSpecs = extractTriggers(committedManifest).specs;
+      await reconcileProjectTriggerRuntime(projectId, createdSpecs);
+      await reconcileEventSubscriptions(projectId, loaded.row.accountId, createdSpecs);
       await setTriggerSessionAccess({
         projectId,
         accountId: loaded.row.accountId,
@@ -225,6 +495,7 @@ export function registerTriggersRoutes(): void {
         access: parsedAccess.access,
         pinnedSessionId: draft.pinnedSessionId,
       });
+      await followTrigger(c, loaded.row, projectId, draft.slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
     },
@@ -265,7 +536,7 @@ export function registerTriggersRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -318,23 +589,31 @@ export function registerTriggersRoutes(): void {
             run_at: z.string().optional().openapi({ description: 'ISO-8601 instant for a one-off trigger.' }),
             timezone: z.string().optional().openapi({ description: 'IANA timezone.' }),
             secret_env: z.string().optional().openapi({ description: 'Webhook signing secret name.' }),
+            connector: z.string().optional().openapi({ description: 'Connector slug of an event trigger.' }),
+            event_account: z.string().nullish().openapi({ description: 'Label of one shared account of the connector; null clears it to the connector default.' }),
+            event_source: z.string().nullish().openapi({ description: 'Event source adapter id of an event trigger; null clears it to the connector provider.' }),
+            event: z.string().optional().openapi({ description: 'The adapter event type id of an event trigger.' }),
+            event_config: z.record(z.string(), z.any()).optional().openapi({ description: 'Provider event config of an event trigger.' }),
             session_mode: z.enum(['fresh', 'reuse', 'pinned', 'keyed']).optional().openapi({ description: 'Session reuse mode.' }),
             session_id: z.string().optional().openapi({ description: 'Session to pin.' }),
             session_key: z.string().optional().openapi({ description: 'Session key template.' }),
-            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter.' }),
+            filter: z.record(z.string(), z.any()).optional().openapi({ description: 'Payload filter: path to a value (equals) or one operator (not, in, exists, prefix, not_prefix). null or {} clears it.' }),
+            max_runs_per_hour: z.number().int().min(1).nullish().openapi({ description: 'Runs per 60 minutes; null resets it to the default, 60.' }),
+            max_runs_per_day: z.number().int().min(1).nullish().openapi({ description: 'Runs per UTC day; null removes the daily cap.' }),
+            overlap: z.enum(['skip', 'allow']).nullish().openapi({ description: 'skip or allow; null resets it to the default (skip for cron, allow otherwise).' }),
             session_access: z.object({ mode: z.enum(['private', 'members', 'project']), memberIds: z.array(z.string()).optional(), groupIds: z.array(z.string()).optional() }).optional().optional().openapi({ description: 'Who can see the sessions this trigger creates.' }),
           }) } } },
       },
       responses: {
         200: json(TriggerListSchema, 'Every trigger after the update'),
-        ...errors(400, 404, 409, 502),
+        ...errors(400, 403, 404, 409, 502),
       },
     }),
     async (c) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
       const body = await readJsonObject(c);
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -380,8 +659,23 @@ export function registerTriggersRoutes(): void {
           const patchesKey = 'session_key' in body || 'sessionKey' in body;
           const patchesMode = 'session_mode' in body || 'sessionMode' in body;
           if (patchesKey && !patchesMode) delete base.session_mode;
+          // A type change starts from the shared fields only: the old type's wiring
+          // (cron, secret, monitor command, event source) would fail the new type.
+          if (typeof body.type === 'string' && body.type !== current.type) {
+            for (const key of TYPE_SPECIFIC_BODY_KEYS) delete base[key];
+          }
+          // An account label belongs to one connector: naming another connector drops it.
+          if ('connector' in body && !('event_account' in body)) delete base.event_account;
+          if ('connector' in body && !('event_source' in body)) delete base.event_source;
           const draft = parseTriggerDraft({ ...base, ...body, slug: slug }, { existingSlug: slug });
           if ('error' in draft) return { ok: false, error: draft.error, status: 400 };
+          if (draft.type === 'event' && !resolveFeatureFlag(loaded.row.metadata, 'event_triggers')) {
+            return { ok: false, error: featureDisabledBody('event_triggers').error, status: 403, code: 'feature_disabled' };
+          }
+          if (draft.event && (body.type === 'event' || EVENT_BODY_KEYS.some((k) => k in body))) {
+            const problem = await validateEventTrigger(projectId, draft.event);
+            if (problem) return { ok: false, error: problem, status: 400 };
+          }
           if (draft.type === 'webhook' && draft.secretEnv) {
             const configurationError = await validateWebhookSecretConfiguration({
               projectId,
@@ -413,6 +707,7 @@ export function registerTriggersRoutes(): void {
         },
       );
       if (!result.ok) {
+        if (result.code === 'feature_disabled') return c.json(featureDisabledBody('event_triggers'), 403);
         return c.json(
           {
             error: result.error,
@@ -424,7 +719,9 @@ export function registerTriggersRoutes(): void {
       }
       if (touchesManifest) {
         if (!committedManifest) throw new Error('trigger update completed without a manifest');
-        await reconcileProjectTriggerRuntime(projectId, extractTriggers(committedManifest).specs);
+        const updatedSpecs = extractTriggers(committedManifest).specs;
+        await reconcileProjectTriggerRuntime(projectId, updatedSpecs);
+        await reconcileEventSubscriptions(projectId, loaded.row.accountId, updatedSpecs);
       }
       if (parsedAccess?.ok) {
         await setTriggerSessionAccess({
@@ -435,6 +732,10 @@ export function registerTriggersRoutes(): void {
           pinnedSessionId: effectivePinnedSessionId,
         });
       }
+      // Turning a trigger on also resumes it from an auto-pause (KRTX-1721):
+      // the same Resume control and `kortix triggers enable` clear both.
+      if (body.enabled === true) await clearTriggerAutoPause(projectId, slug);
+      await followTrigger(c, loaded.row, projectId, slug);
 
       return c.json(await loadTriggersForResponse(projectId, loaded.row));
     },
@@ -460,7 +761,7 @@ export function registerTriggersRoutes(): void {
     async (c) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
-      const loaded = await loadProjectForUser(c, projectId, 'manage');
+      const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
       await assertProjectCapability(
         c,
@@ -474,6 +775,7 @@ export function registerTriggersRoutes(): void {
         return c.json({ error: 'Invalid slug' }, 400);
       }
 
+      let remainingManifest: ParsedManifest | undefined;
       const result = await mutateManifestWithRetry(
         loaded.row,
         `trigger ${slug} was being deleted`,
@@ -483,6 +785,7 @@ export function registerTriggersRoutes(): void {
           }
           const next = removeTriggerFromManifest(manifest, slug);
           manifest.raw = next.raw;
+          remainingManifest = manifest;
           return { ok: true, commitMessage: `chore: delete trigger ${slug}` };
         },
       );
@@ -497,6 +800,11 @@ export function registerTriggersRoutes(): void {
         .where(
           and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, slug)),
         );
+      await deleteTriggerWatchers({ projectId, slug }).catch((err) =>
+        logger.warn('[trigger-watchers] cleanup failed', { projectId, slug, error: err instanceof Error ? err.message : String(err) }));
+      if (remainingManifest) {
+        await reconcileEventSubscriptions(projectId, loaded.row.accountId, extractTriggers(remainingManifest).specs);
+      }
 
       return c.json({ ok: true as const });
     },
@@ -504,105 +812,351 @@ export function registerTriggersRoutes(): void {
 
   // POST /v1/projects/:projectId/triggers/:slug/fire
   //
-  // Manual fire for git-backed triggers. Reads the file, renders the prompt
-  // against a synthetic payload, spawns a session. Manage role required.
+  // Manual fire. Optional body `{ payload?, dry_run? }` (KRTX-1743): `payload`
+  // deep-merges over the manual base payload; `dry_run` renders and evaluates
+  // only, and writes nothing. No body = a plain manual fire.
 
   projectsApp.openapi(
     createRoute({
       method: 'post',
       path: '/{projectId}/triggers/{slug}/fire',
       tags: ['triggers'],
-      summary: 'Fire a project trigger now',
+      summary: 'Fire a project trigger now, or dry-run it',
       ...auth,
       request: {
         params: z.object({ projectId: z.string(), slug: z.string() }),
+        body: { content: { 'application/json': { schema: TriggerFireRequestSchema } }, required: false },
       },
       responses: {
+        200: json(TriggerDryRunResultSchema, 'Dry run: what a fire would send; nothing written'),
         202: json(TriggerFireResultSchema, 'Queued or fired'),
-        ...errors(404, 500),
+        // 402: the account has no usable model — the fire gates instead of
+        // minting a session that would fail on its first turn.
+        ...errors(400, 402, 403, 404, 500),
       },
     }),
     async (c) => {
-      const projectId = c.req.param('projectId');
-      const slug = c.req.param('slug');
-      // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
-      // was 'manage' (= project.write) — which the floor `member` role LACKS even
-      // though it HOLDS trigger.fire, so a plain member could never fire a trigger
-      // (its designed fire grant was dead behind the floor). Now member/
-      // manager all fire (all hold the leaf); a custom role without it is denied.
-      const loaded = await loadProjectForUser(c, projectId, 'read');
-      if (!loaded) return c.json({ error: 'Not found' }, 404);
-      await assertProjectCapability(
-        c,
-        loaded.userId,
-        loaded.row.accountId,
-        projectId,
-        PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
-      );
-
-      const spec = await findProjectTriggerBySlug(await withProjectGitAuth(loaded.row), slug);
-      if (!spec) return c.json({ error: 'Not found' }, 404);
-      // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
-      // acts as the trigger's agent, so the FIRER must be allowed to run that
-      // agent. `default` selects the project's default agent; ask about that one.
-      const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
-      const firedAgent =
-        spec.agent === 'default' && typeof mirroredDefault === 'string' && mirroredDefault.trim()
-          ? mirroredDefault.trim()
-          : spec.agent;
-      await assertMayRunAgent(
-        c,
-        loaded.row.accountId,
-        projectId,
-        firedAgent,
-        PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE,
-      );
-
+      const body = await readJsonObject(c);
+      const override = body.payload;
+      if (override !== undefined && (!override || typeof override !== 'object' || Array.isArray(override))) {
+        return c.json({ error: 'payload must be a JSON object' }, 400);
+      }
+      if (body.dry_run !== undefined && typeof body.dry_run !== 'boolean') {
+        return c.json({ error: 'dry_run must be a boolean' }, 400);
+      }
+      const target = await authorizeTriggerFire(c, c.req.param('projectId'), c.req.param('slug'));
+      if (!('spec' in target)) return target;
       const now = new Date();
-      const payload = {
-        trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
-        fired_at: now.toISOString(),
-        source: 'manual',
-        actor: loaded.userId,
-        message: { text: '', source: 'manual_test' },
-      };
-      const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
-
-      const result = await fireGitTrigger({
-        spec,
-        project: loaded.row,
-        payload,
-        renderedPrompt,
-        source: 'manual',
-        request: requestAuditContext(c),
-      });
-
-      if (result.status === 'queued') {
-        await markGitTriggerFired(projectId, slug, now);
+      const base = await manualFirePayload(target, now);
+      // The caller's payload never rewrites who fired it.
+      const payload = override
+        ? { ...mergeTriggerPayload(base, override as Record<string, unknown>), source: base.source, actor: base.actor }
+        : base;
+      const renderedPrompt = renderPromptTemplate(target.spec.promptTemplate, payload);
+      if (body.dry_run === true) {
+        // The request's audit row keeps `trigger.fire`; this marks it as nothing fired.
+        annotateAuditEvent({ metadata: { dry_run: true } });
         return c.json(
           {
-            status: 'queued' as const,
-            command_id: result.commandId ?? null,
-            session_id: result.sessionId ?? null,
-            reason: result.reason ?? null,
-            deduped: result.deduped ?? false,
+            dry_run: true as const,
+            rendered_prompt: renderedPrompt,
+            filter_matches: triggerFilterMatches(target.spec, payload),
+            session_key: renderSessionKey(target.spec, payload),
+            payload,
           },
-          202,
+          200,
         );
       }
-      if (result.status === 'failed') {
-        return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
-      }
-      await markGitTriggerFired(projectId, slug, now);
-      return c.json(
-        {
-          status: result.deduped ? ('deduped' as const) : ('fired' as const),
-          command_id: result.commandId ?? null,
-          session_id: result.sessionId ?? null,
-          deduped: result.deduped ?? false,
-        },
-        202,
-      );
+      return fireAndAnswer(c, target, { payload, renderedPrompt, source: 'manual', now });
     },
   );
+
+  // GET /v1/projects/:projectId/triggers/:slug/runs — one trigger's run history.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/triggers/{slug}/runs',
+      tags: ['triggers'],
+      summary: "List a trigger's runs",
+      description: 'Newest first. A run whose session the caller may not open is left out, so a page can hold fewer than `limit` runs.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+        query: z.object({
+          status: z.enum(TRIGGER_RUN_STATUSES).optional(),
+          limit: z.string().optional(),
+          cursor: z.string().optional(),
+        }),
+      },
+      responses: {
+        200: json(TriggerRunListSchema, 'Runs, newest first'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => listRunsRoute(c, { slug: c.req.param('slug') }),
+  );
+
+  // GET /v1/projects/:projectId/trigger-runs?status= — every trigger's runs.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'get',
+      path: '/{projectId}/trigger-runs',
+      tags: ['triggers'],
+      summary: "List a project's trigger runs",
+      description: 'Newest first, across every trigger. `status` narrows to one run status, e.g. `failed`.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({
+          status: z.enum(TRIGGER_RUN_STATUSES).optional(),
+          limit: z.string().optional(),
+          cursor: z.string().optional(),
+        }),
+      },
+      responses: {
+        200: json(TriggerRunListSchema, 'Runs, newest first'),
+        ...errors(400, 403, 404),
+      },
+    }),
+    async (c) => listRunsRoute(c, {}),
+  );
+
+  // POST /v1/projects/:projectId/triggers/:slug/runs/:run_id/replay
+  //
+  // Re-fires a run's stored payload through the manual fire path. Writes a new
+  // run with the original source and `replay_of`.
+
+  projectsApp.openapi(
+    createRoute({
+      method: 'post',
+      path: '/{projectId}/triggers/{slug}/runs/{run_id}/replay',
+      tags: ['triggers'],
+      summary: 'Replay a trigger run',
+      description: 'A run whose webhook signature never verified needs `confirm_unverified: true`. A truncated payload cannot be replayed.',
+      ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string(), run_id: z.string() }),
+        body: { content: { 'application/json': { schema: TriggerReplayRequestSchema } }, required: false },
+      },
+      responses: {
+        202: json(TriggerFireResultSchema, 'Queued or fired'),
+        ...errors(402, 403, 404, 409, 422, 500),
+      },
+    }),
+    async (c) => {
+      const body = await readJsonObject(c);
+      const target = await authorizeTriggerFire(c, c.req.param('projectId'), c.req.param('slug'));
+      if (!('spec' in target)) return target;
+      const run = await loadTriggerRunForReplay(target.projectId, target.spec.slug, c.req.param('run_id'));
+      if (!run) return c.json({ error: 'Not found' }, 404);
+      const runStatus = triggerRunApiStatus(run.status);
+      if (runStatus === 'queued' || runStatus === 'running') {
+        return c.json({ error: `This run is still ${runStatus}. Replay it once it ends`, code: 'run_in_progress' }, 409);
+      }
+      if (run.payload.truncated === true) {
+        return c.json({ error: 'This run\'s payload was over 64 KiB and was not kept, so it cannot be replayed', code: 'payload_truncated' }, 422);
+      }
+      if (!run.payloadVerified && body.confirm_unverified !== true) {
+        return c.json({ error: 'This payload\'s webhook signature never verified. Send confirm_unverified: true to replay it', code: 'payload_unverified' }, 409);
+      }
+      const source = run.source as TriggerFireSource;
+      const template = renderPromptTemplate(target.spec.promptTemplate, run.payload);
+      const renderedPrompt =
+        source === 'event' ? `${eventPromptPreamble(target.spec)}${template}`
+          : source === 'monitor' ? `${MONITOR_PROMPT_PREAMBLE}${template}`
+            : template;
+      return fireAndAnswer(c, target, {
+        payload: run.payload,
+        renderedPrompt,
+        source,
+        idempotencyKey: `trigger:replay:${run.executionId}:${crypto.randomUUID()}`,
+        replayOf: run.executionId,
+        // A replay of an unverified payload is still unverified.
+        verified: run.payloadVerified,
+        now: new Date(),
+      });
+    },
+  );
+}
+
+type FireTarget = {
+  projectId: string;
+  loaded: NonNullable<Awaited<ReturnType<typeof loadProjectForUser>>>;
+  spec: GitTriggerSpec;
+};
+
+/**
+ * The manual fire's gate, shared by fire, dry run and replay: membership, the
+ * `project.trigger.fire` leaf, the trigger lookup, the event flag, and the
+ * right to run the trigger's agent.
+ */
+async function authorizeTriggerFire(c: Context<AppEnv>, projectId: string, slug: string) {
+  // Floor 'read' (membership); project.trigger.fire is the real gate. The floor
+  // was 'manage' (= project.write) — which the floor `member` role LACKS even
+  // though it HOLDS trigger.fire, so a plain member could never fire a trigger
+  // (its designed fire grant was dead behind the floor). Now member/
+  // manager all fire (all hold the leaf); a custom role without it is denied.
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
+
+  const gitProject = await withProjectGitAuth(loaded.row);
+  const spec = await findProjectTriggerBySlug(gitProject, slug);
+  if (!spec) return c.json({ error: 'Not found' }, 404);
+  if (spec.type === 'event') {
+    const disabled = requireFeatureFlag(c, loaded.row.metadata, 'event_triggers');
+    if (disabled) return disabled;
+  }
+  // Agents as principals (spec 2026-09-22 §2.2, closes V2): the fired run
+  // acts as the trigger's agent, so the FIRER must be allowed to run that
+  // agent. `default` is resolved exactly as session creation resolves it
+  // (KRTX-1720): the manifest's default first; the metadata mirror, which
+  // can lag a git push, only for a v1 manifest that declares none.
+  // Asking about the mirror instead refused a member allowed to run the
+  // real default, and admitted one allowed to run only the stale name.
+  const mirroredDefault = (loaded.row.metadata as Record<string, unknown> | null)?.default_agent;
+  const firedAgent =
+    spec.agent === 'default'
+      ? resolveSessionAgentName({
+          requestedAgent: null,
+          manifestDefaultAgent:
+            (await loadProjectAgents(gitProject, { forceRefresh: 'tip-proof' })).defaultAgent?.trim() || null,
+          mirroredDefaultAgent:
+            typeof mirroredDefault === 'string' && mirroredDefault.trim() ? mirroredDefault.trim() : null,
+        })
+      : spec.agent;
+  await assertMayRunAgent(c, loaded.row.accountId, projectId, firedAgent, PROJECT_ACTIONS.PROJECT_TRIGGER_FIRE);
+  return { projectId, loaded, spec } satisfies FireTarget;
+}
+
+/** The synthetic payload of a manual fire. An event trigger fires with an empty event, so the user can test the prompt. */
+async function manualFirePayload({ projectId, loaded, spec }: FireTarget, now: Date) {
+  const eventConnector = spec.event ? await connectorInfo(projectId, spec.event.connector, loaded.row.metadata) : null;
+  const eventRoot = spec.event && eventConnector
+    ? eventPayload({
+        spec,
+        ...eventConnector,
+        eventId: `manual-${crypto.randomUUID()}`,
+        type: spec.event.type,
+        occurredAt: now.toISOString(),
+        data: {},
+        firedAt: now,
+      })
+    : {};
+  return {
+    trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
+    fired_at: now.toISOString(),
+    ...eventRoot,
+    source: 'manual',
+    actor: loaded.userId,
+    message: { text: '', source: 'manual_test' },
+  };
+}
+
+/**
+ * Fire, record the run, update the trigger's state and answer: the one path
+ * for a manual fire and a replay.
+ */
+async function fireAndAnswer(
+  c: Context<AppEnv>,
+  { projectId, loaded, spec }: FireTarget,
+  input: {
+    payload: Record<string, unknown>;
+    renderedPrompt: string;
+    source: TriggerFireSource;
+    idempotencyKey?: string;
+    replayOf?: string;
+    verified?: boolean;
+    now: Date;
+  },
+) {
+  const { payload, source, now } = input;
+  const slug = spec.slug;
+  const run = { projectId, slug, source, spec, payload, verified: input.verified ?? true, replayOf: input.replayOf ?? null, now };
+  // Every fire is a run in the trigger's history (KRTX-1743), a fire that
+  // throws included; the throw still answers as before.
+  const result = await fireGitTrigger({
+    spec,
+    project: loaded.row,
+    payload,
+    renderedPrompt: input.renderedPrompt,
+    source,
+    idempotencyKey: input.idempotencyKey ?? null,
+    request: requestAuditContext(c),
+    // A person fired it: the run caps do not hold it (KRTX-1721).
+    deliberate: true,
+  }).catch(async (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    await recordTriggerRun({ ...run, status: 'failed', error: message });
+    throw error;
+  });
+  const runId = await recordTriggerRun({ ...run, ...triggerRunFromFire(result) });
+
+  if (result.status === 'queued') {
+    // Not run yet: its delivery ends an alert streak, not this handoff (KRTX-1742).
+    await markGitTriggerFired(projectId, slug, now, 'fired', { endsAlert: false });
+    return c.json(
+      {
+        status: 'queued' as const,
+        command_id: result.commandId ?? null,
+        session_id: result.sessionId ?? null,
+        reason: result.reason ?? null,
+        deduped: result.deduped ?? false,
+        run_id: runId,
+      },
+      202,
+    );
+  }
+  if (result.status === 'failed') {
+    const error = result.error ?? 'Failed to fire trigger';
+    // Recorded like a failed cron fire, so the trigger says it failed (KRTX-1743).
+    await markGitTriggerAttemptFailed(projectId, slug, now, error).catch(() => {});
+    // The first failure of a streak alerts the watchers, not only the firer
+    // (KRTX-1742). A create that went back to the queue alerts from the
+    // drain only if it dead-letters.
+    if (!result.requeued) {
+      await raiseTriggerAlert({ projectId, accountId: loaded.row.accountId, slug, source: 'fire', error });
+    }
+    // Model and billing gates are account state, not a server fault: answer
+    // the billing gate's convention (402 + a machine-readable code).
+    if (result.errorCode && ACCOUNT_STATE_FIRE_CODES.has(result.errorCode)) {
+      return c.json({ error, code: result.errorCode, run_id: runId }, 402);
+    }
+    return c.json({ error, run_id: runId }, 500);
+  }
+  await markGitTriggerFired(projectId, slug, now);
+  return c.json(
+    {
+      status: result.deduped ? ('deduped' as const) : ('fired' as const),
+      command_id: result.commandId ?? null,
+      session_id: result.sessionId ?? null,
+      deduped: result.deduped ?? false,
+      run_id: runId,
+    },
+    202,
+  );
+}
+
+/** Both run lists: the trigger read leaf, then one keyset page (rulings 4 and 6). */
+async function listRunsRoute(c: Context<AppEnv>, scope: { slug?: string }) {
+  const projectId = c.req.param('projectId')!;
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_TRIGGER_READ);
+  const limitText = c.req.query('limit');
+  const limit = limitText === undefined ? 25 : Number(limitText);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    return c.json({ error: 'limit must be an integer from 1 to 100' }, 400);
+  }
+  const cursorText = c.req.query('cursor');
+  const cursor = cursorText ? decodeTriggerRunCursor(cursorText) : null;
+  if (cursorText && !cursor) return c.json({ error: 'Invalid cursor' }, 400);
+  const status = c.req.query('status') as TriggerRunApiStatus | undefined;
+  if (status !== undefined && !TRIGGER_RUN_STATUSES.includes(status)) {
+    return c.json({ error: `status must be one of ${TRIGGER_RUN_STATUSES.join(', ')}` }, 400);
+  }
+  const binding = callerKortixSessionId(c);
+  return c.json(await listVisibleTriggerRuns({ loaded, binding, slug: scope.slug, status, limit, cursor }), 200);
 }

@@ -47,6 +47,8 @@ async function runCli(args: string[], cwd = tmp) {
     NO_COLOR: '1',
     FORCE_COLOR: '0',
     KORTIX_DISABLE_SANDBOX_ENV_FILE: '1',
+    // The hermetic suite's fresh config store — the spawned CLI inherits nothing.
+    KORTIX_CONFIG_FILE: process.env.KORTIX_CONFIG_FILE,
     // Stub docker first on PATH: nothing in this suite may reach a real daemon.
     PATH: `${join(tmp, 'bin')}:${process.env.PATH}`,
   };

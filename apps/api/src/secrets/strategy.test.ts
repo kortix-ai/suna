@@ -3,17 +3,11 @@ import { randomBytes } from 'node:crypto';
 
 import {
   DEFAULT_HANDLE_PREFIX,
-  type DeliveredSecret,
   type SecretDelivery,
   type SecretDeliveryInput,
   type SecretWithheldReason,
   type SecretEgressPolicy,
-  type SecretStrategy,
-  deliversPlaintextToSandbox,
-  emitsValue,
   findHandleCandidates,
-  isFullyWithheld,
-  looksLikeHandle,
   matchRule,
   maxStrategy,
   mintHandle,
@@ -21,7 +15,6 @@ import {
   parseEgressPolicy,
   parseHandle,
   resolveSecretDelivery,
-  secretNamesForSandbox,
 } from './strategy';
 
 const ROOT = 'test-root-secret-do-not-use-in-production';
@@ -48,14 +41,6 @@ describe('maxStrategy — the strictness lattice', () => {
     expect(maxStrategy('broker', 'nonsense' as never)).toBe('broker');
   });
 
-  test('the two derived predicates agree with the lattice', () => {
-    expect(deliversPlaintextToSandbox('runtime')).toBe(true);
-    for (const s of ['egress', 'broker', 'denied'] as const) {
-      expect(deliversPlaintextToSandbox(s)).toBe(false);
-    }
-    expect(isFullyWithheld('denied')).toBe(true);
-    expect(isFullyWithheld('broker')).toBe(false);
-  });
 });
 
 describe('parseEgressPolicy', () => {
@@ -301,11 +286,6 @@ describe('handles', () => {
     expect(parsed.ok).toBe(false);
   });
 
-  test('looksLikeHandle is a cheap pre-filter, never an authorization check', () => {
-    expect(looksLikeHandle(mintHandle({ lookupId: lookup(), rootSecret: ROOT }))).toBe(true);
-    expect(looksLikeHandle('ordinary-value')).toBe(false);
-  });
-
   test('findHandleCandidates pulls handles out of arbitrary request text', () => {
     const handle = mintHandle({ lookupId: lookup(), prefix: 'sk-ant-api03-', rootSecret: ROOT });
     const found = findHandleCandidates(
@@ -405,7 +385,6 @@ describe('resolveSecretDelivery — what each strategy emits', () => {
   test('denied emits NOTHING — and that is what keeps its name out of KORTIX_PROJECT_SECRET_NAMES', () => {
     const delivery = resolve({ strategy: 'denied' });
     expect(delivery).toEqual({ emit: 'nothing', strategy: 'denied', reason: 'denied' });
-    expect(secretNamesForSandbox([{ key: 'ALPHA_KEY', delivery }])).toEqual([]);
   });
 
   test('denied is decided FIRST, so its reason survives every other objection', () => {
@@ -546,120 +525,5 @@ describe('resolveSecretDelivery — the per-session allowlist', () => {
     expect(
       resolve({ strategy: 'broker', agentGrantEnv: ['ALPHA'], sessionAllowlist: ['BETA'] }).emit,
     ).toBe('nothing');
-  });
-});
-
-describe('secretNamesForSandbox — the name/value invariant', () => {
-  const named = (key: string, delivery: SecretDelivery): DeliveredSecret => ({ key, delivery });
-
-  test('a plaintext row and a handle row both contribute their name', () => {
-    expect(
-      secretNamesForSandbox([
-        named('STRIPE_KEY', { emit: 'handle', strategy: 'broker' }),
-        named('OPENAI_KEY', { emit: 'plaintext', strategy: 'runtime' }),
-      ]),
-    ).toEqual(['OPENAI_KEY', 'STRIPE_KEY']);
-  });
-
-  test('a withheld row contributes nothing, for every reason', () => {
-    const reasons = [
-      'denied',
-      'agent_grant_excludes',
-      'agent_grant_unscoped',
-      'session_allowlist_excludes',
-      'no_session',
-    ] as const;
-    for (const reason of reasons) {
-      expect(
-        secretNamesForSandbox([named('K', { emit: 'nothing', strategy: 'denied', reason })]),
-      ).toEqual([]);
-    }
-  });
-
-  test('names are deduped and sorted, matching sanitizeSandboxEnv’s Object.keys().sort()', () => {
-    expect(
-      secretNamesForSandbox([
-        named('B_KEY', { emit: 'plaintext', strategy: 'runtime' }),
-        named('A_KEY', { emit: 'handle', strategy: 'egress' }),
-        named('B_KEY', { emit: 'plaintext', strategy: 'runtime' }),
-      ]),
-    ).toEqual(['A_KEY', 'B_KEY']);
-  });
-
-  test('an empty input yields an empty list, not [""]', () => {
-    expect(secretNamesForSandbox([])).toEqual([]);
-  });
-
-  test('TWO IDENTIFIERS, ONE KEY: the name appears if EITHER of them emits', () => {
-    // `project_secrets.name` is deliberately non-unique — GMAPS_PRIMARY and
-    // GMAPS_BACKUP may both be GOOGLE_MAPS_API_KEY. `resolveGrantedSecretEnv`
-    // picks one winner for the env map, so the key is present as long as any
-    // contributing row emits, in either order.
-    const emitted = { emit: 'plaintext', strategy: 'runtime' } as const;
-    const withheld = { emit: 'nothing', strategy: 'denied', reason: 'denied' } as const;
-    const KEY = 'GOOGLE_MAPS_API_KEY';
-    expect(secretNamesForSandbox([named(KEY, emitted), named(KEY, withheld)])).toEqual([KEY]);
-    expect(secretNamesForSandbox([named(KEY, withheld), named(KEY, emitted)])).toEqual([KEY]);
-  });
-
-  test('TWO IDENTIFIERS, ONE KEY: the name disappears only when EVERY one is withheld', () => {
-    const withheld = { emit: 'nothing', strategy: 'denied', reason: 'denied' } as const;
-    const KEY = 'GOOGLE_MAPS_API_KEY';
-    expect(secretNamesForSandbox([named(KEY, withheld), named(KEY, withheld)])).toEqual([]);
-  });
-
-  test('THE INVARIANT, over the whole decision space: a name appears IFF a value does', () => {
-    // Exhaustive rather than illustrative because the failure is not a wrong
-    // answer, it is a desynchronised box: the daemon's env store builds
-    // `knownNames` from this list, so a name without a value advertises a
-    // variable that is not there and a value without a name escapes the store's
-    // scrubbing and its hot-push updates entirely.
-    const strategies: Array<SecretStrategy | null> = [null, 'runtime', 'egress', 'broker', 'denied'];
-    const grants: Array<string[] | 'all' | null> = [null, 'all', [], ['ALPHA'], ['BETA']];
-    const allowlists: Array<string[] | null> = [null, [], ['ALPHA'], ['BETA']];
-    const sessions: Array<string | null> = [null, 'ses_1'];
-
-    let combos = 0;
-    for (const strategy of strategies) {
-      for (const projectDefaultStrategy of strategies) {
-        for (const agentGrantEnv of grants) {
-          for (const sessionAllowlist of allowlists) {
-            for (const sessionId of sessions) {
-              combos += 1;
-              const delivery = resolveSecretDelivery({
-                identifier: 'ALPHA',
-                strategy,
-                projectDefaultStrategy,
-                agentGrantEnv,
-                sessionAllowlist,
-                sessionId,
-              });
-
-              // A value is emitted iff the delivery is not 'nothing'…
-              expect(emitsValue(delivery)).toBe(delivery.emit !== 'nothing');
-              // …and the name list agrees, row by row.
-              expect(secretNamesForSandbox([{ key: 'ALPHA_KEY', delivery }])).toEqual(
-                delivery.emit === 'nothing' ? [] : ['ALPHA_KEY'],
-              );
-
-              // The two invariants that make the emit tag trustworthy.
-              if (delivery.emit === 'plaintext') expect(delivery.strategy).toBe('runtime');
-              if (delivery.emit === 'handle') {
-                expect(['egress', 'broker']).toContain(delivery.strategy);
-                expect(sessionId).toBeTruthy();
-              }
-              // No route to plaintext exists for a strategy anyone strengthened.
-              if (delivery.emit === 'plaintext') {
-                expect(strategy === null || strategy === 'runtime').toBe(true);
-                expect(
-                  projectDefaultStrategy === null || projectDefaultStrategy === 'runtime',
-                ).toBe(true);
-              }
-            }
-          }
-        }
-      }
-    }
-    expect(combos).toBe(strategies.length ** 2 * grants.length * allowlists.length * 2);
   });
 });

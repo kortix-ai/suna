@@ -1,5 +1,7 @@
 'use client';
 
+import { workspaceAccountLabel } from '@kortix/ui/workspace/sidebar/workspace-grouping';
+
 /**
  * Every organization the signed-in user belongs to, each linking to that
  * account's own settings.
@@ -36,17 +38,15 @@
  * more attention than the shortcut is worth.
  */
 
-import Link from 'next/link';
-
-import { HubLink } from '@/features/accounts/hub/account-hub-location';
-import { hubTarget } from '@/stores/account-panel-store';
-import { Button } from '@/components/ui/button';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@kortix/ui/button';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { HubLink } from '@kortix/ui/internal/account-hub/account-hub-location';
+import { hubTarget } from '@kortix/ui/internal/stores/account-panel-store';
 import { type KortixAccount } from '@kortix/sdk';
 
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
 
 /** Exactly the fields this list reads — nothing else from `KortixAccount`. */
 export type AccountMembership = Pick<KortixAccount, 'account_id' | 'name' | 'account_role'>;
@@ -130,7 +130,7 @@ export function AccountMembershipsSection({
           accounts.map((account) => (
             <SettingsRow
               key={account.account_id}
-              label={account.name?.trim() || copy.fallbackAccountName}
+              label={workspaceAccountLabel(account.name, copy.fallbackAccountName, false)}
               description={accountRoleLabel(account.account_role, copy)}
             >
               <Button asChild variant="outline" size="sm">

@@ -1,380 +1,317 @@
 ---
 title: Models
-description: How Kortix picks a model, and how billing works for managed vs. your-own-key models.
+description: "Kortix-managed models, your own provider keys and subscriptions, how the default is chosen, routing, budgets, and calling the LLM gateway from other tools."
 ---
 
-Kortix runs each [session](/docs/work/sessions) on a model. This page
-explains managed models vs. your own provider key (BYOK), how Kortix picks a
-model automatically, and two billing gotchas to know.
+A model is the LLM that a session's agent runs on. A project can use Kortix-managed models, your own provider API keys, and a ChatGPT or OpenCode subscription. This page is for the people who choose models, connect keys, and control model spend in a project.
 
-This page applies to projects with the LLM Gateway on. LLM Gateway is an
-experimental [feature flag](/docs/feature-flags), **on by default** where the
-platform offers it — check or toggle it in Settings → Experimental (operators
-can default a whole deployment off with `LLM_GATEWAY_DEFAULT_ENABLED=false`).
+<Steps>
+  <Step title="Run on the default">
+    Start a [session](/docs/work/sessions). On Kortix Cloud it runs on the platform default, `deepseek-v4.1-flash`. You set up nothing.
+  </Step>
+  <Step title="Pick another model">
+    Choose a model in the composer's model picker, or run `kortix sessions new --model glm-5.3-flash`. To switch a running session, run `kortix sessions model <session-id> <model-id>`. A live sandbox restarts and the turn in flight ends. A stopped session uses the new model at its next start.
+  </Step>
+  <Step title="Connect your own provider">
+    Open **Customize → Models → Providers** and paste a key, or run `kortix providers set anthropic` and paste the key on stdin.
+  </Step>
+  <Step title="Set the project default">
+    Run `kortix models default <model-id>`. Copy the id from `kortix models ls --json`.
+  </Step>
+</Steps>
 
-Turning the flag off is a fully supported path. The project then runs
-**native OpenCode model management**. Every session of that project runs the
-OpenCode [harness](/docs/work/harnesses): pi calls models only through the
-gateway.
+## How a session gets a model
 
-- Your provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
-  `OPENROUTER_API_KEY`, …) are injected into the sandbox as ordinary env
-  vars — add them on the Model settings page or as
-  [secrets](/docs/project/secrets). OpenCode connects each provider from its
-  key automatically.
-- Model ids are OpenCode's native `provider/model` refs, like
-  `anthropic/claude-opus-4-8`. Managed bare ids and `kortix/…` refs do not
-  exist off-gateway.
-- The model picker shows one list before and after the sandbox boots: the
-  providers your keys connect, plus OpenCode Zen's free models (OpenCode
-  connects those without a key). Thinking effort is the composer's thinking
-  control (the model's own variants); the gateway's Generation defaults do not
-  apply.
-- The gateway surfaces on this page — managed models, the model-defaults
-  chain, budgets, logs — do not apply; OpenCode resolves the default model in
-  the sandbox.
+Every model request goes through the LLM gateway. The gateway finds the credentials, applies the project's routing, access rules and budgets, and records the cost. A model id has one of three shapes:
 
-## Managed models and BYOK
+| Shape | Example | Who supplies the credentials | Who bills |
+| --- | --- | --- | --- |
+| Bare managed id | `glm-5.3-flash` | Kortix | Kortix credits |
+| `provider/model` | `anthropic/<model-id>` | Your provider API key | Your provider; past $1,000 a month, a 5% Kortix fee in credits |
+| `codex/<id>` | `codex/gpt-5.6-sol` | Your ChatGPT Plus or Pro subscription | OpenAI, through your plan |
+| `<custom-id>/<model>` | `my-vllm/qwen-3` | Your [custom endpoint](#connect-your-own-provider)'s key, when it needs one | Your endpoint; no Kortix credits |
 
-A model id has one of three shapes:
+Inside the sandbox, OpenCode shows every gateway model under the `kortix` provider, for example `kortix/glm-5.3-flash`. The gateway removes the `kortix/` prefix. Use the bare id everywhere else.
 
-- **Managed** — a bare id, like `kimi-k3` or `deepseek-v4.1-flash`.
-  Kortix supplies the credentials. Cloud accounts pay with Kortix credits.
-- **BYOK** — a `provider/model` id, like `anthropic/claude-opus-4-8`. You
-  supply the key. Your provider account pays.
-- **ChatGPT** — a `codex/<id>` id. You connect your ChatGPT plan once through
-  OAuth, and it pays.
+The catalog comes from [models.dev](https://models.dev) and the Codex model list. The API refreshes it every hour, so a new provider model appears without a Kortix release.
 
-Connect a BYOK key on the project's Model settings page, or set the
-provider's env var directly as a [secret](/docs/project/secrets).
+## Kortix-managed models
 
-Each provider reads its own key. Some providers share one env var on
-models.dev, for example OpenCode Zen (`opencode`) and OpenCode Go
-(`opencode-go`) both list `OPENCODE_API_KEY`. The provider that owns the name
-keeps it. Every other provider reads `<PROVIDER_ID>_API_KEY`: OpenCode Go reads
-`OPENCODE_GO_API_KEY`, Z.ai Coding Plan reads `ZAI_CODING_PLAN_API_KEY`, and
-Moonshot China reads `MOONSHOTAI_CN_API_KEY`. A Zen key therefore never lists
-Go models. The connect form and `kortix providers set` use the right name.
+Kortix managed models are the models Platinum Inference offers. You need no key. The picker shows the current list, with each model's context window, image support and price. On 2026-10-21 the list was:
 
-### OpenCode Zen and Go (sign in with OpenCode)
+| Model | Id | Context | Max output | Images |
+| --- | --- | --- | --- | --- |
+| DeepSeek V4.1 Flash | `deepseek-v4.1-flash` | 1,000,000 | 65,536 | Yes |
+| GLM 5.3 Flash | `glm-5.3-flash` | 1,000,000 | 65,536 | Yes |
 
-Connect OpenCode Zen or OpenCode Go with an API key, or sign in with your
-OpenCode Console account instead:
+- The picker lists them under **Kortix**. The platform default is the first model Platinum Inference lists, unless the operator sets one.
+- A session or default that names a retired model (for example `kimi-k3`) runs on its successor.
+- Managed models need the Credits plan or Enterprise. On Free, every managed model, the platform default included, returns `plan_upgrade_required`.
+- Platinum Inference serves every managed model, only through inference providers with zero data retention.
+- Managed requests use credits. See [Plans & credits](/docs/credits).
+- The managed lineup has no OpenAI or Anthropic models. Use your own key or a ChatGPT subscription for them.
+- A self-hosted instance has no managed models. Connect your own providers.
 
-1. Open **Customize → Models → Providers** and find **OpenCode Go**.
-2. Choose **Sign in with OpenCode**. Copy the code, choose **Open auth page**,
-   and approve the device in your OpenCode workspace.
-3. The key field shows the provider as connected. Remove the key to sign out.
+## Connect your own provider
 
-From the CLI: `kortix providers login opencode-go`, or `kortix providers
-login opencode` for Zen. Zen models are used by id, for example
-`opencode/glm-5.3-flash`; the picker does not list them. Zen and Go
-each hold their own login, so signing in to one never connects the other. The
-login lasts 30 days, and Kortix renews it before it expires. When OpenCode
-refuses a login, Kortix renews it once and retries the request. When the
-renewal fails too, the request returns `provider_reauth_required`: sign in
-again.
+Open **Customize → Models → Providers** and choose a provider. Or use the CLI on the linked project:
 
-### Kortix-managed models
+```bash
+kortix providers set anthropic            # reads the key from stdin
+kortix providers set openai sk-...        # key as an argument
+kortix providers set bedrock --region us-east-1
+kortix providers ls                       # what is connected
+kortix providers rm anthropic             # remove the key and any login
+```
 
-The picker lists these under **Kortix**, with their token rates. Every one
-accepts text and images. Each request goes to one pinned endpoint with zero
-data retention, and never falls back to another provider.
+`kortix providers set` stores the key as an encrypted project [secret](/docs/project/secrets) under the provider's key name:
 
-| Model | Id |
+| Provider | Secret name |
 | --- | --- |
-| Kimi K3 2.8T | `kimi-k3` |
-| DeepSeek V4.1 Flash (platform default) | `deepseek-v4.1-flash` |
-| GLM 5.3 Flash | `glm-5.3-flash` |
+| `anthropic` | `ANTHROPIC_API_KEY` |
+| `openai` | `OPENAI_API_KEY` |
+| `openrouter` | `OPENROUTER_API_KEY` |
+| `google` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `groq` | `GROQ_API_KEY` |
+| `xai` | `XAI_API_KEY` |
+| `deepseek` | `DEEPSEEK_API_KEY` |
+| `mistral` | `MISTRAL_API_KEY` |
+| `opencode` (OpenCode Zen) | `OPENCODE_API_KEY` |
+| `opencode-go` (OpenCode Go) | `OPENCODE_GO_API_KEY` |
+| `bedrock` (Amazon Bedrock) | `AWS_BEARER_TOKEN_BEDROCK` and `AWS_REGION` |
 
-Kortix does not offer OpenAI or Anthropic models as managed models. Use them
-through a BYOK key or a ChatGPT plan. A BYOK key offers its provider's whole
-catalog, for example `anthropic/claude-opus-5-5` with an Anthropic key. A
-ChatGPT plan offers every model Codex offers a ChatGPT account, for example
-`codex/gpt-6.1-sol`. The picker shows the newest model of each family by default.
+Other models.dev providers connect in **Providers** with the key name the form shows. When several providers list the same key name, the provider that owns the name keeps it. Each other provider reads `<PROVIDER_ID>_API_KEY`, for example `ZAI_CODING_PLAN_API_KEY` or `MOONSHOTAI_CN_API_KEY`.
 
-Both lists update automatically. The API reads [models.dev](https://models.dev)
-and the Codex CLI's published model list every hour, so a new release appears
-within an hour of its listing, without a Kortix release. When you connect a
-provider, its newest stable model with tool calling becomes the default.
+**Sign in instead of a key.** Three providers take a device-code login:
 
-## Disable providers or models
+```bash
+kortix providers login openai        # ChatGPT Plus or Pro
+kortix providers login opencode      # OpenCode Zen
+kortix providers login opencode-go   # OpenCode Go
+```
 
-Open **Customize → Models → Providers**. Open the **⋯** menu in the **Kortix** row and choose **Disable provider** to use only your own providers. Kortix appears in the same list as other providers, with its model count and credit-billing description. Every provider uses the same menu. Only disabled providers show a status badge. Choose **Enable provider** from the menu to restore access.
+In the web app, use **Connect ChatGPT** and **Connect OpenCode Go**. The OpenCode Zen login runs only from the CLI. Zen and Go each need their own login. An OpenCode login lasts 30 days, and Kortix renews it one day before it expires. When a renewal is refused, requests return `provider_reauth_required`: sign in again.
 
-Open the **Models** tab to enable or disable individual models. A disabled provider blocks all of its models, including models added later. Re-enabling the provider preserves individual model choices. Credentials stay saved throughout.
+**A custom endpoint.** For a self-hosted or unlisted OpenAI-compatible endpoint, open the **Custom** tab. Enter a provider id, a name, the base URL and one or more models (an id and a name each). Kortix stores the endpoint in the project. The gateway calls `<base_url>/chat/completions` with the OpenAI chat-completions format. The key is optional: Kortix saves it as the project secret `CUSTOM_<ID>_API_KEY` and sends it as a Bearer token. Budgets, logs, access rules and routing apply as for any other model. Kortix charges no credits for a custom endpoint. Both harnesses, OpenCode and pi, can use its models. A model id is `<id>/<model>`, for example `my-vllm/qwen-3`.
 
-The project default and its provider cannot be disabled. Select a different enabled default first. Project managers can change access; readers can inspect it.
+From the CLI:
 
-These controls apply to new requests through the Kortix gateway, including saved session selections and fallback candidates. A request already sent to an upstream finishes normally. Disabled targets return `provider_disabled` or `model_disabled`; choose an enabled model to continue. Native OpenCode mode does not use this gateway policy.
+```bash
+printf %s "$KEY" | kortix providers custom set my-vllm \
+  --base-url https://llm.example.com/v1 --model "qwen-3=Qwen 3" --key-stdin
+kortix providers custom ls
+kortix providers custom rm my-vllm
+```
 
-Existing picker-only visibility preferences remain separate. Resetting the model list does not remove explicit access restrictions.
+`set` creates or replaces the endpoint. `--model <id>[=<name>]` repeats and replaces the model list. `--name <name>` defaults to the id. `--key-stdin` reads the key from stdin. `rm` removes the endpoint and its key.
+
+- The provider id cannot be a catalog provider id such as `openai`: that returns `reserved_provider_id`.
+- The gateway refuses a base URL on a private, loopback or link-local address. On a self-hosted deployment, list the host in the API environment variable `KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS` (comma-separated) to allow it.
+- A key saved by the earlier snippet flow, with no endpoint stored, shows as **Add endpoint** in the **Custom** tab. Add the base URL and models to use it.
+
+Your provider bills a request that runs on your own key or subscription. Kortix charges nothing for the first $1,000 of key usage a month at list price, then 5% of each request's list price, from credits ([Credits](/docs/credits)). A ChatGPT subscription and OpenCode Go are never charged. The one other charge is a Kortix model that you put in your own fallback chain: see [Routing and fallback](#routing-and-fallback).
+
+## How the default is chosen
+
+A session that names no model uses the first of these that is set:
+
+1. **Explicit pin.** The model of the session, the [channel](/docs/connect/channels) or the [trigger](/docs/connect/triggers) (`model:`).
+2. **Agent pin.** `kortix agents model <agent> <model-id>`. `--clear` removes it.
+3. **Project default.** `kortix models default <model-id>`.
+4. **Account default.** `kortix models default <model-id> --account`. It applies to every project in the account that has no project default.
+5. **Platform default.** `deepseek-v4.1-flash` on Kortix Cloud.
+
+The `model:` field in the [agent file](/docs/project/agents#the-agent-file) is not in this chain. It applies only to a prompt that names no model:
+
+- The web composer names a model on every prompt: your pick, else the chain above. There the agent file's `model:` does not apply.
+- On OpenCode, a prompt that names no model runs on the agent file's `model:`. The chain's model applies to an agent whose file sets none.
+- On pi, the session runs on the chain's model. A prompt that switches to another agent and names no model runs on that agent's `model:`.
+
+A stale default never fails a session. A less specific default is not tried when a more specific one cannot run:
+
+- An explicit pin that the project cannot run falls through to the defaults.
+- A default that cannot run, for example after its key was removed, falls back to a model of another connected provider, then to the platform default.
+- On the Free plan, a default that names a managed model falls back to your connected ChatGPT subscription, then a connected provider key. With neither, the session has no model until you connect one.
+
+`kortix models default` prints the chain and what it resolves to. `kortix models default --clear [--account]` removes a default. Writes need the `project.model.write` permission.
+
+When a gateway project saves a provider key, and neither the project nor the account has a default, Kortix sets that provider's flagship model as the project default, if the project can run it. It never replaces a default that exists.
+
+## Offer vs allow
+
+Two separate controls decide which models a project uses:
+
+| Control | What it does | Where | Enforced |
+| --- | --- | --- | --- |
+| Offer (enablement) | Decides which models the pickers list. By default, the newest model of each family. | **Models** tab, or `kortix models enable\|disable\|reset` | No. A request that names a hidden model still runs. |
+| Allow (access) | Blocks inference on a provider or one model. | **Providers** or **Models** tab, **⋯ → Disable provider** or **Disable model** | Yes. Requests return `provider_disabled` or `model_disabled`. |
+
+- `kortix models enable <model-id>...` and `disable <model-id>...` store exceptions to the catalog default. `kortix models reset` removes every exception.
+- A disabled provider blocks all its models, including models the catalog adds later. Its credentials stay saved.
+- Disable the **Kortix** provider to run only on your own providers. First set a project default on one of your providers: while the default is a Kortix model, the switch returns `409 cannot_disable_default`.
+- Access applies to every new request: picker choices, saved session selections and fallback candidates. A request already sent upstream finishes.
+- You cannot hide the default model (project, else account, else platform), and you cannot disable it or its provider. Set another project default first.
 
 ## Thinking effort
 
-The composer's thinking control sets the session's model **variant** in both
-modes. The choices are the model's own published tiers (models.dev
-`reasoning_options`), never a fixed ladder; a model without a knob shows no
-control. `Auto` clears the variant.
+The composer's thinking control sets the session's model variant. The choices are the reasoning levels the model itself publishes. A model without reasoning levels shows no control. **Auto** clears the variant, and the model's own default applies. The gateway translates the level into each provider's request field.
 
-- Native (gateway off): OpenCode applies the variant as the provider's own
-  request field.
-- Gateway on: the request carries `reasoning_effort`; the gateway maps it per
-  upstream (OpenAI → `reasoning_effort`, Claude → adaptive thinking, OpenAI on
-  Amazon Bedrock → Bedrock's `reasoning.effort` request field). For an upstream it
-  cannot map yet (Nova, Grok on Bedrock today) the value is dropped and the
-  model runs at its own default.
-- Amazon Bedrock refuses the bare in-region id of most current models
-  ("on-demand throughput isn't supported"). The picker prefers the `global.` /
-  regional inference-profile id when the catalog carries one, and the gateway
-  retries a refused bare id once per profile prefix (`global.`, `us.`).
-- The sandbox learns the project's servable model set from the API at every
-  boot (`GET /v1/llm/models?scope=picker`, the same composition as the web
-  picker), so a model the picker offers always resolves in the runtime.
-- A project default per model lives in Customize → Models → Routing →
-  Advanced → **Generation defaults** (`model_generation_config`). It fills only a field
-  the request left unset, so a session's variant always wins.
+A project can set defaults per model: **Customize → Models → Routing → Advanced → Generation defaults**. The fields are reasoning effort, temperature, top_p and max output tokens. A default fills only a field that the request left unset, so a session's variant always wins.
 
-## How auto picks a model
+## Routing and fallback
 
-Set no model, and Kortix resolves one through five layers, in order. (The
-id `auto` covers this same behavior, but it is not yet a selectable option
-in the model picker.)
+Open **Customize → Models → Routing**, or use the CLI:
 
-1. An explicit pin — a session, channel, or trigger's own `model:` field.
-2. The [agent's](/docs/project/agents) default for this project.
-3. The project's default.
-4. The account's default.
-5. The platform default.
+```bash
+kortix gateway routing                      # effective policy and its sources
+kortix gateway routing set \
+  --default-model glm-5.3-flash \
+  --fallback anthropic/<model-id>,glm-5.3-flash \
+  --fallback-on transient \
+  --vision-model glm-5.3-flash
+kortix gateway routing preview glm-5.3-flash --image
+kortix gateway routing reset
+```
 
-Kortix uses the first layer that has a value it can still serve. A saved
-default that stops working — a disconnected key, a retired model — is
-skipped automatically. A session never dies from a stale default. See the
-[manifest reference](/docs/project/manifest) for the trigger `model:`
-field.
+- `--default-model` sets the project default.
+- `--fallback` is the chain the gateway tries in order when the model fails. It takes up to 8 models.
+- `--fallback-on transient` moves on after a network error, a timeout, any 5xx, or a `402`, `403`, `404` or `429`. `any-error` moves on after every failure.
+- The project's chain also runs when every key or ChatGPT account that the request may use is paused after a rate limit. With `--fallback-on any-error`, it also runs when the login needs reconnection.
+- The chain covers every model in the project: the project default, an agent's default, and a model that a session or trigger pins. A per-model override (`rules` in `set --file`, or **Per-model overrides** in Customize → Models → Routing) replaces the chain for one exact model.
+- `--vision-model` takes a request that carries images when the default model accepts only text.
+- `set` changes only the flags you pass. The rest of the policy, the generation defaults included, stays as stored. `set --file policy.json` replaces the whole policy; a file without `modelGenerationConfig` keeps the stored generation defaults.
 
-:::warning[Billing surprises on BYOK]
-Two costs are easy to miss on a paid cloud account:
+**Billing in a fallback.** A request on your own key moves to a Kortix-billed model only when your project's chain names that model and the account can pay for it. Kortix's own platform chain never moves your request onto credits. On Kortix Cloud, the platform chain moves `deepseek-v4.1-flash` to `glm-5.3-flash` on transient errors.
 
-- **Platform fee.** Kortix adds a 10% fee, billed as credits, on top of what
-  your own provider charges. Free-tier and self-hosted accounts are exempt.
-- **Fallback chains.** If your BYOK key or ChatGPT plan fails, for example on
-  its usage limit, Kortix runs the fallback chain you set in **Customize →
-  Models → Routing**. The chain also runs when every key or ChatGPT account the
-  request may use is paused after a rate limit. With **Retry on: Any error**, it
-  also runs when they need reconnection. A Kortix model in that chain bills your
-  credits, and runs only when your account can pay for it. The platform's own
-  fallback never moves a BYOK or ChatGPT request onto credits.
+When a fallback model answers, the composer shows **Running on** and the model name. The turn details name the model that answered and the model it replaced. **Costs** counts the spend under the model that answered.
 
-If you see credit charges on a BYOK-only project, check these two causes
-before reporting a billing bug.
-:::
+## Shared keys and ChatGPT accounts
 
-When a fallback model answers, the session says so. The composer shows
-**Running on** and the model's name beside the model selector. Each turn's details
-name the model that answered, the model it replaced, and what Kortix billed for the
-turn. **Customize → Models → Costs** counts that spend under the model that answered.
+By default, a provider key belongs to the whole project. A personal override of a provider key returns `llm_credentials_project_wide`.
 
-## Per-project model enablement
+Turn on the `pooled_provider_secrets` [feature flag](/docs/project#feature-flags) (off by default) to let each member bring their own keys and ChatGPT accounts.
 
-The project controls which models its pickers offer. By default, the newest
-model of each family is offered automatically. Kortix-managed models and any
-model your project's defaults or routing policy reference are always offered —
-a guard never prunes them.
+**Add a key.** In **Providers**, choose **Add key** beside a provider. Give it a label. The value is write-only. A new key is **Only you** by default. Any member can add a key for their own use. Sharing with **Everyone in this project** or **Specific members** needs permission to manage project secrets. Change it in **⋯ → Manage access**. Rotating a key keeps its access and session selections. Deleting it removes it for everyone.
 
-You can override the default for individual models on the **Manage models**
-page (Customize → Models). An exception is stored per project and takes effect
-immediately. The session model picker and the command palette hide anything
-you turn off; new models stay on by default as the catalog grows.
+**Connect a ChatGPT account.** In the model picker, choose **Use your ChatGPT subscription**, then **Connect ChatGPT**, and sign in with the code shown. Each sign-in adds one named account, so a member can connect more than one. When ChatGPT signs you out, the account shows **Needs reconnection**: choose **⋯ → Reconnect**. Only the member who connected an account can reconnect it. Account owners and admins can delete any account. A project manager can turn off **ChatGPT subscription** for the project in **Providers**.
 
-Enablement governs what is offered, not what is served: a request that names a
-disabled model outright (for example through the raw API) still runs. The
-project's default model cannot be turned off — set a different default first.
+**Choose keys for a session.** Open **Session overrides → Provider keys** in the composer. Select up to 10 keys per provider, then **Save changes**. An empty selection turns the provider off for that session. **Reset to project default** removes the selection.
 
-## Provider keys and member access
+**Which keys a session may use:**
 
-With **Pooled provider secrets** off, a connected provider key applies to the
-whole project. Personal overrides for these project secrets return
-`llm_credentials_project_wide`.
+- Your private session uses keys shared with the project, plus keys and ChatGPT accounts granted to you.
+- A shared session, a trigger session and a Slack or Teams session use only keys shared with the whole project.
+- When you share a private session whose model runs only on your own keys, the request fails with `409 SHARED_SESSION_NEEDS_PROJECT_KEY`. Share a key with the whole project, or switch the session to another model.
+- A session started by the CLI, the SDK, Slack or Teams names a model and no keys. It gets every key it may use for that provider under the rules above, up to 10, and they rotate.
 
-Enable **Pooled provider secrets** and **LLM Gateway** in Settings → Experimental
-to use provider secret resources. Open **Customize → Models → Providers** and
-choose **Add key** beside a provider. Give each key a distinct label. The value
-is write-only; later screens show its label and access list.
+**The agent must be allowed the key.** When the running agent declares a `secrets` list, the list must name the key, for example `CODEX_AUTH_JSON` for ChatGPT or `ANTHROPIC_API_KEY`. Otherwise the turn fails with `agent_grant_excludes`. See [Agents & permissions](/docs/project/agents).
 
-New keys belong to this project and are private to you by default (**Only
-you**). Any project member can add a key for their own use. Sharing a key with
-**Everyone in this project** or **Specific members** requires permission to
-manage project secrets; without it, those options are disabled. Open a key's
-**⋯ → Manage access** to change who can use it. Legacy account-wide resources
-retain their member grants. Account membership, project permissions, the
-agent's secret permissions, and session selection still apply.
-A member grant permits use without revealing the key. Rotating a key preserves
-its access and session selections. Deleting it removes access for everyone.
+**Rate limits.** When a key returns `429` before any output, the gateway tries the next selected key. It never replays a partial answer on another key. When every key is paused, the project's fallback chain runs. With no chain, the request fails with a `Retry-After` of at most 60 seconds. The gateway tries a paused key again every 15 minutes. `kortix providers retry [<provider>]` ends the pause now, for example after you reset ChatGPT usage.
 
-### Choose keys for a session
+## Budgets and costs
 
-Open the composer's **Session overrides → Provider keys**. Choose a provider,
-then select up to ten keys. Choose **Save changes** in the panel footer.
-For a new session, the selection is sent with the first prompt.
+A budget caps what a project, or one member in it, spends on models in a period. Open **Customize → Models → Costs**, or use the CLI:
 
-- Without an explicit selection, the existing project key remains available.
-- Selecting no keys disables that provider for the session. It does not restore
-  the project key.
-- **Reset to project default** removes the explicit selection.
-- Revoked or inactive keys appear as unavailable. Remove them from the
-  selection, select another key, or reset the selection.
-- Deleting the last selected key leaves an empty pool. The session settings
-  still show that provider so you can reset it.
-- A failed read shows **Try again**. It never appears as an inherited selection.
+```bash
+kortix gateway budget                                   # budgets with their spend this period, and this month's project spend
+kortix gateway budget set --limit 20 --scope project --period month --action block   # 20 USD = 2,000 credits
+kortix gateway budget set --limit <limit> --scope member --user <user-id> --period week --action warn
+kortix gateway budget rm <budget-id>
+```
 
-A session lists only the keys it can use when it runs: keys shared with the
-whole project, and, in your own private session, keys granted to you. A session
-shared with the project never uses a key granted to one member, so the list
-leaves those keys out and saving one is refused. Changing a shared session to a
-model that only such keys reach is refused too, instead of failing every turn.
+- `--limit` takes US dollars, the unit of the API's `limit_usd` field. One credit is $0.01, so `--limit 20` is a 2,000-credit budget. The CLI shows budgets and spend in credits, and `--json` returns the API's dollar fields.
+- `--period` is `day`, `week` or `month`, in UTC. A week starts on Monday. A month starts on the 1st.
+- **Block** (`block`) refuses new requests at the limit with `402 budget_exceeded`. **Warn only** (`warn`) lets them run.
+- A budget counts all spend: Kortix credits and the cost on your own keys.
+- Each budget shows its spend in its own period, for example `1,500 of 2,000 credits per day · blocks at limit · 75% used`, and when the period resets. This is the number the gateway compares with the limit. `GET /v1/projects/<project-id>/gateway/budgets` returns it per budget in US dollars as `spent_usd`, `period_start` and `resets_at`, and a member budget's member as `subject_email`. `project_spend` and `members` in the same response are month-to-date.
+- Every member cap has a row in the list, also when its member has spent nothing this month.
+- At 80% and at 100% of the limit, Kortix emails the account owners and admins and the project managers, once per threshold per period.
+- Setting a budget needs `project.gateway.budget.set`. Reading spend needs `project.gateway.spend.read`.
+- A project manager reads every member's spend and cap. A plain `member` reads the project budget, their own cap and their own spend row, and never another member's id or email.
 
-Sharing a private session, with the whole project or with chosen people, is
-checked the same way. When its model ran only on keys that work in your
-private sessions, such as your own ChatGPT connection, the session switches to
-every key shared with the whole project for that provider. When no such key
-runs the model, the share is refused with `409 SHARED_SESSION_NEEDS_PROJECT_KEY`
-and the session stays private. Share a key with the whole project, or switch
-the session to another model, then share it.
+Read spend and requests:
 
-### Sessions that name only a model
+```bash
+kortix gateway usage --days 7      # requests, errors and cost by model
+kortix gateway sources --hours 24  # spend by trigger, member, channel and API
+kortix gateway logs --failed       # recent failed requests
+kortix gateway logs <log-id>       # one request in full
+kortix gateway test deepseek-v4.1-flash glm-5.3-flash --prompt "Say hi"
+```
 
-The CLI, the SDK, and Teams and Slack name a model but no keys. When that model
-runs only on pooled keys, the session gets every key its creator may use for
-that provider, up to ten, so they rotate. The agent must be allowed the key's
-name in its `secrets`. Otherwise the turn fails with `agent_grant_excludes`:
-add the name, for example `CODEX_AUTH_JSON` for ChatGPT, to the agent's
-`secrets`, or choose another agent. Changing a running session to such a model
-does the same when the session has no selection for that provider. A selection
-made on purpose, an empty one included, is left alone.
+The **Costs** and **Logs** tabs show the same data. For account-wide usage, see [Plans & credits](/docs/credits).
 
-Your own keys and ChatGPT connections count only in a session that is private
-to you and acts on your behalf. In a shared session only keys shared with the
-whole project count: a Teams channel or group chat, a Slack channel.
+A project manager reads every log and every session's spend. A plain `member` reads only the logs and session spend of their own requests and of sessions they may open. `kortix gateway test` spends credits on real model calls, so it needs `project.model.write`, the Manager permission that changes the project's models.
 
-On a rate limit before output starts, the gateway tries another selected key.
-It never replays a partial answer across keys. If every key is rate-limited,
-retry after the earliest cooldown, capped at 60 seconds. An explicit pool does
-not silently borrow another member's key or the legacy project credential.
+## Use the gateway from your own tools
 
-### ChatGPT accounts (bring your own subscription)
+A gateway key lets any OpenAI- or Anthropic-compatible client call the project's models. The client gets the same keys, routing, access rules and budgets as a session.
 
-Every project member can connect their own ChatGPT Plus or Pro subscription.
-Project permissions to manage secrets are not required.
+1. Create a key in **Customize → Models → Gateway**, or run `kortix gateway keys new <name>`. The key starts with `kortix_gw_`. Kortix shows it once. `kortix gateway keys` lists keys, and `kortix gateway keys rm <key-id>` revokes one. Managing keys needs `project.gateway.keys.manage`.
+2. Point the client at the gateway. On Kortix Cloud the base URL is `https://gateway.kortix.com`. A self-hosted instance shows its own URL in the **Gateway** tab.
 
-1. In a session, open the model picker and choose **Use your ChatGPT
-   subscription**. Project managers can also use **Models → Providers →
-   ChatGPT accounts**.
-2. Choose **Connect ChatGPT**. The label defaults to `ChatGPT · <your name>`.
-3. Keep **Only you**, then choose **Connect account**. Sign in to ChatGPT with
-   the code shown. If the authorization fails or times out, the dialog shows
-   why; choose **Try again**.
+| Endpoint | Protocol |
+| --- | --- |
+| `POST /v1/chat/completions` | OpenAI Chat Completions |
+| `POST /v1/messages` | Anthropic Messages |
+| `POST /v1/responses` | OpenAI Responses |
+| `GET /v1/models` | Model list |
 
-The subscription's models appear in your model picker under **ChatGPT
-subscription**. Each authorization creates a separate named account, so you can
-connect more than one. **Only you** means only you can select the account;
-choosing **Everyone in this project** or **Specific members** requires
-permission to manage project secrets.
+The gateway reads the key from `Authorization: Bearer`, and on `/v1/messages` also from `x-api-key`, so `ANTHROPIC_API_KEY` works as well as `ANTHROPIC_AUTH_TOKEN`.
 
-If ChatGPT signs you out, open the account's **⋯ → Reconnect** and sign in
-again. Reconnecting keeps the account's name, access, and session selections.
-Only the member who connected an account can reconnect it. Account owners and
-admins can delete any account.
+```bash
+curl https://gateway.kortix.com/v1/chat/completions \
+  -H "Authorization: Bearer kortix_gw_..." \
+  -H "Content-Type: application/json" \
+  -d '{"model": "glm-5.3-flash", "messages": [{"role": "user", "content": "Hello"}]}'
+```
 
-When an account's login stops working, the account shows **Needs
-reconnection**. This happens when ChatGPT rejects the renewal of the login, or
-when the stored login cannot be read. ChatGPT can also refuse a login before
-it expires. Kortix then renews the login once and retries the request. If the
-renewal is refused too, the account needs reconnection, and the request moves
-to the next selected account when there is one. A brief outage at ChatGPT does
-not mark an account. The member who connected the account sees **Reconnect** beside it.
-**Session overrides → Provider keys** shows the same mark. A turn that fails
-names the accounts that need reconnection. The account stays selected, and
-reconnecting it or a successful renewal clears the mark.
-
-A turn that fails for this reason also shows the fix beside its error:
-
-- `provider_reauth_required` shows **Reconnect ChatGPT**. It appears in your
-  own private session, and in a shared session that selects ChatGPT accounts.
-- `provider_not_connected` shows **Connect ChatGPT**. It appears only in your
-  own private session without a ChatGPT selection. A session with a selection
-  is fixed in **Session overrides → Provider keys** instead.
-
-Both open your ChatGPT accounts. After you connect or reconnect, send your
-message again. In Slack and Microsoft Teams the same failure reads **ChatGPT
-login needs reconnection**.
-
-A session can select multiple granted ChatGPT accounts in **Session overrides →
-Provider keys**. Without a selection, the member's newest usable connection is
-the default in their own private session. A connection marked **Needs
-reconnection** is the default only when all of the member's connections are
-marked. A session shared with the project
-never uses a member's own connection: select a connection shared with the whole
-project for it. Scheduled sessions cannot use an **Only you** account either.
-Another member's shared connection requires an explicit selection. The legacy
-project login remains available when the member has no usable connection of
-their own. A project gateway key uses the connections shared with
-**Everyone in this project**. It never uses its creator's private connection or
-a connection restricted to specific members.
-
-A project manager can turn off **ChatGPT subscription** for the whole project
-in **Models → Providers**. The picker then hides the connect entry.
-
-Google Gemini API keys use Google's OpenAI-compatible endpoint with the gateway
-on. Native OpenCode mode continues to use project secrets.
-
-Models hidden by older picker preferences show **Hidden from picker**. Direct requests remain allowed. Open that model’s menu and choose **Disable model** to block inference too.
-
-Provider model-count links open the **Models** tab. All provider groups appear together in the same list used to enable or disable models and set defaults. Search narrows the list. Connect a provider before managing its models.
-
-Provider selections stay as drafts until you click **Save changes** in the
-session overrides footer. This saves changes for every provider, including a
-reset to the default. You can switch sections or close and reopen the panel
-without losing these drafts. Reloading the page discards unsaved changes.
-If a save fails, the panel stays open and shows the error. Correct the selection
-or retry. Providers already saved remain saved; unfinished changes stay in the
-panel.
-
-## Use the gateway from Claude Code
-
-The gateway serves the Anthropic Messages API at `POST /v1/messages`. Claude
-Code and Anthropic SDKs can call any gateway model through it.
-
-1. Create a key in **Customize → Gateway**, tab **Gateway**.
-2. Start Claude Code with the gateway as its API endpoint:
+**Claude Code:**
 
 ```bash
 ANTHROPIC_BASE_URL=https://gateway.kortix.com \
 ANTHROPIC_AUTH_TOKEN=kortix_gw_... \
-claude --model kimi-k3
+claude --model glm-5.3-flash
 ```
 
-The gateway reads the key from `Authorization: Bearer` or from `x-api-key`, so
-`ANTHROPIC_API_KEY` also works.
+**Codex CLI** speaks only the Responses protocol. Add a provider to `~/.codex/config.toml`:
 
-The gateway translates these Claude Code fields for every provider:
+```toml
+model = "glm-5.3-flash"
+model_provider = "kortix"
 
-- `thinking: {type: "adaptive"}` with `output_config.effort` becomes
-  `reasoning_effort`. See [Thinking effort](#thinking-effort).
-- Usage on the final `message_delta` carries `input_tokens`,
-  `cache_read_input_tokens`, and `cache_creation_input_tokens`. Claude Code
-  uses them for `/context` and auto-compaction.
-- Images that a tool returns, such as a `Read` of a screenshot, reach the model
-  in a user message after the tool result.
-- A provider stream that ends before completion returns an `api_error` event,
-  so Claude Code retries the turn.
+[model_providers.kortix]
+name = "Kortix"
+base_url = "https://gateway.kortix.com/v1"
+env_key = "KORTIX_GATEWAY_KEY"
+wire_api = "responses"
+```
+
+Then run `KORTIX_GATEWAY_KEY=kortix_gw_... codex`.
 
 Limits:
 
-- `/v1/messages/count_tokens` returns `404`. Claude Code then estimates
-  counts from characters.
+- `/v1/messages/count_tokens` returns `404`. Claude Code then estimates token counts itself.
 - Reasoning text is not returned as `thinking` blocks.
-- ChatGPT models (`codex/*`) need a ChatGPT connection shared with
-  **Everyone in this project**. A gateway key cannot use a private connection.
-- Claude Code cannot set a context window per model. Set
-  `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the smallest window you use.
+- Claude Code cannot set a context window per model. Set `CLAUDE_CODE_MAX_CONTEXT_TOKENS` to the smallest window of the models you use.
+- A request with more than 20 inline images keeps the 12 newest. A text notice replaces each older image.
+- A request body over 128 MiB returns `413`.
+- `codex/*` models need a ChatGPT account shared with **Everyone in this project**. A gateway key never uses a private account.
+
+## Errors
+
+| Code | Cause | Fix |
+| --- | --- | --- |
+| `subscription_required` | The account has no active plan for Kortix-billed models. | Subscribe, or run on your own key. |
+| `insufficient_credits` | The credit balance is empty. | Add credits, or run on your own key. |
+| `budget_exceeded` (`402`) | A **Block** budget reached its limit. | Raise or remove the budget in **Costs**, or wait for the next period. |
+| `plan_upgrade_required` | The plan does not include this managed model. | Use `deepseek-v4.1-flash`, upgrade, or connect your own key. |
+| `provider_disabled` | A project manager disabled the provider. | Choose another model, or enable the provider in **Providers**. |
+| `model_disabled` | A project manager disabled the model. | Choose another model, or enable it in **Models**. |
+| `provider_not_connected` | No usable key or ChatGPT account for this provider. | Connect one in **Providers**, or select one in **Session overrides → Provider keys**. |
+| `provider_reauth_required` | A ChatGPT or OpenCode login stopped working. | **Reconnect ChatGPT**, or run `kortix providers login <provider>` again. |
+| `llm_credentials_project_wide` (`400`) | A personal override of a provider key. Provider keys cannot be overridden per member. | Update the shared key, or turn on `pooled_provider_secrets` and use **Add key** in **Providers**. |
+| `agent_grant_excludes` | The agent's `secrets` list does not name the key. | Add the key name to the agent's `secrets`, or use another agent. |
+| `context_length_exceeded` | The conversation is longer than the model's context window. | Compact the session, or switch to a model with a larger window. |
+
+Slack and Microsoft Teams show the same failures in their own words. See [Models and keys in a channel](/docs/connect/channels#models-and-keys-in-a-channel).

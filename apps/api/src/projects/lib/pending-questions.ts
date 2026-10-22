@@ -2,9 +2,10 @@
  * Park-and-restore for a blocked turn.
  *
  * THE PROBLEM. When the agent calls the `question` tool it stops and waits for
- * a human. A waiting turn makes no gateway LLM calls, so it earns no deadline
- * extension, so its box is parked on schedule. That part is correct and must
- * stay correct: the whole bounded-lifetime design rests on "only a
+ * a human. A waiting turn makes no gateway LLM calls and the reaper renews
+ * nothing for it, so after the wait bound (`turnWaitingMaxMs`) the turn ends
+ * and its box is parked (box-reaper.ts `holdWaitingTurn`). That part is
+ * correct and must stay correct: the whole bounded-lifetime design rests on "only a
  * control-plane-OBSERVED event may extend a box", and a box that could keep
  * itself alive by saying "I'm still waiting" is exactly the self-renewal that
  * once left 187 boxes running, the oldest for 264 hours.
@@ -25,7 +26,7 @@
 
 import type { RuntimeQuestion } from '@kortix/api-contract/transcript';
 import { sessionPendingQuestions } from '@kortix/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '../../shared/db';
 
 export interface PendingQuestion {
@@ -163,13 +164,23 @@ export async function resolvePendingQuestion(input: {
 }
 
 /**
- * Drop a session's open questions.
+ * Close a session's open questions: nobody waits on them any more (KRTX-1739).
+ * A stale question is worse than none: GET needs-input, the digest and the
+ * session lists count it, and a resumed session would invite an answer nothing
+ * waits for. The callers:
  *
- * Called when a turn ends for any other reason — the agent gave up, errored, or
- * the user sent a new prompt that supersedes the ask. A stale prompt rendered
- * on resume is worse than none: it invites an answer nothing is waiting for.
+ * - a turn end that closed the turn — idle, a stop, a failure
+ *   (routes/turn-stream-handlers.ts). The reaper's `TurnAwaitingInput` end is
+ *   not one: the box parks and the question waits for its answer;
+ * - a prompt delivered into the session, for the questions asked before it was
+ *   sent (`askedBefore`, session-lifecycle/queued-continue-delivery.ts);
+ * - the runtime answered `requestId`: a person replied or dismissed it through
+ *   the session proxy, or the server released a Slack/Teams question.
  */
-export async function clearOpenQuestions(sessionId: string): Promise<number> {
+export async function clearOpenQuestions(
+  sessionId: string,
+  scope: { requestId?: string; askedBefore?: Date } = {},
+): Promise<number> {
   const rows = await db
     .update(sessionPendingQuestions)
     .set({ answeredAt: sql`NOW()`, updatedAt: new Date().toISOString() })
@@ -177,6 +188,8 @@ export async function clearOpenQuestions(sessionId: string): Promise<number> {
       and(
         eq(sessionPendingQuestions.sessionId, sessionId),
         isNull(sessionPendingQuestions.answeredAt),
+        scope.requestId ? eq(sessionPendingQuestions.requestId, scope.requestId) : undefined,
+        scope.askedBefore ? lt(sessionPendingQuestions.askedAt, scope.askedBefore.toISOString()) : undefined,
       ),
     )
     .returning({ id: sessionPendingQuestions.id });

@@ -123,7 +123,7 @@ describe.skipIf(!dockerAvailable)('wrap legacy public deletion policies migratio
 
   afterAll(() => {
     if (!containerStarted) return;
-    Bun.spawnSync(['docker', 'rm', '-f', container], { stdout: 'ignore', stderr: 'ignore' });
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container], { stdout: 'ignore', stderr: 'ignore' });
   });
 
   test('wraps both policies, preserves cmd/roles/RLS, and a second apply is a no-op', () => {

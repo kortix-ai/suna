@@ -1,19 +1,34 @@
 'use client';
 
+import { ListIcon } from '@phosphor-icons/react';
+
+import { TITLEBAR_CONTROL_CLASS } from '@kortix/ui/internal/desktop/titlebar-control';
+import { Button } from '@kortix/ui/button';
+import { useTranslations } from '@/i18n/use-translations';
 import {
   getDesktopZoom,
   isDesktop,
   setDesktopNativeTheme,
   setDesktopZoom,
+  showDesktopAppMenu,
   zoomIn,
   zoomOut,
   zoomReset,
-} from '@/lib/desktop';
-import { projectIdFromPathname } from '@/stores/project-switch-store';
-import { useSettingsPanelStore } from '@/stores/settings-panel-store';
+} from '@kortix/ui/internal/lib/desktop';
+import {
+  DEFAULT_THEME_CHOICE,
+  isThemedPath,
+  normalizeDarkTheme,
+  normalizeLightTheme,
+} from '@/lib/interface-themes';
+import { projectIdFromPathname } from '@kortix/ui/internal/stores/project-switch-store';
+import { useSettingsPanelStore } from '@kortix/ui/internal/stores/settings-panel-store';
+import { useUserPreferencesStore } from '@kortix/ui/internal/stores/user-preferences-store';
 import { useTheme } from 'next-themes';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+
+import { cn } from '@kortix/ui';
 
 /**
  * Invisible top-of-window drag region. The web app's own UI extends to the
@@ -23,13 +38,22 @@ import { useEffect } from 'react';
  */
 export function DesktopChrome() {
   const { theme } = useTheme();
+  const lightTheme = useUserPreferencesStore((s) => normalizeLightTheme(s.preferences.lightTheme));
+  const darkTheme = useUserPreferencesStore((s) => normalizeDarkTheme(s.preferences.darkTheme));
   const pathname = usePathname();
   const router = useRouter();
 
+  // The window's launch background follows the page the person is on: their
+  // palette on a themed route, the default palette (the brand look) elsewhere,
+  // so the auth screen never opens on a Dracula background.
+  const themed = isThemedPath(pathname);
   useEffect(() => {
     if (!isDesktop() || !theme) return;
-    void setDesktopNativeTheme(theme);
-  }, [theme]);
+    void setDesktopNativeTheme(
+      theme,
+      themed ? { light: lightTheme, dark: darkTheme } : DEFAULT_THEME_CHOICE,
+    );
+  }, [theme, lightTheme, darkTheme, themed]);
 
   useEffect(() => {
     if (!isDesktop()) return;
@@ -85,8 +109,40 @@ export function DesktopChrome() {
   }, [pathname, router]);
 
   return (
-    <div className="kx-desktop-chrome" aria-hidden>
-      <div className="kx-desktop-drag" data-tauri-drag-region />
-    </div>
+    <>
+      <div className="kx-desktop-chrome" aria-hidden>
+        <div className="kx-desktop-drag" data-tauri-drag-region />
+      </div>
+      <DesktopAppMenuButton />
+    </>
+  );
+}
+
+/**
+ * The application menu, in the title-bar band's left slot (Windows). The
+ * Windows window has no menu bar, so this button and Alt are how About,
+ * Settings, Check for Updates and Change Kortix Instance are reached. CSS
+ * shows it only under `html[data-desktop-titlebar='overlay']`, which the
+ * shell sets before first paint, so server and client markup stay identical.
+ */
+function DesktopAppMenuButton() {
+  const t = useTranslations('sidebar');
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      aria-label={t('openMenu')}
+      title={t('openMenu')}
+      onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        void showDesktopAppMenu(rect.left, rect.bottom);
+      }}
+      className={cn(
+        TITLEBAR_CONTROL_CLASS,
+        'kx-desktop-app-menu left-[var(--kx-titlebar-menu-left)] w-[var(--kx-titlebar-control-size)] p-0',
+      )}
+    >
+      <ListIcon className="size-4" />
+    </Button>
   );
 }

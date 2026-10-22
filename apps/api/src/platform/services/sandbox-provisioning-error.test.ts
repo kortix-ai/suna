@@ -25,6 +25,7 @@ describe('classifySandboxProvisioningFailure', () => {
       userMessage: SANDBOX_PROVIDER_STORAGE_FULL_MESSAGE,
       isCapacity: true,
       isGitAuth: false,
+      transient: true,
     });
     expect(failure.userMessage).toBe(
       'The sandbox provider is out of storage, so no new session can start on it. Try again later, or ask a project admin to switch the sandbox provider in Customize → Settings → Sandbox.',
@@ -32,7 +33,6 @@ describe('classifySandboxProvisioningFailure', () => {
   });
 
   test.each([
-    'you have reached the maximum number of concurrent E2B sandboxes (8)',
     'max number of running sandboxes on node reached',
     'too many sandboxes starting on this node',
     'No available runners can satisfy the request',
@@ -44,6 +44,7 @@ describe('classifySandboxProvisioningFailure', () => {
       userMessage: SANDBOX_PROVIDER_CAPACITY_MESSAGE,
       isCapacity: true,
       isGitAuth: false,
+      transient: true,
     });
   });
 
@@ -65,6 +66,7 @@ describe('classifySandboxProvisioningFailure', () => {
       userMessage: SANDBOX_PROVIDER_FAILURE_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
+      transient: false,
     });
     expect(result.userMessage).not.toContain(secretProviderMessage);
   });
@@ -156,6 +158,7 @@ describe('classifySandboxProvisioningFailure', () => {
       userMessage: SNAPSHOT_TOO_LARGE_MESSAGE,
       isCapacity: false,
       isGitAuth: false,
+      transient: false,
     });
   });
 

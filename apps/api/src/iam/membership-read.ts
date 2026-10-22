@@ -9,6 +9,7 @@
 import { accountMembers, accountMemberships, accounts, iamRoles, roleAssignments } from '@kortix/db';
 import { type SQL, and, asc, count, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../shared/db';
+import { isUuid } from '../shared/validate';
 
 /** The accounts a user belongs to, with the fields the account switcher shows. */
 export function userAccountRows(userId: string) {
@@ -78,8 +79,23 @@ export function userAccountMemberRow(userId: string, accountId: string) {
     .limit(1);
 }
 
+/** `{ accountRole }` when the user is in the account. */
+export function accountMemberRoleRow(accountId: string, userId: string) {
+  return db
+    .select({ accountRole: accountMembers.accountRole })
+    .from(accountMembers)
+    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.userId, userId)))
+    .limit(1);
+}
+
 /** `{ accountId }` when the user is in the account. */
 export function userAccountMembershipRow(userId: string, accountId: string) {
+  // A malformed account id (a slug, a truncated id, a stray path segment) is
+  // never a membership, and letting it reach the uuid-typed `account_members`
+  // predicate dies as SQLSTATE 22P02 → an opaque 500 (Better Stack pattern
+  // 97669531, KRTX-211). A non-uuid is exactly a miss: resolve to no rows
+  // without a DB read, so the caller's existing miss branch answers.
+  if (!isUuid(accountId)) return Promise.resolve([] as { accountId: string }[]);
   return db
     .select({ accountId: accountMembers.accountId })
     .from(accountMembers)
@@ -256,6 +272,26 @@ export function accountOwnersByJoinDate(accountIds: string[]) {
       ),
     )
     .orderBy(asc(accountMembers.joinedAt));
+}
+
+/**
+ * The accounts among `accountIds` where `userId` is a super admin, read where
+ * `authorize` reads it (the `account_members` view): its step 5, which sits
+ * above the account MFA gate.
+ */
+export async function superAdminAccountIds(userId: string, accountIds: readonly string[]): Promise<Set<string>> {
+  if (accountIds.length === 0) return new Set();
+  const rows = await db
+    .select({ accountId: accountMembers.accountId })
+    .from(accountMembers)
+    .where(
+      and(
+        eq(accountMembers.userId, userId),
+        inArray(accountMembers.accountId, [...accountIds]),
+        eq(accountMembers.isSuperAdmin, true),
+      ),
+    );
+  return new Set(rows.map((row) => row.accountId));
 }
 
 /** The member's `is_super_admin` flag, from the membership table. */

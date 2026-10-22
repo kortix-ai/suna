@@ -1,101 +1,145 @@
 ---
 title: Quickstart
-description: Install the CLI, run a session, and merge your first change request.
+description: Install the CLI, create or clone a project, run a session and merge the change request it opens.
 ---
 
-This page takes you from a fresh terminal to a merged change request (CR).
-Every command below is copy-pasteable.
+This page takes you from a fresh terminal, or the web app, to a merged change request. Every step is a git operation on your project's repository:
 
-<Steps>
+| Step | Command | What happens in git |
+| --- | --- | --- |
+| Create a project | `kortix init`, `kortix ship` | `git init`, commit, push to the project's repository |
+| Get a project | `kortix projects clone` | `git clone` through Kortix |
+| Run a session | `kortix sessions new` | The agent works on its own branch, named `<session_id>` |
+| Review and merge | `kortix cr merge` | The session branch merges into the default branch |
 
-<Step title="Install the CLI">
-Run the install script. It downloads the `kortix` binary for your OS.
+## Install the CLI
 
 ```sh
 curl -fsSL https://kortix.com/install | bash
 ```
 
-Kortix supports macOS and Linux. There is no Windows binary yet.
-</Step>
+The script supports macOS and Linux on x86_64 and arm64. On Windows, run it inside WSL. It installs two commands: `kortix` and `kortixt` (the [TUI](/docs/tui)). To pin a version or use the dev channel, see [CLI → Install](/docs/cli#install).
 
-<Step title="Sign in">
+## Sign in
+
 ```sh
 kortix login
 ```
 
-This opens your browser for sign-in. After you sign in, `kortix login` picks
-your account and a default [project](/docs/project) for you.
-</Step>
+1. Your browser opens. Approve the CLI there. The token comes back to the CLI on a local callback.
+2. If you belong to one account, the CLI selects it. If you belong to several, it asks. `--account <slug>` skips the question.
+3. The CLI sets a default project. With one project, it picks that project. With several, it asks. With none, it tells you to run `kortix init <name>`.
 
-<Step title="Create or clone a project">
-A new account has no projects yet, so `kortix login` has none to pick. Run
-`kortix init` with a name to create your first project. This scaffolds a
-project directory on your machine.
+On a machine without a browser, sign in with a token: `kortix login --token kortix_pat_…`. To create a token, see [API keys and tokens](/docs/accounts/identity#api-keys-and-tokens).
+
+## Create or get a project
+
+A project is a git repository with a `kortix.yaml` at its root. A new account has no projects. Create one, or clone one a teammate made.
+
+<Tabs>
+<Tab title="New project">
 
 ```sh
-kortix init my-app
-cd my-app
+kortix init my-agent
+cd my-agent
 kortix ship
 ```
 
-`kortix ship` creates the project in Kortix Cloud on its first run, then
-pushes your code. Run `kortix ship` again any time to sync local changes.
+`kortix init` creates the `my-agent` directory from the starter, runs `git init -b main`, and asks which local coding tools to wire up (OpenCode, Claude Code, Codex, pi, Cursor). It prints a starter prompt for your coding agent. The starter layout is on [Projects](/docs/project).
 
-To work on a project that already exists in Kortix Cloud, clone it instead:
+`kortix ship` validates `kortix.yaml`, commits, asks for missing secrets, pushes the current branch and asks you to connect declared connectors. The first run creates the project: with no `origin` it creates a Kortix-managed repository, with a GitHub `origin` it links that repository. After it, plain `git push` and `git pull` work. Details: [Commit and push](/docs/git#commit-and-push).
 
-```sh
-kortix projects clone <project-id>
-```
-
-Find `<project-id>` with `kortix projects ls`.
-</Step>
-
-<Step title="Run a session">
-```sh
-kortix sessions new --prompt "Build the login page"
-```
-
-This starts a [session](/docs/work/sessions). The agent works in its own
-sandbox, on its own branch, so your project is not touched yet.
-
-Attach to the session to watch progress and reply:
+</Tab>
+<Tab title="Existing project">
 
 ```sh
-kortix sessions chat
+kortix projects ls --all
+kortix projects clone <project_id> my-agent
+cd my-agent
 ```
-</Step>
 
-<Step title="Review and merge the change request">
-When the agent finishes, it opens a change request with a summary and
-the exact diff.
+`kortix projects clone` clones the repository through Kortix with your Kortix login. The directory name defaults to the project ID, so pass a name. Inside the clone, the CLI writes `.kortix/link.json` and installs a credential helper. Plain `git pull` then works. `git push` and `kortix ship` need `project.gitops.push`, which the project **Manager** role holds. A **Member** can clone and pull only.
+
+To start a session, a Member also needs an agent grant. A manager runs `kortix access grant --user <your-email> --agent kortix`, or `--everyone --agent kortix` for every project member. The first grant on an agent closes it to everyone the grants do not name, managers included. See [Accounts & access](/docs/accounts#project-access).
+
+Run the next commands from inside the clone. Outside it, commands use your default project, which can be a different one.
+
+</Tab>
+<Tab title="Web app">
+
+Open **Create a project** in the web app (`/new`). Pick the **Account**, type a **Project name**, and choose the repository under **Git account**:
+
+| Choice | Result |
+| --- | --- |
+| **Kortix managed** | Kortix creates and manages a private repository. |
+| A GitHub account, **Create a new repository** | Kortix creates a private repository in that GitHub account. |
+| A GitHub account, **Import an existing repository** | Kortix links a repository you already have. |
+
+Click **Create project**. To work on it from a terminal, run `kortix projects clone`.
+
+</Tab>
+</Tabs>
+
+The [Git](/docs/git) page covers cloning, pushing from any git client, and who can push.
+
+## Run a session
+
+A session is one unit of agent work. It runs in its own sandbox, on its own branch.
 
 ```sh
-kortix cr ls
+kortix sessions new --prompt "Add a skill that drafts the weekly status report"
 ```
 
-This lists the open CRs in your project. Review the one the agent opened, then
-merge it to land the work on your default branch:
+In the web app, type the prompt on the project page.
+
+The session runs the project's default agent. `--agent <name>` and `--model <id>` override them. On an interactive terminal, the CLI asks whether to attach the OpenCode TUI. `--connect` attaches without asking.
+
+| Task | Command |
+| --- | --- |
+| Talk to the agent | `kortix chat` (picks your most recent running session) |
+| Send one prompt | `kortix chat <session_id> --prompt "…"` |
+| Attach the OpenCode TUI (OpenCode sessions) | `kortix connect <session_id>` |
+| Open the Kortix terminal app | `kortix tui` |
+| List sessions | `kortix sessions ls` |
+
+The platform default model runs on every plan. To use your own provider keys, see [Models](/docs/project/models). Everything else about sessions is on [Sessions](/docs/work/sessions).
+
+## Review and merge
+
+A change request proposes to merge the session branch into the project's default branch (`main` in a new project). The agent opens it with `kortix cr open`, because the `kortix-system` skill that Kortix adds to every session tells it to. The platform does not open one by itself. If the agent did not open one, ask it to, or open it yourself:
 
 ```sh
-kortix cr merge 1
+kortix cr open --head <session_id> --session <session_id> --title "Weekly status report skill"
 ```
 
-Replace `1` with the CR number from `kortix cr ls`. Nothing reaches your
-project's default branch until you merge.
-</Step>
+Then review and merge:
 
-</Steps>
+```sh
+kortix cr ls          # open change requests
+kortix cr diff 1      # the unified diff
+kortix cr merge 1     # merge into the base branch
+git pull              # bring the merged work into your clone
+```
+
+`1` is the change request number from `kortix cr ls`. To send the work back instead, run `kortix cr request-changes 1 --message "…"`. The note goes to the change request's session and wakes it if it sleeps. In the web app, use the project's **Review** page.
+
+An agent declared in `kortix.yaml` merges only when its `kortix_permissions` include `project.gitops.merge`. Otherwise the merge returns `403` with code `agent_scope_insufficient`. See [Agents that merge](/docs/git#agents-that-merge).
+
+The starter `kortix` agent has `kortix_permissions: all`, so the API lets it merge its own change request. The managed `kortix-system` skill tells it to stop after it opens one, so a person merges.
+
+## Check your setup
+
+```sh
+kortix doctor
+```
+
+`kortix doctor` checks your login and the project. Then it starts a throwaway session, waits up to 180 seconds for its sandbox to start (`--timeout <seconds>`), sends `ping`, waits for the agent's reply, and deletes the session (`--keep-session` keeps it). It exits `0` when every check passes and `1` when one fails. `--no-session` stops after the login and project checks.
 
 ## Next steps
 
 <CardGroup>
-  <Card icon="route" title="How the pieces fit" href="/docs/work">
-    Projects, sessions, and change requests, explained.
-  </Card>
-  <Card icon="terminal" title="CLI command reference" href="/docs/cli">
-    Every command, flag, and subcommand.
-  </Card>
-  <Card icon="terminal" title="The CLI dev loop" href="/docs/cli">
-    Link a repo, ship code, and manage sessions from your terminal.
-  </Card>
+  <Card icon="git-branch" title="Git" href="/docs/git">Clone, push, session branches and change requests.</Card>
+  <Card icon="bot" title="Agents & permissions" href="/docs/project/agents">Write agents and decide what each one may do.</Card>
+  <Card icon="plug" title="Connectors" href="/docs/connect/connectors">Give agents governed access to apps, APIs and MCP servers.</Card>
+  <Card icon="clock" title="Triggers & reminders" href="/docs/connect/triggers">Start sessions on a schedule, a webhook or an app event.</Card>
 </CardGroup>

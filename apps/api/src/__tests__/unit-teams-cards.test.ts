@@ -91,6 +91,14 @@ describe('buildFinalCard', () => {
     expect(lines).toContain('It broke.');
     expect(lines.some((t) => t.includes('https://app/session'))).toBe(true);
   });
+
+  test('no title, no header: a finished card opens with its steps, or with the answer', () => {
+    const withSteps = buildFinalCard({ steps: [step({ status: 'complete', title: 'Read the logs' })], body: 'Done.' });
+    expect(texts(withSteps)[0]).toBe('✓ Read the logs');
+    const bare = buildFinalCard({ steps: [], body: 'Done.' });
+    expect(texts(bare)).toEqual(['Done.']);
+    expect((bare.body as Array<{ spacing?: string }>)[0]!.spacing).toBeUndefined();
+  });
 });
 
 describe('buildAnswerCard', () => {
@@ -106,7 +114,7 @@ describe('buildAnswerCard', () => {
     const body = `Gmail is not connected yet.\n\n[Connect Gmail](${connect})`;
     for (const card of [
       buildAnswerCard(body, 'https://app/s'),
-      buildFinalCard({ title: 'Task complete', steps: [step({ status: 'complete' })], body, sessionUrl: 'https://app/s' }),
+      buildFinalCard({ steps: [step({ status: 'complete' })], body, sessionUrl: 'https://app/s' }),
     ]) {
       const els = card.body as Array<{ type: string; text?: string; actions?: Array<Record<string, unknown>> }>;
       const row = els.findIndex((e) => e.type === 'ActionSet');
@@ -259,13 +267,14 @@ describe('Slack parity cards', () => {
   test('an approval outcome names who decided', () => {
     expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'approve', note: '', decidedBy: 'Alex Example' }))).toContain('by Alex Example');
     expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'deny', note: '' }))).not.toContain('by ');
+    expect(texts(buildTeamsApprovalOutcomeCard({ actionPath: 'gmail.send', decision: 'expired', note: '' }))).toContain('This approval expired.');
   });
 
   test('an agent-built card keeps the run\'s steps above it', () => {
     const custom = { type: 'AdaptiveCard', version: '1.5', body: [{ type: 'TextBlock', text: 'Custom body' }] };
-    const withPlan = buildAnswerCard('', 'https://app/s', custom, { title: 'Task complete', steps: [step({ status: 'complete', title: 'Read the logs' })] });
+    const withPlan = buildAnswerCard('', 'https://app/s', custom, { steps: [step({ status: 'complete', title: 'Read the logs' })] });
     const lines = texts(withPlan);
-    expect(lines[0]).toBe('Task complete');
+    expect(lines[0]).toBe('✓ Read the logs');
     expect(lines.findIndex((t) => t.includes('Read the logs'))).toBeLessThan(lines.indexOf('Custom body'));
     expect((withPlan.body as Array<Record<string, unknown>>).find((e) => e.text === 'Custom body')).toMatchObject({ separator: true });
     // No live card, no steps: the custom card is used as sent.

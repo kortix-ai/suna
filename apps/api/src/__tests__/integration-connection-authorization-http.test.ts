@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import {
   accountMembers,
   accounts,
+  connectionCredentials,
   connectorConnections,
   connectors,
   iamPolicies,
@@ -36,6 +37,7 @@ import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
 import { createServiceAccount } from '../repositories/service-accounts';
 import { mintSetupLink } from '../setup-links/token';
+import { encryptProjectSecret } from '../projects/secrets';
 import { db } from '../shared/db';
 import {
   publicShareToken,
@@ -145,14 +147,16 @@ beforeAll(async () => {
     name: 'Connection owner HTTP test',
     scopeType: 'project',
   });
-  await db.insert(iamRoleActions).values(
-    [
-      PROJECT_ACTIONS.PROJECT_READ,
-      PROJECT_ACTIONS.PROJECT_SESSION_START,
-      PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
-      PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
-    ].map((action) => ({ roleId: serviceAccountRoleId, action })),
-  );
+  await db
+    .insert(iamRoleActions)
+    .values(
+      [
+        PROJECT_ACTIONS.PROJECT_READ,
+        PROJECT_ACTIONS.PROJECT_SESSION_START,
+        PROJECT_ACTIONS.PROJECT_SESSION_BINDINGS_WRITE,
+        PROJECT_ACTIONS.PROJECT_CONNECTOR_CONNECTIONS_MANAGE,
+      ].map((action) => ({ roleId: serviceAccountRoleId, action })),
+    );
   await insertIntoView(db, iamPolicies, {
     accountId: ACCOUNT,
     principalType: 'token',
@@ -307,9 +311,7 @@ afterAll(async () => {
     await db.execute(sql`delete from kortix.account_tokens where token_id = ${tokenId}`);
   }
   await db.delete(projectSessions).where(eq(projectSessions.projectId, PROJECT));
-  await db
-    .delete(connectorConnections)
-    .where(eq(connectorConnections.projectId, PROJECT));
+  await db.delete(connectorConnections).where(eq(connectorConnections.projectId, PROJECT));
   await db.delete(projects).where(eq(projects.projectId, PROJECT));
   await db.delete(accounts).where(eq(accounts.accountId, ACCOUNT));
   if (previousGitCacheDir === undefined) delete process.env.KORTIX_GIT_CACHE_DIR;
@@ -342,11 +344,7 @@ function request(method: string, path: string, token: string, body?: unknown) {
 
 describe('connection owner authorization over HTTP', () => {
   test('members list every shared connection plus only their own personal connection', async () => {
-    const response = await request(
-      'GET',
-      `/v1/projects/${PROJECT}/connections`,
-      await mint(ALICE),
-    );
+    const response = await request('GET', `/v1/projects/${PROJECT}/connections`, await mint(ALICE));
     expect(response.status).toBe(200);
     const ids = (
       (await response.json()) as { connections: Array<{ connection_id: string }> }
@@ -456,11 +454,7 @@ describe('connection owner authorization over HTTP', () => {
   });
 
   test('service accounts cannot list or mutate pre-existing service-account-owned member rows', async () => {
-    const listed = await request(
-      'GET',
-      `/v1/projects/${PROJECT}/connections`,
-      serviceAccountToken,
-    );
+    const listed = await request('GET', `/v1/projects/${PROJECT}/connections`, serviceAccountToken);
     expect(listed.status).toBe(200);
     const ids = (
       (await listed.json()) as { connections: Array<{ connection_id: string }> }
@@ -579,12 +573,10 @@ describe('connection owner authorization over HTTP', () => {
   // strategy that used to refuse this is retired (connection-access.ts).
   test('a member can hold their own private connection on a connector that also has a shared one', async () => {
     const token = await mint(MANAGER);
-    const self = await request(
-      'POST',
-      `/v1/projects/${PROJECT}/connections/me`,
-      token,
-      { connector_alias: 'customer_data', label: 'Manager private authorization' },
-    );
+    const self = await request('POST', `/v1/projects/${PROJECT}/connections/me`, token, {
+      connector_alias: 'customer_data',
+      label: 'Manager private authorization',
+    });
     expect(self.status).toBe(201);
     expect(await self.json()).toMatchObject({
       connector_alias: 'customer_data',
@@ -592,17 +584,12 @@ describe('connection owner authorization over HTTP', () => {
       owner_id: MANAGER,
     });
 
-    const managed = await request(
-      'POST',
-      `/v1/projects/${PROJECT}/connections`,
-      token,
-      {
-        connector_alias: 'customer_data',
-        owner_type: 'member',
-        owner_id: MANAGER,
-        label: 'Manager private authorization, take two',
-      },
-    );
+    const managed = await request('POST', `/v1/projects/${PROJECT}/connections`, token, {
+      connector_alias: 'customer_data',
+      owner_type: 'member',
+      owner_id: MANAGER,
+      label: 'Manager private authorization, take two',
+    });
     expect(managed.status).toBe(201);
     expect(await managed.json()).toMatchObject({ owner_type: 'member', owner_id: MANAGER });
   });
@@ -666,7 +653,7 @@ describe('connection owner authorization over HTTP', () => {
   // (db-deps.ts connectorConnect) only ever authorized the ONE shared project
   // account, so `owner: 'me'` (the default on both routes) is refused for it —
   // that has nothing to do with the retired strategy flag.
-  test('shared account-link routes work regardless of the connector\'s (retired) authorization strategy', async () => {
+  test("shared account-link routes work regardless of the connector's (retired) authorization strategy", async () => {
     const manager = await mint(MANAGER);
     const connectRequest = await request(
       'POST',
@@ -1032,7 +1019,9 @@ describe('connection owner authorization over HTTP', () => {
         {},
       );
       expect(started.status).toBe(200);
-      const url = new URL(((await started.json()) as { authorization_url: string }).authorization_url);
+      const url = new URL(
+        ((await started.json()) as { authorization_url: string }).authorization_url,
+      );
       const state = url.searchParams.get('state');
       if (!state) throw new Error('authorization state is missing');
       return createHash('sha256').update(state).digest('hex');
@@ -1508,7 +1497,26 @@ describe('sharing your own private account', () => {
     ).connections;
   };
   const share = (connectionId: string, token: string, principals: unknown) =>
-    request('POST', `/v1/projects/${PROJECT}/connections/${connectionId}/share`, token, { principals });
+    request('POST', `/v1/projects/${PROJECT}/connections/${connectionId}/share`, token, {
+      principals,
+    });
+
+  // The account list says whether each account is signed in, so the page can
+  // offer Connect on one that is not (an abandoned OAuth sign-in, say).
+  test('each account says whether it is signed in: false until it holds a credential', async () => {
+    const connectionId = await privateAccount(MANAGER, 'Manager unsigned');
+    const authorized = async () =>
+      ((await listFor(MANAGER)) as Array<{ connection_id: string; authorized?: boolean }>).find(
+        (c) => c.connection_id === connectionId,
+      )?.authorized;
+    expect(await authorized()).toBe(false);
+    await db.insert(connectionCredentials).values({
+      connectorId: CONNECTOR,
+      connectionId,
+      valueEnc: encryptProjectSecret(PROJECT, 'synthetic-token'),
+    });
+    expect(await authorized()).toBe(true);
+  });
 
   test('the owner, a connections manager, shares it with chosen people: it becomes a shared account narrowed to them', async () => {
     const connectionId = await privateAccount(MANAGER, 'Manager inbox', true);
@@ -1524,8 +1532,14 @@ describe('sharing your own private account', () => {
       label: 'Manager inbox',
       is_default: false,
     });
-    expect(await ownerOf(connectionId)).toEqual({ ownerType: 'project', ownerId: null, isDefault: false });
-    expect((await grantsOn(connectionId)).map((g) => g.principal_id).sort()).toEqual([ALICE, MANAGER].sort());
+    expect(await ownerOf(connectionId)).toEqual({
+      ownerType: 'project',
+      ownerId: null,
+      isDefault: false,
+    });
+    expect((await grantsOn(connectionId)).map((g) => g.principal_id).sort()).toEqual(
+      [ALICE, MANAGER].sort(),
+    );
 
     // The audience is in force at once: Alice uses it, Bob never sees it.
     const alice = (await listFor(ALICE)).find((c) => c.connection_id === connectionId);
@@ -1550,7 +1564,9 @@ describe('sharing your own private account', () => {
 
   test('an owner without the connections-manage right → 403, no grant written, the account stays private', async () => {
     const connectionId = await privateAccount(BOB, 'Bob inbox');
-    const res = await share(connectionId, await mint(BOB), [{ principal_type: 'user', principal_id: ALICE }]);
+    const res = await share(connectionId, await mint(BOB), [
+      { principal_type: 'user', principal_id: ALICE },
+    ]);
     expect(res.status).toBe(403);
     expect(await ownerOf(connectionId)).toMatchObject({ ownerType: 'member', ownerId: BOB });
     expect(await grantsOn(connectionId)).toEqual([]);
@@ -1561,18 +1577,30 @@ describe('sharing your own private account', () => {
     expect(res.status).toBe(409);
   });
 
-  test('a shared account of the same name → 409 before any grant is written', async () => {
+  // Sharing never asks for a rename: a name a shared account already uses gets
+  // the next free one, the way Add account names a second account.
+  test('a shared account of the same name → shared under the next free name', async () => {
     const connectionId = await privateAccount(MANAGER, 'project DEFAULT');
-    const res = await share(connectionId, await mint(MANAGER), [{ principal_type: 'user', principal_id: ALICE }]);
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: string }).error).toContain('project DEFAULT');
-    expect(await ownerOf(connectionId)).toMatchObject({ ownerType: 'member', ownerId: MANAGER });
-    expect(await grantsOn(connectionId)).toEqual([]);
+    const res = await share(connectionId, await mint(MANAGER), [
+      { principal_type: 'user', principal_id: ALICE },
+    ]);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      connection_id: connectionId,
+      owner_type: 'project',
+      label: 'project DEFAULT 2',
+    });
+    expect(await ownerOf(connectionId)).toMatchObject({ ownerType: 'project', ownerId: null });
+    expect((await grantsOn(connectionId)).map((g) => g.principal_id)).toEqual([ALICE]);
   });
 
   test('a malformed audience → 400 before anything is written', async () => {
     const connectionId = await privateAccount(MANAGER, 'Manager drive');
-    for (const principals of [undefined, 'everyone', [{ principal_type: 'robot', principal_id: ALICE }]]) {
+    for (const principals of [
+      undefined,
+      'everyone',
+      [{ principal_type: 'robot', principal_id: ALICE }],
+    ]) {
       const res = await request(
         'POST',
         `/v1/projects/${PROJECT}/connections/${connectionId}/share`,

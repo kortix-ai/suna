@@ -15,9 +15,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@kortix/ui/tooltip';
 import { AuthProvider } from '@/features/providers/auth-provider';
-import { ComposerCard } from './ComposerCard';
+import { ComposerCard } from '@kortix/ui/composer';
 
 const noop = () => {};
 const asyncNoop = async () => {};
@@ -57,6 +57,8 @@ function render(props?: {
               promptAttachmentItems={[] as never}
               removeAttachedFile={noop}
               retryAttachedFile={noop}
+              pastes={[]}
+              removePaste={noop}
               commandAttachmentPlan={
                 (props?.commandAttachmentPlan ?? { kind: 'carry', command: null }) as never
               }
@@ -79,6 +81,8 @@ function render(props?: {
               handleAttachClick={noop}
               primaryAgents={[] as never}
               availableSelectedModel={null}
+              agentMenuOpen={false}
+              setAgentMenuOpen={noop}
               modelMenuOpen={false}
               setModelMenuOpen={noop}
               reasoningMenuOpen={false}

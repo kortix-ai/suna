@@ -30,40 +30,6 @@ function isSnapshotStillBuilding(error: unknown): boolean {
   return (error as Error | null)?.name?.startsWith('Daytona') === true && /snapshot .+ is building/i.test(errorMessage(error));
 }
 
-export function deriveSandboxInitStatus(
-  lifecycleStatus: string | null | undefined,
-  metadata: Record<string, unknown> | null | undefined,
-): SandboxInitStatus {
-  const raw = metadata?.initStatus;
-  if (raw === 'pending' || raw === 'provisioning' || raw === 'retrying' || raw === 'ready' || raw === 'failed') {
-    return raw;
-  }
-  switch (lifecycleStatus) {
-    case 'active':
-    case 'stopped':
-    case 'archived':
-      return 'ready';
-    case 'provisioning':
-      return 'provisioning';
-    case 'error':
-      return 'failed';
-    default:
-      return 'pending';
-  }
-}
-
-export function deriveSandboxHealthStatus(
-  lifecycleStatus: string | null | undefined,
-  metadata: Record<string, unknown> | null | undefined,
-): SandboxHealthStatus {
-  const raw = metadata?.healthStatus;
-  if (raw === 'healthy' || raw === 'degraded' || raw === 'offline' || raw === 'unknown') {
-    return raw;
-  }
-  if (lifecycleStatus === 'stopped' || lifecycleStatus === 'archived') return 'offline';
-  return 'unknown';
-}
-
 /** The failure keys every builder below drops before it writes its own. */
 const SANDBOX_INIT_FAILURE_KEYS = [
   'provisioningError',
@@ -236,8 +202,9 @@ export async function retrySandboxProvisionCreate(
       const willRetry = attempt < maxAttempts;
       await hooks.onAttemptFailure?.(attempt, error, willRetry, maxAttempts);
       if (!willRetry) throw error;
-      // Snapshot-building keeps its separate long polling window. Deterministic
-      // provider capacity is terminal and never reaches this delay branch.
+      // Snapshot-building keeps its separate long polling window. Capacity
+      // fails this create fast and never reaches this delay branch: the
+      // session's next `/start` re-attempts it with backoff.
       const delay = snapshotStillBuilding
         ? SNAPSHOT_BUILDING_RETRY_DELAY_MS
         : exponentialBackoffMs({ attempt, baseMs: RETRY_DELAY_BASE_MS, capMs: RETRY_DELAY_MAX_MS });

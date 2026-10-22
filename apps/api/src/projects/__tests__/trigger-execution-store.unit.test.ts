@@ -1,4 +1,5 @@
-// markTriggerExecutionFailed() — `terminal` override for PERMANENT rejections.
+// markTriggerExecutionFailed() — `terminal` override for PERMANENT rejections;
+// claimTriggerExecutions() — an abandoned final attempt alerts (KRTX-1742).
 //
 // The prod gap this closes (incident-20260907T005210Z-monitors): a trigger fire
 // rejected by the billing gate ("team wallet is out of credits") went through
@@ -17,6 +18,9 @@ import { projectTriggerExecutions } from '@kortix/db';
 import type { TriggerExecutionRow } from '../trigger-execution-store';
 
 let updateCalls: Array<{ table: unknown; updates: Record<string, unknown> }> = [];
+/** What the next `.returning()` of an UPDATE yields: the rows Postgres changed. */
+let updatedRows: Array<Record<string, unknown>> = [];
+let raised: Array<Record<string, unknown>> = [];
 
 mock.module('../../shared/db', () => ({
   db: {
@@ -24,14 +28,30 @@ mock.module('../../shared/db', () => ({
       set: (updates: Record<string, unknown>) => ({
         where: () => {
           updateCalls.push({ table, updates });
-          return { then: (resolve: (v: unknown) => void) => resolve(undefined) };
+          return {
+            then: (resolve: (v: unknown) => void) => resolve(undefined),
+            returning: async () => updatedRows,
+          };
         },
       }),
+    }),
+    // The claim's candidate read: nothing else is due.
+    select: () => ({
+      from: () => ({ where: () => ({ orderBy: () => ({ limit: async () => [] }) }) }),
     }),
   },
 }));
 
-const { markTriggerExecutionFailed } = await import('../trigger-execution-store');
+const realTriggerAlerts = await import('../lib/trigger-alerts');
+mock.module('../lib/trigger-alerts', () => ({
+  ...realTriggerAlerts,
+  raiseTriggerAlert: async (input: Record<string, unknown>) => {
+    raised.push(input);
+    return true;
+  },
+}));
+
+const { claimTriggerExecutions, markTriggerExecutionFailed } = await import('../trigger-execution-store');
 
 const baseRow = (overrides: Record<string, unknown> = {}) =>
   ({
@@ -47,6 +67,8 @@ const baseRow = (overrides: Record<string, unknown> = {}) =>
 
 beforeEach(() => {
   updateCalls = [];
+  updatedRows = [];
+  raised = [];
 });
 
 describe('markTriggerExecutionFailed — terminal override', () => {
@@ -87,5 +109,28 @@ describe('markTriggerExecutionFailed — terminal override', () => {
 
     expect(result).toBe('dead_lettered');
     expect(updateCalls[0]!.updates.status).toBe('dead_lettered');
+  });
+});
+
+describe('claimTriggerExecutions — an abandoned final attempt', () => {
+  test('dead-letters each row whose last lease expired and raises one fire alert per row', async () => {
+    updatedRows = [
+      { projectId: 'proj-1', slug: 'nightly' },
+      { projectId: 'proj-2', slug: 'hourly' },
+    ];
+    const claimed = await claimTriggerExecutions({ now: new Date('2026-09-05T12:40:00.000Z'), workerId: 'w-1', limit: 10 });
+
+    expect(claimed).toEqual([]);
+    expect(updateCalls[0]!.updates.status).toBe('dead_lettered');
+    const error = 'execution lease expired after the maximum number of attempts';
+    expect(raised).toEqual([
+      { projectId: 'proj-1', slug: 'nightly', source: 'fire', error },
+      { projectId: 'proj-2', slug: 'hourly', source: 'fire', error },
+    ]);
+  });
+
+  test('raises nothing when no lease expired', async () => {
+    await claimTriggerExecutions({ now: new Date('2026-09-05T12:40:00.000Z'), workerId: 'w-1', limit: 10 });
+    expect(raised).toEqual([]);
   });
 });

@@ -98,6 +98,32 @@ Lesser, non-DB couplings (rare long tail): forward-written persisted state old c
 can't parse (queue/cache formats), or external contract changes (Stripe API
 version, webhook shapes).
 
+### Kortix Apps: static hosting and retention do not roll back
+
+Two Apps changes ship in one release and survive a code rollback:
+
+1. **Static Apps go offline on an older api.** A static App is served by the api
+   from storage (`apps/api/src/apps/static-site.ts`) and has no `app_runtimes`
+   row. An api that predates that file requires a runtime, so every static App
+   answers with a status page until the next promote. `rollback-prod.yml`
+   refuses such an api target unless `static_apps_ack` is exactly
+   `STATIC APPS OFFLINE`. Rolling only `gateway,frontend` is not affected.
+2. **Retired deployments stay retired.** The first maintenance pass after the
+   release retires every ready deployment beyond the active one and the newest
+   `KORTIX_APPS_RETAINED_DEPLOYMENTS` (default 5), 50 Apps per pass. It tears
+   down their runtimes and images; `reclaimAppArtifacts` deletes their archives
+   24 h later. A rollback cannot bring them back. Before the first release,
+   count what it will retire:
+
+   ```sql
+   select app_id, count(*) - 6 as retired
+   from kortix.app_deployments where status = 'ready'
+   group by 1 having count(*) > 6;
+   ```
+
+   To defer it, set `KORTIX_APPS_RETAINED_DEPLOYMENTS` high on prod for that
+   release and lower it on the next one.
+
 ## 5. Per-surface availability (the engine handles this)
 
 You can't roll a surface BELOW where it existed. The gateway only entered prod

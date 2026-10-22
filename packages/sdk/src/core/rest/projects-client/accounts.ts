@@ -164,6 +164,9 @@ export interface AccountInviteDescribeFull {
   expired: boolean;
   accepted_at: string | null;
   email_matches_caller: true;
+  /** Projects the invite grants on accept, named. Empty for a workspace
+   *  invite; absent from an older API. */
+  projects?: Array<{ project_id: string; name: string; role: string }>;
 }
 
 export interface AccountInviteDescribeRedacted {
@@ -171,6 +174,18 @@ export interface AccountInviteDescribeRedacted {
   expired: boolean;
   accepted_at: string | null;
   email_matches_caller: false;
+  /** Why the invite is not the caller's; absent from an older API. The same
+   *  codes a refused accept or decline returns as `code`:
+   *  - `email_unconfirmed`: the caller holds the address, but the instance
+   *    cannot prove it (a self-host with no email). The person signs in through
+   *    `sso_provider_id`, or an account admin resends the invite.
+   *  - `sso_email_domain_unverified`: an SSO login whose IdP did not verify the
+   *    address's domain. The person signs in with the email address instead.
+   *  - `wrong_account`: the invite names another address. */
+  reason?: 'email_unconfirmed' | 'sso_email_domain_unverified' | 'wrong_account';
+  /** With `email_unconfirmed`: the Supabase SSO provider of the invite's
+   *  account, for `signInWithSSO({ providerId })`. Null when it has none. */
+  sso_provider_id?: string | null;
   account_id?: null;
   account_name?: null;
   email?: null;
@@ -328,11 +343,51 @@ export async function describeAccountInvite(inviteId: string) {
 
 export async function acceptAccountInvite(inviteId: string) {
   return unwrap(
-    await backendApi.post<{ account_id: string; account_role: AccountRole }>(
+    await backendApi.post<{
+      account_id: string;
+      account_role: AccountRole;
+      already_accepted?: boolean;
+      /** The projects the invite granted, in order: where to land (KRTX-1731). */
+      bootstrap_grants_applied?: Array<{ project_id: string; role: string }>;
+    }>(
       `/account-invites/${inviteId}/accept`,
       {},
     ),
   );
+}
+
+/** Where an accepted invite lands: a project, or the account joined. */
+export type AccountInviteLanding =
+  | { kind: 'project'; projectId: string; accountId: string }
+  | { kind: 'account'; accountId: string };
+
+/**
+ * Where an accepted invite lands (KRTX-1731): the first project the accept
+ * granted; else the first project the invite names (an admin invite, whose
+ * grants the API skips, or an invite accepted before); else the account
+ * joined. Every host reads this one rule and maps it to its own route.
+ */
+export function accountInviteLanding(
+  accepted: { account_id: string; bootstrap_grants_applied?: ReadonlyArray<{ project_id: string }> },
+  invite?: { projects?: ReadonlyArray<{ project_id: string }> } | null,
+): AccountInviteLanding {
+  const project = accepted.bootstrap_grants_applied?.[0] ?? invite?.projects?.[0];
+  return project
+    ? { kind: 'project', projectId: project.project_id, accountId: accepted.account_id }
+    : { kind: 'account', accountId: accepted.account_id };
+}
+
+/**
+ * `acceptAccountInvite`, then `accountInviteLanding`. Pass the invite the
+ * host already read (`describeAccountInvite` or `listMyAccountInvites`) so an
+ * accept that grants nothing still lands in the project the invite names.
+ */
+export async function acceptAccountInviteAndLand(
+  inviteId: string,
+  invite?: { projects?: ReadonlyArray<{ project_id: string }> } | null,
+) {
+  const accepted = await acceptAccountInvite(inviteId);
+  return { accepted, landing: accountInviteLanding(accepted, invite) };
 }
 
 export async function declineAccountInvite(inviteId: string) {

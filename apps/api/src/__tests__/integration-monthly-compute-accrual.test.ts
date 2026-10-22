@@ -1,16 +1,13 @@
 /**
- * CHARACTERIZATION: the monthly unbilled-compute accrual, for BOTH readers.
+ * CHARACTERIZATION: the monthly unbilled-compute accrual.
  *
- * `monitorMonthlyComputeCost` (projects/lib/monitor-box.ts) and
- * `appMonthlyComputeCost` (apps/budget.ts) hand-encode the same select list
- * and the same accrual loop — monitor-box's doc comment admits the mirror.
- * The dedupe keeps one copy. These pins hold the observable contract of both
- * functions against a real database: recorded cost sums, an open window
+ * `monitorMonthlyComputeCost` (projects/lib/monitor-box.ts) against a real
+ * database: recorded cost sums, an open window
  * accrues the seconds since its last bill, a closed row contributes its
  * recorded cost only, a zero-cost open row contributes nothing, and a row
  * that started last month sits outside the month bucket.
  *
- * Real: the compute-session rows and both joins. Faked: only the cost
+ * Real: the compute-session rows and the monitor join. Faked: only the cost
  * function — 1 USD per unbilled second, so the accrual is directly readable
  * in the total.
  */
@@ -41,7 +38,6 @@ mock.module('../billing/services/compute-metering', () => ({
 }));
 
 const { monitorMonthlyComputeCost } = await import('../projects/lib/monitor-box');
-const { appMonthlyComputeCost } = await import('../apps/budget');
 const NOW = new Date('2026-09-15T12:00:00.000Z');
 /** One of this month's sessions, in the per-spec shape the meter bills. */
 const SPEC = { cpuCores: 1, memoryGb: 2, diskGb: 10, gpuCount: 0 };
@@ -203,13 +199,6 @@ describe('the monthly unbilled-compute accrual', () => {
     // billed-an-hour-ago box, 0 for the just-billed zero-cost row. The closed
     // and prior-month rows never reach the meter.
     expect([...unbilledSeconds].sort((a, b) => a - b)).toEqual([0, 3600]);
-  });
-
-  test('appMonthlyComputeCost: same accrual over the app join', async () => {
-    unbilledSeconds.length = 0;
-    expect(await appMonthlyComputeCost(appId, NOW)).toBe(1803.75);
-    // The closed row contributes its recorded cost only: one accrual call.
-    expect(unbilledSeconds).toEqual([1800]);
   });
 
   test('each scope reads only its own rows', async () => {

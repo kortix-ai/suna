@@ -1,11 +1,21 @@
+import { describe, expect, test } from 'bun:test';
 import { getSchema } from '@tiptap/core';
 import Document from '@tiptap/extension-document';
 import Paragraph from '@tiptap/extension-paragraph';
 import Text from '@tiptap/extension-text';
 import { Node as PMNode } from '@tiptap/pm/model';
-import { describe, expect, test } from 'bun:test';
+import { createTranslator } from 'next-intl';
 
 import { testUiTranslator } from '@/i18n/test-translator';
+import de from '../../../../translations/de.json';
+import en from '../../../../translations/en.json';
+import es from '../../../../translations/es.json';
+import fr from '../../../../translations/fr.json';
+import it from '../../../../translations/it.json';
+import ja from '../../../../translations/ja.json';
+import pt from '../../../../translations/pt.json';
+import sr from '../../../../translations/sr.json';
+import zh from '../../../../translations/zh.json';
 import {
   COMMAND_CHIP_ATTRIBUTE,
   COMMAND_CHIP_LABEL_ATTRIBUTE,
@@ -13,9 +23,10 @@ import {
   COMMAND_CHIP_VALUE,
   draftWillRunCommand,
   planCommandAttachments,
+  planUnresolvedCommandChip,
   readCommandChipLabel,
-} from './command-attachments';
-import { MentionNode } from './editor/mention-node';
+  MentionNode,
+} from '@kortix/ui/composer';
 
 describe('planCommandAttachments', () => {
   test('a command with no attachments dispatches', () => {
@@ -74,6 +85,62 @@ describe('planCommandAttachments', () => {
     expect(
       planCommandAttachments({ isCommand: true, attachmentCount: -1 }, testUiTranslator).kind,
     ).toBe('dispatch');
+  });
+});
+
+describe('planCommandAttachments — the refuse copy is translated', () => {
+  const enSingularDescription =
+    '1 file stays attached. Remove it to run the command, or remove the command to send the file as a message.';
+  const enPluralDescription =
+    '3 files stay attached. Remove them to run the command, or remove the command to send them as a message.';
+
+  test('a German session reads the refusal in German, not the hardcoded English', () => {
+    // The message already comes from the catalog; the description beside it
+    // must too. This pins the exact defect the i18n review caught: a de
+    // session saw the English description under a German headline.
+    const t = createTranslator({
+      locale: 'de',
+      messages: de,
+      namespace: 'hardcodedUi.i18nComplete',
+      onError: (error) => {
+        throw new Error(`de: ${error.message}`);
+      },
+    });
+    const singular = planCommandAttachments({ isCommand: true, attachmentCount: 1 }, t);
+    if (singular.kind !== 'refuse') throw new Error('expected a refusal');
+    expect(singular.message).toBe(de.hardcodedUi.i18nComplete.text01ec8eaf8ffa);
+    expect(singular.description).not.toBe(enSingularDescription);
+    const plural = planCommandAttachments({ isCommand: true, attachmentCount: 3 }, t);
+    if (plural.kind !== 'refuse') throw new Error('expected a refusal');
+    expect(plural.description).not.toBe(enPluralDescription);
+  });
+
+  test('every locale reads both refusal descriptions from its catalog', () => {
+    const locales = { de, en, es, fr, it, ja, pt, sr, zh };
+    for (const [locale, messages] of Object.entries(locales)) {
+      const t = createTranslator({
+        locale,
+        messages: messages as typeof en,
+        namespace: 'hardcodedUi.i18nComplete',
+        onError: (error) => {
+          throw new Error(`${locale}: ${error.message}`);
+        },
+      });
+      const singular = planCommandAttachments({ isCommand: true, attachmentCount: 1 }, t);
+      if (singular.kind !== 'refuse') throw new Error('expected a refusal');
+      expect(singular.description).toContain('1');
+      const plural = planCommandAttachments({ isCommand: true, attachmentCount: 3 }, t);
+      if (plural.kind !== 'refuse') throw new Error('expected a refusal');
+      expect(plural.description).toContain('3');
+      if (locale === 'en') {
+        // Byte-identity: the English copy must not drift when it gains keys.
+        expect(singular.description).toBe(enSingularDescription);
+        expect(plural.description).toBe(enPluralDescription);
+      } else {
+        expect(singular.description).not.toBe(enSingularDescription);
+        expect(plural.description).not.toBe(enPluralDescription);
+      }
+    }
   });
 });
 
@@ -180,5 +247,90 @@ describe('COMMAND_CHIP_SELECTOR', () => {
     // `draftWillRunCommand` resolves this string against the live command
     // list, exactly as `collectCommandName` -> `planDraftSubmission` does.
     expect(chipAttributes('command')[COMMAND_CHIP_LABEL_ATTRIBUTE]).toBe('webapp');
+  });
+});
+
+describe('planUnresolvedCommandChip', () => {
+  // The bypass this guard closes, reproduced on a booted local stack
+  // (2026-10-15, issue KRTX-1903): a command chip and an attachment staged,
+  // `commands` not yet resolved, Enter pressed in the editor. The plan
+  // degraded to a message (`/name args`), the refuse guard above never ran,
+  // and the prompt left with the attachment — composer emptied on the wire.
+  test('a chip with attachments is refused while the command list has never resolved', () => {
+    const plan = planUnresolvedCommandChip(
+      { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 1 },
+      testUiTranslator,
+    );
+    expect(plan.kind).toBe('refuse');
+  });
+
+  test('the refusal says nothing was sent and what stays', () => {
+    const plan = planUnresolvedCommandChip(
+      { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 2 },
+      testUiTranslator,
+    );
+    if (plan.kind !== 'refuse') throw new Error('expected a refusal');
+    expect(plan.message.toLowerCase()).toContain('loading');
+    expect(plan.description).toContain('Nothing was sent');
+  });
+
+  test('a resolved list keeps the deliberate dead-command fallback', () => {
+    // When the list HAS resolved and the command is genuinely gone, sending
+    // `/name args` as an ordinary message is the documented behavior — the
+    // failure degrades to plain text instead of discarding the draft.
+    expect(
+      planUnresolvedCommandChip(
+        { commandName: 'deleted-command', commandsResolved: true, attachmentCount: 1 },
+        testUiTranslator,
+      ).kind,
+    ).toBe('dispatch');
+  });
+
+  test('a chip without attachments still rides the fallback — the guard is attachments-only', () => {
+    // Without files there is nothing the refusal protects: the plain-text
+    // fallback is visible, recoverable, and the composer's documented miss
+    // behavior regardless of list state.
+    expect(
+      planUnresolvedCommandChip(
+        { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 0 },
+        testUiTranslator,
+      ).kind,
+    ).toBe('dispatch');
+  });
+
+  test('a draft with no chip never refuses — a loading list must not block plain messages', () => {
+    expect(
+      planUnresolvedCommandChip(
+        { commandName: undefined, commandsResolved: false, attachmentCount: 3 },
+        testUiTranslator,
+      ).kind,
+    ).toBe('dispatch');
+  });
+
+  test('every locale reads the refusal from its catalog', () => {
+    const locales = { de, en, es, fr, it, ja, pt, sr, zh };
+    const enDescription = planUnresolvedCommandChip(
+      { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 1 },
+      testUiTranslator,
+    );
+    if (enDescription.kind !== 'refuse') throw new Error('expected a refusal');
+    for (const [locale, messages] of Object.entries(locales)) {
+      const t = createTranslator({
+        locale,
+        messages: messages as typeof en,
+        namespace: 'hardcodedUi.i18nComplete',
+        onError: (error) => {
+          throw new Error(`${locale}: ${error.message}`);
+        },
+      });
+      const plan = planUnresolvedCommandChip(
+        { commandName: 'customize-opencode', commandsResolved: false, attachmentCount: 1 },
+        t,
+      );
+      if (plan.kind !== 'refuse') throw new Error(`expected a refusal for ${locale}`);
+      if (locale !== 'en') {
+        expect(plan.description).not.toBe(enDescription.description);
+      }
+    }
   });
 });

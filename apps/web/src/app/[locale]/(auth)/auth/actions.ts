@@ -1,5 +1,10 @@
 'use server';
 
+import {
+  AUTH_TIMEOUT_AUTH_ERROR,
+  AUTH_UPSTREAM_TIMEOUT_MS,
+  settleWithin,
+} from '@/lib/auth/submit-auth';
 import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import {
   resolveNewAccountReturnUrl,
@@ -14,12 +19,13 @@ import {
   authRateLimitCopy,
   resolveEmailFlowMode,
 } from '@/lib/auth/unified-auth-flow';
-import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@/lib/onboarding/landing-destination';
+import { AUTH_BOUNCE_COOKIE, parseAuthBounceOwner } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { createClient } from '@/lib/supabase/server';
 import { checkAccessEmail, submitAccessRequest } from '@kortix/sdk';
 import { getTranslations } from '@/i18n/get-translations';
 import type { UiTranslator } from '@/i18n/translator';
+import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { cookies, headers } from 'next/headers';
 
 /**
@@ -211,27 +217,62 @@ export async function sendEmailCode(prevState: any, formData: FormData) {
     mobileState,
   });
 
-  const { error } = await supabase.auth.signInWithOtp({
-    email: normalizedEmail,
-    options: {
-      emailRedirectTo,
-      shouldCreateUser: true,
-      data: referralCode
-        ? {
-            referral_code: referralCode.trim().toUpperCase(),
-          }
-        : undefined,
-    },
-  });
+  // Resolve presentation before the irreversible send; it must not turn a
+  // delivered email into a failed submit.
+  const successMessage = tI18nComplete.raw('textd7eb7cdcff7d');
+  const { error } = await settleWithin(
+    supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        emailRedirectTo,
+        shouldCreateUser: true,
+        data: referralCode
+          ? {
+              referral_code: referralCode.trim().toUpperCase(),
+            }
+          : undefined,
+      },
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (error) {
-    return authFailure(error, 'Could not send the link', tI18nComplete);
+    return {
+      ...authFailure(error, 'Could not send the link', tI18nComplete),
+      status: authRateLimitCopy(error, tI18nComplete) ? 429 : error.status === 503 ? 503 : 400,
+    };
+  }
+
+  // Hand the PKCE verifier to the browser in the RESULT, not only as a
+  // Set-Cookie header: on the prod edge deployment the action's cookie writes
+  // never reached the browser (a successful send left the jar empty —
+  // KRTX-2095), so the mailed link's exchange failed
+  // `pkce_code_verifier_not_found`. The page seeds the cookie from this value
+  // — the same pattern `signInWithPassword` already uses for the session
+  // tokens; no new exposure, `@supabase/ssr` stores the verifier
+  // non-httpOnly by design. The value is the ssr-encoded `base64-` payload
+  // under the fixed unchunked `-code-verifier` cookie; the page writes it
+  // back byte-identical.
+  let codeVerifier: string | null = null;
+  try {
+    codeVerifier =
+      (await cookies()).get(`${KORTIX_SUPABASE_AUTH_COOKIE}-code-verifier`)?.value ?? null;
+  } catch {
+    // The cookie is a fallback for PKCE, not evidence of email delivery.
+    console.warn('[auth] could not read email code verifier after successful send');
   }
 
   return {
     success: true,
-    message: tI18nComplete.raw('textd7eb7cdcff7d'),
+    message: successMessage,
     email: normalizedEmail,
+    redirectTo: returnUrl,
+    codeVerifier,
+    // Which email GoTrue just minted: a new address got the signup
+    // confirmation ("Confirm your email"), an existing one the sign-in link.
+    // The link step names the email the mailbox actually receives (KRTX-2195).
+    mode: flowMode,
   };
 }
 
@@ -264,7 +305,7 @@ export async function requestAccess(prevState: any, formData: FormData) {
   }
 }
 
-export async function forgotPassword(prevState: any, formData: FormData) {
+export async function forgotPassword(_prevState: unknown, formData: FormData) {
   const tI18nComplete = await getTranslations('hardcodedUi.i18nComplete');
   const email = formData.get('email') as string;
   const origin = formData.get('origin') as string;
@@ -275,12 +316,22 @@ export async function forgotPassword(prevState: any, formData: FormData) {
 
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${trustedWebOrigin(origin)}/auth/reset-password`,
-  });
+  const { error } = await settleWithin(
+    supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${trustedWebOrigin(origin)}/auth/reset-password`,
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (error) {
-    return authFailure(error, 'Could not send password reset email', tI18nComplete);
+    // Same contract as sendEmailCode: the route turns a rate-limited refusal
+    // into a 429 (with Retry-After) the browser can tell apart from success —
+    // a 200 body the page cannot distinguish is how KRTX-2049 went unnoticed.
+    return {
+      ...authFailure(error, 'Could not send password reset email', tI18nComplete),
+      status: authRateLimitCopy(error, tI18nComplete) ? 429 : error.status === 503 ? 503 : 400,
+    };
   }
 
   return {
@@ -345,10 +396,14 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
 
   const supabase = await createClient();
 
-  const { data, error } = await supabase.auth.signInWithPassword({
-    email: email.trim().toLowerCase(),
-    password,
-  });
+  const { data, error } = await settleWithin(
+    supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (error) {
     // Thread GoTrue's error code through so the flow — which already resolved
@@ -455,11 +510,15 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     mobileState,
   });
 
-  const { error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo },
-  });
+  const { error: signUpError } = await settleWithin(
+    supabase.auth.signUp({
+      email,
+      password,
+      options: { emailRedirectTo },
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   const alreadyExists =
     signUpError &&
@@ -471,10 +530,14 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     return authFailure(signUpError, 'Could not create account', tI18nComplete);
   }
 
-  const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  });
+  const { data: signInData, error: signInError } = await settleWithin(
+    supabase.auth.signInWithPassword({
+      email,
+      password,
+    }),
+    AUTH_UPSTREAM_TIMEOUT_MS,
+    () => ({ data: { user: null, session: null }, error: AUTH_TIMEOUT_AUTH_ERROR }),
+  );
 
   if (signInError) {
     if (authRateLimitCopy(signInError, tI18nComplete)) {

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { RegisteredFlow } from '../src/core/flow';
@@ -7,6 +8,7 @@ import {
   isPinnedToFirstShard,
   parseShardSpec,
   planShard,
+  SERIAL_WORKER_PENALTY,
 } from '../src/core/shard';
 
 function fakeFlow(
@@ -114,6 +116,16 @@ describe('planShard', () => {
     expect(loads[1]).toBe(600_000);
   });
 
+  it('charges a serial flow the API worker count the release gate runs', () => {
+    // KRTX-2667: the constant read 2 while the gate ran 4 workers.
+    const gate = readFileSync(resolve(import.meta.dirname, '../../.github/workflows/tests-release.yml'), 'utf8');
+    const workers = Number(/KE2E_API_WORKERS:\s*'(\d+)'/.exec(gate)?.[1]);
+    expect(workers).toBeGreaterThan(0);
+    expect(SERIAL_WORKER_PENALTY).toBe(workers);
+    const flows = [fakeFlow('S-1', { serial: true, timeoutMs: 60_000 }), fakeFlow('P-1')];
+    expect(planShard(flows, { current: 1, total: 2 }).loads[0]).toBe(60_000 * workers);
+  });
+
   it('degenerates to the whole suite at --shard 1/1', () => {
     const flows = [fakeFlow('A-1'), fakeFlow('B-1', { serial: true })];
     expect(planShard(flows, { current: 1, total: 1 }).ids).toEqual(['A-1', 'B-1']);
@@ -182,11 +194,15 @@ function shardTheRealRegistry(shards: number): RegistryShardReport {
   return JSON.parse(out.trim().split('\n').at(-1) as string) as RegistryShardReport;
 }
 
-/** The shard count `tests-release.yml` actually runs. Keep the two in step. */
-const RELEASE_GATE_API_SHARDS = 6;
+/**
+ * The widest split the planner is proven against. The release gate runs its
+ * `deployed` set in one job today (`tests-release.yml`), but `--api-shard`
+ * still partitions the whole registry for any caller that needs it.
+ */
+const WIDE_SHARDS = 6;
 
 describe('the real flow registry', () => {
-  const shardCounts = [2, 4, RELEASE_GATE_API_SHARDS];
+  const shardCounts = [2, 4, WIDE_SHARDS];
   const reports = new Map<number, RegistryShardReport>();
 
   beforeAll(() => {
@@ -194,7 +210,7 @@ describe('the real flow registry', () => {
   }, 180_000);
 
   it('discovers the whole suite', () => {
-    const report = reports.get(RELEASE_GATE_API_SHARDS)!;
+    const report = reports.get(WIDE_SHARDS)!;
     expect(report.total).toBeGreaterThan(400);
     expect(report.pinned.length).toBeGreaterThan(0);
   });
@@ -222,13 +238,13 @@ describe('the real flow registry', () => {
     });
   }
 
-  it(`splits the parallel flows evenly across shards 2-${RELEASE_GATE_API_SHARDS}`, () => {
+  it(`splits the parallel flows evenly across shards 2-${WIDE_SHARDS}`, () => {
     // The reason to shard at all. On run 32240074477 every 137-flow shard was
     // killed by its cap ~60% through; the packer must not leave one shard
     // carrying materially more than its peers.
-    const report = reports.get(RELEASE_GATE_API_SHARDS)!;
+    const report = reports.get(WIDE_SHARDS)!;
     const packed = report.perShard.slice(1);
-    expect(packed).toHaveLength(RELEASE_GATE_API_SHARDS - 1);
+    expect(packed).toHaveLength(WIDE_SHARDS - 1);
     expect(Math.max(...packed) - Math.min(...packed)).toBeLessThanOrEqual(10);
 
     const packedLoads = report.loadsMs.slice(1);
@@ -238,7 +254,7 @@ describe('the real flow registry', () => {
 
   it('cuts the per-shard parallel load by going from 4 shards to 6', () => {
     const four = Math.max(...reports.get(4)!.loadsMs.slice(1));
-    const six = Math.max(...reports.get(RELEASE_GATE_API_SHARDS)!.loadsMs.slice(1));
+    const six = Math.max(...reports.get(WIDE_SHARDS)!.loadsMs.slice(1));
     expect(six).toBeLessThan(four * 0.7);
   });
 });

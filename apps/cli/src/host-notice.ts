@@ -6,6 +6,7 @@ import {
   hasEnvTokenHost,
   type Host,
 } from './api/config.ts';
+import { sandboxEnvValue } from './api/sandbox-env.ts';
 import { cachedTokenIdentity } from './api/token-identity.ts';
 import { resolveProjectAuth } from './command-helpers.ts';
 import { loadLink } from './project-link.ts';
@@ -61,11 +62,14 @@ export function resolveHostNotice(hostArg?: string): HostNotice {
     };
   }
 
-  const { name, host } = activeHostEntry();
+  const { name, host, envWins } = activeHostEntry();
   return {
     name,
     url: host.url,
-    authState: hostAuthState(host, hasEnvTokenHost() ? 'env' : 'stored'),
+    // The auth state follows the actual winner: an in-sandbox `hosts use`
+    // (KRTX-1705) serves commands from the stored credential, so the notice
+    // must stop calling it a session/project token.
+    authState: hostAuthState(host, envWins ? 'env' : 'stored'),
     ...(tokenAgent(host) ? { agent: tokenAgent(host) } : {}),
   };
 }
@@ -125,11 +129,14 @@ function activeAccountLabel(): string | null {
 }
 
 /** Active project: the cwd's directory link wins over the global default. */
-function activeProjectLabel(): { label: string; source: 'linked' | 'default' } | null {
+function activeProjectLabel(): { label: string; source: 'linked' | 'default' | 'session' } | null {
   const link = loadLink();
   if (link?.project_id) {
     return { label: idPrefix(link.project_id), source: 'linked' };
   }
+  // A session box without the repository has no link file; its project is injected.
+  const envProjectId = sandboxEnvValue('KORTIX_PROJECT_ID');
+  if (envProjectId) return { label: idPrefix(envProjectId), source: 'session' };
   const def = defaultProject();
   if (def) return { label: def.name || idPrefix(def.project_id), source: 'default' };
   return null;
@@ -171,13 +178,13 @@ export function renderContext(): string {
   const { hostName: linkHostName, auth: linkAuth } = resolveProjectAuth();
   const linkedHost =
     linkHostName && (linkAuth?.token || !hasEnvTokenHost()) ? getHost(linkHostName) : null;
-  const active = activeHostEntry();
-  const name = linkedHost && linkHostName ? linkHostName : active.name;
-  const host = linkedHost ?? active.host;
+  const { name: activeName, host: activeHost, envWins } = activeHostEntry();
+  const name = linkedHost && linkHostName ? linkHostName : activeName;
+  const host = linkedHost ?? activeHost;
   const signedIn = Boolean(host.token);
   const authState = hostAuthState(
     host,
-    linkedHost ? 'stored' : hasEnvTokenHost() ? 'env' : 'stored',
+    linkedHost ? 'stored' : envWins ? 'env' : 'stored',
   );
   const agent = tokenAgent(host);
   const labelW = 7; // "account".length / "project".length / "session".length

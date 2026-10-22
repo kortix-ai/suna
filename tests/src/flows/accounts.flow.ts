@@ -3,16 +3,22 @@
  * Needs OWNER + NONMEMBER principals (provisioned per run).
  */
 import { AccountSummarySchema } from '@kortix/api-contract';
+import { CliSandbox } from '../fixtures/cli';
 import { flow } from '../core/flow';
-import { enableEnterpriseDemo } from '../fixtures/enterprise-demo';
+import type { Client } from '../core/client';
+import type { Principal } from '../core/types';
+import { enableEnterpriseDemo } from '../fixtures/enterprise-access';
+import { waitFor } from '../core/poll';
+import { adminCreateUser, adminDeleteUser, passwordGrant } from '../fixtures/supabase';
+import { withDb } from '../fixtures/chat';
 
 flow(
   'ME-1',
-  { domain: 'accounts', tags: ['smoke'], routes: ['GET /v1/accounts/me'] },
+  { domain: 'accounts', tags: ['deployed', 'smoke'], routes: ['GET /v1/accounts/me'] },
   async (ctx) => {
-    await ctx.step('OWNER sees own identity', async () => {
+    await ctx.step('OWNER sees own identity; a web session carries no token_id', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/me');
-      r.status(200).body().exists('$.user_id').exists('$.email');
+      r.status(200).body().exists('$.user_id').exists('$.email').has('$.token_context.token_id', null);
     });
     await ctx.step('ANON → 401', async () => {
       const r = await ctx.client.as(ctx.P.ANON).get('/v1/accounts/me');
@@ -44,7 +50,7 @@ flow('ACCT-1', { domain: 'accounts', routes: ['GET /v1/accounts'] }, async (ctx)
 
 flow(
   'ACCT-2',
-  { domain: 'accounts', routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId'] },
+  { domain: 'accounts', tags: ['deployed'], routes: ['POST /v1/accounts', 'GET /v1/accounts/:accountId', 'GET /v1/accounts/:accountId/members'] },
   async (ctx) => {
     let accountId = '';
     await ctx.step('create team account → caller is owner', async () => {
@@ -59,13 +65,29 @@ flow(
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId', { params: { accountId } });
-      r.status(200).body().has('$.account_id', accountId);
+      r.status(200).body()
+        .has('$.account_id', accountId)
+        .has('$.name', ctx.fixtures.name('team'))
+        .has('$.member_count', 1)
+        .has('$.project_count', 0)
+        .has('$.role', 'owner');
     });
-    await ctx.step('NONMEMBER cannot read it → 403', async () => {
-      const r = await ctx.client
-        .as(ctx.P.NONMEMBER)
-        .get('/v1/accounts/:accountId', { params: { accountId } });
-      r.status(403);
+    await ctx.step('foreign and nonexistent accounts have identical denials on detail and members', async () => {
+      for (const targetId of [accountId, crypto.randomUUID()]) {
+        for (const route of ['/v1/accounts/:accountId', '/v1/accounts/:accountId/members']) {
+          const r = await ctx.client.as(ctx.P.NONMEMBER)
+            .get(route, { params: { accountId: targetId } });
+          r.status(403).body().has('$', { error: 'Forbidden' });
+          if (r.text() !== '{"error":"Forbidden"}') {
+            throw new Error('Account denial envelope differs from the members route');
+          }
+        }
+      }
+    });
+    await ctx.step('create without a name → 400 Validation failed; a 256-character name → 400 name is too long', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts', {})).status(400).body().has('$.message', 'Validation failed');
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts', { name: 'a'.repeat(256) }))
+        .status(400).body().has('$.error', 'name is too long');
     });
   },
 );
@@ -93,6 +115,9 @@ flow(
     await ctx.step('list does not expose the secret', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens');
       r.status(200);
+      const rows = r.json<Array<Record<string, unknown>>>();
+      if (!rows.some((row) => row.token_id === tokenId)) throw new Error('the minted token is missing from the list');
+      if (rows.some((row) => 'secret_key' in row)) throw new Error('the token list exposes secret_key');
     });
     await ctx.step('revoke it', async () => {
       const r = await ctx.client
@@ -110,17 +135,24 @@ flow('TOK-2', { domain: 'accounts', routes: ['POST /v1/accounts/tokens'] }, asyn
   });
 });
 
-flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId'] }, async (ctx) => {
+flow('ACCT-4', { domain: 'accounts', routes: ['PATCH /v1/accounts/:accountId', 'POST /v1/accounts', 'GET /v1/accounts'] }, async (ctx) => {
   const team = await ctx.fixtures.team();
-  await ctx.step('OWNER renames account', async () => {
+  await ctx.step('OWNER renames account → 200 with the new name', async () => {
+    const name = ctx.fixtures.name('renamed');
     const r = await ctx.client
       .as(ctx.P.OWNER)
-      .patch(
-        '/v1/accounts/:accountId',
-        { name: ctx.fixtures.name('renamed') },
-        { params: { accountId: team.id } },
-      );
-    r.status(200);
+      .patch('/v1/accounts/:accountId', { name }, { params: { accountId: team.id } });
+    r.status(200).body().has('$.name', name);
+  });
+  await ctx.step('a name with markup or a control character → 400 on rename and on create; the name is unchanged', async () => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    for (const name of ['<h1>PenTest</h1>', 'a>b', 'line\nbreak']) {
+      (await owner.patch('/v1/accounts/:accountId', { name }, { params: { accountId: team.id } })).status(400);
+      (await owner.post('/v1/accounts', { name })).status([400, 403]);
+    }
+    const accounts = (await owner.get('/v1/accounts')).status(200).json<Array<{ account_id: string; name: string }>>();
+    const current = accounts.find((a) => a.account_id === team.id)?.name ?? '';
+    if (/[<>\n]/.test(current)) throw new Error(`the account name changed to ${JSON.stringify(current)}`);
   });
   await ctx.step('MEMBER cannot rename → 403', async () => {
     const member = await team.addMember('member');
@@ -139,14 +171,20 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
+    let adminUserId: string | undefined;
     await ctx.step('add an admin member → 201 status added', async () => {
-      await team.addMember('admin');
+      adminUserId = (await team.addMember('admin')).userId;
     });
     await ctx.step('list members → owner + admin present', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
       r.status(200);
+      const members = r.json<Array<{ user_id: string; account_role: string }>>();
+      if (!members.some((m) => m.user_id === ctx.P.OWNER.userId && m.account_role === 'owner'))
+        throw new Error('OWNER is not listed as owner');
+      if (!members.some((m) => m.user_id === adminUserId && m.account_role === 'admin'))
+        throw new Error('the added admin is not listed as admin');
     });
     await ctx.step('NONMEMBER cannot list → 403', async () => {
       const r = await ctx.client
@@ -155,7 +193,7 @@ flow(
       r.status(403);
     });
     await ctx.step(
-      "plain MEMBER sees the directory, with other members' sensitive columns redacted",
+      'plain MEMBER lists only themselves: not the owner, not a teammate',
       async () => {
         const memberA = await team.addMember('member');
         const memberB = await team.addMember('member');
@@ -163,16 +201,210 @@ flow(
           .as(memberA)
           .get('/v1/accounts/:accountId/members', { params: { accountId: team.id } });
         r.status(200);
-        const list = r.json<any[]>();
-        if (!list.some((m) => m.user_id === memberA.userId))
-          throw new Error('member cannot see their own row');
-        if (!list.some((m) => m.user_id === memberB.userId))
-          throw new Error('member directory omitted a teammate');
-        for (const m of list) {
-          if (m.user_id === memberA.userId) continue;
-          if (m.active_pat_count !== 0 || m.has_verified_mfa !== false || m.groups.length !== 0)
-            throw new Error('sensitive member columns leaked to plain member');
-        }
+        const ids = r.json<Array<{ user_id: string }>>().map((m) => m.user_id);
+        if (JSON.stringify(ids) !== JSON.stringify([memberA.userId]))
+          throw new Error(`a plain member must list only themselves, got ${JSON.stringify(ids)} (teammate ${memberB.userId})`);
+      },
+    );
+  },
+);
+
+flow(
+  'MEM-8',
+  {
+    domain: 'accounts',
+    routes: [
+      'GET /v1/accounts/:accountId/members',
+      'GET /v1/accounts/:accountId/iam/groups',
+      'GET /v1/accounts/:accountId/iam/groups/:groupId',
+      'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+      'GET /v1/accounts/:accountId/iam/groups/:groupId/project-grants',
+      'GET /v1/projects/:projectId/access',
+      'GET /v1/accounts/:accountId/iam/mfa-required/preview',
+      'GET /v1/accounts/:accountId/iam/sessions',
+      'GET /v1/accounts/:accountId/iam/members/:userId/project-access',
+      'POST /v1/accounts/:accountId/iam/roles',
+      'POST /v1/accounts/:accountId/iam/policies',
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team({ enterprise: true });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { accountId: team.id };
+    const viewer = await team.addMember('member');
+    const coProject = await team.addMember('member');
+    const groupMate = await team.addMember('member');
+    const viaGroup = await team.addMember('member');
+    const stranger = await team.addMember('member');
+    const admin = await team.addMember('admin');
+    const asViewer = ctx.client.as(viewer);
+    const shared = await team.project();
+    const hidden = await team.project();
+    let mine = '';
+    let onShared = '';
+    let elsewhere = '';
+
+    const group = async (slug: string, members: Principal[]) => {
+      const created = await owner.post(
+        '/v1/accounts/:accountId/iam/groups',
+        { name: ctx.fixtures.name(slug) },
+        { params },
+      );
+      const groupId = created.status(201).json<{ group_id: string }>().group_id;
+      (
+        await owner.post(
+          '/v1/accounts/:accountId/iam/groups/:groupId/members',
+          { userIds: members.map((m) => m.userId!) },
+          { params: { ...params, groupId } },
+        )
+      ).status(200);
+      return groupId;
+    };
+    const grantGroup = async (projectId: string, groupId: string) =>
+      (
+        await owner.post(
+          '/v1/projects/:projectId/group-grants',
+          { group_id: groupId, role: 'member' },
+          { params: { projectId } },
+        )
+      ).status(201);
+    const memberIds = async (who: Client) =>
+      (await who.get('/v1/accounts/:accountId/members', { params }))
+        .status(200)
+        .json<Array<{ user_id: string }>>()
+        .map((m) => m.user_id);
+    const groupRows = async (who: Client) =>
+      (await who.get('/v1/accounts/:accountId/iam/groups', { params }))
+        .status(200)
+        .json<{ groups: Array<{ group_id: string; project_count: number }> }>().groups;
+    const groupIds = async (who: Client) => (await groupRows(who)).map((g) => g.group_id);
+    const expectIds = (label: string, ids: string[], present: string[], absent: string[]) => {
+      const missing = present.filter((id) => !ids.includes(id));
+      const leaked = absent.filter((id) => ids.includes(id));
+      if (missing.length || leaked.length) {
+        throw new Error(`${label}: missing ${JSON.stringify(missing)}, leaked ${JSON.stringify(leaked)}`);
+      }
+    };
+
+    await ctx.step(
+      'setup: the viewer shares one project with a teammate and a group with another; a third reaches the project through a group; a fourth shares nothing',
+      async () => {
+        await team.grantProjectRole(shared.id, viewer.userId!, 'member');
+        await team.grantProjectRole(shared.id, coProject.userId!, 'member');
+        mine = await group('grp-mine', [viewer, groupMate]);
+        onShared = await group('grp-shared', [viaGroup]);
+        elsewhere = await group('grp-elsewhere', [stranger]);
+        await grantGroup(shared.id, onShared);
+        await grantGroup(hidden.id, onShared);
+        await grantGroup(hidden.id, elsewhere);
+      },
+    );
+
+    await ctx.step(
+      'a plain member lists only themselves: not the owner, the admin, nor anyone they share a project or a group with',
+      async () => {
+        expectIds(
+          'viewer members',
+          await memberIds(asViewer),
+          [viewer.userId!],
+          [ctx.P.OWNER, admin, coProject, groupMate, viaGroup, stranger].map((p) => p.userId!),
+        );
+      },
+    );
+
+    await ctx.step('the owner and an admin still list every member', async () => {
+      const everyone = [viewer, coProject, groupMate, viaGroup, stranger].map((p) => p.userId!);
+      expectIds('owner members', await memberIds(owner), everyone, []);
+      expectIds('admin members', await memberIds(ctx.client.as(admin)), everyone, []);
+    });
+
+    await ctx.step('a plain member lists no group, not even their own; the owner lists every group', async () => {
+      expectIds('viewer groups', await groupIds(asViewer), [], [mine, onShared, elsewhere]);
+      expectIds('owner groups', await groupIds(owner), [mine, onShared, elsewhere], []);
+    });
+
+    await ctx.step('every group → 404 for a plain member on read, members and project grants', async () => {
+      for (const groupId of [mine, onShared, elsewhere]) {
+        const at = { params: { ...params, groupId } };
+        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId', at)).status(404);
+        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/members', at)).status(404);
+        (await asViewer.get('/v1/accounts/:accountId/iam/groups/:groupId/project-grants', at)).status(404);
+      }
+      (await owner.get('/v1/accounts/:accountId/iam/groups/:groupId', { params: { ...params, groupId: onShared } }))
+        .status(200)
+        .body()
+        .has('$.group_id', onShared);
+    });
+
+    await ctx.step(
+      "a project's access list: a plain member sees only themselves; a member who manages it sees the people and groups with access to it, nobody else; the owner sees every member",
+      async () => {
+        const manager = await team.addMember('member');
+        await team.grantProjectRole(shared.id, manager.userId!, 'manager');
+        const roster = async (who: Client) => {
+          const view = (await who.get('/v1/projects/:projectId/access', { params: { projectId: shared.id } }))
+            .status(200)
+            .json<{ members: Array<{ user_id: string }>; group_access: Array<{ group_id: string }> }>();
+          return { people: view.members.map((m) => m.user_id), groups: view.group_access.map((g) => g.group_id) };
+        };
+        const asViewerRoster = await roster(asViewer);
+        expectIds(
+          'viewer project access',
+          asViewerRoster.people,
+          [viewer.userId!],
+          [ctx.P.OWNER, admin, coProject, viaGroup, stranger].map((p) => p.userId!),
+        );
+        expectIds('viewer project groups', asViewerRoster.groups, [], [onShared]);
+        const managerRoster = await roster(ctx.client.as(manager));
+        expectIds(
+          'manager project access',
+          managerRoster.people,
+          [manager, viewer, coProject, viaGroup].map((p) => p.userId!),
+          [groupMate, stranger].map((p) => p.userId!),
+        );
+        expectIds('manager project groups', managerRoster.groups, [onShared], [mine, elsewhere]);
+        expectIds('owner project access', (await roster(owner)).people, [stranger.userId!], []);
+      },
+    );
+
+    await ctx.step(
+      "other members' MFA status, sign-in sessions and access details → 403 for a plain member; their own access → 200",
+      async () => {
+        (await asViewer.get('/v1/accounts/:accountId/iam/mfa-required/preview', { params })).status(403);
+        (await owner.get('/v1/accounts/:accountId/iam/mfa-required/preview', { params })).status(200);
+        (await asViewer.get('/v1/accounts/:accountId/iam/sessions', { params })).status(403);
+        const access = '/v1/accounts/:accountId/iam/members/:userId/project-access';
+        (await asViewer.get(access, { params: { ...params, userId: coProject.userId! } })).status(403);
+        (await asViewer.get(access, { params: { ...params, userId: viewer.userId! } })).status(200);
+      },
+    );
+
+    await ctx.step(
+      'an owner restores the full directory for one member with a custom role holding member.read and group.read',
+      async () => {
+        const key = `directory_${Date.now().toString(36)}`;
+        const role = await owner.post(
+          '/v1/accounts/:accountId/iam/roles',
+          { key, name: key, resourceType: 'account', actions: ['member.read', 'group.read'] },
+          { params },
+        );
+        const roleId = role.status(201).json<{ role_id: string }>().role_id;
+        (
+          await owner.post(
+            '/v1/accounts/:accountId/iam/policies',
+            { principalType: 'member', principalId: viewer.userId, roleId, scopeType: 'account' },
+            { params },
+          )
+        ).status(201);
+        // IAM verdicts are cached for up to 15 s: a fresh assignment can read the old answer first.
+        const ids = await waitFor(() => memberIds(asViewer), {
+          until: (list) => list.includes(stranger.userId!),
+          timeoutMs: 20_000,
+          intervalMs: 1_000,
+          description: 'the full member list after the custom role',
+        });
+        expectIds('viewer members after the role', ids, [stranger.userId!], []);
+        expectIds('viewer groups after the role', await groupIds(asViewer), [elsewhere], []);
       },
     );
   },
@@ -280,6 +512,17 @@ flow(
       });
       r.status(400).body().has('$.message', 'Validation failed');
     });
+    await ctx.step('an ADMIN removing the OWNER → 403 Admins cannot remove owners', async () => {
+      const admin = await team.addMember('admin');
+      (await ctx.client.as(admin).del('/v1/accounts/:accountId/members/:userId', {
+        params: { accountId: team.id, userId: ctx.P.OWNER.userId! },
+      })).status(403).body().has('$.error', 'Admins cannot remove owners');
+    });
+    await ctx.step('the OWNER removing the last owner (themselves) → 409', async () => {
+      (await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
+        params: { accountId: team.id, userId: ctx.P.OWNER.userId! },
+      })).status(409).body().has('$.error', 'Cannot remove the last owner');
+    });
     await ctx.step('OWNER removes member → ok', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/:accountId/members/:userId', {
         params: { accountId: team.id, userId: member.userId! },
@@ -304,21 +547,57 @@ flow(
 
 flow(
   'MEM-5',
-  { domain: 'accounts', routes: ['POST /v1/accounts/:accountId/leave'] },
+  { domain: 'accounts', routes: [
+    'POST /v1/accounts/:accountId/leave',
+    'POST /v1/accounts/:accountId/iam/groups',
+    'POST /v1/accounts/:accountId/iam/groups/:groupId/members',
+    'GET /v1/accounts/:accountId/iam/groups/:groupId/members',
+  ] },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const member = await team.addMember('member');
+    let groupId = '';
+    await ctx.step('the member is in a group', async () => {
+      await enableEnterpriseDemo(ctx, team.id);
+      const created = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups',
+        { name: ctx.fixtures.name('leaver') },
+        { params: { accountId: team.id } },
+      );
+      created.status(201);
+      groupId = created.json<any>().group_id;
+      (await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/accounts/:accountId/iam/groups/:groupId/members',
+        { userIds: [member.userId!] },
+        { params: { accountId: team.id, groupId } },
+      )).status(200).body().has('$.added', 1);
+    });
     await ctx.step('member leaves → ok', async () => {
       const r = await ctx.client
         .as(member)
         .post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } });
       r.status(200);
     });
+    // KRTX-1722: leaving kept the group rows, so a re-invite restored every
+    // group grant. Removal and SCIM already delete them.
+    await ctx.step('the leaver is in no group of the account', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/groups/:groupId/members', {
+        params: { accountId: team.id, groupId },
+      });
+      r.status(200);
+      if (r.json<any>().members.some((row: any) => row.user_id === member.userId)) {
+        throw new Error('The member who left remains in the group');
+      }
+    });
     await ctx.step('non-member leave → 404', async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)
         .post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } });
       r.status(404);
+    });
+    await ctx.step('the last owner cannot leave → 409', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/:accountId/leave', {}, { params: { accountId: team.id } }))
+        .status(409).body().has('$.error', 'Cannot leave as the last owner — transfer ownership first');
     });
   },
 );
@@ -345,6 +624,10 @@ flow(
     const team = await ctx.fixtures.team();
     const admin = await team.addMember('admin');
     const member = await team.addMember('member');
+    // The owner-role guards need a caller that IS an admin when they run. The
+    // first step demotes `admin`, so a 403 for it came from the member floor
+    // and proved nothing about these guards (KRTX-2850).
+    const guardAdmin = await team.addMember('admin');
 
     await ctx.step('OWNER demotes admin → member (downward transition) → 200', async () => {
       const r = await ctx.client
@@ -373,7 +656,7 @@ flow(
         // change OWNER's role (even to owner — the "change the owner role" branch
         // fires whenever the TARGET is an owner) → 403.
         const r = await ctx.client
-          .as(admin)
+          .as(guardAdmin)
           .patch(
             '/v1/accounts/:accountId/members/:userId',
             { role: 'admin' },
@@ -386,7 +669,7 @@ flow(
       'admin cannot promote anyone to owner → 403 (privilege-escalation guard)',
       async () => {
         const r = await ctx.client
-          .as(admin)
+          .as(guardAdmin)
           .patch(
             '/v1/accounts/:accountId/members/:userId',
             { role: 'owner' },
@@ -600,45 +883,85 @@ flow(
 
 flow(
   'INV-1',
-  { domain: 'accounts', routes: ['GET /v1/accounts/:accountId/invites'] },
+  {
+    domain: 'accounts',
+    routes: [
+      'GET /v1/accounts/:accountId/invites',
+      'POST /v1/accounts/:accountId/members',
+      'PATCH /v1/accounts/:accountId/members/:userId',
+      'POST /v1/accounts/:accountId/invites/:inviteId/resend',
+      'DELETE /v1/accounts/:accountId/invites/:inviteId',
+    ],
+  },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    await ctx.step('list pending invites', async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .get('/v1/accounts/:accountId/invites', { params: { accountId: team.id } });
+    const params = { accountId: team.id };
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const email = `${ctx.fixtures.name('inv1')}@${ctx.env.testEmailDomain}`.toLowerCase();
+    let inviteId = '';
+    let admin!: Principal;
+    const pending = async (who: Principal) => {
+      const r = await ctx.client.as(who).get('/v1/accounts/:accountId/invites', { params });
       r.status(200);
+      return r.json<Array<Record<string, unknown>>>();
+    };
+    await ctx.step('an invite to a padded, mixed-case address is stored lower-cased → 201 pending with its link', async () => {
+      const r = await owner.post('/v1/accounts/:accountId/members', { email: `  ${email.toUpperCase()}  `, role: 'admin' }, { params });
+      r.status(201).body().has('$.status', 'pending').has('$.email', email).has('$.account_role', 'admin');
+      inviteId = r.json<{ invite_id: string }>().invite_id;
+      r.body().matches('$.invite_url', new RegExp(`/invites/${inviteId}$`));
     });
-    await ctx.step('plain MEMBER sees no pending invites', async () => {
-      const member = await team.addMember('member');
-      const r = await ctx.client
-        .as(member)
-        .get('/v1/accounts/:accountId/invites', { params: { accountId: team.id } });
-      r.status(200);
-      if (r.json<any[]>().length !== 0) throw new Error('pending invites leaked to plain member');
+    await ctx.step('the owner lists it with its email, role, inviter and link', async () => {
+      const row = (await pending(ctx.P.OWNER)).find((i) => i.invite_id === inviteId);
+      const ok = row && row.email === email && row.initial_role === 'admin' && row.invited_by === ctx.P.OWNER.userId &&
+        String(row.invite_url).endsWith(`/invites/${inviteId}`);
+      if (!ok) throw new Error(`listed invite: ${JSON.stringify(row)}`);
+    });
+    await ctx.step('an account admin lists it; after demoting themselves to member they see an empty list', async () => {
+      admin = await team.addMember('admin');
+      if (!(await pending(admin)).some((i) => i.invite_id === inviteId)) throw new Error('admin cannot see the pending invite');
+      (await ctx.client.as(admin).patch('/v1/accounts/:accountId/members/:userId', { role: 'member' }, { params: { ...params, userId: admin.userId! } }))
+        .status(200).body().has('$.account_role', 'member');
+      // The demotion busts the caller's cached role on every API process over
+      // LISTEN/NOTIFY (iam/cache-invalidation.ts), so no process behind the load
+      // balancer may still serve the admin view. Every read must be empty.
+      for (let read = 0; read < 8; read++) {
+        if ((await pending(admin)).length !== 0) throw new Error(`read ${read + 1}: pending invites leaked to a demoted member`);
+      }
+    });
+    await ctx.step('a plain member cannot resend the invite or promote themselves → 403; the invite is unchanged', async () => {
+      (await ctx.client.as(admin).post('/v1/accounts/:accountId/invites/:inviteId/resend', {}, { params: { ...params, inviteId } })).status(403);
+      (await ctx.client.as(admin).patch('/v1/accounts/:accountId/members/:userId', { role: 'admin' }, { params: { ...params, userId: admin.userId! } })).status(403);
+      if (!(await pending(ctx.P.OWNER)).some((i) => i.invite_id === inviteId)) throw new Error('the invite vanished');
+    });
+    await ctx.step('NONMEMBER cannot list → 403 Forbidden', async () => {
+      (await ctx.client.as(ctx.P.NONMEMBER).get('/v1/accounts/:accountId/invites', { params })).status(403).body().has('$.error', 'Forbidden');
+    });
+    await ctx.step('the owner cancels → 200 {ok:true}; the invite drops out of the list', async () => {
+      (await owner.del('/v1/accounts/:accountId/invites/:inviteId', { params: { ...params, inviteId } })).status(200).body().has('$.ok', true);
+      if ((await pending(ctx.P.OWNER)).some((i) => i.invite_id === inviteId)) throw new Error('a cancelled invite is still listed');
     });
   },
 );
 
 flow(
   'DEL-1',
-  { domain: 'accounts', routes: ['GET /v1/billing/account/deletion-status'] },
+  { domain: 'accounts', routes: ['GET /v1/account/deletion-status'] },
   async (ctx) => {
     await ctx.step('OWNER reads deletion status', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/billing/account/deletion-status');
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/account/deletion-status');
       r.status(200);
     });
   },
 );
 
-// DEL-3 — the "backwards-compatible" `/v1/account/*` deletion mount
-// (apps/api/src/billing/routes/account-deletion.ts, mounted at /v1/account/*
-// in apps/api/src/index.ts:694, distinct from the `/v1/billing/account/*`
-// mirror mount covered by DEL-1/DEL-2). Drives `GET .../deletion-status` and
+// DEL-4 — the `/v1/account/*` deletion mount
+// (apps/api/src/billing/routes/account-deletion.ts). Drives `GET .../deletion-status` and
 // the real, destructive `DELETE .../delete-immediately` on a THROWAWAY user's
 // own personal account (never OWNER/team accounts other flows depend on).
 // Immediate self-deletion removes the auth identity, invalidates its token and
-// removes the account row itself: the account answers 404 to a nonmember.
+// removes the account row itself. A nonmember gets the same 403 as for any
+// foreign or nonexistent account (KRTX-2402); the row check needs `database`.
 flow(
   'DEL-4',
   {
@@ -690,12 +1013,16 @@ flow(
       (await asVictim.get('/v1/accounts/me')).status(401);
       (await asVictim.get('/v1/account/deletion-status')).status(401);
     });
-    await ctx.step('the deleted account is gone for a nonmember → 404', async () => {
-      (
-        await ctx.client
-          .as(ctx.P.OWNER)
-          .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } })
-      ).status(404);
+    await ctx.step('the deleted account answers a nonmember like any foreign account → 403, and its row is gone', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .get('/v1/accounts/:accountId', { params: { accountId: victimAccountId } });
+      r.status(403).body().has('$', { error: 'Forbidden' });
+      if (!ctx.env.capabilities.database) return;
+      const left = await withDb(ctx, (db) =>
+        db.query('SELECT 1 FROM kortix.accounts WHERE account_id = $1', [victimAccountId]),
+      );
+      if (left.rowCount !== 0) throw new Error(`the deleted account row still exists: ${victimAccountId}`);
     });
     await ctx.step('repeated deletion cannot restore old-token access → 401', async () => {
       (await asVictim.del('/v1/account/delete-immediately')).status(401);
@@ -723,16 +1050,18 @@ flow('ACCT-3', { domain: 'accounts', routes: ['GET /v1/accounts/:accountId'] }, 
 });
 
 // TOK-3 — account-PAT revoke semantics: revoke → 200; unknown/already-revoked
-// → 404; a revoked secret used on any route → 401.
+// → 404 unless delete_revoked=true removes a revoked personal key; its secret → 401.
 flow(
   'TOK-3',
   {
     domain: 'accounts',
+    tags: ['deployed'],
     serial: true,
     routes: [
       'POST /v1/accounts/tokens',
       'DELETE /v1/accounts/tokens/:tokenId',
       'GET /v1/accounts/me',
+      'GET /v1/accounts/tokens',
     ],
   },
   async (ctx) => {
@@ -746,6 +1075,13 @@ flow(
       const j = r.json<any>();
       tokenId = j.token_id;
       secret = j.secret_key;
+    });
+    await ctx.step('explicit deletion never revokes an active key, even when replayed', async () => {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        (await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/tokens/:tokenId', {
+          params: { tokenId }, query: { delete_revoked: 'true' },
+        })).status(404);
+      }
     });
     await ctx.step('secret authenticates before revoke → 200', async () => {
       const r = await ctx.client.withBearer(secret).get('/v1/accounts/me');
@@ -762,6 +1098,39 @@ flow(
         .as(ctx.P.OWNER)
         .del('/v1/accounts/tokens/:tokenId', { params: { tokenId } });
       r.status(404);
+    });
+    await ctx.step('the revoked key stays listed until explicit deletion and cannot authenticate', async () => {
+      (await ctx.client.withBearer(secret).get('/v1/accounts/me')).status(401);
+      const listed = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens', { query: { mine: 'true' } });
+      listed.status(200);
+      if (!listed.json<Array<{ token_id: string }>>().some((row) => row.token_id === tokenId)) {
+        throw new Error('first removal deleted an active key instead of revoking it');
+      }
+      (await ctx.client.as(ctx.P.NONMEMBER).del('/v1/accounts/tokens/:tokenId', {
+        params: { tokenId }, query: { delete_revoked: 'true' },
+      })).status(404);
+    });
+    await ctx.step('the CLI deletes a revoked key and mine no longer lists it', async () => {
+      const cli = new CliSandbox('tok3-delete');
+      try {
+        // Pin the account the key lives in. A non-TTY login picks the first of
+        // the OWNER's accounts, and concurrent flows add team accounts to it.
+        const login = await cli.login(await ctx.fixtures.pat({ name: ctx.fixtures.name('cleanup') }), {
+          noProject: true,
+          account: ctx.P.OWNER.accountId,
+        });
+        if (login.exitCode !== 0) throw new Error('CLI login failed');
+        const removed = await cli.run(['tokens', 'rm', tokenId, '-y']);
+        if (removed.exitCode !== 0 || !removed.stdout.includes('Deleted')) {
+          throw new Error(`CLI deletion failed: ${removed.stderr}`);
+        }
+        const listed = await cli.run(['tokens', 'ls', '--mine', '--json']);
+        if (listed.exitCode !== 0 || listed.stdout.includes(tokenId)) {
+          throw new Error('deleted key remains in personal listing');
+        }
+      } finally {
+        cli.dispose();
+      }
     });
     await ctx.step('revoke an unknown id → 404', async () => {
       const r = await ctx.client.as(ctx.P.OWNER).del('/v1/accounts/tokens/:tokenId', {
@@ -792,6 +1161,9 @@ flow(
       'GET /v1/accounts/me',
       'PATCH /v1/accounts/:accountId',
       'POST /v1/accounts/:accountId/iam/oauth-clients',
+      'GET /v1/accounts/tokens',
+      'GET /v1/accounts/:accountId/iam/service-accounts',
+      'GET /v1/accounts/:accountId/iam/oauth-clients',
     ],
   },
   async (ctx) => {
@@ -813,9 +1185,11 @@ flow(
       memberSecret = j.secret_key;
     });
 
-    await ctx.step('the member token authenticates as the member → /accounts/me 200, auth_type pat', async () => {
+    await ctx.step('the member token authenticates as the member → /accounts/me 200, auth_type pat, token_id names this token', async () => {
       const r = await ctx.client.withBearer(memberSecret).get('/v1/accounts/me');
-      r.status(200).body().has('$.token_context.auth_type', 'pat');
+      // token_id lets a client tell its own credential from the rest
+      // (`kortix tokens rm` refuses to revoke it, KRTX-1842).
+      r.status(200).body().has('$.token_context.auth_type', 'pat').has('$.token_context.token_id', memberTokenId);
     });
 
     await ctx.step('the member token carries only member rights → renaming the account 403', async () => {
@@ -858,6 +1232,29 @@ flow(
         query: { account_id },
       });
       r.status(403);
+    });
+
+    await ctx.step("MEMBER lists the account's tokens → only their own; OWNER (token.revoke) → both", async () => {
+      const ids = async (as: ReturnType<typeof ctx.client.as>) => {
+        const r = await as.get('/v1/accounts/tokens', { query: { account_id } });
+        r.status(200);
+        return r.json<Array<{ token_id: string }>>().map((t) => t.token_id);
+      };
+      const mine = await ids(ctx.client.as(member));
+      if (!mine.includes(memberTokenId)) throw new Error('member list must hold the member token');
+      if (mine.includes(ownerTokenId)) throw new Error("member list must not hold the owner's token");
+      const all = await ids(ctx.client.as(ctx.P.OWNER));
+      if (!all.includes(memberTokenId) || !all.includes(ownerTokenId)) {
+        throw new Error('owner list must hold every live token of the account');
+      }
+    });
+
+    await ctx.step('MEMBER cannot list service accounts or OAuth clients → 403 (token.create); OWNER → 200', async () => {
+      const params = { accountId: account_id };
+      (await ctx.client.as(member).get('/v1/accounts/:accountId/iam/service-accounts', { params })).status(403);
+      (await ctx.client.as(member).get('/v1/accounts/:accountId/iam/oauth-clients', { params })).status(403);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/service-accounts', { params })).status(200);
+      (await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/:accountId/iam/oauth-clients', { params })).status(200);
     });
 
     await ctx.step("the owner's token still authenticates after the refused revoke → 200", async () => {
@@ -1177,6 +1574,236 @@ flow(
       r.status(403);
       const a = await ctx.client.as(ctx.P.ANON).get('/v1/accounts/:accountId/branding', { params });
       a.status(401);
+    });
+  },
+);
+
+// ACCT-5 — an invite-first signup. The invites exist before the identity
+// does, and the identity is a raw Supabase user with no fixture bootstrap, so
+// its first Kortix read is the one that must create the personal account
+// before claiming the invites.
+flow(
+  'ACCT-5',
+  {
+    domain: 'accounts',
+    routes: [
+      'POST /v1/accounts/:accountId/members',
+      'GET /v1/accounts/:accountId/invites',
+      'GET /v1/accounts',
+      'GET /v1/accounts/me',
+    ],
+  },
+  async (ctx) => {
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const created: string[] = [];
+    const signUp = async (email: string): Promise<{ userId: string; client: Client }> => {
+      const password = `Ke2e-${crypto.randomUUID()}-Aa1!`;
+      const user = await adminCreateUser(ctx.env, email, password);
+      created.push(user.id);
+      return { userId: user.id, client: ctx.client.withBearer(await passwordGrant(ctx.env, email, password), 'INVITE-FIRST') };
+    };
+    const invite = async (accountId: string, email: string, role: 'admin' | 'member') => {
+      (await owner.post('/v1/accounts/:accountId/members', { email, role }, { params: { accountId } }))
+        .status(201).body().has('$.status', 'pending');
+    };
+    try {
+      await ctx.step('an invite-first signup invited as admin by two accounts: the first GET /v1/accounts lists its own account AND both accounts; a repeat adds nothing', async () => {
+        const teamA = await ctx.fixtures.team();
+        const teamB = await ctx.fixtures.team();
+        const email = `${ctx.fixtures.name('invite-first')}@${ctx.env.testEmailDomain}`.toLowerCase();
+        await invite(teamA.id, email, 'admin');
+        await invite(teamB.id, email, 'admin');
+        const { userId, client } = await signUp(email);
+        for (const attempt of [1, 2]) {
+          const r = await client.get('/v1/accounts');
+          r.status(200);
+          const rows = r.json<Array<{ account_id: string; account_role: string; is_primary_owner: boolean }>>();
+          const byId = new Map(rows.map((a) => [a.account_id, a]));
+          const own = byId.get(userId);
+          const ok =
+            rows.length === 3 &&
+            own?.account_role === 'owner' && own.is_primary_owner === true &&
+            [teamA.id, teamB.id].every((id) => byId.get(id)?.account_role === 'admin' && byId.get(id)?.is_primary_owner === false);
+          if (!ok) throw new Error(`call ${attempt}: ${JSON.stringify(rows)}`);
+        }
+        for (const team of [teamA, teamB]) {
+          const r = await owner.get('/v1/accounts/:accountId/invites', { params: { accountId: team.id } });
+          r.status(200);
+          if (r.json<Array<{ email: string }>>().some((i) => i.email === email)) throw new Error('the invite was not claimed');
+        }
+      });
+      await ctx.step('an invite-first signup whose first read is GET /v1/accounts/me gets its own account (owner) plus the inviting account (member); a repeat adds nothing', async () => {
+        const team = await ctx.fixtures.team();
+        const email = `${ctx.fixtures.name('invite-first-me')}@${ctx.env.testEmailDomain}`.toLowerCase();
+        await invite(team.id, email, 'member');
+        const { userId, client } = await signUp(email);
+        for (const attempt of [1, 2]) {
+          const r = await client.get('/v1/accounts/me');
+          r.status(200);
+          const accounts = r.json<{ accounts: Array<{ account_id: string; role: string }> }>().accounts;
+          const roles = new Map(accounts.map((a) => [a.account_id, a.role]));
+          if (accounts.length !== 2 || roles.get(userId) !== 'owner' || roles.get(team.id) !== 'member') {
+            throw new Error(`call ${attempt}: ${JSON.stringify(accounts)}`);
+          }
+        }
+      });
+      await ctx.step('a user who already has a membership gets no retroactive personal account from GET /v1/accounts or /accounts/me', async () => {
+        const team = await ctx.fixtures.team();
+        const member = await team.addMember('member');
+        for (const path of ['/v1/accounts', '/v1/accounts/me'] as const) {
+          const r = await ctx.client.as(member).get(path);
+          r.status(200);
+          const body = r.json<any>();
+          const ids = (Array.isArray(body) ? body : body.accounts).map((a: { account_id: string }) => a.account_id);
+          if (ids.length !== 1 || ids[0] !== team.id) throw new Error(`${path} listed ${JSON.stringify(ids)}, expected only the team`);
+        }
+      });
+    } finally {
+      for (const id of created) await adminDeleteUser(ctx.env, id).catch(() => {});
+    }
+  },
+);
+
+// TOPUP-1 — KRTX-1718: a member out of credits asks the owners to add some.
+// The member cannot buy credits (billing.write is owner-only by default) and
+// had no way to tell an owner from inside the product.
+flow(
+  'TOPUP-1',
+  { domain: 'accounts', routes: ['POST /v1/accounts/:accountId/top-up-requests'] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember('member');
+    const ask = (who: Principal) =>
+      ctx.client.as(who).post('/v1/accounts/:accountId/top-up-requests', {}, { params: { accountId: team.id } });
+
+    await ctx.step('ANON → 401; NONMEMBER → 403', async () => {
+      (await ask(ctx.P.ANON)).status(401);
+      (await ask(ctx.P.NONMEMBER)).status(403);
+    });
+    await ctx.step('the OWNER can add credits, so asking → 409 can_manage_billing', async () => {
+      (await ask(ctx.P.OWNER)).status(409).body().has('$.code', 'can_manage_billing');
+    });
+    await ctx.step('a MEMBER asks → 202, and the one owner is emailed', async () => {
+      (await ask(member)).status(202).body().has('$.notified', 1);
+    });
+    await ctx.step('the same MEMBER again that day → 429 already_requested', async () => {
+      (await ask(member)).status(429).body().has('$.code', 'already_requested');
+    });
+  },
+);
+
+// TOK-7 — mint expiry bounds. A token never mints already dead, and a
+// project-scoped PAT never mints a token that outlives itself.
+flow(
+  'TOK-7',
+  {
+    domain: 'accounts',
+    routes: ['POST /v1/accounts/tokens', 'POST /v1/projects/:projectId/cli-token'],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const params = { params: { projectId: project.id } };
+    const at = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+    const mintProjectToken = async (expires_at?: string) => {
+      const r = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/cli-token',
+        { name: ctx.fixtures.name('tok7'), ...(expires_at ? { expires_at } : {}) },
+        params,
+      );
+      r.status(201);
+      return r.json<{ secret_key: string }>().secret_key;
+    };
+
+    await ctx.step('an expiry in the past → 400 token_expiry_in_past on both mint routes', async () => {
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', { name: ctx.fixtures.name('tok7'), expires_at: at(-1) }))
+        .status(400).body().has('$.code', 'token_expiry_in_past');
+      (await ctx.client.as(ctx.P.OWNER).post('/v1/projects/:projectId/cli-token', { expires_at: at(-1) }, params))
+        .status(400).body().has('$.code', 'token_expiry_in_past');
+    });
+
+    await ctx.step('a browser session still mints a token with no expiry → 201', async () => {
+      await mintProjectToken();
+    });
+
+    await ctx.step('a project PAT that expires in 60 min: no expiry or a later one → 403 token_mint_exceeds_parent; an earlier one → 201', async () => {
+      const parent = ctx.client.withBearer(await mintProjectToken(at(60)), 'PAT_PROJ');
+      (await parent.post('/v1/projects/:projectId/cli-token', {}, params))
+        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(120) }, params))
+        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(30) }, params)).status(201);
+    });
+
+    await ctx.step('a project PAT with no expiry must still pass one: none → 403 token_mint_exceeds_parent; one → 201', async () => {
+      const parent = ctx.client.withBearer(await mintProjectToken(), 'PAT_PROJ');
+      (await parent.post('/v1/projects/:projectId/cli-token', {}, params))
+        .status(403).body().has('$.code', 'token_mint_exceeds_parent');
+      (await parent.post('/v1/projects/:projectId/cli-token', { expires_at: at(30) }, params)).status(201);
+    });
+  },
+);
+
+// TOK-8 — the live token lists hold only tokens that still authenticate: an
+// expired token and a token of an archived project leave them. The personal
+// history (`?mine=true`) keeps the expired key.
+flow(
+  'TOK-8',
+  {
+    domain: 'accounts',
+    requires: ['database'],
+    serial: true,
+    routes: [
+      'POST /v1/accounts/tokens',
+      'GET /v1/accounts/tokens',
+      'POST /v1/projects/:projectId/cli-token',
+      'GET /v1/projects/:projectId/cli-token',
+    ],
+  },
+  async (ctx) => {
+    const project = await ctx.fixtures.project();
+    const expires_at = new Date(Date.now() + 60 * 60_000).toISOString();
+    let expiredId = '';
+    let projectTokenId = '';
+    await ctx.step('mint a personal key and a project token, then expire the key and archive the project in the database (a row that predates the archive revocation)', async () => {
+      const key = await ctx.client.as(ctx.P.OWNER).post('/v1/accounts/tokens', { name: ctx.fixtures.name('tok8'), expires_at });
+      key.status(201);
+      expiredId = key.json<{ token_id: string }>().token_id;
+      const proj = await ctx.client.as(ctx.P.OWNER).post(
+        '/v1/projects/:projectId/cli-token',
+        { name: ctx.fixtures.name('tok8') },
+        { params: { projectId: project.id } },
+      );
+      proj.status(201);
+      projectTokenId = proj.json<{ token_id: string }>().token_id;
+      await withDb(ctx, async (db) => {
+        await db.query(`UPDATE kortix.account_tokens SET expires_at = now() - interval '1 minute' WHERE token_id = $1`, [expiredId]);
+      });
+    });
+    await ctx.step('the project list omits nothing yet: the live project token is listed', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/cli-token', { params: { projectId: project.id } });
+      r.status(200);
+      if (!r.json<{ items: Array<{ token_id: string }> }>().items.some((t) => t.token_id === projectTokenId))
+        throw new Error('the live project token is missing from the project list');
+    });
+    await ctx.step('the account list omits the expired key and the archived project token; ?mine=true keeps the expired key', async () => {
+      await withDb(ctx, async (db) => {
+        await db.query(`UPDATE kortix.projects SET status = 'archived' WHERE project_id = $1`, [project.id]);
+      });
+      try {
+        const live = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens');
+        live.status(200);
+        const ids = live.json<Array<{ token_id: string }>>().map((t) => t.token_id);
+        if (ids.includes(expiredId)) throw new Error('the expired key is still in the live token list');
+        if (ids.includes(projectTokenId)) throw new Error('the archived project token is still in the live token list');
+        const mine = await ctx.client.as(ctx.P.OWNER).get('/v1/accounts/tokens', { query: { mine: true } });
+        mine.status(200);
+        if (!mine.json<Array<{ token_id: string }>>().some((t) => t.token_id === expiredId))
+          throw new Error('the expired key is missing from the personal history');
+      } finally {
+        await withDb(ctx, async (db) => {
+          await db.query(`UPDATE kortix.projects SET status = 'active' WHERE project_id = $1`, [project.id]);
+        });
+      }
     });
   },
 );

@@ -41,8 +41,6 @@ export function resolveRootSessionInitiator(input: {
 
 export type SessionStartedByFilter = 'me' | 'others' | 'automated';
 
-export const SESSION_STARTED_BY_FILTERS: readonly SessionStartedByFilter[] = ['me', 'others', 'automated'];
-
 const CHANNEL_LABELS: Record<string, string> = {
   slack: 'Slack',
   teams: 'Teams',

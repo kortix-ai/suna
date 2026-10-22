@@ -24,8 +24,9 @@ const mockConfig = {
 
 mock.module('../../config', () => ({ config: mockConfig }));
 
-const { configuredEmailProviders, emailSender, isEmailConfigured, sendEmail } =
-  await import('./transport');
+const { isEmailConfigured, resolveEmailChain, sendEmail } = await import('./transport');
+const configuredEmailProviders = () => resolveEmailChain().targets.map((target) => target.kind);
+const emailSender = () => resolveEmailChain().from;
 
 let calls: Array<{ url: string; init: RequestInit }> = [];
 let responder: (url: string) => Response;

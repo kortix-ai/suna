@@ -22,6 +22,8 @@ import { logger } from '@/lib/log/logger'
 import { sandboxRelayContext, sessionChannel } from '@/lib/kortix-api/relay-context'
 import { noteControlPlaneResponse, sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import type { InitialTurnClaim } from '@/types/control-plane'
+import { flushSessionLogJournal } from './session-log-journal'
+import { runOnIdleHook } from './on-idle-hook'
 
 export type TurnStreamFrame = Omit<TurnStreamRelayBody, 'session_id' | 'kind'> & { kind: DaemonTurnStreamKind }
 
@@ -93,7 +95,7 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
       throw new Error(`initial turn claim rejected: ${response.status} ${text.slice(0, 200)}`)
     }
     const body = (await response.json()) as {
-      initial_turn?: { prompt?: unknown; turn_token?: unknown; message_id?: unknown } | null
+      initial_turn?: { prompt?: unknown; context?: unknown; turn_token?: unknown; message_id?: unknown } | null
       runtime_session_id?: unknown
     }
     const pin = typeof body.runtime_session_id === 'string' ? body.runtime_session_id.trim() : ''
@@ -102,7 +104,12 @@ export function claimInitialTurn(): Promise<InitialTurnClaim | null> {
     if (!turn || typeof turn.prompt !== 'string' || typeof turn.turn_token !== 'string' || typeof turn.message_id !== 'string') {
       return null
     }
-    claimedInitialTurn = { prompt: turn.prompt, turnToken: turn.turn_token, messageId: turn.message_id }
+    claimedInitialTurn = {
+      prompt: turn.prompt,
+      ...(typeof turn.context === 'string' && turn.context ? { context: turn.context } : {}),
+      turnToken: turn.turn_token,
+      messageId: turn.message_id,
+    }
     return claimedInitialTurn
   })().finally(() => {
     claimInFlight = null
@@ -203,6 +210,25 @@ export async function relayTurnBegin(runtimeSessionId: string, messageId: string
 }
 
 /**
+ * A turn's end waits for its begin relay, at most `waitMs`: an end that lands first lets the late
+ * begin adopt a turn that nothing ends (a refused pi `/summarize` ends within milliseconds). The
+ * bound keeps a hung begin (2 attempts of a 30 s request) from delaying the end.
+ */
+export function turnEndAfterBegin(waitMs = 5_000) {
+  const begins = new Map<string, Promise<unknown>>()
+  return {
+    begin(messageId: string, relay: Promise<unknown>): void {
+      begins.set(messageId, relay)
+    },
+    async end(messageId: string): Promise<void> {
+      const begun = begins.get(messageId)
+      begins.delete(messageId)
+      if (begun) await Promise.race([begun, Bun.sleep(waitMs)])
+    },
+  }
+}
+
+/**
  * The running turn read a steered message at a step boundary (`steer_read`).
  * apps/api closes that message's inbox row as delivered. 3 attempts; a
  * non-ok answer other than 5xx is definitive. Skipped while the session
@@ -286,7 +312,8 @@ function turnEndBody(frame: TurnEndFrame): TurnStreamFrame {
 
 /**
  * The ONLY signal that finalizes a turn server-side: channel output and the
- * idle deadline. 4 attempts with a linear backoff. An answer apps/api did not
+ * idle deadline. The session-log journal is flushed first (at most 3 s).
+ * 4 attempts with a linear backoff. An answer apps/api did not
  * settle (`turn_completion.outcome` other than closed, already closed or no
  * active turn) retries too, after `reread` re-observes the turn; a settled
  * answer or a non-ok status is definitive. Resolves true only when settled.
@@ -299,6 +326,9 @@ export async function relayTurnEnd(
   // A credential the API refused, repeatedly and without contradiction, cannot
   // finalize a turn: all four attempts carry the same dead token (KRTX-446).
   if (sessionTokenPresumedDead()) return false
+  // The turn's messages go to the session log first, so apps/api can mark the
+  // turn durable when it closes it. Bounded at 3 s; the journal keeps retrying.
+  await flushSessionLogJournal()
   let current = frame
   for (let attempt = 1; attempt <= 4; attempt++) {
     try {
@@ -315,6 +345,8 @@ export async function relayTurnEnd(
         const settled = outcome === undefined || outcome === 'closed' || outcome === 'already_closed' || outcome === 'no_active_turn'
         if (settled) {
           if (data?.ok) logger.info('[turn-relay] turn end relayed', { status: current.status, errorName: current.error?.name, runtimeSessionId: current.runtimeSessionId, attempt })
+          // pi ends its turns here; OpenCode's own relay (open-code/turn-relay.ts) runs the hook too.
+          runOnIdleHook(current)
           return true
         }
         logger.warn('[turn-relay] turn-end relay was not settled', {
@@ -427,7 +459,8 @@ export async function relayQuestion(request: Pick<RuntimeQuestionRequest, 'id' |
   // Name the channel the agent is in: a Teams agent has no `slack send`.
   const sentinel =
     `(Posted to the ${channel} conversation. In ${channel}, questions are async — the user ` +
-    'replies as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'replies in the thread, which reaches you as a NEW turn with full context. In a channel, ' +
+    'the reply reaches you only when it @mentions you; a DM reply needs no mention. Do NOT ' +
     'wait for an answer here; finish this turn now.)'
   return request.questions.map(() => [sentinel])
 }

@@ -98,20 +98,8 @@ import {
   id = "AWSBackupDefaultServiceRole"
 }
 import {
-  to = aws_backup_plan.daily
-  id = "0f55c185-2a80-467e-95dd-e0d969c93f52"
-}
-import {
-  to = aws_backup_selection.daily
-  id = "0f55c185-2a80-467e-95dd-e0d969c93f52|c997845c-aeae-459e-8de1-0c405e0c5627"
-}
-import {
   to = aws_iam_role.flow_logs
   id = "vpc-flow-logs-role"
-}
-import {
-  to = aws_cloudwatch_log_group.flow_logs
-  id = "/vpc/flowlogs"
 }
 import {
   to = aws_iam_policy.cloudwatch_logs

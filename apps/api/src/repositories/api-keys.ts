@@ -109,63 +109,6 @@ export async function createApiKey(params: CreateApiKeyParams): Promise<CreateAp
   };
 }
 
-/**
- * List all API keys for a sandbox. Never returns secret data.
- */
-export async function listApiKeys(sandboxId: string) {
-  return db
-    .select({
-      keyId: kortixApiKeys.keyId,
-      publicKey: kortixApiKeys.publicKey,
-      title: kortixApiKeys.title,
-      description: kortixApiKeys.description,
-      type: kortixApiKeys.type,
-      status: kortixApiKeys.status,
-      sandboxId: kortixApiKeys.sandboxId,
-      expiresAt: kortixApiKeys.expiresAt,
-      lastUsedAt: kortixApiKeys.lastUsedAt,
-      createdAt: kortixApiKeys.createdAt,
-    })
-    .from(kortixApiKeys)
-    .where(eq(kortixApiKeys.sandboxId, sandboxId));
-}
-
-/**
- * Revoke an API key (soft-delete — sets status to 'revoked').
- */
-export async function revokeApiKey(keyId: string, accountId: string): Promise<boolean> {
-  const result = await db
-    .update(kortixApiKeys)
-    .set({ status: 'revoked' })
-    .where(
-      and(
-        eq(kortixApiKeys.keyId, keyId),
-        eq(kortixApiKeys.accountId, accountId),
-        eq(kortixApiKeys.status, 'active'),
-      ),
-    )
-    .returning({ keyId: kortixApiKeys.keyId });
-
-  return result.length > 0;
-}
-
-/**
- * Hard-delete an API key.
- */
-export async function deleteApiKey(keyId: string, accountId: string): Promise<boolean> {
-  const result = await db
-    .delete(kortixApiKeys)
-    .where(
-      and(
-        eq(kortixApiKeys.keyId, keyId),
-        eq(kortixApiKeys.accountId, accountId),
-      ),
-    )
-    .returning({ keyId: kortixApiKeys.keyId });
-
-  return result.length > 0;
-}
-
 // ─── Validation ──────────────────────────────────────────────────────────────
 
 /**

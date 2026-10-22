@@ -41,6 +41,13 @@ export interface HarnessTurnService {
   readMessage(runtimeSessionId: string, messageId: string): Promise<HarnessTurnResponse>
   /** 2xx on removal, 404 when already gone, 409 while the message runs. */
   removeMessage(runtimeSessionId: string, messageId: string): Promise<HarnessTurnResponse>
+  /**
+   * Take back a user message no model call has read: an unread steered
+   * message, a prompt queued behind the running work, a `no_reply` message no
+   * turn has read. 200 `{ retracted: true }`, 404 when there is no such
+   * message, 409 `{ code: MESSAGE_READ_CODE }` when a model call read it.
+   */
+  retractMessage(runtimeSessionId: string, messageId: string): Promise<HarnessTurnResponse>
   /** 200 `{ agents: [{ name, description, mode }] }`. */
   agents(directory: string | null): Promise<HarnessTurnResponse>
 }

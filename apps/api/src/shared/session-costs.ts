@@ -7,6 +7,7 @@ import {
   sessionSandboxes,
 } from '@kortix/db';
 import {
+  type AnyColumn,
   type SQL,
   type SQLWrapper,
   and,
@@ -28,7 +29,6 @@ import {
   kortixBilledSpendSql,
   providerBilledSpendSql,
   rowKortixBilledSpendSql,
-  rowTotalSpendSql,
   totalSpendSql,
 } from './llm-spend';
 
@@ -361,7 +361,11 @@ const llmAggregateFields = {
   outputTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.outputTokens}), 0)::float8`,
   cachedTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cachedTokens}), 0)::float8`,
   cacheWriteTokens: sql<number>`coalesce(sum(${gatewayRequestLogs.cacheWriteTokens}), 0)::float8`,
-  modelCount: sql<number>`count(distinct (${gatewayRequestLogs.provider}, ${gatewayRequestLogs.resolvedModel}))::int`,
+  // Refusal rows written by the gateway trace (KRTX-1749: post-auth 4xx and
+  // attributed 401s) carry empty provider/model — they answered nothing. The
+  // pair is real but says nothing about "models used", so keep it out of the
+  // distinct: a session that only saw refusals reports modelCount 0, not 1.
+  modelCount: sql<number>`(count(distinct (${gatewayRequestLogs.provider}, ${gatewayRequestLogs.resolvedModel})) filter (where ${gatewayRequestLogs.provider} <> '' or ${gatewayRequestLogs.resolvedModel} <> ''))::int`,
   lastAt: sql<Date | null>`max(${gatewayRequestLogs.createdAt})`,
 };
 
@@ -885,6 +889,8 @@ export async function listProjectGatewaySessionSpend(input: {
   accountId: string;
   projectId: string;
   days: number;
+  /** The caller's session filter (`ProjectReadView.where`); absent reads every session. */
+  sessionsVisibleTo?: (sessionColumn: AnyColumn) => SQL | undefined;
 }): Promise<{ window_days: number; sessions: LegacyGatewaySessionRow[] }> {
   const [llmRows, computeRows] = await Promise.all([
     db
@@ -904,6 +910,7 @@ export async function listProjectGatewaySessionSpend(input: {
           eq(gatewayRequestLogs.projectId, input.projectId),
           sql`${gatewayRequestLogs.sessionId} is not null`,
           sql`${gatewayRequestLogs.createdAt} >= now() - make_interval(days => ${input.days})`,
+          input.sessionsVisibleTo?.(gatewayRequestLogs.sessionId),
         ),
       )
       .groupBy(gatewayRequestLogs.sessionId),
@@ -923,6 +930,7 @@ export async function listProjectGatewaySessionSpend(input: {
           eq(sessionSandboxes.projectId, input.projectId),
           sql`${sandboxComputeSessions.sessionId} is not null`,
           sql`${sandboxComputeSessions.startedAt} >= now() - make_interval(days => ${input.days})`,
+          input.sessionsVisibleTo?.(sandboxComputeSessions.sessionId),
         ),
       )
       .groupBy(sandboxComputeSessions.sessionId),

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { auditEventsAll } from '@kortix/db';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import pg from 'pg';
+import { PgClient } from './helpers/pg-client';
 import { db } from '../shared/db';
 import { buildAuditCursorCondition, parseAuditCursor } from '../shared/audit-query';
 
@@ -10,11 +10,11 @@ const ACCOUNT = 'c7100000-0000-4000-a000-000000000001';
 const OLDER = 'c7100000-0000-4000-a000-000000000011';
 const NEWER = 'c7100000-0000-4000-a000-000000000012';
 
-let client: pg.Client | null = null;
+let client: PgClient | null = null;
 
 describe.skipIf(!databaseUrl)('audit cursor pagination — migrated PostgreSQL', () => {
   beforeAll(async () => {
-    client = new pg.Client({ connectionString: databaseUrl });
+    client = new PgClient({ connectionString: databaseUrl });
     await client.connect();
     await client.query(`SET kortix.audit_maintenance = 'on'`);
     await client.query(`DELETE FROM kortix.audit_events WHERE account_id = $1`, [ACCOUNT]);

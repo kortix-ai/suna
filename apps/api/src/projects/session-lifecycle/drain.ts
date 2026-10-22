@@ -3,6 +3,7 @@
  * belong to another API instance, and run one lane per session.
  */
 
+import { isRepositoryDisconnectedError } from '../../shared/repository-health';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../../lib/logger';
 import {
@@ -19,6 +20,7 @@ import {
   markCommandSucceeded,
   requeueForAdmission,
 } from './store';
+import { clearTriggerAlert, commandTriggerSlug } from '../lib/trigger-alerts';
 import { INBOX_ORDER_BACKOFF_MS } from './inbox-admission';
 import { withCommandLeaseHeartbeat } from './command-lease';
 import { claimsStopped, forgetClaim, trackClaims } from './claim-handover';
@@ -202,7 +204,8 @@ async function drainSessionLifecycleQueueTick(
       await markCommandFailed(
         row,
         `drain failed: ${err instanceof Error ? err.message : String(err)}`,
-        { retryable: true, attempts: row.attempts },
+        // A disconnected repository cannot succeed on a retry (KRTX-2955).
+        { retryable: !isRepositoryDisconnectedError(err), attempts: row.attempts },
       );
       out.failed += 1;
       return;
@@ -230,11 +233,18 @@ async function drainSessionLifecycleQueueTick(
         out.queued += 1;
         return;
       }
-      await markCommandSucceeded(
+      const applied = await markCommandSucceeded(
         row,
         { status: 'created', session_id: result.sessionId, source: row.source },
         result.sessionId,
       );
+      // A queued trigger create reached its session: that ends a fire failure
+      // streak, as markTriggerRuntimeDelivered does for a queued prompt
+      // (KRTX-1742). clearTriggerAlert never throws.
+      const triggerSlug = applied ? commandTriggerSlug(row) : null;
+      if (triggerSlug) {
+        await clearTriggerAlert({ projectId: row.projectId, accountId: row.accountId, slug: triggerSlug, source: 'fire' });
+      }
       out.succeeded += 1;
     } else {
       const message = String(

@@ -1,11 +1,13 @@
 /** Project settings: onboarding, deletion, feature flags, and the sandbox provider override. */
+import { releaseProjectEventSubscriptions } from '../trigger-events/subscriptions';
 import { PROJECT_ACTIONS } from '../../iam';
 import { assertAgentScope, isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { db } from '../../shared/db';
+import { logger } from '../../lib/logger';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projects } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { accountTokens, projects } from '@kortix/db';
+import { and, eq } from 'drizzle-orm';
 import { loadProjectForUser, assertProjectCapability } from '../lib/access';
 import {
   AnyObject,
@@ -16,10 +18,18 @@ import {
 import { serializeProject } from '../lib/serializers';
 import { readJsonObject } from '../../shared/http-body';
 import { isPlainObject } from '../../shared/json';
-import { metadataClearSubtreeKey, metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
-import { isFeatureFlagKey } from '../../feature-flags/registry';
-import { runFeatureFlagToggleEffects } from '../../feature-flags/toggle-effects';
-import { deleteManagedProjectRepo } from '../lib/project-deletion';
+import { metadataMerge, metadataMergeSubtree } from '../lib/metadata-merge';
+import {
+  featureFlagDef,
+  isDerivedFeatureFlag,
+  isFeatureFlagKey,
+  isOperatorOnlyFeatureFlag,
+  resolveFeatureFlag,
+} from '../../feature-flags/registry';
+import { FEATURE_OPERATOR_ONLY_CODE } from '../../feature-flags/gate';
+import { writeProjectFeatureFlag } from '../../feature-flags/write';
+import { isPlatformAdmin } from '../../shared/platform-roles';
+import { deleteManagedProjectRepo, purgeProjectConnectors } from '../lib/project-deletion';
 import {
   requestProviderTransition,
   readPublicProjectTransitionState,
@@ -109,38 +119,35 @@ const patchFeatureFlagHandler = async (c: any) => {
   if (!isFeatureFlagKey(feature)) {
     return c.json({ error: `Unknown feature flag '${feature}'` }, 400);
   }
+  if (isDerivedFeatureFlag(feature)) {
+    return c.json({ error: `'${feature}' follows the project's Volumes flag and cannot be set on its own` }, 400);
+  }
   if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);
   }
   // Archived projects are read-only: reject BEFORE the write. The old order
   // (update, then 404 on archived) committed the metadata mutation anyway.
   if (loaded.row.status === 'archived') return c.json({ error: 'Not found' }, 404);
-  // FIX-J: `experimental` is a NESTED object, so a whole-object `||` merge of it
-  // would lose an update one level down when two flags are toggled
-  // concurrently. Re-read + merge the CURRENT `experimental` sub-object in-SQL:
-  // set writes only `experimental.<feature>`; clear removes it (dropping the
-  // whole `experimental` key once the last override is gone). The metadata key
-  // name `experimental` is a stable storage detail. Every write preserves the
-  // routing pin.
-  const metadataExpr =
-    enabled === null
-      ? metadataClearSubtreeKey('experimental', feature)
-      : metadataMergeSubtree('experimental', { [feature]: enabled });
-  const [row] = await db
-    .update(projects)
-    .set({ metadata: metadataExpr, updatedAt: new Date() })
-    .where(eq(projects.projectId, projectId))
-    .returning();
+  // An internal-only flag (`session_log_restore`) changes what
+  // the platform records, so Kortix decides it: only a platform operator
+  // writes it, never a project admin and never an agent session. An operator
+  // acting in a customer project through impersonation passes (`userId`
+  // stays the operator's).
+  if (isOperatorOnlyFeatureFlag(feature)) {
+    const operator = !isProjectSessionPrincipal(c) && (await isPlatformAdmin(c.get('userId')));
+    if (!operator) {
+      return c.json(
+        {
+          error: `${featureFlagDef(feature)?.name ?? feature} is managed by Kortix. Contact Kortix to change it.`,
+          code: FEATURE_OPERATOR_ONLY_CODE,
+          feature,
+        },
+        403,
+      );
+    }
+  }
+  const row = await writeProjectFeatureFlag(projectId, feature, enabled);
   if (!row) return c.json({ error: 'Not found' }, 404);
-  // Convergence work (connector materialization, sandbox env fan-out) runs
-  // behind the response; runFeatureFlagToggleEffects retries once and logs
-  // failures at error level. See feature-flags/toggle-effects.ts.
-  void runFeatureFlagToggleEffects({
-    key: feature,
-    projectId,
-    accountId: row.accountId,
-    metadata: row.metadata,
-  });
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 };
 
@@ -167,8 +174,9 @@ export function registerProjectSettingsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'write');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+    await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_SETTINGS_WRITE);
 
     // Two independent writes share this route. `completed` is a TOP-LEVEL
     // lifecycle flag; `profile` is a NESTED object written answer-by-answer as
@@ -230,16 +238,14 @@ export function registerProjectSettingsRoutes(): void {
         },
       responses: {
           200: json(z.any(), 'OK'),
-          ...errors(404, 502),
+          ...errors(404, 500, 502),
       },
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
-    // Deletion is admin-only. The floor `member` role explicitly excludes
-    // project.delete; loadProjectForUser('manage') would otherwise let
-    // members through via project.write.
+    // project.delete is the gate; the load above only proves membership.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_DELETE);
 
     // Release prompt attachments first. After the repository deletion below, a
@@ -256,17 +262,42 @@ export function registerProjectSettingsRoutes(): void {
     try {
       repoDeleted = await deleteManagedProjectRepo(loaded.row);
     } catch (error) {
-      console.error(`[projects] failed to delete managed repo for ${projectId}:`, error);
+      logger.error('[projects] failed to delete the managed repo', { projectId, error: String(error) });
       return c.json({ error: 'Failed to delete managed project repository' }, 502);
     }
 
-    const [row] = await db
-      .update(projects)
-      .set({ status: 'archived', updatedAt: new Date() })
-      .where(eq(projects.projectId, projectId))
-      .returning();
+    // Purge the project's connector rows before the archive: after it the
+    // project answers 404, so a failed purge could never be retried.
+    // The row survives its archive as a tombstone, so the database's
+    // connectors FK cascade never fires and the rows would outlive the
+    // purged project (KRTX-1907). Same visibility rule as the repo delete:
+    // a failure leaves the project active and the deletion retryable.
+    try {
+      await purgeProjectConnectors(projectId);
+    } catch (error) {
+      logger.error('[projects] failed to purge the project connectors', { projectId, error: String(error) });
+      return c.json({ error: 'Failed to purge project connectors' }, 500);
+    }
 
+    // The archive UPDATE locks the project against concurrent token mints.
+    // Roll back both writes on failure so cleanup remains retryable.
+    const row = await db.transaction(async (tx) => {
+      const [archived] = await tx.update(projects)
+        .set({ status: 'archived', updatedAt: new Date() })
+        .where(eq(projects.projectId, projectId)).returning();
+      if (!archived) return undefined;
+      await tx.update(accountTokens)
+        .set({ status: 'revoked', revokedAt: new Date() })
+        .where(and(
+          eq(accountTokens.projectId, projectId),
+          eq(accountTokens.accountId, loaded.row.accountId),
+          eq(accountTokens.status, 'active'),
+        ));
+      return archived;
+    });
     if (!row) return c.json({ error: 'Not found' }, 404);
+    // An archived project fires nothing: release its app-event provider instances.
+    await releaseProjectEventSubscriptions(projectId);
     return c.json({ ok: true, archived: true, repo_deleted: repoDeleted });
   },
   );
@@ -300,7 +331,7 @@ export function registerProjectSettingsRoutes(): void {
   // (in ALLOWED_SANDBOX_PROVIDERS and with its API key configured), or null/'' to clear
   // (follow the platform default/distribution). Bypasses the distribution weights by
   // design — pin a project to platinum even when platinum's weight is 0. Human callers
-  // only: project 'manage' + project.settings.write, and never a session principal —
+  // only: project.settings.write, and never a session principal —
   // the pin routes EVERY new session in the project (KRTX-1681: a security-audit
   // agent pinned its whole project to daytona to unblock its own task).
   projectsApp.openapi(

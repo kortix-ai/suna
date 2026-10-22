@@ -228,7 +228,7 @@ export const FILES_SHELL_TOOL_GROUP: FixtureToolGroup = {
       },
       error: 'ENOENT: no such file or directory, scandir \'/workspace/acme-dashboard/src/widgets\'',
       durationMs: 45,
-      note: 'Flat absolute paths, because `parseFilePaths` is the only body parser on both surfaces. The OpenCode `list` tool itself prints an indented tree (`/dir/` then `  name` rows); that shape fails the 70% path-line rule and falls to `ToolOutputFallback` on web and mobile. Subtitle is `getDirectory(input.path)` (the parent directory) on both.',
+      note: 'Flat absolute paths, the one shape both surfaces parse (web `parseListing`, mobile `parseFilePaths`). The OpenCode `list` tool itself prints an indented tree (`/dir/` then `  name` rows); web parses that shape (`parseListing`); on mobile it fails the 70% path-line rule and falls to `ToolOutputFallback`. Subtitle is `getDirectory(input.path)` (the parent directory) on both.',
     },
     // ─── Decide ────────────────────────────────────────────────────────────────
     {

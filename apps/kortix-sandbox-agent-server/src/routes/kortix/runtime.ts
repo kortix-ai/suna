@@ -4,7 +4,7 @@ import { RUNTIME_NOT_READY_CODE } from '@kortix/api-contract/runtime-relay'
 import type { Config } from '@/lib/config/config'
 import { logger } from '@/lib/log/logger'
 import { KORTIX_SERVICE_CALL_HEADER, KORTIX_USER_CONTEXT_HEADER, verifyKortixUserContext } from '@/lib/kortix-api/kortix-user-context'
-import type { KortixEvent } from '@/services/event-bus/kortix-event-bus'
+import { sessionLogEventBus, type KortixEvent } from '@/services/event-bus/kortix-event-bus'
 import { etagMatches, notModified, timedJson } from './kortix-http'
 import type { HarnessQueryService } from '@/harness/contract/queries'
 import type { HarnessReadiness } from '@/harness/contract/proxy'
@@ -16,7 +16,7 @@ export const MAX_MESSAGE_PAGE = 200
 /** Heartbeat cadence on `/events`. Three of these fit in a 60 s client budget. */
 const EVENT_HEARTBEAT_MS = 15_000
 /**
- * Frames one `/events` consumer may leave unread. The ring holds 2000; a
+ * Frames one `/events` consumer may leave unread. The ring holds 20,000; a
  * consumer further behind than this is dropped, and reconnects with its cursor
  * (replay, or a typed resync), instead of buffering every event for the life of
  * the connection.
@@ -174,6 +174,13 @@ export function createRuntimeRouter(
       return answer(c, () => turns.removeMessage(c.req.param('sessionId'), c.req.param('messageId')))
     })
 
+    // Take back a user message no model call has read (RUNTIME_RETRACT_CAPABILITY).
+    app.post('/messages/:sessionId/:messageId/retract', async (c) => {
+      const auth = authorize(cfg, c)
+      if (!auth.ok) return auth.response
+      return answer(c, () => turns.retractMessage(c.req.param('sessionId'), c.req.param('messageId')))
+    })
+
     app.get('/agents', async (c) => {
       const auth = authorize(cfg, c)
       if (!auth.ok) return auth.response
@@ -233,10 +240,14 @@ export function createRuntimeRouter(
     })
   })
 
+  // `schema=v2` (capability `session.log.v2`): the session log's `log.*`
+  // frames, on their own sequence and epoch. Absent, empty or `v1`: the v1 stream.
   app.get('/events', (c) => {
     const auth = authorize(cfg, c)
     if (!auth.ok) return auth.response
-    const bus = queries.events
+    const schema = c.req.query('schema') || 'v1'
+    if (schema !== 'v1' && schema !== 'v2') return c.json({ error: 'unknown schema', schema, supported: ['v1', 'v2'] }, 400)
+    const bus = schema === 'v2' ? sessionLogEventBus() : queries.events
     const sinceRaw = c.req.query('since')
     const since = sinceRaw !== undefined && /^\d+$/.test(sinceRaw) ? Number(sinceRaw) : null
     const epoch = c.req.query('epoch')?.trim() || null

@@ -9,16 +9,13 @@
 #   staging-api-euw2.kortix.com     → Cloudflare (proxied) → ALB → API
 #   gateway-staging-euw2.kortix.com → Cloudflare (proxied) → ALB → gateway
 #
-# These are this stack's origin hostnames. The staging-api Worker picks the
-# live origin: ../staging while its ACTIVE_BACKEND is "ecs-fargate", this root
-# once it is "eu-west-2". Until the switch, this API runs with
-# KORTIX_WORKERS_ENABLED=false in its copy of kortix-staging-env. README.md in
-# this directory has the apply and switch-over steps.
+# These are this stack's origin hostnames. The staging-api Worker routes
+# staging-api.kortix.com to them (ACTIVE_BACKEND "eu-west-2"). README.md in
+# this directory has the apply steps and the record of the move.
 #
-# Naming: local.name is "kortix-staging-euw2", not "kortix-staging" — IAM
-# roles/policies are account-global and the project-snapshots S3 bucket name
-# is globally unique, so this root cannot reuse ../staging's names while both
-# are live. Same reasoning as ../dev-us-east-2.
+# Naming: local.name is "kortix-staging-euw2", not "kortix-staging": the old
+# us-west-2 stack owned the account-global "kortix-staging" names while both
+# ran during the move. Same reasoning as ../dev-us-east-2.
 #
 # Unlike ../dev-us-east-2, eu-west-2 has NO existing *.kortix.com wildcard
 # cert to piggyback on (prod's own main.tf says so verbatim: "eu-west-2 has
@@ -73,7 +70,7 @@ module "network" {
   name               = local.name
   cidr               = "10.24.0.0/16" # distinct from staging (10.20), dev-use2 (10.14), prod (10.20 eu-west-2 — different region, no collision)
   az_count           = 2
-  single_nat_gateway = true # staging: one NAT to save cost, matches ../staging
+  single_nat_gateway = false # a NAT per AZ, like prod: one NAT is one egress failure domain
   tags               = local.tags
 }
 
@@ -82,9 +79,8 @@ data "aws_secretsmanager_secret" "env" {
 }
 
 # ── Project snapshot object store (S3 config provider) ────────────────────────
-# New bucket, new region — "kortix-staging-project-snapshots" (us-west-2)
-# already exists and S3 bucket names are globally unique. Snapshots are
-# derived data, so a fresh empty bucket is safe.
+# Snapshots are derived data, so this bucket started empty. The old us-west-2
+# cache "kortix-staging-project-snapshots" was deleted on 2026-10-12.
 module "project_snapshots" {
   source = "../../modules/project-snapshots-bucket"
   name   = "${local.name}-project-snapshots"
@@ -131,6 +127,20 @@ module "acm_gateway" {
   }
 }
 
+# ── Kortix Capture store ──────────────────────────────────────────────────────
+# Private bucket the Kortix Capture desktop app writes the capture format to
+# (orgs/<account_id>/<device_id>/…), the SQS queue of its `*.manifest.json`
+# events, and the device role the API assumes with a per-device session policy.
+# The task names them through the non-secret KORTIX_CAPTURE_S3_BUCKET /
+# _S3_REGION / _SQS_QUEUE_URL / _STS_ROLE_ARN overrides in the deploy workflow.
+# Nothing records until an account turns Capture on.
+module "capture_store" {
+  source            = "../../modules/capture-store"
+  name              = "${local.name}-capture-store"
+  api_task_role_arn = module.api.task_role_arn
+  tags              = local.tags
+}
+
 module "api" {
   source     = "../../modules/ecs-api"
   name       = local.name
@@ -158,19 +168,28 @@ module "api" {
   audit_archive_enabled       = true
   audit_archive_bucket_arn    = module.audit_archive.bucket_arn
   audit_archive_kms_key_arn   = module.audit_archive.kms_key_arn
+  capture_enabled             = true
+  capture_bucket_arn          = module.capture_store.bucket_arn
+  capture_queue_arn           = module.capture_store.queue_arn
+  capture_device_role_arn     = module.capture_store.device_role_arn
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
-  # Same sizing as ../staging today (see that file's comment history —
-  # the release gate's own concurrent load drove these numbers). Identical
-  # instance class, different region.
+  # Same capacity type, health check, insights and scaling policy as prod: no
+  # Spot. Spot reclaims killed in-flight requests and agent turns during the
+  # v0.13.57 release gate (GOLD-1, RUN-7, CFG-11/12). Two numbers differ from
+  # prod on purpose: the task count (`api_task_count`, bounded by the staging
+  # database's 120 connections) and 2 vCPU per task, sized for the release
+  # gate's concurrent load.
   task_cpu                   = 2048
   task_memory                = 4096
   desired_count              = var.api_task_count
   min_capacity               = var.api_task_count
   max_capacity               = 8
-  use_fargate_spot           = true
-  fargate_base_on_demand     = 1
+  use_fargate_spot           = false
+  force_new_deployment       = true
+  cpu_target                 = 55
+  memory_target              = 65
   requests_per_target_target = 600
   tags                       = local.tags
 }
@@ -196,13 +215,15 @@ module "gateway" {
 
   alb_ingress_cidrs = local.cloudflare_ip_ranges
 
+  # Prod's gateway shape: on-demand (the LLM path), HA floor of 3. The gateway
+  # holds no database connections, so prod's counts fit staging too.
   task_cpu                   = 1024
   task_memory                = 2048
-  desired_count              = 2
-  min_capacity               = 2
-  max_capacity               = 8
-  use_fargate_spot           = true
-  fargate_base_on_demand     = 1
+  desired_count              = 3
+  min_capacity               = 3
+  max_capacity               = 20
+  use_fargate_spot           = false
+  force_new_deployment       = true
   deregistration_delay       = 300
   stop_timeout               = 120
   requests_per_target_target = 120

@@ -4,6 +4,7 @@ import { isProjectSessionPrincipal } from '../../iam/agent-scope';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import {
   PatPolicyError,
+  checkTokenMintExpiry,
   createAccountToken,
   listAccountTokens,
   revokeAccountToken,
@@ -45,16 +46,28 @@ export function registerProjectCredentialsRoutes(): void {
         },
       responses: {
           200: json(z.any(), 'OK'),
-          ...errors(404),
+          ...errors(403, 404),
       },
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'read');
+    // The list names every member's project keys: it needs the leaf that
+    // issues and revokes them (`project.credentials.issue`), not project.read.
+    const loaded = await loadProjectForUser(c, projectId, 'credentials');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     const tokens = await listAccountTokens(loaded.row.accountId, projectId);
+    // Session-bound tokens are not CLI tokens. The runtime mints one per session
+    // (the sandbox's KORTIX_TOKEN, `mintSessionToken`) and revokes it with the
+    // session; a person never creates one, and revoking the one a live box still
+    // holds bricks that session (learnings, 2026-10-01). This is the same call
+    // the personal tokens page makes server-side (`listPersonalAccountTokens`,
+    // `session_id IS NULL`), applied to the project list the CLI reads, so no
+    // `Session <8-hex>` row of confusing provenance shows up here. The count
+    // keeps provenance visible: the CLI explains what it did not list.
+    const cliTokens = tokens.filter((t) => !t.sessionId);
     return c.json({
-      items: tokens.map((t) => ({
+      session_tokens: tokens.length - cliTokens.length,
+      items: cliTokens.map((t) => ({
         token_id: t.tokenId,
         name: t.name,
         public_key: t.publicKey,
@@ -125,6 +138,14 @@ export function registerProjectCredentialsRoutes(): void {
     const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : undefined;
     if (expiresAt && Number.isNaN(expiresAt.getTime())) {
       return c.json({ error: 'expires_at must be ISO-8601' }, 400);
+    }
+    // A project-scoped caller never mints a token that outlives itself.
+    const expiryRefusal = await checkTokenMintExpiry(
+      expiresAt,
+      c.get('tokenProjectId') ? (c.get('iamTokenId') as string | undefined) : undefined,
+    );
+    if (expiryRefusal) {
+      return c.json({ error: expiryRefusal.error, code: expiryRefusal.code }, expiryRefusal.status);
     }
 
     const userId = c.get('userId') as string;
@@ -221,7 +242,7 @@ export function registerProjectCredentialsRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const body = await readJsonObject(c);
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Storing a git credential is a connector-write capability — a custom role can
     // omit project.connector.write to take credential management away from a

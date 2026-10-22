@@ -7,10 +7,11 @@ import {
   resolveGrantSet,
   safeAgentFile,
   SLUG_RE,
-  WORKSPACE_MODES_V2,
+  projectRepositoryDefault,
+  resolveProjectRepository,
   type GrantSetV2,
 } from '@kortix/manifest-schema';
-import { normalizeRequiredConnectorAliases } from '../lib/agent-config-v2';
+import { normalizeRequiredConnectorAliases, readAgentBlockV2 } from '../lib/agent-config-v2';
 import {
   MANIFEST_FILENAME,
   type AgentParseError,
@@ -105,6 +106,40 @@ export function extractAgents(manifest: ParsedManifest): LoadedAgents {
 }
 
 /**
+ * Does the manifest declare this agent at all — the roster every agent-name
+ * gate shares (KRTX-2071/KRTX-2535): v2+ the `agents:` map, where
+ * `readAgentBlockV2`'s ok-but-null block means the name is absent; v1 the
+ * `[[agents]]` array (a manifest without one declares nothing, matching
+ * `applyAgentScope`).
+ */
+function manifestDeclaresAgent(manifest: ParsedManifest, agentName: string): boolean {
+  if (manifest.schemaVersion >= 2) {
+    const read = readAgentBlockV2(manifest, agentName);
+    return read.ok && read.block !== null;
+  }
+  return extractAgents(manifest).specs.some((spec) => spec.name === agentName);
+}
+
+/**
+ * The not-declared verdict + message the agent-name gates share: the config
+ * GET (404) and the agent model-pin PUT (409). Names the declared agents so a
+ * caller can self-correct. `null` = the agent is declared; the caller
+ * proceeds.
+ */
+export function agentNotDeclaredError(
+  manifest: ParsedManifest,
+  agentName: string,
+): { error: string; code: 'agent_not_found' } | null {
+  if (manifestDeclaresAgent(manifest, agentName)) return null;
+  const declared = extractAgents(manifest).specs.map((spec) => spec.name);
+  const listed = declared.length > 0 ? declared.join(', ') : 'none';
+  return {
+    error: `No agent "${agentName}" declared in ${manifest.path || MANIFEST_FILENAME}. Declared agents: ${listed}.`,
+    code: 'agent_not_found',
+  };
+}
+
+/**
  * v2's `agents:` map reader (spec §2.1/§2.2). Maps each `AgentBlockV2` onto
  * the same `AgentSpec` shape the rest of the grant pipeline already consumes:
  *   - `connectors` / `kortix_permissions` / `secrets` (v2's rename of v1's `env`) are
@@ -149,7 +184,7 @@ function extractAgentsV2(raw: unknown, manifest: ParsedManifest, filename: strin
   const defaultAgent =
     typeof defaultAgentRaw === 'string' && defaultAgentRaw.trim() ? defaultAgentRaw.trim() : null;
 
-  return { specs, errors, defaultAgent };
+  return { specs, errors, defaultAgent, schemaVersion: manifest.schemaVersion };
 }
 
 /**
@@ -319,24 +354,10 @@ function parseAgentEntryV2(name: string, block: unknown, filename: string, versi
     typeof normalizedRow.sandbox === 'string' && normalizedRow.sandbox.trim()
       ? normalizedRow.sandbox.trim()
       : null;
-  const workspaceRaw = normalizedRow.workspace;
-  if (
-    workspaceRaw !== undefined &&
-    (typeof workspaceRaw !== 'string' ||
-      !(WORKSPACE_MODES_V2 as readonly string[]).includes(workspaceRaw))
-  ) {
-    return err(name, `agents.${name}.workspace must be one of: ${WORKSPACE_MODES_V2.join(', ')}`);
-  }
-  const repositoryAccessRaw = normalizedRow.repository_access;
-  if (repositoryAccessRaw !== undefined && typeof repositoryAccessRaw !== 'boolean') {
-    return err(name, `agents.${name}.repository_access must be a boolean`);
-  }
-  if (repositoryAccessRaw !== undefined && workspaceRaw !== undefined &&
-      repositoryAccessRaw !== (workspaceRaw === 'branch')) {
-    return err(name, `agents.${name}.repository_access conflicts with workspace`);
-  }
-  const repositoryAccess = repositoryAccessRaw ?? (workspaceRaw === undefined || workspaceRaw === 'branch');
-  const legacyReadWorkspace = workspaceRaw === 'read' && repositoryAccessRaw === undefined;
+  const repository = resolveProjectRepository(normalizedRow, projectRepositoryDefault(version));
+  if (!repository.ok) return err(name, `agents.${name}.${repository.path} ${repository.message}`);
+  const repositoryAccess = repository.value;
+  const legacyReadWorkspace = repository.legacyRead;
 
   const connectorsResolved = resolveGrantSet(normalizedRow.connectors, 'none');
 

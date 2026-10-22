@@ -94,8 +94,11 @@ const projectWebhookLimiter = new TokenBucketRateLimiter('project_webhook');
 const projectWebhookManifestRefreshLimiter = new TokenBucketRateLimiter(
   'project_webhook_manifest_refresh',
 );
+const projectWebhookRejectedRunLimiter = new TokenBucketRateLimiter('project_webhook_rejected_run');
 const projectSecretWriteLimiter = new TokenBucketRateLimiter('project_secret_write');
 const llmGatewayLimiter = new TokenBucketRateLimiter('llm_gateway');
+const feedbackLimiter = new TokenBucketRateLimiter('feedback');
+const deviceTokenReleaseLimiter = new TokenBucketRateLimiter('device_token_release');
 
 /**
  * Per-project budget on secret WRITES (POST/PUT/PATCH/DELETE under
@@ -227,6 +230,31 @@ export function createPublicSessionShareRateLimitMiddleware() {
 }
 
 /**
+ * Guards the authenticated `POST /v1/feedback` endpoint. Keyed on the caller's
+ * user id — every credential type resolves one, and auth runs first on the
+ * mounted app — so one identity cannot fill the triage surface.
+ */
+export function createFeedbackRateLimitMiddleware() {
+  return createAuditedRateLimitMiddleware(feedbackLimiter, (c) => {
+    const userId = c.get('userId') as string | undefined;
+    const key = userId ? `user:${userId}` : `ip:${requestClientKey(c)}`;
+    return {
+      key,
+      policy: {
+        limit: positiveInt(config.KORTIX_FEEDBACK_REQS_PER_MIN, 10),
+        windowMs: 60_000,
+      },
+      auditContext: {
+        action: RATE_LIMIT_EXCEEDED_ACTION,
+        resourceType: 'feedback',
+        resourceId: userId ?? null,
+        metadata: { limiter: 'feedback' },
+      },
+    };
+  });
+}
+
+/**
  * Guards the public, unauthenticated `POST /v1/system/demo-request` lead-capture
  * endpoint. No identity to key on (anyone on the marketing site can submit), so
  * it's keyed on client IP — deliberately tight, since every allowed request
@@ -306,9 +334,46 @@ export function createProjectWebhookRateLimitMiddleware() {
 }
 
 /**
+ * Guards the public `POST /v1/notifications/device-token/release`. Keyed on
+ * client IP; a signed-out app calls it once per sign-out. The rejection path
+ * writes no audit row, so a flood cannot become a database-write flood.
+ */
+export function createDeviceTokenReleaseRateLimitMiddleware() {
+  return async (c: Context, next: Next) => {
+    const result = deviceTokenReleaseLimiter.check(requestClientKey(c), { limit: 30, windowMs: 60_000 });
+    setHeaders(c, result);
+    if (!result.allowed) {
+      return c.json(
+        {
+          error: 'rate_limit_exceeded',
+          message: 'Rate limit exceeded. Please retry shortly.',
+          retry_after_seconds: Math.ceil((result.retryAfterMs ?? result.resetMs) / 1000),
+        },
+        429,
+      );
+    }
+    await next();
+  };
+}
+
+/**
  * Bound forced Git mirror refreshes by project, independent of source IP.
  * Each API replica owns a local mirror, so each replica needs its own budget.
  */
+/**
+ * A webhook delivery rejected before authentication is stored as a run, so
+ * the owner can see it and replay it. Anyone holding the URL can send them,
+ * so at most one is recorded per trigger per 10 s per replica: a request
+ * flood never becomes a database-write flood. Over budget, the route still
+ * answers 401; it only skips the write.
+ */
+export function consumeProjectWebhookRejectedRunBudget(projectId: string, slug: string): boolean {
+  return projectWebhookRejectedRunLimiter.check(`${projectId}:${slug}`, {
+    limit: 1,
+    windowMs: 10_000,
+  }).allowed;
+}
+
 export function consumeProjectWebhookManifestRefreshBudget(projectId: string): boolean {
   return projectWebhookManifestRefreshLimiter.check(projectId, {
     limit: 1,
@@ -367,6 +432,9 @@ export function resetRateLimiters() {
   checkEmailLimiter.reset();
   projectWebhookLimiter.reset();
   projectWebhookManifestRefreshLimiter.reset();
+  projectWebhookRejectedRunLimiter.reset();
   projectSecretWriteLimiter.reset();
   llmGatewayLimiter.reset();
+  feedbackLimiter.reset();
+  deviceTokenReleaseLimiter.reset();
 }

@@ -1,4 +1,5 @@
 /** Catalogue browse routes: Discover (integrations.sh), easy-connect toolkits, Pipedream apps. */
+import { withDirectIds, withDirectMcpUrls } from '../connect-direct-twins';
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { featureDisabledBody } from '../../feature-flags/gate';
 import { auth, errors, json } from '../../openapi';
@@ -34,14 +35,14 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       // Flag gate AFTER authz: a non-admin still learns nothing.
-      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
-        return c.json(featureDisabledBody('connectors_api_discover'), 403);
-      }
+      const catalogue = await discoverCatalogue(deps, projectId);
+      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.listDiscoverConnectors) return c.json({ error: 'catalogue unavailable' }, 502);
       const limit = Number(c.req.query('limit'));
       try {
         return c.json(
           await deps.listDiscoverConnectors({
+            catalogue,
             q: c.req.query('q') || undefined,
             cursor: c.req.query('cursor') || undefined,
             category: c.req.query('category') || undefined,
@@ -81,15 +82,15 @@ export function registerDiscoverRoutes(app: OpenAPIHono, deps: ConnectorRouterDe
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       // Flag gate AFTER authz: a non-admin still learns nothing.
-      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
-        return c.json(featureDisabledBody('connectors_api_discover'), 403);
-      }
+      const catalogue = await discoverCatalogue(deps, projectId);
+      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.listDiscoverSections) return c.json({ error: 'catalogue unavailable' }, 502);
       const perCategory = Number(c.req.query('perCategory'));
       const maxCategories = Number(c.req.query('maxCategories'));
       try {
         return c.json(
           await deps.listDiscoverSections({
+            catalogue,
             ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
             ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
           }),
@@ -123,18 +124,55 @@ export function registerDiscoverDetailRoutes(app: OpenAPIHono, deps: ConnectorRo
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       // Flag gate AFTER authz: a non-admin still learns nothing.
-      if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) {
-        return c.json(featureDisabledBody('connectors_api_discover'), 403);
-      }
+      const catalogue = await discoverCatalogue(deps, projectId);
+      if (!catalogue) return c.json(featureDisabledBody('connectors_api_discover'), 403);
       if (!deps.getDiscoverConnector) return c.json({ error: 'catalogue unavailable' }, 502);
       try {
-        return c.json(await deps.getDiscoverConnector(c.req.query('id')));
+        return c.json(await deps.getDiscoverConnector(c.req.query('id'), catalogue));
       } catch (error) {
         const message = (error as Error).message || 'catalogue unavailable';
         return c.json({ error: message }, message === 'Connector not found' ? 404 : 502);
       }
     },
   );
+}
+
+/**
+ * Which catalogue Discover serves: Kortix's own MCP apps for a `connectors_v2`
+ * project (`connectors/mcp-apps.ts`), integrations.sh behind
+ * `connectors_api_discover`, else none.
+ */
+async function discoverCatalogue(
+  deps: ConnectorRouterDeps,
+  projectId: string,
+): Promise<'kortix' | 'integrations' | null> {
+  if (await deps.featureFlagEnabled(projectId, 'connectors_v2')) return 'kortix';
+  return (await deps.featureFlagEnabled(projectId, 'connectors_api_discover')) ? 'integrations' : null;
+}
+
+/**
+ * Each managed app with `directMcpUrl` (its hosted MCP server, which Install
+ * offers first) and, for a project with the API/MCP catalogue on, `directId`
+ * (the same app's catalogue id). A lookup failure leaves the listing as it was.
+ */
+async function withCatalogTwins(
+  deps: ConnectorRouterDeps,
+  projectId: string,
+  result: unknown,
+): Promise<unknown> {
+  let out = result;
+  try {
+    if (deps.catalogDirectMcpUrls) out = withDirectMcpUrls(out, await deps.catalogDirectMcpUrls());
+  } catch {
+    /* listing without MCP URLs */
+  }
+  if (!deps.catalogDirectIds) return out;
+  try {
+    if (!(await deps.featureFlagEnabled(projectId, 'connectors_api_discover'))) return out;
+    return withDirectIds(out, await deps.catalogDirectIds());
+  } catch {
+    return out;
+  }
 }
 
 export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: ConnectorRouterDeps): void {
@@ -169,7 +207,9 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
         cursor: c.req.query('cursor') || undefined,
         ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
       });
-      return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
+      return result
+        ? c.json(await withCatalogTwins(deps, projectId, result))
+        : featureNotSupportedResponse(c, 'connect_toolkits');
     },
   );
 
@@ -207,7 +247,9 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
         ...(Number.isFinite(perCategory) && perCategory > 0 ? { perCategory } : {}),
         ...(Number.isFinite(maxCategories) && maxCategories > 0 ? { maxCategories } : {}),
       });
-      return result ? c.json(result) : featureNotSupportedResponse(c, 'connect_toolkits');
+      return result
+        ? c.json(await withCatalogTwins(deps, projectId, result))
+        : featureNotSupportedResponse(c, 'connect_toolkits');
     },
   );
 
@@ -303,7 +345,11 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
       ...auth,
       responses: {
         200: json(
-          z.object({ configured: z.boolean(), provider: z.string().nullable(), providers: z.array(z.string()).optional() }),
+          z.object({
+            configured: z.boolean(),
+            provider: z.string().nullable(),
+            providers: z.array(z.string()).optional(),
+          }),
           'Connect provider status',
         ),
         ...errors(401),
@@ -312,7 +358,10 @@ export function registerConnectCatalogueRoutes(app: OpenAPIHono, deps: Connector
     async (c: any) => {
       const result = deps.connectStatus
         ? await deps.connectStatus()
-        : { configured: !!deps.listPipedreamApps, provider: deps.listPipedreamApps ? 'pipedream' : null };
+        : {
+            configured: !!deps.listPipedreamApps,
+            provider: deps.listPipedreamApps ? 'pipedream' : null,
+          };
       return c.json(result);
     },
   );

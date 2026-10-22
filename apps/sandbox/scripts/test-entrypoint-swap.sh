@@ -233,6 +233,35 @@ code=$(run_case)
   || no "pinned" "log=$(tr '\n' ',' < "${TMP}/log")"
 rm -rf "${TMP}"
 
+# ---------------------------------------------------------------------------
+# One supervisor per box. Prod 2026-10-13: four relaunches started four
+# supervisors; three daemons lost the port, and their fast exits rolled the
+# agent back and pinned it. A second supervisor must launch nothing.
+# ---------------------------------------------------------------------------
+if command -v flock >/dev/null 2>&1; then
+  setup
+  make_agent "${TMP}/bin/kortix-agent" v1 0 3
+  (run_case >/dev/null) &
+  first=$!
+  sleep 1
+  code=$(KORTIX_SUPERVISOR_LOCK_WAIT_S=1 run_case)
+  wait "${first}"
+  [ "${code}" = "0" ] && [ "$(grep -c AGENT:v1 "${TMP}/log")" = "1" ] \
+    && grep -q "another supervisor owns this box" "${TMP}/out" \
+    && [ ! -f "${TMP}/state/agent.pinned" ] \
+    && ok "a second supervisor on the same box launches no daemon" \
+    || no "second supervisor" "code=${code} runs=$(grep -c AGENT:v1 "${TMP}/log") out=$(tr '\n' ',' < "${TMP}/out")"
+  # Once the first supervisor is gone, a relaunch takes over normally.
+  : > "${TMP}/log"
+  code=$(run_case)
+  [ "${code}" = "0" ] && [ "$(grep -c AGENT:v1 "${TMP}/log")" = "1" ] \
+    && ok "a relaunch after the supervisor exits takes the lock" \
+    || no "relaunch takes the lock" "code=${code} runs=$(grep -c AGENT:v1 "${TMP}/log")"
+  rm -rf "${TMP}"
+else
+  echo "SKIP  one supervisor per box (no flock on this machine)"
+fi
+
 echo
 echo "${pass} passed, ${fail} failed"
 [ "${fail}" -eq 0 ]

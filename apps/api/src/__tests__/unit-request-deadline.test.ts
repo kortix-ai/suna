@@ -36,13 +36,13 @@ function makeApp() {
     return c.json({ error: String(err) }, 500);
   });
   const slow = async (c: any) => {
-    await new Promise((r) => setTimeout(r, 500)); // exceeds the 50ms deadline
+    await new Promise((r) => setTimeout(r, 200)); // 4x the 50ms deadline: due after it, whatever the load
     return c.json({ ok: true });
   };
   app.get('/v1/projects/x/change-requests', slow); // bounded
   app.get('/v1/p/sandbox/3000/index.html', slow); // exempt prefix
   app.get('/v1/projects/x/turn-stream', slow); // JSON relay, bounded
-  app.get('/v1/router/chat/completions', slow); // exempt prefix
+  app.get('/v1/router/tavily/search', slow); // exempt prefix
   app.get('/v1/llm/chat/completions', slow); // exempt prefix (LLM streaming)
   app.post('/v1/connectors/projects/x/connectors', slow); // exempt prefix (git + provider sync)
   app.post('/v1/billing/webhooks/stripe', slow); // exempt prefix (webhook)
@@ -79,8 +79,8 @@ describe('requestDeadline', () => {
     expect(res.status).toBe(503);
   });
 
-  it('exempts the LLM router prefix from the deadline', async () => {
-    const res = await makeApp().request('/v1/router/chat/completions');
+  it('exempts the router tool-proxy prefix from the deadline', async () => {
+    const res = await makeApp().request('/v1/router/tavily/search');
     expect(res.status).toBe(200);
   });
 

@@ -34,7 +34,7 @@ export { replaceCli } from './runtime-assets-cli'
 export type { ReplaceCliDeps } from './runtime-assets-cli'
 import { optionalString, manifestComponent, isV2Manifest, manifestBuild, agentSelfUpdateAllowed, resolveArtifactUrl, agentStateDirOf, agentBakedPathOf, isCompiledStandalone } from './runtime-assets-manifest'
 import { writeOverlay, fetchJson, fetchArtifact, chunkStoreSources } from './runtime-assets-download'
-import { withReleaseStoreLock } from '../config-release/boot-config'
+import { withReleaseStoreLock } from '@/lib/release-store-lock'
 
 /**
  * What the convergence pass is doing RIGHT NOW, for the proxy's not-ready

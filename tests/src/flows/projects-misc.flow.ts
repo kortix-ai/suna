@@ -16,6 +16,10 @@ import { bindDatabaseSessionCredential, createDatabaseSession } from '../fixture
 // a real 201 needs a GitHub App install + reachable repo, which the harness
 // can't guarantee.
 flow('PROJ-2', { domain: 'projects', routes: ['POST /v1/projects'] }, async (ctx) => {
+  await ctx.step('missing repo_url → 400 repo_url is required', async () => {
+    (await ctx.client.as(ctx.P.OWNER).post('/v1/projects', { name: ctx.fixtures.name('byo') }))
+      .status(400).body().has('$.error', 'repo_url is required');
+  });
   await ctx.step('non-GitHub repo_url → 400', async () => {
     const r = await ctx.client
       .as(ctx.P.OWNER)
@@ -75,11 +79,11 @@ flow(
       tokenId = r.json<any>().token_id;
       ctx.track('cli-token', tokenId, { projectId: p.id });
     });
-    await ctx.step('list CLI tokens → 200 includes minted', async () => {
+    await ctx.step('list CLI tokens → 200 includes minted, hides session tokens', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .get('/v1/projects/:projectId/cli-token', { params: { projectId: p.id } });
-      r.status(200).body().exists('$.items');
+      r.status(200).body().exists('$.items').exists('$.session_tokens');
     });
     await ctx.step('revoke CLI token → 200', async () => {
       const r = await ctx.client
@@ -485,11 +489,20 @@ flow(
     routes: [
       'GET /v1/projects/:projectId/agents/:agentName/config',
       'PUT /v1/projects/:projectId/agents/:agentName/config',
+      'GET /v1/projects/:projectId/files/content',
     ],
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
     const project = await team.project({ seed: true });
+    const kortixBlock = async () => {
+      const file = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/:projectId/files/content', {
+        params: { projectId: project.id }, query: { path: 'kortix.yaml' },
+      });
+      file.status(200);
+      const content = file.json<{ content: string }>().content;
+      return content.slice(content.indexOf('\n  kortix:'));
+    };
 
     await ctx.step(
       'GET reports schema_version 2 / editable true for a seeded manifest',
@@ -516,6 +529,10 @@ flow(
         );
         read.status(200).body().has('$.block.repository_access', access);
         if ('workspace' in read.json<any>().block) throw new Error('response exposes legacy workspace');
+        const block = await kortixBlock();
+        if (!block.includes(`workspace:\n      project_repository: ${access}`) || block.includes('repository_access')) {
+          throw new Error(`kortix.yaml must store workspace.project_repository: ${access}, got:\n${block}`);
+        }
       });
     }
     await ctx.step('legacy runtime saves a disabled repository policy', async () => {
@@ -525,7 +542,7 @@ flow(
       );
       saved.status(200).body().has('$.block.repository_access', false);
     });
-    for (const body of [{ repository_access: 'false' }, { repository_access: true, workspace: 'runtime' }]) {
+    for (const body of [{ repository_access: 'false' }, { repository_access: true, workspace: 'runtime' }, { workspace: { project_repository: false } }]) {
       await ctx.step('invalid or conflicting repository policy is rejected without widening access', async () => {
         const params = { projectId: project.id, agentName: 'kortix' };
         const rejected = await ctx.client.as(ctx.P.OWNER).put(
@@ -630,6 +647,73 @@ flow(
       if (typeof r.json<any>()?.configured !== 'boolean') {
         throw new Error(`expected configured to be a boolean, got: ${r.json<any>()?.configured}`);
       }
+    });
+  },
+);
+
+// PROJ-43 — project-quota pre-flight. GET /projects/quota reports the
+// account's project-cap state so the /new form can show the cap reason and
+// keep Create disabled BEFORE a create fails with the 403 (KRTX-2495). The
+// same computation the create gate runs (`enforceProjectQuota` →
+// `projectQuotaState`), so the pre-check and the submit-time denial can never
+// disagree about `capped`, the message or the count. Auth-gated,
+// account-scoped: `account_id` must name an account of the caller (the same
+// `resolveProjectAccount` the create routes use), and omitting it resolves
+// the same default account an omitted-`account_id` create would target.
+// Read-only; the shape is asserted, not the tier — the manifest's OWNER
+// account may be free or paid on any deployment.
+flow(
+  'PROJ-43',
+  { domain: 'projects', routes: ['GET /v1/projects/quota'] },
+  async (ctx) => {
+    await ctx.step('ANON → 401', async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/quota');
+      r.status(401);
+    });
+    await ctx.step('OWNER (default account) → 200 with the cap shape', async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/quota');
+      r.status(200).body().exists('$.capped').exists('$.limit');
+      const body = r.json<any>();
+      if (typeof body.capped !== 'boolean') {
+        throw new Error(`expected a boolean capped, got: ${JSON.stringify(body.capped)}`);
+      }
+      if (typeof body.limit !== 'number' || body.limit < 1) {
+        throw new Error(`expected a positive numeric limit, got: ${JSON.stringify(body.limit)}`);
+      }
+      // `count` is null exactly when the plan does not cap (no count query
+      // ran); `message` is non-null exactly when `capped` is true.
+      if (body.count !== null && typeof body.count !== 'number') {
+        throw new Error(`expected count to be a number or null, got: ${JSON.stringify(body.count)}`);
+      }
+      if (body.message !== null && typeof body.message !== 'string') {
+        throw new Error(`expected message to be a string or null, got: ${JSON.stringify(body.message)}`);
+      }
+      if (body.capped !== (body.message !== null)) {
+        throw new Error(
+          `capped=${body.capped} must agree with message=${JSON.stringify(body.message)}`,
+        );
+      }
+    });
+    await ctx.step('explicit account_id → same shape for a caller account', async () => {
+      const p = await ctx.fixtures.project();
+      const accountId = await withDb(ctx, async (db) =>
+        (await db.query('SELECT account_id FROM kortix.projects WHERE project_id = $1', [p.id])).rows[0]
+          .account_id as string,
+      );
+      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/quota', {
+        query: { account_id: accountId },
+      });
+      r.status(200).body().exists('$.capped').exists('$.limit');
+    });
+    await ctx.step('an account the caller is not a member of → 403; a malformed id → 400', async () => {
+      const denied = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/quota', {
+        query: { account_id: '00000000-0000-4000-a000-000000000009' },
+      });
+      denied.status(403);
+      const bad = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/quota', {
+        query: { account_id: '00000000-0000-4000-a000-00000000notre' },
+      });
+      bad.status(400);
     });
   },
 );
@@ -748,17 +832,16 @@ flow(
 );
 
 // PROJ-37 — PUT and DELETE /model-defaults run one guard in one order:
-// project visible (404) → project.model.write (403) → project LLM gateway
-// enabled (404 llm_gateway_disabled). Same caller + same project state → same
-// status on both verbs. Every denial fires before model servability is
-// checked. PROJ-27 covers the funded set/read/clear lifecycle; this local
-// flow proves an authorized writer reaches model validation and deletion.
+// project visible (404) → project.model.write (403). Same caller + same
+// project state → same status on both verbs. Every denial fires before model
+// servability is checked. PROJ-27 covers the funded set/read/clear lifecycle;
+// this local flow proves an authorized writer reaches model validation and
+// deletion.
 flow(
   'PROJ-37',
   {
     domain: 'projects',
     routes: [
-      'PATCH /v1/projects/:projectId/experimental',
       'GET /v1/projects/:projectId/model-defaults',
       'PUT /v1/projects/:projectId/model-defaults',
       'DELETE /v1/projects/:projectId/model-defaults',
@@ -766,57 +849,32 @@ flow(
   },
   async (ctx) => {
     const team = await ctx.fixtures.team();
-    const gatewayOff = await team.project();
-    const gatewayOn = await team.project();
+    const project = await team.project();
     const user = await team.addMember('member');
     const manager = await team.addMember('member');
-    for (const project of [gatewayOff, gatewayOn]) {
-      await team.grantProjectRole(project.id, user.userId!, 'user');
-      await team.grantProjectRole(project.id, manager.userId!, 'manager');
-    }
+    await team.grantProjectRole(project.id, user.userId!, 'user');
+    await team.grantProjectRole(project.id, manager.userId!, 'manager');
     const path = '/v1/projects/:projectId/model-defaults';
     const put = (actor: typeof user, projectId: string, model = 'guard-probe-model') =>
       ctx.client.as(actor).put(path, { scope: 'project', model }, { params: { projectId } });
     const del = (actor: typeof user, projectId: string) =>
       ctx.client.as(actor).del(path, { params: { projectId }, query: { scope: 'project' } });
 
-    await ctx.step('OWNER turns the LLM gateway off on one project and on for the other', async () => {
-      for (const [project, enabled] of [[gatewayOff, false], [gatewayOn, true]] as const) {
-        const r = await ctx.client
-          .as(ctx.P.OWNER)
-          .patch(
-            '/v1/projects/:projectId/experimental',
-            { feature: 'llm_gateway', enabled },
-            { params: { projectId: project.id } },
-          );
-        r.status(200);
-      }
+    await ctx.step('project user without model.write → PUT and DELETE both 403', async () => {
+      (await put(user, project.id)).status(403);
+      (await del(user, project.id)).status(403);
     });
-    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is off', async () => {
-      (await put(user, gatewayOff.id)).status(403);
-      (await del(user, gatewayOff.id)).status(403);
+    await ctx.step('NONMEMBER → PUT and DELETE both 403', async () => {
+      (await put(ctx.P.NONMEMBER, project.id)).status(403);
+      (await del(ctx.P.NONMEMBER, project.id)).status(403);
     });
-    await ctx.step('project user without model.write → PUT and DELETE both 403 while the gateway is on', async () => {
-      (await put(user, gatewayOn.id)).status(403);
-      (await del(user, gatewayOn.id)).status(403);
-    });
-    await ctx.step('project manager → PUT and DELETE both 404 llm_gateway_disabled while the gateway is off', async () => {
-      (await put(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
-      (await del(manager, gatewayOff.id)).status(404).body().has('$.code', 'llm_gateway_disabled');
-    });
-    await ctx.step('NONMEMBER → PUT and DELETE both 403 on either project', async () => {
-      for (const project of [gatewayOff, gatewayOn]) {
-        (await put(ctx.P.NONMEMBER, project.id)).status(403);
-        (await del(ctx.P.NONMEMBER, project.id)).status(403);
-      }
-    });
-    await ctx.step('project manager reaches model validation and deletion while the gateway is on', async () => {
-      (await put(manager, gatewayOn.id)).status(409)
+    await ctx.step('project manager reaches model validation and deletion', async () => {
+      (await put(manager, project.id)).status(409)
         .body().has('$.code', 'model_not_servable');
       const read = () =>
-        ctx.client.as(manager).get(path, { params: { projectId: gatewayOn.id } });
+        ctx.client.as(manager).get(path, { params: { projectId: project.id } });
       (await read()).status(200).body().has('$.projectDefault', null);
-      (await del(manager, gatewayOn.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
+      (await del(manager, project.id)).status(200).body().has('$.ok', true).has('$.scope', 'project');
       (await read()).status(200).body().has('$.projectDefault', null);
     });
   },
@@ -871,42 +929,6 @@ flow(
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
-    });
-  },
-);
-
-// PROJ-28 — Suna-migration status surface. Top-level `/v1/projects/suna-migration/*`
-// (NOT project-scoped, despite the path prefix) — scoped to the caller's own
-// account. eligible = the account has legacy `public.projects` rows AND no
-// completed/in-flight migration yet. A fresh e2e account (synthesized per run)
-// has neither, so this asserts the real "nothing to migrate" shape rather than
-// kicking off a real migration against production Suna data.
-flow(
-  'PROJ-28',
-  {
-    domain: 'projects',
-    routes: [
-      'GET /v1/projects/suna-migration/eligibility',
-      'GET /v1/projects/suna-migration/status',
-      'POST /v1/projects/suna-migration/start',
-    ],
-  },
-  async (ctx) => {
-    await ctx.step('GET eligibility for a fresh account → 200, not eligible', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/suna-migration/eligibility');
-      r.status(200).body().has('$.eligible', false).has('$.migration', null);
-    });
-    await ctx.step('GET status for a fresh account → 200, no migration on record', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get('/v1/projects/suna-migration/status');
-      r.status(200).body().has('$.migration', null);
-    });
-    await ctx.step('POST start for a non-eligible account → 400 (nothing to migrate)', async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).post('/v1/projects/suna-migration/start', {});
-      r.status(400);
-    });
-    await ctx.step('ANON cannot read eligibility → 401', async () => {
-      const r = await ctx.client.as(ctx.P.ANON).get('/v1/projects/suna-migration/eligibility');
-      r.status(401);
     });
   },
 );
@@ -1054,8 +1076,8 @@ flow(
     });
     if (ctx.env.target !== 'local') {
       // The enabled set is deployment config (ALLOWED_SANDBOX_PROVIDERS with an
-      // API key): dev/staging/prod enable Daytona + Platinum, a PR preview
-      // enables Platinum only. Read it from the project instead of assuming a
+      // API key): dev/staging/prod enable Platinum and the legacy Daytona
+      // fallback, a PR preview enables Platinum only. Read it from the project instead of assuming a
       // provider, then prove a concrete pin works and a known-but-disabled
       // provider is refused.
       let enabled: string[] = [];
@@ -1088,7 +1110,7 @@ flow(
           throw new Error(`unexpected sandbox-provider PATCH response: ${r.text()}`);
         }
       });
-      const disabled = ['daytona', 'platinum', 'e2b'].find((name) => !enabled.includes(name));
+      const disabled = ['platinum', 'daytona'].find((name) => !enabled.includes(name));
       if (disabled) {
         await ctx.step('pin to a known but disabled provider → 400', async () => {
           const r = await ctx.client
@@ -1102,6 +1124,16 @@ flow(
         });
       }
     }
+    await ctx.step('pin to the discontinued e2b provider → 400', async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .patch(
+          '/v1/projects/:projectId/sandbox-provider',
+          { provider: 'e2b' },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
     await ctx.step('clear the pin (null) → 200 (immediate, kind:project)', async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
@@ -1117,7 +1149,7 @@ flow(
         .as(ctx.P.NONMEMBER)
         .patch(
           '/v1/projects/:projectId/sandbox-provider',
-          { provider: 'daytona' },
+          { provider: 'platinum' },
           { params: { projectId: p.id } },
         );
       r.status([403, 404]);
@@ -1127,7 +1159,7 @@ flow(
         .as(ctx.P.ANON)
         .patch(
           '/v1/projects/:projectId/sandbox-provider',
-          { provider: 'daytona' },
+          { provider: 'platinum' },
           { params: { projectId: p.id } },
         );
       r.status(401);
@@ -1135,12 +1167,68 @@ flow(
   },
 );
 
+// PROJ-44 — Daytona is deprecated: no customer may choose it. It runs on the
+// local profile (no managed Git, no sandbox): every refusal happens before a
+// repository or a sandbox is read. The local stack lists `daytona` among the
+// allowed providers, so the refusal is proven where Daytona is still configured.
+flow(
+  'PROJ-44',
+  {
+    domain: 'projects',
+    routes: [
+      'GET /v1/projects/:projectId',
+      'PATCH /v1/projects/:projectId/sandbox-provider',
+      'POST /v1/projects/:projectId/sessions',
+      'GET /v1/projects/:projectId/sessions',
+    ],
+  },
+  async (ctx) => {
+    const p = await ctx.fixtures.project({ metadata: { default_sandbox_provider: 'daytona' } });
+    const owner = ctx.client.as(ctx.P.OWNER);
+    const params = { params: { projectId: p.id } };
+    const readProject = async () => {
+      const r = await owner.get('/v1/projects/:projectId', params);
+      r.status(200);
+      return r.json<{ default_sandbox_provider?: string | null; available_sandbox_providers?: string[] }>();
+    };
+    await ctx.step('a project with a stored daytona pin reads as unpinned and never offers daytona', async () => {
+      const project = await readProject();
+      if (project.default_sandbox_provider !== null) {
+        throw new Error(`expected default_sandbox_provider null, got ${project.default_sandbox_provider}`);
+      }
+      if ((project.available_sandbox_providers ?? []).includes('daytona')) {
+        throw new Error(`daytona is offered: ${JSON.stringify(project.available_sandbox_providers)}`);
+      }
+    });
+    await ctx.step('pin to daytona → 400 with the deprecation message; the project stays unpinned', async () => {
+      const r = await owner.patch('/v1/projects/:projectId/sandbox-provider', { provider: 'daytona' }, params);
+      r.status(400).body().has('$.error', 'Daytona is deprecated. New sandboxes run on Platinum.');
+      const project = await readProject();
+      if (project.default_sandbox_provider !== null) {
+        throw new Error(`a refused pin changed the project: ${project.default_sandbox_provider}`);
+      }
+    });
+    await ctx.step('a session that names daytona → 400 sandbox_provider_deprecated, and no session exists', async () => {
+      const r = await owner.post('/v1/projects/:projectId/sessions', { provider: 'daytona' }, params);
+      r.status(400).body().has('$.code', 'sandbox_provider_deprecated');
+      const list = await owner.get('/v1/projects/:projectId/sessions', params);
+      list.status(200);
+      const sessions = list.json<Array<{ session_id: string }>>();
+      if (sessions.length !== 0) throw new Error(`a refused create left ${sessions.length} session(s)`);
+    });
+    await ctx.step('NONMEMBER cannot reach the pin → 403/404', async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .patch('/v1/projects/:projectId/sandbox-provider', { provider: 'daytona' }, params);
+      r.status([403, 404]);
+    });
+  },
+);
+
 // PROJ-32 — the BYOK-provider-connect-modal catalog. Serves the SAME live,
 // 24h-refreshed `runtimeModelCatalog.snapshot()` every other gateway/model
 // endpoint reads (apps/api/src/projects/routes/models.ts) — provider-level rows
-// (id, name, auth env vars, docs URL), NOT gated by projectLlmGatewayEnabled
-// since it's meaningful for every project including native (non-gateway)
-// ones. Project-read-scoped (403/404 boundary), not actually secret data.
+// (id, name, auth env vars, docs URL). Project-read-scoped (403/404 boundary), not actually secret data.
 flow(
   'PROJ-32',
   { domain: 'projects', routes: ['GET /v1/projects/:projectId/llm-catalog/providers'] },

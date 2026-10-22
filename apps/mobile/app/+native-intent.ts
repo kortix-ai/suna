@@ -1,3 +1,4 @@
+import { inviteIdFromUrl, rememberInviteLink } from '@/lib/invites/invite-landing';
 import { resolveShareLinkUrl } from '@/lib/share-link';
 import { isBrowserReturnPath } from '@/lib/session/connect-model';
 
@@ -10,10 +11,16 @@ import { isBrowserReturnPath } from '@/lib/session/connect-model';
  * In-app browser return URLs (`kortix://providers/…`, `kortix://connectors/…`)
  * only close the browser session. On Android they also arrive as a deep link;
  * the same rule keeps the user on the screen that opened the browser.
+ *
+ * Invite links (`kortix://invites/<id>`) route to `app/invites/[id].tsx`. The
+ * id is also remembered (KRTX-1731): signed out, `AuthProtection` sends the
+ * user to /auth, and the start screen opens the invite after sign-in.
  */
 export function redirectSystemPath({ path, initial }: { path: string; initial: boolean }) {
   try {
     if (resolveShareLinkUrl(path) || isBrowserReturnPath(path)) return initial ? '/' : null;
+    const inviteId = inviteIdFromUrl(path);
+    if (inviteId) rememberInviteLink(inviteId);
   } catch {
     // Never throw here: an error in this hook can crash the app.
   }

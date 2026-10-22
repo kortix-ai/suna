@@ -1,18 +1,18 @@
 /**
- * Convergence triggers: a base branch moved by an API write, and a push to the base
- * branch through the git proxy. Each one only schedules
- * `convergeSessionConfig`; neither ends or delays a turn.
+ * Convergence triggers: a turn ended, a base branch moved by an API write, and a
+ * push to the base branch through the git proxy. None of them ends or delays a
+ * turn.
  *
- * They are a WARM-UP, not the guarantee. The guarantee is
- * `convergeBeforeTurnStart` (projects/lib/turn-start-convergence.ts): a prompt
- * on a box that is behind converges before it runs. These triggers move a box
- * onto the new config while nobody is waiting, so that gate finds it current.
+ * TURN END is the guarantee for a running box (`notifyTurnEnded`): when a turn
+ * ends and no queued prompt took its place, `convergeConfigIfBehind` compares
+ * the release the box runs with the desired one and converges only on a
+ * difference. The next turn runs the converged config. A session whose queue
+ * keeps promoting prompts converges when the queue drains, at its next wake or
+ * restart, or at the next base move. Until 2026-10-13 the same gate ran before
+ * every prompt and the prompt waited for it (median 1.46 s on prod).
  *
- * THE TURN-END TRIGGER IS GONE (2026-09-24). It was skipped whenever the turn
- * end promoted a queued prompt (`r4.ts`, `promotedPromptId !== null`), so a
- * session with a busy queue never converged at a turn end — the exact session
- * that runs the most turns. Turn start converges every turn, including those,
- * so the trigger bought nothing and hid a hole.
+ * BASE MOVE and PUSH move every running box onto the new config while nobody
+ * is waiting, so most turn ends find the box current.
  *
  * Limits, per API process:
  * - Base move: at most one fan-out per `(project, branch)` per
@@ -31,8 +31,10 @@ import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { logger } from '../../lib/logger';
 import { db } from '../../shared/db';
 import { convergeSessionConfig, type SessionConfigConvergenceOutcome } from './session-config-convergence';
-import { invalidateDesiredRelease } from './turn-start-convergence';
+import { convergeConfigIfBehind, invalidateDesiredRelease } from './turn-start-convergence';
 import { invalidateProjectMirror } from '../git/mirror';
+import { expireBaseTips } from '../../config-releases/base-tip';
+import { schedulePublish } from '../../config-releases/publish';
 import { isUuid } from '../../shared/validate';
 
 export const BASE_MOVE_WINDOW_MS = 30_000;
@@ -210,6 +212,21 @@ function productionTriggers(): ConvergenceTriggers {
  * base ref is that branch converge; every other session is untouched.
  * Never throws, never waits.
  */
+/**
+ * A turn ended and no queued prompt took its place: converge the box if it is
+ * behind. Fire-and-forget; never throws. Called from `promoteAfterTurnEnd`.
+ */
+export function notifyTurnEnded(sessionId: string): void {
+  void convergeConfigIfBehind(sessionId).then((result) => {
+    if (result.decision !== 'converged') return;
+    logger.info('[projects] turn-end config convergence', {
+      session_id: sessionId,
+      outcome: result.outcome,
+      ms: result.ms,
+    });
+  });
+}
+
 export function notifyBaseBranchMoved(projectId: string, ref: string, context: string): void {
   try {
     // FIRST, and unconditionally: the turn-start gate must not answer a turn
@@ -220,6 +237,10 @@ export function notifyBaseBranchMoved(projectId: string, ref: string, context: s
     // must make the next one fetch. Other api processes drop theirs through the
     // base-move broadcast (`startReplicaServices`).
     invalidateProjectMirror(projectId);
+    // The descriptor route shares one upstream check per interval (config-releases/base-tip.ts): the next one asks.
+    void expireBaseTips(projectId).catch(() => {});
+    // Build the new tip's release now, so the next box finds it ready (config-releases/publish.ts).
+    schedulePublish(projectId, branchName(ref));
     productionTriggers().baseMoved(projectId, ref, context);
   } catch {
     // A trigger must never fail the write that moved the branch.

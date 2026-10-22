@@ -23,7 +23,7 @@ interface RefundRequest {
   payment_intent_id?: string;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useUserBillingSummary(userId: string | null) {
   return useRetiredQuery<any>('useUserBillingSummary', ['admin', 'billing', 'user', userId], !!userId);
 }
@@ -35,17 +35,17 @@ interface TransactionParams {
   type_filter?: string;
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdminUserTransactions(params: TransactionParams) {
   return useRetiredQuery<any>('useAdminUserTransactions', ['admin', 'billing', 'transactions', params.userId, params.page, params.page_size, params.type_filter], !!params.userId);
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useAdjustCredits() {
   return useRetiredMutation<any, CreditAdjustmentRequest>('useAdjustCredits');
 }
 
-/** @deprecated The API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. */
+/** @deprecated No replacement: the API removed this admin route. Fails with `ENDPOINT_RETIRED`, sends no request. Removed in the next major. */
 export function useProcessRefund() {
   return useRetiredMutation<any, RefundRequest>('useProcessRefund');
 }

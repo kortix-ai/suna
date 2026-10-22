@@ -35,9 +35,8 @@ export function registerIamServiceAccountsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
-    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_READ);
+    await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_CREATE);
     const rows = await listServiceAccounts(accountId);
     return c.json({
       service_accounts: rows.map((sa) => ({
@@ -188,7 +187,6 @@ export function registerIamServiceAccountsRoutes(): void {
       },
     }),
     async (c: any) => {
-    const userId = c.get('userId') as string;
     const accountId = c.req.param('accountId');
     const saId = c.req.param('saId');
     await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.TOKEN_REVOKE);

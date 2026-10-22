@@ -1,738 +1,721 @@
 ---
 title: Connectors
-description: How connectors and connections give agents scoped access to external tools.
+description: "Give agents and your own code governed access to external apps, MCP servers and APIs: Kortix holds the credential, applies your policies and records every call."
 ---
 
-A connector links a project to an external tool or service. The agent
-calls it as a tool. Kortix brokers each call, so the sandbox never holds the
-connector credential.
+A connector gives a project governed access to one external app, MCP server or API. Agents call it as a tool, and your own code calls it through the SDK. Kortix stores the credential, picks the account, applies the project's policies, calls the provider and writes an audit event for every call. The credential never enters a sandbox.
 
-You declare most connectors in `kortix.yaml`, or in a file it lists under [`imports:`](/docs/project/manifest#imports). See the
-[manifest reference](/docs/project/manifest) for every field. Kortix declares
-channel and computer connectors when you connect a chat platform or a
-machine.
+This page is for project members who connect apps, decide who may use them, and call them from sessions or code.
 
-## Browse and add a connector
+## What a connector is
 
-Open **Connectors** to browse the managed catalog. Its default list contains
-managed-provider toolkits connectable with provider-managed authentication or an
-enabled custom authentication configuration. It does not require an existing
-connection in your project. A toolkit that needs an unverified custom OAuth
-configuration stays hidden until that configuration can be verified.
+A connector has:
 
-For direct sources, enable **Connectors API Discover** in the project's feature
-flags, then select **API / MCP** on the same page. Enabling the flag does not
-replace the managed default. The direct catalog groups published OpenAPI, MCP,
-GraphQL, Postman, and other API surfaces. Select a card, choose a published
-surface, and complete its connection form. Documentation-only surfaces open the
-provider's documentation; they are not presented as a ready-to-connect template.
-Use **Add → Manual** for a raw API or a schema that the catalog does not contain.
-Direct discovery also works without a configured managed provider.
+- a slug, unique in the project (`[a-z0-9][a-z0-9_-]`, up to 128 characters);
+- a display name;
+- a provider, which decides how Kortix reaches the service;
+- its actions, the tools an agent calls (`<slug>.<action>`);
+- its policies, which decide which actions run, need approval, or are blocked.
 
-## Connectors, connections, and accounts
+A connector holds one or more [accounts](#connectors-connections-and-accounts). An account is the authorized identity a call runs as.
 
-A connector is the agent-facing reach package: a declared capability (which
-actions, how to reach the service). It is not a role, and it holds no Kortix
-permission: an agent reaches a connector only when its manifest grant lists the
-slug and the role verdict allows the call. See
-[One vocabulary, two bindings](/docs/accounts#one-vocabulary-two-bindings). A
-connector contains:
+Connectors live in `kortix.yaml` under `connectors:`, or in a file it lists under [`imports:`](/docs/project/manifest#imports). The manifest never holds a credential.
 
-- a project-unique slug
-- a display name
-- a provider app
-- connector policies
+| Provider | Use it for | Required fields |
+| --- | --- | --- |
+| `composio` | The managed catalog of SaaS apps (Gmail, GitHub, Linear, …). The default for managed apps. | `app` (the toolkit slug) |
+| `mcp` | A remote MCP server. | `url`; `transport` is `http` (default) or `sse` |
+| `openapi` | An API with an OpenAPI document. | `spec` (a URL or a repo path) |
+| `postman` | An API described by a Postman collection. | `spec` |
+| `graphql` | A GraphQL endpoint. Kortix introspects it when `spec` is absent. | `endpoint` |
+| `http` | A raw HTTP API. | `base_url` |
+| `channel` | Slack, Microsoft Teams or email. Kortix writes it when you connect a [channel](/docs/connect/channels). | `platform` |
+| `computer` | Built in. Each connected [computer](/docs/connect/computers) is one account. It is never written to `kortix.yaml`. | — |
 
-A connection is one **account** — one authorized identity — for the
-connector: a credential, an OAuth grant, or an API key. A connector can hold
-several accounts side by side. Every account uses the connector's policies.
-Each account's `owner_type` decides who may run a call as it:
+`pipedream` is a legacy provider: existing connectors run, and new managed apps use `composio`. With `connectors_v2` on, [move a Pipedream or Composio connector to Kortix](#move-a-pipedream-or-composio-connector-to-kortix).
 
-- `project` — a **shared** account. Reachable by anyone the connector is
-  granted to, human or service account (agent, trigger).
-- `member` — a **private** account, owned by one project member
-  (`owner_id`). Reachable only by that member, and only in a **private**
-  session. A service account (an agent or a trigger acting unattended) can
-  never run as a member's private account.
+A `provider: mcp` connector is Kortix calling someone else's MCP server. The [Kortix MCP server](/docs/connect/mcp) is the other direction: your MCP client calls Kortix.
 
-Multiple connectors can reference the same provider app. Use separate
-connectors when one app needs different policies.
+## Add a connector
 
-### Add an account
+### From the web app
 
-Open the connector in **Customize → Connectors**. The **Accounts** tab lists
-every account you can use or manage in one list. Each card shows who can use
-the account: **Only you**, **Everyone in project**, or the groups and people it
-is shared with.
+1. Open **Customize → Connectors**.
+2. On the **All** tab, find the app and select **Install**.
+3. When the app has its own hosted MCP server with one-click sign-in, **Connect** *app* opens. That means OAuth with dynamic client registration, for example Linear, Notion or Sentry. Choose **Who can use it** (**Only you** by default) and select **Connect**. You sign in to the app and return to the connector's page with its tools loaded.
+4. Otherwise Kortix adds the managed app, opens its page and opens **Add account** with **Only you** selected. [Authorize an account](#authorize-an-account) there.
 
-Select **Add account**, name the account, and choose **Who can use it**:
+- **Install** shows only to members who can change the project's connectors. Other members add their own account on an installed connector's **Accounts** tab.
+- Installing an app that the project already has adds an account to the existing connector. It does not create a second connector.
+- An app page lists its **Ways to connect** (for example an MCP server and a REST API). **Install** uses the MCP server when the catalog lists one.
+- Kortix checks the app's MCP server when you select **Install**. A server that needs a pasted token, or has no dynamic client registration (for example GitHub's remote MCP server), installs as the managed app instead.
+- For an MCP server, [add it from its URL](#add-an-mcp-server-from-its-url). For another API that is not in the catalog, select **New → Add a custom connector** and choose OpenAPI, Postman, GraphQL, MCP or HTTP. Paste the source URL and Kortix proposes the slug: the document's title, or else the URL's domain. Kortix then opens the connector's page. An MCP server that asks for sign-in (HTTP `401` or `403`) opens **Add account** there, as **Install** does. This needs an auth scheme: one you pick under **Auth**, or one **Auto-detect** finds in the server's `WWW-Authenticate` challenge. Without one, the `401` or `403` is shown as the failure. **New → Create in chat** has an agent scaffold the connector and open a change request.
+- When Kortix cannot load a new connector's tools, the connector's page shows the reason and **Retry**. The connector stays in the project. OAuth 2.0 client credentials entered in the form are saved as well, so **Retry** uses them.
+- With OAuth 2.0 client credentials, **Added and connected** means the tools loaded with them. When the server still refuses them, the page shows the refusal and **Retry**.
+- A search on **All** also covers published OpenAPI, MCP, GraphQL and Postman surfaces when the project flag **Connectors API Discover** (`connectors_api_discover`, off by default) is on. Turn it on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
 
-- **Only you** — a private account. Any member can add one.
-- **Everyone in the project** — a shared account.
-- **Specific people or groups** — a shared account, narrowed to the people,
-  groups, and agents you pick.
+A connector page has up to four tabs:
 
-The two shared choices need `project.connector.connections.manage`. For
-**Specific people or groups**, Kortix writes the grants before you authorize
-the account, so the account never holds a credential while it is open to the
-whole project. An account name must be new: a name that an account of the same
-owner already uses is refused.
+| Tab | Shows | Who sees it |
+| --- | --- | --- |
+| **Accounts** | The accounts the connector can run as. | Everyone with access to the project. |
+| **Tools** | Each action, and whether it runs, needs approval, or is blocked. | Members who can change connectors. |
+| **Triggers** | [App event triggers](/docs/connect/triggers#app-events) on this connector. | Everyone, when the app has events. |
+| **Settings** | Connection details and **Remove connector**. | Members who can change connectors. Absent on the computer connector. |
 
-When an agent needs an account, it posts a **Connect** card in the chat. The
-card opens the same dialog, with the name the agent suggests already filled in
-and the audience it asked for preselected. Kortix creates a new account, never
-re-authorizes an existing one, and tells the agent the new account's name so it
-can run calls as that account.
+### Add an MCP server from its URL
 
-### Choose who can use a shared account
+1. Open **Customize → Connectors** and select **New → MCP server**.
+2. Paste the server's URL, for example `https://mcp.linear.app/mcp`. Kortix names the connector after the domain (`linear`) and shows the name under the field.
+3. Choose **Who can use it**. **Only you** is selected by default.
+4. Select **Connect**. Kortix adds the connector and the account, then opens the server's sign-in. After you approve, you return to the connector's page with its tools loaded.
 
-A shared account is usable by everyone in the project until you narrow it.
-Select **Share** on the account card. The dialog is the same **Grant access**
-dialog used for agents. It lists who can use the account now, and you add:
+- **Only you** adds no shared account. Your login stays in your private account.
+- **Everyone in** *project* and **Specific people, groups, or agents** need permission to manage the project's connections.
+- A server that needs no sign-in (for example DeepWiki) is ready when the account exists.
+- A server that asks for a credential but has no one-click OAuth opens credential entry on the connector page.
+- A sign-in that cannot start shows the server's reason. The connector and the account stay; select **Sign in** on the connector page to try again.
 
-- **Everyone in the project** — the default.
-- **Groups** — every member of each group.
-- **People** — one member each. Pick only yourself to keep the account to you.
-- **Agents** — every session of that agent, triggers and shared sessions
-  included. Anyone who can run the agent can use the account through it.
+### The MCP app catalog (experimental)
 
-Nothing changes until you select **Save**. Removing the last group or person
-makes the account usable by everyone again; the dialog states the result before
-you save.
+With the project flag **Connectors v2** (`connectors_v2`, off by default) on, the **All** tab lists the Kortix MCP app catalog instead of the managed apps. Every app in it is a remote MCP server that its vendor runs, and Kortix connects to it directly. Turn the flag on under **Customize → Settings → [Feature flags](/docs/project#feature-flags)**.
 
-A narrowed account follows the private-account rules, with its audience in
-place of the owner:
+1. Find the app and select **Install**.
+2. **Connect** *app* opens. Choose **Who can use it** and select **Connect**.
+3. You sign in to the app and return to the connector's page with its tools loaded.
 
-- A person in the audience can use it, and only in a private session.
-- An agent in the audience can use it in every one of its sessions.
-- Any other agent, and a trigger of any other agent, never uses it.
-- A session that binds it cannot be shared, unless the account is shared with
-  that session's own agent.
-- Only a person changes who can use an account. An agent session gets `403`.
+Apps sign in one of three ways:
 
-A person outside the audience does not see the account. A person who manages
-the project's connections still sees it, marked **Not shared with you**, so
-they can change who can use it.
+| Sign-in | Apps | Setup |
+| --- | --- | --- |
+| The vendor registers Kortix on the fly | Linear, Notion, Atlassian, Figma, Stripe, Sentry, Airtable, Dropbox, Canva, Miro, monday.com, ClickUp, Intercom, PostHog, Supabase, Vercel, Cloudflare and more | None |
+| Kortix's own OAuth client | Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, GitHub, Slack, HubSpot, Asana, Box | The operator configures the client (`KORTIX_OAUTH_CLIENTS`, see [Kortix OAuth clients](/docs/host#kortix-oauth-clients)). Until then the app is not listed. |
+| None | DeepWiki, Context7 | None. The app is ready when it is installed. |
 
-### Share your own private account
+- Kortix's own OAuth client is used only for the exact MCP server URL in the catalog, with the catalog's endpoints and scopes. Its client secret stays on the server.
+- Connectors you added from the managed catalog keep working with the flag on.
+- Agents see the same catalog: the `search_connector_apps` tool of the [Kortix MCP server](/docs/connect/mcp) lists the MCP apps, and `add_connector` with `app` adds the app's MCP server.
 
-Your own **Only you** account has a **Share** button too. Sharing it turns it
-into a shared account for the people and groups you pick (you stay on it unless
-you remove yourself), or for everyone in the project. From then on it is a
-shared account: people who manage the project's connections can manage it too.
+Catalog apps can start [triggers](/docs/connect/triggers#app-events). With the project flag `event_triggers` also on, Kortix checks an installed app's MCP server for new items, such as a new email in Gmail, and fires the trigger once for each one. Every tool that lists items and only reads can be an event, on catalog apps and on your own MCP servers. The trigger runs on an account shared with the whole project.
 
-- Sharing needs `project.connector.connections.manage`, the same right as
-  adding a shared account. Without it the button is disabled and says why.
-- Kortix writes the grants first and turns the account shared in one update,
-  so it is never open to the whole project in between.
-- A shared account of the same name on the connector blocks it (`409`): rename
-  one first.
+#### Move a Pipedream or Composio connector to Kortix
 
-```text
-POST /projects/{projectId}/connections/{connectionId}/share
-     {"principals": [{"principal_type": "group", "principal_id": "<group-id>"}]}
+Kortix retires Pipedream and Composio. With `connectors_v2` on, a Pipedream or Composio connector moves to the catalog app for the same service and keeps its slug. Their sign-ins belong to their own OAuth clients, so they do not carry over: one person signs in to the app once, and the connector switches.
+
+What stays:
+
+- The slug. Agent grants (`agents.<name>.connectors`), session bindings and every other reference to the slug keep working.
+- The display name, the entry's `sensitive` flag, and a `*` rule in its `policies`. A rule that names a tool (for example `send_email` on the connector, or `gmail.send_email` in the project's rules) names the old provider's tool, and the Kortix app names its tools differently: a connector with such a rule does not move until you remove it. Add rules for the new tool names after the move.
+- Every account row, with its name, owner and audience.
+- The old provider serves the connector until the sign-in completes.
+
+What changes:
+
+- Kortix rewrites the `kortix.yaml` entry to `provider: mcp` with the app's `url`, commits it to the default branch and syncs the connector.
+- The tools now come from the vendor's own MCP server, so the tool names differ. Check the agent prompts that name an old tool.
+- The account that signed in holds the new sign-in. Every other account on the connector loses its old sign-in. It reads not signed in until its owner signs in again.
+- A Composio [event trigger](/docs/connect/triggers#app-events) on the connector moves to the Kortix event that replaces it, in the same `kortix.yaml` commit, and its Composio subscription is deleted. Kortix then checks the app itself.
+
+```yaml
+# Before
+connectors:
+  - slug: issues
+    name: Issues
+    provider: composio
+    app: linear
+
+# After
+connectors:
+  - slug: issues
+    name: Issues
+    provider: mcp
+    url: https://mcp.linear.app/mcp
+    transport: http
 ```
 
-An empty `principals` list shares it with everyone. From the CLI:
-`kortix connectors connections share <connection-id> --group <group-id>`
-(also `--user <email|id>`, repeatable, or `--everyone`).
+Composio event triggers that move:
 
-Each audience entry is one `connection` object assignment in the grant store:
+| Composio event | Kortix event | Config |
+| --- | --- | --- |
+| `GMAIL_NEW_GMAIL_MESSAGE` | `gmail.message.received` | `query` becomes `in:inbox (<query>)`, so the trigger stays inbox-only. `labelIds` must be empty or `INBOX`. |
+| `GOOGLECALENDAR_GOOGLE_CALENDAR_EVENT_CREATED_TRIGGER` | `google_calendar.event.created` | `calendarId` becomes `calendar_id`. `lookahead_days` is `365`, so an event created far ahead still fires. `showDeleted` is dropped. |
+| `GOOGLEDRIVE_FILE_CREATED_TRIGGER` | `google_drive.file.created` | `folder_id` and `query` stay; a `folder_id` that is not a Drive folder id blocks the move. `max_results` is dropped. |
 
-```text
-POST   /accounts/{accountId}/iam/assignments
-       {"principal_type": "group", "principal_id": "<group-id>",
-        "role_key": "agent-user", "scope_type": "project", "scope_id": "<project-id>",
-        "object_type": "connection", "object_id": "<connection-id>"}
-DELETE /accounts/{accountId}/iam/assignments/{assignmentId}
-```
+`interval` (minutes; Composio checks every minute when it is unset) rounds up to the next Kortix value: 1, 5, 15, 30, 60, 360 or 1440. A trigger in an imported file is rewritten in that file. A connector with any other Composio event trigger does not move until you delete or change that trigger.
 
-From the CLI, the same writes are:
+Which apps move:
+
+- Each app in the table below moves to its catalog app.
+- Gmail, Google Calendar, Google Drive, Google Docs, Google Sheets, GitHub, HubSpot, Asana and Box move only when the deployment has a Kortix OAuth client for the vendor. See [Kortix OAuth clients](/docs/host#kortix-oauth-clients).
+- Slack does not move: connect the [Slack channel](/docs/connect/channels) instead, which replaces a Slack connector.
+- Any other app has no Kortix equivalent yet, for example `jira_data_center`, `slack_bot`, `neon_postgres`, `googlesuper` or `supabase_read_mcp`. The connector keeps working through its provider.
+
+| Kortix app | Pipedream `app` | Composio `app` |
+| --- | --- | --- |
+| Airtable | `airtable_oauth` | `airtable` |
+| Asana | `asana` | `asana` |
+| Atlassian | `jira`, `confluence` | `jira`, `confluence`, `atlassian_mcp` |
+| Attio | `attio` | `attio` |
+| Box | `box` | `box`, `box_mcp` |
+| Canva | `canva` | `canva`, `canva_mcp` |
+| ClickUp | `clickup` | `clickup`, `clickup_mcp` |
+| Close | `close` | `close`, `close_mcp` |
+| Cloudflare | `cloudflare_api_key` | `cloudflare`, `cloudflare_api_key`, `cloudflare_mcp` |
+| Dropbox | `dropbox` | `dropbox` |
+| Figma | `figma` | `figma` |
+| GitHub | `github` | `github`, `github_mcp` |
+| Gmail | `gmail` | `gmail` |
+| Google Calendar | `google_calendar` | `googlecalendar` |
+| Google Docs | `google_docs` | `googledocs` |
+| Google Drive | `google_drive` | `googledrive` |
+| Google Sheets | `google_sheets` | `googlesheets` |
+| Granola | `granola` | `granola_mcp` |
+| HubSpot | `hubspot` | `hubspot` |
+| Intercom | `intercom` | `intercom`, `intercom_mcp` |
+| Jotform | `jotform` | `jotform` |
+| Linear | `linear`, `linear_app` | `linear`, `linear_mcp` |
+| Miro | `miro_custom_app` | `miro` |
+| monday.com | `monday` | `monday`, `monday_mcp` |
+| Neon | `neon_api_keys` | `neon`, `neon_mcp` |
+| Notion | `notion`, `notion_api_key` | `notion`, `notion_mcp` |
+| PayPal | `paypal` | `paypal` |
+| PostHog | `posthog` | `posthog`, `posthog_mcp` |
+| Sentry | `sentry` | `sentry`, `sentry_mcp` |
+| Stripe | `stripe` | `stripe`, `stripe_mcp` |
+| Supabase | `supabase`, `supabase_management_api` | `supabase`, `supabase_mcp` |
+| Vercel | `vercel_token_auth` | `vercel`, `vercel_mcp` |
+| Webflow | `webflow` | `webflow` |
+| Wix | `wix_api_key` | `wix`, `wix_mcp` |
+
+A move needs permission to change the project's connectors.
+
+**In the web app**, open the connector in **Customize → Connectors**. The Connected tab names the connectors that can move. The connector page offers **Move to Kortix**. Sign in to the app when it opens.
+
+**From the CLI:**
 
 ```bash
-kortix access grant --group <group-id> --connection <connection-id>
-kortix access grant --everyone --connection <connection-id>
-kortix access revoke <assignment-id>
-kortix connectors connections ls   # the WHO CAN USE column
+kortix connectors moves                  # each Pipedream and Composio connector and its Kortix app
+kortix connectors move issues            # sign in once; the connector switches
+kortix connectors move issues --connection <connection-id> --no-open
 ```
 
-- `principal_type` is `user`, `group`, or `project` (everyone in the project;
-  `principal_id` is the project id).
-- Granting or revoking one needs `project.connector.connections.manage`.
-- Only a shared account can be narrowed through these grants. A private account,
-  or an id that is not a connection in this project, answers `404`; share your
-  own private account with the `share` route above instead.
-- `GET /projects/{projectId}/connections` returns each shared account's grants
-  in `shared_with`, and `usable: false` on an account the caller sees only to
-  manage it. The session picker offers only usable accounts.
+- `moves` prints `SLUG`, `PROVIDER`, `APP` (the app on that provider), `MOVES TO`, `STATE` and `ACCOUNTS`. `STATE` is `ready`, `signing in`, `signed in`, or `no Kortix app yet`. `--json` prints the API response.
+- `move` opens the app's sign-in in your browser and waits up to 10 minutes for it. `--no-open` prints the URL only. `--device` uses the device flow on a server that offers it.
+- `--connection` signs in on that account. Without it, `move` uses the connector's shared project account.
+- Without `connectors_v2`, both commands exit `1` and print `kortix projects features enable connectors_v2`.
 
-### Which identity an account acts as
+**Through the API:**
 
-An account's `label` is a name chosen before authorization. It does not say
-which login was used. `connected_as` does: the email, login, or display name
-the provider reports for the authorized account.
+```http
+GET /v1/projects/{projectId}/connector-moves
+```
 
-- Kortix reads it when a Composio authorization finalizes: first the connected
-  account's display name, then the toolkit's "who am I" tool (Gmail, Google
-  Calendar, Google Drive, Linear, GitHub, Slack, Notion, Outlook, Microsoft
-  Teams, HubSpot, Jira, Asana, Figma, Airtable, Salesforce, Trello, Dropbox,
-  Calendly). Google Docs and Google Sheets expose no such tool, so their
-  `connected_as` stays `null`.
-- An account still carrying a default label (`Private connection`,
-  `Project connection`, or the connector name) is relabelled to that identity.
-  A label someone chose is never replaced.
-- The connect page shows "Connected as …" the moment the account lands, so a
-  shared account authorized with a personal login is visible right away.
-- `connected_as` is on every connection (`GET /projects/{projectId}/connections`),
-  on the accounts list, in `kortix connectors accounts <slug>` and
-  `kortix connectors connections ls` (the `CONNECTED AS` column), and on the
-  account rows in **Customize → Connectors**.
+```json
+{
+  "moves": [
+    {
+      "slug": "issues",
+      "name": "Issues",
+      "provider": "composio",
+      "app": "linear",
+      "to": { "slug": "linear", "name": "Linear", "icon": "/connector-icons/linear.svg" },
+      "connection_id": null,
+      "signed_in": false,
+      "accounts": 2
+    }
+  ]
+}
+```
 
-### Rename an account
+`to` is `null` when the app has no Kortix equivalent on the deployment. `connection_id` is the account a started move signs in on. `signed_in` is `true` when that sign-in completed and only the switch is left.
 
-Rename an account without re-authorizing it:
+```http
+POST /v1/projects/{projectId}/connectors/{slug}/move
+Content-Type: application/json
 
-```text
-PUT /projects/{projectId}/connections/{connectionId}/label   {"label": "Support inbox"}
+{ "connection_id": "11111111-1111-4111-8111-111111111111" }
+```
+
+`connection_id` is optional. A connector that already moved answers `{ "status": "moved" }`. Otherwise the answer is the next step:
+
+```json
+{
+  "status": "sign_in",
+  "connection_id": "11111111-1111-4111-8111-111111111111",
+  "to": { "slug": "linear", "name": "Linear", "url": "https://mcp.linear.app/mcp" }
+}
+```
+
+1. Sign in on `connection_id` with the OAuth routes: `POST /v1/projects/{projectId}/connections/{connection_id}/oauth2/discover-resource`, then `/oauth2/register`, then `/oauth2/authorize`. Open `authorization_url`. When discovery returns `kortix_client: true`, send `register` without `registration_endpoint`: Kortix signs in with its own OAuth client.
+2. Poll `GET /v1/projects/{projectId}/connections/{connection_id}/oauth2/status` until `status` is `active`. Kortix switches the connector when the sign-in stores its token.
+3. Wait for the switch: the connector leaves `GET /v1/projects/{projectId}/connector-moves`. If it is still listed with `signed_in: true` after 30 seconds, call `move` again. That call finishes a switch that failed and answers `{ "status": "moved" }`.
+
+| Status | Meaning |
+| --- | --- |
+| `400` | `connection_id` is an account of another connector. |
+| `403` | `feature_disabled` without `connectors_v2`, no permission to change the project's connectors, or no `connection_id` and no permission to manage the project's accounts. |
+| `404` | No connector with this slug, or `connection_id` is an account you cannot change. |
+| `409` | The connector is not a Pipedream connector, its app has no Kortix equivalent on this deployment, or it has tool rules other than `*`. The message names the rules. |
+| `502` | The `kortix.yaml` write failed. Call `move` again. |
+
+The SDK has the same two calls: `p.connectors.listMoves()` and `p.connectors.move(slug, { connectionId })`. See the [SDK reference](/docs/sdk/reference#connectors-and-policies).
+
+### From the CLI
+
+```bash
+kortix connectors apps gmail                                   # search the managed catalog
+kortix connectors add gmail --provider composio --app gmail --apply
+kortix connectors connect gmail                                # authorize your account
+```
+
+- Without `--apply`, `add` and `rm` edit your local `kortix.yaml`. Run `kortix ship` to apply the change, then `kortix connectors sync` to reconcile the connector.
+- With `--apply`, Kortix commits the change to the default branch and syncs the connector at once, like the web app.
+- `kortix connectors rm <slug> [--apply]` removes a connector. `kortix connectors rename <slug> <name>` sets its display name and applies at once.
+- `kortix connectors catalog [<query>]` and `catalog show <id>` browse the direct API catalog. They need the `connectors_api_discover` flag.
+- `--auth-type none|bearer|basic|custom|oauth1` overrides the authentication Kortix detects from the source.
+
+### In kortix.yaml
+
+```yaml
+connectors:
+  - slug: gmail
+    name: Gmail
+    provider: composio
+    app: gmail
+
+  - slug: docs-search
+    provider: mcp
+    url: https://mcp.example.com/mcp
+
+  - slug: billing-api
+    name: Billing API
+    provider: openapi
+    spec: https://api.example.com/openapi.json
+    auth:
+      type: bearer
+    headers:
+      Accept: application/json
+      X-Api-Version: "2026-01-01"
+    policies:
+      - match: "get_*"
+        action: always_run
+      - match: "*"
+        action: require_approval
+```
+
+A change to `connectors:` applies when it reaches the default branch, through a change request merge or a direct push. A merge syncs at once. After a push, Kortix syncs on its next periodic pass. Run `kortix connectors sync` to apply it now. See [Change requests](/docs/git#change-requests).
+
+| Field | Rule |
+| --- | --- |
+| `auth.type` | `bearer`, `basic`, `custom`, `api_key`, `oauth1`, `hmac`, `aws_sigv4`, `mtls` or `none`. Omit `auth` on a direct provider and Kortix detects it. `none` opts out. `oauth1` works on `openapi`, `postman` and `http` only. |
+| `auth.in`, `auth.name`, `auth.prefix` | Where a `custom` or `api_key` credential goes: `in` is `header` (default), `query` or `cookie`. `name` is required for both types. |
+| `auth` on `composio` or `channel` | Not allowed. The provider authorizes the account. |
+| `headers` | Static headers sent on every call: at most 32, names up to 128 characters, values up to 2,048 characters, no line breaks. Transport headers such as `Host` and `Content-Length` are refused. The auth header always wins over a static header of the same name. Not allowed on `composio`, `pipedream` or `channel`. Values are plaintext in git: never put a credential in a header. |
+| `sensitive: true` | Every action that no rule matches needs approval, reads included. See [Policies and approvals](#policies-and-approvals). |
+| `enabled: false` | Kortix keeps the connector but refuses its calls with `connector_disabled`. |
+| Reserved slugs | `kortix_slack`, `kortix_teams` and `kortix_email` belong to channel connectors. `computer` belongs to the built-in computer connector. A new connector added from the web app, `--apply` or MCP also cannot take `slack` or `email` (`400`): connect Slack with `kortix channels connect`. |
+
+The full schema is in the [`kortix.yaml` reference](/docs/project/manifest#triggers-connectors-apps).
+
+## Connectors, connections and accounts
+
+A connection is one **account**: one authorized identity for a connector, such as an OAuth grant or an API key. A connector can hold several accounts, for example a team inbox and your own inbox. Every account uses the connector's policies.
+
+Each account has an owner type that decides who may run a call as it:
+
+| Account | `owner_type` | Who can use it |
+| --- | --- | --- |
+| Shared | `project` | Everyone in the project, and every agent whose `connectors` grant lists the connector, triggers included. You can [narrow it](#share-accounts-and-give-agents-access) to specific people, groups or agents. |
+| Private | `member` | Only its owner, and only in the owner's private sessions. An unattended run (a trigger, or code that uses a service account key, `kortix_sa_…`) never uses a private account. |
+
+`connected_as` is the identity the provider reports for an account, such as an email address or login. It shows on the **Accounts** tab, in `kortix connectors accounts <slug>`, and in `kortix connectors connections ls`. An account with a default label takes `connected_as` as its label. A label someone chose never changes.
+
+Rename an account without a new authorization:
+
+```bash
 kortix connectors connections rename <connection-id> Support inbox
 ```
 
-In the dashboard, open the connector, then **⋯ → Rename** on the account row.
-Only the label changes. The authorized account, its owner, its default flag,
-and the provider state stay as they are. The same gate applies as for
-disconnect: your own private account, or `project.connector.connections.manage`
-for a shared one.
+In the web app, open the account row's menu and select **Rename**. The label cannot be `me`, `project` or UUID-shaped (`400`), and it must be unique among the same owner's accounts, ignoring case (`409`).
 
-A rename is refused with `400` for `me`, `project`, or a UUID-shaped label,
-because `--account` resolves those before labels. It is refused with `409` when
-another account of the same owner already has that label, compared
-case-insensitively.
+## Authorize an account
 
-### Connect a different account
+**Add account** on a connector page asks for a name and **Who can use it**:
 
-A connect link for a slot that already holds an active account does not
-re-authorize it. The provider reuses the account, and the connect page shows
-**Already connected**. To use a different login, add a new account on the
-connector, make it the default, then disconnect the old one.
+- **Everyone in** *project* creates a shared account.
+- **Only you** creates a private account. It is selected by default.
+- **Specific people, groups, or agents** creates a shared account for that audience only.
 
-A call that names no account resolves to the caller's own default private
-account first, then the project's default shared account. Every call result
-echoes which account it ran as (`account: { connection_id, label,
-owner_type }`), so the transcript always shows the identity a tool call used.
-List the accounts a connector can be called as, default first, with
-`GET /connectors/projects/{projectId}/connectors/{slug}/accounts` — or
-`kortix.project(projectId).connectors.accounts(slug)` on the SDK.
+Then sign in to the app, or enter its API key.
 
-<Callout type="warning">
-`authorization_strategy` (`project` | `user`) was a connector-level MODE that
-made project-owned and member-owned accounts mutually exclusive — a
-`user`-strategy connector could offer no shared account, so it had no connect
-flow anywhere a service account could use. It is deprecated: the manifest and
-`PUT .../authorization-strategy` still accept it and answer without error, but
-nothing reads it any more. `owner_type` on each connection is the whole access
-rule now.
-</Callout>
+A connector with exactly one shared account uses it as its default. Kortix makes an empty shared account when it adds a connector, except an MCP server added for **Only you**. The **Accounts** list does not show that empty account, so the connector reads **has no account** until someone adds one. While that account is still not signed in and is the only shared account, a new shared account reuses it instead of adding a second one. It keeps its name unless you type another. Two shared accounts with no default pinned leave the connector with no default. A sign-in on a shared account that is not the default does not reload an MCP connector's tools.
 
-## Providers
+When you have no account of your own on a connector, the **Sign in**, **Set credential** or **Connect** button at the top of the connector page opens **Add account**. It never signs a shared account in with your login. To sign in a shared account, select **Connect** on its row.
 
-A connector uses one provider type:
+| Method | Web app | CLI |
+| --- | --- | --- |
+| Managed OAuth (`composio`) | **Add account**, then sign in. | `kortix connectors connect <slug>` |
+| API key or token | **Add account**, then enter the key. | `kortix connectors credential <slug> [value]`. Without a value it prompts. `-` reads stdin. |
+| Project secret | — | `kortix connectors secret <slug> <identifier>`. `--clear` removes the binding. |
+| OAuth 2.1 (`mcp`) or OAuth2 (direct APIs) | **Add account**, then sign in. | `kortix connectors connect <slug>` on an MCP server with one-click sign-in. Otherwise `kortix connectors authorize <slug>`. See [OAuth for MCP servers and direct APIs](#oauth-for-mcp-servers-and-direct-apis). |
 
-- **composio** — managed OAuth for supported SaaS apps
-- **pipedream** — legacy managed OAuth, kept for rollback only
-- **openapi**, **postman**, **graphql**, **http** — direct API connectors
-- **mcp** — a remote MCP server over HTTP or SSE
-- **channel** — a chat platform connection
-- **computer** — each member's connected machine is one account
+```bash
+kortix connectors connect gmail                          # a private account (--owner me, the default)
+kortix connectors connect gmail --owner project          # a shared account
+kortix connectors connect gmail --label "Support inbox"  # name a new account
+kortix connectors connect-finalize gmail                 # confirm; pass the same --owner
+```
 
-See [Slack and channels](/docs/connect/slack) and
-[Computers](/docs/connect/computers) for the managed provider flows.
+- `connect` prints a link. Open it and approve the app. `connect-finalize` exits `1` while authorization is incomplete.
+- `connect`, `--label` and agent connect links work on `composio` connectors and on `mcp` connectors with one-click sign-in. One-click sign-in means the server publishes OAuth metadata and supports dynamic client registration, or it is a catalog app on a Kortix OAuth client. For such an `mcp` connector, the link is the app's own consent page: Kortix runs discovery, client registration and PKCE on the server. A legacy `pipedream` connector gets a link for its shared account only.
+- `--owner project` needs permission to change the project's connectors.
+- `--label` names a new account. The person who opens the link confirms the name and who can use it.
+- A project secret works as the credential when it is an active project secret, not a personal one, stored with `--scope connector`: `kortix secrets set BILLING_KEY=- --scope connector`. A binding answers `409` when the connector needs no credential, is a channel, or already has a stored credential, or when the secret is missing, inactive or not connector-scoped. A secret narrowed to some people works only in their private sessions (`credential_not_shared`). See [Secrets](/docs/project/secrets).
+- A connect link for an account that is already authorized shows **Already connected**. To change the login, add a new account, [make it the default](#which-account-a-call-uses), then disconnect the old one.
 
-### Apps that need your own OAuth app
+### Connect links inside a session
 
-Composio holds its own OAuth app for most toolkits. For some it holds none:
-X (`twitter`) since February 2026, and OAuth-only toolkits such as `xero`,
-`spotify`, `google_chat`, `googleforms`, and `zoom_chat`. On 2026-09-26 there
-were 47. Composio cannot connect them until the Composio project holds an
-auth config with your own OAuth app.
+A session starts even when a granted connector has no account. The first call is denied with `connector_not_connected` and a `connect_url`. The web transcript shows it as a **Connect** button. This works on `composio` connectors and on `mcp` connectors with one-click sign-in. The button opens the **Add account** dialog with the name and audience the agent suggests. By default the account is private. Kortix tells the agent the new account's name. For a shared account from a terminal, run `kortix connectors connect <slug> --owner project`.
 
-- Until that auth config exists, the Connectors catalogue does not list the
-  toolkit. A connector already declared for it fails to sync with `422`
-  `composio_auth_config_required`, and the message names the toolkit.
-- To enable one, register an OAuth app with the provider. In the Composio
-  dashboard, open **Auth Configs**, create an auth config for the toolkit, and
-  enter the app's client ID and secret. Add the redirect URI the dashboard
-  shows to the provider app.
-- Kortix finds the enabled auth config itself. You do not restart or redeploy.
-  The catalogue lists the toolkit within 60 seconds. The next sync and connect
-  use the auth config immediately.
-- When more than one enabled auth config exists for a toolkit, Kortix uses the
-  newest. Disable the old one to rotate an OAuth app.
-- Toolkits that Composio connects with its own app keep using it. Kortix never
-  selects an auth config for them.
+### OAuth for MCP servers and direct APIs
 
-## Authentication and policy
+Kortix discovers the server's OAuth metadata (RFC 9728, RFC 8414), registers itself as a client when the server supports dynamic client registration (RFC 7591), and runs PKCE (S256) with a `resource` parameter (RFC 8707). With registration support you create no OAuth app.
 
-A connection authenticates with:
-
-- OAuth through Composio, a channel install, or a native OAuth2 grant
-- an API key or token entered through the dashboard or SDK
-
-Kortix encrypts connection data and resolves it server-side for each tool
-call. The agent requests an action. Kortix attaches the credential, checks the
-agent grant and connector-connection policy, calls the external API, and returns
-the result.
-
-Connector policies belong to the connector. A connection cannot
-override them. Project guardrails apply above connector-connection policies.
-
-By default, an unmatched connector action runs without approval. Set
-`policy.default_mode: risk` to require approval for unmatched write and
-destructive actions. Set `sensitive: true` to make `require_approval` the
-connector's unmatched-action default, including reads. Explicit project
-or connector-connection rules still apply first.
-
-### Approve one governed call
-
-`require_approval` creates one decision for one connector call. The Connector
-returns `202 pending_approval` with `approval_url`, `approval_summary`, and
-`execution_id`. It does not keep an HTTP request open.
-
-Share `approval_url` with any teammate. The URL identifies the request but does
-not grant authority. The page requires a signed-in Kortix account. Kortix then
-verifies that the account can access and approve actions in the project.
-
-The approval page shows the redacted parameters that the connector will receive.
-A caller can add `approval_context` (CLI: `--reason`) to describe the effect.
-Use it when the parameters are only references: `gmail.send_draft` takes a
-draft id, so the agent states the recipient, subject, and body. The page shows
-this text as the agent's description, not verified. The parameters remain the
-evidence. Kortix never sends `approval_context` to the provider.
-
-Approve or deny the call once. Add an optional message to the decision. The
-message goes back to the agent with the decision, so a deny can say what to do
-instead.
-
-Every pending call also appears in **Review → Needs you** for the project. Open
-**Review** from the sidebar; its count shows how many items wait for you. A
-call opens in the same approval view as its approval link, so you see the
-connector, the parameters, and the agent's description before you decide.
-
-When the call comes from a Slack or Teams session, Kortix posts an approval
-card in that thread. The card shows the agent's description, the parameters,
-and **Approve** / **Deny**. In Slack, **Reply…** opens a box for a message to
-the agent; in Teams, the card has the message box inline. Only a project
-manager or the person who started the session can decide. A decision made
-anywhere (the thread, Kortix, or the approval page) replaces the card's
-buttons with the outcome, and the agent continues in the same thread. Kortix sends the decision back into the session
-through a durable callback. An approval applies only to the exact request
-digest. A changed recipient, subject, body, channel, URL, or other parameter
-requires a new decision.
-
-Open the session's **Audit** panel to use the same parameter view. Historical
-entries remain read-only. There is no session-wide approval option. Use an
-explicit `always_run` policy only when a connector action must run unattended.
-
-## Connect with OAuth
-
-<Steps>
-<Step title="Open the project's Connectors page">
-Open the project. Select **Connectors**, then select the app.
-
-</Step>
-<Step title="Select the account scope">
-Select **Project** for a shared account, reachable by anyone the connector is
-granted to. Select **User** for a private account, owned by you and reachable
-only by you, only in a private session.
-
-</Step>
-<Step title="Complete authorization">
-Complete the OAuth flow. Kortix stores the connected account as a connection.
-
-</Step>
-</Steps>
-
-## Connect an MCP server that uses OAuth 2.1
-
-Kortix implements the MCP authorization specification. Open the connector,
-select **Add credential**, then select the **OAuth 2.0** tab. Kortix probes the
-server and reads its metadata:
-
-1. The unauthenticated probe returns `401` with
-   `WWW-Authenticate: Bearer resource_metadata="…"`.
-2. Kortix reads the protected resource metadata (RFC 9728) at that URL, or at
-   `/.well-known/oauth-protected-resource`.
-3. Kortix reads the authorization server metadata (RFC 8414 or OpenID Connect
-   discovery) for the first authorization server the resource names.
-
-When that server advertises `registration_endpoint`, Kortix registers itself as
-an OAuth client (RFC 7591) and shows one button: **Connect &lt;server&gt;**. You
-create no application, and you copy no client ID or secret. Kortix then runs
-Authorization Code with PKCE (S256) and binds the token to the server with the
-`resource` parameter (RFC 8707).
-
-Register this redirect URI when a server needs one in advance:
+When the server does not support registration, the web app opens credential entry. Enter the client ID (and secret) of an OAuth app you create with the provider, and register this redirect URI with it:
 
 ```text
 https://api.kortix.com/v1/connectors/oauth2/callback
 ```
 
-When the server publishes endpoints but no `registration_endpoint`, Kortix
-prefills the authorization URL, token URL, and scopes. Enter the client ID of an
-app you create with that provider. When the server publishes no metadata, enter
-every field.
+On a self-hosted instance the URI is `<KORTIX_URL>/v1/connectors/oauth2/callback`. `KORTIX_URL` must be stable. See [Self-hosting](/docs/host#integrations).
 
-Kortix keeps the MCP session: it runs `initialize` and
-`notifications/initialized` on demand, then sends `Mcp-Session-Id` on later
-calls. A server that answers without a session never sees the handshake.
+From a terminal or an agent session:
 
-Kortix binds each connection to the authorization server that issued it. When
-the callback carries an `iss` parameter (RFC 9207), Kortix rejects it unless it
-matches the recorded issuer — a code minted by a different server is refused
-before it is redeemed.
-
-### Authorize from the CLI
-
-The dashboard is one way to run this flow, not the only one. Declare the
-connector in `kortix.yaml`, then authorize it from a terminal or an agent
-session:
-
-```yaml
-connectors:
-  - slug: read-ai
-    name: Read AI
-    provider: mcp
-    url: 'https://api.read.ai/mcp'
-    auth:
-      type: bearer
+```bash
+kortix connectors authorize docs-search --json     # prints authorization_url
+kortix connectors authorize docs-search --status   # exits non-zero on error
 ```
 
-```text
-kortix connectors authorize read-ai --json
-```
+| Flag | Effect |
+| --- | --- |
+| `--device` | Uses the device flow (RFC 8628): prints a code and a URL, then polls until approval, denial or expiry. |
+| `--scope "a b"` | Requests only these scopes. |
+| `--client-id`, `--client-secret` | Uses an existing OAuth app, for servers without dynamic registration. |
+| `--success-redirect`, `--error-redirect` | Where the browser lands after approval or denial. Without them the browser shows **Connected. You can close this tab and return to Kortix.**, or the failure with its reason code. |
 
-The command creates the connection, runs the discovery chain, registers Kortix
-as a client when the server supports RFC 7591, and returns the URL to approve:
+Kortix refreshes the connector's tool catalog when authorization completes. Direct API connectors also support the client credentials grant (`client_secret_basic`, `client_secret_post`, `client_secret_jwt`, `private_key_jwt`). Kortix refreshes access tokens before they expire and stores each rotated refresh token.
 
-```json
-{
-  "connection_id": "7b1a16b2-...",
-  "registered": true,
-  "scopes": ["openid", "offline_access", "mcp:execute", "meeting:read"],
-  "authorization_url": "https://authn.read.ai/oauth2/auth?response_type=code&...",
-  "expires_at": "2026-08-19T14:48:26.345Z"
-}
-```
+## Share accounts and give agents access
 
-An agent returns `authorization_url` to the person it is working with. After
-they approve, the agent confirms:
+Two checks decide whether a call can run: the agent's grant to the connector, and the caller's right to use the account.
 
-```text
-kortix connectors authorize read-ai --status
-```
+### Give an agent a connector
 
-The command exits non-zero while the status is `error`. Use `--scope` to narrow
-what is requested. Use `--client-id` and `--client-secret` for a server that
-does not support dynamic client registration.
-
-The same steps are available on the SDK — `discoverConnectionOAuth2Resource`,
-`registerConnectionOAuth2Client`, `startConnectionOAuth2Authorization`, and
-`getConnectionOAuth2Status`.
-
-Kortix refetches the connector's tool catalog as soon as authorization
-completes, so the connector leaves the `error` state without a manual sync.
-
-### Self-hosted: give the box a stable public URL
-
-The callback URL is derived from `KORTIX_URL`, the public origin of your API.
-Authorization servers compare `redirect_uri` byte for byte, so the value must be
-stable.
-
-A self-host install started with the zero-config quick tunnel gets a **new**
-`https://<random>.trycloudflare.com` hostname every time `cloudflared`
-restarts. The callback URL changes with it. A server that supports dynamic
-client registration recovers on its own — the next authorization registers a
-new client against the current URL. A server that needs a pre-registered OAuth
-app does not: you must update its allowed redirect URI after every restart.
-
-Set `CLOUDFLARE_TUNNEL_TOKEN` and `CLOUDFLARE_TUNNEL_HOSTNAME` for a named
-tunnel, or point `KORTIX_URL` at your own domain. Then register one callback
-URL once:
-
-```text
-https://<your-kortix-host>/v1/connectors/oauth2/callback
-```
-
-## Connect a direct API with OAuth2
-
-Direct connectors support:
-
-- client credentials
-- authorization code with PKCE
-- device authorization
-- dynamic client registration (RFC 7591)
-
-For client credentials, enter the token URL, client ID, scopes, and client
-secret. You can use `client_secret_basic`, `client_secret_post`,
-`client_secret_jwt`, or `private_key_jwt` token-endpoint authentication.
-
-For authorization code, enter the authorization URL and token URL. For device
-authorization, enter the device-authorization URL and token URL. An RFC 8414
-discovery URL can provide these endpoints.
-
-Kortix encrypts the OAuth2 configuration and tokens. It refreshes access tokens
-before expiry, and it stores each rotated refresh token. Revoking the connection
-blocks the next connector call.
-
-For Microsoft Graph, use:
-
-```text
-https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token
-https://graph.microsoft.com/.default
-```
-
-For direct SharePoint REST calls, use the SharePoint resource scope:
-
-```text
-https://{tenant}.sharepoint.com/.default
-```
-
-## Connect with an API key
-
-<Steps>
-<Step title="Declare the connector">
-```yaml
-connectors:
-  - slug: stripe-read
-    name: Stripe read access
-    provider: openapi
-    spec: 'https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json'
-    auth:
-      type: bearer
-    policies:
-      - match: 'get_*'
-        action: always_run
-      - match: '*'
-        action: block
-```
-
-The manifest still accepts an `authorization_strategy` key for backward
-compatibility. Kortix ignores it: set the owner (shared or private) per
-connection instead, when you add its credential.
-
-</Step>
-<Step title="Merge the change request">
-Kortix reads the manifest from the default branch. The connector becomes
-active after the change request merges.
-
-</Step>
-<Step title="Add the connection">
-Open the connector and set its credential. Kortix stores the value
-encrypted. It does not write the value to the manifest.
-
-</Step>
-</Steps>
-
-## Grant an agent access
-
-Add the connector slug to the agent's `connectors` field:
+An agent reaches a connector only when `agents.<name>.connectors` in `kortix.yaml` lists its slug or is `all`. An omitted value means `none`.
 
 ```yaml
 agents:
   release-bot:
-    connectors: [stripe-read]
+    connectors: [github, linear]
 ```
 
-Omit `connectors`, and the agent gets `none`. Merge the change before it takes
-effect.
-
-`connectors_required` is deprecated. The manifest still accepts it, but
-nothing reads it: a session is never refused at create time for a connector
-with no usable account. A session-create refusal for a missing connector was
-unreachable in practice — a private-only connector had no shared account to
-offer, so the refusal had no remedy the caller could act on. The gate is now
-the connector **call**: an agent granted `stripe-read` can start its turn
-immediately, and only a call that actually needs the connector is denied (see
-[When a call is denied](#when-a-call-is-denied)) — with a remedy attached.
-
-## Select an account
-
-Two independent ways to pick which account a call runs as — pin one for the
-whole session, or name one on a single call.
-
-### Pin a session-wide default
-
-A session can override the connector's default account for every call it
-makes:
-
-```json
-{
-  "connector_bindings": {
-    "stripe-read": {
-      "connection_id": "00000000-0000-4000-8000-000000000000"
-    }
-  }
-}
+```bash
+kortix agents scope release-bot --connectors github,linear
 ```
 
-The binding key is the connector slug. The value is an account (connection)
-this session's caller is entitled to reach.
+A change applies to a running session on its next call. The channel connector that started a session (Slack, Teams or email) is always callable from that session, so the agent can always answer where it was asked. See [Agents & permissions](/docs/project/agents#give-an-agent-access).
 
-Use `GET /projects/{projectId}/sessions/{sessionId}/scope` to read the
-effective binding. Use `PUT` on the same path to replace it. The replacement
-applies to the next tool call without restarting the session.
+### Narrow a shared account
 
-### Name an account on one call
+A shared account is open to everyone in the project until you narrow it. Select **Share** on the account and add groups, people or agents. Nothing changes until you select **Save**.
 
-List the accounts a connector can be called as — default first — with:
-
-```text
-GET /connectors/projects/{projectId}/connectors/{slug}/accounts
+```bash
+kortix access grant --group <group-id> --connection <connection-id>
+kortix access grant --user <email> --connection <connection-id>
+kortix access revoke <assignment-id>
 ```
 
-```json
-{
-  "connector": "stripe-read",
-  "accounts": [
-    { "connection_id": "...", "label": "Shared workspace", "owner_type": "project", "is_default": true, "connected_as": "billing@example.com" },
-    { "connection_id": "...", "label": "My Stripe", "owner_type": "member", "is_default": false, "connected_as": null }
-  ]
-}
+- A person in the audience uses the account only in a private session.
+- An agent in the audience uses it in all its sessions, triggers included. Anyone who can run that agent can use the account through it.
+- A session that binds a narrowed account cannot be shared, unless the account is shared with that session's agent.
+- Only a person changes an audience. An agent session gets `403`.
+- People outside the audience do not see the account. Connection managers see it marked **Not shared with you**.
+- Removing the last group or person opens the account to everyone again.
+- Only a shared account can be narrowed. A private account answers `404`.
+
+### Share your private account
+
+**Share** on your own **Only you** account turns it into a shared account for the people and groups you pick, or for everyone. Connection managers can then manage it too.
+
+```bash
+kortix connectors connections share <connection-id> --group <group-id>
+kortix connectors connections share <connection-id> --everyone
 ```
 
-Then name one on the call, by connection id or by label (case-insensitive), or
-with the two selector words `me` (your own default private account) and
-`project` (the project's default shared account):
+Sharing needs permission to manage the project's connections. A shared account with the same name answers `409`: rename one first.
 
-```text
-kortix connectors call stripe-read get_balance '{}' --account me
-kortix connectors call stripe-read get_balance '{}' --account "Shared workspace"
+### Pin an account for one session
+
+A session can pin one account per connector for every call it makes:
+
+```bash
+kortix sessions new --connector gmail=<connection-id>
+kortix sessions scope <session-id> --connector gmail=<connection-id>
 ```
 
-A call that names no account resolves to the caller's own default private
-account first, then the project's default shared account — unchanged from
-before a connector could hold more than one account. A named account that does
-not resolve is **denied**, never silently substituted onto a different one
-(see [When a call is denied](#when-a-call-is-denied)). Every successful call
-result echoes which account it ran as: `account: { connection_id, label,
-owner_type }`.
+`--no-connectors` removes the pins. A change applies on the next call, with no restart.
 
-## Use a connector in a session
+## Which account a call uses
 
-Inside a session, use the Connector CLI:
+A call that names no account, or names `me` or `project`, uses an account only when the choice is certain:
 
-```text
-kortix connectors ls
-kortix connectors accounts stripe-read
-kortix connectors call stripe-read <action> '<json-args>' [--account <id|label|me|project>]
+1. Exactly one account is reachable: the call uses it.
+2. Several are reachable and exactly one is pinned as the default: the call uses the default.
+3. Otherwise the call is denied with `account_required` and `available_accounts`.
+
+`me` limits the choice to your private accounts. `project` limits it to shared accounts.
+
+```bash
+kortix connectors accounts gmail                         # accounts you may use, default first
+kortix connectors accounts gmail --default "Support inbox"
+kortix connectors call gmail <action> '{}' --account "Support inbox"
 ```
 
-`connectors` lists the connectors in scope. `accounts` lists the accounts this
-caller may call `stripe-read` as — default first, shared before private within
-each group. `call` runs one action, as the named `--account` or, when omitted,
-the same default resolution used before a connector could hold more than one
-account.
+- `--account` takes a label (any case), a connection id, `me` or `project`.
+- A named account that does not match is denied with `connector_not_connected` and the names you can use. Kortix never substitutes another account.
+- Every result carries `account: { connection_id, label, owner_type }`, so the transcript shows which identity ran the call.
 
-### Large results
+## Policies and approvals
 
-A list or search call can return more than a model can read: tool output
-above ~50 KB is truncated. Save the result to a file and work through it with
-code:
+A policy decides what happens when an action is called: **Allow** (`always_run`), **Ask** (`require_approval`) or **Block** (`block`). Kortix evaluates each call in this order, and the first match wins:
 
-```text
-kortix connectors call linear graphql.issues '{"first":250}' --out /workspace/output/issues.json
-# → { "ok": true, "account": …, "saved_to": "/workspace/output/issues.json",
-#     "bytes": 93037, "shape": { "issues": { "nodes": "array(250) of {id,title,…}",
-#     "pageInfo": { "hasNextPage": true, "endCursor": "…" } } } }
-jq '.data.issues.nodes[] | {id, title}' /workspace/output/issues.json
+1. Project-wide `policies:` in `kortix.yaml`. Patterns are fully qualified (`gmail.send_email`, `*.delete*`). A connector rule cannot override them.
+2. The connector's own `policies:`. Patterns are relative to the connector (`send_*`).
+3. `sensitive: true` on the connector: every remaining action needs approval, reads included.
+4. `policy.default_mode`: `allow_all` (the default) runs every remaining action. `risk` runs reads and holds writes and destructive actions for approval.
+
+Patterns are globs, case-insensitive, or `/regex/` in slashes. A rule can also test the call's arguments:
+
+```yaml
+policy:
+  default_mode: risk
+
+policies:
+  - match: gmail.send_email
+    action: always_run
+    conditions:
+      - arg: to
+        match: "*@example.com"
+  - match: gmail.send_email
+    action: require_approval
 ```
 
-`--out` writes the full JSON result, creating parent directories. Stdout gets
-the call envelope without `data`, plus `saved_to`, `bytes`, and `shape`: the
-outline of `data` (keys, array lengths, and every `pageInfo`). The exit code is
-unchanged.
+- `arg` is a dot path into the arguments (`message.channel`). `negate: true` inverts a condition. A rule holds up to 10 conditions, and all must match.
+- A missing argument never matches the pattern, so a negated condition on it holds. An array matches only when every element matches.
+- A malformed condition fails closed: it never opens an action.
 
-The `kortix-connectors` MCP tool `call` does the same without a flag. A result
-larger than 16 KB is saved under
-`/workspace/.kortix/state/connector-results/` and the tool returns
-`{ saved_to, bytes, shape, preview, hint }`, with a ~2 KB preview. That
-directory ignores itself in git. A smaller result is returned inline.
+```bash
+kortix connectors policy ls                                   # project-wide rules
+kortix connectors policy set --default risk --apply           # or allow_all; without --apply it edits the local kortix.yaml
+kortix connectors policy add "gmail.send_*" ask --condition to='*@example.com'   # project-wide rule; k!=v negates
+kortix connectors policy rm "gmail.send_*"
+kortix connectors policy gmail set send_email block           # connector rule: allow, ask or block
+kortix connectors policy gmail ls                             # also: rm <match>, clear
+kortix connectors sensitive gmail on                          # or off
+```
+
+`policy add`, `policy rm`, `policy <slug> …` and `sensitive` apply at once. The **Tools** tab on a connector page edits the same connector rules.
+
+### Approve a held call
+
+A held call returns `202` with `status: "pending_approval"`, `approval_url`, `approval_summary` and `execution_id`. Nothing ran.
+
+1. A person opens the approval in **Review → Needs you**, through `approval_url`, or on the approval card in a [Slack or Teams thread](/docs/connect/channels#approvals-and-stopping-a-run). The page asks for a signed-in Kortix account that can approve actions in the project.
+2. The page shows the redacted arguments the provider will receive. They decide **Approve** or **Deny**, with an optional message back to the agent.
+3. Kortix sends the decision into the session, and the agent continues.
+
+- An approval covers one exact request: the same connector, action, arguments and account. A changed argument needs a new approval.
+- After an approval, the identical call runs once when it repeats within 15 minutes.
+- A held call expires when nobody decides it within 24 hours, or within the project's [`approvals.ttl`](/docs/project/manifest#policy-and-policies). `approval_url` expires at the same time. An expired call leaves **Review → Needs you**, its chat card shows **Expired**, and `POST /v1/projects/<project_id>/approvals/<execution_id>` returns `409` with `code: "APPROVAL_EXPIRED"`. The session does not resume. The agent asks again with a new call.
+- There is no session-wide approval. An action that must run unattended needs an **Allow** rule.
+- A project manager or the person who started the session decides a held call. A session started with an API token (the CLI, a service account) is decided by project managers only.
+- Anyone else who can open the session sees the call and who decides it, with no **Approve** or **Deny**. They can copy `approval_url` and send it to that person: the approval page answers them with `403` too. In **Review**, the call is under **Waiting** for them, not **Needs you**.
+- `GET /v1/projects/<project_id>/sessions/<session_id>/audit` and `GET /v1/projects/<project_id>/review/items` return `can_resolve` and `resolvers` on each pending call. `can_resolve` is `true` only when the caller's `POST /v1/projects/<project_id>/approvals/<execution_id>` would succeed. Any other caller gets `403`. `resolvers` is `managers` or `managers_and_launcher`.
+- `--reason` (SDK: `approvalContext`) describes the effect when the arguments are only ids, for example who a draft goes to. The approver sees it marked as unverified. Kortix never sends it to the provider.
+
+## Call a connector from a session
+
+An agent calls connectors with the `kortix` CLI in its sandbox. The same commands work from your terminal.
+
+```bash
+kortix connectors ls                            # connectors in scope and their status
+kortix connectors discover "send an email"      # find an action by intent
+kortix connectors show gmail.send_email         # one action's input schema
+kortix connectors call gmail send_email @mail.json --account "Support inbox" --reason "Weekly report to the team"
+```
+
+`call` takes the arguments as inline JSON, `@file.json`, or `-` for stdin. `--account`, `--reason`, `--attach` and `--out` are optional.
+
+### Read the result
+
+- Read `output ?? data`. `data` is the raw upstream answer. `output` is the payload without the provider's envelope, present only when it differs from `data`.
+- `upstream_error` reports a failure inside a `2xx` answer (an MCP `isError` result, GraphQL `errors`). `ok` stays `true`.
+- An upstream `429` or `503` keeps its status. When the provider sent `Retry-After`, the body carries `retry_after_seconds`. Wait, then call again.
+- Every other upstream failure answers `500` with the cause in `reason`.
+- The upstream deadline is 60 seconds (`upstream_timeout`). Answers over 64 MiB are refused (`upstream_response_too_large`).
+- A call is not idempotent. After a timeout it may have run upstream. Check the effect before you repeat a write.
+
+For a list or search result too large to read, write it to a file:
+
+```bash
+kortix connectors call linear list_issues '{"first":250}' --out /workspace/output/issues.json
+jq '.data' /workspace/output/issues.json
+```
+
+`--out` writes the full JSON and prints only `saved_to`, `bytes` and the `shape` of `data` (keys, array lengths, `pageInfo`).
 
 ### Attach files
 
-A call never carries file bytes in its arguments. Stage the file, then put its
-reference in the arguments. The gateway reads the bytes server-side and writes
-them into the request.
+Arguments never carry file bytes. Stage the file, and Kortix writes the bytes into the provider request server-side.
 
-```text
-kortix connectors call microsoft-graph.sendmail @mail.json \
-  --attach /workspace/artifacts/report.pdf
+```bash
+kortix connectors call outlook send_mail @mail.json --attach /workspace/artifacts/report.pdf
+kortix connectors upload /workspace/artifacts/report.pdf --connector outlook   # prints ref
 ```
 
-`--attach` stages the file and appends a reference to the action's attachments
-array. The array is found in the action's input schema: `attachments` for the
-Email channel, `body.message.attachments` for Microsoft Graph `sendMail`. Name
-it with `--attach-path body.message.attachments` when the schema is unusual.
-Large JSON arguments go in a file (`@mail.json`) or on stdin (`-`).
+- `--attach` appends a reference to the action's attachments array. Name the array with `--attach-path body.message.attachments` when Kortix cannot find it.
+- `upload` returns `ref`, `{"$kortix_attachment": "<id>"}`. In an attachments array it becomes the provider's attachment item. In a string field it becomes the file's base64. On the email channel it becomes a signed download URL.
+- Files come from `/workspace/output`, `/workspace/artifacts`, `/workspace/reports` or `/workspace/deliverables`. Symbolic links and hard links are refused.
+- One call carries at most 20 files and 25 MiB. A staged file is single-use, private to its session, and deleted after 24 hours.
+- `composio`, `pipedream` and `computer` connectors do not accept staged files (`connector_attachments_unsupported`).
 
-To place a file yourself, stage it first:
+From an MCP client, the [Kortix MCP server](/docs/connect/mcp) offers the same flow through `list_connectors`, `search_connector_actions`, `describe_connector_action`, `call_connector` and `upload_connector_attachment`.
 
-```text
-kortix connectors upload /workspace/artifacts/report.pdf --connector microsoft-graph
-# → { "attachment_id": "…", "ref": { "$kortix_attachment": "…" }, … }
-```
+## Call connectors from code
 
-Put `ref` anywhere in the arguments. The gateway replaces it by position:
+Code calls a connector through `@kortix/sdk` and holds only a Kortix credential. Do not put a provider API key in an App or a backend when a connector for that provider exists: the key skips policies, approvals and audit.
 
-| Position of `ref` | Replaced with |
-| --- | --- |
-| An element of an attachments array whose items are objects | The provider's attachment item. The item schema selects the shape: Microsoft Graph `fileAttachment` (`name` + `contentBytes` or `@odata.type`), Postmark (`Name` + `Content`), Mailjet (`Filename` + `Base64Content`), SendGrid and Resend (`filename` + `content`), Brevo (`name` + `content`). Any other item shape is refused with `attachment_item_shape_unknown`. |
-| A string field, e.g. `contentBytes` or a GitHub file `content` | The file's base64. |
-| The Email channel's `attachments[]` | A signed download URL for the Email provider. |
+### Pick the credential
 
-Rules:
-
-- Files come from `/workspace/output`, `/workspace/artifacts`,
-  `/workspace/reports`, or `/workspace/deliverables`. Symbolic links and hard
-  links are refused. Copy a file there first.
-- One call carries up to 20 files and 25 MiB in total. The upstream API can
-  set a lower limit: Microsoft Graph documents 3 MB as the largest file one
-  `sendMail` request can attach.
-- A staged file is private to the session that staged it, used once, and
-  deleted after 24 hours. A failed call releases it for a retry.
-- The audit record, the approval preview, and the model see only the
-  reference, never the bytes. An upstream error that echoes the file has the
-  base64 removed.
-- Pipedream and Composio connectors do not accept staged files
-  (`connector_attachments_unsupported`).
-
-The MCP server offers the same flow: `call` takes `attachment_files` (and an
-optional `attachment_path`), and `upload_attachment` returns a `ref`. The SDK
-equivalent is `connectors.uploadAttachment(bytes, { filename, contentType,
-connector })`, which returns `ref`.
-
-### When a call is denied
-
-A denied call answers `{ ok: false, status: "denied", reason, hint }`. `reason` is a stable code; `hint` says what to do.
-
-| `reason` | HTTP | Meaning | Also in the body |
+| Where the code runs | Credential | Acts as | Accounts it reaches |
 | --- | --- | --- | --- |
-| `connector_not_assigned` | 403 | The running agent's `connectors:` grant in `kortix.yaml` does not include this connector. | `agent`, `granted` (the list or `"all"`), `manifest_revision` and `manifest_commit` (the manifest the grant came from). |
-| `connector_not_connected` | 403 | No usable account for this call. Either the connector has no account at all for this caller (no stored credential, or the app was never authorized — `kortix connectors ls` shows it as `needs_auth`), or `--account` named one that did not resolve. | `connect_url` — a hosted link to authorize an account, when the caller can mint one — when nothing is connected. `requested_account` and `available_accounts` — the name that did not resolve and the names that were — when `--account` named one. |
-| `connector_disabled` | 403 | The connector is declared but disabled. | — |
-| `connector_not_found` | 404 | No connector with this slug is declared in the project. | — |
-| `action_not_found` | 404 | The connector has no such action. | — |
+| An App, in the browser | `createKortix({ backendUrl: '/_kortix/api/v1', getToken: kortixAppViewerToken() })`. Set the App to `kortix apps access <app> --viewer api`. | The person viewing the App | Shared accounts that person may use, and their private accounts |
+| An App, on its server | `await createAppViewerKortix(request, { backendUrl })` from `@kortix/sdk/server`. Build one client per request. | The person viewing the App | The same |
+| Unattended code (a backend job, a cron, an App job) | A service account key, `kortix_sa_…` | The service account | Shared accounts nobody narrowed. Never a private or narrowed account |
+| A script or CI job | A personal access key, `kortix_pat_…`. Bind it with `kortix tokens new <name> --project <project-id>`. | You | Shared accounts you may use, and your private accounts |
+| A session sandbox | `KORTIX_TOKEN` | The session | Limited by the agent's connector grant |
 
-`connect_url` is the whole remedy for an unconnected connector: a session is
-never refused up front for one (see [Grant an agent
-access](#grant-an-agent-access)), so the denial itself carries the fix. The
-agent surfaces the link verbatim; the web transcript renders it as a one-click
-Connect button. The link authorizes a private account for the human who opens
-it by default — connecting a shared account is an explicit choice
-(`kortix connectors connect stripe-read --owner project`, gated on
-`project.connector.write`).
+- A viewer token reaches every project the viewer can read. Pass the App's own project id on every call.
+- Create a service account with `kortix tokens service-accounts new <name>`. The key prints once. Give it a role with `kortix access grant --service-account <id> --role member --project <project-id>`: until then every call answers `403`. `kortix tokens service-accounts disable <id>` revokes it. See [API keys and tokens](/docs/accounts/identity#api-keys-and-tokens).
+- For the viewer token, see [Know who is looking](/docs/apps#know-who-is-looking).
 
-The channel connector that created a session (Slack, Teams, email) is always callable from that session, whatever the agent's grant says, so the agent can always report in the thread it was asked from.
+### The connector handle
 
-A session's grant follows `kortix.yaml`: a change to the running agent's `connectors:` (including `kortix connectors add --apply`) applies on the next call. The grant records which manifest blob and commit it came from; a read that would replace it from the same blob is confirmed by a second read first, and a read from an older commit never replaces it.
+```ts
+import { createKortix } from '@kortix/sdk';
 
-Slack and Microsoft Teams connect from the dashboard the same way as OAuth apps. Connecting Slack writes a `channel` connector to `kortix.yaml` for you. See [Slack & channels](/docs/connect/slack).
+const kortix = createKortix({ backendUrl: 'https://api.kortix.com/v1', getToken });
+const crm = kortix.project(projectId).connector('crm');
+
+const deals = await crm.run('list_deals', { stage: 'won' }, { account: 'Team CRM' });
+```
+
+`kortix.connector(slug)` is the same handle for a token bound to one project, such as a session token.
+
+| Method | Returns |
+| --- | --- |
+| `run(action, args, options)` | The action's `output`. Throws a typed error for every other outcome. |
+| `call(action, args, options)` | The raw result (`ok`, `data`, `output`, `account`, `binding`, …). `200` and `202` resolve. Other statuses throw `ApiError`. |
+| `describe()`, `describe(action)` | The connector or one action with input and output schemas, or `null`. |
+| `accounts()` | The accounts this credential may use, default first. |
+| `paginate(action, args, { next, maxPages })` | An async iterator over each page's `output`. |
+| `uploadAttachment(content, { filename, contentType })` | A `ref` for a later call of this connector. |
+
+| Option | Value |
+| --- | --- |
+| `account` | A label, a connection id, `me` or `project`. Omit it for the [account rule](#which-account-a-call-uses). |
+| `approvalContext` | Text for the approver. Never sent to the provider. |
+| `timeoutMs` | Client deadline. Default 90,000 ms, above the gateway's 60 s upstream deadline. |
+| `signal` | An `AbortSignal`. The call may still run upstream. |
+
+### Typed calls
+
+```bash
+kortix connectors types --out src/kortix-connectors.d.ts
+kortix connectors types --connector linear,github --out src/kortix-connectors.d.ts
+```
+
+The file fills `ConnectorActionRegistry` in `@kortix/sdk`. Include it in `tsconfig.json`, and `run` and `kortix.project(projectId).connectors.callAction(slug, action, args)` type-check arguments and `output`. `composio` and `pipedream` connectors publish no output schema, so their output is `unknown`. Run the command again after you add a connector.
+
+### Errors in code
+
+```ts
+import { ConnectorApprovalPendingError, ConnectorCallError } from '@kortix/sdk';
+
+try {
+  return await crm.run('create_deal', { name: 'Renewal' });
+} catch (error) {
+  if (error instanceof ConnectorApprovalPendingError) return showLink(error.approvalUrl);
+  if (error instanceof ConnectorCallError && error.connectUrl) return showConnect(error.connectUrl);
+  if (error instanceof ConnectorCallError && error.retryAfterSeconds) return retryLater(error.retryAfterSeconds);
+  throw error;
+}
+```
+
+- `ConnectorApprovalPendingError` means a policy held the call and nothing ran. It has `approvalUrl`, `approvalSummary`, `approvalInstructions`, `executionId` and `retryable`. Show the link. Do not repeat the call in a loop.
+- `ConnectorCallError` extends `ApiError`. `code` is `upstream_<status>` for an upstream failure, `upstream_error` for a failure inside a `2xx` (`status` 200), or the gateway reason from [Errors](#errors). It also has `reason`, `hint`, `connectUrl`, `availableAccounts`, `requestedAccount`, `upstreamStatus`, `retryAfterSeconds` and `binding`.
+- The SDK retries nothing, because a connector call is not idempotent.
+
+### Pages
+
+```ts
+import { ConnectorPageLimitError } from '@kortix/sdk';
+
+try {
+  for await (const page of crm.paginate('list_deals', { limit: 100 }, {
+    next: (page, args) => (page.next_cursor ? { ...args, cursor: page.next_cursor } : undefined),
+    maxPages: 20,
+  })) await save(page.deals);
+} catch (error) {
+  if (error instanceof ConnectorPageLimitError) await resumeLater(error.nextArgs);
+  else throw error;
+}
+```
+
+`next` returns the next page's arguments, or `undefined` after the last page. `maxPages` defaults to 100. When pages remain after it, `paginate` throws `ConnectorPageLimitError` (`code: 'max_pages_exceeded'`) with `nextArgs`, so a capped listing never reads as complete. Each page is one call, with its own policy check and audit event.
+
+In React, `useConnectorQuery(projectId, slug, action, args)` from `@kortix/sdk/react` reads one action as a cached query. Use it for read actions only. See [React hooks](/docs/sdk/react#hooks).
+
+## Errors
+
+A denied call answers `{ ok: false, status: "denied", reason }` plus a `hint` or `message` that names the fix. A failed call answers `{ ok: false, status: "error", reason, upstream_status }`.
+
+An `error` reason starts with the code in the table. Text after the first `:` is detail (`upstream_timeout: …`). For an upstream failure, read `upstream_status`: `reason` can be the provider's own text. In the SDK, `ConnectorCallError.code` is always the bare code or `upstream_<status>`.
+
+| `reason` | HTTP | Meaning | Fix |
+| --- | --- | --- | --- |
+| `connector_not_assigned` | 403 | The agent's `connectors:` grant does not list this connector. The body names `agent` and `granted`. | Add the slug to `agents.<name>.connectors`. |
+| `connector_not_connected` | 403 | No usable account, or `--account` named one that does not exist. | Open `connect_url`, or retry with a name from `available_accounts`. |
+| `account_required` | 403 | Several accounts are reachable, none is named, none is pinned. | Pass `--account`, or pin a default. |
+| `credential_not_shared` | 403 | The connector's project secret is not shared with the person this call acts for. | Ask the secret's owner to share it. |
+| `credential_undecryptable` | 403 | Kortix cannot decrypt the connector's stored credential, or the project secret it uses: the server's encryption key changed, or the stored value is damaged. `message` names the connector or the secret. | Reconnect the account, or enter the credential or the secret again. For an OAuth 2.0 account, save its OAuth application again first: the same key encrypts it, and until then its routes answer `409 SECRET_UNDECRYPTABLE`. |
+| `connector_disabled` | 403 | The connector is declared with `enabled: false`. | Enable it. |
+| `policy_block` | 403 | A **Block** rule matched. Final. | Do not retry. Change the policy. |
+| `connector_not_found` | 404 | No connector with this slug. | Run `kortix connectors ls`. |
+| `action_not_found` | 404 | The connector has no such action. | Run `kortix connectors show <slug>`. |
+| `computer_*` | 403 or 409 | The computer refused, is offline, or is not paired. | See [Computers](/docs/connect/computers#errors). |
+| `insufficient_scope` | 403 | An OAuth token without the `kortix` scope. | Use a token with the `kortix` scope. |
+| `viewer_api_disabled` | 403 | An App's browser call while the App is not `--viewer api`. | `kortix apps access <app> --viewer api`. |
+| `upstream_<status>`, `upstream_timeout`, `upstream_response_too_large` | 500 (429 and 503 keep their status) | The provider failed, did not answer in 60 s, or answered over 64 MiB. | Wait for `retry_after_seconds`, or ask for a smaller page. Check the effect before you repeat a write. |
+| `connector_egress_blocked` | 500 | The target resolves to a private or internal address. | See [Network safety](#network-safety). |
+| `connector_attachments_unsupported` | 500 | A staged file on a `composio`, `pipedream` or `computer` connector. | Send the file through the provider's own input. |
+
+## Network safety
+
+Kortix checks every connector request before it leaves: calls to `http`, `openapi`, `graphql`, `mcp`, `postman` and `channel` connectors, and the catalog reads of a sync.
+
+- The host must resolve to public addresses. A private or internal address is refused with `connector_egress_blocked`.
+- Kortix follows redirects itself and checks each hop again. A redirect to another origin drops the `Authorization` header.
+- Both `http` and `https` are allowed.
+
+A self-hosted instance can allow internal hosts with `KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS`. Managed apps that need your own OAuth app, and the other integration settings, are on [Self-hosting](/docs/host#integrations).

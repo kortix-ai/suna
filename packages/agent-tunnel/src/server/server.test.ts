@@ -31,3 +31,20 @@ describe('standalone tunnel WebSocket boundary', () => {
     expect(server.relay.getConnectedCount()).toBe(0);
   });
 });
+
+describe('standalone tunnel HTTP routes', () => {
+  // Pentest: with no onAuthorizeHTTP the routes listed agents and relayed RPC to anyone.
+  test('fail closed when no HTTP authorizer is configured', async () => {
+    server = startTunnelServer({ port: 0 });
+    const base = `http://127.0.0.1:${server.port}`;
+    expect((await fetch(`${base}/connections`)).status).toBe(403);
+    expect((await fetch(`${base}/rpc/00000000-0000-4000-8000-000000000001`, { method: 'POST', body: '{}' })).status).toBe(403);
+  });
+
+  test('serve a caller the authorizer accepts', async () => {
+    server = startTunnelServer({ port: 0, onAuthorizeHTTP: async (req) => req.headers.get('authorization') === 'Bearer ok' });
+    const base = `http://127.0.0.1:${server.port}`;
+    expect((await fetch(`${base}/connections`, { headers: { authorization: 'Bearer ok' } })).status).toBe(200);
+    expect((await fetch(`${base}/connections`)).status).toBe(403);
+  });
+});

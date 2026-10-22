@@ -1,6 +1,6 @@
 'use client';
 
-import { useLocalizedUiCatalog } from '@/i18n/use-localized-ui-catalog';
+import { useLocalizedUiCatalog } from '@kortix/ui/i18n';
 import { useTranslations } from '@/i18n/use-translations';
 /**
  * Service account tokens: the account's machine identities.
@@ -18,7 +18,7 @@ import { useTranslations } from '@/i18n/use-translations';
  * The two kinds are not two implementations of one thing; they answer to
  * different people. A personal key acts as YOU, dies when your membership
  * does, and is nobody else's business — it belongs on your own settings page
- * (`features/workspace/settings/tabs/tokens-tab.tsx`, `/settings/tokens`). A
+ * (`packages/ui/src/customize/settings/tabs/tokens-tab.tsx`, `/settings/tokens`). A
  * service account token acts as ITSELF, keeps working when its author leaves,
  * and is account configuration — it belongs here, beside the key rules that
  * govern it. So this file lists exactly one kind now, and the create form has
@@ -31,39 +31,27 @@ import { useTranslations } from '@/i18n/use-translations';
  * reads service accounts, the personal one because the server filters them out
  * (`listPersonalAccountTokens`).
  *
- * **One layout, shared with every other access surface.** The rows are
- * `AccessList` / `AccessRow` from `features/workspace/shared/access` — the same
- * row the members, groups, projects and audit-webhook lists use. They were a
- * bordered `Table` here, borrowed from `secrets-view.tsx` when this list held
- * two backends' worth of columns; one kind of credential fits the row every
- * other list in this account already uses.
+ * **Layout: a flat, Linear-style table** (`iam-table.tsx`) — Name, Created,
+ * Last used, Expires — Jay's pick from the Paper "API · service account tokens"
+ * variants (2026-10-13: 01 empty, 03 table). Status is a dot before the name;
+ * the row kebab is `AccessRow`'s own (`RowKebab`), so the menu reads the same
+ * as every other access list.
  */
 
-import { useState } from 'react';
+import { type FormEvent, type ReactNode, useState } from 'react';
 
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
 import {
   InputGroupSearch,
   InputGroupSearchClear,
   InputGroupSearchIcon,
   InputGroupSearchInput,
-} from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
-import {
-  Modal,
-  ModalBody,
-  ModalContent,
-  ModalDescription,
-  ModalFooter,
-  ModalHeader,
-  ModalTitle,
-} from '@/components/ui/modal';
+} from '@kortix/ui/input-group';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Select,
   SelectContent,
@@ -73,13 +61,15 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/select';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import { MFA_REQUIRED_EVENT } from '@/features/auth/mfa-step-up';
-import { ErrorState } from '@/features/layout/section/error-state';
-import { AccessList, AccessRow, CopyRow, type KebabItem } from '@/features/workspace/shared/access';
+import { ErrorState } from '@kortix/ui/error-state';
+import { useAccountHubSheet } from '@kortix/ui/internal/account-hub/hub-sheet';
+import { CopyRow, RowKebab, type KebabItem } from '@kortix/ui/access/access/index';
+import { cn } from '@kortix/ui';
 import {
   createServiceAccountApi,
   deleteServiceAccountApi,
@@ -87,7 +77,7 @@ import {
   getPatPolicy,
   listServiceAccountsApi,
 } from '@/lib/iam-client';
-import { relativeTime } from '@/lib/relative-time';
+import { relativeTime } from '@kortix/ui/internal/lib/relative-time';
 import {
   KeyIcon,
   MagnifyingGlassIcon,
@@ -95,10 +85,11 @@ import {
   ProhibitIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useIsMutating, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 
-import { NEVER_EXPIRES, defaultExpiryOption, expiresAtIso, expiryOptions } from './api-key-expiry';
+import { NEVER_EXPIRES, defaultExpiryOption, expiresAtIso, expiryOptions } from '@kortix/ui/access/iam/api-key-expiry';
+import { IamTable, IamTableCell, IamTableHead, IamTableRow } from './iam-table';
 import {
   type ApiKeyFilterValue,
   type ApiKeyRow,
@@ -107,7 +98,7 @@ import {
   buildApiKeyRows,
   countApiKeys,
   filterApiKeyRows,
-} from './api-key-rows';
+} from '@kortix/ui/access/iam/api-key-rows';
 
 /**
  * How each state reads in the Status badge.
@@ -127,6 +118,13 @@ const STATUS_BADGE: Record<
 };
 
 const STATUS_OPTIONS: ApiKeyStatus[] = ['active', 'expired', 'revoked'];
+
+/** The status dot before each name: green live, orange expired, an empty ring revoked. */
+const STATUS_DOT: Record<ApiKeyStatus, string> = {
+  active: 'bg-kortix-green',
+  expired: 'bg-kortix-orange',
+  revoked: 'border-muted-foreground/50 border',
+};
 
 /** The line under each filter option: what picking it leads to, before it is picked. */
 function countLabel(count: number): string {
@@ -155,10 +153,12 @@ export interface ApiKeysListProps {
   accountId: string;
   /** `token.revoke` — hides every row action when false. */
   canManage: boolean;
+  /** One line under the list — inside the empty block when there are no tokens. */
+  footnote?: ReactNode;
 }
 
 /** The list itself. The create action is the caller's, so the pane header can own it. */
-export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
+export function ApiKeysList({ accountId, canManage, footnote }: ApiKeysListProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const statusBadges = useLocalizedUiCatalog(STATUS_BADGE);
   const queryClient = useQueryClient();
@@ -249,11 +249,20 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
 
   const rows = buildApiKeyRows({ serviceAccounts: serviceAccountsQuery.data });
 
-  // No tokens, no chrome — the toolbar goes with them: a search field over
-  // nothing is furniture. The create action lives in the pane header where the
-  // eye already lands (Jay, 2026-08-12: "If there is no service account yet,
-  // don't show the empty state").
-  if (rows.length === 0) return null;
+  // No tokens: one quiet empty block, no toolbar — a search field over nothing
+  // is furniture. The create action stays in the section header (Paper
+  // "API · service account tokens", variant 01, Jay's pick 2026-10-13).
+  if (rows.length === 0) {
+    return (
+      <div className="border-muted-foreground flex flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed px-6 py-12 text-center">
+        <KeyIcon className="text-muted-foreground mb-1 size-5" />
+        <p className="text-foreground text-sm font-medium">{tI18nComplete.raw('text79eb7fb19229')}</p>
+        <p className="text-muted-foreground text-sm">{tI18nComplete.raw('texta56abb72ba43')}</p>
+        {/* Where the OTHER kind of key lives: inside the block while it is empty. */}
+        {footnote ? <div className="mt-3">{footnote}</div> : null}
+      </div>
+    );
+  }
 
   const counts = countApiKeys(rows);
   const visible = filterApiKeyRows(rows, { ...apiKeyFilter(view), search });
@@ -332,7 +341,14 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
           )}
         </p>
       ) : (
-        <AccessList>
+        <IamTable label={tI18nComplete.raw('textaff66989659f')}>
+          <IamTableHead>
+            <IamTableCell header>{tI18nComplete.raw('textdcd1d5223f73')}</IamTableCell>
+            <IamTableCell header width="w-24">{tI18nComplete.raw('textd70b9e24bca2')}</IamTableCell>
+            <IamTableCell header width="w-24">{tI18nComplete.raw('text830ec7f812f9')}</IamTableCell>
+            <IamTableCell header width="w-24">{tI18nComplete.raw('textf6725f3af08a')}</IamTableCell>
+            <IamTableCell width="w-7" />
+          </IamTableHead>
           {visible.map((row) => {
             const live = row.status === 'active';
             const canRevoke = live || row.status === 'expired';
@@ -355,33 +371,64 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
                       onSelect: () => setPending({ row, action: 'delete' }),
                     },
                   ];
+            const rowBusy = busy && pending?.row.id === row.id;
             return (
-              <AccessRow
-                key={row.id}
-                leading={<EntityAvatar icon={KeyIcon} label={row.name} size="sm" />}
-                title={row.name}
-                badges={
-                  <Badge variant={statusBadges[row.status].variant} size="sm">
-                    {statusBadges[row.status].label}
-                  </Badge>
-                }
-                metaParts={[
-                  row.hint,
-                  `Created ${relativeTime(row.createdAt)}`,
-                  row.lastUsedAt
-                    ? `Last used ${relativeTime(row.lastUsedAt)}`
-                    : tI18nComplete.raw('text24d3236c3ac4'),
-                  row.expiresAt
-                    ? `Expires ${relativeTime(row.expiresAt)}`
-                    : tI18nComplete.raw('text6a9894204cc7'),
-                ]}
-                kebab={kebab}
-                kebabLabel={tI18nComplete('text33da220b1a34', { value0: row.name })}
-                pending={busy && pending?.row.id === row.id}
-              />
+              <IamTableRow key={row.id} muted={!live}>
+                <IamTableCell>
+                  {/* Status as a dot, its name for screen readers: a column of
+                      badges was louder than the names it sat beside. */}
+                  <span
+                    aria-hidden
+                    className={cn('size-1.5 shrink-0 rounded-full', STATUS_DOT[row.status])}
+                  />
+                  <span className="sr-only">{statusBadges[row.status].label}</span>
+                  <span
+                    className={cn(
+                      'truncate',
+                      live && 'font-medium',
+                      row.status === 'revoked' && 'line-through',
+                    )}
+                  >
+                    {row.name}
+                  </span>
+                  <span className="text-muted-foreground shrink-0 font-mono text-xs">
+                    {row.hint}
+                  </span>
+                </IamTableCell>
+                <IamTableCell width="w-24" className="text-muted-foreground">
+                  {relativeTime(row.createdAt)}
+                </IamTableCell>
+                <IamTableCell width="w-24" className="text-muted-foreground">
+                  {row.lastUsedAt
+                    ? relativeTime(row.lastUsedAt)
+                    : tI18nComplete.raw('text6300ef800bb8')}
+                </IamTableCell>
+                <IamTableCell
+                  width="w-24"
+                  className={row.status === 'expired' ? 'text-kortix-orange' : 'text-muted-foreground'}
+                >
+                  {row.status === 'revoked'
+                    ? statusBadges.revoked.label
+                    : row.status === 'expired'
+                      ? statusBadges.expired.label
+                      : row.expiresAt
+                        ? relativeTime(row.expiresAt)
+                        : tI18nComplete.raw('text6300ef800bb8')}
+                </IamTableCell>
+                <IamTableCell width="w-7" align="end">
+                  {rowBusy ? (
+                    <Loading className="size-3.5" />
+                  ) : kebab.length > 0 ? (
+                    <RowKebab
+                      items={kebab}
+                      label={tI18nComplete('text33da220b1a34', { value0: row.name })}
+                    />
+                  ) : null}
+                </IamTableCell>
+              </IamTableRow>
             );
           })}
-        </AccessList>
+        </IamTable>
       )}
 
       <ConfirmDialog
@@ -410,34 +457,29 @@ export function ApiKeysList({ accountId, canManage }: ApiKeysListProps) {
           else revokeMutation.mutate(pending.row);
         }}
       />
+      {footnote}
     </div>
   );
 }
 
-export interface CreateApiKeyDialogProps {
-  accountId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}
-
 /**
- * Create, then show the secret once.
- *
- * Both halves live in one Modal on purpose: the secret is the only reason a
- * person opened this, and a dialog that closes and reopens somewhere else is
- * how a one-time secret gets lost.
- *
- * The form lost two fields when the personal keys left. "Who uses it" had one
- * answer here now, and the project scope picker only ever applied to the other
- * kind — a service account is an account-level identity whose reach comes from
- * the policies attached to it, not from a binding chosen at mint time.
+ * `onCreated` runs from the mutation's own options, not from a `mutate`
+ * callback: it still fires if the form unmounted mid-request (the sheet was
+ * closed), so the one-time secret is never dropped.
  */
-export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiKeyDialogProps) {
+/** Lets the sheet's pinned footer read the create request's state: it renders outside the form. */
+const CREATE_SERVICE_ACCOUNT_KEY = (accountId: string) => ['create-service-account', accountId];
+const CREATE_TOKEN_FORM_ID = 'create-service-account-form';
+
+function useCreateApiKey(
+  accountId: string,
+  enabled: boolean,
+  onCreated?: (created: { name: string; secret: string }) => void,
+) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [expiry, setExpiry] = useState<string>(NEVER_EXPIRES);
-  const [created, setCreated] = useState<{ name: string; secret: string } | null>(null);
 
   // Shares its key with `KeyRulesCard`, so opening this form while the rules
   // are on screen costs no second request.
@@ -445,7 +487,7 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
     queryKey: ['iam-pat-policy', accountId],
     queryFn: () => getPatPolicy(accountId),
     staleTime: 30_000,
-    enabled: open,
+    enabled,
     retry: false,
   });
   const policy = policyQuery.data ?? null;
@@ -458,6 +500,7 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
     : defaultExpiryOption(policy, tI18nComplete);
 
   const mutation = useMutation({
+    mutationKey: CREATE_SERVICE_ACCOUNT_KEY(accountId),
     mutationFn: async () => {
       const expiresAt = expiresAtIso(selectedExpiry);
       const sa = await createServiceAccountApi(accountId, {
@@ -468,138 +511,131 @@ export function CreateApiKeyDialog({ accountId, open, onOpenChange }: CreateApiK
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: SERVICE_ACCOUNTS_KEY(accountId) });
-      setCreated(result);
+      onCreated?.(result);
     },
     onError: (err: Error) => errorToast(err.message || tI18nComplete.raw('textc85c6ea416c8')),
   });
 
-  function close() {
-    onOpenChange(false);
-    // Reset after the close animation so the form does not visibly blank out
-    // underneath the fading overlay.
-    setTimeout(() => {
-      setName('');
-      setExpiry(NEVER_EXPIRES);
-      setCreated(null);
-    }, 200);
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!name.trim() || mutation.isPending) return;
+    mutation.mutate();
   }
 
-  return (
-    <Modal
-      open={open}
-      onOpenChange={(next) => {
-        if (mutation.isPending) return;
-        if (!next) close();
-        else onOpenChange(true);
-      }}
-    >
-      <ModalContent className="lg:max-w-lg">
-        {created ? (
-          <>
-            <ModalHeader>
-              <ModalTitle>{tI18nComplete.raw('textd7db5a6e1483')}</ModalTitle>
-              <ModalDescription>
-                {tI18nComplete.raw('textd21d10509292')} <strong>{created.name}</strong>
-                {tI18nComplete.raw('text26a69b6ee645')}
-              </ModalDescription>
-            </ModalHeader>
-            <ModalBody>
-              <CopyRow
-                value={created.secret}
-                successMessage={tI18nComplete.raw('textc9feac7acc32')}
-              />
-            </ModalBody>
-            <ModalFooter>
-              <Button type="button" size="sm" onClick={close}>
-                {tI18nComplete.raw('text11a6767d5674')}
-              </Button>
-            </ModalFooter>
-          </>
-        ) : (
-          <>
-            <ModalHeader>
-              <ModalTitle>{tI18nComplete.raw('text44d5cf8e9451')}</ModalTitle>
-              <ModalDescription>{tI18nComplete.raw('text7074515e8fda')}</ModalDescription>
-            </ModalHeader>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!name.trim() || mutation.isPending) return;
-                mutation.mutate();
-              }}
-            >
-              <ModalBody className="space-y-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="service-account-name">
-                    {tI18nComplete.raw('textdcd1d5223f73')}
-                  </Label>
-                  <Input
-                    id="service-account-name"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    placeholder={tI18nComplete.raw('textc725967d3988')}
-                    disabled={mutation.isPending}
-                    maxLength={128}
-                    autoFocus
-                    variant="popover"
-                  />
-                  <p className="text-muted-foreground text-xs">
-                    {tI18nComplete.raw('textb74399647bf0')}
-                  </p>
-                </div>
+  return { name, setName, setExpiry, selectedExpiry, expiryChoices, policy, mutation, submit };
+}
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="service-account-expiry">
-                    {tI18nComplete.raw('textf6725f3af08a')}
-                  </Label>
-                  <Select
-                    value={selectedExpiry}
-                    onValueChange={setExpiry}
-                    disabled={mutation.isPending}
-                  >
-                    <SelectTrigger id="service-account-expiry" className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {expiryChoices.map((choice) => (
-                        <SelectItem key={choice.value} value={choice.value}>
-                          {choice.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {policy?.require_expiry ? (
-                    <p className="text-muted-foreground text-xs">
-                      {tI18nComplete.raw('texta06efd337206')}
-                    </p>
-                  ) : null}
-                </div>
-              </ModalBody>
-              <ModalFooter className="sm:justify-between">
-                <Button
-                  type="button"
-                  variant="outline-ghost"
-                  size="sm"
-                  onClick={close}
-                  disabled={mutation.isPending}
-                >
-                  {tI18nComplete.raw('text19766ed6ccb2')}
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={!name.trim() || mutation.isPending}
-                  className="gap-1.5"
-                >
-                  {mutation.isPending ? <Loading className="size-3.5 shrink-0" /> : null}
-                  {tI18nComplete.raw('text5d8e8e30bc4f')}
-                </Button>
-              </ModalFooter>
-            </form>
-          </>
-        )}
-      </ModalContent>
-    </Modal>
+type CreateApiKeyState = ReturnType<typeof useCreateApiKey>;
+
+/** Name and expiry for the split sheet. */
+function CreateApiKeyFields({ form }: { form: CreateApiKeyState }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const pending = form.mutation.isPending;
+  return (
+    <>
+      <div className="space-y-1.5">
+        <Label htmlFor="service-account-name">{tI18nComplete.raw('textdcd1d5223f73')}</Label>
+        <Input
+          id="service-account-name"
+          value={form.name}
+          onChange={(event) => form.setName(event.target.value)}
+          placeholder={tI18nComplete.raw('textc725967d3988')}
+          disabled={pending}
+          maxLength={128}
+          required
+          autoFocus
+          variant="popover"
+        />
+        <p className="text-muted-foreground text-xs">{tI18nComplete.raw('textb74399647bf0')}</p>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="service-account-expiry">{tI18nComplete.raw('textf6725f3af08a')}</Label>
+        <Select value={form.selectedExpiry} onValueChange={form.setExpiry} disabled={pending}>
+          <SelectTrigger id="service-account-expiry" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {form.expiryChoices.map((choice) => (
+              <SelectItem key={choice.value} value={choice.value}>
+                {choice.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {form.policy?.require_expiry ? (
+          <p className="text-muted-foreground text-xs">{tI18nComplete.raw('texta06efd337206')}</p>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/**
+ * The create form as the body of the account hub's split sheet: the fields
+ * only. Its buttons are `CreateApiKeySheetFooter`, pinned in the sheet's
+ * footer and tied to this form by `form=` id. On success the sheet is
+ * re-opened with the secret — from the mutation's own options, so a sheet
+ * closed mid-request still reopens with the one-time secret.
+ */
+function CreateApiKeySheetForm({ accountId }: { accountId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const sheet = useAccountHubSheet();
+  const form = useCreateApiKey(accountId, true, (created) =>
+    sheet.open({
+      title: tI18nComplete.raw('textd7db5a6e1483'),
+      description: (
+        <>
+          {tI18nComplete.raw('textd21d10509292')} <strong>{created.name}</strong>
+          {tI18nComplete.raw('text26a69b6ee645')}
+        </>
+      ),
+      body: <CopyRow value={created.secret} successMessage={tI18nComplete.raw('textc9feac7acc32')} />,
+      footer: (
+        <Button type="button" size="sm" onClick={sheet.close}>
+          {tI18nComplete.raw('text11a6767d5674')}
+        </Button>
+      ),
+    }),
+  );
+
+  return (
+    <form id={CREATE_TOKEN_FORM_ID} onSubmit={form.submit} className="space-y-4">
+      <CreateApiKeyFields form={form} />
+    </form>
+  );
+}
+
+/** Cancel and Create, pinned at the sheet's bottom. Reads the request's state by mutation key. */
+function CreateApiKeySheetFooter({ accountId }: { accountId: string }) {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  const sheet = useAccountHubSheet();
+  const pending = useIsMutating({ mutationKey: CREATE_SERVICE_ACCOUNT_KEY(accountId) }) > 0;
+  return (
+    // Cancel on the left edge, the commit action on the right.
+    <div className="flex w-full items-center justify-between gap-2">
+      <Button type="button" variant="outline-ghost" size="sm" onClick={sheet.close} disabled={pending}>
+        {tI18nComplete.raw('text19766ed6ccb2')}
+      </Button>
+      <Button type="submit" form={CREATE_TOKEN_FORM_ID} size="sm" disabled={pending} className="gap-1.5">
+        {pending ? <Loading className="size-3.5 shrink-0" /> : null}
+        {tI18nComplete.raw('text5d8e8e30bc4f')}
+      </Button>
+    </div>
+  );
+}
+
+/** Where a person's own API key lives (Settings → Tokens). */
+function ApiKeyFootnote() {
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
+  return (
+    <p className="text-muted-foreground text-xs">
+      {tI18nComplete.raw('text4703d3bef6c4')}{' '}
+      <Link href="/settings/tokens" className="text-foreground underline underline-offset-2">
+        {tI18nComplete.raw('text80b9316cb15b')}
+      </Link>
+      .
+    </p>
   );
 }
 
@@ -613,10 +649,12 @@ export interface ApiKeysSectionProps {
  * kind of key lives. That line is not decoration: this pane is where everyone
  * has looked for an API key for months, and a person who lands here for a CLI
  * key has to be able to leave with one.
+ *
+ * "New token" opens the form in the account hub's split sheet, beside the list.
  */
 export function ApiKeysSection({ accountId, canManage }: ApiKeysSectionProps) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [createOpen, setCreateOpen] = useState(false);
+  const sheet = useAccountHubSheet();
 
   return (
     <section className="space-y-4">
@@ -629,7 +667,14 @@ export function ApiKeysSection({ accountId, canManage }: ApiKeysSectionProps) {
               size="sm"
               variant="secondary"
               className="gap-1.5"
-              onClick={() => setCreateOpen(true)}
+              onClick={() =>
+                sheet.open({
+                  title: tI18nComplete.raw('text44d5cf8e9451'),
+                  description: tI18nComplete.raw('text7074515e8fda'),
+                  body: <CreateApiKeySheetForm accountId={accountId} />,
+                  footer: <CreateApiKeySheetFooter accountId={accountId} />,
+                })
+              }
             >
               <PlusIcon className="size-4 shrink-0" />
               {tI18nComplete.raw('textfe46cb83ad1c')}
@@ -637,19 +682,7 @@ export function ApiKeysSection({ accountId, canManage }: ApiKeysSectionProps) {
           ) : undefined
         }
       />
-      {/* `ApiKeysList` renders NOTHING when there are no tokens — no icon, no
-          headline, no second Create button. Jay, 2026-08-12: "If there is no
-          service account yet, don't show the empty state." The create action
-          lives in the header above, where the eye already lands. */}
-      <ApiKeysList accountId={accountId} canManage={canManage} />
-      <p className="text-muted-foreground text-xs">
-        {tI18nComplete.raw('text4703d3bef6c4')}{' '}
-        <Link href="/settings/tokens" className="text-foreground underline underline-offset-2">
-          {tI18nComplete.raw('text80b9316cb15b')}
-        </Link>
-        .
-      </p>
-      <CreateApiKeyDialog accountId={accountId} open={createOpen} onOpenChange={setCreateOpen} />
+      <ApiKeysList accountId={accountId} canManage={canManage} footnote={<ApiKeyFootnote />} />
     </section>
   );
 }

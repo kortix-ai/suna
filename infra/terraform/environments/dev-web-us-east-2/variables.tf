@@ -21,7 +21,7 @@ variable "cloudflare_api_token" {
 }
 
 variable "manage_dns" {
-  description = "Manage the dev-use2.kortix.com origin record. dev.kortix.com stays with ../dev-web until the switch-over."
+  description = "Manage the dev-use2.kortix.com origin record. Deploy Dev's publish-web-ecs-dns job owns dev.kortix.com."
   type        = bool
   default     = true
 }

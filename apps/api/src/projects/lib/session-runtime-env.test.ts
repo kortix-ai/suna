@@ -1,8 +1,40 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  COMPILED_AGENT_CONFIG_ENV,
+  COMPILED_AGENT_CONFIG_GZ_PARTS_ENV,
+  MAX_ENV_STRING_BYTES,
+  envStringBytes,
+  readCompiledAgentConfigEnv,
+} from '@kortix/api-contract/compiled-agent-config-env';
+import { agentConfigEtag } from './compile-agent-config';
+import {
   auditRelayEnvPassthrough,
   buildSessionRuntimeEnv,
 } from './session-runtime-env';
+
+/**
+ * Compiled agent config JSON whose `KORTIX_COMPILED_AGENT_CONFIG=<json>\0` is
+ * exactly `envBytes` long: agents with prompt-length prose, the last one
+ * trimmed to land on the size.
+ */
+function oversizedCompiledConfig(envBytes: number): string {
+  const words = 'agent reads the repository plans then edits files and reports what changed with a short summary'.split(' ');
+  const prose = (seed: number, chars: number) => {
+    let out = '';
+    for (let i = seed; out.length < chars; i = (i * 1103515245 + 12345) % 2147483648) out += `${words[i % words.length]} `;
+    return out.slice(0, chars);
+  };
+  const config = { default_agent: 'build', agent: {} as Record<string, { mode: string; prompt: string; permission: unknown }> };
+  const size = () => envStringBytes(COMPILED_AGENT_CONFIG_ENV, JSON.stringify(config));
+  let index = 0;
+  while (size() < envBytes - 20_000) {
+    config.agent[`agent-${index}`] = { mode: 'subagent', prompt: prose(index + 1, 15_000), permission: { bash: 'ask' } };
+    index++;
+  }
+  config.agent.build = { mode: 'primary', prompt: '', permission: { edit: 'allow' } };
+  config.agent.build.prompt = prose(7, envBytes - size());
+  return JSON.stringify(config);
+}
 
 const BASE_INPUT = {
   projectId: 'proj-1',
@@ -72,6 +104,15 @@ describe('buildSessionRuntimeEnv — KORTIX_PI_PACKAGES', () => {
   });
 });
 
+describe('buildSessionRuntimeEnv — KORTIX_PI_CODEMODE', () => {
+  test('a pi session carries the manifest value; none leaves the daemon default', () => {
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: 'only' }).KORTIX_PI_CODEMODE).toBe('only');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: 'off' }).KORTIX_PI_CODEMODE).toBe('off');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'pi', piCodemode: null })).not.toHaveProperty('KORTIX_PI_CODEMODE');
+    expect(buildSessionRuntimeEnv({ ...BASE_INPUT, harness: 'opencode', piCodemode: 'only' })).not.toHaveProperty('KORTIX_PI_CODEMODE');
+  });
+});
+
 describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
   test('omits the key entirely for a v1 project (compiledAgentConfig absent) — byte-for-byte unaffected', () => {
     const env = buildSessionRuntimeEnv(BASE_INPUT);
@@ -98,6 +139,35 @@ describe('buildSessionRuntimeEnv — KORTIX_COMPILED_AGENT_CONFIG', () => {
     });
     expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-opus-4-8');
     expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+  });
+
+  // Platinum prod, 2026-10-14: every create whose `KORTIX_COMPILED_AGENT_CONFIG=…\0`
+  // was over 131,072 bytes failed to exec in the guest (kortix-ai/platinum#1569).
+  test.each([131_734, 269_979])(
+    'a %d-byte config leaves the create with no env string over the exec limit, and the etag names the JSON',
+    (envBytes) => {
+      const compiled = oversizedCompiledConfig(envBytes);
+      expect(envStringBytes(COMPILED_AGENT_CONFIG_ENV, compiled)).toBe(envBytes);
+
+      const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledAgentConfig: compiled });
+
+      for (const [name, value] of Object.entries(env)) {
+        expect(envStringBytes(name, value), name).toBeLessThanOrEqual(MAX_ENV_STRING_BYTES);
+      }
+      expect(env).not.toHaveProperty(COMPILED_AGENT_CONFIG_ENV);
+      expect(env[COMPILED_AGENT_CONFIG_GZ_PARTS_ENV]).toBe('1');
+      expect(readCompiledAgentConfigEnv(env)).toBe(compiled);
+      // The etag stays the hash of the JSON, so the box reports the same
+      // identity whichever form the config travelled in.
+      expect(env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(agentConfigEtag(compiled)!);
+    },
+  );
+
+  test('a config at the exec limit still travels raw, for a daemon that predates the gzip form', () => {
+    const compiled = oversizedCompiledConfig(MAX_ENV_STRING_BYTES);
+    const env = buildSessionRuntimeEnv({ ...BASE_INPUT, compiledAgentConfig: compiled });
+    expect(env.KORTIX_COMPILED_AGENT_CONFIG).toBe(compiled);
+    expect(Object.keys(env).filter((name) => name.startsWith('KORTIX_COMPILED_AGENT_CONFIG_GZ'))).toEqual([]);
   });
 
   test('ignores legacy attribution input and emits no attribution variables', () => {
@@ -176,8 +246,8 @@ describe('buildSessionRuntimeEnv — fast Git boot hints', () => {
   });
 
   test('sends fresh-session and base-tip hints for a fresh session', () => {
-    // 2026-08-27: the fresh-session fast path is the default boot
-    // (KORTIX_FAST_GIT_BOOT_ENABLED, decided at create).
+    // 2026-08-27: the fresh-session fast path is the default boot (decided at
+    // create).
     const env = buildSessionRuntimeEnv({
       ...BASE_INPUT,
       freshSession: true,

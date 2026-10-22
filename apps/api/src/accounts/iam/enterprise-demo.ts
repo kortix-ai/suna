@@ -1,30 +1,35 @@
-// IAM V2 route: the **enterprise demo** state (read) + operator-only toggle.
+// IAM route: the Enterprise DEMO — a self-serve switch for the Enterprise
+// features (.agents/skills/billing/references/plans-and-access.md, "Enterprise").
 //
-// Enterprise features (SSO, SCIM, …) are normally gated behind the sales-
-// assigned `enterprise` tier (see requireEntitlement + tiers.ts). The demo
-// flag flips on an interactive PREVIEW of that surface for one account.
-//
-// The WRITE is platform-admin-only. It used to be self-serve (any account
-// member with write), which made "enterprise demo" a free entitlement anyone
-// could grant themselves; enabling it is now an operator decision, made in the
-// admin console (POST /v1/admin/api/accounts/{id}/enterprise-demo — see
-// admin/index.ts). This PUT stays for API-shape compatibility but enforces the
-// same platform-admin role. The GET stays account-read so the account page can
-// show the state. Fail-closed (default off); real production use still
-// requires a signed Enterprise agreement.
+// An owner or admin (`billing.write`) turns it on or off; turning it on emails
+// Kortix sales. A platform admin may switch it for any account. The account is
+// marked "Demo" wherever Enterprise shows; a license contract (Licensed) is the
+// paid state. Demo keeps the plan's limits and the BYOK fee.
 
 import { createRoute, z } from '@hono/zod-openapi';
 import { json, errors, auth } from '../../openapi';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
-import { isDemoEnterprise } from '../../billing/repositories/credit-accounts';
+import { getCreditAccount } from '../../billing/repositories/credit-accounts';
 import { applyAdminOverride } from '../../billing/services/account-write-owner';
+import { invalidateAccountBilling } from '../../billing/services/billing-cache';
+import { notifySales } from '../../billing/services/enterprise-sales';
+import { enterpriseStateOf } from '../../billing/services/resolve-billing';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { iamRouter, AccountIdParam } from './app';
 import { auditIam } from './http-helpers';
-import { readJsonObject } from '../../shared/http-body';
 
-const DemoStateSchema = z.object({ enabled: z.boolean() }).openapi('EnterpriseDemoState');
+const DemoState = z
+  .object({
+    enabled: z.boolean(),
+    state: z.enum(['off', 'demo', 'licensed']),
+  })
+  .openapi('EnterpriseDemoState');
+
+async function stateOf(accountId: string) {
+  const row = await getCreditAccount(accountId);
+  return { enabled: row?.demoEnterprise === true, state: enterpriseStateOf(row) };
+}
 
 export function registerIamEnterpriseDemoRoutes(): void {
   iamRouter.openapi(
@@ -32,19 +37,18 @@ export function registerIamEnterpriseDemoRoutes(): void {
       method: 'get',
       path: '/{accountId}/iam/enterprise-demo',
       tags: ['iam'],
-      summary: 'Get the enterprise-demo toggle state',
+      summary: 'Get the Enterprise demo and Enterprise state',
       ...auth,
       request: { params: AccountIdParam },
       responses: {
-        200: json(DemoStateSchema, 'Whether the enterprise demo is enabled'),
+        200: json(DemoState, 'Whether the demo is on, and the Enterprise state'),
         ...errors(401, 403),
       },
     }),
-    async (c: any) => {
-      const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
+    async (c) => {
+      const { accountId } = c.req.valid('param');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.ACCOUNT_READ);
-      return c.json({ enabled: await isDemoEnterprise(accountId) });
+      return c.json(await stateOf(accountId), 200);
     },
   );
 
@@ -53,48 +57,54 @@ export function registerIamEnterpriseDemoRoutes(): void {
       method: 'put',
       path: '/{accountId}/iam/enterprise-demo',
       tags: ['iam'],
-      summary: 'Enable or disable the enterprise demo for the account (platform admin only)',
+      summary: 'Turn the Enterprise demo on or off (owners and admins)',
       ...auth,
       request: {
         params: AccountIdParam,
-        body: { content: { 'application/json': { schema: DemoStateSchema } } },
+        body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } },
       },
       responses: {
-        200: json(DemoStateSchema, 'The updated state'),
+        200: json(DemoState, 'The updated state'),
         ...errors(400, 401, 403),
       },
     }),
-    async (c: any) => {
+    async (c) => {
+      const { accountId } = c.req.valid('param');
+      const { enabled } = c.req.valid('json');
       const userId = c.get('userId') as string;
-      const accountId = c.req.param('accountId');
-      // Operator decision, not self-serve — platform admin role required. (No
-      // account-membership check: admins are typically not members of the
-      // account they are enabling the demo for.)
+      // A platform admin switches any account (support, or withdrawing a
+      // demo); everyone else needs billing.write on this account.
       if (!(await isPlatformAdmin(userId))) {
-        return c.json({ error: 'Platform admin role required', code: 'admin_required' }, 403);
+        await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.BILLING_WRITE);
       }
 
-      const body = await readJsonObject(c);
-      if (typeof body.enabled !== 'boolean') {
-        return c.json({ error: 'enabled must be a boolean' }, 400);
+      const before = await stateOf(accountId);
+      if (before.enabled !== enabled) {
+        await applyAdminOverride(
+          accountId,
+          { demoEnterprise: enabled },
+          { userId, action: enabled ? 'enterprise_demo.enable' : 'enterprise_demo.disable' },
+        );
+        invalidateAccountBilling(accountId);
+        await auditIam(c, {
+          accountId,
+          action: enabled ? 'enterprise_demo.enable' : 'enterprise_demo.disable',
+          resourceType: 'account',
+          resourceId: accountId,
+          before: { enabled: before.enabled },
+          after: { enabled },
+        });
       }
-
-      const before = await isDemoEnterprise(accountId);
-      await applyAdminOverride(
-        accountId,
-        { demoEnterprise: body.enabled },
-        { userId, action: 'enterprise_demo.set' },
-      );
-      await auditIam(c, {
-        accountId,
-        action: body.enabled ? 'enterprise_demo.enable' : 'enterprise_demo.disable',
-        resourceType: 'account',
-        resourceId: accountId,
-        before: { enabled: before },
-        after: { enabled: body.enabled },
-      });
-
-      return c.json({ enabled: body.enabled });
+      const after = await stateOf(accountId);
+      if (enabled && !before.enabled) {
+        await notifySales({
+          accountId,
+          signal: 'demo_on',
+          userEmail: (c.get('userEmail') as string | undefined) ?? null,
+          enterprise: after.state,
+        });
+      }
+      return c.json(after, 200);
     },
   );
 }

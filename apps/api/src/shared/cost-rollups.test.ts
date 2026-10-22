@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { gatewayRequestLogs, projectSessions, projects, sandboxComputeSessions } from '@kortix/db';
-import { type SQL, sql } from 'drizzle-orm';
+import { type SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { ProjectCostRow } from './cost-rollups';
 import type { CostSort } from './cost-window';
@@ -764,6 +764,24 @@ describe('getCostSummary', () => {
     expect(summary.models[8]).toMatchObject({ provider: 'bedrock', model: 'anthropic/claude-0' });
     expect(summary.models[9]).toMatchObject({ provider: 'anthropic', model: 'claude-d' });
     expect(summary.models.map((row) => row.provider)).not.toContain('zeta');
+  });
+
+  test('a gateway row with an empty-string provider is listed, not a 500', async () => {
+    // provider is NOT NULL but may be '' (a prod gateway row did this on
+    // 2026-10-17 and the whole Usage page failed with a 500).
+    resultForQuery = (fields, table) =>
+      table === gatewayRequestLogs && 'setId' in fields
+        ? [{
+            setId: 'model', provider: '', model: 'glm-5.3-flash', day: null, projectId: null,
+            llmCost: 0, llmKortixCost: 0, llmProviderCost: 0, requestCount: 1, sessionCount: 1,
+          }]
+        : [];
+
+    const summary = await getCostSummary({ accountId, window });
+
+    expect(summary.models).toEqual([
+      { provider: '', model: 'glm-5.3-flash', cost: 0, request_count: 1 },
+    ]);
   });
 
   test('the prior window is the equal-length window immediately before the current one', async () => {

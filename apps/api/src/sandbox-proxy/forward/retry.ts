@@ -17,6 +17,7 @@ import {
   portUnreachableResponse,
   sanitizeRedirectLocation,
 } from '../preview-response';
+import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from '../proxy-hop';
 import {
   PROXY_RETRY_BUDGET_MS,
   PROXY_RETRY_DELAYS_MS,
@@ -300,6 +301,26 @@ async function handleUpstreamFailureStatus(
       if (promptDedupeKey) releasePromptDelivery(promptDedupeKey);
       await turn.abandon();
       const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
+      // Attribute the designed answer (proxy-hop.ts). The hop is the PORT's
+      // hop, not a hardcoded `daemon`: a user app on an ordinary port that
+      // mimics the daemon's not-ready shape (the match is header/body text)
+      // must not borrow the daemon's identity — as `upstream_port` its GET
+      // 503 stays logged (request-log-suppression.ts suppresses only the
+      // daemon-attributed shapes) and
+      // the probe counts it, while the real boot-window answer on the
+      // session-data ports (8000/4096/4097 — /lsp/diagnostics, /permission,
+      // /vcs/diff, …) is suppressed instead of paging a route 5xx rise.
+      notReadyHeaders.set(PROXY_HOP_HEADER, portFailureHop(upstreamPort));
+      notReadyHeaders.set(PROXY_UPSTREAM_STATUS_HEADER, String(upstream.status));
+      if (notReadyHeaders.get('Access-Control-Allow-Origin')) {
+        notReadyHeaders.set(
+          'Access-Control-Expose-Headers',
+          `${PROXY_HOP_HEADER}, ${PROXY_UPSTREAM_STATUS_HEADER}`,
+        );
+      }
+      // The answer is built from the clone; release the original, or its
+      // unread body pins the upstream connection until GC (KRTX-2803).
+      await upstream.body?.cancel().catch(() => {});
       return new Response(bodyText, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -313,13 +334,18 @@ async function handleUpstreamFailureStatus(
     // 502 can mean the sandbox already accepted the body (the gateway just
     // dropped the response), so re-POSTing would enqueue the message twice or
     // write the file twice. Pass the upstream response straight through to the
-    // passthrough below. GET/idempotent requests retry as before.
-    if (!nonReplayableWrite && attempt < MAX_RETRIES) {
+    // passthrough below. GET/idempotent requests retry as before. The one
+    // exception: the Platinum edge marks every answer it gives itself with
+    // `x-pt-edge-verdict` — it did not proxy the request, so the box never
+    // saw the body and a replay cannot deliver it twice (CFG-12).
+    const edgeRefused = upstream.headers.has('x-pt-edge-verdict');
+    if ((!nonReplayableWrite || edgeRefused) && attempt < MAX_RETRIES) {
       // Port not ready yet — sandbox is booting (container running, port down).
       console.warn(
         `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
       );
       invalidatePreviewLink(sandboxId, port);
+      await upstream.body?.cancel().catch(() => {});
       await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
       return 'retry';
     }
@@ -329,6 +355,7 @@ async function handleUpstreamFailureStatus(
     if (!nonReplayableWrite && isBrowserNavigation(incomingHeaders)) {
       void markSandboxUsed(sandboxId);
       ptl.log({ path: remainingPath, port, upstream_status: upstream.status });
+      await upstream.body?.cancel().catch(() => {});
       return portUnreachableResponse({
         port,
         status: upstream.status,

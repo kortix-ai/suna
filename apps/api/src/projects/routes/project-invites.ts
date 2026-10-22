@@ -1,5 +1,6 @@
 /** Project invites: invite by email and manage pending invites. */
-import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail } from '../../accounts/email';
+import { buildInviteUrl, isInviteEmailConfigured, sendAccountInviteEmail, sendProjectAddedEmail } from '../../accounts/email';
+import { logger } from '../../lib/logger';
 import { PROJECT_ACTIONS } from '../../iam';
 import { resolveAccountIdentityByEmail } from '../../iam/account-identity';
 import { assignPendingProjectRole, revokePendingAssignments } from '../../iam/assignments';
@@ -50,7 +51,7 @@ export function registerProjectInvitesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     // Inviting a member grants project access — members.manage, not plain write.
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
@@ -191,33 +192,35 @@ export function registerProjectInvitesRoutes(): void {
     }
 
     const targetAccountRole = await ensureOrgMembership(loaded.row.accountId, targetUserId);
-    if (isAccountManager(targetAccountRole)) {
-      return c.json({
-        user_id: targetUserId,
-        email,
-        account_role: targetAccountRole,
-        project_role: null,
-        effective_project_role: 'manager',
-        has_implicit_access: true,
+    const implicitAccess = isAccountManager(targetAccountRole);
+    if (!implicitAccess) {
+      await grantProjectRole({
+        accountId: loaded.row.accountId,
+        projectId,
+        userId: targetUserId,
+        role,
+        grantedBy: loaded.userId,
+        expiresAt: expires.value,
       });
     }
 
-    await grantProjectRole({
-      accountId: loaded.row.accountId,
+    void sendProjectAddedEmail({
+      email,
       projectId,
-      userId: targetUserId,
-      role,
-      grantedBy: loaded.userId,
-      expiresAt: expires.value,
+      projectName: loaded.row.name ?? 'Untitled project',
+      inviterEmail: c.get('userEmail') ?? null,
+      role: implicitAccess ? 'manager' : role,
+    }).catch(() => {
+      logger.warn('[projects/invite] project notification delivery rejected');
     });
 
     return c.json({
       user_id: targetUserId,
       email,
       account_role: targetAccountRole,
-      project_role: role,
-      effective_project_role: role,
-      has_implicit_access: false,
+      project_role: implicitAccess ? null : role,
+      effective_project_role: implicitAccess ? 'manager' : role,
+      has_implicit_access: implicitAccess,
     });
   },
   );
@@ -249,7 +252,7 @@ export function registerProjectInvitesRoutes(): void {
     }),
     async (c: any) => {
     const projectId = c.req.param('projectId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
@@ -339,7 +342,7 @@ export function registerProjectInvitesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const inviteId = c.req.param('inviteId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 
@@ -414,7 +417,7 @@ export function registerProjectInvitesRoutes(): void {
     async (c: any) => {
     const projectId = c.req.param('projectId');
     const inviteId = c.req.param('inviteId');
-    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
     await assertProjectCapability(c, loaded.userId, loaded.row.accountId, projectId, PROJECT_ACTIONS.PROJECT_MEMBERS_MANAGE);
 

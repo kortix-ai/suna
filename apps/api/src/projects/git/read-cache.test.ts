@@ -114,6 +114,24 @@ describe('cachedGitRead', () => {
     expect(runs).toBe(2);
   });
 
+  test('keeps an answer up to the cap the read names, and serves a larger one uncached', async () => {
+    const sha = await commit('a.txt', 'one');
+    const big = 'x'.repeat(1024 * 1024 + 1); // 2 MiB + 2 bytes as UTF-16: over the default cap
+    let runs = 0;
+    const load = async () => {
+      runs += 1;
+      return big;
+    };
+
+    await cachedGitRead(bare, sha, 'ls-tree-1l', 'small-cap', load);
+    await cachedGitRead(bare, sha, 'ls-tree-1l', 'small-cap', load);
+    expect(runs).toBe(2);
+
+    await cachedGitRead(bare, sha, 'ls-tree-1l', 'big-cap', load, { maxEntryBytes: 4 * 1024 * 1024 });
+    expect(await cachedGitRead(bare, sha, 'ls-tree-1l', 'big-cap', load, { maxEntryBytes: 4 * 1024 * 1024 })).toBe(big);
+    expect(runs).toBe(3);
+  });
+
   test('keys by mirror, commit, operation and argument', async () => {
     const sha = await commit('a.txt', 'one');
     const seen: string[] = [];

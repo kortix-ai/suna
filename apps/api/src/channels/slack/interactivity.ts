@@ -502,11 +502,11 @@ async function handleRequestAccess(
   const result = await createChatAccessRequest(chatUser('slack', teamId, slackUserId), projectId);
   const message =
     result.status === 'created'
-      ? "Access requested ✓ — an admin will review it. Once you're approved, send your message again and I'll get on it."
+      ? "Access requested ✓ — an admin will review it. Once you're approved, mention me again and I'll get on it."
       : result.status === 'pending'
         ? "You've already requested access — it's pending an admin's review."
         : result.status === 'already-member'
-          ? 'You already have access — send your message again and I’ll get on it.'
+          ? 'You already have access — mention me again and I’ll get on it.'
           : result.status === 'no-project'
             ? 'That project isn’t connected to this Slack workspace.'
             : 'I couldn’t request access — connect your Kortix account first, then try again.';

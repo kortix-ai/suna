@@ -58,9 +58,6 @@ let modelGate: unknown = {
   accountId: 'a1',
   ownerUserId: 'u1',
   freeManagedOnly: false,
-  // These cases exercise the GATEWAY picker/servability path; native mode
-  // (flag off) has its own cases.
-  llmGatewayEnabled: true,
 };
 mock.module('../channels/slack/model-gate', () => ({
   // The gate follows the binding: an unbound channel has no project.
@@ -258,7 +255,7 @@ describe('/kortix agent <name>', () => {
     expect(resp.text).toContain('reviewer');
   });
   test('"default" clears the override (null)', async () => {
-    const resp = await handleSlashCommand('agent', 'default', ctx);
+    await handleSlashCommand('agent', 'default', ctx);
     expect(setAgentCalls).toEqual([null]);
   });
   test('no arg → usage', async () => {
@@ -285,7 +282,7 @@ describe('/kortix agents (list)', () => {
     expect(resp.text).toContain('Loading agents');
   });
   test('/kortix agents <name> is an alias for set', async () => {
-    const resp = await handleSlashCommand('agents', 'reviewer', ctx);
+    await handleSlashCommand('agents', 'reviewer', ctx);
     expect(setAgentCalls).toEqual(['reviewer']);
   });
 });

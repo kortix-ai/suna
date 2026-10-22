@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { Part } from '@kortix/sdk';
+import { toolCallBlock, type ToolPart } from '@kortix/sdk';
+import { blocksOf } from '@/lib/testing/session-log';
 
 import { burstView } from './activity';
 import {
@@ -17,7 +18,8 @@ function tool(
   name: string,
   status: 'pending' | 'running' | 'completed' | 'error',
   input: Record<string, unknown> = {},
-): Part {
+  state: Record<string, unknown> = {},
+): ToolPart {
   seq += 1;
   return {
     type: 'tool',
@@ -26,55 +28,66 @@ function tool(
     tool: name,
     sessionID: 's',
     messageID: 'm',
-    state: { status, input, ...(status === 'error' ? { error: 'boom' } : {}) },
-  } as unknown as Part;
+    state: { status, input, ...(status === 'error' ? { error: 'boom' } : {}), ...state },
+  } as unknown as ToolPart;
 }
 
-function reasoning(text: string, time: { start?: number; end?: number } = { start: 1, end: 2 }): Part {
+/** One call as a block. */
+function call(...args: Parameters<typeof tool>) {
+  return toolCallBlock(tool(...args));
+}
+
+function reasoning(text: string, time: { start?: number; end?: number } = { start: 1, end: 2 }): unknown {
   seq += 1;
-  return { type: 'reasoning', id: `prt_${seq}`, sessionID: 's', messageID: 'm', text, time } as unknown as Part;
+  return { type: 'reasoning', id: `prt_${seq}`, sessionID: 's', messageID: 'm', text, time };
 }
 
-function entriesFor(parts: Part[], working = false, isTrailing = false) {
-  return activitySheetEntries(burstView(parts, working, isTrailing));
+function patch(): unknown {
+  seq += 1;
+  return { type: 'patch', id: `prt_${seq}`, sessionID: 's', messageID: 'm', hash: 'h', files: ['/w/a.ts'] };
+}
+
+function entriesFor(parts: unknown[], working = false, isTrailing = false) {
+  return activitySheetEntries(burstView(blocksOf(parts), working, isTrailing));
 }
 
 // ─── Thought summary ─────────────────────────────────────────────────────────
 
 describe('toolHasDetail', () => {
   test('a call with arguments, output, an error, or still running has a detail', () => {
-    expect(toolHasDetail(tool('bash', 'completed', { command: 'ls' }))).toBe(true);
-    expect(toolHasDetail(tool('bash', 'error'))).toBe(true);
-    expect(toolHasDetail(tool('bash', 'running'))).toBe(true);
-    expect(toolHasDetail({ ...tool('custom', 'completed'), state: { status: 'completed', input: {}, output: 'ok' } } as unknown as Part)).toBe(true);
+    expect(toolHasDetail(call('bash', 'completed', { command: 'ls' }))).toBe(true);
+    expect(toolHasDetail(call('bash', 'error'))).toBe(true);
+    expect(toolHasDetail(call('bash', 'running'))).toBe(true);
+    expect(toolHasDetail(call('custom', 'completed', {}, { output: 'ok' }))).toBe(true);
   });
 
   test('a finished call with no arguments and no output has none', () => {
-    expect(toolHasDetail(tool('bash', 'completed'))).toBe(false);
-    expect(toolHasDetail({ ...tool('custom', 'completed'), state: { status: 'completed', input: { a: '' }, output: '  ' } } as unknown as Part)).toBe(false);
+    expect(toolHasDetail(call('bash', 'completed'))).toBe(false);
+    expect(toolHasDetail(call('custom', 'completed', { a: '' }, { output: '  ' }))).toBe(false);
   });
 
   test('navigation-only rows have none', () => {
-    expect(toolHasDetail(tool('project_select', 'completed', { project: 'p' }))).toBe(false);
-    expect(toolHasDetail(tool('oc-project-create', 'completed', { name: 'p' }))).toBe(false);
-    expect(toolHasDetail(tool('todoread', 'completed', { x: 1 }))).toBe(false);
+    expect(toolHasDetail(call('project_select', 'completed', { project: 'p' }))).toBe(false);
+    expect(toolHasDetail(call('oc-project-create', 'completed', { name: 'p' }))).toBe(false);
+    expect(toolHasDetail(call('todoread', 'completed', { x: 1 }))).toBe(false);
   });
 
-  test('a part that is not a tool call has none', () => {
-    expect(toolHasDetail(reasoning('x'))).toBe(false);
+  test('a block that is not a tool call has none: a kept patch summary is a bare "Used" entry', () => {
+    const [entry] = entriesFor([patch(), tool('bash', 'completed')]);
+    expect(entry).toMatchObject({ kind: 'tool', title: 'Used', openable: false, running: false, failed: false });
   });
 });
 
 // ─── Ownership ───────────────────────────────────────────────────────────────
 
 describe('ownsBurst', () => {
-  test('a burst owns the open sheet when it shares any part', () => {
-    expect(ownsBurst(['a', 'b'], [{ id: 'b' }, { id: 'c' }] as Part[])).toBe(true);
+  test('a burst owns the open sheet when it shares any block', () => {
+    expect(ownsBurst(['a', 'b'], [{ id: 'b' }, { id: 'c' }])).toBe(true);
   });
 
-  test('a burst with no shared part does not', () => {
-    expect(ownsBurst(['a'], [{ id: 'b' }] as Part[])).toBe(false);
-    expect(ownsBurst([], [{ id: 'b' }] as Part[])).toBe(false);
+  test('a burst with no shared block does not', () => {
+    expect(ownsBurst(['a'], [{ id: 'b' }])).toBe(false);
+    expect(ownsBurst([], [{ id: 'b' }])).toBe(false);
   });
 });
 
@@ -91,28 +104,11 @@ describe('burstHasPendingPermission', () => {
 // ─── Entries ─────────────────────────────────────────────────────────────────
 
 describe('activitySheetEntries', () => {
-  test('a thought is listed as "Thinking"; its text is the detail a tap opens', () => {
-    const [entry] = entriesFor([reasoning('**Planning**\n\nFirst read the file.'), tool('bash', 'completed')]);
-    expect(entry).toEqual({
-      kind: 'thought',
-      key: entry.key,
-      title: 'Thinking',
-      body: '**Planning**\n\nFirst read the file.',
-      running: false,
-      openable: true,
-    });
-  });
-
-  test('thought fragments merge into one "Thinking" entry whose body keeps paragraphs', () => {
-    const entries = entriesFor([reasoning('one'), reasoning('two'), tool('bash', 'completed')]);
-    expect(entries).toHaveLength(2);
-    expect(entries[0]).toMatchObject({ kind: 'thought', title: 'Thinking', body: 'one\n\ntwo', openable: true });
-  });
-
-  test('a thought with no text yet does not open', () => {
-    const entries = entriesFor([reasoning('   '), tool('bash', 'completed')]);
-    const thought = entries.find((entry) => entry.kind === 'thought');
-    if (thought) expect(thought).toMatchObject({ title: 'Thinking', openable: false });
+  test('thoughts are never entries, whatever their text', () => {
+    const entries = entriesFor([reasoning('**Planning**\n\nFirst read the file.'), reasoning('   '), tool('bash', 'completed')]);
+    expect(entries).toHaveLength(1);
+    expect(entries.every((e) => e.kind === 'tool')).toBe(true);
+    expect(entriesFor([reasoning('only thinking')])).toEqual([]);
   });
 
   test('a same-family group expands into one entry per call', () => {
@@ -162,24 +158,17 @@ describe('activitySheetEntries', () => {
     expect(entries[1]).toMatchObject({ title: 'Ran ls', running: false });
   });
 
-  test('only the last thought of a live burst is running', () => {
-    const entries = entriesFor(
-      [reasoning('first', { start: 1 }), tool('bash', 'completed'), reasoning('second', { start: 3 })],
-      true,
-      true,
-    );
-    expect(entries.map((e) => e.running)).toEqual([false, false, true]);
-  });
-
   test('a failed call is flagged', () => {
     const entries = entriesFor([tool('bash', 'error', { command: 'ls' }), tool('bash', 'completed')]);
     expect(entries.map((e) => (e.kind === 'tool' ? e.failed : null))).toEqual([true, false]);
   });
 
-  test('tool entries carry their part, icon key, and a stable key', () => {
+  test('tool entries carry their block, icon key, and a stable key', () => {
     const part = tool('grep', 'completed', { pattern: 'queue' });
-    const [entry] = entriesFor([part, reasoning('x')]);
-    expect(entry).toMatchObject({ kind: 'tool', key: part.id, part, icon: 'search', openable: true });
+    const blocks = blocksOf([part, reasoning('x')]);
+    const [entry] = activitySheetEntries(burstView(blocks, false, false));
+    expect(entry).toMatchObject({ kind: 'tool', key: part.id, icon: 'search', openable: true });
+    expect(entry?.block).toBe(blocks[0]);
   });
 
   test('a tool entry without a detail is not openable', () => {

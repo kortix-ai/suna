@@ -1,9 +1,23 @@
-import type { ManifestFormat, ResolvedManifest } from '@kortix/manifest-schema';
+import type { ManifestFormat, ResolvedManifest, TriggerFilter } from '@kortix/manifest-schema';
 
-export type GitTriggerType = 'cron' | 'webhook' | 'monitor';
+export type GitTriggerType = 'cron' | 'webhook' | 'monitor' | 'event';
 
 /** For type=monitor only — how the platform runs `run`. */
 export type GitMonitorMode = 'poll' | 'stream';
+
+/** For type=event only — which app event on which connector fires the trigger. */
+export interface GitTriggerEventFields {
+  /** Slug of a connector declared under `connectors:`. */
+  connector: string;
+  /** Label of one shared account of that connector. Absent = the connector's default shared account. */
+  account?: string | null;
+  /** Event source adapter id (e.g. `composio`). Absent = the connector's provider. */
+  source?: string | null;
+  /** The adapter's own event type id (e.g. `GITHUB_PULL_REQUEST_EVENT`). */
+  type: string;
+  /** Provider event config; the provider validates it at subscribe time. */
+  config: Record<string, unknown>;
+}
 
 export interface GitTriggerSpec {
   /** URL-safe slug — unique per project. */
@@ -42,6 +56,26 @@ export interface GitTriggerSpec {
   /** For type=cron only. IANA timezone. Defaults to UTC. */
   timezone: string;
   /**
+   * For type=cron only (`max_lateness`). A slot claimed more than this many
+   * seconds after its time is recorded as a skipped run instead of firing.
+   * Omitted when unset: the late slot fires once, as before.
+   */
+  maxLatenessSeconds?: number;
+  /**
+   * Any trigger type (`max_runs_per_hour`, KRTX-1721): runs started in any 60
+   * minutes. A fire past it is recorded as a throttled, skipped run. Omitted
+   * when unset: the platform default (60) applies.
+   */
+  maxRunsPerHour?: number;
+  /** Any trigger type (`max_runs_per_day`): runs started in a UTC day. Omitted when unset: no daily cap. */
+  maxRunsPerDay?: number;
+  /**
+   * `overlap` (KRTX-1721), fresh session mode only: `skip` holds a fire while
+   * the trigger's previous run is still active (`lib/trigger-overlap.ts`).
+   * Omitted when unset: `skip` for a cron trigger, `allow` for the others.
+   */
+  overlap?: 'skip' | 'allow';
+  /**
    * For type=webhook only — the project_secrets key that holds the HMAC
    * signing secret. The actual secret value is never inline.
    */
@@ -66,6 +100,8 @@ export interface GitTriggerSpec {
    * silently. Null when the monitor declares no expectation.
    */
   expectEventWithinSeconds: number | null;
+  /** For type=event only. Absent (or null) for every other type — parsed non-event specs omit it so existing spec shapes are unchanged. */
+  event?: GitTriggerEventFields | null;
   /**
    * Session reuse policy.
    * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +
@@ -108,8 +144,10 @@ export interface GitTriggerSpec {
    * directions of a conversation would otherwise re-trigger the agent with the
    * agent's own reply. `{ "body.data.direction": "inbound" }` ends that without
    * having to narrow the subscription and lose every other event type.
+   * A path maps to a value (equals) or one operator: `not`, `in`, `exists`,
+   * `prefix`, `not_prefix` (`@kortix/manifest-schema` `trigger-filter.ts`).
    */
-  filter: Record<string, string> | null;
+  filter: TriggerFilter | null;
   /**
    * Set only on a session reminder (`lib/session-reminders.ts`): a DB-native `cron`
    * row that re-prompts `pinnedSessionId`. The manifest never declares one, so
@@ -187,6 +225,16 @@ export interface ParsedManifest {
    * edit back to the declaring file instead of flattening it into the root.
    */
   imports?: ResolvedManifest;
+  /**
+   * The exact source text this manifest was parsed from, when it was read as
+   * YAML. Comment preservation is per-FORMAT: the `yaml` package's Document
+   * is lossless (comments + blank lines ride on the node tree), while a TOML
+   * parser only decodes data, so a TOML write is a full re-serialize. The
+   * edit path (serializeManifest) splices its changes into this text instead
+   * of reserializing; reads never need it. null/undefined = fall back to a
+   * full re-serialize.
+   */
+  source?: string | null;
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */

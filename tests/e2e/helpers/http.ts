@@ -138,30 +138,6 @@ export async function json<T>(
   return body ? JSON.parse(body) as T : ({} as T);
 }
 
-export async function apiStatus(
-  apiBase: string,
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-): Promise<number> {
-  const { status } = await requestWithTransientRetry(`${apiBase}${path}`, {
-    method,
-    headers: authHeaders(token),
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return status;
-}
-
-export function createApiStatusClient(apiBase: string) {
-  return (
-    token: string,
-    method: string,
-    path: string,
-    body?: Record<string, unknown>,
-  ): Promise<number> => apiStatus(apiBase, token, method, path, body);
-}
-
 export async function apiJson<T>(
   apiBase: string,
   token: string,

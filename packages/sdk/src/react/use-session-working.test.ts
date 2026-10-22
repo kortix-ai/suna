@@ -424,7 +424,7 @@ describe('readSessionTurnObservation', () => {
       queue: { known: true, prompts: [], held: false },
       transcript: { known: true, requested: false },
       config: { known: true },
-      models: { known: false, reason: 'llm_gateway_disabled' },
+      models: { known: false, reason: 'read_failed' },
       session: { session_id: 'S1' },
     }));
     openSessionBundle('P1', 'S1');
@@ -469,6 +469,30 @@ describe('readSessionTurnObservation', () => {
     expect(urls[0]).toContain('/sessions/S1/turn');
     expect(observation.turns).toEqual([]);
     expect(observation.last_ended?.turn_token).toBe('tt-0');
+  });
+
+  test('carries the caller\'s can_stop from /turn and from the open bundle', async () => {
+    resetSessionOpenBundles();
+    mockFetch(() => ({ turns: [{ turn_token: 'tt-4', state: 'active' }], can_stop: false }));
+    expect((await readSessionTurnObservation('P1', 'S1', { bundle: false })).can_stop).toBe(false);
+
+    resetSessionOpenBundles();
+    mockFetch(() => ({
+      observed_at: BUNDLE_AT,
+      turn: { known: true, turns: [{ turn_token: 'tt-5', state: 'active' }], can_stop: false },
+      queue: { known: true, prompts: [], held: false },
+      transcript: { known: true, requested: false },
+      config: { known: true },
+      models: { known: false, reason: 'x' },
+      session: { session_id: 'S1' },
+    }));
+    openSessionBundle('P1', 'S1');
+    expect((await readSessionTurnObservation('P1', 'S1')).can_stop).toBe(false);
+
+    // An older server sends no field: nothing is invented.
+    resetSessionOpenBundles();
+    mockFetch(() => ({ turns: [] }));
+    expect('can_stop' in (await readSessionTurnObservation('P1', 'S1', { bundle: false }))).toBe(false);
   });
 
   test('falls back to /turn when the bundle could not answer that leg', async () => {

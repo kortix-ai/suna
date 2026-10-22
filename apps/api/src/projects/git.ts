@@ -32,7 +32,6 @@ export type {
   GetCommitDiffOptions,
   CommitDiff,
   GetFileHistoryOptions,
-  GetFileAtRefResult,
   BranchDiffSummary,
   MergePreview,
   MergeOptions,
@@ -41,7 +40,6 @@ export type {
 
 export {
   invalidateProjectMirror,
-  resolveTreeOid,
   materializeRepoContext,
   type MirrorRefresh,
 } from './git/mirror';
@@ -51,9 +49,9 @@ export {
   searchRepoFileNames,
   grepRepoFiles,
   readRepoFile,
+  readRepoFileBytes,
   readManifestFromRepo,
   archiveRepoSubtree,
-  getFileAtRef,
   getFileHistory,
   RepoFileNotFoundError,
   isRepoFileNotFoundError,
@@ -90,7 +88,6 @@ export {
   previewMerge,
   MergeConflictError,
   mergeBranches,
-  diffStat,
   resolveBranchAheadState,
 } from './git/merge';
 

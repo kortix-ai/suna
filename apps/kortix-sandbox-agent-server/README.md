@@ -80,9 +80,10 @@ import rules, and where new code goes; `bun run lint` enforces them.
    of repo/harness state — previews work while the agent is still booting.
    Non-fatal: a bind failure is logged and `static_web_port` reports `null`.
 3. Materialize the project repo in `/workspace/.kortix` through the
-   config-provider coordinator (`src/services/config-provider/config-provider.ts`). A
+   workspace provider (`src/services/workspace-provider/workspace-provider.ts`). A
    baked checkout that IS the session's base is adopted first, in every mode.
-   Then `KORTIX_PROJECT_SNAPSHOT_MODE` selects the transport: `git` (default)
+   Then `acquire` (`src/services/workspace-provider/acquire.ts`) reads
+   `KORTIX_PROJECT_SNAPSHOT_MODE` to select the transport: `git` (default)
    is the legacy path — image-baked scaffold + API delta, or `git clone`;
    `prefer-s3` fetches the PREPARED boot object pinned in
    `KORTIX_PROJECT_SNAPSHOT_PIN` from object storage (descriptor from the Git
@@ -92,16 +93,24 @@ import rules, and where new code goes; `bun run lint` enforces them.
    failure except an authorization denial or a cancellation; `require-s3`
    fails closed. Nothing runs git on that boot path. Off it, the daemon
    refreshes the index and imports the tip's blob pack (`git index-pack`),
-   reported as `config_provider.hydration` (`pending` → `ok` | `failed`; a
+   reported as `workspace_provider.hydration` (`pending` → `ok` | `failed`; a
    failed import leaves lazy blob fetches through the proxy). The outcome —
    provider, expected vs actual SHA, extractor, classified S3 failure,
-   fallback, hydration — is on `GET /kortix/health` (`config_provider`) and in
-   the boot timeline marks (`config-provider:*`). A prepared-S3 start defers
+   fallback, hydration, per-stage timings — is on `GET /kortix/health`
+   (`workspace_provider`). The workspace writes nothing into `boot_timeline`:
+   it is not config. The config release the runtime boots from is downloaded
+   in parallel by the config provider (`src/services/config-provider/`), from
+   the S3 project snapshot first and the API archive second, and never from
+   `/workspace`. A prepared-S3 start defers
    the optional history backfill until the runtime is actually ready and the
    hydration has settled. Materialization failures are logged but non-fatal in
    non-required modes.
 4. Inject managed system skills into the project's skills dir: root `skills/`
    (root layout) or `<config dir>/skills` (legacy `.kortix/opencode`).
+   A `kortix_version: 3` session takes its agents, registered skill folders,
+   commands and extensions only from the compiled set
+   (`KORTIX_COMPILED_AGENT_CONFIG`, `schema: 3`) and reads no `harnesses/`,
+   `.kortix/`, `.opencode/` or `.pi/` folder; config dirs are a v1/v2 concern.
 5. Resolve `OPENCODE_CONFIG_DIR`.
 6. Start the OpenCode REST supervisor in the project directory
    (`opencode serve --port <internal> --hostname 127.0.0.1`).
@@ -211,7 +220,7 @@ KORTIX_BRANCH_FETCH_ATTEMPTS=60
 KORTIX_BRANCH_FETCH_DELAY=0.25
 KORTIX_DEFAULT_OPENCODE_CONFIG_DIR=/ephemeral/kortix-master/opencode
 KORTIX_PROJECT_AUTO_CLONE=0
-KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/services/config-provider)
+KORTIX_PROJECT_SNAPSHOT_MODE=git          # git | prefer-s3 | require-s3 (src/services/workspace-provider)
 KORTIX_PROJECT_SNAPSHOT_PIN=              # <sha>:<archive-sha256>:<bytes> of a PREPARED archive, set by the API
 KORTIX_PROJECT_SNAPSHOT_DESCRIPTOR=       # base64 JSON of the presigned download descriptor for that pin, signed by the API at session create; first attempt only, the proxy route is the fallback
 KORTIX_REPO_URL=
@@ -240,6 +249,42 @@ curl -s http://localhost:9999/kortix/health
 
 The daemon should boot and report `opencode: "starting"` (or `"down"` if the
 binary is genuinely missing) without crashing.
+
+## Run it on your machine (`scripts/local.ts`)
+
+`scripts/local.ts` runs a whole session on your computer and gives you a chat
+REPL in the terminal. It needs no Kortix API and no sandbox provider. The model
+is your ChatGPT Plus/Pro subscription.
+
+```
+bun apps/kortix-sandbox-agent-server/scripts/local.ts login      # once: ChatGPT sign-in in the browser
+cd ~/some/project
+bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts                      # pi
+bun ~/path/to/suna/apps/kortix-sandbox-agent-server/scripts/local.ts --harness opencode   # OpenCode
+```
+
+Options: `--model codex/<id>` (default `codex/gpt-5.5`; `/models` in the REPL
+lists them), `--workspace <dir>` (default: the current directory), `--fresh`
+(drop the previous conversation of this workspace). In the REPL, `/model <id>`
+switches the model, Ctrl-C aborts the turn, and Ctrl-D quits.
+
+What it starts:
+
+1. A local LLM gateway on `127.0.0.1`: `packages/llm-gateway` with local hooks.
+   It sends every request to ChatGPT's Codex backend with the token `login`
+   stored in `~/.kortix/local/codex-auth.json`, and refreshes that token.
+2. kortixd from source, pointed at that gateway (`KORTIX_LLM_BASE_URL`), with
+   `HOME=~/.kortix/local/home` so it never writes your own git or OpenCode
+   config. State, `daemon.log` and `gateway.log` live in
+   `~/.kortix/local/workspaces/<harness>-<hash>/`, so the next run in the same
+   directory continues the same conversation.
+3. A REPL over the Runtime API: `POST /kortix/runtime/sessions/:id/prompt` and
+   the `GET /kortix/runtime/events` stream. It shows text, reasoning (dim), tool
+   calls, questions and permission requests.
+
+The agent's tools run as your user in the workspace directory. This is not a
+sandbox. Tools that call the Kortix API (`web_search`, `scrape_webpage`, …) fail
+without one.
 
 ## Management CLI
 

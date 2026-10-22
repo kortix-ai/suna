@@ -3,7 +3,6 @@
  * member or group. A resource with >=1 grant is visible only to grantees.
  */
 
-import { SessionScopeSchema } from '@kortix/api-contract';
 import {
   PROJECT_ACTIONS,
   deleteResourceGrant,
@@ -17,22 +16,14 @@ import {
   loadConfigWithFiles,
 } from '../lib/project-resources';
 import { auth, errors, json, lenientBody } from '../../openapi';
-import { db } from '../../shared/db';
 import { accountMemberRow } from '../../iam/membership-read';
 import { accountGroupNamesAmong, accountGroupRow } from '../../iam/group-read';
 import { createRoute, z } from '@hono/zod-openapi';
-import { connectors } from '@kortix/db';
-import { and, or } from 'drizzle-orm';
-import { config } from '../../config';
 import { loadProjectForUser, lookupEmailsByUserIds, parseExpiresAtBody, assertProjectCapability } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { normalizeString } from '../lib/serializers';
 import { isUuid } from '../../shared/validate';
 import { readJsonObject } from '../../shared/http-body';
-import { resolveEffectiveSessionConnectorBindings } from '../lib/session-connector-bindings';
-import { callerKortixSessionId } from '../../middleware/caller-session';
-import { DEFAULT_AGENT_SENTINEL } from '../agents';
-import { resolveSessionAgentGrant } from '../lib/secret-grant';
 
 /**
  * At most one forced mirror refresh per project per window. A miss is the only

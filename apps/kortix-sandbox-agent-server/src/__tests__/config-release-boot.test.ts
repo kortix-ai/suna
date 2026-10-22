@@ -6,10 +6,11 @@
  * What these assert is the contract, not the implementation:
  *   C2 "proven" is OpenCode answering its session API on the candidate dir.
  *   C3 the readiness gate opens only after a proof, never before.
- *   C4 `/workspace` is never a candidate while `config_releases` is on.
+ *   C4 `/workspace` is never a candidate while the API serves releases.
  *   C6 no timer decides the config: the release is waited for.
  *   C7 valve A (present but does not load) and valve B (store/API unreachable).
- *   C8 flag off is one early return to the pre-release behaviour.
+ *   C8 `403 feature_disabled` (an API from before config releases graduated)
+ *      is one early return to the pre-release behaviour.
  */
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { spawnSync } from 'node:child_process'
@@ -21,18 +22,19 @@ import {
   materializeRelease,
   readBootConfigPointer,
   readBootLinkTarget,
+  readBootReleaseRoot,
   readQuarantine,
   releaseDir,
   type ReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import type { Config } from '@/lib/config/config'
-import type { ConfigReleaseApi } from '@/services/config-release/api-client'
+import type { ConfigReleaseApi } from '@/services/config-provider/api-client'
 import type { HarnessConfigReleaseReport } from '@/harness/contract/control'
 import { createOpenCodeDiagnosticsService } from '@/harness/open-code/diagnostics'
 import type { Opencode } from '@/harness/open-code/lifecycle'
 import { bootOpenCodeConfig, type BootConfigPathResult } from '@/harness/open-code/boot-config-path'
 import { configReleaseReport, resetConfigReleaseStateForTests } from '@/harness/open-code/config-release'
-import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '@/services/config-release/notice'
+import { CONFIG_RELEASE_NOTICE_PATH, clearConfigReleaseNotice } from '@/services/config-provider/notice'
 import type { OpenCodeConfig } from '@/harness/open-code/config'
 import {
   buildRelease,
@@ -41,6 +43,7 @@ import {
   git,
   initRepo,
   serveRelease,
+  serveSnapshot,
   startFakeApi,
   write,
   type BuiltRelease,
@@ -285,12 +288,90 @@ describe('the desired release is what the box runs', () => {
     expect(api.archiveRequests.length).toBe(1)
   })
 
+  // Project tools load from the release root (`readBootReleaseRoot`), not from
+  // the config dir: a tools-only release (an agent without repository access)
+  // has no OpenCode config dir and serves the image default.
+  test('the served release is recorded as the project tool root, with or without an OpenCode config dir', async () => {
+    await boot()
+    expect(await readBootReleaseRoot(store)).toBe(releaseDir(store, release.descriptor.release_id!))
+
+    resetConfigReleaseStateForTests()
+    const toolsOnly = mkdtempSync(join(root, 'tools-only-'))
+    initRepo(toolsOnly)
+    write(toolsOnly, 'tools/lookup_order.ts', 'export default {}\n')
+    const built = buildRelease(toolsOnly, commitAll(toolsOnly, 'tools'), null, { governance: GOV })
+    serveRelease(api, built)
+    const run = await boot()
+    expect(run.result).toMatchObject({ dir: defaultDir, source: 'release', releaseId: built.descriptor.release_id })
+    expect(await readBootReleaseRoot(store)).toBe(releaseDir(store, built.descriptor.release_id!))
+    expect(existsSync(join(releaseDir(store, built.descriptor.release_id!), 'tools/lookup_order.ts'))).toBe(true)
+  })
+
+  test('a governance-only release records no project tool root', async () => {
+    await boot()
+    resetConfigReleaseStateForTests()
+    api.respond({ status: 200, json: { ...release.descriptor, release_id: 'b'.repeat(64), config_tree_id: null, archive: null, files: null, reason: 'repository access withheld' } })
+    await boot()
+    expect(await readBootReleaseRoot(store)).toBeNull()
+  })
+
   test('an intact copy from an earlier boot is reused without a download', async () => {
     await installProvenRelease()
     api.archiveRequests.length = 0
     const run = await boot()
     expect(run.result.source).toBe('release')
     expect(api.archiveRequests).toHaveLength(0)
+  })
+
+  test('the checkout is never a config source: a box at the release commit still downloads the release', async () => {
+    const run = await boot({ cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig })
+    const dir = join(releaseDir(store, release.descriptor.release_id!), DIR)
+    expect(run.result).toMatchObject({ dir, source: 'release', proven: true, fallbackReason: null })
+    expect(readFileSync(join(dir, 'agents/kortix.md'), 'utf8')).toBe('RELEASE PROMPT\n')
+    expect(api.archiveRequests).toHaveLength(1)
+    expect(run.servedDirs).not.toContain(join(work, DIR))
+    expect(git(work, 'status', '--porcelain')).toBe('')
+  })
+
+  test('a release with no archive and no snapshot boots the image default and says why', async () => {
+    api.respond({ status: 200, json: { ...release.descriptor, format: 'config-release-v3', archive: null, snapshot: null } })
+    const run = await boot({ cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig })
+    expect(run.result.source).toBe('image-default')
+    expect(run.result.fallbackReason).toContain('the API has no project snapshot of this commit yet')
+    expect(api.archiveRequests).toEqual([])
+  })
+
+  test('a checkout that did not materialize is never read: the box downloads instead', async () => {
+    const run = await boot(
+      { cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig },
+      { workspaceError: 'clone failed' },
+    )
+    expect(run.result.source).toBe('release')
+    expect(api.archiveRequests).toHaveLength(1)
+  })
+
+  test('a release over the archive cap boots from the project snapshot (v3)', async () => {
+    write(work, 'assets/big.bin', 'never in the release\n')
+    const tip = commitAll(work, 'big')
+    const built = buildRelease(work, tip, DIR, { governance: GOV })
+    api.respond({
+      status: 200,
+      json: {
+        ...built.descriptor,
+        format: 'config-release-v3',
+        archive: null,
+        files: built.descriptor.files!.filter(([path]) => !path.startsWith('assets/')),
+        snapshot: serveSnapshot(api, work, tip),
+      },
+    })
+    // The box checked out an older commit, so the checkout is not the release.
+    const run = await boot({ cfg: { ...cfg(), baseSha: release.descriptor.source_commit } as OpenCodeConfig })
+    const dir = releaseDir(store, built.descriptor.release_id!)
+    expect(run.result).toMatchObject({ dir: join(dir, DIR), source: 'release', proven: true, fallbackReason: null })
+    expect(api.archiveRequests).toEqual([])
+    expect(api.storageRequests).toHaveLength(1)
+    expect(existsSync(join(dir, '.git'))).toBe(false)
+    expect(existsSync(join(dir, 'assets'))).toBe(false)
   })
 })
 
@@ -420,7 +501,7 @@ describe('valve B: the store or the API could not be reached', () => {
 
   test('a quarantined desired release is skipped with its reason, not retried', async () => {
     const dir = await installProvenRelease()
-    const { quarantineRelease } = await import('@/services/config-release/boot-config')
+    const { quarantineRelease } = await import('@/services/config-provider/boot-config')
     write(work, `${DIR}/agents/kortix.md`, 'NEWER PROMPT\n')
     const newer = buildRelease(work, commitAll(work, 'newer'), DIR, { governance: GOV })
     serveRelease(api, newer)
@@ -573,5 +654,32 @@ describe('what the API decides, the session is told and the box runs', () => {
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG).toBe('{}')
     expect(process.env.KORTIX_COMPILED_AGENT_CONFIG_ETAG).toBe(none.descriptor.compiled_governance_etag!)
     expect(await readQuarantine(store)).toEqual({})
+  })
+})
+
+// kortix.yaml v3 has no harness config folder: the compiled set is the only
+// input. A `harnesses/opencode` or `.kortix/opencode` left in the repository is
+// never served, and the boot is still proven on the image default.
+describe('kortix.yaml v3: no project OpenCode config dir', () => {
+  const V3 = '{"schema":3,"default_agent":"kortix","agent":{"kortix":{"mode":"primary"}}}'
+
+  test('a v3 release serves the image default, keeps the release as the config root, and is proven', async () => {
+    write(work, 'kortix.yaml', 'kortix_version: 3\n')
+    const built = buildRelease(work, commitAll(work, 'v3'), DIR, { governance: V3 })
+    serveRelease(api, built)
+    const run = await boot()
+    const releaseRoot = releaseDir(store, built.descriptor.release_id!)
+    expect(run.result).toMatchObject({ dir: defaultDir, source: 'release', releaseId: built.descriptor.release_id, proven: true })
+    expect(run.servedDirs).not.toContain(join(releaseRoot, DIR))
+    expect(await readBootReleaseRoot(store)).toBe(releaseRoot)
+    expect(await readBootConfigPointer(store)).toMatchObject({ release_id: built.descriptor.release_id, config_dir: null, proven: true })
+  })
+
+  test('config releases off: a v3 checkout serves the image default, with /workspace as the config root', async () => {
+    process.env.KORTIX_COMPILED_AGENT_CONFIG = V3
+    api.respond(FEATURE_DISABLED)
+    const run = await boot()
+    expect(run.result).toMatchObject({ dir: defaultDir, releasesEnabled: false, proven: true })
+    expect(await readBootReleaseRoot(store)).toBe(work)
   })
 })

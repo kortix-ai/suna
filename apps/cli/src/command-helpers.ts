@@ -1,7 +1,15 @@
 import { FEATURE_DISABLED_CODE } from '@kortix/sdk';
 
-import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
-import { activeAccount, activeHostName, getHost, hasEnvTokenHost, listHosts } from './api/config.ts';
+import { loadAuth, loadAuthForHost, loadEnvAuth, type Auth } from './api/auth.ts';
+import {
+  activeAccount,
+  activeHostEntry,
+  activeHostName,
+  getHost,
+  hasEnvTokenHost,
+  listHosts,
+  markerActive,
+} from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectRef } from './project-link.ts';
 import { ensureDefaultProjectBinding } from './project-bind.ts';
@@ -46,17 +54,39 @@ interface ProjectContextOpts {
 export function resolveProjectAuth(opts: { hostArg?: string } = {}): {
   hostName?: string;
   auth: Auth | null;
+  /** Plain auth resolved to the stored active host through an in-sandbox
+   *  `hosts use` selection (KRTX-1705) while the injected delegation points
+   *  elsewhere: the env project/session ids cannot be served by this
+   *  credential, so the project must resolve from the host's own context —
+   *  the branch an explicit `--host` already uses. */
+  hostScoped?: boolean;
 } {
   const link = opts.hostArg ? null : loadLink();
   let hostName = opts.hostArg ?? link?.host ?? undefined;
   let auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   // A link naming a host with no stored credentials must not dead-end the CLI
-  // inside a sandbox: the injected env token stays the fallback there.
+  // inside a sandbox: the injected env token stays the fallback there — and
+  // it stays the INJECTED identity even when an in-sandbox `hosts use`
+  // selected another host (loadEnvAuth, KRTX-1705): the link's project
+  // belongs to the deployment the link names, never to the selection.
+  let fellBackToEnv = false;
   if (!auth?.token && !opts.hostArg && hasEnvTokenHost()) {
-    auth = loadAuth();
+    auth = loadEnvAuth();
     hostName = undefined;
+    fellBackToEnv = true;
   }
-  return { hostName, auth };
+  // The marker only ever wins for plain resolution (no --host, no link, and
+  // not the link's env fallback above): the command acts as the selected
+  // stored host, so the ambient project chain (KORTIX_PROJECT_ID) — which
+  // belongs to the injected deployment — must not pair with this credential.
+  // markerActive (not envWins) because the marker stays active after the
+  // injected env disappears. Downstream, resolveProjectContext then scopes
+  // the project the way --host does.
+  let hostScoped = false;
+  if (!opts.hostArg && !hostName && !fellBackToEnv && auth?.token && markerActive()) {
+    hostScoped = true;
+  }
+  return { hostName, auth, hostScoped };
 }
 
 /**
@@ -96,13 +126,13 @@ export type CtxOpts = Pick<ProjectContextOpts, 'projectArg' | 'hostArg' | 'onePr
 
 export async function resolveProjectContext(
   optsOrProjectArg?: ProjectContextOpts | string,
-): Promise<{ client: ApiClient; projectId: string; auth: Auth } | null> {
+): Promise<{ client: ApiClient; projectId: string; auth: Auth; defaultProject?: boolean } | null> {
   const opts: ProjectContextOpts =
     typeof optsOrProjectArg === 'string'
       ? { projectArg: optsOrProjectArg }
       : optsOrProjectArg ?? {};
 
-  const { hostName, auth: resolvedAuth } = resolveProjectAuth({ hostArg: opts.hostArg });
+  const { hostName, auth: resolvedAuth, hostScoped } = resolveProjectAuth({ hostArg: opts.hostArg });
   let auth: Auth | null = resolvedAuth;
   if (!auth?.token) {
     if (hostName) {
@@ -122,17 +152,26 @@ export async function resolveProjectContext(
   // host's token. Resolve the project from the named host's own context — a
   // --project pin, a link bound to that same host, or that host's stored
   // default — and say so clearly when it has none.
+  //
+  // The same scoping applies without the flag when an in-sandbox `hosts use`
+  // selected the active host (KRTX-1705): plain commands act as that host, so
+  // pairing its credential with the injected project id would 404
+  // cross-deployment, exactly like --host would.
+  const scopedHost = opts.hostArg ?? (hostScoped ? (activeHostName() ?? undefined) : undefined);
   let projectId: string | null;
-  if (opts.hostArg && !opts.projectArg) {
+  let defaultProject = false;
+  if (scopedHost && !opts.projectArg) {
     const link = loadLink();
-    const linkProject = link?.host === opts.hostArg ? link.project_id : undefined;
-    const hostDefault = getHost(opts.hostArg)?.default_project;
+    const linkProject = link?.host === scopedHost ? link.project_id : undefined;
+    const hostDefault = getHost(scopedHost)?.default_project;
     projectId = linkProject ?? hostDefault?.project_id ?? null;
+    defaultProject = !linkProject && !!hostDefault?.project_id;
     if (!projectId) {
       if (!opts.quietWhenUnresolved) {
+        const source = opts.hostArg ? '(--host)' : '(the active host)';
         process.stderr.write(
-          `${status.err(`No project context on host "${opts.hostArg}".`)} Pass ` +
-            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls --host ${opts.hostArg}${C.reset} lists them).\n`,
+          `${status.err(`No project context on host "${scopedHost}" ${source}.`)} Pass ` +
+            `${C.cyan}--project <id>${C.reset} (${C.cyan}kortix projects ls${opts.hostArg ? ` --host ${opts.hostArg}` : ''}${C.reset} lists them).\n`,
         );
       }
       return null;
@@ -140,6 +179,7 @@ export async function resolveProjectContext(
   } else {
     const ref = resolveProjectRef(opts.projectArg);
     projectId = ref?.projectId ?? null;
+    defaultProject = ref?.source === 'default';
     // ONE PRINCIPAL (KRTX-1486): the ambient sandbox session token is bound
     // to the sandbox's own project. A project the CLI config resolved
     // (.kortix/link.json) must never pair with it — writes 403 cross-project
@@ -186,7 +226,7 @@ export async function resolveProjectContext(
     }
     return null;
   }
-  return { client: clientFromAuth(auth), projectId, auth };
+  return { client: clientFromAuth(auth), projectId, auth, defaultProject };
 }
 
 export interface AccountContext {
@@ -204,9 +244,11 @@ export interface AccountContext {
  * even for a grant that lands on ONE project. So `kortix access`, `kortix roles`
  * and `kortix permissions` all need this, not `resolveProjectContext`.
  *
- * Account resolution order: `--account` → the active account → the host's
- * default account from the stored credentials. With `--host`, only that
- * host's stored account is used unless `--account` explicitly overrides it.
+ * Account resolution order: `--account` → the account of the cwd's host-bound
+ * project link (the account the host notice prints as "(linked)") → the active
+ * account → the host's default account from the stored credentials. With
+ * `--host`, only that host's stored account is used unless `--account`
+ * explicitly overrides it.
  */
 export function resolveAccountContext(opts: {
   accountArg?: string;
@@ -226,7 +268,12 @@ export function resolveAccountContext(opts: {
     }
     return null;
   }
-  const accountId = opts.accountArg || (opts.hostArg ? auth.account_id : activeAccount()?.id || auth.account_id) || '';
+  const link = opts.hostArg ? null : loadLink();
+  const linkedAccountId = link?.host ? link.account_id : '';
+  const accountId =
+    opts.accountArg ||
+    (opts.hostArg ? auth.account_id : linkedAccountId || activeAccount()?.id || auth.account_id) ||
+    '';
   if (!accountId && !opts.accountOptional) {
     process.stderr.write(
       `${status.err('No active account. Run `kortix accounts use` or pass --account <id>.')}\n`,
@@ -447,26 +494,31 @@ function printHostRetryHints(retryCommand: (hostName: string) => string): void {
 }
 
 /** result = the fetched row, false = 404 (keep looking), ApiError = a real failure. */
-const SESSION_UUID_RE =
+export const SESSION_UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Expand a short session-id prefix against the project's session list,
- *  returning the matched row (the list already carries it — no re-fetch). */
+ *  returning the matched row (the list already carries it — no re-fetch).
+ *  The list leaves out the caller's archived sessions, so a prefix with no
+ *  match is tried against `archived=only` too: the short id that
+ *  `sessions ls --archived` prints must resolve. */
 export async function expandSessionIdPrefix(
   client: ApiClient,
   projectId: string,
   reference: string,
 ): Promise<ProjectSession | 'ambiguous' | null> {
-  try {
-    const sessions = await client.get<ProjectSession[]>(`/projects/${projectId}/sessions`);
-    const matches = sessions.filter((s) => s.session_id.startsWith(reference));
-    if (matches.length === 1) return matches[0];
-    if (matches.length > 1) return 'ambiguous';
-    return null;
-  } catch {
-    // Listing failed — let the direct probe surface the real error.
-    return null;
+  for (const view of ['', '?archived=only']) {
+    try {
+      const sessions = await client.get<ProjectSession[]>(`/projects/${projectId}/sessions${view}`);
+      const matches = sessions.filter((s) => s.session_id.startsWith(reference));
+      if (matches.length === 1) return matches[0];
+      if (matches.length > 1) return 'ambiguous';
+    } catch {
+      // Listing failed — let the direct probe surface the real error.
+      return null;
+    }
   }
+  return null;
 }
 
 async function probeSession(
@@ -576,7 +628,7 @@ async function probeConcurrently<Item, Result>(
  * structurally here, and the status is deliberately NOT checked, so a future
  * status carrying the same code still surfaces the same message.
  */
-function featureDisabledMessage(err: unknown): string | null {
+export function featureDisabledMessage(err: unknown): string | null {
   if (!err || typeof err !== 'object') return null;
   const carrier = err as {
     code?: unknown;
@@ -613,7 +665,28 @@ export function tokenRejectedLine(
 }
 
 /** Print an HTTP error in a consistent style + return exit code 1. */
+/** The `issues` a refusal lists (`app_config_invalid`, …), one indented `path: message` line each. */
+function issueLines(err: unknown): string {
+  const issues = (err as { details?: { issues?: unknown } } | null)?.details?.issues;
+  if (!Array.isArray(issues)) return '';
+  return issues.map((issue: { path?: string; message?: string }) => `    ${issue.path ? `${issue.path}: ` : ''}${issue.message ?? ''}\n`).join('');
+}
+
+/** True for the API's 409 `repository_disconnected`, from the CLI client (`.body`) or an SDK handle (`.code`). */
+function repositoryDisconnectedCode(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as { code?: unknown; body?: { code?: unknown } | null; details?: { code?: unknown } | null };
+  return [e.code, e.body?.code, e.details?.code].includes('repository_disconnected');
+}
+
 export function surfaceApiError(err: unknown): number {
+  // The project's GitHub repository cannot be reached (KRTX-2955). The
+  // server's sentence names the cause and who fixes it; add where to look.
+  if (repositoryDisconnectedCode(err)) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    process.stderr.write(`  Run ${C.cyan}kortix projects info${C.reset} for the reconnect link.\n`);
+    return 1;
+  }
   // The feature-flag gate is actionable on its own — never let it fall through
   // to the generic 403 "you may not have permission" prose, which sends the
   // user hunting for a role problem that does not exist.
@@ -642,10 +715,17 @@ export function surfaceApiError(err: unknown): number {
       process.stderr.write(`${status.err(err.message || 'Not found.')}\n`);
     } else {
       process.stderr.write(`${status.err(`HTTP ${err.status}: ${err.message}`)}\n`);
+      // A remediation-bearing body (the webhook-secret 409s, e.g.) names the
+      // fix — print it, or the status line is all the reader gets and the
+      // actual command hides in `--help` prose.
+      const remediation = (err.body as { remediation?: unknown } | null)?.remediation;
+      if (typeof remediation === 'string' && remediation) {
+        process.stderr.write(`  ${C.dim}${remediation}${C.reset}\n`);
+      }
     }
     return 1;
   }
-  process.stderr.write(`${status.err((err as Error).message)}\n`);
+  process.stderr.write(`${status.err((err as Error).message)}\n${issueLines(err)}`);
   return 1;
 }
 

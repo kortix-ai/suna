@@ -23,7 +23,8 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { SandboxFile } from '@/api/types';
-import { FilePreview, FilePreviewBottomInsetContext } from '@/components/files/FilePreviewRenderers';
+import { FilePreview } from '@/components/files/FilePreviewRenderers';
+import { FilePreviewBottomInsetContext } from '@/components/files/file-preview-webview';
 import { useFilePreviewData } from '@/components/files/use-file-preview-data';
 import { KortixLoader } from '@/components/kortix/kortix-loader';
 import { PinnedBar, usePinnedBarInset } from '@/components/kortix/pinned-bar';
@@ -59,7 +60,7 @@ function toSandboxFile(file: PreviewFile): SandboxFile {
   return { name: file.name, path, type: 'file' } as SandboxFile;
 }
 
-export interface FilePreviewSheetProps {
+interface FilePreviewSheetProps {
   /** The file to show, or null while the sheet is closed. */
   file: PreviewFile | null;
   /** The session's sandbox: where the file loads from. */
@@ -129,7 +130,7 @@ export const FilePreviewSheet = React.forwardRef<SheetRef, FilePreviewSheetProps
 );
 FilePreviewSheet.displayName = 'FilePreviewSheet';
 
-export function FilePreviewBody({
+function FilePreviewBody({
   file,
   sandboxUrl,
   onCopyTextChange,

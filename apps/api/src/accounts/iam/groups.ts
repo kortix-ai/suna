@@ -1,13 +1,15 @@
 // IAM V2 routes: account groups, group members, and group→project grants.
 
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { json, errors, auth } from '../../openapi';
-import { and, asc, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { groupProjectGrants } from '../../iam/read-models';
 import { db } from '../../shared/db';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../../iam';
 import { actorOf } from '../../iam/actor';
+import { visibleDirectory } from '../../iam/directory-visibility';
 import {
   invalidateIamCacheForGroup,
   invalidateIamCacheForUser,
@@ -63,6 +65,18 @@ function idpManagedGroupError(c: any, what: 'rename' | 'membership') {
   );
 }
 
+/**
+ * The caller's view of the directory (iam/directory-visibility.ts). Without
+ * `group.read`, the caller must still be in the account: a non-member gets the
+ * 403 the old `group.read` check gave.
+ */
+async function visibleGroups(c: Context, accountId: string) {
+  const actor = await actorOf(c, accountId);
+  const visible = await visibleDirectory(actor);
+  if (visible.groupIds) await assertAuthorized(actor, ACCOUNT_ACTIONS.ACCOUNT_READ);
+  return visible;
+}
+
 export function registerIamGroupsRoutes(): void {
   // ─── Groups ────────────────────────────────────────────────────────────────
 
@@ -80,20 +94,30 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
+      // `group.read` lists every group; a plain member lists the groups they
+      // share access with (iam/directory-visibility.ts).
+      const { groupIds, projectIds } = await visibleGroups(c, accountId);
 
       const rows = await listGroups(accountId);
+      // Without `group.read`, a group's project count covers only the projects
+      // the caller can read, like its project-grants list below.
+      const readable = groupIds ? projectIds : null;
+      const readableCount = new Map<string, number>();
+      if (readable) {
+        for (const g of await groupProjectGrants({ accountId })) {
+          if (readable.has(g.projectId)) readableCount.set(g.groupId, (readableCount.get(g.groupId) ?? 0) + 1);
+        }
+      }
       return c.json({
-        groups: rows.map((g) => ({
+        groups: rows.filter((g) => !groupIds || groupIds.has(g.groupId)).map((g) => ({
           group_id: g.groupId,
           name: g.name,
           description: g.description,
           source: g.source,
           member_count: g.memberCount,
           // Number of project_group_grants for this group.
-          project_count: g.projectCount,
+          project_count: readable ? (readableCount.get(g.groupId) ?? 0) : g.projectCount,
           created_at: g.createdAt.toISOString(),
           updated_at: g.updatedAt.toISOString(),
         })),
@@ -181,10 +205,11 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
+      // A group the caller may not see reads as missing, not as forbidden.
+      const { groupIds } = await visibleGroups(c, accountId);
+      if (groupIds && !groupIds.has(groupId)) return c.json({ error: 'group not found' }, 404);
 
       const group = await getGroup(accountId, groupId);
       if (!group) return c.json({ error: 'group not found' }, 404);
@@ -224,7 +249,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_UPDATE);
@@ -288,7 +312,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_DELETE);
@@ -335,14 +358,14 @@ export function registerIamGroupsRoutes(): void {
       request: { params: GroupParams },
       responses: {
         200: json(z.object({ members: z.array(GroupMemberSchema) }), 'Group members'),
-        ...errors(401, 403),
+        ...errors(401, 403, 404),
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
+      const { groupIds } = await visibleGroups(c, accountId);
+      if (groupIds && !groupIds.has(groupId)) return c.json({ error: 'group not found' }, 404);
 
       const members = await listGroupMembers(accountId, groupId);
       return c.json({
@@ -437,7 +460,6 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const callerId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
       const targetUserId = c.req.param('userId');
@@ -476,7 +498,7 @@ export function registerIamGroupsRoutes(): void {
   // /v1/projects/:projectId/group-grants (already shipped) — those routes
   // gate on project.members.manage and are the right place to detach a
   // single grant. This endpoint just answers "which projects?" for the
-  // group view, gated by GROUP_READ.
+  // group view: every grant with `group.read`, else the readable projects only.
 
   iamRouter.openapi(
     createRoute({
@@ -492,10 +514,14 @@ export function registerIamGroupsRoutes(): void {
       },
     }),
     async (c: any) => {
-      const userId = c.get('userId') as string;
       const accountId = c.req.param('accountId');
       const groupId = c.req.param('groupId');
-      await assertAuthorized(await actorOf(c, accountId), ACCOUNT_ACTIONS.GROUP_READ);
+      const visible = await visibleGroups(c, accountId);
+      if (visible.groupIds && !visible.groupIds.has(groupId)) {
+        return c.json({ error: 'group not found' }, 404);
+      }
+      // Without `group.read`, only the projects the caller can read are listed.
+      const readable = visible.groupIds ? visible.projectIds : null;
 
       const group = await getGroup(accountId, groupId);
       if (!group) return c.json({ error: 'group not found' }, 404);
@@ -512,7 +538,7 @@ export function registerIamGroupsRoutes(): void {
       ]);
       const projectById = new Map(projectRows.map((p) => [p.projectId, p] as const));
       const rows = assignments
-        .filter((g) => projectById.has(g.projectId))
+        .filter((g) => projectById.has(g.projectId) && (!readable || readable.has(g.projectId)))
         .map((g) => ({
           projectId: g.projectId,
           projectName: projectById.get(g.projectId)!.name,

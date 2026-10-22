@@ -20,16 +20,19 @@
  * same dirs it reads in `/workspace`: `skills/` (and the legacy
  * `.kortix/opencode/skills`), and its own config dir (the repository's
  * `pi.config_dir`, `harnesses/pi` or `.kortix/pi`: skills, extensions, prompts,
- * `settings.json`). OpenCode's files in the release are not pi's. Extensions, prompts and settings are read when the runtime starts, so a
- * release that changes them restarts the runtime in place, while it is idle.
+ * `settings.json`), and the project tools the governance declares
+ * (kortix.yaml `tools`). OpenCode's files in the release are not pi's.
+ * Extensions, prompts, settings and project tools are read when the runtime
+ * starts, so a release that changes them restarts the runtime in place, while
+ * it is idle.
  */
+import { compiledAgentConfigFromEnv } from '@/services/config-provider/compiled-agent-config'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import {
   activateBootConfig,
   bootConfigRoot,
   deactivateBootConfig,
-  materializeRelease,
   pruneBootConfigs,
   quarantineRelease,
   readBootConfigPointer,
@@ -38,28 +41,28 @@ import {
   releaseDir,
   verifyRelease,
   verifyReleaseDetail,
-  writeReleaseManifest,
   type ReleaseManifest,
-} from '@/services/config-release/boot-config'
+} from '@/services/config-provider/boot-config'
 import {
   configReleaseApiFrom,
-  downloadConfigArchive,
   fetchConfigReleaseDescriptor,
   isFeatureDisabledError,
   type ConfigReleaseApi,
-} from '@/services/config-release/api-client'
-import type { ConfigReleaseDescriptor } from '@/services/config-release/descriptor'
+} from '@/services/config-provider/api-client'
+import type { ConfigReleaseDescriptor } from '@/services/config-provider/descriptor'
 import {
   CONFIG_RELEASE_NOTICE_PATH,
   clearConfigReleaseNotice,
   writeConfigReleaseNotice,
-} from '@/services/config-release/notice'
+} from '@/services/config-provider/notice'
+import { obtainRelease, type ReleaseTransport } from '@/services/config-provider/obtain'
+import { readPublishedRelease } from '@/services/config-provider/published'
 import {
   ConvergeBusyError,
   deliverGovernance,
   effectiveReleaseId,
   manifestFromDescriptor,
-} from '@/services/config-release/release'
+} from '@/services/config-provider/release'
 import { sessionTokenPresumedDead } from '@/lib/kortix-api/session-token-health'
 import { logger } from '@/lib/log/logger'
 import type { Config } from '@/lib/config/config'
@@ -133,14 +136,22 @@ export interface PiConfigReleases {
    * in play: pi then resolves the working tree's.
    */
   piConfigDir(): string | null | undefined
+  /**
+   * The checkout the running config decides, where project tools and the root
+   * `AGENTS.md` load from:
+   * the release root, or null when it has no tree (the image default).
+   * Undefined while releases are not in play: pi then reads the working tree.
+   */
+  projectRoot(): string | null | undefined
   /** The notice text for the system prompt, or null when no release runs. */
   notice(): string | null
   /** True once a release owns the compiled governance: a `/kortix/env` push of it is dropped. */
   governanceOwned(): boolean
   inFlight(): boolean
   /**
-   * Choose what the runtime starts on. Runs once, before `PiRuntime.start()`;
-   * a second call joins the first. Never throws for a config reason.
+   * Choose the config the runtime starts on. Runs once, before
+   * `PiRuntime.start()`; a second call joins the first. Never reads or waits
+   * for the `/workspace` checkout. Never throws for a config reason.
    */
   boot(mark?: (label: string) => void): Promise<void>
   /** Apply the desired release. Single flight: a call while one runs throws `ConvergeBusyError`. */
@@ -149,27 +160,64 @@ export interface PiConfigReleases {
 
 /**
  * The repo paths a release is built from, for the session notice. pi reads the
- * agents (through the compiled governance) and the skills; the legacy layout
- * keeps both under `.kortix/opencode`.
+ * agents (through the compiled governance), the skills and the root
+ * `AGENTS.md`; the legacy layout keeps agents and skills under `.kortix/opencode`.
  */
 export function piReleaseSourcePaths(configDir: string | null): string[] {
-  return configDir === '.kortix/opencode' ? [configDir] : ['agents', 'skills']
+  return configDir === '.kortix/opencode' ? [configDir] : ['agents', 'skills', 'AGENTS.md']
 }
 
-/** pi's own config dir inside a release root, resolved exactly as in the working tree. */
-function piDirIn(releaseRoot: string): Promise<string | null> {
+/** pi's own config dir inside a release root, resolved exactly as in the working tree. A v3 release (`schema: 3` governance) has none. */
+async function piDirIn(releaseRoot: string, governance: string | null | undefined): Promise<string | null> {
+  if (parseCompiledAgentConfig(governance ?? undefined)?.schema === 3) return null
   return resolvePiProjectConfigDir({ projectTarget: releaseRoot } as HostConfig)
 }
 
-/** The release's pi-native files that only a runtime start reads: everything in pi's own config dir except its skills. */
-function startOnlyFiles(files: readonly (readonly string[])[] | null, releaseRoot: string | null, piDir: string | null): string {
-  if (!releaseRoot || !piDir) return ''
-  const prefix = `${relative(releaseRoot, piDir)}/`
-  return (files ?? [])
-    .filter(([path]) => path!.startsWith(prefix) && !path!.startsWith(`${prefix}skills/`))
-    .map(([path, , blob]) => `${path}:${blob}`)
-    .sort()
-    .join('\n')
+/** A module path's folder (`tools/lookup.ts` → `tools/`), or the path itself at the repo root. */
+const folderOf = (path: string) => path.slice(0, path.lastIndexOf('/') + 1) || path
+
+/**
+ * The repo folders of the `./` pi packages (`KORTIX_PI_PACKAGES`): a file
+ * package (one extension) is its folder, as a tool module is; a directory
+ * package is the directory. npm packages are not repo files.
+ */
+function localPackageDirs(raw: string | undefined): string[] {
+  let entries: unknown
+  try {
+    entries = JSON.parse(raw?.trim() || '[]')
+  } catch {
+    return []
+  }
+  if (!Array.isArray(entries)) return []
+  return entries.flatMap((entry) => {
+    const source = typeof entry === 'string' ? entry : (entry as { source?: unknown } | null)?.source
+    if (typeof source !== 'string' || !source.startsWith('./')) return []
+    const path = source.slice(2).replace(/\/+$/, '')
+    return [/\.[cm]?[jt]s$/.test(path) ? folderOf(path) : `${path}/`]
+  })
+}
+
+/**
+ * What only a runtime start reads from a release: everything in pi's own
+ * config dir except its skills, every file in the folder of each `./` pi
+ * package, and the tools (the project tools and the Kortix tool list in the
+ * governance, and every file in the folder of each tool module).
+ */
+function startOnlyFiles(release: Pick<ReleaseManifest, 'files' | 'compiled_governance'> | null, releaseRoot: string | null, piDir: string | null, packageDirs: readonly string[]): string {
+  if (!releaseRoot || !release) return ''
+  const pi = piDir ? `${relative(releaseRoot, piDir)}/` : null
+  const governance = parseCompiledAgentConfig(release.compiled_governance ?? undefined)
+  const declared = governance?.project_tools ?? {}
+  const toolDirs = Object.values(declared).map(folderOf)
+  const startOnly = (path: string) =>
+    (pi !== null && path.startsWith(pi) && !path.startsWith(`${pi}skills/`)) ||
+    [...toolDirs, ...packageDirs].some((dir) => path.startsWith(dir))
+  const files = (release.files ?? []).filter(([path]) => startOnly(path!)).map(([path, , blob]) => `${path}:${blob}`).sort()
+  return [
+    ...(toolDirs.length > 0 ? [`tools:${JSON.stringify(declared)}`] : []),
+    ...(governance?.kortix_tools ? [`kortix_tools:${JSON.stringify(governance.kortix_tools)}`] : []),
+    ...files,
+  ].join('\n')
 }
 
 /** A release's compiled governance must parse to a config object. Null governance keeps the running one. */
@@ -186,6 +234,7 @@ function bounded(reasons: readonly string[]): string | null {
 
 export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConfigReleases {
   const { cfg, env } = options
+  const packageDirs = localPackageDirs(env.KORTIX_PI_PACKAGES)
   const root = options.root ?? bootConfigRoot()
   const noticePath = options.noticePath ?? CONFIG_RELEASE_NOTICE_PATH
   const api =
@@ -242,19 +291,21 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     }
   }
 
-  /** Download, verify, extract and seal a release, or reuse an intact copy. */
-  const materialize = async (manifest: ReleaseManifest, from: ConfigReleaseApi): Promise<string> => {
-    const dir = releaseDir(root, manifest.release_id)
-    const intact =
-      existsSync(dir) && (await verifyRelease({ dir, files: manifest.files, configDir: manifest.config_dir, managedSkillsDir: options.managedSkillsDir }))
-    if (intact) {
-      await writeReleaseManifest(root, manifest)
-      return dir
-    }
-    const archive = await downloadConfigArchive(from, manifest.archive_url, { expectedBytes: manifest.archive_bytes })
-    await materializeRelease({ root, manifest, archive, managedSkillsDir: options.managedSkillsDir })
-    return dir
-  }
+  /** Put a release on this box from the first source that holds it (obtain.ts). */
+  const materialize = (
+    manifest: ReleaseManifest,
+    descriptor: ConfigReleaseDescriptor,
+    signedArchive?: Promise<Buffer>,
+  ): Promise<{ dir: string; transport: ReleaseTransport }> =>
+    obtainRelease({
+      root,
+      manifest,
+      snapshot: descriptor.snapshot,
+      api,
+      signedArchive,
+      git: cfg,
+      managedSkillsDir: options.managedSkillsDir,
+    })
 
   const settleRelease = async (releaseId: string, manifest: ReleaseManifest, dir: string) => {
     const previous = await readBootConfigPointer(root).catch(() => null)
@@ -271,15 +322,18 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   // ── Boot ─────────────────────────────────────────────────────────────────
 
   async function chooseBootConfig(mark?: (label: string) => void): Promise<void> {
-    // 1. The descriptor request IS this boot's flag evaluation.
-    let descriptor: ConfigReleaseDescriptor | null = null
-    let disabled: string | null = api
+    // 1. The release this boot runs: the one the API published and signed at
+    //    session create (no API call), else the descriptor request.
+    const published = await readPublishedRelease(cfg.configRelease)
+    let descriptor: ConfigReleaseDescriptor | null = published?.descriptor ?? null
+    if (published) mark?.('config-release-published')
+    let disabled: string | null = api || published
       ? null
       : 'this box has no API to ask (KORTIX_API_URL, KORTIX_PROJECT_ID, KORTIX_SESSION_ID or KORTIX_TOKEN is unset)'
     const reasons: string[] = []
-    if (api) {
+    if (api && !published) {
       try {
-        descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: options.descriptorTimeoutMs })
+        descriptor = await fetchConfigReleaseDescriptor(api, { timeoutMs: options.descriptorTimeoutMs, baseSha: cfg.baseSha })
         mark?.('config-release-fetched')
       } catch (err) {
         if (isFeatureDisabledError(err)) disabled = 'config releases are disabled for this project'
@@ -288,7 +342,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       }
     }
 
-    // 2. Flag off, or no API: the pre-release behaviour — the working tree.
+    // 2. `403 feature_disabled` (an API from before config releases
+    // graduated), or no API: the pre-release behaviour — the working tree.
     if (disabled) {
       clearNotice()
       setCurrent({ ...WORKSPACE, proven: true })
@@ -306,7 +361,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       const quarantined = (await readQuarantine(root))[desiredId]
       if (quarantined) {
         reasons.push(`release ${desiredId.slice(0, 12)} is quarantined on this box: ${quarantined.reason}`)
-      } else if (descriptor.archive === null) {
+      } else if (descriptor.files === null) {
         // Governance only: no repository access, or no config dir on the base branch.
         const problem = governanceProblem(descriptor.compiled_governance)
         if (!problem) {
@@ -338,8 +393,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
           await quarantineRelease(root, desiredId, problem)
         } else {
           try {
-            const dir = await materialize(manifest, api!)
-            mark?.('config-release-extracted')
+            const { dir, transport } = await materialize(manifest, descriptor, published?.archive)
+            mark?.(`config-release-${transport}`)
             await useRelease(desiredId, desiredId, manifest, dir, reasons, null)
             mark?.('config-release-proven')
             return
@@ -403,7 +458,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       failed_release_id: failedReleaseId,
       source_commit: manifest.source_commit,
       dir,
-      piDir: await piDirIn(dir),
+      piDir: await piDirIn(dir, compiledAgentConfigFromEnv(env)),
     })
     logger.info('[pi-config] pi runs this release', { releaseId, desiredId, dir, sourceCommit: manifest.source_commit })
   }
@@ -427,7 +482,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     setCurrent(next)
     try {
       await load()
-      if (restart) logger.info('[pi-config] the release changes pi extensions, prompts or settings; the runtime restarted in place')
+      if (restart) logger.info('[pi-config] the release changes pi extensions, prompts, settings or project tools; the runtime restarted in place')
       return null
     } catch (err) {
       restoreGovernance()
@@ -440,7 +495,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
   /** The start-only pi files the runtime loaded: the running release's, or the working tree's pi dir. */
   async function loadedStartOnlyFiles(): Promise<string | null> {
     if (current.source === 'release' && current.release_id) {
-      return startOnlyFiles((await readReleaseManifest(root, current.release_id))?.files ?? null, current.dir, current.piDir)
+      return startOnlyFiles(await readReleaseManifest(root, current.release_id), current.dir, current.piDir, packageDirs)
     }
     // Off the release path the working tree's pi dir may hold extensions: unknown, so restart.
     return current.source === 'workspace' ? null : ''
@@ -487,7 +542,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     }
     const releaseId = effectiveReleaseId(descriptor)
     setCurrent({ ...current, desired_release_id: releaseId })
-    if (releaseId === null || (descriptor.archive === null && descriptor.config_tree_id !== null)) {
+    if (releaseId === null) {
       return respond(descriptor.reason ? 'failed' : 'unchanged', descriptor.reason)
     }
     const met = () => {
@@ -497,7 +552,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     const busy = () => respond('failed', 'a turn is running; the apply waits for the next trigger')
 
     const governance = { value: descriptor.compiled_governance, etag: descriptor.compiled_governance_etag }
-    if (descriptor.archive === null) {
+    if (descriptor.files === null) {
       if (current.release_id === releaseId && current.source === 'image-default') return met()
       const problem = governanceProblem(governance.value)
       if (problem) {
@@ -555,7 +610,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     }
 
     try {
-      await materialize(manifest, api)
+      await materialize(manifest, descriptor)
     } catch (err) {
       if (isFeatureDisabledError(err)) return revert(runtime, err.message)
       const reason = `could not build release ${releaseId.slice(0, 12)}: ${(err as Error).message}`
@@ -571,8 +626,8 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
     // The download took time; a prompt may have arrived. Ask again right before the swap.
     if (!runtime.idle()) return busy()
 
-    const piDir = await piDirIn(dir)
-    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest.files, dir, piDir)
+    const piDir = await piDirIn(dir, governance.value ?? compiledAgentConfigFromEnv(env))
+    const restart = (await loadedStartOnlyFiles()) !== startOnlyFiles(manifest, dir, piDir, packageDirs)
     writeNotice(manifest, dir)
     const refused = await swap(
       runtime,
@@ -618,6 +673,7 @@ export function createPiConfigReleases(options: PiConfigReleasesOptions): PiConf
       if (current.source === 'workspace') return undefined
       return current.piDir && existsSync(current.piDir) ? current.piDir : null
     },
+    projectRoot: () => (current.source === 'workspace' ? undefined : current.dir),
     notice: () => {
       if (current.source !== 'release') return null
       try {

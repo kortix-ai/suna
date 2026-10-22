@@ -23,6 +23,10 @@ describe('classifyRuntimeRequest', () => {
     ['POST', '/kortix/runtime/sessions/ses_%31/abort', { kind: 'abort', runtimeSessionId: 'ses_1', prefix: '' }],
     ['GET', '/session/ses_1/message', { kind: 'message-list', runtimeSessionId: 'ses_1', prefix: '' }],
     ['GET', '/session/ses_1/message/', { kind: 'message-list', runtimeSessionId: 'ses_1', prefix: '' }],
+    ['POST', '/question/que_1/reply', { kind: 'question-answer', requestId: 'que_1', prefix: '' }],
+    ['POST', '/question/que_1/reject/', { kind: 'question-answer', requestId: 'que_1', prefix: '' }],
+    ['POST', '/question/que_%31/reply?directory=%2Fworkspace', { kind: 'question-answer', requestId: 'que_1', prefix: '' }],
+    ['POST', '/proxy/4096/question/que_1/reply', { kind: 'question-answer', requestId: 'que_1', prefix: '/proxy/4096' }],
   ] as const)('%s %s', (method, path, expected) => {
     expect(classifyRuntimeRequest(method, path)).toEqual(expected);
   });
@@ -40,6 +44,14 @@ describe('classifyRuntimeRequest', () => {
     ['POST', '/kortix/runtime/messages/ses_1'],
     ['POST', '/session/%E0%A4%A/prompt_async'],
     ['POST', '/global/event'],
+    ['GET', '/session/ses_1/revert'],
+    ['POST', '/session/ses_1/revertx'],
+    ['POST', '/session/ses_1/revert/extra'],
+    ['GET', '/question'],
+    ['GET', '/question/que_1/reply'],
+    ['POST', '/question/que_1/replyx'],
+    ['POST', '/question/que_1/reply/extra'],
+    ['POST', '/question/%E0%A4%A/reply'],
   ])('%s %s is not a runtime turn route', (method, path) => {
     expect(classifyRuntimeRequest(method, path)).toEqual({ kind: 'other' });
   });

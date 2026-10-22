@@ -1,9 +1,8 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { accountRoleMap } from '../../iam/read-models';
 import { accountMayUseManagedModels } from '../../billing/services/entitlements';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { type ChannelCtx, currentChannelSelection } from './selection';
 
 // The account/tier context a channel's model setting resolves against. Kept out
@@ -18,10 +17,6 @@ export interface ChannelModelContext {
   ownerUserId: string;
   /** The account may not use platform-managed Kortix models. */
   freeManagedOnly: boolean;
-  /** The project's `llm_gateway` flag. Off ⇒ native OpenCode mode: the gateway
-   *  picker/servability machinery does not apply — a channel model is a native
-   *  `provider/model` ref stored verbatim. */
-  llmGatewayEnabled: boolean;
 }
 
 /**
@@ -53,8 +48,8 @@ export async function projectModelContext(project: {
   // THE single managed-models predicate (billing/services/entitlements.ts).
   // This channel used to derive the answer itself, as
   // `accountIsFreeTierForModels(getAccountTier(...))` — a tier-string check
-  // that silently ignored the operator `managed_models_override` column, so an
-  // account granted managed models by an operator still saw a Zen-only picker
+  // that silently ignored the operator's managed-models override, so an
+  // account granted managed models by an operator still saw a reduced picker
   // in Slack while every other surface showed it the full lineup (and an
   // account force-restricted to BYOK still saw managed models here).
   // `accountMayUseManagedModels` already returns true when internal billing is
@@ -65,6 +60,5 @@ export async function projectModelContext(project: {
     accountId: project.accountId,
     ownerUserId: owner?.userId ?? project.accountId,
     freeManagedOnly,
-    llmGatewayEnabled: projectLlmGatewayEnabled(project.metadata),
   };
 }

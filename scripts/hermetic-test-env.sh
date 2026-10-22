@@ -20,6 +20,15 @@
 #   3. Children spawned with an explicit minimal env object: they inherit
 #      nothing, so path 2 applies to them unless each child carries the
 #      documented opt-out itself.
+#   4. The developer's own CLI login: the multi-host config store defaults to
+#      ~/.config/kortix/config.json, and a `kortix login` there (including the
+#      KRTX-1705 in-sandbox selection marker, which would flip the suite's
+#      injected KORTIX_TOKENs to the stored credential) must not reach the
+#      suite. Point KORTIX_CONFIG_FILE at a fresh path so every loadConfig()
+#      sees an empty store; the legacy single-host import only fires on the
+#      default path, so this cuts ~/.config/kortix/auth.json off too. Children
+#      spawned with an explicit env object need `KORTIX_CONFIG_FILE:
+#      process.env.KORTIX_CONFIG_FILE` of their own — they inherit nothing.
 # Unset every ambient KORTIX_* var the suites do not own and disable the
 # platform env file, so a worker box behaves exactly like a laptop that has
 # neither. The knobs the test infrastructure itself passes down stay.
@@ -34,3 +43,6 @@ done < <(compgen -e)
 # Children spawned with an explicit env object still need
 # KORTIX_DISABLE_SANDBOX_ENV_FILE: '1' of their own — they inherit nothing.
 export KORTIX_DISABLE_SANDBOX_ENV_FILE=1
+# Path 4: a suite-owned, empty config store (see the leak list above).
+KORTIX_TEST_CONFIG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/kortix-hermetic-config.XXXXXX")"
+export KORTIX_CONFIG_FILE="$KORTIX_TEST_CONFIG_DIR/config.json"

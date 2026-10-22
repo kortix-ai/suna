@@ -9,7 +9,11 @@ import {
   rootRowsOnly,
   searchQueryParam,
   sessionStarter,
+  sessionsInView,
+  sessionsPageFilter,
+  sessionsPageRows,
   startedByForScope,
+  uniqueSessions,
 } from './session-tree';
 
 const make = (overrides: Record<string, unknown> = {}): ProjectSession =>
@@ -126,4 +130,114 @@ describe('buildDrawerItems', () => {
     const mine = buildDrawerItems([{ id: 'sessions', title: 'Sessions', rows: [leaf], ...base, hasMore: true }], () => false);
     expect(mine.some((i) => i.kind === 'more')).toBe(false);
   });
+  // The three sections are three queries refreshed at different times. A
+  // session whose starter changed (the viewer ran a shared session) sits in a
+  // stale Shared page and in a fresh Mine page at once.
+  test('a session cached in two sections renders once, in the first', () => {
+    const items = buildDrawerItems(
+      [
+        { id: 'sessions', title: 'Sessions', rows: [leaf], ...base },
+        { id: 'shared', title: 'Shared', rows: [leaf, parent], ...base },
+      ],
+      () => false,
+    );
+    const rows = items.filter((i) => i.kind === 'root').map((i) => `${i.section}:${i.session.session_id}`);
+    expect(rows).toEqual(['sessions:l', 'shared:p']);
+  });
 });
+
+describe('uniqueSessions', () => {
+  test('drops a repeated session_id, keeping the first and the order', () => {
+    const a = make({ session_id: 'a' });
+    const b = make({ session_id: 'b' });
+    const staleA = make({ session_id: 'a', title: 'stale' });
+    expect(uniqueSessions([a, b, staleA])).toEqual([a, b]);
+  });
+});
+
+// KRTX-2418: a person pins a session to the top of their own list, or archives
+// it out of the list.
+describe('pinned and archived views', () => {
+  const pinned = make({ session_id: 'pin', pinned_at: '2026-10-15T10:00:00Z', archived_at: null });
+  const archived = make({ session_id: 'arch', pinned_at: null, archived_at: '2026-10-15T10:00:00Z' });
+  const plain = make({ session_id: 'plain', pinned_at: null, archived_at: null });
+  const archivedChild = make({ session_id: 'arch-child', parent_session_id: 'p', pinned_at: null, archived_at: '2026-10-15T10:00:00Z' });
+  // A server without the feature ignores `pinned=only` and answers the whole list.
+  const legacy = make({ session_id: 'legacy' });
+
+  test('the view key keeps `view`; the list key stays the legacy one', () => {
+    expect(normalizeSessionListFilter({ parent: 'root', view: 'pinned' })).toEqual({ parent: 'root', view: 'pinned' });
+    expect(normalizeSessionListFilter({ view: 'archived', q: '  ' })).toEqual({ view: 'archived' });
+    expect(normalizeSessionListFilter({ parent: 'root' })).toEqual({ parent: 'root' });
+  });
+
+  test('a view shows only the rows that carry its stamp', () => {
+    expect(sessionsInView([pinned, archived, plain, legacy], 'pinned').map((s) => s.session_id)).toEqual(['pin']);
+    expect(sessionsInView([pinned, archived, plain, legacy], 'archived').map((s) => s.session_id)).toEqual(['arch']);
+  });
+
+  test('the Sessions page asks for top-level sessions, or with Archived on for every archived one', () => {
+    expect(sessionsPageFilter({ scope: 'all', archived: false, q: 'fix' })).toEqual({ parent: 'root', startedBy: undefined, q: 'fix' });
+    expect(sessionsPageFilter({ scope: 'mine', archived: true })).toEqual({ view: 'archived', startedBy: 'me', q: undefined });
+    // No `parent`: an archived sub-agent session left its parent's children,
+    // so the Archived view is the way back to it.
+    expect(sessionsPageFilter({ scope: 'all', archived: true })).not.toHaveProperty('parent');
+  });
+
+  test('the Sessions page rows: roots for the list, archived rows (children too) for Archived', () => {
+    expect(sessionsPageRows([plain, archivedChild], false).map((s) => s.session_id)).toEqual(['plain']);
+    expect(sessionsPageRows([plain, archived, archivedChild, legacy], true).map((s) => s.session_id)).toEqual([
+      'arch',
+      'arch-child',
+    ]);
+  });
+
+  const base = { open: true, hidden: false, hasMore: false };
+  const roots = (items: ReturnType<typeof buildDrawerItems>) =>
+    items.filter((i) => i.kind === 'root').map((i) => `${i.section}:${i.session.session_id}`);
+
+  test('Pinned comes first and a pinned session is not repeated in Sessions or Shared', () => {
+    const items = buildDrawerItems(
+      [
+        { id: 'pinned', title: 'Pinned', rows: [pinned], ...base },
+        { id: 'sessions', title: 'Sessions', rows: [plain, pinned], ...base },
+        { id: 'shared', title: 'Shared', rows: [pinned], ...base },
+      ],
+      () => false,
+    );
+    expect(roots(items)).toEqual(['pinned:pin', 'sessions:plain']);
+    expect(items[0]).toEqual({ kind: 'header', section: 'pinned', title: 'Pinned', open: true });
+  });
+
+  test('a collapsed Pinned keeps its rows out of Sessions too', () => {
+    const items = buildDrawerItems(
+      [
+        { id: 'pinned', title: 'Pinned', rows: [pinned], ...base, open: false },
+        { id: 'sessions', title: 'Sessions', rows: [plain, pinned], ...base },
+      ],
+      () => false,
+    );
+    expect(roots(items)).toEqual(['sessions:plain']);
+  });
+
+  test('Pinned lists a pinned sub-agent session; Sessions never lists a child', () => {
+    const pinnedChild = make({ session_id: 'pin-child', parent_session_id: 'p', pinned_at: '2026-10-15T10:00:00Z' });
+    const items = buildDrawerItems(
+      [
+        { id: 'pinned', title: 'Pinned', rows: [pinnedChild], ...base },
+        { id: 'sessions', title: 'Sessions', rows: [orphanOf('p')], ...base },
+      ],
+      () => false,
+    );
+    expect(roots(items)).toEqual(['pinned:pin-child']);
+  });
+
+  test('Pinned ends with "Show more" while it has a next page', () => {
+    const items = buildDrawerItems([{ id: 'pinned', title: 'Pinned', rows: [pinned], ...base, hasMore: true }], () => false);
+    expect(items.at(-1)).toEqual({ kind: 'more', section: 'pinned' });
+  });
+});
+
+function orphanOf(parent: string): ProjectSession {
+  return make({ session_id: `child-of-${parent}`, parent_session_id: parent });
+}

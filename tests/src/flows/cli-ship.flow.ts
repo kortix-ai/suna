@@ -37,6 +37,8 @@
  * are green-or-skipped locally and exercise the real path on dev-api.
  */
 import { writeFileSync } from 'node:fs';
+import { Client as PgClient } from 'pg';
+import { serveFixtureRepoLocally } from '../fixtures/local-git';
 import { join } from 'node:path';
 
 import { flow } from '../core/flow';
@@ -70,6 +72,48 @@ async function initProject(sb: CliSandbox): Promise<void> {
   if (r.exitCode !== 0) throw new Error(`init failed in ship fixture: ${r.all}`);
   sb.enter(projectName);
 }
+
+flow('SHIP-DEFAULT', {
+  domain: 'cli',
+  timeoutMs: 300_000,
+  requires: ['database'],
+  routes: ['POST /v1/accounts/tokens', 'GET /v1/accounts/me', 'GET /v1/projects/:projectId',
+    'POST /v1/connectors/projects/:projectId/connectors/sync'],
+}, async (ctx) => {
+  const project = await ctx.fixtures.project({ managedGit: true });
+  const pat = await ctx.fixtures.pat({ name: ctx.fixtures.name('ship-default') });
+  const sb = new CliSandbox('ship-default');
+  const db = new PgClient({ connectionString: ctx.env.databaseUrl ?? undefined });
+  let gitServer: Awaited<ReturnType<typeof serveFixtureRepoLocally>> = null;
+  try {
+    await db.connect();
+    gitServer = await serveFixtureRepoLocally(ctx, db, project.id, 'SHIP-DEFAULT');
+    await initProject(sb);
+    const branch = Bun.spawnSync(['git', 'checkout', '-b', 'default-proof'], { cwd: sb.cwd });
+    check('new local branch avoids overwriting seeded remote main', branch.exitCode === 0, 0, branch.exitCode);
+    checkExit('login without linking', await sb.login(pat, { noProject: true, account: ctx.P.accountId }), 0);
+    checkExit('save default project', await sb.run(['projects', 'use', project.id]), 0);
+    check('folder remains unlinked', !sb.exists('.kortix/link.json'), true, !sb.exists('.kortix/link.json'));
+    await ctx.step('unlinked ship uses saved default and pushes twice without creating a project', async () => {
+      for (const content of ['first ship', 'second ship']) {
+        sb.writeFile('DEFAULT-PROOF.md', content);
+        const result = await sb.run(['ship', '-y', '--no-env', '--no-connect'], { timeoutMs: 120_000 });
+        checkExit(content, result, 0);
+        check('reports selected project', result.stdout.includes(project.id), project.id, result.stdout);
+      }
+      const clone = await sb.run(['projects', 'clone', project.id, 'readback']);
+      checkExit('clone pushed default project for read-back', clone, 0);
+      const checkout = Bun.spawnSync(['git', 'checkout', 'default-proof'], { cwd: join(sb.cwd, 'readback') });
+      check('checkout pushed branch', checkout.exitCode === 0, 0, checkout.exitCode);
+      check('second push persisted', sb.readFile('readback/DEFAULT-PROOF.md') === 'second ship', 'second ship', sb.readFile('readback/DEFAULT-PROOF.md'));
+    });
+  } finally {
+    const server = gitServer;
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+    await db.end();
+    sb.dispose();
+  }
+});
 
 // ─────────────────────── SHIP-7 — dry-run (runnable now) ─────────────────────
 
@@ -195,6 +239,7 @@ flow(
   'SHIP-1',
   {
     domain: 'cli',
+    tags: ['deployed'],
     requires: ['managedGitPush'],
     // Each `ship` is allotted its own 120s CLI budget below, and a real ship
     // provisions a GitHub repo, commits, and pushes through the git proxy to a
@@ -259,7 +304,7 @@ flow(
   'SHIP-2',
   {
     domain: 'cli',
-    routes: ['GET /v1/accounts/me', 'POST /v1/projects'],
+    routes: ['GET /v1/accounts/me'],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -269,7 +314,7 @@ flow(
     ctx.track('cli-sandbox', sb.cwd);
     try {
       await initProject(sb);
-      // Pre-set a non-GitHub origin so ship takes the BYO POST /projects path.
+      // Pre-set a non-GitHub origin: ship must refuse it as a BYO origin.
       const byoUrl = 'https://git.example.test/ke2e/byo.git';
       Bun.spawnSync(['git', '-C', sb.cwd, 'remote', 'add', 'origin', byoUrl]);
       const login = await sb.login(pat, { noProject: true, account: ctx.P.accountId });
@@ -278,18 +323,18 @@ flow(
       await ctx.step(
         'ship -y with a non-GitHub origin → BYO rejected (GitHub-only), origin untouched',
         async () => {
-          // The BYO path POSTs /projects {repo_url}, but the API only accepts a
-          // GitHub repo_url (normalizeRepoUrl → resolveGitHubImport). A non-GitHub
-          // origin is rejected 400 BEFORE saveLink — so ship exits non-zero, no
-          // link.json is written, and (critically) the existing origin is never
+          // POST /projects accepts only a GitHub repo_url (normalizeRepoUrl), so
+          // ship refuses a non-GitHub origin itself, before any project request:
+          // exit 2, no link.json, and (critically) the existing origin is never
           // clobbered (the single-writable-origin invariant). A real BYO happy
           // path needs a live GitHub repo + App installation (env-specific).
           const r = await sb.run(['ship', '-y'], { timeoutMs: 120_000 });
+          check('ship refused the non-GitHub origin (exit 2)', r.exitCode === 2, 2, r.exitCode);
           check(
-            'ship failed — non-GitHub BYO rejected (non-zero exit)',
-            r.exitCode !== 0,
+            'the refusal names the GitHub-only rule',
+            r.stderr.includes('Kortix links GitHub repositories only'),
             true,
-            r.exitCode,
+            r.stderr.slice(0, 300),
           );
           check(
             'no link.json written on failure',
@@ -318,7 +363,7 @@ flow(
   'SHIP-3',
   {
     domain: 'cli',
-    routes: ['GET /v1/accounts/me', 'POST /v1/projects'],
+    routes: ['GET /v1/accounts/me'],
   },
   async (ctx) => {
     const pat = await ctx.fixtures.pat({
@@ -334,20 +379,20 @@ flow(
       await ctx.step(
         'ship -y --origin <non-GitHub url> → BYO rejected (GitHub-only), no link',
         async () => {
-          // `--origin <url>` forces the BYO path; the API rejects a non-GitHub
-          // repo_url (400) before saveLink AND before setOrigin (which is line-
-          // ordered after the POST), so ship exits non-zero, no link.json is
-          // written, and the origin is not rewritten. The happy path (origin
-          // rewritten to an explicit url) needs a real GitHub repo + App.
+          // `--origin <url>` forces the BYO path. Ship refuses a non-GitHub url
+          // before any project request and before setOrigin, so it exits 2, no
+          // link.json is written, and the origin is not rewritten. The happy
+          // path (origin rewritten to an explicit url) needs a real GitHub repo + App.
           const explicit = 'https://git.example.test/ke2e/explicit.git';
           const r = await sb.run(['ship', '-y', '--origin', explicit], {
             timeoutMs: 120_000,
           });
+          check('ship refused the non-GitHub origin (exit 2)', r.exitCode === 2, 2, r.exitCode);
           check(
-            'ship failed — non-GitHub BYO rejected (non-zero exit)',
-            r.exitCode !== 0,
+            'the refusal suggests --origin managed',
+            r.stderr.includes('--origin managed'),
             true,
-            r.exitCode,
+            r.stderr.slice(0, 300),
           );
           check(
             'no link.json written on failure',
@@ -631,7 +676,7 @@ flow(
   'CR-9',
   {
     domain: 'cli',
-    requires: ['funded', 'daytona'],
+    requires: ['funded', 'sandbox'],
     serial: true,
     timeoutMs: 1_200_000,
     routes: [

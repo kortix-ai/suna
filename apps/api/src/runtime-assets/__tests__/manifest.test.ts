@@ -144,21 +144,18 @@ describe('runtime assets manifest', () => {
     expect(manifest.managed_skills_count).toBe(managedSkillOverlayFiles().length);
   });
 
-  test('is memoized — repeat calls do not re-hash', async () => {
+  test('re-hashes a binary that changed on disk, never serving a stale digest', async () => {
     const binaryPath = await stageCli('one');
     process.env[CLI_BIN_ENV] = binaryPath;
     _resetRuntimeAssetsCache();
 
     const first = await runtimeAssetsManifest();
-    await writeFile(binaryPath, 'two');
+    const again = await runtimeAssetsManifest();
+    expect(again.components).toEqual(first.components);
+    await writeFile(binaryPath, 'two-rebuilt');
     const second = await runtimeAssetsManifest();
-    // Not object identity: the returned object is assembled per call so `policy`
-    // can be read live. Everything that costs a hash comes from the memo, which
-    // is what this asserts — the rewritten file is NOT re-read.
-    expect(second.cli_sha256).toBe(first.cli_sha256 as string);
-    expect(second.cli_size).toBe(first.cli_size as number);
-    expect(second.build).toBe(first.build);
-    expect(second.components).toEqual(first.components);
+    expect(second.cli_sha256).toBe(new Bun.CryptoHasher('sha256').update('two-rebuilt').digest('hex'));
+    expect(second.cli_size).toBe('two-rebuilt'.length);
   });
 
   test('two CONCURRENT first calls hash the binaries exactly once', async () => {
@@ -170,16 +167,11 @@ describe('runtime assets manifest', () => {
 
     // Both calls are issued before either can settle, so they can only agree if
     // the memo stores the in-flight PROMISE rather than the resolved value.
-    // Rewriting both files the instant the first read starts would make a second
-    // hash observable as a different digest.
     const [a, b] = await Promise.all([runtimeAssetsManifest(), runtimeAssetsManifest()]);
-    await writeFile(cliPath, 'mutated-cli');
-    await writeFile(agentPath, 'mutated-agent');
-    const c = await runtimeAssetsManifest();
 
     const expectedCli = new Bun.CryptoHasher('sha256').update('concurrent-cli').digest('hex');
     const expectedAgent = new Bun.CryptoHasher('sha256').update('concurrent-agent').digest('hex');
-    for (const manifest of [a, b, c]) {
+    for (const manifest of [a, b]) {
       expect(manifest.components.cli?.sha256).toBe(expectedCli);
       expect(manifest.components.agent?.sha256).toBe(expectedAgent);
     }

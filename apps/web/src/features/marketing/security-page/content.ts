@@ -1,4 +1,4 @@
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
 import { SECURITY_SELFHOST_TRANSLATION_KEYS } from '@/i18n/security-selfhost-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 
@@ -34,12 +34,12 @@ import type { UiTranslator } from '@/i18n/translator';
  *     upstream keys never enter it either, and a session only receives the
  *     secrets both the person's role and the agent's declared grant allow.
  *  2. "Each session runs in its own VM" / blanket "microVM" is NOT true of the
- *     DEFAULT provider. Platinum is a Cloud Hypervisor microVM; Daytona, the
- *     default, is not. The copy claims one isolated sandbox per session, and
+ *     legacy Daytona provider. Platinum is a Cloud Hypervisor microVM; Daytona,
+ *     the legacy fallback, is not. The copy claims one isolated sandbox per session, and
  *     names microVM only where it is accurate.
  *  3. "Egress controlled at the network" (a `kortix-brand` proof point) is NOT
- *     substantiated anywhere in this tree — E2B ships `allowInternetAccess:
- *     true` and the network design is "Proposed — not scheduled". Dropped.
+ *     substantiated anywhere in this tree — the network design is
+ *     "Proposed — not scheduled". Dropped.
  *  4. Approval gates are NOT on by default. `policy.default_mode` falls back to
  *     `allow_all` for a project with no `policy:` block
  *     (apps/api/src/projects/policies.ts). The copy says "turn it on".
@@ -108,7 +108,7 @@ export const isolation = {
     {
       id: 'microvm',
       k: 'microVM where you ask for it',
-      v: 'On Kortix’s own Platinum compute a sandbox is a Cloud Hypervisor microVM. Daytona and E2B are also supported. The provider is a deployment choice, and we will tell you which one you are on rather than blur them together.',
+      v: 'On Platinum, Kortix’s own compute and the reference provider, a sandbox is a Cloud Hypervisor microVM. Daytona remains a legacy fallback, and its removal is scheduled. We will tell you which one you are on rather than blur them together.',
     },
     {
       id: 'branch',
@@ -210,7 +210,7 @@ export const identity = {
     label: 'Built-in roles — on every plan',
     account: [
       { k: 'Owner', v: 'Full account control.' },
-      { k: 'Admin', v: 'Manage members, groups, roles and tokens.' },
+      { k: 'Admin', v: 'Manage members, groups, roles, tokens and billing.' },
       { k: 'Member', v: 'Baseline account membership.' },
     ],
     project: [

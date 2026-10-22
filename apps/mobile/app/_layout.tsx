@@ -29,12 +29,13 @@ import { OVERLAY_PORTAL_HOST } from '@/lib/ui/portal-hosts';
 import { ToastProvider } from '@/components/kortix/toast-provider';
 import { OfflineBanner } from '@/components/kortix/OfflineBanner';
 import { SessionEndedDialog } from '@/components/kortix/SessionEndedDialog';
+import { SsoRequiredSignOut } from '@/components/auth/SsoRequiredSignOut';
+import { PastedTextSheet } from '@/components/files/PastedTextSheet';
 import { PushNotificationsBridge } from '@/components/notifications/PushNotificationsBridge';
 import { reportUnauthorized } from '@/lib/auth/session-expiry-monitor';
-import {
-  GlobalUpgradeSheet,
-  SandboxUpgradeGateListener,
-} from '@/components/billing/GlobalUpgradeSheet';
+import { reportAccessRemedy } from '@/lib/auth/sso-required';
+import { authRedirect } from '@/lib/auth/mfa';
+import { GlobalUpgradeSheet } from '@/components/billing/GlobalUpgradeSheet';
 import { useFonts } from 'expo-font';
 import { SplashScreen, Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
@@ -42,6 +43,7 @@ import { NavigationBar } from 'expo-navigation-bar';
 import * as SystemUI from 'expo-system-ui';
 import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
+import { IN_APP_BROWSER_OPTIONS } from '@/lib/utils/link-target';
 import { resolveShareLinkUrl } from '@/lib/share-link';
 import React, { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
@@ -55,6 +57,7 @@ import { useThemeStore } from '@/stores/theme-store';
 import { useBootStore } from '@/stores/boot-store';
 import { SPLASH_SAFETY_TIMEOUT_MS, shouldHideSplash } from '@/lib/boot/splash-gate';
 import { OtaUpdateManager } from '@/components/updates/OtaUpdateManager';
+import { UpdateRequiredGate } from '@/components/updates/UpdateRequiredGate';
 import { subscribeOnlineStatus } from '@/lib/network/use-online-status';
 import { applyPersistedQueryDefaults } from '@/lib/query/persisted-queries';
 import { queryCachePersistence } from '@/lib/query/query-cache';
@@ -63,7 +66,7 @@ import { installHapticsGate } from '@/lib/haptics';
 import { installLoopbackRewrite } from '@/lib/utils/loopback-xhr';
 import { resolveLocalUrl } from '@/lib/utils/resolve-local-url';
 import Constants from 'expo-constants';
-import { configureKortix } from '@kortix/sdk';
+import { createKortix } from '@kortix/sdk';
 import EventSource from 'react-native-sse';
 import { createSseTransport } from '@/lib/session/sse-transport';
 import { API_URL, kortixGetToken } from '@/api/config';
@@ -87,12 +90,11 @@ if (__DEV__ && Platform.OS !== 'web' && typeof XMLHttpRequest === 'function') {
   installLoopbackRewrite(XMLHttpRequest, resolveLocalUrl);
 }
 
-// Wire the SDK's single app-specific seam once at startup, before any screen
-// mounts. `backendUrl`/`getToken` reuse mobile's own env resolution and
-// Supabase token source (api/config.ts) unchanged — this just injects them
-// into @kortix/sdk so `lib/projects/projects-client.ts` and friends can call
-// through to `backendApi`/`projects-client` instead of hand-rolling fetch.
-configureKortix({
+// The app's one @kortix/sdk client, created at startup before any screen
+// mounts. `backendUrl`/`getToken` reuse mobile's env resolution and Supabase
+// token source (api/config.ts). Screens call the SDK's standalone functions,
+// which read this same process-wide config.
+createKortix({
   backendUrl: API_URL,
   getToken: kortixGetToken,
   clientVersion: Constants.expoConfig?.version ? `mobile/${Constants.expoConfig.version}` : undefined,
@@ -104,6 +106,8 @@ configureKortix({
     // A 401 may mean the login ended: the monitor checks once (COR-144).
     if ((error as { status?: unknown } | null)?.status === 401) reportUnauthorized();
   },
+  // 403 `sso_required` from an SDK REST call: `SsoRequiredSignOut` signs out (KRTX-1716).
+  onAccessRemedy: reportAccessRemedy,
 });
 
 // React Query has no DOM in React Native: without these listeners every query
@@ -466,6 +470,7 @@ export default function RootLayout() {
         log.log('🔗 Share link received, opening in the in-app browser');
         isHandlingDeepLink = false;
         WebBrowser.openBrowserAsync(shareUrl, {
+          ...IN_APP_BROWSER_OPTIONS,
           presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
         }).catch((error) => {
           log.warn('⚠️ Failed to open share link:', error);
@@ -580,20 +585,32 @@ export default function RootLayout() {
                                     name="accounts/[id]"
                                     options={{ fullScreenGestureEnabled: true }}
                                   />
+                                  {/* An invite (KRTX-1731): replaced in from `index`
+                                      (the first screen at boot) or pushed from the
+                                      switcher sheet. Accept resets the stack to the
+                                      project it lands in. */}
+                                  <Stack.Screen
+                                    name="invites/[id]"
+                                    options={{ animation: bootAnimation }}
+                                  />
                                 </Stack>
                               </AuthProtection>
                             </View>
                             <OtaUpdateManager />
-                            <SandboxUpgradeGateListener />
                             <GlobalUpgradeSheet />
+                            {/* A "Pasted text" tile's full text: sent messages and composers (`openPastedText`). */}
+                            <PastedTextSheet />
                             <PortalHost />
                             <OfflineBanner />
                             <SessionEndedDialog />
+                            <SsoRequiredSignOut />
                             <PushNotificationsBridge />
                           </ThemeProvider>
                         </BottomSheetModalProvider>
                         {/* Above every bottom sheet: dropdowns opened from inside a sheet. */}
                         <PortalHost name={OVERLAY_PORTAL_HOST} />
+                        {/* Last, outside the sheet provider: covers the navigator, every bottom sheet and the overlay portal when this build is below the API's minimum version. */}
+                        <UpdateRequiredGate />
                       </ToastProvider>
                     </AdvancedFeaturesProvider>
                   </BillingProvider>
@@ -642,7 +659,7 @@ function QueryCachePersistence() {
  * loader at boot — the splash — and the first screen is the destination.
  */
 function SplashGate() {
-  const { isLoading: authLoading, isAuthenticated } = useAuthContext();
+  const { isLoading: authLoading, isAuthenticated, mfaRequired } = useAuthContext();
   const segment = (useSegments() as string[])[0];
   const landingSettled = useBootStore((s) => s.landingSettled);
   const timedOut = useBootStore((s) => s.timedOut);
@@ -655,20 +672,21 @@ function SplashGate() {
         timedOut,
         fontsReady: true,
         authLoading,
-        authenticated: isAuthenticated,
+        // A session that owes a TOTP code lands on /auth/mfa, like a signed-out one on /auth.
+        authenticated: isAuthenticated && !mfaRequired,
         segment,
         landingSettled,
       })
     ) {
       hideSplash();
     }
-  }, [splashHidden, timedOut, authLoading, isAuthenticated, segment, landingSettled]);
+  }, [splashHidden, timedOut, authLoading, isAuthenticated, mfaRequired, segment, landingSettled]);
 
   return null;
 }
 
 function AuthProtection({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  const { isAuthenticated, mfaRequired, isLoading: authLoading } = useAuthContext();
   const segments = useSegments();
   const router = useRouter();
 
@@ -676,29 +694,15 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // Don't do anything while auth is loading
     if (authLoading) return;
 
-    // Wait for segments
-    if (!segments || segments.length < 1) return;
-
-    const currentSegment = segments[0] as string | undefined;
-    const inAuthGroup = currentSegment === 'auth';
-    // Index/splash screen has no segment or empty segment
-    const onSplashScreen = !currentSegment;
-
-    // RULE 1: Unauthenticated users can only be on auth or splash screens
-    if (!isAuthenticated && !inAuthGroup && !onSplashScreen) {
-      log.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
-      router.replace('/auth');
-      return;
+    // Signed out: only the auth screens. A session that owes a TOTP code: only
+    // /auth/mfa. Signed in: never the auth screens, so back navigation and
+    // gestures cannot show them (lib/auth/mfa authRedirect).
+    const to = authRedirect({ isAuthenticated, mfaRequired, segments });
+    if (to) {
+      log.log(`🚫 Route not allowed for this auth state, redirecting to ${to}`);
+      router.replace(to);
     }
-
-    // RULE 2: Authenticated users should NEVER see auth screens
-    // This prevents back navigation/gestures from showing auth to logged-in users
-    if (isAuthenticated && inAuthGroup) {
-      log.log('🚫 Authenticated user on auth screen, redirecting to the last project');
-      router.replace('/');
-      return;
-    }
-  }, [isAuthenticated, authLoading, segments, router]);
+  }, [isAuthenticated, mfaRequired, authLoading, segments, router]);
 
   return <>{children}</>;
 }

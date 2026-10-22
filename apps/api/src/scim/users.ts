@@ -3,24 +3,17 @@ import { userChanges, applyProfile } from './user-profile';
 // registerScimUsersRoutes() registers these onto the shared scimRouter.
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { accountInvitations, accountMemberships, accountScimUsers, accountGroupMembers, roleAssignments } from '@kortix/db';
-import { and, eq, gt, inArray, isNull, or } from 'drizzle-orm';
-import { isAudienceObjectType, notAnAudienceGrant } from '../iam/audience-grants';
+import { accountInvitations, accountMemberships, accountScimUsers, accountGroupMembers } from '@kortix/db';
+import { and, eq, gt, isNull, or } from 'drizzle-orm';
+import { offboardMember } from '../accounts/core/offboard-member';
 import { invalidateIamCacheForUser } from '../iam/cache-invalidation';
 import { accountRoleFor, countAccountOwners } from '../iam/read-models';
-import {
-  assignRole,
-  auditAssignmentRevoked,
-  listAssignments,
-  SYSTEM_ACTOR,
-} from '../iam/assignments';
+import { assignRole, SYSTEM_ACTOR } from '../iam/assignments';
 import { scimError } from '../middleware/scim-auth';
 import { errors, json } from '../openapi';
-import { revokeAllAccountTokensForUser } from '../repositories/account-tokens';
-import { onMemberRemoved } from '../billing/services/seat-management';
 import { db } from '../shared/db';
 import { scimMemberRow, scimMemberRows } from '../iam/membership-read';
-import { accountGroupIds, accountGroupsAmong, scimGroupIdsOfUser } from '../iam/group-read';
+import { accountGroupsAmong, scimGroupIdsOfUser } from '../iam/group-read';
 import { buildDirectoryUser, directoryUserById, directoryUserByEmail, saveDirectoryUser, directoryGroupIds, type DirectoryUser } from './directory-users';
 import {
   ScimResource,
@@ -85,13 +78,14 @@ async function getMember(accountId: string, userId: string): Promise<MemberRow |
 }
 
 /**
- * SCIM's half of the ONE write path.
+ * SCIM's half of the ONE write path. Deprovisioning is `offboardMember`
+ * (accounts/core/offboard-member.ts), shared with removal and leave.
  *
- * Both helpers are best-effort by construction: the mirror trigger on
- * `account_members` already wrote (or removed) the same canonical row inside the
- * caller's own statement, so a failure here costs the AUDIT EVENT, never the
- * grant. Failing a provisioning call because an audit insert hiccuped would take
- * an enterprise's IdP sync down for a bookkeeping problem.
+ * Best-effort by construction: the mirror trigger on `account_members` already
+ * wrote the same canonical row inside the caller's own statement, so a failure
+ * here costs the AUDIT EVENT, never the grant. Failing a provisioning call
+ * because an audit insert hiccuped would take an enterprise's IdP sync down for
+ * a bookkeeping problem.
  */
 async function assignScimMembership(accountId: string, userId: string): Promise<void> {
   try {
@@ -108,93 +102,6 @@ async function assignScimMembership(accountId: string, userId: string): Promise<
       err: (err as Error)?.message,
     });
   }
-}
-
-/**
- * Remove every canonical assignment this principal holds in the account.
- *
- * Deliberately NOT `revokeAssignment` per row: that would run the last-owner
- * guard, and SCIM's callers run their own `isLastOwner` check first (scim/
- * users.ts) — routing through the guard here would turn a legitimate,
- * already-guarded offboarding into a 409 for the second-to-last owner. The audit
- * event is emitted per row so the trail is identical.
- */
-async function revokeScimMembership(accountId: string, userId: string): Promise<void> {
-  try {
-    const rows = await listAssignments({
-      accountId,
-      principal: { type: 'user', id: userId },
-      liveOnly: false,
-    });
-    if (rows.length === 0) return;
-    // Audience grants stay: deleting a value's last one would share it with
-    // the whole project (`iam/audience-grants.ts`).
-    await db.delete(roleAssignments).where(
-      and(
-        eq(roleAssignments.accountId, accountId),
-        eq(roleAssignments.principalType, 'user'),
-        eq(roleAssignments.principalId, userId),
-        notAnAudienceGrant(),
-      ),
-    );
-    for (const row of rows) {
-      if (!isAudienceObjectType(row.objectType)) await auditAssignmentRevoked(SYSTEM_ACTOR, accountId, row);
-    }
-  } catch (err) {
-    console.warn('[scim] canonical membership revoke failed', {
-      accountId,
-      userId,
-      err: (err as Error)?.message,
-    });
-  }
-}
-
-/**
- * Deprovision a live member: remove the membership, bust the IAM cache, and
- * revoke PATs + live sandbox tokens. Callers must run the last-owner guard
- * BEFORE calling. Returns the token-revocation error message (if any) for the
- * audit event; the membership removal itself always proceeds.
- */
-async function deprovisionMember(accountId: string, userId: string): Promise<string | null> {
-  // Revoke the canonical assignments FIRST, while the membership row still
-  // exists to describe them: `revokeAssignment` is the only revoke path that
-  // audits, and the audit event has to name what was taken away.
-  await revokeScimMembership(accountId, userId);
-  // …then the IDENTITY row. Two stores since the cutover: the GRANTS live in
-  // kortix.role_assignments, the identity in kortix.account_memberships.
-  await db
-    .delete(accountMemberships)
-    .where(and(eq(accountMemberships.accountId, accountId), eq(accountMemberships.userId, userId)));
-  invalidateIamCacheForUser(userId);
-
-  // RELEASE THE PAID SEAT.
-  //
-  // Removing the member row is not the whole offboarding: on a per-seat account
-  // the Stripe subscription quantity is what gets invoiced, and nothing else
-  // lowers it. The UI removal path has always called this (accounts/core/
-  // members.ts:549 and :704); SCIM never did, so an enterprise offboarding
-  // through its IdP — the automated channel we tell enterprises to use — kept
-  // paying $40/month for every departed employee, indefinitely. There is no
-  // periodic seat reconciler to catch it up.
-  //
-  // It also revokes the member's YOLO token, which SCIM likewise did not.
-  //
-  // Awaited, not fire-and-forget: `onMemberRemoved` catches its own errors and
-  // returns void, so it cannot fail the SCIM response, and awaiting makes the
-  // seat release deterministic rather than racing the reply.
-  await onMemberRemoved(accountId, userId);
-
-  return revokeAllAccountTokensForUser(userId, accountId).then(
-    () => null,
-    (err) => {
-      console.error(
-        '[scim] token revocation FAILED on deprovision — user may retain live tokens',
-        { userId, accountId },
-        err,
-      );
-      return err instanceof Error ? err.message : String(err);
-    },
-  );
 }
 
 /** Last-owner guard shared by every deprovision path. */
@@ -241,12 +148,12 @@ async function applyDirectoryState(c: any, user: DirectoryUser, active: boolean,
   });
   if (!active) {
     if (userId) {
-      const revocationError = await deprovisionMember(user.accountId, userId);
-      const groups = await accountGroupIds(user.accountId);
-      if (groups.length) await db.delete(accountGroupMembers).where(and(
-        eq(accountGroupMembers.userId, userId), inArray(accountGroupMembers.groupId, groups.map(g => g.groupId)),
-      ));
-      invalidateIamCacheForUser(userId);
+      // The groups were read into the directory row above, so an active:true
+      // restores them; offboarding deletes the live rows. A repeated
+      // deactivation finds no membership and has nothing left to end.
+      const revocationError = member
+        ? (await offboardMember(SYSTEM_ACTOR, user.accountId, userId, 'deprovisioned')).tokenRevocationError
+        : null;
       await scimAudit(c, {
         accountId: user.accountId, action: deleted ? 'scim.user.delete' : 'scim.user.deactivate',
         resourceType: 'account_member', resourceId: userId,

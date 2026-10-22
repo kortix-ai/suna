@@ -52,6 +52,7 @@ export function mockIamAssignments(hooks: AssignmentMockHooks = {}): void {
   let seq = 0;
   mock.module('../../iam/assignments', () => ({
     SYSTEM_ACTOR,
+    FOLDER_ROLE_KEYS: new Set(['folder-reader', 'folder-writer', 'folder-manager']),
     assignRole: async (_writer: unknown, accountId: string, input: any) => {
       hooks.onGrant?.({ accountId, ...input });
       seq += 1;
@@ -137,6 +138,7 @@ export function mockIamEngineAllowAll(
     credentialOnBehalfOf: () => null,
     loadTokenBinding: Object.assign(async () => null, { invalidate: () => {}, clear: () => {} }),
     loadServiceAccountActivation: async () => false,
+    tokenCredential: async (tokenId: string) => ({ kind: 'token' as const, tokenId }),
     actorOf: jwtActor,
     actorFor: jwtActor,
     buildActor: async (c: CtxLike, accountId?: string) =>

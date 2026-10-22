@@ -5,7 +5,7 @@ import { db } from '../shared/db';
 import { toPublicStorageUrl } from '../shared/supabase';
 import { buildPromptAttachmentReference } from './session-lifecycle/prompt-attachment-reference';
 import type { PromptPartWire } from './session-lifecycle/store';
-import { PromptAttachmentError, download, filePath, digest, storage } from './prompt-attachment-storage';
+import { PromptAttachmentError, download, filePath, digest, signedDownloadUrl } from './prompt-attachment-storage';
 
 interface PromptAttachmentHandle {
   attachmentId: string;
@@ -196,13 +196,7 @@ export async function resolveRuntimePromptAttachmentDescriptor(input: {
     partIndex: input.partIndex,
   });
   // The only signed download URL: the daemon fetches it directly.
-  const { data, error } = await storage().createSignedUrl(filePath(resolved), 5 * 60);
-  if (error || !data?.signedUrl)
-    throw new PromptAttachmentError(
-      'attachment_storage_unavailable',
-      'Attachment storage is unavailable.',
-      503,
-    );
+  const signedUrl = await signedDownloadUrl(filePath(resolved), 5 * 60);
   return {
     version: 1 as const,
     command_id: input.commandId,
@@ -213,7 +207,7 @@ export async function resolveRuntimePromptAttachmentDescriptor(input: {
     size_bytes: resolved.size,
     sha256: resolved.sha256,
     target_path: resolved.targetPath,
-    download_url: toPublicStorageUrl(data.signedUrl),
+    download_url: toPublicStorageUrl(signedUrl),
     download_expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
   };
 }

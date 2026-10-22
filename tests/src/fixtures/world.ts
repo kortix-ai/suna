@@ -10,10 +10,10 @@
  * account are wired here.
  */
 import { ProjectSessionSchema, SessionCreateAcceptedSchema } from '@kortix/api-contract';
-import { Client, throwIfEdgeLaundered, type Identity } from '../core/client';
+import { Client, expectApi, mintAccountToken, throwIfEdgeLaundered, type Identity } from '../core/client';
 import type { Env } from '../core/env';
 import { log } from '../core/log';
-import type {
+import type { ProjectFixtureOptions,
   CreatedProject,
   CreatedSession,
   Fixtures,
@@ -28,7 +28,7 @@ import { provisionMatrix, synthUser, synthUserWithEmail, type Provisioned } from
 import { stopAllSessionRefresh, type SupabaseSessionAuth } from './supabase-session';
 import { provisionProject } from './provision';
 import { grantEphemeralPlatformAdmin } from './platform-admin';
-import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-demo';
+import { ADMIN_TOKEN_LABEL, NO_ADMIN_TOKEN_HINT } from './enterprise-access';
 import {
   createDatabaseProject,
   createDatabaseSession,
@@ -224,15 +224,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
 
   async function createProject(
     stack: ResourceStack,
-    opts?: {
-      name?: string;
-      accountId?: string;
-      seed?: boolean;
-      managedGit?: boolean;
-      allowAllSecrets?: boolean;
-      allowAllConnectors?: boolean;
-      metadata?: Record<string, unknown>;
-    },
+    opts?: ProjectFixtureOptions,
     signal?: AbortSignal,
   ): Promise<CreatedProject> {
     const name = opts?.name ?? `e2e-${runId}-proj-${rand()}`;
@@ -281,24 +273,27 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
   const sharedProject = memoizeUntilRejected(() =>
     createProject(sharedStack, { name: `e2e-${runId}-shared`, managedGit: true }),
   );
-  const sharedSeededOpenCode = memoizeUntilRejected(() =>
-    createProject(sharedStack, { name: `e2e-${runId}-shared-seeded`, seed: true }),
-  );
-  // The pi twin: the same starter, with the project's `pi_harness` flag on, so
-  // every session in it boots pi (apps/api selectSessionHarness).
-  const sharedSeededPi = memoizeUntilRejected(async () => {
-    const project = await createProject(sharedStack, { name: `e2e-${runId}-shared-seeded-pi`, seed: true });
-    const res = await adminClient.patch(
-      '/v1/projects/:projectId/features',
-      { feature: 'pi_harness', enabled: true },
-      { params: { projectId: project.id } },
-    );
-    throwIfEdgeLaundered(res, 'pi_harness flag');
-    if (res.statusCode !== 200 || res.json<any>()?.experimental?.pi_harness !== true) {
-      throw new Error(`pi_harness flag did not turn on for ${project.id}: ${res.statusCode} ${res.text()}`);
-    }
-    return project;
-  });
+  // Two twins of the same starter. The project's `pi_harness` flag picks the
+  // harness every session boots (apps/api selectSessionHarness). It is on by
+  // default, so the OpenCode twin turns it off explicitly.
+  const seededProjectOn = (harness: Harness) =>
+    memoizeUntilRejected(async () => {
+      const suffix = harness === 'pi' ? '-pi' : '';
+      const project = await createProject(sharedStack, { name: `e2e-${runId}-shared-seeded${suffix}`, seed: true });
+      const enabled = harness === 'pi';
+      const res = await adminClient.patch(
+        '/v1/projects/:projectId/features',
+        { feature: 'pi_harness', enabled },
+        { params: { projectId: project.id } },
+      );
+      expectApi(res, 'pi_harness flag', 200);
+      if (res.json<any>()?.experimental?.pi_harness !== enabled) {
+        throw new Error(`pi_harness flag did not turn ${enabled ? 'on' : 'off'} for ${project.id}: ${res.text()}`);
+      }
+      return project;
+    });
+  const sharedSeededOpenCode = seededProjectOn('opencode');
+  const sharedSeededPi = seededProjectOn('pi');
   const sharedSeededProject = (harness: Harness = 'opencode') =>
     harness === 'pi' ? sharedSeededPi() : sharedSeededOpenCode();
 
@@ -323,21 +318,17 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       if (!accountId) throw new Error(`team account create returned no id: ${res.text()}`);
       stack.push('account', accountId);
       if (opts?.enterprise) {
-        // The enterprise-demo PUT is platform-admin-only — the OWNER of this
-        // fixture account gets 403 {code:'admin_required'}. Unlock through the
-        // run-scoped platform admin provisioned above.
+        // Enterprise is a feature layer: the fixture account gets the
+        // Enterprise demo (fixtures/enterprise-access.ts), switched on by the
+        // run-scoped platform admin so it does not depend on the owner.
         if (!env.adminToken) {
           throw new Error(`enterprise team fixture needs a platform admin — ${NO_ADMIN_TOKEN_HINT}`);
         }
-        const enabled = await adminClient
+        const granted = await adminClient
           .withBearer(env.adminToken, ADMIN_TOKEN_LABEL)
-          .put(
-            '/v1/accounts/:accountId/iam/enterprise-demo',
-            { enabled: true },
-            { params: { accountId } },
-          );
-        if (enabled.statusCode !== 200 || enabled.json<any>()?.enabled !== true) {
-          throw new Error(`enterprise team enable failed: ${enabled.text()}`);
+          .put('/v1/accounts/:accountId/iam/enterprise-demo', { enabled: true }, { params: { accountId } });
+        if (granted.statusCode !== 200 || granted.json<any>()?.state !== 'demo') {
+          throw new Error(`enterprise team demo failed: ${granted.text()}`);
         }
       }
       return {
@@ -356,12 +347,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
             { email: u.user.email, role },
             { params: { accountId } },
           );
-          throwIfEdgeLaundered(added, `team addMember(${role})`);
-          if (added.statusCode !== 201) {
-            throw new Error(
-              `team addMember(${role}) failed: ${added.statusCode} ${added.text()}`,
-            );
-          }
+          expectApi(added, `team addMember(${role})`, 201);
           return u.principal;
         },
         async grantProjectRole(projectId, userId, role) {
@@ -372,12 +358,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           );
           // Same class as addMember above: a swallowed grant becomes a 403 in
           // whichever later step relies on the role.
-          throwIfEdgeLaundered(granted, `team grantProjectRole(${role})`);
-          if (granted.statusCode !== 200 && granted.statusCode !== 201) {
-            throw new Error(
-              `team grantProjectRole(${role}) failed: ${granted.statusCode} ${granted.text()}`,
-            );
-          }
+          expectApi(granted, `team grantProjectRole(${role})`, 200, 201);
         },
         async project(o) {
           return createProject(
@@ -398,13 +379,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       // Personal accounts are lazy. Minting a PAT forces the personal account
       // and owner membership into existence without joining this user to any
       // team, which is exactly what account-deletion flows require.
-      const bootstrap = await new Client(env.apiUrl)
-        .as(u.principal)
-        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-bootstrap${suffix}` });
-      throwIfEdgeLaundered(bootstrap, 'standalone user bootstrap');
-      if (bootstrap.statusCode !== 201) {
-        throw new Error(`standalone user bootstrap failed: ${bootstrap.text()}`);
-      }
+      await mintAccountToken(
+        new Client(env.apiUrl).as(u.principal),
+        `e2e-${runId}-user-bootstrap${suffix}`,
+      );
       return u.principal;
     },
     async userWithEmail(email, opts) {
@@ -413,13 +391,10 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       // Same lazy-personal-account bootstrap as `user()` — minting a PAT forces
       // the personal account + owner membership into existence so subsequent
       // account-scoped reads (e.g. /v1/accounts/me) work for this identity.
-      const bootstrap = await new Client(env.apiUrl)
-        .as(u.principal)
-        .post('/v1/accounts/tokens', { name: `e2e-${runId}-user-email-bootstrap${suffix}` });
-      throwIfEdgeLaundered(bootstrap, 'standalone user-with-email bootstrap');
-      if (bootstrap.statusCode !== 201) {
-        throw new Error(`standalone user-with-email bootstrap failed: ${bootstrap.text()}`);
-      }
+      await mintAccountToken(
+        new Client(env.apiUrl).as(u.principal),
+        `e2e-${runId}-user-email-bootstrap${suffix}`,
+      );
       return u.principal;
     },
     async session(project, opts) {
@@ -446,7 +421,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           params: { projectId: project.id },
         },
       );
-      throwIfEdgeLaundered(res, 'session create');
+      expectApi(res, 'session create', 201, 202);
       // Every flow that creates a real session also checks the create body
       // against the contract: the row on 201, the accepted envelope on 202.
       if (res.statusCode === 201) res.body().schema(ProjectSessionSchema);
@@ -494,7 +469,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         try {
           // delete-immediately resolves the caller's account; account_id in body
           // overrides for team accounts the OWNER controls.
-          await adminClient.del('/v1/billing/account/delete-immediately', {
+          await adminClient.del('/v1/account/delete-immediately', {
             body: { account_id: acct },
           });
         } catch (err) {

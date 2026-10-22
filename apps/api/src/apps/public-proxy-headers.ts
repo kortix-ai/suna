@@ -4,6 +4,7 @@ import { appAccessCookieName } from './access';
 import { APP_AUTHORIZATION_HEADER, type AppViewerHeaders } from './public-proxy-access';
 import { appFrameAncestors } from './public-proxy-status';
 import { APP_VIEWER_HEADER, APP_VIEWER_TOKEN_HEADER } from './viewer';
+import { stripFrameAncestors } from '../sandbox-proxy/preview-response';
 const EDGE_HOST_HEADER = APP_EDGE_HEADERS.host;
 const EDGE_TIMESTAMP_HEADER = APP_EDGE_HEADERS.timestamp;
 const EDGE_SIGNATURE_HEADER = APP_EDGE_HEADERS.signature;
@@ -77,26 +78,31 @@ export function appUpstreamHeaders(
   return headers;
 }
 
-function withoutFrameAncestors(value: string): string[] {
-  return value
-    .split(';')
-    .map((directive) => directive.trim())
-    .filter((directive) => directive && !/^frame-ancestors(?:\s|$)/i.test(directive));
-}
+/**
+ * Set by the API, never by an App: this response is the same for every viewer
+ * of the App host, so the apps-router Worker may keep it in its edge cache.
+ */
+export const APP_EDGE_CACHEABLE_HEADER = 'x-kortix-edge-cacheable';
 
 /** Preserve App security policy while allowing the Kortix preview browser to frame it. */
 export function appPublicResponseHeaders(upstreamHeaders: Headers): Headers {
   const headers = new Headers(upstreamHeaders);
   headers.delete('x-frame-options');
+  // An App's own headers never mark a response shareable at the edge.
+  headers.delete(APP_EDGE_CACHEABLE_HEADER);
+  // The API origin hostnames are Cloudflare-proxied, and Cloudflare keys its
+  // cache on the API host and path, not the App host. Only the apps-router
+  // Worker decides edge caching, keyed on the App host.
+  headers.set('cloudflare-cdn-cache-control', 'no-store');
 
-  const enforced = withoutFrameAncestors(headers.get('content-security-policy') || '');
-  headers.set('content-security-policy', [...enforced, appFrameAncestors()].join('; '));
+  const enforced = stripFrameAncestors(headers.get('content-security-policy') || '');
+  headers.set('content-security-policy', [enforced, appFrameAncestors()].filter(Boolean).join('; '));
 
   const reportOnlyKey = 'content-security-policy-report-only';
   const reportOnly = headers.get(reportOnlyKey);
   if (reportOnly && /frame-ancestors/i.test(reportOnly)) {
-    const remaining = withoutFrameAncestors(reportOnly);
-    if (remaining.length) headers.set(reportOnlyKey, remaining.join('; '));
+    const remaining = stripFrameAncestors(reportOnly);
+    if (remaining) headers.set(reportOnlyKey, remaining);
     else headers.delete(reportOnlyKey);
   }
   return headers;

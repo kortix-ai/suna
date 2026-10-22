@@ -5,9 +5,16 @@ import {
   FEATURE_NOT_SUPPORTED_CODE,
   MODEL_NOT_SERVABLE_CODE,
   PROVISION_IN_FLIGHT_CODE,
+  SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE,
 } from './api-client';
 import type { ApiResponse, ErrorContext } from './api-client';
-import { ApiError, RequestTooLargeError, parseBillingError } from './api/errors';
+import {
+  ApiError,
+  FEATURE_DISABLED_CODE,
+  REPOSITORY_DISCONNECTED_CODE,
+  RequestTooLargeError,
+  parseBillingError,
+} from './api/errors';
 import { platformConfig } from './config';
 
 const REQUEST_DEADLINE_CODE = 'request_deadline';
@@ -67,6 +74,34 @@ const isGitMirrorUnavailableResponse = (
   );
 };
 
+/**
+ * Stable error code the platform API returns (HTTP 503) when the hosted
+ * connectors provider (Composio) is transiently unavailable — the provider's
+ * own API 5xx-ing (e.g. its DB-backed API-key lookup failing, error code 809:
+ * `Failed to fetch API key information from DB`) or the connection dropping.
+ * The API already classifies the cause out of its OWN Sentry
+ * (`apps/api/src/shared/composio-transient.ts`'s
+ * `isComposioTransientProviderError`) and answers a clean 503 + Retry-After;
+ * this is the frontend mirror of `CONNECTORS_PROVIDER_UNAVAILABLE_CODE`.
+ *
+ * The 503 RESPONSE crosses the boundary exactly like the git-mirror one:
+ * `handleApiError` captures every 5xx to the FRONTEND Sentry (app 2346967),
+ * so an unclassified provider blip on the connectors catalogue page paged a
+ * SECOND time from the browser. Treat it as SILENT here — skip the global
+ * `onError` (Sentry) capture — but still return the `ApiError` so callers can
+ * branch on `.code`. A genuine 503 with another message/code still reports.
+ */
+const CONNECTORS_PROVIDER_UNAVAILABLE_CODE = 'connectors_provider_unavailable';
+
+const isConnectorsProviderUnavailableResponse = (status: number, errorData: unknown): boolean => {
+  if (status !== 503) return false;
+  const code =
+    typeof errorData === 'object' && errorData !== null && 'code' in errorData
+      ? (errorData as { code?: unknown }).code
+      : undefined;
+  return code === CONNECTORS_PROVIDER_UNAVAILABLE_CODE;
+};
+
 async function readErrorBody(
   response: Response,
   signal: AbortSignal,
@@ -90,9 +125,16 @@ function isExpectedResponse(status: number, data: any, message: string): boolean
   return (
     isRequestDeadlineResponse(status, data, message) ||
     isGitMirrorUnavailableResponse(status, data, message) ||
+    isConnectorsProviderUnavailableResponse(status, data) ||
+    // Flag gates are expected disabled states; callers still receive the ApiError.
+    (status === 403 && data?.code === FEATURE_DISABLED_CODE) ||
     (status === 501 && data?.code === FEATURE_NOT_SUPPORTED_CODE) ||
     (status === 409 &&
-      (data?.code === MODEL_NOT_SERVABLE_CODE || data?.code === PROVISION_IN_FLIGHT_CODE)) ||
+      (data?.code === MODEL_NOT_SERVABLE_CODE ||
+        data?.code === PROVISION_IN_FLIGHT_CODE ||
+        data?.code === SANDBOX_STATE_CHANGE_IN_PROGRESS_CODE ||
+        // A state a GitHub owner fixes, not a defect: the host shows the fix.
+        data?.code === REPOSITORY_DISCONNECTED_CODE)) ||
     (status === 503 &&
       (data?.code === ANALYTICS_UNAVAILABLE_CODE || data?.code === ACCOUNTS_LIST_UNAVAILABLE_CODE))
   );
@@ -116,15 +158,27 @@ export async function handleErrorResponse<T>(
       : data?.code || data?.error_code || data?.detail?.error_code || response.status.toString(),
   });
   if (response.status === 402) error = parseBillingError(error);
-  if (
+  // Two coded 403s a person can act on. MFA: a step-up on this page. SSO only:
+  // the account requires sign-in through its IdP, so the host signs out and
+  // offers single sign-on.
+  const remedyCode: 'account_mfa_required' | 'sso_required' | null =
     response.status === 403 &&
-    data?.code === 'account_mfa_required' &&
-    typeof window !== 'undefined' &&
-    typeof window.dispatchEvent === 'function'
-  ) {
+    (data?.code === 'account_mfa_required' || data?.code === 'sso_required')
+      ? data.code
+      : null;
+  if (remedyCode) {
     try {
-      window.dispatchEvent(new CustomEvent('kortix:mfa-required'));
+      platformConfig().onAccessRemedy?.(remedyCode);
     } catch {}
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent(
+            remedyCode === 'account_mfa_required' ? 'kortix:mfa-required' : 'kortix:sso-required',
+          ),
+        );
+      } catch {}
+    }
   }
   if (response.status === 431) {
     error = new RequestTooLargeError(431, {

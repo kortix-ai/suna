@@ -6,7 +6,4 @@
 // import-path change.
 export { slackWebhookApp } from './slack/app';
 export { registerSlackWebhookRoutes } from './slack/routes';
-export { postQuestion } from './slack/questions';
-export { postReviewCard } from './slack/review';
-export { relayTurnStep, relayTurnAnswer, relayTurnEnd } from './slack/turn';
 export type { QuestionInfo } from './slack/questions';

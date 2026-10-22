@@ -3,10 +3,8 @@ import type { ProvisionTimeline } from '../../platform/services/provision-timeli
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { remintGrantForAgentSwitch } from '../../projects/lib/session-token-grant';
 import { bindSessionTurnIdentity } from '../../projects/lib/on-behalf-of';
-import { scheduleOpencodeSnapshotSync } from '../../projects/opencode-session-snapshot';
 import { generateSessionTitleFromFirstPrompt } from '../../projects/session-title-generate';
 import {
-  convergeBeforeTurnStart,
   convergeModelCatalogForTurnStart,
   scheduleAssetConvergence,
 } from '../../projects/lib/turn-start-convergence';
@@ -58,7 +56,6 @@ const REAL_PRE_PROMPT_DEPS: PrePromptEnvSyncDeps = {
   syncEnv: syncSandboxEnvForPrompt,
   remintGrant: remintGrantForAgentSwitch,
   bindTurnIdentity: bindSessionTurnIdentity,
-  scheduleSnapshot: scheduleOpencodeSnapshotSync,
   generateTitle: generateSessionTitleFromFirstPrompt,
 };
 
@@ -185,9 +182,12 @@ export function claimPromptDeliveryOnce(input: {
 }
 
 /**
- * C9: converge a box that is behind before a user turn runs on it, and start
- * the first attempt's ingress resolve alongside. `refusal` is set when the
- * model-catalog repair definitively did not land.
+ * Repair the box before a user turn when THIS turn's model is missing from it,
+ * and start the first attempt's ingress resolve alongside. `refusal` is set when
+ * the model-catalog repair definitively did not land.
+ *
+ * Config is not converged here: a box that is behind converges after its turn
+ * ends (`convergeConfigIfBehind`, projects/lib/turn-start-convergence.ts).
  */
 export async function convergeTurnStartRuntime(input: {
   record: SandboxRecord;
@@ -203,14 +203,10 @@ export async function convergeTurnStartRuntime(input: {
 }> {
   const { record, ingressRequest, isSseEventStreamRequest, requestBody, incomingHeaders, ptl, origin } = input;
   let prefetchedIngress: ReturnType<typeof resolveSandboxIngress> | null = null;
-  // R2 — config-converge, model-catalog-converge and the ingress resolve
-  // read/act on three independent surfaces (the session's config release,
-  // the box's managed-model map, this box's provider network address) and
-  // none consumes another's result before the upstream fetch is built. They
-  // used to run back to back — measured ~40 ms each on a warm box, ~120 ms
-  // stacked for nothing. They now start together and are joined where each
-  // result is first actually needed, exactly like `Promise.all` on the
-  // pre-flight reads the spec calls out (§3, R2).
+  // The model-catalog gate and the ingress resolve act on independent surfaces
+  // (the box's managed-model map, this box's provider network address) and
+  // neither consumes the other's result before the upstream fetch is built, so
+  // they start together (R2).
   //
   // EXCLUDED: the SSE stall-recovery path just below
   // (`isSseEventStreamRequest`) decides whether to INVALIDATE the cached
@@ -228,27 +224,12 @@ export async function convergeTurnStartRuntime(input: {
     prefetchedIngress.catch(() => undefined);
   }
   const requestedModelId = requestedPromptManagedModelId(requestBody, incomingHeaders);
-  const convergedPromise = convergeBeforeTurnStart(record.sessionId);
-  const modelCatalogPromise = convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
-
-  const converged = await convergedPromise;
-  ptl.mark('config-converge');
-  // …and the BINARIES, which must not block. `convergeBeforeTurnStart` above
-  // awaits because config changes what the agent IS; the daemon, the CLI, the
-  // overlay and OpenCode are ~96 MB / ~104 MB / ~373 KB / ~167 MB and a box
-  // one turn behind on them is the state that exists today. This call returns
-  // synchronously, never throws, and adds no network call at all to a box the
-  // API last saw current — it reads two in-process maps, and its only probe is
-  // the health GET the gate above already made. Do not await it.
+  // The BINARIES must not block either: the daemon, the CLI, the overlay and
+  // OpenCode are ~96 MB / ~104 MB / ~373 KB / ~167 MB. This returns
+  // synchronously, never throws, and adds no network call to a box the API last
+  // saw current — it reads two in-process maps; a cold memo fires a detached
+  // health read. Do not await it.
   scheduleAssetConvergence(record.sessionId);
-  if (converged.decision !== 'current' && converged.decision !== 'skipped') {
-    console.log('[PREVIEW] turn-start config convergence', {
-      session_id: record.sessionId,
-      decision: converged.decision,
-      outcome: converged.outcome,
-      ms: converged.ms,
-    });
-  }
   // A third case, neither CONFIG nor BINARIES: the box's `kortix` provider
   // map is missing the ONE model this turn asks for. AWAITED — unlike the
   // asset lane just above — because the alternative is `Model not found:
@@ -256,7 +237,7 @@ export async function convergeTurnStartRuntime(input: {
   // (2026-09-26). Any provider: a `codex/…` or BYOK id the box's image
   // catalog predates fails the same way (2026-10-01, codex/gpt-6.1-sol).
   // A model the box already confirmed costs one in-process map read.
-  const modelCatalog = await modelCatalogPromise;
+  const modelCatalog = await convergeModelCatalogForTurnStart(record.sessionId, requestedModelId);
   ptl.mark('model-catalog-converge');
   if (modelCatalog.decision !== 'skipped' && modelCatalog.decision !== 'current') {
     console.log('[PREVIEW] turn-start model-catalog convergence', {

@@ -8,12 +8,16 @@
  * the row scrolls horizontally so the composer does not grow a 103px row per
  * three files. Used by `SessionChatInput` and `components/kortix/composer.tsx`.
  *
+ * Pasted text (`pastes`, `use-pasted-tiles.ts`) draws first, as the same tile
+ * with a text preview and a `PASTED` badge. Pressing one opens it (`onOpenPaste`).
+ *
  * Each tile is memoized and reads its own progress (`live`), so a progress
  * tick re-renders one tile, and a keystroke in the composer re-renders none.
  */
 
 import * as React from 'react';
 import { ScrollView, View } from 'react-native';
+import type { PastedContent } from '@kortix/shared';
 import type { AttachedFile } from '@/lib/session/attachments';
 import { isPreviewableImage } from '@/lib/session/attachment-tile';
 import { webSpace } from '@/lib/session/user-message';
@@ -43,6 +47,7 @@ export interface ComposerAttachmentUpload {
 }
 
 const NO_SUBSCRIBE = () => () => {};
+const NO_PASTES: PastedContent[] = [];
 
 /** Room for the remove dot, which sits `webSpace(1.5)` outside each tile. */
 const DOT_OVERHANG = webSpace(1.5);
@@ -50,12 +55,18 @@ const DOT_OVERHANG = webSpace(1.5);
 export function ComposerAttachmentTiles({
   files,
   onRemove,
+  pastes = NO_PASTES,
+  onRemovePaste,
+  onOpenPaste,
   uploads,
   disabled,
   contentPaddingHorizontal = 0,
 }: {
   files: AttachedFile[];
   onRemove: (index: number) => void;
+  pastes?: PastedContent[];
+  onRemovePaste?: (id: string) => void;
+  onOpenPaste?: (paste: PastedContent) => void;
   uploads?: Readonly<Record<number, ComposerAttachmentUpload>>;
   disabled?: boolean;
   /** Aligns the first tile with the composer's text. */
@@ -66,7 +77,11 @@ export function ComposerAttachmentTiles({
   const onRemoveRef = React.useRef(onRemove);
   onRemoveRef.current = onRemove;
   const remove = React.useCallback((index: number) => onRemoveRef.current(index), []);
-  if (files.length === 0) return null;
+  const pasteHandlersRef = React.useRef({ onRemovePaste, onOpenPaste });
+  pasteHandlersRef.current = { onRemovePaste, onOpenPaste };
+  const removePaste = React.useCallback((id: string) => pasteHandlersRef.current.onRemovePaste?.(id), []);
+  const openPaste = React.useCallback((paste: PastedContent) => pasteHandlersRef.current.onOpenPaste?.(paste), []);
+  if (files.length === 0 && pastes.length === 0) return null;
   return (
     <ScrollView
       horizontal
@@ -80,6 +95,15 @@ export function ComposerAttachmentTiles({
         paddingLeft: contentPaddingHorizontal,
       }}
     >
+      {pastes.map((paste) => (
+        <PastedTextTile
+          key={paste.id}
+          paste={paste}
+          disabled={disabled}
+          onOpen={onOpenPaste ? openPaste : undefined}
+          onRemove={removePaste}
+        />
+      ))}
       {files.map((file, index) => (
         <ComposerAttachmentTile
           key={`${file.uri}-${index}`}
@@ -125,6 +149,30 @@ const ComposerAttachmentTile = React.memo(function ComposerAttachmentTile({
         overlay={failed ? <AttachmentFailureScrim filename={file.name} onRetry={upload?.onRetry} /> : undefined}
       />
       <AttachmentRemoveButton filename={file.name} disabled={disabled} onRemove={() => onRemove(index)} />
+    </View>
+  );
+});
+
+const PastedTextTile = React.memo(function PastedTextTile({
+  paste,
+  disabled,
+  onOpen,
+  onRemove,
+}: {
+  paste: PastedContent;
+  disabled?: boolean;
+  onOpen?: (paste: PastedContent) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <View style={{ position: 'relative' }}>
+      <AttachmentTile
+        filename="Pasted text"
+        preview={paste.text}
+        onPress={onOpen ? () => onOpen(paste) : undefined}
+        accessibilityLabel="Pasted text"
+      />
+      <AttachmentRemoveButton filename="pasted text" disabled={disabled} onRemove={() => onRemove(paste.id)} />
     </View>
   );
 });

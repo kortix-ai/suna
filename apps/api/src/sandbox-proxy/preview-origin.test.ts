@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
 const configState: Record<string, unknown> = {
   FRONTEND_URL: 'https://dev.kortix.com',
@@ -241,6 +241,20 @@ describe('preview origin auth gate', () => {
     } finally {
       configState.KORTIX_PREVIEW_BASE_DOMAIN = undefined;
     }
+  });
+});
+
+describe('a claimed local preview host', () => {
+  test('is ignored, so an unsigned request to the API origin is not a preview', async () => {
+    // Pentest: a local `*.localhost` target skips the signature, so a claimed
+    // one made any caller's request "verified".
+    const [req, url] = request(
+      '/learn?token=good',
+      { headers: { 'x-kortix-preview-host': 'p8081-sbx-known.localhost' } },
+      'dev-api.kortix.com',
+    );
+    expect(await handlePreviewOriginRequest(req, url)).toBeNull();
+    expect(labelLookups).toEqual([]);
   });
 });
 
@@ -601,7 +615,137 @@ describe('a public share on its own origin', () => {
   test('a revoked share stops working on the next request, cookie or not', async () => {
     shares = {};
     const [req, url] = request('/', { headers: { cookie: shareCookie('s-revoked') } });
-    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(410);
+    expect((await handlePreviewOriginRequest(req, url))?.status).toBe(404);
+    expect(forwarded).toBe(0);
+  });
+
+  // The share link lives on after the share dies: a person who reloads it is
+  // reading a PAGE, not debugging an API. The page says why, with the real
+  // status, and offers no sign-in — no credential can revive a revoked link.
+  test('a revoked share is a page a person can read, not bare JSON', async () => {
+    shares = {};
+    const [req, url] = request('/', {
+      headers: { cookie: shareCookie('s-revoked'), 'sec-fetch-dest': 'document' },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(404);
+    expect(res?.headers.get('content-type')).toContain('text/html');
+    expect(res?.headers.get('x-kortix-preview-state')).toBe('unavailable');
+    const html = await res!.text();
+    expect(html).toContain('This share link is no longer available');
+    // Nothing to sign in for: no credential revives a revoked link.
+    expect(html).not.toContain('/preview/authorize');
+    expect(forwarded).toBe(0);
+  });
+
+  test('a machine fetch of a revoked share still gets JSON with the real status', async () => {
+    shares = {
+      [publicShareToken('s-dead')]: { ok: false, status: 410, error: 'Share link revoked' },
+    };
+    const [req, url] = request('/', { headers: { cookie: shareCookie('s-dead') } });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(410);
+    expect(res?.headers.get('content-type')).toContain('application/json');
+    expect(await res!.text()).toContain('no longer available');
+    expect(forwarded).toBe(0);
+  });
+
+  // Same dead link, first visit: the URL still carries the one-shot share
+  // token. The visitor must read "revoked", not a sign-in wall that implies
+  // signing in would open the share.
+  test('a dead share token in the URL gets the unavailable page, not the sign-in page', async () => {
+    shares = {
+      [publicShareToken('s-dead')]: { ok: false, status: 410, error: 'Share link revoked' },
+    };
+    const [req, url] = request(`/?public_share=${publicShareToken('s-dead')}`, {
+      headers: { 'sec-fetch-dest': 'document' },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(410);
+    expect(res?.headers.get('content-type')).toContain('text/html');
+    expect(res?.headers.get('x-kortix-preview-state')).toBe('unavailable');
+    const html = await res!.text();
+    expect(html).toContain('This share link is no longer available');
+    expect(html).not.toContain('/preview/authorize');
+  });
+
+  // A dead share param must not lock the owner out of their own preview: the
+  // share grants nothing the owner's own credential does not, so the owner
+  // rides past it, and the dead one-shot param is bounced out of the URL.
+  test('a dead share token does not lock out the owner riding their own credential', async () => {
+    shares = {
+      [publicShareToken('s-dead')]: { ok: false, status: 410, error: 'Share link revoked' },
+    };
+    const [req, url] = request(`/page?public_share=${publicShareToken('s-dead')}&token=good`, {
+      headers: { 'sec-fetch-dest': 'document' },
+    });
+    const res = await handlePreviewOriginRequest(req, url);
+    expect(res?.status).toBe(302);
+    expect(res?.headers.get('set-cookie')).toContain('__kortix_preview=');
+    expect(res?.headers.get('location')).toBe('/page');
+    expect(forwarded).toBe(0);
+  });
+});
+
+describe('preview navigation tickets', () => {
+  test('a signed cookie cannot be exchanged as a navigation ticket', async () => {
+    const clock = spyOn(Date, 'now').mockReturnValue(1_800_000_000_000);
+    try {
+      const cookie = mintCookieFor('sbx-known', 8081);
+      const value = cookie.slice(cookie.indexOf('=') + 1);
+      const path = '/?preview_ticket=' + encodeURIComponent(value);
+      const withoutCookie = await handlePreviewOriginRequest(...request(path));
+      expect(withoutCookie?.status).toBe(401);
+      expect(withoutCookie?.headers.getSetCookie()).toHaveLength(0);
+      const withCookie = await handlePreviewOriginRequest(...request(path, {
+        headers: { Cookie: cookie, 'sec-fetch-dest': 'document' },
+      }));
+      expect(withCookie?.status).toBe(302);
+      expect(withCookie?.headers.getSetCookie()).toHaveLength(0);
+      clock.mockReturnValue(1_800_003_601_000);
+      expect((await handlePreviewOriginRequest(...request('/', { headers: { Cookie: cookie } })))?.status).toBe(401);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  test('a forged ticket cannot renew an existing authenticated cookie', async () => {
+    const response = await handlePreviewOriginRequest(...request('/?preview_ticket=forged', {
+      headers: { Cookie: mintCookieFor('sbx-known', 8081), 'sec-fetch-dest': 'document' },
+    }));
+    expect(response?.status).toBe(302);
+    expect(response?.headers.get('location')).toBe('/');
+    expect(response!.headers.getSetCookie()).toHaveLength(0);
+  });
+
+  test('exchanges a header credential for a short-lived preview-only ticket', async () => {
+    const { previewTicket } = await import('./routes/preview-ticket');
+    const minted = await previewTicket.request('http://api.local/', {
+      method: 'POST', headers: { Authorization: 'Bearer good', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ preview_url: `http://${HOST}/` }),
+    });
+    expect(minted?.status).toBe(200);
+    const { ticket } = await minted!.json();
+    expect(ticket).not.toContain('good');
+    expect((await handlePreviewOriginRequest(...request('/', { headers: { Cookie: `__kortix_preview=${ticket}` } })))?.status).toBe(401);
+    const { verifyPreviewSession } = await import('./preview-session');
+    const grant = verifyPreviewSession(ticket, { sandboxLabel: 'sbx-known', port: 8081 }, 'ticket');
+    expect(grant?.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    expect(grant!.exp).toBeLessThanOrEqual(Math.floor(Date.now() / 1000) + 60);
+    expect(verifyPreviewSession(ticket, { sandboxLabel: 'other', port: 8081 }, 'ticket')).toBeNull();
+    expect(verifyPreviewSession(ticket, { sandboxLabel: 'sbx-known', port: 8082 }, 'ticket')).toBeNull();
+    const opened = await handlePreviewOriginRequest(...request('/?preview_ticket=' + encodeURIComponent(ticket), {
+      headers: { 'sec-fetch-dest': 'document' },
+    }));
+    expect(opened?.status).toBe(302);
+    expect(opened?.headers.get('location')).toBe('/');
+    expect(opened!.headers.getSetCookie()).toHaveLength(2);
+    expect(forwarded).toBe(0);
+  });
+  test('refuses unauthenticated ticket minting and invalid navigation tickets', async () => {
+    const { previewTicket } = await import('./routes/preview-ticket');
+    expect((await previewTicket.request('http://api.local/', { method: 'POST' })).status).toBe(401);
+    expect((await previewTicket.request('http://api.local/', { method: 'POST', headers: { Authorization: 'Bearer bad', 'Content-Type': 'application/json' }, body: JSON.stringify({ preview_url: `http://${HOST}/` }) })).status).toBe(401);
+    expect((await handlePreviewOriginRequest(...request('/?preview_ticket=forged')))?.status).toBe(401);
     expect(forwarded).toBe(0);
   });
 });

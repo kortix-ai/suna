@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -57,13 +57,23 @@ describe('kortix validate — repository size', () => {
     expect(r.size?.message).toContain('object storage');
   }, SPAWN_TEST_MS);
 
-  test('many medium files over the release limit are a warning', () => {
+  test('many medium files over the project snapshot limit are a warning', () => {
     const cwd = project();
-    for (let i = 0; i < 4; i++) writeFileSync(join(cwd, `part-${i}.bin`), Buffer.alloc(9 * MiB));
+    // Sparse: the check reads sizes, so 522 MiB costs no disk.
+    for (let i = 0; i < 58; i++) {
+      writeFileSync(join(cwd, `part-${i}.bin`), '');
+      truncateSync(join(cwd, `part-${i}.bin`), 9 * MiB);
+    }
     const r = validate(cwd);
     expect(r.exitCode).toBe(0);
-    expect(r.size?.message).toContain('36.0 MiB');
-    expect(r.size?.message).toContain('32 MiB');
+    expect(r.size?.message).toContain('522.0 MiB');
+    expect(r.size?.message).toContain('512 MiB');
+  }, SPAWN_TEST_MS);
+
+  test('medium files under the project snapshot limit get no warning', () => {
+    const cwd = project();
+    for (let i = 0; i < 4; i++) writeFileSync(join(cwd, `part-${i}.bin`), Buffer.alloc(9 * MiB));
+    expect(validate(cwd).size).toBeUndefined();
   }, SPAWN_TEST_MS);
 
   test('gitignored and export-ignore files do not count', () => {
@@ -74,6 +84,16 @@ describe('kortix validate — repository size', () => {
     writeFileSync(join(cwd, 'build/out.bin'), Buffer.alloc(11 * MiB));
     writeFileSync(join(cwd, '.gitattributes'), 'assets/** export-ignore\n');
     writeFileSync(join(cwd, '.gitignore'), 'build/\n');
+    expect(validate(cwd).size).toBeUndefined();
+  }, SPAWN_TEST_MS);
+
+  // KRTX-1728: `fixtures export-ignore` names the directory. `git archive` and
+  // the API's release leave the whole folder out; the check must agree.
+  test('a directory marked export-ignore does not count, as in the release', () => {
+    const cwd = project();
+    mkdirSync(join(cwd, 'fixtures/deep'), { recursive: true });
+    writeFileSync(join(cwd, 'fixtures/deep/dump.sql'), Buffer.alloc(11 * MiB));
+    writeFileSync(join(cwd, '.gitattributes'), 'fixtures export-ignore\n');
     expect(validate(cwd).size).toBeUndefined();
   }, SPAWN_TEST_MS);
 

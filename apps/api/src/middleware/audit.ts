@@ -142,5 +142,3 @@ async function auditRequestInScope(c: AuditContext, next: Next): Promise<void> {
     if (scope.owner === 'hono') await emitInboundAuditRow(scope, scope.status);
   }
 }
-
-export const auditStateChangingRequest = auditApiRequest;

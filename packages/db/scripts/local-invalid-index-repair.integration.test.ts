@@ -87,7 +87,7 @@ describe.skipIf(!dockerAvailable)('local invalid-index repair — real PostgreSQ
   }, 120_000);
 
   afterAll(() => {
-    Bun.spawnSync(['docker', 'rm', '-f', container]);
+    Bun.spawnSync(['docker', 'rm', '-f', '-v', container]);
   });
 
   test('an index build in another database does not block the repair', async () => {

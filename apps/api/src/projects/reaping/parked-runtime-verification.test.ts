@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { decideParkedRuntime, decideRemovedParkedOutcome } from './parked-runtime-verification';
+import { sessionSandboxes } from '@kortix/db';
+import {
+  decideParkedRuntime,
+  decideRemovedParkedOutcome,
+  recoverRemovedParkedRuntime,
+} from './parked-runtime-verification';
 
 /**
  * Incident 2026-08-12 (Platinum deleted a parked sandbox while it held a
@@ -218,5 +223,30 @@ describe('decideRemovedParkedOutcome', () => {
       markRecovered: never,
     });
     expect(outcome).toBe('preserve-lost');
+  });
+});
+
+describe('recoverRemovedParkedRuntime', () => {
+  // The wake-maintenance reconcile reaches this helper with rows the preserve
+  // path already condemned (`runtimeIdentityState: 'unavailable'`): the
+  // cleanup-claim guard keeps such a row a candidate for the guard window. The
+  // sweep never sees one (`decideParkedRuntime` skips it first), and the gate
+  // must not either — a recovery run against a condemned identity resurrects a
+  // runtime the platform reported lost, and a rescue that later fails
+  // re-reports the loss as a new `runtime.lost` occurrence.
+  test('an already-condemned identity skips the gate and stands preserved as lost', async () => {
+    const row = {
+      sandboxId: 'sb_test',
+      sessionId: 'ses_test',
+      externalId: 'sbx_test',
+      provider: 'platinum',
+      metadata: { runtimeIdentityState: 'unavailable', preservedExternalId: 'sbx_test' },
+    } as unknown as typeof sessionSandboxes.$inferSelect;
+
+    const { outcome, row: ended } = await recoverRemovedParkedRuntime(row, 'sbx_test', new Date());
+
+    expect(outcome).toBe('preserve-lost');
+    // No recovery claim, no provider call: the row comes back untouched.
+    expect(ended).toBe(row);
   });
 });

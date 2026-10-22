@@ -9,6 +9,7 @@
  *   is reclaimable.
  * - `markCommandFailed` decides retry versus dead-letter, and its log level.
  * - A prompt whose runtime is down is parked, backed off, and re-armed.
+ * - The claim's generic prepared plan uses `idx_session_lifecycle_commands_claimable`.
  *
  * Every case drives the shipped writers and reads the rows back.
  */
@@ -26,6 +27,7 @@ import {
   type SessionLifecycleCommandRow,
   claimCreateSessionCommand,
   claimDueLifecycleCommands,
+  dueLifecycleCommandIds,
   enqueueContinueSessionCommand,
   markCommandFailed,
   markCommandForwarded,
@@ -394,7 +396,7 @@ describe('a create claim', () => {
 
 describe('markCommandFailed decides retry or dead-letter', () => {
   /** Run `fn` and record which logger level each dead-letter line used. */
-  async function logLevels(fn: () => Promise<void>): Promise<Array<{ level: string; context: Row }>> {
+  async function logLevels(fn: () => Promise<unknown>): Promise<Array<{ level: string; context: Row }>> {
     const seen: Array<{ level: string; context: Row }> = [];
     const { warn, error } = logger;
     logger.warn = (message: string, context?: Row) => {
@@ -716,5 +718,25 @@ describe('a prompt whose runtime is unreachable', () => {
         sql`delete from kortix.project_sessions where session_id = ${stoppedSessionId}`,
       );
     }
+  });
+});
+
+describe('claim drain plan', () => {
+  // `status = $n` cannot prove the partial index's predicate in a generic
+  // plan. Without the index the claim detoasts every held prompt per tick.
+  test('a generic prepared plan of the claim uses the claimable partial index', async () => {
+    const { sql: text, params } = dueLifecycleCommandIds({ limit: 20, now: new Date() }).toSQL();
+    const literal = (value: unknown) =>
+      `'${String(value instanceof Date ? value.toISOString() : value).replaceAll("'", "''")}'`;
+    const plan = await db.transaction(async (tx) => {
+      await tx.execute(sql`set local plan_cache_mode = force_generic_plan`);
+      await tx.execute(sql`set local enable_seqscan = off`);
+      await tx.execute(sql.raw(`prepare claim_plan as ${text}`));
+      const args = params.length ? `(${params.map(literal).join(', ')})` : '';
+      const out = rows(await tx.execute(sql.raw(`explain execute claim_plan${args}`)));
+      await tx.execute(sql`deallocate claim_plan`);
+      return out.map((row) => row['QUERY PLAN']).join('\n');
+    });
+    expect(plan).toContain('idx_session_lifecycle_commands_claimable');
   });
 });

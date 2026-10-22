@@ -37,6 +37,9 @@ let createBody: Record<string, unknown> | null = null;
 let transcript: unknown[] = [];
 /** When true, the assistant reply stops with a structured runtime error. */
 let replyError = false;
+let provisioning = false;
+let startPosts = 0;
+let stopped = false;
 
 function sessionRow() {
   return {
@@ -46,13 +49,13 @@ function sessionRow() {
     branch_name: SESSION_ID,
     base_ref: 'main',
     sandbox_provider: 'daytona',
-    sandbox_id: SESSION_ID,
+    sandbox_id: provisioning ? null : SESSION_ID,
     sandbox_url: null,
-    opencode_session_id: OPENCODE_SESSION_ID,
+    opencode_session_id: provisioning ? null : OPENCODE_SESSION_ID,
     name: 'SDK chat',
     custom_name: null,
     agent_name: 'default',
-    status: 'running',
+    status: stopped ? 'stopped' : provisioning ? 'provisioning' : 'running',
     error: null,
     metadata: {},
     created_at: '2026-07-30T00:00:00.000Z',
@@ -127,6 +130,9 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     createBody = null;
     transcript = [];
     replyError = false;
+    provisioning = false;
+    startPosts = 0;
+    stopped = false;
 
     server = Bun.serve({
       port: 0,
@@ -146,6 +152,8 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
           request.method === 'POST' &&
           url.pathname === `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`
         ) {
+          startPosts += 1;
+          provisioning = false;
           return Response.json({
             stage: 'ready',
             agent_name: 'default',
@@ -233,7 +241,18 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     rmSync(directory, { recursive: true, force: true });
   });
 
-  test('sends through the prompt inbox and reads the reply from the session runtime', async () => {
+  test('chat rejects stopped sessions, starts unused sessions, and reads the prompt reply', async () => {
+    stopped = true;
+    const stoppedCode = await runSessions([
+      'chat', SESSION_ID, '--project', PROJECT_ID, '--prompt', 'Reply pong', '--json',
+    ]);
+    expect(stoppedCode).toBe(1);
+    expect(stderr).toContain('not running');
+    expect(startPosts).toBe(0);
+    expect(runtimePromptPosts).toBe(0);
+    stopped = false;
+    stderr = '';
+    provisioning = true;
     const chatCode = await runSessions([
       'chat',
       SESSION_ID,
@@ -245,6 +264,7 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
     ]);
 
     expect(chatCode).toBe(0);
+    expect(startPosts).toBeGreaterThan(0);
     expect(runtimeAuthorization).toBe(`Bearer ${TOKEN}`);
     expect(promptBody).toMatchObject({
       parts: [{ type: 'text', text: 'hello from the CLI' }],
@@ -266,10 +286,29 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
 
     expect(logCode).toBe(0);
     expect(runtimeAuthorization).toBe(`Bearer ${TOKEN}`);
+    // No stored session log (this API answers GET …/log with 404): the live v1
+    // read, converted to kortix.session/2 records.
+    const log = JSON.parse(stdout) as {
+      schema: string;
+      source: string;
+      threads: Array<{ thread_id: string; messages: Array<{ role: string; blocks: Array<{ type: string; text?: string }> }> }>;
+    };
+    expect(log).toMatchObject({ schema: 'kortix.session/2', source: 'v1' });
+    expect(log.threads.map((t) => t.thread_id)).toEqual([OPENCODE_SESSION_ID]);
+    expect(log.threads[0]!.messages.map((m) => [m.role, m.blocks.find((b) => b.type === 'text')?.text])).toEqual([
+      ['user', 'hello from the CLI'],
+      ['assistant', 'OpenCode REST reply'],
+    ]);
+
+    // The old v1 JSON, deprecated, for one release.
+    stdout = '';
+    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--limit', '5', '--json', '--schema', 'v1'])).toBe(0);
     expect(JSON.parse(stdout)).toEqual([
       expect.objectContaining({ role: 'user', text: 'hello from the CLI' }),
       expect.objectContaining({ role: 'assistant', text: 'OpenCode REST reply' }),
     ]);
+    expect(stderr).toContain('--schema v1 is deprecated');
+    stderr = '';
 
     stdout = '';
     const code = await runSessions([
@@ -315,8 +354,17 @@ describe('sessions chat uses the session-scoped SDK runtime', () => {
 
     stdout = '';
     expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--json'])).toBe(0);
-    const logged = JSON.parse(stdout) as Array<{ role: string; error?: unknown }>;
-    expect(logged.at(-1)).toMatchObject({
+    const logged = JSON.parse(stdout) as { threads: Array<{ messages: Array<{ role: string; error?: unknown }> }> };
+    expect(logged.threads[0]!.messages.at(-1)).toMatchObject({
+      role: 'assistant',
+      status: 'error',
+      error: { code: 'APIError', message: 'Synthetic model requires a paid plan.' },
+    });
+
+    stdout = '';
+    expect(await runSessions(['log', SESSION_ID, '--project', PROJECT_ID, '--json', '--schema', 'v1'])).toBe(0);
+    const old = JSON.parse(stdout) as Array<{ role: string; error?: unknown }>;
+    expect(old.at(-1)).toMatchObject({
       role: 'assistant',
       error: { name: 'APIError', data: { message: 'Synthetic model requires a paid plan.' } },
     });

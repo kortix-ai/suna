@@ -169,7 +169,7 @@ describe('postQuestion → interactive buttons', () => {
     const text = String(plain!.args[2]);
     expect(text).toContain('Ship it?');
     expect(text).toContain('Yes');
-    expect(text).toContain('Reply in this thread');
+    expect(text).toContain('@mention me in this thread');
   });
 
   test('both block AND plain renders fail → ok:false', async () => {

@@ -7,6 +7,7 @@ import { recordAuditEvent } from '../../shared/audit';
 import { requestClientIp } from '../../middleware/client-ip';
 import { accountHasEntitlement } from '../../billing/services/entitlements';
 import type { TierEntitlements } from '../../types';
+import { resolveAccountBilling } from '../../billing/services/billing-cache';
 
 /** Human label per entitlement, for the 402 message shown to admins. */
 const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {
@@ -20,9 +21,8 @@ const ENTITLEMENT_LABEL: Record<keyof TierEntitlements, string> = {
 /**
  * Gate an enterprise-only IAM surface behind the account's plan. Returns a 402
  * `Response` to return early when the account's tier lacks `key`, or `null`
- * when entitled. Enterprise features (SSO, SCIM) are sales-assigned via the
- * `enterprise` tier — everyone else gets a "contact sales" 402 rather than a
- * silent 403, so the UI can surface an upgrade path.
+ * when entitled. The denial names the billing plan separately from Enterprise
+ * features and points to the demo or license path without changing access.
  *
  *   const denied = await requireEntitlement(c, accountId, 'sso');
  *   if (denied) return denied;
@@ -33,9 +33,10 @@ export async function requireEntitlement(
   key: keyof TierEntitlements,
 ): Promise<Response | null> {
   if (await accountHasEntitlement(accountId, key)) return null;
+  const { plan } = await resolveAccountBilling(accountId);
   return c.json(
     {
-      error: `${ENTITLEMENT_LABEL[key]} is available on the Enterprise plan. Contact sales to enable it.`,
+      error: `${ENTITLEMENT_LABEL[key]} needs Enterprise. Current plan: ${plan.displayName}. An owner or admin can turn on the Enterprise demo, or talk to sales for a license in Settings > Billing (/settings/billing).`,
       code: 'entitlement_required',
       entitlement: key,
     },

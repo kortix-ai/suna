@@ -16,7 +16,6 @@ import { sql } from 'drizzle-orm';
 import { db, hasDatabase } from '../shared/db';
 import { app } from '../index';
 import { createAccountToken } from '../repositories/account-tokens';
-import { loadSystemRoles } from '../iam/catalog';
 import { clearAuthorizeCaches } from '../iam/authorize';
 
 const ACCOUNT = crypto.randomUUID();
@@ -179,6 +178,30 @@ describe.if(hasDatabase)('GET/POST/DELETE /v1/accounts/:accountId/iam/assignment
     const first = (await (await grant()).json()) as { assignment_id: string };
     const second = (await (await grant()).json()) as { assignment_id: string };
     expect(second.assignment_id).toBe(first.assignment_id);
+  });
+
+  test('a direct user project grant replaces manager with member without removing object grants', async () => {
+    const userId = target;
+    const grant = (role: string, object = false) => req(
+      'POST', `/v1/accounts/${ACCOUNT}/iam/assignments`, ownerToken, {
+        principal_type: 'user', principal_id: userId, role_key: role,
+        scope_type: 'project', scope_id: PROJECT,
+        ...(object ? { object_type: 'agent', object_id: 'finance-bot' } : {}),
+      },
+    );
+    expect((await grant('manager')).status).toBe(201);
+    expect((await grant('agent-user', true)).status).toBe(201);
+    expect((await grant('member')).status).toBe(201);
+    const res = await req('GET',
+      `/v1/accounts/${ACCOUNT}/iam/assignments?principal_type=user&principal_id=${userId}`,
+      ownerToken);
+    expect(res.status).toBe(200);
+    const body: { assignments: Array<{ role_key: string; scope_type: string; object_type: string | null }> } = await res.json();
+    expect(body.assignments.filter((row) => row.scope_type === 'project' && row.object_type === null)
+      .map((row) => row.role_key)).toEqual(['member']);
+    expect(body.assignments.some((row) => row.object_type === 'agent')).toBe(true);
+    expect(body.assignments.some((row) => row.scope_type === 'account')).toBe(true);
+    await db.execute(sql`DELETE FROM kortix.role_assignments WHERE principal_id = ${userId} AND scope_type = 'project'`);
   });
 
   test('an object assignment is one row that names the object', async () => {
@@ -475,7 +498,9 @@ describe.if(hasDatabase)('GET /v1/accounts/:accountId/iam/roles', () => {
     };
     const system = roles.filter((r) => r.is_system);
     // All SIX seeded rows, the object-grant marker included — it is a system
-    // role, and the edit guards have to recognise it.
+    // role, and the edit guards have to recognise it. The three Files folder
+    // roles are seeded too but never listed: they are only the level of a
+    // folder grant, set from the Files access dialog.
     expect(system.map((r) => `${r.resource_type}:${r.key}`).sort()).toEqual([
       'account:admin',
       'account:member',

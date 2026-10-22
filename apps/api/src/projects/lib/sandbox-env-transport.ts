@@ -3,13 +3,16 @@
  * `/kortix/env`, its URL-security policy and its error class. Split out of
  * `sandbox-env-push.ts` (KRTX-1499), which keeps the memo/skip machinery.
  */
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+import { isPrivateIp } from '../../shared/ssrf-guard';
 import { SECRET_CAPABILITIES_ENV_NAME } from '../secret-capabilities';
 import type { SandboxEnvSnapshot } from './sandbox-env-snapshot';
 
 export const SANDBOX_SERVICE_PORT = 8000;
 const ENV_PUSH_TIMEOUT_MS = 15_000;
 
-function isSecureOrPrivateTarget(rawUrl: string): boolean {
+async function isSecureOrPrivateTarget(rawUrl: string): Promise<boolean> {
   let u: URL;
   try {
     u = new URL(rawUrl);
@@ -29,7 +32,17 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
   if (/^172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}$/.test(h)) return true;
   if (/^169\.254(\.\d{1,3}){2}$/.test(h)) return true;
   if (/^f[cd][0-9a-f]{2}:/i.test(h)) return true; // IPv6 unique-local
-  return false; // plain http to a public host — refuse to send secrets in cleartext
+  // Any other name is private only if it RESOLVES privately: a provider edge on
+  // a wildcard-DNS name for a loopback or tailnet address (`*.127.0.0.1.nip.io`)
+  // is as local as `localhost`. Every address must be non-public.
+  if (isIP(h) !== 0) return false;
+  try {
+    const resolved = await dnsLookup(h, { all: true });
+    // Plain http to a public host: refuse to send secrets in cleartext.
+    return resolved.length > 0 && resolved.every((r) => isPrivateIp(r.address));
+  } catch {
+    return false;
+  }
 }
 
 /** The daemon answered the env push with a non-2xx. */
@@ -43,6 +56,40 @@ export class EnvSyncHttpError extends Error {
   }
 }
 
+/**
+ * Does this failure mean the BOX (or the provider edge in front of it) could
+ * not serve the push at all — as opposed to the daemon refusing the payload?
+ *
+ * The shapes on the reachable side are the ones prod actually logged
+ * (2026-10-12..17, KRTX-2213/KRTX-2590): the Platinum edge answers
+ * `502 upstream unreachable: Failed to connect`, `502 upstream closed before
+ * response headers received`, `503 Preview access denied` and `404 This
+ * sandbox URL is not active ... auto-resume-disabled` for a box that is
+ * suspended, stopped or not yet serving, and a push to such a box either gets
+ * one of those bodies or hangs until the transport's own 15 s
+ * `AbortSignal.timeout` fires (Bun's `TimeoutError: The operation timed
+ * out.`). A connection-level failure (`Unable to connect`) is the same
+ * verdict.
+ *
+ * On the other side sit the daemon's OWN answers — `409 env sync already
+ * running` (its single in-flight gate), `401/403` (auth), `400` (payload),
+ * `500` (its bug) — which say nothing about the box's reachability and must
+ * keep retrying at prompt rate. Only an UNREACHABLE verdict may back the
+ * background refresh off (see `sandbox-env-push.ts`): a dead box's env is
+ * re-applied by its own boot-time sync the moment it comes back, so retrying
+ * a push against it at prompt rate is pure waste.
+ */
+export function isBoxUnreachableError(err: unknown): boolean {
+  if (err instanceof EnvSyncHttpError) {
+    if (err.status === 502 || err.status === 503 || err.status === 504) return true;
+    return /not active|upstream unreachable|failed to connect|preview access denied/i.test(err.message);
+  }
+  if (!(err instanceof Error)) return false;
+  return /timed out|unable to connect|failed to connect|connection refused|connection reset/i.test(
+    `${err.name} ${err.message}`,
+  );
+}
+
 export async function postEnvToDaemon(args: {
   previewUrl: string;
   providerHeaders: Record<string, string>;
@@ -51,7 +98,7 @@ export async function postEnvToDaemon(args: {
   refreshModels?: boolean;
   /** Runtime env the daemon applies to the OPENCODE process (allow-listed there). */
   opencodeEnv?: Record<string, string | null>;
-  llmGatewayEnabled?: boolean;
+  /** The gateway base the box's model provider points at. */
   llmGatewayBaseUrl?: string;
   requireAgentEnvProof?: boolean;
 }): Promise<{
@@ -74,7 +121,7 @@ export async function postEnvToDaemon(args: {
    */
   opencodeTurnEnded: boolean | null;
 }> {
-  if (!isSecureOrPrivateTarget(args.previewUrl)) {
+  if (!(await isSecureOrPrivateTarget(args.previewUrl))) {
     throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
   }
   const headers: Record<string, string> = {
@@ -98,12 +145,9 @@ export async function postEnvToDaemon(args: {
       runtimeEnv,
       // The same map under its pre-W3 name, for a daemon built before W3.
       opencodeEnv: runtimeEnv,
-      ...(typeof args.llmGatewayEnabled === 'boolean'
-        ? {
-            llmGatewayEnabled: args.llmGatewayEnabled,
-            ...(args.llmGatewayBaseUrl ? { llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
-          }
-        : {}),
+      // `llmGatewayEnabled: true` is what switches a box that booted with the
+      // gateway off (a mode that no longer exists) over to the gateway.
+      ...(args.llmGatewayBaseUrl ? { llmGatewayEnabled: true, llmGatewayBaseUrl: args.llmGatewayBaseUrl } : {}),
     }),
     signal: AbortSignal.timeout(ENV_PUSH_TIMEOUT_MS),
   });

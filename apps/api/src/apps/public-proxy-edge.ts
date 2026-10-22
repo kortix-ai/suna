@@ -1,5 +1,5 @@
 import { APP_EDGE_HEADERS, edgeSecret as sharedEdgeSecret, edgeSignature, verifyEdgeSignedRequest } from '../shared/edge-signature';
-import { resolveAppHost, type ResolvedAppHost } from './hostnames';
+import { appsLocalMode, resolveAppHost, type ResolvedAppHost } from './hostnames';
 const EDGE_HOST_HEADER = APP_EDGE_HEADERS.host;
 
 export interface ResolvedAppRequest extends ResolvedAppHost {
@@ -29,9 +29,19 @@ function appDirectEdgeMode(): boolean {
  * API proxy them into it, past the App's own access policy. There, only the
  * real Host header decides which App (if any) a request is for.
  */
-export function resolveAppRequest(request: Request, url: URL): ResolvedAppRequest | null {
+export function edgePublicHost(request: Request, url: URL): string {
   const claimedHost = appDirectEdgeMode() ? null : request.headers.get(EDGE_HOST_HEADER);
-  const publicHost = (claimedHost || url.hostname).toLowerCase().replace(/\.$/, '');
+  const realHost = url.hostname.toLowerCase().replace(/\.$/, '');
+  if (!claimedHost) return realHost;
+  const claimed = claimedHost.toLowerCase().replace(/\.$/, '');
+  // No edge fronts `*.apps.localhost`, and verifyAppEdgeRequest skips the
+  // signature for a local App. So a local App host is only ever the real Host:
+  // a claimed one would route any caller into App dispatch unsigned.
+  return resolveAppHost(claimed)?.local ? realHost : claimed;
+}
+
+export function resolveAppRequest(request: Request, url: URL): ResolvedAppRequest | null {
+  const publicHost = edgePublicHost(request, url);
   const matched = resolveAppHost(publicHost);
   return matched ? { ...matched, publicHost } : null;
 }
@@ -47,7 +57,7 @@ export function appEdgeSignature(
   pathAndQuery: string,
   secret = edgeSecret(),
 ): string {
-  return edgeSignature(timestamp, host, method, pathAndQuery, secret);
+  return edgeSignature(timestamp, host, method, pathAndQuery, secret.split(',')[0]!.trim());
 }
 
 export function verifyAppEdgeRequest(
@@ -56,7 +66,9 @@ export function verifyAppEdgeRequest(
   local: boolean,
   publicHost = url.hostname,
 ): boolean {
-  if (local && (process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE !== 'false')) return true;
+  // Only a deployment that hands out local App URLs serves them unsigned: a
+  // deployed API must not honour a forged `Host: *.apps.localhost` either.
+  if (local && appsLocalMode() && (process.env.KORTIX_APPS_ALLOW_LOCAL_EDGE !== 'false')) return true;
   // Unsigned by design — the operator's reverse proxy is the trust boundary.
   // resolveAppRequest refuses the caller-supplied host header in this mode, so
   // the App being served is the one the real Host header names.

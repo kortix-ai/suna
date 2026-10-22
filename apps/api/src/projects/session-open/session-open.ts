@@ -9,6 +9,8 @@ import { and, eq } from 'drizzle-orm';
 import { type SandboxStatus, getProvider } from '../../platform/providers';
 import { type SandboxProviderName } from '../../config';
 import { db } from '../../shared/db';
+import { claimRetiredSandboxRow, isRetiredSandboxRow } from '../../platform/services/retired-sandbox-row';
+import { sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { inspectSandboxRuntime } from '../runtime-inspection';
 import { createStartCallLog, withStartEnvelope, type StartCallLog } from '../session-lifecycle/start-envelope';
 import type {
@@ -16,6 +18,7 @@ import type {
   OpenSessionRowWithExternalId,
 } from './session-open-context';
 import {
+  allocateRuntimeOnOpen,
   openProvisioningRowAnswer,
   openRecoveryClaimAnswer,
   openStaleProvisioningRow,
@@ -28,7 +31,12 @@ import {
 } from './session-open-readiness';
 import { openNotRunningBox, openRemovedBox, syncRecoveredRunningRow } from './session-open-recovery';
 import { enforceAdmission, enforceRuntimeGuarantee } from './session-open-guarantee';
-import { keepStoppedRefusesWake, resumeHibernatedOnOpen } from './resume-stopped-sandbox';
+import {
+  keepStoppedRefusesWake,
+  liveStopClaimAtMs,
+  resumeHibernatedOnOpen,
+  userStopFollowsIntent,
+} from './resume-stopped-sandbox';
 import {
   serializeSandboxRow,
   sessionRuntimeUrlPath,
@@ -104,17 +112,54 @@ async function runOpenSession(
   const accountId = visible.row.accountId;
   let stoppedProviderStatus: SandboxStatus | null = null;
 
-  let [row] = await db
-    .select()
-    .from(sessionSandboxes)
-    .where(
-      and(
-        eq(sessionSandboxes.sessionId, sessionId),
-        eq(sessionSandboxes.projectId, projectId),
-        eq(sessionSandboxes.accountId, accountId),
-      ),
-    )
-    .limit(1);
+  // A caller that already read the sandbox row in the same tick (the `/start`
+  // prologue and every long-poll tick read session + sandbox joined, once)
+  // hands it over here; re-reading it is one more statement on the request's
+  // Server-Timing for zero new information. A pre-read that found NO row keeps
+  // the original select — that is the no-sandbox-yet provisioning path, where
+  // the row may appear between the caller's read and the open.
+  const preloadedRow = args.preloadedSandboxRow ?? undefined;
+  let [row] =
+    preloadedRow !== undefined
+      ? [preloadedRow]
+      : await db
+          .select()
+          .from(sessionSandboxes)
+          .where(
+            and(
+              eq(sessionSandboxes.sessionId, sessionId),
+              eq(sessionSandboxes.projectId, projectId),
+              eq(sessionSandboxes.accountId, accountId),
+            ),
+          )
+          .limit(1);
+
+  // A retired row (a restored session) has no box: waking is a fresh box from
+  // the session branch. The claim is an atomic delete of the retired row, so
+  // of concurrent polls exactly one allocates; the rest report provisioning.
+  if (row && isRetiredSandboxRow(row)) {
+    // Stop intent is read BEFORE the claim: the claim deletes the retired row
+    // and allocates a fresh box, so a keep-alive poll that reached it would
+    // undo the stop it was only meant to observe. Only an explicit open wakes.
+    if (keepStoppedRefusesWake(args.keepStopped, row) || userStopFollowsIntent(args.wakeIntentAt, row)) {
+      return keptStoppedAnswer(visible.row.agentName);
+    }
+    const claim = sandboxCallbackUnreachableReason() ? null : await claimRetiredSandboxRow(row.sandboxId);
+    if (claim) {
+      await allocateRuntimeOnOpen(args.loaded, visible.row, projectId, sessionId, {
+        platinumCreateAttempt: claim.nextCreateAttempt,
+      });
+      log.did('provisioned');
+    }
+    return {
+      stage: 'provisioning',
+      agent_name: visible.row.agentName ?? 'default',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      reason: 'retired_row_wake',
+    };
+  }
 
   // Gate browser polling before any provider call. A live wake coalesces behind
   // its durable claim. A failed wake returns one terminal cooldown payload.
@@ -130,14 +175,31 @@ async function runOpenSession(
     return existingWake;
   }
 
-  if (row?.status === 'stopped' && row.externalId && keepStoppedRefusesWake(args.keepStopped, row)) {
+  // Every stopped row, with or without a box: a stopped row with no external
+  // id would otherwise fall through to `openUnusableRow`, which allocates.
+  if (
+    row?.status === 'stopped' &&
+    (keepStoppedRefusesWake(args.keepStopped, row) || userStopFollowsIntent(args.wakeIntentAt, row))
+  ) {
+    return keptStoppedAnswer(visible.row.agentName);
+  }
+
+  // A box under a live stop claim is being powered off. Answering `ready` for it hands the client a box that is
+  // gone a second later. A caller that was already waiting when the Stop
+  // began, and every keep-alive poll, learns `stopped`; an open formed after
+  // it waits for the stop to settle and then wakes the box as usual.
+  const stopClaimedAtMs = liveStopClaimAtMs(row, log.observedAt.getTime());
+  if (stopClaimedAtMs !== null) {
+    if (args.keepStopped || (args.wakeIntentAt && stopClaimedAtMs >= args.wakeIntentAt.getTime())) {
+      return keptStoppedAnswer(visible.row.agentName);
+    }
     return {
-      stage: 'stopped',
+      stage: 'starting',
       agent_name: visible.row.agentName ?? 'default',
-      retriable: false,
+      retriable: true,
       sandbox: null,
       opencode_session_id: null,
-      failure: null,
+      reason: 'runtime_stopping',
     };
   }
 
@@ -180,6 +242,18 @@ async function runOpenSession(
   if (notRunning) return notRunning;
 
   return stageRunningOpen(args, log, establishedRow);
+}
+
+/** A keep-alive poll's answer for a deliberately stopped session: report it, never wake it. */
+function keptStoppedAnswer(agentName: string | null): SessionStartResult {
+  return {
+    stage: 'stopped',
+    agent_name: agentName ?? 'default',
+    retriable: false,
+    sandbox: null,
+    opencode_session_id: null,
+    failure: null,
+  };
 }
 
 /**

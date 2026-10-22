@@ -7,7 +7,7 @@
 import * as lifecycleStore from './store';
 import { sessionAttachmentStore } from '../lib/session-attachments';
 import { projectSessions } from '@kortix/db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import type { SandboxRecord } from '../../sandbox-proxy/backend';
@@ -22,11 +22,13 @@ import { materializePromptAttachments } from './prompt-attachment-materializer';
 import { confirmPromptLanded, promptNeedsLandingProof } from './prompt-landing-proof';
 import { writeRuntimePromptFile } from './runtime-prompt-file';
 import { db } from '../../shared/db';
+import { qualifiedColumn } from '../../shared/sql-qualified-column';
 import { generateSessionTitleFromFirstPrompt } from '../session-title-generate';
 import { resolveProjectAutomationActor } from './actor';
 import { awakeDeliveryTarget, deliverAfterWake, undoDeliveryWake, type SendOutcome } from './deliver';
 import { sessionTransitionLeaves, transitionSession } from './status-transitions';
 import { repairLegacyInlineAttachments } from './legacy-inline-attachment-repair';
+import { promptAgent } from './agent-availability';
 import type {
   ContinueSessionCommand,
   LegacyInlineAttachmentRepairMetadata,
@@ -69,13 +71,18 @@ export async function continueSession(
       accountId: projectSessions.accountId,
       projectId: projectSessions.projectId,
       status: projectSessions.status,
+      agentName: projectSessions.agentName,
       metadata: projectSessions.metadata,
+      projectStatus: sql<string | null>`(SELECT p.status::text FROM kortix.projects p WHERE p.project_id = ${qualifiedColumn(projectSessions.projectId)})`,
     })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
 
   if (!session) return 'no-session';
+  // A deleted workspace's sessions take no more messages (KRTX-1714): a chat
+  // reply in a bound thread, a trigger, a prompt queued before the delete.
+  if (session.projectStatus === 'archived') return 'no-session';
   // A parked session is a parked RUNTIME (`runtime_boot_failed` /
   // `runtime_wake_failed` stamp it), not a bad prompt. It is deliberately not
   // auto-restarted — see the 2026-08-24 learning — but the prompt waits for the
@@ -180,7 +187,14 @@ export async function continueSession(
           text: replacementText,
         }),
       markRepaired: () => lifecycleStore.markLegacyInlineAttachmentsRepaired(sessionId),
-    }).then(() => undefined);
+    }).then((result) => {
+      if (result.unsupported) {
+        logger.info('[session-lifecycle] legacy attachment repair skipped: the runtime edits no parts', {
+          session_id: sessionId,
+          external_id: externalId,
+        });
+      }
+    });
     legacyRepairByExternalId.set(externalId, repair);
     return repair;
   };
@@ -202,7 +216,7 @@ export async function continueSession(
       idempotencyKey,
       {
         parts: command.parts,
-        overrides: command.overrides,
+        overrides: { ...command.overrides, agent: promptAgent(command.overrides?.agent, session.agentName) },
         wireMessageId: command.wireMessageId,
         materializationKey: command.materializationKey,
         noReply: command.noReply,
@@ -301,7 +315,7 @@ export async function continueSession(
         error: err instanceof Error ? err.message : String(err),
       }),
     );
-  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, tl })
+  const outcome = await deliverAfterWake({ command, session, sessionId, userId, awakeEarly, sendPrompt, beforeSend, identityBound: turnIdentity, tl })
     .catch(async (err) => {
       if (wokeFrom) await undoWake();
       throw err;

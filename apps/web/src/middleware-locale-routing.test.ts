@@ -60,10 +60,23 @@ describe('locale rewrite onto app/[locale]', () => {
     }
   });
 
-  test('a locale prefix on a non-localized route still renders not-found', async () => {
-    // `/de` is public, so `/de/projects` never bounced; it rendered the 404.
-    const response = await middleware(request('/de/projects'));
-    expect(response.headers.get('x-middleware-rewrite')).toBe(`${ORIGIN}/en/de/projects`);
+  test('explicit app locales are not prefixed again, even with a different cookie locale', async () => {
+    for (const path of ['/en/auth', '/fr/debug/session-fixture', '/en/debug/session-fixture?view=compact']) {
+      const response = await middleware(request(path, GERMAN_SESSION));
+      expect(response.headers.get('x-middleware-rewrite')).toBe(`${ORIGIN}${path}`);
+      expect(response.headers.get('x-middleware-request-x-next-intl-locale')).toBe(path.split('/')[1]);
+    }
+  });
+
+  test('locale-prefixed protected routes still require authentication', async () => {
+    for (const path of ['/en/settings', '/fr/projects']) {
+      const response = await middleware(request(path));
+      expect(response.status).toBe(307);
+      expect(response.headers.get('location')).toBe(
+        `${ORIGIN}/auth?redirect=${encodeURIComponent(path.slice(3))}`,
+      );
+      expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+    }
   });
 
   test('non-page paths pass through without a locale', async () => {
@@ -193,6 +206,26 @@ describe('docs Markdown negotiation without the middleware', () => {
     expect(accept.test('text/html,application/xhtml+xml,*/*;q=0.8')).toBe(false);
   });
 
+  test("the auth route handlers carry the visitor's cookie locale to the actions", async () => {
+    // KRTX-2072: the auth submits moved from a server action on /auth (whose
+    // page rewrite set X-NEXT-INTL-LOCALE) to /api/auth/* route handlers, which
+    // the middleware skips. The skip must still forward the session cookie's
+    // locale so the actions' server-side copy (rate limits, confirmations)
+    // translates in the visitor's language — and must not turn into an auth
+    // gate or a locale rewrite.
+    for (const path of ['/api/auth/send-code', '/api/auth/password']) {
+      const response = await middleware(request(path, GERMAN_SESSION));
+      expect(response.headers.get('x-middleware-request-x-next-intl-locale')).toBe('de');
+      expect(response.headers.get('x-middleware-request-x-locale')).toBe('de');
+      expect(response.headers.get('x-middleware-rewrite')).toBeNull();
+      expect(response.headers.getSetCookie()).toEqual([]);
+    }
+    // No session cookie: the default locale, still forwarded and unrewritten.
+    const anonymous = await middleware(request('/api/auth/send-code'));
+    expect(anonymous.headers.get('x-middleware-request-x-next-intl-locale')).toBe('en');
+    expect(anonymous.headers.get('x-middleware-rewrite')).toBeNull();
+  });
+
   test('the rewrite targets resolve to the docs Markdown records', async () => {
     const { resolvePublicMarkdown, getPublicContentRecords } =
       await import('@/lib/seo/public-content');
@@ -205,7 +238,7 @@ describe('docs Markdown negotiation without the middleware', () => {
         record.htmlPath === '/docs'
           ? '/markdown/docs/index.md'
           : `/markdown/docs/${record.htmlPath.slice('/docs/'.length)}.md`;
-      expect(target).toBe(record.markdownPath);
+      expect(record.markdownPath).toBe(target);
       expect(resolvePublicMarkdown(target.replace(/^\/markdown\//, '').split('/'))).toBeTruthy();
     }
   });

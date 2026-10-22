@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveBrowserWorkers } from '../playwright.config';
-import { buildLocalTestPlan, onKortixSandboxImage, waitForLocalWeb } from '../src/core/local-runner';
+import { buildLocalTestPlan, refusesSuiteRun, waitForLocalWeb } from '../src/core/local-runner';
 
 describe('local test runner', () => {
   it('keeps agentic tests opt-in and rejects combining them with another mode', () => {
@@ -25,7 +25,7 @@ describe('local test runner', () => {
       'sdk',
       'package-quality',
     ]);
-    // Package quality is its own stage: the attestation's `packages` lane.
+    // Package quality is its own stage.
     // The SDK gets one too: it owns the gate's only wall-clock assertions
     // (the ReDoS guards), which the start burst of the heavy lanes pushes
     // past their bounds (PR #9266 measured 1272 ms against 1000 ms there).
@@ -36,6 +36,36 @@ describe('local test runner', () => {
       'bun',
       'tests/bin/db-suites.ts',
     ]);
+  });
+
+  it('--no-packages drops package quality from the core run and keeps it out of the flow args', () => {
+    const plan = buildLocalTestPlan(['--no-packages']);
+
+    expect(plan.mode).toBe('core');
+    expect(plan.lanes.map((lane) => lane.name)).not.toContain('package-quality');
+    expect(plan.stages.flat().map((lane) => lane.name)).not.toContain('package-quality');
+    expect(plan.lanes.find((lane) => lane.name === 'api-cli-flows')?.command).not.toContain('--no-packages');
+    expect(() => buildLocalTestPlan(['--packages-only', '--no-packages'])).toThrow('--no-packages');
+  });
+
+  it('--core-group=flows|db splits the --no-packages run into two halves', () => {
+    const flows = buildLocalTestPlan(['--core-group=flows']);
+    const db = buildLocalTestPlan(['--core-group=db']);
+    expect(flows.mode).toBe('core');
+    expect(db.mode).toBe('core');
+    expect(flows.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([['api-cli-flows']]);
+    expect(flows.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'local']);
+    // The SDK keeps a stage of its own: its wall-clock assertions.
+    expect(db.stages.map((stage) => stage.map((lane) => lane.name))).toEqual([
+      ['db-suites', 'flow-runner-unit', 'route-coverage', 'worktree-unit'],
+      ['sdk'],
+    ]);
+    const halves = [...flows.lanes, ...db.lanes].map((lane) => lane.name).sort();
+    expect(halves).toEqual(buildLocalTestPlan(['--no-packages']).lanes.map((lane) => lane.name).sort());
+    expect(buildLocalTestPlan(['--no-packages', '--core-group=db']).lanes).toEqual(db.lanes);
+    expect(() => buildLocalTestPlan(['--core-group=web'])).toThrow('flows or db');
+    expect(() => buildLocalTestPlan(['--core-group=db', '--core-group=flows'])).toThrow('only one --core-group');
+    expect(() => buildLocalTestPlan(['--full', '--core-group=db'])).toThrow('default core run');
   });
 
   it('runs only the DB suites and passes path filters through', () => {
@@ -105,13 +135,12 @@ describe('local test runner', () => {
     const plan = buildLocalTestPlan(['--browser-only', '--browser-shard=1/2']);
 
     expect(plan.mode).toBe('browser');
-    expect(plan.lanes[0]?.command).toEqual([
-      'bun',
-      'run',
-      'test:browser',
-      '--',
-      '--shard=1/2',
-    ]);
+    // Spec files by measured duration (core/browser-shard.ts), not Playwright's --shard.
+    const command = plan.lanes[0]?.command ?? [];
+    expect(command.slice(0, 4)).toEqual(['bun', 'run', 'test:browser', '--']);
+    expect(command.length).toBeGreaterThan(4);
+    expect(command.slice(4).every((arg) => /^e2e\/specs\/.+\.spec\.ts$/.test(arg))).toBe(true);
+    expect(command).not.toContain('--shard=1/2');
   });
 
   it('rejects invalid browser shards', () => {
@@ -147,6 +176,18 @@ describe('local test runner', () => {
     ]);
   });
 
+  it('runs one package group for a parallel CI lane, and only with --packages-only', () => {
+    expect(buildLocalTestPlan(['--packages-only', '--package-group=api']).lanes).toEqual([
+      {
+        name: 'package-quality',
+        command: ['bun', 'tests/bin/package-quality.ts'],
+        env: { KORTIX_PACKAGE_GROUP: 'api' },
+      },
+    ]);
+    expect(() => buildLocalTestPlan(['--package-group=api'])).toThrow('requires --packages-only');
+    expect(() => buildLocalTestPlan(['--packages-only', '--package-group=web'])).toThrow('api, cli, kortixd or rest');
+  });
+
   it('runs deployed API and browser smoke through the same root command', () => {
     const plan = buildLocalTestPlan(['--target-smoke']);
 
@@ -167,40 +208,42 @@ describe('local test runner', () => {
     ]);
   });
 
-  it('runs every deployed API flow and browser journey through the release command', () => {
+  it('runs the deployed API flows and every browser journey through the release command', () => {
     const plan = buildLocalTestPlan(['--target-full']);
 
     expect(plan.mode).toBe('target-full');
     expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-api-full', 'target-browser-full']);
-    expect(plan.lanes[0]?.command).toEqual(['bun', 'tests/bin/ke2e.ts', 'run', '--require-all']);
+    // Only the `deployed` seam flows: the `Tests` lanes ran every flow on this
+    // tree already. `--require-all` applies to that set.
+    expect(plan.lanes[0]?.command).toEqual([
+      'bun',
+      'tests/bin/ke2e.ts',
+      'run',
+      '--require-all',
+      '--tag',
+      'deployed',
+    ]);
     expect(plan.lanes[1]).toEqual({
       name: 'target-browser-full',
       command: ['bun', 'run', 'test:browser'],
       cwd: 'tests',
       env: {
         E2E_BROWSER_WORKERS: '2',
-        E2E_ENABLE_SDK_ONLY_SESSION: '1',
-        E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-        E2E_OAUTH_PROVIDER_INITIATION: '1',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
       },
     });
   });
 
-  it('keeps strict browser coverage but records the authorized preview OAuth exclusion', () => {
+  it('runs the same strict browser lane on a preview target', () => {
     const previous = process.env.KE2E_TARGET;
     process.env.KE2E_TARGET = 'preview';
     try {
       const plan = buildLocalTestPlan(['--target-full']);
       expect(plan.lanes[1]?.env).toEqual({
         E2E_BROWSER_WORKERS: '2',
-        E2E_ENABLE_SDK_ONLY_SESSION: '1',
-        E2E_ENABLE_SANDBOX_TEMPLATE_BUILD: '1',
-        E2E_OAUTH_PROVIDER_INITIATION: '0',
         E2E_ENABLE_BILLING_JOURNEY: '1',
         E2E_REQUIRE_ALL_BROWSER: '1',
-        E2E_ALLOW_PREVIEW_OAUTH_EXCLUSION: '1',
       });
     } finally {
       if (previous === undefined) delete process.env.KE2E_TARGET;
@@ -266,6 +309,8 @@ describe('local test runner', () => {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      'deployed',
       '--shard',
       '2/4',
     ]);
@@ -276,13 +321,10 @@ describe('local test runner', () => {
 
     expect(plan.mode).toBe('target-browser-full');
     expect(plan.lanes.map((lane) => lane.name)).toEqual(['target-browser-full']);
-    expect(plan.lanes[0]?.command).toEqual([
-      'bun',
-      'run',
-      'test:browser',
-      '--',
-      '--shard=3/3',
-    ]);
+    const command = plan.lanes[0]?.command ?? [];
+    expect(command.slice(0, 4)).toEqual(['bun', 'run', 'test:browser', '--']);
+    expect(command.slice(4).every((arg) => /^e2e\/specs\/.+\.spec\.ts$/.test(arg))).toBe(true);
+    expect(command.length).toBeGreaterThan(4);
     expect(plan.lanes[0]?.env?.E2E_REQUIRE_ALL_BROWSER).toBe('1');
   });
 
@@ -292,6 +334,8 @@ describe('local test runner', () => {
       'tests/bin/ke2e.ts',
       'run',
       '--require-all',
+      '--tag',
+      'deployed',
     ]);
     expect(buildLocalTestPlan(['--target-browser-full']).lanes[0]?.command).toEqual([
       'bun',
@@ -341,6 +385,18 @@ describe('local test runner', () => {
     expect(() => buildLocalTestPlan(['--latency', '--sdk-only'])).toThrow('choose only one');
   });
 
+  it('refuses a suite-wide run on a Mac and allows targeted runs, Linux, and the override', () => {
+    const refused = (args: string[], platform = 'darwin', env: Record<string, string> = {}) =>
+      refusesSuiteRun(buildLocalTestPlan(args), platform, env);
+    for (const args of [[], ['--full'], ['--packages-only'], ['--browser-only'], ['--db-only']]) expect(refused(args)).toBe(true);
+    for (const args of [['--id', 'ACC-4'], ['--domain', 'access'], ['--sdk-only'], ['--db-only', 'tests/migration'], ['--target-smoke']])
+      expect(refused(args)).toBe(false);
+    expect(refused([], 'linux')).toBe(false);
+    expect(refused([], 'darwin', { KORTIX_FULL_TEST: '1' })).toBe(false);
+    // --sdk-only passed this gate, so the package guard (scripts/test-guard.mjs) must not refuse it.
+    expect(buildLocalTestPlan(['--sdk-only']).lanes[0]?.env).toEqual({ KORTIX_FULL_TEST: '1' });
+  });
+
   it('retries a cold local web route until it is ready', async () => {
     let attempts = 0;
     const sleeps: number[] = [];
@@ -359,10 +415,5 @@ describe('local test runner', () => {
 
     expect(attempts).toBe(3);
     expect(sleeps).toEqual([250, 250]);
-  });
-
-  it('detects a Kortix sandbox image by its baked model catalog', () => {
-    expect(onKortixSandboxImage(new URL(import.meta.url).pathname)).toBe(true);
-    expect(onKortixSandboxImage('/nonexistent/kortix-test-llm-catalog.json')).toBe(false);
   });
 });

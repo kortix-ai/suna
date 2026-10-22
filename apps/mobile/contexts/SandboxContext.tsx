@@ -1,22 +1,24 @@
 /**
- * SandboxContext — provides sandboxUrl to the entire app after auth.
+ * SandboxContext — the sandbox of the open session, for the whole app.
  *
- * 1. After login, calls useSandbox() to ensure user has a sandbox
- * 2. Detects provisioning state and exposes it for the progress screen
- * 3. Binds `@kortix/sdk` to the open session (`SessionRuntimeProvider`): its
+ * 1. Binds `@kortix/sdk` to the open session (`SessionRuntimeProvider`): its
  *    live event stream runs for the switched-in session only
- * 4. Passes sandboxUrl down to all children via context
- * 5. Supports switching to a session's sandbox via switchSandbox() and
- *    leaving it via clearSandbox()
+ * 2. Passes that session's sandboxUrl down to all children via context
+ * 3. Switches to a session's sandbox via switchSandbox() and leaves it via
+ *    clearSandbox()
+ *
+ * No session is open: no sandbox. The app used to pick a "default sandbox" on
+ * every signed-in start by reading one sessions page per project (151
+ * requests for a member of 150 projects, KRTX-2316); nothing reads it, as a
+ * thread switches its own session's sandbox in when it connects.
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useSandbox, platformKeys } from '@/lib/platform/hooks';
 import { getSandboxUrl, type SandboxInfo } from '@/lib/platform/client';
 import { resetIdentityState } from '@kortix/sdk/react';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { SessionRuntimeProvider, type BoundSession } from '@/components/session/SessionRuntime';
+import { useQuestionReminders } from '@/hooks/useQuestionReminders';
 import { useRuntimeStream } from '@/hooks/useRuntimeStream';
 import { useDisclosureStore } from '@/lib/session/disclosure-store';
 import { log } from '@/lib/logger';
@@ -26,18 +28,6 @@ interface SandboxContextValue {
   sandboxId: string | undefined;
   sandboxUuid: string | undefined;
   sandboxName: string | undefined;
-  isLoading: boolean;
-  error: Error | null;
-  /** True when the sandbox exists but is still being provisioned */
-  isProvisioning: boolean;
-  /** The sandbox_id (UUID) to use for polling provisioning status */
-  provisioningSandboxId: string | undefined;
-  /** The external_id for proxy URL construction */
-  provisioningExternalId: string | undefined;
-  /** The provider of the provisioning sandbox. */
-  provisioningProvider: string | undefined;
-  /** Call this when provisioning completes to refetch sandbox data */
-  onProvisioningComplete: () => void;
   /**
    * Switch to `sandbox`. `session` is the project session it runs: the SDK
    * binds to it and opens its live stream. Without one (Settings → Instances)
@@ -53,13 +43,6 @@ const SandboxContext = createContext<SandboxContextValue>({
   sandboxId: undefined,
   sandboxUuid: undefined,
   sandboxName: undefined,
-  isLoading: false,
-  error: null,
-  isProvisioning: false,
-  provisioningSandboxId: undefined,
-  provisioningExternalId: undefined,
-  provisioningProvider: undefined,
-  onProvisioningComplete: () => {},
   switchSandbox: () => {},
   clearSandbox: () => {},
 });
@@ -69,15 +52,9 @@ export function useSandboxContext() {
 }
 
 export function SandboxProvider({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
-  const queryClient = useQueryClient();
+  const { isAuthenticated } = useAuthContext();
 
-  // Only fetch sandbox when user is fully authenticated (not loading, not anonymous)
-  const shouldFetch = isAuthenticated === true && !authLoading;
-
-  const { data, isLoading, error } = useSandbox(shouldFetch);
-
-  // Override state — when user manually switches sandbox
+  // The switched-in sandbox, and the session it runs.
   const [override, setOverride] = useState<{ sandboxUrl: string; sandboxId: string; sandboxUuid: string; sandboxName: string; session: BoundSession | null } | null>(null);
 
   const switchSandbox = useCallback((sandbox: SandboxInfo, session?: BoundSession) => {
@@ -100,32 +77,11 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
   // Setting null on an already-null override is a no-op render bail-out.
   const clearSandbox = useCallback(() => setOverride(null), []);
 
-  // Detect provisioning state from useSandbox result
-  const isProvisioning = !!(data?.sandbox && data.sandbox.status === 'provisioning');
-  const provisioningSandboxId = isProvisioning ? data?.sandbox?.sandbox_id : undefined;
-  const provisioningExternalId = isProvisioning ? data?.sandbox?.external_id : undefined;
-  const provisioningProvider = isProvisioning ? data?.sandbox?.provider : undefined;
-
-  // Derive values — override takes precedence
-  // Expose the default sandboxUrl only while that sandbox is active. The SSE
-  // stream below connects to it, and a provisioning, stopped, or failed
-  // sandbox cannot serve /event: the stream would error and reconnect forever.
-  const sandboxUrl =
-    override?.sandboxUrl ??
-    (shouldFetch && data?.sandbox.status === 'active' ? data.sandboxUrl : undefined);
-  const sandboxId = override?.sandboxId ?? (shouldFetch ? data?.sandboxId : undefined);
-  const sandboxUuid = override?.sandboxUuid ?? (shouldFetch ? data?.sandbox?.sandbox_id : undefined);
-  const sandboxName = override?.sandboxName ?? (shouldFetch ? data?.sandbox?.name : undefined);
-
-  // Called by the provisioning progress screen when sandbox becomes ready
-  const onProvisioningComplete = useCallback(() => {
-    log.log('🎉 [SandboxContext] Provisioning complete, refetching sandbox...');
-    queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
-  }, [queryClient]);
-
   // Cues, the "Live updates paused" state and the foreground/online signals
   // of the live stream the SDK runs for the bound session (below).
   useRuntimeStream();
+  // The local reminder for a question left unanswered for 60 s (KRTX-2138).
+  useQuestionReminders(override?.session ?? null, isAuthenticated);
 
   // Reset the session and disclosure stores on logout and clear override
   useEffect(() => {
@@ -138,55 +94,18 @@ export function SandboxProvider({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated]);
 
-  useEffect(() => {
-    if (sandboxUrl) {
-      log.log('✅ [SandboxContext] Sandbox ready:', sandboxUrl);
-    }
-    if (isProvisioning) {
-      log.log('⏳ [SandboxContext] Sandbox provisioning:', provisioningSandboxId);
-    }
-    if (error && shouldFetch) {
-      log.error('❌ [SandboxContext] Sandbox error:', error?.message || error);
-    }
-  }, [sandboxUrl, isProvisioning, provisioningSandboxId, error, shouldFetch]);
-
-  const contextLoading = shouldFetch ? isLoading : false;
-  const contextError = shouldFetch ? (error as Error | null) : null;
+  // Keyed by the values, not the override object: a repeat switch to the same
+  // sandbox builds a new object and must not re-render every consumer.
+  const sandboxUrl = override?.sandboxUrl;
+  const sandboxId = override?.sandboxId;
+  const sandboxUuid = override?.sandboxUuid;
+  const sandboxName = override?.sandboxName;
   const value = useMemo<SandboxContextValue>(
-    () => ({
-      sandboxUrl,
-      sandboxId,
-      sandboxUuid,
-      sandboxName,
-      isLoading: contextLoading,
-      error: contextError,
-      isProvisioning,
-      provisioningSandboxId,
-      provisioningExternalId,
-      provisioningProvider,
-      onProvisioningComplete,
-      switchSandbox,
-      clearSandbox,
-    }),
-    [
-      sandboxUrl,
-      sandboxId,
-      sandboxUuid,
-      sandboxName,
-      contextLoading,
-      contextError,
-      isProvisioning,
-      provisioningSandboxId,
-      provisioningExternalId,
-      provisioningProvider,
-      onProvisioningComplete,
-      switchSandbox,
-      clearSandbox,
-    ]
+    () => ({ sandboxUrl, sandboxId, sandboxUuid, sandboxName, switchSandbox, clearSandbox }),
+    [sandboxUrl, sandboxId, sandboxUuid, sandboxName, switchSandbox, clearSandbox]
   );
 
   // The live stream follows the switched-in sandbox of an open session only.
-  // The default sandbox above can belong to any project, so nothing binds to it.
   return (
     <SandboxContext.Provider value={value}>
       <SessionRuntimeProvider session={override?.session ?? null}>{children}</SessionRuntimeProvider>

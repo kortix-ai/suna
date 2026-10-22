@@ -2,6 +2,7 @@
 import { type OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
 import { auth, errors, json, lenientBody } from '../../openapi';
 import { parseConnectorConnectOwner } from '../../projects/lib/connection-access';
+import { reconcileEventSubscriptionsFromCatalog } from '../../projects/surface';
 import type { ConnectorRouterDeps } from '../router';
 import { OkSchema, OpaqueSchema, ProjectSlugParam, featureNotSupportedResponse } from './shared';
 
@@ -127,6 +128,8 @@ export function registerConnectRoutes(app: OpenAPIHono, deps: ConnectorRouterDep
       }
       const result = await finalize(projectId, slug, admin.userId, selector, owner);
       if (!result) return c.json({ error: 'not a supported connect connector' }, 404);
+      // A new shared account may activate pending event triggers.
+      await reconcileEventSubscriptionsFromCatalog(projectId, admin.accountId);
       return c.json(result);
     },
   );

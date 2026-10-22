@@ -188,6 +188,30 @@ export function createOpenCodeTurnService(
       recent.delete(`${sessionId}:${messageId}`)
       return call(proxy, 'DELETE', `/session/${segment(sessionId)}/message/${segment(messageId)}`, workspace())
     },
+    /*
+      OpenCode cannot tell a read message from an unread one, so the caller
+      proves "unread" from the transcript before it asks (apps/api
+      `reachedPlacement`). An idle OpenCode removes the message whole. A busy
+      one refuses that (`assertNotBusy`) but removes parts, and its
+      `toModelMessages` skips a user message with no parts, so no model call
+      reads the emptied message.
+    */
+    async retractMessage(sessionId, messageId) {
+      recent.delete(`${sessionId}:${messageId}`)
+      const messagePath = `/session/${segment(sessionId)}/message/${segment(messageId)}`
+      const whole = await call(proxy, 'DELETE', messagePath, workspace())
+      if (whole.status >= 200 && whole.status < 300) return { status: 200, body: { retracted: true } }
+      if (whole.status === 404) return whole
+      const read = await call(proxy, 'GET', messagePath, workspace())
+      if (read.status !== 200) return read
+      const parts = (read.body as { parts?: Array<{ id?: unknown }> } | null)?.parts ?? []
+      for (const part of parts) {
+        if (typeof part.id !== 'string') continue
+        const removed = await call(proxy, 'DELETE', `${messagePath}/part/${segment(part.id)}`, workspace())
+        if (removed.status >= 300 && removed.status !== 404) return removed
+      }
+      return { status: 200, body: { retracted: true } }
+    },
     async agents(directory) {
       const result = await call(proxy, 'GET', '/agent', directory ?? workspace())
       if (result.status !== 200 || !Array.isArray(result.body)) return result

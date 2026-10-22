@@ -1,49 +1,41 @@
 /**
- * The plan catalog — one record per billable plan key, describing the plan the
- * way the product talks about it (family, status, billing shape, price, grant,
- * entitlements, limits) rather than the way `TierConfig` happens to store it.
+ * The plan catalog — one record per plan key, describing the plan the way the
+ * product talks about it (family, shape, entitlements, limits) rather than the
+ * way `TierConfig` stores it.
  *
  * PURE. Like `tier-facts.ts`, this module must never import `../../config` (or
  * anything that reaches it — `tiers.ts` builds per-environment Stripe price
- * catalogs at module scope, so importing ANY symbol from it boots env
- * validation). Everything here is static data plus total functions over it.
+ * catalogs at module scope). Everything here is static data plus total
+ * functions over it.
  *
- * PARITY CONTRACT. Every number below is transcribed from `TIERS` in `tiers.ts`
- * and the legacy multiplier table in `shared/account-limits.ts`. It is a second
- * spelling of today's behavior, NOT a redefinition of it.
- * `src/__tests__/unit-plan-catalog-parity.test.ts` asserts the two agree for all
- * 16 keys and fails the build if they ever drift.
+ * Four keys. Plans differ only in credit volume: every paid account is on
+ * `credits` at the monthly amount it chose. Legacy stored keys resolve through
+ * `canonicalTier` (tier-facts.ts). `unit-plan-catalog-parity.test.ts` pins this
+ * table to `TIERS` in tiers.ts.
  */
 
-/**
- * Public plan family — the identity a customer sees. There are exactly three
- * rungs on the public ladder: Free, Team, Enterprise. Grandfathered and retired
- * plans still belong to a family (that is how they are LABELLED); they keep
- * their own prices, grants, and limits.
- */
-export type PlanFamily = 'free' | 'team' | 'enterprise';
+import { canonicalTier } from './tier-facts';
+
+/** Public plan family — the identity a customer sees. */
+export type PlanFamily = 'free' | 'credits' | 'enterprise';
 
 /**
  * Lifecycle of a plan key.
- *   current       — sellable today.
- *   grandfathered — sold once, still honored exactly as sold, not offered.
- *   retired       — defined but never sold (no Stripe price ever existed).
- *   non_plan      — the absence of a plan (`none`).
+ *   current  — sellable today.
+ *   non_plan — the absence of a plan (`none`).
  */
-export type PlanStatus = 'current' | 'grandfathered' | 'retired' | 'non_plan';
+export type PlanStatus = 'current' | 'non_plan';
 
 /** How the recurring charge is computed. */
-export type BillingShape = 'none' | 'flat' | 'seat' | 'contract';
+export type BillingShape = 'none' | 'credits' | 'contract';
 
 export interface PlanRecord {
   key: string;
   family: PlanFamily;
   status: PlanStatus;
   shape: BillingShape;
-  /** Strictly ordered ladder position. See RANKING below. */
+  /** Strictly ordered ladder position. Compare, don't display. */
   rank: number;
-  price: { amountUsd: number; unit: 'month' | 'seat_month' | 'contract' };
-  grant: { includedCreditsUsd: number; per: 'account' | 'seat' };
   entitlements: {
     sso: boolean;
     scim: boolean;
@@ -54,41 +46,25 @@ export interface PlanRecord {
     /** True iff the tier's `models` list includes 'all' (tierGrantsAllModels). */
     managedModels: boolean;
     canPurchaseCredits: boolean;
-    /**
-     * Does an account on this plan pay for sandbox compute?
-     *
-     * Today this is NOT a property of the plan — `accountMetersCompute` in
-     * `tier-facts.ts` reads `credit_accounts.billing_model` ('per_seat' |
-     * 'credit'), a column, not the tier. The only plan key whose billing_model
-     * is structurally implied is `per_seat`, so on a RECORD this is true iff
-     * `shape === 'seat'`. A flat v3 credit plan meters compute because its ROW
-     * carries billing_model='credit', which the record cannot know — the
-     * resolver takes the row, so that mapping belongs there when a consumer
-     * needs it, not here.
-     */
-    metersCompute: boolean;
+    /** The BYOK platform fee applies (byok-fee.ts). Off on Enterprise. */
+    byokFee: boolean;
   };
   limits: {
     /**
-     * LLM router rate multiplier, transcribed from `tierMultiplier` in
-     * `shared/account-limits.ts`. NOTE: free/none are 0, not 1 — a 0 multiplier
-     * selects the FREE requests-per-minute budget instead of paid × multiplier.
+     * LLM router rate multiplier. 0 selects the FREE requests-per-minute
+     * budget instead of paid × multiplier. `credits` carries 12, the highest
+     * any legacy paid plan had: spend is capped by credits, not by the plan.
      */
     llmRateMultiplier: number;
   };
-  /** Reserved for per-plan compute pricing. 1.0 everywhere today. */
-  compute: { rateMultiplier: number };
-  /** EXACTLY `TierConfig.displayName` — parity, not a new label. */
+  /** EXACTLY `TierConfig.displayName`. */
   displayName: string;
 }
-
-/** Public ladder, low to high. */
-export const PLAN_FAMILIES: readonly PlanFamily[] = ['free', 'team', 'enterprise'] as const;
 
 /** Customer-facing name of each family. */
 export const PLAN_FAMILY_LABELS: Record<PlanFamily, string> = {
   free: 'Free',
-  team: 'Team',
+  credits: 'Credits',
   enterprise: 'Enterprise',
 };
 
@@ -99,345 +75,62 @@ const NO_ENTERPRISE = {
   auditAccess: false,
   branding: false,
 } as const;
-const ALL_ENTERPRISE = {
-  sso: true,
-  scim: true,
-  rbac: true,
-  auditAccess: true,
-  branding: true,
-} as const;
-
-// ─── RANKING ────────────────────────────────────────────────────────────────
-// rank 0 = none, rank 1 = free, then ascending monthly price, enterprise last.
-// Ties at equal price break so that (a) non-legacy plan keys precede legacy
-// `tier_*` keys and (b) otherwise alphabetically. That rule reproduces
-// `getTierOrder()`'s relative order for every key that appears in it, which the
-// parity test asserts:
-//   none < free < pro < tier_2_20 < tier_6_50 < tier_12_100 < tier_25_200
-//        < tier_50_400 < tier_125_800 < tier_200_1000 < tier_150_1200 < enterprise
-// $20: pro, tier_2_20 · $40: per_seat, starter · $200: team, tier_25_200
-// $800: scale, tier_125_800
 
 export const PLAN_CATALOG: Record<string, PlanRecord> = {
-  // ─── Free family ──────────────────────────────────────────────────────────
   none: {
     key: 'none',
     family: 'free',
     status: 'non_plan',
     shape: 'none',
     rank: 0,
-    price: { amountUsd: 0, unit: 'month' },
-    grant: { includedCreditsUsd: 0, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: false,
-      canPurchaseCredits: false,
-      metersCompute: false,
-    },
+    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: false, byokFee: true },
     limits: { llmRateMultiplier: 0 },
-    compute: { rateMultiplier: 1.0 },
     displayName: 'No Plan',
   },
 
+  // $5 (500 credits) a month and top-ups, for compute and the user's own
+  // provider keys or ChatGPT subscription. Never the Kortix-managed models:
+  // the gateway refuses them for every account without `managedModels`.
   free: {
     key: 'free',
     family: 'free',
     status: 'current',
     shape: 'none',
     rank: 1,
-    price: { amountUsd: 0, unit: 'month' },
-    // $2 of expiring credits. Sandbox compute spends them like any other
-    // plan; managed models stay gated by managedModels: false — except the
-    // platform default, which every tier may run (KRTX-1067).
-    grant: { includedCreditsUsd: 2, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: false,
-      canPurchaseCredits: false,
-      metersCompute: false,
-    },
+    entitlements: { ...NO_ENTERPRISE, managedModels: false, canPurchaseCredits: true, byokFee: true },
     limits: { llmRateMultiplier: 0 },
-    compute: { rateMultiplier: 1.0 },
     displayName: 'Free',
   },
 
-  // ─── Team family ──────────────────────────────────────────────────────────
-  // Grandfathered individual/small plans. There is no separate "starter"
-  // family: the public ladder is free / team / enterprise, and a grandfathered
-  // key keeps its own numbers while displaying under its family's name.
-  pro: {
-    key: 'pro',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
+  credits: {
+    key: 'credits',
+    family: 'credits',
+    status: 'current',
+    shape: 'credits',
     rank: 2,
-    price: { amountUsd: 20, unit: 'month' },
-    // No monthly credits — $5 one-time per machine provisioned.
-    grant: { includedCreditsUsd: 0, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 1 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Pro',
-  },
-
-  tier_2_20: {
-    key: 'tier_2_20',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
-    rank: 3,
-    price: { amountUsd: 20, unit: 'month' },
-    grant: { includedCreditsUsd: 20, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 1 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Plus (Legacy)',
-  },
-
-  // Billing v2 seat plan. The record models ONE seat: price is per seat-month
-  // and the grant is per seat (multi-seat math is grantForSeats() in tiers.ts).
-  // The only shape that structurally meters compute.
-  per_seat: {
-    key: 'per_seat',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'seat',
-    rank: 4,
-    price: { amountUsd: 40, unit: 'seat_month' },
-    grant: { includedCreditsUsd: 25, per: 'seat' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: true,
-    },
-    limits: { llmRateMultiplier: 1 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Team (legacy seats)',
-  },
-
-  // Billing v3 flat credit plans. Defined, never sold — no Stripe price exists
-  // for any of them, so getVisibleTiers() has always filtered them out and no
-  // account can carry one. Retired, not current.
-  starter: {
-    key: 'starter',
-    family: 'team',
-    status: 'retired',
-    shape: 'flat',
-    rank: 5,
-    price: { amountUsd: 40, unit: 'month' },
-    grant: { includedCreditsUsd: 25, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: false,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 1 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Starter',
-  },
-
-  tier_6_50: {
-    key: 'tier_6_50',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
-    rank: 6,
-    price: { amountUsd: 50, unit: 'month' },
-    grant: { includedCreditsUsd: 50, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 2 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Pro (Legacy)',
-  },
-
-  tier_12_100: {
-    key: 'tier_12_100',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
-    rank: 7,
-    price: { amountUsd: 100, unit: 'month' },
-    grant: { includedCreditsUsd: 100, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 3 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Business (Legacy)',
-  },
-
-  team: {
-    key: 'team',
-    family: 'team',
-    status: 'retired',
-    shape: 'flat',
-    rank: 8,
-    price: { amountUsd: 200, unit: 'month' },
-    grant: { includedCreditsUsd: 125, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: false,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 1 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Team',
-  },
-
-  tier_25_200: {
-    key: 'tier_25_200',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
-    rank: 9,
-    price: { amountUsd: 200, unit: 'month' },
-    grant: { includedCreditsUsd: 200, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 4 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Ultra (Legacy)',
-  },
-
-  tier_50_400: {
-    key: 'tier_50_400',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
-    rank: 10,
-    price: { amountUsd: 400, unit: 'month' },
-    grant: { includedCreditsUsd: 400, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 6 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Enterprise (Legacy)',
-  },
-
-  scale: {
-    key: 'scale',
-    family: 'team',
-    status: 'retired',
-    shape: 'flat',
-    rank: 11,
-    price: { amountUsd: 800, unit: 'month' },
-    grant: { includedCreditsUsd: 500, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: false,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 1 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Scale',
-  },
-
-  tier_125_800: {
-    key: 'tier_125_800',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
-    rank: 12,
-    price: { amountUsd: 800, unit: 'month' },
-    grant: { includedCreditsUsd: 800, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 8 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Scale (Legacy)',
-  },
-
-  tier_200_1000: {
-    key: 'tier_200_1000',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
-    rank: 13,
-    price: { amountUsd: 1000, unit: 'month' },
-    grant: { includedCreditsUsd: 1000, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
-    limits: { llmRateMultiplier: 10 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Max (Legacy)',
-  },
-
-  tier_150_1200: {
-    key: 'tier_150_1200',
-    family: 'team',
-    status: 'grandfathered',
-    shape: 'flat',
-    rank: 14,
-    price: { amountUsd: 1200, unit: 'month' },
-    grant: { includedCreditsUsd: 1200, per: 'account' },
-    entitlements: {
-      ...NO_ENTERPRISE,
-      managedModels: true,
-      canPurchaseCredits: true,
-      metersCompute: false,
-    },
+    entitlements: { ...NO_ENTERPRISE, managedModels: true, canPurchaseCredits: true, byokFee: true },
     limits: { llmRateMultiplier: 12 },
-    compute: { rateMultiplier: 1.0 },
-    displayName: 'Enterprise Max (Legacy)',
+    displayName: 'Credits',
   },
 
-  // ─── Enterprise family ────────────────────────────────────────────────────
-  // Sales-assigned. Price and credits are negotiated out-of-band, which is why
-  // both are 0 in the tier config — the contract, not the catalog, carries them.
+  // Sales-assigned. Credits are granted per contract.
   enterprise: {
     key: 'enterprise',
     family: 'enterprise',
     status: 'current',
     shape: 'contract',
-    rank: 15,
-    price: { amountUsd: 0, unit: 'contract' },
-    grant: { includedCreditsUsd: 0, per: 'account' },
+    rank: 3,
     entitlements: {
-      ...ALL_ENTERPRISE,
+      sso: true,
+      scim: true,
+      rbac: true,
+      auditAccess: true,
+      branding: true,
       managedModels: true,
       canPurchaseCredits: true,
-      metersCompute: false,
+      byokFee: false,
     },
-    limits: { llmRateMultiplier: 1 },
-    compute: { rateMultiplier: 1.0 },
+    limits: { llmRateMultiplier: 12 },
     displayName: 'Enterprise',
   },
 };
@@ -445,10 +138,15 @@ export const PLAN_CATALOG: Record<string, PlanRecord> = {
 /** The record used whenever a key cannot be resolved. */
 export const NO_PLAN: PlanRecord = PLAN_CATALOG.none as PlanRecord;
 
-/** Exact lookup. Returns null for an unknown key — use this to TEST a key. */
+/**
+ * Lookup for a STORED key, legacy keys included. Returns null only for a key
+ * that is neither current nor legacy — use this to TEST a key.
+ */
 export function getPlanRecord(key: string | null | undefined): PlanRecord | null {
   if (!key) return null;
-  return PLAN_CATALOG[key] ?? null;
+  const canonical = canonicalTier(key);
+  if (canonical === 'none' && key !== 'none') return null;
+  return PLAN_CATALOG[canonical] ?? null;
 }
 
 /**
@@ -458,9 +156,4 @@ export function getPlanRecord(key: string | null | undefined): PlanRecord | null
  */
 export function resolvePlanRecord(key: string | null | undefined): PlanRecord {
   return getPlanRecord(key) ?? NO_PLAN;
-}
-
-/** Every key in the catalog, in rank order. */
-export function listPlanRecords(): PlanRecord[] {
-  return Object.values(PLAN_CATALOG).sort((a, b) => a.rank - b.rank);
 }

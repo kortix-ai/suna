@@ -3,17 +3,19 @@
  * drain executes, followed by the command's post-create actions.
  */
 
+import { isRepositoryDisconnectedError, repositoryDisconnectedBody } from '../../shared/repository-health';
 import { projectSessions, projects, serviceAccounts } from '@kortix/db';
 import { and, eq } from 'drizzle-orm';
-import { bindChatThread } from '../../channels/core/threads';
+import { adoptChatThreads, bindChatThread } from '../../channels/core/threads';
 import { logger } from '../../lib/logger';
 import { mayRequeueFailedCreate } from './requeue-policy';
 import { db } from '../../shared/db';
 import { connectorBindingPayloadConflicts } from '../lib/session-connector-bindings';
 import { secretsAllowlistPayloadConflicts } from '../secrets';
-import { providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
+import { forkSourceConflicts, providerPoolConflicts, runtimeContextConflicts } from './idempotency-conflicts';
 import { createProjectSession } from '../lib/sessions';
 import { applyTriggerSessionAccess } from '../trigger-session-access';
+import { repinSessionReminder } from '../lib/session-reminders';
 import { resolveProjectAutomationActor } from './actor';
 import { sessionBackpressureState } from './backpressure';
 import {
@@ -91,6 +93,7 @@ export async function createSession(
         ? (existingPayload.body as Record<string, unknown>)
         : {};
     const conflicts = [
+      [() => forkSourceConflicts(existingBody.fork_from_session_id, command.body.fork_from_session_id), 'IDEMPOTENCY_FORK_CONFLICT', 'a different fork source'],
       [() => connectorBindingPayloadConflicts(existingBody.connector_bindings, command.body.connector_bindings), 'IDEMPOTENCY_BINDING_CONFLICT', 'different connector bindings'],
       [() => providerPoolConflicts(existingBody.provider_secret_pools, command.body.provider_secret_pools), 'IDEMPOTENCY_PROVIDER_POOL_CONFLICT', 'different provider secret pools'],
       [() => secretsAllowlistPayloadConflicts(existingBody.secrets as string[] | null | undefined, command.body.secrets as string[] | null | undefined), 'IDEMPOTENCY_SECRETS_CONFLICT', 'a different secrets allowlist'],
@@ -180,7 +183,19 @@ async function runInlineCreate(
     // immediately, and the row is queued for backoff / dead-lettered per the
     // normal 5-attempt budget rather than left dangling on a lease.
     const message = err instanceof Error ? err.message : String(err);
-    await markCommandFailed(row, message, {
+    // A disconnected repository is not retried: no attempt can succeed until a
+    // person reconnects GitHub, and the caller needs the cause, not a 503.
+    if (isRepositoryDisconnectedError(err)) {
+      await markCommandFailed(row, message, { retryable: false, attempts: row.attempts + 1 });
+      return {
+        status: 'failed',
+        commandId: row.commandId,
+        retryable: false,
+        requeued: false,
+        error: { status: 409, body: repositoryDisconnectedBody(err) },
+      };
+    }
+    const outcome = await markCommandFailed(row, message, {
       retryable: true,
       attempts: row.attempts + 1,
     });
@@ -188,6 +203,8 @@ async function runInlineCreate(
       status: 'failed',
       commandId: row.commandId,
       retryable: true,
+      // A lost lease means another owner holds the row.
+      requeued: outcome !== 'dead_lettered',
       error: { status: 503, body: { error: message } },
     };
   }
@@ -199,7 +216,7 @@ async function runInlineCreate(
       commandId: row.commandId,
     });
     if (!postCreate.ok) {
-      await markCommandFailed(row, postCreate.error, {
+      const outcome = await markCommandFailed(row, postCreate.error, {
         retryable: true,
         attempts: row.attempts + 1,
         sessionId: result.sessionId,
@@ -216,6 +233,7 @@ async function runInlineCreate(
         sessionId: result.sessionId,
         row: result.row,
         retryable: true,
+        requeued: outcome !== 'dead_lettered',
         error: { status: 500, body: { error: postCreate.error } },
       };
     }
@@ -332,6 +350,15 @@ export async function executeQueuedCreate(
 async function executeCreateSession(
   command: CreateSessionCommand,
 ): Promise<SessionLifecycleResult> {
+  // A deleted workspace starts no session (KRTX-1714). Every create path meets
+  // here, and the chat channels load the project by id with no status filter.
+  if (command.project.status === 'archived') {
+    return {
+      status: 'failed',
+      retryable: false,
+      error: { status: 404, body: { error: 'This workspace was deleted', code: 'project_archived' } },
+    };
+  }
   const metadata = {
     source: command.source,
     ...(command.metadata ?? {}),
@@ -416,6 +443,10 @@ export async function applyPostCreateActions(input: {
           sessionId: input.sessionId,
           triggerSlug: action.triggerSlug,
         });
+      } else if (action.type === 'repin_reminder') {
+        await repinSessionReminder(input.projectId, action.reminderId, input.sessionId, new Date());
+      } else if (action.type === 'adopt_chat_threads') {
+        await adoptChatThreads(input.projectId, action.fromSessionId, input.sessionId);
       }
     }
     return { ok: true };

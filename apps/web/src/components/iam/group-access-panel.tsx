@@ -53,21 +53,21 @@ import {
   sortGroupMembersByOverride,
   type AccountMeta,
 } from '@/components/iam/iam-display-helpers';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Badge } from '@kortix/ui/badge';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+} from '@kortix/ui/dropdown-menu';
+import { EntityAvatar } from '@kortix/ui/entity-avatar';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -76,17 +76,15 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { Skeleton } from '@/components/ui/skeleton';
-import { errorToast, successToast } from '@/components/ui/toast';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { EmptyState } from '@/features/layout/section/empty-state';
-import { ErrorState } from '@/features/layout/section/error-state';
+} from '@kortix/ui/modal';
+import { Skeleton } from '@kortix/ui/skeleton';
+import { errorToast, successToast } from '@kortix/ui/toast';
+import { UserAvatar } from '@kortix/ui/user-avatar';
+import { EmptyState } from '@kortix/ui/empty-state';
+import { ErrorState } from '@kortix/ui/error-state';
 import {
   AccessDetailShell,
-  AccessDialog,
   AccessList,
-  AccessRow,
   builtinRole,
   customRole,
   formatDate,
@@ -97,7 +95,11 @@ import {
   useAccountRoles,
   type KebabItem,
   type RoleValue,
-} from '@/features/workspace/shared/access';
+} from '@kortix/ui/access/access/index';
+import {
+  AccessDialog,
+  AccessRow,
+} from '@kortix/ui/access';
 import {
   deleteGroup,
   getGroup,
@@ -108,7 +110,7 @@ import {
   updateGroup,
   type GroupProjectGrant,
 } from '@/lib/iam-client';
-import { usePermission } from '@/lib/use-permission';
+import { usePermission } from '@kortix/ui/workspace';
 import {
   detachGroupFromProject,
   listAccountMembers,
@@ -143,6 +145,8 @@ export interface GroupAccessPanelProps {
   /** `member.update` — the leaf `PATCH .../members/:userId` asserts. The hub
    *  holds it in its batched probe; pass it down, do not re-probe. */
   canUpdateRole: boolean;
+  /** `member.read` — "View access" on another member's row. */
+  canReadMembers: boolean;
   /** "View access" on a member row — the hub opens `?tab=members&member=`. */
   onSelectMember: (userId: string) => void;
   /** Back to the groups list — the hub drops the `?group=` param. */
@@ -158,6 +162,7 @@ export function GroupAccessPanel({
   accountName,
   currentUserId,
   canUpdateRole,
+  canReadMembers,
   onSelectMember,
   onBack,
 }: GroupAccessPanelProps) {
@@ -287,6 +292,7 @@ export function GroupAccessPanel({
             rbacEnabled={rbacEnabled}
             canReadPolicies={canReadPolicies}
             canManageRoles={canManageRoles}
+            canReadMembers={canReadMembers}
             onSelectMember={onSelectMember}
           />
 
@@ -481,6 +487,7 @@ function GroupMembersCard({
   rbacEnabled,
   canReadPolicies,
   canManageRoles,
+  canReadMembers,
   onSelectMember,
 }: {
   accountId: string;
@@ -497,6 +504,7 @@ function GroupMembersCard({
   rbacEnabled: boolean;
   canReadPolicies: boolean;
   canManageRoles: boolean;
+  canReadMembers: boolean;
   onSelectMember: (userId: string) => void;
 }) {
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
@@ -588,8 +596,9 @@ function GroupMembersCard({
         onSelect: () => roleEditor.openEdit({ userId, label, accountRole }),
       });
     }
-    // Only a person on the account roster has a member panel to open.
-    if (accountRole) {
+    // Only a person on the account roster has a member panel to open, and
+    // another member's panel needs `member.read`.
+    if (accountRole && (canReadMembers || userId === currentUserId)) {
       items.push({
         label: tI18nComplete.raw('textf5462009cf42'),
         icon: <KeyIcon className="size-3.5" />,

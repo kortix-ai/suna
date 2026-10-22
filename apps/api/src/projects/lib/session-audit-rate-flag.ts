@@ -67,16 +67,3 @@ export async function flagSessionAuditRateLimited(input: AuditRateFlagInput): Pr
     // audit ingest request, and must not turn an unhandled rejection loose.
   }
 }
-
-/** Reads the marker off a metadata blob. Returns null when absent or malformed. */
-export function readAuditRateLimitFlag(
-  metadata: Record<string, unknown> | null | undefined,
-): { consecutiveHotWindows: number; at: string } | null {
-  const raw = metadata?.[AUDIT_RATE_LIMIT_METADATA_KEY];
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const record = raw as Record<string, unknown>;
-  const hot = record.consecutiveHotWindows;
-  const at = record.at;
-  if (typeof hot !== 'number' || !Number.isFinite(hot) || typeof at !== 'string') return null;
-  return { consecutiveHotWindows: hot, at };
-}

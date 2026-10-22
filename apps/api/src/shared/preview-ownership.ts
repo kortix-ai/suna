@@ -128,6 +128,8 @@ async function readSandboxSessionAccess(
     .limit(1);
 
   let allowed = true;
+  // Per-call, never module state: the write and the store both sit after awaits.
+  let refusal: SessionAccessRefusal | null = null;
   if (row) {
     const [subject, grantsBySession, managerVerdict] = await Promise.all([
       subjectRead,
@@ -135,13 +137,18 @@ async function readSandboxSessionAccess(
       isTriggerRunSession(row)
         ? authorize(
             actorForUser(input.userId, input.accountId),
-            'project.members.manage',
+            // `project.trigger.update`, not `project.members.manage` — the same
+            // action and ruling as the canonical engine
+            // (sessionManagerStanding, projects/lib/session-visibility.ts):
+            // whoever may change what a trigger does may read what it
+            // produced; administering people must not unlock session content.
+            'project.trigger.update',
             { type: 'project', id: input.projectId },
           )
         : Promise.resolve({ allowed: false as const, reason: 'not_trigger_session' }),
     ]);
     const grants = grantsBySession.get(input.sessionId) ?? [];
-    lastRefusalContext = {
+    refusal = {
       sessionId: input.sessionId,
       projectId: input.projectId,
       visibility: row.visibility,
@@ -183,7 +190,7 @@ async function readSandboxSessionAccess(
     }
   }
   sessionVisibilityCache.set(key, { allowed, expiresAt: Date.now() + SESSION_VISIBILITY_TTL_MS });
-  if (!allowed && lastRefusalContext) refusalContexts.set(key, lastRefusalContext);
+  if (!allowed && refusal) refusalContexts.set(key, refusal);
   return allowed;
 }
 
@@ -221,7 +228,6 @@ export interface SessionAccessRefusal {
   boundCredentialSessionId: string | null;
 }
 
-let lastRefusalContext: SessionAccessRefusal | null = null;
 const refusalContexts = new Map<string, SessionAccessRefusal>();
 const REFUSAL_CONTEXT_MAX = 500;
 

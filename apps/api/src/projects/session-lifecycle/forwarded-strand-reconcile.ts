@@ -44,7 +44,7 @@ import type { StoredSandboxTurn } from '../session-turn-ledger';
 import { ORPHANED_PROMPT_MIN_AGE_MS } from '../reaper-constants';
 import { wireIdClockDelta, wireIdTime } from '../wire-message-id';
 import { drainSessionLifecycleQueue } from './drain';
-import { readSessionMessageTip, removeRuntimeMessage, resolveSessionOpencodeEndpoint } from './runtime-client';
+import { readSessionMessageTip, resolveSessionOpencodeEndpoint, retractSessionMessage } from './runtime-client';
 import { type PlacementTipMessage, isLaterTipMessage, openUserAbove, strandedPlacement, tipIsBusy } from './forwarded-placement';
 import { promoteNextInboxRow, withNextDeliveryAttempt } from './store';
 import { wireMessageIdMatches } from './wire-id-match';
@@ -116,10 +116,7 @@ const liveDeps: StrandReconcileDeps = {
     const resolved = await resolveSessionOpencodeEndpoint(sessionId);
     return resolved ? readSessionMessageTip(resolved, { limit: TIP_LIMIT }) : null;
   },
-  async removeMessage(sessionId, messageId) {
-    const resolved = await resolveSessionOpencodeEndpoint(sessionId);
-    return resolved ? removeRuntimeMessage(resolved, messageId) : false;
-  },
+  removeMessage: (sessionId, messageId) => retractSessionMessage(sessionId, messageId, 'forwarded-turns'),
   async requeueStranded(sessionId, messageId) {
     const [row] = await db
       .select({

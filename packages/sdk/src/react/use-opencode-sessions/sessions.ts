@@ -1,5 +1,6 @@
 'use client';
 
+import { qk } from '../query-keys';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getClient } from '../../core/runtime/client';
 import { isRuntimeConfigInvalidError } from '../../core/http/runtime-errors';
@@ -9,7 +10,7 @@ import { useCurrentRuntime } from '../use-current-runtime';
 import { useRuntimeSupports } from '../use-runtime-supports';
 import type { Session } from '../../core/runtime/runtime-types';
 import { runtimeKeys, useRuntimeReady } from './keys';
-import { unwrap, getLSCache, setLSCache, LS_SESSIONS, canQueryRuntimeSession } from './shared';
+import { unwrap, canQueryRuntimeSession } from './shared';
 import { NoCompactionModelError } from './no-compaction-model-error';
 import { SESSION_SYNC_PAGE_SIZE } from '../../core/session-sync/session-sync-controller';
 
@@ -29,11 +30,8 @@ export function useRuntimeSessions(enabled = true) {
       const client = getClient();
       const result = await client.session.list({ limit: 10000 });
       const sessions = unwrap(result);
-      const sorted = sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
-      setLSCache(LS_SESSIONS, sorted);
-      return sorted;
+      return sessions.sort((a: Session, b: Session) => b.time.updated - a.time.updated);
     },
-    placeholderData: () => getLSCache<Session[]>(LS_SESSIONS),
     enabled: runtimeReady && enabled,
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
@@ -156,6 +154,7 @@ export function useDeleteOpenCodeSession() {
   });
 }
 
+/** @deprecated Rename with `updateProjectSession` (`name`). Removed in the next major. */
 export function useUpdateRuntimeSession() {
   const queryClient = useQueryClient();
 
@@ -212,7 +211,7 @@ export function useForkSession() {
       });
       return unwrap(result);
     },
-    onSuccess: (forkedSession) => {
+    onSuccess: async (forkedSession) => {
       // Surgically insert into cache — SSE session.created will also fire.
       const session = forkedSession as Session;
       queryClient.setQueryData<Session[]>(runtimeKeys.sessions(), (old) => {
@@ -226,10 +225,14 @@ export function useForkSession() {
         return [session, ...old].sort((a, b) => b.time.updated - a.time.updated);
       });
       queryClient.setQueryData(runtimeKeys.runtimeSession(session.id), session);
+      await queryClient.refetchQueries({
+        predicate: (query) => qk.project.scope('').slice(0, 2).every((part, index) => query.queryKey[index] === part),
+      });
     },
   });
 }
 
+/** @deprecated Use `useRuntimeVcsDiff`. Removed in the next major. */
 export function useRuntimeSessionDiff(sessionId: string) {
   const runtimeReady = useRuntimeReady();
   const canQuerySession = canQueryRuntimeSession(sessionId);
@@ -272,7 +275,6 @@ export function useRuntimeSessionTodo(sessionId: string) {
 // ============================================================================
 
 export function useSummarizeRuntimeSession() {
-  const queryClient = useQueryClient();
   const startCompaction = useOpenCodeCompactionStore((s) => s.startCompaction);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
   return useMutation({
@@ -393,6 +395,7 @@ export function useSummarizeRuntimeSession() {
 // Init Hook — analyze project and create AGENTS.md (via /init command)
 // ============================================================================
 
+/** @deprecated Use `useExecuteRuntimeCommand` with `command: 'init'`. Removed in the next major. */
 export function useInitSession() {
   const queryClient = useQueryClient();
 

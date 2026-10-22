@@ -32,20 +32,25 @@ let providerStarts = 0;
 let onProviderStart: () => Promise<void> = async () => {};
 /** Compute meters (re)opened: one per runtime that became active. */
 let computeReopens = 0;
+/** `getProvider` throws synchronously for a provider the deployment cannot build. */
+let providerUnbuildable = false;
 mock.module('../platform/providers', () => ({
   ...realProviders,
-  getProvider: () => ({
-    start: async () => {
-      providerStarts += 1;
-      await onProviderStart();
-    },
-    stop: async () => {
-      providerStops += 1;
-      await onProviderStop();
-    },
-    remove: async () => onProviderRemove(),
-    getStatus: async () => providerStatus,
-  }),
+  getProvider: () => {
+    if (providerUnbuildable) throw new Error('PLATINUM_API_KEY is not set');
+    return {
+      start: async () => {
+        providerStarts += 1;
+        await onProviderStart();
+      },
+      stop: async () => {
+        providerStops += 1;
+        await onProviderStop();
+      },
+      remove: async () => onProviderRemove(),
+      getStatus: async () => providerStatus,
+    };
+  },
 }));
 // The delete clears the session's stored attachments in object storage, which
 // this lane does not run. The database half of the delete is the subject.
@@ -78,6 +83,10 @@ const {
 } = await import('../projects/runtime-identity');
 const { claimInPlaceRestart } = await import('../projects/session-lifecycle/runtime-restart-claim');
 const { deleteSession } = await import('../projects/session-lifecycle/actions');
+const { restoreSession } = await import('../projects/session-lifecycle/restore-session');
+const { claimRetiredSandboxRow, isRetiredSandboxRow } = await import(
+  '../platform/services/retired-sandbox-row'
+);
 const { stopSession } = await import('../projects/session-lifecycle/stop');
 const { beginSandboxTurn } = await import('../projects/sandbox-turn-lifecycle');
 const { transitionRuntime, transitionSandbox, transitionSession } = await import(
@@ -126,7 +135,7 @@ async function fixture(input: {
        updated_at)
     values
       (${sessionId}::uuid, ${sessionId}, ${project.account_id}::uuid, ${project.project_id}::uuid,
-       ${input.withoutExternalId ? null : externalId}, 'daytona',
+       ${input.withoutExternalId ? null : externalId}, 'platinum',
        ${input.sandboxStatus}::kortix.session_sandbox_status,
        ${JSON.stringify(input.sandboxMetadata ?? {})}::jsonb,
        -- The API writes updated_at from a JS Date (millisecond precision), and
@@ -524,7 +533,7 @@ describe('in-place recovery (claim, then accept)', () => {
         accountId: project.account_id,
         userId: 'user-1',
       }),
-    ).toEqual({ ok: true });
+    ).toMatchObject({ ok: true });
 
     expect(await markInPlaceRuntimeRecoveryAccepted(claim!, 'running')).toBeNull();
     const { session, sandbox } = await read(f);
@@ -556,7 +565,7 @@ describe('resume (resumeStoppedSandbox)', () => {
       sandboxId: f.sandboxId,
       sessionId: f.sessionId,
       accountId: project.account_id,
-      provider: 'daytona',
+      provider: 'platinum',
       externalId: f.externalId,
       metadata: { initStatus: 'ready' },
     };
@@ -691,6 +700,25 @@ describe('in-place restart claim', () => {
     await concurrentMetadataWrite(f, { lifecycleStopClaim: { token: 'stop-1', claimedAtMs: 0 } });
     expect(await claimFor(f)).toBe(true);
   });
+
+  // The wake ladder's automatic restart used to stop the box a live wake was
+  // starting, and both provider starts then failed each other.
+  test('never claims a stopped row under a live wake claim, and claims it once the lease lapses', async () => {
+    const f = await fixture({
+      sessionStatus: 'stopped',
+      sandboxStatus: 'stopped',
+      sandboxMetadata: {
+        runtimeWakeId: 'wake-1',
+        runtimeWakeLeaseExpiresAt: new Date(Date.now() + 120_000).toISOString(),
+      },
+    });
+    expect(await claimFor(f)).toBe(false);
+    const { sandbox } = await read(f);
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.metadata.runtimeWakeId).toBe('wake-1');
+    await concurrentMetadataWrite(f, { runtimeWakeLeaseExpiresAt: '2026-01-01T00:00:00.000Z' });
+    expect(await claimFor(f)).toBe(true);
+  });
 });
 
 describe('first provisioning (session-sandbox writers)', () => {
@@ -719,10 +747,10 @@ describe('first provisioning (session-sandbox writers)', () => {
     // The final failure record lands on the row the last attempt marked.
     expect(await transitionSandbox('failProvisioning', f.sandboxId)).not.toBeNull();
     const failedOver = await transitionSandbox('reprovision', f.sandboxId, {
-      columns: { provider: 'e2b' },
+      columns: { provider: 'platinum' },
     });
     expect(failedOver?.status).toBe('provisioning');
-    expect(failedOver?.provider).toBe('e2b');
+    expect(failedOver?.provider).toBe('platinum');
   });
 
   test('`provisioned` flips only a session still being provisioned, and sets its URL', async () => {
@@ -891,6 +919,41 @@ describe('manual stop (stopSession)', () => {
     });
   });
 
+  // A queued prompt must not wake the box the user just stopped: the abort's
+  // turn end would promote it, and a prompt parked on an unreachable runtime
+  // re-arms on its backoff (on the rig, one resumed a stopped box 8 min later).
+  test('holds the session\'s queued prompts until the user sends again', async () => {
+    const f = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    const { enqueueContinueSessionCommand } = await import('../projects/session-lifecycle/store');
+    const { row } = await enqueueContinueSessionCommand({
+      source: 'ui',
+      projectId: project.project_id,
+      accountId: project.account_id,
+      sessionId: f.sessionId,
+      actorUserId: crypto.randomUUID(),
+      text: 'queued before the stop',
+      idempotencyKey: `prompt:${f.sessionId}:q_before_stop`,
+      clientMessageId: 'q_before_stop',
+      parts: [{ type: 'text', text: 'queued before the stop' }],
+    });
+
+    const result = await stopSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+    expect(result.status).toBe(200);
+
+    const [prompt] = rows(
+      await db.execute(sql`
+        select status, result from kortix.session_lifecycle_commands where command_id = ${row.commandId}`),
+    );
+    expect(prompt!.status).toBe('queued');
+    expect((prompt!.result as Row | null)?.held).toBe(true);
+    await db.execute(sql`delete from kortix.session_lifecycle_commands where session_id = ${f.sessionId}`);
+  });
+
   // The row is already `stopped` while a wake is in flight. The stop cancels
   // the wake, and the guard window keeps a provider start that lands late
   // from leaving a running box behind a stopped row.
@@ -968,7 +1031,7 @@ describe('delete (deleteSession)', () => {
     const f = await deleteFixture();
     onProviderRemove = async () => {};
 
-    expect(await runDelete(f)).toEqual({ ok: true });
+    expect(await runDelete(f)).toMatchObject({ ok: true });
 
     const { session, sandbox } = await read(f);
     expect(session.status).toBe('stopped');
@@ -1019,5 +1082,270 @@ describe('delete (deleteSession)', () => {
       providerStatus = 'stopped';
       onProviderRemove = async () => {};
     }
+  });
+
+  // KRTX-2316: a delete that bumped `updated_at` moved every tombstone to the
+  // head of the session list order, above the owner's live sessions.
+  test('keeps the session’s place in the list: `updated_at` is unchanged', async () => {
+    const f = await deleteFixture();
+    await db.execute(sql`
+      update kortix.project_sessions set updated_at = '2026-09-01T12:00:00.123456Z'
+       where session_id = ${f.sessionId}`);
+
+    expect(await runDelete(f)).toMatchObject({ ok: true });
+
+    const [row] = rows(
+      await db.execute(sql`
+        select to_char(updated_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') as updated_at, metadata
+          from kortix.project_sessions where session_id = ${f.sessionId}`),
+    );
+    expect(row!.updated_at).toBe('2026-09-01T12:00:00.123456');
+    expect(typeof (row!.metadata as Row).deletedAt).toBe('string');
+    await waitForRemovalOutcome(f);
+  });
+
+  test('keeps the session row restorable for 30 days: it answers restore_until', async () => {
+    const f = await deleteFixture();
+    const before = Date.now();
+    const result = await runDelete(f);
+    if (!('ok' in result)) throw new Error(`delete refused: ${result.error}`);
+    const deletedAt = Date.parse((await read(f)).session.metadata.deletedAt as string);
+    expect(deletedAt).toBeGreaterThanOrEqual(before - 1);
+    expect(Date.parse(result.restore_until)).toBe(deletedAt + 30 * 86_400_000);
+    await waitForRemovalOutcome(f);
+  });
+});
+
+describe('restore (restoreSession)', () => {
+  const DAY_MS = 86_400_000;
+
+  async function deletedFixture(): Promise<Fixture> {
+    const f = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    await deleteSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+    // The delete's own removal attempt runs detached: wait for its verdict.
+    for (let i = 0; i < 100; i += 1) {
+      const { metadata } = (await read(f)).sandbox;
+      if ('providerRemovedAt' in metadata || 'providerRemovalAttempts' in metadata) return f;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('the provider removal never recorded an outcome');
+  }
+
+  const runRestore = (f: Fixture, now?: Date) =>
+    restoreSession({ projectId: project.project_id, sessionId: f.sessionId, accountId: project.account_id, now });
+
+  test('lifts the tombstone and leaves a retired row that the next open claims for a fresh box', async () => {
+    onProviderRemove = async () => {};
+    const f = await deletedFixture();
+
+    expect(await runRestore(f)).toEqual({ ok: true });
+
+    const { session, sandbox } = await read(f);
+    expect(session.status).toBe('stopped');
+    expect(session.metadata).not.toHaveProperty('deletedAt');
+    expect(session.metadata).not.toHaveProperty('deletedBy');
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.external_id).toBeNull();
+    expect(sandbox.metadata.ephemeralRetiredExternalId).toBe(f.externalId);
+    expect(typeof sandbox.metadata.sessionRestoredAt).toBe('string');
+    expect(sandbox.metadata).not.toHaveProperty('providerRemovalPendingAt');
+    // The open path's retired-row branch: claim the row, then provision.
+    const row = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, f.sandboxId));
+    expect(isRetiredSandboxRow(row[0]!)).toBe(true);
+    expect(await claimRetiredSandboxRow(f.sandboxId)).not.toBeNull();
+    expect((await read(f)).sandbox).toBeUndefined();
+  });
+
+  test('a second restore, and a restore of a session that was never deleted, answer 409 session_not_deleted', async () => {
+    onProviderRemove = async () => {};
+    const f = await deletedFixture();
+    expect(await runRestore(f)).toEqual({ ok: true });
+    expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_not_deleted' });
+
+    const live = await fixture({ sessionStatus: 'running', sandboxStatus: 'active' });
+    expect(await runRestore(live)).toMatchObject({ status: 409, code: 'session_not_deleted' });
+    expect((await read(live)).sandbox.status).toBe('active');
+  });
+
+  test('an unknown session, and a session of another project, answer 404', async () => {
+    const f = await deletedFixture();
+    expect(
+      await restoreSession({ projectId: project.project_id, sessionId: crypto.randomUUID(), accountId: project.account_id }),
+    ).toEqual({ status: 404, error: 'Not found' });
+    expect(
+      await restoreSession({ projectId: crypto.randomUUID(), sessionId: f.sessionId, accountId: project.account_id }),
+    ).toEqual({ status: 404, error: 'Not found' });
+    expect(typeof (await read(f)).session.metadata.deletedAt).toBe('string');
+  });
+
+  test('past restore_until, or once the purge marker exists, answers 410 and changes nothing', async () => {
+    onProviderRemove = async () => {};
+    const f = await deletedFixture();
+    const deletedAt = Date.parse((await read(f)).session.metadata.deletedAt as string);
+
+    expect(await runRestore(f, new Date(deletedAt + 30 * DAY_MS))).toMatchObject({ status: 410, code: 'session_purged' });
+
+    const purged = await deletedFixture();
+    await db.execute(sql`
+      insert into kortix.session_content_purges (session_id, project_id, account_id, reason, rows_purged_at)
+      values (${purged.sessionId}, ${project.project_id}::uuid, ${project.account_id}::uuid, 'session_deleted', now())`);
+    try {
+      // Another session's marker does not block this one: the guard correlates on its own id.
+      expect(await runRestore(f, new Date(deletedAt + 30 * DAY_MS - 1))).toEqual({ ok: true });
+      expect(await runRestore(purged)).toMatchObject({ status: 410, code: 'session_purged' });
+      const { session, sandbox } = await read(purged);
+      expect(typeof session.metadata.deletedAt).toBe('string');
+      expect(sandbox.status).toBe('archived');
+    } finally {
+      await db.execute(sql`delete from kortix.session_content_purges where session_id = ${purged.sessionId}`);
+    }
+  });
+
+  test('a box the provider has not confirmed removed blocks the restore until it is gone', async () => {
+    providerStatus = 'stopped';
+    onProviderRemove = async () => {
+      throw new Error('sandbox is transitioning');
+    };
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      const f = await deletedFixture();
+      expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_sandbox_removal_pending' });
+      let state = await read(f);
+      expect(typeof state.session.metadata.deletedAt).toBe('string');
+      expect(state.sandbox.status).toBe('archived');
+      expect(state.sandbox.external_id).toBe(f.externalId);
+      expect(typeof state.sandbox.metadata.providerRemovalPendingAt).toBe('string');
+
+      // The restore's own attempt is the retry: once the provider removes the box, it goes through.
+      onProviderRemove = async () => {};
+      expect(await runRestore(f)).toEqual({ ok: true });
+      state = await read(f);
+      expect(state.sandbox.external_id).toBeNull();
+      expect(state.sandbox.metadata).not.toHaveProperty('providerRemovalPendingAt');
+      expect(state.sandbox.metadata).not.toHaveProperty('providerRemovalAttempts');
+    } finally {
+      console.warn = warn;
+      onProviderRemove = async () => {};
+    }
+  });
+
+  test('a provider this deployment cannot build refuses the restore with 409, never a throw', async () => {
+    providerUnbuildable = true;
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      // The delete's own attempt records the failure instead of rejecting.
+      const f = await deletedFixture();
+      expect((await read(f)).sandbox.metadata.providerRemovalAttempts).toBe(1);
+      expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_sandbox_removal_pending' });
+      const { session, sandbox } = await read(f);
+      expect(sandbox.metadata.providerRemovalAttempts).toBe(2);
+      expect(typeof session.metadata.deletedAt).toBe('string');
+    } finally {
+      providerUnbuildable = false;
+      console.warn = warn;
+    }
+  });
+
+  // A delete during provider.create, a provider the deployment does not allow,
+  // and a delete from before the removal lane all archive a row that names its
+  // box with no removal stamp. The row is the box's only record.
+  test('an archived row that names a box with no confirmed removal: the restore removes the box first', async () => {
+    const f = await fixture({
+      sessionStatus: 'stopped',
+      sessionMetadata: { deletedAt: new Date().toISOString(), deletedBy: 'user-1' },
+      sandboxStatus: 'archived',
+    });
+    let removes = 0;
+    providerStatus = 'stopped';
+    onProviderRemove = async () => {
+      removes += 1;
+      throw new Error('sandbox is transitioning');
+    };
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_sandbox_removal_pending' });
+      expect(removes).toBe(1);
+      let state = await read(f);
+      expect(typeof state.session.metadata.deletedAt).toBe('string');
+      expect(state.sandbox.status).toBe('archived');
+      expect(state.sandbox.external_id).toBe(f.externalId);
+
+      onProviderRemove = async () => {
+        removes += 1;
+      };
+      expect(await runRestore(f)).toEqual({ ok: true });
+      expect(removes).toBe(2);
+      state = await read(f);
+      expect(state.sandbox.external_id).toBeNull();
+      expect(state.sandbox.metadata.ephemeralRetiredExternalId).toBe(f.externalId);
+    } finally {
+      console.warn = warn;
+      onProviderRemove = async () => {};
+    }
+  });
+
+  async function deletedDuringCreate(): Promise<{ f: Fixture; deletedAt: number }> {
+    const f = await fixture({
+      sessionStatus: 'provisioning',
+      sandboxStatus: 'provisioning',
+      sandboxMetadata: { initStatus: 'provisioning' },
+      withoutExternalId: true,
+    });
+    await deleteSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+    return { f, deletedAt: Date.parse((await read(f)).session.metadata.deletedAt as string) };
+  }
+
+  test('a delete during the first provisioning holds the restore until the interrupted create lands', async () => {
+    const { f } = await deletedDuringCreate();
+    expect(await runRestore(f)).toMatchObject({ status: 409, code: 'session_sandbox_removal_pending' });
+    let state = await read(f);
+    expect(typeof state.session.metadata.deletedAt).toBe('string');
+    expect(state.sandbox.status).toBe('archived');
+
+    // What settleSandboxStoppedDuringCreate writes when provider.create returns.
+    await transitionSandbox('archive', f.sandboxId, { columns: { externalId: f.externalId } });
+    onProviderRemove = async () => {};
+    expect(await runRestore(f)).toEqual({ ok: true });
+    state = await read(f);
+    expect(state.sandbox.external_id).toBeNull();
+    expect(state.sandbox.metadata.ephemeralRetiredExternalId).toBe(f.externalId);
+    expect(state.sandbox.metadata).not.toHaveProperty('deletedDuringCreateAt');
+  });
+
+  test('a create that never lands holds the restore for the provisioning stale window only', async () => {
+    const { f, deletedAt } = await deletedDuringCreate();
+    expect(await runRestore(f, new Date(deletedAt + 10 * 60_000 - 1))).toMatchObject({
+      status: 409,
+      code: 'session_sandbox_removal_pending',
+    });
+    expect(await runRestore(f, new Date(deletedAt + 10 * 60_000))).toEqual({ ok: true });
+    const { sandbox } = await read(f);
+    expect(sandbox.status).toBe('stopped');
+    expect(sandbox.metadata.ephemeralRetiredExternalId).toBe('');
+  });
+
+  test('a deleted row with no box and no create in flight restores at once', async () => {
+    const f = await fixture({ sessionStatus: 'failed', sandboxStatus: 'error', withoutExternalId: true });
+    await deleteSession({
+      projectId: project.project_id,
+      sessionId: f.sessionId,
+      accountId: project.account_id,
+      userId: 'user-1',
+    });
+    expect(await runRestore(f)).toEqual({ ok: true });
+    expect((await read(f)).sandbox.status).toBe('stopped');
   });
 });

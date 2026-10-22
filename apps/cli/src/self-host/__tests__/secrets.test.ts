@@ -23,18 +23,21 @@ import {
 describe('secrets-registry pure helpers', () => {
   test('groupSecretsByCategory returns every category in CATEGORY_ORDER with correctly-flagged rows', () => {
     const groups = groupSecretsByCategory({
-      DAYTONA_API_KEY: 'dtn_abcdefghijklmnop',
+      PLATINUM_API_KEY: 'plt_abcdefghijklmnop',
       OPENROUTER_API_KEY: '',
     });
 
     expect(groups.map((g) => g.category)).toEqual(CATEGORY_ORDER);
 
     const sandboxGroup = groups.find((g) => g.category === 'sandbox')!;
-    const daytona = sandboxGroup.rows.find((r) => r.key === 'DAYTONA_API_KEY')!;
-    expect(daytona.configured).toBe(true);
-    expect(daytona.required).toBe(true);
-    expect(daytona.kind).toBe('operator');
-    expect(daytona.masked).toBe('dtn…mnop');
+    const platinum = sandboxGroup.rows.find((r) => r.key === 'PLATINUM_API_KEY')!;
+    expect(platinum.configured).toBe(true);
+    expect(platinum.required).toBe(true);
+    expect(platinum.kind).toBe('operator');
+    expect(platinum.masked).toBe('plt…mnop');
+    // Daytona is a legacy fallback: listed, never required. E2B is gone.
+    expect(sandboxGroup.rows.find((r) => r.key === 'DAYTONA_API_KEY')?.required).toBe(false);
+    expect(sandboxGroup.rows.some((r) => r.key.startsWith('E2B_'))).toBe(false);
 
     const llmGroup = groups.find((g) => g.category === 'llm')!;
     const openrouter = llmGroup.rows.find((r) => r.key === 'OPENROUTER_API_KEY')!;
@@ -79,11 +82,13 @@ describe('secrets-registry pure helpers', () => {
     expect(servicesForKeys([])).toEqual([]);
   });
 
-  test('ROTATABLE_GENERATED_KEYS excludes the internal Supabase-infra encryption keys', () => {
+  test('ROTATABLE_GENERATED_KEYS excludes every key whose new value breaks stored data', () => {
     for (const infraKey of ['SECRET_KEY_BASE', 'REALTIME_DB_ENC_KEY', 'VAULT_ENC_KEY', 'PG_META_CRYPTO_KEY']) {
       expect(ROTATABLE_GENERATED_KEYS).not.toContain(infraKey);
     }
-    expect(ROTATABLE_GENERATED_KEYS).toContain('POSTGRES_PASSWORD');
+    // The data encryption key, and the password initdb gave the database roles.
+    expect(ROTATABLE_GENERATED_KEYS).not.toContain('API_KEY_SECRET');
+    expect(ROTATABLE_GENERATED_KEYS).not.toContain('POSTGRES_PASSWORD');
     expect(ROTATABLE_GENERATED_KEYS).toContain('SUPABASE_JWT_SECRET');
   });
 
@@ -106,8 +111,8 @@ describe('secrets-registry pure helpers', () => {
  *  i.e. exactly the state right after a non-interactive `init`. */
 function baseEnv(overrides: Record<string, string> = {}): Record<string, string> {
   return {
-    ALLOWED_SANDBOX_PROVIDERS: 'daytona',
-    DAYTONA_API_KEY: '',
+    ALLOWED_SANDBOX_PROVIDERS: 'platinum',
+    PLATINUM_API_KEY: '',
     MANAGED_GIT_PROVIDER: 'github',
     MANAGED_GIT_GITHUB_OWNER: '',
     MANAGED_GIT_GITHUB_TOKEN: '',
@@ -141,7 +146,7 @@ function baseEnv(overrides: Record<string, string> = {}): Record<string, string>
 
 describe('missingRequiredSecrets', () => {
   // The CLI's init-time gate is deliberately narrow: ONLY the agent sandbox
-  // runtime (Daytona) is required — the one credential with no in-app
+  // runtime (Platinum by default) is required — the one credential with no in-app
   // settings surface. Managed git (GitHub, Settings → Git) and the LLM key
   // (BYOK via the model picker) are both configured in the dashboard after
   // `start` and no longer block init/start — see missingRequiredSecrets() in
@@ -152,22 +157,34 @@ describe('missingRequiredSecrets', () => {
     const missing = missingRequiredSecrets(baseEnv());
     const labels = missing.map((m) => m.label).join(' | ');
     expect(labels).toContain('Agent sandbox');
+    expect(missing.some((m) => m.hint === 'kortix self-host env set PLATINUM_API_KEY=<key>')).toBe(true);
     expect(labels).not.toContain('Managed git');
     expect(missing.some((m) => m.hint.includes('OPENROUTER_API_KEY'))).toBe(false);
     expect(sandboxProviderConfigured(baseEnv())).toBe(false);
     expect(gitProviderConfigured(baseEnv())).toBe(false);
   });
 
-  test('Daytona alone (no managed git, no OpenRouter) reports nothing missing', () => {
-    const env = baseEnv({ DAYTONA_API_KEY: 'dtn_live_key' });
+  test('Platinum alone (no managed git, no OpenRouter) reports nothing missing', () => {
+    const env = baseEnv({ PLATINUM_API_KEY: 'plt_live_key' });
     expect(missingRequiredSecrets(env)).toEqual([]);
     expect(sandboxProviderConfigured(env)).toBe(true);
     expect(gitProviderConfigured(env)).toBe(false);
   });
 
-  test('a fully-configured env (Daytona + GitHub PAT + OpenRouter) also reports nothing missing', () => {
+  test('an operator on the legacy Daytona fallback with its key reports nothing missing', () => {
+    const env = baseEnv({ ALLOWED_SANDBOX_PROVIDERS: 'daytona', DAYTONA_API_KEY: 'dtn_live_key' });
+    expect(missingRequiredSecrets(env)).toEqual([]);
+    expect(sandboxProviderConfigured(env)).toBe(true);
+  });
+
+  test('a stale E2B selection is not a configured sandbox provider (E2B support is discontinued)', () => {
+    const env = baseEnv({ ALLOWED_SANDBOX_PROVIDERS: 'e2b', E2B_API_KEY: 'e2b_live_key' });
+    expect(sandboxProviderConfigured(env)).toBe(false);
+  });
+
+  test('a fully-configured env (Platinum + GitHub PAT + OpenRouter) also reports nothing missing', () => {
     const env = baseEnv({
-      DAYTONA_API_KEY: 'dtn_live_key',
+      PLATINUM_API_KEY: 'plt_live_key',
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai',
       MANAGED_GIT_GITHUB_TOKEN: 'ghp_faketoken',
       OPENROUTER_API_KEY: 'sk-or-fake',
@@ -179,7 +196,7 @@ describe('missingRequiredSecrets', () => {
 
   test('managed-git owner set but no PAT/App credentials: gitProviderConfigured is still false, but this no longer blocks init/start', () => {
     const env = baseEnv({
-      DAYTONA_API_KEY: 'dtn_live_key',
+      PLATINUM_API_KEY: 'plt_live_key',
       OPENROUTER_API_KEY: 'sk-or-fake',
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai', // owner alone is not enough
     });
@@ -189,7 +206,7 @@ describe('missingRequiredSecrets', () => {
 
   test('a complete GitHub App credential set (no PAT) satisfies gitProviderConfigured', () => {
     const env = baseEnv({
-      DAYTONA_API_KEY: 'dtn_live_key',
+      PLATINUM_API_KEY: 'plt_live_key',
       OPENROUTER_API_KEY: 'sk-or-fake',
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai',
       KORTIX_GITHUB_APP_ID: '123456',
@@ -202,7 +219,7 @@ describe('missingRequiredSecrets', () => {
 
   test('a corrupted/blanked-out internal generated secret is reported even though the sandbox provider is configured', () => {
     const env = baseEnv({
-      DAYTONA_API_KEY: 'dtn_live_key',
+      PLATINUM_API_KEY: 'plt_live_key',
       MANAGED_GIT_GITHUB_OWNER: 'kortix-ai',
       MANAGED_GIT_GITHUB_TOKEN: 'ghp_faketoken',
       OPENROUTER_API_KEY: 'sk-or-fake',
@@ -210,6 +227,16 @@ describe('missingRequiredSecrets', () => {
     });
     const missing = missingRequiredSecrets(env);
     expect(missing.some((m) => m.hint.includes('TUNNEL_SIGNING_SECRET'))).toBe(true);
+  });
+
+  // `env rotate POSTGRES_PASSWORD` is refused (the roles keep the first-start
+  // value), so the missing-secret text must not send the operator there.
+  test('a blank POSTGRES_PASSWORD says to restore the first-start value, not to rotate it', () => {
+    const missing = missingRequiredSecrets(baseEnv({ PLATINUM_API_KEY: 'plt_live_key', POSTGRES_PASSWORD: '' }));
+    const postgres = missing.find((m) => m.hint.includes('POSTGRES_PASSWORD'));
+    expect(postgres?.label).toContain('restore that value');
+    expect(postgres?.label).toContain('`env rotate` refuses it');
+    expect(postgres?.label).not.toContain('regenerate via `env rotate`');
   });
 });
 
@@ -379,17 +406,67 @@ describe('kortix self-host env (CLI)', () => {
     expect(readEnv().SECRET_KEY_BASE).toBe(before);
   });
 
+  // API_KEY_SECRET is the one encryption key for every stored credential and
+  // the pepper of every token hash: a new value leaves all of them
+  // undecryptable, with no copy of the old one. POSTGRES_PASSWORD reaches the
+  // services but not the database roles, which initdb set once.
+  for (const key of ['API_KEY_SECRET', 'POSTGRES_PASSWORD']) {
+    test(`env rotate ${key} is refused and says why`, async () => {
+      await run(['init', '--yes']);
+      const before = readEnv()[key];
+      const { code, stderr } = await run(['env', 'rotate', key]);
+      expect(code).toBe(2);
+      expect(stderr).toContain(`Refusing to rotate ${key}`);
+      expect(stderr).toMatch(key === 'API_KEY_SECRET' ? /undecryptable/ : /role passwords/);
+      expect(readEnv()[key]).toBe(before);
+    });
+  }
+
+  // `env set API_KEY_SECRET=<new>` loses every stored credential, the same
+  // loss `env rotate` refuses (KRTX-1719). It warns, and a non-interactive run
+  // changes it only with --yes.
+  test('env set API_KEY_SECRET without --yes is refused, says why, and writes nothing', async () => {
+    await run(['init', '--yes']);
+    const before = readEnv();
+    const { code, stderr } = await run(['env', 'set', 'API_KEY_SECRET=synthetic-new-data-key', 'OPENROUTER_API_KEY=sk-or-test-456']);
+    expect(code).toBe(2);
+    expect(stderr).toMatch(/undecryptable/);
+    expect(stderr).toContain('Refusing to change API_KEY_SECRET');
+    expect(stderr).toContain('--yes');
+    const after = readEnv();
+    expect(after.API_KEY_SECRET).toBe(before.API_KEY_SECRET);
+    expect(after.OPENROUTER_API_KEY).toBe(before.OPENROUTER_API_KEY);
+  });
+
+  test('env set API_KEY_SECRET with --yes warns and writes the new value', async () => {
+    await run(['init', '--yes']);
+    const { code, stderr } = await run(['env', 'set', 'API_KEY_SECRET=synthetic-new-data-key', '--yes']);
+    expect(code).toBe(0);
+    expect(stderr).toMatch(/undecryptable/);
+    expect(readEnv().API_KEY_SECRET).toBe('synthetic-new-data-key');
+  });
+
+  test('env set API_KEY_SECRET to its current value needs no confirmation', async () => {
+    await run(['init', '--yes']);
+    const current = readEnv().API_KEY_SECRET;
+    const { code, stderr } = await run(['env', 'set', `API_KEY_SECRET=${current}`]);
+    expect(code).toBe(0);
+    expect(stderr).not.toContain('Refusing');
+    expect(readEnv().API_KEY_SECRET).toBe(current);
+  });
+
   test('env rotate --all-generated rotates every rotatable key and leaves non-rotatable infra keys untouched', async () => {
     await run(['init', '--yes']);
     const before = readEnv();
     const { code } = await run(['env', 'rotate', '--all-generated']);
     expect(code).toBe(0);
     const after = readEnv();
-    expect(after.POSTGRES_PASSWORD).not.toBe(before.POSTGRES_PASSWORD);
     expect(after.DASHBOARD_PASSWORD).not.toBe(before.DASHBOARD_PASSWORD);
     expect(after.GATEWAY_INTERNAL_TOKEN).not.toBe(before.GATEWAY_INTERNAL_TOKEN);
     expect(after.TUNNEL_SIGNING_SECRET).not.toBe(before.TUNNEL_SIGNING_SECRET);
-    // Deliberately excluded infra keys must survive untouched.
+    // Deliberately excluded keys must survive untouched.
+    expect(after.API_KEY_SECRET).toBe(before.API_KEY_SECRET);
+    expect(after.POSTGRES_PASSWORD).toBe(before.POSTGRES_PASSWORD);
     expect(after.SECRET_KEY_BASE).toBe(before.SECRET_KEY_BASE);
     expect(after.VAULT_ENC_KEY).toBe(before.VAULT_ENC_KEY);
     expect(after.DASHBOARD_USERNAME).toBe(before.DASHBOARD_USERNAME);
@@ -457,7 +534,7 @@ describe('kortix self-host init/start required-secrets warning (CLI)', () => {
 
   test('once the actual secret is set, the warning naturally clears', async () => {
     await run(['init', '--yes']);
-    await run(['env', 'set', 'DAYTONA_API_KEY=dtn-test-key']);
+    await run(['env', 'set', 'PLATINUM_API_KEY=plt-test-key']);
 
     const { code, stdout } = await run(['init', '--yes']);
     expect(code).toBe(0);

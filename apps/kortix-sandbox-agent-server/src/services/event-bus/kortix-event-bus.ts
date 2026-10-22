@@ -4,7 +4,17 @@
  * Adapter code owns event interpretation and supplies resync recovery routes.
  * Payloads pass through unchanged; the ring is bounded and is not durable.
  */
-export const DEFAULT_RING_CAPACITY = 2_000
+/**
+ * Envelopes kept for replay. A reconnect inside the ring resumes exactly; one
+ * outside it costs every open session a resync and a transcript refetch. 2,000
+ * was a few seconds of token deltas on a busy box with subagents (the cause of
+ * the 2026-08-28 client revert ef43d7f851), so the ring now holds 20,000 and is
+ * bounded by bytes instead ({@link DEFAULT_RING_MAX_BYTES}).
+ */
+export const DEFAULT_RING_CAPACITY = 20_000
+
+/** Bytes of serialized envelopes the ring keeps, oldest dropped first. */
+export const DEFAULT_RING_MAX_BYTES = 32 * 1024 * 1024
 
 /** One envelope on the wire. */
 export interface KortixEvent {
@@ -58,12 +68,21 @@ export interface KortixResync {
 export class KortixEventBus {
   private seq = 0
   private ring: KortixEvent[] = []
+  /** Serialized size of each ring entry, same index as `ring`. */
+  private sizes: number[] = []
+  private bytes = 0
+  /** Index of the oldest live entry. Dropped entries before it are compacted
+   *  away in batches, so a full ring costs O(1) per publish, not a shift. */
+  private head = 0
   private readonly listeners = new Set<KortixEventListener>()
+  /** Daemon-internal listeners (`tap`): called before the subscribers, never counted as one. */
+  private readonly taps = new Set<KortixEventListener>()
 
   constructor(
     readonly epoch: string = `b${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
     private readonly capacity: number = DEFAULT_RING_CAPACITY,
     private readonly now: () => number = () => Date.now(),
+    private readonly maxBytes: number = DEFAULT_RING_MAX_BYTES,
   ) {}
 
   get headSeq(): number {
@@ -72,7 +91,7 @@ export class KortixEventBus {
 
   /** Oldest seq still replayable. `headSeq` when the ring is empty. */
   get firstSeq(): number {
-    return this.ring.length > 0 ? this.ring[0]!.seq : this.seq
+    return this.ring.length > this.head ? this.ring[this.head]!.seq : this.seq
   }
 
   get subscriberCount(): number {
@@ -88,17 +107,40 @@ export class KortixEventBus {
       payload,
       ...(session ? { session } : {}),
     }
+    const size = JSON.stringify(event).length
     this.ring.push(event)
-    if (this.ring.length > this.capacity) this.ring.splice(0, this.ring.length - this.capacity)
-    for (const listener of this.listeners) {
-      try {
-        listener(event)
-      } catch {
-        // A broken consumer must never stop the stream for the others, and
-        // must never propagate into The harness's SSE reader.
+    this.sizes.push(size)
+    this.bytes += size
+    // Drop the oldest past either bound, but always keep the newest envelope.
+    while (
+      this.ring.length - this.head > 1 &&
+      (this.ring.length - this.head > this.capacity || this.bytes > this.maxBytes)
+    ) {
+      this.bytes -= this.sizes[this.head]!
+      this.head += 1
+    }
+    if (this.head > 0 && this.head >= this.ring.length / 2) {
+      this.ring = this.ring.slice(this.head)
+      this.sizes = this.sizes.slice(this.head)
+      this.head = 0
+    }
+    for (const set of [this.taps, this.listeners]) {
+      for (const listener of set) {
+        try {
+          listener(event)
+        } catch {
+          // A broken consumer must never stop the stream for the others, and
+          // must never propagate into The harness's SSE reader.
+        }
       }
     }
     return event
+  }
+
+  /** A daemon-internal listener: live events only, before the subscribers, not in `subscriberCount`. Returns its removal. */
+  tap(listener: KortixEventListener): () => void {
+    this.taps.add(listener)
+    return () => this.taps.delete(listener)
   }
 
   /** A daemon-origin event. Types are `kortix.*` by convention and by test. */
@@ -147,7 +189,7 @@ export class KortixEventBus {
         // boot ("everything"), so it replays.
         resync = makeResync('epoch-changed')
       } else {
-        replay = this.ring.filter((event) => event.seq > since)
+        replay = this.ring.slice(this.head).filter((event) => event.seq > since)
       }
     }
 
@@ -173,13 +215,49 @@ export class KortixEventBus {
 // report and `proxy.ts` for the resource monitor. `main.ts` feeds it The harness's
 // SSE; the turn observer and boot marks publish into it directly.
 
+/**
+ * The v1 transcript frames: the v2 stream (`/events?schema=v2`) carries the
+ * `log.*` frames in their place, and every other v1 frame unchanged (status,
+ * idle, error, permission, question, todo, the session tree, diffs, pty, lsp,
+ * `kortix.*`). The set P4.4 defines as `V1_TRANSCRIPT_EVENTS` in
+ * `@kortix/api-contract/session-log`; ponytail: inline until that is on dev,
+ * then import it from there.
+ */
+export const V1_TRANSCRIPT_EVENTS: ReadonlySet<string> = new Set([
+  'message.updated',
+  'message.part.updated',
+  'message.part.delta',
+  'message.removed',
+  'message.part.removed',
+])
+
 let bus: KortixEventBus | null = null
+let logBus: KortixEventBus | null = null
 
 export function kortixEventBus(): KortixEventBus {
-  if (!bus) bus = new KortixEventBus()
+  if (!bus) {
+    bus = new KortixEventBus()
+    // The v2 stream carries every v1 frame except the transcript's, which the
+    // `log.*` frames replace. The first tap: the copy is on the v2 bus before
+    // anything a later listener publishes there.
+    bus.tap((event) => {
+      if (!V1_TRANSCRIPT_EVENTS.has(event.type)) sessionLogEventBus().publish(event.type, event.payload, event.session)
+    })
+  }
   return bus
+}
+
+/**
+ * The bus of `/events?schema=v2`: the session log's `log.*` frames and a copy
+ * of every v1 frame outside `V1_TRANSCRIPT_EVENTS`. A second sequence, so the
+ * v1 stream keeps its dense seqs with no gap where a `log.*` frame would sit.
+ */
+export function sessionLogEventBus(): KortixEventBus {
+  if (!logBus) logBus = new KortixEventBus()
+  return logBus
 }
 
 export function resetKortixEventBusForTests(): void {
   bus = null
+  logBus = null
 }

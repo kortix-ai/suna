@@ -1,20 +1,20 @@
 /**
  * The pi session boot.
  *
- * Same host steps as the OpenCode boot, in the same order — git identity,
- * egress shim, agent env file, proxy up FIRST, then the workspace, then the
- * runtime — with one difference that is the whole point: "start the runtime"
+ * The host steps — git identity, egress shim, agent env file, proxy up FIRST —
+ * then the config and the workspace in parallel, and the runtime on the config
+ * alone. "Start the runtime"
  * is building an in-process object (tens of milliseconds), not spawning and
  * probing a server. There is no early-spawn, no config-dir dance, no
- * bind-window and no readiness lottery. `pi-ready` follows `repo-materialized`
- * as fast as the model catalog reads from disk.
+ * bind-window and no readiness lottery. `pi-ready` follows the config release
+ * (`config-release-proven`), never the workspace checkout.
  */
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { agentEnvDirIsTmpfs, writeAgentEnvFile } from '../shared/agent-env-file'
 import { relayBootTimelineToApi } from '../shared/boot-timeline-relay'
 import { createRuntimeAuditRelay, type AuditRelay } from '../shared/audit-relay'
-import { scheduleRuntimeProjectionPush } from '../shared/projection-relay'
+import { createSessionTreeWatch, scheduleRuntimeProjectionPush } from '../shared/projection-relay'
 import {
   claimInitialTurn,
   relayPermission,
@@ -24,15 +24,16 @@ import {
   relayTurnAccepted,
   relayTurnBegin,
   relayTurnEnd,
+  turnEndAfterBegin,
 } from '../shared/turn-relay'
 import { resolveKortixRuntimeStateDirectory } from '@/lib/config/runtime-state-dir'
-import { materializeProject } from '@/services/config-provider/config-provider'
+import { scheduleHistoryBackfill } from '@/services/workspace-provider/git'
+import { backfillAfterHydration, provideWorkspace } from '@/services/workspace-provider/workspace-provider'
 import { startEgressShim } from '@/services/egress-shim'
 import {
   configureGitCredentialHelper,
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
-  scheduleHistoryBackfill,
 } from '@/lib/git/git'
 import type { HarnessBootContext } from '../harness'
 import { kortixEventBus } from '@/services/event-bus/kortix-event-bus'
@@ -42,11 +43,15 @@ import { runSandboxOnBoot } from '../shared/on-boot'
 import { createProjectEnvStore } from '@/services/sandbox-env/project-env'
 import { configureRuntimeConvergence, scheduleRuntimeAssetsReconcile } from '@/services/runtime-assets/runtime-assets'
 import { configureRuntimeTruth, startRuntimeTruthTicker } from '@/services/runtime-assets/runtime-truth'
-import { ConvergeBusyError } from '@/services/config-release/release'
+import { ConvergeBusyError } from '@/services/config-provider/release'
 import type { PiBootState } from './boot-state'
 import type { PiConfig } from './config'
 import type { PiRuntimeHooks } from './runtime'
 import { createPiHarnessService, type PiHarnessService } from './service'
+import { createPiSessionLogPort } from './session-log'
+import { startSessionLogJournal } from '../shared/session-log-journal'
+import { reconcileSessionLog, type SessionLogBoot } from '../shared/session-log-boot'
+import { readPiSnapshot } from './session-log-restore'
 
 export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootState: PiBootState }): Promise<void> {
   const { cfg, bootState, bootMark, serve } = context
@@ -96,14 +101,17 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
 
   // ── Serve BEFORE doing any slow work ────────────────────────────────────
   const relayedTurnEnds = new Set<string>()
+  const turnOrder = turnEndAfterBegin()
+  const sessionTreeChanged = createSessionTreeWatch()
   const hooks: PiRuntimeHooks = {
     onTurnBegin: ({ rootId, messageId }) => {
-      void relayTurnBegin(rootId, messageId)
+      turnOrder.begin(messageId, relayTurnBegin(rootId, messageId))
     },
     onTurnEnd: ({ rootId, messageId, status, error }) => {
       kortixEventBus().publishDaemon('kortix.turn', { runtime_session_id: rootId, verdict: status, error: error ?? null }, rootId)
+      const begun = turnOrder.end(messageId)
       if (relayedTurnEnds.has(messageId)) return
-      void relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error }).then((settled) => {
+      void begun.then(() => relayTurnEnd({ runtimeSessionId: rootId, messageId, status, error })).then((settled) => {
         if (settled) relayedTurnEnds.add(messageId)
       })
     },
@@ -120,6 +128,8 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
       void relayPermission(request)
     },
     onFrame: (frame) => {
+      // A child session or a new title: apps/api lists the tree from the pushed projection.
+      if (sessionTreeChanged(frame)) scheduleRuntimeProjectionPush(frame.type)
       if (!auditRelay) return
       try {
         auditRelay.enqueue(frame)
@@ -137,6 +147,15 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     exit: (code) => shutdown({ reason: 'agent-swap', exitCode: code }),
   })
   bootMark('proxy-up')
+
+  // The session log's boot reconcile (P6.4, shared/session-log-boot.ts), beside
+  // the checkout: a restore writes pi's dump, which needs no /workspace, and the
+  // runtime loads it at start. A failed reconcile fails the boot below.
+  const sessionLog: Promise<SessionLogBoot | null | Error> = sessionId
+    ? reconcileSessionLog(
+        createPiSessionLogPort(() => readPiSnapshot(cfg.piStateDir, sessionId), { stateDir: cfg.piStateDir, sessionId, cwd: cfg.projectTarget || cfg.workspace }),
+      ).catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+    : Promise.resolve(null)
 
   // The first turn's claim is a read; prefetch it while the workspace lands.
   const claimPromise = bootstrapSession && sessionId
@@ -162,45 +181,50 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     }
   }
 
-  // The config release the runtime starts on (config-release.ts): fetched,
-  // verified and sealed beside the checkout. `lifecycle.start()` joins it.
-  void harness.releases.boot(bootMark)
-
-  // Fresh-boot acquisition goes through the config-provider coordinator
-  // (git | prefer-s3 | require-s3), exactly as the OpenCode boot does.
-  if (cfg.autoClone) {
-    bootState.workspaceReady = false
-    await materializeProject(cfg, {
-      bootMark,
-      onSummary: (summary) => {
-        bootState.configProvider = summary
-      },
-    })
-      .then((result) => {
-        if (result.provider === 's3') {
-          const hydration = result.hydration ?? Promise.resolve()
-          bootState.deferredHistoryBackfill = () => {
-            void hydration.then(
-              () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-              () => scheduleHistoryBackfill(cfg, cfg.projectTarget),
-            )
-          }
-        }
+  // Two independent providers, started together:
+  //   - the config provider (config-release.ts) downloads the release pi
+  //     boots from, from S3 first, and never reads `/workspace`;
+  //   - the workspace provider (git | prefer-s3 | require-s3) checks out the
+  //     project for the agent's tools.
+  // pi starts on the config alone. The workspace gates turns, not the runtime:
+  // the readiness gate (service.ts) holds every turn until it lands.
+  const configReady = harness.releases.boot(bootMark)
+  if (cfg.autoClone) bootState.workspaceReady = false
+  const workspace: Promise<string | null> = cfg.autoClone
+    ? provideWorkspace(cfg, {
+        onSummary: (summary) => {
+          bootState.workspaceProvider = summary
+        },
       })
-      .catch((err) => {
-        bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
-        logger.error('[boot] repo materialization failed', err)
-      })
-  }
-  bootMark('repo-materialized')
-  if (cfg.autoClone && !bootState.repoMaterializationError) {
-    if (!bootState.deferredHistoryBackfill) scheduleHistoryBackfill(cfg, cfg.projectTarget)
-    await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
-      logger.warn('[boot] repo-local git credential helper setup failed', { err: (err as Error).message })
-    })
-  }
-  bootState.workspaceReady = true
+        .then(async (result) => {
+          if (result.provider === 's3') bootState.deferredHistoryBackfill = backfillAfterHydration(cfg, result)
+          if (!bootState.deferredHistoryBackfill) scheduleHistoryBackfill(cfg, cfg.projectTarget)
+          await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch((err) => {
+            logger.warn('[boot] repo-local git credential helper setup failed', { err: (err as Error).message })
+          })
+          return null
+        })
+        .catch((err) => {
+          bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+          logger.error('[boot] repo materialization failed', err)
+          return bootState.repoMaterializationError
+        })
+        .finally(() => {
+          bootState.workspaceReady = true
+        })
+    : Promise.resolve('this box does not clone the project')
 
+  await configReady
+  // Releases off (an API from before they graduated, or no API): the working
+  // tree IS the config, so pi waits for it. The only wait on the workspace.
+  if (harness.releases.projectRoot() === undefined) await workspace
+
+  const logBoot = await sessionLog
+  if (logBoot instanceof Error) {
+    bootState.initialRuntimeSessionError = `session log restore failed: ${logBoot.message}`
+    logger.error('[boot] session log restore failed; the session does not start', { err: bootState.initialRuntimeSessionError })
+    return
+  }
   try {
     await harness.lifecycle.start()
   } catch (err) {
@@ -208,7 +232,6 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
   const runtime = harness.runtime()!
-  runtime.markWorkspaceReady()
   logger.info('[boot] proxy up; pi runtime ready', { servicePort: cfg.servicePort, rootId: runtime.rootId })
   convergeAfterReady(harness)
   // The reconcile floor: every 60 s the box re-checks its release and its
@@ -224,6 +247,8 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
   })
   startRuntimeTruthTicker()
 
+  // Everything below runs in the project: hooks, the first turn.
+  await workspace
   if (bootState.repoMaterializationError) return
   runSandboxOnBoot(cfg)
 
@@ -233,13 +258,25 @@ export async function runPi(context: HarnessBootContext & { cfg: PiConfig; bootS
     return
   }
 
+  // ── The session log (P2.5, P6.4) ────────────────────────────────────────
+  // Before the first turn, so its turn end flushes it, at the generation and
+  // with the cursors the boot reconcile returned.
+  if (logBoot && startSessionLogJournal(createPiSessionLogPort(() => harness.runtime()?.sessionLogSnapshot() ?? null), logBoot)) {
+    logger.info('[session-log] journal started', { harness: 'pi', generation: logBoot.generation, restored: logBoot.cursors.length > 0, dumpDir: process.env.KORTIX_SESSION_LOG_DUMP_DIR?.trim() || null })
+  }
+
   // ── The session's root and its first turn ───────────────────────────────
   // One deterministic root per session: nothing to create, nothing to list.
   void relayRuntimeSession(runtime.rootId)
   const claim = await claimPromise
   if (claim?.prompt) {
     try {
-      const admitted = runtime.admit({ messageID: claim.messageId, text: claim.prompt, files: [] })
+      // ponytail: pi's admission takes plain text only, so the harness context
+      // still rides inside the prompt here; the transcript shows the caller's
+      // words plus the contract tail until pi grows a synthetic-part carrier
+      // (OpenCode already delivers it as a model-only part).
+      const text = claim.context ? `${claim.prompt}\n\n${claim.context}` : claim.prompt
+      const admitted = runtime.admit({ messageID: claim.messageId, text, files: [] })
       bootMark('initial-prompt-delivered')
       // Published AFTER admission, like OpenCode's publish-after-prompt: the
       // control plane must never promote a `delivering` record for a turn the

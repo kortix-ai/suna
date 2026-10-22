@@ -28,14 +28,16 @@ name: DB Migrations
 on:
   # A pull request into `dev` runs no CI: the developer runs `pnpm test` in
   # their box. The push to `dev` is the non-blocking post-merge check; release
-  # pull requests (`staging`, `prod`) are the gate.
+  # pull request (`prod`) is the gate.
   push:
     branches: [dev]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'
+  # Only into `prod`: the release pull request is the one gate. The pull
+  # request into `staging` runs nothing; Promote merges it (2026-10-16).
   pull_request:
-    branches: [staging, prod]
+    branches: [prod]
     paths:
       - 'packages/db/**'
       - '.github/workflows/db-migrations.yml'
@@ -51,7 +53,7 @@ permissions:
 jobs:
   lint:
     name: Migration files are well-formed
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -62,7 +64,7 @@ jobs:
 
   squawk:
     name: Squawk (zero-downtime lint) on new migrations
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
@@ -78,7 +80,7 @@ jobs:
 
   immutability:
     name: Migrations are immutable
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -101,7 +103,7 @@ jobs:
 
   sequence:
     name: Migrations are sequential
-    runs-on: ${{ vars.CI_RUNNER_S || 'blacksmith-2vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_S || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -133,7 +135,7 @@ jobs:
 
   shadow-db:
     name: Applies cleanly to a fresh DB
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -150,7 +152,7 @@ jobs:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2
@@ -184,12 +186,12 @@ jobs:
 
   schema-sync:
     name: Schema matches migrations
-    runs-on: ${{ vars.CI_RUNNER_M || 'blacksmith-4vcpu-ubuntu-2404' }}
+    runs-on: ${{ vars.CI_RUNNER_M || 'ubuntu-24.04' }}
     env:
       DATABASE_URL: postgres://ci:ci@localhost:1/ci
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
       - uses: oven-sh/setup-bun@v2

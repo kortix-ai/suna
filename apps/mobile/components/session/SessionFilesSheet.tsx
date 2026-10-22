@@ -39,7 +39,7 @@ import { SettingsGroup, SettingsRow } from '@/components/kortix/settings-list';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { THEME } from '@/lib/utils/theme';
-import { useSessionRows } from '@/lib/session/session-store';
+import { useRuntimeThread } from '@/components/session/SessionRuntime';
 import {
   deriveSessionFiles,
   filterSessionFiles,
@@ -134,10 +134,10 @@ function SessionFilesBody({
   onPreview: (file: SessionFile) => void;
 }) {
   const insets = useSafeAreaInsets();
-  const messages = useSessionRows(sessionId);
+  const thread = useRuntimeThread(sessionId);
   const [query, setQuery] = React.useState('');
 
-  const files = React.useMemo(() => deriveSessionFiles(messages), [messages]);
+  const files = React.useMemo(() => deriveSessionFiles(thread?.messages), [thread]);
   const groups = React.useMemo(() => {
     const matches = filterSessionFiles(files, query);
     return [

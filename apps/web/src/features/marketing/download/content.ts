@@ -19,10 +19,11 @@
  *     Play. The rows link the store listings — see MOBILE_ROWS.
  */
 
-import { localizeUiCatalog } from '@/i18n/localize-ui-catalog';
-import { REMAINING_UI_TRANSLATION_KEYS } from '@/i18n/remaining-ui-translation-keys.generated';
+import { localizeUiCatalog } from '@kortix/ui/i18n';
+import { REMAINING_UI_TRANSLATION_KEYS } from '@kortix/ui/i18n/ui-catalog/remaining-ui-translation-keys.generated';
 import type { UiTranslator } from '@/i18n/translator';
 import type { DesktopOs, MobileOs } from './detect-os';
+import { APP_STORE_URL, GOOGLE_PLAY_URL } from '@kortix/ui/internal/lib/mobile-store-urls';
 
 export const hero = {
   title: 'Download Kortix',
@@ -54,20 +55,17 @@ export const DESKTOP_ROWS: Record<DesktopOs, RowCopy> = {
   linux: { label: 'Linux', hint: 'AppImage · x86_64', href: '/download/linux' },
 };
 
-/**
- * Canonical store URLs: no storefront country (`/cg/`) and no `hl=` locale.
- * Each store picks the visitor's own region and language.
- */
+/** Store URLs live in `mobile-store-urls.ts`. */
 export const MOBILE_ROWS: Record<MobileOs, RowCopy> = {
   ios: {
     label: 'iPhone and iPad',
     hint: 'App Store',
-    href: 'https://apps.apple.com/app/kortix/id6754448524',
+    href: APP_STORE_URL,
   },
   android: {
     label: 'Android',
     hint: 'Google Play',
-    href: 'https://play.google.com/store/apps/details?id=com.kortix.application',
+    href: GOOGLE_PLAY_URL,
   },
 };
 

@@ -1,0 +1,402 @@
+[
+  {
+    "id": "ayu-dark",
+    "name": "Ayu Dark",
+    "family": "ayu",
+    "familyName": "Ayu",
+    "mode": "dark",
+    "background": "#0b0e14",
+    "foreground": "#bfbdb6",
+    "accent": "#53bdfa"
+  },
+  {
+    "id": "ayu-light",
+    "name": "Ayu Light",
+    "family": "ayu",
+    "familyName": "Ayu",
+    "mode": "light",
+    "background": "#f8f9fa",
+    "foreground": "#464b50",
+    "accent": "#2490d7"
+  },
+  {
+    "id": "ayu-mirage",
+    "name": "Ayu Mirage",
+    "family": "ayu",
+    "familyName": "Ayu",
+    "mode": "dark",
+    "background": "#1f2430",
+    "foreground": "#cccac2",
+    "accent": "#6dcbfa"
+  },
+  {
+    "id": "catppuccin-latte",
+    "name": "Catppuccin Latte",
+    "family": "catppuccin",
+    "familyName": "Catppuccin",
+    "mode": "light",
+    "background": "#eff1f5",
+    "foreground": "#41445e",
+    "accent": "#1e66f5"
+  },
+  {
+    "id": "catppuccin-macchiato",
+    "name": "Catppuccin Macchiato",
+    "family": "catppuccin",
+    "familyName": "Catppuccin",
+    "mode": "dark",
+    "background": "#24273a",
+    "foreground": "#cad3f5",
+    "accent": "#8aadf4"
+  },
+  {
+    "id": "catppuccin-mocha",
+    "name": "Catppuccin Mocha",
+    "family": "catppuccin",
+    "familyName": "Catppuccin",
+    "mode": "dark",
+    "background": "#1e1e2e",
+    "foreground": "#cdd6f4",
+    "accent": "#89b4fa"
+  },
+  {
+    "id": "dracula-default",
+    "name": "Dracula",
+    "family": "dracula",
+    "familyName": "Dracula",
+    "mode": "dark",
+    "background": "#282a36",
+    "foreground": "#f8f8f2",
+    "accent": "#bd93f9"
+  },
+  {
+    "id": "everforest-dark",
+    "name": "Everforest Dark",
+    "family": "everforest",
+    "familyName": "Everforest",
+    "mode": "dark",
+    "background": "#2d353b",
+    "foreground": "#f1e3c7",
+    "accent": "#7fbbb3"
+  },
+  {
+    "id": "everforest-light",
+    "name": "Everforest Light",
+    "family": "everforest",
+    "familyName": "Everforest",
+    "mode": "light",
+    "background": "#fdf6e3",
+    "foreground": "#3e4b53",
+    "accent": "#3691c2"
+  },
+  {
+    "id": "github-dark",
+    "name": "GitHub Dark",
+    "family": "github",
+    "familyName": "GitHub",
+    "mode": "dark",
+    "background": "#010409",
+    "foreground": "#e6edf3",
+    "accent": "#58a6ff"
+  },
+  {
+    "id": "github-dark-dimmed",
+    "name": "GitHub Dark Dimmed",
+    "family": "github",
+    "familyName": "GitHub",
+    "mode": "dark",
+    "background": "#1c2128",
+    "foreground": "#bac7d4",
+    "accent": "#539bf5"
+  },
+  {
+    "id": "github-light",
+    "name": "GitHub Light",
+    "family": "github",
+    "familyName": "GitHub",
+    "mode": "light",
+    "background": "#f6f8fa",
+    "foreground": "#1f2328",
+    "accent": "#0969da"
+  },
+  {
+    "id": "gruvbox-dark",
+    "name": "Gruvbox Dark",
+    "family": "gruvbox",
+    "familyName": "Gruvbox",
+    "mode": "dark",
+    "background": "#282828",
+    "foreground": "#ebdbb2",
+    "accent": "#458588"
+  },
+  {
+    "id": "gruvbox-light",
+    "name": "Gruvbox Light",
+    "family": "gruvbox",
+    "familyName": "Gruvbox",
+    "mode": "light",
+    "background": "#fbf1c7",
+    "foreground": "#3c3836",
+    "accent": "#458588"
+  },
+  {
+    "id": "iceberg-dark",
+    "name": "Iceberg Dark",
+    "family": "iceberg",
+    "familyName": "Iceberg",
+    "mode": "dark",
+    "background": "#161821",
+    "foreground": "#c6c8d1",
+    "accent": "#84a0c6"
+  },
+  {
+    "id": "iceberg-light",
+    "name": "Iceberg Light",
+    "family": "iceberg",
+    "familyName": "Iceberg",
+    "mode": "light",
+    "background": "#e8e9ec",
+    "foreground": "#33374c",
+    "accent": "#2d539e"
+  },
+  {
+    "id": "jellybeans-default",
+    "name": "Jellybeans",
+    "family": "jellybeans",
+    "familyName": "Jellybeans",
+    "mode": "dark",
+    "background": "#121212",
+    "foreground": "#dedede",
+    "accent": "#97bedc"
+  },
+  {
+    "id": "jellybeans-light",
+    "name": "Jellybeans Light",
+    "family": "jellybeans",
+    "familyName": "Jellybeans",
+    "mode": "light",
+    "background": "#f4f4f4",
+    "foreground": "#262626",
+    "accent": "#3475a1"
+  },
+  {
+    "id": "kanagawa-dragon",
+    "name": "Kanagawa Dragon",
+    "family": "kanagawa",
+    "familyName": "Kanagawa",
+    "mode": "dark",
+    "background": "#181616",
+    "foreground": "#c5c9c5",
+    "accent": "#8ba4b0"
+  },
+  {
+    "id": "kanagawa-lotus",
+    "name": "Kanagawa Lotus",
+    "family": "kanagawa",
+    "familyName": "Kanagawa",
+    "mode": "light",
+    "background": "#f2ecbc",
+    "foreground": "#414150",
+    "accent": "#4d699b"
+  },
+  {
+    "id": "kanagawa-wave",
+    "name": "Kanagawa Wave",
+    "family": "kanagawa",
+    "familyName": "Kanagawa",
+    "mode": "dark",
+    "background": "#1f1f28",
+    "foreground": "#dcd7ba",
+    "accent": "#7e9cd8"
+  },
+  {
+    "id": "night-owl-dark",
+    "name": "Night Owl Dark",
+    "family": "night-owl",
+    "familyName": "Night Owl",
+    "mode": "dark",
+    "background": "#011627",
+    "foreground": "#cccccc",
+    "accent": "#82aaff"
+  },
+  {
+    "id": "night-owl-light",
+    "name": "Night Owl Light",
+    "family": "night-owl",
+    "familyName": "Night Owl",
+    "mode": "light",
+    "background": "#f6f6f6",
+    "foreground": "#403f53",
+    "accent": "#288ed7"
+  },
+  {
+    "id": "nightfox-default",
+    "name": "Nightfox",
+    "family": "nightfox",
+    "familyName": "Nightfox",
+    "mode": "dark",
+    "background": "#192330",
+    "foreground": "#cdcecf",
+    "accent": "#719cd6"
+  },
+  {
+    "id": "nightfox-carbonfox",
+    "name": "Nightfox Carbonfox",
+    "family": "nightfox",
+    "familyName": "Nightfox",
+    "mode": "dark",
+    "background": "#161616",
+    "foreground": "#f2f4f8",
+    "accent": "#78a9ff"
+  },
+  {
+    "id": "nightfox-dayfox",
+    "name": "Nightfox Dayfox",
+    "family": "nightfox",
+    "familyName": "Nightfox",
+    "mode": "light",
+    "background": "#f6f2ee",
+    "foreground": "#3d2b5a",
+    "accent": "#2848a9"
+  },
+  {
+    "id": "nord-default",
+    "name": "Nord",
+    "family": "nord",
+    "familyName": "Nord",
+    "mode": "dark",
+    "background": "#2e3440",
+    "foreground": "#dfe5f0",
+    "accent": "#81a1c1"
+  },
+  {
+    "id": "one-dark",
+    "name": "One Dark",
+    "family": "one",
+    "familyName": "One",
+    "mode": "dark",
+    "background": "#282c34",
+    "foreground": "#ced5e3",
+    "accent": "#61afef"
+  },
+  {
+    "id": "one-light",
+    "name": "One Light",
+    "family": "one",
+    "familyName": "One",
+    "mode": "light",
+    "background": "#f8f8f8",
+    "foreground": "#2a2b33",
+    "accent": "#2f5af3"
+  },
+  {
+    "id": "rose-pine-default",
+    "name": "Ros\u00e9 Pine",
+    "family": "rose-pine",
+    "familyName": "Ros\u00e9 Pine",
+    "mode": "dark",
+    "background": "#1f1d2e",
+    "foreground": "#e0def4",
+    "accent": "#9ccfd8"
+  },
+  {
+    "id": "rose-pine-dawn",
+    "name": "Ros\u00e9 Pine Dawn",
+    "family": "rose-pine",
+    "familyName": "Ros\u00e9 Pine",
+    "mode": "light",
+    "background": "#fffaf3",
+    "foreground": "#4c476d",
+    "accent": "#56949f"
+  },
+  {
+    "id": "rose-pine-moon",
+    "name": "Ros\u00e9 Pine Moon",
+    "family": "rose-pine",
+    "familyName": "Ros\u00e9 Pine",
+    "mode": "dark",
+    "background": "#2a273f",
+    "foreground": "#e0def4",
+    "accent": "#9ccfd8"
+  },
+  {
+    "id": "solarized-dark",
+    "name": "Solarized Dark",
+    "family": "solarized",
+    "familyName": "Solarized",
+    "mode": "dark",
+    "background": "#002b36",
+    "foreground": "#bed0d2",
+    "accent": "#268bd2"
+  },
+  {
+    "id": "solarized-light",
+    "name": "Solarized Light",
+    "family": "solarized",
+    "familyName": "Solarized",
+    "mode": "light",
+    "background": "#fdf6e3",
+    "foreground": "#364b52",
+    "accent": "#268bd2"
+  },
+  {
+    "id": "sonokai-default",
+    "name": "Sonokai",
+    "family": "sonokai",
+    "familyName": "Sonokai",
+    "mode": "dark",
+    "background": "#2c2e34",
+    "foreground": "#e2e2e3",
+    "accent": "#76cce0"
+  },
+  {
+    "id": "tokyo-night-default",
+    "name": "Tokyo Night",
+    "family": "tokyo-night",
+    "familyName": "Tokyo Night",
+    "mode": "dark",
+    "background": "#1a1b26",
+    "foreground": "#c0caf5",
+    "accent": "#7aa2f7"
+  },
+  {
+    "id": "tokyo-night-day",
+    "name": "Tokyo Night Day",
+    "family": "tokyo-night",
+    "familyName": "Tokyo Night",
+    "mode": "light",
+    "background": "#e1e2e7",
+    "foreground": "#133691",
+    "accent": "#2777e2"
+  },
+  {
+    "id": "tokyo-night-moon",
+    "name": "Tokyo Night Moon",
+    "family": "tokyo-night",
+    "familyName": "Tokyo Night",
+    "mode": "dark",
+    "background": "#222436",
+    "foreground": "#c8d3f5",
+    "accent": "#82aaff"
+  },
+  {
+    "id": "tokyo-night-storm",
+    "name": "Tokyo Night Storm",
+    "family": "tokyo-night",
+    "familyName": "Tokyo Night",
+    "mode": "dark",
+    "background": "#24283b",
+    "foreground": "#c6d0fc",
+    "accent": "#7aa2f7"
+  },
+  {
+    "id": "tomorrow-night",
+    "name": "Tomorrow Night",
+    "family": "tomorrow",
+    "familyName": "Tomorrow",
+    "mode": "dark",
+    "background": "#1d1f21",
+    "foreground": "#c5c8c6",
+    "accent": "#81a2be"
+  }
+]

@@ -5,6 +5,7 @@
 // lives there instead of a second header mechanism here.
 import { describe, expect, spyOn, test } from 'bun:test';
 import { ProvisionTimeline } from './provision-timeline';
+import { logger } from '../../lib/logger';
 import { parseTimelineLine } from '../../../scripts/prompt-latency-bench';
 
 describe('ProvisionTimeline', () => {
@@ -42,6 +43,24 @@ describe('ProvisionTimeline', () => {
     const summary = ptl.log();
     expect(summary.marks).toHaveLength(1);
     expect(summary.marks[0]?.label).toBe('turn-begin');
+  });
+
+  test('log() ships through the logger, not a bare console.log', () => {
+    // The api logger patches console.error/warn to Better Stack but NOT
+    // console.log — a bare console.log line never leaves stdout, so the whole
+    // timeline instrumentation was invisible in prod telemetry (0
+    // `[provision-timeline]` rows in 8 days of prod logs, Linear KRTX-471).
+    // logger.info both prints to stdout and ships with request context.
+    const ship = spyOn(logger, 'info').mockImplementation(() => {});
+    const tl = new ProvisionTimeline('0123456789abcdef', 'proxy');
+    tl.mark('ingress');
+    tl.log({ path: '/file/raw', hop: 'daemon' });
+    expect(ship).toHaveBeenCalledTimes(1);
+    const [message, context] = ship.mock.calls[0]!;
+    expect(String(message)).toContain('[provision-timeline] proxy 01234567 total=');
+    expect(String(message)).toContain('ingress=');
+    expect(context).toEqual({ path: '/file/raw', hop: 'daemon' });
+    ship.mockRestore();
   });
 
   test('the latency bench parses the line log() prints', () => {

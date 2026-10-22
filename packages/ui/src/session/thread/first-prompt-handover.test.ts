@@ -1,0 +1,151 @@
+import { describe, expect, test } from 'bun:test';
+import { sessionLogOfV1Rows, sessionLogTurns } from '@kortix/sdk';
+
+import { resolveFirstPromptHandover, transcriptCarriesFirstPrompt } from './first-prompt-handover';
+
+const text = (t: string) => ({ type: 'text', text: t });
+const file = (name: string) => ({ type: 'file', mime: 'image/png', filename: name, url: 'data:x' });
+const ref = (name: string) =>
+  text(`<file path="/workspace/uploads/x/${name}" mime="application/zip" filename="${name}">u</file>`);
+type V1Part = { type: string; text?: string; synthetic?: boolean; ignored?: boolean; mime?: string };
+/** The turn the transcript reads for a v1 user row holding `parts`, answered by one reply when `answered`. */
+const turn = (parts: V1Part[], answered = false) => {
+  const rows = [
+    { info: { id: 'u1', role: 'user', time: { created: 1 } }, parts: parts.map((p, i) => ({ id: `p${i}`, ...p })) },
+    ...(answered
+      ? [{ info: { id: 'a1', role: 'assistant', parentID: 'u1', time: { created: 2, completed: 3 } }, parts: [{ id: 'a-text', ...text('hi') }] }]
+      : []),
+  ] as never;
+  return sessionLogTurns(sessionLogOfV1Rows('s', 'rs', rows).threads[0]!)[0]!;
+};
+
+describe('transcriptCarriesFirstPrompt', () => {
+  test('a <file> ref inside a pasted block is not a delivered attachment', () => {
+    const body = '<file path="/workspace/a.zip" mime="application/zip" filename="a.zip">u</file>';
+    const pasted = `<pasted_content id="abcd1234" chars="${body.length}">\n${body}\n</pasted_content>\n\nhi`;
+    expect(transcriptCarriesFirstPrompt([turn([text(pasted)])], 1)).toBe(false);
+  });
+
+  test('a text-only prompt is carried the moment its text shows', () => {
+    expect(transcriptCarriesFirstPrompt([turn([text('YO BRO')])], 0)).toBe(true);
+  });
+
+  test('an info frame with no text is not carried yet', () => {
+    expect(transcriptCarriesFirstPrompt([turn([text('  ')])], 0)).toBe(false);
+    expect(transcriptCarriesFirstPrompt([], 0)).toBe(false);
+  });
+
+  // The 2026-09-04 blackout, measured in a real browser: the runtime streams
+  // the TEXT part first and the file parts ~6 s later. Releasing the preview
+  // on text alone left the bubble with no tiles for those seconds — the exact
+  // frame Jay screenshotted ("prompt only, no attachments").
+  test('a prompt that promised files is NOT carried until the files show', () => {
+    expect(transcriptCarriesFirstPrompt([turn([text('YO BRO')])], 3)).toBe(false);
+    expect(transcriptCarriesFirstPrompt([turn([text('YO BRO'), file('a.png')])], 3)).toBe(false);
+    expect(
+      transcriptCarriesFirstPrompt([turn([text('YO BRO'), file('a.png'), file('b.png'), file('c.png')])], 3),
+    ).toBe(true);
+  });
+
+  // A materialized file arrives as a `<file …>` ref folded into a text part,
+  // not as a file part. Both count, or a zip beside a photo waits forever.
+  test('counts materialized <file> refs as attachments', () => {
+    expect(
+      transcriptCarriesFirstPrompt([turn([text('look'), ref('bundle.zip'), file('shot.png')])], 2),
+    ).toBe(true);
+  });
+
+  // If the turn has already been ANSWERED, nothing more is streaming — a file
+  // that never showed is never going to. Holding the preview then would pin a
+  // stale bubble over a finished turn.
+  test('releases once the turn is answered, even short of the promise', () => {
+    expect(transcriptCarriesFirstPrompt([turn([text('x'), file('a.png')], true)], 3)).toBe(true);
+  });
+
+  // The v1 rule counted every `text` and `file` part. An ignored text part and a
+  // text/plain mention become harness blocks; both still count.
+  test('ignored text and text/plain mentions count as they did as v1 parts', () => {
+    const ignored = { ...ref('bundle.zip'), ignored: true };
+    expect(transcriptCarriesFirstPrompt([turn([{ ...text('only'), ignored: true }])], 0)).toBe(true);
+    expect(transcriptCarriesFirstPrompt([turn([{ ...text('only'), synthetic: true }])], 0)).toBe(false);
+    const mention = { type: 'file', mime: 'text/plain', filename: 'notes.txt', url: 'file:///workspace/notes.txt' };
+    expect(transcriptCarriesFirstPrompt([turn([text('look'), ignored, mention])], 2)).toBe(true);
+    expect(transcriptCarriesFirstPrompt([turn([text('look'), ignored, mention])], 3)).toBe(false);
+  });
+});
+
+describe('resolveFirstPromptHandover', () => {
+  const base = { hasPreview: true, transcriptShowsText: false, transcriptCarriesFiles: false, releasedBefore: false };
+
+  test('the stand-in draws until the transcript shows the text', () => {
+    expect(resolveFirstPromptHandover(base)).toEqual({ showStandIn: true, handOverToRealTurn: false, released: false });
+  });
+
+  test('the frame the text shows, the stand-in steps aside and the real turn takes over', () => {
+    expect(resolveFirstPromptHandover({ ...base, transcriptShowsText: true })).toEqual({
+      showStandIn: false,
+      handOverToRealTurn: true,
+      released: true,
+    });
+  });
+
+  // The glitch (2026-09-06, on video): the transcript\'s first message loses
+  // its parts for ~176 ms while the store swaps in the runtime\'s echo. A live
+  // boolean brought the stand-in back at full opacity over the dimmed real
+  // turn, then dropped it again — "the same message twice, then it vanishes".
+  test('a release is a latch — the stand-in never comes back', () => {
+    const out = resolveFirstPromptHandover({ ...base, transcriptShowsText: false, releasedBefore: true });
+    expect(out.showStandIn).toBe(false);
+    expect(out.handOverToRealTurn).toBe(true);
+    expect(out.released).toBe(true);
+  });
+
+  test('once the files have landed the real turn needs nothing handed over', () => {
+    expect(
+      resolveFirstPromptHandover({ ...base, transcriptShowsText: true, transcriptCarriesFiles: true, releasedBefore: true }),
+    ).toEqual({ showStandIn: false, handOverToRealTurn: false, released: true });
+  });
+
+  // The blank thread (2026-09-06, on video). The prompt's bubble on a fresh
+  // session comes from its INBOX ROW (a synthetic turn), and the row is gone
+  // the moment the server hands the prompt to the runtime — a beat before the
+  // runtime echoes it. For that beat there is no turn at all, so the latch's
+  // promise ("the real turn owns the prompt now") names something that does not
+  // exist, and neither surface draws.
+  test('an empty transcript brings the stand-in back — there is no real turn yet', () => {
+    const out = resolveFirstPromptHandover({
+      ...base,
+      transcriptShowsText: false,
+      releasedBefore: true,
+      transcriptEmpty: true,
+    });
+    expect(out.showStandIn).toBe(true);
+    expect(out.released).toBe(true);
+  });
+
+  test('an emptied bubble is still a turn, so the latch holds there', () => {
+    // The distinction that keeps the fix above from re-opening the glitch the
+    // latch was written for: a user message whose parts have not landed yet is
+    // a turn, so the transcript is not empty and the stand-in stays away.
+    expect(
+      resolveFirstPromptHandover({
+        ...base,
+        transcriptShowsText: false,
+        releasedBefore: true,
+        transcriptEmpty: false,
+      }).showStandIn,
+    ).toBe(false);
+  });
+
+  test('a caller that does not track the transcript keeps the pure latch', () => {
+    expect(
+      resolveFirstPromptHandover({ ...base, transcriptShowsText: false, releasedBefore: true })
+        .showStandIn,
+    ).toBe(false);
+  });
+
+  test('no preview, nothing to hand over', () => {
+    expect(resolveFirstPromptHandover({ ...base, hasPreview: false }).showStandIn).toBe(false);
+    expect(resolveFirstPromptHandover({ ...base, hasPreview: false }).handOverToRealTurn).toBe(false);
+  });
+});

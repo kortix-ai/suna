@@ -1,0 +1,180 @@
+{
+  "next_prompts": {
+    "ses_pilive0000000000000001": "Anything else?",
+    "ses_pilive0000000000000001-child1": "Anything else?"
+  },
+  "views": {
+    "ses_pilive0000000000000001": [
+      {
+        "role": "summary",
+        "text": "SUMMARY-L: the user created hello.txt containing hi and checked an image."
+      },
+      {
+        "role": "user",
+        "text": [
+          "Read hello.txt and look at this image"
+        ],
+        "images": [
+          "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77"
+        ]
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv17itv59",
+            "name": "read",
+            "input": {
+              "path": "hello.txt"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv17itv59",
+        "content": "hi",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "It says hi. The image is a single pixel."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Run the command `false` and report the result."
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv17itvad",
+            "name": "bash",
+            "input": {
+              "command": "false"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv17itvad",
+        "content": "(no output)\n\nCommand exited with code 1",
+        "is_error": true
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "The command failed with exit code 1."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Spawn a helper to list the files"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv17itvhh",
+            "name": "task",
+            "input": {
+              "description": "list files",
+              "prompt": "List the files in the workspace",
+              "subagent_type": "general"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv17itvhh",
+        "content": "task_id: ses_pilive0000000000000001-child1 (for resuming to continue this task if needed)\n\n<task_result>\nFound hello.txt\n</task_result>",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "The helper found hello.txt."
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "What is in hello.txt? Answer in one word."
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "hi"
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Anything else?"
+        ],
+        "images": []
+      }
+    ],
+    "ses_pilive0000000000000001-child1": [
+      {
+        "role": "user",
+        "text": [
+          "List the files in the workspace"
+        ],
+        "images": []
+      },
+      {
+        "role": "assistant",
+        "text": [],
+        "calls": [
+          {
+            "id": "call_mv17itvhj",
+            "name": "bash",
+            "input": {
+              "command": "ls"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "call_id": "call_mv17itvhj",
+        "content": "hello.txt",
+        "is_error": false
+      },
+      {
+        "role": "assistant",
+        "text": [
+          "Found hello.txt"
+        ],
+        "calls": []
+      },
+      {
+        "role": "user",
+        "text": [
+          "Anything else?"
+        ],
+        "images": []
+      }
+    ]
+  }
+}

@@ -12,11 +12,12 @@
  * (project_id, slug) key.
  */
 import { randomBytes } from 'node:crypto';
-import { projectTriggerRuntime } from '@kortix/db';
+import { projectTriggerRuntime, projects } from '@kortix/db';
 import { reminderPromptText as sharedReminderPromptText } from '@kortix/shared';
 import { formatDurationSeconds, parseDurationSeconds } from '@kortix/manifest-schema';
 import { Cron } from 'croner';
-import { and, asc, count, eq, isNotNull, sql } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { REMINDER_ID_PREFIX } from '../../notifications/push-payload';
 import { db } from '../../shared/db';
 import {
   nextTriggerScheduleSlot,
@@ -129,7 +130,7 @@ export function parseReminderDraft(body: Record<string, unknown>, now: Date): Re
 }
 
 export function newReminderId(): string {
-  return `reminder.${randomBytes(6).toString('hex')}`;
+  return `${REMINDER_ID_PREFIX}${randomBytes(6).toString('hex')}`;
 }
 
 /** The trigger spec the scheduler stores and fires for one reminder. */
@@ -184,7 +185,10 @@ export type ReminderState = 'active' | 'paused' | 'done';
 export function serializeSessionReminder(row: RuntimeRow) {
   const spec = row.scheduleSpec as unknown as GitTriggerSpec;
   const everySeconds = spec.reminder?.everySeconds ?? null;
-  const state: ReminderState = !row.enabled ? 'paused' : row.nextFireAt ? 'active' : 'done';
+  // A one-shot that fired is done for good: pausing it afterwards (an agent
+  // cleaning up) or a failed fire switching it off does not make it resumable.
+  const fired = Boolean(spec.runAt && row.lastScheduledFor);
+  const state: ReminderState = fired || (row.enabled && !row.nextFireAt) ? 'done' : row.enabled ? 'active' : 'paused';
   return {
     id: row.slug,
     session_id: row.sessionId,
@@ -243,7 +247,7 @@ export async function listProjectReminders(projectId: string): Promise<RuntimeRo
       ),
     )
     .orderBy(
-      sql`case when ${projectTriggerRuntime.enabled} and ${projectTriggerRuntime.nextFireAt} is not null then 0 when not ${projectTriggerRuntime.enabled} then 1 else 2 end`,
+      sql`case when ${projectTriggerRuntime.scheduleRunAt} is not null and ${projectTriggerRuntime.lastScheduledFor} is not null then 2 when ${projectTriggerRuntime.enabled} and ${projectTriggerRuntime.nextFireAt} is not null then 0 when not ${projectTriggerRuntime.enabled} then 1 else 2 end`,
       sql`${projectTriggerRuntime.nextFireAt} asc nulls last`,
       sql`${projectTriggerRuntime.lastFiredAt} desc nulls last`,
       asc(projectTriggerRuntime.slug),
@@ -351,8 +355,8 @@ export async function insertSessionReminder(input: {
 
 /**
  * Turn a reminder on or off. On re-arms from now: a recurring reminder fires one period
- * (or the next cron slot) later; a one-shot reminder that never fired fires at its
- * `at`, or at once when `at` already passed; a one-shot reminder that fired stays done.
+ * (or the next cron slot) later; an unfired one-shot restarts its original delay
+ * from creation to `at`. A one-shot reminder that fired stays done.
  */
 export async function setSessionReminderEnabled(row: RuntimeRow, enabled: boolean, now: Date): Promise<RuntimeRow> {
   const spec = row.scheduleSpec as unknown as GitTriggerSpec;
@@ -360,7 +364,9 @@ export async function setSessionReminderEnabled(row: RuntimeRow, enabled: boolea
     ? null
     : spec.runAt && row.lastScheduledFor
       ? null
-      : nextTriggerScheduleSlot(spec, now, { includePastOneOff: true });
+      : spec.runAt && spec.reminder
+        ? new Date(now.getTime() + Date.parse(spec.runAt) - Date.parse(spec.reminder.createdAt))
+        : nextTriggerScheduleSlot(spec, now, { includePastOneOff: true });
   const [updated] = await db
     .update(projectTriggerRuntime)
     .set({ enabled, nextFireAt, updatedAt: now })
@@ -375,10 +381,60 @@ export async function deleteSessionReminder(projectId: string, id: string): Prom
     .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow));
 }
 
+/**
+ * Offboarding (KRTX-1722): pause every live reminder `userId` set in the
+ * account's projects. Its fire would act as a person who no longer has access.
+ * It is the same pause a fire applies when it finds the author gone
+ * (`lib/trigger-fire.ts`), done at once instead of at the next fire. A
+ * reminder the session's agent set has no author and keeps firing as the
+ * agent. Returns the number of reminders paused.
+ */
+export async function disableRemindersAuthoredBy(accountId: string, userId: string, now: Date): Promise<number> {
+  const paused = await db
+    .update(projectTriggerRuntime)
+    .set({ enabled: false, nextFireAt: null, updatedAt: now })
+    .where(
+      and(
+        inArray(
+          projectTriggerRuntime.projectId,
+          db.select({ projectId: projects.projectId }).from(projects).where(eq(projects.accountId, accountId)),
+        ),
+        sql`${projectTriggerRuntime.scheduleSpec} -> 'reminder' ->> 'promptAuthorUserId' = ${userId}`,
+        ...activeReminder,
+      ),
+    )
+    .returning({ slug: projectTriggerRuntime.slug });
+  return paused.length;
+}
+
 /** A fire found the reminder's session gone: switch the reminder off so it stops firing. */
 export async function disableSessionReminder(projectId: string, id: string, now: Date): Promise<void> {
   await db
     .update(projectTriggerRuntime)
     .set({ enabled: false, nextFireAt: null, updatedAt: now })
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow));
+}
+
+/**
+ * Move a reminder to another session of the same project (its session failed)
+ * and re-arm it from now: the move also ends the pause a queued successor holds.
+ */
+export async function repinSessionReminder(projectId: string, id: string, sessionId: string, now: Date): Promise<void> {
+  const [row] = await db
+    .select({ spec: projectTriggerRuntime.scheduleSpec })
+    .from(projectTriggerRuntime)
+    .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow))
+    .limit(1);
+  if (!row) return;
+  const spec = { ...(row.spec as unknown as GitTriggerSpec), pinnedSessionId: sessionId };
+  await db
+    .update(projectTriggerRuntime)
+    .set({
+      sessionId,
+      scheduleSpec: spec as unknown as Record<string, unknown>,
+      enabled: true,
+      nextFireAt: spec.runAt ? null : nextTriggerScheduleSlot(spec, now),
+      updatedAt: now,
+    })
     .where(and(eq(projectTriggerRuntime.projectId, projectId), eq(projectTriggerRuntime.slug, id), isReminderRow));
 }

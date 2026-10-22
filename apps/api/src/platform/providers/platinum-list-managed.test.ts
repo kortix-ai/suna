@@ -38,15 +38,28 @@ const MANAGED = { 'kortix.managed': 'v2-owner-a', 'kortix.env': 'dev' };
 
 let pages: Array<Record<string, unknown>> = [];
 let requested: string[] = [];
+let serverRows: Array<Record<string, unknown>> | null = null;
 
 beforeEach(() => {
   pages = [];
   requested = [];
+  serverRows = null;
   globalThis.fetch = (async (url: string | URL | Request) => {
     const path = new URL(String(url)).pathname + new URL(String(url)).search;
     requested.push(path);
     const offset = Number(new URL(String(url)).searchParams.get('offset') ?? '0');
-    const page = pages[offset / 100] ?? { rows: [], has_more: false };
+    const limit = Number(new URL(String(url)).searchParams.get('limit') ?? '50');
+    if (serverRows) {
+      // Fake Platinum: honours `state`, newest-first order is the array order.
+      const state = new URL(String(url)).searchParams.get('state');
+      const matching = serverRows.filter((row) => !state || row.state === state);
+      const rows = matching.slice(offset, offset + limit);
+      return new Response(
+        JSON.stringify({ rows, total: matching.length, has_more: offset + rows.length < matching.length }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    }
+    const page = pages[offset / limit] ?? { rows: [], has_more: false };
     return new Response(JSON.stringify(page), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -100,8 +113,8 @@ test('pages until has_more is false', async () => {
 
   expect(listed.map((box) => box.externalId)).toEqual(['sbx_a', 'sbx_b']);
   expect(requested).toEqual([
-    '/v1/sandboxes?paginated=true&limit=100&offset=0',
-    '/v1/sandboxes?paginated=true&limit=100&offset=100',
+    '/v1/sandboxes?paginated=true&limit=200&offset=0&state=running&regions=all',
+    '/v1/sandboxes?paginated=true&limit=200&offset=200&state=running&regions=all',
   ]);
 });
 
@@ -161,4 +174,21 @@ test('unset instance ID never grants ownership of another instance or database',
   const listed = await new PlatinumProvider().listManagedRunningSandboxes();
 
   expect(listed).toEqual([]);
+});
+
+test('finds a running box that sits past row 5000 of the unfiltered list', async () => {
+  // A persistent box (Monitors) is OLD, so it sorts below thousands of newer
+  // archived boxes. An unfiltered scan capped at 50 pages never reaches it.
+  const stopped = (i: number) => ({
+    id: `sbx_old_${i}`, state: 'archived', metadata: MANAGED, created_at: '2026-08-12T00:00:00Z',
+  });
+  serverRows = [
+    ...Array.from({ length: 6000 }, (_, i) => stopped(i)),
+    { id: 'sbx_deep_running', state: 'running', metadata: MANAGED, created_at: '2026-01-01T00:00:00Z' },
+  ];
+
+  const { PlatinumProvider } = await import('./platinum');
+  const listed = await new PlatinumProvider().listManagedRunningSandboxes();
+
+  expect(listed.map((box) => box.externalId)).toEqual(['sbx_deep_running']);
 });

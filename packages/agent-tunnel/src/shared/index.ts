@@ -35,7 +35,7 @@ export type {
 export { TunnelErrorCode, TunnelMethods } from './types';
 export {
   capabilityForMethod,
-  desktopFeatureForMethod,
+  normalizeDesktopCall,
   isTunnelCapability,
   operationForMethod,
   validateTunnelPermissionScope,
