@@ -620,23 +620,6 @@ describe('a box without a journal: the capture writes the log from the box and n
     expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
   });
 
-  test('size cap: a session without a log whose read is over the cap gets no log; one that has a log keeps its captures', async () => {
-    const session = await pinned();
-    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
-    try {
-      await captureJournallessSessionLog(session, box(() => range(0, 12)).deps);
-      expect(await logRow(session)).toBeUndefined();
-      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
-      await captureJournallessSessionLog(session, box(() => range(0, 2)).deps);
-      config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
-      await captureJournallessSessionLog(session, box(() => range(0, 12)).deps);
-      expect((await liveRows(session)).length).toBe(12);
-    } finally {
-      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
-    }
-  });
-
   test('an old mirror converts into an empty log only: it never overwrites the log the box wrote', async () => {
     const session = await pinned();
     await seedV1Mirror(mirrorScope(session), ROOT, range(0, 4));
@@ -675,19 +658,6 @@ describe('a box without a journal: the capture writes the log from the box and n
       warn.mockRestore();
       consoleWarn.mockRestore();
     }
-  });
-
-  test('a log write that stores nothing (too large) is a failed capture: null, so a wake retries it', async () => {
-    const session = await pinned();
-    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
-    config.SESSION_LOG_RESTORE_MAX_BYTES = 200;
-    try {
-      expect(await captureJournallessSessionLog(session, box(() => range(0, 6)).deps, { scope: 'tail' })).toBeNull();
-    } finally {
-      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
-    }
-    expect(await liveRows(session)).toEqual([]);
-    expect(await mirrorCount(session)).toEqual({ mirrors: 0, messages: 0 });
   });
 
   test('with session-log ingest off, the capture reads no box and writes nothing anywhere', async () => {

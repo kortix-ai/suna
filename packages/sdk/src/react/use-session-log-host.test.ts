@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
@@ -11,6 +11,8 @@ import { useSession } from './opencode';
 import { useSessionLogThread } from './use-session-log';
 import { qk } from './query-keys';
 import { resetSessionOpenBundles } from '../core/session/open-bundle';
+import { readSavedSessionCopy } from '../core/session-sync/saved-transcript';
+import { useSyncStore } from '../browser/stores/sync-store';
 import type { SessionLog, SessionLogThread } from '../core/session-log/types';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -245,5 +247,41 @@ describe('useSession with its chat engine: the session log owns the history once
     expect(urls).toContain(`${base}/transcript?shape=sync&limit=40&history=true`);
     // The log is asked first.
     expect(urls.indexOf(`${base}/log?limit=40`)).toBeLessThan(urls.indexOf(`${base}/transcript?shape=sync&limit=40&history=true`));
+  });
+});
+
+describe('a connecting view read the first log page (readSavedSessionCopy, apps/mobile): the bind does not read it again', () => {
+  const first = `/projects/${PROJECT_ID}/sessions/${SESSION_ID}/log?limit=40`;
+  async function connectThenBind(boundAfterMs: number) {
+    serveLog = true;
+    const now = Date.now();
+    const clock = spyOn(Date, 'now').mockReturnValue(now);
+    try {
+      const copy = await readSavedSessionCopy({ projectId: PROJECT_ID, sessionId: SESSION_ID, runtimeSessionId: log.threads[0]!.thread_id });
+      expect(copy.log?.messages).toHaveLength(log.threads[0]!.messages.length);
+      clock.mockReturnValue(now + boundAfterMs);
+      function Host() {
+        useSession(PROJECT_ID, SESSION_ID, { chatEngine: false, replayStartStash: false });
+        return null;
+      }
+      act(() => {
+        renderer = create(createElement(QueryClientProvider, { client: queryClient }, createElement(Host)));
+      });
+      act(() => setRuntimeCapabilities(['session.log.v2']));
+      await flush();
+    } finally {
+      clock.mockRestore();
+    }
+  }
+
+  test('a bind within the hold uses the page the connecting view read: one GET …/log per open, and the page is in the store', async () => {
+    await connectThenBind(1_000);
+    expect(urls.filter((u) => u === first)).toHaveLength(1);
+    expect(useSyncStore.getState().sessionLogs[SESSION_ID]?.messages[log.threads[0]!.thread_id]).toHaveLength(log.threads[0]!.messages.length);
+  });
+
+  test('a bind after the hold (a wake) reads the page again', async () => {
+    await connectThenBind(60_000);
+    expect(urls.filter((u) => u === first)).toHaveLength(2);
   });
 });
