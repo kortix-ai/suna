@@ -53,7 +53,8 @@ test('sheet trims names, rejects blank and pending submits, and reveals a comple
   await act(async () => section.unmount());
   await act(async () => finish?.({ name: 'Synthetic token', secret: 'synthetic-secret' }));
   expect(content).not.toBeNull();
-  const reveal: AccountHubSheetContent | null = content;
+  const readContent = (): AccountHubSheetContent | null => content;
+  const reveal = readContent();
   if (!reveal || !React.isValidElement<{ value: string }>(reveal.body)) throw new Error('missing secret reveal');
   expect(reveal.body.props.value).toBe('synthetic-secret');
   expect(client.getQueryState(['service-accounts', 'synthetic-account'])?.isInvalidated).toBe(true);
