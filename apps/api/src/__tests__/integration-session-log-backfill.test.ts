@@ -28,7 +28,7 @@ import { asc, eq, sql } from 'drizzle-orm';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { fakeSessionStorage } from './helpers/fake-session-storage';
-import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
+import { removeSeeded, seedAccount, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 import { syntheticOpencodeSession } from './helpers/synthetic-opencode-session';
 
 const bucket = fakeSessionStorage();
@@ -36,9 +36,10 @@ const realSupabase = await import('../shared/supabase');
 mock.module('../shared/supabase', () => ({ ...realSupabase, getSupabase: () => ({ storage: bucket.storage }) }));
 
 const { backfillSessionLogs, convertMirrorOnRead, roundTripMismatches, newBackfillState, BACKFILL_BATCH_SIZE } = await import('../projects/session-log-backfill');
-const { SESSION_DELETE_ROWS_DAYS } = await import('../projects/session-log-purge');
+const { SESSION_DELETE_ROWS_DAYS, purgeSessionContent } = await import('../projects/session-log-purge');
+const { transferProjectOwnership } = await import('../projects/lib/project-transfer');
 const { restoreSession } = await import('../projects/session-lifecycle/restore-session');
-const { readStoredTranscriptWindow } = await import('../projects/session-log-read');
+const { readSessionLogPage, readStoredTranscriptWindow } = await import('../projects/session-log-read');
 const { writeSessionLogFromMirror } = await import('../projects/session-log-capture');
 const { ingestSessionLogJournal } = await import('../projects/session-log-ingest');
 const { claimSessionLog } = await import('../projects/session-log-restore');
@@ -836,5 +837,37 @@ describe('drained (P8.2): once a pass selects nothing, the mirror is never read 
     } finally {
       warn.mockRestore();
     }
+  });
+
+  test('Release B1: once drained, the conversion (fork, restore, recovery), the /log read, the retention purge and the project transfer run with both mirror tables gone', async () => {
+    const old = await oldSession([plain(0), plain(1)]);
+    const transferred = await seedProject('session-log-backfill-transfer');
+    const target = await seedAccount('session-log-backfill-transfer-target');
+    await db.insert(sessionTranscriptMirrors).values({ sessionId: await seedSession(transferred, OWNER), projectId: transferred.project_id, accountId: transferred.account_id, runtimeSessionId: ROOT });
+    // The first pass converts `old`; the second selects nothing and drains.
+    await pass('write');
+    expect(await hasLog(old)).toBe(true);
+    await pass('write');
+    expect((await stateRow())!.state.drainedWithDeleted).toBe(true);
+    const fresh = await seedSession(project, OWNER);
+    const expired = await seedSession(project, OWNER);
+    await markDeleted(expired, (SESSION_DELETE_ROWS_DAYS + 1) * DAY_MS);
+    const warn = spyOn(logger, 'warn');
+    try {
+      await withMirrorHidden(async () => {
+        expect(await writeSessionLogFromMirror(fresh)).toEqual({ outcome: 'skipped' });
+        expect(await readSessionLogPage({ sessionId: fresh, threadId: null, beforeSeq: null, limit: 50 })).toBeNull();
+        expect(await purgeSessionContent({ store: { removeSession: async () => {} } })).toMatchObject({ failed: 0 });
+        await transferProjectOwnership({ projectId: transferred.project_id, fromAccountId: transferred.account_id, toAccountId: target });
+      });
+      expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('capture write failed'))).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+    expect(await db.select({ id: sessionContentPurges.sessionId }).from(sessionContentPurges).where(eq(sessionContentPurges.sessionId, expired))).toHaveLength(1);
+    expect((await db.select({ accountId: projects.accountId }).from(projects).where(eq(projects.projectId, transferred.project_id)))[0]!.accountId).toBe(target);
+    // The mirror rows stay as they were: the Release B2 migration drops them.
+    expect(await db.select({ accountId: sessionTranscriptMirrors.accountId }).from(sessionTranscriptMirrors).where(eq(sessionTranscriptMirrors.projectId, transferred.project_id))).toEqual([{ accountId: transferred.account_id }]);
+    await removeSeeded([{ account_id: target, project_id: transferred.project_id }, transferred]);
   });
 });

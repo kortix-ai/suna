@@ -7,7 +7,8 @@
  *   (`session-log-backfill.ts` and its thread), a log read of a session with no log
  *   (`convertMirrorOnRead`), a restore (`restore-session.ts`), a lost-session recovery
  *   (`recover-lost-session.ts`) and a fork (`session-create.ts`). It converts only into a log
- *   with no message yet: a session whose log holds a message never reads the mirror here.
+ *   with no message yet: a session whose log holds a message never reads the mirror here. Once
+ *   the mirror is drained (`mirrorDrained`) it reads no mirror table at all and answers `skipped`.
  * - `writeSessionLogFromRead` is the capture of a box without a journal
  *   (`lib/session-transcript-capture.ts`): the box read goes straight into the log.
  *
@@ -49,6 +50,7 @@ import {
   sessionLogMessages,
   sessionLogs,
   sessionLogThreads,
+  sessionLogBackfillState,
   sessionRuntimeProjections,
   sessionTranscriptMessages,
   sessionTranscriptMirrors,
@@ -63,7 +65,7 @@ import { SESSION_LOG_CAPTURE_REV_LIMIT, sessionLogContentHash, writeCapturedSess
 const READ_ONLY = { isolationLevel: 'repeatable read', accessMode: 'read only' } as const;
 
 /**
- * - `skipped`: the switch is off, a journal owns the log, there is no mirror, nothing changed,
+ * - `skipped`: the switch is off, the mirror is drained, a journal owns the log, there is no mirror, nothing changed,
  *   a newer mirror capture ran, or the capture revs are exhausted.
  * - `invalid`: `fromV1` of the mirror fails `SessionLogSchema`; nothing written.
  * - `too_large`: no log yet, and the mirror is over the size cap; nothing read or written.
@@ -93,10 +95,31 @@ export const mirrorStoredCap = () => Math.floor(config.SESSION_LOG_RESTORE_MAX_B
  */
 export const breathe = () => new Promise<void>((resolve) => setImmediate(resolve));
 
+/**
+ * The v1 mirror is drained: a backfill pass selected no session (`drainedWithDeleted` in the pass
+ * state, `session-log-backfill.ts`). Nothing writes the mirror since P8.2, so it stays drained.
+ * Every code path that would touch `session_transcript_*` asks this first and touches neither table
+ * when it is true (Release B1): the conversion here, the `/log` read, the retention purge and the
+ * project transfer. So the Release B2 migration can drop both tables under the code that is live then.
+ * One primary-key read of the one-row state table; no mirror table.
+ * ponytail: not memoized: a flow fixture and the operator (`DELETE` of the state row) reopen the
+ * mirror on a running API, and a cached `true` would hide that. Every caller is a path that would
+ * otherwise read the mirror.
+ */
+export async function mirrorDrained(): Promise<boolean> {
+  const [row] = await db
+    .select({ drained: sql<boolean | null>`(${sessionLogBackfillState.state} ->> 'drainedWithDeleted')::boolean` })
+    .from(sessionLogBackfillState)
+    .where(eq(sessionLogBackfillState.id, 'pass'));
+  return row?.drained === true;
+}
+
 /** `uncapped`: no size cap. Only the backfill's conversion thread passes it (`session-log-backfill-thread.ts`). */
 export async function writeSessionLogFromMirror(sessionId: string, options: { dry?: boolean; uncapped?: boolean } = {}): Promise<MirrorLogWrite> {
   try {
     if (!options.dry && !config.SESSION_LOG_INGEST_ENABLED) return SKIPPED;
+    // Drained: no mirror table is read (Release B1).
+    if (await mirrorDrained()) return SKIPPED;
     const read = await db.transaction(async (tx) => {
       const [s] = await tx
         .select({

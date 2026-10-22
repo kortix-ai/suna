@@ -28,9 +28,11 @@
  * - Passes. `write` starts a new pass after each one (the worker waits an hour);
  *   it selects only sessions without a log, so every pass retries the failures
  *   of the last one. A pass that selects nothing sets `drainedWithDeleted`: no read
- *   serves the mirror, nothing writes it (P8.2), and only the purge deletes a log (with
- *   its mirror rows), so the selection stays empty and every later tick, in any mode,
- *   does nothing and reads no mirror table. The key replaced `drained` (2026-10-22),
+ *   serves the mirror, nothing writes it (P8.2), and only the purge deletes a log (and
+ *   writes the purge marker the selection excludes), so the selection stays empty and every
+ *   later tick, in any mode, does nothing and reads no mirror table. From then on no code
+ *   path touches a mirror table (`mirrorDrained`, `session-log-capture.ts`; Release B1), so
+ *   the Release B2 migration can drop them. The key replaced `drained` (2026-10-22),
  *   which a selection that skipped deleted sessions set. `dry` runs one pass per
  *   build (`KORTIX_COMMIT`): after its summary it does nothing until the mode or
  *   the build changes, because each dry pass reads and converts every old
@@ -226,18 +228,6 @@ async function saveState(state: BackfillState, rev: number): Promise<boolean> {
   return saved.length > 0;
 }
 
-/**
- * The mirror is drained (a pass selected no session). One read of the state row; no mirror table.
- * Not memoized: a new pass state (the operator's `DELETE`) clears it.
- */
-async function mirrorDrained(): Promise<boolean> {
-  const [row] = await db
-    .select({ drained: sql<boolean | null>`(${sessionLogBackfillState.state} ->> 'drainedWithDeleted')::boolean` })
-    .from(sessionLogBackfillState)
-    .where(eq(sessionLogBackfillState.id, STATE_ID));
-  return row?.drained === true;
-}
-
 /** A read found a mirror over the capture's size cap and no log: the backfill's thread converts it. */
 export class SessionLogConvertingError extends Error {
   readonly code = 'session_log_converting';
@@ -249,11 +239,10 @@ export class SessionLogConvertingError extends Error {
 
 /**
  * Before a log read answers "no log" (P8.2): convert the session's v1 mirror now, capped, unless
- * the mirror is drained. True when a log was written, so the read reads again. Throws
- * `SessionLogConvertingError` for a mirror over the cap.
+ * the mirror is drained (`mirrorDrained`, checked in the conversion). True when a log was written,
+ * so the read reads again. Throws `SessionLogConvertingError` for a mirror over the cap.
  */
 export async function convertMirrorOnRead(sessionId: string): Promise<boolean> {
-  if (await mirrorDrained()) return false;
   const result = await writeSessionLogFromMirror(sessionId);
   if (result.outcome === 'too_large') throw new SessionLogConvertingError();
   return result.outcome === 'written';
