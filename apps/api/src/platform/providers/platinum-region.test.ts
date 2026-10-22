@@ -271,20 +271,20 @@ describe('us_region: a template not yet copied to the region', () => {
 });
 
 describe('us_region: a drive that lives in another region', () => {
-  const drives = { '/drives/notes': { volume: 'kd-755bd1b433bd4e54920b' } };
+  const drives = { '/drives/notes': { volume: 'kd-0a1b2c3d4e5f60718293' } };
   const refusals = {
     // Platinum with the volume directory names where the volume lives.
     'volume_in_other_region': platinumHttpError(
       'platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 409 ' +
       JSON.stringify({
-        error: 'volume kd-755bd1b433bd4e54920b lives in region eu-west; call https://api.platinum.dev or create the sandbox in eu-west',
-        code: 'volume_in_other_region', volume: 'kd-755bd1b433bd4e54920b', region: 'eu-west', api_url: 'https://api.platinum.dev',
+        error: 'volume kd-0a1b2c3d4e5f60718293 lives in region eu-west; call https://api.platinum.dev or create the sandbox in eu-west',
+        code: 'volume_in_other_region', volume: 'kd-0a1b2c3d4e5f60718293', region: 'eu-west', api_url: 'https://api.platinum.dev',
       }),
     ),
     // Platinum without it only says the region has no such volume.
     'volume_not_found': platinumHttpError(
       'platinum POST /v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000 -> 404 ' +
-      JSON.stringify({ error: 'volume kd-755bd1b433bd4e54920b not found', code: 'volume_not_found' }),
+      JSON.stringify({ error: 'volume kd-0a1b2c3d4e5f60718293 not found', code: 'volume_not_found' }),
     ),
   };
 
