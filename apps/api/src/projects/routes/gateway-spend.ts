@@ -31,7 +31,7 @@ export function registerGatewaySpendRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ days: z.string().optional() }),
+        query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway usage overview'), ...errors(404) },
     }),
@@ -88,7 +88,7 @@ export function registerGatewaySpendRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ days: z.string().optional() }),
+        query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway daily usage series'), ...errors(404) },
     }),
@@ -174,7 +174,7 @@ export function registerGatewaySpendRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ days: z.string().optional() }),
+        query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway spend by session'), ...errors(404) },
     }),
@@ -247,7 +247,7 @@ export function registerGatewaySpendRoutes(): void {
       ...auth,
       request: {
         params: z.object({ projectId: z.string() }),
-        query: z.object({ days: z.string().optional() }),
+        query: z.object({ days: z.string().refine((value) => Number.isInteger(Number(value))).optional() }),
       },
       responses: { 200: json(z.any(), 'Gateway usage by model'), ...errors(404) },
     }),
