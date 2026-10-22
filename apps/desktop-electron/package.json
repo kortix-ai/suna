@@ -21,8 +21,8 @@
     "build:linux": "electron-builder --linux"
   },
   "devDependencies": {
-    "electron": "^39.8.1",
-    "electron-builder": "^25.1.8"
+    "electron": "^42.11.3",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
     "@sentry/electron": "^7.3.0",
