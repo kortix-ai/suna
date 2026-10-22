@@ -6,6 +6,8 @@
  * authorization, and a visible, undeleted session. An agent session credential
  * may manage reminders on its OWN session only.
  */
+import type { Context } from 'hono';
+import type { AppEnv } from '../../types';
 import { createRoute, z } from '@hono/zod-openapi';
 import { requireFeatureFlag } from '../../feature-flags/gate';
 import { PROJECT_ACTIONS } from '../../iam';
@@ -40,14 +42,14 @@ import {
   setSessionReminderEnabled,
 } from '../lib/session-reminders';
 
-const ReminderSchema = z.object({}).passthrough();
+const ReminderSchema = z.record(z.string(), z.any());
 const sessionParams = z.object({ projectId: z.string(), sessionId: z.string() });
 const reminderParams = sessionParams.extend({ reminderId: z.string() });
 
 /** Resolve the caller's right to schedule prompts into this session, or an error response. */
-async function authorizeReminderSession(c: any) {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
+async function authorizeReminderSession(c: Context<AppEnv>) {
+  const projectId = c.req.param('projectId') ?? '';
+  const sessionId = c.req.param('sessionId') ?? '';
   if (!isUuid(sessionId)) return { response: c.json({ error: 'Invalid session id' }, 400) };
   const loaded = await loadProjectForUser(c, projectId, 'session');
   if (!loaded) return { response: c.json({ error: 'Not found' }, 404) };
@@ -74,7 +76,7 @@ async function authorizeReminderSession(c: any) {
   if (typeof metadata.deletedAt === 'string') {
     return { response: c.json({ error: 'Session is deleted' }, 409) };
   }
-  return { projectId, sessionId, loaded, visible, agentCaller };
+  return { response: null, projectId, sessionId, loaded, visible, agentCaller } as const;
 }
 
 export function registerSessionRemindersRoutes(): void {
@@ -100,7 +102,7 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(403, 404),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const projectId = c.req.param('projectId');
       const loaded = await loadProjectForUser(c, projectId, 'read');
       if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -152,9 +154,9 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const rows = await listSessionReminders(access.projectId, access.sessionId);
       return c.json({ reminders: rows.map(serializeSessionReminder) });
     },
@@ -186,10 +188,10 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const body = await readJsonObject(c);
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const { projectId, sessionId, loaded, visible, agentCaller } = access;
 
       const now = new Date();
@@ -266,13 +268,13 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const body = await readJsonObject(c);
       if (typeof body.enabled !== 'boolean') {
         return c.json({ error: 'enabled (boolean) is required' }, 400);
       }
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const row = await getSessionReminder(access.projectId, access.sessionId, c.req.param('reminderId'));
       if (!row) return c.json({ error: 'Reminder not found' }, 404);
       if (
@@ -308,9 +310,9 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const { projectId, loaded, visible, agentCaller } = access;
       const row = await getSessionReminder(projectId, access.sessionId, c.req.param('reminderId'));
       if (!row) return c.json({ error: 'Reminder not found' }, 404);
@@ -352,9 +354,9 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const access = await authorizeReminderSession(c);
-      if ('response' in access) return access.response;
+      if (access.response) return access.response;
       const row = await getSessionReminder(access.projectId, access.sessionId, c.req.param('reminderId'));
       if (!row) return c.json({ error: 'Reminder not found' }, 404);
       await deleteSessionReminder(access.projectId, row.slug);

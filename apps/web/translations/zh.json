@@ -1268,10 +1268,6 @@
           "name": "云盘",
           "description": "与会话保持同步的共享文件夹：你自己的云盘、每个智能体一个云盘，以及管理员关联到项目的公司云盘。新会话可在 /drives 下看到它们。"
         },
-        "session_log": {
-          "name": "会话日志 v2",
-          "description": "通过 v2 会话日志而不是 v1 转录读取会话。由 Kortix 按项目启用。"
-        },
         "session_log_restore": {
           "name": "会话日志恢复",
           "description": "当会话的计算机丢失对话时，从保存的会话日志重建该会话。由 Kortix 按项目启用。"
@@ -5121,7 +5117,14 @@
       "youHaveBeenInvitedToAProject": "你已受邀加入一个项目。",
       "joinProjectDescription": "你将以{roleLabel}身份加入 {projectName}。",
       "roleManager": "管理员",
-      "signOutAndContinue": "退出并继续"
+      "signOutAndContinue": "退出并继续",
+      "ssoTitle": "使用单点登录",
+      "ssoDescription": "你所在组织的目录已将你添加到此账户。请使用组织的单点登录来加入。如果无法登录，请让账户管理员重新发送邀请。",
+      "ssoContinue": "继续使用单点登录",
+      "askAdminTitle": "请管理员重新发送",
+      "askAdminDescription": "你所在组织的目录已将你添加到此账户，但此实例无法确认你的邮箱地址。请让账户管理员重新发送邀请，然后再次打开此链接。",
+      "ssoDomainUnverified": "你的单点登录提供方尚未验证此邮箱的域名。请退出，然后使用你的邮箱地址重新登录，以使用此邀请。",
+      "ssoUnavailable": "单点登录当前不可用。请让账户管理员重新发送邀请。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 开源的 AI Operating System",

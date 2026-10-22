@@ -1268,10 +1268,6 @@
           "name": "ドライブ",
           "description": "セッションと同期し続ける共有フォルダー：自分のドライブ、エージェントごとのドライブ、管理者がプロジェクトに割り当てた会社のドライブ。新しいセッションでは /drives に表示されます。"
         },
-        "session_log": {
-          "name": "セッションログ v2",
-          "description": "セッションを v1 のトランスクリプトではなく v2 のセッションログ経由で読み取ります。Kortix がプロジェクトごとに有効にします。"
-        },
         "session_log_restore": {
           "name": "セッションログからの復元",
           "description": "セッションのコンピューターが会話を失ったとき、保存されたセッションログからセッションを再構築します。Kortix がプロジェクトごとに有効にします。"
@@ -5121,7 +5117,14 @@
       "youHaveBeenInvitedToAProject": "プロジェクトに招待されています。",
       "joinProjectDescription": "{projectName} に{roleLabel}として参加します。",
       "roleManager": "マネージャー",
-      "signOutAndContinue": "サインアウトして続ける"
+      "signOutAndContinue": "サインアウトして続ける",
+      "ssoTitle": "シングルサインオンでサインイン",
+      "ssoDescription": "組織のディレクトリによって、このアカウントに追加されました。参加するには、組織のシングルサインオンでサインインしてください。サインインできない場合は、アカウント管理者に招待の再送を依頼してください。",
+      "ssoContinue": "シングルサインオンで続行",
+      "askAdminTitle": "管理者に再送を依頼",
+      "askAdminDescription": "組織のディレクトリによってこのアカウントに追加されましたが、このインスタンスではメールアドレスを確認できません。アカウント管理者に招待の再送を依頼し、その後このリンクをもう一度開いてください。",
+      "ssoDomainUnverified": "シングルサインオンのプロバイダーがこのメールのドメインを検証していません。この招待を使うには、サインアウトしてメールアドレスでサインインし直してください。",
+      "ssoUnavailable": "現在シングルサインオンを利用できません。アカウント管理者に招待の再送を依頼してください。"
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – オープンソースのAI Operating System",

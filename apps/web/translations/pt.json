@@ -1268,10 +1268,6 @@
           "name": "Drive",
           "description": "Pastas compartilhadas que ficam sincronizadas com as sessões: o seu próprio drive, um por agente e os drives da empresa que um administrador vincula ao projeto. Novas sessões os veem em /drives."
         },
-        "session_log": {
-          "name": "Registo de sessão v2",
-          "description": "Lê uma sessão através do registo de sessão v2 em vez da transcrição v1. A Kortix ativa-o por projeto."
-        },
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."
@@ -5121,7 +5117,14 @@
       "youHaveBeenInvitedToAProject": "Você foi convidado para um projeto.",
       "joinProjectDescription": "Você entrará em {projectName} como {roleLabel}.",
       "roleManager": "gerente",
-      "signOutAndContinue": "Sair e continuar"
+      "signOutAndContinue": "Sair e continuar",
+      "ssoTitle": "Entrar com logon único",
+      "ssoDescription": "O diretório da sua organização adicionou você a esta conta. Entre com o logon único da sua organização para participar. Se não conseguir, peça a um administrador da conta para reenviar o convite.",
+      "ssoContinue": "Continuar com logon único",
+      "askAdminTitle": "Peça a um administrador para reenviar",
+      "askAdminDescription": "O diretório da sua organização adicionou você a esta conta, e esta instância não consegue confirmar seu endereço de e-mail. Peça a um administrador da conta para reenviar o convite e abra este link novamente.",
+      "ssoDomainUnverified": "Seu provedor de logon único não verificou o domínio deste e-mail. Saia e entre novamente com seu endereço de e-mail para usar este convite.",
+      "ssoUnavailable": "O logon único não está disponível agora. Peça a um administrador da conta para reenviar o convite."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – O AI Operating System de código aberto",

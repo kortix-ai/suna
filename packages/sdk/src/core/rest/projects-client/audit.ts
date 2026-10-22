@@ -151,6 +151,67 @@ export async function listAccountAudit(accountId: string, options?: ListAccountA
   );
 }
 
+export interface GetAccountAuditActivityOptions {
+  /** First UTC day, inclusive (YYYY-MM-DD). Default: 27 days before `until`. */
+  since?: string;
+  /** Last UTC day, inclusive (YYYY-MM-DD). Default: today (UTC). At most 400 days per request. */
+  until?: string;
+  projectId?: string;
+  /** Only this user. */
+  actor?: string;
+  /** `browser`: a person in a web page. `program`: CLI, SDK, sandbox or script acting as the user. */
+  client?: 'browser' | 'program';
+  actorType?: 'human' | 'agent' | 'service_account' | 'system' | 'anonymous';
+  credentialKind?: string;
+}
+
+export interface AuditActivityDay {
+  /** UTC day, YYYY-MM-DD. */
+  day: string;
+  events: number;
+  /** Distinct UTC hours with at least one event. */
+  active_hours: number;
+}
+
+export interface AuditActivityActor {
+  actor_user_id: string;
+  email: string | null;
+  active_days: number;
+  active_hours: number;
+  events: number;
+  first_at: string;
+  last_at: string;
+  days: AuditActivityDay[];
+}
+
+export interface AuditActivity {
+  since: string;
+  until: string;
+  /** Events before this instant are counted; later ones are not rolled up yet. */
+  rolled_through: string | null;
+  /** Most active first. */
+  actors: AuditActivityActor[];
+}
+
+/** Who was active in the account and how often, per UTC day. Same gate as the audit log. */
+export async function getAccountAuditActivity(accountId: string, options: GetAccountAuditActivityOptions = {}) {
+  const params = new URLSearchParams();
+  const wire: Record<string, string | undefined> = {
+    since: options.since,
+    until: options.until,
+    project_id: options.projectId,
+    actor: options.actor,
+    client: options.client,
+    actor_type: options.actorType,
+    credential_kind: options.credentialKind,
+  };
+  for (const [key, value] of Object.entries(wire)) if (value) params.set(key, value);
+  const qs = params.toString();
+  return unwrap(
+    await backendApi.get<AuditActivity>(`/accounts/${accountId}/audit/activity${qs ? `?${qs}` : ''}`),
+  );
+}
+
 /** Canonical project-scoped audit timeline. The API binds project scope server-side. */
 export async function listProjectAudit(projectId: string, options?: ListAccountAuditOptions) {
   // The path carries the project; a caller-passed projectId stays off the wire.

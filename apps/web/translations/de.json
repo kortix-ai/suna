@@ -1268,10 +1268,6 @@
           "name": "Drive",
           "description": "Geteilte Ordner, die mit Sitzungen synchron bleiben: dein eigenes Drive, eines pro Agent und Firmen-Drives, die ein Admin dem Projekt zuweist. Neue Sitzungen sehen sie unter /drives."
         },
-        "session_log": {
-          "name": "Session-Log v2",
-          "description": "Liest eine Session über das Session-Log v2 statt über das Transkript v1. Kortix aktiviert es pro Projekt."
-        },
         "session_log_restore": {
           "name": "Wiederherstellung aus dem Session-Log",
           "description": "Baut eine Session aus ihrem gespeicherten Session-Log neu auf, wenn ihr Computer die Unterhaltung verloren hat. Kortix aktiviert es pro Projekt."
@@ -5121,7 +5117,14 @@
       "youHaveBeenInvitedToAProject": "Du wurdest zu einem Projekt eingeladen.",
       "joinProjectDescription": "Du trittst {projectName} als {roleLabel} bei.",
       "roleManager": "Manager",
-      "signOutAndContinue": "Abmelden und fortfahren"
+      "signOutAndContinue": "Abmelden und fortfahren",
+      "ssoTitle": "Mit Single Sign-On anmelden",
+      "ssoDescription": "Das Verzeichnis deiner Organisation hat dich zu diesem Konto hinzugefügt. Melde dich mit dem Single Sign-On deiner Organisation an, um beizutreten. Wenn das nicht geht, bitte einen Kontoadmin, die Einladung erneut zu senden.",
+      "ssoContinue": "Weiter mit Single Sign-On",
+      "askAdminTitle": "Admin um erneutes Senden bitten",
+      "askAdminDescription": "Das Verzeichnis deiner Organisation hat dich zu diesem Konto hinzugefügt, und diese Instanz kann deine E-Mail-Adresse nicht bestätigen. Bitte einen Kontoadmin, die Einladung erneut zu senden, und öffne diesen Link dann noch einmal.",
+      "ssoDomainUnverified": "Dein Single-Sign-On-Anbieter hat die Domain dieser E-Mail-Adresse nicht verifiziert. Melde dich ab und mit deiner E-Mail-Adresse wieder an, um diese Einladung zu nutzen.",
+      "ssoUnavailable": "Single Sign-On ist gerade nicht verfügbar. Bitte einen Kontoadmin, die Einladung erneut zu senden."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das Open-Source-AI Operating System",

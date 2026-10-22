@@ -2,31 +2,14 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { configureKortix } from '../http/config';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fetchFirstSessionLogPage, fetchSessionLogPage, loadSessionLogPage, negotiateSessionLog, SESSION_LOG_FIRST_PAGE_LIMIT } from './source';
+import { fetchFirstSessionLogPage, fetchSessionLogPage, loadSessionLogPage, SESSION_LOG_FIRST_PAGE_LIMIT } from './source';
 import type { SessionLog } from './types';
 
 const log: SessionLog = JSON.parse(readFileSync(join(import.meta.dir, '../../../../api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'));
-const loader = async () => ({});
 const page = () => {
   const { threads, ...session } = structuredClone(log);
   return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }) => head), thread_id: threads[0]!.thread_id, messages: threads[0]!.messages, has_more: true };
 };
-
-describe('negotiateSessionLog', () => {
-  // The stored log is the API's: it needs no runtime, so a stopped box reads it too. The
-  // session stream serves `schema=v2` for every daemon (it converts a daemon that does not
-  // list `session.log.v2`), so the runtime's capability list no longer gates it.
-  test('v2 when the flag is on and a page loader exists, whatever the runtime lists', () => {
-    expect(negotiateSessionLog({ flag: true, loader })).toBe('v2');
-  });
-  test('v1 for each missing condition', () => {
-    expect(negotiateSessionLog({ flag: false, loader })).toBe('v1');
-    expect(negotiateSessionLog({ flag: true, loader: null })).toBe('v1');
-  });
-  test('an API that predates the flag never says true, so this SDK keeps v1 there', () => {
-    expect(negotiateSessionLog({ flag: undefined, loader })).toBe('v1');
-  });
-});
 
 describe('loadSessionLogPage: GET /v1/projects/:p/sessions/:s/log', () => {
   const realFetch = globalThis.fetch;

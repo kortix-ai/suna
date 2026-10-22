@@ -1268,10 +1268,6 @@
           "name": "Drive",
           "description": "Cartelle condivise sincronizzate con le sessioni: il tuo drive, uno per agente e i drive aziendali che un amministratore collega al progetto. Le nuove sessioni li vedono in /drives."
         },
-        "session_log": {
-          "name": "Log di sessione v2",
-          "description": "Legge una sessione tramite il log di sessione v2 invece della trascrizione v1. Kortix lo attiva per progetto."
-        },
         "session_log_restore": {
           "name": "Ripristino dal log di sessione",
           "description": "Ricostruisce una sessione dal suo log di sessione salvato quando il suo computer ha perso la conversazione. Kortix lo attiva per progetto."
@@ -5121,7 +5117,14 @@
       "youHaveBeenInvitedToAProject": "Sei stato invitato a un progetto.",
       "joinProjectDescription": "Entrerai in {projectName} come {roleLabel}.",
       "roleManager": "responsabile",
-      "signOutAndContinue": "Esci e continua"
+      "signOutAndContinue": "Esci e continua",
+      "ssoTitle": "Accedi con il single sign-on",
+      "ssoDescription": "La directory della tua organizzazione ti ha aggiunto a questo account. Accedi con il single sign-on della tua organizzazione per unirti. Se non riesci, chiedi a un amministratore dell'account di inviare di nuovo l'invito.",
+      "ssoContinue": "Continua con il single sign-on",
+      "askAdminTitle": "Chiedi a un amministratore di inviarlo di nuovo",
+      "askAdminDescription": "La directory della tua organizzazione ti ha aggiunto a questo account e questa istanza non può confermare il tuo indirizzo email. Chiedi a un amministratore dell'account di inviare di nuovo l'invito, poi riapri questo link.",
+      "ssoDomainUnverified": "Il tuo provider di single sign-on non ha verificato il dominio di questa email. Esci e accedi di nuovo con il tuo indirizzo email per usare questo invito.",
+      "ssoUnavailable": "Il single sign-on non è disponibile al momento. Chiedi a un amministratore dell'account di inviare di nuovo l'invito."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – L'AI Operating System open source",

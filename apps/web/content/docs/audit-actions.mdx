@@ -895,6 +895,7 @@ One table per domain. The route column shows the method and route template. `any
 | `session.reminder.create` | Created session reminder | `POST /v1/projects/:projectId/sessions/:sessionId/reminders` |
 | `session.reminder.delete` | Deleted session reminder | `DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
 | `session.reminder.list` | Listed session reminders | `GET /v1/projects/:projectId/sessions/:sessionId/reminders` |
+| `session.reminder.run` | Ran session reminder now | `POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run` |
 | `session.reminder.update` | Turned session reminder on or off | `PATCH /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId` |
 | `session.restart` | Restarted session | `POST /v1/projects/:projectId/sessions/:sessionId/restart` |
 | `session.restore` | Restored deleted session | `POST /v1/projects/:projectId/sessions/:sessionId/restore` |

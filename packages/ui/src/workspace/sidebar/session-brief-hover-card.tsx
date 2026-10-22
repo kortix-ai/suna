@@ -15,7 +15,7 @@ import { menuRow } from '../../primitives/menu-recipe';
 import { CR_ID_PREFIX } from '../review/review-actions';
 import { reviewHref } from '../../internal/lib/capability-tab-routes';
 import { useTranslations } from '../../i18n';
-import { useSessionHoverStore } from '../../internal/stores/session-hover-store';
+import { sessionRowHoverHandlers, useSessionHoverStore } from '../../internal/stores/session-hover-store';
 import type { ChangeRequest, ChangeRequestStatus } from '@kortix/sdk';
 import { ArrowsSplitIcon, GitDiffIcon, RobotIcon } from '@phosphor-icons/react';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -351,16 +351,16 @@ function SessionBriefCard({
 }) {
   const open = useSessionHoverStore((state) => state.activeSessionId === id);
   const slot = useSessionHoverStore((state) => state.slot);
-  const openSession = useSessionHoverStore((state) => state.openSession);
-  const closeSession = useSessionHoverStore((state) => state.closeSession);
 
   // A row can be filtered out, or the sidebar unmounted, while its card shows.
   // Without this the store keeps naming a row that no longer exists and the
-  // group is still warm the next time the list mounts.
+  // group is still warm the next time the list mounts. A row unmounted under
+  // the pointer gets no pointerleave, so its click's suppression ends here too.
   useEffect(
     () => () => {
       const store = useSessionHoverStore.getState();
       if (store.activeSessionId === id) store.dismiss();
+      store.release(id);
     },
     [id],
   );
@@ -368,15 +368,7 @@ function SessionBriefCard({
   return (
     <>
       {/* data-state as the Radix trigger set it: the row hides its markers while the card is open. */}
-      <Slot.Root
-        data-state={open ? 'open' : 'closed'}
-        onPointerEnter={(event) => {
-          if (event.pointerType !== 'touch') openSession(id, event.currentTarget, 'pointer');
-        }}
-        onPointerLeave={() => closeSession(id)}
-        onFocus={(event) => openSession(id, event.currentTarget, 'focus')}
-        onBlur={() => closeSession(id)}
-      >
+      <Slot.Root data-state={open ? 'open' : 'closed'} {...sessionRowHoverHandlers(id)}>
         {children}
       </Slot.Root>
       {open && slot ? createPortal(content, slot) : null}

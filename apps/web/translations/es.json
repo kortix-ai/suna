@@ -1268,10 +1268,6 @@
           "name": "Drive",
           "description": "Carpetas compartidas que se mantienen sincronizadas con las sesiones: tu propio drive, uno por agente y los drives de empresa que un administrador asigna al proyecto. Las sesiones nuevas los ven en /drives."
         },
-        "session_log": {
-          "name": "Registro de sesión v2",
-          "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
-        },
         "session_log_restore": {
           "name": "Restauración del registro de sesión",
           "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
@@ -5121,7 +5117,14 @@
       "youHaveBeenInvitedToAProject": "Te han invitado a un proyecto.",
       "joinProjectDescription": "Te unirás a {projectName} como {roleLabel}.",
       "roleManager": "administrador del proyecto",
-      "signOutAndContinue": "Cerrar sesión y continuar"
+      "signOutAndContinue": "Cerrar sesión y continuar",
+      "ssoTitle": "Inicia sesión con inicio de sesión único",
+      "ssoDescription": "El directorio de tu organización te añadió a esta cuenta. Inicia sesión con el inicio de sesión único de tu organización para unirte. Si no puedes, pide a un administrador de la cuenta que reenvíe la invitación.",
+      "ssoContinue": "Continuar con inicio de sesión único",
+      "askAdminTitle": "Pide a un administrador que la reenvíe",
+      "askAdminDescription": "El directorio de tu organización te añadió a esta cuenta y esta instancia no puede confirmar tu correo electrónico. Pide a un administrador de la cuenta que reenvíe la invitación y vuelve a abrir este enlace.",
+      "ssoDomainUnverified": "Tu proveedor de inicio de sesión único no ha verificado el dominio de este correo. Cierra sesión y vuelve a iniciarla con tu correo electrónico para usar esta invitación.",
+      "ssoUnavailable": "El inicio de sesión único no está disponible ahora. Pide a un administrador de la cuenta que reenvíe la invitación."
     },
     "appLayout": {
       "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – El AI Operating System de código abierto",
