@@ -104,7 +104,7 @@ jobs:
       - uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.3
       # No node_modules cache: measured 2026-10-16 (runs
