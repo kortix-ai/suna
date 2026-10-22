@@ -1693,21 +1693,19 @@ function OverridesCard({ account }: { account: AdminAccount }) {
     setDraft(draftFromOverrides(stored));
   }
 
-  const result = overridesPatch(draft, stored);
-  const patch = result.ok ? result.patch : {};
-  const nothingToSave = result.ok && isEmptyPatch(patch);
-  const dirty = !result.ok || !nothingToSave;
+  const patch = overridesPatch(draft, stored);
+  const dirty = !isEmptyPatch(patch);
 
   function setRow<K extends keyof OverridesDraft>(key: K, value: OverridesDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
   async function handleSave() {
-    if (!result.ok || isEmptyPatch(result.patch)) return;
+    if (isEmptyPatch(patch)) return;
     try {
-      await setOverrides.mutateAsync({ accountId: account.accountId, patch: result.patch });
+      await setOverrides.mutateAsync({ accountId: account.accountId, patch });
       successToast(tI18nComplete.raw('text214d79fdac84'), {
-        description: describeOverridePatch(result.patch),
+        description: describeOverridePatch(patch),
       });
     } catch (error) {
       errorToast(tI18nComplete.raw('text222b8d57e366'), {
@@ -1763,12 +1761,10 @@ function OverridesCard({ account }: { account: AdminAccount }) {
         ))}
       </div>
 
-      {!result.ok && <p className="text-kortix-red text-xs">{result.error}</p>}
-
       <div className="flex flex-wrap items-center gap-2">
         <Button
           onClick={handleSave}
-          disabled={!dirty || !result.ok || setOverrides.isPending}
+          disabled={!dirty || setOverrides.isPending}
           className="gap-1.5"
         >
           {setOverrides.isPending && <Loading className="h-3.5 w-3.5" />}
