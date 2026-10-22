@@ -71,6 +71,71 @@ export async function loadTriggerSpace(projectId: string, slug: string): Promise
   return row?.space ?? null;
 }
 
+/**
+ * A PATCH's space and sharing, from the stored space, the space the body asks
+ * for (undefined: none named) and the sharing it saves (null: none). Naming the
+ * stored space is no move. A move applies to later runs only; into a channel
+ * with no sharing saved, they become project-visible. A DM trigger's runs stay
+ * shared with the DM's member only. Only a sharing save outside a DM with no
+ * move re-shares earlier threads (`propagate`).
+ */
+export function decideTriggerSpacePatch(
+  stored: SpaceRow | null,
+  requested: SpaceRow | null | undefined,
+  access: TriggerSessionAccess | null,
+): { nextSpace: SpaceRow | null | undefined; space: SpaceRow | null; access: TriggerSessionAccess | null; propagate: boolean } {
+  const nextSpace = requested !== undefined && (requested?.spaceId ?? null) !== (stored?.spaceId ?? null) ? requested : undefined;
+  const space = nextSpace !== undefined ? nextSpace : stored;
+  const propagate = access !== null && nextSpace === undefined && space?.kind !== 'dm';
+  if (space?.kind === 'dm' && (access || nextSpace !== undefined)) access = dmTriggerSessionAccess(space);
+  else if (nextSpace?.kind === 'channel' && !access) access = PROJECT_TRIGGER_SESSION_ACCESS;
+  return { nextSpace, space, access, propagate };
+}
+
+/**
+ * `decideTriggerSpacePatch` for a PATCH body. `channels` off: `space_id` is
+ * ignored. The stored space is read whatever the flag, so a flag-off sharing
+ * write on a DM trigger stays DM-only. Another member's DM trigger: anyone else
+ * may only move it out or switch it on or off (403).
+ */
+export async function resolveTriggerSpacePatch(input: {
+  projectId: string;
+  slug: string;
+  userId: string;
+  channels: boolean;
+  body: Record<string, unknown>;
+  access: TriggerSessionAccess | null;
+}): Promise<ReturnType<typeof decideTriggerSpacePatch> | { error: TriggerSpaceError }> {
+  const { projectId, slug, userId, body } = input;
+  let requested: SpaceRow | null | undefined;
+  if (input.channels && 'space_id' in body) {
+    if (body.space_id === null) requested = null;
+    else {
+      const found = await resolveTriggerSpace(projectId, body.space_id, userId);
+      if ('error' in found) return found;
+      requested = found.space;
+    }
+  }
+  const stored = await loadTriggerSpace(projectId, slug);
+  if (stored?.kind === 'dm' && stored.dmUserId !== userId && Object.keys(body).some((key) => key !== 'space_id' && key !== 'enabled')) {
+    return {
+      error: { status: 403, body: { error: 'Only the member a DM belongs to can edit a trigger that posts to it.', code: 'space_forbidden' } },
+    };
+  }
+  return decideTriggerSpacePatch(stored, requested, input.access);
+}
+
+/**
+ * The space a run lands in: its trigger's live space, except a DM whose agent
+ * the trigger no longer runs (the manifest changed outside the API). That run,
+ * like one with no live space, goes to the default channel (null) with the
+ * trigger's own sharing.
+ */
+export function triggerRunSpace(space: SpaceRow | null, agentName: string | null | undefined): SpaceRow | null {
+  if (space?.kind === 'dm' && agentName !== space.dmAgentName) return null;
+  return space;
+}
+
 /** The space a run of this trigger lands in now: null when it has none or the space is archived. */
 export async function liveTriggerSpace(projectId: string, slug: string): Promise<SpaceRow | null> {
   const space = await loadTriggerSpace(projectId, slug);

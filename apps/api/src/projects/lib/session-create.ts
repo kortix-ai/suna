@@ -90,7 +90,7 @@ import { mergeSessionSandboxEnv, parseSessionRuntimeContext } from './session-ru
 import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { resolvePlatformMetaSandbox } from './platform-meta-agent';
 import { FIRST_PROMPT_MAX_CHARS, SPACE_NOT_FOUND, ensureDefaultSpace, findForkSourceSpace, findSessionSpace, spaceSessionVisibility } from './project-spaces';
-import { liveTriggerSpace } from './trigger-space';
+import { liveTriggerSpace, triggerRunSpace } from './trigger-space';
 
 import {
   resolveProjectSnapshotMode,
@@ -276,10 +276,14 @@ async function resolveRequestedSessionSpace(input: CreateProjectSessionInput): P
   // create executes (a queued run sees the space as it is then). The space
   // was checked when it was set on the trigger: a DM was the setter's own,
   // while the run's actor is the automation stand-in. None or archived:
-  // `#general`. `source` and `trigger_*` are server-set (`createSession`).
+  // `#general`, as is a DM whose agent the trigger no longer runs
+  // (`triggerRunSpace`). `source` and `trigger_*` are server-set (`createSession`).
   const meta = input.metadata ?? {};
   if (typeof meta.source === 'string' && meta.source.startsWith('trigger:') && meta.trigger_kind === 'git') {
-    const space = typeof meta.trigger_slug === 'string' ? await liveTriggerSpace(project.projectId, meta.trigger_slug) : null;
+    const space = triggerRunSpace(
+      typeof meta.trigger_slug === 'string' ? await liveTriggerSpace(project.projectId, meta.trigger_slug) : null,
+      normalizeString(body.agent_name),
+    );
     return space ? { filed: true, spaceId: space.spaceId, visibility: spaceSessionVisibility(space.kind) } : { filed: true, spaceId: null };
   }
   if (body.space_id === undefined) {

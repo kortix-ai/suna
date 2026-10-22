@@ -11,9 +11,11 @@
 import type { Space, SpaceCreateInput, SpaceUpdateInput } from '@kortix/api-contract';
 import { projectSessions, projectSpaces } from '@kortix/db';
 import { spaceSlug } from '@kortix/shared';
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { resolveFeatureFlag } from '../../feature-flags/registry';
 import { db } from '../../shared/db';
 import { uniqueViolationConstraint } from '../../shared/postgres-errors';
+import { normalizeString } from './serializers';
 
 type SpaceRow = typeof projectSpaces.$inferSelect;
 
@@ -80,6 +82,29 @@ export async function ensureDefaultSpace(projectId: string, accountId: string): 
   const general = await ensureDefaultSpaceCreated(projectId, accountId);
   if (general.created) await assignUnassignedSessions(projectId, general.space.spaceId);
   return general.space;
+}
+
+/**
+ * A warm session claimed while `project_channels` is on is a new `#general`
+ * thread, as a create without `space_id` is (a warm session is created outside
+ * any space). Returns the `#general` id (null while the flag is off), the
+ * columns the claim sets (a space the row already has wins) and the metadata
+ * that carries the first prompt.
+ */
+export async function warmClaimFiling(
+  project: { projectId: string; accountId: string; metadata: unknown },
+  promptText: unknown,
+): Promise<{ defaultSpaceId: string | null; columns: { spaceId?: SQL }; metadata: { first_prompt?: string } }> {
+  if (!resolveFeatureFlag(project.metadata, 'project_channels')) {
+    return { defaultSpaceId: null, columns: {}, metadata: {} };
+  }
+  const { spaceId } = await ensureDefaultSpace(project.projectId, project.accountId);
+  const firstPrompt = normalizeString(promptText);
+  return {
+    defaultSpaceId: spaceId,
+    columns: { spaceId: sql`coalesce(${projectSessions.spaceId}, ${spaceId}::uuid)` },
+    metadata: firstPrompt ? { first_prompt: firstPrompt.slice(0, FIRST_PROMPT_MAX_CHARS) } : {},
+  };
 }
 
 /** Live channels (default first, then oldest first), then the user's DMs. */
