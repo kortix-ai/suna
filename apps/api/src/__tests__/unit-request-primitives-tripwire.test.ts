@@ -92,13 +92,12 @@ const JSON_OBJECT_INLINE = new RegExp(
 );
 const JSON_OBJECT_ALLOW: Record<string, string> = {};
 
-// A hand-written `Authorization: Bearer` parse in the one helper's exact form.
-// The case-insensitive and whitespace-tolerant parsers below are different
-// contracts, so they keep their own code.
+// A hand-written `Authorization: Bearer` parse in the old exact form
+// (`header.startsWith('Bearer ')`). shared/bearer-token.ts parses the scheme
+// case-insensitively now (RFC 7235 §2.1) and so does not match this pattern —
+// nothing is allowlisted, and any new exact-form parse is an offender.
 const BEARER_PARSE = /startsWith\(\s*['"`]Bearer ['"`]\s*\)/;
-const BEARER_ALLOW: Record<string, string> = {
-  'shared/bearer-token.ts': 'the one implementation',
-};
+const BEARER_ALLOW: Record<string, string> = {};
 
 const ESCAPE_HTML_DEF = /function\s+escapeHtml\b|\bescapeHtml\s*=\s*(?:\(|function)/;
 const ESCAPE_HTML_ALLOW: Record<string, string> = {
