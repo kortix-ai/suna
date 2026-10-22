@@ -8,7 +8,7 @@ import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { type ComponentProps, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { AppErrorCard, ClientErrorBoundary } from '@/components/common/error-boundary';
 import {
@@ -883,15 +883,13 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (sessionSwitchLoading) {
       if (resumeOverlay === 'saved-skeleton') return resumeSkeleton;
       return (
-        <HeaderlessSessionSurface>
-          <SessionStartingLoader
-            stage={switchingToSessionId === sessionId ? startStage : 'starting'}
-            projectId={projectId}
-            sessionId={switchingToSessionId ?? sessionId}
-            reason={switchingToSessionId === sessionId ? session.reason : null}
-            failure={switchingToSessionId === sessionId ? session.failure : null}
-          />
-        </HeaderlessSessionSurface>
+        <SessionBootSurface
+          stage={switchingToSessionId === sessionId ? startStage : 'starting'}
+          projectId={projectId}
+          sessionId={switchingToSessionId ?? sessionId}
+          reason={switchingToSessionId === sessionId ? session.reason : null}
+          failure={switchingToSessionId === sessionId ? session.failure : null}
+        />
       );
     }
 
@@ -984,16 +982,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     if (wakeLadderHolding) {
       if (!showCachedTranscriptWhileDown) {
         return (
-          <HeaderlessSessionSurface>
-            <SessionStartingLoader
-              stage="starting"
-              projectId={projectId}
-              sessionId={sessionId}
-              note={wake.note}
-              reason={session.reason}
-              failure={session.failure}
-            />
-          </HeaderlessSessionSurface>
+          <SessionBootSurface
+            stage="starting"
+            projectId={projectId}
+            sessionId={sessionId}
+            note={wake.note}
+            reason={session.reason}
+            failure={session.failure}
+          />
         );
       }
     } else if (recoverableFailure && !notice) {
@@ -1142,16 +1138,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
       // dead-end, so the user just sees it come back (as a hard refresh would).
       if (autoResuming) {
         return (
-          <HeaderlessSessionSurface>
-            <SessionStartingLoader
-              stage="starting"
-              projectId={projectId}
-              sessionId={sessionId}
-              note={wake.note}
-              reason={session.reason}
-              failure={session.failure}
-            />
-          </HeaderlessSessionSurface>
+          <SessionBootSurface
+            stage="starting"
+            projectId={projectId}
+            sessionId={sessionId}
+            note={wake.note}
+            reason={session.reason}
+            failure={session.failure}
+          />
         );
       }
       // Auto-resume exhausted (or genuinely un-resumable): give an in-place
@@ -1265,16 +1259,14 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
             ) : resumeOverlay === 'saved-skeleton' ? (
               resumeSkeleton
             ) : (
-              <HeaderlessSessionSurface>
-                <SessionStartingLoader
-                  stage={authLoading || !user ? 'provisioning' : startStage}
-                  projectId={projectId}
-                  sessionId={sessionId}
-                  note={wake.note}
-                  reason={session.reason}
-                  failure={session.failure}
-                />
-              </HeaderlessSessionSurface>
+              <SessionBootSurface
+                stage={authLoading || !user ? 'provisioning' : startStage}
+                projectId={projectId}
+                sessionId={sessionId}
+                note={wake.note}
+                reason={session.reason}
+                failure={session.failure}
+              />
             )}
           </div>
         )}
@@ -1295,7 +1287,6 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
           bootPresentation === 'banner' &&
           (startStage !== 'ready' || !chatReady) && (
             <SessionConnectingBanner
-              stage={authLoading || !user ? 'provisioning' : startStage}
               projectId={projectId}
               sessionId={sessionId}
               note={wake.note}
@@ -1414,6 +1405,29 @@ function HeaderlessSessionSurface({ children }: { children: ReactNode }) {
       <SidebarToggle placement="floating" />
       {children}
     </div>
+  );
+}
+
+/**
+ * A session with nothing saved to read yet: its frame (header and composer
+ * outline) while the computer wakes in the background. The frame speaks only
+ * when the wake needs attention (`SessionStartingLoader`).
+ */
+function SessionBootSurface({
+  stage,
+  ...wake
+}: ComponentProps<typeof SessionStartingLoader> & {
+  projectId: string;
+  sessionId: string;
+  stage: ComponentProps<typeof SavedSessionSkeleton>['stage'];
+}) {
+  return (
+    <SavedSessionSkeleton
+      projectId={wake.projectId}
+      sessionId={wake.sessionId}
+      stage={stage}
+      status={<SessionStartingLoader {...wake} />}
+    />
   );
 }
 

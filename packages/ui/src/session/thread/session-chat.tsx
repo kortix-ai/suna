@@ -4105,12 +4105,8 @@ export function SessionChat({
       <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
         {/* `projectId`/`sessionId` are what arm the loader's restart offer
             (`canRestart`). Without them a session wedged in this state spun
-            forever with no way out but a page reload. The stage must also track
-            the real runtime — hardcoding "ready" froze the copy on
-            "Connecting" no matter what the boot was actually doing. */}
+            forever with no way out but a page reload. */}
         <SessionStartingLoader
-          stage={runtimeReady ? 'ready' : 'starting'}
-          variant="compact"
           projectId={projectId}
           sessionId={projectSessionId}
         />

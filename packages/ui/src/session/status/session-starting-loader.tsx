@@ -3,52 +3,33 @@
 import { Button } from '../../primitives/button';
 import Loading from '../../primitives/loading';
 import { useRestartProjectSession } from '../../internal/hooks/projects/use-restart-project-session';
-import { useLocalizedUiCatalog } from '../../i18n/ui-catalog/use-localized-ui-catalog';
 import { useTranslations } from '../../i18n';
 import { cn } from '../../lib/utils';
-import { type SessionStartResult, type SessionStartStage } from '@kortix/sdk';
+import { type SessionStartResult } from '@kortix/sdk';
 import { useProjectSession } from '@kortix/sdk/react';
 import { ArrowCounterClockwiseIcon as RotateCcw } from '@phosphor-icons/react';
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * The ONE loader shown while a session's Kortix Computer comes up — full-screen
- * for resumes, and dead-center in the side panel while a fresh session boots.
- * All the heavy lifting (provision / wake / OpenCode readiness + pin) is
- * server-side behind POST /sessions/:id/start; this just reports the real stage.
+ * What a session shows while its Kortix Computer comes up: nothing, unless the
+ * wake needs attention. Opening a session wakes its computer in the background,
+ * and a send goes out as soon as it is up, so a routine wake has nothing to
+ * say. Two states speak: an escalation or retry note from the server, and a
+ * wake stuck past `STUCK_AFTER_MS` that the caller may restart. A screen reader
+ * still hears that the session is starting.
  *
- * Visual: one stable heading, one short stage label, one four-stage rail, and
- * one small spinner. The spinner is the only perpetual motion. The rail moves
- * only when the backend stage advances, so it never claims progress we do not
- * have.
+ * All the heavy lifting (provision / wake / runtime readiness) is server-side
+ * behind POST /sessions/:id/start.
  */
-const LOADER_DELAY_MS = 100;
-/**
- * How long we sit in the backend `starting` stage before softly advancing from
- * "Loading your workspace" to "Waking the agent". Both happen within that one
- * backend stage (clone → OpenCode boot), so the advance reflects real order.
- */
-const STARTING_SUBSTEP_MS = 5_000;
-/** After this long, show copy that sets expectations for a cold start. */
-const SLOW_AFTER_MS = 15_000;
+
 /**
  * After this long, offer a manual restart. Sandboxes occasionally wedge (e.g. a
  * stuck provider-side proxy) with no server-side signal that anything is wrong —
  * a stop/start of the sandbox is the known fix, so surface it as a fallback
- * instead of leaving the user staring at "Connecting" indefinitely.
+ * instead of leaving the user waiting indefinitely.
  */
 export const STUCK_AFTER_MS = 45_000;
 
-interface Step {
-  /** User-visible label for the active startup stage. */
-  label: string;
-}
-
-/**
- * Accepted for input compatibility. Both values intentionally render the same
- * loader.
- */
-type BootStepVariant = 'stepper' | 'compact';
 type StartFailure = SessionStartResult['failure'];
 
 /**
@@ -84,44 +65,14 @@ export function sessionWakeStatusNote(input: {
   return `Still starting your computer. Trying again in ${duration} (attempt ${nextAttempt}).`;
 }
 
-/** Copy is deliberately parallel, so stage changes read as one continuous task. */
-export const STEPS: Step[] = [
-  { label: 'Reserving your computer' },
-  { label: 'Loading your workspace' },
-  { label: 'Waking the agent' },
-  { label: 'Connecting' },
-];
-
-/**
- * Resolve which step is CURRENTLY active from the backend stage plus how long
- * we've been in it. The index is the floor we KNOW we're at — earlier steps are
- * genuinely complete, later ones haven't started.
- */
-export function activeStep(stage: SessionStartStage, msInStage: number): number {
-  if (stage === 'provisioning') return 0;
-  if (stage === 'starting') return msInStage >= STARTING_SUBSTEP_MS ? 2 : 1;
-  return 3;
-}
-
-/**
- * The shared boot clock: a 1s tick that resolves the current active step from
- * the backend stage plus time-in-stage, and exposes `now` for elapsed-time UI.
- */
-function useBootProgress(stage: SessionStartStage): { active: number; now: number } {
+/** A 1 s tick: the retry countdown and the stuck clock read it. */
+function useNow(): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(id);
   }, []);
-
-  const [stageEnteredAt, setStageEnteredAt] = useState(now);
-  const [prevStage, setPrevStage] = useState(stage);
-  if (prevStage !== stage) {
-    setPrevStage(stage);
-    setStageEnteredAt(now);
-  }
-
-  return { active: activeStep(stage, now - stageEnteredAt), now };
+  return now;
 }
 
 /**
@@ -204,88 +155,12 @@ export function RestartFallback({
   );
 }
 
-interface QuietProgressLoaderProps {
-  active: number;
-  canRestart: boolean;
-  note?: string | null;
-  onRestart: () => void;
-  pending: boolean;
-  show: boolean;
-  slow: boolean;
-  stuck: boolean;
-}
-
 /**
- * One stable headline, one source of perpetual motion, and an honest four-stage
- * rail. Progress changes immediately when the backend stage changes.
+ * The wake's status where nothing else can paint: the side panel, a chat with
+ * no runtime yet, a resume with nothing saved. A routine wake renders only the
+ * screen-reader status.
  */
-function QuietProgressLoader({
-  active,
-  canRestart,
-  note,
-  onRestart,
-  pending,
-  show,
-  slow,
-  stuck,
-}: QuietProgressLoaderProps) {
-  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const steps = useLocalizedUiCatalog(STEPS);
-  const step = steps[Math.min(active, steps.length - 1)];
-
-  return (
-    <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-4 sm:px-8">
-      {show ? (
-        <div role="status" aria-live="polite" className="flex w-full max-w-xs items-start gap-3">
-          <Loading
-            variant="spokes"
-            className="text-muted-foreground mt-0.5 size-4 shrink-0 motion-reduce:animate-none"
-          />
-          <div className="min-w-0 flex-1">
-            <h2 className="text-foreground text-sm font-medium text-balance">
-              {tI18nComplete.raw('textac4e05b19878')}
-            </h2>
-            <p className="text-muted-foreground mt-1 text-xs text-pretty">{note ?? step.label}</p>
-
-            <div
-              role="progressbar"
-              aria-label={tI18nComplete.raw('text4cbf9c0d5628')}
-              aria-valuemin={1}
-              aria-valuemax={steps.length}
-              aria-valuenow={active + 1}
-              aria-valuetext={`Step ${active + 1} of ${steps.length}: ${step.label}`}
-              className="mt-3 grid grid-cols-4 gap-1.5"
-            >
-              {steps.map((item, index) => (
-                <span
-                  key={item.label}
-                  aria-hidden
-                  className={cn(
-                    'h-1 rounded-full',
-                    index <= active ? 'bg-kortix-green' : 'bg-border/70',
-                  )}
-                />
-              ))}
-            </div>
-
-            {slow ? (
-              <p className="text-muted-foreground mt-3 text-xs text-pretty">
-                {tI18nComplete.raw('textbb2ab0401c3c')}
-              </p>
-            ) : null}
-
-            <RestartFallback show={stuck && canRestart} pending={pending} onRestart={onRestart} />
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function SessionStartingLoader({
-  stage = 'provisioning',
-  /** Delay before the content appears. Warm opens avoid flashing the loader. */
-  delayMs = LOADER_DELAY_MS,
   projectId,
   sessionId,
   /** Honest one-liner from the SDK wake escalation ladder. */
@@ -293,43 +168,46 @@ export function SessionStartingLoader({
   reason,
   failure,
 }: {
-  stage?: SessionStartStage;
-  delayMs?: number;
   projectId?: string;
   sessionId?: string;
-  variant?: BootStepVariant;
   note?: string | null;
   reason?: string | null;
   failure?: StartFailure;
 }) {
-  const [delayElapsed, setDelayElapsed] = useState(false);
-  const show = delayMs <= 0 || delayElapsed;
-  useEffect(() => {
-    if (delayMs <= 0) return;
-    const timeout = setTimeout(() => setDelayElapsed(true), delayMs);
-    return () => clearTimeout(timeout);
-  }, [delayMs]);
-
+  const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
-  const { active, now } = useBootProgress(stage);
+  const now = useNow();
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const clockStart = useRestartedBootClock(restart);
-  const slow = now - clockStart >= SLOW_AFTER_MS;
-  const stuck = now - clockStart >= STUCK_AFTER_MS;
-  const canRestart = canOfferBootRestart(session, projectId, sessionId);
+  const restartable =
+    now - clockStart >= STUCK_AFTER_MS && canOfferBootRestart(session, projectId, sessionId);
 
+  if (!statusNote && !restartable) {
+    return (
+      <span role="status" className="sr-only">
+        {tI18nComplete.raw('textac4e05b19878')}
+      </span>
+    );
+  }
   return (
-    <QuietProgressLoader
-      active={active}
-      canRestart={canRestart}
-      note={statusNote}
-      onRestart={restart.restart}
-      pending={restart.isPending}
-      show={show}
-      slow={slow}
-      stuck={stuck}
-    />
+    <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-4 sm:px-8">
+      <div role="status" aria-live="polite" className="flex w-full max-w-xs items-start gap-3">
+        <Loading
+          variant="spokes"
+          className="text-muted-foreground mt-0.5 size-4 shrink-0 motion-reduce:animate-none"
+        />
+        <div className="min-w-0 flex-1">
+          {statusNote ? <p className="text-muted-foreground text-xs text-pretty">{statusNote}</p> : null}
+          <RestartFallback
+            show={restartable}
+            pending={restart.isPending}
+            onRestart={restart.restart}
+            className={statusNote ? 'mt-3' : 'mt-0'}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -340,7 +218,6 @@ export function SessionStartingLoader({
  * scrollable because only the restart control accepts input.
  */
 export function SessionConnectingBanner({
-  stage = 'provisioning',
   projectId,
   sessionId,
   className,
@@ -348,7 +225,6 @@ export function SessionConnectingBanner({
   reason,
   failure,
 }: {
-  stage?: SessionStartStage;
   projectId?: string;
   sessionId?: string;
   className?: string;
@@ -359,7 +235,7 @@ export function SessionConnectingBanner({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
-  const { now } = useBootProgress(stage);
+  const now = useNow();
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const clockStart = useRestartedBootClock(restart);
   const stuck = now - clockStart >= STUCK_AFTER_MS;
@@ -386,7 +262,7 @@ export function SessionConnectingBanner({
           className="size-3.5 shrink-0 text-current motion-reduce:animate-none"
         />
         <span className="min-w-0 text-pretty">
-          {statusNote ?? tI18nComplete.raw('textbb2ab0401c3c')}
+          {statusNote ?? tI18nComplete.raw('textbeda94e911d3')}
         </span>
         {stuck && canRestart ? (
           <Button
