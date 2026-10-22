@@ -652,9 +652,7 @@ when the session is not read live.
                     messages and "has_more". A running turn's messages
                     the log does not hold yet carry
                     "ext": {"kortix": {"data": {"provisional": true}}}
-                    (their seq is not stored yet). The top-level
-                    "provisional": true they also carry is deprecated
-                    and goes in the next release: read the ext key.
+                    (their seq is not stored yet).
   --schema v1       Deprecated: emit the old JSON (role / text / parts per
                     root message) from the v1 transcript. Goes in the next
                     release.
@@ -935,8 +933,7 @@ export async function readStoredSessionLog(
 /**
  * A running session's threads with the turn it runs now. The stored log is
  * journaled at each turn end, so the root thread takes the live messages it
- * does not hold yet (newer than its last), marked `ext.kortix.data.provisional: true` and,
- * deprecated for one release, a top-level `provisional: true`: their
+ * does not hold yet (newer than its last), marked `ext.kortix.data.provisional: true`: their
  * seq is not stored yet. A tail keeps the seqs `fromV1` gives the live read
  * when those agree with the stored ones, else it goes above the newest stored
  * seq. A deleted message's seq is not served, so a provisional seq can differ
@@ -945,17 +942,14 @@ export async function readStoredSessionLog(
  * its newest `limit` messages, and `has_more` says when older ones exist.
  */
 export function withLiveTurn(threads: LogThread[], live: SessionLogThread, limit: number): LogThread[] {
-  // Both marks for one release: the top-level `provisional` (v0.13.57, deprecated) and
-  // `ext.kortix.data.provisional`. An `ext.kortix.data` that is not a plain object is left as
-  // it is; the top-level mark still says provisional.
-  const provisional = (message: SessionLogMessage): SessionLogMessage & { provisional: true } => {
+  // The top-level `provisional` (v0.13.57) was deprecated in v0.14.0 and is gone. An `ext.kortix.data`
+  // that is not a plain object (no writer emits one) gives way to the mark.
+  const provisional = (message: SessionLogMessage): SessionLogMessage => {
     const kortix = message.ext?.kortix;
     const data = kortix?.data;
-    const plain = data === undefined || (typeof data === 'object' && data !== null && !Array.isArray(data));
-    const ext = plain
-      ? { ...message.ext, kortix: { ...kortix, version: kortix?.version ?? '1', data: { ...(data as Record<string, unknown> | undefined), provisional: true } } }
-      : message.ext;
-    return { ...message, thread_id: live.thread_id, ...(ext && { ext }), provisional: true };
+    const own = typeof data === 'object' && data !== null && !Array.isArray(data) ? (data as Record<string, unknown>) : {};
+    const ext = { ...message.ext, kortix: { ...kortix, version: kortix?.version ?? '1', data: { ...own, provisional: true } } };
+    return { ...message, thread_id: live.thread_id, ext };
   };
   const fit = (thread: SessionLogThread, messages: SessionLogMessage[], older: boolean): LogThread => ({
     ...thread,

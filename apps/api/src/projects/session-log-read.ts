@@ -26,11 +26,12 @@
  * - a text over 200,000 characters: the mirror cuts it (`MIRROR_MAX_PART_CHARS`); the log keeps
  *   the whole text. A text over 256 kB is a preview in the row (F3, `session-log-blobs.ts`):
  *   this read puts the whole text back from its object, after the transaction.
- * Paging assumes `seq` order is the mirror order (`created`, then id): the OpenCode adapter issues
- * seqs in `fromV1`'s order, which is that order; the pi adapter issues them in pi's append order,
- * which is its creation order. A cursor that names a message anchors on the
- * `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the column
- * then holds the ingest time). The two agree for every row with a creation time.
+ * Paging: a `fromV1` thread serves the mirror order (`created`, then id), which is its seq order
+ * (the OpenCode adapter issues seqs in `fromV1`'s order). A cursor that names a message anchors on
+ * the `created_at` column, while rows sort on `info.time.created` (`-Infinity` when absent; the
+ * column then holds the ingest time). The two agree for every row with a creation time. A native
+ * thread serves seq order, pi's append order: two of its messages can share a millisecond with ids
+ * that sort against their seqs, and a key order would skip or repeat one at a page boundary.
  *
  * `readSessionLogPage` answers `'unknown_thread'` for a `thread` the session does not have.
  */
@@ -54,6 +55,7 @@ import {
   type MirrorSnapshot,
 } from './lib/session-transcript-mirror';
 import { convertMirrorOnRead } from './session-log-backfill';
+import { mirrorDrained } from './session-log-capture';
 import { rehydrateLargeTexts } from './session-log-blobs';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -91,9 +93,10 @@ type PageInput = { sessionId: string; threadId: string | null; beforeSeq: number
 
 /**
  * One page of one thread. Null when the session has no stored log and no v1 mirror to convert
- * (a new session). `'mirror_unconverted'`: no log, but a mirror this read did not convert (another
- * read holds the session's conversion lock, or ingest is off), so the history exists and a client
- * must not read it as "nothing saved".
+ * (a new session), or no stored log once the mirror is drained (`mirrorDrained`: no mirror table
+ * is read). `'mirror_unconverted'`: no log, but a mirror this read did not convert (another read
+ * holds the session's conversion lock, or ingest is off), so the history exists and a client must
+ * not read it as "nothing saved".
  */
 export async function readSessionLogPage(input: PageInput): Promise<SessionLogPage | 'unknown_thread' | 'mirror_unconverted' | null> {
   const page = await readPage(input);
@@ -101,6 +104,8 @@ export async function readSessionLogPage(input: PageInput): Promise<SessionLogPa
   if (await convertMirrorOnRead(input.sessionId)) return readPage(input);
   const again = await readPage(input);
   if (again !== null) return again;
+  // Drained: no mirror table is read (Release B1).
+  if (await mirrorDrained()) return null;
   const [mirror] = await db
     .select({ sessionId: sessionTranscriptMirrors.sessionId })
     .from(sessionTranscriptMirrors)
@@ -313,9 +318,13 @@ async function readLogTranscriptWindow(input: WindowInput): Promise<MirrorSnapsh
 
   // F3: a text over 256 kB is a preview in the row; v1 bodies carry the whole text. Read after COMMIT, off the connection.
   const records = await rehydrateLargeTexts({ projectId: log.projectId, sessionId: input.sessionId }, read.records);
-  const rows = toRows(records)
-    .filter((r) => anchor === null || keyCompare(keyOf(r), anchor.key) < 0)
-    .sort((a, b) => keyCompare(keyOf(b), keyOf(a)));
+  // Newest first. A `fromV1` thread in the mirror order; a native thread in seq order (pi's append
+  // order): its creation times can tie within a millisecond, and the ids need not follow them.
+  const rows = v1Thread
+    ? toRows(records)
+        .filter((r) => anchor === null || keyCompare(keyOf(r), anchor.key) < 0)
+        .sort((a, b) => keyCompare(keyOf(b), keyOf(a)))
+    : nativeRows(records.flatMap((r) => toRows([r])), anchor?.inclusive ? input.before : null).reverse();
   const kept = rows.slice(0, input.limit);
   return {
     opencode_session_id: target,
@@ -332,6 +341,12 @@ async function readLogTranscriptWindow(input: WindowInput): Promise<MirrorSnapsh
 }
 
 type Anchor = { seq: number; inclusive: boolean; key: { at: number; id: string } };
+
+/** A native thread's rows in seq order; an inclusive cursor (a compaction summary row) drops itself and what follows it. */
+const nativeRows = (rows: V1Row[], cursor: string | null | undefined) => {
+  const at = cursor ? rows.findIndex((r) => idOf(r) === cursor) : -1;
+  return at === -1 ? rows : rows.slice(0, at);
+};
 
 /**
  * The cursor row: a message of the scope, or a compaction summary row (its marker's message,

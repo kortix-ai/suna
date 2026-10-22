@@ -10,6 +10,7 @@ import { sessionLogOfV1Rows, sessionLogThreadWithV1Rows } from '../core/session-
 import {
   fetchSessionLogPage,
   readFirstSessionLogAnswer,
+  takeHeldFirstSessionLogPage,
   loadSessionLogPage,
   SESSION_LOG_FIRST_PAGE_LIMIT,
   SESSION_LOG_OLDER_PAGE_LIMIT,
@@ -257,8 +258,11 @@ export function useSessionLogSync(
       stream?.close();
       stream = joinStream({ projectId, sessionId, ...options });
     };
+    // The first read of the bind takes the page a connecting view just read (`readSavedSessionCopy`).
+    let held: SessionLogPage | null = takeHeldFirstSessionLogPage(projectId, sessionId);
     const load = async (): Promise<SessionLogPage | 'missing' | null> => {
-      const answer = await readFirstSessionLogAnswer(loader, projectId, sessionId, controller.signal);
+      const answer = held ?? (await readFirstSessionLogAnswer(loader, projectId, sessionId, controller.signal));
+      held = null;
       if (stopped) return null;
       if (answer && answer !== 'missing') {
         store().applySessionLogPage(sessionId, answer);

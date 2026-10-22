@@ -25,6 +25,7 @@ flow(
     tags: ["smoke"],
     routes: [
       "GET /v1/billing/transactions",
+      "GET /v1/billing/credit-usage",
       "POST /v1/billing/purchase-credits",
     ],
   },
@@ -32,6 +33,16 @@ flow(
     await ctx.step("OWNER reads transactions", async () => {
       const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/transactions", { query: { limit: "5" } });
       r.status(OWNER_READ);
+    });
+    await ctx.step("invalid transaction pagination returns 400 before reaching PostgreSQL", async () => {
+      for (const route of ["transactions", "credit-usage"]) {
+        for (const key of ["offset", "limit"]) {
+          for (const value of ["-1", "1.5", "9007199254740992"]) {
+            const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/" + route, { query: { [key]: value } });
+            r.status(400);
+          }
+        }
+      }
     });
     await ctx.step("ANON cannot read transactions → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/transactions");
