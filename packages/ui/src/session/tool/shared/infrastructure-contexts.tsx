@@ -72,6 +72,14 @@ export const StalePendingContext = createContext(false);
  */
 export const TurnLiveContext = createContext(false);
 
+/**
+ * The ids of the failed commands in a settled turn that the agent moved past: a
+ * later step of the same turn worked (`recoveredShellFailures`). Their rows keep
+ * "Command failed" and the exit code, in the muted ink; red stays for a failure
+ * the turn ended on (KRTX-3021). Empty outside a settled turn.
+ */
+export const RecoveredCallsContext = createContext<ReadonlySet<string>>(new Set());
+
 export const ToolDurationContext = createContext<number | undefined>(undefined);
 
 // Background memory plumbing (searches/gets and raw memory/ reads) stays
