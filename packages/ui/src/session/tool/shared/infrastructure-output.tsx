@@ -22,8 +22,12 @@ export function JsonFailureOutputCard({
   failure: ParsedJsonFailure;
   toolName?: string;
 }) {
-  const summary = cleanErrorMessage(failure.errorSummary);
-  const detail = failure.nestedMessage ? cleanErrorMessage(failure.nestedMessage) : undefined;
+  // A provider's sentence nested in the error body is the readable line; the
+  // raw `432 Error: {…}` around it is noise, and its status is in the chip
+  // (KRTX-3022).
+  const summary = failure.nestedMessage
+    ? cleanErrorMessage(failure.nestedMessage)
+    : cleanErrorMessage(failure.errorSummary);
 
   return (
     <div className="flex items-start gap-2.5 px-3 py-2.5 text-xs">
@@ -36,22 +40,17 @@ export function JsonFailureOutputCard({
         <CircleAlert className={cn('size-3.5', STATUS_TEXT.destructive)} />
       </span>
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-foreground/90 text-xs leading-relaxed text-pretty wrap-break-word">
+        <p className="text-foreground text-xs leading-relaxed text-pretty wrap-break-word">
           {summary}
         </p>
-        {detail && detail !== summary && (
-          <p className="text-muted-foreground text-xs leading-relaxed text-pretty wrap-break-word">
-            {detail}
-          </p>
-        )}
         {failure.hint && (
-          <p className="text-muted-foreground/80 text-xs leading-relaxed text-pretty wrap-break-word">
+          <p className="text-muted-foreground text-xs leading-relaxed text-pretty wrap-break-word">
             {failure.hint.trim()}
           </p>
         )}
       </div>
       {typeof failure.status === 'number' && (
-        <span className="text-muted-foreground/60 shrink-0 font-mono text-xs tabular-nums">
+        <span className="text-muted-foreground shrink-0 font-mono text-xs tabular-nums">
           {failure.status}
         </span>
       )}
@@ -145,7 +144,7 @@ function ToolOutputCard({ copyText, children }: { copyText?: string; children: R
       {copyText && (
         <CopyButton
           code={copyText}
-          className="text-muted-foreground/60 hover:text-foreground absolute top-1 right-1 z-10"
+          className="text-muted-foreground hover:text-foreground absolute top-1 right-1 z-10"
         />
       )}
       <div data-scrollable className={cn('max-h-96 overflow-auto', pad, 'pr-11')}>
@@ -193,7 +192,7 @@ export function RawOutputBlock({ output, maxChars = 2000 }: { output: string; ma
         </pre>
       )}
       {truncatedChars > 0 && (
-        <div className="text-muted-foreground/40 mt-2 text-xs">
+        <div className="text-muted-foreground mt-2 text-xs">
           +{truncatedChars.toLocaleString()} {tI18nComplete.raw('text6d0123a90793')}
         </div>
       )}
