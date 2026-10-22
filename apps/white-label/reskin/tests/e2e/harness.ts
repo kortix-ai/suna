@@ -13,8 +13,14 @@ import { randomUUID } from 'node:crypto';
 import { createScopedKortix } from '@kortix/sdk/server';
 
 export const APP_ROOT = join(import.meta.dir, '..', '..');
-/** Includes one cold production build before the first test app starts in CI. */
-export const APP_SETUP_TIMEOUT_MS = 120_000;
+/**
+ * Includes one cold production build before the first test app starts in CI.
+ * The build costs ~140 CPU-seconds (40 s wall on an idle Mac). In the packages
+ * lane it shares 4 vCPUs with other packages' suites (`apps/web --parallel=4`)
+ * and took longer than 120 s; the hook timeout then killed it (exit 143) and
+ * the memoized build failed every later file.
+ */
+export const APP_SETUP_TIMEOUT_MS = 600_000;
 const NEXT_BIN = join(APP_ROOT, 'node_modules', '.bin', 'next');
 
 /**
