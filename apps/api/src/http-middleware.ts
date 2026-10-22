@@ -23,6 +23,7 @@ import { addBreadcrumb } from './lib/sentry';
 import { compressResponse } from './middleware/compress';
 import { createCorsMiddleware } from './middleware/cors';
 import { requestDeadline } from './middleware/request-deadline';
+import { createPublicEdgeRateLimitMiddleware } from './middleware/public-edge-rate-limit';
 import { shouldSuppressRequestLog } from './sandbox-proxy/request-log-suppression';
 import { PROXY_HOP_HEADER, PROXY_UPSTREAM_STATUS_HEADER } from './sandbox-proxy/proxy-hop';
 import { upstreamTiming } from './middleware/upstream-timing';
@@ -286,6 +287,9 @@ if (config.INTERNAL_KORTIX_ENV === 'dev') {
 // Every route, not just /v1: `/scim/v2` provisions users and changes group
 // membership, and was never request-audited. See shared/audit-scope.ts.
 app.use('*', auditApiRequest);
+
+// Before route validation and authentication; inside request logging and audit.
+app.use('/v1/*', createPublicEdgeRateLimitMiddleware());
 
 // Wall-clock deadline for non-streaming requests — returns 503 before the 30s
 // client abort instead of hanging. Streaming/proxy/WS surfaces are exempted
