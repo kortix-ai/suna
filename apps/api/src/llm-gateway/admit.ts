@@ -64,6 +64,7 @@ async function admit(token: unknown, input: unknown) {
   const admission = await authorizeRequest(token, {
     deferBilling: true,
     timing,
+    skipDefault: true,
     // Start the project's routing and resolution reads while the tier and the
     // budget resolve; the route and resolve steps below reuse them (request memo).
     onPrincipal: ({ projectId }) => {

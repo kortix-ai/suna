@@ -134,7 +134,11 @@ async function resolvePrincipalWithReason(
  * Kortix models are visible without a second tier lookup. When internal billing
  * is off (self-host) every account sees the full lineup.
  */
-async function withResolvedTier(principal: AuthedPrincipal, timing?: Record<string, number>): Promise<AuthedPrincipal> {
+async function withResolvedTier(
+  principal: AuthedPrincipal,
+  timing?: Record<string, number>,
+  options: { skipDefault?: boolean } = {},
+): Promise<AuthedPrincipal> {
   const t0 = performance.now();
   const tiered: AuthedPrincipal = config.KORTIX_BILLING_INTERNAL_ENABLED
     ? await (async () => {
@@ -150,6 +154,8 @@ async function withResolvedTier(principal: AuthedPrincipal, timing?: Record<stri
       })()
     : { ...principal, freeModelsOnly: false };
   if (timing) timing.tier_billing = Math.round(performance.now() - t0);
+  // Admission resolves the default only when the route needs it (resolve-route.ts).
+  if (options.skipDefault) return tiered;
   // Resolve the account/project/agent-configured concrete default once, here,
   // so it travels with the principal across the standalone-gateway RPC boundary.
   // Never let a resolution error break authentication for every LLM call.
@@ -242,6 +248,8 @@ export async function authorizeRequest(
     timing?: Record<string, number>;
     /** Called as soon as the credential resolves, so a caller can start its own reads. */
     onPrincipal?: (principal: AuthedPrincipal) => void;
+    /** Leave `defaultModel` unresolved; the route resolves it when it matters. */
+    skipDefault?: boolean;
   } = {},
 ): Promise<AuthorizeResult> {
   const t0 = performance.now();
@@ -260,7 +268,9 @@ export async function authorizeRequest(
     : null;
   earlyBudget?.catch(() => {});
   const t1 = performance.now();
-  let principal = resolved.principal ? await withResolvedTier(resolved.principal, options.timing) : null;
+  let principal = resolved.principal
+    ? await withResolvedTier(resolved.principal, options.timing, { skipDefault: options.skipDefault })
+    : null;
   if (options.timing) options.timing.tier = Math.round(performance.now() - t1);
   if (!principal) {
     // Name the SANDBOX refusal when that is what happened. "Invalid token" for
