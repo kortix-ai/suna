@@ -24,16 +24,18 @@ export interface SessionPrintHeaderProps {
   now?: Date;
 }
 
+const printedAtFormat = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
 /** `16 September 2026 at 20:41` — unambiguous across locales, no slashes. */
 export function formatPrintedAt(date: Date): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date);
+  return printedAtFormat.format(date);
 }
 
 /** The meta line under the title: the parts that exist, separated by a middot. */

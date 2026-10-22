@@ -87,6 +87,8 @@ export function parseAddressInput(value: string): string | null {
   return toInternalUrl(parsed.port, parsed.path);
 }
 
+const NO_SUGGESTIONS: readonly { label: string; url: string }[] = [];
+
 /**
  * The back / forward buttons and the home / address / reload group every
  * sandbox preview surface renders, with the hostname highlighted at rest. The bar
@@ -106,7 +108,7 @@ export function SandboxAddressBar({
   onReload,
   onHome,
   onNavigate,
-  suggestions = [],
+  suggestions = NO_SUGGESTIONS,
   placeholder,
   ariaLabel,
   inputRef,

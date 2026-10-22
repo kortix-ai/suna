@@ -488,7 +488,6 @@ export function SessionPanelProvider({
       setPanelSplit(split);
     },
     [
-      sessionId,
       getServiceUrl,
       closeDetail,
       openDetail,

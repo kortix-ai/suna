@@ -210,6 +210,7 @@ function ListRow({
                 <input
                   ref={renameInputRef}
                   type="text"
+                  aria-label={tHardcodedUi.raw('i18nComplete.text3064d79a295c')}
                   value={renameName}
                   onChange={(e) => setRenameName(e.target.value)}
                   onKeyDown={(e) => {
@@ -257,6 +258,7 @@ function ListRow({
                   <DropdownMenuTrigger asChild>
                     <Button
                       onClick={(e) => e.stopPropagation()}
+                      aria-label={tHardcodedUi.raw('i18nComplete.textf8d46c2570e7')}
                       variant="ghost"
                       size="icon-xs"
                       className="shrink-0 opacity-0 group-hover:opacity-100"
@@ -411,7 +413,7 @@ export function DriveListView({
     }
   };
 
-  const SortIcon = ({ field }: { field: SortField }) => {
+  const renderSortIcon = (field: SortField) => {
     if (sortDisabled || sortBy !== field) return null;
     return sortOrder === 'asc' ? (
       <ArrowUp className="ml-1 size-3" />
@@ -433,7 +435,7 @@ export function DriveListView({
                 className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
               >
                 {tI18nComplete.raw('textdcd1d5223f73')}
-                <SortIcon field="name" />
+                {renderSortIcon('name')}
               </Button>
             </TableHead>
             <TableHead>
@@ -444,7 +446,7 @@ export function DriveListView({
                 className="text-muted-foreground hover:text-foreground m-0 h-fit w-fit p-0 font-normal has-[>svg]:p-0"
               >
                 {tI18nComplete.raw('textbaaddf70fb5d')}
-                <SortIcon field="type" />
+                {renderSortIcon('type')}
               </Button>
             </TableHead>
             <TableHead className="w-[52px]">

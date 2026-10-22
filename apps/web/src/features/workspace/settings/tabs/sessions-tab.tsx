@@ -253,9 +253,9 @@ export function SessionsTabView({
               <>
                 {!notificationCenter && (
                   <div className="flex flex-col space-y-3">
-                    <label className="text-muted-foreground text-sm font-medium">
+                    <p className="text-muted-foreground text-sm font-medium">
                       {copy.notificationTypes}
-                    </label>
+                    </p>
                     <div className="divide-y rounded-md border">
                       {NOTIFICATION_TYPE_TOGGLES.map((toggle) => (
                         <NotificationToggle
@@ -273,9 +273,9 @@ export function SessionsTabView({
                 )}
 
                 <div className="flex flex-col space-y-3">
-                  <label className="text-muted-foreground text-sm font-medium">
+                  <p className="text-muted-foreground text-sm font-medium">
                     {copy.behavior}
-                  </label>
+                  </p>
                   <div className="divide-y rounded-md border">
                     {NOTIFICATION_BEHAVIOR_TOGGLES.map((toggle) => (
                       <NotificationToggle
@@ -437,6 +437,7 @@ export function SessionsTabView({
                         <Button
                           variant="ghost"
                           size="icon"
+                          aria-label={copy.preview}
                           className="text-muted-foreground duration-moderate opacity-0 transition-opacity group-hover:opacity-100"
                           onClick={() => onSoundPreview(event.id)}
                         >

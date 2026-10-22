@@ -87,7 +87,7 @@ export const useAutosizeTextArea = ({
         clearTimeout(resizeTimeoutRef.current);
       }
     };
-  }, [textAreaRef.current, triggerAutoSize, minHeight, maxHeight, currentHeight, init]);
+  }, [textAreaRef, triggerAutoSize, minHeight, maxHeight, currentHeight, init]);
 };
 
 export type AutosizeTextAreaRef = {

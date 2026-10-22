@@ -90,12 +90,11 @@ export function ConnectorAdvancedTools({
   // re-fired whenever a rule was added or removed, so the panel sprang back open
   // moments after the user collapsed it, which read as the disclosure opening by
   // itself. After the first reveal the panel is the user's to control.
-  const revealedExistingRules = useRef(false);
-  useEffect(() => {
-    if (revealedExistingRules.current || advancedRules.length === 0) return;
-    revealedExistingRules.current = true;
+  const [revealedExistingRules, setRevealedExistingRules] = useState(false);
+  if (!revealedExistingRules && advancedRules.length > 0) {
+    setRevealedExistingRules(true);
     setAdvancedOpen(true);
-  }, [advancedRules.length]);
+  }
 
   const savePatternRules = () => onSave([...toolRules, ...draftToRules(draft)]);
 

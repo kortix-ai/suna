@@ -14,7 +14,7 @@ import { errorToast, successToast } from '../../primitives/toast';
 import { useCopy } from '../../internal/hooks/use-copy';
 import { cn } from '../../internal/lib/utils';
 import { CheckIcon, CopyIcon } from '@phosphor-icons/react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, m } from 'motion/react';
 import type { ReactNode } from 'react';
 
 /**
@@ -80,7 +80,7 @@ export function CopyRow({
           >
             <span className="relative inline-flex size-3.5 items-center justify-center">
               <AnimatePresence initial={false} mode="popLayout">
-                <motion.span
+                <m.span
                   key={copied ? 'check' : 'copy'}
                   initial={{ scale: 0.25, opacity: 0, filter: 'blur(4px)' }}
                   animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }}
@@ -93,7 +93,7 @@ export function CopyRow({
                   ) : (
                     <CopyIcon className="size-3.5" />
                   )}
-                </motion.span>
+                </m.span>
               </AnimatePresence>
             </span>
           </Button>

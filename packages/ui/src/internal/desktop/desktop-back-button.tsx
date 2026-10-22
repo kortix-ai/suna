@@ -133,6 +133,9 @@ export function useDesktopBackTarget(href: string | undefined): void {
   }, [href]);
 }
 
+const subscribeNoop = () => () => {};
+const readCanGoBack = () => Boolean((window as Window & NavigationWindow).navigation?.canGoBack);
+
 /** Pathname of an app href, for comparing against `useUiPathname()`. */
 function hrefPath(href: string): string {
   return href.split(/[?#]/)[0] || '/';
@@ -174,8 +177,8 @@ export function DesktopBackButton() {
     () => backTarget,
     () => undefined,
   );
+  const canGoBack = useSyncExternalStore(subscribeNoop, readCanGoBack, () => false);
   if (!viewerId) return null;
-  const win = window as Window & NavigationWindow;
-  if (!hasBackDestination(win, { to, home, pathname })) return null;
-  return <DesktopBackControl onBack={() => void goBack(router, win, { to, home })} />;
+  if (!hasBackDestination({ navigation: { canGoBack } }, { to, home, pathname })) return null;
+  return <DesktopBackControl onBack={() => void goBack(router, window as Window & NavigationWindow, { to, home })} />;
 }

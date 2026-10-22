@@ -719,7 +719,9 @@ export function SessionChat({
   const messages: SessionLogMessage[] | undefined = thread?.messages.length ? thread.messages : undefined;
   // The thread for handlers that read it at call time (the optimistic answers cache).
   const threadRef = useRef(thread);
-  threadRef.current = thread;
+  useLayoutEffect(() => {
+    threadRef.current = thread;
+  }, [thread]);
   const messagesLoading = syncMessagesLoading;
   // Who wrote each user message. A one-person session stays unlabelled.
   const viewerId = useUiViewerId();
@@ -1686,6 +1688,7 @@ export function SessionChat({
     autoLoadedPages,
     handleLoadOlder,
     scrollRef,
+    spacerElRef,
     sessionId,
     transcriptOnLog,
   ]);
@@ -1934,7 +1937,9 @@ export function SessionChat({
   );
   // P5.6: load the whole of every text a turn shows as a preview, on request only.
   const fullTextsRef = useRef(loaded);
-  fullTextsRef.current = loaded;
+  useLayoutEffect(() => {
+    fullTextsRef.current = loaded;
+  });
   const loadFullTexts = useCallback(
     (turnId: string, refs: readonly SessionLogReferencedText[]) => {
       const key = fullTextsRef.current.key;
@@ -3848,6 +3853,7 @@ export function SessionChat({
     ),
     [
       sessionId,
+      sessionScopeAgentName,
       pendingPermissions,
       handlePermissionReply,
       renderedQuestion,
@@ -3855,10 +3861,6 @@ export function SessionChat({
       handleQuestionReply,
       handleQuestionReject,
       handleQuestionActionChange,
-      tHardcodedUi,
-      local.model.fallback,
-      local.model.list,
-      handleModelChange,
     ],
   );
 

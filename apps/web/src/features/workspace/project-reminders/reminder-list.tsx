@@ -16,7 +16,7 @@ import type {
 } from '@kortix/sdk';
 import type { useProjectReminders } from '@kortix/sdk/react';
 import { PauseIcon, PlayIcon, TrashIcon, XIcon } from '@phosphor-icons/react';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { reminderTitle } from '@kortix/ui/workspace';
 import { selectionState, toggleSelection } from './reminder-list-model';
 import { ReminderRow, ReminderRowSkeleton, type RowPending } from './reminder-row';
@@ -64,7 +64,9 @@ export function useReminderActions(query: RemindersQuery) {
   };
 
   const latest = useRef({ setEnabled, run });
-  latest.current = { setEnabled, run };
+  useLayoutEffect(() => {
+    latest.current = { setEnabled, run };
+  });
   const toggle = useCallback(
     (reminder: ProjectReminder) => latest.current.setEnabled(reminder, reminder.state !== 'active'),
     [],

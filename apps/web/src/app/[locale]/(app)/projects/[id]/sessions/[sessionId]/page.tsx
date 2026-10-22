@@ -579,9 +579,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
     enabled: !!user && !chatReady && !handoff.newSessionHint && !restoredFirstPrompt,
   });
   const hasPendingFirstPrompt = restoreInbox.prompts.some(isFirstPromptRow);
-  useEffect(() => {
-    if (hasPendingFirstPrompt && session.messages.length === 0) setRestoredFirstPrompt(true);
-  }, [hasPendingFirstPrompt, session.messages.length]);
+  if (hasPendingFirstPrompt && session.messages.length === 0 && !restoredFirstPrompt) {
+    setRestoredFirstPrompt(true);
+  }
   // "The shell is painting this session's first prompt right now." TWO producers
   // put a prompt on that surface and only one of them is a send made here:
   //

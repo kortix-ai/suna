@@ -219,7 +219,11 @@ function ComposerForm({
   }, [error]);
 
   const create = useMutation({
-    onSettled: () => setFrozenApp(null),
+    onMutate: () => onBusyChange(true),
+    onSettled: () => {
+      setFrozenApp(null);
+      onBusyChange(false);
+    },
     mutationFn: async () => {
       const trimmedName = name.trim();
       const slug = slugify(draft.customId.trim() || trimmedName);
@@ -337,7 +341,6 @@ function ComposerForm({
       setError(message);
     },
   });
-  useEffect(() => onBusyChange(create.isPending), [create.isPending, onBusyChange]);
 
   const submit = () => {
     setError(null);

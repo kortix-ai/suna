@@ -779,13 +779,15 @@ function FiltersPanel({
   const tierOptions = useLocalizedUiCatalog(TIER_OPTIONS);
   const paymentStatusOptions = useLocalizedUiCatalog(PAYMENT_STATUS_OPTIONS);
   // The fields take CREDITS; the filter (and the API) holds USD.
-  const [minBalance, setMinBalance] = useState(creditsField(filters.minBalance));
-  const [maxBalance, setMaxBalance] = useState(creditsField(filters.maxBalance));
-
-  useEffect(() => {
+  const [minBalance, setMinBalance] = useState(() => creditsField(filters.minBalance));
+  const [maxBalance, setMaxBalance] = useState(() => creditsField(filters.maxBalance));
+  const balanceKey = `${filters.minBalance}:${filters.maxBalance}`;
+  const [syncedBalanceKey, setSyncedBalanceKey] = useState(balanceKey);
+  if (syncedBalanceKey !== balanceKey) {
+    setSyncedBalanceKey(balanceKey);
     setMinBalance(creditsField(filters.minBalance));
     setMaxBalance(creditsField(filters.maxBalance));
-  }, [filters.minBalance, filters.maxBalance]);
+  }
 
   const toggleTier = (v: string) => {
     onChange({

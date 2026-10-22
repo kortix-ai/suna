@@ -14734,7 +14734,7 @@
       "text8bb2b50055b6": "Ein Konnektor gehört zum Projekt, nicht zu einem Laptop oder Login. Fügen Sie ihn einmal hinzu, und jede Sitzung, die in diesem Projekt gestartet wird, kann ihn erreichen – ohne weitere Einrichtung und ohne dass ein Schlüssel per DM weitergegeben werden muss.",
       "text8bbecc2acd82": "IdP-Metadaten festlegen",
       "text8bc1d53cc57c": "Eingehend",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Inhalt der .pem-Datei einfügen",
       "text8bd901c25ba7": "F&E — Plattform",
       "text8bf73992ff9b": "Es gibt keinen separaten Bereitstellungsschritt und keine Konsole zum Durchklicken. Ein Befehl startet den Stack. Ein weiterer legt fest, mit welchem Kortix Ihre CLI kommuniziert.",
       "text8bf926d1ef32": "SSO einrichten",
