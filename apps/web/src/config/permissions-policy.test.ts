@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test';
+import type { NextConfig } from 'next';
 import { PHASE_DEVELOPMENT_SERVER } from 'next/constants';
 import config from '../../next.config';
 
-const resolved = await config(PHASE_DEVELOPMENT_SERVER);
+const resolved: NextConfig = await config(PHASE_DEVELOPMENT_SERVER);
 
 test('web sends a restrictive Permissions-Policy on the catch-all header rule', async () => {
   const rules = await resolved.headers?.();
