@@ -89,14 +89,16 @@ token.personal.revoke). Service accounts and other people's keys need
 token.create / token.revoke.
 
 Personal API keys — act as YOU, and die with your membership:
-  ls [--mine] [--all] [--json]      List the account's keys. --mine narrows to
-                                    the ones you minted yourself. Keys that
-                                    cannot authenticate are hidden; --all
-                                    lists them too.
+  ls [--mine] [--all] [--json]      List the account's keys that still
+                                    authenticate. --mine narrows to the ones
+                                    you minted yourself; --mine --all lists
+                                    your revoked keys too.
   new <name> [--expires <when>]     Mint a key. The secret prints ONCE.
       [--project <id>]              Bind the key to one project (it can never
                                     reach another).
-  rm <token-id> [-y]                Revoke a key; delete it if already revoked.
+  rm <token-id> [-y] [--force]      Revoke a key; delete it if already revoked.
+                                    Refuses the key this CLI is signed in
+                                    with unless --force.
 
 Service accounts — act as THEMSELVES, with no inherited access:
   service-accounts ls [--json]              List service accounts.
@@ -118,15 +120,17 @@ A new service account holds NO permissions. Grant it one with
 
 Options:
   --mine              ls: only the keys you minted.
-  --all               ls: with --mine, also list the keys that cannot
+  --all               ls --mine: also list your keys that cannot
                       authenticate (revoked, or revoked_at stamped on a row
-                      still reading active).
+                      still reading active). Without --mine it changes
+                      nothing: the account list holds live keys only.
   --expires <when>    ISO-8601, or a forward span: 30d, 12h, 6w, 1y.
   --project <id>      new: bind the key to one project.
   --description <t>   service-accounts new: what this identity is for.
   --account <id>      Operate on this account (default: the active account).
   --host <name>       Operate against a non-default Kortix host.
-  --json              Machine-readable output.
+  --json              Machine-readable output. List rows of both kinds
+                      carry a shared \`id\`.
   -y, --yes           Skip the confirmation prompt.
   -h, --help          Show this help.
 
@@ -150,6 +154,7 @@ export async function runTokens(argv: string[]): Promise<number> {
   let mine = false;
   let all = false;
   let yes = false;
+  let force = false;
   try {
     f.account = takeFlagValue(rest, ['--account']);
     f.host = takeFlagValue(rest, ['--host']);
@@ -160,6 +165,7 @@ export async function runTokens(argv: string[]): Promise<number> {
     mine = takeFlagBool(rest, ['--mine']);
     all = takeFlagBool(rest, ['--all']);
     yes = takeFlagBool(rest, ['-y', '--yes']);
+    force = takeFlagBool(rest, ['--force']);
   } catch (err) {
     return fail((err as Error).message);
   }
@@ -205,7 +211,8 @@ export async function runTokens(argv: string[]): Promise<number> {
             : tokens;
         const hidden = tokens.length - visible.length;
         if (json) {
-          emitJson(visible);
+          // `id` is the key every token kind shares (KRTX-2829); `token_id` stays.
+          emitJson(visible.map((t) => ({ id: t.token_id, ...t })));
           return 0;
         }
         if (visible.length === 0) {
@@ -216,7 +223,7 @@ export async function runTokens(argv: string[]): Promise<number> {
           if (hidden > 0) {
             process.stdout.write(
               `  ${C.dim}${hidden} revoked key${hidden === 1 ? '' : 's'} hidden — list them with ` +
-                `${C.reset}${C.cyan}kortix tokens ls --all${C.reset}\n`,
+                `${C.reset}${C.cyan}kortix tokens ls --mine --all${C.reset}\n`,
             );
           }
           process.stdout.write('\n');
@@ -237,7 +244,7 @@ export async function runTokens(argv: string[]): Promise<number> {
         }
         const count =
           hidden > 0
-            ? `${visible.length} key${visible.length === 1 ? '' : 's'} · ${hidden} revoked hidden (--all lists them)`
+            ? `${visible.length} key${visible.length === 1 ? '' : 's'} · ${hidden} revoked hidden (--mine --all lists them)`
             : `${visible.length} key${visible.length === 1 ? '' : 's'}`;
         process.stdout.write(`\n  ${C.dim}${count}${C.reset}\n\n`);
         return 0;
@@ -281,7 +288,7 @@ export async function runTokens(argv: string[]): Promise<number> {
       case 'rm':
       case 'revoke':
       case 'delete':
-        return await revokeToken(ctx.client, positional, { yes });
+        return await revokeToken(ctx.client, positional, { yes, force });
 
       case 'service-accounts':
       case 'sa':
@@ -305,10 +312,25 @@ export async function runTokens(argv: string[]): Promise<number> {
 async function revokeToken(
   client: NonNullable<ReturnType<typeof resolveAccountContext>>['client'],
   positional: string[],
-  opts: { yes: boolean },
+  opts: { yes: boolean; force: boolean },
 ): Promise<number> {
   const tokenId = positional[0];
   if (!tokenId) return missing('a token id (see `kortix tokens ls`)');
+  // Revoking the key this CLI signs in with locks the host out: every next
+  // command answers "token rejected" (KRTX-1842). `/accounts/me` names the
+  // calling token; a failed probe never blocks the revoke.
+  if (!opts.force) {
+    const me = await client
+      .get<{ token_context?: { token_id?: string | null } }>('/accounts/me')
+      .catch(() => null);
+    if (me?.token_context?.token_id === tokenId) {
+      process.stderr.write(
+        `${status.err(`${tokenId} is the key this CLI is signed in with.`)} Revoking it signs this host out. ` +
+          `Sign in with another key first (${C.cyan}kortix login${C.reset}), or pass ${C.cyan}--force${C.reset} to revoke it anyway.\n`,
+      );
+      return 2;
+    }
+  }
   if (!opts.yes) {
     const ok = await confirm(
       `Revoke API key ${C.bold}${tokenId}${C.reset}, or permanently delete it if already revoked?`,
@@ -422,7 +444,8 @@ async function serviceAccounts(
         base,
       );
       if (opts.json) {
-        emitJson(rows);
+        // The same shared `id` as `tokens ls --json`; `service_account_id` stays.
+        emitJson(rows.map((r) => ({ id: r.service_account_id, ...r })));
         return 0;
       }
       if (rows.length === 0) {

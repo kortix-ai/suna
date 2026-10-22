@@ -16,7 +16,7 @@ npm install @kortix/sdk
 | `@kortix/sdk` | The client and every framework-free module. | Any runtime with a global `fetch`: browsers, Node 18 or later, Bun, edge workers. |
 | `@kortix/sdk/react` | Hooks, `useSession` first. Needs the optional peers `react` (18 or later) and `@tanstack/react-query` (5.75.2 or a later 5.x). | React and React Native. |
 | `@kortix/sdk/server` | `createScopedKortix`, `runWithKortix`, `createKortixAuth`, `createKortixAppGuard`, `readAppViewer`, `createAppViewerKortix`. It imports `node:async_hooks`. | Node and Bun. Never bundle it for a browser. |
-| `@kortix/ui` | The Kortix React components and `@kortix/ui/chat`, the whole session chat on top of `useSession`. A separate package, not on npm yet. See [Kortix UI](/docs/sdk/ui). | React hosts. |
+| `@kortix/ui` | The Kortix React components and `@kortix/ui/session`, the whole session chat on top of `useSession`. A separate package: `npm i @kortix/ui`, the same version as `@kortix/sdk`. See [Kortix UI](/docs/sdk/ui). | React hosts. |
 
 Import from the root. Two other subpaths are stable. `@kortix/sdk/wire-message-id` holds the wire-id clock in one module with no imports, and the root exports the same names. `@kortix/sdk/workspace-search` adds ranked file search over a session workspace, and the root does not export it. The other subpaths (`@kortix/sdk/turns`, `@kortix/sdk/projects-client` and similar) are deprecated aliases of root names. The full list is in [Entry points and stability](/docs/sdk/reference#entry-points-and-stability).
 

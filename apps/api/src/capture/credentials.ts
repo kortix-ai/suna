@@ -25,7 +25,8 @@ export interface CaptureCredentials {
   device_id: string;
   access_key_id: string;
   secret_access_key: string;
-  session_token: string;
+  /** Omitted for static-key stores (the device uses the pair without a token). */
+  session_token?: string;
   expires_at_ms: number;
   /** Path-style URLs (MinIO and most self-hosted S3); false on AWS. */
   path_style: boolean;

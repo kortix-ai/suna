@@ -13,6 +13,9 @@ let provisionBodies: unknown[];
 let refuseCreation: boolean;
 let useLocalRepo: boolean;
 let managedRepo: boolean;
+let onboardingBodies: unknown[];
+let refuseOnboarding: boolean;
+let refuseCredential: boolean;
 
 beforeEach(() => {
   cwd = mkdtempSync(join(tmpdir(), 'kortix-ship-host-'));
@@ -24,6 +27,9 @@ beforeEach(() => {
   refuseCreation = false;
   useLocalRepo = false;
   managedRepo = false;
+  onboardingBodies = [];
+  refuseOnboarding = false;
+  refuseCredential = false;
   bareRepo = join(cwd, 'remote.git');
   server = Bun.serve({
     port: 0,
@@ -39,11 +45,18 @@ beforeEach(() => {
           account_id: 'account_workspace',
           name: 'Workspace',
           repo_url: bareRepo,
-          push_token: 'synthetic_push_token',
-          metadata: {},
+          push_token: refuseCredential ? undefined : 'synthetic_push_token',
+          metadata: { git: { managed: true } },
         });
       }
-      if (path.endsWith('/git-token')) return Response.json({ push_token: 'synthetic', repo_url: bareRepo });
+      if (path.endsWith('/onboarding')) {
+        expect(req.method).toBe('PATCH');
+        onboardingBodies.push(await req.json());
+        return Response.json({}, { status: refuseOnboarding ? 403 : 200 });
+      }
+      if (path.endsWith('/git-token')) return refuseCredential
+        ? Response.json({ error: 'credential refused' }, { status: 403 })
+        : Response.json({ push_token: 'synthetic', repo_url: bareRepo });
       if (path.endsWith('/connectors/sync')) return Response.json({ ok: true });
       if (path.startsWith('/v1/projects/'))
         return Response.json({
@@ -230,13 +243,15 @@ test.each([false, true])('projects use then ship pushes twice without provisioni
   writeFileSync(join(cwd, 'README.md'), 'Synthetic second ship\n');
   expect((await cli(args)).code).toBe(0);
   expect(provisionBodies).toEqual([]);
+  expect(onboardingBodies).toEqual([]);
   const pushed = Bun.spawnSync(['git', '--git-dir', bareRepo, 'show', 'main:README.md']);
   expect(pushed.exitCode).toBe(0);
   expect(pushed.stdout.toString()).toBe('Synthetic second ship\n');
   expect(hits.filter((hit) => hit.path === '/v1/projects/chosen_project')).toHaveLength(3);
 });
 
-test('first ship provisions on the named host and pushes the actual commit to local Git', async () => {
+test.each([false, true])('first ship dismisses onboarding without failing a push when persistence is refused=%s', async (refused) => {
+  refuseOnboarding = refused;
   clearDefaults();
   expect(Bun.spawnSync(['git', 'init', '--bare', bareRepo]).exitCode).toBe(0);
   expect(Bun.spawnSync(['git', 'config', 'user.name', 'Synthetic Agent'], { cwd }).exitCode).toBe(
@@ -259,6 +274,7 @@ test('first ship provisions on the named host and pushes the actual commit to lo
     '-y',
   ]);
   expect(result.code).toBe(0);
+  expect(onboardingBodies).toEqual([{ completed: true }]);
   expect(provisionBodies).toEqual([
     { name: 'synthetic-workspace', account_id: 'account_workspace', seed_starter: false },
   ]);
@@ -266,6 +282,7 @@ test('first ship provisions on the named host and pushes the actual commit to lo
   expect(hits.map((hit) => hit.path)).toEqual([
     '/v1/accounts/me',
     '/v1/projects/provision',
+    '/v1/projects/created_workspace/onboarding',
     '/v1/connectors/projects/created_workspace/connectors/sync',
   ]);
   const pushed = Bun.spawnSync(['git', '--git-dir', bareRepo, 'show', 'main:kortix.yaml']);
@@ -285,6 +302,41 @@ test('projects use binds only the named host despite session injection', async (
   expect(config.hosts.workspace.default_project.project_id).toBe('global_default');
 });
 
+
+test('projects clone keeps a shipped link and README clean', async () => {
+  useLocalRepo = true;
+  const hostUrl = `http://127.0.0.1:${server.port}`;
+  const binding = JSON.stringify({
+    project_id: 'workspace_project',
+    account_id: 'account_workspace',
+    host: 'workspace',
+    host_url: hostUrl,
+    linked_at: '2026-01-01T00:00:00.000Z',
+  }, null, 2) + '\n';
+  writeFileSync(join(cwd, '.kortix/link.json'), binding);
+  writeFileSync(join(cwd, 'README.md'), 'Synthetic shipped content\n');
+  const git = (...args: string[]) => {
+    const result = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
+    expect(result.exitCode).toBe(0);
+    return result.stdout.toString();
+  };
+  git('add', 'kortix.yaml', 'README.md', '.kortix/link.json');
+  git('-c', 'user.name=Synthetic', '-c', 'user.email=synthetic@example.test', 'commit', '-m', 'ship fixture');
+  git('clone', '--bare', '.', bareRepo);
+
+  for (const destination of ['clone-one', 'clone-two']) {
+    const result = await cli(['projects', 'clone', 'workspace_project', destination, '--host', 'workspace']);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('Cloned Workspace');
+    expect(result.stderr).not.toContain('git clone failed');
+    const cloned = join(cwd, destination);
+    expect(readFileSync(join(cloned, '.kortix/link.json'), 'utf8')).toBe(binding);
+    expect(readFileSync(join(cloned, 'README.md'), 'utf8')).toBe('Synthetic shipped content\n');
+    const status = Bun.spawnSync(['git', 'status', '--porcelain'], { cwd: cloned });
+    expect(status.exitCode).toBe(0);
+    expect(status.stdout.toString()).toBe('');
+  }
+});
 
 test.each([false, true])('seeded managed ship recovery preserves history (fetch fails=%s)', async (failFetch) => {
   useLocalRepo = true;
@@ -332,4 +384,39 @@ exec ${JSON.stringify(realGit)} "$@"
   expect(git('show', 'HEAD:kortix.yaml')).toBe('name: local-work');
   expect(hits.some((hit) => hit.path.includes('/git-token'))).toBe(true);
   expect(hits.every((hit) => hit.auth === 'Bearer tok_workspace')).toBe(true);
+});
+
+test('creation dismisses onboarding even if credential resolution fails before the first push', async () => {
+  clearDefaults();
+  refuseCredential = true;
+  const result = await cli(['ship', '--no-verify', '--no-env', '--no-connect', '--origin', 'managed', '-y']);
+  expect(result.code).toBe(1);
+  expect(result.stderr).toContain('credential refused');
+  expect(onboardingBodies).toEqual([{ completed: true }]);
+  expect(hits.map((hit) => hit.path)).toEqual([
+    '/v1/accounts/me',
+    '/v1/projects/provision',
+    '/v1/projects/created_workspace/onboarding',
+    '/v1/projects/created_workspace/git-token',
+  ]);
+});
+
+// KRTX-2992: POST /v1/projects accepts only GitHub repository URLs
+// (normalizeRepoUrl in apps/api/src/projects/lib/serializers.ts). A first ship
+// that promised to "register + push" any other origin always ended in a 400.
+test.each([
+  ['an existing origin remote', [] as string[]],
+  ['--origin <url>', ['--origin', 'https://git.example.test/other.git']],
+])('first ship refuses a non-GitHub origin before any request: %s', async (_label, extra) => {
+  clearDefaults();
+  if (extra.length === 0) {
+    expect(
+      Bun.spawnSync(['git', 'remote', 'add', 'origin', 'https://git.example.test/workspace.git'], { cwd }).exitCode,
+    ).toBe(0);
+  }
+  const result = await cli(['ship', '--no-verify', '--no-env', '--no-connect', '-y', ...extra]);
+  expect(result.code).toBe(2);
+  expect(result.stderr).toContain('links GitHub repositories only');
+  expect(result.stderr).toContain('--origin managed');
+  expect(hits).toEqual([]);
 });

@@ -11,7 +11,6 @@ import {
   resolveFeatureFlag,
   resolveFeatureFlags,
 } from '../feature-flags/registry';
-import { projectLlmGatewayEnabled } from '../llm-gateway/enablement';
 
 const STABILITIES = ['experimental', 'beta', 'stable'];
 const ENFORCEMENTS = ['routes', 'behavioral', 'ui-only'];
@@ -32,7 +31,7 @@ describe('registry ↔ contract', () => {
   // Compared as sets: the registry's order is the Settings display order and is
   // deliberately independent of the contract schema's field order. Membership
   // is the invariant — a flag added to one side and not the other fails here.
-  test('the catalog covers exactly the contract key list, minus hidden flags', () => {
+  test('the catalog covers exactly the contract key list, minus hidden flags that are off', () => {
     expect(
       buildFeatureFlagCatalog({})
         .map((f) => f.key)
@@ -41,7 +40,8 @@ describe('registry ↔ contract', () => {
       [...FEATURE_FLAG_KEYS]
         .filter((key) => {
           const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === key);
-          return !def?.catalogHidden && !def?.derivedFrom;
+          // A hidden flag is listed (read-only) only while it resolves on.
+          return !def?.derivedFrom && (!def?.catalogHidden || resolveFeatureFlag({}, key));
         })
         .sort(),
     );
@@ -133,6 +133,16 @@ describe('resolveFeatureFlag — explicit override wins', () => {
     const metadata = { experimental: { apps: false } };
     expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('apps');
     expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('apps');
+  });
+
+  test('llm_gateway graduated: the gateway is the only model path and a stored override is inert', () => {
+    // 2026-10-20: no flag, no native OpenCode provider mode, no operator lever.
+    // A project that stored `experimental.llm_gateway` keeps the value in
+    // metadata; it must not resurface as a key or a catalog row.
+    expect(isFeatureFlagKey('llm_gateway')).toBe(false);
+    const metadata = { experimental: { llm_gateway: false } };
+    expect(Object.keys(resolveFeatureFlags(metadata))).not.toContain('llm_gateway');
+    expect(buildFeatureFlagCatalog(metadata).map((flag) => flag.key)).not.toContain('llm_gateway');
   });
 
   test('monitors is explicit opt-in and gated on Platinum availability', () => {
@@ -227,50 +237,6 @@ describe('resolveFeatureFlag — explicit override wins', () => {
         'connectors_api_discover',
       ),
     ).toBe(false);
-  });
-
-  test('llm_gateway is platform-gated and follows the fleet default', () => {
-    const available = findCatalogFlag('llm_gateway').available;
-    expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(
-      available && config.LLM_GATEWAY_DEFAULT_ENABLED,
-    );
-    expect(resolveFeatureFlag({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-      available,
-    );
-    expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(false);
-    expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: true } })).toBe(available);
-  });
-
-  test('llm_gateway fleet default rolls all projects on while the kill switch and project-off override still win', () => {
-    const previousEnabled = config.LLM_GATEWAY_ENABLED;
-    const previousDefault = config.LLM_GATEWAY_DEFAULT_ENABLED;
-    try {
-      config.LLM_GATEWAY_ENABLED = false;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
-      expect(projectLlmGatewayEnabled({})).toBe(false);
-
-      config.LLM_GATEWAY_ENABLED = true;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = false;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(false);
-
-      config.LLM_GATEWAY_DEFAULT_ENABLED = true;
-      expect(resolveFeatureFlag({}, 'llm_gateway')).toBe(true);
-      expect(projectLlmGatewayEnabled({})).toBe(true);
-      expect(resolveFeatureFlag({ experimental: { llm_gateway: false } }, 'llm_gateway')).toBe(
-        false,
-      );
-      expect(projectLlmGatewayEnabled({ experimental: { llm_gateway: false } })).toBe(false);
-
-      // The kill switch also beats an explicit project ON.
-      config.LLM_GATEWAY_ENABLED = false;
-      expect(resolveFeatureFlag({ experimental: { llm_gateway: true } }, 'llm_gateway')).toBe(
-        false,
-      );
-    } finally {
-      config.LLM_GATEWAY_ENABLED = previousEnabled;
-      config.LLM_GATEWAY_DEFAULT_ENABLED = previousDefault;
-    }
   });
 
   test('session_log_restore follows the deployment default while a stored project value wins', () => {
@@ -368,15 +334,9 @@ describe('buildFeatureFlagCatalog', () => {
  * break (d) and take the operator lever with it.
  */
 describe('catalogHidden', () => {
-  test('only internal-only surfaces are hidden: session_log (the v2 session-log rollout) and session_log_restore (the boot restore from the session log)', () => {
-    // `apps` graduated (2026-10-14): Apps is generally available.
-    expect(HIDDEN_KEYS).toEqual(['session_log', 'session_log_restore']);
-  });
-
-  test('session_log is a behavioral flag that defaults off', () => {
-    const def = REGISTERED_FEATURE_FLAGS.find((f) => f.key === 'session_log');
-    expect(def?.enforcement).toBe('behavioral');
-    expect(resolveFeatureFlag({}, 'session_log')).toBe(false);
+  test('only internal-only surfaces are hidden: session_log_restore (the boot restore from the session log)', () => {
+    // `apps` graduated (2026-10-14) and `session_log` (2026-10-22): neither is a flag.
+    expect(HIDDEN_KEYS).toEqual(['session_log_restore']);
   });
 
   test('session_log_restore is a behavioral flag that defaults off', () => {
@@ -402,7 +362,7 @@ describe('catalogHidden', () => {
 
     test(`${key}: (c) is absent from the catalog while off`, () => {
       // An overridden-off hidden flag must not reappear as a row someone can flip.
-      expect(buildFeatureFlagCatalog({}).map((f) => f.key)).not.toContain(key);
+      if (!resolveFeatureFlag({}, key)) expect(buildFeatureFlagCatalog({}).map((f) => f.key)).not.toContain(key);
       expect(buildFeatureFlagCatalog({ experimental: { [key]: false } }).map((f) => f.key)).not.toContain(key);
     });
 
@@ -426,11 +386,12 @@ describe('catalogHidden', () => {
     });
   }
 
-  test('every offered flag is a project flag writable by project admins (operator_only false)', () => {
+  test('every offered flag is a project flag writable by project admins (operator_only false); a hidden flag that is on is listed read-only', () => {
     for (const f of buildFeatureFlagCatalog({})) {
       expect(f.scope).toBe('project');
-      expect(f.operator_only).toBe(false);
-      expect(isOperatorOnlyFeatureFlag(f.key)).toBe(false);
+      const hidden = HIDDEN_KEYS.includes(f.key);
+      expect(f.operator_only).toBe(hidden);
+      expect(isOperatorOnlyFeatureFlag(f.key)).toBe(hidden);
     }
   });
 });

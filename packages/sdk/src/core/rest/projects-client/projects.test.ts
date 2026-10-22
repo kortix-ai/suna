@@ -1002,7 +1002,6 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'agentmail_email',
     'connectors_api_discover',
     'drives',
-    'llm_gateway',
     'marketplace',
     'meta_agent',
     'monitors',
@@ -1015,10 +1014,11 @@ test('FEATURE_FLAG_KEYS lists every flag key exactly once', () => {
     'event_triggers',
     'warm_sessions',
     'notification_center',
-    'session_log',
     'session_log_restore',
     'volumes',
     'connectors_v2',
+    'agent_rooms',
+    'goals',
   ];
   expect([...FEATURE_FLAG_KEYS].sort()).toEqual(expected.sort());
   expect(new Set(FEATURE_FLAG_KEYS).size).toBe(FEATURE_FLAG_KEYS.length);
@@ -1076,6 +1076,14 @@ test('apps graduated: Apps is on for every project, the key still typechecks', (
   expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
 });
 
+test('llm_gateway graduated: the gateway is the only model path, the key still typechecks', () => {
+  // Every project's models run through the LLM gateway (2026-10-20). The API
+  // no longer lists, resolves, or accepts `llm_gateway`; it still sends
+  // `experimental.llm_gateway: true` for older clients.
+  const graduated: FeatureFlagKey = 'llm_gateway';
+  expect(FEATURE_FLAG_KEYS).not.toContain(graduated);
+});
+
 test('pi_worker withdrawn: sessions run pi only in the sandbox, the key still typechecks', () => {
   // The worker/environment split left the product. The API no longer lists,
   // resolves, or accepts `pi_worker`; `pi_harness` is the pi path.
@@ -1105,8 +1113,8 @@ test('ExperimentalFeatureKey and ExperimentalFeatureView stay as aliases', () =>
 
 test('FeatureFlagView marks an operator-only flag; older servers omit the field', () => {
   const managed: FeatureFlagView = {
-    key: 'session_log',
-    name: 'Session log',
+    key: 'session_log_restore',
+    name: 'Session log restore',
     description: 'x',
     stability: 'experimental',
     available: true,

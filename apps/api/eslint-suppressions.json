@@ -290,9 +290,6 @@
   "src/billing/routes/account-state.ts": {
     "no-console": {
       "count": 2
-    },
-    "no-restricted-syntax": {
-      "count": 1
     }
   },
   "src/billing/routes/payments.ts": {
@@ -564,11 +561,6 @@
       "count": 2
     }
   },
-  "src/channels/slack/model-choice.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    }
-  },
   "src/channels/slack/participants.ts": {
     "kortix-api/projects-surface": {
       "count": 1
@@ -715,11 +707,6 @@
   },
   "src/channels/teams/jwt.ts": {
     "no-console": {
-      "count": 1
-    }
-  },
-  "src/channels/teams/model-choice.ts": {
-    "kortix-api/projects-surface": {
       "count": 1
     }
   },
@@ -1046,9 +1033,6 @@
     }
   },
   "src/feature-flags/toggle-effects.ts": {
-    "kortix-api/projects-surface": {
-      "count": 1
-    },
     "no-console": {
       "count": 1
     }
@@ -1696,7 +1680,7 @@
       "count": 1
     },
     "no-console": {
-      "count": 3
+      "count": 2
     }
   },
   "src/projects/lib/legacy-runtime-bootstrap-wiring.ts": {
@@ -1750,7 +1734,7 @@
       "count": 1
     },
     "no-console": {
-      "count": 9
+      "count": 7
     }
   },
   "src/projects/lib/sandbox-env-snapshot.ts": {
@@ -2384,11 +2368,6 @@
   "src/projects/routes/session-open-bundle.ts": {
     "no-console": {
       "count": 1
-    }
-  },
-  "src/projects/routes/session-reminders.ts": {
-    "no-restricted-syntax": {
-      "count": 6
     }
   },
   "src/projects/routes/session-scope-decide.ts": {
@@ -3040,11 +3019,6 @@
   "src/shared/instance.ts": {
     "no-restricted-properties": {
       "count": 1
-    }
-  },
-  "src/shared/jwt-liveness.ts": {
-    "kortix-api/replica-local": {
-      "count": 2
     }
   },
   "src/shared/jwt-verify.ts": {

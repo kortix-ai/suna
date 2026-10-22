@@ -15,7 +15,7 @@ import { removeProfileAvatar } from './profile-avatar';
  * opens on its heading and a hairline rule, then rows: label on the left, its
  * control on the right, consecutive rows sharing ONE bordered box separated by
  * hairlines — `SettingsRowGroup` / `SettingsRow`
- * (`components/ui/settings-row.tsx`, whose header explains the rationale).
+ * (`packages/ui/src/primitives/settings-row.tsx`, whose header explains the rationale).
  * Sections between groups are a plain small label, not a card header. Three
  * consequences worth naming, because each replaced something that used to be
  * here:
@@ -59,14 +59,14 @@ import { useLocale, useTranslations } from '@/i18n/use-translations';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { Input } from '@/components/ui/input';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { Label } from '@/components/ui/label';
-import Loading from '@/components/ui/loading';
+import { Avatar, AvatarFallback, AvatarImage } from '@kortix/ui/avatar';
+import { Button } from '@kortix/ui/button';
+import { ConfirmDialog } from '@kortix/ui/confirm-dialog';
+import { InfoBanner } from '@kortix/ui/info-banner';
+import { Input } from '@kortix/ui/input';
+import { KortixLoader } from '@kortix/ui/kortix-loader';
+import { Label } from '@kortix/ui/label';
+import Loading from '@kortix/ui/loading';
 import {
   Modal,
   ModalBody,
@@ -74,11 +74,11 @@ import {
   ModalFooter,
   ModalHeader,
   ModalTitle,
-} from '@/components/ui/modal';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { SettingsRow, SettingsRowGroup } from '@/components/ui/settings-row';
-import { SettingsSubsectionHeader } from '@/components/ui/settings-subsection-header';
-import { errorToast, successToast } from '@/components/ui/toast';
+} from '@kortix/ui/modal';
+import { RadioGroup, RadioGroupItem } from '@kortix/ui/radio-group';
+import { SettingsRow, SettingsRowGroup } from '@kortix/ui/settings-row';
+import { SettingsSubsectionHeader } from '@kortix/ui/settings-subsection-header';
+import { errorToast, successToast } from '@kortix/ui/toast';
 import {
   useAccountDeletionStatus,
   useCancelAccountDeletion,
@@ -86,8 +86,8 @@ import {
   useRequestAccountDeletion,
 } from '@/hooks/account/use-account-deletion';
 import { createClient } from '@/lib/supabase/client';
-import { cn } from '@/lib/utils';
-import { SettingsTabHeader } from '../settings-tab-header';
+import { cn } from '@kortix/ui';
+import { SettingsTabHeader } from '@kortix/ui/customize/settings/settings-tab-header';
 import {
   type AccountMembership,
   type AccountMembershipsCopy,
@@ -183,8 +183,7 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   scheduledForDeletionOn: 'Scheduled for deletion on {date}.',
   scheduledForDeletion: 'Scheduled for deletion.',
   cancelBeforeDeletion: 'You can cancel any time before then.',
-  deletionDescription:
-    'This deletes every agent, thread, credential, and subscription tied to your account. This cannot be undone.',
+  deletionDescription: 'Schedule account deletion. You can cancel before the scheduled date.',
   unavailable: 'Unavailable',
   retry: 'Retry',
   keepMyAccount: 'Keep my account',
@@ -196,7 +195,7 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   // (KRTX-1403: "is scheduled" read as an already-scheduled deletion while
   // GET /v1/account/deletion-status reported none).
   gracePeriodWarning:
-    'Your account will be scheduled for deletion after a 30-day grace period, during which you can cancel.',
+    'Your account will be scheduled for deletion after a grace period. You can cancel before the scheduled date.',
   whenDeleted: 'When your account is deleted:',
   agentsDeleted: 'Every agent you own is deleted',
   threadsDeleted: 'Every thread and message is deleted',
@@ -204,9 +203,8 @@ export const DEFAULT_PROFILE_TAB_COPY: ProfileTabCopy = {
   subscriptionCancelled: 'Your subscription is cancelled',
   billingHistoryRemoved: 'Your billing history is removed',
   chooseWhen: 'Choose when',
-  gracePeriodLabel: '30-day grace period',
-  gracePeriodDescription:
-    'Deletion happens automatically after 30 days. Cancel any time before then.',
+  gracePeriodLabel: 'Grace period',
+  gracePeriodDescription: 'Deletion happens on the scheduled date. Cancel any time before then.',
   immediateLabel: 'Delete immediately',
   immediateDescription: 'Your account and its data are deleted right away. This cannot be undone.',
   typeDeleteToConfirm: 'Type "delete" to confirm',
@@ -248,6 +246,7 @@ export interface ProfileTabViewProps {
   accountDeletionSupported?: boolean;
   hasPendingDeletion?: boolean;
   deletionScheduledForLabel?: string | null;
+  deletionPreviewDateLabel?: string | null;
   isDeletionStatusError?: boolean;
   onRetryDeletionStatus?: () => void;
   showDeleteDialog?: boolean;
@@ -268,6 +267,8 @@ export interface ProfileTabViewProps {
     organizations?: Partial<AccountMembershipsCopy>;
   };
 }
+
+const NO_ACCOUNTS: readonly AccountMembership[] = [];
 
 /** Presentational only — no hooks, no data fetching, no store or Supabase
  *  read. Kept separate from `ProfileTab` so this renders under
@@ -292,11 +293,12 @@ export function ProfileTabView({
   isSavingName = false,
   onSaveName = () => {},
   userEmail = '',
-  accounts = [],
+  accounts = NO_ACCOUNTS,
   accountsLoading = false,
   accountDeletionSupported = true,
   hasPendingDeletion = false,
   deletionScheduledForLabel = null,
+  deletionPreviewDateLabel = null,
   isDeletionStatusError = false,
   onRetryDeletionStatus = () => {},
   showDeleteDialog = false,
@@ -491,7 +493,14 @@ export function ProfileTabView({
                 </ModalHeader>
                 <ModalBody className="space-y-4">
                   <InfoBanner tone="warning">
-                    {deletionType === 'immediate' ? copy.immediateWarning : copy.gracePeriodWarning}
+                    {deletionType === 'immediate' ? (
+                      copy.immediateWarning
+                    ) : (
+                      <>
+                        {copy.gracePeriodWarning}
+                        {deletionPreviewDateLabel && <p>{deletionPreviewDateLabel}</p>}
+                      </>
+                    )}
                   </InfoBanner>
                   <div className="space-y-2">
                     <p className="text-sm font-medium">{copy.whenDeleted}</p>
@@ -669,7 +678,7 @@ export function ProfileTab() {
       const filePath = `${userId}/${Date.now()}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+        .upload(filePath, file, { cacheControl: '0', upsert: true });
       if (uploadError) throw uploadError;
       const {
         data: { publicUrl },
@@ -772,6 +781,7 @@ export function ProfileTab() {
     (isDeletionStatusError ||
       (deletionStatusFetchStatus !== 'idle' && deletionStatusFailedAt > deletionStatusAnsweredAt));
 
+  const [deletionPreviewDate, setDeletionPreviewDate] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCancelDeletionDialog, setShowCancelDeletionDialog] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -783,6 +793,8 @@ export function ProfileTab() {
   // invariant `TypeToConfirmDialog` buys by mounting its body inside the
   // portal (KRTX-1403).
   const openDeleteDialog = () => {
+    // Match the API's fourteen-day elapsed-time grace period.
+    setDeletionPreviewDate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString());
     setDeleteConfirmText('');
     setDeletionType('grace-period');
     setShowDeleteDialog(true);
@@ -814,14 +826,12 @@ export function ProfileTab() {
     }
   };
 
-  const formatDate = (dateString: string | null | undefined): string | null => {
-    if (!dateString) return null;
-    return new Intl.DateTimeFormat(locale, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    }).format(new Date(dateString));
-  };
+  const dateFormat = useMemo(
+    () => new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long', day: 'numeric' }),
+    [locale],
+  );
+  const formatDate = (dateString: string | null | undefined): string | null =>
+    dateString ? dateFormat.format(new Date(dateString)) : null;
 
   return (
     <ProfileTabView
@@ -848,6 +858,7 @@ export function ProfileTab() {
       accountDeletionSupported={accountDeletionSupported}
       hasPendingDeletion={deletionStatus?.has_pending_deletion ?? false}
       deletionScheduledForLabel={formatDate(deletionStatus?.deletion_scheduled_for)}
+      deletionPreviewDateLabel={formatDate(deletionPreviewDate)}
       isDeletionStatusError={isDeletionStatusFailed}
       onRetryDeletionStatus={() => retryDeletionStatus()}
       showDeleteDialog={showDeleteDialog}

@@ -7,10 +7,10 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 import { ProjectPendingScreen } from '@/components/projects/project-pending-screen';
-import { useAccountsList } from '@/hooks/account/use-accounts-list';
-import { PROJECT_LANDING_PATH } from '@/lib/onboarding/landing-destination';
+import { useAccountsList } from '@kortix/ui/internal/hooks/account/use-accounts-list';
+import { PROJECT_LANDING_PATH } from '@kortix/ui/internal/lib/onboarding/landing-destination';
 
-import { captureHref, lastCaptureAccount } from './use-capture-area';
+import { captureHref, lastCaptureAccount } from '@kortix/ui/internal/capture/use-capture-area';
 
 /**
  * `/capture`: opens the organization used last in this browser, else the only

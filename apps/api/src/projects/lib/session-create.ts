@@ -1,3 +1,7 @@
+import { copySessionLog, withForkAttachmentCleanup } from '../session-log-fork';
+import { platformDefaultModelId } from '../../llm-gateway/models/served-managed-models';
+import { writeSessionLogFromMirror } from '../session-log-capture';
+import { captureJournallessSessionLog } from './session-transcript-capture';
 import { randomUUID } from 'node:crypto';
 import { SESSION_INITIAL_CONTEXT_MAX_CHARS, SessionCreateInputSchema } from '@kortix/api-contract';
 import { projectSessionConnectorBindings, projectSessionGrants, projectSessionRuntimeContexts, projectSessions, sessionLifecycleCommands, sessionProviderSecretPools } from '@kortix/db';
@@ -19,7 +23,6 @@ import {
   type SessionVisibility,
 } from '../../connectors/share';
 import { setContextField } from '../../lib/request-context';
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import {
   isModelServableForAccount,
   resolveEffectiveModel,
@@ -51,7 +54,6 @@ import {
 import { createRemoteSessionBranch } from '../git';
 import { convertPendingPromptToInboxRow } from '../session-lifecycle/pending-prompt';
 
-import { validateNativeOpencodeModelRef } from './session-model-change';
 import { listResolvedProjectSecrets, parseSessionSecretsAllowlist, secretKeyCollisionInAllowlist } from '../secrets';
 
 
@@ -59,6 +61,11 @@ import { withProjectGitAuth } from './git';
 import { repositoryGeneration } from './repository-generation';
 import { resolveFastBootGitHintWithCache } from './fast-boot-git-hint';
 import { resolveSessionProvider, sessionProviderIsLocked } from './provider-precedence';
+import {
+  DEPRECATED_PROVIDER_CODE,
+  DEPRECATED_PROVIDER_ERROR,
+  isDeprecatedProvider,
+} from '../../platform/providers/deprecated';
 
 import { type ProjectRow, type ProjectSessionRow, type RequestAuditContext, normalizeString } from './serializers';
 import { normalizeJsonObject } from '../../shared/json';
@@ -519,7 +526,6 @@ async function resolveSessionModel(params: {
   origin: SessionOrigin;
 }): Promise<
   SessionCreateStep<{
-    llmGatewayEnabled: boolean;
     providerSecretPools: Record<string, string[]> | undefined;
     opencodeModel: string | null;
     opencodeModelSource: ModelSource | null;
@@ -528,31 +534,20 @@ async function resolveSessionModel(params: {
   const { input, accountId, projectId, agentName, loadedAgents, visibility, origin } = params;
   const { project, userId, body } = input;
   const freeModelsOnly = !(await accountMayUseManagedModels(accountId));
-  const llmGatewayEnabled = projectLlmGatewayEnabled(project.metadata);
   const pooledProviderSecrets = resolveFeatureFlag(project.metadata, 'pooled_provider_secrets');
-  if (body.provider_secret_pools !== undefined && (!pooledProviderSecrets || !llmGatewayEnabled)) {
+  if (body.provider_secret_pools !== undefined && !pooledProviderSecrets) {
     return { error: { status: 403, body: { error: 'Provider secret pools are unavailable' } } };
   }
   // The key selection this session starts with: the caller's, or the one
   // chosen below for a model that runs only on pooled keys.
   let providerSecretPools = body.provider_secret_pools as Record<string, string[]> | undefined;
 
-  // Model: normalize + fail-fast at create. Two paths, forked on the project's
-  // `llm_gateway` flag:
-  //
-  //  • gateway ON — validate against the same servability resolver the gateway
-  //    uses and store the OPENCODE ref form (`kortix/<wire>`). An unservable /
-  //    retired / typo'd pin previously only failed at prompt time (a dead
-  //    turn); a bare managed id (`claude-opus-4-8`) silently dropped to the
-  //    daemon's default because opencode addresses managed models as
-  //    `kortix/<id>`.
-  //  • gateway OFF (native OpenCode) — the gateway resolver has no say.
-  //    OpenCode owns the catalog and connects providers from the keys in the
-  //    box, so the pin is stored VERBATIM in OpenCode's native
-  //    `provider/model` form. Only the shape is checked here: the daemon's
-  //    resolveOpencodeModel drops a slash-less ref silently, and a `kortix/…`
-  //    ref names a provider that does not exist off-gateway — both would be a
-  //    dead pin, so both fail fast instead.
+  // Model: normalize + fail-fast at create. Validate against the same
+  // servability resolver the gateway uses and store the OPENCODE ref form
+  // (`kortix/<wire>`). An unservable / retired / typo'd pin previously only
+  // failed at prompt time (a dead turn); a bare managed id (`claude-opus-4-8`)
+  // silently dropped to the daemon's default because opencode addresses
+  // managed models as `kortix/<id>`.
   //
   // Runs BEFORE the billing hold so a bad model never costs a credit
   // reservation. Mirrors the channel-model gate (routes/channel-bindings.ts).
@@ -568,82 +563,68 @@ async function resolveSessionModel(params: {
         },
       };
     }
-    if (!llmGatewayEnabled) {
-      const nativeShapeError = validateNativeOpencodeModelRef(requestedModel);
-      if (nativeShapeError) {
-        return {
-          error: {
-            status: 400,
-            body: { error: nativeShapeError.message, code: nativeShapeError.code },
-          },
-        };
-      }
-      opencodeModel = requestedModel;
-      opencodeModelSource = 'explicit';
-    } else {
-      let servable = await isModelServableForAccount({
-        userId,
+    let servable = await isModelServableForAccount({
+      userId,
+      accountId,
+      projectId,
+      freeModelsOnly,
+      model: requestedModel,
+      providerSecretPools,
+    });
+    // A model reached only through pooled keys needs a key selection, and a
+    // caller that names only the model (the CLI, the SDK, a chat channel)
+    // names none: it was refused here. Select every key the caller may use
+    // for its provider, so they rotate — the same keys the web offers.
+    // Personal keys only in a session private to them that acts on their
+    // behalf (spec 2026-09-22 §2.3); a child session's human is its
+    // parent's, unknown here, so it gets shared keys only.
+    if (!servable && providerSecretPools === undefined && pooledProviderSecrets) {
+      const personal =
+        visibility === 'private' && !input.callerSessionId
+          ? decideSessionOnBehalfOf({
+              userId,
+              origin,
+              // The metadata the session will carry: the request's, then the caller's.
+              metadata: { ...normalizeJsonObject(body.metadata), ...normalizeJsonObject(input.metadata) },
+              isAccountMember: true,
+              slackRequiresUserIdentity: config.SLACK_REQUIRE_USER_IDENTITY !== false,
+              teamsRequiresUserIdentity: config.TEAMS_REQUIRE_USER_IDENTITY !== false,
+            })
+          : null;
+      const selection = await usableProviderKeys({
         accountId,
         projectId,
-        freeModelsOnly,
+        userId,
+        grantUserId: personal,
         model: requestedModel,
-        providerSecretPools,
-      });
-      // A model reached only through pooled keys needs a key selection, and a
-      // caller that names only the model (the CLI, the SDK, a chat channel)
-      // names none: it was refused here. Select every key the caller may use
-      // for its provider, so they rotate — the same keys the web offers.
-      // Personal keys only in a session private to them that acts on their
-      // behalf (spec 2026-09-22 §2.3); a child session's human is its
-      // parent's, unknown here, so it gets shared keys only.
-      if (!servable && providerSecretPools === undefined && pooledProviderSecrets) {
-        const personal =
-          visibility === 'private' && !input.callerSessionId
-            ? decideSessionOnBehalfOf({
-                userId,
-                origin,
-                // The metadata the session will carry: the request's, then the caller's.
-                metadata: { ...normalizeJsonObject(body.metadata), ...normalizeJsonObject(input.metadata) },
-                isAccountMember: true,
-                slackRequiresUserIdentity: config.SLACK_REQUIRE_USER_IDENTITY !== false,
-                teamsRequiresUserIdentity: config.TEAMS_REQUIRE_USER_IDENTITY !== false,
-              })
-            : null;
-        const selection = await usableProviderKeys({
+      }).catch(() => null);
+      if (selection && agentMayUseEnv(grantFromLoadedAgents(agentName, loadedAgents), selection.envVar)) {
+        const selected = { [selection.providerId]: selection.secretIds };
+        servable = await isModelServableForAccount({
+          userId,
           accountId,
           projectId,
-          userId,
-          grantUserId: personal,
+          freeModelsOnly,
           model: requestedModel,
-        }).catch(() => null);
-        if (selection && agentMayUseEnv(grantFromLoadedAgents(agentName, loadedAgents), selection.envVar)) {
-          const selected = { [selection.providerId]: selection.secretIds };
-          servable = await isModelServableForAccount({
-            userId,
-            accountId,
-            projectId,
-            freeModelsOnly,
-            model: requestedModel,
-            providerSecretPools: selected,
-          });
-          if (servable) providerSecretPools = selected;
-        }
+          providerSecretPools: selected,
+        });
+        if (servable) providerSecretPools = selected;
       }
-      if (!servable) {
-        return {
-          error: {
-            status: 400,
-            body: {
-              error: `Model "${requestedModel}" is not available for this account`,
-              code: 'INVALID_SESSION_MODEL',
-            },
-          },
-        };
-      }
-      opencodeModel = toOpencodeModelRef(requestedModel);
-      opencodeModelSource = 'explicit';
     }
-  } else if (llmGatewayEnabled) {
+    if (!servable) {
+      return {
+        error: {
+          status: 400,
+          body: {
+            error: `Model "${requestedModel}" is not available for this account`,
+            code: 'INVALID_SESSION_MODEL',
+          },
+        },
+      };
+    }
+    opencodeModel = toOpencodeModelRef(requestedModel);
+    opencodeModelSource = 'explicit';
+  } else {
     try {
       const resolved = await resolveEffectiveModel({
         userId,
@@ -656,7 +637,7 @@ async function resolveSessionModel(params: {
       });
       // An account without managed models gets no platform default: it runs
       // its own connected model (already in `resolved`) or none.
-      const concreteModel = resolved.model ?? (freeModelsOnly ? null : config.LLM_GATEWAY_DEFAULT_MODEL);
+      const concreteModel = resolved.model ?? (freeModelsOnly ? null : platformDefaultModelId() || null);
       if (concreteModel) {
         opencodeModel = toOpencodeModelRef(concreteModel);
         opencodeModelSource = resolved.model ? resolved.source : 'platform';
@@ -674,7 +655,7 @@ async function resolveSessionModel(params: {
       };
     }
   }
-  return { llmGatewayEnabled, providerSecretPools, opencodeModel, opencodeModelSource };
+  return { providerSecretPools, opencodeModel, opencodeModelSource };
 }
 
 /** Every explicitly bound connector must be granted to the agent and resolve to a usable connection. */
@@ -1168,11 +1149,16 @@ async function insertSessionAndBindings(
       labels: SessionCreateInputSchema.shape.labels.parse(body.labels) ?? [],
       connectorBindingsConfigured,
       connectorBindingsInheritUnbound: inheritUnbound,
-      metadata,
+      metadata: typeof body.fork_from_session_id === 'string'
+        ? { ...metadata, forkedFromSessionId: body.fork_from_session_id }
+        : metadata,
       updatedAt: new Date(),
     })
     .returning();
   if (!row) throw new Error('Session insert returned no row');
+  if (typeof body.fork_from_session_id === 'string') {
+    await copySessionLog(tx, { sourceId: body.fork_from_session_id, sessionId, projectId, accountId, captureComplete: input.forkCaptureComplete });
+  }
   if (input.createCommandId) {
     // Same transaction as the session row: a create command whose worker
     // dies after this commit is reclaimed WITH its session id, and
@@ -1366,7 +1352,6 @@ async function provisionCreatedSession(params: {
   baseRef: string;
   agentName: string;
   opencodeModel: string | null;
-  llmGatewayEnabled: boolean;
   platformMetaAgent: boolean;
   repositoryAccess: boolean;
   providerName: SandboxProviderName;
@@ -1382,7 +1367,6 @@ async function provisionCreatedSession(params: {
     baseRef,
     agentName,
     opencodeModel,
-    llmGatewayEnabled,
     platformMetaAgent,
     repositoryAccess,
     providerName,
@@ -1440,7 +1424,6 @@ async function provisionCreatedSession(params: {
           baseRef,
           agentName,
           opencodeModel,
-          llmGatewayEnabled,
           platformMetaAgent,
           freshSession: true,
           projectSnapshotMode,
@@ -1544,6 +1527,7 @@ export async function createProjectSession(input: {
   userId: string;
   requestingPrincipalType: 'human' | 'service_account';
   body: Record<string, unknown>;
+  forkCaptureComplete?: boolean;
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
@@ -1589,6 +1573,9 @@ export async function createProjectSession(input: {
   const parsedBody = parseSessionCreateBody(body);
   if (parsedBody.error) return { error: parsedBody.error };
   const { parsedRuntimeContext, parsedConnectorBindings } = parsedBody;
+  if (isDeprecatedProvider(normalizeString(body.provider))) {
+    return { error: { status: 400, body: { error: DEPRECATED_PROVIDER_ERROR, code: DEPRECATED_PROVIDER_CODE } } };
+  }
 
   // `inherit_unbound` is a benign binding modifier: when this session binds any
   // connector, unbound aliases keep resolving to the PROJECT DEFAULT instead of
@@ -1638,7 +1625,7 @@ export async function createProjectSession(input: {
     origin,
   });
   if (model.error) return { error: model.error };
-  const { llmGatewayEnabled, providerSecretPools, opencodeModel, opencodeModelSource } = model;
+  const { providerSecretPools, opencodeModel, opencodeModelSource } = model;
 
   const connectors = await validateSessionConnectorsForAgent({
     input,
@@ -1692,6 +1679,23 @@ export async function createProjectSession(input: {
   const billingCheck = await checkSessionBillingAdmission(accountId);
   if (billingCheck) return billingCheck;
 
+  if (typeof body.fork_from_session_id === 'string') {
+    if (!config.SESSION_LOG_RESTORE_ENABLED || !config.SESSION_LOG_INGEST_ENABLED) {
+      return { error: { status: 503, body: { error: 'Session log restore is off' } } };
+    }
+    const capture = await captureJournallessSessionLog(body.fork_from_session_id);
+    // A reachable box must provide the whole snapshot. A stopped box can use
+    // its durable journal, checked again under the journal lock during copy.
+    if (capture && !capture.head_complete) {
+      return { error: { status: 409, body: { error: 'Source history capture is incomplete' } } };
+    }
+    input.forkCaptureComplete = capture?.head_complete === true;
+    const converted = await writeSessionLogFromMirror(body.fork_from_session_id);
+    if (converted.outcome === 'failed' || converted.outcome === 'invalid' || converted.outcome === 'too_large') {
+      return { error: { status: 409, body: { error: 'Source history capture is unavailable' } } };
+    }
+  }
+
   const identity = resolveSessionIdentity({ input, projectId, accountId });
   if (identity.error) return { error: identity.error };
   const { sessionId, initialPrompt, initialContext, initialTurn, pendingPromptConversion } = identity;
@@ -1718,7 +1722,7 @@ export async function createProjectSession(input: {
 
   let sessionRow: ProjectSessionRow | null = null;
   try {
-    sessionRow = await insertSessionAndBindings(
+    const insert = () => insertSessionAndBindings(
       {
         input,
         sessionId,
@@ -1742,6 +1746,9 @@ export async function createProjectSession(input: {
       parsedRuntimeContext.context,
       validatedConnectorBindings.bindings,
     );
+    sessionRow = typeof body.fork_from_session_id === 'string'
+      ? await withForkAttachmentCleanup(projectId, sessionId, insert)
+      : await insert();
   } catch (error) {
     // Besides a randomUUID() collision on the PK / (project_id, branch_name)
     // unique index, `sandbox_provider` is an ENUM: a provider this env enables
@@ -1751,9 +1758,9 @@ export async function createProjectSession(input: {
     // create on a project pinned to it.) verify-live-schema.ts now gates that drift.
     // Session, context and connection bindings are one transaction. Nothing is
     // visible and provisioning never starts when any child insert fails.
-    if (error instanceof HTTPException && error.status < 500) {
+    if (error instanceof HTTPException) {
       return {
-        error: { status: sessionCreateErrorStatus(error.status), body: await error.getResponse().json() },
+        error: { status: sessionCreateErrorStatus(error.status), body: { error: error.message } },
       };
     }
     // Never return `(error as Error).message`: postgres.js embeds the whole
@@ -1795,7 +1802,6 @@ export async function createProjectSession(input: {
     baseRef,
     agentName,
     opencodeModel,
-    llmGatewayEnabled,
     platformMetaAgent,
     repositoryAccess,
     providerName,

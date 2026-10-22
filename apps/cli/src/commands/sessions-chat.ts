@@ -13,11 +13,12 @@ import {
   sessionLogCallStatus,
   sessionLogOfV1Rows,
   sessionModelPin,
+  sessionListStatus,
   toolCallError,
   toolCallRawOutput,
 } from '@kortix/sdk';
 import { genuiToMarkdown } from '@kortix/sdk/genui';
-import { formatRelative } from '@kortix/shared';
+import { formatRelative, parseRoomDigest, parseRoomPrompt } from '@kortix/shared';
 
 import type { Auth } from '../api/auth.ts';
 import { kortixFromAuth, withKortixScope } from '../api/sdk.ts';
@@ -35,10 +36,12 @@ import {
   resolveSessionRuntime,
   SessionRuntimeError,
   type SessionRuntime,
+  type NotRunningPolicy,
 } from '../session-runtime.ts';
 import { C, help, pad, status } from '../style.ts';
 import { selectFromList } from '../tui-select.ts';
 import { queueSessionPrompt, type CreateSessionPromptResult } from './sessions-queue.ts';
+import { requireConnectedModel } from './session-model-access.ts';
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
@@ -64,7 +67,7 @@ export async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
   cliCommand = 'sessions chat',
-  options: { requireRunning?: boolean } = {},
+  options: { onNotRunning?: NotRunningPolicy; onStarting?: (session: ProjectSession) => void } = {},
 ): Promise<ResolvedSession | null> {
   const found = await locateSessionAnywhere(
     sessionId,
@@ -74,6 +77,14 @@ export async function loadSessionForChat(
   if (!found) return null;
   const { client, projectId, auth, session, projectName, hostName } = found.located;
   const ctx = { client, projectId, auth };
+  if (cliCommand === 'sessions chat') {
+    try {
+      await requireConnectedModel(client, projectId);
+    } catch (error) {
+      surfaceApiError(error);
+      return null;
+    }
+  }
   if (found.switched) {
     process.stderr.write(
       `${status.ok(`Found in ${C.bold}${projectName ?? projectId}${C.reset}`)} ` +
@@ -91,7 +102,12 @@ export async function loadSessionForChat(
       client,
       projectId,
       session,
-      onNotRunning: options.requireRunning === false ? 'ignore' : 'fail',
+      onNotRunning: options.onNotRunning ?? (
+        cliCommand === 'sessions chat' && session.status === 'provisioning' ? 'start' : 'fail'
+      ),
+      onStarting: options.onStarting ?? (() => {
+        process.stderr.write(`${C.dim}  Starting session…${C.reset}\n`);
+      }),
     });
   } catch (error) {
     if (error instanceof SessionRuntimeError && error.kind === 'not-running') {
@@ -101,7 +117,11 @@ export async function loadSessionForChat(
       );
       return null;
     }
-    surfaceApiError(error instanceof SessionRuntimeError ? error.cause : error);
+    if (error instanceof SessionRuntimeError && error.cause === undefined) {
+      process.stderr.write(`${status.err(error.message)}\n`);
+    } else {
+      surfaceApiError(error instanceof SessionRuntimeError ? error.cause : error);
+    }
     return null;
   }
   return { ...runtime, ctx };
@@ -161,8 +181,35 @@ export function extractMessageText(msg: MessageWithParts): string {
   return message ? logMessageText(message) : '';
 }
 
+/**
+ * The header a delivered room message prints under instead of `user`: where it
+ * came from and who sent it (`agent session 3f2a1b9c (builder)` or a person).
+ * Null for any other message.
+ */
+export function roomMessageHeader(text: string): { header: string; body: string } | null {
+  const digest = parseRoomDigest(text);
+  if (digest) {
+    const range = digest.fromSeq === digest.toSeq ? `#${digest.toSeq}` : `#${digest.fromSeq}–#${digest.toSeq}`;
+    const lines = digest.lines.map((line) => `#${line.seq} ${line.sender}: ${line.text}`);
+    if (digest.more) lines.push(`… and ${digest.more} more`);
+    return { header: `room ${digest.room} ${range} · ${digest.count} new message${digest.count === 1 ? '' : 's'}`, body: lines.join('\n') };
+  }
+  const room = parseRoomPrompt(text);
+  if (!room) return null;
+  const who = room.senderKind === 'session' ? `agent session ${room.sender}` : room.sender;
+  const reply = room.replyTo ? ` ↳#${room.replyTo}` : '';
+  return { header: `room ${room.room} #${room.seq} · from ${who}${reply}`, body: room.text };
+}
+
 /** Print one session-log message: a role header, its blocks as text, and its error. */
 export function printLogMessage(message: SessionLogMessage): void {
+  const roomEvent = message.role === 'user' ? roomMessageHeader(logMessageText(message)) : null;
+  if (roomEvent) {
+    const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';
+    process.stdout.write(`\n${C.cyan}${C.bold}${roomEvent.header}${C.reset} ${C.faded}${ts}${C.reset}\n`);
+    for (const line of roomEvent.body.split('\n')) process.stdout.write(`  ${line}\n`);
+    return;
+  }
   const role = message.kind === 'compaction' ? 'compaction' : message.role;
   const color = role === 'user' || role === 'system' ? C.green : C.cyan;
   const ts = message.created_at ? new Date(message.created_at).toLocaleTimeString() : '';
@@ -362,6 +409,7 @@ async function queuePrompt(
   const { client, projectId, session } = located.located;
   let result: CreateSessionPromptResult;
   try {
+    await requireConnectedModel(client, projectId);
     result = await queueSessionPrompt(client, projectId, session, text, delivery);
   } catch (err) {
     return surfaceApiError(err);
@@ -438,6 +486,12 @@ async function resolveChatSessionId(
   if (!ctx) return null;
 
   if (wantNew) {
+    try {
+      await requireConnectedModel(ctx.client, ctx.projectId);
+    } catch (error) {
+      surfaceApiError(error);
+      return null;
+    }
     const body: Record<string, unknown> = {};
     if (initialPrompt) body.initial_prompt = initialPrompt;
     if (agent) body.agent_name = agent;
@@ -1100,13 +1154,16 @@ const STATUS_HELP = help`Usage: kortix sessions status [options]
 
 Mission control: a one-line overview of every session and what each agent is
 doing *right now* — for when many run in parallel. For each running session it
-reads the live agent state (current tool / generating / idle + last activity).
+uses canonical work activity without waking its computer. Older servers fall
+back to live agent state (current tool / generating / idle + last activity).
 By default shows active sessions (running / provisioning / failed); pass --all
 to include stopped ones. Aliases: \`overview\`, \`ps\`.
 
   --all, -a         Include stopped/completed sessions.
   --json            Structured output for scripting; each session carries
                     model, its resolved model id (null when none stored).
+                    status is computer lifecycle; working is canonical activity;
+                    display_status is the list verdict.
   --project <id>    Operate on this project id (default: linked).
   --host <name>     Operate against a non-default Kortix host.
   -h, --help        Show this help.
@@ -1129,7 +1186,7 @@ interface SessionActivity {
 
 /**
  * `kortix sessions status` — overview of all sessions + live per-agent
- * activity. Running sessions get one concurrent OpenCode read each (capped),
+ * activity. Older servers get one concurrent runtime read per running session (capped),
  * so it scales to a wall of parallel sessions without a thundering herd.
  */
 export async function runSessionsStatus(argv: string[]): Promise<number> {
@@ -1177,10 +1234,17 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
       Date.parse(b.updated_at) - Date.parse(a.updated_at),
   );
 
-  // Pull live activity for running sessions, concurrency-capped.
+  // Canonical activity never needs a runtime probe (which could wake the computer).
   const running = shown.filter((s) => s.status === 'running');
   const activity = new Map<string, SessionActivity>();
-  await mapLimit(running, 8, async (s) => {
+  for (const s of shown) {
+    if (s.working) activity.set(s.session_id, {
+      working: s.working.state === 'working',
+      summary: s.working.state === 'working' ? 'working…' : 'idle',
+      ...(s.working.since ? { last_at: s.working.since } : {}),
+    });
+  }
+  await mapLimit(running.filter((s) => !s.working), 8, async (s) => {
     const a = await fetchSessionActivity(s, ctx.projectId, auth);
     if (a) activity.set(s.session_id, a);
   });
@@ -1191,11 +1255,12 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
         session_id: s.session_id,
         name: s.name ?? null,
         status: s.status,
+        working: s.working ?? null,
+        display_status: sessionListStatus(s),
         branch: s.branch_name,
         agent: s.agent_name,
-        // Stored resolved model pin; null = the row stores none and the
-        // session follows the default chain.
-        model: sessionModelPin(s),
+        // Prefer the conversation selection; preserve old-server compatibility.
+        model: s.model === undefined ? sessionModelPin(s) : s.model,
         updated_at: s.updated_at,
         activity: activity.get(s.session_id) ?? null,
       })),
@@ -1219,7 +1284,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
 
   process.stdout.write(`\n  ${C.dim}${headline}${C.reset}\n\n`);
   for (const s of shown) {
-    const dot = statusDot(s.status);
+    const dot = statusDot(sessionListStatus(s));
     const label = s.name ?? s.agent_name;
     const id = shortId(s.session_id);
     const act = activity.get(s.session_id);
@@ -1231,7 +1296,7 @@ export async function runSessionsStatus(argv: string[]): Promise<number> {
         : `${C.faded}${s.status}${C.reset}`;
     const age = formatRelative(act?.last_at ?? s.updated_at, { maxRelativeDays: null });
     process.stdout.write(
-      `  ${dot} ${C.dim}${id}${C.reset}  ${pad(label, labelW)}  ${doing}  ${C.faded}${age}${C.reset}\n`,
+      `  ${dot} ${C.dim}${id}${C.reset}  ${pad(label, labelW)}  ${doing}  ${C.dim}computer: ${s.status}${C.reset}  ${C.faded}${age}${C.reset}\n`,
     );
   }
   process.stdout.write('\n');
@@ -1420,7 +1485,10 @@ function statusDot(s: string): string {
 
 function countByStatus(sessions: ProjectSession[]): Record<string, number> {
   const out: Record<string, number> = {};
-  for (const s of sessions) out[s.status] = (out[s.status] ?? 0) + 1;
+  for (const s of sessions) {
+    const state = sessionListStatus(s);
+    out[state] = (out[state] ?? 0) + 1;
+  }
   return out;
 }
 

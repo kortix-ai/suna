@@ -21,11 +21,13 @@ import {
 import { CodexRefreshError, resolveCodexAccountCredential, resolveCodexCredential } from '../credentials/codex';
 import { opencodeInferenceBaseUrl, parseOpencodeLogin, resolveOpencodeLogin } from '../credentials/opencode-console';
 import { capabilitiesForModel } from '../models/catalog-models';
+import { type CustomLlmProviderDefinition, customProviderDescriptor, customProviderSecretName } from '../custom-providers';
 import { isRefusedCodexModelId } from '../models/codex-models';
 import {
   canonicalManagedModelId,
   getRuntimeManagedModel,
   isKnownManagedModelId,
+  managedLineup,
   isRetiredManagedModelId,
 } from '../models/managed-models';
 import { resolveCatalogUpstream } from '../models/provider-registry';
@@ -40,7 +42,7 @@ import {
 import { isAwsRegion } from './aws-region';
 
 // Bedrock is the one native-transport BYOK provider whose credential is
-// multi-field (see apps/web/src/lib/llm-providers.ts's env-vars-per-provider
+// multi-field (see packages/ui/src/internal/lib/llm-providers.ts's env-vars-per-provider
 // doc comment): AWS_BEARER_TOKEN_BEDROCK (fetched below via `byok.envVar`,
 // same as every other BYOK provider) PLUS the project's own AWS_REGION, which
 // no other BYOK provider needs — every other provider publishes a static
@@ -51,7 +53,7 @@ import { isAwsRegion } from './aws-region';
 const BEDROCK_REGION_ENV_VAR = 'AWS_REGION';
 
 const PLAN_UPGRADE_SUGGESTION =
-  'Upgrade your plan to use this model, or choose a model available on your current plan.';
+  'Your plan includes no Kortix-managed models. Upgrade to Credits, or connect your own provider key or ChatGPT account. List connected models with /v1/llm/v1/models?scope=picker in your project.';
 
 /**
  * The same block, for a plan that is PAID but simply does not include managed
@@ -100,7 +102,8 @@ function codexGrantAllowed(principal: AuthedPrincipal) {
  */
 function chatGptAccountsResting(subject: string, retryAfterSeconds: number | undefined, suggestion: string) {
   if (retryAfterSeconds === undefined || retryAfterSeconds <= 60) {
-    return new GatewayResolutionError('provider_pool_rate_limited', `${subject} are cooling down.`, suggestion, retryAfterSeconds);
+    return new GatewayResolutionError('provider_pool_rate_limited', `${subject} are cooling down.`, suggestion,
+      retryAfterSeconds, retryAfterSeconds);
   }
   const hours = retryAfterSeconds / 3600;
   // Rounded: a floor read 4 days less a few seconds as "3 days".
@@ -109,7 +112,7 @@ function chatGptAccountsResting(subject: string, retryAfterSeconds: number | und
     : `${Math.ceil(retryAfterSeconds / 60)} minutes`;
   return new GatewayResolutionError('provider_pool_rate_limited',
     `${subject} reached their usage limit. The first resets in ${wait}.`,
-    'Choose another model, or connect another ChatGPT account.');
+    'Choose another model, or connect another ChatGPT account.', undefined, retryAfterSeconds);
 }
 
 function codexGrantRefusal() {
@@ -237,6 +240,15 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
     const personal = await resolveDefaultCodexAccountSecret(principal.accountId, principal.projectId, personalUserId);
     if (personal) {
       if (!codexGrantAllowed(principal)) throw codexGrantRefusal();
+      // Resting after a rate or usage limit: a shared account may serve,
+      // else the routed model is unavailable and the project's chain takes
+      // over, instead of every request being refused by ChatGPT again.
+      if (personal.restingSeconds) {
+        const shared = await codexSharedCandidates(context);
+        if (Array.isArray(shared)) return shared;
+        throw chatGptAccountsResting('Your ChatGPT connections', personal.restingSeconds,
+          'Retry after the cooldown, or connect another ChatGPT account.');
+      }
       try {
         const credential = await resolveCodexAccountCredential({
           projectId: principal.projectId, accountId: principal.accountId,
@@ -244,7 +256,9 @@ async function resolveCodexCandidates(context: Context): Promise<UpstreamDescrip
           secretId: personal.secretId, value: personal.value, updatedAt: personal.updatedAt,
           probe: context.options?.probe,
         });
-        if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, refreshableCredential: true }];
+        // `poolSecretId`: a 429 records this account's rest, which the next
+        // resolution reads (above).
+        if (credential) return [{ ...codexDescriptor(credential, effectiveModel), credentialRef: personal.secretId, poolSecretId: personal.secretId, refreshableCredential: true }];
       } catch (err) {
         if (!(err instanceof CodexRefreshError)) throw err;
       }
@@ -309,7 +323,10 @@ async function byokDescriptors(context: Context, provider: string,
   const baseUrl = byok.kind === 'bedrock' ? bedrockByokBaseUrl(bedrockRegion) : byok.baseUrl;
   const invokeModelId = byok.kind === 'bedrock'
     ? normalizeBedrockInferenceProfileRegion(resolvedModelId, bedrockRegion) : resolvedModelId;
-  const headers = opencodeHeaders(baseUrl, principal);
+  // Platinum caches prompts (and pins its upstream) per conversation.
+  const headers = provider === 'platinum'
+    ? { 'x-platinum-session': principal.sessionId ?? principal.keyId ?? principal.userId }
+    : opencodeHeaders(baseUrl, principal);
   const descriptors: UpstreamDescriptor[] = [];
   let expiredLogin = false;
   for (const { identifier, secretId, value } of keys) {
@@ -375,6 +392,22 @@ async function resolveByokCandidates(context: Context, provider: string,
   return keys.length ? byokDescriptors(context, provider, byok, keys, !!pool?.configured) : [];
 }
 
+/** A project's own OpenAI-compatible endpoint (custom-providers.ts). Its key is optional. */
+async function resolveCustomCandidates(context: Context, provider: CustomLlmProviderDefinition): Promise<UpstreamDescriptor[]> {
+  const { principal, effectiveModel } = context;
+  const modelId = effectiveModel.slice(provider.id.length + 1);
+  if (!provider.models.some((model) => model.id === modelId)) throw new GatewayResolutionError(
+    'model_not_found', `"${effectiveModel}" is not a model of the custom provider ${provider.name}.`,
+    'Add the model to the provider in Models → Custom, or choose another model.');
+  // Like a project BYOK key: no pool, no agent-grant check.
+  const [key] = await resolveProjectSecretsForConsumer({
+    projectId: principal.projectId!, accountId: principal.accountId,
+    sessionId: principal.sessionId, actorUserId: principal.userId,
+    name: customProviderSecretName(provider.id), consumer: 'llm_gateway',
+  });
+  return [customProviderDescriptor(provider, modelId, key ? { value: key.value, secretId: key.secretId ?? key.identifier } : null)];
+}
+
 /**
  * The managed route on Kortix's own credentials. Cloud-only:
  * getRuntimeManagedModel() matches only when KORTIX_MANAGED_PROVIDER_ENABLED is
@@ -384,7 +417,7 @@ async function resolveByokCandidates(context: Context, provider: string,
 async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveModel: string,
   access: Awaited<ReturnType<typeof getProjectModelAccess>>): Promise<UpstreamDescriptor[]> {
   const managed = getRuntimeManagedModel(effectiveModel);
-  if (!managed || !config.LLM_GATEWAY_ENABLED || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
+  if (!managed || !config.KORTIX_MANAGED_PROVIDER_ENABLED) return [];
   if (access.disabledProviders.includes('kortix')) throw new GatewayResolutionError('provider_disabled',
     'Kortix Managed Models are disabled for this project.',
     'Choose a model from an enabled provider, or enable Kortix Managed Models in Models.');
@@ -397,10 +430,9 @@ async function resolveManagedCandidates(principal: AuthedPrincipal, effectiveMod
     const tier = await getCachedAccountTier(principal.accountId);
     throw noManagedModelsError(effectiveModel, isPaidTier(tier ?? 'free'));
   }
-  return managedCandidates(managed).map((candidate) => {
-    const headers = opencodeHeaders(candidate.baseUrl, principal);
-    return headers ? { ...candidate, headers } : candidate;
-  });
+  // Platinum keys its upstream prompt caches by this id: the conversation.
+  const session = principal.sessionId ?? principal.keyId ?? principal.userId;
+  return managedCandidates(managed).map((candidate) => ({ ...candidate, headers: { 'x-platinum-session': session } }));
 }
 
 function noManagedModelsError(model: string, tierIsPaid: boolean): GatewayResolutionError {
@@ -437,9 +469,9 @@ export async function resolveCandidates(
   // (legacy); null = none (agent-principal session with no on-behalf-of human).
   const personalUserId = principal.personalUserId === undefined ? principal.userId : principal.personalUserId;
   // Avoid a second projects-row query on every resolution (KRTX-586).
-  const { access, pooledEnabled } = principal.projectId
-    ? await getProjectGatewayResolution(principal.projectId)
-    : { access: { disabledProviders: [], disabledModels: [] }, pooledEnabled: false };
+  const resolution = principal.projectId ? await getProjectGatewayResolution(principal.projectId) : null;
+  const access = resolution?.access ?? { disabledProviders: [], disabledModels: [] };
+  const pooledEnabled = resolution?.pooledEnabled ?? false;
   if (!modelAccessAllows(access, effectiveModel)) {
     const providerDisabled = access.disabledProviders.includes(modelAccessProvider(effectiveModel));
     throw new GatewayResolutionError(
@@ -463,6 +495,9 @@ export async function resolveCandidates(
       ({ ...candidate, headers: { ...candidate.headers, ...conversation } }));
   }
 
+  const custom = resolution?.customProviders?.find((candidate) => candidate.id === provider);
+  if (custom) return resolveCustomCandidates(context, custom);
+
   const byok = resolveCatalogUpstream(provider, provider ? effectiveModel.slice(provider.length + 1) : undefined);
   if (byok && principal.projectId) {
     const candidates = await resolveByokCandidates(context, provider, byok);
@@ -477,9 +512,8 @@ export async function resolveCandidates(
     'provider_not_connected', `No ${provider} API key is connected for this project.`,
     `Add a ${provider} API key in project settings, then retry.`);
 
-  // The model id is a genuine managed-model id (checked against the BUNDLED
-  // catalog, which — unlike RUNTIME_MANAGED_MODELS — is never gated by
-  // KORTIX_MANAGED_PROVIDER_ENABLED) but didn't resolve above. Two distinct
+  // The model id is a known managed-model id (in the lineup, or retired) but
+  // didn't resolve above. Two distinct
   // causes collapse into ONE catch-all here on purpose (both are "ask your
   // operator" for the same reason — a deployment-config gap, never a client
   // mistake): the managed provider is off on this deployment, or it's on but
@@ -492,7 +526,10 @@ export async function resolveCandidates(
   // or operator flag fixes it. Pairs with the session-level fix that stops a
   // session ever reaching this: llm-gateway/resolution/session-model-repoint.ts
   // (re-point at boot) and its pure decision, session-model.ts.
-  if (isKnownManagedModelId(effectiveModel)) {
+  // With nothing served (the managed provider off, or no Platinum key), any
+  // bare id is a managed id this deployment cannot reach.
+  const nothingServed = managedLineup().length === 0 && !effectiveModel.includes('/');
+  if (isKnownManagedModelId(effectiveModel) || nothingServed) {
     if (isRetiredManagedModelId(effectiveModel)) {
       const replacement = canonicalManagedModelId(effectiveModel);
       const named = replacement !== effectiveModel ? replacement : null;

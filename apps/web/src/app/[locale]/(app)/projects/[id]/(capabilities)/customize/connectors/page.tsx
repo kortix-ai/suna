@@ -3,13 +3,13 @@
 import { useParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-import { ConnectorsAppReturnBar } from '@/features/workspace/capabilities/connectors/connectors-app-return-bar';
-import { ConnectorsPage } from '@/features/workspace/capabilities/connectors/connectors-page';
-import { CapabilitiesSkeleton } from '@/features/workspace/capabilities/shared/capability-skeleton';
+import { ConnectorsAppReturnBar } from '@kortix/ui/customize/connectors/connectors-app-return-bar';
+import { ConnectorsPage } from '@kortix/ui/customize/connectors/connectors-page';
+import { CapabilitiesSkeleton } from '@kortix/ui/customize/shared/capability-skeleton';
 
 /**
  * /projects/[id]/connectors — the standalone Connectors catalog. See
- * `features/workspace/capabilities/connectors/connectors-page.tsx` for the
+ * `packages/ui/src/customize/connectors/connectors-page.tsx` for the
  * page body.
  *
  * The `Suspense` boundary is required, not decorative: `ConnectorsPage` reads

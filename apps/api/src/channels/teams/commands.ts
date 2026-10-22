@@ -7,7 +7,6 @@ import { lookupEmailsByUserIds } from '../../projects/lib/access';
 import { currentChannelSelection } from '../slack/selection';
 import { type SettingsChannel, changeChannelAgent, changeChannelPolicy, switchChannelProject, unbindChannel } from '../core/settings';
 import { teamsAgentChangeText, teamsSettingsChannel, teamsSettingsRefusal } from './settings-text';
-import { projectLlmGatewayEnabledById } from '../../llm-gateway/enablement';
 import { buildAgentsPicker } from './agent-picker';
 import { stopTeamsTurn } from './stop';
 import { applyTeamsModelChoice, buildTeamsModelsCard, statusModel } from './model-choice';
@@ -286,11 +285,10 @@ async function buildStatusCard(
   userId: string | null,
   sessionProjectId?: string,
 ) {
-  const [selection, projects, session, gatewayOn, identity] = await Promise.all([
+  const [selection, projects, session, identity] = await Promise.all([
     currentChannelSelection(ctx),
     listTenantProjects(tenantId).catch(() => []),
     conversationSession(tenantId, conversationId, sessionProjectId).catch(() => null),
-    projectLlmGatewayEnabledById(projectId).catch(() => true),
     userId ? lookupChatIdentity(chatUser('teams', tenantId, userId)).catch(() => null) : Promise.resolve(null),
   ]);
   const email = identity
@@ -303,7 +301,7 @@ async function buildStatusCard(
     rows: [
       { label: 'Project', value: projectName },
       { label: 'Agent', value: selection?.agentName || 'default' },
-      { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session, gatewayOn) },
+      { label: 'Model', value: statusModel(selection?.opencodeModel ?? null, session) },
       { label: 'Policy', value: conversationPolicyLabel(normalizeConversationPolicy(selection?.conversationPolicy ?? null)) },
       // The run itself. `/status` was the one place a user looks to answer
       // "what is this conversation doing", and it answered everything except

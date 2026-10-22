@@ -1,4 +1,4 @@
-import { newWorkspacePathForAccount } from '@/features/workspace/new/account-param';
+import { newWorkspacePathForAccount } from '@kortix/ui/workspace/new/account-param';
 import type { KortixAccount } from '@kortix/sdk';
 import { qk } from '@kortix/sdk/react';
 import type { QueryClient, QueryKey } from '@tanstack/react-query';

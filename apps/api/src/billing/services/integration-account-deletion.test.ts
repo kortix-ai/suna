@@ -281,6 +281,30 @@ describe('immediate deletion', () => {
 });
 
 describe('auth-user-delete trigger', () => {
+  test('reclaims a personal scaffold even when bootstrap never created its membership', async () => {
+    const userId = crypto.randomUUID();
+    await superuser.query('insert into auth.users (id) values ($1)', [userId]);
+    await db.insert(accounts).values({ accountId: userId, name: 'incomplete-bootstrap' });
+    await db.insert(creditAccounts).values({ accountId: userId, balance: '0' });
+    await db.insert(projects).values({
+      projectId: crypto.randomUUID(), accountId: userId, name: 'scaffold-project',
+      repoUrl: 'https://example.test/scaffold.git',
+    });
+
+    await superuser.query('delete from auth.users where id = $1', [userId]);
+
+    const [request] = await db.select().from(accountDeletionRequests)
+      .where(eq(accountDeletionRequests.accountId, userId));
+    expect(request?.status).toBe('pending');
+    deleteUser.mockImplementation(async () => ({ error: { status: 404 } }));
+    expect((await processScheduledDeletions()).errors).toEqual([]);
+    expect(await accountExists(userId)).toBe(false);
+    expect(await db.select().from(projects).where(eq(projects.accountId, userId))).toHaveLength(0);
+    expect(await requestStatus(request.id)).toBe('completed');
+    const [credit] = await db.select().from(creditAccounts).where(eq(creditAccounts.accountId, userId));
+    expect(credit?.paymentStatus).toBe('deleted');
+  });
+
   test('schedules the orphan account for the sweep instead of deleting it', async () => {
     const userId = crypto.randomUUID();
     const accountId = userId;

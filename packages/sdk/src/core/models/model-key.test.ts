@@ -10,13 +10,10 @@ describe('modelRefToKey', () => {
     expect(modelRefToKey('anthropic/claude-sonnet-4-6', true)).toEqual({ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-6' });
   });
 
-  test('gateway off: a stored ref is the native provider/model, split on the first slash', () => {
-    expect(modelRefToKey('openrouter/z-ai/glm-4.7-flash', false)).toEqual({ providerID: 'openrouter', modelID: 'z-ai/glm-4.7-flash' });
-    expect(modelRefToKey('kortix/anthropic/claude-sonnet-4-6', false)).toEqual({ providerID: 'anthropic', modelID: 'claude-sonnet-4-6' });
-  });
-
-  test('gateway off: a ref with no provider falls back to the gateway shape (renders unset, never throws)', () => {
-    expect(modelRefToKey('glm-5.3-flash', false)).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
+  test('the gateway is the only model path: the deprecated second argument changes nothing', () => {
+    expect(modelRefToKey('openrouter/z-ai/glm-4.7-flash', false)).toEqual({ providerID: 'kortix', modelID: 'openrouter/z-ai/glm-4.7-flash' });
+    expect(modelRefToKey('kortix/anthropic/claude-sonnet-4-6', false)).toEqual({ providerID: 'kortix', modelID: 'anthropic/claude-sonnet-4-6' });
+    expect(modelRefToKey('glm-5.3-flash')).toEqual({ providerID: 'kortix', modelID: 'glm-5.3-flash' });
   });
 });
 
@@ -31,6 +28,7 @@ describe('flattenModels ids', () => {
       default: {},
     } as never;
     expect(flattenModels(providers).map((m) => m.id)).toEqual(['glm-5.3-flash', 'anthropic/claude']);
-    expect(flattenModels(providers, { providerMode: 'native' }).map((m) => m.id)).toEqual(['openrouter/z-ai/glm']);
+    // `providerMode: 'native'` is deprecated: the gateway is the only model path.
+    expect(flattenModels(providers, { providerMode: 'native' }).map((m) => m.id)).toEqual(['glm-5.3-flash', 'anthropic/claude']);
   });
 });

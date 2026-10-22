@@ -869,11 +869,9 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           await cancelRepository.click();
           await expect(repositoryDialog).toBeHidden();
         }
-        for (const feature of ['llm_gateway', 'pooled_provider_secrets']) {
-          await api(session.access_token, 'PATCH', `/projects/${project.id}/features`, {
-            feature, enabled: true,
-          });
-        }
+        await api(session.access_token, 'PATCH', `/projects/${project.id}/features`, {
+          feature: 'pooled_provider_secrets', enabled: true,
+        });
         const key = await api<{ secret_id: string }>(
           session.access_token, 'POST', `/accounts/${accountId}/secret-resources`, {
             label: 'Desktop pooled key', provider_id: 'anthropic', name: 'ANTHROPIC_API_KEY',
@@ -947,10 +945,6 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           // A saved test credential makes a real catalog model selectable.
           // This journey verifies pending submission, not model execution.
           const base = `/projects/${project.id}`;
-          await api(auth.access_token, "PATCH", `${base}/experimental`, {
-            feature: "llm_gateway",
-            enabled: true,
-          });
           await api(
             auth.access_token,
             "POST",
@@ -983,9 +977,9 @@ export function defineDesktopParity(runtime: "web" | "desktop"): void {
           });
           const rootId = `ses_${sessionId.replaceAll("-", "")}`;
           const now = Date.now() - 60_000;
-          // The web run keeps its history in the session log (the project's
-          // `session_log` flag on); the desktop run keeps the v1 mirror, so this
-          // live-chat journey covers both stores.
+          // The web run keeps its history in the session log; the desktop run
+          // seeds an old session's v1 mirror, which its first read converts
+          // into the log (P8.2), so this journey covers both.
           await seedSessionTranscript(loadEnv(), {
             projectId: project.id,
             accountId: accounts[0].account_id,

@@ -48,7 +48,7 @@
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*",
     "croner": "^9.0.0",
     "drizzle-orm": "^0.45.2",
-    "hono": "^4.13.7",
+    "hono": "^4.13.11",
     "jose": "^5.9.6",
     "nodemailer": "^10.0.13",
     "oauth4webapi": "^3.8.7",

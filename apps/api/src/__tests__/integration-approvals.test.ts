@@ -15,6 +15,7 @@ import {
   accountMembers,
   auditEvents,
   connectorCalls,
+  connectors,
   projectMembers,
   projectSessions,
   projects,
@@ -29,6 +30,7 @@ import { deleteFromView, insertIntoView } from './helpers/compat-views';
 /** Test fixture: put the account on, or take it off, the Enterprise plan through the ownership chokepoint. */
 const setEnterprisePlan = (accountId: string, tier: string) =>
   applyAdminOverride(accountId, { tier }, { action: 'test.enterprise_plan.set' });
+import { consumeApprovedExecution } from '../connectors/db-deps-gateway';
 import { createAccountToken } from '../repositories/account-tokens';
 import { mintSetupLink } from '../setup-links/token';
 import { db } from '../shared/db';
@@ -648,7 +650,64 @@ describe('approvals inbox + resolution', () => {
     const described = await authGet(`/v1/approval-links/${token}`);
     expect(await described.json()).toMatchObject({
       approval_context: 'Deletes the scratch repo created in this session',
+      resolved_preview: null,
+      resolved_error: null,
     });
+
+    await db
+      .update(connectorCalls)
+      .set({
+        resultSummary: {
+          args_preview: { draft_id: 'r-1' },
+          args_preview_complete: true,
+          resolved_preview: { to: ['buyer@example.test'], body: 'Hello' },
+          resolved_digest: 'd'.repeat(64),
+        },
+      })
+      .where(eq(connectorCalls.executionId, execId));
+    const loaded = await (await authGet(`/v1/approval-links/${token}`)).json();
+    expect(loaded).toMatchObject({
+      resolved_preview: { to: ['buyer@example.test'], body: 'Hello' },
+      resolved_error: null,
+    });
+    expect(loaded).not.toHaveProperty('resolved_digest');
+  });
+
+  test('a carried-over approval hands back the content digest the human approved, once', async () => {
+    if (!ctx) return;
+    const [connector] = await db
+      .insert(connectors)
+      .values({ accountId: ctx.accountId, projectId: ctx.projectId, slug: 'mail', name: 'Mail', providerType: 'http' })
+      .returning({ connectorId: connectors.connectorId });
+    const claim = {
+      sessionId: SESSION,
+      actingUserId: ctx.userId,
+      connectorId: connector!.connectorId,
+      actionPath: 'mail.drafts.send',
+      requestDigest: 'r'.repeat(64),
+    };
+    const [row] = await db
+      .insert(connectorCalls)
+      .values({
+        accountId: ctx.accountId,
+        projectId: ctx.projectId,
+        connectorId: claim.connectorId,
+        actionPath: claim.actionPath,
+        actingUserId: ctx.userId,
+        sessionId: SESSION,
+        status: 'ok',
+        approvedBy: ctx.userId,
+        resolvedAt: new Date(),
+        requestDigest: claim.requestDigest,
+        resultSummary: { decision: 'approve', resolved_digest: 'd'.repeat(64) },
+      })
+      .returning({ id: connectorCalls.executionId });
+    execIds.push(row!.id);
+
+    expect(await consumeApprovedExecution(claim)).toEqual({ resolvedDigest: 'd'.repeat(64), resolvedError: false });
+    expect(await consumeApprovedExecution(claim)).toBe(false);
+    await db.delete(connectorCalls).where(eq(connectorCalls.executionId, row!.id));
+    await db.delete(connectors).where(eq(connectors.connectorId, claim.connectorId));
   });
 
   test('Review Center exposes parameters only to a human who can resolve the approval', async () => {

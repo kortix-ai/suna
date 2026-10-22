@@ -66,18 +66,42 @@ describe('GET /download/<platform>', () => {
     expect(res.headers.get('location')).toContain('/releases/latest');
   });
 
-  test('never hands a phone a desktop installer', async () => {
-    // normalizePlatform resolves these to real platforms, so without the mobile
-    // guard they reach pickDesktopAsset, whose isInstaller() falls through to
-    // `.appimage` for anything that is not macOS or Windows. That would serve a
-    // Linux AppImage to an iPhone.
-    for (const platform of ['ios', 'iphone', 'ipad', 'android']) {
+  test('sends a phone platform to its store, never a desktop installer', async () => {
+    for (const [platform, store] of [
+      ['ios', 'https://apps.apple.com/'],
+      ['iphone', 'https://apps.apple.com/'],
+      ['ipad', 'https://apps.apple.com/'],
+      ['android', 'https://play.google.com/'],
+    ] as const) {
       const res = await call(platform);
       expect(res.status).toBe(302);
-      const location = res.headers.get('location') ?? '';
-      expect(location).toContain('/releases/latest');
-      expect(location.toLowerCase()).not.toContain('.appimage');
+      expect(res.headers.get('location') ?? '').toStartWith(store);
     }
+  });
+});
+
+describe('GET /download/mobile (the store QR code target)', () => {
+  const scan = (userAgent: string) =>
+    GET(new NextRequest('https://kortix.com/download/mobile', { headers: { 'user-agent': userAgent } }), {
+      params: Promise.resolve({ platform: 'mobile' }),
+    });
+
+  test('an iPhone lands on the App Store listing', async () => {
+    const res = await scan('Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('https://apps.apple.com/app/kortix/id6754448524');
+  });
+
+  test('an Android phone lands on the Google Play listing', async () => {
+    const res = await scan('Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 Mobile');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('https://play.google.com/store/apps/details?id=com.kortix.application');
+  });
+
+  test('a desktop browser lands on the /download page of the same deployment', async () => {
+    const res = await scan('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15');
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('https://kortix.com/download');
   });
 });
 

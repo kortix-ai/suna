@@ -379,7 +379,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       repoUrl: 'https://example.test/principal.git',
       baseRef: 'main',
       agentName: 'default',
-      llmGatewayEnabled: false,
     });
     expect(env[OVERRIDE_KEY]).toBe('owner-val');
   });
@@ -394,7 +393,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         repoUrl: 'https://example.test/principal.git',
         baseRef: 'main',
         agentName: 'default',
-        llmGatewayEnabled: false,
       });
     const setFlag = (on: boolean | null) =>
       db
@@ -422,7 +420,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
         repoUrl: 'https://example.test/principal.git',
         baseRef: 'main',
         agentName: 'default',
-        llmGatewayEnabled: false,
       });
     const mark = (key: string, on: boolean) =>
       db
@@ -486,7 +483,6 @@ describe('listProjectSecretsSnapshotForUser — session env injection by identif
       repoUrl: 'https://example.test/wrapper.git',
       baseRef: 'main',
       agentName: 'wrapper-agent',
-      llmGatewayEnabled: false,
     });
     expect(env.WRAPPER_API_URL).toBe('https://fresh.wrapper.example.test');
     expect(env.WRAPPER_AGENT_TOKEN).toBe('fresh-capability');

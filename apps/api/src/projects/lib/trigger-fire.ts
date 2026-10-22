@@ -1,4 +1,3 @@
-import { projectLlmGatewayEnabled } from '../../llm-gateway/enablement';
 import { servableProjectCatalog } from '../../llm-gateway/models/servable-catalog';
 import { toOpencodeModelRef } from '../../llm-gateway/resolution/effective';
 import type { PromptOverridesWire } from '../session-lifecycle/store';
@@ -209,16 +208,12 @@ export async function findKeyedTriggerSession(
  * session pinned to a managed model the account can no longer use.
  *
  * The one place a stored ref becomes the runtime's `{providerID, modelID}`:
- * with the LLM gateway every model is the `kortix` provider's; without it the
- * ref is the native `provider/model`, and a managed id has no provider.
+ * every model is the `kortix` provider's.
  */
-export function triggerModelOverride(
-  model: string | null | undefined,
-  gatewayEnabled = true,
-): PromptOverridesWire | undefined {
+export function triggerModelOverride(model: string | null | undefined): PromptOverridesWire | undefined {
   const trimmed = (model ?? '').trim();
   if (!trimmed) return undefined;
-  const ref = gatewayEnabled ? toOpencodeModelRef(trimmed) : trimmed.replace(/^kortix\//, '');
+  const ref = toOpencodeModelRef(trimmed);
   const slash = ref.indexOf('/');
   if (slash <= 0 || slash === ref.length - 1) return undefined;
   return { model: { providerID: ref.slice(0, slash), modelID: ref.slice(slash + 1) } };
@@ -267,7 +262,7 @@ async function enqueueTriggerPrompt(input: {
     // Same per-due-slot key the create path uses — a fire the sweep timed out
     // on but that actually enqueued isn't duplicated when the next tick retries.
     idempotencyKey: input.idempotencyKey ?? null,
-    overrides: triggerModelOverride(input.model, projectLlmGatewayEnabled(input.project.metadata)),
+    overrides: triggerModelOverride(input.model),
     ...(input.bindTurnIdentity ? { bindTurnIdentity: true } : {}),
   });
   // The same delivery again: its prompt is already queued or delivered (KRTX-1735).
@@ -384,13 +379,31 @@ export async function fireGitTrigger(input: {
   }
 }
 
+/**
+ * Who an agent's reminder (no `promptAuthorUserId`) runs as, for its prompt
+ * and for a successor session: the session's creator while they are a member.
+ * The account owner was the fallback, and the proxy refuses the owner on a
+ * member's private session, so every fire of such a reminder dead-lettered. A
+ * creator who is not a member (left the account, or a service account) falls
+ * back to the owner.
+ */
+async function memberSessionCreator(project: ProjectRow, sessionId: string): Promise<string | null> {
+  const [session] = await db
+    .select({ createdBy: projectSessions.createdBy })
+    .from(projectSessions)
+    .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.accountId, project.accountId)))
+    .limit(1);
+  const createdBy = session?.createdBy;
+  return createdBy && (await accountMemberRow(project.accountId, createdBy))[0] ? createdBy : null;
+}
+
 const CREATE_WAIT_ATTEMPTS = 15;
 const CREATE_WAIT_POLL_MS = 1_000;
 
 /**
- * A session reminder re-prompts its own session and nothing else. Unlike a pinned
- * trigger it never falls back to a fresh session: a check-in without the
- * session's context is noise. A gone session switches the reminder off instead.
+ * A session reminder re-prompts its own session. A deleted session switches
+ * the reminder off. A failed session hands the reminder to a successor session
+ * (fireReminderSuccessor), which picks up the work its predecessor kept in Files.
  */
 async function fireSessionReminder(
   input: Parameters<typeof fireGitTrigger>[0],
@@ -411,9 +424,10 @@ async function fireSessionReminder(
       retryable: false,
     };
   }
+  const runAs = author ?? (sessionId ? await memberSessionCreator(project, sessionId) : null) ?? actor;
   const outcome = sessionId
     ? await enqueueTriggerPrompt({
-        project, sessionId, actor: author ?? actor, text: reminderPromptText(spec), source: 'reminder',
+        project, sessionId, actor: runAs, text: reminderPromptText(spec), source: 'reminder',
         triggerSlug: spec.slug, model: null,
         idempotencyKey: input.idempotencyKey ?? null,
         bindTurnIdentity: !!author,
@@ -422,6 +436,9 @@ async function fireSessionReminder(
   if (outcome === 'queued' || outcome === 'deduped') {
     return { status: 'queued', sessionId: sessionId!, deduped: outcome === 'deduped', reason: 'prompt queued for delivery' };
   }
+  // A failed box is not a decision to stop; a deleted session is. The reminder
+  // carries on in a successor session, so work kept in Files outlives a box.
+  if (outcome === 'failed' && sessionId) return fireReminderSuccessor(input, runAs, sessionId);
   await disableSessionReminder(project.projectId, spec.slug, new Date());
   return {
     status: 'failed',
@@ -429,6 +446,55 @@ async function fireSessionReminder(
     errorCode: 'reminder_session_gone',
     retryable: false,
   };
+}
+
+/**
+ * The reminder's session failed: start a successor that inherits its sharing
+ * (as its child), hand it the reminder text, pin the reminder to it, and move
+ * the failed session's chat threads to it so replies there reach it.
+ */
+async function fireReminderSuccessor(
+  input: Parameters<typeof fireGitTrigger>[0],
+  actor: string,
+  failedSessionId: string,
+): ReturnType<typeof fireGitTrigger> {
+  const { spec, project } = input;
+  const result = await createSession({
+    source: 'trigger:reminder',
+    project,
+    userId: actor,
+    requestingPrincipalType: 'human',
+    callerSessionId: failedSessionId,
+    request: input.request,
+    queuePolicy: 'on_backpressure',
+    idempotencyKey: input.idempotencyKey ?? null,
+    body: {
+      agent_name: spec.agent,
+      initial_prompt:
+        `${reminderPromptText(spec)}\n\n` +
+        `This reminder belonged to session ${failedSessionId}, which failed. You continue its work: ` +
+        'read what it kept in Files (/drives) before you act.',
+      metadata: { reminder_successor_of: failedSessionId },
+    },
+    metadata: { reminder_successor_of: failedSessionId, trigger_slug: spec.slug },
+    postCreate: [{ type: 'repin_reminder', reminderId: spec.slug }, { type: 'adopt_chat_threads', fromSessionId: failedSessionId }],
+  });
+  const successorId = result.sessionId ?? result.row?.sessionId;
+  if (result.error || (result.status !== 'queued' && result.status !== 'pending' && !successorId)) {
+    return {
+      status: 'failed',
+      error: String(result.error?.body.error ?? 'The reminder session failed and no successor session could start'),
+      errorCode: 'reminder_successor_failed',
+      retryable: result.retryable === true,
+    };
+  }
+  if (result.status === 'queued' || result.status === 'pending') {
+    // Paused until the queued create runs and its repin re-arms it: a fire in
+    // between would find the failed session again and start a second successor.
+    await disableSessionReminder(project.projectId, spec.slug, new Date());
+    return { status: 'queued', sessionId: successorId, commandId: result.commandId, reason: result.reason };
+  }
+  return { status: 'fired', sessionId: successorId, commandId: result.commandId };
 }
 
 async function queueExistingTriggerSession(
@@ -507,24 +573,21 @@ async function createGitTriggerSession(
   // ("requires a paid plan") while the caller keeps a 202 + a session id that
   // points at nothing (dogfood journey trig-webhook). Gate on the same catalog
   // the chat composer gates on: zero enabled models = nothing to run. Only
-  // gateway projects gate (native mode resolves models outside the gateway),
-  // and only the fresh-create path — reminders and re-prompts of an existing
+  // the fresh-create path gates — reminders and re-prompts of an existing
   // session keep their semantics.
-  if (projectLlmGatewayEnabled(project.metadata)) {
-    const catalog = await servableProjectCatalog({
-      projectId: project.projectId,
-      accountId: project.accountId,
-      // The run executes as this actor (the account owner), so its personal
-      // keys count exactly as the gateway will count them for the session.
-      principalUserId: actor,
-    });
-    if (!Object.values(catalog.models).some((model) => model.enabled)) {
-      return {
-        status: 'failed',
-        error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
-        errorCode: 'no_usable_model',
-      };
-    }
+  const catalog = await servableProjectCatalog({
+    projectId: project.projectId,
+    accountId: project.accountId,
+    // The run executes as this actor (the account owner), so its personal
+    // keys count exactly as the gateway will count them for the session.
+    principalUserId: actor,
+  });
+  if (!Object.values(catalog.models).some((model) => model.enabled)) {
+    return {
+      status: 'failed',
+      error: 'No usable model for this account. Connect a provider key or upgrade the plan, then fire again.',
+      errorCode: 'no_usable_model',
+    };
   }
   const sessionResult = await createSession({
     source: `trigger:${source}`,
@@ -592,6 +655,8 @@ async function createGitTriggerSession(
       status: 'failed',
       error: String(sessionResult.error.body.error ?? 'Failed to create trigger session'),
       errorCode: code,
+      // A requeued create may still start a session; its run links to it by command.
+      commandId: sessionResult.commandId,
       requeued: sessionResult.requeued === true,
       retryable: sessionResult.retryable === true,
     };

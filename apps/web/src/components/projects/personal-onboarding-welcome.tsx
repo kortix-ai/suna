@@ -7,7 +7,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@kortix/ui/button';
 import {
   Card,
   CardAction,
@@ -16,15 +16,15 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card';
-import Hint from '@/components/ui/hint';
-import { successToast } from '@/components/ui/toast';
+} from '@kortix/ui/card';
+import Hint from '@kortix/ui/hint';
+import { successToast } from '@kortix/ui/toast';
 import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { WhatsApp } from '@/features/icon/icons/whats-app';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
-import { cn } from '@/lib/utils';
+import { cn } from '@kortix/ui';
 
 const MARKO_CAL_LINK = 'team/kortix/demo';
 const MARKO_CAL_NAMESPACE = 'kortix-onboarding';
@@ -33,6 +33,9 @@ const MARKO_WHATSAPP = '17372940835';
 const STORAGE_KEY = 'kortix:marko-welcome-dismissed';
 
 const enterTransition = { type: 'spring' as const, duration: 0.3, bounce: 0 };
+
+/** Hidden everywhere (Marko, 2026-10-20). The card stays in code; flip to show it again. */
+const SHOW_FOUNDER_WELCOME = false;
 
 export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } = {}) {
   const tI18nHardcoded = useTranslations('hardcodedUi');
@@ -52,7 +55,7 @@ export function PersonalOnboardingWelcome({ projectId }: { projectId?: string } 
     setHydrated(true);
   }, []);
 
-  if (tier !== 'personal') return null;
+  if (!SHOW_FOUNDER_WELCOME || tier !== 'personal') return null;
   if (!hydrated || dismissed) return null;
   if (wizardPending) return null;
 

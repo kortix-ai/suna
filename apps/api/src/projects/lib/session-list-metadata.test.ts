@@ -12,7 +12,7 @@ import {
  * (`initial_prompt` alone 36%), and the sidebar re-fetches the list several
  * times per session open. No client reads any of them back — verified by an
  * exhaustive read-side sweep of apps/web, apps/mobile, packages/sdk and
- * apps/whitelabel-demo (2026-08-26). These tests pin BOTH halves of that
+ * apps/white-label/lumen (2026-08-26). These tests pin BOTH halves of that
  * contract: the five go, and everything a client actually reads stays.
  */
 const CLIENT_READ_METADATA = {
@@ -165,4 +165,14 @@ describe('serializeSession warm status', () => {
     expect((source as { status: unknown }).status).toBe('running');
     expect((source as { metadata: Record<string, unknown> }).metadata.warm).toBe(true);
   });
+});
+
+test('list serialization prefers the durable conversation selection without changing the creation pin', () => {
+  const source = row({ metadata: { opencode_model: 'kortix/deepseek-v4.1-flash' } });
+  const out = serializeSession(source, { trimListMetadata: true, conversationModel: 'kortix/glm-5.3-flash' });
+  expect(out.model).toBe('kortix/glm-5.3-flash');
+  expect(out.metadata.opencode_model).toBe('kortix/deepseek-v4.1-flash');
+  expect(serializeSession(source).model).toBe('kortix/deepseek-v4.1-flash');
+  expect(serializeSession(row({ metadata: {} })).model).toBeNull();
+  expect(serializeSession(source, { canAccess: false, conversationModel: 'kortix/glm-5.3-flash' }).model).toBeNull();
 });

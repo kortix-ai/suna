@@ -310,6 +310,15 @@ describe('show', () => {
     await expect(show({ items: JSON.stringify([{ type: 'image' }]) })).rejects.toThrow('All items failed validation')
     await expect(show({ items: 'not json' })).rejects.toThrow("Invalid JSON in 'items' parameter.")
   })
+
+  test('an empty items value ("null", "[]") beside a single item shows that item', async () => {
+    writeFileSync(join(dir, 'SKILL.md'), '# skill')
+    for (const items of ['null', '[]']) {
+      const result = JSON.parse(out(await show({ type: 'file', path: 'SKILL.md', theme: 'success', items })))
+      expect(result.entry).toMatchObject({ type: 'file', path: join(dir, 'SKILL.md'), theme: 'success' })
+    }
+    await expect(show({ items: 'null' })).rejects.toThrow("'type' is required.")
+  })
 })
 
 describe('each Kortix tool is one self-contained module (what `kortix tools eject` copies)', () => {

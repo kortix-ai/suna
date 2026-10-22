@@ -297,7 +297,9 @@ export class SessionLogJournal {
     if (typeof part?.id !== 'string' || typeof part.messageID !== 'string' || this.collected(part.messageID)) return
     const row = this.row(part.messageID)
     const before = row.parts.get(part.id)
-    row.due ||= !before || toolShape(before) !== toolShape(part)
+    // OpenCode also streams complete text snapshots via message.part.updated.
+    // Publish changed snapshots; a snapshot echoing an applied delta is unchanged.
+    row.due ||= !before || before.text !== part.text || toolShape(before) !== toolShape(part)
     // A copy: deltas extend it, and the v1 ring must keep the frame as published.
     row.parts.set(part.id, structuredClone(part))
     if (row.due) this.publishLive()

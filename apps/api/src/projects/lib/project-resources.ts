@@ -275,3 +275,8 @@ export async function resourceDenierForRequest(ctx: ResourceAccessContext & {
   }
   return denierFromConfig(config, ctx);
 }
+
+/** A committed resource mutation must not leave the IAM picker on its old catalog. */
+export function invalidateProjectResourceConfig(projectId: string): void {
+  configWithFilesMemo.invalidate(projectId);
+}

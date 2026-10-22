@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  type SessionWorking,
   ConnectorAuthorizationStrategySchema,
   ConnectionSchema,
   ConnectionMetadataSchema,
@@ -135,7 +136,6 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       marketplace: false,
       connectors_api_discover: false,
       agentmail_email: false,
-      llm_gateway: true,
       meta_agent: false,
       monitors: false,
       reminders: false,
@@ -149,9 +149,10 @@ function projectFixture(overrides: Record<string, unknown> = {}) {
       notification_center: false,
       volumes: false,
       drives: false,
-      session_log: false,
       session_log_restore: false,
       connectors_v2: false,
+      agent_rooms: false,
+      goals: false,
     },
     experimental_features: [],
     default_sandbox_provider: null,
@@ -326,11 +327,25 @@ describe('ProjectSchema', () => {
   });
 
   test('rejects an experimental map missing a registered key', () => {
-    const { llm_gateway: _dropped, ...partial } = projectFixture().experimental as Record<
+    const { meta_agent: _dropped, ...partial } = projectFixture().experimental as Record<
       string,
       boolean
     >;
     expect(() => ProjectSchema.parse(projectFixture({ experimental: partial }))).toThrow();
+  });
+
+  test('experimental carries the graduated llm_gateway key only as a constant true', () => {
+    // Wire compat: the API still sends `llm_gateway: true` for older SDK and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: true } })).experimental.llm_gateway).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, llm_gateway: false } }))).toThrow();
+  });
+
+  test('experimental carries the graduated session_log key only as a constant true', () => {
+    // Wire compat: the API still sends `session_log: true` for older SDK, CLI and mobile clients.
+    const experimental = projectFixture().experimental as Record<string, boolean>;
+    expect(ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: true } })).experimental.session_log).toBe(true);
+    expect(() => ProjectSchema.parse(projectFixture({ experimental: { ...experimental, session_log: false } }))).toThrow();
   });
 
   test('accepts a null icon', () => {
@@ -363,6 +378,15 @@ describe('ProjectSchema.icon_glyph', () => {
 });
 
 describe('ProjectSessionSchema', () => {
+  test('working is additive and survives parsing independently of lifecycle status', () => {
+    const working: SessionWorking = { state: 'idle', since: null, turn_token: null, pending_delivery: false };
+    const parsed = ProjectSessionSchema.parse(sessionFixture({ working }));
+    expect(parsed.working).toEqual(working);
+    expect(String(parsed.status)).toBe(sessionFixture().status);
+    expect(ProjectSessionSchema.parse(sessionFixture()).working).toBeUndefined();
+    expect(ProjectSessionSchema.safeParse(sessionFixture({ working: { ...working, state: 'running' } })).success).toBe(false);
+  });
+
   test('accepts a full serialized session', () => {
     expect(() => ProjectSessionSchema.strict().parse(sessionFixture())).not.toThrow();
   });
@@ -522,6 +546,14 @@ describe('ProjectSessionSandboxSchema', () => {
 });
 
 describe('TriggerSchema', () => {
+  test('keeps exact cron time distinct from jittered execution and accepts older APIs', () => {
+    const parsed = TriggerSchema.strict().parse(triggerFixture({
+      next_cron_at: '2026-10-10T09:00:00.000Z', next_fire_at: '2026-10-10T09:15:00.000Z',
+    }));
+    expect(parsed.next_cron_at).toBe('2026-10-10T09:00:00.000Z');
+    expect(parsed.next_fire_at).toBe('2026-10-10T09:15:00.000Z');
+    expect(TriggerSchema.strict().parse(triggerFixture()).next_cron_at).toBeUndefined();
+  });
   test('accepts a cron trigger and a webhook trigger', () => {
     expect(() => TriggerSchema.strict().parse(triggerFixture())).not.toThrow();
     expect(() =>
@@ -778,7 +810,6 @@ describe('envelopes', () => {
       'marketplace',
       'connectors_api_discover',
       'agentmail_email',
-      'llm_gateway',
       'meta_agent',
       'monitors',
       'reminders',
@@ -792,9 +823,10 @@ describe('envelopes', () => {
       'notification_center',
       'volumes',
       'drives',
-      'session_log',
       'session_log_restore',
       'connectors_v2',
+      'agent_rooms',
+      'goals',
     ]);
   });
 

@@ -582,6 +582,8 @@ export function localApiEnvironment(options: {
     // Only this exact host is exempt from the connector egress check;
     // every other private address stays refused.
     KORTIX_CONNECTOR_EGRESS_ALLOW_HOSTS: "127.0.0.1",
+    // GW-CUSTOM-1 stands up a loopback OpenAI-compatible model the gateway calls.
+    KORTIX_LLM_CUSTOM_PROVIDER_ALLOW_HOSTS: "127.0.0.1",
     // CONN-CALL-1 waits out the connector upstream deadline (60 s by default).
     KORTIX_CONNECTOR_CALL_TIMEOUT_MS: "15000",
     // TRG-19 and SCOPE-6 push kortix.yaml and poll until the API's git
@@ -607,12 +609,6 @@ export function localApiEnvironment(options: {
     // address that no principal holds.
     KORTIX_PLATFORM_ADMIN_EMAILS: LOCAL_PLATFORM_ADMIN_EMAIL,
     ...(JWT_SECRET ? { SUPABASE_JWT_SECRET: JWT_SECRET } : {}),
-    // Every access token is confirmed live with GoTrue. TTL 0 sends one
-    // GoTrue `/user` call per request; a full core run then exhausts
-    // GoTrue's ephemeral DB ports (see the learnings ledger, 2026-10-01).
-    // 2 s bounds that to one call per token per 2 s, and logout drops the
-    // cached verdict on this single replica at once.
-    SUPABASE_JWT_LIVENESS_TTL_MS: "2000",
     KORTIX_SKIP_ENSURE_SCHEMA: "1",
     // Config archives go through the API's one object store, pointed at
     // this profile's Supabase Storage S3 endpoint. `--no-env-file` above
@@ -666,7 +662,6 @@ export function localApiEnvironment(options: {
     SLACK_CLIENT_ID: "local-flow-runner-disabled",
     SLACK_CLIENT_SECRET: "local-flow-runner-disabled",
     SLACK_SIGNING_SECRET: "local-flow-runner-disabled",
-    LLM_GATEWAY_ENABLED: "true",
     LLM_GATEWAY_BASE_URL: "",
     LLM_GATEWAY_PROXY_PORT: String(gatewayPort),
     GATEWAY_INTERNAL_TOKEN: LOCAL_GATEWAY_INTERNAL_TOKEN,

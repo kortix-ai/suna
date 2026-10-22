@@ -276,7 +276,7 @@ export async function getFileStatus(baseUrl?: string): Promise<GitFileStatus[]> 
  * Throws `ApiError` on failure — like every other op in this module. This
  * USED TO swallow every failure to `[]`, which silently hid daemon/network
  * errors from callers. The only real caller of this SDK export
- * (`apps/web/src/features/files/search/workspace-search-service.ts`) already
+ * (`packages/ui/src/files/runtime/search/workspace-search-service.ts`) already
  * wraps each call in its own `.catch(() => [])`, and there are no callers
  * under `@kortix/sdk/react`, so removing the internal swallow here is
  * non-breaking — verified by grepping every `findFiles(` call site in the

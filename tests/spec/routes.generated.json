@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 856,
+  "count": 881,
   "routes": [
     {
       "method": "GET",
@@ -216,6 +216,10 @@
     },
     {
       "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/activity"
+    },
+    {
+      "method": "GET",
       "path": "/v1/accounts/:accountId/audit/export"
     },
     {
@@ -349,6 +353,14 @@
     {
       "method": "GET",
       "path": "/v1/accounts/:accountId/capture/search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/capture/storage"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/capture/storage"
     },
     {
       "method": "GET",
@@ -2275,6 +2287,18 @@
       "path": "/v1/projects/:projectId/connectors/:slug/oauth2/connection"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/custom-providers"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/custom-providers/:providerId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/custom-providers/:providerId"
+    },
+    {
       "method": "PUT",
       "path": "/v1/projects/:projectId/default-agent"
     },
@@ -2544,6 +2568,54 @@
     },
     {
       "method": "GET",
+      "path": "/v1/projects/:projectId/rooms"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/:roomId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/rooms/:roomId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/people/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/people/:userId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/sessions/:sessionId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/rooms/:roomId/members/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/rooms/:roomId/read"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/rooms/people"
+    },
+    {
+      "method": "GET",
       "path": "/v1/projects/:projectId/runtime/prompt-attachments/:attachmentId"
     },
     {
@@ -2731,6 +2803,10 @@
       "path": "/v1/projects/:projectId/sessions/:sessionId/events"
     },
     {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/idle-notice"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/sessions/:sessionId/log"
     },
@@ -2876,11 +2952,31 @@
     },
     {
       "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run"
+    },
+    {
+      "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
     },
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/sessions/:sessionId/restore"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId/messages"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/rooms/:roomId/messages"
     },
     {
       "method": "GET",
@@ -2933,6 +3029,10 @@
     {
       "method": "POST",
       "path": "/v1/projects/:projectId/skills"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/skills/remove"
     },
     {
       "method": "GET",

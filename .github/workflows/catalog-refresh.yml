@@ -30,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 22
 
@@ -73,7 +73,8 @@ jobs:
         run: |
           (cd packages/llm-catalog && bun test)
           (cd apps/api && bun test --isolate --env-file=scripts/test.env src/llm-gateway/models)
-          (cd apps/web && bun test src/features/session/reasoning-effort-selector.test.ts src/features/workspace/customize/sections/view/gateway)
+          (cd packages/ui && bun test --isolate ./src/session/composer/reasoning-effort-selector.test.ts ./src/customize/sections/view/gateway)
+          (cd apps/web && bun test src/features/workspace/customize/sections/view/gateway)
 
       # Data-only change behind green tests: merge it, no human in the loop.
       - name: Open and merge the PR

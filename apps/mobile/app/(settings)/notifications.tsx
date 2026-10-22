@@ -5,6 +5,7 @@ import { useNotificationPreferences } from '@kortix/sdk/react';
 import {
   ArrowCounterClockwiseIcon,
   BellIcon,
+  ChatCircleIcon,
   CheckCircleIcon,
   QuestionIcon,
   ShareNetworkIcon,
@@ -49,6 +50,7 @@ const KIND_ICON: Record<InboxNotificationKind, AppIcon> = {
   automation_recovered: ArrowCounterClockwiseIcon,
   capture_device_down: XCircleIcon,
   capture_device_recovered: ArrowCounterClockwiseIcon,
+  message: ChatCircleIcon,
 };
 
 /**
@@ -172,6 +174,9 @@ function NotificationCenterPage() {
   );
 
   const kinds = record.data?.kinds;
+  // Room messages exist only with a project's `agent_rooms` flag on: an API
+  // that does not say so hides the row rather than show a dead switch.
+  const hiddenKinds = record.data?.hidden_kinds ?? ['message'];
 
   return (
     <SettingsPage>
@@ -184,7 +189,7 @@ function NotificationCenterPage() {
       {preferences.enabled &&
         (kinds ? (
           <SettingsGroup title="Push">
-            {INBOX_NOTIFICATION_KINDS.map((kind) => {
+            {INBOX_NOTIFICATION_KINDS.filter((kind) => !hiddenKinds.includes(kind)).map((kind) => {
               const deviceKey = DEVICE_KIND_SWITCH[kind];
               const checked = (kinds[kind]?.push ?? true) && (!deviceKey || preferences[deviceKey]);
               return (
