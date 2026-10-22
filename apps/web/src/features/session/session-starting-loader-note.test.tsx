@@ -70,10 +70,12 @@ describe('escalation note reaches the pixels', () => {
     expect(html).not.toContain('Waking the agent');
   });
 
-  test('without a note the banner keeps the ordinary phase label', () => {
-    const html = render(<SessionConnectingBanner stage="starting" />);
-    expect(html).toContain('Loading your workspace');
-    expect(html).not.toContain('Still waking');
+  // A routine wake is silent: the conversation stays readable and a send goes
+  // out once the computer is up. The banner speaks only when the wake needs
+  // attention.
+  test('without a note the banner renders nothing', () => {
+    expect(render(<SessionConnectingBanner stage="starting" />)).toBe('');
+    expect(render(<SessionConnectingBanner stage="provisioning" />)).toBe('');
   });
 
   test('the loader shows the ladder note instead of the phase label', () => {

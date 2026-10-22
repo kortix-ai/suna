@@ -363,10 +363,13 @@ test('34 — a reload with every read held shows the project, its session list a
     });
     expect(marks.bootScreen, 'the boot screen must not appear').toBeUndefined();
     expect(marks.skeleton, 'no placeholder rows: the kept copy paints at once').toBeUndefined();
-    // One story about the computer: the page's own start is waking it, so the
-    // composer says so too, never "idle — your next message wakes it".
-    await expect(page.getByText("Waking this session's computer.", { exact: false })).toBeVisible();
-    await expect(page.getByText('This session is idle', { exact: false })).toHaveCount(0);
+    // The page's own start wakes the computer in the background, and a routine
+    // wake says nothing: no boot pill, no waking line, never "asleep — your
+    // next message wakes it". The composer stays live.
+    await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
+    await expect(page.getByText("Waking this session's computer", { exact: false })).toHaveCount(0);
+    await expect(page.getByText('Reserving your computer', { exact: false })).toHaveCount(0);
+    await expect(page.getByText("This session's computer is asleep", { exact: false })).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('reload-held.png') });
   } finally {
     release();

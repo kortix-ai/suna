@@ -334,8 +334,10 @@ export function SessionStartingLoader({
 }
 
 /**
- * Compact status above a readable conversation while its runtime wakes. The
- * transcript remains scrollable because only the restart control accepts input.
+ * Compact status above a readable conversation while its runtime wakes, shown
+ * only when the wake needs attention: an escalation or retry note, or a stuck
+ * wake with a Restart. A normal wake renders nothing. The transcript remains
+ * scrollable because only the restart control accepts input.
  */
 export function SessionConnectingBanner({
   stage = 'provisioning',
@@ -357,13 +359,16 @@ export function SessionConnectingBanner({
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
   const { data: session } = useProjectSession(projectId, sessionId);
   const restart = useRestartProjectSession(projectId ?? '', sessionId ?? '');
-  const { active, now } = useBootProgress(stage);
+  const { now } = useBootProgress(stage);
   const statusNote = sessionWakeStatusNote({ reason, failure, note, now });
   const clockStart = useRestartedBootClock(restart);
   const stuck = now - clockStart >= STUCK_AFTER_MS;
   const canRestart = canOfferBootRestart(session, projectId, sessionId);
-  const steps = useLocalizedUiCatalog(STEPS);
-  const step = steps[Math.min(active, steps.length - 1)];
+  // A normal wake is silent: opening the session wakes its computer in the
+  // background, and a send goes out as soon as it is up. The pill speaks only
+  // when something is wrong: the wake escalated or waits on a retry
+  // (`statusNote`), or it is stuck and can be restarted.
+  if (!statusNote && !(stuck && canRestart)) return null;
 
   return (
     <div
@@ -380,7 +385,9 @@ export function SessionConnectingBanner({
           variant="spokes"
           className="size-3.5 shrink-0 text-current motion-reduce:animate-none"
         />
-        <span className="min-w-0 text-pretty">{statusNote ?? step.label}</span>
+        <span className="min-w-0 text-pretty">
+          {statusNote ?? tI18nComplete.raw('textbb2ab0401c3c')}
+        </span>
         {stuck && canRestart ? (
           <Button
             type="button"

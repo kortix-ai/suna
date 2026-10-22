@@ -1282,10 +1282,9 @@ function ProjectSessionView({ projectId, sessionId }: { projectId: string; sessi
         {/* Boot status ABOVE the conversation, never in front of it. Mounted
             only in the `banner` presentation — i.e. only when there is a
             transcript underneath worth reading — and held until the runtime is
-            actually reachable, so the strip does not disappear the instant the
-            chat paints while the box is still coming up. What SENDING will do
-            during the wake is the composer's own notice; this says only which
-            phase the boot is in. */}
+            actually reachable. A routine wake renders nothing: the computer
+            comes up in the background and a send goes out once it is up. The
+            banner speaks only for an escalation, a retry, or a stuck wake. */}
         {notice && !canMountChat ? <SessionNoticeBanner {...notice} /> : null}
         {/* Dormant with a transcript paints no boot strip: nothing is booting
             until a message or a returning human wakes the box, and the
