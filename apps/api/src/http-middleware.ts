@@ -70,8 +70,8 @@ export function installHttpMiddleware(app: OpenAPIHono) {
   // kilobyte of the body, never by buffering it. See middleware/compress.ts.
   app.use('*', compressResponse);
 
-  const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
-    ? process.env.CORS_ALLOWED_ORIGINS.split(',')
+  const extraOrigins = config.CORS_ALLOWED_ORIGINS
+    ? config.CORS_ALLOWED_ORIGINS.split(',')
         .map((s) => s.trim())
         .filter(Boolean)
     : [];
@@ -112,9 +112,7 @@ export function installHttpMiddleware(app: OpenAPIHono) {
   //
   // Streaming paths are exempt: a git push pack and a sandbox-preview upload are
   // legitimately larger than any JSON request and must not be pre-read.
-  const REQUEST_BODY_LIMIT_BYTES = Number(
-    process.env.KORTIX_MAX_REQUEST_BODY_BYTES ?? 64 * 1024 * 1024,
-  );
+  const REQUEST_BODY_LIMIT_BYTES = config.KORTIX_MAX_REQUEST_BODY_BYTES;
   const UNLIMITED_BODY_PREFIXES = ['/v1/git', '/v1/p/', '/v1/llm', '/v1/sandbox'];
 
   app.use('*', async (c, next) => {

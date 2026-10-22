@@ -4,6 +4,7 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
 import { auth, errors, json, makeOpenApiApp } from '../openapi';
@@ -43,7 +44,7 @@ const MARKETPLACE_LIST_REQS_PER_MIN = 300;
  * `stale-while-revalidate` because a newly indexed source must appear within
  * one max-age window.
  */
-function cachedCatalogJson(c: any, payload: unknown, maxAgeSeconds: number) {
+function cachedCatalogJson(c: Context<AppEnv>, payload: unknown, maxAgeSeconds: number): Response {
   const etag = computeEtag(payload);
   c.header('Cache-Control', `public, max-age=${maxAgeSeconds}, s-maxage=${maxAgeSeconds * 4}`);
   c.header('ETag', etag);
@@ -86,9 +87,11 @@ marketplaceApp.openapi(
     },
     responses: {
       200: json(z.any(), 'Catalog items'),
+      304: { description: 'Not modified — the caller already has this catalog' },
+      ...errors(429),
     },
   }),
-  async (c: any) => {
+  async (c: Context<AppEnv>) => {
     const q = c.req.query();
     const limitResult = marketplaceListLimiter.check(requestClientKey(c), {
       limit: MARKETPLACE_LIST_REQS_PER_MIN,
@@ -162,7 +165,7 @@ marketplaceApp.openapi(
       200: json(z.any(), 'Distinct marketplaces with item counts'),
     },
   }),
-  async (c: any) => {
+  async (c: Context<AppEnv>) => {
     return c.json({ marketplaces: await listMarketplaces(), ...catalogStatus() });
   },
 );
@@ -177,7 +180,7 @@ marketplaceApp.openapi(
       200: json(z.any(), 'Curated featured marketplaces'),
     },
   }),
-  async (c: any) => {
+  async (c: Context<AppEnv>) => {
     return c.json({ featured: await listFeaturedMarketplaces() });
   },
 );
@@ -196,8 +199,8 @@ marketplaceApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
-    const detail = await getCatalogItemDetail(c.req.param('id'));
+  async (c: Context<AppEnv>) => {
+    const detail = await getCatalogItemDetail(c.req.param('id') ?? '');
     if (!detail) return c.json({ error: 'Not found' }, 404);
     return c.json(detail);
   },
@@ -218,8 +221,8 @@ marketplaceApp.openapi(
       ...errors(404),
     },
   }),
-  async (c: any) => {
-    const file = await getCatalogItemFile(c.req.param('id'), c.req.query('path'));
+  async (c: Context<AppEnv>) => {
+    const file = await getCatalogItemFile(c.req.param('id') ?? '', c.req.query('path') ?? '');
     if (!file) return c.json({ error: 'Not found' }, 404);
     return c.json(file);
   },
@@ -257,7 +260,7 @@ marketplaceApp.openapi(
       ...errors(401),
     },
   }),
-  async (c: any) => {
+  async (c: Context<AppEnv>) => {
     return c.json({ sources: await listSources() });
   },
 );
@@ -281,7 +284,7 @@ marketplaceApp.openapi(
       ...errors(400, 401),
     },
   }),
-  async (c: any) => {
+  async (c: Context<AppEnv>) => {
     // The route validator runs only for a JSON content-type, so the handler
     // parses the body with the same schema.
     const parsed = AddMarketplaceSourceBodySchema.safeParse(await readJsonObject(c));
@@ -327,8 +330,8 @@ marketplaceApp.openapi(
       ...errors(401, 404),
     },
   }),
-  async (c: any) => {
-    const removed = await removeSource(c.req.param('id'));
+  async (c: Context<AppEnv>) => {
+    const removed = await removeSource(c.req.param('id') ?? '');
     if (!removed) return c.json({ error: 'Not found' }, 404);
     _resetExternalCache();
     warmMarketplaceCatalog();
