@@ -3,11 +3,12 @@
  * journal (`writeSessionLogFromRead`, `session-log-capture.ts`) on a rewound, re-pinned or large
  * box. Every session here is synthetic.
  */
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test';
 import { accountMembers, projectSessions, sessionLogMessages } from '@kortix/db';
 import { asc, eq } from 'drizzle-orm';
 import { config } from '../config';
 import { db } from '../shared/db';
+import { logger } from '../lib/logger';
 import { insertIntoView } from './helpers/compat-views';
 import { removeSeeded, seedProject, seedSession, type SeededProject } from './helpers/integration-fixtures';
 import { syntheticOpencodeSession } from './helpers/synthetic-opencode-session';
@@ -195,6 +196,53 @@ describe('a box without a journal: rewind, re-pin, size', () => {
       config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
     }
     expect(await live(session)).toEqual(inOrder(span(0, 12)));
+  });
+
+  test('the capture thread has a memory guard and runs one at a time: no room defers the capture (one WARN, nothing stored, the next call retries)', async () => {
+    const first = await pinned();
+    const second = await pinned();
+    await captureJournallessSessionLog(first, box(ROOT, msgs(span(0, 12))));
+    await captureJournallessSessionLog(second, box(ROOT, msgs(span(0, 12))));
+    const before = await logRows(first);
+    const cap = config.SESSION_LOG_RESTORE_MAX_BYTES;
+    const memory = config.SESSION_LOG_BACKFILL_MEMORY_MB;
+    const RealWorker = globalThis.Worker;
+    const spawned: string[] = [];
+    let running = 0;
+    let most = 0;
+    globalThis.Worker = class extends RealWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        spawned.push(String(url).split('/').pop()!);
+        most = Math.max(most, ++running);
+      }
+      override terminate() {
+        running--;
+        super.terminate();
+      }
+    };
+    const warn = spyOn(logger, 'warn');
+    config.SESSION_LOG_RESTORE_MAX_BYTES = 2_000;
+    try {
+      // No room: the process limit (1 MB) is under RSS alone.
+      config.SESSION_LOG_BACKFILL_MEMORY_MB = 1;
+      expect(await captureJournallessSessionLog(first)).toBeNull();
+      expect(spawned).toEqual([]);
+      const deferred = warn.mock.calls.filter(([line]) => String(line).startsWith('[session-log] capture deferred'));
+      expect(deferred).toHaveLength(1);
+      expect(deferred[0]![1]).toMatchObject({ session_id: first });
+      expect(await logRows(first)).toEqual(before);
+      // Room again: the next call runs, and two sessions' threads never run at once.
+      config.SESSION_LOG_BACKFILL_MEMORY_MB = 1_000_000;
+      expect(await Promise.all([captureJournallessSessionLog(first), captureJournallessSessionLog(second)])).toEqual([null, null]);
+      expect(spawned).toEqual(['session-transcript-capture-thread.ts', 'session-transcript-capture-thread.ts']);
+      expect(most).toBe(1);
+    } finally {
+      globalThis.Worker = RealWorker;
+      warn.mockRestore();
+      config.SESSION_LOG_RESTORE_MAX_BYTES = cap;
+      config.SESSION_LOG_BACKFILL_MEMORY_MB = memory;
+    }
   });
 
   test('no size cap: an over-cap first capture stores the whole history, and every later capture writes', async () => {

@@ -34,6 +34,7 @@ import { resolveSessionOpencodeEndpoint } from '../session-lifecycle/runtime-cli
 import { logger } from '../../lib/logger';
 import { config } from '../../config';
 import { mirrorStoredCap, readCapturedSessionLog, writeSessionLogFromRead } from '../session-log-capture';
+import { threadRoom } from './thread-memory';
 import {
   MIRROR_CAPTURE_LIMIT,
   childReadFailureLog,
@@ -100,7 +101,7 @@ export interface CaptureDeps {
    * A capture too large for the API's event loop runs here instead (`captureInThread`): the same
    * capture, from the box read on, on a Bun `Worker`'s own heap, event loop and DB pool.
    */
-  inThread?: (sessionId: string, options: CaptureOptions | undefined) => Promise<CaptureResult | null>;
+  inThread?: (sessionId: string, options: CaptureOptions | undefined, jsonBytes: number) => Promise<CaptureResult | null>;
 }
 
 /** Sub-agent transcripts with rows one capture saves at most. A finished
@@ -118,10 +119,26 @@ const MAX_CAPTURE_CHAIN = 8;
  * 2026-10-23 Mac in the API process (many small tool parts): 50 MB stalls the event loop 273 ms,
  * 100 MB 533 ms, 200 MB 1.1 s (`fromV1` 1.07 s, `toV1` 1.01 s). A capture whose stored log or box
  * read is over `SESSION_LOG_RESTORE_MAX_BYTES` of JSON (stored: over `mirrorStoredCap` by
- * `pg_column_size`) runs in a Worker instead. ponytail: no memory guard; the thread holds what the
- * main loop would hold (the backfill's thread: ~12x the JSON with `smol`).
+ * `pg_column_size`) runs in a Worker instead: one at a time per process (a second waits), and only
+ * with room for it (`threadRoom`, the backfill's guard: RSS + 12x its JSON under 75 % of the limit).
+ * No room: one WARN, nothing stored, and the next turn end tries again.
  */
-function captureInThread(sessionId: string, options: CaptureOptions | undefined): Promise<CaptureResult | null> {
+function captureInThread(sessionId: string, options: CaptureOptions | undefined, jsonBytes: number): Promise<CaptureResult | null> {
+  const run = threadQueue.then(() => runCaptureThread(sessionId, options, jsonBytes));
+  threadQueue = run.catch(() => null);
+  return run;
+}
+
+/** One capture thread at a time per process: a second waits for the first (`captureInThread`). */
+let threadQueue: Promise<unknown> = Promise.resolve();
+
+function runCaptureThread(sessionId: string, options: CaptureOptions | undefined, jsonBytes: number): Promise<CaptureResult | null> {
+  // The backfill's guard: no room stores nothing now, and the next turn end tries again.
+  const room = threadRoom(jsonBytes);
+  if (!room.fits) {
+    logger.warn('[session-log] capture deferred: no memory for its thread', { session_id: sessionId, json_bytes: jsonBytes, rss: room.rss, need: room.need, limit: room.limit });
+    return Promise.resolve(null);
+  }
   const worker = new Worker(new URL('./session-transcript-capture-thread.ts', import.meta.url).href, { smol: true });
   return new Promise<CaptureResult | null>((resolve) => {
     worker.onmessage = (event: MessageEvent<CaptureResult | null>) => resolve(event.data);
@@ -332,12 +349,21 @@ async function captureIntoSessionLog(
   let moreChildren = false;
   // Too large for this event loop: the whole capture runs in a thread (`captureInThread`).
   const handOff = !options?.inThread && deps.inThread ? deps.inThread : null;
+  // The JSON the thread will hold, for its memory guard. ponytail: estimates; stored JSON is ~2x its
+  // `pg_column_size`, and the thread holds the stored log and the box read, about the same size.
+  let threadJsonBytes = 0;
   const capture = async (): Promise<CaptureResult | null | typeof IN_THREAD> => {
-    if (handOff && (await storedLogBytes(sessionId)) > mirrorStoredCap()) return IN_THREAD;
+    if (handOff) {
+      const stored = await storedLogBytes(sessionId);
+      if (stored > mirrorStoredCap()) return ((threadJsonBytes = stored * 4), IN_THREAD);
+    }
     const before = await readCapturedSessionLog(sessionId);
     const read = await deps.readMessages(sessionId, { fullHistory, projectId, actorUserId: options?.actorUserId, stored: before.rows });
     if (!read) return null;
-    if (handOff && JSON.stringify(read.payload).length + JSON.stringify(read.children ?? []).length > config.SESSION_LOG_RESTORE_MAX_BYTES) return IN_THREAD;
+    if (handOff) {
+      const chars = JSON.stringify(read.payload).length + JSON.stringify(read.children ?? []).length;
+      if (chars > config.SESSION_LOG_RESTORE_MAX_BYTES) return ((threadJsonBytes = chars * 2), IN_THREAD);
+    }
     const rows = mirrorRowsFromOpencodePayload(read.payload);
     const completeRead = fullHistory && read.complete === true && read.headComplete === true;
     if (rows.length === 0 && !completeRead) return null;
@@ -358,7 +384,7 @@ async function captureIntoSessionLog(
     return { captured: rows.length, head_complete: completeRead };
   };
   const answer = fullHistory ? await retryTranscriptCapture(capture) : await capture();
-  if (answer === IN_THREAD) return handOff!(sessionId, options);
+  if (answer === IN_THREAD) return handOff!(sessionId, options, threadJsonBytes);
   const result = answer;
   const step = options?.chain?.step ?? 0;
   if (result && fullHistory && moreChildren && step < MAX_CAPTURE_CHAIN) {
