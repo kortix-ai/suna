@@ -4,7 +4,7 @@ import {
   type CustomLlmProviderDefinition,
   CustomLlmProviderInputSchema,
   customProviderIdError,
-  detectCustomModelLimits,
+  probeCustomModelLimits,
   customProviderIdFromSecret,
   customProviderSecretName,
 } from '../../llm-gateway/custom-providers';
@@ -15,6 +15,7 @@ import { assertSafeEgressUrl, UnsafeEgressError } from '../../shared/ssrf-guard'
 import { assertProjectCapability, loadProjectForUser } from '../lib/access';
 import { projectsApp } from '../lib/app';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { resolveProjectSecretsForConsumer } from '../secrets';
 
 const CustomLlmProviderSchema = z.object({
   id: z.string(),
@@ -102,9 +103,11 @@ export function registerCustomProvidersRoutes(): void {
       }, 400);
     }
     // Save the key first: the endpoint's `GET /models` usually needs it.
-    const detected = await detectCustomModelLimits({
-      projectId, accountId: loaded.row.accountId, userId: loaded.userId, providerId, baseUrl: input.base_url,
+    const [key] = await resolveProjectSecretsForConsumer({
+      projectId, accountId: loaded.row.accountId, actorUserId: loaded.userId,
+      name: customProviderSecretName(providerId), consumer: 'llm_gateway',
     });
+    const detected = await probeCustomModelLimits(input.base_url, key?.value ?? null);
     const next = await writeProjectCustomProvider(projectId, providerId, input, detected);
     const { secretNames } = await listProjectCustomProviders(projectId);
     // Running sessions re-read the served model list.
