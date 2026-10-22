@@ -21,7 +21,7 @@
     "build:linux": "electron-builder --linux"
   },
   "devDependencies": {
-    "electron": "^41.10.7",
+    "electron": "^42.11.9",
     "electron-builder": "^26.18.0"
   },
   "dependencies": {
