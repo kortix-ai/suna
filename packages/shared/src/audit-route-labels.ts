@@ -735,6 +735,7 @@ export const AUDIT_ROUTE_LABELS: Readonly<Record<string, AuditRouteLabel | strin
   'GET /v1/projects/:projectId/sessions/:sessionId/reminders': { action: 'session.reminder.list', title: 'Listed session reminders' },
   'POST /v1/projects/:projectId/sessions/:sessionId/reminders': { action: 'session.reminder.create', title: 'Created session reminder' },
   'PATCH /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId': { action: 'session.reminder.update', title: 'Turned session reminder on or off' },
+  'POST /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId/run': { action: 'session.reminder.run', title: 'Ran session reminder now' },
   'DELETE /v1/projects/:projectId/sessions/:sessionId/reminders/:reminderId': { action: 'session.reminder.delete', title: 'Deleted session reminder' },
   'GET /v1/projects/:projectId/custom-providers': { action: 'project.custom_provider.list', title: 'Listed custom model providers' },
   'PUT /v1/projects/:projectId/custom-providers/:providerId': { action: 'project.custom_provider.upsert', title: 'Saved custom model provider' },

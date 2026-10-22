@@ -1256,10 +1256,6 @@
           "name": "Drive",
           "description": "Pastas compartilhadas que ficam sincronizadas com as sessões: o seu próprio drive, um por agente e os drives da empresa que um administrador vincula ao projeto. Novas sessões os veem em /drives."
         },
-        "session_log": {
-          "name": "Registo de sessão v2",
-          "description": "Lê uma sessão através do registo de sessão v2 em vez da transcrição v1. A Kortix ativa-o por projeto."
-        },
         "session_log_restore": {
           "name": "Restauro do registo de sessão",
           "description": "Reconstrói uma sessão a partir do seu registo de sessão guardado quando o seu computador perdeu a conversa. A Kortix ativa-o por projeto."

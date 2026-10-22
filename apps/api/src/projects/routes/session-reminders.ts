@@ -308,7 +308,7 @@ export function registerSessionRemindersRoutes(): void {
         ...errors(400, 403, 404, 409),
       },
     }),
-    async (c: any) => {
+    async (c) => {
       const access = await authorizeReminderSession(c);
       if ('response' in access) return access.response;
       const { projectId, loaded, visible, agentCaller } = access;
