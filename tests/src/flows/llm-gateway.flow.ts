@@ -19,12 +19,14 @@ flow('GW-1', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET
 // GW-1b — the API's public streaming bridge to standalone gateway health.
 flow('GW-1b', { domain: 'llm-gateway', tags: ['deployed', 'smoke'], routes: ['GET /v1/llm/health'] }, async (ctx) => {
   await ctx.step('the API gateway health bridge reaches the standalone service', async () => {
+    // The bridge forwards to the gateway's gated /health (#10749): a caller
+    // without gateway credentials sees only the serving status, as in GW-1.
     const r = await ctx.client.get('/v1/llm/health');
-    r.status(200)
-      .body()
-      .has('$.status', 'healthy')
-      .has('$.service', 'kortix-llm-gateway')
-      .has('$.checks.api.status', 'up');
+    r.status(200);
+    const body = r.json<{ status: string }>();
+    if (!['healthy', 'degraded'].includes(body.status) || Object.keys(body).length !== 1) {
+      throw new Error(`gateway health bridge must expose only a serving status: ${JSON.stringify(body)}`);
+    }
   });
 });
 

@@ -15,8 +15,10 @@ let client: PgClient | null = null;
 const q = <T extends Record<string, unknown> = Record<string, unknown>>(text: string, values?: unknown[]) =>
   client!.query<T>(text, values);
 
-// Three hours ago, on the hour: the first slices are closed and past the 2 h lag.
-const start = new Date(Math.floor((Date.now() - 3 * 60 * MINUTE) / (60 * MINUTE)) * 60 * MINUTE);
+// Four hours ago, on the hour. The last event (minute 61) is in slice [60, 75), which the
+// rollup takes once now() >= start + 75 min + the 120 min lag. start <= now - 4 h makes that
+// true at every wall-clock time; 3 h failed whenever the current minute was below 15.
+const start = new Date(Math.floor((Date.now() - 4 * 60 * MINUTE) / (60 * MINUTE)) * 60 * MINUTE);
 const at = (minutes: number) => new Date(start.getTime() + minutes * MINUTE).toISOString();
 const day = start.toISOString().slice(0, 10);
 
