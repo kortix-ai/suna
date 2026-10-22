@@ -4073,7 +4073,9 @@ export function SessionChat({
       // Change requests are the only kind a turn produces. `external` exists on
       // the union for `setup-links/setup-link-button.tsx`, which renders this
       // card inline in prose and handles its own open.
-      if (outcome.kind === 'change_request') setOpenCrId(outcome.id.slice('cr:'.length));
+      if (outcome.kind === 'change_request') {
+        setOpenCrId(outcome.action.target ?? outcome.id.slice('cr:'.length));
+      }
     },
     [setOpenCrId],
   );
@@ -4203,7 +4205,11 @@ export function SessionChat({
         {/* Change request detail — opened from a turn's outcome card, or from
           `?cr=` on load. Lives inside `ProjectFilesProvider` alongside
           `SessionOutcomesProvider` so both read the SAME project id and cache. */}
-        <ChangeRequestDetailDialog crId={openCrId} onClose={() => setOpenCrId(null)} />
+        <ChangeRequestDetailDialog
+          crId={openCrId}
+          onClose={() => setOpenCrId(null)}
+          onOpenChangeRequest={setOpenCrId}
+        />
 
         {/* Chat and the action panel share one row — see `session-body.tsx`. The
           instant shell renders the SAME row, so nothing moves at the crossfade.

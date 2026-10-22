@@ -4069,6 +4069,8 @@ const catalog = {
       "texta4cf35d7f3ca": "Provision a few sandboxes — their timing and outcome show up here.",
       "texta4f264c3ab5f": "Admin Grant",
       "texta4fc39798651": "Change request #{number}",
+      "textddcd87c21894": "Superseded by #{number}",
+      "texta8ef31fa7d25": "View #{number}",
       "texta514a684676a": "Edit access",
       "texta52ace420f21": "All",
       "texta54220c82b33": "Optional at session start. Click to require this connector.",

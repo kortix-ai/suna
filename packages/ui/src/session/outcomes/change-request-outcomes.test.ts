@@ -101,3 +101,26 @@ describe('changeRequestOutcomes', () => {
     expect(out.description).toBe('Ready for you to look over.');
   });
 });
+
+// KRTX-3031: an agent revises its work by closing #12 and opening #13 on the
+// same branch. #12 read only "Closed · View", which said nothing about #13.
+describe('a superseded change request', () => {
+  const replaced = cr({ status: 'closed', superseded_by: { cr_id: 'cr_13', number: 13 } } as Partial<Cr>);
+
+  test('reads "Superseded by #13" and its action opens #13', () => {
+    const [out] = changeRequestOutcomes([replaced], 'sess_1');
+    expect(out.status).toEqual({ label: 'Superseded by #13', tone: 'neutral' });
+    expect(out.action).toEqual({ label: 'View #13', intent: 'open', target: 'cr_13' });
+    expect(out.resourceHref).toBe('?cr=cr_13');
+    // The card is still #12's own: its identity and reference do not move.
+    expect(out.id).toBe('cr:cr_1');
+    expect(out.meta).toEqual(['Change request #12']);
+  });
+
+  test('a request closed for any other reason still reads "Closed"', () => {
+    const [out] = changeRequestOutcomes([cr({ status: 'closed', superseded_by: null } as Partial<Cr>)], 'sess_1');
+    expect(out.status.label).toBe('Closed');
+    expect(out.action).toEqual({ label: 'View', intent: 'open' });
+    expect(out.resourceHref).toBe('?cr=cr_1');
+  });
+});
