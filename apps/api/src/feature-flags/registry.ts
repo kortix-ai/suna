@@ -105,8 +105,8 @@
  * that makes it the default, delete it in the next one. The comment on the
  * entry names the release and the spec section that ends it.
  *
- * The same state also serves INTERNAL-ONLY surfaces (`session_log`,
- * `session_log_restore`): not offered in Settings, enabled per project by a
+ * The same state also serves INTERNAL-ONLY surfaces (`session_log_restore`):
+ * not offered in Settings, enabled per project by a
  * Kortix operator on request. Their 403 says "contact Kortix" instead of
  * naming a toggle the caller cannot see (gate.ts).
  */
@@ -442,29 +442,9 @@ const FLAGS: readonly FeatureFlagDef[] = [
       'flag through the API outside a box (apps/cli/src/commands/goals.ts). The server parts goals use ' +
       '(reminders, unattended question release, reminder successors) are generic and stay on for every project.',
   },
-  {
-    key: 'session_log',
-    name: 'Session log v2',
-    description:
-      'Read a session through the v2 session log instead of the v1 transcript. On by default for every project since 2026-10-22, after the backfill gave every old session a log; not offered in Settings. A Kortix operator can turn it off for one project (a stored false). It is deleted in a later release, with the v1 mirror.',
-    stability: 'experimental',
-    available: () => true,
-    // On for every project (2026-10-22): the prod backfill (P3.4) gave every old session a log.
-    // A stored project value wins: `false` keeps a project on the v1 transcript.
-    platformDefault: () => true,
-    // Internal-only (2026-10-11): not offered in Settings. A Kortix operator sets it per project
-    // (PUT /v1/admin/api/projects/:id/features).
-    catalogHidden: true,
-    enforcement: 'behavioral',
-    enforcementNote:
-      'BEHAVIORAL only. On (the default), the API serves the stored v1 transcript reads ' +
-      '(transcript shape=sync and the compact fallback, the open bundle, the ' +
-      'public share, MCP read_session) from the session log, and the open ' +
-      'bundle carries a `log` leg (P4.2). With the flag on, the SDK reads the ' +
-      'history from the session log (P8.0a): pages, sub-agent threads, no v1 saved copy. ' +
-      'A capture writes the log and no v1 mirror row. A session without a log still reads ' +
-      'its v1 mirror. A stored false keeps the project on the v1 transcript and the mirror.',
-  },
+  // `session_log` graduated (2026-10-22, P8.2): the session log is every session's
+  // saved history and the v1 transcript mirror is no longer read. No flag and no
+  // operator lever. A stored `experimental.session_log` override is inert.
   {
     key: 'session_log_restore',
     name: 'Session log restore',

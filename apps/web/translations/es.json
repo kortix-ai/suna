@@ -1256,10 +1256,6 @@
           "name": "Drive",
           "description": "Carpetas compartidas que se mantienen sincronizadas con las sesiones: tu propio drive, uno por agente y los drives de empresa que un administrador asigna al proyecto. Las sesiones nuevas los ven en /drives."
         },
-        "session_log": {
-          "name": "Registro de sesión v2",
-          "description": "Lee una sesión mediante el registro de sesión v2 en lugar de la transcripción v1. Kortix lo activa por proyecto."
-        },
         "session_log_restore": {
           "name": "Restauración del registro de sesión",
           "description": "Reconstruye una sesión a partir de su registro de sesión guardado cuando su ordenador perdió la conversación. Kortix lo activa por proyecto."
@@ -14734,7 +14730,7 @@
       "text8bb2b50055b6": "Un conector pertenece al proyecto, no a un portátil ni a un inicio de sesión. Añádelo una vez y todas las sesiones que inicie ese proyecto podrán acceder a él, sin una segunda configuración ni claves compartidas por mensaje directo.",
       "text8bbecc2acd82": "Establece los metadatos del proveedor de identidad",
       "text8bc1d53cc57c": "Dentro",
-      "text8bcac7908eb9": "-----BEGIN RSA PRIVATE KEY-----",
+      "text8bcac7908eb9": "Pega el contenido del archivo .pem",
       "text8bd901c25ba7": "I+D — plataforma",
       "text8bf73992ff9b": "No hay un paso de aprovisionamiento independiente ni una consola por la que hacer clic. Un comando inicia la pila. Otro decide con qué Kortix se comunica tu CLI.",
       "text8bf926d1ef32": "Configurar SSO",
@@ -15611,6 +15607,8 @@
       "texta4f264c3ab5f": "Concesión de administrador",
       "texta4f6c318a669": "¿Eliminar esta aplicación?",
       "texta4fc39798651": "Solicitud de cambio #{number}",
+      "textddcd87c21894": "Reemplazada por #{number}",
+      "texta8ef31fa7d25": "Ver #{number}",
       "texta505da26f529": "No se pudo eliminar la foto de perfil",
       "texta514a684676a": "Editar acceso",
       "texta515cf580dd9": "Permisos del rol de IAM actualizados",
@@ -16250,6 +16248,11 @@
       "textb6bb289a7a2c": "cuentas equipos organizaciones cambiar administrar",
       "textb6bcbb175d23": "Regular · 400",
       "textb6c70926c1aa": "Solo administradores",
+      "textf19611c61ca5": "Acceso completo",
+      "text15589a542412": "{count, plural, =0 {Sin conectores} one {# conector} other {# conectores}}",
+      "texte96d99ad9896": "{count, plural, =0 {Sin secretos} one {# secreto} other {# secretos}}",
+      "text70b8d7e10749": "Todas las acciones de Kortix",
+      "text2d3f4433505a": "{count, plural, =0 {Sin acciones de Kortix} one {# acción de Kortix} other {# acciones de Kortix}}",
       "textb6cde9030cef": "Crear clave",
       "textb6d85433a7ee": "No se pudieron cargar las sesiones",
       "textb6daf93376cc": "Cargando finance.weekly",
@@ -21130,6 +21133,8 @@
     "timeZone": "Zona horaria",
     "lastRun": "Última ejecución",
     "lastRunFailed": "La última ejecución falló",
+    "runQueued": "Recordatorio enviado a la sesión",
+    "runFailed": "No se pudo ejecutar el recordatorio",
     "neverRun": "Aún no se ha ejecutado",
     "searchPlaceholder": "Buscar recordatorios",
     "statusAll": "Todos",

@@ -1,8 +1,15 @@
 /**
- * The session log of a box without a journal (P2.7): after each transcript
- * capture (`lib/session-transcript-capture.ts`) wrote the v1 mirror, this
- * writes `fromV1` of the whole mirror as v2 rows through the journal's apply
- * path (`writeCapturedSessionLog`, `session-log-ingest.ts`).
+ * Two writers of the session log for what no journal wrote.
+ *
+ * - `writeSessionLogFromMirror` converts a session's v1 mirror (`session_transcript_*`, written
+ *   until P8) into the log. Since P8.2 nothing writes the mirror and no read serves it; this is
+ *   the only reader left, and only these call it, each before it reads the log: the backfill
+ *   (`session-log-backfill.ts` and its thread), a log read of a session with no log
+ *   (`convertMirrorOnRead`), a restore (`restore-session.ts`), a lost-session recovery
+ *   (`recover-lost-session.ts`) and a fork (`session-create.ts`). It converts only into a log
+ *   with no message yet: a session whose log holds a message never reads the mirror here.
+ * - `writeSessionLogFromRead` is the capture of a box without a journal
+ *   (`lib/session-transcript-capture.ts`): the box read goes straight into the log.
  *
  * - "Without a journal" is `session_logs.journal_seen_at` null: an old daemon,
  *   a daemon in `KORTIX_SESSION_LOG_DUMP_DIR` mode, or one whose posts have not
@@ -20,33 +27,24 @@
  *   rev (1, 2, ... below `SESSION_LOG_CAPTURE_REV_LIMIT`). A stored message that
  *   `fromV1` no longer gives (the mirror removes rows only on a recorded rewind)
  *   gets a tombstone at the next rev. Nothing is ever deleted here.
- * - A newer mirror capture between the read and the write makes this write
- *   stale: `current` compares the mirror's `captured_at` under the lock and the
- *   write is skipped (the newer capture writes its own).
+ * - A write between the read and this write makes it stale: `current` compares
+ *   the mirror's `captured_at` and the stored messages under the lock, and the
+ *   write is skipped.
  * - The operator switch `SESSION_LOG_INGEST_ENABLED` gates this writer too.
  * - Size cap. The conversion is synchronous and holds the whole mirror in memory:
  *   one 200 MB session blocked a prod API task's event loop 17 s (2026-10-16).
  *   A session without a log whose mirror stores more than `mirrorStoredCap()`
  *   bytes (`pg_column_size`, read without detoasting) gets no log (`too_large`);
- *   a restore answers 413 above `SESSION_LOG_RESTORE_MAX_BYTES` anyway. A session
- *   that already has a log keeps its captures, so its log never goes stale. The
+ *   a restore answers 413 above `SESSION_LOG_RESTORE_MAX_BYTES` anyway. The
  *   stages yield to the event loop (`breathe`). The backfill converts a session over
- *   the cap in a Bun `Worker` (`uncapped`, `session-log-backfill.ts`); a capture never does.
- * - The `session_log` flag on (P8): the capture writes no mirror row. It converts
- *   the box read straight into the log (`writeSessionLogFromRead`), merged into the
- *   stored log. A mirror converts only into a log without a message (the backfill,
- *   a restore, a lost-session recovery); a session whose log holds a message never
- *   reads the mirror here.
+ *   the cap in a Bun `Worker` (`uncapped`, `session-log-backfill.ts`); no request does.
  *
- * Never throws: the mirror is the user-facing store, and a failed v2 write is
- * only a log line. The result says what happened, for the backfill of old
- * sessions (P3.1, `session-log-backfill.ts`), which converts through this
- * function so it writes exactly what the capture writes. `dry` stops before the
- * write and returns the batch it would write.
+ * Never throws: a failed write is a log line and an outcome. The outcome is what
+ * the backfill of old sessions (P3.1, `session-log-backfill.ts`) counts. `dry`
+ * stops before the write and returns the batch it would write.
  */
 import { fromV1, SessionLogSchema, toV1, type SessionLog, type SessionLogJournalRequest, type V1Row } from '@kortix/api-contract/session-log';
 import {
-  projects,
   projectSessions,
   sessionLogMessages,
   sessionLogs,
@@ -57,7 +55,6 @@ import {
 } from '@kortix/db';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { config } from '../config';
-import { resolveFeatureFlag } from '../feature-flags/registry';
 import { logger } from '../lib/logger';
 import { db } from '../shared/db';
 import { restoreStrippedToolParts } from './lib/session-transcript-mirror';
@@ -105,13 +102,11 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
         .select({
           projectId: projectSessions.projectId,
           accountId: projectSessions.accountId,
-          metadata: projects.metadata,
           journalSeenAt: sessionLogs.journalSeenAt,
           hasLog: sessionLogs.sessionId,
           harness: sessionRuntimeProjections.harness,
         })
         .from(projectSessions)
-        .innerJoin(projects, eq(projects.projectId, projectSessions.projectId))
         .leftJoin(sessionLogs, eq(sessionLogs.sessionId, projectSessions.sessionId))
         .leftJoin(sessionRuntimeProjections, eq(sessionRuntimeProjections.sessionId, projectSessions.sessionId))
         .where(eq(projectSessions.sessionId, sessionId))
@@ -119,10 +114,8 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
       // A journal owns the log.
       if (!s || s.journalSeenAt) return null;
       const stored = await storedMessages(tx, sessionId);
-      // P8: with the flag on the capture writes the log from the box (`writeSessionLogFromRead`) and no
-      // mirror row; a mirror converts only into a log with no message yet, and is not read otherwise.
-      const flagOn = resolveFeatureFlag(s.metadata, 'session_log');
-      if (flagOn && stored.length > 0) return null;
+      // A mirror converts only into a log with no message yet, and is not read otherwise.
+      if (stored.length > 0) return null;
       const [mirror] = await tx
         .select({ root: sessionTranscriptMirrors.runtimeSessionId, capturedAt: sessionTranscriptMirrors.capturedAt })
         .from(sessionTranscriptMirrors)
@@ -136,12 +129,12 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
             FROM kortix.session_transcript_messages WHERE session_id = ${sessionId}`);
         if (Number(size?.bytes ?? 0) > mirrorStoredCap()) return TOO_LARGE;
       }
-      // ponytail: the whole mirror per capture, as the capture reads the whole box history per turn end.
+      // ponytail: the whole mirror in memory, under the size cap; the backfill's thread takes the rest.
       const rows = await tx
         .select({ runtime_session_id: sessionTranscriptMessages.runtimeSessionId, info: sessionTranscriptMessages.info, parts: sessionTranscriptMessages.parts })
         .from(sessionTranscriptMessages)
         .where(eq(sessionTranscriptMessages.sessionId, sessionId));
-      return { s: { ...s, root: mirror.root, flagOn }, capturedAt: mirror.capturedAt, rows: rows as unknown as V1Row[], stored };
+      return { s: { ...s, root: mirror.root }, capturedAt: mirror.capturedAt, rows: rows as unknown as V1Row[], stored };
     }, READ_ONLY);
     if (!read) return SKIPPED;
     if ('outcome' in read) return read;
@@ -155,7 +148,7 @@ export async function writeSessionLogFromMirror(sessionId: string, options: { dr
           .where(eq(sessionTranscriptMirrors.sessionId, sessionId))
           .limit(1);
         if (!mirror || new Date(mirror.capturedAt).getTime() !== capturedAt) return false;
-        return !read.s.flagOn || (await storedMessages(tx, sessionId)).length === 0;
+        return (await storedMessages(tx, sessionId)).length === 0;
       },
     });
   } catch (err) {
@@ -178,14 +171,14 @@ const maxCaptureRev = (stored: StoredMessage[]) =>
 
 /**
  * The log as the capture of a box without a journal reads it before the box (P8): `rows` is `toV1`
- * of its live messages (exact: `fromV1` wrote them, a journal never did), `stored` every message's
+ * of its live messages (exact: `fromV1` wrote them, a journal never did), `root_id` its v1 root, `stored` every message's
  * rev and hash. A text over 256 kB is its stored preview here (F3); `writeSessionLogFromRead` never
  * puts a message it did not read from the box, so a preview is never written back.
  */
-export async function readCapturedSessionLog(sessionId: string): Promise<{ rows: V1Row[]; stored: StoredMessage[] }> {
+export async function readCapturedSessionLog(sessionId: string): Promise<{ rows: V1Row[]; root_id: string | null; stored: StoredMessage[] }> {
   return db.transaction(async (tx) => {
     const [log] = await tx.select({ record: sessionLogs.record }).from(sessionLogs).where(eq(sessionLogs.sessionId, sessionId));
-    if (!log) return { rows: [], stored: [] };
+    if (!log) return { rows: [], root_id: null, stored: [] };
     const threads = await tx
       .select({ threadId: sessionLogThreads.threadId, record: sessionLogThreads.record })
       .from(sessionLogThreads)
@@ -201,14 +194,15 @@ export async function readCapturedSessionLog(sessionId: string): Promise<{ rows:
       threads: threads.map((t) => ({ ...t.record, messages: messages.filter((m) => m.threadId === t.threadId).map((m) => m.record) })),
     } as unknown as SessionLog;
     await breathe();
-    return { rows: toV1(log1).rows, stored };
+    const v1 = toV1(log1);
+    return { rows: v1.rows, root_id: v1.root_id, stored };
   }, READ_ONLY);
 }
 
 const idOf = (row: V1Row) => String((row.info as { id?: unknown } | null)?.id ?? '');
 
 /**
- * The capture of a box without a journal, with the flag on (P8): `rows` (the box's messages just
+ * The capture of a box without a journal (P8): `rows` (the box's messages just
  * read, root and complete sub-agents) go straight into the log; no v1 row is read or written.
  *
  * - Merge, never trim, as the mirror did: `fromV1` runs over the stored log (`before`, from

@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { isHexColor } from './inline-chip';
+import { OutputPathsContext } from './output-paths-context';
 import { MarkdownCode, type MarkdownCodeProps } from './markdown-code';
 import { highlightAsync, SHIKI_THEME_LIGHT } from './shiki-highlighter';
 
@@ -441,5 +442,45 @@ describe('generative UI fences', () => {
     // Shiki splits the source into token spans, so assert the card chrome.
     expect(labelOf(html)).toBe('typescript');
     expect(html).toContain('<pre');
+  });
+});
+
+describe('MarkdownCode — inline code naming a session output (KRTX-3023)', () => {
+  const inSession = (paths: string[], children: string) =>
+    renderToStaticMarkup(
+      <UiProvider components={HOST_COMPONENTS}>
+        <OutputPathsContext.Provider value={paths}>
+          <MarkdownCode>{children}</MarkdownCode>
+        </OutputPathsContext.Provider>
+      </UiProvider>,
+    );
+
+  test("a bare filename the session produced opens that output, and still reads as the name", () => {
+    const markup = inSession(['/workspace/marketing/claims.md', '/workspace/marketing/story.md'], 'claims.md');
+
+    expect(markup).toContain('role="button"');
+    expect(markup).toContain('Click to preview /workspace/marketing/claims.md');
+    expect(markup).toContain('>claims.md</code>');
+  });
+
+  test('one file written as an absolute and a relative path is still one output', () => {
+    const markup = inSession(['/workspace/marketing/claims.md', 'marketing/claims.md'], 'claims.md');
+
+    expect(markup).toContain('role="button"');
+  });
+
+  test('a name two different outputs share stays plain: the reply does not say which', () => {
+    const markup = inSession(['/workspace/marketing/claims.md', '/workspace/store/claims.md'], 'claims.md');
+
+    expect(markup).not.toContain('role="button"');
+  });
+
+  test('a bare filename outside a session, or not among its outputs, stays plain', () => {
+    expect(render({ children: 'claims.md' })).not.toContain('role="button"');
+    expect(inSession(['/workspace/marketing/story.md'], 'claims.md')).not.toContain('role="button"');
+  });
+
+  test('a word without an extension never matches an output', () => {
+    expect(inSession(['/workspace/claims'], 'claims')).not.toContain('role="button"');
   });
 });

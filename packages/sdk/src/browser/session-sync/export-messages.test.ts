@@ -11,9 +11,10 @@ import { setCurrentRuntime } from '../../core/session/current-runtime';
 import { loadSessionExportMessages } from './session-sync-registry';
 
 /**
- * KRTX-2525: export reads the runtime while the computer runs, and the saved
- * copy (every window of it) while the computer is asleep, stopped or failed —
- * the conversation the page shows meanwhile.
+ * The export reads the session log first. Without one (`GET …/log` answers 404:
+ * a server older than the log), KRTX-2525: it reads the runtime while the
+ * computer runs, and the saved copy (every window of it) while the computer is
+ * asleep, stopped or failed — the conversation the page shows meanwhile.
  */
 const base = 'http://export.test';
 const previousConfig = platformConfig();
@@ -72,18 +73,19 @@ afterEach(() => {
 
 const ids = (messages: Array<{ info: { id: string } }>) => messages.map((message) => message.info.id);
 
-test('asleep: every saved window, oldest first, from the session the page shows', async () => {
+test('no log (404, a server older than the log), asleep: every saved window, oldest first, from the session the page shows', async () => {
   windows = {
     '': { messages: [row('m3', 3), row('m4', 4)], next_cursor: 'm3' },
     m3: { messages: [row('m1', 1), row('m2', 2)], next_cursor: null },
   };
   const messages = await loadSessionExportMessages('ses_root', 'p1/s1');
   expect(ids(messages)).toEqual(['m1', 'm2', 'm3', 'm4']);
-  expect(calls).toHaveLength(2);
-  expect(calls[0]).toContain('/projects/p1/sessions/s1/transcript');
-  expect(calls[0]).toContain('shape=sync');
-  expect(calls[0]).toContain('history=true');
-  expect(calls[1]).toContain('before=m3');
+  expect(calls).toHaveLength(3);
+  expect(calls[0]).toBe(`${base}/projects/p1/sessions/s1/log?limit=500`);
+  expect(calls[1]).toContain('/projects/p1/sessions/s1/transcript');
+  expect(calls[1]).toContain('shape=sync');
+  expect(calls[1]).toContain('history=true');
+  expect(calls[2]).toContain('before=m3');
 });
 
 test('running: the runtime history, and no saved-copy read', async () => {
@@ -106,7 +108,7 @@ test('a server cursor that does not advance ends the walk', async () => {
     m1: { messages: [row('m1', 1)], next_cursor: 'm1' },
   };
   expect(ids(await loadSessionExportMessages('ses_root', 'p1/s1'))).toEqual(['m1', 'm2']);
-  expect(calls).toHaveLength(2);
+  expect(calls.filter((url) => url.includes('/transcript'))).toHaveLength(2);
 });
 
 test('no saved scope: a runtime that is not ready still throws', async () => {
@@ -152,4 +154,27 @@ test('session log (v2): a failed page fails the export (the dialog keeps what it
   useSyncStore.getState().applySessionLogPage('s1', logPage(12, 18, true));
   await expect(loadSessionExportMessages(ROOT, 'p1/s1')).rejects.toThrow();
   expect(calls.some((url) => url.includes('/transcript'))).toBe(false);
+});
+
+test('session log, cold (the store holds no log): the log is read first, every page of the thread, and no saved-copy or runtime read', async () => {
+  setCurrentRuntime(`${base}/runtime`, 'sbx-1');
+  runtimeRows = [row('live-1', 1)];
+  // The newest page of the root (no `thread`), then the older one.
+  logPages = [{ ...logPage(9, 18, true), thread_id: ROOT }, logPage(0, 9, false)];
+  const served = logPages;
+  globalThis.fetch = mock(async (input: unknown) => {
+    const url = String(input instanceof Request ? input.url : input);
+    calls.push(url);
+    if (url.includes('/log?')) {
+      const before = new URL(url).searchParams.get('before_seq');
+      return Response.json(before === null ? served[0] : served[1]);
+    }
+    return Response.json(runtimeRows);
+  }) as unknown as typeof fetch;
+  const messages = await loadSessionExportMessages(ROOT, 'p1/s1');
+  expect(ids(messages)).toEqual(v1Ids(0));
+  expect(calls.every((url) => url.includes('/log?'))).toBe(true);
+  expect(calls).toHaveLength(2);
+  // The export reads into a copy: the store holds no log after it.
+  expect(useSyncStore.getState().sessionLogs.s1).toBeUndefined();
 });

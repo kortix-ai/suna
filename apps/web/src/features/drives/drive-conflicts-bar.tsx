@@ -50,11 +50,11 @@ export function DriveConflictsBar({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [open, setOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
+  const pinned = useRef(false);
 
   const close = useCallback(() => {
     setOpen(false);
-    setPinned(false);
+    pinned.current = false;
   }, []);
 
   const cancelLeave = () => {
@@ -102,12 +102,12 @@ export function DriveConflictsBar({
           setOpen(true);
         }}
         onMouseLeave={() => {
-          if (pinned) return;
+          if (pinned.current) return;
           cancelLeave();
           leaveTimer.current = setTimeout(close, 160);
         }}
         onBlur={(event) => {
-          if (!pinned && !rootRef.current?.contains(event.relatedTarget as Node | null)) close();
+          if (!pinned.current && !rootRef.current?.contains(event.relatedTarget as Node | null)) close();
         }}
         className="bg-popover text-popover-foreground border-border pointer-events-auto flex max-w-full flex-col overflow-hidden border shadow-md"
       >
@@ -182,10 +182,10 @@ export function DriveConflictsBar({
           aria-controls={open ? panelId : undefined}
           onClick={() => {
             cancelLeave();
-            if (open && pinned) close();
+            if (open && pinned.current) close();
             else {
               setOpen(true);
-              setPinned(true);
+              pinned.current = true;
             }
           }}
           className={cn(

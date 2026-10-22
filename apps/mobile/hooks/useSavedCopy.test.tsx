@@ -22,8 +22,6 @@ const CHILD = 'ses_mobile_child';
 const originalFetch = globalThis.fetch;
 
 let urls: string[] = [];
-/** The project flag `session_log` the project detail answers. */
-let sessionLogOn = false;
 const BACKEND = 'http://test.local/v1';
 function serve(route: (url: string) => unknown) {
   urls = [];
@@ -33,13 +31,18 @@ function serve(route: (url: string) => unknown) {
     // later. A retry from an earlier test's other backend is not this test's read.
     if (!url.startsWith(BACKEND)) throw new TypeError('Network request failed');
     urls.push(url);
-    if (url.endsWith('/projects/p1/detail')) return Response.json({ project: { project_id: 'p1', experimental: { session_log: sessionLogOn } }, config: {} });
+    if (url.endsWith('/projects/p1/detail')) return Response.json({ project: { project_id: 'p1', experimental: { session_log: true } }, config: {} });
     const answer = route(url);
     return answer instanceof Response ? answer : Response.json(answer);
   }) as unknown as typeof fetch;
 }
-/** Every read but the project detail (the flag). */
+/** Every read but the project detail. */
 const reads = () => urls.filter((url) => !url.endsWith('/detail'));
+/** No project detail is read: the `session_log` flag decides nothing. */
+const details = () => urls.filter((url) => url.endsWith('/projects/p1/detail'));
+/** A server older than the session log: `GET …/log` answers 404. */
+const noLog = (route: (url: string) => unknown) => (url: string) =>
+  url.includes('/log?') ? Response.json({ error: 'Not found' }, { status: 404 }) : route(url);
 
 function copy(rootId: string, count: number, fields: Record<string, unknown> = {}) {
   return {
@@ -90,7 +93,6 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  sessionLogOn = false;
   configureKortix({ backendUrl: BACKEND, getToken: async () => 'token' });
 });
 
@@ -102,30 +104,31 @@ afterEach(async () => {
   resetIdentityState();
 });
 
-describe('useSavedCopy', () => {
-  test('the root paints the server copy from one saved-history read', async () => {
-    serve(() => copy(ROOT, 2));
+describe('useSavedCopy on a server older than the session log (`GET …/log` answers 404): the v1 copy', () => {
+  test('the root asks the log first, then paints the server copy from one saved-history read', async () => {
+    serve(noLog(() => copy(ROOT, 2)));
     const view = await mount(target());
     expect(view.thread?.messages.map((message) => message.message_id)).toEqual([`msg_${ROOT}_1`, `msg_${ROOT}_2`]);
     expect(view.empty).toBe(false);
-    expect(reads()).toHaveLength(1);
-    expect(reads()[0]).toContain('/projects/p1/sessions/s1/transcript?shape=sync');
-    expect(reads()[0]).toContain('history=true');
-    // The flag is read first: the project detail, once.
-    expect(urls.filter((url) => url.endsWith('/projects/p1/detail'))).toHaveLength(1);
+    expect(reads()).toHaveLength(2);
+    expect(reads()[0]).toBe('http://test.local/v1/projects/p1/sessions/s1/log?limit=40');
+    expect(reads()[1]).toContain('/projects/p1/sessions/s1/transcript?shape=sync');
+    expect(reads()[1]).toContain('history=true');
+    expect(details()).toHaveLength(0);
   });
 
-  test('a sub-agent paints its own window, read by `child`, and never claims emptiness', async () => {
-    serve(() => copy(CHILD, 1));
+  test('a sub-agent asks the log first, then paints its own window, read by `child`, and never claims emptiness', async () => {
+    serve(noLog(() => copy(CHILD, 1)));
     const view = await mount(target({ rootId: CHILD, child: true }));
     expect(view.thread?.messages.map((message) => message.thread_id)).toEqual([CHILD]);
     expect(view.empty).toBe(false);
-    expect(reads()).toHaveLength(1);
-    expect(reads()[0]).toContain(`child=${CHILD}`);
+    expect(reads()).toHaveLength(2);
+    expect(reads()[0]).toBe('http://test.local/v1/projects/p1/sessions/s1/log?limit=40');
+    expect(reads()[1]).toContain(`child=${CHILD}`);
   });
 
   test('a copy that proves the root empty, with no turn on record, opens on the composer', async () => {
-    serve((url) => (url.includes('/turn') ? { turns: [] } : copy(ROOT, 0, { total: 0 })));
+    serve(noLog((url) => (url.includes('/turn') ? { turns: [] } : copy(ROOT, 0, { total: 0 }))));
     const view = await mount(target());
     expect(view.empty).toBe(true);
     expect(view.thread).toBeUndefined();
@@ -143,16 +146,16 @@ describe('useSavedCopy', () => {
   });
 
   test('no target reads nothing', async () => {
-    serve(() => copy(ROOT, 2));
+    serve(noLog(() => copy(ROOT, 2)));
     const view = await mount(null);
     expect(view).toEqual({ thread: undefined, empty: false });
     expect(urls).toHaveLength(0);
   });
 });
 
-describe('useSavedCopy with the session log (`session_log` on, P8)', () => {
-  // With the flag on the session log is the saved copy: the connecting view paints its
-  // newest page and never reads the v1 window (`GET …/transcript`).
+describe('useSavedCopy reads the session log first (P8)', () => {
+  // The session log is the saved copy: the connecting view paints its newest page and never
+  // reads the v1 window (`GET …/transcript`). No project flag is read.
   const golden = JSON.parse(
     readFileSync(join(import.meta.dir, '../../../packages/api-contract/src/__tests__/fixtures/session-log/golden21.v2.json'), 'utf8'),
   );
@@ -165,16 +168,13 @@ describe('useSavedCopy with the session log (`session_log` on, P8)', () => {
     return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }: { messages: unknown }) => head), thread_id: thread, messages, has_more: false };
   }
 
-  beforeEach(() => {
-    sessionLogOn = true;
-  });
-
-  test('the root paints the log page: one /log read, no /transcript', async () => {
+  test('the root paints the log page: one /log read, no /transcript, no project detail', async () => {
     serve((url) => (url.includes('/log') ? serveLog(url) : copy(ROOT, 2)));
     const view = await mount(target({ sessionId: 's-log-root', rootId: root!.thread_id }));
     expect(view.thread?.messages.map((message) => message.message_id)).toEqual(root!.messages.map((message) => message.message_id));
     expect(view.empty).toBe(false);
     expect(reads()).toEqual(['http://test.local/v1/projects/p1/sessions/s-log-root/log?limit=40']);
+    expect(details()).toHaveLength(0);
   });
 
   test("a sub-agent paints its thread from the log: the root page, then the thread's page, no /transcript", async () => {
@@ -196,11 +196,12 @@ describe('useSavedCopy with the session log (`session_log` on, P8)', () => {
     expect(reads().some((url) => url.includes('/transcript'))).toBe(false);
   });
 
-  test('no stored log (404): no copy, and still no /transcript', async () => {
-    serve((url) => (url.includes('/log') ? Response.json({ error: 'No session log for this session' }, { status: 404 }) : copy(ROOT, 2)));
+  test('no stored log (404): the v1 window paints as the fallback', async () => {
+    serve((url) => (url.includes('/log') ? Response.json({ error: 'No session log for this session' }, { status: 404 }) : copy(root!.thread_id, 2)));
     const view = await mount(target({ sessionId: 's-log-none', rootId: root!.thread_id }));
-    expect(view).toEqual({ thread: undefined, empty: false });
-    expect(reads()).toEqual(['http://test.local/v1/projects/p1/sessions/s-log-none/log?limit=40']);
+    expect(view.thread?.messages).toHaveLength(2);
+    expect(reads()[0]).toBe('http://test.local/v1/projects/p1/sessions/s-log-none/log?limit=40');
+    expect(reads()[1]).toContain('/projects/p1/sessions/s-log-none/transcript?shape=sync');
   });
 });
 
@@ -232,8 +233,8 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
     );
   }
 
-  /** The server: `/start` still waking, the snapshot honouring `?transcript=`. */
-  function serveOpen(sessionId: string) {
+  /** The server: `/start` still waking, the snapshot honouring `?transcript=`; `log: false` is a server older than the log. */
+  function serveOpen(sessionId: string, options: { log: boolean }) {
     serve((url) => {
       if (url.includes('/snapshot')) {
         return {
@@ -249,7 +250,7 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
         };
       }
       if (url.includes('/transcript?')) return copy(OPEN_ROOT, 2);
-      if (url.includes('/log?')) return logPage(sessionId);
+      if (url.includes('/log?')) return options.log ? logPage(sessionId) : Response.json({ error: 'Not found' }, { status: 404 });
       return { stage: 'starting', retriable: true, sandbox: null };
     });
   }
@@ -269,18 +270,17 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
     return { session, generation: 1, threads: threads.map(({ messages: _m, ...head }) => head), thread_id: threads[0]!.thread_id, messages: threads[0]!.messages, has_more: false };
   }
 
-  test('session_log on: the connecting view and the bound thread read the log, no /transcript, and the snapshot asks no window', async () => {
-    sessionLogOn = true;
+  test('the connecting view and the bound thread read the log, no /transcript, and the snapshot asks no window', async () => {
     const sessionId = '33333333-3333-4333-8333-333333333189';
-    serveOpen(sessionId);
-    // One app-wide query client, as in the app: the flag the connecting view read is known at the bind.
+    serveOpen(sessionId, { log: true });
+    // One app-wide query client, as in the app.
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const connecting = await mount(target({ sessionId, rootId: OPEN_ROOT }), client);
     expect(connecting.thread?.messages.map((message) => message.message_id)).toEqual([`msg_${OPEN_ROOT}_1`, `msg_${OPEN_ROOT}_2`]);
     await act(async () => tree.unmount());
 
     await act(async () => {
-      tree = create(React.createElement(Opened, { client, session: { projectId: 'p1', sessionId }, sessionId, sessionLog: true }));
+      tree = create(React.createElement(Opened, { client, session: { projectId: 'p1', sessionId }, sessionId }));
     });
     await settle();
 
@@ -290,15 +290,13 @@ describe('connect → thread: the window is downloaded once per open (KRTX-189)'
     const snapshots = mine.filter((url) => url.includes('/snapshot'));
     expect(snapshots.length).toBeGreaterThan(0);
     for (const url of snapshots) expect(url).toContain('transcript=0');
-    // The project detail (the flag) is read once for both views.
-    expect(urls.filter((url) => url.endsWith('/projects/p1/detail'))).toHaveLength(1);
     client.clear();
   });
 
   for (const order of ['bound with the thread', 'thread before the bind'] as const) {
-    test(`${order}: one window read, and the snapshot asks for the pointer only`, async () => {
+    test(`no log (404), ${order}: one window read, and the snapshot asks for the pointer only`, async () => {
       const sessionId = order === 'bound with the thread' ? '11111111-1111-4111-8111-111111111189' : '22222222-2222-4222-8222-222222222189';
-      serveOpen(sessionId);
+      serveOpen(sessionId, { log: false });
       const connecting = await mount(target({ sessionId, rootId: OPEN_ROOT }));
       expect(connecting.thread?.messages).toHaveLength(2);
       await act(async () => tree.unmount());

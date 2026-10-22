@@ -34,7 +34,7 @@ export default function PreviewPage({ params }: { params: Promise<{ port: string
     } else {
       router.replace(appHome);
     }
-  }, [port, tabs, setActiveTab, router]);
+  }, [appHome, port, tabs, setActiveTab, router]);
 
   return null;
 }

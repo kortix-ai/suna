@@ -59,6 +59,7 @@ import { projectsApp } from '../lib/app';
 import { parseBoundedPositiveInt } from '../lib/serializers';
 import { findSessionLogBlob, storeSessionLogBlob } from '../session-log-blobs';
 import { ingestSessionLogJournal, readSessionLogManifest, sessionExists, type SessionLogScope } from '../session-log-ingest';
+import { SessionLogConvertingError } from '../session-log-backfill';
 import { readSessionLogPage } from '../session-log-read';
 import { claimSessionLog } from '../session-log-restore';
 import { sessionLogSwitchPreflight } from '../session-log-switch';
@@ -342,7 +343,9 @@ export function registerSessionLogRoutes(): void {
         '`thread` defaults to the root thread; `messages` are the newest `limit` (default 40, max 500) ' +
         'with `seq < before_seq`, ascending by seq, tombstoned messages left out. Session read permission, ' +
         'the same gate as `GET .../transcript`: a session-bound token reads the sessions that route serves it. ' +
-        '404 when the session has no stored log or no such thread.',
+        '404 when the session has no stored log or no such thread. A session whose history is still only in the ' +
+        'v1 mirror is converted to the log before the read answers; one over the conversion size cap answers ' +
+        '503 `session_log_converting` with `Retry-After` while the backfill converts it.',
       ...auth,
       request: {
         params,
@@ -350,7 +353,7 @@ export function registerSessionLogRoutes(): void {
       },
       responses: {
         200: json(SessionLogPageSchema, 'One page of the session log'),
-        ...errors(400, 403, 404),
+        ...errors(400, 403, 404, 503),
       },
     }),
     async (c) => {
@@ -369,7 +372,14 @@ export function registerSessionLogRoutes(): void {
       const gate = await sessionReadGate(c, projectId, sessionId);
       if (gate.denied) return gate.denied as never;
 
-      const page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
+      let page: Awaited<ReturnType<typeof readSessionLogPage>>;
+      try {
+        page = await readSessionLogPage({ sessionId, threadId: query.thread ?? null, beforeSeq, limit: limit.value });
+      } catch (err) {
+        if (!(err instanceof SessionLogConvertingError)) throw err;
+        c.header('Retry-After', '60');
+        return c.json({ error: err.message, code: err.code }, 503);
+      }
       if (!page) return c.json({ error: 'No session log for this session' }, 404);
       if (page === 'unknown_thread') return c.json({ error: 'Unknown thread' }, 404);
       return c.json(page, 200);

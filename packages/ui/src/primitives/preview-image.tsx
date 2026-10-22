@@ -52,10 +52,12 @@ const PreviewImageContent = React.forwardRef<
   const [zoomLevel, setZoomLevel] = React.useState(DEFAULT_ZOOM);
   const [transformOrigin, setTransformOrigin] = React.useState(DEFAULT_ORIGIN);
 
-  React.useEffect(() => {
+  const [zoomedContent, setZoomedContent] = React.useState(fileContent);
+  if (fileContent !== zoomedContent) {
+    setZoomedContent(fileContent);
     setZoomLevel(DEFAULT_ZOOM);
     setTransformOrigin(DEFAULT_ORIGIN);
-  }, [fileContent]);
+  }
 
   const getTransformOrigin = (
     event: React.MouseEvent<HTMLDivElement> | React.WheelEvent<HTMLDivElement>,

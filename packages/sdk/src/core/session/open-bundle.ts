@@ -282,6 +282,8 @@ export function openBundleAudit(bundle: SessionOpenBundle): SessionAudit | null 
  * only for the session's CURRENT root. `null` when the leg is unknown or
  * pointer-only, and when a saved copy's root is not the root the session row
  * names. The route decides those.
+ *
+ * @deprecated The snapshot's v1 window. The snapshot's `log` leg is the session log's first page. Removed in the next major.
  */
 export function openBundleHistory(bundle: SessionOpenBundle): SessionTranscriptSyncEnvelope | null {
   const transcript = bundle.transcript;

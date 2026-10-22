@@ -301,7 +301,8 @@ function AgentPageFrame({
   const tI18nComplete = useI18nTranslations('hardcodedUi.i18nComplete');
   const isMobile = useIsMobile();
   const localizedConfig = useLocalizedAgentConfigCatalog();
-  const items = localizedConfig.sections.filter((s) => sections.includes(s.key));
+  const sectionKeys = new Set(sections);
+  const items = localizedConfig.sections.filter((s) => sectionKeys.has(s.key));
   // The Preferences rail's rule: a heading over a lone group labels nothing.
   const groups = localizedConfig.groups
     .map((group) => ({

@@ -719,7 +719,9 @@ export function SessionChat({
   const messages: SessionLogMessage[] | undefined = thread?.messages.length ? thread.messages : undefined;
   // The thread for handlers that read it at call time (the optimistic answers cache).
   const threadRef = useRef(thread);
-  threadRef.current = thread;
+  useLayoutEffect(() => {
+    threadRef.current = thread;
+  }, [thread]);
   const messagesLoading = syncMessagesLoading;
   // Who wrote each user message. A one-person session stays unlabelled.
   const viewerId = useUiViewerId();
@@ -1686,6 +1688,7 @@ export function SessionChat({
     autoLoadedPages,
     handleLoadOlder,
     scrollRef,
+    spacerElRef,
     sessionId,
     transcriptOnLog,
   ]);
@@ -1934,7 +1937,9 @@ export function SessionChat({
   );
   // P5.6: load the whole of every text a turn shows as a preview, on request only.
   const fullTextsRef = useRef(loaded);
-  fullTextsRef.current = loaded;
+  useLayoutEffect(() => {
+    fullTextsRef.current = loaded;
+  });
   const loadFullTexts = useCallback(
     (turnId: string, refs: readonly SessionLogReferencedText[]) => {
       const key = fullTextsRef.current.key;
@@ -3848,6 +3853,7 @@ export function SessionChat({
     ),
     [
       sessionId,
+      sessionScopeAgentName,
       pendingPermissions,
       handlePermissionReply,
       renderedQuestion,
@@ -3855,10 +3861,6 @@ export function SessionChat({
       handleQuestionReply,
       handleQuestionReject,
       handleQuestionActionChange,
-      tHardcodedUi,
-      local.model.fallback,
-      local.model.list,
-      handleModelChange,
     ],
   );
 
@@ -4071,7 +4073,9 @@ export function SessionChat({
       // Change requests are the only kind a turn produces. `external` exists on
       // the union for `setup-links/setup-link-button.tsx`, which renders this
       // card inline in prose and handles its own open.
-      if (outcome.kind === 'change_request') setOpenCrId(outcome.id.slice('cr:'.length));
+      if (outcome.kind === 'change_request') {
+        setOpenCrId(outcome.action.target ?? outcome.id.slice('cr:'.length));
+      }
     },
     [setOpenCrId],
   );
@@ -4201,7 +4205,11 @@ export function SessionChat({
         {/* Change request detail — opened from a turn's outcome card, or from
           `?cr=` on load. Lives inside `ProjectFilesProvider` alongside
           `SessionOutcomesProvider` so both read the SAME project id and cache. */}
-        <ChangeRequestDetailDialog crId={openCrId} onClose={() => setOpenCrId(null)} />
+        <ChangeRequestDetailDialog
+          crId={openCrId}
+          onClose={() => setOpenCrId(null)}
+          onOpenChangeRequest={setOpenCrId}
+        />
 
         {/* Chat and the action panel share one row — see `session-body.tsx`. The
           instant shell renders the SAME row, so nothing moves at the crossfade.

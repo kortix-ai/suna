@@ -141,8 +141,15 @@ export function FileSearch() {
   );
 
   return (
-    <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={closeSearch}>
-      <div className="mx-auto mt-4 max-w-lg px-4" onClick={(e) => e.stopPropagation()}>
+    <div
+      role="presentation"
+      className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) closeSearch();
+        else e.stopPropagation();
+      }}
+    >
+      <div className="mx-auto mt-4 max-w-lg px-4">
         <div className="border-border bg-card overflow-hidden rounded-2xl border shadow-2xl">
           {/* Search input */}
           <div className="flex items-center gap-2 border-b px-3">

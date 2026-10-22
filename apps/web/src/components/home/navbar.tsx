@@ -48,9 +48,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { type MouseEvent, useCallback, useEffect, useState } from 'react';
 import { Download } from '@kortix/ui/internal/icons/download';
 
-const SCROLL_THRESHOLD_DOWN = 50;
-const SCROLL_THRESHOLD_UP = 20;
-
 const CTA_LINK = '/auth';
 
 /**
@@ -80,7 +77,6 @@ interface NavbarProps {
 export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tI18nComplete = useTranslations('hardcodedUi.i18nComplete');
-  const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   // Drawer navigation closes the drawer when it commits, not on tap
   // (KRTX-1591): an instant close left the old page frozen for ~2 s at mobile
@@ -135,7 +131,9 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
         ? `/brandkit/Logo/Brandmark/SVG/Brandmark ${color}.svg`
         : `/brandkit/Logo/Logomark/SVG/Logomark ${color}.svg`;
     try {
-      const svg = await (await fetch(path)).text();
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const svg = await res.text();
       await navigator.clipboard.writeText(svg);
       successToast(tHardcodedUi.raw('i18nComplete.textc46a054cc5d2'));
     } catch {
@@ -158,22 +156,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     }
   };
 
-  // Asymmetric thresholds: the bar compacts at 50px and only expands again below
-  // 20px, so a reader hovering around the trigger point never sees it flicker.
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      setHasScrolled((wasScrolled) =>
-        wasScrolled
-          ? currentScrollY >= SCROLL_THRESHOLD_UP
-          : currentScrollY > SCROLL_THRESHOLD_DOWN,
-      );
-    };
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll();
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
   useEffect(() => {
     if (!isDrawerOpen) return;
     const prev = document.body.style.overflow;
@@ -189,13 +171,12 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     if (pendingHref !== null && pathname === pendingHref) setIsDrawerOpen(false);
   }, [pathname, pendingHref]);
 
-  // A drawer closed by hand must not leave a row marked pending; this is also
-  // what clears the pending mark after the commit close above.
-  useEffect(() => {
-    if (!isDrawerOpen) setPendingHref(null);
-  }, [isDrawerOpen]);
-
-  const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
+  // Pending rows render only inside the drawer, so a mark left by a close is
+  // cleared when the drawer opens or closes by hand.
+  const toggleDrawer = () => {
+    setIsDrawerOpen((prev) => !prev);
+    setPendingHref(null);
+  };
 
   // Anchor links scroll in place on the home page and close the drawer at
   // once. Page links commit first: the drawer stays up — spinner on the tapped

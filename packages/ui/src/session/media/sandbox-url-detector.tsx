@@ -229,7 +229,6 @@ function SandboxUrlChip({
   proxyUrl: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [copied, setCopied] = useState(false);
 
   const tabId = `preview:${detected.port}`;
   const tabHref = `/p/${detected.port}`;
@@ -249,13 +248,6 @@ function SandboxUrlChip({
       }),
     }, undefined, shallowNavigate);
   }, [tabId, tHardcodedUi, detected.port, tabHref, proxyUrl, internalUrl, shallowNavigate]);
-
-  const handleCopyUrl = useCallback(() => {
-    navigator.clipboard.writeText(proxyUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [proxyUrl]);
 
   const openPreview = useOpenPreviewLink();
   const handleOpenExternal = useCallback(() => {

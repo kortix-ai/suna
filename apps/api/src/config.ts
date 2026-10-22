@@ -301,14 +301,15 @@ const envSchema = z.object({
   // On by default. Off stops the worker's tick; nothing it has not yet purged is touched.
   SESSION_LOG_PURGE_ENABLED: optBoolTrue,
   // The backfill of old sessions (P3.1, `projects/session-log-backfill.ts`): each session with
-  // history only in the v1 mirror gets its v2 log. `off` (default) runs nothing. `dry` converts
-  // in memory, writes nothing, and logs counts per tick and per pass. `write` writes the logs
-  // (it also needs SESSION_LOG_INGEST_ENABLED). Leader only. The pass resumes across leaders
+  // history only in the v1 mirror gets its v2 log. `write` (default since P8.2: no read serves the
+  // mirror, so a self-hosted upgrade converts its own history) writes the logs (it also needs
+  // SESSION_LOG_INGEST_ENABLED). `dry` converts in memory, writes nothing, and logs counts per
+  // tick and per pass. `off` runs nothing. Leader only. The pass resumes across leaders
   // (`kortix.session_log_backfill_state`). A dry pass runs once per build (KORTIX_COMMIT): a new
   // build runs it again; on the same build, `DELETE FROM kortix.session_log_backfill_state`.
   // A mirror over the capture's size cap (~SESSION_LOG_RESTORE_MAX_BYTES of JSON) converts in a
   // Worker thread, only while the process has room for it (SESSION_LOG_BACKFILL_MEMORY_MB).
-  SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('off'),
+  SESSION_LOG_BACKFILL: z.enum(['off', 'dry', 'write']).optional().default('write'),
   // The API task's memory in MiB (prod and dev ECS tasks: 4096). The backfill starts a conversion
   // thread only while RSS plus its estimate stays under 75 % of this, or of cgroup memory.max when lower.
   SESSION_LOG_BACKFILL_MEMORY_MB: optInt(4096),
