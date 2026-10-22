@@ -1,7 +1,7 @@
 import { z } from '@hono/zod-openapi';
 import type { UpstreamDescriptor } from '@kortix/llm-gateway';
 import { config } from '../config';
-import { resolveProjectSecretsForConsumer } from '../projects/secrets';
+import { resolveProjectSecretsForConsumer } from '../projects/surface';
 import { safeEgressFetch } from '../shared/ssrf-guard';
 import { runtimeModelCatalog } from './models/runtime-catalog';
 

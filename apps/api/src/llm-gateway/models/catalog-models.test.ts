@@ -65,11 +65,12 @@ describe('gatewayModelCatalog — served catalog', () => {
     },
   );
 
-  test('every served model carries a positive context limit', () => {
-    const missing = Object.entries(full)
-      .filter(([, m]) => !(typeof m.limit?.context === 'number' && m.limit.context > 0))
+  test('a served limit is never invented: present means a positive context from the source', () => {
+    const bad = Object.entries(full)
+      .filter(([, m]) => m.limit && !(typeof m.limit.context === 'number' && m.limit.context > 0))
       .map(([id]) => id);
-    expect(missing).toEqual([]);
+    expect(bad).toEqual([]);
+    expect(Object.values(full).filter((m) => m.limit).length).toBeGreaterThan(0);
   });
 
   test('synthetic auto is absent, and an anonymous caller sees exactly the served managed ids', () => {
@@ -200,7 +201,7 @@ describe('served catalog field passthrough', () => {
     });
   });
 
-  test('a BYOK record without enriched capabilities gets permissive defaults and the default window', () => {
+  test('a BYOK record without enriched capabilities gets permissive defaults and no invented window', () => {
     expect(gatewayModelsAll(catalog)['anthropic/bare']).toEqual({
       name: 'Bare',
       provider: 'anthropic',
@@ -212,8 +213,13 @@ describe('served catalog field passthrough', () => {
       tool_call: true,
       attachment: false,
       temperature: false,
-      limit: { context: 200_000, output: 32_000 },
     });
+  });
+
+  test('a ChatGPT subscription model serves the backend window from Codex models.json', () => {
+    const limit = gatewayCodexModels(catalog, [codexId], { [codexId]: 272_000 })[`codex/${codexId}`]!.limit;
+    expect(limit!.context).toBe(272_000);
+    expect(limit!.output).toBeLessThanOrEqual(272_000);
   });
 
   test('a ChatGPT subscription record carries the openai record fields verbatim', () => {

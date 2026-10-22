@@ -56,6 +56,28 @@ export function readCatalogFile(path: string = process.env.KORTIX_LLM_CATALOG_FI
   }
 }
 
+/**
+ * The project's servable models with their real limits: `GET /models?scope=picker`,
+ * the list the web picker shows. It carries what the image-baked catalog cannot:
+ * custom endpoints, Platinum BYOK and models newer than the image. Empty on failure.
+ */
+export async function fetchPickerCatalog(env: NodeJS.ProcessEnv): Promise<Record<string, CatalogModel>> {
+  const base = env.KORTIX_LLM_BASE_URL?.trim()
+  const token = env.KORTIX_TOKEN?.trim()
+  if (!base || !token) return {}
+  try {
+    const res = await fetch(`${base.replace(/\/+$/, '')}/models?scope=picker`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3_000),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return ((await res.json()) as { models?: Record<string, CatalogModel> }).models ?? {}
+  } catch (err) {
+    logger.warn('[pi] live model catalog unavailable; the baked catalog sizes the models', { err: String(err) })
+    return {}
+  }
+}
+
 /** `kortix/<id>` and bare `<id>` both name the gateway model `<id>`. */
 export function nativeModelId(ref: string | undefined | null): string | null {
   const raw = (ref ?? '').trim()
@@ -113,8 +135,10 @@ function gatewayModel(id: string, entry: CatalogModel | undefined, target: Gatew
     reasoning: entry?.reasoning === true,
     input: entry?.attachment ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    // No source knows the window: pi's own default for a model it cannot size.
     contextWindow: entry?.limit?.context ?? 128_000,
-    maxTokens: entry?.limit?.output ?? 32_768,
+    // pi clamps a request's max_tokens to the room left in the window.
+    maxTokens: entry?.limit?.output ?? entry?.limit?.context ?? 32_768,
     compat: { thinkingFormat: 'openai', supportsStore: false, supportsDeveloperRole: false },
     // pi-ai clamps `xhigh` and `max` down to `high` unless the model maps them.
     thinkingLevelMap: Object.fromEntries(
@@ -133,7 +157,7 @@ export async function createPiModels(input: {
 
   const target = resolveGatewayTarget(env)
   if (!target) throw new Error('pi harness needs KORTIX_LLM_BASE_URL and KORTIX_TOKEN (the Kortix LLM gateway)')
-  const catalog = readCatalogFile(env.KORTIX_LLM_CATALOG_FILE)
+  const catalog = { ...readCatalogFile(env.KORTIX_LLM_CATALOG_FILE), ...(await fetchPickerCatalog(env)) }
   const provider = createProvider({
     id: KORTIX_PROVIDER_ID,
     name: 'Kortix',

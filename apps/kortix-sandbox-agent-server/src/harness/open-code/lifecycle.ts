@@ -1526,39 +1526,19 @@ export async function refreshGatewayCatalogFile(opts: {
   return { changed, catalogFile: opts.targetCatalogFile }
 }
 
-// Conservative window for a model we have no declared limit for. Better to
-// compact a little early than to never compact and get stuck at the wall.
-const DEFAULT_MODEL_LIMIT = { context: 200_000, output: 32_000 } as const
+// OpenCode compacts only when a model declares a window. The gateway serves each
+// model's real limits; a model no source can size (no live picker answer and not
+// in the baked catalog) gets this one so compaction still fires.
+const UNKNOWN_MODEL_LIMIT = { context: 200_000, output: 32_000 } as const
 
-// Known limits indexed by bare model id (the tail after the last "/"), so a
-// catalog model offered under any provider prefix (e.g.
-// "alibaba-cn/deepseek-v4-flash") still resolves to the right window.
-const KNOWN_LIMIT_BY_TAIL: Record<string, { context?: number; output?: number }> = (() => {
-  const out: Record<string, { context?: number; output?: number }> = {}
-  for (const [id, model] of Object.entries(MINIMAL_FALLBACK_MODELS)) {
-    if (!model.limit) continue
-    out[id.split('/').pop() ?? id] = model.limit
-  }
-  return out
-})()
-
-// Guarantee every model carries a context window. The gateway /models endpoint
-// returns NO per-model limits, so without this OpenCode sees models with no
-// context limit, can't size the conversation, and auto-compaction never fires —
-// long sessions then blow past the window and get stuck (session pinned at 100%
-// context). Backfill from the known-model table (exact id, then bare id), else a
-// conservative default. Models that already declare a usable limit are untouched.
 function withModelLimits(
   models: Record<string, KortixGatewayModel>,
 ): Record<string, KortixGatewayModel> {
   const out: Record<string, KortixGatewayModel> = {}
   for (const [id, model] of Object.entries(models)) {
-    if (typeof model.limit?.context === 'number' && model.limit.context > 0) {
-      out[id] = model
-      continue
-    }
-    const known = MINIMAL_FALLBACK_MODELS[id]?.limit ?? KNOWN_LIMIT_BY_TAIL[id.split('/').pop() ?? id]
-    out[id] = { ...model, limit: known ?? { ...DEFAULT_MODEL_LIMIT } }
+    out[id] = typeof model.limit?.context === 'number' && model.limit.context > 0
+      ? model
+      : { ...model, limit: { ...UNKNOWN_MODEL_LIMIT } }
   }
   return out
 }

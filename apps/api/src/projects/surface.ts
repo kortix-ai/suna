@@ -130,3 +130,6 @@ export type { GitBackedProject } from './git/types';
 export { readRunningTurn, sessionLifecycleStandingFor, turnPrompterOf } from './session-lifecycle/turn-stop-authority';
 
 export { registerRuntimeFork } from './lib/runtime-session-snapshot';
+
+// A secret's value for a consumer (consumed by llm-gateway/custom-providers).
+export { resolveProjectSecretsForConsumer } from './secrets';

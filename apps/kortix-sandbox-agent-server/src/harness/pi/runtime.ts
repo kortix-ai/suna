@@ -714,6 +714,18 @@ export class PiRuntime {
     return { changed: before !== after }
   }
 
+  /** Re-read the served models and their limits (a custom endpoint saved), keeping the selected model. */
+  async refreshModels(): Promise<void> {
+    if (!this.agent || !this.models) return
+    const { createPiModels } = await import('./model')
+    this.models = await createPiModels({
+      env: this.env,
+      defaultModelRef: this.env.KORTIX_MODEL ?? this.compiledAgent()?.model ?? this.compiled?.model ?? null,
+    })
+    this.selected = this.models.select(this.selected?.modelID ?? null)
+    this.agent.state.model = this.selected.model
+  }
+
   /** Reload skills and the root AGENTS.md from disk (after a repo refresh). */
   async reloadSkills(): Promise<number> {
     if (!this.agent) return 0

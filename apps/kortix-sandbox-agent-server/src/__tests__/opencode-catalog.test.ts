@@ -277,9 +277,9 @@ describe('the boot config never touches the network', () => {
     expect(catalogIsDegraded(file)).toBe(false)
   })
 
-  test('every model gets a context window: a known one by id tail, else the conservative default', async () => {
-    // The gateway listing carries no limits; without one OpenCode cannot size
-    // the conversation and auto-compaction never fires.
+  test("a model keeps its own window; only a model no source can size gets the default", async () => {
+    // Without a window OpenCode cannot size the conversation and never compacts.
+    // Another provider's model with the same last id segment does not lend its window.
     const knownTail = Object.entries(MINIMAL_FALLBACK_MODELS).find(([, model]) => model.limit?.context)!
     const tail = knownTail[0].split('/').pop()!
     recordFetches()
@@ -287,12 +287,15 @@ describe('the boot config never touches the network', () => {
       await buildOpencodeConfigContent({
         ...NO_FILE_ENV,
         KORTIX_LLM_CATALOG_FILE: await bakedCatalogFile({
-          models: { [`other-provider/${tail}`]: { name: 'Known tail' }, 'unknown/model-x': { name: 'Unknown' } },
+          models: {
+            'own/model': { name: 'Own', limit: { context: 1_048_576, output: 65_536 } },
+            [`other-provider/${tail}`]: { name: 'Same tail' },
+          },
         }),
       } as NodeJS.ProcessEnv),
     ) as Record<string, { limit?: { context?: number; output?: number } }>
-    expect(models[`other-provider/${tail}`]?.limit).toEqual(knownTail[1].limit)
-    expect(models['unknown/model-x']?.limit).toEqual({ context: 200_000, output: 32_000 })
+    expect(models['own/model']?.limit).toEqual({ context: 1_048_576, output: 65_536 })
+    expect(models[`other-provider/${tail}`]?.limit).toEqual({ context: 200_000, output: 32_000 })
   })
 
   test('no OpenAI reasoning model in the fallback set claims temperature support', () => {
