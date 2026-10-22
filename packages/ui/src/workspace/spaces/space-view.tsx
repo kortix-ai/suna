@@ -245,7 +245,7 @@ function SpaceViewBody({ projectId, target, beforeSend, renderFolder, renderApps
   const place = space.kind === 'channel' ? `#${space.slug}` : title;
   return (
     <div className="bg-background flex min-h-0 flex-1 overflow-hidden">
-      <ComposerDropZone className={cn('flex min-w-0 flex-1 flex-col', threadId && 'max-lg:hidden')}>
+      <ComposerDropZone className={cn('flex min-w-0 flex-1 flex-col', threadId && 'max-xl:hidden')}>
         {header}
         <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
           <TabsList type="underline" size="sm" className="w-full shrink-0 justify-start gap-4 overflow-x-auto px-5">
@@ -713,7 +713,7 @@ function ThreadPanel({
     [agentName, thread, t],
   );
   return (
-    <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-col lg:w-125 lg:shrink-0 lg:border-l">
+    <aside aria-label={t('threadTitle')} className="bg-background flex min-h-0 w-full flex-col xl:w-125 xl:shrink-0 xl:border-l">
       <div className="kx-titlebar-row relative flex shrink-0 items-center gap-2 border-b px-2">
         <div className="kx-titlebar-tabs flex h-12 min-w-0 flex-1 items-center px-3">
           <div className="flex min-w-0 items-baseline gap-2">
