@@ -315,6 +315,35 @@ jobs:
             fi
             echo "✓ $IMAGE:${VERSION} (from $SRC_TAG, digest $NEW_DIGEST verified)"
           done
+
+      # Sign what was just published. Deploy-dev has signed its images for a
+      # while; the RELEASE images — the ones a self-hosted box pulls and runs —
+      # shipped unsigned, so a puller had no way to check that the bytes came
+      # from this repository's workflow rather than from whoever controls the
+      # Docker Hub tag (pentest 2026-10-22, "prod images are mutable and
+      # unsigned"). Signed by digest, keyless, into the public transparency log.
+      - name: Check out the signing script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          sparse-checkout: scripts/ci
+          path: .release-scripts
+          persist-credentials: false
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign release images (keyless)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          for IMAGE in kortix/kortix-api kortix/kortix-gateway kortix/kortix-frontend; do
+            DIGEST="$(docker buildx imagetools inspect "$IMAGE:${VERSION}" --format '{{json .Manifest}}' | jq -r '.digest // empty')"
+            case "$DIGEST" in sha256:*) ;; *) echo "::error::could not resolve digest for $IMAGE:${VERSION} (got: ${DIGEST:-<empty>})"; exit 1 ;; esac
+            # Sign by digest, never by tag: the tag is mutable, the digest is
+            # the exact manifest this release verified above.
+            bash .release-scripts/scripts/ci/cosign-sign-attest.sh "$IMAGE@${DIGEST}"
+            echo "✓ signed $IMAGE@${DIGEST}"
+          done
       - name: Summary
         env:
           VERSION: ${{ needs.version.outputs.version }}
@@ -884,6 +913,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      # Keyless cosign signing of SHA256SUMS needs a GitHub OIDC token.
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -908,6 +939,20 @@ jobs:
           # SHA256SUMS so the checksum files are not themselves listed in it.
           for f in kortix-tui-*; do sha256sum "$f" > "$f.sha256"; done
           ls -lh
+
+      # Keyless-sign the checksum manifest. install.sh already refuses to run
+      # a binary whose digest is missing from SHA256SUMS — but it fetches both
+      # over the same channel, so the manifest alone proves only that the
+      # download was not corrupted. The Sigstore bundle ties it to this
+      # workflow's OIDC identity and a public transparency-log entry (pentest
+      # 2026-10-22: "release integrity is TOFU").
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign SHA256SUMS (keyless)
+        run: |
+          set -euo pipefail
+          bash "$GITHUB_WORKSPACE/scripts/ci/cosign-sign-blob.sh" release/SHA256SUMS
+          ls -lh release/SHA256SUMS*
 
       # ── Refuse to publish an assetless or partial Release ────────────────────
       # A Release with no binaries is WORSE than no Release: scripts/install.sh

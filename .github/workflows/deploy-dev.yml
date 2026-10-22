@@ -1370,6 +1370,8 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: write
+      # Keyless cosign signing of SHA256SUMS needs a GitHub OIDC token.
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1380,6 +1382,14 @@ jobs:
         with:
           name: cli-binaries
           path: release/
+
+      # The dev channel must be verifiable the same way prod is; otherwise a
+      # `kortix update --dev` install is the only TOFU path left (see
+      # deploy-prod.yml's github-release job).
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign SHA256SUMS (keyless)
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/cosign-sign-blob.sh" release/SHA256SUMS
 
       - name: List assets
         run: ls -lh release/
